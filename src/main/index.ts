@@ -1,6 +1,5 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { join } from 'node:path';
 import { IPC } from '../shared/ipc';
 import type {
   AppSettings,
@@ -19,10 +18,12 @@ import { loadPdfFile } from './services/pdf-file';
 import { SamplesService } from './services/samples';
 import { DEFAULT_SETTINGS, SettingsService } from './services/settings';
 import { SignatureService } from './services/signature-service';
+import { UpdateService } from './services/update-service';
+import { buildAppMenu } from './menu';
 import { createMainWindow } from './window';
 
 function mainModuleDir(): string {
-  return dirname(fileURLToPath(import.meta.url));
+  return __dirname;
 }
 
 // Test harness: export start() so unit tests can call it directly.
@@ -49,8 +50,19 @@ if (!_isVitest) {
 }
 
 export async function start(): Promise<void> {
-  Menu.setApplicationMenu(null);
   await app.whenReady();
+
+  // Phase 6: build the application menu. The menu sends actions to the
+  // focused window's renderer via IPC, where the same handlers as toolbar
+  // buttons pick them up.
+  buildAppMenu({
+    sendToFocused(_action: string, ...args: unknown[]): void {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      if (win !== undefined && !win.isDestroyed()) {
+        win.webContents.send('menu:action', ...args);
+      }
+    },
+  });
 
   const broadcast = (settings: AppSettings): void => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -176,6 +188,54 @@ export async function start(): Promise<void> {
     signatures.save(source, label),
   );
   ipcMain.handle(IPC.signaturesDelete, (_event, id: string) => signatures.delete(id));
+
+  // Phase 6: About / preferences — app info
+  ipcMain.handle(IPC.appGetInfo, () => {
+    return {
+      version: app.getVersion(),
+      electronVersion: process.versions.electron ?? 'unknown',
+      nodeVersion: process.versions.node ?? 'unknown',
+      storagePaths: {
+        userData: app.getPath('userData'),
+        settings: join(app.getPath('userData'), 'settings.json'),
+        signatures: join(app.getPath('userData'), 'signatures.json'),
+        cache: app.getPath('sessionData'),
+      },
+    };
+  });
+
+  // Phase 6: open a folder or file in the OS shell
+  ipcMain.handle(IPC.appOpenPath, async (_event, path: string) => {
+    const error = await shell.openPath(path);
+    if (error) {
+      throw new Error(error);
+    }
+  });
+
+  // Phase 6: OTA updates via electron-updater
+  const updateService = new UpdateService();
+  updateService.init();
+
+  ipcMain.handle(IPC.updateStatus, () => {
+    return updateService.getStatus();
+  });
+
+  ipcMain.handle(IPC.updateDownload, async () => {
+    return updateService.download();
+  });
+
+  ipcMain.handle(IPC.updateInstall, () => {
+    updateService.install();
+  });
+
+  // Push update status changes to all windows
+  updateService.onStatusChanged((state) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.updateStatusChangedEvent, state);
+      }
+    }
+  });
 
   let currentSettings: AppSettings = DEFAULT_SETTINGS;
   const loaded = await settings.load();

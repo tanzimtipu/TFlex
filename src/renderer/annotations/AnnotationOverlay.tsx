@@ -38,8 +38,9 @@ import {
 // without having to know the geometry module's surface.
 export type { TextItemGeom };
 import {
-  ANNOTATION_COLOR_HEX,
+  annotationColorToCss,
   type Annotation,
+  type AnnotationColorValue,
   type AnnotationToolState,
   type PagePoint,
   type PageRect,
@@ -360,7 +361,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           <path
             className="ann-ink ann-preview"
             d={inkPathD(ink)}
-            stroke={ANNOTATION_COLOR_HEX[tool.color]}
+            stroke={annotationColorToCss(tool.color)}
             strokeWidth={tool.penWidth}
             fill="none"
             strokeLinecap="round"
@@ -489,7 +490,7 @@ function SvgAnnotation({ ann, dimmed }: { ann: Annotation; dimmed: boolean }): R
 }
 
 function SvgAnnotationInner({ ann }: { ann: Annotation; dimmed: boolean }): ReactElement | null {
-  const hex = ANNOTATION_COLOR_HEX[ann.color];
+  const hex = annotationColorToCss(ann.color);
   switch (ann.kind) {
     case "highlight":
       return (
@@ -619,11 +620,11 @@ function ArrowShape({
 }: {
   from: PagePoint;
   to: PagePoint;
-  color: keyof typeof ANNOTATION_COLOR_HEX;
+  color: AnnotationColorValue;
   id?: string;
   preview?: boolean;
 }): ReactElement {
-  const hex = ANNOTATION_COLOR_HEX[color];
+  const hex = annotationColorToCss(color);
   const [w1, w2] = arrowHead(from, to, ARROW_HEAD_PT);
   return (
     <g
@@ -647,9 +648,9 @@ function MarkupPreviewRect({
 }: {
   kind: "highlight" | "underline" | "strikeout";
   rect: PageRect;
-  color: keyof typeof ANNOTATION_COLOR_HEX;
+  color: AnnotationColorValue;
 }): ReactElement {
-  const hex = ANNOTATION_COLOR_HEX[color];
+  const hex = annotationColorToCss(color);
   if (kind === "highlight") {
     return (
       <rect
@@ -683,9 +684,9 @@ function ShapePreview({
 }: {
   kind: "rect" | "ellipse";
   rect: PageRect;
-  color: keyof typeof ANNOTATION_COLOR_HEX;
+  color: AnnotationColorValue;
 }): ReactElement {
-  const hex = ANNOTATION_COLOR_HEX[color];
+  const hex = annotationColorToCss(color);
   const common = {
     fill: "none",
     stroke: hex,
@@ -720,7 +721,7 @@ function DomAnnotation({
     const r = ann.rect ?? (ann as unknown as { rects?: { x: number; y: number; width: number; height: number }[] }).rects?.[0];
     if (r === undefined) return null;
     const box = overlayRectToCss(r, cssScale);
-    const hex = ANNOTATION_COLOR_HEX[ann.color];
+    const hex = annotationColorToCss(ann.color);
     const style: CSSProperties = {
       left: box.left,
       top: box.top,
@@ -751,7 +752,7 @@ function DomAnnotation({
     const at = ann.at ?? (ann as unknown as { rects?: { x: number; y: number }[] }).rects?.[0];
     if (at === undefined) return null;
     const size = NOTE_ICON_PT * cssScale;
-    const hex = ANNOTATION_COLOR_HEX[ann.color];
+    const hex = annotationColorToCss(ann.color);
     return (
       <div
         className="ann ann-note"

@@ -1,6 +1,5 @@
 import { BrowserWindow, screen, type Rectangle } from 'electron';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import type { AppSettings, WindowGeometry } from '../shared/types';
 
 interface WindowDeps {
@@ -12,7 +11,7 @@ interface WindowDeps {
 const GEOMETRY_DEBOUNCE_MS = 300;
 
 function mainModuleDir(): string {
-  return dirname(fileURLToPath(import.meta.url));
+  return __dirname;
 }
 
 export function resolvePreloadPath(): string {

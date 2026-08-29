@@ -1,12 +1,9 @@
-import type { ReactElement } from "react";
-import { FolderOpen, Moon, Sun, X } from "lucide-react";
+import { useCallback, type ReactElement, type MouseEvent as ReactMouseEvent } from "react";
+import { FolderOpen, Moon, Plus, Sun, X } from "lucide-react";
 import type { Theme } from "../state/theme";
+import { resolveTabMouseDown, type TabInput } from "../state/tabMouseDown";
 
-export interface AppHeaderTab {
-  id: string;
-  title: string;
-  modified: boolean;
-}
+export type AppHeaderTab = TabInput;
 
 interface AppHeaderProps {
   activeId: string | null;
@@ -16,10 +13,47 @@ interface AppHeaderProps {
   theme: Theme;
   onToggleTheme: () => void;
   onOpen: () => void;
+  /** Phase 6 — "+ tab" affordance. Spawns a brand-new empty tab that
+   *  the user can fill by opening a PDF. The host owns the empty-tab
+   *  state (see App.tsx -> tabs.openEmpty). */
+  onNewEmptyTab: () => void;
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, onToggleTheme, onOpen } = props;
+  const { activeId, tabs, onActivate, onClose, theme, onToggleTheme, onOpen, onNewEmptyTab } = props;
+  // Single mousedown handler for the tab strip. We use mousedown (not
+  // click) so the activate mutation lands synchronously and is not
+  // dropped by a re-render that swaps the button element between
+  // mousedown and mouseup (DEF-034: state-churn click loss). The
+  // resolver classifies the hit as activate / close / no-op, so
+  // padding, gap, and inner title clicks all flow through the same
+  // path.
+  const onTabMouseDown = useCallback(
+    (e: ReactMouseEvent<HTMLDivElement>): void => {
+      const action = resolveTabMouseDown(
+        { target: e.target, button: e.button },
+        tabs,
+      );
+      if (action === null) return;
+      if (action.kind === "activate") {
+        if (action.id === activeId) return;
+        onActivate(action.id);
+      } else {
+        onClose(action.id);
+      }
+    },
+    [tabs, activeId, onActivate, onClose],
+  );
+
+  // Close button stops mousedown from bubbling so the resolver above
+  // sees the close-button hit and the tab-level mousedown doesn't
+  // ALSO fire an activate. stopPropagation on mousedown is the right
+  // level here — stopping click alone would let the outer mousedown
+  // race past before click resolved.
+  const onCloseMouseDown = useCallback((e: ReactMouseEvent<HTMLButtonElement>): void => {
+    e.stopPropagation();
+  }, []);
+
   return (
     <header className="app-header">
       <div className="brand">
@@ -41,18 +75,11 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                     className={isActive ? "tab tab-active" : "tab"}
                     role="tab"
                     aria-selected={isActive}
+                    data-tab-id={tab.id}
+                    onMouseDown={onTabMouseDown}
                   >
-                    <button
-                      type="button"
-                      onClick={(): void => onActivate(tab.id)}
+                    <span
                       className="tab-title"
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        cursor: "pointer",
-                        padding: 0,
-                        color: "inherit",
-                      }}
                       title={tab.title}
                     >
                       <span
@@ -64,10 +91,11 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                         aria-hidden
                       />
                       {tab.title}
-                    </button>
+                    </span>
                     <button
                       type="button"
                       className="tab-close"
+                      onMouseDown={onCloseMouseDown}
                       onClick={(e): void => {
                         e.stopPropagation();
                         onClose(tab.id);
@@ -82,6 +110,20 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             })}
           </ul>
         )}
+        {/* Phase 6 — "+ tab" affordance. Always visible (including when
+            no tabs are open), always rendered as its own button so it
+            doesn't accidentally get classified as a tab by the mousedown
+            resolver. */}
+        <button
+          type="button"
+          className="tab-new"
+          onClick={onNewEmptyTab}
+          aria-label="New empty tab"
+          title="New empty tab"
+          data-new-tab
+        >
+          <Plus size={14} aria-hidden />
+        </button>
       </div>
       <div className="header-actions">
         <button

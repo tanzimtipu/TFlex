@@ -9,6 +9,7 @@ import { useState, type ReactElement } from "react";
 import {
   ANNOTATION_COLORS,
   ANNOTATION_COLOR_HEX,
+  annotationColorToCss,
   annotationSummary,
   countByKind,
   hasEditableText,
@@ -96,7 +97,7 @@ function AnnotationRow(props: RowProps): ReactElement {
           aria-label={`Jump to ${kindLabel(a.kind)} on page ${a.page}`}
           title={`Jump to ${kindLabel(a.kind)} on page ${a.page}`}
         >
-          <span className="ann-panel-row-icon" style={{ color: ANNOTATION_COLOR_HEX[a.color] }}>
+          <span className="ann-panel-row-icon" style={{ color: annotationColorToCss(a.color) }}>
             {rowIcon(a)}
           </span>
           <span className="ann-panel-row-text">

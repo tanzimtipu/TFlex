@@ -23,13 +23,82 @@ export interface WindowGeometry {
   maximized: boolean;
 }
 
+/** Phase 6 — per-theme annotation color overrides. Each entry is a
+ *  custom color preset the user added; the picker shows these
+ *  alongside the built-in swatches. Keys are 'light' | 'dark' so
+ *  the palette can be tuned per theme. Two storage shapes are
+ *  accepted for backwards-compatibility with the backend's existing
+ *  settings.json migration:
+ *
+ *   - Legacy: `string[]` — each entry is the raw hex string.
+ *   - Current: `AnnotationColorPreset[]` — `{ id, hex }` so removals
+ *     can target by id even if the user adds the same hex twice.
+ *
+ *  The renderer normalises on read (see `annotations/ColorPalette.tsx`)
+ *  and writes the current shape through `state/colorPalette.ts`.
+ *  Backend migration only needs to survive a re-read; we keep the
+ *  legacy shape accepted so existing settings.json files don't
+ *  crash the migration path while backend-dev ships the matching
+ *  normalisation. */
+export interface AnnotationColorPreset {
+  id: string;
+  hex: string;
+}
+
+export interface AnnotationColors {
+  light?: AnnotationColorPreset[] | string[];
+  dark?: AnnotationColorPreset[] | string[];
+}
+
 export interface AppSettings {
   theme: 'light' | 'dark';
   geometry: WindowGeometry;
   recentFiles: RecentFile[];
+  /** Phase 6 — default theme the user picks on first boot. When the
+   *  preference sheet changes this, the live theme flips too. */
+  themeDefault?: 'light' | 'dark' | 'system';
+  /** Phase 6 — cap for the recent-files list (1..50). The backend
+   *  enforces a matching cap on its side; this is what the renderer
+   *  asks for next save. */
+  recentsCap?: number;
+  /** Phase 6 — tools palette layout. 'list' is the dense icon+label
+   *  stack (default); 'grid' is the icon tile layout. */
+  toolsPaletteLayout?: 'list' | 'grid';
+  /** Phase 6 — per-theme annotation color overrides. See
+   *  `AnnotationColors`. The picker reads + writes this list. */
+  annotationColors?: AnnotationColors;
+}
+
+/** Phase 6 — what the renderer gets back from `app:getInfo`. The
+ *  backend fills this in `start()` and exposes it over IPC. The
+ *  About dialog reads `version` and the preferences sheet reads
+ *  `storagePaths`. The OTA work backend-dev is building in parallel
+ *  will surface `updateState` (not consumed by the renderer here —
+ *  that's a future addition). */
+export interface AppInfo {
+  version: string;
+  electronVersion: string;
+  nodeVersion: string;
+  storagePaths: {
+    userData: string;
+    settings: string;
+    signatures: string;
+    cache: string;
+  };
 }
 
 export type LoadSettingsResult = Result<AppSettings, 'io' | 'corrupt-settings'>;
+
+// ---- Phase 6: OTA updates ----
+
+export type UpdateState =
+  | { kind: 'unsupported'; reason: string }
+  | { kind: 'checking' }
+  | { kind: 'up-to-date'; version: string }
+  | { kind: 'available'; version: string; releaseDate?: string }
+  | { kind: 'downloading'; progress: number }
+  | { kind: 'downloaded'; version: string }
+  | { kind: 'error'; message: string };
 
 // ---- Phase 2: Page organization engine ----
 

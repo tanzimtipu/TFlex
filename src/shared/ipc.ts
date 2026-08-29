@@ -1,5 +1,6 @@
 import type { Result } from "./result";
 import type {
+  AppInfo,
   AppSettings,
   LoadSettingsResult,
   PdfOpenError,
@@ -7,6 +8,7 @@ import type {
   SampleDocument,
   SavedSignature,
   SignatureSource,
+  UpdateState,
 } from "./types";
 
 export const IPC = {
@@ -22,6 +24,9 @@ export const IPC = {
   settingsSave: "settings:save",
   settingsAddRecent: "settings:addRecent",
   settingsChangedEvent: "settings:changed",
+  // Phase 6 — About + preferences surface
+  appGetInfo: "app:getInfo",
+  appOpenPath: "app:openPath",
 // Phase 2: page organization engine
   engineLoadDocument: "engine:loadDocument",
   engineLoadDocumentBytes: "engine:loadDocumentBytes",
@@ -49,6 +54,11 @@ export const IPC = {
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
+  // Phase 6 — OTA updates
+  updateStatus: "update:status",
+  updateDownload: "update:download",
+  updateInstall: "update:install",
+  updateStatusChangedEvent: "update:statusChanged",
 } as const;
 
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
@@ -79,5 +89,25 @@ export interface TFlexApi {
     list(): Promise<SavedSignaturesResult>;
     save(source: SignatureSource, label?: string): Promise<SavedSignaturesResult>;
     delete(id: string): Promise<SavedSignaturesResult>;
+  };
+  /** Phase 6 — About + preferences. Backend fills `AppInfo` from
+   *  `app.getVersion()` and the user-data path so the About dialog
+   *  can show a version badge and the preferences sheet can show
+   *  storage locations. `openPath` is best-effort — the renderer
+   *  treats rejection as a non-error (it falls back to a toast).
+   *  Optional because preload wiring is being added in parallel
+   *  by backend-dev; the renderer guards with a runtime check. */
+  app?: {
+    getInfo(): Promise<AppInfo>;
+    openPath(path: string): Promise<void>;
+  };
+  /** Phase 6 — OTA updates. Backend manages the update lifecycle
+   *  through electron-updater; the renderer polls status and can
+   *  trigger download/install. Status changes are pushed as events. */
+  update?: {
+    getStatus(): Promise<UpdateState>;
+    download(): Promise<UpdateState>;
+    install(): Promise<void>;
+    onStatusChanged(cb: (state: UpdateState) => void): () => void;
   };
 }

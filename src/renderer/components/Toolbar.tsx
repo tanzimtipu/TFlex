@@ -7,6 +7,7 @@ import {
   Layers,
   Minus,
   MoveHorizontal,
+  PanelRightOpen,
   Plus,
   Save,
   Scissors,
@@ -46,6 +47,11 @@ interface ToolbarProps {
    *  action) opens the flatten flow. */
   hasFormFields: boolean;
   onFlattenClick: () => void;
+  /** Phase 6 — Tools palette toggle. The toolbar sits left of the rail
+   *  panel; clicking the button opens / closes the right-side palette.
+   *  Mirrors the Ctrl+Shift+P accelerator the menu wires up. */
+  toolsPaletteOpen: boolean;
+  onToolsPaletteToggle: () => void;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -71,6 +77,8 @@ export function Toolbar(props: ToolbarProps) {
     onSignClick,
     hasFormFields,
     onFlattenClick,
+    toolsPaletteOpen,
+    onToolsPaletteToggle,
   } = props;
 
   const [pageInput, setPageInput] = useState(String(page));
@@ -229,6 +237,19 @@ export function Toolbar(props: ToolbarProps) {
             <span className="tool-btn-label">Flatten</span>
           </button>
         )}
+        <span className="toolbar-sep" aria-hidden />
+        <button
+          type="button"
+          className={toolsPaletteOpen ? 'tool-btn tool-btn-active' : 'tool-btn'}
+          onClick={onToolsPaletteToggle}
+          aria-pressed={toolsPaletteOpen}
+          title="Show tools palette (Ctrl+Shift+P)"
+          aria-label="Tools palette"
+          data-tools-toggle
+        >
+          <PanelRightOpen size={15} aria-hidden />
+          <span className="tool-btn-label">Tools</span>
+        </button>
       </div>
     </div>
   );

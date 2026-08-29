@@ -24,7 +24,17 @@ export interface PageRect {
 // ---------------------------------------------------------------------------
 // Colors
 
+/** Built-in annotation colors. The user can also pick any custom hex
+ *  through the ColorPalette; that path produces a free-form hex string
+ *  instead of one of these literals. The `hexOrBuiltIn` alias is the
+ *  union shape used everywhere annotations touch the color channel. */
 export type AnnotationColor = "yellow" | "red" | "green" | "blue";
+
+/** Any valid color for an annotation: either a built-in name or a
+ *  hex string (#rgb / #rrggbb, normalised to lowercase). Custom
+ *  hexes are stored verbatim and resolved to a CSS color by the
+ *  overlay at render time. */
+export type AnnotationColorValue = AnnotationColor | string;
 
 export const ANNOTATION_COLORS: readonly AnnotationColor[] = [
   "yellow",
@@ -39,6 +49,23 @@ export const ANNOTATION_COLOR_HEX: Record<AnnotationColor, string> = {
   green: "#22c55e",
   blue: "#3b82f6",
 };
+
+/** Resolve any annotation color value (built-in name OR raw hex) to a
+ *  CSS color string. Unknown values fall through to `currentColor`,
+ *  which lets the overlay degrade gracefully instead of painting
+ *  nothing — the worst case is "the highlight isn't visible," not
+ *  a crash. */
+export function annotationColorToCss(value: AnnotationColorValue): string {
+  if (typeof value !== "string") return "currentColor";
+  if (value in ANNOTATION_COLOR_HEX) {
+    return ANNOTATION_COLOR_HEX[value as AnnotationColor];
+  }
+  // Custom hex (lowercase, with leading #, length 4 or 7).
+  if (/^#[0-9a-f]{3}$/.test(value) || /^#[0-9a-f]{6}$/.test(value)) {
+    return value;
+  }
+  return "currentColor";
+}
 
 export function isAnnotationColor(v: unknown): v is AnnotationColor {
   return (
@@ -65,7 +92,7 @@ interface AnnotationBase {
   id: string;
   /** 1-based page number in the document's current visible order. */
   page: number;
-  color: AnnotationColor;
+  color: AnnotationColorValue;
   createdAt: string; // ISO 8601
 }
 
@@ -121,9 +148,10 @@ export type Annotation =
   | NoteAnnotation;
 
 /** Fields the user can change after creation (via the annotations panel or
- *  the inline note editor). */
+ *  the inline note editor). `color` accepts both built-in names and free-form
+ *  hex strings so the picker can apply custom colors. */
 export interface AnnotationPatch {
-  color?: AnnotationColor;
+  color?: AnnotationColorValue;
   text?: string;
 }
 
@@ -167,7 +195,7 @@ export type AnnotationTool =
 
 export interface AnnotationToolState {
   tool: AnnotationTool;
-  color: AnnotationColor;
+  color: AnnotationColorValue;
   /** Pen stroke width in page points. */
   penWidth: number;
 }
@@ -182,7 +210,7 @@ export const initialAnnotationToolState: AnnotationToolState = {
 
 export type AnnotationToolAction =
   | { type: "set-tool"; tool: AnnotationTool }
-  | { type: "set-color"; color: AnnotationColor }
+  | { type: "set-color"; color: AnnotationColorValue }
   | { type: "set-pen-width"; width: number };
 
 /** One active tool at a time. `set-tool` sets the tool exactly; tool

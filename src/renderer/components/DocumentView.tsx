@@ -130,6 +130,21 @@ interface DocumentViewProps {
   onPlaceSignature?: (signatureId: string, page: number, rect: SignaturePlacement["rect"]) => void;
   onMoveSignature?: (placementId: string, rect: SignaturePlacement["rect"]) => void;
   onDeleteSignature?: (placementId: string) => void;
+  /** Phase 6 — Tools palette. App owns the open/closed state; this view
+   *  just threads it into the toolbar so the toggle button can render
+   *  the active treatment when the palette is up. */
+  toolsPaletteOpen?: boolean;
+  onToolsPaletteToggle?: () => void;
+  /** Phase 6 — annotation color palette. The toolbar shows a
+   *  single swatch that opens a popover picker; the host owns the
+   *  saved presets (typically App.settings.annotationColors). The
+   *  shape matches the shared `AppSettings.annotationColors` field:
+   *  each bucket is an array of `{ id, hex }` preset objects. */
+  annotationPalette?: { light?: Array<{ id: string; hex: string }>; dark?: Array<{ id: string; hex: string }> } | null;
+  onAnnotationPaletteChange?: (next: { light?: Array<{ id: string; hex: string }>; dark?: Array<{ id: string; hex: string }> }) => void;
+  /** Active theme ('light' | 'dark'). Drives which per-theme
+   *  preset bucket the picker shows. */
+  themeName?: 'light' | 'dark';
 }
 
 // Stable empty-array reference: passed to PageView when a page has no search
@@ -231,6 +246,11 @@ export function DocumentView({
   onPlaceSignature,
   onMoveSignature,
   onDeleteSignature,
+  toolsPaletteOpen = false,
+  onToolsPaletteToggle,
+  annotationPalette,
+  onAnnotationPaletteChange,
+  themeName = 'dark',
 }: DocumentViewProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const slotRefsRef = useRef(new Map<number, HTMLDivElement>());
@@ -1078,8 +1098,27 @@ export function DocumentView({
           onFlattenClick={(): void => {
             window.dispatchEvent(new CustomEvent("tflex:flatten-button"));
           }}
+          toolsPaletteOpen={toolsPaletteOpen}
+          onToolsPaletteToggle={(): void => onToolsPaletteToggle?.()}
         />
-        <AnnotationToolbar state={annTool} onAction={onAnnToolAction} />
+        <AnnotationToolbar
+          state={annTool}
+          onAction={onAnnToolAction}
+          palette={
+            annotationPalette === undefined || annotationPalette === null
+              ? undefined
+              : {
+                  light: annotationPalette.light ?? [],
+                  dark: annotationPalette.dark ?? [],
+                }
+          }
+          onPaletteChange={
+            onAnnotationPaletteChange === undefined
+              ? undefined
+              : (next): void => onAnnotationPaletteChange(next)
+          }
+          theme={themeName}
+        />
         {searchOpen && (
           <SearchBar
             query={query}

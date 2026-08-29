@@ -275,3 +275,52 @@ true:
   would — opening, organizing, annotating, filling and signing real PDFs, in both themes,
   on the packaged build, with every screen visually inspected. Passing tests is necessary
   but NOT sufficient.**
+
+## Version numbering (Phase 6 onward)
+
+From Phase 6 the semver series is active: **v1.1.x**. Retrospemptive naming of v1
+deliverables: v1.0.0 for the original gate closure (Phases 1-5). From now on
+`package.json.version` always matches the next tag. Tag names like `v1.1.0`,
+`v1.1.1` etc; incrementing through included build metadata when needed.
+
+## Phase 6 — Tab UX, tools palette, menus, color picker, OTA updates, auto-git-push
+
+**Planned first; fixes to land before features are declared green:**
+
+1. BUG — tab click frozen/unresponsive (React handler/state) — reproduce and fix source.
+
+Features and success criteria:
+
+1. Empty tabs: "+" control to create an empty tab; opening a PDF fills it; closing
+   returns to the previous tab. Success: "+ tab->" stay alive in welcome/-empty tab and
+   closed returns to prior tab as evidenced by e2e.
+2. Tools palette right-side panel (icon+label list/grid toggle persisted) containing
+   merge/split/extract/rotate/delete/sign/forms entries. Success: panel opens; modes
+   persist across restart via settings; e2e verifies.
+3. Standard app menu: File (Open/Merge/Save/SaveAs/Recent/Close-Tab-Exit), View, Edit,
+   Tools, Window, Help/About with version badge, Preferences (theme default, recents
+   limit, storage). Success: menu rendered with existing single-source handlers;
+   accelerators work; About reports app version for OTA surface.
+4. Annotation color UX: active-tool swatch as rounded square under the tool; opens
+   color palette with preset+full picker (hex/RGB); persisted per theme. Applies to
+   highlight/ink/underline/strikeout/note/shapes. Success: e2e picks custom color and
+   persists.
+5. OTA updates: electron-updater in main via updateService, IPC status/download/install,
+   About+toolbar indicator; silent download+prompt restart; portable build explicitly
+   no-auto-update (documented); private repo credentials not committed. Success: bump
+   version then simulated/published release surfaces "Update available" in app.
+6. Auto-push pipeline: after full green loop (build, unit+e2e, package checks) for a
+   phase/fix batch, git-agent tags v1.x.x (+ build metadata increment) and pushes.
+   Success: tag lands only on green builds.
+
+Repo-safety amendments:
+- Prune duplicate reduntant e2e/unused harnesses before first commit; no new debug
+  files under e2e/ or root.
+- .gitignore additions: .env, test-results/, screenshots/, test-fixtures/*.pdf never
+  pushing-kill exceptions (qa/adversary-authored README/MD inside those dirs still OK).
+- Unused harnesses named harness.cjs/harness.js/retest_harness.cjs/retest_rework*
+  purge as part of P6 gate.
+
+Completion demands: all Phase-6 green; tag v1.x.x pushed; OTA verified by a version
+bump against tanzimtipu/TFlex; thumbnails/screenshots included per gate; timing per
+performance budget as RECheckWise for the new tab-switch/palette work.

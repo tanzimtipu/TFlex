@@ -14,9 +14,16 @@ import type { TFlexApi } from "../shared/ipc";
 import { Welcome } from "./components/Welcome";
 import { AppHeader } from "./components/AppHeader";
 import { Toasts, type Toast } from "./components/Toasts";
+import { ToolsPalette } from "./components/ToolsPalette";
+import { AboutDialog } from "./components/AboutDialog";
+import { PreferencesDialog } from "./components/PreferencesDialog";
 import { tabsReducer, initialTabsState, type TabMeta } from "./state/tabs";
 import { applyTheme, nextTheme } from "./state/theme";
 import { resolveInitialSettings } from "./state/settings";
+import {
+  DEFAULT_RECENTS_CAP,
+  preferencesReducer,
+} from "./state/preferences";
 import { openPdfDocument, readOutline, type OutlineNode } from "./pdf/pdfjs";
 import {
   DocumentView,
@@ -188,6 +195,13 @@ export function App(): ReactElement {
   // Phase 4 — signature manager modal + flatten confirm
   const [sigModalOpen, setSigModalOpen] = useState(false);
   const [flattenOpen, setFlattenOpen] = useState(false);
+  // Phase 6 — Tools palette state, About dialog, Preferences dialog.
+  // Layout persists via settings.toolsPaletteLayout; open/close is
+  // session-only. The toolbar's Tools button toggles the palette and
+  // Ctrl+Shift+P from the menu does the same.
+  const [toolsPaletteOpen, setToolsPaletteOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [prefsOpen, setPrefsOpen] = useState(false);
   // Saved signatures (renderer mirror). The signature service is the
   // source of truth; we cache the list locally so the modal renders
   // synchronously after the first load.
@@ -216,6 +230,11 @@ export function App(): ReactElement {
   const savedSignaturesRef = useRef(savedSignatures);
   savedSignaturesRef.current = savedSignatures;
   const activeTabIdRefLocal = useRef<string | null>(null);
+  // Menu-action handler reads the latest tabs / active id without
+  // re-subscribing on every change. Mirrors the openTabsRef pattern
+  // above so the listener doesn't churn.
+  const tabsRef = useRef(tabs);
+  tabsRef.current = tabs;
 
   const debouncedPersistRef = useRef<ReturnType<typeof createDebouncer<[AppSettings]>>>(
     createDebouncer<[AppSettings]>(
@@ -557,6 +576,22 @@ export function App(): ReactElement {
 
   const activateTab = useCallback((id: string): void => {
     dispatchTabs({ type: "activate", id });
+  }, []);
+
+  /** Phase 6 — "+ tab" affordance. Appends an empty placeholder tab
+   *  and activates it. The next PDF the user opens (via the menu /
+   *  toolbar / Welcome screen) fills this tab in place instead of
+   *  stacking a new one — see `tabsReducer.open`. */
+  const onNewEmptyTab = useCallback((): void => {
+    const id = crypto.randomUUID();
+    const meta: TabMeta = {
+      id,
+      title: 'Empty tab',
+      filePath: '',
+      kind: 'empty',
+      modified: false,
+    };
+    dispatchTabs({ type: 'open-empty', tab: meta });
   }, []);
 
   const onPersist = useCallback((tabId: string, viewer: PersistedViewer): void => {
@@ -1230,6 +1265,102 @@ export function App(): ReactElement {
     [pushToast, setEngineUiFor],
   );
 
+  // Phase 6 — native application menu. The backend builds the menu
+  // (see src/main/menu.ts) and dispatches every action over IPC as
+  // a single 'menu:action' channel carrying { action: string }. We
+  // route each action into the same single-source handler the
+  // toolbar / keyboard accelerator already use, so the menu is a
+  // thin dispatch surface — no business logic lives here.
+  useEffect(() => {
+    type MenuAction =
+      | 'open'
+      | 'merge'
+      | 'save'
+      | 'saveAs'
+      | 'closeTab'
+      | 'undo'
+      | 'redo'
+      | 'toggleTheme'
+      | 'zoomIn'
+      | 'zoomOut'
+      | 'fitWidth'
+      | 'fitPage'
+      | 'showToolsPalette'
+      | 'about'
+      | 'preferences';
+
+    const onMenuAction = (e: Event): void => {
+      const detail = (e as CustomEvent<{ action: string }>).detail;
+      const action = detail?.action as MenuAction | undefined;
+      if (action === undefined) return;
+      switch (action) {
+        case 'open':
+          void onOpenClick();
+          return;
+        case 'merge':
+          setMergeOpen(true);
+          return;
+        case 'save':
+          if (tabsRef.current.activeId !== null) {
+            void onSave(tabsRef.current.activeId);
+          }
+          return;
+        case 'saveAs':
+          if (tabsRef.current.activeId !== null) {
+            void onSaveAs(tabsRef.current.activeId);
+          }
+          return;
+        case 'closeTab':
+          if (tabsRef.current.activeId !== null) {
+            closeTab(tabsRef.current.activeId);
+          }
+          return;
+        case 'undo':
+          if (tabsRef.current.activeId !== null) {
+            void onUndo(tabsRef.current.activeId);
+          }
+          return;
+        case 'redo':
+          if (tabsRef.current.activeId !== null) {
+            void onRedo(tabsRef.current.activeId);
+          }
+          return;
+        case 'toggleTheme':
+          onToggleTheme();
+          return;
+        case 'showToolsPalette':
+          setToolsPaletteOpen((v) => !v);
+          return;
+        case 'about':
+          setAboutOpen(true);
+          return;
+        case 'preferences':
+          setPrefsOpen(true);
+          return;
+        // Zoom / fitWidth / fitPage are handled by DocumentView
+        // internally — the menu action is just a shortcut into the
+        // same keyboard accelerator DocumentView already listens for.
+        case 'zoomIn':
+        case 'zoomOut':
+        case 'fitWidth':
+        case 'fitPage':
+          return;
+      }
+    };
+    window.addEventListener('menu:action', onMenuAction);
+    return (): void => {
+      window.removeEventListener('menu:action', onMenuAction);
+    };
+  }, [
+    onOpenClick,
+    onSave,
+    onSaveAs,
+    closeTab,
+    onUndo,
+    onRedo,
+    onToggleTheme,
+  ]);
+
   // ---- merge / split dialogs ----
   const onMergeClick = useCallback((): void => {
     setMergeOpen(true);
@@ -1705,6 +1836,27 @@ export function App(): ReactElement {
     [allRecents],
   );
 
+  // Stable projection of tabs.tabs for AppHeader. We rebuild this list
+  // only when the underlying tabs array actually changes (open / close
+  // / activate / set-modified / rename). Without the memo, every App
+  // re-render (theme toggle, settings echo, engine state mirror effects)
+  // would produce new outer tab objects, which would force AppHeader
+  // to re-render every tab element and — combined with a mousedown /
+  // mouseup crossing the re-render — lose the click. Identity-stable
+  // props keep the React tree stable so the mousedown semantics in
+  // AppHeader resolve to the same DOM node the user pressed
+  // (DEF-034: state-churn click loss).
+  const headerTabs = useMemo(
+    () => tabs.tabs.map((meta) => ({ id: meta.id, title: meta.title, modified: meta.modified })),
+    [tabs.tabs],
+  );
+
+  /** True when the active tab is an empty placeholder (no document).
+   *  The renderer mounts the Welcome screen instead of a DocumentView
+   *  so the user has somewhere to drop a PDF. */
+  const activeIsEmpty = tabs.activeId !== null
+    && tabs.tabs.find((t) => t.id === tabs.activeId)?.kind === 'empty';
+
   const activeTab = tabs.activeId !== null ? openTabs[tabs.activeId] : null;
   const activeEngineUi = tabs.activeId !== null ? engineUi[tabs.activeId] : null;
 
@@ -1721,24 +1873,22 @@ export function App(): ReactElement {
     <div className="app">
       <AppHeader
         activeId={tabs.activeId}
-        // Build from `tabs.tabs` (the reducer-managed list) so the
-        // `modified` flag is always live — `openTabs` is a parallel cache
-        // that doesn't mirror tabs-reducer state for that field.
-        tabs={tabs.tabs.map((meta) => ({
-          id: meta.id,
-          title: meta.title,
-          modified: meta.modified,
-        }))}
+        // `headerTabs` is memoised above so its reference is stable
+        // across App re-renders that don't actually change tab state.
+        // AppHeader reads `modified` from this list (mirrored by the
+        // tabs reducer on every successful engine op).
+        tabs={headerTabs}
         onActivate={activateTab}
         onClose={closeTab}
         theme={settings.theme}
         onToggleTheme={onToggleTheme}
         onOpen={onOpenClick}
+        onNewEmptyTab={onNewEmptyTab}
       />
       <div className="app-main">
         <div className="tab-stage">
-          {tabs.tabs.length === 0 ? (
-            <div className="tab-pane" key="welcome">
+          {tabs.tabs.length === 0 || activeIsEmpty ? (
+            <div className="tab-pane" key={tabs.activeId ?? 'welcome'}>
               <Welcome
                 recentFiles={recentDisplays}
                 onOpenRecent={onRecentClick}
@@ -1803,12 +1953,76 @@ export function App(): ReactElement {
                     onPlaceSignature={fs.onPlaceSignature}
                     onMoveSignature={fs.onMoveSignature}
                     onDeleteSignature={fs.onDeleteSignature}
+                    toolsPaletteOpen={toolsPaletteOpen}
+                    onToolsPaletteToggle={(): void => setToolsPaletteOpen((v) => !v)}
+                    annotationPalette={
+                      settings.annotationColors === undefined
+                        ? null
+                        : {
+                            light: (settings.annotationColors.light ?? []).map((p) =>
+                              typeof p === 'string'
+                                ? { id: `legacy-${p}`, hex: p }
+                                : p,
+                            ),
+                            dark: (settings.annotationColors.dark ?? []).map((p) =>
+                              typeof p === 'string'
+                                ? { id: `legacy-${p}`, hex: p }
+                                : p,
+                            ),
+                          }
+                    }
+                    onAnnotationPaletteChange={(next): void => {
+                      setSettings((prev) => {
+                        if (prev === null) return prev;
+                        return { ...prev, annotationColors: next };
+                      });
+                      debouncedPersist({ ...settings, annotationColors: next });
+                    }}
+                    themeName={settings.theme}
                   />
                 </div>
               );
             })
           )}
         </div>
+        {toolsPaletteOpen && (
+          <ToolsPalette
+            layout={settings.toolsPaletteLayout ?? 'list'}
+            onLayoutChange={(next): void => {
+              setSettings((prev) => {
+                if (prev === null) return prev;
+                const updated = preferencesReducer(prev, {
+                  type: 'set-tools-palette-layout',
+                  value: next,
+                });
+                debouncedPersist(updated);
+                return updated;
+              });
+            }}
+            onMerge={onMergeClick}
+            onSplit={onSplitClick}
+            onExtract={(): void => setSplitOpen(true)}
+            onRotate={(): void => {
+              // No-op stub: rotate happens per-page in the rail.
+              // The palette keeps the entry visible so the user can
+              // discover the rail action via the same label.
+            }}
+            onDelete={(): void => {
+              // Same — delete lives on the rail selection.
+            }}
+            onSign={(): void => {
+              if (armedSignatureId !== null) {
+                setArmedSignatureId(null);
+              } else {
+                setSigModalOpen(true);
+              }
+            }}
+            onForms={(): void => setFlattenOpen(true)}
+            onClose={(): void => setToolsPaletteOpen(false)}
+            documentRequired={activeTab !== null}
+            hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
+          />
+        )}
       </div>
       <MergeDialog
         open={mergeOpen}
@@ -1849,6 +2063,23 @@ export function App(): ReactElement {
         }}
       />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
+      <AboutDialog open={aboutOpen} onClose={(): void => setAboutOpen(false)} />
+      <PreferencesDialog
+        open={prefsOpen}
+        onClose={(): void => setPrefsOpen(false)}
+        themeDefault={settings.themeDefault ?? 'dark'}
+        recentsCap={settings.recentsCap ?? DEFAULT_RECENTS_CAP}
+        onSetThemeDefault={(next): void => {
+          const updated = preferencesReducer(settings, { type: 'set-theme-default', value: next });
+          setSettings(updated);
+          debouncedPersist(updated);
+        }}
+        onSetRecentsCap={(next): void => {
+          const updated = preferencesReducer(settings, { type: 'set-recents-cap', value: next });
+          setSettings(updated);
+          debouncedPersist(updated);
+        }}
+      />
     </div>
   );
 }

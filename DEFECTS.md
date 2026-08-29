@@ -1,4 +1,46 @@
 
+## DEF-035: Production build fails to launch due to ESM/CommonJS shim error
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 6
+
+Steps to reproduce:
+1. Run `npm.cmd run build` to produce the production build.
+2. Run `npm.cmd run start:prod` or launch the app via Playwright/Electron.
+3. Observe the console output or app behavior.
+
+Expected: The app should launch and display the welcome screen.
+Actual: The app throws an error during load: `Error: Dynamic require of "fs" is not supported`. This is caused by `esbuild` injecting a `require` shim in the ESM-formatted `dist/main/index.js` when bundling CommonJS dependencies (like `electron-updater` or `fs-extra`). In Node.js ESM mode, `require` is undefined, causing the shim to throw.
+
+History:
+- qa: opened
+- qa: Root cause identified in `dist/main/index.js`. `esbuild` bundles `electron-updater` and `fs-extra` which contain dynamic `require` calls. These calls are wrapped in a shim that fails in pure ESM. Fix requires changing the main process build to CommonJS or providing a `require` polyfill via `createRequire`.
+- qa: CLOSED. Retested on fresh production build. App launches successfully and is fully responsive. Verified via `e2e/retest_final.spec.cjs`.
+
+## DEF-034: Tab switching unresponsive on padding/gap clicks or during state churn
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 6
+
+Steps to reproduce:
+1. Launch the app and open multiple documents in tabs (e.g., report.pdf and long.pdf).
+2. Attempt to switch tabs by clicking near the extreme left edge of a tab (the 12px padding area).
+3. Attempt to switch tabs by clicking the gap between the document title and the close (X) button.
+4. Toggle the theme (Ctrl+T or toolbar button) and immediately try to click another tab while the theme switch re-render is in progress.
+
+Expected: The tab should activate regardless of where it is clicked within its visible boundaries, and clicks should be reliably processed even during background state updates.
+Actual: Clicks on the tab's padding or internal gaps are ignored because the click handler is scoped only to the inner title button, not the full tab container. Additionally, clicks can be lost during re-renders (like theme-switch echo) because the button element is replaced between mousedown and mouseup.
+
+Screenshot: screenshots/def-034-padding-click.png
+
+History:
+- qa: opened
+- qa: CLOSED. Retested on production build: verified tab switching on padding clicks (5px from edge) and internal gaps (between title and close button). Verified that clicks are processed correctly during theme-switch churn. Verified via `e2e/retest_final.spec.cjs`.
+
 ## DEF-033: Document outline missing in SideRail (regression)
 
 - Status: CLOSED

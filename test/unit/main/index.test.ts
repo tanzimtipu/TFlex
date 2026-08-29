@@ -17,6 +17,9 @@ const {
   _fromWebContents,
   _quit,
   _createMainWindow,
+_buildAppMenu,
+    _updateServiceInstance,
+    _openPath,
 } = vi.hoisted(() => {
   const engineState = { pageCount: 1, modified: false, pageOrder: [0], rotations: [0], deleted: [false] };
 
@@ -62,6 +65,15 @@ const {
       save: vi.fn().mockResolvedValue([]),
       delete: vi.fn().mockResolvedValue([]),
     },
+    _buildAppMenu: vi.fn(),
+    _updateServiceInstance: {
+      init: vi.fn(),
+      getStatus: vi.fn().mockReturnValue({ kind: 'up-to-date', version: '1.0.0' }),
+      download: vi.fn().mockResolvedValue({ kind: 'downloading', progress: 0 }),
+      install: vi.fn(),
+      onStatusChanged: vi.fn().mockReturnValue(() => {}),
+    },
+    _openPath: vi.fn().mockResolvedValue(''),
     _handle: vi.fn(),
     _on: vi.fn(),
     _setApplicationMenu: vi.fn(),
@@ -85,20 +97,26 @@ vi.mock('electron', () => ({
     on: _on,
     getPath: vi.fn((name: string) => name === 'userData' ? '/mock/user/data' : '/mock/app'),
     getAppPath: vi.fn().mockReturnValue('/mock/app'),
+    getVersion: vi.fn().mockReturnValue('0.1.0'),
     isPackaged: false,
   },
   BrowserWindow: {
     getAllWindows: _getAllWindows,
     fromWebContents: _fromWebContents,
+    getFocusedWindow: vi.fn().mockReturnValue(null),
   },
   ipcMain: {
     handle: _handle,
   },
   Menu: {
     setApplicationMenu: _setApplicationMenu,
+    buildFromTemplate: vi.fn().mockReturnValue({}),
   },
   dialog: {
     showSaveDialog: _showSaveDialog,
+  },
+  shell: {
+    openPath: _openPath,
   },
   screen: {
     getAllDisplays: vi.fn().mockReturnValue([
@@ -126,6 +144,14 @@ vi.mock('../../../src/main/services/engine', () => ({
 
 vi.mock('../../../src/main/services/signature-service', () => ({
   SignatureService: vi.fn().mockImplementation(function() { return _sigInstance; }),
+}));
+
+vi.mock('../../../src/main/services/update-service', () => ({
+  UpdateService: vi.fn().mockImplementation(function() { return _updateServiceInstance; }),
+}));
+
+vi.mock('../../../src/main/menu', () => ({
+  buildAppMenu: _buildAppMenu,
 }));
 
 vi.mock('../../../src/main/services/dialog', () => ({
@@ -160,8 +186,8 @@ describe('main/index - start()', () => {
     await start();
   });
 
-  it('removes the application menu', () => {
-    expect(_setApplicationMenu).toHaveBeenCalledWith(null);
+  it('builds the application menu via buildAppMenu', () => {
+    expect(_buildAppMenu).toHaveBeenCalled();
   });
 
   it('registers window:minimize handler', () => {
@@ -571,5 +597,225 @@ describe('main/index - activate handler', () => {
     handler();
 
     expect(_createMainWindow).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6: app:getInfo handler
+// ---------------------------------------------------------------------------
+
+describe('main/index - app:getInfo handler', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    await start();
+  });
+
+  it('registers app:getInfo handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.appGetInfo);
+  });
+
+  it('returns version and storage paths', async () => {
+    const infoCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.appGetInfo)!;
+    expect(infoCall).toBeDefined();
+    const handler = infoCall[1] as (...args: unknown[]) => unknown;
+    const result = await handler();
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        version: expect.any(String),
+        electronVersion: expect.any(String),
+        nodeVersion: expect.any(String),
+        storagePaths: expect.objectContaining({
+          userData: expect.any(String),
+          settings: expect.stringContaining('settings.json'),
+          signatures: expect.stringContaining('signatures.json'),
+        }),
+      }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6: app:openPath handler
+// ---------------------------------------------------------------------------
+
+describe('main/index - app:openPath handler', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _openPath.mockResolvedValue('');
+    await start();
+  });
+
+  it('registers app:openPath handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.appOpenPath);
+  });
+
+  it('calls shell.openPath', async () => {
+    const openPathCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.appOpenPath)!;
+    const handler = openPathCall[1] as (...args: unknown[]) => unknown;
+    await handler({}, '/mock/path');
+    expect(_openPath).toHaveBeenCalledWith('/mock/path');
+  });
+
+  it('throws when shell.openPath returns an error string', async () => {
+    _openPath.mockResolvedValue('some error');
+    const openPathCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.appOpenPath)!;
+    const handler = openPathCall[1] as (...args: unknown[]) => unknown;
+    await expect(handler({}, '/mock/path')).rejects.toThrow('some error');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6: update:status handler
+// ---------------------------------------------------------------------------
+
+describe('main/index - update:status handler', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    await start();
+  });
+
+  it('registers update:status handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.updateStatus);
+  });
+
+  it('returns current update status', async () => {
+    const statusCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.updateStatus)!;
+    const handler = statusCall[1] as (...args: unknown[]) => unknown;
+    const result = await handler();
+    expect(_updateServiceInstance.getStatus).toHaveBeenCalled();
+    expect(result).toEqual({ kind: 'up-to-date', version: '1.0.0' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6: update:download handler
+// ---------------------------------------------------------------------------
+
+describe('main/index - update:download handler', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    await start();
+  });
+
+  it('registers update:download handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.updateDownload);
+  });
+
+  it('triggers download', async () => {
+    const dlCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.updateDownload)!;
+    const handler = dlCall[1] as (...args: unknown[]) => unknown;
+    await handler();
+    expect(_updateServiceInstance.download).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6: update:install handler
+// ---------------------------------------------------------------------------
+
+describe('main/index - update:install handler', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    await start();
+  });
+
+  it('registers update:install handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.updateInstall);
+  });
+
+  it('triggers install', async () => {
+    const instCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.updateInstall)!;
+    const handler = instCall[1] as (...args: unknown[]) => unknown;
+    await handler();
+    expect(_updateServiceInstance.install).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6: update status broadcast
+// ---------------------------------------------------------------------------
+
+describe('main/index - update status broadcast', () => {
+  it('broadcasts update status to all non-destroyed windows', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _on.mockClear();
+
+    const send = vi.fn();
+    _getAllWindows.mockReturnValue([
+      { isDestroyed: vi.fn().mockReturnValue(false), webContents: { send } },
+    ]);
+
+    await start();
+
+    // Find the onStatusChanged callback registered during start()
+    const onStatusChangedCalls = _updateServiceInstance.onStatusChanged.mock.calls;
+    expect(onStatusChangedCalls.length).toBeGreaterThan(0);
+    const broadcastFn = onStatusChangedCalls[onStatusChangedCalls.length - 1][0] as (s: unknown) => void;
+
+    const state = { kind: 'available', version: '2.0.0' };
+    broadcastFn(state);
+
+    expect(send).toHaveBeenCalledWith(IPC.updateStatusChangedEvent, state);
+  });
+
+  it('skips destroyed windows for update status broadcast', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _on.mockClear();
+
+    const send = vi.fn();
+    _getAllWindows.mockReturnValue([
+      { isDestroyed: vi.fn().mockReturnValue(true), webContents: { send } },
+    ]);
+
+    await start();
+
+    const onStatusChangedCalls = _updateServiceInstance.onStatusChanged.mock.calls;
+    expect(onStatusChangedCalls.length).toBeGreaterThan(0);
+    const broadcastFn = onStatusChangedCalls[onStatusChangedCalls.length - 1][0] as (s: unknown) => void;
+
+    broadcastFn({ kind: 'available', version: '2.0.0' });
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6: application menu is built
+// ---------------------------------------------------------------------------
+
+describe('main/index - application menu', () => {
+  it('builds the application menu via buildAppMenu', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _buildAppMenu.mockClear();
+
+    await start();
+    expect(_buildAppMenu).toHaveBeenCalled();
+  });
+
+  it('menu action handler sends to focused window', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _buildAppMenu.mockClear();
+
+    const send = vi.fn();
+    _getAllWindows.mockReturnValue([
+      { isDestroyed: vi.fn().mockReturnValue(false), webContents: { send } },
+    ]);
+
+    await start();
+
+    // Extract the sendToFocused callback passed to buildAppMenu
+    const menuCall = _buildAppMenu.mock.calls[0][0] as { sendToFocused: (action: string) => void };
+    menuCall.sendToFocused('menu:action');
+
+    expect(send).toHaveBeenCalledWith('menu:action');
   });
 });

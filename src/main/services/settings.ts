@@ -35,7 +35,7 @@ function normalizeGeometry(raw: unknown): WindowGeometry {
   };
 }
 
-function normalizeRecentFiles(raw: unknown): RecentFile[] {
+function normalizeRecentFiles(raw: unknown, cap: number = RECENT_FILES_CAP): RecentFile[] {
   if (!Array.isArray(raw)) {
     return [];
   }
@@ -53,16 +53,48 @@ function normalizeRecentFiles(raw: unknown): RecentFile[] {
       files.push({ path: r.path, name: r.name, openedAt: r.openedAt });
     }
   }
-  return files.slice(0, RECENT_FILES_CAP);
+  const effectiveCap = Math.max(1, Math.min(50, cap));
+  return files.slice(0, effectiveCap);
 }
 
 export function normalizeSettings(raw: unknown): AppSettings {
-  const rawObj = raw !== null && typeof raw === 'object' ? (raw as Partial<AppSettings>) : {};
-  return {
-    theme: rawObj.theme === 'light' || rawObj.theme === 'dark' ? rawObj.theme : DEFAULT_SETTINGS.theme,
+  const rawObj = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const recentsCap = typeof rawObj.recentsCap === 'number' && Number.isFinite(rawObj.recentsCap) && rawObj.recentsCap >= 1 && rawObj.recentsCap <= 50
+    ? rawObj.recentsCap
+    : RECENT_FILES_CAP;
+  const settings: AppSettings = {
+    theme: typeof rawObj.theme === 'string' && (rawObj.theme === 'light' || rawObj.theme === 'dark')
+      ? rawObj.theme
+      : DEFAULT_SETTINGS.theme,
     geometry: normalizeGeometry(rawObj.geometry),
-    recentFiles: normalizeRecentFiles(rawObj.recentFiles),
+    recentFiles: normalizeRecentFiles(rawObj.recentFiles, recentsCap),
   };
+
+  // Phase 6: preserve optional settings fields if they are valid
+  if (typeof rawObj.toolsPaletteLayout === 'string' && (rawObj.toolsPaletteLayout === 'list' || rawObj.toolsPaletteLayout === 'grid')) {
+    settings.toolsPaletteLayout = rawObj.toolsPaletteLayout;
+  }
+  if (typeof rawObj.themeDefault === 'string' && (rawObj.themeDefault === 'light' || rawObj.themeDefault === 'dark' || rawObj.themeDefault === 'system')) {
+    settings.themeDefault = rawObj.themeDefault;
+  }
+  if (typeof rawObj.recentsCap === 'number' && Number.isFinite(rawObj.recentsCap) && rawObj.recentsCap >= 1 && rawObj.recentsCap <= 50) {
+    settings.recentsCap = rawObj.recentsCap;
+  }
+  if (rawObj.annotationColors !== null && typeof rawObj.annotationColors === 'object') {
+    const ac = rawObj.annotationColors as Record<string, unknown>;
+    const colors: { light?: string[]; dark?: string[] } = {};
+    if (Array.isArray(ac.light)) {
+      colors.light = ac.light.filter((c): c is string => typeof c === 'string');
+    }
+    if (Array.isArray(ac.dark)) {
+      colors.dark = ac.dark.filter((c): c is string => typeof c === 'string');
+    }
+    if (colors.light || colors.dark) {
+      settings.annotationColors = colors;
+    }
+  }
+
+  return settings;
 }
 
 export class SettingsService {

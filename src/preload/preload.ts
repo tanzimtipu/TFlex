@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC, type SavedSignaturesResult } from "../shared/ipc";
 import type {
+  AppInfo,
   AppSettings,
   CreateAnnotationPayload,
   EditAnnotationPayload,
@@ -13,6 +14,7 @@ import type {
   PlaceSignaturePayload,
   RecentFile,
   SampleDocument,
+  UpdateState,
 } from "../shared/types";
 import type { Result } from "../shared/result";
 import type { PdfOpenError } from "../shared/types";
@@ -176,6 +178,34 @@ const api = {
     },
     delete(id: string): Promise<SavedSignaturesResult> {
       return ipcRenderer.invoke(IPC.signaturesDelete, id);
+    },
+  },
+  // Phase 6: About / preferences
+  app: {
+    getInfo(): Promise<AppInfo> {
+      return ipcRenderer.invoke(IPC.appGetInfo);
+    },
+    openPath(path: string): Promise<void> {
+      return ipcRenderer.invoke(IPC.appOpenPath, path);
+    },
+  },
+  // Phase 6: OTA updates
+  update: {
+    getStatus(): Promise<UpdateState> {
+      return ipcRenderer.invoke(IPC.updateStatus);
+    },
+    download(): Promise<UpdateState> {
+      return ipcRenderer.invoke(IPC.updateDownload);
+    },
+    install(): Promise<void> {
+      return ipcRenderer.invoke(IPC.updateInstall);
+    },
+    onStatusChanged(cb: (state: UpdateState) => void): () => void {
+      const listener = (_event: unknown, state: UpdateState): void => cb(state);
+      ipcRenderer.on(IPC.updateStatusChangedEvent, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.updateStatusChangedEvent, listener);
+      };
     },
   },
 };

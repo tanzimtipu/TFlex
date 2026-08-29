@@ -93,10 +93,131 @@ it("clearing the last tab nulls the active id", () => {
     expect(s.tabs.find((t) => t.id === "tab-1")?.title).toBe("report-edited.pdf");
   });
 
-  it("rename is a no-op when the title is unchanged", () => {
+it("rename is a no-op when the title is unchanged", () => {
     let s = tabsReducer(initialTabsState, { type: "open", tab: make(1, "a.pdf") });
     const before = s;
     s = tabsReducer(s, { type: "rename", id: "tab-1", title: "1.pdf" });
     expect(s).toBe(before);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6 — empty tab affordance
+
+describe("tabs reducer — empty tab", () => {
+  it("open-empty appends and activates", () => {
+    const s = tabsReducer(initialTabsState, {
+      type: "open-empty",
+      tab: {
+        id: "empty-1",
+        title: "Empty tab",
+        filePath: "",
+        kind: "empty",
+        modified: false,
+      },
+    });
+    expect(s.tabs).toHaveLength(1);
+    expect(s.activeId).toBe("empty-1");
+    expect(s.tabs[0]?.kind).toBe("empty");
+  });
+
+  it("opening a PDF while an empty tab is active fills the empty tab in place", () => {
+    const withEmpty = tabsReducer(initialTabsState, {
+      type: "open-empty",
+      tab: {
+        id: "empty-1",
+        title: "Empty tab",
+        filePath: "",
+        kind: "empty",
+        modified: false,
+      },
+    });
+    const filled = tabsReducer(withEmpty, {
+      type: "open",
+      tab: make(1, "a.pdf"),
+    });
+    expect(filled.tabs).toHaveLength(1);
+    expect(filled.activeId).toBe("empty-1");
+    expect(filled.tabs[0]?.kind).toBe("file");
+    expect(filled.tabs[0]?.title).toBe("1.pdf");
+    expect(filled.tabs[0]?.filePath).toBe("a.pdf");
+  });
+
+  it("opening a PDF while a real tab is active does NOT fill an empty tab", () => {
+    const a = tabsReducer(initialTabsState, { type: "open", tab: make(1, "a.pdf") });
+    const withEmpty = tabsReducer(a, {
+      type: "open-empty",
+      tab: {
+        id: "empty-1",
+        title: "Empty tab",
+        filePath: "",
+        kind: "empty",
+        modified: false,
+      },
+    });
+    // The active tab is now the empty one — that's expected when
+    // open-empty runs without an explicit activate. Re-activate a
+    // real tab to assert the fill-in-place path doesn't fire.
+    const onReal = tabsReducer(withEmpty, { type: "activate", id: "tab-1" });
+    const next = tabsReducer(onReal, { type: "open", tab: make(2, "b.pdf") });
+    expect(next.tabs).toHaveLength(3);
+    // The empty tab is preserved (not filled because the active is
+    // a real tab).
+    expect(next.tabs.find((t) => t.id === "empty-1")?.kind).toBe("empty");
+  });
+
+  it("fill-empty flips the empty tab to file kind", () => {
+    const withEmpty = tabsReducer(initialTabsState, {
+      type: "open-empty",
+      tab: {
+        id: "empty-1",
+        title: "Empty tab",
+        filePath: "",
+        kind: "empty",
+        modified: false,
+      },
+    });
+    const next = tabsReducer(withEmpty, {
+      type: "fill-empty",
+      id: "empty-1",
+      title: "report.pdf",
+      filePath: "/tmp/report.pdf",
+    });
+    expect(next.tabs[0]?.kind).toBe("file");
+    expect(next.tabs[0]?.title).toBe("report.pdf");
+    expect(next.tabs[0]?.filePath).toBe("/tmp/report.pdf");
+  });
+
+  it("closing the only empty tab nulls the active id", () => {
+    const withEmpty = tabsReducer(initialTabsState, {
+      type: "open-empty",
+      tab: {
+        id: "empty-1",
+        title: "Empty tab",
+        filePath: "",
+        kind: "empty",
+        modified: false,
+      },
+    });
+    const next = tabsReducer(withEmpty, { type: "close", id: "empty-1" });
+    expect(next).toEqual({ tabs: [], activeId: null });
+  });
+
+  it("closing an empty tab activates the previous tab", () => {
+    let s = tabsReducer(initialTabsState, { type: "open", tab: make(1, "a.pdf") });
+    s = tabsReducer(s, {
+      type: "open-empty",
+      tab: {
+        id: "empty-1",
+        title: "Empty tab",
+        filePath: "",
+        kind: "empty",
+        modified: false,
+      },
+    });
+    // Now close the active empty tab — should fall back to tab-1.
+    s = tabsReducer(s, { type: "close", id: "empty-1" });
+    expect(s.tabs).toHaveLength(1);
+    expect(s.activeId).toBe("tab-1");
   });
 });
