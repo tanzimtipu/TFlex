@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 import type {
   AppSettings,
   DocxImageEntry,
+  EditFont,
   ExportPageEntry,
   ExportPagesPayload,
   FillFormFieldPayload,
@@ -65,6 +66,20 @@ import type { EngineApi, EngineOp, EngineState } from "./engine/types";
 import type { Annotation, AnnotationPatch } from "./annotations/model";
 import { describeEngineError } from "./engine/types";
 import { stubRendererEngine } from "./engine/stubEngine";
+import {
+  editReducer,
+  initialEditState,
+  type EditAction,
+  type EditState,
+  type EditTextStyle,
+} from "./edit/model";
+import {
+  defaultImageDecoder,
+  defaultImageEncoder,
+  resizeImageToBytes,
+  cropImageToBytes,
+  detectImageFormat,
+} from "./edit/rasterize";
 import {
   ZERO_COUNTERS,
   countersAfterApply,
@@ -146,6 +161,11 @@ interface OpenTab {
   forms: FormsState;
   /** Phase 4 — local mirror of the active tab's signature placements. */
   placements: SignaturePlacement[];
+  /** Phase 10 — Edit-content state (per tab). The Edit overlay lives
+   *  per page; this state is the source of truth for the active tool,
+   *  the current image-placement list, the selection, and the
+   *  in-progress crop. Reset to `initialEditState` on tab close. */
+  edit: EditState;
 }
 
 interface AppErrorState {
@@ -268,6 +288,13 @@ export function App(): ReactElement {
   const [toolsPaletteOpen, setToolsPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  // Phase 10 — Edit-content mode. The toolbar shows the Edit
+  // button; clicking it (or pressing the menu shortcut) toggles
+  // this. When on, the per-page EditOverlay becomes pointer-active
+  // and the EditToolbar appears above the document area. The
+  // active tool / selection / placements list is per-tab and
+  // lives on `openTabs[id].edit`.
+  const [editModeOpen, setEditModeOpen] = useState(false);
   // Saved signatures (renderer mirror). The signature service is the
   // source of truth; we cache the list locally so the modal renders
   // synchronously after the first load.
@@ -553,6 +580,7 @@ export function App(): ReactElement {
           engine: initialUiState(parsed.doc.numPages).state,
           forms: initialFormsState,
           placements: [],
+          edit: initialEditState,
         },
       }));
       setEngineUi((prev) => ({
@@ -1180,6 +1208,194 @@ export function App(): ReactElement {
       noteOpApplied(tabId, result.value);
     },
     [pushToast, noteOpApplied],
+  );
+
+  // ---- Phase 10: Edit content (text run / text box / image) ----
+
+  /** Read the active tab's "current page" (1-based, from the
+   *  per-tab persisted viewer state). The Edit overlay is
+   *  per-page, so every edit op needs the page number; we read
+   *  the user's last-known visible page rather than a separate
+   *  "edit page" so the user edits what they see. */
+  function currentPageOfTab(
+    tabId: string,
+    tabsRef: { current: Record<string, OpenTab | undefined> },
+  ): number {
+    const tab = tabsRef.current[tabId];
+    if (tab === undefined) return 1;
+    return Math.max(1, Math.floor(tab.persisted.currentPage));
+  }
+
+  /** Toggle Edit mode. Closing the mode clears the active tool on
+   *  every tab; the placements list is preserved so the user can
+   *  re-open and pick up where they left off. */
+  const setEditMode = useCallback((open: boolean): void => {
+    setEditModeOpen(open);
+    if (!open) {
+      // Reset the tool on every open tab so a stray "text" tool
+      // doesn't leak into the next session.
+      setOpenTabs((prev) => {
+        const next: typeof prev = {};
+        for (const [id, tab] of Object.entries(prev)) {
+          next[id] = { ...tab, edit: editReducer(tab.edit, { type: "set-tool", tool: "off" }) };
+        }
+        return next;
+      });
+    }
+  }, []);
+
+  /** Commit a text-run edit. Calls `engine.editTextRun`; the
+   *  engine masks the rect and draws the new text at the rect's
+   *  top-left. */
+  const handleEditTextRun = useCallback(
+    async (tabId: string, args: {
+      rect: { x: number; y: number; width: number; height: number };
+      newText: string;
+      style: EditTextStyle;
+    }): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      const result = await engineRef.current.editTextRun(open.session.engineDocId, {
+        page: currentPageOfTab(tabId, openTabsRef),
+        rect: args.rect,
+        newText: args.newText,
+        font: args.style.font,
+        size: args.style.size,
+        color: args.style.color,
+      });
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      noteOpApplied(tabId, result.value);
+    },
+    [pushToast, noteOpApplied],
+  );
+
+  /** Commit a new text box. */
+  const handleAddTextBox = useCallback(
+    async (tabId: string, args: {
+      rect: { x: number; y: number; width: number; height: number };
+      text: string;
+      style: EditTextStyle;
+      background: "white" | "none";
+    }): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      const result = await engineRef.current.addTextBox(open.session.engineDocId, {
+        page: currentPageOfTab(tabId, openTabsRef),
+        rect: args.rect,
+        text: args.text,
+        font: args.style.font,
+        size: args.style.size,
+        color: args.style.color,
+        background: args.background,
+      });
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      noteOpApplied(tabId, result.value);
+    },
+    [pushToast, noteOpApplied],
+  );
+
+  /** Commit an image edit. The renderer produces the transformed
+   *  bytes (resize / crop / replace) and hands them to the engine.
+   *  For `move` the bytes are passed through unchanged; for
+   *  `resize` / `replace` they're re-encoded to the new rect's
+   *  pixel dims; for `crop` they're cropped to the inner rect. */
+  const handleEditImage = useCallback(
+    async (tabId: string, args: {
+      op: "move" | "resize" | "replace" | "crop";
+      oldRect: { x: number; y: number; width: number; height: number };
+      newRect: { x: number; y: number; width: number; height: number };
+      bytes: Uint8Array;
+      format: "png" | "jpeg";
+      id: string;
+    }): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      // Transform the bytes per the op. We do this before the IPC
+      // so a render failure surfaces as a friendly toast, not a
+      // half-committed engine state.
+      let outBytes: Uint8Array;
+      try {
+        if (args.op === "move") {
+          outBytes = args.bytes;
+        } else if (args.op === "resize" || args.op === "replace") {
+          outBytes = await resizeImageToBytes({
+            sourceBytes: args.bytes,
+            target: args.newRect,
+            decoder: defaultImageDecoder(),
+            encoder: defaultImageEncoder(),
+          });
+        } else {
+          // crop
+          outBytes = await cropImageToBytes({
+            sourceBytes: args.bytes,
+            imageRect: args.oldRect,
+            crop: args.newRect,
+            decoder: defaultImageDecoder(),
+            encoder: defaultImageEncoder(),
+          });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "image transform failed";
+        pushToast("error", `Edit image failed: ${message}`);
+        return;
+      }
+      const format = detectImageFormat(outBytes);
+      if (format === "unknown") {
+        pushToast("error", "Edit image: re-encoded bytes are not a recognised PNG/JPEG.");
+        return;
+      }
+      const result = await engineRef.current.editImage(open.session.engineDocId, {
+        page: currentPageOfTab(tabId, openTabsRef),
+        op: args.op,
+        oldRect: args.oldRect,
+        newRect: args.newRect,
+        imageBytes: outBytes,
+      });
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      // Update the local registry so the next crop / resize / move
+      // starts from the new bytes + rect.
+      setOpenTabs((prev) => {
+        const tab = prev[tabId];
+        if (tab === undefined) return prev;
+        const nextPlacements = tab.edit.placements.map((p) =>
+          p.id === args.id
+            ? { ...p, rect: args.newRect, bytes: outBytes, format }
+            : p,
+        );
+        return {
+          ...prev,
+          [tabId]: {
+            ...tab,
+            edit: { ...tab.edit, placements: nextPlacements },
+          },
+        };
+      });
+      noteOpApplied(tabId, result.value);
+    },
+    [pushToast, noteOpApplied],
+  );
+
+  /** Update the default font for the active tab. Persists through
+   *  `trackAndSave` so the next open session picks it up. */
+  const setEditDefaultFont = useCallback(
+    (font: EditFont): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const updated = preferencesReducer(prev, { type: "set-edit-default-font", value: font });
+        if (updated !== prev) trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
   );
 
   // Sign toolbar button handler — opens the manager modal. We dispatch
@@ -2385,6 +2601,163 @@ export function App(): ReactElement {
     deleteSignature,
   ]);
 
+  // ---- Phase 10: Edit-content handlers ----
+  // Per-tab bag of Edit callbacks. Memoized with the same
+  // reference-stable pattern as the other per-tab handlers so
+  // PageView's props don't churn on every render. The pickImage
+  // helper uses the renderer-side file picker — it returns null
+  // on cancel so the overlay can silently no-op.
+  const pickImage = useCallback(async (): Promise<{ bytes: Uint8Array; format: "png" | "jpeg" } | null> => {
+    // Use a synthetic file input to keep the renderer pure (no
+    // direct `dialog` access from this layer). Returns null when
+    // the user cancels.
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/png,image/jpeg";
+      input.style.position = "fixed";
+      input.style.left = "-10000px";
+      const cleanup = (): void => {
+        input.remove();
+        window.removeEventListener("focus", onFocus);
+      };
+      const onFocus = (): void => {
+        // The picker is closing; if the user picked a file the
+        // change handler fires first, otherwise we resolve null
+        // after a microtask.
+        setTimeout(() => {
+          // No-op: change handler resolves with the file. If
+          // no file was picked, the cleanup also handles it.
+        }, 0);
+      };
+      input.addEventListener("change", () => {
+        const file = input.files?.[0];
+        cleanup();
+        if (file === undefined) {
+          resolve(null);
+          return;
+        }
+        void file.arrayBuffer().then((buf) => {
+          const bytes = new Uint8Array(buf);
+          const format = detectImageFormat(bytes);
+          if (format === "unknown") {
+            pushToast("error", "Unsupported image format. Use PNG or JPEG.");
+            resolve(null);
+            return;
+          }
+          resolve({ bytes, format });
+        }).catch(() => {
+          resolve(null);
+        });
+      });
+      window.addEventListener("focus", onFocus);
+      document.body.appendChild(input);
+      input.click();
+    });
+  }, [pushToast]);
+
+  const editHandlers = useMemo(() => {
+    const cache = new Map<
+      string,
+      {
+        state: EditState;
+        onAction: (action: EditAction) => void;
+        defaultFont: EditFont;
+        onDefaultFontChange: (font: EditFont) => void;
+        pickImage: () => Promise<{ bytes: Uint8Array; format: "png" | "jpeg" } | null>;
+        onCommitTextEdit: (args: {
+          rect: { x: number; y: number; width: number; height: number };
+          newText: string;
+          style: EditTextStyle;
+        }) => void;
+        onCommitTextBox: (args: {
+          rect: { x: number; y: number; width: number; height: number };
+          text: string;
+          style: EditTextStyle;
+          background: "white" | "none";
+        }) => void;
+        onCommitImageEdit: (args: {
+          op: "move" | "resize" | "replace" | "crop";
+          oldRect: { x: number; y: number; width: number; height: number };
+          newRect: { x: number; y: number; width: number; height: number };
+          bytes: Uint8Array;
+          format: "png" | "jpeg";
+          id: string;
+        }) => void;
+      }
+    >();
+    return (tabId: string) => {
+      const cached = cache.get(tabId);
+      const tab = openTabs[tabId];
+      if (tab === undefined) {
+        return {
+          state: initialEditState,
+          onAction: (): void => undefined,
+          defaultFont: "Helvetica" as EditFont,
+          onDefaultFontChange: (): void => undefined,
+          pickImage,
+          onCommitTextEdit: (): void => undefined,
+          onCommitTextBox: (): void => undefined,
+          onCommitImageEdit: (): void => undefined,
+        };
+      }
+      if (cached !== undefined && cached.state === tab.edit) {
+        return cached;
+      }
+      const out = {
+        state: tab.edit,
+        onAction: (action: EditAction): void => {
+          setOpenTabs((prev) => {
+            const t = prev[tabId];
+            if (t === undefined) return prev;
+            return {
+              ...prev,
+              [tabId]: { ...t, edit: editReducer(t.edit, action) },
+            };
+          });
+        },
+        defaultFont: settings?.editDefaultFont ?? "Helvetica",
+        onDefaultFontChange: setEditDefaultFont,
+        pickImage,
+        onCommitTextEdit: (args: {
+          rect: { x: number; y: number; width: number; height: number };
+          newText: string;
+          style: EditTextStyle;
+        }): void => {
+          void handleEditTextRun(tabId, args);
+        },
+        onCommitTextBox: (args: {
+          rect: { x: number; y: number; width: number; height: number };
+          text: string;
+          style: EditTextStyle;
+          background: "white" | "none";
+        }): void => {
+          void handleAddTextBox(tabId, args);
+        },
+        onCommitImageEdit: (args: {
+          op: "move" | "resize" | "replace" | "crop";
+          oldRect: { x: number; y: number; width: number; height: number };
+          newRect: { x: number; y: number; width: number; height: number };
+          bytes: Uint8Array;
+          format: "png" | "jpeg";
+          id: string;
+        }): void => {
+          void handleEditImage(tabId, args);
+        },
+      };
+      cache.set(tabId, out);
+      return out;
+    };
+  }, [
+    openTabs,
+    settings?.editDefaultFont,
+    pickImage,
+    setEditDefaultFont,
+    handleEditTextRun,
+    handleAddTextBox,
+    handleEditImage,
+  ]);
+
   activeTabIdRefLocal.current = tabs.activeId;
 
   const w = window as unknown as { tflexDiagnostics: () => unknown };
@@ -2714,6 +3087,9 @@ export function App(): ReactElement {
                       });
                     }}
                     themeName={settings.theme}
+                    editModeOpen={editModeOpen}
+                    onEditModeToggle={(): void => setEditMode(!editModeOpen)}
+                    edit={editModeOpen ? editHandlers(meta.id) : null}
                   />
                 </div>
               );

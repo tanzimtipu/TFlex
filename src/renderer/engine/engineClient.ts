@@ -10,7 +10,10 @@
 import type { Result } from "../../shared/result";
 import { err } from "../../shared/result";
 import type {
+  AddTextBoxPayload,
   DocxImageEntry,
+  EditImagePayload,
+  EditTextRunPayload,
   EngineError,
   EngineState as SharedEngineState,
   ExportPageEntry,
@@ -251,6 +254,27 @@ export interface TFlexApiEngine {
   createDocxFromImages?(
     entries: DocxImageEntry[],
   ): Promise<Result<Uint8Array, EngineError>>;
+  /** Phase 10 — edit an existing text run by masking its rect and redrawing
+   *  `newText` at the rect's top-left baseline. Optional so a pre-Phase-10
+   *  backend degrades with a friendly engine-error. */
+  editTextRun?(
+    docId: string,
+    payload: EditTextRunPayload,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 10 — add a new text box with wrapping. Same optional pattern as
+   *  editTextRun. */
+  addTextBox?(
+    docId: string,
+    payload: AddTextBoxPayload,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 10 — edit an image (move / resize / replace / crop). The engine
+   *  masks the original placement and draws the (renderer-supplied)
+   *  transformed bytes at the new rect. Optional like the other Phase 10
+   *  methods. */
+  editImage?(
+    docId: string,
+    payload: EditImagePayload,
+  ): Promise<Result<SharedEngineState, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -351,6 +375,13 @@ function missingPhase9Extended(): Result<never, EngineError> {
   return err(
     "engine-error",
     "advanced create/export (clipboard / insert / text / docx) requires the Phase 9 backend update",
+  );
+}
+
+function missingPhase10(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "edit-content (text run / text box / image) requires the Phase 10 backend update",
   );
 }
 
@@ -641,6 +672,35 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.insertFromPdf === undefined) return missingPhase9Extended();
     const r = await this.inner.insertFromPdf(docId, otherBytes, position);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  // -- Phase 10: edit content --
+
+  async editTextRun(
+    docId: string,
+    payload: EditTextRunPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.editTextRun === undefined) return missingPhase10();
+    const r = await this.inner.editTextRun(docId, payload);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  async addTextBox(
+    docId: string,
+    payload: AddTextBoxPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.addTextBox === undefined) return missingPhase10();
+    const r = await this.inner.addTextBox(docId, payload);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  async editImage(
+    docId: string,
+    payload: EditImagePayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.editImage === undefined) return missingPhase10();
+    const r = await this.inner.editImage(docId, payload);
     return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
   }
 }

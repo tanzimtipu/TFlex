@@ -3,9 +3,12 @@ import { IPC, type SavedSignaturesResult } from "../shared/ipc";
 import type {
   AppInfo,
   AppSettings,
+  AddTextBoxPayload,
   CreateAnnotationPayload,
   DocxImageEntry,
   EditAnnotationPayload,
+  EditImagePayload,
+  EditTextRunPayload,
   EngineError,
   EngineState,
   ExportPageEntry,
@@ -176,6 +179,25 @@ const engineApi = {
     entries: DocxImageEntry[],
   ): Promise<Result<Uint8Array, EngineError>> {
     return ipcRenderer.invoke(IPC.engineCreateDocxFromImages, entries);
+  },
+  // Phase 10: edit content
+  editTextRun(
+    docId: string,
+    payload: EditTextRunPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineEditTextRun, docId, payload);
+  },
+  addTextBox(
+    docId: string,
+    payload: AddTextBoxPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineAddTextBox, docId, payload);
+  },
+  editImage(
+    docId: string,
+    payload: EditImagePayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineEditImage, docId, payload);
   },
 };
 

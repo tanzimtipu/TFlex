@@ -3418,3 +3418,377 @@ textarea {
      styling covers layout — we just keep the names here so future
      tweaks have an obvious hook. */
 }
+
+/* ---------------------------------------------------------------------------
+ * Phase 10 - Edit-content overlay + toolbar + inline editor
+ * ------------------------------------------------------------------------- */
+
+.edit-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4; /* above signatures-layer (3), below textLayer for click-passthrough */
+  pointer-events: none;
+}
+
+.edit-layer-active {
+  pointer-events: auto;
+}
+
+/* Text-tool hover hint: outline the text run under the cursor so the
+ * user can see what's clickable. Matches the annotation overlay's
+ * markup-hover treatment. */
+.edit-text-hover {
+  position: absolute;
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-1);
+  pointer-events: none;
+  transition: background var(--t-quick) var(--ease);
+}
+
+/* Box-tool drag preview: dashed rect that follows the drag. */
+.edit-box-preview {
+  position: absolute;
+  background: var(--accent-soft);
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-1);
+  pointer-events: none;
+}
+
+/* Image-tool placement: a positioned div with the image inside.
+ * The selected state shows the accent border + handles. */
+.edit-image-placement {
+  position: absolute;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  background: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  cursor: move;
+  user-select: none;
+  transition: border-color var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
+}
+
+.edit-image-placement:hover {
+  border-color: var(--accent);
+}
+
+.edit-image-placement-selected {
+  border-color: var(--accent);
+  background: rgba(37, 99, 235, 0.04);
+}
+
+.edit-image-placement-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  object-fit: fill;
+}
+
+.edit-image-placement-resizing {
+  position: absolute;
+  inset: 0;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-1);
+  pointer-events: none;
+}
+
+/* Corner resize handles. Same 4-handle set as the signature
+ * placement; the side handles are intentionally omitted so the
+ * user always drags from a clearly-anchored corner. */
+.edit-image-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--bg-raised);
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.edit-image-handle-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.edit-image-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.edit-image-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.edit-image-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
+/* Image-create preview: dashed rect while the user is dragging out
+ * a new placement. Slightly different treatment from the box
+ * preview so the two tools are visually distinct. */
+.edit-image-create-preview {
+  position: absolute;
+  background: rgba(37, 99, 235, 0.06);
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-1);
+  pointer-events: none;
+}
+
+/* Toolbar that appears under a selected image placement.
+ * Floats over the page so it doesn't reflow the layout. */
+.edit-image-toolbar {
+  position: absolute;
+  display: inline-flex;
+  gap: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  padding: 2px;
+  z-index: 5;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.edit-image-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm, 12px);
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-1);
+  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+}
+
+.edit-image-toolbar-btn:hover {
+  background: var(--bg-hover, var(--accent-soft));
+  color: var(--fg);
+}
+
+.edit-image-toolbar-btn-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.edit-image-toolbar-btn-danger:hover {
+  color: #ef4444;
+}
+
+/* Crop overlay: covers the placement rect, draws a marquee inside. */
+.edit-image-crop-overlay {
+  position: absolute;
+  border: 1px solid var(--accent);
+  background: rgba(37, 99, 235, 0.05);
+  cursor: crosshair;
+  z-index: 4;
+}
+
+.edit-image-crop-marquee {
+  position: absolute;
+  background: rgba(37, 99, 235, 0.18);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-1);
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 10 - inline text editor
+ * ------------------------------------------------------------------------- */
+
+.edit-inline-editor {
+  position: absolute;
+  z-index: 6;
+  background: var(--bg-raised);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+  font-family: var(--font-ui, "Inter", system-ui, sans-serif);
+  color: var(--fg);
+}
+
+.edit-inline-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-toolbar, var(--bg-raised));
+  border-top-left-radius: var(--radius-2);
+  border-top-right-radius: var(--radius-2);
+}
+
+.edit-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.edit-inline-label {
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.edit-inline-field select,
+.edit-inline-field input[type="number"] {
+  height: 24px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-raised);
+  color: var(--fg);
+  padding: 0 4px;
+}
+
+.edit-inline-field input[type="number"] {
+  width: 56px;
+}
+
+.edit-inline-field input[type="color"] {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: transparent;
+  cursor: pointer;
+}
+
+.edit-inline-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.edit-inline-btn {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--fg);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+}
+
+.edit-inline-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.edit-inline-btn-commit:hover {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.edit-inline-textarea {
+  width: 100%;
+  min-height: 32px;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-ui, "Inter", system-ui, sans-serif);
+  resize: none;
+  outline: none;
+  border-bottom-left-radius: var(--radius-2);
+  border-bottom-right-radius: var(--radius-2);
+  line-height: 1.35;
+}
+
+.edit-inline-textarea::placeholder {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 10 - Edit toolbar (above the document)
+ * ------------------------------------------------------------------------- */
+
+.edit-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-toolbar, var(--bg-raised));
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui, "Inter", system-ui, sans-serif);
+}
+
+.edit-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+}
+
+.edit-toolbar-btn:hover:not(:disabled) {
+  background: var(--bg-hover, var(--accent-soft));
+  color: var(--fg);
+  border-color: var(--border-strong);
+}
+
+.edit-toolbar-btn-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.edit-toolbar-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.edit-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  margin: 0 2px;
+}
+
+.edit-toolbar-font {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.edit-toolbar-font-label {
+  font-size: 11px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.edit-toolbar-font select {
+  height: 24px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-raised);
+  color: var(--fg);
+  padding: 0 4px;
+}
+
+.edit-toolbar-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-style: italic;
+  user-select: none;
+}

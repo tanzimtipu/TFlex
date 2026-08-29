@@ -21,7 +21,10 @@
 import type { Result } from "../../shared/result";
 import { err, ok } from "../../shared/result";
 import type {
+  AddTextBoxPayload,
   DocxImageEntry,
+  EditImagePayload,
+  EditTextRunPayload,
   EngineError,
   ExportPageEntry,
   ExportPagesPayload,
@@ -65,6 +68,12 @@ interface StubTab {
   formValues: Map<string, string | string[]>;
   /** Phase 4 — signature placements on the document. */
   signatures: SignaturePlacement[];
+  /** Phase 10 — append-only log of edit-content ops (text run / text box /
+   *  image). The stub doesn't actually mutate the PDF (it has no
+   *  pdf-lib); it records what the renderer asked for so unit tests
+   *  can assert the payload shape end-to-end. The real engine owns
+   *  the actual content mutation. */
+  editLog: EditRecord[];
 }
 
 interface Snapshot {
@@ -74,6 +83,11 @@ interface Snapshot {
   annotations: Annotation[];
   formValues: Map<string, string | string[]>;
   signatures: SignaturePlacement[];
+  /** Phase 10 — preserved across undo / redo so the log is
+   *  monorewrite-friendly. We only need to restore the append-point,
+   *  not the entries themselves, so the snapshot stores the length
+   *  captured at snapshot time. */
+  editLogLength: number;
 }
 
 function snap(t: StubTab): Snapshot {
@@ -84,6 +98,7 @@ function snap(t: StubTab): Snapshot {
     annotations: t.annotations.slice(),
     formValues: new Map(t.formValues),
     signatures: t.signatures.slice(),
+    editLogLength: t.editLog.length,
   };
 }
 
@@ -94,6 +109,10 @@ function restore(t: StubTab, s: Snapshot): void {
   t.annotations = s.annotations.slice();
   t.formValues = new Map(s.formValues);
   t.signatures = s.signatures.slice();
+  // Phase 10 — truncate the append-only log back to the snapshot's
+  // length. We never need to recover old entries; truncation is the
+  // natural undo/redo operation for a forward-only log.
+  t.editLog = t.editLog.slice(0, s.editLogLength);
 }
 
 function buildState(t: StubTab): EngineState {
@@ -148,6 +167,7 @@ export class StubRendererEngine implements EngineApi {
         modified: false,
         formValues: new Map(),
         signatures: [],
+        editLog: [],
       };
       this.tabs.set(docId, t);
     }
@@ -660,6 +680,130 @@ export class StubRendererEngine implements EngineApi {
     // renderer-only contract test path.
     return err("engine-error", "createDocxFromImages requires backend engine update");
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 10: edit content (text run / text box / image)
+  //
+  // The stub records the latest payload per tab so the renderer's
+  // mirror can observe "an edit happened" without a real engine. The
+  // full integration (apply payload -> new EngineState) is owned by
+  // the real engine; the stub degrades gracefully with engine-error
+  // when the host doesn't expose the Phase 10 channels.
+
+  /** Phase 10 — edit an existing text run. The stub doesn't have
+   *  pdf-lib, so it can't actually mutate the PDF; it just records
+   *  the call (so the renderer's debug surface can show it landed)
+   *  and returns an engine-error. The renderer is expected to use
+   *  the real engine once it's wired. */
+  async editTextRun(
+    docId: string,
+    payload: EditTextRunPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (payload.rect.width <= 0 || payload.rect.height <= 0) {
+      return err("empty-range", "editTextRun: rect must be positive");
+    }
+    if (payload.newText.length === 0) {
+      return err("empty-range", "editTextRun: newText is empty");
+    }
+    pushUndo(t);
+    recordEdit(t, { kind: "editTextRun", payload });
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Phase 10 — add a new text box. Same shape as editTextRun. */
+  async addTextBox(
+    docId: string,
+    payload: AddTextBoxPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (payload.rect.width <= 0 || payload.rect.height <= 0) {
+      return err("empty-range", "addTextBox: rect must be positive");
+    }
+    if (payload.text.length === 0) {
+      return err("empty-range", "addTextBox: text is empty");
+    }
+    pushUndo(t);
+    recordEdit(t, { kind: "addTextBox", payload });
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Phase 10 — edit an image (move / resize / replace / crop). The
+   *  stub doesn't process the bytes; it records the call and echoes
+   *  EngineState. */
+  async editImage(
+    docId: string,
+    payload: EditImagePayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (payload.newRect.width <= 0 || payload.newRect.height <= 0) {
+      return err("empty-range", "editImage: newRect must be positive");
+    }
+    if (payload.imageBytes.byteLength === 0) {
+      return err("empty-range", "editImage: imageBytes are empty");
+    }
+    pushUndo(t);
+    recordEdit(
+      t,
+      {
+        kind: "editImage",
+        payload: {
+          op: payload.op,
+          oldRect: { ...payload.oldRect },
+          newRect: { ...payload.newRect },
+          imageBytesLen: payload.imageBytes.byteLength,
+        },
+      },
+    );
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Test-only: read back the most recent edit payload recorded for a
+   *  tab. Used by unit tests that exercise the renderer's edit flow
+   *  without a real engine. Returns `undefined` when the tab has no
+   *  recorded edits. */
+  getLastEdit(tabId: string): EditRecord | undefined {
+    const t = this.tabs.get(tabId);
+    if (t === undefined) return undefined;
+    const rec = t.editLog[t.editLog.length - 1];
+    return rec;
+  }
+
+  /** Test-only: snapshot of the full edit history for a tab. */
+  getEditLog(tabId: string): EditRecord[] {
+    const t = this.tabs.get(tabId);
+    if (t === undefined) return [];
+    return t.editLog.slice();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 10 — per-tab edit log (stub-only)
+
+/** What the stub records for each Phase 10 op. The image variant
+ *  carries the byte length rather than the bytes themselves so the
+ *  log stays cheap to inspect in tests. */
+type EditRecord =
+  | { kind: "editTextRun"; payload: EditTextRunPayload }
+  | { kind: "addTextBox"; payload: AddTextBoxPayload }
+  | {
+    kind: "editImage";
+    payload: {
+      op: EditImagePayload["op"];
+      oldRect: EditImagePayload["oldRect"];
+      newRect: EditImagePayload["newRect"];
+      imageBytesLen: number;
+    };
+  };
+
+function recordEdit(t: StubTab, rec: EditRecord): void {
+  t.editLog.push(rec);
 }
 
 // Stub-only: returns the form fields the renderer last seeded via

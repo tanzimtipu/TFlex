@@ -28,6 +28,7 @@ import { SearchBar } from "./SearchBar";
 import { SideRail } from "./SideRail";
 import { Toolbar } from "./Toolbar";
 import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
+import { EditToolbar, defaultEditHint } from "../edit/EditToolbar";
 import type { EngineState } from "../engine/types";
 import {
   annotationToolReducer,
@@ -157,6 +158,42 @@ interface DocumentViewProps {
   /** Active theme ('light' | 'dark'). Drives which per-theme
    *  preset bucket the picker shows. */
   themeName?: 'light' | 'dark';
+  // -- Phase 10: Edit-content overlay --
+  /** Edit mode is open. When true, the per-page EditOverlay
+   *  becomes pointer-active and the EditToolbar renders above
+   *  the document area. The overlay is layered on top of the
+   *  existing annotation overlay (text selection / signing /
+   *  forms), so a single mode is active at a time. */
+  editModeOpen?: boolean;
+  onEditModeToggle?: () => void;
+  /** Per-tab Edit state. DocumentView only forwards it to
+   *  PageView; App owns the reducer. */
+  edit?: {
+    state: import("../edit/model").EditState;
+    onAction: (action: import("../edit/model").EditAction) => void;
+    defaultFont: import("../../shared/types").EditFont;
+    onDefaultFontChange?: (font: import("../../shared/types").EditFont) => void;
+    pickImage: () => Promise<{ bytes: Uint8Array; format: "png" | "jpeg" } | null>;
+    onCommitTextEdit: (args: {
+      rect: { x: number; y: number; width: number; height: number };
+      newText: string;
+      style: import("../edit/model").EditTextStyle;
+    }) => void;
+    onCommitTextBox: (args: {
+      rect: { x: number; y: number; width: number; height: number };
+      text: string;
+      style: import("../edit/model").EditTextStyle;
+      background: "white" | "none";
+    }) => void;
+    onCommitImageEdit: (args: {
+      op: "move" | "resize" | "replace" | "crop";
+      oldRect: { x: number; y: number; width: number; height: number };
+      newRect: { x: number; y: number; width: number; height: number };
+      bytes: Uint8Array;
+      format: "png" | "jpeg";
+      id: string;
+    }) => void;
+  } | null;
 }
 
 // Stable empty-array reference: passed to PageView when a page has no search
@@ -266,6 +303,9 @@ export function DocumentView({
   annotationPalette,
   onAnnotationPaletteChange,
   themeName = 'dark',
+  editModeOpen = false,
+  edit = null,
+  onEditModeToggle,
 }: DocumentViewProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const slotRefsRef = useRef(new Map<number, HTMLDivElement>());
@@ -882,6 +922,16 @@ export function DocumentView({
     [onDeleteSignature],
   );
 
+  // Phase 10 — pass the edit state through to PageView with a
+  // stable callback so child re-renders are isolated. The host
+  // (App) owns the reducer + IPC.
+  const editProp = useMemo(() => {
+    if (!editModeOpen || edit === null) return null;
+    return edit;
+  }, [editModeOpen, edit]);
+
+  const editToolbarHint = edit !== null ? defaultEditHint(edit.state.tool) : defaultEditHint("off");
+
   const hitsByPage = useMemo(() => {
     const map = new Map<number, SearchHit[]>();
     for (const hit of hits) {
@@ -1115,6 +1165,8 @@ export function DocumentView({
           }}
           toolsPaletteOpen={toolsPaletteOpen}
           onToolsPaletteToggle={(): void => onToolsPaletteToggle?.()}
+          editModeOpen={editModeOpen}
+          onEditModeToggle={onEditModeToggle}
           onOptimize={(): void => onOptimize?.()}
           onAuditSpace={(): void => onAuditSpace?.()}
           onRotateClockwise={onRotateClockwise}
@@ -1137,6 +1189,20 @@ export function DocumentView({
           }
           theme={themeName}
         />
+        {editModeOpen && edit !== null && (
+          <EditToolbar
+            tool={edit.state.tool}
+            onSelect={(t): void => edit.onAction({ type: "set-tool", tool: t })}
+            defaultFont={edit.defaultFont}
+            onDefaultFontChange={
+              edit.onDefaultFontChange === undefined
+                ? (): void => undefined
+                : (f): void => edit.onDefaultFontChange?.(f)
+            }
+            enabled
+            hint={editToolbarHint}
+          />
+        )}
         {searchOpen && (
           <SearchBar
             query={query}
@@ -1193,6 +1259,8 @@ export function DocumentView({
                       onPlaceSignature={onPlaceSignatureStable}
                       onMoveSignature={onMoveSignatureStable}
                       onDeleteSignature={onDeleteSignatureStable}
+                      editModeOpen={editModeOpen}
+                      edit={editProp}
                     />
                   )}
                 </div>

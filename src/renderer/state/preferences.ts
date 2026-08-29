@@ -9,7 +9,7 @@
 // settings service normalises them on the way in (e.g. clamping the recents
 // cap to [1, 50]), so the renderer doesn't re-validate at write time.
 
-import type { AppSettings, ExportImageFormat, OptimizePreset } from '../../shared/types';
+import type { AppSettings, EditFont, ExportImageFormat, OptimizePreset } from '../../shared/types';
 
 export const MIN_RECENTS_CAP = 1;
 export const MAX_RECENTS_CAP = 50;
@@ -24,7 +24,8 @@ export type PreferencesAction =
   | { type: 'set-optimize-preset'; value: OptimizePreset }
   | { type: 'set-export-image-format'; value: ExportImageFormat }
   | { type: 'set-export-image-dpi'; value: number }
-  | { type: 'set-create-image-quality'; value: number };
+  | { type: 'set-create-image-quality'; value: number }
+  | { type: 'set-edit-default-font'; value: EditFont };
 
 /** Default compression preset used by the Optimize dialog when the
  *  user hasn't picked one yet. Matches the backend settings.ts default
@@ -162,8 +163,29 @@ export function preferencesReducer(
       if (current === clamped) return state;
       return { ...state, createImageQuality: clamped };
     }
+    case 'set-edit-default-font': {
+      // Allowlist guard: drop anything the backend wouldn't accept.
+      // Mirrors the backend's settings.ts EditFont validation; the
+      // wire shape is `'Helvetica' | 'Times' | 'Courier'`.
+      if (!EDIT_DEFAULT_FONTS.includes(action.value)) return state;
+      const current = state.editDefaultFont;
+      if (current === action.value) return state;
+      return { ...state, editDefaultFont: action.value };
+    }
   }
 }
+
+// ---- Phase 10: Edit-content default font ----
+//
+// The Phase 10 Edit tools (text run edit, text box) need a default
+// font to seed the inline editor. The backend's settings.ts
+// preserves only the three pdf-lib Standard fonts that map cleanly
+// to WinAnsiEncoding (see shared/types.ts `EditFont`). Anything
+// else is dropped on save — the renderer mirrors the same allowlist
+// so the Edit toolbar never shows a font choice the backend would
+// reject.
+export const EDIT_DEFAULT_FONTS: readonly EditFont[] = ['Helvetica', 'Times', 'Courier'];
+export const DEFAULT_EDIT_DEFAULT_FONT: EditFont = 'Helvetica';
 
 /** Clamp a recents-cap candidate to the supported range. Public so the
  *  Preferences sheet can pre-validate the input before dispatch. */

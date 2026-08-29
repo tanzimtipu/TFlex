@@ -6,7 +6,10 @@
 
 import type { Result } from "../../shared/result";
 import type {
+  AddTextBoxPayload,
   DocxImageEntry,
+  EditImagePayload,
+  EditTextRunPayload,
   EngineError,
   EngineState as SharedEngineState,
   ExportPageEntry,
@@ -293,6 +296,51 @@ export interface EngineApi {
     docId: string,
     otherBytes: Uint8Array,
     position: number,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  // -- Phase 10: edit content (text runs, text boxes, images) --
+
+  /** Edit an existing text run: the engine masks `rect` (page points, top-left
+   *  origin) with a white rectangle, then draws `payload.newText` at the
+   *  rect's top-left baseline in the requested font / size / color. Returns
+   *  the new EngineState so the mirror can refresh the modified flag.
+   *
+   *  Phase 10 feasibility limits (per backend's contract):
+   *   - font metrics are NOT preserved: the source's font, weight, and
+   *     stretch are lost. We replace with one of three pdf-lib Standard
+   *     families (Helvetica / Times / Courier), which is the union of
+   *     shapes that map cleanly to WinAnsiEncoding.
+   *   - Latin-only: glyphs outside WinAnsiEncoding (CJK, RTL, most
+   *     emoji) are substituted with a question mark.
+   *   - visual redact-and-redraw: the original text remains in the
+   *     content stream but is visually covered.
+   *  The renderer treats this as a "good-enough" edit for v1 and shows
+   *  a brief hint when the user enters non-Latin text. */
+  editTextRun(
+    docId: string,
+    payload: EditTextRunPayload,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Add a new text box at `payload.rect` (page points, top-left origin).
+   *  The engine wraps `payload.text` to the rect's width and draws it in
+   *  the requested font / size / color. `background: 'white'` paints an
+   *  opaque white fill behind the text so it's readable over existing
+   *  content. */
+  addTextBox(
+    docId: string,
+    payload: AddTextBoxPayload,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Edit an image's placement (move / resize / replace / crop). The engine
+   *  visually masks `oldRect` with a white rectangle and draws
+   *  `imageBytes` (PNG or JPEG) at `newRect`. The renderer is responsible
+   *  for producing the transformed bytes (resize / crop happen in its
+   *  canvas; the engine only composites). The original `Do` operator
+   *  remains in the stream but is covered — same visual-redact-and-redraw
+   *  pattern as `editTextRun`. */
+  editImage(
+    docId: string,
+    payload: EditImagePayload,
   ): Promise<Result<EngineState, EngineError>>;
 }
 

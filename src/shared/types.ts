@@ -89,6 +89,11 @@ export interface AppSettings {
   exportImageDpi?: number;
   /** Phase 9 — create-from-images JPEG quality (0.0–1.0). */
   createImageQuality?: number;
+  /** Phase 10 — default font for the Edit-content text tools. Allowlist
+   *  is the three pdf-lib StandardFonts families that map cleanly to
+   *  WinAnsiEncoding (Helvetica/Times/Courier). Validated
+   *  preserve-if-valid in settings.ts; default 'Helvetica'. */
+  editDefaultFont?: EditFont;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -140,7 +145,6 @@ export interface SpaceAudit {
 // ---- Phase 9: Create + Export ----
 
 export type ExportImageFormat = 'png' | 'jpeg' | 'tiff';
-
 /** Payload for `engine.exportPages`. range is 1‑based inclusive, or
  *  omitted/undefined for all pages. */
 export interface ExportPagesPayload {
@@ -415,4 +419,67 @@ export interface MoveSignaturePayload {
   id: string;
   page: number;
   rect: FormFieldRect;
+}
+
+// ---- Phase 10: Edit content ----
+
+/** Phase 10 — font allowlist for the Edit-content text tools. These are
+ *  the three pdf-lib StandardFonts families whose WinAnsiEncoding maps
+ *  cleanly to Latin text, so round-trip extraction is reliable. Embedded
+ *  subset fonts in the source document cannot be matched exactly — see
+ *  the Phase 10 report for the feasibility limit. */
+export type EditFont = 'Helvetica' | 'Times' | 'Courier';
+
+/** Phase 10 — RGB color for drawn text, components in [0,1]. Matches
+ *  pdf-lib's `rgb()` helper range. */
+export interface EditColor {
+  r: number;
+  g: number;
+  b: number;
+}
+
+/** Phase 10 — payload for `engine.editTextRun`. Replaces the text run
+ *  covering `rect` by masking the region with a white rectangle and
+ *  drawing `newText` at the rect's top-left baseline. `rect` is in
+ *  PAGE POINTS with a TOP-LEFT origin (same convention as annotations).
+ *  `page` is the 1-based VISIBLE page index. */
+export interface EditTextRunPayload {
+  page: number;
+  rect: AnnRect;
+  newText: string;
+  font?: EditFont;
+  size?: number;
+  color?: EditColor;
+}
+
+/** Phase 10 — payload for `engine.addTextBox`. Draws `text` wrapped
+ *  inside `rect` (top-left origin, PDF points). `background` controls
+ *  whether an opaque white fill is drawn behind the text so it is
+ *  readable over existing content; default 'none'. */
+export interface AddTextBoxPayload {
+  page: number;
+  rect: AnnRect;
+  text: string;
+  font?: EditFont;
+  size?: number;
+  color?: EditColor;
+  background?: 'white' | 'none';
+}
+
+/** Phase 10 — payload for `engine.editImage`. All four ops reduce to
+ *  the same engine work: mask the original placement (`oldRect`) with
+ *  a white rectangle, then draw `imageBytes` (PNG or JPEG) at `newRect`.
+ *  The renderer is responsible for producing the transformed image
+ *  bytes (resize/crop happen in its canvas; the engine only composites).
+ *
+ *  Feasibility note: true in-place content-stream editing of the
+ *  image's `cm` transform is not done — the original `Do` operator
+ *  remains in the stream but is visually covered. This is the
+ *  documented Phase 10 limitation. */
+export interface EditImagePayload {
+  page: number;
+  op: 'move' | 'resize' | 'replace' | 'crop';
+  oldRect: AnnRect;
+  newRect: AnnRect;
+  imageBytes: Uint8Array;
 }

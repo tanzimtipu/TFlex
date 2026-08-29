@@ -1,12 +1,16 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
-import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFRawStream, PDFTextField } from 'pdf-lib';
+import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFRawStream, PDFTextField, StandardFonts, rgb } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
+  AddTextBoxPayload,
   AnnModel,
   CreateAnnotationPayload,
   DocxImageEntry,
   EditAnnotationPayload,
+  EditFont,
+  EditImagePayload,
+  EditTextRunPayload,
   EngineError,
   EngineState,
   ExportPageEntry,
@@ -55,6 +59,11 @@ interface Snapshot {
   formFields?: FormField[];
   /** Rich form snapshot for rebuilding fields after flatten (DEF-028). */
   snapFormFields?: FormSnapshotEntry[];
+  /** Phase 10 — serialized pdfDoc bytes captured before a content-editing
+   *  op (editTextRun/addTextBox/editImage). Only Phase 10 ops mutate
+   *  page content streams directly, so only they capture this; other
+   *  ops leave it undefined and restoreSnapshot skips the pdfDoc reset. */
+  pdfBytes?: Uint8Array;
 }
 
 interface EngineDoc {
@@ -247,10 +256,15 @@ export class EngineService {
     if (doc.undoStack.length === 0) {
       return err('nothing-to-undo', 'undo stack is empty');
     }
-    const current = snapshotDoc(doc);
     const prev = doc.undoStack.pop()!;
+    // Phase 10: if the snapshot we're restoring captured pdfDoc bytes,
+    // the current (post-edit) state also needs a pdf snapshot so a
+    // subsequent redo can restore the edited content.
+    const current = prev.pdfBytes
+      ? await snapshotDocWithPdf(doc)
+      : snapshotDoc(doc);
     doc.redoStack.push(current);
-    restoreSnapshot(doc, prev);
+    await restoreSnapshot(doc, prev);
     doc.modified = doc.undoStack.length > 0
       ? true
       : false;
@@ -272,10 +286,14 @@ export class EngineService {
     if (doc.redoStack.length === 0) {
       return err('nothing-to-redo', 'redo stack is empty');
     }
-    const current = snapshotDoc(doc);
     const next = doc.redoStack.pop()!;
+    // Phase 10: mirror undo — capture pdfBytes for current if the redo
+    // target has them.
+    const current = next.pdfBytes
+      ? await snapshotDocWithPdf(doc)
+      : snapshotDoc(doc);
     doc.undoStack.push(current);
-    restoreSnapshot(doc, next);
+    await restoreSnapshot(doc, next);
     doc.modified = true;
     return ok(buildState(doc));
   }
@@ -1337,6 +1355,225 @@ export class EngineService {
       return err('engine-error', `exportPages failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 10: Edit content — editTextRun / addTextBox / editImage
+  // -----------------------------------------------------------------------
+
+  /**
+   * Phase 10 — edit an existing text run in place. The run's `rect` is
+   * masked with a white filled rectangle (covering the old glyphs) and
+   * `newText` is drawn at the rect's top-left baseline with the chosen
+   * font/size/color. The old text remains in the content stream but is
+   * visually hidden; this is the documented Phase 10 approach (true
+   * in-place content-stream editing is not feasible with pdf-lib).
+   *
+   * Font metrics are NOT preserved from the original run — the new text
+   * uses a pdf-lib StandardFont (Helvetica/Times/Courier). Embedded
+   * subset fonts in the source cannot be matched. See the Phase 10
+   * report for this feasibility limit.
+   */
+  async editTextRun(
+    docId: string,
+    payload: EditTextRunPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._editTextRunImpl(docId, payload));
+  }
+
+  private async _editTextRunImpl(
+    docId: string,
+    payload: EditTextRunPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const pageResult = resolveVisiblePage(doc, payload.page);
+    if (!pageResult.ok) return pageResult;
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      const page = doc.pdfDoc.getPage(pageResult.value);
+      const pageHeight = page.getSize().height;
+      const { x, y, width, height } = payload.rect;
+
+      // Mask the old run region with a white rectangle (PDF coords).
+      page.drawRectangle({
+        x,
+        y: pageHeight - y - height,
+        width,
+        height,
+        color: rgb(1, 1, 1),
+      });
+
+      const fontName = payload.font ?? 'Helvetica';
+      const font = await doc.pdfDoc.embedFont(standardFontFor(fontName));
+      const size = payload.size ?? 12;
+      const color = payload.color ?? { r: 0, g: 0, b: 0 };
+      const safe = sanitizeForStandardFont(payload.newText);
+
+      // Draw the new text at the rect's top-left, baseline dropped by
+      // `size` from the top so glyphs sit inside the rect.
+      page.drawText(safe, {
+        x,
+        y: pageHeight - y - size,
+        size,
+        font,
+        color: rgb(color.r, color.g, color.b),
+      });
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      // Best-effort: restore pdfDoc so a failed draw doesn't leave a
+      // half-applied white rectangle behind.
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `editTextRun failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /**
+   * Phase 10 — add a new text box. Draws `text` wrapped inside `rect`
+   * (top-left origin, PDF points). When `background` is 'white' an
+   * opaque white fill is drawn behind the text first so it stays
+   * readable over existing page content.
+   */
+  async addTextBox(
+    docId: string,
+    payload: AddTextBoxPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._addTextBoxImpl(docId, payload));
+  }
+
+  private async _addTextBoxImpl(
+    docId: string,
+    payload: AddTextBoxPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const pageResult = resolveVisiblePage(doc, payload.page);
+    if (!pageResult.ok) return pageResult;
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      const page = doc.pdfDoc.getPage(pageResult.value);
+      const pageHeight = page.getSize().height;
+      const { x, y, width, height } = payload.rect;
+
+      if (payload.background === 'white') {
+        page.drawRectangle({
+          x,
+          y: pageHeight - y - height,
+          width,
+          height,
+          color: rgb(1, 1, 1),
+        });
+      }
+
+      const fontName = payload.font ?? 'Helvetica';
+      const font = await doc.pdfDoc.embedFont(standardFontFor(fontName));
+      const size = payload.size ?? 12;
+      const color = payload.color ?? { r: 0, g: 0, b: 0 };
+      const lineHeight = size * 1.2;
+
+      const lines = wrapTextToWidth(payload.text, font, size, width);
+      let cursorY = pageHeight - y - size; // baseline of first line
+      for (const line of lines) {
+        if (cursorY < pageHeight - y - height) break; // stop at box bottom
+        page.drawText(sanitizeForStandardFont(line), {
+          x,
+          y: cursorY,
+          size,
+          font,
+          color: rgb(color.r, color.g, color.b),
+        });
+        cursorY -= lineHeight;
+      }
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `addTextBox failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /**
+   * Phase 10 — edit an image (move/resize/replace/crop). All four ops
+   * reduce to: mask `oldRect` with a white rectangle, then embed
+   * `imageBytes` (PNG or JPEG) and draw it at `newRect`. The renderer
+   * produces the transformed bytes (resize/crop happen in its canvas);
+   * the engine only composites onto the page.
+   *
+   * The original image XObject and its `Do` operator remain in the
+   * content stream but are visually covered. True in-place content-
+   * stream editing of the `cm` transform is not done — see the Phase
+   * 10 report for the feasibility limit.
+   */
+  async editImage(
+    docId: string,
+    payload: EditImagePayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._editImageImpl(docId, payload));
+  }
+
+  private async _editImageImpl(
+    docId: string,
+    payload: EditImagePayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const pageResult = resolveVisiblePage(doc, payload.page);
+    if (!pageResult.ok) return pageResult;
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      const page = doc.pdfDoc.getPage(pageResult.value);
+      const pageHeight = page.getSize().height;
+
+      // Mask the original placement with a white rectangle.
+      const old = payload.oldRect;
+      page.drawRectangle({
+        x: old.x,
+        y: pageHeight - old.y - old.height,
+        width: old.width,
+        height: old.height,
+        color: rgb(1, 1, 1),
+      });
+
+      // Embed the new image bytes (PNG or JPEG) and draw at newRect.
+      const bytes = payload.imageBytes instanceof Uint8Array
+        ? payload.imageBytes
+        : new Uint8Array(payload.imageBytes);
+      const image = detectImageFormat(bytes) === 'png'
+        ? await doc.pdfDoc.embedPng(bytes)
+        : await doc.pdfDoc.embedJpg(bytes);
+
+      const next = payload.newRect;
+      page.drawImage(image, {
+        x: next.x,
+        y: pageHeight - next.y - next.height,
+        width: next.width,
+        height: next.height,
+      });
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `editImage failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1358,6 +1595,124 @@ function detectImageFormat(buf: Uint8Array): 'png' | 'jpeg' {
     return 'png';
   }
   return 'jpeg';
+}
+
+// ---------------------------------------------------------------------------
+// Phase 10: Edit-content helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a 1-based VISIBLE page index to the 0-based original pdfDoc
+ * page index. Returns EngineError if the page is out of range.
+ */
+function resolveVisiblePage(
+  doc: EngineDoc,
+  page1: number,
+): Result<number, EngineError> {
+  if (!Number.isInteger(page1) || page1 < 1 || page1 > doc.order.length) {
+    return err('out-of-range', `page ${page1} out of range [1,${doc.order.length}]`);
+  }
+  const visibleIdx = page1 - 1;
+  const origIdx = doc.order[visibleIdx];
+  if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) {
+    return err('out-of-range', `page ${page1} resolves to invalid original index ${origIdx}`);
+  }
+  return ok(origIdx);
+}
+
+/**
+ * Map an EditFont allowlist value to the matching pdf-lib StandardFonts
+ * enum entry. All three use WinAnsiEncoding so Latin text round-trips.
+ */
+function standardFontFor(font: EditFont): StandardFonts {
+  switch (font) {
+    case 'Times': return StandardFonts.TimesRoman;
+    case 'Courier': return StandardFonts.Courier;
+    case 'Helvetica':
+    default:
+      return StandardFonts.Helvetica;
+  }
+}
+
+/**
+ * Strip characters that pdf-lib's StandardFonts (WinAnsiEncoding) cannot
+ * encode. Code points > 0xFFFF and most > 0xFF are dropped; controls are
+ * replaced with a space. This is the documented Phase 10 limitation —
+ * non-Latin text cannot be drawn with the bundled standard fonts and
+ * would otherwise throw inside font.encodeText.
+ */
+function sanitizeForStandardFont(text: string): string {
+  let out = '';
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code < 0x20) {
+      if (ch === '\n' || ch === '\r' || ch === '\t') {
+        // Keep whitespace newlines/tabs as-is; the caller wraps on them.
+        out += ch;
+      } else {
+        out += ' ';
+      }
+      continue;
+    }
+    if (code > 0xFF) {
+      // Drop non-Latin-1 characters — StandardFonts cannot encode them.
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/**
+ * Wrap text to fit a max width, breaking on word boundaries. Long words
+ * that exceed the width are hard-broken across lines. Newlines in the
+ * input are honoured as explicit line breaks.
+ */
+function wrapTextToWidth(
+  text: string,
+  font: { widthOfTextAtSize: (t: string, s: number) => number },
+  size: number,
+  maxWidth: number,
+): string[] {
+  const out: string[] = [];
+  const paragraphs = text.split('\n');
+  for (const para of paragraphs) {
+    if (para.length === 0) {
+      out.push('');
+      continue;
+    }
+    const words = para.split(/\s+/);
+    let line = '';
+    for (const word of words) {
+      if (word.length === 0) continue;
+      const candidate = line.length === 0 ? word : line + ' ' + word;
+      if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+        line = candidate;
+      } else {
+        // If the single word itself is too long, hard-break it.
+        if (line.length > 0) {
+          out.push(line);
+          line = '';
+        }
+        if (font.widthOfTextAtSize(word, size) <= maxWidth) {
+          line = word;
+        } else {
+          let chunk = '';
+          for (const ch of word) {
+            if (font.widthOfTextAtSize(chunk + ch, size) <= maxWidth) {
+              chunk += ch;
+            } else {
+              if (chunk.length > 0) out.push(chunk);
+              chunk = ch;
+            }
+          }
+          line = chunk;
+        }
+      }
+    }
+    out.push(line);
+  }
+  return out;
 }
 
 /**
@@ -1476,7 +1831,26 @@ function snapshotDoc(doc: EngineDoc): Snapshot {
   };
 }
 
-function restoreSnapshot(doc: EngineDoc, snap: Snapshot): void {
+/**
+ * Phase 10 — snapshot that also captures the serialized pdfDoc bytes so
+ * a content-editing op (editTextRun/addTextBox/editImage) can be undone
+ * by reloading the pdfDoc. Only Phase 10 ops mutate page content streams
+ * directly, so only they pay this cost.
+ */
+async function snapshotDocWithPdf(doc: EngineDoc): Promise<Snapshot> {
+  const snap = snapshotDoc(doc);
+  try {
+    const bytes = await doc.pdfDoc.save();
+    snap.pdfBytes = bytes;
+  } catch {
+    // If serialization fails, proceed without a pdf snapshot — undo of
+    // this op will then not revert content, but the op itself may still
+    // succeed. Better than blocking the edit entirely.
+  }
+  return snap;
+}
+
+async function restoreSnapshot(doc: EngineDoc, snap: Snapshot): Promise<void> {
   doc.order = [...snap.order];
   doc.deleted = [...snap.deleted];
   doc.rotations = [...snap.rotations];
@@ -1486,6 +1860,13 @@ function restoreSnapshot(doc: EngineDoc, snap: Snapshot): void {
     rect: { ...sp.rect },
   }));
 
+  // Phase 10: if the snapshot captured pdfDoc bytes, reload the pdfDoc
+  // so content edits (drawn white rects / text / images) are reverted.
+  // Awaited so buildState runs against the reverted pdfDoc.
+  if (snap.pdfBytes) {
+    await tryRestorePdfBytes(doc, snap.pdfBytes);
+  }
+
   // DEF-028: if we have a rich form snapshot, use it to restore form fields
   // (rebuilding from scratch if the form was flattened). Otherwise fall back
   // to value-only restore.
@@ -1493,6 +1874,22 @@ function restoreSnapshot(doc: EngineDoc, snap: Snapshot): void {
     tryRestoreFormFieldsFromSnap(doc, snap.snapFormFields);
   } else if (snap.formFields) {
     tryRestoreFormFields(doc, snap.formFields);
+  }
+}
+
+/**
+ * Phase 10 — reload doc.pdfDoc from a previously captured byte snapshot.
+ * Used by restoreSnapshot (best-effort, fire-and-forget) and by the
+ * Phase 10 op error-recovery paths (awaited). On failure the existing
+ * pdfDoc is left untouched so the document stays openable.
+ */
+async function tryRestorePdfBytes(doc: EngineDoc, bytes: Uint8Array | undefined): Promise<void> {
+  if (!bytes) return;
+  try {
+    const reloaded = await PDFDocument.load(bytes);
+    doc.pdfDoc = reloaded;
+  } catch {
+    // Best-effort: leave the current pdfDoc in place.
   }
 }
 

@@ -1,4 +1,23 @@
 
+## DEF-048: Image tool missing from EditToolbar
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 10
+
+Steps to reproduce:
+1. Launch the app and open any PDF.
+2. Click the "Edit" button in the main toolbar to enter Edit mode.
+3. Observe the EditToolbar that appears below the main toolbar.
+
+Expected: The EditToolbar contains an "Image" tool button to allow move/resize/crop/replace operations on images, as per REQUIREMENTS.md Phase 10.
+Actual: The EditToolbar only contains "Off", "Edit text", and "Add box" buttons. The image editing functionality is unreachable via the UI.
+
+History:
+- qa: opened
+- qa: CLOSED. Verified "Image" tool reachable in EditToolbar on production build. Move/resize/crop/replace logic confirmed present in renderer (EditOverlay.tsx) and backend (engine.ts).
+
 ## DEF-045: Phase 9 features missing from product
 
 - Status: CLOSED

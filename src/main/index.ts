@@ -3,9 +3,12 @@ import { join } from 'node:path';
 import { IPC } from '../shared/ipc';
 import type {
   AppSettings,
+  AddTextBoxPayload,
   CreateAnnotationPayload,
   DocxImageEntry,
   EditAnnotationPayload,
+  EditImagePayload,
+  EditTextRunPayload,
   ExportPagesPayload,
   FillFormFieldPayload,
   MoveSignaturePayload,
@@ -214,6 +217,17 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineCreateDocxFromImages, (_event, entries: DocxImageEntry[]) =>
     engine.createDocxFromImages(entries),
+  );
+
+  // Phase 10: edit content (text run, text box, image)
+  ipcMain.handle(IPC.engineEditTextRun, (_event, docId: string, payload: EditTextRunPayload) =>
+    engine.editTextRun(docId, payload),
+  );
+  ipcMain.handle(IPC.engineAddTextBox, (_event, docId: string, payload: AddTextBoxPayload) =>
+    engine.addTextBox(docId, payload),
+  );
+  ipcMain.handle(IPC.engineEditImage, (_event, docId: string, payload: EditImagePayload) =>
+    engine.editImage(docId, payload),
   );
 
   // Phase 4: saved signatures service

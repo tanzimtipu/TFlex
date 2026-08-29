@@ -1653,3 +1653,299 @@ describe("engineClient — Phase 8 optimize + auditSpace pass-through", () => {
     expect(r.error.code).toBe("engine-error");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 10 — edit-content methods.
+//
+// The renderer adapter must:
+//   - pass the payload to engine.editTextRun / addTextBox / editImage
+//     verbatim (the engine validates the field values; the renderer
+//     doesn't re-shape)
+//   - return the engine's EngineState (so the App's noteOpApplied can
+//     flip modified + bump the undo counter)
+//   - degrade with engine-error when the backend doesn't expose the
+//     method (pre-Phase-10 fallback path)
+describe("engineClient — Phase 10 edit-content pass-through", () => {
+  function makePhase10Engine(captured: {
+    editTextRunCalls: Array<{ docId: string; newText: string }>;
+    addTextBoxCalls: Array<{ docId: string; text: string; background: string | undefined }>;
+    editImageCalls: Array<{ docId: string; op: string; newBytesLen: number }>;
+  }): {
+    available: boolean;
+    loadDocument: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    loadDocumentBytes: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    applyOp: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    undo: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    redo: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    merge: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    split: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    extract: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    save: () => Promise<{ ok: true; value: string }>;
+    saveAs: () => Promise<{ ok: true; value: string }>;
+    getState: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    editTextRun: (docId: string, payload: { newText: string }) => Promise<{ ok: true; value: Record<string, unknown> }>;
+    addTextBox: (docId: string, payload: { text: string; background?: "white" | "none" }) => Promise<{ ok: true; value: Record<string, unknown> }>;
+    editImage: (docId: string, payload: { op: string; imageBytes: Uint8Array }) => Promise<{ ok: true; value: Record<string, unknown> }>;
+  } {
+    const state = {
+      pageCount: 1,
+      modified: true,
+      pageOrder: [0],
+      rotations: [0],
+      deleted: [false],
+    };
+    return {
+      available: true,
+      async loadDocument() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async loadDocumentBytes() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async applyOp() {
+        return { ok: true as const, value: state };
+      },
+      async undo() {
+        return { ok: true as const, value: state };
+      },
+      async redo() {
+        return { ok: true as const, value: state };
+      },
+      async merge() {
+        return { ok: true as const, value: state };
+      },
+      async split() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async extract() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async save() {
+        return { ok: true as const, value: "/path" };
+      },
+      async saveAs() {
+        return { ok: true as const, value: "/path" };
+      },
+      async getState() {
+        return { ok: true as const, value: state };
+      },
+      async editTextRun(docId, payload) {
+        captured.editTextRunCalls.push({ docId, newText: payload.newText });
+        return { ok: true as const, value: state };
+      },
+      async addTextBox(docId, payload) {
+        captured.addTextBoxCalls.push({
+          docId,
+          text: payload.text,
+          background: payload.background,
+        });
+        return { ok: true as const, value: state };
+      },
+      async editImage(docId, payload) {
+        captured.editImageCalls.push({
+          docId,
+          op: payload.op,
+          newBytesLen: payload.imageBytes.byteLength,
+        });
+        return { ok: true as const, value: state };
+      },
+    };
+  }
+
+  beforeEach(() => {
+    _resetEngineForTests();
+  });
+
+  afterEach(() => {
+    delete (window as unknown as { tflex?: unknown }).tflex;
+    _resetEngineForTests();
+  });
+
+  it("editTextRun forwards the payload and returns the engine state", async () => {
+    const captured = {
+      editTextRunCalls: [] as Array<{ docId: string; newText: string }>,
+      addTextBoxCalls: [] as Array<{ docId: string; text: string; background: string | undefined }>,
+      editImageCalls: [] as Array<{ docId: string; op: string; newBytesLen: number }>,
+    };
+    (window as unknown as { tflex: { engine: ReturnType<typeof makePhase10Engine> } }).tflex = {
+      engine: makePhase10Engine(captured),
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.editTextRun!("doc-1", {
+      page: 1,
+      rect: { x: 50, y: 50, width: 200, height: 12 },
+      newText: "Replaced",
+      font: "Helvetica",
+      size: 12,
+      color: { r: 0, g: 0, b: 0 },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(captured.editTextRunCalls).toEqual([{ docId: "doc-1", newText: "Replaced" }]);
+    expect(r.value.modified).toBe(true);
+  });
+
+  it("addTextBox forwards the payload and the background field", async () => {
+    const captured = {
+      editTextRunCalls: [] as Array<{ docId: string; newText: string }>,
+      addTextBoxCalls: [] as Array<{ docId: string; text: string; background: string | undefined }>,
+      editImageCalls: [] as Array<{ docId: string; op: string; newBytesLen: number }>,
+    };
+    (window as unknown as { tflex: { engine: ReturnType<typeof makePhase10Engine> } }).tflex = {
+      engine: makePhase10Engine(captured),
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.addTextBox!("doc-1", {
+      page: 1,
+      rect: { x: 100, y: 100, width: 200, height: 30 },
+      text: "Box text",
+      font: "Helvetica",
+      size: 12,
+      color: { r: 0, g: 0, b: 0 },
+      background: "white",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(captured.addTextBoxCalls).toEqual([
+      { docId: "doc-1", text: "Box text", background: "white" },
+    ]);
+  });
+
+  it("editImage forwards the op and the byte length", async () => {
+    const captured = {
+      editTextRunCalls: [] as Array<{ docId: string; newText: string }>,
+      addTextBoxCalls: [] as Array<{ docId: string; text: string; background: string | undefined }>,
+      editImageCalls: [] as Array<{ docId: string; op: string; newBytesLen: number }>,
+    };
+    (window as unknown as { tflex: { engine: ReturnType<typeof makePhase10Engine> } }).tflex = {
+      engine: makePhase10Engine(captured),
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const imageBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const r = await e.editImage!("doc-1", {
+      page: 1,
+      op: "move",
+      oldRect: { x: 0, y: 0, width: 100, height: 100 },
+      newRect: { x: 50, y: 50, width: 100, height: 100 },
+      imageBytes,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(captured.editImageCalls).toEqual([
+      { docId: "doc-1", op: "move", newBytesLen: 8 },
+    ]);
+  });
+
+  it("editTextRun returns engine-error when the backend predates Phase 10", async () => {
+    // A pre-Phase-10 backend has none of the three methods. The
+    // adapter must surface engine-error instead of crashing.
+    const fakeEngine = makeBaseEngine();
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.editTextRun!("doc-1", {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 12 },
+      newText: "x",
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+
+  it("addTextBox returns engine-error when the backend predates Phase 10", async () => {
+    const fakeEngine = makeBaseEngine();
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.addTextBox!("doc-1", {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 30 },
+      text: "x",
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+
+  it("editImage returns engine-error when the backend predates Phase 10", async () => {
+    const fakeEngine = makeBaseEngine();
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.editImage!("doc-1", {
+      page: 1,
+      op: "replace",
+      oldRect: { x: 0, y: 0, width: 100, height: 100 },
+      newRect: { x: 0, y: 0, width: 100, height: 100 },
+      imageBytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+});
+
+/** A minimal pre-Phase-10 engine surface — has every required
+ *  method but none of the optional Phase 10 ones. Used by the
+ *  defensive-gating tests. */
+function makeBaseEngine(): {
+  available: boolean;
+  loadDocument: () => Promise<{ ok: true; value: ArrayBuffer }>;
+  loadDocumentBytes: () => Promise<{ ok: true; value: ArrayBuffer }>;
+  applyOp: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+  undo: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+  redo: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+  merge: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+  split: () => Promise<{ ok: true; value: ArrayBuffer }>;
+  extract: () => Promise<{ ok: true; value: ArrayBuffer }>;
+  save: () => Promise<{ ok: true; value: string }>;
+  saveAs: () => Promise<{ ok: true; value: string }>;
+  getState: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+} {
+  return {
+    available: true,
+    async loadDocument() {
+      return { ok: true as const, value: new ArrayBuffer(0) };
+    },
+    async loadDocumentBytes() {
+      return { ok: true as const, value: new ArrayBuffer(0) };
+    },
+    async applyOp() {
+      return { ok: true as const, value: {} };
+    },
+    async undo() {
+      return { ok: true as const, value: {} };
+    },
+    async redo() {
+      return { ok: true as const, value: {} };
+    },
+    async merge() {
+      return { ok: true as const, value: {} };
+    },
+    async split() {
+      return { ok: true as const, value: new ArrayBuffer(0) };
+    },
+    async extract() {
+      return { ok: true as const, value: new ArrayBuffer(0) };
+    },
+    async save() {
+      return { ok: true as const, value: "/path" };
+    },
+    async saveAs() {
+      return { ok: true as const, value: "/path" };
+    },
+    async getState() {
+      return { ok: true as const, value: {} };
+    },
+  };
+}

@@ -9,6 +9,7 @@ import {
   Minimize2,
   MoveHorizontal,
   PanelRightOpen,
+  Pencil,
   PieChart,
   Plus,
   RotateCw,
@@ -64,6 +65,12 @@ interface ToolbarProps {
    *  in the SideRail first. Calls `engine.applyOp({kind:'rotate',
    *  page, dir:'cw'})`. Disabled when no document is open. */
   onRotateClockwise?: () => void;
+  /** Phase 10 — Edit-content mode. When true, the Edit toolbar
+   *  appears below the page toolbar and the per-page EditOverlay
+   *  is pointer-active. Clicking the button toggles. The host
+   *  owns the open/closed state. */
+  editModeOpen?: boolean;
+  onEditModeToggle?: () => void;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -94,6 +101,8 @@ export function Toolbar(props: ToolbarProps) {
     onOptimize,
     onAuditSpace,
     onRotateClockwise,
+    editModeOpen = false,
+    onEditModeToggle,
   } = props;
 
   const [pageInput, setPageInput] = useState(String(page));
@@ -304,6 +313,20 @@ export function Toolbar(props: ToolbarProps) {
           <PanelRightOpen size={15} aria-hidden />
           <span className="tool-btn-label">Tools</span>
         </button>
+        {onEditModeToggle !== undefined && (
+          <button
+            type="button"
+            className={editModeOpen ? 'tool-btn tool-btn-with-label tool-btn-active' : 'tool-btn tool-btn-with-label'}
+            onClick={onEditModeToggle}
+            aria-pressed={editModeOpen}
+            title="Edit content: replace text, add text boxes, edit images"
+            aria-label="Edit content"
+            data-toolbar-edit-toggle
+          >
+            <Pencil size={15} aria-hidden />
+            <span className="tool-btn-label">Edit</span>
+          </button>
+        )}
       </div>
     </div>
   );

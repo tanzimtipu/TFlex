@@ -769,8 +769,191 @@ describe("StubRendererEngine — Phase 9 advanced methods", () => {
   it("createDocxFromImages rejects empty input with empty-range", async () => {
     const engine = new StubRendererEngine();
     const r = await engine.createDocxFromImages([]);
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
+    if (r.ok) throw new Error("expected err result");
     expect(r.error.code).toBe("empty-range");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 10 — edit-content (text run / text box / image)
+
+describe("StubRendererEngine — editTextRun (Phase 10)", () => {
+  it("returns engine-error for an unknown doc", async () => {
+    const engine = new StubRendererEngine();
+    const r = await engine.editTextRun("unknown", {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 12 },
+      newText: "hello",
+      font: "Helvetica",
+      size: 12,
+      color: { r: 0, g: 0, b: 0 },
+    });
+    if (r.ok) throw new Error("expected err result");
+    expect(r.error.code).toBe("engine-error");
+  });
+
+  it("rejects a zero-area rect with empty-range", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.editTextRun(tabId, {
+      page: 1,
+      rect: { x: 0, y: 0, width: 0, height: 0 },
+      newText: "hello",
+    });
+    if (r.ok) throw new Error("expected err result");
+    expect(r.error.code).toBe("empty-range");
+  });
+
+  it("rejects an empty newText with empty-range", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.editTextRun(tabId, {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 12 },
+      newText: "",
+    });
+    if (r.ok) throw new Error("expected err result");
+    expect(r.error.code).toBe("empty-range");
+  });
+
+  it("records the payload in the edit log and bumps modified", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.editTextRun(tabId, {
+      page: 1,
+      rect: { x: 50, y: 50, width: 200, height: 14 },
+      newText: "Edited",
+      font: "Times",
+      size: 14,
+      color: { r: 1, g: 0, b: 0 },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.modified).toBe(true);
+    const last = engine.getLastEdit(tabId);
+    expect(last?.kind).toBe("editTextRun");
+    if (last?.kind === "editTextRun") {
+      expect(last.payload.newText).toBe("Edited");
+      expect(last.payload.font).toBe("Times");
+      expect(last.payload.size).toBe(14);
+    }
+  });
+});
+
+describe("StubRendererEngine — addTextBox (Phase 10)", () => {
+  it("rejects a zero-area rect", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.addTextBox(tabId, {
+      page: 1,
+      rect: { x: 0, y: 0, width: 0, height: 0 },
+      text: "x",
+    });
+    if (r.ok) throw new Error("expected err result");
+    expect(r.error.code).toBe("empty-range");
+  });
+
+  it("rejects empty text", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.addTextBox(tabId, {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 30 },
+      text: "",
+    });
+    if (r.ok) throw new Error("expected err result");
+    expect(r.error.code).toBe("empty-range");
+  });
+
+  it("records the payload and bumps the undo counter", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.addTextBox(tabId, {
+      page: 1,
+      rect: { x: 100, y: 100, width: 200, height: 30 },
+      text: "Note",
+      font: "Helvetica",
+      size: 12,
+      color: { r: 0, g: 0, b: 0 },
+      background: "white",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.modified).toBe(true);
+    const last = engine.getLastEdit(tabId);
+    expect(last?.kind).toBe("addTextBox");
+    if (last?.kind === "addTextBox") {
+      expect(last.payload.text).toBe("Note");
+      expect(last.payload.background).toBe("white");
+    }
+  });
+});
+
+describe("StubRendererEngine — editImage (Phase 10)", () => {
+  const imageBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  it("rejects an empty newRect", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.editImage(tabId, {
+      page: 1,
+      op: "resize",
+      oldRect: { x: 0, y: 0, width: 100, height: 100 },
+      newRect: { x: 0, y: 0, width: 0, height: 0 },
+      imageBytes,
+    });
+    if (r.ok) throw new Error("expected err result");
+    expect(r.error.code).toBe("empty-range");
+  });
+
+  it("rejects empty imageBytes", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.editImage(tabId, {
+      page: 1,
+      op: "replace",
+      oldRect: { x: 0, y: 0, width: 100, height: 100 },
+      newRect: { x: 0, y: 0, width: 100, height: 100 },
+      imageBytes: new Uint8Array(0),
+    });
+    if (r.ok) throw new Error("expected err result");
+    expect(r.error.code).toBe("empty-range");
+  });
+
+  it("records the op with the byte length (not the bytes themselves)", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.editImage(tabId, {
+      page: 1,
+      op: "move",
+      oldRect: { x: 100, y: 100, width: 50, height: 50 },
+      newRect: { x: 200, y: 100, width: 50, height: 50 },
+      imageBytes,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.modified).toBe(true);
+    const last = engine.getLastEdit(tabId);
+    expect(last?.kind).toBe("editImage");
+    if (last?.kind === "editImage") {
+      expect(last.payload.op).toBe("move");
+      expect(last.payload.imageBytesLen).toBe(imageBytes.byteLength);
+    }
+  });
+});
+
+describe("StubRendererEngine — edit log undo (Phase 10)", () => {
+  it("undo truncates the append-only log back to the snapshot length", async () => {
+    const { engine, tabId } = setup(2);
+    // First edit establishes the snapshot.
+    await engine.editTextRun(tabId, {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 12 },
+      newText: "first",
+    });
+    expect(engine.getEditLog(tabId)).toHaveLength(1);
+    // Second edit grows the log.
+    await engine.addTextBox(tabId, {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 30 },
+      text: "second",
+    });
+    expect(engine.getEditLog(tabId)).toHaveLength(2);
+    // Undo -> log back to 1.
+    const u = await engine.undo(tabId);
+    expect(u.ok).toBe(true);
+    if (!u.ok) return;
+    expect(engine.getEditLog(tabId)).toHaveLength(1);
   });
 });

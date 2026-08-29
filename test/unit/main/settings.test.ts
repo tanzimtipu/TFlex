@@ -570,3 +570,62 @@ describe('Phase 9: create + export settings validation', () => {
     }
   });
 });
+
+// Phase 10: editDefaultFont validation
+describe('Phase 10: editDefaultFont validation', () => {
+  it('preserves valid editDefaultFont values', () => {
+    expect(normalizeSettings({ editDefaultFont: 'Helvetica' }).editDefaultFont).toBe('Helvetica');
+    expect(normalizeSettings({ editDefaultFont: 'Times' }).editDefaultFont).toBe('Times');
+    expect(normalizeSettings({ editDefaultFont: 'Courier' }).editDefaultFont).toBe('Courier');
+  });
+
+  it('rejects editDefaultFont values outside the allowlist', () => {
+    expect(normalizeSettings({ editDefaultFont: 'Arial' }).editDefaultFont).toBeUndefined();
+    expect(normalizeSettings({ editDefaultFont: 'Symbol' }).editDefaultFont).toBeUndefined();
+    expect(normalizeSettings({ editDefaultFont: 'ZapfDingbats' }).editDefaultFont).toBeUndefined();
+    expect(normalizeSettings({ editDefaultFont: 'helvetica' }).editDefaultFont).toBeUndefined();
+  });
+
+  it('rejects non-string editDefaultFont values', () => {
+    expect(normalizeSettings({ editDefaultFont: 123 }).editDefaultFont).toBeUndefined();
+    expect(normalizeSettings({ editDefaultFont: true }).editDefaultFont).toBeUndefined();
+    expect(normalizeSettings({ editDefaultFont: null }).editDefaultFont).toBeUndefined();
+    expect(normalizeSettings({ editDefaultFont: ['Helvetica'] }).editDefaultFont).toBeUndefined();
+  });
+
+  it('does not set editDefaultFont when absent (renderer applies its own default)', () => {
+    expect(normalizeSettings({}).editDefaultFont).toBeUndefined();
+  });
+
+  it('save/load round-trips editDefaultFont', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      editDefaultFont: 'Times' as const,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.editDefaultFont).toBe('Times');
+    }
+  });
+
+  it('invalid editDefaultFont on disk is dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      editDefaultFont: 'ComicSans',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.editDefaultFont).toBeUndefined();
+      expect(result.value.theme).toBe('light');
+    }
+  });
+});

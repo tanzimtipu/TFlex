@@ -5,6 +5,7 @@ import type { SearchHit } from '../search/searchIndex';
 import { AnnotationOverlay, type TextItemGeom } from '../annotations/AnnotationOverlay';
 import { FormsOverlay } from '../forms/FormsOverlay';
 import { SignaturesOverlay } from '../signatures/SignaturesOverlay';
+import { EditOverlay } from '../edit/EditOverlay';
 import type {
   FormField,
   SavedSignature,
@@ -58,6 +59,39 @@ interface PageViewProps {
   onPlaceSignature?: (signatureId: string, page: number, rect: SignaturePlacement["rect"]) => void;
   onMoveSignature?: (placementId: string, rect: SignaturePlacement["rect"]) => void;
   onDeleteSignature?: (placementId: string) => void;
+  // -- Phase 10: Edit-content overlay --
+  /** Edit mode is open. The EditOverlay is mounted only when this
+   *  is true; with it false the layer is invisible and pointer-
+   *  transparent so text selection / signing keep working. */
+  editModeOpen?: boolean;
+  /** Per-tab Edit state. The overlay reads the active tool +
+   *  placement list from here. */
+  edit?: {
+    state: import('../edit/model').EditState;
+    onAction: (action: import('../edit/model').EditAction) => void;
+    defaultFont: import('../../shared/types').EditFont;
+    onDefaultFontChange?: (font: import('../../shared/types').EditFont) => void;
+    pickImage: () => Promise<{ bytes: Uint8Array; format: "png" | "jpeg" } | null>;
+    onCommitTextEdit: (args: {
+      rect: { x: number; y: number; width: number; height: number };
+      newText: string;
+      style: import('../edit/model').EditTextStyle;
+    }) => void;
+    onCommitTextBox: (args: {
+      rect: { x: number; y: number; width: number; height: number };
+      text: string;
+      style: import('../edit/model').EditTextStyle;
+      background: "white" | "none";
+    }) => void;
+    onCommitImageEdit: (args: {
+      op: "move" | "resize" | "replace" | "crop";
+      oldRect: { x: number; y: number; width: number; height: number };
+      newRect: { x: number; y: number; width: number; height: number };
+      bytes: Uint8Array;
+      format: "png" | "jpeg";
+      id: string;
+    }) => void;
+  } | null;
 }
 
 interface Measured {
@@ -151,6 +185,8 @@ export function PageView(props: PageViewProps) {
     onPlaceSignature,
     onMoveSignature,
     onDeleteSignature,
+    editModeOpen = false,
+    edit = null,
   } = props;
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -483,6 +519,23 @@ export function PageView(props: PageViewProps) {
         onMove={(id, r): void => onMoveSignature?.(id, r)}
         onDelete={(id): void => onDeleteSignature?.(id)}
       />
+      {editModeOpen && edit !== null && (
+        <EditOverlay
+          page={pageNumber}
+          pageWidthPt={widthPt}
+          pageHeightPt={heightPt}
+          cssScale={cssScale}
+          tool={edit.state.tool}
+          getTextItems={getTextItems}
+          edit={edit.state}
+          dispatch={edit.onAction}
+          pickImage={edit.pickImage}
+          defaultFont={edit.defaultFont}
+          onCommitTextEdit={edit.onCommitTextEdit}
+          onCommitTextBox={edit.onCommitTextBox}
+          onCommitImageEdit={edit.onCommitImageEdit}
+        />
+      )}
       {!ready && <div className="page-placeholder" aria-hidden />}
     </div>
   );

@@ -1,8 +1,9 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PDFName, PDFRawStream, StandardFonts } from 'pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 
 // ---------------------------------------------------------------------------
@@ -2441,3 +2442,610 @@ function findPkEndSignature(buf: Uint8Array): number {
   }
   return -1;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 10: Edit content — editTextRun / addTextBox / editImage
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a one-page PDF whose single page already contains the given text
+ * drawn at (72, 700) so edit tests have something to mask.
+ */
+async function createSinglePagePdfWithText(text: string): Promise<{ path: string; bytes: Uint8Array }> {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([612, 792]);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  page.drawText(text, { x: 72, y: 700, size: 14, font });
+  const bytes = await doc.save();
+  const path = await writeFixture('edit-test.pdf', bytes);
+  return { path, bytes };
+}
+
+/**
+ * Phase 10 — verification helper. The engine's regex-based exportText
+ * extractor cannot read content streams that pdf-lib packs into object
+ * streams after a load+draw+save round-trip (documented Phase 9
+ * limitation, called out in the Phase 10 spec). So instead of relying
+ * on exportText, we re-parse the saved file with pdf-lib, walk the
+ * page-0 /Contents (single ref or array), inflate each FlateDecode
+ * stream, and return the concatenated decoded content-stream text.
+ *
+ * Drawn text from a StandardFont appears as a hex string operand to Tj
+ * (e.g. `<464F58444F47> Tj` for "FOXDOG"); callers search for the hex
+ * encoding of their expected string.
+ */
+async function decodedPage0Content(path: string): Promise<string> {
+  const fileBytes = await readFile(path);
+  const doc = await PDFDocument.load(fileBytes);
+  const page = doc.getPage(0);
+  const contents = page.node.Contents();
+  if (!contents) return '';
+
+  const lookup = (ref: unknown): string => {
+    const obj = doc.context.lookup(ref as any);
+    if (!obj) return '';
+    if (obj.constructor && obj.constructor.name === 'PDFArray') {
+      const arr = obj as unknown as { size(): number; get(i: number): unknown };
+      let out = '';
+      for (let i = 0; i < arr.size(); i++) out += lookup(arr.get(i));
+      return out;
+    }
+    if (obj instanceof PDFRawStream) {
+      const raw = obj.contents as unknown as Uint8Array;
+      if (!raw || typeof raw.length !== 'number') return '';
+      try {
+        const dec = inflateSync(raw);
+        return new TextDecoder('latin1').decode(dec);
+      } catch {
+        try { return new TextDecoder('latin1').decode(raw); } catch { return ''; }
+      }
+    }
+    return '';
+  };
+  return lookup(contents);
+}
+
+/** Hex-encode a string as pdf-lib would in a Tj operand (uppercase hex
+ *  of the WinAnsi/Latin-1 bytes). Used to search decoded content. */
+function hexOperand(text: string): string {
+  return Buffer.from(text, 'latin1').toString('hex').toUpperCase();
+}
+
+/** True if the decoded page-0 content contains `text` as a Tj operand. */
+async function page0ContentHasText(path: string, text: string): Promise<boolean> {
+  const content = await decodedPage0Content(path);
+  return content.includes(hexOperand(text)) || content.includes(text);
+}
+
+describe('Phase 10: editTextRun', () => {
+  it('replaces a text run: new text is present in the content stream after save', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('OLDTEXT');
+    await engine.loadDocument('doc-edit', path);
+
+    const result = await engine.editTextRun('doc-edit', {
+      page: 1,
+      rect: { x: 70, y: 686, width: 120, height: 20 },
+      newText: 'NEWTEXT',
+      font: 'Helvetica',
+      size: 14,
+      color: { r: 0, g: 0, b: 0 },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.modified).toBe(true);
+
+    const saveResult = await engine.save('doc-edit');
+    expect(saveResult.ok).toBe(true);
+    expect(await page0ContentHasText(saveResult.ok ? saveResult.value : '', 'NEWTEXT')).toBe(true);
+  });
+
+  it('save round-trip preserves the edit (re-parse saved file contains new text)', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('hello');
+    await engine.loadDocument('doc-rt', path);
+
+    await engine.editTextRun('doc-rt', {
+      page: 1,
+      rect: { x: 70, y: 686, width: 100, height: 20 },
+      newText: 'WORLD',
+      size: 14,
+    });
+
+    const saveResult = await engine.save('doc-rt');
+    expect(saveResult.ok).toBe(true);
+    expect(await page0ContentHasText(saveResult.ok ? saveResult.value : '', 'WORLD')).toBe(true);
+  });
+
+  it('undo reverts the edit (old text restored, new text gone)', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('ORIGINAL');
+    await engine.loadDocument('doc-undo', path);
+
+    // Before edit: ORIGINAL is present. (saveAs clears the undo stack,
+    // but it is empty at this point so this is safe.)
+    const saveBefore = await engine.saveAs('doc-undo', join(dir, 'before.pdf'));
+    expect(saveBefore.ok).toBe(true);
+    expect(await page0ContentHasText(saveBefore.ok ? saveBefore.value : '', 'ORIGINAL')).toBe(true);
+
+    // Apply the edit (pushes a pdfBytes snapshot onto the undo stack).
+    // NOTE: we must NOT call save/saveAs between edit and undo — those
+    // clear the undo stack on success (existing engine behaviour).
+    const editResult = await engine.editTextRun('doc-undo', {
+      page: 1,
+      rect: { x: 70, y: 686, width: 120, height: 20 },
+      newText: 'CHANGED',
+      size: 14,
+    });
+    expect(editResult.ok).toBe(true);
+
+    // Undo: must succeed (proves the edit was on the stack) and revert
+    // the content back to the pre-edit pdfDoc state.
+    const undoResult = await engine.undo('doc-undo');
+    expect(undoResult.ok).toBe(true);
+
+    const saveAfterUndo = await engine.saveAs('doc-undo', join(dir, 'reverted.pdf'));
+    expect(await page0ContentHasText(saveAfterUndo.ok ? saveAfterUndo.value : '', 'ORIGINAL')).toBe(true);
+    expect(await page0ContentHasText(saveAfterUndo.ok ? saveAfterUndo.value : '', 'CHANGED')).toBe(false);
+  });
+
+  it('redo re-applies the edit after undo', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('BASE');
+    await engine.loadDocument('doc-redo', path);
+
+    await engine.editTextRun('doc-redo', {
+      page: 1,
+      rect: { x: 70, y: 686, width: 120, height: 20 },
+      newText: 'REDOME',
+      size: 14,
+    });
+    await engine.undo('doc-redo');
+    const redoResult = await engine.redo('doc-redo');
+    expect(redoResult.ok).toBe(true);
+    const sr = await engine.saveAs('doc-redo', join(dir, 'redo.pdf'));
+    expect(await page0ContentHasText(sr.ok ? sr.value : '', 'REDOME')).toBe(true);
+  });
+
+  it('returns out-of-range for an invalid page', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('x');
+    await engine.loadDocument('doc-oob', path);
+
+    const result = await engine.editTextRun('doc-oob', {
+      page: 5,
+      rect: { x: 70, y: 686, width: 100, height: 20 },
+      newText: 'nope',
+      size: 14,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('out-of-range');
+    }
+  });
+
+  it('returns engine-error for an unknown docId', async () => {
+    const engine = new EngineService();
+    const result = await engine.editTextRun('unknown', {
+      page: 1,
+      rect: { x: 0, y: 0, width: 10, height: 10 },
+      newText: 'x',
+      size: 12,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+
+  it('drops non-Latin characters that StandardFonts cannot encode (no throw)', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('latin');
+    await engine.loadDocument('doc-san', path);
+
+    const result = await engine.editTextRun('doc-san', {
+      page: 1,
+      rect: { x: 70, y: 686, width: 200, height: 20 },
+      newText: 'abc\u4e2d\u6587', // 'abc' + CJK chars that cannot encode
+      size: 14,
+    });
+    expect(result.ok).toBe(true);
+    const sr = await engine.save('doc-san');
+    expect(await page0ContentHasText(sr.ok ? sr.value : '', 'abc')).toBe(true);
+  });
+
+  it('honours the font parameter (Helvetica/Times/Courier all draw the text)', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('fonttest');
+    await engine.loadDocument('doc-font', path);
+
+    for (const font of ['Helvetica', 'Times', 'Courier'] as const) {
+      await engine.editTextRun('doc-font', {
+        page: 1,
+        rect: { x: 70, y: 686, width: 200, height: 20 },
+        newText: `F_${font}`,
+        font,
+        size: 14,
+      });
+      const sr = await engine.saveAs('doc-font', join(dir, `font-${font}.pdf`));
+      expect(await page0ContentHasText(sr.ok ? sr.value : '', `F_${font}`)).toBe(true);
+      await engine.undo('doc-font');
+    }
+  });
+
+  it('marks the document modified and clears the redo stack', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('m');
+    await engine.loadDocument('doc-mod', path);
+
+    await engine.editTextRun('doc-mod', {
+      page: 1, rect: { x: 70, y: 686, width: 80, height: 20 },
+      newText: 'A', size: 14,
+    });
+    const s1 = await engine.getState('doc-mod');
+    expect(s1.ok && s1.value.modified).toBe(true);
+
+    await engine.undo('doc-mod');
+    await engine.editTextRun('doc-mod', {
+      page: 1, rect: { x: 70, y: 686, width: 80, height: 20 },
+      newText: 'B', size: 14,
+    });
+    const redoResult = await engine.redo('doc-mod');
+    expect(redoResult.ok).toBe(false);
+    if (!redoResult.ok) {
+      expect(redoResult.error.code).toBe('nothing-to-redo');
+    }
+  });
+});
+
+describe('Phase 10: addTextBox', () => {
+  it('draws wrapped text inside the rect and survives save round-trip', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('box-test.pdf', bytes);
+    await engine.loadDocument('doc-box', path);
+
+    const result = await engine.addTextBox('doc-box', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 100 },
+      text: 'The quick brown fox jumps over the lazy dog',
+      font: 'Helvetica',
+      size: 12,
+      color: { r: 0, g: 0, b: 0 },
+      background: 'white',
+    });
+    expect(result.ok).toBe(true);
+
+    const sr = await engine.save('doc-box');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    expect(content.includes(hexOperand('quick'))).toBe(true);
+    expect(content.includes(hexOperand('fox'))).toBe(true);
+    expect(content.includes(hexOperand('dog'))).toBe(true);
+  });
+
+  it('wraps long words that exceed the box width (no crash, text present)', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('box-wrap.pdf', bytes);
+    await engine.loadDocument('doc-wrap', path);
+
+    const longWord = 'abcdefghijklmnopqrstuvwxyz'.repeat(10);
+    const result = await engine.addTextBox('doc-wrap', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 80, height: 400 },
+      text: longWord,
+      size: 12,
+    });
+    expect(result.ok).toBe(true);
+    const sr = await engine.save('doc-wrap');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    expect(content.length).toBeGreaterThan(0);
+    expect(content.includes(hexOperand('abc'))).toBe(true);
+  });
+
+  it('undo reverts the added text box (content stream empty again)', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('box-undo.pdf', bytes);
+    await engine.loadDocument('doc-box-undo', path);
+
+    // Before edit: empty content stream. (saveAs clears the undo stack,
+    // but it is empty here so this is safe.)
+    const saveBefore = await engine.saveAs('doc-box-undo', join(dir, 'box-before.pdf'));
+    expect((await decodedPage0Content(saveBefore.ok ? saveBefore.value : '')).length).toBe(0);
+
+    // Apply the edit. We must NOT save between edit and undo (save
+    // clears the undo stack on success).
+    const editResult = await engine.addTextBox('doc-box-undo', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 60 },
+      text: 'BOXCONTENT',
+      size: 12,
+    });
+    expect(editResult.ok).toBe(true);
+
+    // Undo must succeed (proves the edit was on the stack).
+    const undoResult = await engine.undo('doc-box-undo');
+    expect(undoResult.ok).toBe(true);
+
+    // After undo: the drawn text box is gone.
+    const saveReverted = await engine.saveAs('doc-box-undo', join(dir, 'box-reverted.pdf'));
+    expect(await page0ContentHasText(saveReverted.ok ? saveReverted.value : '', 'BOXCONTENT')).toBe(false);
+    expect((await decodedPage0Content(saveReverted.ok ? saveReverted.value : '')).length).toBe(0);
+  });
+
+  it('returns out-of-range for an invalid page', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('box-oob.pdf', bytes);
+    await engine.loadDocument('doc-box-oob', path);
+
+    const result = await engine.addTextBox('doc-box-oob', {
+      page: 99,
+      rect: { x: 0, y: 0, width: 10, height: 10 },
+      text: 'x',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('out-of-range');
+    }
+  });
+
+  it('honours explicit newlines as line breaks', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('box-nl.pdf', bytes);
+    await engine.loadDocument('doc-box-nl', path);
+
+    await engine.addTextBox('doc-box-nl', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 100 },
+      text: 'LINEONE\nLINETWO\nLINETHREE',
+      size: 12,
+    });
+    const sr = await engine.save('doc-box-nl');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    expect(content.includes(hexOperand('LINEONE'))).toBe(true);
+    expect(content.includes(hexOperand('LINETWO'))).toBe(true);
+    expect(content.includes(hexOperand('LINETHREE'))).toBe(true);
+  });
+});
+
+describe('Phase 10: editImage', () => {
+  it('replace: masks old rect and draws new image (round-trip adds image XObject)', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([612, 792]);
+    const origPng = createMinimalPng(40, 30);
+    const origImg = await doc.embedPng(origPng);
+    page.drawImage(origImg, { x: 100, y: 600, width: 40, height: 30 });
+    const bytes = await doc.save();
+    const path = await writeFixture('img-replace.pdf', bytes);
+    await engine.loadDocument('doc-img', path);
+
+    const newPng = createMinimalPng(60, 40);
+    const result = await engine.editImage('doc-img', {
+      page: 1,
+      op: 'replace',
+      oldRect: { x: 100, y: 162, width: 40, height: 30 },
+      newRect: { x: 100, y: 152, width: 60, height: 40 },
+      imageBytes: newPng,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.modified).toBe(true);
+
+    const saveResult = await engine.save('doc-img');
+    expect(saveResult.ok).toBe(true);
+    const reloaded = await PDFDocument.load(await readFile(saveResult.ok ? saveResult.value : ''));
+    const xobjRef = reloaded.getPage(0).node.Resources()!.get(PDFName.of('XObject'));
+    expect(xobjRef).toBeTruthy();
+    const xobj = reloaded.context.lookup(xobjRef) as any;
+    expect(xobj.asMap().size).toBeGreaterThanOrEqual(1);
+  });
+
+  it('move: old rect masked, image drawn at new location', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('img-move.pdf', bytes);
+    await engine.loadDocument('doc-move', path);
+
+    const png = createMinimalPng(50, 50);
+    const result = await engine.editImage('doc-move', {
+      page: 1,
+      op: 'move',
+      oldRect: { x: 50, y: 50, width: 50, height: 50 },
+      newRect: { x: 200, y: 200, width: 50, height: 50 },
+      imageBytes: png,
+    });
+    expect(result.ok).toBe(true);
+
+    const saveResult = await engine.save('doc-move');
+    const reloaded = await PDFDocument.load(await readFile(saveResult.ok ? saveResult.value : ''));
+    const xobjRef = reloaded.getPage(0).node.Resources()!.get(PDFName.of('XObject'));
+    expect(xobjRef).toBeTruthy();
+  });
+
+  it('resize: new dimensions applied to the drawn image', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('img-resize.pdf', bytes);
+    await engine.loadDocument('doc-resize', path);
+
+    const png = createMinimalPng(80, 60);
+    const result = await engine.editImage('doc-resize', {
+      page: 1,
+      op: 'resize',
+      oldRect: { x: 100, y: 100, width: 80, height: 60 },
+      newRect: { x: 100, y: 100, width: 160, height: 120 },
+      imageBytes: png,
+    });
+    expect(result.ok).toBe(true);
+    const saveResult = await engine.save('doc-resize');
+    const reloaded = await PDFDocument.load(await readFile(saveResult.ok ? saveResult.value : ''));
+    expect(reloaded.getPageCount()).toBe(1);
+    const xobjRef = reloaded.getPage(0).node.Resources()!.get(PDFName.of('XObject'));
+    expect(xobjRef).toBeTruthy();
+  });
+
+  it('crop: accepts cropped image bytes (same code path as replace)', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('img-crop.pdf', bytes);
+    await engine.loadDocument('doc-crop', path);
+
+    const croppedPng = createMinimalPng(30, 20);
+    const result = await engine.editImage('doc-crop', {
+      page: 1,
+      op: 'crop',
+      oldRect: { x: 100, y: 100, width: 100, height: 80 },
+      newRect: { x: 100, y: 100, width: 30, height: 20 },
+      imageBytes: croppedPng,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('undo reverts an image edit (new XObject gone after undo)', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('img-undo.pdf', bytes);
+    await engine.loadDocument('doc-img-undo', path);
+
+    // Before edit: no XObject on the page. (saveAs clears the undo
+    // stack, but it is empty here so this is safe.)
+    const saveBefore = await engine.saveAs('doc-img-undo', join(dir, 'img-before.pdf'));
+    const beforeParsed = await PDFDocument.load(await readFile(saveBefore.ok ? saveBefore.value : ''));
+    const beforeXobj = beforeParsed.getPage(0).node.Resources()!.get(PDFName.of('XObject'));
+    expect(beforeXobj).toBeFalsy();
+
+    // Apply the edit. We must NOT save between edit and undo (save
+    // clears the undo stack on success).
+    const editResult = await engine.editImage('doc-img-undo', {
+      page: 1,
+      op: 'replace',
+      oldRect: { x: 100, y: 100, width: 50, height: 50 },
+      newRect: { x: 100, y: 100, width: 50, height: 50 },
+      imageBytes: createMinimalPng(50, 50),
+    });
+    expect(editResult.ok).toBe(true);
+
+    // Undo must succeed (proves the edit was on the stack).
+    const undoResult = await engine.undo('doc-img-undo');
+    expect(undoResult.ok).toBe(true);
+
+    // After undo: the drawn image XObject is gone again.
+    const saveReverted = await engine.saveAs('doc-img-undo', join(dir, 'img-reverted.pdf'));
+    const reverted = await PDFDocument.load(await readFile(saveReverted.ok ? saveReverted.value : ''));
+    const xobjRef = reverted.getPage(0).node.Resources()!.get(PDFName.of('XObject'));
+    expect(xobjRef).toBeFalsy();
+  });
+
+  it('returns out-of-range for an invalid page', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('img-oob.pdf', bytes);
+    await engine.loadDocument('doc-img-oob', path);
+
+    const result = await engine.editImage('doc-img-oob', {
+      page: 0,
+      op: 'replace',
+      oldRect: { x: 0, y: 0, width: 10, height: 10 },
+      newRect: { x: 0, y: 0, width: 10, height: 10 },
+      imageBytes: createMinimalPng(10, 10),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('out-of-range');
+    }
+  });
+
+  it('returns engine-error for an unknown docId', async () => {
+    const engine = new EngineService();
+    const result = await engine.editImage('unknown', {
+      page: 1,
+      op: 'replace',
+      oldRect: { x: 0, y: 0, width: 10, height: 10 },
+      newRect: { x: 0, y: 0, width: 10, height: 10 },
+      imageBytes: createMinimalPng(10, 10),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+
+  it('accepts JPEG bytes for the replacement image', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('img-jpg.pdf', bytes);
+    await engine.loadDocument('doc-jpg', path);
+
+    const jpeg = minimalJpeg();
+    const result = await engine.editImage('doc-jpg', {
+      page: 1,
+      op: 'replace',
+      oldRect: { x: 100, y: 100, width: 30, height: 30 },
+      newRect: { x: 100, y: 100, width: 30, height: 30 },
+      imageBytes: jpeg,
+    });
+    expect(result.ok).toBe(true);
+  });
+});
+
+/**
+ * Build a minimal valid 1x1 grayscale JPEG (SOI / APP0 / SOF0 / SOS / EOI).
+ * Just enough for pdf-lib's embedJpg to accept.
+ */
+function minimalJpeg(): Uint8Array {
+  return new Uint8Array([
+    0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01,
+    0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xff, 0xdb, 0x00, 0x43,
+    0x00, 0x08, 0x06, 0x06, 0x07, 0x06, 0x05, 0x08, 0x07, 0x07, 0x07, 0x09,
+    0x09, 0x08, 0x0a, 0x0c, 0x14, 0x0d, 0x0c, 0x0b, 0x0b, 0x0c, 0x19, 0x12,
+    0x13, 0x0f, 0x14, 0x1d, 0x1a, 0x1f, 0x1e, 0x1d, 0x1a, 0x1c, 0x1c, 0x20,
+    0x24, 0x2e, 0x27, 0x20, 0x22, 0x2c, 0x23, 0x1c, 0x1c, 0x28, 0x37, 0x29,
+    0x2c, 0x30, 0x31, 0x34, 0x34, 0x34, 0x1f, 0x27, 0x39, 0x3d, 0x38, 0x32,
+    0x3c, 0x2e, 0x33, 0x34, 0x32, 0xff, 0xc0, 0x00, 0x0b, 0x08, 0x00, 0x01,
+    0x00, 0x01, 0x01, 0x01, 0x11, 0x00, 0xff, 0xc4, 0x00, 0x1f, 0x00, 0x00,
+    0x01, 0x05, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    0x09, 0x0a, 0x0b, 0xff, 0xc4, 0x00, 0xb5, 0x10, 0x00, 0x02, 0x01, 0x03,
+    0x03, 0x02, 0x04, 0x03, 0x05, 0x05, 0x04, 0x04, 0x00, 0x00, 0x01, 0x7d,
+    0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12, 0x21, 0x31, 0x41, 0x06,
+    0x13, 0x51, 0x61, 0x07, 0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xa1, 0x08,
+    0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52, 0xd1, 0xf0, 0x24, 0x33, 0x62, 0x72,
+    0x82, 0x09, 0x0a, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x25, 0x26, 0x27, 0x28,
+    0x29, 0x2a, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x43, 0x44, 0x45,
+    0x46, 0x47, 0x48, 0x49, 0x4a, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59,
+    0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x73, 0x74, 0x75,
+    0x76, 0x77, 0x78, 0x79, 0x7a, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89,
+    0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3,
+    0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6,
+    0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9,
+    0xca, 0xd2, 0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe1, 0xe2,
+    0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea, 0xf1, 0xf2, 0xf3, 0xf4,
+    0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xff, 0xda, 0x00, 0x08, 0x01, 0x01,
+    0x00, 0x00, 0x3f, 0x00, 0xfb, 0xfc, 0xff, 0xd9,
+  ]);
+}
+

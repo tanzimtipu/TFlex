@@ -1,8 +1,11 @@
 import type { Result } from "./result";
 import type {
+  AddTextBoxPayload,
   AppInfo,
   AppSettings,
   DocxImageEntry,
+  EditImagePayload,
+  EditTextRunPayload,
   EngineState,
   ExportPageEntry,
   ExportPagesPayload,
@@ -69,6 +72,10 @@ export const IPC = {
   engineExportPages: "engine:exportPages",
   engineExportText: "engine:exportText",
   engineCreateDocxFromImages: "engine:createDocxFromImages",
+  // Phase 10: edit content
+  engineEditTextRun: "engine:editTextRun",
+  engineAddTextBox: "engine:addTextBox",
+  engineEditImage: "engine:editImage",
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
@@ -194,6 +201,24 @@ export interface TFlexApiEngine {
   createDocxFromImages?(
     entries: DocxImageEntry[],
   ): Promise<Result<Uint8Array, import("./types").EngineError>>;
+  /** Phase 10 — edit existing text run: mask the run's rect with a white
+   *  rectangle and draw `newText` at the rect's top-left. */
+  editTextRun?(
+    docId: string,
+    payload: EditTextRunPayload,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 10 — add a new text box with wrapping inside `rect`. */
+  addTextBox?(
+    docId: string,
+    payload: AddTextBoxPayload,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 10 — edit an image (move/resize/replace/crop). The engine
+   *  masks `oldRect` and draws `imageBytes` at `newRect`; the renderer
+   *  produces the transformed bytes. */
+  editImage?(
+    docId: string,
+    payload: EditImagePayload,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
 }
 
 export interface TFlexApi {

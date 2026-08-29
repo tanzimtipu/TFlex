@@ -139,6 +139,11 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.createImageQuality = rawObj.createImageQuality;
   }
 
+  // Phase 10: preserve editDefaultFont if it is a valid EditFont allowlist value
+  if (typeof rawObj.editDefaultFont === 'string' && (rawObj.editDefaultFont === 'Helvetica' || rawObj.editDefaultFont === 'Times' || rawObj.editDefaultFont === 'Courier')) {
+    settings.editDefaultFont = rawObj.editDefaultFont;
+  }
+
   return settings;
 }
 
