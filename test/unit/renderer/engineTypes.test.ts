@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import {
+  defaultInsertPosition,
   defaultPageRange,
   describeEngineError,
   parsePageRange,
@@ -75,6 +76,21 @@ describe("defaultPageRange", () => {
     expect(defaultPageRange(1)).toBe("1-1");
     expect(defaultPageRange(34)).toBe("1-34");
     expect(defaultPageRange(520)).toBe("1-520");
+  });
+});
+
+describe("defaultInsertPosition", () => {
+  // Phase 9 InsertPagesDialog re-seeds its position field from this
+  // helper. Empty docs return "1" so the user can land the new
+  // insert at the beginning; non-empty docs return N+1 so the
+  // natural action is "append".
+  it("returns 1 for empty docs", () => {
+    expect(defaultInsertPosition(0)).toBe("1");
+  });
+  it("returns N+1 for non-empty docs (append-at-end default)", () => {
+    expect(defaultInsertPosition(1)).toBe("2");
+    expect(defaultInsertPosition(4)).toBe("5");
+    expect(defaultInsertPosition(34)).toBe("35");
   });
 });
 

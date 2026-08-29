@@ -148,8 +148,10 @@ Each agent's model is pinned in its definition in `.opencode/agents/`. If a mode
 repeatedly fails at its role (tool-call errors, ignoring formats, incoherent output),
 the human operator may swap that agent's `model:` field to the documented fallback:
 
-- backend-dev: deepseek/deepseek-v4-pro -> z-ai/glm-5.2
-- frontend-dev: minimax/minimax-m3 -> z-ai/glm-5.2
+- backend-dev: z-ai/glm-5.2 -> deepseek/deepseek-v4-pro
+- frontend-dev: minimax/minimax-m3:free -> minimax/minimax-m3 (paid route — use when the
+  free route is rate-limited or unavailable; the free route was previously blocked by the
+  operator account's data policy and re-enabled 2026-08-30 after a policy change)
 - qa: google/gemini-3-flash-preview -> deepseek/deepseek-v4-flash-vision-exp (note: the
   vision-exp model is served by a single provider, DeepSeek; if your account's data policy
   blocks it, stay on gemini-3-flash-preview)
@@ -159,6 +161,24 @@ the human operator may swap that agent's `model:` field to the documented fallba
 
 Fallback to the orchestrator's model (`openrouter/moonshotai/kimi-k3`) is never
 permitted for any sub-agent. The table above is the only valid fallback source.
+
+2026-08-30 (third swap): frontend-dev re-pinned from minimax/minimax-m3 back to
+minimax/minimax-m3:free. The operator updated the OpenRouter account data policy to allow
+the free-route providers, unblocking the route that failed the earlier probe gate.
+Paid route remains the fallback for rate-limit outages.
+
+2026-08-30 (second swap): frontend-dev reverted from minimax/minimax-m3:free back to
+minimax/minimax-m3. The free route failed the probe gate with an account-level provider
+rejection ("No endpoints available matching your guardrail restrictions and data policy")
+— same class as the 2026-08-27 qa vision-exp rejection. Fallback applied per this table;
+backend-dev stays on z-ai/glm-5.2 (probed READY).
+
+2026-08-30: backend-dev primary changed from deepseek/deepseek-v4-pro to z-ai/glm-5.2
+($0.33/M in vs $0.57/M in, 77% discount, 1M context; the old primary becomes the fallback),
+and frontend-dev primary changed from minimax/minimax-m3 to minimax/minimax-m3:free
+(identical weights, free route; the paid route becomes the fallback for rate-limit
+outages). New primary selections by the human operator after a discounted/free-model cost
+analysis — not emergency fallbacks. Recorded here per this section's rule.
 
 2026-08-27: qa model changed from deepseek/deepseek-v4-flash-vision-exp to
 google/gemini-3-flash-preview before first run — vision-exp is single-provider (DeepSeek)

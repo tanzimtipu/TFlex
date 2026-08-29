@@ -1,12 +1,16 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFTextField } from 'pdf-lib';
+import { inflateSync } from 'node:zlib';
+import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFRawStream, PDFTextField } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AnnModel,
   CreateAnnotationPayload,
+  DocxImageEntry,
   EditAnnotationPayload,
   EngineError,
   EngineState,
+  ExportPageEntry,
+  ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
   MoveSignaturePayload,
@@ -15,6 +19,7 @@ import type {
   PlaceSignaturePayload,
   SignaturePlacement,
   SpaceAudit,
+  TextPage,
 } from '../../shared/types';
 import {
   cloneAnnotations,
@@ -958,11 +963,402 @@ export class EngineService {
       return err('engine-error', `auditSpace failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 9: createFromImages — synthesize a PDF from image buffers
+  // -----------------------------------------------------------------------
+  async createFromImages(
+    docId: string,
+    imageBuffers: Uint8Array[],
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return this._enqueue(docId, () => this._createFromImagesImpl(docId, imageBuffers));
+  }
+
+  private async _createFromImagesImpl(
+    docId: string,
+    imageBuffers: Uint8Array[],
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    if (imageBuffers.length === 0) {
+      return err('empty-range', 'no images provided');
+    }
+    try {
+      const out = await PDFDocument.create();
+      for (const buf of imageBuffers) {
+        const isPng = detectImageFormat(buf) === 'png';
+        const image = isPng
+          ? await out.embedPng(buf)
+          : await out.embedJpg(buf);
+        const dims = image.scale(1);
+        const page = out.addPage([dims.width, dims.height]);
+        page.drawImage(image, { x: 0, y: 0, width: dims.width, height: dims.height });
+      }
+      const bytes = await out.save();
+
+      // Replace the doc entry for this docId with the newly created PDF
+      const newDoc: EngineDoc = {
+        pdfDoc: out,
+        order: Array.from({ length: out.getPageCount() }, (_, i) => i),
+        deleted: Array.from({ length: out.getPageCount() }, () => false),
+        rotations: Array.from({ length: out.getPageCount() }, () => 0),
+        annotations: Array.from({ length: out.getPageCount() }, () => []),
+        undoStack: [],
+        redoStack: [],
+        path: '',
+        modified: true,
+        placedSignatures: [],
+      };
+      this.docs.set(docId, newDoc);
+
+      return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    } catch (e) {
+      return err('engine-error', `createFromImages failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 9: createFromClipboard — synthesize a PDF from clipboard content
+  // -----------------------------------------------------------------------
+  async createFromClipboard(
+    docId: string,
+    content: Uint8Array | string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return this._enqueue(docId, () => this._createFromClipboardImpl(docId, content));
+  }
+
+  private async _createFromClipboardImpl(
+    docId: string,
+    content: Uint8Array | string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    try {
+      const out = await PDFDocument.create();
+
+      if (typeof content === 'string') {
+        // Text content — render as a text page
+        const page = out.addPage([612, 792]); // Letter size
+        const lines = content.split('\n');
+        const fontSize = 12;
+        const lineHeight = fontSize * 1.2;
+        const margin = 72;
+        let y = 792 - margin;
+        let currentPage = page;
+
+        for (const line of lines) {
+          if (y < margin) {
+            currentPage = out.addPage([612, 792]);
+            y = 792 - margin;
+          }
+          currentPage.drawText(line, { x: margin, y, size: fontSize });
+          y -= lineHeight;
+        }
+      } else {
+        // Image content — embed into a page
+        const isPng = detectImageFormat(content) === 'png';
+        const image = isPng
+          ? await out.embedPng(content)
+          : await out.embedJpg(content);
+        const dims = image.scale(1);
+        const page = out.addPage([dims.width, dims.height]);
+        page.drawImage(image, { x: 0, y: 0, width: dims.width, height: dims.height });
+      }
+
+      const bytes = await out.save();
+
+      const newDoc: EngineDoc = {
+        pdfDoc: out,
+        order: Array.from({ length: out.getPageCount() }, (_, i) => i),
+        deleted: Array.from({ length: out.getPageCount() }, () => false),
+        rotations: Array.from({ length: out.getPageCount() }, () => 0),
+        annotations: Array.from({ length: out.getPageCount() }, () => []),
+        undoStack: [],
+        redoStack: [],
+        path: '',
+        modified: true,
+        placedSignatures: [],
+      };
+      this.docs.set(docId, newDoc);
+
+      return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    } catch (e) {
+      return err('engine-error', `createFromClipboard failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 9: insertBlankPage — insert a blank page at a given position
+  // -----------------------------------------------------------------------
+  async insertBlankPage(
+    docId: string,
+    afterIndex: number,
+    widthPx: number,
+    heightPx: number,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._insertBlankPageImpl(docId, afterIndex, widthPx, heightPx));
+  }
+
+  private async _insertBlankPageImpl(
+    docId: string,
+    afterIndex: number,
+    widthPx: number,
+    heightPx: number,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const snapshot = snapshotDoc(doc);
+
+    try {
+      // Create a blank page and add it to the pdfDoc
+      const blankPage = doc.pdfDoc.addPage([widthPx, heightPx]);
+      const blankOrigIdx = doc.pdfDoc.getPageCount() - 1; // last added page
+
+      // Extend the arrays for the new page
+      doc.deleted.push(false);
+      doc.rotations.push(0);
+      doc.annotations.push([]);
+
+      // Determine insertion position in visible order
+      // afterIndex is 0-based visible index; -1 means insert at beginning
+      const insertAt = afterIndex < 0 ? 0 : afterIndex + 1;
+      const clamped = Math.min(insertAt, doc.order.length);
+      doc.order.splice(clamped, 0, blankOrigIdx);
+
+      // Shift placed signatures: pages at or after clamped get +1
+      const clamped1 = clamped + 1; // 1-based
+      for (const sp of doc.placedSignatures) {
+        if (sp.page >= clamped1) {
+          sp.page = sp.page + 1;
+        }
+      }
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      return err('engine-error', `insertBlankPage failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 9: insertFromPdf — insert pages from another PDF at a position
+  // -----------------------------------------------------------------------
+  async insertFromPdf(
+    docId: string,
+    otherBytes: Uint8Array,
+    position: number,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._insertFromPdfImpl(docId, otherBytes, position));
+  }
+
+  private async _insertFromPdfImpl(
+    docId: string,
+    otherBytes: Uint8Array,
+    position: number,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+
+    let otherDoc: PDFDocument;
+    try {
+      otherDoc = await PDFDocument.load(otherBytes);
+    } catch (e) {
+      return err('engine-error', `insertFromPdf: could not parse other PDF: ${e instanceof Error ? e.message : String(e)}`);
+    }
+
+    const otherCount = otherDoc.getPageCount();
+    if (otherCount === 0) {
+      return err('empty-range', 'insertFromPdf: source PDF has 0 pages');
+    }
+
+    const snapshot = snapshotDoc(doc);
+
+    try {
+      const otherIndices = otherDoc.getPageIndices();
+      const copiedPages = await doc.pdfDoc.copyPages(otherDoc, otherIndices);
+
+      // Determine insertion position: position is 0-based visible index
+      // -1 means append at end
+      const insertAt = position < 0 || position > doc.order.length
+        ? doc.order.length
+        : position;
+
+      // Insert pages into pdfDoc and track their original indices
+      const newOrigIndices: number[] = [];
+      for (const copied of copiedPages) {
+        doc.pdfDoc.addPage(copied);
+        newOrigIndices.push(doc.pdfDoc.getPageCount() - 1);
+      }
+
+      // Extend arrays for the new pages
+      for (let i = 0; i < otherCount; i++) {
+        doc.deleted.push(false);
+        doc.rotations.push(0);
+        doc.annotations.push([]);
+      }
+
+      // Insert into visible order
+      doc.order.splice(insertAt, 0, ...newOrigIndices);
+
+      // Shift placed signatures: pages at or after insertAt get +otherCount
+      const insertAt1 = insertAt + 1; // 1-based
+      for (const sp of doc.placedSignatures) {
+        if (sp.page >= insertAt1) {
+          sp.page = sp.page + otherCount;
+        }
+      }
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      return err('engine-error', `insertFromPdf failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 9: exportText — extract per-page text from the document
+  // -----------------------------------------------------------------------
+  async exportText(
+    docId: string,
+  ): Promise<Result<TextPage[], EngineError>> {
+    return this._enqueue(docId, () => this._exportTextImpl(docId));
+  }
+
+  private async _exportTextImpl(
+    docId: string,
+  ): Promise<Result<TextPage[], EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+
+    try {
+      // Serialize the document to bytes and extract text from the raw PDF.
+      // This is more reliable than trying to access content streams through
+      // pdf-lib's internal API, which may not expose the resolved streams.
+      const bytes = await doc.pdfDoc.save();
+      const pages: TextPage[] = [];
+      const pageCount = doc.pdfDoc.getPageCount();
+
+      for (let i = 0; i < pageCount; i++) {
+        const text = extractTextFromRawPdf(bytes, i);
+        pages.push({ pageIndex: i + 1, text });
+      }
+
+      return ok(pages);
+    } catch (e) {
+      return err('engine-error', `exportText failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 9: createDocxFromImages — assemble a .docx from rasterised pages
+  // -----------------------------------------------------------------------
+  async createDocxFromImages(
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>> {
+    try {
+      if (entries.length === 0) {
+        return err('empty-range', 'no image entries provided');
+      }
+      const docxBytes = buildDocxFromImages(entries);
+      return ok(docxBytes);
+    } catch (e) {
+      return err('engine-error', `createDocxFromImages failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  async exportPages(
+    docId: string,
+    payload: ExportPagesPayload,
+  ): Promise<Result<ExportPageEntry[], EngineError>> {
+    return this._enqueue(docId, () => this._exportPagesImpl(docId, payload));
+  }
+
+  private async _exportPagesImpl(
+    docId: string,
+    payload: ExportPagesPayload,
+  ): Promise<Result<ExportPageEntry[], EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+
+    const pageCount = doc.order.length;
+    const allIndices = Array.from({ length: pageCount }, (_, i) => i);
+
+    let selectedIndices: number[];
+    if (payload.range !== undefined) {
+      const [start, end] = payload.range;
+      // range is 1‑based inclusive
+      if (start < 1 || end > pageCount || start > end) {
+        return err('out-of-range', `range [${start},${end}] out of bounds for ${pageCount} pages`);
+      }
+      selectedIndices = allIndices.slice(start - 1, end);
+    } else {
+      selectedIndices = allIndices;
+    }
+
+    if (selectedIndices.length === 0) {
+      return err('empty-range', 'no pages to export');
+    }
+
+    try {
+      const entries: ExportPageEntry[] = [];
+      for (const vi of selectedIndices) {
+        const origIdx = doc.order[vi];
+
+        const singleDoc = await PDFDocument.create();
+        const [copied] = await singleDoc.copyPages(doc.pdfDoc, [origIdx]);
+        const rotation = doc.rotations[origIdx];
+        if (rotation !== 0) {
+          copied.setRotation(degrees(rotation * 90));
+        }
+        singleDoc.addPage(copied);
+
+        const size = copied.getSize(); // Reads size after rotation is applied
+
+        const bytes = await singleDoc.save();
+        const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+
+        entries.push({
+          pageIndex: vi + 1, // 1‑based
+          buffer: new Uint8Array(ab),
+          format: payload.format,
+          width: size.width,
+          height: size.height,
+        });
+      }
+      return ok(entries);
+    } catch (e) {
+      return err('engine-error', `exportPages failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Detect image format from magic bytes. Returns 'png' if the buffer starts
+ * with the 8‑byte PNG signature, otherwise returns 'jpeg'.
+ */
+function detectImageFormat(buf: Uint8Array): 'png' | 'jpeg' {
+  const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (buf.length >= 8) {
+    for (let i = 0; i < 8; i++) {
+      if (buf[i] !== PNG_SIG[i]) {
+        return 'jpeg';
+      }
+    }
+    return 'png';
+  }
+  return 'jpeg';
+}
 
 /**
  * Migrate a single form field from a source PDFDocument to a destination
@@ -1646,4 +2042,685 @@ function parseSignaturesFromDoc(pdfDoc: PDFDocument): SignaturePlacement[] {
   } catch {
     return [];
   }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9: text extraction helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract text from a specific page of a raw PDF byte buffer. Uses a minimal
+ * PDF parser that walks the cross-reference table and page tree to find
+ * content streams, decodes them (FlateDecode), and extracts text from PDF
+ * text operators (Tj, TJ, ', ").
+ */
+function extractTextFromRawPdf(bytes: Uint8Array, targetPageIndex: number): string {
+  try {
+    const text = new TextDecoder('latin1').decode(bytes);
+
+    // Parse xref table/stream to build an offset map: object number -> byte offset
+    const objOffsets = parseXref(text);
+
+    // Parse the trailer to find the /Root reference
+    const rootRef = parseTrailerRootRef(text);
+    if (!rootRef) return '';
+
+    // Resolve: Root -> Pages -> Kids -> page objects
+    const rootObj = resolveObject(text, rootRef, objOffsets);
+    if (!rootObj) return '';
+
+    const pagesRef = extractDictRef(rootObj, 'Pages');
+    if (!pagesRef) return '';
+
+    const pagesObj = resolveObject(text, pagesRef, objOffsets);
+    if (!pagesObj) return '';
+
+    // Get the Kids array reference
+    const kids = extractDictArray(pagesObj, 'Kids');
+    if (!kids || kids.length === 0) return '';
+
+    if (targetPageIndex < 0 || targetPageIndex >= kids.length) return '';
+
+    const pageRef = kids[targetPageIndex];
+    if (!pageRef) return '';
+
+    const pageObj = resolveObject(text, pageRef, objOffsets);
+    if (!pageObj) return '';
+
+    // Get the /Contents reference (may be a single ref or an array of refs)
+    const contentsRefs = extractDictRefOrArray(pageObj, 'Contents');
+    if (!contentsRefs || contentsRefs.length === 0) return '';
+
+    // Decode each content stream and concatenate
+    let rawContent = '';
+    for (const ref of contentsRefs) {
+      const streamObj = resolveObject(text, ref, objOffsets);
+      if (!streamObj) continue;
+      const decoded = decodeStream(text, streamObj);
+      if (decoded) rawContent += decoded;
+    }
+
+    return parseContentStreamText(rawContent);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Parse a PDF cross-reference section (xref table or xref stream) and return
+ * a map from object number to its byte offset in the file.
+ */
+function parseXref(raw: string): Map<number, number> {
+  const offsets = new Map<number, number>();
+
+  // Try traditional xref table first: "xref\n0 N\n0000000000 65535 f\r\n..."
+  const xrefMatch = raw.match(/xref\r?\n/);
+  if (xrefMatch && xrefMatch.index !== undefined) {
+    const xrefStart = xrefMatch.index;
+    const xrefSection = raw.substring(xrefStart, xrefStart + 500000); // generous limit
+
+    // Parse subsection lines: "nnnnnnnnnn ggggg n\r\n" or "nnnnnnnnnn ggggg f\r\n"
+    const entryRegex = /^(\d{10}) (\d{5}) ([nf])\s*$/gm;
+    let match: RegExpExecArray | null;
+    while ((match = entryRegex.exec(xrefSection)) !== null) {
+      const offset = parseInt(match[1], 10);
+      const gen = parseInt(match[2], 10);
+      const type = match[3];
+      if (type === 'n') {
+        // The object number is derived from the subsection header.
+        // We need to track the current subsection base.
+        // For simplicity, parse the subsection headers too.
+      }
+    }
+  }
+
+  // PDFs from pdf-lib use cross-reference streams (PDF 1.5+).
+  // The xref stream is pointed to by /XRefStm in the trailer or by startxref.
+  // For a simpler approach, scan for all "obj" markers and note their numbers.
+  const objRegex = /(\d+)\s+(\d+)\s+obj/g;
+  let match: RegExpExecArray | null;
+  while ((match = objRegex.exec(raw)) !== null) {
+    // match.index is the start of "obj", so the object starts before it
+    // Actually the format is "1 0 obj" so match.index points to the start.
+    // The object number is match[1], generation is match[2].
+    const objNum = parseInt(match[1], 10);
+    offsets.set(objNum, match.index);
+  }
+
+  return offsets;
+}
+
+/**
+ * Extract the /Root indirect reference from the PDF. pdf-lib outputs
+ * cross-reference streams (PDF 1.5+), so the Root reference is in the
+ * last object's dictionary (the xref stream), not in a traditional
+ * trailer section.
+ */
+function parseTrailerRootRef(raw: string): string | null {
+  // Try traditional trailer first: "trailer\n<< ... /Root 1 0 R ... >>"
+  const trailerMatch = raw.match(/trailer\s*<<([^>]*(?:>>[^>]*)*)>>/);
+  if (trailerMatch) {
+    const rootMatch = trailerMatch[1].match(/\/Root\s+(\d+\s+\d+\s+R)/);
+    if (rootMatch) return rootMatch[1];
+  }
+
+  // For cross-reference streams: find the last object in the file.
+  // The xref stream object is typically the last object and contains
+  // /Root in its dictionary.
+  const allObjMatches = [...raw.matchAll(/(\d+)\s+(\d+)\s+obj\s*<<([\s\S]*?)>>/g)];
+  if (allObjMatches.length > 0) {
+    // Check the last few objects (xref stream is always last)
+    for (let i = allObjMatches.length - 1; i >= Math.max(0, allObjMatches.length - 5); i--) {
+      const dict = allObjMatches[i][3];
+      const rootMatch = dict.match(/\/Root\s+(\d+\s+\d+\s+R)/);
+      if (rootMatch) return rootMatch[1];
+    }
+  }
+
+  // Last resort: scan all objects for /Root
+  const rootMatch = raw.match(/\/Root\s+(\d+\s+\d+\s+R)/);
+  return rootMatch ? rootMatch[1] : null;
+}
+
+/**
+ * Resolve an indirect reference string like "5 0 R" to its raw object text
+ * using the offsets map. Returns the text from the object number marker to
+ * the matching "endobj".
+ */
+function resolveObject(raw: string, ref: string, offsets: Map<number, number>): string | null {
+  const refMatch = ref.match(/^(\d+)\s+\d+\s+R$/);
+  if (!refMatch) return null;
+  const objNum = parseInt(refMatch[1], 10);
+  const offset = offsets.get(objNum);
+  if (offset === undefined) return null;
+
+  // pdf-lib output has simple flat objects. The object text runs from the
+  // offset (start of "N G obj") to the next "endobj".
+  const endIdx = raw.indexOf('endobj', offset);
+  if (endIdx < 0) return null;
+  return raw.slice(offset, endIdx + 6);
+}
+
+/**
+ * Extract a reference string (e.g. "5 0 R") from a dictionary for a given key.
+ */
+function extractDictRef(dict: string, key: string): string | null {
+  const regex = new RegExp(`/${key}\\s+(\\d+\\s+\\d+\\s+R)`);
+  const match = dict.match(regex);
+  return match ? match[1] : null;
+}
+
+/**
+ * Extract an array of references from a dictionary key that may be a single
+ * reference or an array of references.
+ */
+function extractDictRefOrArray(dict: string, key: string): string[] {
+  // Try array: /Key [1 0 R 2 0 R]
+  const arrayRegex = new RegExp(`/${key}\\s*\\[([^\\]]*)\\]`);
+  const arrayMatch = dict.match(arrayRegex);
+  if (arrayMatch) {
+    const inner = arrayMatch[1];
+    const refs: string[] = [];
+    const refRegex = /(\d+\s+\d+\s+R)/g;
+    let m: RegExpExecArray | null;
+    while ((m = refRegex.exec(inner)) !== null) {
+      refs.push(m[1]);
+    }
+    return refs;
+  }
+
+  // Try single ref: /Key 1 0 R
+  const ref = extractDictRef(dict, key);
+  return ref ? [ref] : [];
+}
+
+/**
+ * Extract an array of references from a dictionary key (e.g. /Kids array).
+ */
+function extractDictArray(dict: string, key: string): string[] {
+  return extractDictRefOrArray(dict, key);
+}
+
+/**
+ * Decode a PDF stream object. The stream object text consists of the object
+ * header ("N G obj"), a dictionary ("<<...>>"), the stream keyword, the raw
+ * stream data, "endstream", and "endobj".
+ *
+ * Handles FlateDecode and ASCII85Decode filters.
+ */
+function decodeStream(raw: string, streamObjText: string): string | null {
+  // Find the absolute offset of this object in the raw PDF text
+  const objOffset = raw.indexOf(streamObjText);
+  if (objOffset < 0) return null;
+
+  // Extract the stream dictionary to check for filters
+  const dictMatch = streamObjText.match(/<<([^>]*(?:>>[^>]*)*)>>/s);
+  const dict = dictMatch ? dictMatch[1] : '';
+
+  // Find the stream data boundaries within streamObjText
+  const streamIdxNL = streamObjText.indexOf('stream\n');
+  const streamIdxRN = streamObjText.indexOf('stream\r\n');
+  const streamKeywordIdx = streamIdxNL >= 0 ? streamIdxNL : streamIdxRN;
+  if (streamKeywordIdx < 0) return null;
+
+  // Data starts after 'stream\n' or 'stream\r\n'
+  const dataOffsetInObj = streamKeywordIdx === streamIdxNL
+    ? streamKeywordIdx + 7  // 'stream\n'
+    : streamKeywordIdx + 8; // 'stream\r\n'
+
+  // Find endstream after the data start
+  const endstreamIdx = streamObjText.indexOf('endstream', dataOffsetInObj);
+  if (endstreamIdx < 0) return null;
+
+  // Absolute positions in raw
+  const absDataStart = objOffset + dataOffsetInObj;
+  const absDataEnd = objOffset + endstreamIdx;
+
+  // Convert latin1 characters back to bytes (latin1 is 1:1 with bytes 0-255)
+  const streamText = raw.slice(absDataStart, absDataEnd);
+  const streamBytes = new Uint8Array(streamText.length);
+  for (let i = 0; i < streamText.length; i++) {
+    streamBytes[i] = streamText.charCodeAt(i) & 0xff;
+  }
+
+  // Check for common filters
+  const hasFlateDecode = dict.includes('FlateDecode');
+  const hasASCII85 = dict.includes('ASCII85Decode');
+
+  try {
+    let decoded: Uint8Array;
+    if (hasASCII85) {
+      const a85 = decodeASCII85(streamBytes);
+      decoded = hasFlateDecode ? inflateSync(a85) : a85;
+    } else if (hasFlateDecode) {
+      decoded = inflateSync(streamBytes);
+    } else {
+      decoded = streamBytes;
+    }
+    return new TextDecoder('latin1').decode(decoded);
+  } catch {
+    // If decompression fails, return the raw bytes as text
+    return new TextDecoder('latin1').decode(streamBytes);
+  }
+}
+
+/**
+ * Decode ASCII85 encoded data. PDF uses a modified ASCII85 where the data
+ * is terminated by '~>'.
+ */
+function decodeASCII85(data: Uint8Array): Uint8Array {
+  const ascii85Text = new TextDecoder('latin1').decode(data);
+  // Remove whitespace and find the data between the start and '~>'
+  let cleaned = ascii85Text.replace(/\s/g, '');
+  const endMarker = cleaned.indexOf('~>');
+  if (endMarker >= 0) cleaned = cleaned.substring(0, endMarker);
+
+  const result: number[] = [];
+  let group: number[] = [];
+  let padding = 0;
+
+  for (const ch of cleaned) {
+    if (ch === 'z') {
+      // 'z' represents 4 zero bytes
+      result.push(0, 0, 0, 0);
+      continue;
+    }
+    const val = ch.charCodeAt(0) - 33; // '!' = 0
+    if (val < 0 || val > 84) continue;
+    group.push(val);
+
+    if (group.length === 5) {
+      let num = group[0] * 85 * 85 * 85 * 85 +
+                group[1] * 85 * 85 * 85 +
+                group[2] * 85 * 85 +
+                group[3] * 85 +
+                group[4];
+      result.push((num >> 24) & 0xff, (num >> 16) & 0xff, (num >> 8) & 0xff, num & 0xff);
+      group = [];
+    }
+  }
+
+  // Handle leftover group
+  if (group.length > 0) {
+    padding = 5 - group.length;
+    for (let i = 0; i < padding; i++) group.push(84); // pad with max value (84)
+    let num = group[0] * 85 * 85 * 85 * 85 +
+              group[1] * 85 * 85 * 85 +
+              group[2] * 85 * 85 +
+              group[3] * 85 +
+              group[4];
+    for (let i = 0; i < 4 - padding; i++) {
+      result.push((num >> (24 - i * 8)) & 0xff);
+    }
+  }
+
+  return new Uint8Array(result);
+}
+
+/**
+ * Parse a decoded PDF content stream and extract text from Tj, TJ, '
+ * and " operators. Handles both literal strings `(text)` and hexadecimal
+ * strings `<hex>`. pdf-lib uses hex strings for fonts with custom
+ * encodings (WinAnsiEncoding/PDFDocEncoding).
+ */
+function parseContentStreamText(content: string): string {
+  const parts: string[] = [];
+
+  // Match hex-encoded text: <hex> Tj
+  const hexTjRegex = /<([0-9A-Fa-f]*)>\s*Tj/g;
+  let match: RegExpExecArray | null;
+  while ((match = hexTjRegex.exec(content)) !== null) {
+    const hex = match[1];
+    if (hex.length > 0) {
+      parts.push(decodeHexString(hex));
+    }
+  }
+
+  // Match literal text: (text) Tj
+  const tjRegex = /\(((?:[^()\\]|\\.)*)\)\s*Tj/g;
+  while ((match = tjRegex.exec(content)) !== null) {
+    parts.push(decodePdfString(match[1]));
+  }
+
+  // Match TJ array with hex strings: [<hex> num <hex> ...] TJ
+  const hexTjArrayRegex = /\[([^\]]*)\]\s*TJ/g;
+  while ((match = hexTjArrayRegex.exec(content)) !== null) {
+    const inner = match[1];
+    // Hex strings in array
+    const hexStrRegex = /<([0-9A-Fa-f]*)>/g;
+    let hexStrMatch: RegExpExecArray | null;
+    while ((hexStrMatch = hexStrRegex.exec(inner)) !== null) {
+      const hex = hexStrMatch[1];
+      if (hex.length > 0) {
+        parts.push(decodeHexString(hex));
+      }
+    }
+    // Literal strings in array
+    const strRegex = /\(((?:[^()\\]|\\.)*)\)/g;
+    let strMatch: RegExpExecArray | null;
+    while ((strMatch = strRegex.exec(inner)) !== null) {
+      parts.push(decodePdfString(strMatch[1]));
+    }
+  }
+
+  // Match ': (text) ' and '<hex> '
+  const quoteRegex = /(?:\(((?:[^()\\]|\\.)*)\)|<([0-9A-Fa-f]*)>)\s*'/g;
+  while ((match = quoteRegex.exec(content)) !== null) {
+    if (match[1] !== undefined) {
+      parts.push(decodePdfString(match[1]));
+    } else if (match[2] && match[2].length > 0) {
+      parts.push(decodeHexString(match[2]));
+    }
+  }
+
+  return parts.join('');
+}
+
+/**
+ * Decode a PDF hexadecimal string to a UTF-8 string. Each pair of hex
+ * digits represents one byte. pdf-lib uses WinAnsiEncoding for standard
+ * fonts, so we map bytes through a simple Latin-1 decoder.
+ */
+function decodeHexString(hex: string): string {
+  if (hex.length === 0) return '';
+  // Pad to even length
+  if (hex.length % 2 !== 0) hex += '0';
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < hex.length; i += 2) {
+    bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+  }
+  return new TextDecoder('windows-1252').decode(bytes);
+}
+
+/**
+ * Decode a PDF literal-string body (the content between the parentheses)
+ * handling common escape sequences.
+ */
+function decodePdfString(s: string): string {
+  let out = '';
+  let i = 0;
+  while (i < s.length) {
+    if (s[i] === '\\') {
+      i++;
+      if (i >= s.length) break;
+      const c = s[i];
+      switch (c) {
+        case 'n': out += '\n'; break;
+        case 'r': out += '\r'; break;
+        case 't': out += '\t'; break;
+        case 'b': out += '\b'; break;
+        case 'f': out += '\f'; break;
+        case '(':
+        case ')':
+        case '\\':
+          out += c;
+          break;
+        default:
+          // Try octal: \ddd (1-3 digits)
+          if (c >= '0' && c <= '7') {
+            let octal = '';
+            let j = 0;
+            while (j < 3 && i + j < s.length && s[i + j] >= '0' && s[i + j] <= '7') {
+              octal += s[i + j];
+              j++;
+            }
+            const code = parseInt(octal, 8);
+            out += String.fromCharCode(code);
+            i += j - 1; // -1 because the outer i++ will advance
+          } else {
+            // Unknown escape — treat literally
+            out += c;
+          }
+          break;
+      }
+    } else {
+      out += s[i];
+    }
+    i++;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9: DOCX builder (minimal store-only ZIP of Office Open XML)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a minimal .docx file from rasterised page images. The output is a
+ * valid ZIP archive containing the Office Open XML wrapper with one image
+ * per page, each filling one "page" section in the document.
+ *
+ * EMU conversion: 1 point = 12700 EMU (1 inch = 72 points = 914400 EMU).
+ */
+function buildDocxFromImages(entries: DocxImageEntry[]): Uint8Array {
+  const EMU_PER_POINT = 12700;
+
+  // Build word/document.xml
+  let docXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+            xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+            xmlns:o="urn:schemas-microsoft-com:office:office"
+            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+            xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"
+            xmlns:v="urn:schemas-microsoft-com:vml"
+            xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+            xmlns:w10="urn:schemas-microsoft-com:office:word"
+            xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml"
+            xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+            xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+  <w:body>`;
+
+  let docRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const relId = `rId${i + 1}`;
+    const emuW = Math.round(entry.pageWidth * EMU_PER_POINT);
+    const emuH = Math.round(entry.pageHeight * EMU_PER_POINT);
+
+    // Add a page break before every page except the first
+    if (i > 0) {
+      docXml += `
+    <w:p>
+      <w:r>
+        <w:br w:type="page"/>
+      </w:r>
+    </w:p>`;
+    }
+
+    docXml += `
+    <w:p>
+      <w:r>
+        <w:drawing>
+          <wp:inline distT="0" distB="0" distL="0" distR="0">
+            <wp:extent cx="${emuW}" cy="${emuH}"/>
+            <wp:docPr id="${i + 1}" name="Page ${entry.pageNumber}"/>
+            <a:graphic>
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:pic>
+                  <pic:nvPicPr>
+                    <pic:cNvPr id="0" name="Page ${entry.pageNumber}"/>
+                    <pic:cNvPicPr/>
+                  </pic:nvPicPr>
+                  <pic:blipFill>
+                    <a:blip r:embed="${relId}"/>
+                    <a:stretch><a:fillRect/></a:stretch>
+                  </pic:blipFill>
+                  <pic:spPr>
+                    <a:xfrm>
+                      <a:off x="0" y="0"/>
+                      <a:ext cx="${emuW}" cy="${emuH}"/>
+                    </a:xfrm>
+                    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                  </pic:spPr>
+                </pic:pic>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+      </w:r>
+    </w:p>`;
+
+    docRels += `
+  <Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image${i + 1}.png"/>`;
+  }
+
+  docXml += `
+  </w:body>
+</w:document>`;
+
+  docRels += `
+</Relationships>`;
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+
+  const rootRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+  const encoder = new TextEncoder();
+
+  const zipFiles: { name: string; data: Uint8Array }[] = [
+    { name: '[Content_Types].xml', data: encoder.encode(contentTypes) },
+    { name: '_rels/.rels', data: encoder.encode(rootRels) },
+    { name: 'word/document.xml', data: encoder.encode(docXml) },
+    { name: 'word/_rels/document.xml.rels', data: encoder.encode(docRels) },
+  ];
+
+  for (let i = 0; i < entries.length; i++) {
+    zipFiles.push({
+      name: `word/media/image${i + 1}.png`,
+      data: entries[i].pngBuffer,
+    });
+  }
+
+  return createStoreZip(zipFiles);
+}
+
+/**
+ * Build a minimal store-only (uncompressed) ZIP archive from the given file
+ * entries. Each entry has a name (path within the archive, using '/' as
+ * separator) and raw data. The output is a valid ZIP file that can be opened
+ * by any compliant unzip tool, including Microsoft Word for .docx.
+ */
+function createStoreZip(files: { name: string; data: Uint8Array }[]): Uint8Array {
+  // Calculate CRC-32 upfront because we need it in both local and central headers
+  const entries = files.map((f) => ({
+    name: f.name,
+    nameBytes: new TextEncoder().encode(f.name),
+    data: f.data,
+    crc: crc32(f.data),
+  }));
+
+  let offset = 0;
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+
+  for (const entry of entries) {
+    const nameLen = entry.nameBytes.length;
+    const size = entry.data.length;
+
+    // Local file header
+    const lh = new Uint8Array(30 + nameLen);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true);  // signature
+    lv.setUint16(4, 20, true);          // version needed (2.0)
+    lv.setUint16(6, 0x0800, true);      // general-purpose bit flag (UTF-8)
+    lv.setUint16(8, 0, true);           // compression: store
+    lv.setUint16(10, 0, true);          // mod time
+    lv.setUint16(12, 0, true);          // mod date
+    lv.setUint32(14, entry.crc, true);   // CRC-32
+    lv.setUint32(18, size, true);        // compressed size
+    lv.setUint32(22, size, true);        // uncompressed size
+    lv.setUint16(26, nameLen, true);     // filename length
+    lv.setUint16(28, 0, true);           // extra field length
+    lh.set(entry.nameBytes, 30);
+    localParts.push(lh);
+
+    // Central directory header
+    const ch = new Uint8Array(46 + nameLen);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true);   // signature
+    cv.setUint16(4, 20, true);           // version made by (2.0)
+    cv.setUint16(6, 20, true);           // version needed (2.0)
+    cv.setUint16(8, 0x0800, true);       // general-purpose bit flag (UTF-8)
+    cv.setUint16(10, 0, true);           // compression: store
+    cv.setUint16(12, 0, true);           // mod time
+    cv.setUint16(14, 0, true);           // mod date
+    cv.setUint32(16, entry.crc, true);    // CRC-32
+    cv.setUint32(20, size, true);         // compressed size
+    cv.setUint32(24, size, true);         // uncompressed size
+    cv.setUint16(28, nameLen, true);      // filename length
+    cv.setUint16(30, 0, true);            // extra field length
+    cv.setUint16(32, 0, true);            // file comment length
+    cv.setUint16(34, 0, true);            // disk number start
+    cv.setUint16(36, 0, true);            // internal file attributes
+    cv.setUint32(38, 0, true);            // external file attributes
+    cv.setUint32(42, offset, true);       // relative offset of local header
+    ch.set(entry.nameBytes, 46);
+    centralParts.push(ch);
+
+    offset += 30 + nameLen + size;
+  }
+
+  // Concatenate everything
+  const localHeaderSize = localParts.reduce((s, p) => s + p.length, 0);
+  const filesSize = entries.reduce((s, e) => s + e.data.length, 0);
+  const centralSize = centralParts.reduce((s, p) => s + p.length, 0);
+
+  const total = localHeaderSize + filesSize + centralSize + 22;
+  const result = new Uint8Array(total);
+  let pos = 0;
+
+  for (let i = 0; i < entries.length; i++) {
+    result.set(localParts[i], pos); pos += localParts[i].length;
+    result.set(entries[i].data, pos); pos += entries[i].data.length;
+  }
+
+  const centralOffset = pos;
+  for (const cp of centralParts) {
+    result.set(cp, pos); pos += cp.length;
+  }
+
+  // End of central directory record
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);     // signature
+  ev.setUint16(4, 0, true);              // disk number
+  ev.setUint16(6, 0, true);              // disk with central directory
+  ev.setUint16(8, entries.length, true);  // entries on this disk
+  ev.setUint16(10, entries.length, true); // total entries
+  ev.setUint32(12, centralSize, true);    // size of central directory
+  ev.setUint32(16, centralOffset, true);  // offset of central directory
+  ev.setUint16(20, 0, true);             // comment length
+  result.set(eocd, pos);
+
+  return result;
+}
+
+/**
+ * Calculate CRC-32 (IEEE 802.3 / ZIP flavour) of a byte array.
+ */
+function crc32(data: Uint8Array): number {
+  let crc = 0xFFFFFFFF;
+  for (const byte of data) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i++) {
+      if (crc & 1) {
+        crc = (crc >>> 1) ^ 0xEDB88320;
+      } else {
+        crc = crc >>> 1;
+      }
+    }
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
 }

@@ -83,6 +83,12 @@ export interface AppSettings {
    *  user picks 'max' in Optimize then opens Save-As, the toggle
    *  starts OFF (any non-'none' preset is "not linearized"). */
   optimizePreset?: OptimizePreset;
+  /** Phase 9 — image export format for `exportPages`. */
+  exportImageFormat?: ExportImageFormat;
+  /** Phase 9 — export image DPI (72–600). */
+  exportImageDpi?: number;
+  /** Phase 9 — create-from-images JPEG quality (0.0–1.0). */
+  createImageQuality?: number;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -129,6 +135,48 @@ export interface SpaceAudit {
     metadata: number;
     other: number;
   };
+}
+
+// ---- Phase 9: Create + Export ----
+
+export type ExportImageFormat = 'png' | 'jpeg' | 'tiff';
+
+/** Payload for `engine.exportPages`. range is 1‑based inclusive, or
+ *  omitted/undefined for all pages. */
+export interface ExportPagesPayload {
+  range?: [number, number];
+  format: ExportImageFormat;
+  dpi: number;
+}
+
+/** One exported page image returned by `engine.exportPages`. */
+export interface ExportPageEntry {
+  pageIndex: number; // 1‑based
+  buffer: Uint8Array;
+  format: ExportImageFormat;
+  width: number;
+  height: number;
+}
+
+// ---- Phase 9: Clipboard, insert, text export, DOCX ----
+
+/** Per-page text extracted by `engine.exportText`.
+ *  The renderer formats this as plain text or RTF. */
+export interface TextPage {
+  pageIndex: number; // 1‑based
+  text: string;
+}
+
+/** One rasterised page image entry for `engine.createDocxFromImages`.
+ *  The renderer renders each page to PNG and sends the buffers here;
+ *  the engine assembles them into a .docx ZIP. */
+export interface DocxImageEntry {
+  pageNumber: number;    // 1‑based
+  pngBuffer: Uint8Array; // PNG bytes
+  width: number;         // image width in pixels
+  height: number;        // image height in pixels
+  pageWidth: number;     // page width in PDF points
+  pageHeight: number;    // page height in PDF points
 }
 
 // ---- Phase 2: Page organization engine ----

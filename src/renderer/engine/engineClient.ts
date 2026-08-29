@@ -10,14 +10,18 @@
 import type { Result } from "../../shared/result";
 import { err } from "../../shared/result";
 import type {
+  DocxImageEntry,
   EngineError,
   EngineState as SharedEngineState,
+  ExportPageEntry,
+  ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
   OpEntry,
   OptimizePreset,
   SignaturePlacement,
   SpaceAudit,
+  TextPage,
 } from "../../shared/types";
 import type { Annotation, AnnotationPatch, PagePoint, PageRect } from "../annotations/model";
 import { stubRendererEngine } from "./stubEngine";
@@ -203,6 +207,50 @@ export interface TFlexApiEngine {
     preset: OptimizePreset,
   ): Promise<Result<ArrayBuffer, EngineError>>;
   auditSpace?(docId: string): Promise<Result<SpaceAudit, EngineError>>;
+  // Phase 9 — create from images + export pages. Same optional +
+  // degrade-with-engine-error pattern as Phase 8: pre-Phase-9 builds
+  // surface a friendly error and the renderer keeps rendering.
+  // `quality` is the JPEG re-encode fraction (0..1) — matches the
+  // canonical AppSettings.createImageQuality wire shape so the value
+  // survives the backend's preserve-if-valid pipeline.
+  createFromImages?(
+    docId: string,
+    imageBuffers: Uint8Array[],
+    quality: number,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+  /** Phase 9 — create from clipboard (text or image bytes). */
+  createFromClipboard?(
+    docId: string,
+    content: Uint8Array | string,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+  /** Phase 9 — insert a blank page at the given 0-based visible
+   *  position. Width / height are in PDF points. */
+  insertBlankPage?(
+    docId: string,
+    afterIndex: number,
+    widthPx: number,
+    heightPx: number,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 9 — insert every page of another PDF at the given
+   *  0-based position. */
+  insertFromPdf?(
+    docId: string,
+    otherBytes: Uint8Array,
+    position: number,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  exportPages?(
+    docId: string,
+    payload: ExportPagesPayload,
+  ): Promise<Result<ExportPageEntry[], EngineError>>;
+  /** Phase 9 — per-page text extraction. The renderer formats the
+   *  result as plain text or RTF. */
+  exportText?(
+    docId: string,
+  ): Promise<Result<TextPage[], EngineError>>;
+  /** Phase 9 — assemble a .docx from rasterised page images. */
+  createDocxFromImages?(
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -293,6 +341,17 @@ function missingPhase4(): Result<never, EngineError> {
 
 function missingPhase8(): Result<never, EngineError> {
   return err("engine-error", "optimize requires a backend engine update");
+}
+
+function missingPhase9(): Result<never, EngineError> {
+  return err("engine-error", "create/export requires a backend engine update");
+}
+
+function missingPhase9Extended(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "advanced create/export (clipboard / insert / text / docx) requires the Phase 9 backend update",
+  );
 }
 
 /** Map a renderer-level `EngineOp` into the IPC-shaped `OpEntry`. The
@@ -521,6 +580,68 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<SpaceAudit, EngineError>> {
     if (this.inner.auditSpace === undefined) return missingPhase8();
     return this.inner.auditSpace(docId);
+  }
+
+  // -- Phase 9: create + export --
+
+  async createFromImages(
+    docId: string,
+    imageBuffers: Uint8Array[],
+    quality: number,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    if (this.inner.createFromImages === undefined) return missingPhase9();
+    return this.inner.createFromImages(docId, imageBuffers, quality);
+  }
+
+  async exportPages(
+    docId: string,
+    payload: ExportPagesPayload,
+  ): Promise<Result<ExportPageEntry[], EngineError>> {
+    if (this.inner.exportPages === undefined) return missingPhase9();
+    return this.inner.exportPages(docId, payload);
+  }
+
+  async exportText(
+    docId: string,
+  ): Promise<Result<TextPage[], EngineError>> {
+    if (this.inner.exportText === undefined) return missingPhase9Extended();
+    return this.inner.exportText(docId);
+  }
+
+  async createDocxFromImages(
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>> {
+    if (this.inner.createDocxFromImages === undefined) return missingPhase9Extended();
+    return this.inner.createDocxFromImages(entries);
+  }
+
+  async createFromClipboard(
+    docId: string,
+    content: Uint8Array | string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    if (this.inner.createFromClipboard === undefined) return missingPhase9Extended();
+    return this.inner.createFromClipboard(docId, content);
+  }
+
+  async insertBlankPage(
+    docId: string,
+    afterIndex: number,
+    widthPx: number,
+    heightPx: number,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.insertBlankPage === undefined) return missingPhase9Extended();
+    const r = await this.inner.insertBlankPage(docId, afterIndex, widthPx, heightPx);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  async insertFromPdf(
+    docId: string,
+    otherBytes: Uint8Array,
+    position: number,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.insertFromPdf === undefined) return missingPhase9Extended();
+    const r = await this.inner.insertFromPdf(docId, otherBytes, position);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
   }
 }
 

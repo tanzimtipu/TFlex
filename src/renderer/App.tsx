@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "r
 import type { ReactElement } from "react";
 import type {
   AppSettings,
+  DocxImageEntry,
+  ExportPageEntry,
+  ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
   OptimizePreset,
@@ -25,6 +28,9 @@ import { resolveInitialSettings } from "./state/settings";
 import {
   DEFAULT_OPTIMIZE_PRESET,
   DEFAULT_RECENTS_CAP,
+  DEFAULT_CREATE_IMAGE_QUALITY,
+  DEFAULT_EXPORT_IMAGE_DPI,
+  DEFAULT_EXPORT_IMAGE_FORMAT,
   preferencesReducer,
 } from "./state/preferences";
 import { applyAnnotationPaletteChange } from "./state/colorPalette";
@@ -48,6 +54,11 @@ import { SplitDialog } from "./components/SplitDialog";
 import { OptimizeDialog } from "./components/OptimizeDialog";
 import { AuditSpaceDialog } from "./components/AuditSpaceDialog";
 import { SaveAsDialog } from "./components/SaveAsDialog";
+import { CreateFromImagesDialog } from "./components/CreateFromImagesDialog";
+import { ExportDialog } from "./components/ExportDialog";
+import { TextExportDialog } from "./components/TextExportDialog";
+import { DocxExportDialog } from "./components/DocxExportDialog";
+import { InsertPagesDialog } from "./components/InsertPagesDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
 import type { EngineApi, EngineOp, EngineState } from "./engine/types";
@@ -235,6 +246,20 @@ export function App(): ReactElement {
   // checkbox can write through the optimizePreset persist path
   // before the OS save dialog opens.
   const [saveAsOpen, setSaveAsOpen] = useState(false);
+  // Phase 9 — Create-from-images + Export-Pages dialogs. The Create
+  // dialog is reachable from the welcome screen (no doc required);
+  // the Export dialog requires an active document. The dialogs own
+  // their engine IPC; the host routes the result back into
+  // `openFromBytes` (create) or per-page save (export).
+  const [createOpen, setCreateOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  // Phase 9 advanced — text export (TXT / RTF), DOCX export, and
+  // insert-pages (blank / from another PDF). Each opens a modal; the
+  // dialogs own their own engine IPC. Insert-from-PDF also surfaces a
+  // host-side OS file picker for the "other" file.
+  const [textExportOpen, setTextExportOpen] = useState(false);
+  const [docxExportOpen, setDocxExportOpen] = useState(false);
+  const [insertPagesOpen, setInsertPagesOpen] = useState(false);
   // Phase 6 — Tools palette state, About dialog, Preferences dialog.
   // Phase 6 — Tools palette state, About dialog, Preferences dialog.
   // Layout persists via settings.toolsPaletteLayout; open/close is
@@ -1468,6 +1493,34 @@ export function App(): ReactElement {
         if (activeTabIdRefLocal.current === null) return;
         setAuditOpen(true);
       },
+      // Phase 9 — Create from images is reachable from the welcome
+      // screen too (no doc required). Export-Pages requires an
+      // active doc; gate on the same active-tab id the other
+      // doc-bound actions use.
+      createFromImages: (): void => {
+        setCreateOpen(true);
+      },
+      exportPages: (): void => {
+        if (activeTabIdRefLocal.current === null) return;
+        setExportOpen(true);
+      },
+      // Phase 9 advanced — text export, docx export, and insert
+      // pages. Each routes through the same modal-state plumbing
+      // as the raster export. The host stays menu-agnostic; the
+      // dialogs own their own engine IPC and the user can also
+      // reach these via the Tools palette.
+      exportText: (): void => {
+        if (activeTabIdRefLocal.current === null) return;
+        setTextExportOpen(true);
+      },
+      exportDocx: (): void => {
+        if (activeTabIdRefLocal.current === null) return;
+        setDocxExportOpen(true);
+      },
+      insertPages: (): void => {
+        if (activeTabIdRefLocal.current === null) return;
+        setInsertPagesOpen(true);
+      },
     };
     const unsubscribe = window.tflex.menu.onAction((action) => {
       dispatchMenuAction(action, ctx);
@@ -1708,6 +1761,393 @@ export function App(): ReactElement {
   const onCancelAudit = useCallback((): void => {
     setAuditOpen(false);
   }, []);
+
+  // ---- Phase 9: Create-from-images + Export-Pages ----
+
+  const onCreateClick = useCallback((): void => {
+    setCreateOpen(true);
+  }, []);
+
+  const onCancelCreate = useCallback((): void => {
+    setCreateOpen(false);
+  }, []);
+
+  /** Host callback: invoke `engine.createFromImages` and route the
+   *  result into a brand-new tab. Mirrors the Optimize / Split /
+   *  Extract flow: read image bytes off disk, hand them to the
+   *  engine, open the resulting PDF in a fresh tab. */
+  const runCreateFromImages = useCallback(
+    async (
+      files: File[],
+      quality: number,
+    ): Promise<{ bytes: ArrayBuffer; size: number; name: string } | { error: string }> => {
+      if (files.length === 0) return { error: "No images selected." };
+      try {
+        const buffers: Uint8Array[] = [];
+        for (const f of files) {
+          const buf = new Uint8Array(await f.arrayBuffer());
+          buffers.push(buf);
+        }
+        const docId = `create-${crypto.randomUUID()}`;
+        const result = await engineRef.current.createFromImages(docId, buffers, quality);
+        if (!result.ok) {
+          return { error: describeEngineError(result.error.code, result.error.message) };
+        }
+        return {
+          bytes: result.value,
+          size: result.value.byteLength,
+          name: files[0]?.name ?? "new.pdf",
+        };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { error: msg };
+      }
+    },
+    [],
+  );
+
+  const onCreateConfirm = useCallback(
+    async (files: File[], quality: number): Promise<void> => {
+      setCreateOpen(false);
+      const result = await runCreateFromImages(files, quality);
+      if ("error" in result) {
+        pushToast("error", `Could not create PDF: ${result.error}`);
+        return;
+      }
+      // Open the result as a new tab. We seed a synthesised
+      // display name from the first image's name (strip extension
+      // and prefix with "Created from ").
+      const firstName = files[0]?.name ?? "new.pdf";
+      const baseName = firstName.replace(/\.[^/.]+$/, "");
+      const displayName = `Created from ${baseName}.pdf`;
+      const opened = await openFromBytes(toArrayBuffer(result.bytes), {
+        kind: "file",
+        path: `<create>${firstName}`,
+        displayName,
+        onDiskPath: null,
+      });
+      if (opened !== null) {
+        dispatchTabs({ type: "set-modified", id: opened.tabId, modified: true });
+        pushToast("info", `Created PDF from ${files.length} image${files.length === 1 ? "" : "s"}.`);
+      }
+    },
+    [openFromBytes, pushToast, runCreateFromImages],
+  );
+
+  /** Host callback: `engine.exportPages` against the active tab. The
+   *  dialog supplies its own engine.docId() lookup via the active tab
+   *  state; we hand back an error string when no document is open. */
+  const runExportPages = useCallback(
+    async (
+      payload: ExportPagesPayload,
+    ): Promise<ExportPageEntry[] | { error: string }> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      const result = await engineRef.current.exportPages(open.session.engineDocId, payload);
+      if (!result.ok) {
+        return { error: describeEngineError(result.error.code, result.error.message) };
+      }
+      return result.value;
+    },
+    [],
+  );
+
+  const onExportClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setExportOpen(true);
+  }, []);
+
+  const onCancelExport = useCallback((): void => {
+    setExportOpen(false);
+  }, []);
+
+  const onExportConfirm = useCallback(
+    (result: { entries: ExportPageEntry[] }): void => {
+      // The dialog itself already triggered per-page downloads via
+      // URL.createObjectURL + anchor click. We close the dialog here
+      // and surface a confirmation toast so the user knows how many
+      // pages were saved.
+      setExportOpen(false);
+      pushToast(
+        "info",
+        `Exported ${result.entries.length} page${result.entries.length === 1 ? "" : "s"}.`,
+      );
+    },
+    [pushToast],
+  );
+
+  // ---- Phase 9 advanced: text + docx + insert ----
+
+  const onTextExportClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setTextExportOpen(true);
+  }, []);
+
+  const onCancelTextExport = useCallback((): void => {
+    setTextExportOpen(false);
+  }, []);
+
+  /** Host callback for the text export dialog. Calls
+   *  `engine.exportText(docId)` against the active tab; the dialog
+   *  formats the per-page strings as TXT or RTF and saves via the
+   *  renderer-side download flow. */
+  const runExportText = useCallback(
+    async (): Promise<
+      { pageIndex: number; text: string }[] | { error: string }
+    > => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      const result = await engineRef.current.exportText(open.session.engineDocId);
+      if (!result.ok) {
+        return { error: describeEngineError(result.error.code, result.error.message) };
+      }
+      return result.value;
+    },
+    [],
+  );
+
+  const onTextExportConfirm = useCallback(
+    (result: { range: number[]; format: "txt" | "rtf"; text: string }): void => {
+      setTextExportOpen(false);
+      pushToast(
+        "info",
+        `Exported ${result.range.length} page${result.range.length === 1 ? "" : "s"} as ${result.format.toUpperCase()}.`,
+      );
+    },
+    [pushToast],
+  );
+
+  const onDocxExportClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setDocxExportOpen(true);
+  }, []);
+
+  const onCancelDocxExport = useCallback((): void => {
+    setDocxExportOpen(false);
+  }, []);
+
+  /** DOCX assembly — runs after the renderer has rasterised every
+   *  page to PNG. The renderer owns the rasterization step; the
+   *  engine just assembles the .docx ZIP. */
+  const runAssembleDocx = useCallback(
+    async (
+      entries: DocxImageEntry[],
+    ): Promise<Uint8Array | { error: string }> => {
+      const result = await engineRef.current.createDocxFromImages(entries);
+      if (!result.ok) {
+        return { error: describeEngineError(result.error.code, result.error.message) };
+      }
+      return result.value;
+    },
+    [],
+  );
+
+  const onDocxExportConfirm = useCallback(
+    (result: { range: number[]; dpi: number }): void => {
+      setDocxExportOpen(false);
+      pushToast(
+        "info",
+        `Exported ${result.range.length} page${result.range.length === 1 ? "" : "s"} as DOCX at ${result.dpi} DPI.`,
+      );
+    },
+    [pushToast],
+  );
+
+  const onInsertPagesClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setInsertPagesOpen(true);
+  }, []);
+
+  const onCancelInsertPages = useCallback((): void => {
+    setInsertPagesOpen(false);
+  }, []);
+
+  /** OS file picker for the "from another PDF" insert path. Returns
+   *  the picked PDF's bytes + path. The renderer reads the bytes
+   *  off disk via the standard file dialog, then forwards them to
+   *  `engine.insertFromPdf`. */
+  const pickOtherPdf = useCallback(async (): Promise<
+    { bytes: Uint8Array; path: string } | null
+  > => {
+    const path = await window.tflex.openFileDialog();
+    if (path === null) return null;
+    const res = await window.tflex.loadPdf(path);
+    if (!res.ok) return null;
+    const displayName = splitRecentPath(path).name;
+    void displayName;
+    return { bytes: new Uint8Array(res.value), path };
+  }, []);
+
+  const onInsertPagesConfirm = useCallback(
+    async (choice: {
+      mode: "blank" | "fromPdf";
+      position: number;
+      widthPt?: number;
+      heightPt?: number;
+      otherBytes?: Uint8Array;
+      otherPath?: string;
+    }): Promise<void> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) {
+        setInsertPagesOpen(false);
+        return;
+      }
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) {
+        setInsertPagesOpen(false);
+        return;
+      }
+      let res;
+      if (choice.mode === "blank") {
+        const width = choice.widthPt ?? 612;
+        const height = choice.heightPt ?? 792;
+        res = await engineRef.current.insertBlankPage(
+          open.session.engineDocId,
+          choice.position,
+          width,
+          height,
+        );
+      } else {
+        if (choice.otherBytes === undefined) {
+          setInsertPagesOpen(false);
+          return;
+        }
+        res = await engineRef.current.insertFromPdf(
+          open.session.engineDocId,
+          choice.otherBytes,
+          choice.position,
+        );
+      }
+      setInsertPagesOpen(false);
+      if (!res.ok) {
+        pushToast("error", describeEngineError(res.error.code, res.error.message));
+        return;
+      }
+      // After an insert the pageCount can change and the modified flag
+      // flips — push through noteOpApplied so the rail / thumbnail /
+      // toolbar refresh. The engine echoes the updated EngineState in
+      // res.value.
+      const isReal = !engineRef.current.available;
+      if (isReal) {
+        noteOpApplied(activeId, res.value);
+      } else {
+        // Stub path: refresh by re-querying state.
+        const stateResult = await engineRef.current.getState(open.session.engineDocId);
+        if (stateResult.ok) noteOpApplied(activeId, stateResult.value);
+      }
+      pushToast(
+        "info",
+        choice.mode === "blank"
+          ? "Inserted blank page."
+          : "Inserted pages from PDF.",
+      );
+    },
+    [noteOpApplied, pushToast],
+  );
+
+  /** Reads the OS clipboard via the existing signatures IPC bridge
+   *  is not appropriate (signatures save drawn signatures, not raw
+   *  image bytes). Instead we expose a small renderer-side helper
+   *  that uses the browser-standard `navigator.clipboard.read` /
+   *  Electron's native `clipboard.readImage` / `clipboard.readText`.
+   *  The helper falls back to `null` (empty / unsupported), which
+   *  the dialog surfaces as "Clipboard is empty". */
+  const readClipboard = useCallback(async (): Promise<
+    Uint8Array | string | null | { error: string }
+  > => {
+    // Browser-side: navigator.clipboard is the only portable API.
+    // Electron's renderer also exposes `electron.clipboard` via the
+    // preload bridge; we use it when available so image bytes
+    // survive (navigator.clipboard.read on images isn't universally
+    // supported in Chromium yet).
+    const electronClipboard = (
+      window as unknown as {
+        electron?: {
+          clipboard?: {
+            readImage?: () => { toPNG?: () => Uint8Array } | null;
+            readText?: () => string;
+            readBuffer?: (format: string) => Uint8Array;
+          };
+        };
+      }
+    ).electron?.clipboard;
+    if (electronClipboard !== undefined) {
+      try {
+        const img = electronClipboard.readImage?.();
+        if (img !== null && img !== undefined && typeof img.toPNG === "function") {
+          const png = img.toPNG();
+          if (png.length > 0) return png;
+        }
+        if (typeof electronClipboard.readBuffer === "function") {
+          const buf = electronClipboard.readBuffer("image/png");
+          if (buf.length > 0) return buf;
+        }
+        const text = electronClipboard.readText?.();
+        if (typeof text === "string" && text.length > 0) return text;
+      } catch {
+        // fall through
+      }
+    }
+    if (typeof navigator !== "undefined" && navigator.clipboard !== undefined) {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          if (item.types.includes("image/png")) {
+            const blob = await item.getType("image/png");
+            return new Uint8Array(await blob.arrayBuffer());
+          }
+          if (item.types.includes("image/jpeg")) {
+            const blob = await item.getType("image/jpeg");
+            return new Uint8Array(await blob.arrayBuffer());
+          }
+          if (item.types.includes("text/plain")) {
+            const blob = await item.getType("text/plain");
+            return await blob.text();
+          }
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return { error: `Could not read clipboard: ${msg}` };
+      }
+    }
+    return null;
+  }, []);
+
+  const onCreateFromClipboardConfirm = useCallback(
+    async (choice: { content: Uint8Array | string; quality: number }): Promise<void> => {
+      setCreateOpen(false);
+      const docId = `create-clipboard-${crypto.randomUUID()}`;
+      const result = await engineRef.current.createFromClipboard(
+        docId,
+        choice.content,
+      );
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      // Synthesise a display name from the content shape (text vs. image).
+      const isText = typeof choice.content === "string";
+      const displayName = isText
+        ? "Created from clipboard text.pdf"
+        : "Created from clipboard image.pdf";
+      const opened = await openFromBytes(toArrayBuffer(result.value), {
+        kind: "file",
+        path: `<create-clipboard>${displayName}`,
+        displayName,
+        onDiskPath: null,
+      });
+      void choice.quality; // currently unused; engine.createFromClipboard doesn't take a quality
+      if (opened !== null) {
+        dispatchTabs({ type: "set-modified", id: opened.tabId, modified: true });
+        pushToast("info", "Created PDF from clipboard content.");
+      }
+    },
+    [openFromBytes, pushToast],
+  );
 
   const searchIndexProgressRef = useRef<SearchIndexProgress | null>(null);
 
@@ -2016,6 +2456,14 @@ export function App(): ReactElement {
       optimizeDialogOpen: optimizeOpen,
       auditDialogOpen: auditOpen,
       optimizePreset: settingsRef.current?.optimizePreset ?? null,
+      // Phase 9 — export image defaults (mirrored so e2e harnesses
+      // can drive Export dialogs without scraping the DOM, same
+      // pattern as optimizePreset).
+      exportImageFormat:
+        settingsRef.current?.exportImageFormat ?? null,
+      exportImageDpi: settingsRef.current?.exportImageDpi ?? null,
+      createImageQuality:
+        settingsRef.current?.createImageQuality ?? null,
       // Per-tab reducer-level modified flag — distinct from
       // engineState.modified (which tracks engine-level mutation
       // only). Set for tabs whose only mutation is a render-side
@@ -2144,6 +2592,7 @@ export function App(): ReactElement {
                 onOpenFile={onOpenClick}
                 onSampleClick={onSampleClick}
                 onMergeClick={onMergeClick}
+                onCreateFromImages={onCreateClick}
                 samplesResolver={async (): Promise<SampleDocument[]> =>
                   window.tflex.listSamples()
                 }
@@ -2306,6 +2755,11 @@ export function App(): ReactElement {
             onForms={(): void => setFlattenOpen(true)}
             onOptimize={onOptimizeClick}
             onAudit={onAuditClick}
+            onCreateFromImages={onCreateClick}
+            onExportPages={onExportClick}
+            onExportText={onTextExportClick}
+            onExportDocx={onDocxExportClick}
+            onInsertPages={onInsertPagesClick}
             onClose={(): void => setToolsPaletteOpen(false)}
             documentRequired={activeTab !== null}
             hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
@@ -2332,6 +2786,73 @@ export function App(): ReactElement {
         onConfirm={(c): void => {
           void onConfirmSplit(c);
         }}
+      />
+      <CreateFromImagesDialog
+        open={createOpen}
+        initialQuality={
+          settings.createImageQuality ?? DEFAULT_CREATE_IMAGE_QUALITY
+        }
+        onQualityChange={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, {
+              type: 'set-create-image-quality',
+              value: next,
+            });
+            if (updated !== prev) trackAndSave(updated);
+            return updated;
+          });
+        }}
+        onConfirm={(c): void => {
+          void onCreateConfirm(c.files, c.quality);
+        }}
+        onCreateFromClipboard={(c): void => {
+          void onCreateFromClipboardConfirm(c);
+        }}
+        readClipboard={readClipboard}
+        onClose={onCancelCreate}
+      />
+      <ExportDialog
+        open={exportOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        initialFormat={
+          settings.exportImageFormat ?? DEFAULT_EXPORT_IMAGE_FORMAT
+        }
+        initialDpi={
+          settings.exportImageDpi ?? DEFAULT_EXPORT_IMAGE_DPI
+        }
+        onFormatChange={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, {
+              type: 'set-export-image-format',
+              value: next,
+            });
+            if (updated !== prev) trackAndSave(updated);
+            return updated;
+          });
+        }}
+        onDpiChange={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, {
+              type: 'set-export-image-dpi',
+              value: next,
+            });
+            if (updated !== prev) trackAndSave(updated);
+            return updated;
+          });
+        }}
+        runExport={runExportPages}
+        onConfirm={(c): void => {
+          onExportConfirm(c);
+        }}
+        sourceName={activeTab?.displayName ?? "this document"}
+        onClose={onCancelExport}
       />
       <SignatureManagerModal
         open={sigModalOpen}
@@ -2412,6 +2933,44 @@ export function App(): ReactElement {
           }
         }}
         onClose={(): void => setSaveAsOpen(false)}
+      />
+      <TextExportDialog
+        open={textExportOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        runExport={runExportText}
+        onConfirm={onTextExportConfirm}
+        sourceName={activeTab?.displayName ?? "this document"}
+        onClose={onCancelTextExport}
+      />
+      <DocxExportDialog
+        open={docxExportOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        runEngineExport={runExportPages}
+        runAssemble={runAssembleDocx}
+        onConfirm={onDocxExportConfirm}
+        sourceName={activeTab?.displayName ?? "this document"}
+        onClose={onCancelDocxExport}
+      />
+      <InsertPagesDialog
+        open={insertPagesOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        pickOtherFile={pickOtherPdf}
+        onConfirm={(c): void => {
+          void onInsertPagesConfirm(c);
+        }}
+        onClose={onCancelInsertPages}
       />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
       <AboutDialog open={aboutOpen} onClose={(): void => setAboutOpen(false)} />

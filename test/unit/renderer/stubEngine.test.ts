@@ -681,3 +681,96 @@ describe("StubRendererEngine — Phase 8 auditSpace", () => {
     expect(r.error.code).toBe("engine-error");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 9 advanced: clipboard / insert / text / docx (DEF-045)
+//
+// The stub implements just enough of these to keep the renderer-only
+// path healthy in jsdom tests. The real engine owns the production
+// implementation; the stub's contract is "graceful degradation so the
+// UI keeps rendering" — see the per-method comments for the exact
+// behaviour each stub method delivers.
+// ---------------------------------------------------------------------------
+
+describe("StubRendererEngine — Phase 9 advanced methods", () => {
+  it("insertBlankPage bumps pageCount and updates order", async () => {
+    const { engine, tabId } = setup(3);
+    const r = await engine.insertBlankPage(tabId, -1, 612, 792);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.pageCount).toBe(4);
+    expect(r.value.modified).toBe(true);
+  });
+
+  it("insertBlankPage returns engine-error for an unknown doc", async () => {
+    const engine = new StubRendererEngine();
+    const r = await engine.insertBlankPage("unknown", 0, 612, 792);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+
+  it("exportText returns empty text per page", async () => {
+    const { engine, tabId } = setup(3);
+    const r = await engine.exportText(tabId);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toHaveLength(3);
+    for (const p of r.value) {
+      expect(p.text).toBe("");
+    }
+  });
+
+  it("exportText returns engine-error for an unknown doc", async () => {
+    const engine = new StubRendererEngine();
+    const r = await engine.exportText("unknown");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+
+  it("createFromClipboard returns engine-error (backend-only feature)", async () => {
+    const engine = new StubRendererEngine();
+    const r = await engine.createFromClipboard("tab-1", "hello");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+
+  it("insertFromPdf returns engine-error (backend-only feature)", async () => {
+    const engine = new StubRendererEngine();
+    const r = await engine.insertFromPdf(
+      "tab-1",
+      new Uint8Array([0x25, 0x50, 0x44, 0x46]),
+      0,
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+
+  it("createDocxFromImages returns engine-error for any non-empty input", async () => {
+    const engine = new StubRendererEngine();
+    const r = await engine.createDocxFromImages([
+      {
+        pageNumber: 1,
+        pngBuffer: new Uint8Array([0]),
+        width: 100,
+        height: 100,
+        pageWidth: 612,
+        pageHeight: 792,
+      },
+    ]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+
+  it("createDocxFromImages rejects empty input with empty-range", async () => {
+    const engine = new StubRendererEngine();
+    const r = await engine.createDocxFromImages([]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("empty-range");
+  });
+});

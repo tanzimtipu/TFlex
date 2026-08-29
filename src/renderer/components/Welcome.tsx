@@ -1,5 +1,5 @@
 import type { ReactElement } from "react";
-import { FilePlus2, FileText, FolderOpen, GitMerge, Sparkles, X } from "lucide-react";
+import { FileImage, FilePlus2, FileText, FolderOpen, GitMerge, Sparkles, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { RecentFile, SampleDocument } from "../../shared/types";
 import { formatOpenedAt } from "../utils/recentPath";
@@ -16,6 +16,11 @@ interface WelcomeProps {
   onOpenFile: () => void;
   onSampleClick: (sample: SampleDocument) => void;
   onMergeClick?: () => void;
+  /** Phase 9 — Create-from-images entry. Renders alongside the
+   *  existing Open PDF / Merge PDFs buttons on the welcome hero.
+   *  Optional: callers that don't yet wire the Phase 9 dialog can
+   *  omit the prop and the button stays hidden. */
+  onCreateFromImages?: () => void;
   samplesResolver: () => Promise<SampleDocument[]>;
 }
 
@@ -27,6 +32,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
     onOpenFile,
     onSampleClick,
     onMergeClick,
+    onCreateFromImages,
     samplesResolver,
   } = props;
   const [samples, setSamples] = useState<SampleDocument[] | null>(null);
@@ -59,6 +65,17 @@ export function Welcome(props: WelcomeProps): ReactElement {
             <FolderOpen size={14} aria-hidden /> Open PDF
             <span className="kbd" style={{ marginLeft: 8 }}>Ctrl O</span>
           </button>
+          {onCreateFromImages !== undefined && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onCreateFromImages}
+              title="Combine picked images into a new PDF"
+              data-welcome-create
+            >
+              <FileImage size={14} aria-hidden /> Create from images
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-secondary"

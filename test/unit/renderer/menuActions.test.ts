@@ -35,6 +35,11 @@ interface Spies {
   preferences: Mock;
   optimize: Mock;
   auditSpace: Mock;
+  createFromImages: Mock;
+  exportPages: Mock;
+  exportText: Mock;
+  exportDocx: Mock;
+  insertPages: Mock;
 }
 
 function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
@@ -51,6 +56,11 @@ function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
   const preferences = vi.fn();
   const optimize = vi.fn();
   const auditSpace = vi.fn();
+  const createFromImages = vi.fn();
+  const exportPages = vi.fn();
+  const exportText = vi.fn();
+  const exportDocx = vi.fn();
+  const insertPages = vi.fn();
   const ctx: MenuActionContext = {
     open: () => open(),
     merge: () => merge(),
@@ -65,12 +75,18 @@ function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
     preferences: () => preferences(),
     optimize: () => optimize(),
     auditSpace: () => auditSpace(),
+    createFromImages: () => createFromImages(),
+    exportPages: () => exportPages(),
+    exportText: () => exportText(),
+    exportDocx: () => exportDocx(),
+    insertPages: () => insertPages(),
   };
   return {
     ctx,
     spies: {
       open, merge, save, saveAs, closeTab, undo, redo, toggleTheme,
       showToolsPalette, about, preferences, optimize, auditSpace,
+      createFromImages, exportPages, exportText, exportDocx, insertPages,
     },
   };
 }
@@ -148,6 +164,42 @@ describe("dispatchMenuAction — every menu action routes to exactly one handler
     expect(spies.auditSpace).toHaveBeenCalledTimes(1);
     expect(spies.optimize).not.toHaveBeenCalled();
   });
+
+  it("Tools -> Create from Images opens the Create dialog", () => {
+    const { ctx, spies } = buildCtx();
+    expect(dispatchMenuAction("createFromImages", ctx)).toBe(true);
+    expect(spies.createFromImages).toHaveBeenCalledTimes(1);
+    expect(spies.exportPages).not.toHaveBeenCalled();
+  });
+
+  it("Tools -> Export Pages opens the Export dialog", () => {
+    const { ctx, spies } = buildCtx();
+    expect(dispatchMenuAction("exportPages", ctx)).toBe(true);
+    expect(spies.exportPages).toHaveBeenCalledTimes(1);
+    expect(spies.createFromImages).not.toHaveBeenCalled();
+  });
+
+  it("Tools -> Export Text opens the Text Export dialog", () => {
+    const { ctx, spies } = buildCtx();
+    expect(dispatchMenuAction("exportText", ctx)).toBe(true);
+    expect(spies.exportText).toHaveBeenCalledTimes(1);
+    expect(spies.exportDocx).not.toHaveBeenCalled();
+    expect(spies.insertPages).not.toHaveBeenCalled();
+  });
+
+  it("Tools -> Export to Word opens the DOCX dialog", () => {
+    const { ctx, spies } = buildCtx();
+    expect(dispatchMenuAction("exportDocx", ctx)).toBe(true);
+    expect(spies.exportDocx).toHaveBeenCalledTimes(1);
+    expect(spies.exportText).not.toHaveBeenCalled();
+  });
+
+  it("Tools -> Insert Pages opens the Insert dialog", () => {
+    const { ctx, spies } = buildCtx();
+    expect(dispatchMenuAction("insertPages", ctx)).toBe(true);
+    expect(spies.insertPages).toHaveBeenCalledTimes(1);
+    expect(spies.exportPages).not.toHaveBeenCalled();
+  });
 });
 
 describe("dispatchMenuAction — zoom / fit actions are claimed (DocumentView handles them)", () => {
@@ -207,6 +259,11 @@ describe("dispatchMenuAction — handler isolation (DEF-038 regression)", () => 
       "preferences",
       "optimize",
       "auditSpace",
+      "createFromImages",
+      "exportPages",
+      "exportText",
+      "exportDocx",
+      "insertPages",
     ] as const;
     for (const action of actions) {
       dispatchMenuAction(action, ctx);
@@ -224,5 +281,10 @@ describe("dispatchMenuAction — handler isolation (DEF-038 regression)", () => 
     expect(spies.preferences).toHaveBeenCalledTimes(1);
     expect(spies.optimize).toHaveBeenCalledTimes(1);
     expect(spies.auditSpace).toHaveBeenCalledTimes(1);
+    expect(spies.createFromImages).toHaveBeenCalledTimes(1);
+    expect(spies.exportPages).toHaveBeenCalledTimes(1);
+    expect(spies.exportText).toHaveBeenCalledTimes(1);
+    expect(spies.exportDocx).toHaveBeenCalledTimes(1);
+    expect(spies.insertPages).toHaveBeenCalledTimes(1);
   });
 });

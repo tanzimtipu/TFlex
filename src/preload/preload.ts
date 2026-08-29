@@ -4,9 +4,12 @@ import type {
   AppInfo,
   AppSettings,
   CreateAnnotationPayload,
+  DocxImageEntry,
   EditAnnotationPayload,
   EngineError,
   EngineState,
+  ExportPageEntry,
+  ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
   MoveSignaturePayload,
@@ -16,6 +19,7 @@ import type {
   RecentFile,
   SampleDocument,
   SpaceAudit,
+  TextPage,
   UpdateState,
 } from "../shared/types";
 import type { Result } from "../shared/result";
@@ -128,6 +132,50 @@ const engineApi = {
     docId: string,
   ): Promise<Result<SpaceAudit, EngineError>> {
     return ipcRenderer.invoke(IPC.engineAuditSpace, docId);
+  },
+  // Phase 9: create + export
+  createFromImages(
+    docId: string,
+    imageBuffers: Uint8Array[],
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineCreateFromImages, docId, imageBuffers);
+  },
+  createFromClipboard(
+    docId: string,
+    content: Uint8Array | string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineCreateFromClipboard, docId, content);
+  },
+  insertBlankPage(
+    docId: string,
+    afterIndex: number,
+    widthPx: number,
+    heightPx: number,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineInsertBlankPage, docId, afterIndex, widthPx, heightPx);
+  },
+  insertFromPdf(
+    docId: string,
+    otherBytes: Uint8Array,
+    position: number,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineInsertFromPdf, docId, otherBytes, position);
+  },
+  exportPages(
+    docId: string,
+    payload: ExportPagesPayload,
+  ): Promise<Result<ExportPageEntry[], EngineError>> {
+    return ipcRenderer.invoke(IPC.engineExportPages, docId, payload);
+  },
+  exportText(
+    docId: string,
+  ): Promise<Result<TextPage[], EngineError>> {
+    return ipcRenderer.invoke(IPC.engineExportText, docId);
+  },
+  createDocxFromImages(
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineCreateDocxFromImages, entries);
   },
 };
 

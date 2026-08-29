@@ -4,7 +4,9 @@ import { IPC } from '../shared/ipc';
 import type {
   AppSettings,
   CreateAnnotationPayload,
+  DocxImageEntry,
   EditAnnotationPayload,
+  ExportPagesPayload,
   FillFormFieldPayload,
   MoveSignaturePayload,
   OpEntry,
@@ -189,6 +191,29 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineAuditSpace, (_event, docId: string) =>
     engine.auditSpace(docId),
+  );
+
+  // Phase 9: create + export
+  ipcMain.handle(IPC.engineCreateFromImages, (_event, docId: string, imageBuffers: Uint8Array[]) =>
+    engine.createFromImages(docId, imageBuffers),
+  );
+  ipcMain.handle(IPC.engineCreateFromClipboard, (_event, docId: string, content: Uint8Array | string) =>
+    engine.createFromClipboard(docId, content),
+  );
+  ipcMain.handle(IPC.engineInsertBlankPage, (_event, docId: string, afterIndex: number, widthPx: number, heightPx: number) =>
+    engine.insertBlankPage(docId, afterIndex, widthPx, heightPx),
+  );
+  ipcMain.handle(IPC.engineInsertFromPdf, (_event, docId: string, otherBytes: Uint8Array, position: number) =>
+    engine.insertFromPdf(docId, otherBytes, position),
+  );
+  ipcMain.handle(IPC.engineExportPages, (_event, docId: string, payload: ExportPagesPayload) =>
+    engine.exportPages(docId, payload),
+  );
+  ipcMain.handle(IPC.engineExportText, (_event, docId: string) =>
+    engine.exportText(docId),
+  );
+  ipcMain.handle(IPC.engineCreateDocxFromImages, (_event, entries: DocxImageEntry[]) =>
+    engine.createDocxFromImages(entries),
   );
 
   // Phase 4: saved signatures service

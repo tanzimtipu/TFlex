@@ -2,12 +2,17 @@ import type { Result } from "./result";
 import type {
   AppInfo,
   AppSettings,
+  DocxImageEntry,
+  EngineState,
+  ExportPageEntry,
+  ExportPagesPayload,
   LoadSettingsResult,
   PdfOpenError,
   RecentFile,
   SampleDocument,
   SavedSignature,
   SignatureSource,
+  TextPage,
   UpdateState,
 } from "./types";
 
@@ -56,6 +61,14 @@ export const IPC = {
   // Phase 8: optimize
   engineOptimize: "engine:optimize",
   engineAuditSpace: "engine:auditSpace",
+  // Phase 9: create + export
+  engineCreateFromImages: "engine:createFromImages",
+  engineCreateFromClipboard: "engine:createFromClipboard",
+  engineInsertBlankPage: "engine:insertBlankPage",
+  engineInsertFromPdf: "engine:insertFromPdf",
+  engineExportPages: "engine:exportPages",
+  engineExportText: "engine:exportText",
+  engineCreateDocxFromImages: "engine:createDocxFromImages",
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
@@ -69,6 +82,119 @@ export const IPC = {
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
  *  the signature service as a flat list of saved entries. */
 export type SavedSignaturesResult = SavedSignature[];
+
+/** Phase 9 — engine surface exposed to the renderer. Each method
+ *  routes over the matching `engine:*` IPC channel through preload.
+ *  Optional methods: a pre-Phase-9 backend won't expose them; the
+ *  renderer's `RealEngineAdapter` degrades with a friendly
+ *  `engine-error` so the UI keeps rendering (same defensive pattern
+ *  as the earlier phases). */
+export interface TFlexApiEngine {
+  loadDocument(
+    docId: string,
+    path: string,
+  ): Promise<Result<ArrayBuffer, "open-error">>;
+  loadDocumentBytes(
+    docId: string,
+    bytes: ArrayBuffer | Uint8Array,
+  ): Promise<Result<ArrayBuffer, "open-error">>;
+  applyOp(
+    docId: string,
+    op: import("./types").OpEntry,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  undo(docId: string): Promise<Result<EngineState, import("./types").EngineError>>;
+  redo(docId: string): Promise<Result<EngineState, import("./types").EngineError>>;
+  merge(
+    docId: string,
+    otherPaths: string[],
+    position: "before" | "after",
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  split(
+    docId: string,
+    range: [number, number],
+  ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
+  extract(
+    docId: string,
+    pages: number[],
+  ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
+  save(docId: string): Promise<Result<string, import("./types").EngineError>>;
+  saveAs(docId: string): Promise<Result<string, import("./types").EngineError>>;
+  getState(docId: string): Promise<Result<EngineState, import("./types").EngineError>>;
+  createAnnotation?(
+    docId: string,
+    annotation: unknown,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  editAnnotation?(
+    docId: string,
+    id: string,
+    patch: unknown,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  deleteAnnotation?(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  getFormFields?(
+    docId: string,
+  ): Promise<Result<unknown[], import("./types").EngineError>>;
+  fillFormField?(
+    docId: string,
+    payload: unknown,
+  ): Promise<Result<unknown[], import("./types").EngineError>>;
+  flattenForms?(
+    docId: string,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  placeSignature?(
+    docId: string,
+    payload: unknown,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  moveSignature?(
+    docId: string,
+    payload: unknown,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  deleteSignature?(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  optimize?(
+    docId: string,
+    preset: import("./types").OptimizePreset,
+  ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
+  auditSpace?(
+    docId: string,
+  ): Promise<Result<import("./types").SpaceAudit, import("./types").EngineError>>;
+  /** Phase 9 — create + export. `quality` is the JPEG re-encode
+   *  fraction in [0, 1] — matches `AppSettings.createImageQuality`
+   *  so the persisted value survives the backend's preserve-if-valid
+   *  pipeline. */
+  createFromImages?(
+    docId: string,
+    imageBuffers: Uint8Array[],
+    quality: number,
+  ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
+  createFromClipboard?(
+    docId: string,
+    content: Uint8Array | string,
+  ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
+  insertBlankPage?(
+    docId: string,
+    afterIndex: number,
+    widthPx: number,
+    heightPx: number,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  insertFromPdf?(
+    docId: string,
+    otherBytes: Uint8Array,
+    position: number,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  exportPages?(
+    docId: string,
+    payload: ExportPagesPayload,
+  ): Promise<Result<ExportPageEntry[], import("./types").EngineError>>;
+  exportText?(docId: string): Promise<Result<TextPage[], import("./types").EngineError>>;
+  createDocxFromImages?(
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, import("./types").EngineError>>;
+}
 
 export interface TFlexApi {
   minimizeWindow(): void;
@@ -122,4 +248,11 @@ export interface TFlexApi {
     install(): Promise<void>;
     onStatusChanged(cb: (state: UpdateState) => void): () => void;
   };
+  /** Phase 9 — engine surface (matches `window.tflex.engine` at
+   *  runtime). Optional because the renderer also falls back to an
+   *  in-memory stub when preload doesn't expose the engine (jsdom
+   *  tests, older builds). The renderer's `RealEngineAdapter`
+   *  enforces per-method `engine-error` degradation when an
+   *  individual engine.* method is missing. */
+  engine?: TFlexApiEngine;
 }

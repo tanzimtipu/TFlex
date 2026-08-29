@@ -124,6 +124,21 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.optimizePreset = rawObj.optimizePreset;
   }
 
+  // Phase 9: preserve exportImageFormat if it is a valid enum value
+  if (typeof rawObj.exportImageFormat === 'string' && (rawObj.exportImageFormat === 'png' || rawObj.exportImageFormat === 'jpeg' || rawObj.exportImageFormat === 'tiff')) {
+    settings.exportImageFormat = rawObj.exportImageFormat;
+  }
+
+  // Phase 9: preserve exportImageDpi if it is a number in 72..600
+  if (typeof rawObj.exportImageDpi === 'number' && Number.isFinite(rawObj.exportImageDpi) && rawObj.exportImageDpi >= 72 && rawObj.exportImageDpi <= 600) {
+    settings.exportImageDpi = rawObj.exportImageDpi;
+  }
+
+  // Phase 9: preserve createImageQuality if it is a number in 0..1
+  if (typeof rawObj.createImageQuality === 'number' && Number.isFinite(rawObj.createImageQuality) && rawObj.createImageQuality >= 0 && rawObj.createImageQuality <= 1) {
+    settings.createImageQuality = rawObj.createImageQuality;
+  }
+
   return settings;
 }
 

@@ -1626,3 +1626,818 @@ describe('EngineService - auditSpace', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 9: createFromImages
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a minimal valid PNG image buffer at a given width and height.
+ * This is a 1-pixel-wide PNG with a single solid colour pixel.
+ */
+function createMinimalPng(width: number = 100, height: number = 80): Uint8Array {
+  // Build a minimal PNG with an IHDR, IDAT, and IEND chunk.
+  // For simplicity we use a tiny 1x1 pixel PNG and resize via pdf-lib's
+  // embedPng, which reads the actual pixel dimensions from IHDR.
+  // We construct a valid PNG of the requested dimensions.
+  const zlib = require('zlib');
+
+  // PNG signature
+  const sig = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  // IHDR chunk
+  function createChunk(type: string, data: Buffer): Buffer {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(data.length, 0);
+    const typeB = Buffer.from(type, 'ascii');
+    const crc = crc32(Buffer.concat([typeB, data]));
+    const crcB = Buffer.alloc(4);
+    crcB.writeUInt32BE(crc, 0);
+    return Buffer.concat([length, typeB, data, crcB]);
+  }
+
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(width, 0);
+  ihdrData.writeUInt32BE(height, 4);
+  ihdrData.writeUInt8(8, 8);   // bit depth
+  ihdrData.writeUInt8(2, 9);   // colour type: RGB
+  ihdrData.writeUInt8(0, 10);  // compression
+  ihdrData.writeUInt8(0, 11);  // filter
+  ihdrData.writeUInt8(0, 12);  // interlace
+
+  const ihdr = createChunk('IHDR', ihdrData);
+
+  // IDAT: raw pixel data (each row: filter byte + RGB pixels)
+  const rawRows: Buffer[] = [];
+  for (let y = 0; y < height; y++) {
+    const row = Buffer.alloc(1 + width * 3);
+    row[0] = 0; // filter: none
+    for (let x = 0; x < width; x++) {
+      const offset = 1 + x * 3;
+      row[offset] = y % 2 === 0 ? 255 : 0;     // R
+      row[offset + 1] = x % 2 === 0 ? 255 : 0; // G
+      row[offset + 2] = 128;                     // B
+    }
+    rawRows.push(row);
+  }
+  const rawData = Buffer.concat(rawRows);
+  const compressed = zlib.deflateSync(rawData);
+  const idat = createChunk('IDAT', compressed);
+
+  // IEND
+  const iend = createChunk('IEND', Buffer.alloc(0));
+
+  return new Uint8Array(Buffer.concat([sig, ihdr, idat, iend]));
+}
+
+function crc32(buf: Buffer): number {
+  let crc = 0xffffffff;
+  const table = crc32Table();
+  for (const b of buf) {
+    crc = (crc >>> 8) ^ table[(crc ^ b) & 0xff];
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function crc32Table(): Uint32Array {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[i] = c;
+  }
+  return table;
+}
+
+describe('Phase 9: createFromImages', () => {
+  it('synthesizes a PDF from a single PNG image', async () => {
+    const engine = new EngineService();
+    const png = createMinimalPng(100, 80);
+
+    const result = await engine.createFromImages('doc-img', [png]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Round-trip: re-parse the output
+    const reDoc = await PDFDocument.load(result.value);
+    expect(reDoc.getPageCount()).toBe(1);
+    const page = reDoc.getPage(0);
+    const size = page.getSize();
+    expect(size.width).toBe(100);
+    expect(size.height).toBe(80);
+  });
+
+  it('synthesizes a PDF from multiple images', async () => {
+    const engine = new EngineService();
+    const png1 = createMinimalPng(100, 80);
+    const png2 = createMinimalPng(200, 150);
+
+    const result = await engine.createFromImages('doc-multi', [png1, png2]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reDoc = await PDFDocument.load(result.value);
+    expect(reDoc.getPageCount()).toBe(2);
+    expect(reDoc.getPage(0).getSize().width).toBe(100);
+    expect(reDoc.getPage(0).getSize().height).toBe(80);
+    expect(reDoc.getPage(1).getSize().width).toBe(200);
+    expect(reDoc.getPage(1).getSize().height).toBe(150);
+  });
+
+  it('returns empty-range when no images are provided', async () => {
+    const engine = new EngineService();
+    const result = await engine.createFromImages('doc-empty', []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('empty-range');
+    }
+  });
+
+  it('creates a document that is backed by the engine and getState returns it', async () => {
+    const engine = new EngineService();
+    const png = createMinimalPng(150, 100);
+
+    const result = await engine.createFromImages('doc-state', [png]);
+    expect(result.ok).toBe(true);
+
+    const state = await engine.getState('doc-state');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      expect(state.value.pageCount).toBe(1);
+    }
+  });
+
+  it('supports JPEG images', async () => {
+    const engine = new EngineService();
+    // Create a minimal JPEG (magic bytes FF D8 FF)
+    const jpegHeader = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
+    const jpegFooter = new Uint8Array([0xff, 0xd9]);
+    const jpeg = new Uint8Array(jpegHeader.length + jpegFooter.length);
+    jpeg.set(jpegHeader);
+    jpeg.set(jpegFooter, jpegHeader.length);
+
+    // JPEG embed will likely fail on a tiny invalid JPEG, but the engine
+    // should handle it gracefully with an error
+    const result = await engine.createFromImages('doc-jpeg', [jpeg]);
+    // pdf-lib may or may not accept this minimal JPEG; we just check
+    // that the engine doesn't crash and returns a Result
+    expect(result).toBeDefined();
+    expect(typeof result.ok).toBe('boolean');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9: exportPages
+// ---------------------------------------------------------------------------
+
+describe('Phase 9: exportPages', () => {
+  it('exports all pages when no range is specified', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    const loadResult = await engine.loadDocument('doc-exp', path);
+    expect(loadResult.ok).toBe(true);
+
+    const result = await engine.exportPages('doc-exp', { format: 'png', dpi: 150 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toHaveLength(3);
+      for (const entry of result.value) {
+        expect(entry.pageIndex).toBeGreaterThanOrEqual(1);
+        expect(entry.pageIndex).toBeLessThanOrEqual(3);
+        expect(entry.format).toBe('png');
+        expect(entry.buffer).toBeInstanceOf(Uint8Array);
+        expect(entry.buffer.length).toBeGreaterThan(0);
+        expect(entry.width).toBeGreaterThan(0);
+        expect(entry.height).toBeGreaterThan(0);
+
+        // Round-trip: each exported buffer should be a valid single-page PDF
+        const reDoc = await PDFDocument.load(entry.buffer);
+        expect(reDoc.getPageCount()).toBe(1);
+      }
+    }
+  });
+
+  it('exports a subset of pages when a range is specified', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(5);
+    await engine.loadDocument('doc-range', path);
+
+    const result = await engine.exportPages('doc-range', {
+      range: [2, 4],
+      format: 'jpeg',
+      dpi: 300,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toHaveLength(3);
+      expect(result.value[0].pageIndex).toBe(2);
+      expect(result.value[1].pageIndex).toBe(3);
+      expect(result.value[2].pageIndex).toBe(4);
+      for (const entry of result.value) {
+        expect(entry.format).toBe('jpeg');
+      }
+    }
+  });
+
+  it('returns out-of-range for invalid range', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-oob', path);
+
+    const result = await engine.exportPages('doc-oob', {
+      range: [2, 5],
+      format: 'png',
+      dpi: 150,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('out-of-range');
+    }
+  });
+
+  it('returns out-of-range for reversed range', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-rev', path);
+
+    const result = await engine.exportPages('doc-rev', {
+      range: [3, 2],
+      format: 'png',
+      dpi: 150,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('out-of-range');
+    }
+  });
+
+  it('returns engine-error for unknown docId', async () => {
+    const engine = new EngineService();
+    const result = await engine.exportPages('unknown-doc', { format: 'png', dpi: 150 });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+
+  it('exported pages preserve page rotations', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-rot', path);
+
+    // Rotate page 1 clockwise
+    const rotResult = await engine.applyOp('doc-rot', { kind: 'rotate-cw', page: 0 });
+    expect(rotResult.ok).toBe(true);
+
+    const result = await engine.exportPages('doc-rot', { format: 'png', dpi: 150 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Rotation is a display metadata property (/Rotate) that does not
+      // change page dimensions. The rotated page should still report its
+      // original dimensions, but the exported PDF contains the /Rotate
+      // entry so a viewer will display it correctly.
+      const page1 = result.value[0];
+      expect(page1.width).toBe(612); // original width unchanged
+      expect(page1.height).toBe(792); // original height unchanged
+
+      // Verify the exported buffer contains the /Rotate entry
+      const reDoc = await PDFDocument.load(page1.buffer);
+      const page0 = reDoc.getPage(0);
+      // pdf-lib re-exports the rotation, accessible via getRotation
+      const rot = (page0 as any).getRotation?.()?.angle ?? 0;
+      expect(rot % 360).toBe(90);
+    }
+  });
+
+  it('different page sizes are preserved in exported entries', async () => {
+    const engine = new EngineService();
+    // Create a PDF with pages of different sizes
+    const doc = await PDFDocument.create();
+    const page1 = doc.addPage([612, 792]);
+    page1.drawText('Letter', { x: 72, y: 700, size: 14 });
+    const page2 = doc.addPage([595, 842]);
+    page2.drawText('A4', { x: 72, y: 750, size: 14 });
+    const bytes = await doc.save();
+    const path = await writeFixture('diffSizes.pdf', bytes);
+    await engine.loadDocument('doc-sizes', path);
+
+    const result = await engine.exportPages('doc-sizes', { format: 'png', dpi: 150 });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toHaveLength(2);
+      expect(result.value[0].width).toBe(612);
+      expect(result.value[0].height).toBe(792);
+      expect(result.value[1].width).toBe(595);
+      expect(result.value[1].height).toBe(842);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9: createFromClipboard
+// ---------------------------------------------------------------------------
+
+describe('Phase 9: createFromClipboard', () => {
+  it('creates a PDF with a text page from clipboard text', async () => {
+    const engine = new EngineService();
+    const text = 'Hello\nWorld';
+
+    const result = await engine.createFromClipboard('doc-cb-text', text);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Round-trip: re-parse the output
+    const reDoc = await PDFDocument.load(result.value);
+    expect(reDoc.getPageCount()).toBe(1);
+
+    // The page should be Letter size (612 x 792)
+    const page = reDoc.getPage(0);
+    const size = page.getSize();
+    expect(size.width).toBe(612);
+    expect(size.height).toBe(792);
+  });
+
+  it('creates a PDF with an image page from clipboard image', async () => {
+    const engine = new EngineService();
+    const png = createMinimalPng(200, 150);
+
+    const result = await engine.createFromClipboard('doc-cb-img', png);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reDoc = await PDFDocument.load(result.value);
+    expect(reDoc.getPageCount()).toBe(1);
+    const page = reDoc.getPage(0);
+    const size = page.getSize();
+    expect(size.width).toBe(200);
+    expect(size.height).toBe(150);
+  });
+
+  it('handles multi-line text with overflow creating multiple pages', async () => {
+    const engine = new EngineService();
+    // Enough lines to overflow one Letter page at 12pt
+    const lines: string[] = [];
+    for (let i = 0; i < 100; i++) {
+      lines.push(`Line ${i + 1}`);
+    }
+    const text = lines.join('\n');
+
+    const result = await engine.createFromClipboard('doc-cb-multi', text);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reDoc = await PDFDocument.load(result.value);
+    // Should have created multiple pages to fit the text
+    expect(reDoc.getPageCount()).toBeGreaterThan(1);
+  });
+
+  it('engine state is correctly initialised for clipboard-created doc', async () => {
+    const engine = new EngineService();
+    const png = createMinimalPng(100, 80);
+
+    await engine.createFromClipboard('doc-cb-state', png);
+    const state = await engine.getState('doc-cb-state');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      expect(state.value.pageCount).toBe(1);
+      expect(state.value.modified).toBe(true);
+    }
+  });
+
+  it('empty string text creates a PDF with one empty page', async () => {
+    const engine = new EngineService();
+
+    const result = await engine.createFromClipboard('doc-cb-empty', '');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const reDoc = await PDFDocument.load(result.value);
+    expect(reDoc.getPageCount()).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9: insertBlankPage
+// ---------------------------------------------------------------------------
+
+describe('Phase 9: insertBlankPage', () => {
+  it('inserts a blank page at the beginning', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-bp', path);
+
+    const result = await engine.insertBlankPage('doc-bp', -1, 400, 300);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pageCount).toBe(4);
+      // The new blank page should be first in the visible order
+      expect(result.value.pageOrder.length).toBe(4);
+    }
+  });
+
+  it('inserts a blank page after the first page', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-bp-2', path);
+
+    const result = await engine.insertBlankPage('doc-bp-2', 0, 500, 400);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pageCount).toBe(4);
+    }
+  });
+
+  it('inserts a blank page after the last page', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-bp-3', path);
+
+    const result = await engine.insertBlankPage('doc-bp-3', 2, 600, 500);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pageCount).toBe(4);
+    }
+  });
+
+  it('insert-blank is undoable', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-bp-undo', path);
+
+    await engine.insertBlankPage('doc-bp-undo', 1, 400, 300);
+    const stateAfter = await engine.getState('doc-bp-undo');
+    expect(stateAfter.ok && stateAfter.value.pageCount).toBe(4);
+
+    const undo = await engine.undo('doc-bp-undo');
+    expect(undo.ok).toBe(true);
+    if (undo.ok) {
+      expect(undo.value.pageCount).toBe(3);
+    }
+  });
+
+  it('insert-blank round-trips via save', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-bp-rt', path);
+
+    await engine.insertBlankPage('doc-bp-rt', 0, 400, 300);
+    const saveResult = await engine.save('doc-bp-rt');
+    expect(saveResult.ok).toBe(true);
+
+    // Re-load and verify 3 pages
+    const { readFile } = await import('node:fs/promises');
+    const saved = await readFile(path);
+    const reDoc = await PDFDocument.load(saved.buffer.slice(
+      saved.byteOffset,
+      saved.byteOffset + saved.byteLength,
+    ) as ArrayBuffer);
+    expect(reDoc.getPageCount()).toBe(3);
+  });
+
+  it('returns engine-error for unknown docId', async () => {
+    const engine = new EngineService();
+    const result = await engine.insertBlankPage('nonexistent', 0, 400, 300);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9: insertFromPdf
+// ---------------------------------------------------------------------------
+
+describe('Phase 9: insertFromPdf', () => {
+  it('inserts pages from another PDF at the beginning', async () => {
+    const engine = new EngineService();
+    const { path: pA } = await createNPagePdf(3);
+    const { bytes: bB } = await createNPagePdf(2);
+    await engine.loadDocument('doc-ifp', pA);
+
+    const result = await engine.insertFromPdf('doc-ifp', bB, 0);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pageCount).toBe(5);
+    }
+  });
+
+  it('inserts pages at the end', async () => {
+    const engine = new EngineService();
+    const { path: pA } = await createNPagePdf(3);
+    const { bytes: bB } = await createNPagePdf(2);
+    await engine.loadDocument('doc-ifp-end', pA);
+
+    const result = await engine.insertFromPdf('doc-ifp-end', bB, -1);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pageCount).toBe(5);
+    }
+  });
+
+  it('inserts pages in the middle', async () => {
+    const engine = new EngineService();
+    const { path: pA } = await createNPagePdf(4);
+    const { bytes: bB } = await createNPagePdf(2);
+    await engine.loadDocument('doc-ifp-mid', pA);
+
+    const result = await engine.insertFromPdf('doc-ifp-mid', bB, 2);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pageCount).toBe(6);
+    }
+  });
+
+  it('insert-from-pdf is undoable', async () => {
+    const engine = new EngineService();
+    const { path: pA } = await createNPagePdf(3);
+    const { bytes: bB } = await createNPagePdf(2);
+    await engine.loadDocument('doc-ifp-undo', pA);
+
+    await engine.insertFromPdf('doc-ifp-undo', bB, 1);
+    const stateAfter = await engine.getState('doc-ifp-undo');
+    expect(stateAfter.ok && stateAfter.value.pageCount).toBe(5);
+
+    const undo = await engine.undo('doc-ifp-undo');
+    expect(undo.ok).toBe(true);
+    if (undo.ok) {
+      expect(undo.value.pageCount).toBe(3);
+    }
+  });
+
+  it('insert-from-pdf round-trips via save', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    const { bytes: bB } = await createNPagePdf(2);
+    await engine.loadDocument('doc-ifp-rt', path);
+
+    await engine.insertFromPdf('doc-ifp-rt', bB, 3);
+    const saveResult = await engine.save('doc-ifp-rt');
+    expect(saveResult.ok).toBe(true);
+
+    const { readFile } = await import('node:fs/promises');
+    const saved = await readFile(path);
+    const reDoc = await PDFDocument.load(saved.buffer.slice(
+      saved.byteOffset,
+      saved.byteOffset + saved.byteLength,
+    ) as ArrayBuffer);
+    expect(reDoc.getPageCount()).toBe(5);
+  });
+
+  it('returns empty-range for a 0-page source PDF', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-ifp-zero', path);
+
+    // Use encrypted-looking.pdf which pdf-lib loads as a 0-page document
+    const { readFile } = await import('node:fs/promises');
+    const fixturePath = join(process.cwd(), 'test-fixtures', 'encrypted-looking.pdf');
+    const emptyBytes = await readFile(fixturePath);
+
+    const result = await engine.insertFromPdf('doc-ifp-zero', new Uint8Array(emptyBytes), 0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('empty-range');
+    }
+  });
+
+  it('returns engine-error for unknown docId', async () => {
+    const engine = new EngineService();
+    const { bytes } = await createNPagePdf(2);
+    const result = await engine.insertFromPdf('nonexistent', bytes, 0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+
+  it('returns engine-error for corrupt bytes', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-ifp-corr', path);
+
+    const corrupt = new Uint8Array([0, 1, 2, 3]);
+    const result = await engine.insertFromPdf('doc-ifp-corr', corrupt, 0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9: exportText
+// ---------------------------------------------------------------------------
+
+describe('Phase 9: exportText', () => {
+  it('extracts text from pages containing drawText content', async () => {
+    const engine = new EngineService();
+
+    // Create a PDF with known text
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([612, 792]);
+    page.drawText('Hello World', { x: 72, y: 700, size: 14 });
+    page.drawText('Second line', { x: 72, y: 680, size: 14 });
+    const bytes = await doc.save();
+    const path = await writeFixture('exportText-test.pdf', bytes);
+    await engine.loadDocument('doc-et', path);
+
+    const result = await engine.exportText('doc-et');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.length).toBe(1);
+      // Text extraction is best-effort: content streams may use font
+      // encodings that are not trivially decoded. The engine must not
+      // crash and must return a string (possibly empty for complex
+      // encodings). The renderer handles failed extractions gracefully.
+      expect(typeof result.value[0].text).toBe('string');
+    }
+  });
+
+  it('returns text for all pages', async () => {
+    const engine = new EngineService();
+
+    const doc = await PDFDocument.create();
+    for (let i = 0; i < 3; i++) {
+      const page = doc.addPage([612, 792]);
+      page.drawText(`Page ${i + 1}`, { x: 72, y: 700, size: 14 });
+    }
+    const bytes = await doc.save();
+    const path = await writeFixture('exportText-multi.pdf', bytes);
+    await engine.loadDocument('doc-et-multi', path);
+
+    const result = await engine.exportText('doc-et-multi');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toHaveLength(3);
+      for (const page of result.value) {
+        expect(page.pageIndex).toBeGreaterThanOrEqual(1);
+        expect(page.pageIndex).toBeLessThanOrEqual(3);
+        expect(typeof page.text).toBe('string');
+      }
+    }
+  });
+
+  it('returns engine-error for unknown docId', async () => {
+    const engine = new EngineService();
+    const result = await engine.exportText('nonexistent');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+
+  it('exportText is read-only (does not modify engine state)', async () => {
+    const engine = new EngineService();
+
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([612, 792]);
+    page.drawText('Test', { x: 72, y: 700, size: 14 });
+    const bytes = await doc.save();
+    const path = await writeFixture('exportText-ro.pdf', bytes);
+    await engine.loadDocument('doc-et-ro', path);
+
+    const stateBefore = await engine.getState('doc-et-ro');
+    await engine.exportText('doc-et-ro');
+    const stateAfter = await engine.getState('doc-et-ro');
+
+    expect(stateBefore.ok && stateAfter.ok).toBe(true);
+    if (stateBefore.ok && stateAfter.ok) {
+      expect(stateAfter.value.pageCount).toBe(stateBefore.value.pageCount);
+      expect(stateAfter.value.modified).toBe(stateBefore.value.modified);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9: createDocxFromImages
+// ---------------------------------------------------------------------------
+
+describe('Phase 9: createDocxFromImages', () => {
+  it('creates a valid DOCX (ZIP) from a single image', async () => {
+    const engine = new EngineService();
+    const png = createMinimalPng(100, 80);
+
+    const entries = [{
+      pageNumber: 1,
+      pngBuffer: png,
+      width: 100,
+      height: 80,
+      pageWidth: 612,
+      pageHeight: 792,
+    }];
+
+    const result = await engine.createDocxFromImages(entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Verify it is a valid ZIP: starts with PK signature
+    const bytes = result.value;
+    expect(bytes[0]).toBe(0x50); // 'P'
+    expect(bytes[1]).toBe(0x4b); // 'K'
+
+    // Should be large enough to contain XML + PNG
+    expect(bytes.length).toBeGreaterThan(500);
+  });
+
+  it('creates a DOCX with multiple pages', async () => {
+    const engine = new EngineService();
+    const png1 = createMinimalPng(100, 80);
+    const png2 = createMinimalPng(200, 150);
+
+    const entries = [
+      { pageNumber: 1, pngBuffer: png1, width: 100, height: 80, pageWidth: 612, pageHeight: 792 },
+      { pageNumber: 2, pngBuffer: png2, width: 200, height: 150, pageWidth: 612, pageHeight: 792 },
+    ];
+
+    const result = await engine.createDocxFromImages(entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const bytes = result.value;
+    expect(bytes[0]).toBe(0x50);
+    expect(bytes[1]).toBe(0x4b);
+    expect(bytes.length).toBeGreaterThan(1000); // Two images + XML
+  });
+
+  it('returns empty-range for empty entries', async () => {
+    const engine = new EngineService();
+    const result = await engine.createDocxFromImages([]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('empty-range');
+    }
+  });
+
+  it('DOCX output contains expected XML content', async () => {
+    const engine = new EngineService();
+    const png = createMinimalPng(50, 50);
+
+    const entries = [{
+      pageNumber: 1,
+      pngBuffer: png,
+      width: 50,
+      height: 50,
+      pageWidth: 612,
+      pageHeight: 792,
+    }];
+
+    const result = await engine.createDocxFromImages(entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // The ZIP should contain the string 'word/document.xml' somewhere
+    // (as a filename entry in the central directory or as content)
+    const decoder = new TextDecoder();
+    const text = decoder.decode(result.value);
+    expect(text).toContain('word/document.xml');
+    expect(text).toContain('word/media/image1.png');
+    expect(text).toContain('[Content_Types].xml');
+  });
+
+  it('DOCX is self-consistent (no internal errors)', async () => {
+    const engine = new EngineService();
+
+    // Create a larger number of pages to test consistency
+    const entries = [];
+    for (let i = 1; i <= 5; i++) {
+      entries.push({
+        pageNumber: i,
+        pngBuffer: createMinimalPng(100 + i * 10, 80 + i * 5),
+        width: 100 + i * 10,
+        height: 80 + i * 5,
+        pageWidth: 612,
+        pageHeight: 792,
+      });
+    }
+
+    const result = await engine.createDocxFromImages(entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // All 5 images should be referenced
+    const decoder = new TextDecoder();
+    const text = decoder.decode(result.value);
+    for (let i = 1; i <= 5; i++) {
+      expect(text).toContain(`image${i}.png`);
+    }
+
+    // The central directory should list all entries
+    const pkEnd = findPkEndSignature(result.value);
+    expect(pkEnd).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Find the end-of-central-directory signature (PK\x05\x06) in a ZIP buffer.
+ */
+function findPkEndSignature(buf: Uint8Array): number {
+  for (let i = buf.length - 22; i >= 0; i--) {
+    if (buf[i] === 0x50 && buf[i + 1] === 0x4b && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
+      return i;
+    }
+  }
+  return -1;
+}

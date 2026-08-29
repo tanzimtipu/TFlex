@@ -37,7 +37,7 @@ const {
     _downloadUpdate: vi.fn().mockResolvedValue(undefined),
     _quitAndInstall: vi.fn(),
     _setFeedURL: vi.fn(),
-    _mockGetVersion: vi.fn().mockReturnValue('1.1.1'),
+    _mockGetVersion: vi.fn().mockReturnValue('1.2.0'),
     _mockIsPackaged: false,
     _mockGetAppPath: vi.fn().mockReturnValue('/mock/app'),
     _mockReadFileSync: vi.fn(),

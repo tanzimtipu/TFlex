@@ -1,7 +1,7 @@
 ---
 description: Backend developer for TFlex. Owns the Electron main process: the pdf-lib PDF engine, file I/O, persistence, IPC services, Windows packaging, and backend unit tests. Never touches renderer code.
 mode: subagent
-model: openrouter/deepseek/deepseek-v4-pro
+model: openrouter/z-ai/glm-5.2
 permission:
   edit:
     "REQUIREMENTS.md": deny

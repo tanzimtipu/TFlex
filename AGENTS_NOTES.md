@@ -1,5 +1,70 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-08-30: frontend-dev re-pinned to MiniMax M3 free route
+
+- From: `openrouter/minimax/minimax-m3` (paid)
+- To: `openrouter/minimax/minimax-m3:free`
+- Reason: the operator updated their OpenRouter account data-policy / guardrail settings
+  to allow free-route providers, unblocking the route that failed the earlier probe gate
+  with "No endpoints available matching your guardrail restrictions and data policy".
+  Identical weights to the paid route; 100% token-cost saving restored.
+- The paid route `openrouter/minimax/minimax-m3` stays as the documented fallback for
+  rate-limit outages.
+
+Files changed in this re-pin: `.opencode/agents/frontend-dev.md`, `AGENTS.md` (fallback
+table + dated note), `AGENTS_NOTES.md` (this entry), `README.md` (lineup + probe-gate
+list), and the selector skill baseline table. Restart OpenCode; the probe gate must show
+`minimax-m3:free` for frontend-dev before any real task dispatch.
+
+## 2026-08-30: frontend-dev free route rejected — fallback to paid MiniMax M3
+
+Probe-gate result after restart: backend-dev READY (glm-5.2), qa READY, adversary READY,
+git-agent READY; frontend-dev FAILED with account-level provider rejection: "No endpoints
+available matching your guardrail restrictions and data policy".
+
+- From: `openrouter/minimax/minimax-m3:free`
+- To: `openrouter/minimax/minimax-m3` (paid route)
+- Reason: the free route is blocked by the operator account's OpenRouter data policy /
+  guardrail settings — same failure class as the 2026-08-27 qa vision-exp rejection
+  (single-provider route rejected at account level). Fallback applied per the AGENTS.md
+  fallback table; the free route remains documented as the fallback-of-the-fallback but
+  must not be re-pinned unless the account setting changes.
+- To keep the free-route savings in future: allow the MiniMax free provider in the
+  OpenRouter account privacy/data-policy settings, then re-pin `:free` and re-run the
+  probe gate.
+
+backend-dev stays on `openrouter/z-ai/glm-5.2` — it probed READY. All other agents
+unchanged. Files changed in this fix: `.opencode/agents/frontend-dev.md`, `AGENTS.md`
+(fallback table + dated note), `AGENTS_NOTES.md` (this entry), `README.md` (lineup +
+probe-gate list), and the selector skill baseline table. Restart OpenCode; the probe gate
+must show `minimax-m3` for frontend-dev before any real task dispatch.
+
+## 2026-08-30: backend-dev + frontend-dev primary model swaps (hosted)
+
+Human-approved primary selections after a discounted/free-model cost analysis against the
+OpenRouter discounted-models and free-models collections (prices verified via the
+Models API at run time):
+
+- backend-dev: `openrouter/deepseek/deepseek-v4-pro` -> `openrouter/z-ai/glm-5.2`.
+  GLM 5.2 is $0.33/M in vs $0.57/M in (77% promotional discount at swap time), 1M context,
+  positioned for project-level agentic software engineering, and was already the
+  documented fallback for this role — now primary. Typical 100K-in/20K-out sub-agent task
+  drops from ~$0.29 to ~$0.13. Old primary becomes the fallback.
+- frontend-dev: `openrouter/minimax/minimax-m3` -> `openrouter/minimax/minimax-m3:free`.
+  Identical weights on the free route; zero capability change, 100% token-cost saving.
+  Risk: free-route rate limits / slower providers — the paid route
+  `openrouter/minimax/minimax-m3` stays as the documented fallback.
+- qa, adversary, git-agent: unchanged (already at their cost floor; qa keeps its proven
+  vision stack).
+
+Files changed: `.opencode/agents/backend-dev.md`, `.opencode/agents/frontend-dev.md`,
+`AGENTS.md` (fallback table + dated note), `README.md` (model lineup + probe-gate model
+list). Pre-swap backups live in `.opencode/backups/2026-08-30-hosted-model-swap/`.
+
+These are new primary selections, not emergency fallbacks. OpenCode must be restarted to
+load the new definitions; the orchestrator's probe gate must then show `glm-5.2` for
+backend-dev and `minimax-m3:free` for frontend-dev before any real task dispatch.
+
 ## 2026-08-29: Frontend Phase 8 — Optimize + Audit Space renderer
 
 Phase 8 landed in the renderer (backend `engine.optimize` / `engine.auditSpace`

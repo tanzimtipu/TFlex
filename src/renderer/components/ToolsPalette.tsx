@@ -16,6 +16,9 @@
 import type { ReactElement } from 'react';
 import {
   ArrowDownToLine,
+  FileImage,
+  FilePlus2,
+  FileText,
   GitMerge,
   Layers,
   LayoutGrid,
@@ -43,6 +46,18 @@ interface ToolsPaletteProps {
   onOptimize: () => void;
   onAudit: () => void;
   onClose: () => void;
+  /** Phase 9 — Create-from-images. The user can invoke this from the
+   *  welcome screen too; the palette entry is always enabled. */
+  onCreateFromImages?: () => void;
+  /** Phase 9 — Export pages. The button is enabled only when a real
+   *  document is open. */
+  onExportPages?: () => void;
+  /** Phase 9 — Export text (TXT or RTF). */
+  onExportText?: () => void;
+  /** Phase 9 — Export the active document as a .docx. */
+  onExportDocx?: () => void;
+  /** Phase 9 — Insert blank page or pages from another PDF. */
+  onInsertPages?: () => void;
   /** True when a real document is open. The palette always renders,
    *  but every entry EXCEPT Sign is greyed out when no doc is open
    *  (Sign opens the manager modal regardless). */
@@ -75,17 +90,30 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     onOptimize,
     onAudit,
     onClose,
+    onCreateFromImages,
+    onExportPages,
+    onExportText,
+    onExportDocx,
+    onInsertPages,
     documentRequired,
     hasFormFields,
   } = props;
 
   const isEntryEnabled = (id: ToolEntry['id']): boolean => {
+    if (id === 'createFromImages') {
+      // Create-from-images is available regardless of doc state.
+      return onCreateFromImages !== undefined;
+    }
     if (!documentRequired) {
       // Without a document the only useful action is Sign, which opens
       // the signature manager modal regardless of doc state.
       return id === 'sign';
     }
     if (id === 'forms') return hasFormFields;
+    if (id === 'exportPages') return onExportPages !== undefined;
+    if (id === 'exportText') return onExportText !== undefined;
+    if (id === 'exportDocx') return onExportDocx !== undefined;
+    if (id === 'insertPages') return onInsertPages !== undefined;
     return true;
   };
 
@@ -162,6 +190,56 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       shortcut: '',
       action: onAudit,
     },
+    ...(onCreateFromImages !== undefined
+      ? [{
+          id: 'createFromImages' as const,
+          label: 'Create PDF from images',
+          description: 'Combine picked images into a new PDF document.',
+          icon: <FileImage size={16} aria-hidden />,
+          shortcut: '',
+          action: onCreateFromImages,
+        }]
+      : []),
+    ...(onExportPages !== undefined
+      ? [{
+          id: 'exportPages' as const,
+          label: 'Export pages as images',
+          description: 'Save selected pages as PNG, JPEG, or TIFF files.',
+          icon: <ArrowDownToLine size={16} aria-hidden />,
+          shortcut: '',
+          action: onExportPages,
+        }]
+      : []),
+    ...(onExportText !== undefined
+      ? [{
+          id: 'exportText' as const,
+          label: 'Export text',
+          description: 'Save extracted text as .txt or .rtf.',
+          icon: <FileText size={16} aria-hidden />,
+          shortcut: '',
+          action: onExportText,
+        }]
+      : []),
+    ...(onExportDocx !== undefined
+      ? [{
+          id: 'exportDocx' as const,
+          label: 'Export to Word (.docx)',
+          description: 'Render every page to a single .docx document.',
+          icon: <ArrowDownToLine size={16} aria-hidden />,
+          shortcut: '',
+          action: onExportDocx,
+        }]
+      : []),
+    ...(onInsertPages !== undefined
+      ? [{
+          id: 'insertPages' as const,
+          label: 'Insert pages',
+          description: 'Insert a blank page, or import pages from another PDF.',
+          icon: <FilePlus2 size={16} aria-hidden />,
+          shortcut: '',
+          action: onInsertPages,
+        }]
+      : []),
   ];
 
   return (

@@ -480,3 +480,93 @@ describe('DEF-044: saveCurrent race-condition fix', () => {
     }
   });
 });
+
+// Phase 9: exportImageFormat, exportImageDpi, createImageQuality validation
+describe('Phase 9: create + export settings validation', () => {
+  it('preserves valid exportImageFormat values', () => {
+    expect(normalizeSettings({ exportImageFormat: 'png' }).exportImageFormat).toBe('png');
+    expect(normalizeSettings({ exportImageFormat: 'jpeg' }).exportImageFormat).toBe('jpeg');
+    expect(normalizeSettings({ exportImageFormat: 'tiff' }).exportImageFormat).toBe('tiff');
+  });
+
+  it('rejects invalid exportImageFormat values', () => {
+    expect(normalizeSettings({ exportImageFormat: 'webp' }).exportImageFormat).toBeUndefined();
+    expect(normalizeSettings({ exportImageFormat: 123 }).exportImageFormat).toBeUndefined();
+    expect(normalizeSettings({ exportImageFormat: '' }).exportImageFormat).toBeUndefined();
+    expect(normalizeSettings({ exportImageFormat: true }).exportImageFormat).toBeUndefined();
+  });
+
+  it('does not set exportImageFormat when absent', () => {
+    expect(normalizeSettings({}).exportImageFormat).toBeUndefined();
+  });
+
+  it('preserves valid exportImageDpi values', () => {
+    expect(normalizeSettings({ exportImageDpi: 72 }).exportImageDpi).toBe(72);
+    expect(normalizeSettings({ exportImageDpi: 150 }).exportImageDpi).toBe(150);
+    expect(normalizeSettings({ exportImageDpi: 300 }).exportImageDpi).toBe(300);
+    expect(normalizeSettings({ exportImageDpi: 600 }).exportImageDpi).toBe(600);
+  });
+
+  it('rejects exportImageDpi outside 72-600 range', () => {
+    expect(normalizeSettings({ exportImageDpi: 71 }).exportImageDpi).toBeUndefined();
+    expect(normalizeSettings({ exportImageDpi: 601 }).exportImageDpi).toBeUndefined();
+    expect(normalizeSettings({ exportImageDpi: 0 }).exportImageDpi).toBeUndefined();
+    expect(normalizeSettings({ exportImageDpi: -1 }).exportImageDpi).toBeUndefined();
+  });
+
+  it('rejects non-numeric exportImageDpi values', () => {
+    expect(normalizeSettings({ exportImageDpi: '150' }).exportImageDpi).toBeUndefined();
+    expect(normalizeSettings({ exportImageDpi: true }).exportImageDpi).toBeUndefined();
+    expect(normalizeSettings({ exportImageDpi: NaN }).exportImageDpi).toBeUndefined();
+    expect(normalizeSettings({ exportImageDpi: Infinity }).exportImageDpi).toBeUndefined();
+  });
+
+  it('does not set exportImageDpi when absent', () => {
+    expect(normalizeSettings({}).exportImageDpi).toBeUndefined();
+  });
+
+  it('preserves valid createImageQuality values', () => {
+    expect(normalizeSettings({ createImageQuality: 0 }).createImageQuality).toBe(0);
+    expect(normalizeSettings({ createImageQuality: 0.5 }).createImageQuality).toBe(0.5);
+    expect(normalizeSettings({ createImageQuality: 1 }).createImageQuality).toBe(1);
+    expect(normalizeSettings({ createImageQuality: 0.85 }).createImageQuality).toBe(0.85);
+  });
+
+  it('rejects createImageQuality outside 0-1 range', () => {
+    expect(normalizeSettings({ createImageQuality: -0.1 }).createImageQuality).toBeUndefined();
+    expect(normalizeSettings({ createImageQuality: 1.1 }).createImageQuality).toBeUndefined();
+    expect(normalizeSettings({ createImageQuality: 2 }).createImageQuality).toBeUndefined();
+    expect(normalizeSettings({ createImageQuality: -1 }).createImageQuality).toBeUndefined();
+  });
+
+  it('rejects non-numeric createImageQuality values', () => {
+    expect(normalizeSettings({ createImageQuality: '0.5' }).createImageQuality).toBeUndefined();
+    expect(normalizeSettings({ createImageQuality: true }).createImageQuality).toBeUndefined();
+    expect(normalizeSettings({ createImageQuality: NaN }).createImageQuality).toBeUndefined();
+    expect(normalizeSettings({ createImageQuality: Infinity }).createImageQuality).toBeUndefined();
+  });
+
+  it('does not set createImageQuality when absent', () => {
+    expect(normalizeSettings({}).createImageQuality).toBeUndefined();
+  });
+
+  it('save/load round-trips all Phase 9 settings', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      exportImageFormat: 'jpeg' as const,
+      exportImageDpi: 300,
+      createImageQuality: 0.85,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.exportImageFormat).toBe('jpeg');
+      expect(result.value.exportImageDpi).toBe(300);
+      expect(result.value.createImageQuality).toBe(0.85);
+    }
+  });
+});

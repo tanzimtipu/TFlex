@@ -168,7 +168,7 @@ export function Toolbar(props: ToolbarProps) {
         </button>
         <button
           type="button"
-          className="tool-btn"
+          className="tool-btn tool-btn-with-label"
           onClick={onSaveAs}
           disabled={!modified}
           title={modified ? 'Save a copy' : 'Nothing to save'}
@@ -226,7 +226,7 @@ export function Toolbar(props: ToolbarProps) {
         )}
         <button
           type="button"
-          className="tool-btn"
+          className="tool-btn tool-btn-with-label"
           onClick={onMerge}
           title="Merge with another PDF"
           aria-label="Merge with another PDF"
@@ -236,7 +236,7 @@ export function Toolbar(props: ToolbarProps) {
         </button>
         <button
           type="button"
-          className="tool-btn"
+          className="tool-btn tool-btn-with-label"
           onClick={onSplit}
           title="Extract or split pages"
           aria-label="Extract or split pages"
@@ -247,7 +247,7 @@ export function Toolbar(props: ToolbarProps) {
         <span className="toolbar-sep" aria-hidden />
         <button
           type={signToolActive ? 'button' : 'button'}
-          className={signToolActive ? 'tool-btn tool-btn-active' : 'tool-btn'}
+          className={signToolActive ? 'tool-btn tool-btn-with-label tool-btn-active' : 'tool-btn tool-btn-with-label'}
           onClick={onSignClick}
           title={signToolActive ? 'Sign tool active — click a page to place the selected signature. Click again to disarm.' : 'Sign: draw, type, or place a saved signature.'}
           aria-pressed={signToolActive}
@@ -259,7 +259,7 @@ export function Toolbar(props: ToolbarProps) {
         {hasFormFields && (
           <button
             type="button"
-            className="tool-btn tool-btn-form"
+            className="tool-btn tool-btn-with-label tool-btn-form"
             onClick={onFlattenClick}
             title="Flatten form fields: bake filled values into the page content"
             aria-label="Flatten form fields"
@@ -271,7 +271,7 @@ export function Toolbar(props: ToolbarProps) {
         <span className="toolbar-sep" aria-hidden />
         <button
           type="button"
-          className="tool-btn tool-btn-optimize"
+          className="tool-btn tool-btn-with-label tool-btn-optimize"
           onClick={onOptimize}
           title="Reduce file size: re-serialise the document with a compression preset"
           aria-label="Reduce file size"
@@ -282,7 +282,7 @@ export function Toolbar(props: ToolbarProps) {
         </button>
         <button
           type="button"
-          className="tool-btn tool-btn-audit"
+          className="tool-btn tool-btn-with-label tool-btn-audit"
           onClick={onAuditSpace}
           title="Audit space usage: see a per-element breakdown of the file size"
           aria-label="Audit space usage"
@@ -294,7 +294,7 @@ export function Toolbar(props: ToolbarProps) {
         <span className="toolbar-sep" aria-hidden />
         <button
           type="button"
-          className={toolsPaletteOpen ? 'tool-btn tool-btn-active' : 'tool-btn'}
+          className={toolsPaletteOpen ? 'tool-btn tool-btn-with-label tool-btn-active' : 'tool-btn tool-btn-with-label'}
           onClick={onToolsPaletteToggle}
           aria-pressed={toolsPaletteOpen}
           title="Show tools palette (Ctrl+Shift+P)"

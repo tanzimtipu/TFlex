@@ -818,18 +818,37 @@ textarea {
 .toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  /* Two groups (left = navigation/save, right = actions) sit on one
+   * row when the window is wide; when it isn't, the right group wraps
+   * to the next row and the toolbar grows vertically so labelled
+   * buttons (Merge / Split / Sign / Flatten / Optimize / Audit /
+   * Tools) never overlap the navigation group. */
+  flex-wrap: wrap;
+  gap: 4px var(--sp-3);
   padding: 6px var(--sp-3);
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar);
-  height: 44px;
+  min-height: 44px;
   flex-shrink: 0;
+  /* Each side can use `margin-left: auto` to push the right cluster
+   * to the trailing edge; this selector matches the second group. */
+}
+
+.toolbar > .toolbar-group:last-child {
+  margin-left: auto;
 }
 
 .toolbar-group {
   display: flex;
   align-items: center;
   gap: 4px;
+  /* Allow wrapping INSIDE a group as a defence-in-depth measure for
+   * very narrow windows — usually the outer toolbar already wraps the
+   * two groups, but in pathological cases a single group can still
+   * overflow its row. */
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .tool-btn {
@@ -838,12 +857,30 @@ textarea {
   justify-content: center;
   width: 28px;
   height: 28px;
+  /* Buttons never shrink below 28px; this stops the navigation
+   * cluster (page input, zoom percent) from compressing into
+   * illegibility when the toolbar is narrow. */
+  flex-shrink: 0;
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-2);
   color: var(--fg-muted);
   cursor: pointer;
+  /* Labels inside a button never wrap to a second line; instead the
+   * toolbar grows vertically. The button itself decides its own
+   * width via the `tool-btn-with-label` class. */
+  white-space: nowrap;
   transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+}
+
+/* Labelled buttons (icon + text) opt out of the fixed 28px width and
+ * add horizontal padding so the text isn't flush against the icon.
+ * Without this the label "Save..." inside a 28px box overflows the
+ * button and bleeds into the next control. */
+.tool-btn-with-label {
+  width: auto;
+  padding: 0 8px;
+  gap: 4px;
 }
 
 .tool-btn:hover:not([disabled]) {
@@ -878,6 +915,12 @@ textarea {
   font-variant-numeric: tabular-nums;
   color: var(--fg);
   padding: 0 4px;
+  /* Allow the page input to shrink inside the page indicator when the
+   * window is narrow; without min-width:0 here, flex items default to
+   * min-width: auto which lets the text-input refuse to shrink past
+   * its content size and pushes the rest of the toolbar off-screen. */
+  min-width: 0;
+  flex-shrink: 0;
 }
 
 .page-input {
@@ -3289,4 +3332,89 @@ textarea {
   font-size: var(--fs-xs);
   color: var(--fg-muted);
   line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 9 - Create-from-images + Export-Pages dialogs
+ * ------------------------------------------------------------------------- */
+
+.create-image-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: var(--bg-toolbar);
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.create-image-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm);
+}
+
+.create-image-row:last-child {
+  border-bottom: none;
+}
+
+.create-image-index {
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.create-image-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-strong);
+}
+
+.create-image-remove {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+}
+
+.create-image-remove:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.export-format {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.export-progress {
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  padding: 6px 10px;
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+  font-variant-numeric: tabular-nums;
+}
+
+[role="button"][data-tool-id="createFromImages"],
+[role="button"][data-tool-id="exportPages"] {
+  /* Placeholder for any per-entry tweaks. The base tools-palette
+     styling covers layout — we just keep the names here so future
+     tweaks have an obvious hook. */
 }

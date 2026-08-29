@@ -6,13 +6,17 @@
 
 import type { Result } from "../../shared/result";
 import type {
+  DocxImageEntry,
   EngineError,
   EngineState as SharedEngineState,
+  ExportPageEntry,
+  ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
   OptimizePreset,
   SignaturePlacement,
   SpaceAudit,
+  TextPage,
 } from "../../shared/types";
 import type { Annotation, AnnotationPatch } from "../annotations/model";
 
@@ -197,6 +201,99 @@ export interface EngineApi {
    *  render a pie or bar chart with stable percentages. The operation is
    *  read-only and safe to call while other ops are queued. */
   auditSpace(docId: string): Promise<Result<SpaceAudit, EngineError>>;
+
+  // -- Phase 9: create from images + export pages --
+
+  /** Create a brand-new PDF document from a list of image byte buffers
+   *  (PNG/JPEG). The engine wraps each image as a page sized to the
+   *  image's intrinsic dimensions. Returns the new document's bytes;
+   *  the renderer hands them to the same open-from-bytes flow split
+   *  / extract use. `imageBuffers[i]` is the i-th image's raw file
+   *  bytes; the engine infers format from the magic bytes.
+   *  `quality` is the JPEG quality as a FRACTION in [0, 1] used when
+   *  the engine re-encodes images for size; ignored for PNG inputs.
+   *  This is the canonical persisted wire shape
+   *  (`AppSettings.createImageQuality`); the dialog displays the
+   *  value as a percentage (10..100) for the user.
+   *
+   *  Engine compliance with AppSettings.createImageQuality is the
+   *  host's responsibility — the renderer passes the user-picked
+   *  value here verbatim. */
+  createFromImages(
+    docId: string,
+    imageBuffers: Uint8Array[],
+    quality: number,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+
+  /** Export a page range of the active document as raster images.
+   *  The renderer rasterizes the engine's per-page PDF buffers at the
+   *  chosen DPI and format (see `rasterizeExportPage`). Each entry in
+   *  the result is the encoded bytes for one page (PNG or JPEG). The
+   *  `range` field is 1-based inclusive; omitted for all pages.
+   *
+   *  Backend note: the engine returns PER-PAGE PDF buffers (one
+   *  single-page PDF per requested page). The renderer rasterizes each
+   *  buffer with pdf.js at the requested DPI, then re-encodes to the
+   *  requested format with canvas.toBlob(). This split keeps the main
+   *  process free of canvas / DOM dependencies.
+   *
+   *  For TIFF: the browser canvas can't natively encode TIFF, so the
+   *  renderer falls back to PNG-bytes-with-TIFF-extension when the
+   *  engine doesn't supply proper TIFF bytes. This is documented in
+   *  `rasterizePageToBlob` so the limitation is visible to the user. */
+  exportPages(
+    docId: string,
+    payload: ExportPagesPayload,
+  ): Promise<Result<ExportPageEntry[], EngineError>>;
+
+  /** Phase 9 — extract per-page text from the document. The renderer
+   *  composes the per-page strings into a plain-text or RTF
+   *  document for download. Per-page granularity is preserved so the
+   *  RTF pipeline can apply paragraph breaks at page boundaries. */
+  exportText(
+    docId: string,
+  ): Promise<Result<TextPage[], EngineError>>;
+
+  /** Phase 9 — assemble a .docx from rasterised page images. The
+   *  renderer rasterizes every page of the active doc to PNG at the
+   *  dialog's DPI and hands the buffers here; the engine assembles
+   *  them into a single .docx ZIP and returns the bytes. The
+   *  renderer triggers the per-page download via the standard
+   *  anchor-download trick. */
+  createDocxFromImages(
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>>;
+
+  /** Phase 9 — create a brand-new PDF from clipboard content. The
+   *  renderer reads the OS clipboard (text or image bytes) and
+   *  forwards the payload to the engine. The engine decides how to
+   *  format the result (text becomes a single text page; images
+   *  become single-page PDFs sized to the image). */
+  createFromClipboard(
+    docId: string,
+    content: Uint8Array | string,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+
+  /** Phase 9 — insert a blank page at the given 0-based visible
+   *  position (afterIndex=-1 means "at the very beginning"). Width
+   *  and height are in PDF points. Returns the updated EngineState so
+   *  the renderer's mirror can refresh pageCount + pageOrder. */
+  insertBlankPage(
+    docId: string,
+    afterIndex: number,
+    widthPx: number,
+    heightPx: number,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 9 — insert every page of another PDF at the given
+   *  0-based position (position=-1 means "appended at the end").
+   *  Other PDF bytes are passed through the IPC so the engine can
+   *  parse + copy pages without a renderer-side round-trip. */
+  insertFromPdf(
+    docId: string,
+    otherBytes: Uint8Array,
+    position: number,
+  ): Promise<Result<EngineState, EngineError>>;
 }
 
 /** Translate an engine error code into a user-friendly message. */
@@ -283,6 +380,17 @@ export function defaultPageRange(totalPages: number): string {
     return "";
   }
   return `1-${totalPages}`;
+}
+
+/** Build a default "insert at" hint string for the Insert dialog.
+ *  Empty docs render as "end" (always valid); non-empty docs render
+ *  as the position immediately after the last page (e.g. "5" for a
+ *  4-page doc) so the natural action is "append". */
+export function defaultInsertPosition(totalPages: number): string {
+  if (totalPages <= 0) {
+    return "1";
+  }
+  return `${totalPages + 1}`;
 }
 
 // ---------------------------------------------------------------------------

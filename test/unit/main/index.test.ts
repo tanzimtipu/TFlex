@@ -60,6 +60,10 @@ _buildAppMenu,
       placeSignature: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
       moveSignature: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
       deleteSignature: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
+      optimize: vi.fn().mockResolvedValue({ ok: true, value: new ArrayBuffer(8) }),
+      auditSpace: vi.fn().mockResolvedValue({ ok: true, value: { totalBytes: 0, breakdown: { images: 0, fonts: 0, contentStreams: 0, metadata: 0, other: 0 } } }),
+      createFromImages: vi.fn().mockResolvedValue({ ok: true, value: new ArrayBuffer(8) }),
+      exportPages: vi.fn().mockResolvedValue({ ok: true, value: [] }),
     },
     _sigInstance: {
       list: vi.fn().mockResolvedValue([]),
@@ -98,7 +102,7 @@ vi.mock('electron', () => ({
     on: _on,
     getPath: vi.fn((name: string) => name === 'userData' ? '/mock/user/data' : '/mock/app'),
     getAppPath: vi.fn().mockReturnValue('/mock/app'),
-    getVersion: vi.fn().mockReturnValue('1.1.1'),
+    getVersion: vi.fn().mockReturnValue('1.2.0'),
     isPackaged: false,
   },
   BrowserWindow: {
@@ -325,6 +329,14 @@ describe('main/index - start()', () => {
 
   it('registers signatures:delete handler', () => {
     expect(getRegisteredChannels()).toContain(IPC.signaturesDelete);
+  });
+
+  it('registers engine:createFromImages handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.engineCreateFromImages);
+  });
+
+  it('registers engine:exportPages handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.engineExportPages);
   });
 
   it('creates the main window via createMainWindow', () => {

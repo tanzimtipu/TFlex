@@ -37,7 +37,12 @@ export type MenuAction =
   | 'about'
   | 'preferences'
   | 'optimize'
-  | 'auditSpace';
+  | 'auditSpace'
+  | 'createFromImages'
+  | 'exportPages'
+  | 'exportText'
+  | 'exportDocx'
+  | 'insertPages';
 
 /** The bag of side-effect callbacks `App.tsx` hands the dispatcher.
  *  Each entry mirrors a menu item the user can trigger from the
@@ -62,6 +67,22 @@ export interface MenuActionContext {
   /** Phase 8 — Audit Space dialog. Opens the per-element-type size
    *  breakdown chart for the active tab. Read-only. */
   auditSpace(): void;
+  /** Phase 9 — Create-from-images dialog. The WIN + Tools palette both
+   *  funnel through this entry; the dialog picks image files, asks
+   *  the user for a JPEG quality, and feeds the bytes to
+   *  `engine.createFromImages`. Result opens as a new tab via the same
+   *  flow split / extract / optimize use. */
+  createFromImages(): void;
+  /** Phase 9 — Export-Pages dialog. Page range + format + DPI +
+   *  the dialog rasterizes each entry with pdf.js and triggers a
+   *  per-page download. The active document is required. */
+  exportPages(): void;
+  /** Phase 9 — Export text (TXT or RTF). */
+  exportText(): void;
+  /** Phase 9 — Export the active document as a .docx. */
+  exportDocx(): void;
+  /** Phase 9 — Insert pages (blank or from another PDF). */
+  insertPages(): void;
 }
 
 /** Dispatch a menu action string to its handler. Returns true if
@@ -86,6 +107,11 @@ export function dispatchMenuAction(action: string, ctx: MenuActionContext): bool
     case 'preferences':      ctx.preferences();       return true;
     case 'optimize':         ctx.optimize();          return true;
     case 'auditSpace':       ctx.auditSpace();        return true;
+    case 'createFromImages': ctx.createFromImages();  return true;
+    case 'exportPages':      ctx.exportPages();       return true;
+    case 'exportText':       ctx.exportText();        return true;
+    case 'exportDocx':       ctx.exportDocx();        return true;
+    case 'insertPages':      ctx.insertPages();       return true;
     case 'zoomIn':
     case 'zoomOut':
     case 'fitWidth':
