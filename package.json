@@ -1,0 +1,54 @@
+{
+  "name": "tflex",
+  "version": "0.1.0",
+  "description": "TFlex - desktop PDF studio for Windows",
+  "type": "module",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "dev": "concurrently -k -n renderer,electron \"vite\" \"wait-on http://localhost:5173 && npm run build:node && electron .\"",
+    "build": "npm run typecheck && npm run build:renderer && npm run build:node",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "build:renderer": "vite build",
+    "build:node": "esbuild src/main/index.ts --bundle --platform=node --format=esm --external:electron --target=node24 --outfile=dist/main/index.js && esbuild src/preload/preload.ts --bundle --platform=node --format=cjs --external:electron --target=node24 --outfile=dist/preload/preload.cjs",
+    "start:prod": "electron .",
+    "dist": "npm run build && electron-builder",
+    "test:unit": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.2.5",
+    "lucide-react": "^1.34.0",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "4.10.38",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "concurrently": "^10.0.5",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.0.1",
+    "pdfkit": "^0.20.1",
+    "pngjs": "^7.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11",
+    "wait-on": "^9.1.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "electron-winstaller@5.4.0": true,
+    "electron@44.0.0": true
+  }
+}
