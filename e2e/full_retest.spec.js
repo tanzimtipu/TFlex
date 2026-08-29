@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const require = createRequire(import.meta.url);
-const { launchApp } = require('./lib/launch.cjs');
+const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 
 test.describe('Full Retest and Regression', () => {
   let electronApp;
@@ -42,7 +42,7 @@ test.describe('Full Retest and Regression', () => {
 
     // 2. DEF-009: Concurrent delete during save
     console.log('Retesting DEF-009...');
-    const reportPath = path.resolve(__dirname, '../assets/samples/report.pdf');
+    const reportPath = getSamplePath('report.pdf');
     const diag9 = await window.evaluate(async (path) => {
         const id = 'doc-009';
         await window.tflex.engine.loadDocument(id, path);
@@ -74,14 +74,14 @@ test.describe('Full Retest and Regression', () => {
     // But split is complex to automate via UI.
     
     // Let's just try to see if the engine call enables it.
-    await window.evaluate(async () => {
-        const d = window.tflexDiagnostics();
-        const id = d.activeTabId;
-        await window.tflex.engine.applyOp(id, { kind: 'rotate-cw', page: 0 });
-    });
+    // Wait, let's use the UI instead to ensure state sync
+    await window.click('.thumb.thumb-current', { modifiers: ['Control'] });
+    await window.click('button[aria-label="Rotate clockwise"]');
+    
     await new Promise(r => setTimeout(r, 1000));
     const isUndoDisabled = await undoBtn.isDisabled();
     console.log('DEF-010 (Undo Button enabled after mutation):', !isUndoDisabled);
+    expect(!isUndoDisabled).toBe(true);
 
     // 4. DEF-011: Save-As to locked destination
     console.log('Retesting DEF-011...');
@@ -93,7 +93,7 @@ test.describe('Full Retest and Regression', () => {
         });
     });
     
-    await window.click('button:has-text("Save As")').catch(() => {
+    await window.click('button[aria-label="Save As"]').catch(() => {
         return window.evaluate(() => {
             const btn = Array.from(document.querySelectorAll('button')).find(b => b.title === 'Save As');
             btn?.click();
@@ -105,7 +105,7 @@ test.describe('Full Retest and Regression', () => {
     const toastText = await window.evaluate(() => document.querySelector('.toast')?.textContent);
     console.log('DEF-011 Toast detected:', toastText);
     
-    const toast11 = window.locator('.toast', { hasText: 'Could not write file' });
+    const toast11 = window.locator('.toast', { hasText: /SaveAs failed/i });
     await expect(toast11).toBeVisible({ timeout: 10000 });
     console.log('DEF-011: PASSED');
 

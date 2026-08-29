@@ -1384,3 +1384,272 @@ describe("engineClient — formFields wire-shape defaults (DEF-025)", () => {
     if (r.ok) expect(r.value.formFields).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 — optimize + auditSpace pass-through
+//
+// The renderer adapter wraps the IPC's engine.optimize / engine.auditSpace
+// behind the same EngineApi surface used by every other engine op. The
+// real adapter must:
+//   - pass the preset through unchanged (the engine validates the enum;
+//     the renderer doesn't)
+//   - return the result bytes / SpaceAudit verbatim (no shape rewriting)
+//   - degrade gracefully with engine-error when the backend doesn't expose
+//     the method (pre-Phase-8 fallback path)
+describe("engineClient — Phase 8 optimize + auditSpace pass-through", () => {
+  function makePhase8Engine(captured: {
+    optimizeCalls: Array<{ docId: string; preset: string }>;
+    auditCalls: string[];
+    bytes?: ArrayBuffer;
+    audit?: {
+      totalBytes: number;
+      breakdown: {
+        images: number;
+        fonts: number;
+        contentStreams: number;
+        metadata: number;
+        other: number;
+      };
+    };
+  }): {
+    available: boolean;
+    loadDocument: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    loadDocumentBytes: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    applyOp: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    undo: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    redo: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    merge: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    split: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    extract: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    save: () => Promise<{ ok: true; value: string }>;
+    saveAs: () => Promise<{ ok: true; value: string }>;
+    getState: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    optimize: (docId: string, preset: string) => Promise<{ ok: true; value: ArrayBuffer }>;
+    auditSpace: (docId: string) => Promise<{ ok: true; value: typeof captured.audit }>;
+  } {
+    return {
+      available: true,
+      async loadDocument() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async loadDocumentBytes() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async applyOp() {
+        return { ok: true as const, value: {} };
+      },
+      async undo() {
+        return { ok: true as const, value: {} };
+      },
+      async redo() {
+        return { ok: true as const, value: {} };
+      },
+      async merge() {
+        return { ok: true as const, value: {} };
+      },
+      async split() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async extract() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async save() {
+        return { ok: true as const, value: "/path" };
+      },
+      async saveAs() {
+        return { ok: true as const, value: "/path" };
+      },
+      async getState() {
+        return { ok: true as const, value: {} };
+      },
+      async optimize(docId, preset) {
+        captured.optimizeCalls.push({ docId, preset });
+        return { ok: true as const, value: captured.bytes ?? new ArrayBuffer(4) };
+      },
+      async auditSpace(docId) {
+        captured.auditCalls.push(docId);
+        return {
+          ok: true as const,
+          value: captured.audit ?? {
+            totalBytes: 1000,
+            breakdown: {
+              images: 500,
+              fonts: 200,
+              contentStreams: 200,
+              metadata: 50,
+              other: 50,
+            },
+          },
+        };
+      },
+    };
+  }
+
+  beforeEach(() => {
+    _resetEngineForTests();
+  });
+
+  afterEach(() => {
+    delete (window as unknown as { tflex?: unknown }).tflex;
+    _resetEngineForTests();
+  });
+
+  it("optimize forwards preset and returns bytes verbatim", async () => {
+    const captured = {
+      optimizeCalls: [] as Array<{ docId: string; preset: string }>,
+      auditCalls: [] as string[],
+    };
+    (window as unknown as { tflex: { engine: ReturnType<typeof makePhase8Engine> } }).tflex = {
+      engine: makePhase8Engine(captured),
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.optimize!("doc-1", "compact");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(captured.optimizeCalls).toEqual([{ docId: "doc-1", preset: "compact" }]);
+    expect(r.value).toBeInstanceOf(ArrayBuffer);
+  });
+
+  it("optimize accepts every valid preset enum value", async () => {
+    const captured = {
+      optimizeCalls: [] as Array<{ docId: string; preset: string }>,
+      auditCalls: [] as string[],
+    };
+    (window as unknown as { tflex: { engine: ReturnType<typeof makePhase8Engine> } }).tflex = {
+      engine: makePhase8Engine(captured),
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    for (const preset of ["none", "compact", "max"] as const) {
+      await e.optimize!("doc-1", preset);
+    }
+    expect(captured.optimizeCalls.map((c) => c.preset)).toEqual(["none", "compact", "max"]);
+  });
+
+  it("auditSpace returns the breakdown unchanged", async () => {
+    const audit = {
+      totalBytes: 10000,
+      breakdown: {
+        images: 4500,
+        fonts: 1200,
+        contentStreams: 3000,
+        metadata: 500,
+        other: 800,
+      },
+    };
+    const captured = {
+      optimizeCalls: [] as Array<{ docId: string; preset: string }>,
+      auditCalls: [] as string[],
+      audit,
+    };
+    (window as unknown as { tflex: { engine: ReturnType<typeof makePhase8Engine> } }).tflex = {
+      engine: makePhase8Engine(captured),
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.auditSpace!("doc-1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toEqual(audit);
+    expect(captured.auditCalls).toEqual(["doc-1"]);
+  });
+
+  it("optimize returns engine-error when the backend predates Phase 8", async () => {
+    // A backend with no optimize method — the renderer adapter must
+    // surface a friendly engine-error instead of crashing.
+    const fakeEngine = {
+      available: true,
+      async loadDocument() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async loadDocumentBytes() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async applyOp() {
+        return { ok: true as const, value: {} };
+      },
+      async undo() {
+        return { ok: true as const, value: {} };
+      },
+      async redo() {
+        return { ok: true as const, value: {} };
+      },
+      async merge() {
+        return { ok: true as const, value: {} };
+      },
+      async split() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async extract() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async save() {
+        return { ok: true as const, value: "/path" };
+      },
+      async saveAs() {
+        return { ok: true as const, value: "/path" };
+      },
+      async getState() {
+        return { ok: true as const, value: {} };
+      },
+    };
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.optimize!("doc-1", "compact");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+
+  it("auditSpace returns engine-error when the backend predates Phase 8", async () => {
+    const fakeEngine = {
+      available: true,
+      async loadDocument() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async loadDocumentBytes() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async applyOp() {
+        return { ok: true as const, value: {} };
+      },
+      async undo() {
+        return { ok: true as const, value: {} };
+      },
+      async redo() {
+        return { ok: true as const, value: {} };
+      },
+      async merge() {
+        return { ok: true as const, value: {} };
+      },
+      async split() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async extract() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async save() {
+        return { ok: true as const, value: "/path" };
+      },
+      async saveAs() {
+        return { ok: true as const, value: "/path" };
+      },
+      async getState() {
+        return { ok: true as const, value: {} };
+      },
+    };
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.auditSpace!("doc-1");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+});

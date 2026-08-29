@@ -324,3 +324,136 @@ Repo-safety amendments:
 Completion demands: all Phase-6 green; tag v1.x.x pushed; OTA verified by a version
 bump against tanzimtipu/TFlex; thumbnails/screenshots included per gate; timing per
 performance budget as RECheckWise for the new tab-switch/palette work.
+
+## Phase 7 — Phase-6 fixes (must land before Phase 8 features)
+
+**Fixes (target the source, not workarounds):**
+
+1. Color palette: replace the hex/RGB text-input picker with a visual color picker —
+   hue/saturation gradient pad, hue slider, optional swatch grid, and the current-color
+   preview. Preset swatches remain as quick-picks; the custom picker appears inline
+   (not as a dialog) when the user selects "Custom…" from the swatch row. Applies to
+   all annotation tools. Persisted per theme.
+2. "+" add-tab control: move from the far right of the tab bar to immediately after
+   the rightmost open tab (always adjacent to the last tab). Clicking "+" opens an
+   empty tab; the control re-attaches to the new rightmost tab.
+3. App menu: the Phase-6 standard menu (File/View/Edit/Tools/Window/Help/About/
+   Preferences) is not visible in the running app. Diagnose why (missing
+   `Menu.setApplicationMenu`, wrong platform assumption, or registration missing in
+   `start()`) and fix so the menu bar renders on Windows with all items functional.
+
+**Success criteria:**
+
+1. Palette: visual gradient picker picks a custom color and persists per theme; unit
+   tests cover the picker state model; e2e exercises a custom-color round trip.
+2. "+": adjacent placement verified visually (screenshot) and by e2e (open 3 tabs,
+   verify control sits after tab 3).
+3. Menu: menu bar renders on Windows; every menu item triggers its handler; e2e drives
+   File→Open and Preferences→theme-default.
+4. No regressions: full unit + e2e suites green.
+
+**Settings impact:** none (reuse Phase-6 `annotationColors` and existing fields).
+
+## Phase 8 — Optimize (file size reduction)
+
+**Features**
+
+- Reduce file size action: one-click "Reduce file size" (image downsample/recompress,
+  font subsetting, discard objects, cleanup) with a quality preset choice
+  (screen/ebook/printer/press).
+- Audit space usage: dialog showing percentage breakdown of the file by element type
+  (images, fonts, content streams, metadata).
+- Fast web view (linearize) toggle on Save-As.
+
+**Success criteria**
+
+1. Reducing a 20MB sample PDF produces a measurably smaller file that re-opens
+   correctly with identical page count and text extraction.
+2. Audit dialog shows a plausible breakdown for a real file; numbers are reproducible.
+3. Unit tests for optimizer pipeline round-trip; e2e covers reduce+audit+reopen.
+
+**Settings impact:** `optimizePreset?: 'screen'|'ebook'|'printer'|'press'` (default
+`'ebook'`; validation: preserve-if-valid enum, reject-if-invalid; transported via
+AppSettings IPC; used by the optimizer action and saved per-document? No — global).
+
+## Phase 9 — Create + Export
+
+**Features**
+
+- Create PDF from images (JPEG/PNG) and from clipboard content; insert resulting pages
+  into open document or new tab.
+- Export PDF pages to images (JPEG/PNG/TIFF) with resolution choice; export text to
+  plain text/RTF; export whole PDF to Word (.docx) via a bundled converter (offline).
+- Insert blank page; insert from another PDF at a chosen position.
+
+**Success criteria**
+
+1. Creating a PDF from 3 sample images produces a valid PDF that opens in TFlex with
+   correct page count and dimensions.
+2. Exporting a page to PNG at 150 DPI produces a viewable image; text export preserves
+   reading order for the sample report.
+3. Insert-blank and insert-from-PDF round-trip correctly in unit tests and e2e.
+
+**Settings impact:** `exportImageFormat?: 'png'|'jpeg'|'tiff'` (default `'png'`);
+`exportImageDpi?: number` (default 150, range 72–600); `createImageQuality?: number`
+(default 85, range 10–100). All validated preserve-if-valid.
+
+## Phase 10 — Edit content (text and images in place)
+
+**Features**
+
+- Edit existing text: click into a text run, change/replace/delete with font metrics
+  preserved (font, size, color, baseline); reflow within the original bounding box.
+- Add new text box on any page with font/size/color choice.
+- Edit images: move/resize/replace/crop embedded images.
+
+**Success criteria**
+
+1. Editing a word in the sample report produces a PDF that opens in an external reader
+   with the change visible and no layout shift.
+2. Round-trip: edit → save → reopen shows the edit; text extraction reflects it.
+3. Unit tests for text-run replacement and image crop; e2e for the full edit-save-reopen
+   loop.
+
+**Settings impact:** `editDefaultFont?: string` (default `'Helvetica'`; validation:
+string from a bundled allowlist, preserve-if-valid).
+
+## Phase 11 — OCR (recognize text)
+
+**Features**
+
+- Recognize Text action on a scanned PDF: searchable-image output (text layer behind
+  the image) with language choice and downsample option.
+- Batch OCR via the tools palette on multiple open documents.
+- Fix OCR suspects: list low-confidence words with click-to-correct.
+
+**Success criteria**
+
+1. Running OCR on the scanned-style sample makes its text searchable (search finds a
+   known word) and selectable; saved file re-opens with the text layer intact.
+2. Batch OCR on two scanned files completes without UI freeze; progress is reported.
+3. Unit tests for OCR engine integration; e2e for search-after-OCR.
+
+**Settings impact:** `ocrLanguage?: string` (default `'eng'`; validation: ISO-639
+code from a bundled allowlist, preserve-if-valid); `ocrDownsample?: number` (default
+300, range 72–600).
+
+## Phase 12 — Residual page-organize + annotate parity
+
+**Features**
+
+- Replace pages (swap pages from another file, retaining links/bookmarks); renumber
+  pages (logical page labels, sections); crop pages (CropBox/TrimBox control).
+- Callout text boxes; stamps (built-in palettes + custom stamp creation); comment
+  import/export (FDF/XFDF local files).
+
+**Success criteria**
+
+1. Replace-pages on the sample report retains its outline and links; output opens
+   correctly.
+2. Crop a page and verify dimensions change in the saved file.
+3. Stamps render at every zoom; comment export produces a valid FDF that re-imports.
+4. Unit tests for replace/renumber/crop/stamp/FDF; e2e for the user-visible flows.
+
+**Settings impact:** `defaultStampId?: string` (default `'APPROVED'`; validation:
+string from a bundled allowlist, preserve-if-valid).

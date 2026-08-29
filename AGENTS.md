@@ -14,6 +14,15 @@ and demonstrable success criteria, in the original format and phase template. Th
 original v1 text stays frozen; extensions are appended, never rewritten. Ledgers
 (DEF-NNN, ADV-NNN numbering) continue across all phases and extend forever.
 
+Every phase plan also carries a **Settings impact** line: either "none" or the new
+AppSettings fields it introduces (name, default, validation/normalization rule, and
+which IPC transports it). The developer implements the field's validation in
+`src/main/services/settings.ts` (mirroring the Phase-6 pattern: preserve-if-valid,
+reject-if-invalid) before any renderer code reads it. This rule came from the
+Phase-7+ backlog — new feature buckets like Optimize/Create/Export/OCR each carry
+their own settings (per-tool defaults, export formats, OCR language, etc.) and must
+never grow the settings shape ad-hoc.
+
 ## The team
 
 - **orchestrator** (primary) — plans, delegates, reviews, gates phases. Does not write code.

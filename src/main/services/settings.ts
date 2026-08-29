@@ -94,6 +94,11 @@ export function normalizeSettings(raw: unknown): AppSettings {
     }
   }
 
+  // Phase 8: preserve optimizePreset if it is a valid enum value
+  if (typeof rawObj.optimizePreset === 'string' && (rawObj.optimizePreset === 'none' || rawObj.optimizePreset === 'compact' || rawObj.optimizePreset === 'max')) {
+    settings.optimizePreset = rawObj.optimizePreset;
+  }
+
   return settings;
 }
 

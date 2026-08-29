@@ -603,3 +603,81 @@ describe("StubRendererEngine — placeSignature / moveSignature / deleteSignatur
     expect(r.ok).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 — optimize + audit space stub behaviour
+//
+// The stub engine returns a placeholder ArrayBuffer for optimize (the
+// renderer keeps its own bytes for PDF.js display) and synthesises a
+// plausible breakdown for auditSpace (so the dialog renders something
+// even when no real engine is wired). These tests pin that behaviour
+// and confirm the methods surface the same Result<T, EngineError>
+// shape as every other engine op.
+describe("StubRendererEngine — Phase 8 optimize", () => {
+  beforeEach(() => {
+    // Each test gets a fresh stub instance.
+  });
+
+  it("optimize returns an ArrayBuffer placeholder", async () => {
+    const { engine, tabId } = setup(3);
+    const r = await engine.optimize(tabId, "compact");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toBeInstanceOf(ArrayBuffer);
+  });
+
+  it("optimize accepts every valid preset enum value", async () => {
+    const { engine, tabId } = setup(2);
+    for (const preset of ["none", "compact", "max"] as const) {
+      const r = await engine.optimize(tabId, preset);
+      expect(r.ok).toBe(true);
+    }
+  });
+
+  it("optimize returns engine-error for an unknown doc", async () => {
+    const engine = new StubRendererEngine();
+    const r = await engine.optimize("unknown", "compact");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+});
+
+describe("StubRendererEngine — Phase 8 auditSpace", () => {
+  it("returns a SpaceAudit with all five categories populated", async () => {
+    const { engine, tabId } = setup(4);
+    const r = await engine.auditSpace(tabId);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.totalBytes).toBeGreaterThan(0);
+    expect(r.value.breakdown.images).toBeGreaterThanOrEqual(0);
+    expect(r.value.breakdown.fonts).toBeGreaterThanOrEqual(0);
+    expect(r.value.breakdown.contentStreams).toBeGreaterThanOrEqual(0);
+    expect(r.value.breakdown.metadata).toBeGreaterThanOrEqual(0);
+    expect(r.value.breakdown.other).toBeGreaterThanOrEqual(0);
+  });
+
+  it("the breakdown sum is roughly proportional to totalBytes", async () => {
+    const { engine, tabId } = setup(10);
+    const r = await engine.auditSpace(tabId);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const sum =
+      r.value.breakdown.images +
+      r.value.breakdown.fonts +
+      r.value.breakdown.contentStreams +
+      r.value.breakdown.metadata +
+      r.value.breakdown.other;
+    // The stub's percentages round to integers so the sum is within a
+    // few bytes of the total — generous bound to avoid flakiness.
+    expect(Math.abs(sum - r.value.totalBytes)).toBeLessThanOrEqual(10);
+  });
+
+  it("auditSpace returns engine-error for an unknown doc", async () => {
+    const engine = new StubRendererEngine();
+    const r = await engine.auditSpace("unknown");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe("engine-error");
+  });
+});

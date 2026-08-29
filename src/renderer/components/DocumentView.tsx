@@ -108,6 +108,18 @@ interface DocumentViewProps {
   onSaveAs?: () => void;
   onMerge?: () => void;
   onSplit?: () => void;
+  /** Phase 8 — Optimize / Audit Space dialogs. Both are toolbar
+   *  actions that the host owns (the dialogs are mounted at the App
+   *  level). The toolbar buttons are disabled when there's no active
+   *  document, so the dialogs themselves don't need a guard. */
+  onOptimize?: () => void;
+  onAuditSpace?: () => void;
+  /** DEF-041 — Rotate the current page clockwise. The host passes a
+   *  callback that uses `engine.applyOp({kind:'rotate', page, dir:'cw'})`
+   *  with the page the toolbar reports as currently visible. The
+   *  toolbar button only renders when this is wired, so missing
+   *  wiring (e.g. tests) doesn't surface a no-op button. */
+  onRotateClockwise?: () => void;
   /** Phase 3 — annotations. The host (App) holds the canonical list; this
    *  view threads it through to each PageView's overlay and the rail's
    *  annotations panel. */
@@ -233,6 +245,9 @@ export function DocumentView({
   onSaveAs,
   onMerge,
   onSplit,
+  onOptimize,
+  onAuditSpace,
+  onRotateClockwise,
   annotations = [],
   onCreateAnnotation,
   onEditAnnotation,
@@ -1100,6 +1115,9 @@ export function DocumentView({
           }}
           toolsPaletteOpen={toolsPaletteOpen}
           onToolsPaletteToggle={(): void => onToolsPaletteToggle?.()}
+          onOptimize={(): void => onOptimize?.()}
+          onAuditSpace={(): void => onAuditSpace?.()}
+          onRotateClockwise={onRotateClockwise}
         />
         <AnnotationToolbar
           state={annTool}

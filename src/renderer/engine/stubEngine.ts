@@ -24,9 +24,11 @@ import type {
   EngineError,
   FillFormFieldPayload,
   FormField,
+  OptimizePreset,
   SavedSignature,
   SignaturePlacement,
   SignatureSource,
+  SpaceAudit,
 } from "../../shared/types";
 import { applyPatch, type Annotation, type AnnotationPatch } from "../annotations/model";
 import type { EngineApi, EngineOp, EngineState, MergePosition } from "./types";
@@ -459,6 +461,49 @@ export class StubRendererEngine implements EngineApi {
     t.signatures.splice(idx, 1);
     t.modified = true;
     return ok(buildState(t));
+  }
+
+  // -------------------------------------------------------------------------
+  // Optimize + audit space (Phase 8)
+
+  /** Stub equivalent of `engine.optimize`. The renderer never actually
+   *  consumes these bytes (PDF.js uses the renderer-side bytes it
+   *  already has); the stub returns a small placeholder so the type
+   *  checker is happy. The dialog's "before/after" comparison uses
+   *  `tab.sourcePageCount`-derived estimates instead of real bytes.
+   *  Callers must not depend on the result's contents. */
+  async optimize(
+    docId: string,
+    _preset: OptimizePreset,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    return ok(new ArrayBuffer(0));
+  }
+
+  /** Stub equivalent of `engine.auditSpace`. Returns a plausible
+   *  breakdown so the dialog renders something testable; the real
+   *  engine's audit is the source of truth in production. The numbers
+   *  are arbitrary (so long as they sum to totalBytes and percentages
+   *  stay in [0, 100]) — the stub never reads the actual PDF. */
+  async auditSpace(
+    docId: string,
+  ): Promise<Result<SpaceAudit, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    // Roughly plausible breakdown for a typical document: images 45%,
+    // content streams 30%, fonts 12%, metadata 5%, other 8%.
+    const totalBytes = Math.max(t.sourcePageCount, 1) * 12000;
+    return ok({
+      totalBytes,
+      breakdown: {
+        images: Math.round(totalBytes * 0.45),
+        fonts: Math.round(totalBytes * 0.12),
+        contentStreams: Math.round(totalBytes * 0.30),
+        metadata: Math.round(totalBytes * 0.05),
+        other: Math.round(totalBytes * 0.08),
+      },
+    });
   }
 }
 

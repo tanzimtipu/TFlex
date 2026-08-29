@@ -24,6 +24,8 @@ export const IPC = {
   settingsSave: "settings:save",
   settingsAddRecent: "settings:addRecent",
   settingsChangedEvent: "settings:changed",
+  // Phase 7: application menu actions pushed from main to renderer
+  menuActionEvent: "menu:action",
   // Phase 6 — About + preferences surface
   appGetInfo: "app:getInfo",
   appOpenPath: "app:openPath",
@@ -51,6 +53,9 @@ export const IPC = {
   enginePlaceSignature: "engine:placeSignature",
   engineMoveSignature: "engine:moveSignature",
   engineDeleteSignature: "engine:deleteSignature",
+  // Phase 8: optimize
+  engineOptimize: "engine:optimize",
+  engineAuditSpace: "engine:auditSpace",
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
@@ -89,6 +94,13 @@ export interface TFlexApi {
     list(): Promise<SavedSignaturesResult>;
     save(source: SignatureSource, label?: string): Promise<SavedSignaturesResult>;
     delete(id: string): Promise<SavedSignaturesResult>;
+  };
+  /** Phase 7 — application menu. Menu actions are pushed from main
+   *  to the renderer via IPC; the renderer listens with onAction and
+   *  dispatches to the same handlers as toolbar/button interactions.
+   *  The callback receives the action name (e.g. 'open', 'saveAs'). */
+  menu: {
+    onAction(cb: (action: string) => void): () => void;
   };
   /** Phase 6 — About + preferences. Backend fills `AppInfo` from
    *  `app.getVersion()` and the user-data path so the About dialog

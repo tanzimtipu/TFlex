@@ -17,7 +17,117 @@
 // (open/closed, last-picked preset id) lives in the palette component, not in
 // this module, because it doesn't need to round-trip through settings.json.
 
+import type { AppSettings, AnnotationColors as SharedAnnotationColors } from '../../shared/types';
+
 export type AnnotationTheme = 'light' | 'dark';
+
+/** Pure helper that produces the next AppSettings after a palette change.
+ *  Lives next to `reducer` so App.tsx can call it from inside the
+ *  `setSettings(prev => ...)` updater with React's latest pending state
+ *  (instead of a render-scope `settings` capture that may be stale — see
+ *  DEF-037). Returns the input settings unchanged when the new palette is
+ *  content-equal to the existing one, so callers can short-circuit
+ *  the downstream `debouncedPersist` write.
+ *
+ *  Three guarantees matter here (the third is the new one — DEF-037
+ *  was reopened because the previous implementation only satisfied
+ *  the first two):
+ *
+ *    1. **Idempotency guard.** When the incoming `next` palette is
+ *       content-equal to the current palette (in either preset or
+ *       string shape — the backend normalises to hex strings on
+ *       persist, the renderer writes preset objects), the input
+ *       settings object is returned unchanged. The previous
+ *       reference-equality check was always false (the picker prop
+ *       is a freshly-mapped array on every render), so the guard was
+ *       dead code — replaced with a canonical hex comparison.
+ *
+ *    2. **Theme preservation.** The caller always passes React's
+ *       latest `prev` (via `setSettings(prev => ...)`), so the
+ *       returned settings keep whatever theme the user is currently
+ *       looking at. The reducer does not touch `theme`.
+ *
+ *    3. **Per-bucket merge (the regression fix).** The incoming
+ *       `next` may only carry the active-theme bucket — the inactive
+ *       bucket comes from the picker's view of `presets`, which is
+ *       a freshly-mapped view of `settings.annotationColors`. If a
+ *       stale `settings.changed` echo arrived between the user's
+ *       last click and this call (and was applied by the echo
+ *       handler's `setSettings(s)`), `settings.annotationColors`
+ *       may carry a partial palette (e.g., one bucket stripped).
+ *       The previous implementation REPLACED
+ *       `settings.annotationColors` with `next` entirely, so any
+ *       bucket `next` did not carry would be lost. The new
+ *       implementation merges per key: each bucket in the result
+ *       comes from `next` if present, else from `current`, else is
+ *       empty. This is the path that prevents an inactive-bucket
+ *       wipe when rapid theme toggles + palette writes interleave
+ *       with stale echoes. */
+export function applyAnnotationPaletteChange(
+  settings: AppSettings,
+  next: SharedAnnotationColors,
+): AppSettings {
+  const current = settings.annotationColors;
+  // Idempotency guard — canonical hex equality across both buckets.
+  // `bucketHexes` collapses preset/string shape into the same sorted
+  // hex list, so this check matches whether `next` came from the
+  // picker's reducer (preset shape) or from a stale echo (string
+  // shape) and the content is the same.
+  if (
+    current !== undefined
+    && bucketHexes(current.light) === bucketHexes(next.light)
+    && bucketHexes(current.dark) === bucketHexes(next.dark)
+  ) {
+    return settings;
+  }
+  // Per-bucket merge. Each bucket in the result prefers `next` (the
+  // caller's intent), falls back to `current` (the existing state)
+  // when `next` did not provide the bucket at all, and finally to
+  // an empty array.
+  //
+  // The fallback to `current` is the defensive path that prevents an
+  // inactive-bucket wipe when `next` is partial — see the comment
+  // above. `next` carrying an empty array (`[]`) is treated as an
+  // INTENTIONAL clear (the caller wanted to empty the bucket), so we
+  // respect it; `next` carrying `undefined` (the key was absent or
+  // stripped by the caller) is the partial case where we fall back
+  // to `current` to avoid wiping preserved content.
+  const mergedLight = next.light !== undefined
+    ? next.light
+    : (current?.light ?? []);
+  const mergedDark = next.dark !== undefined
+    ? next.dark
+    : (current?.dark ?? []);
+  return {
+    ...settings,
+    annotationColors: {
+      light: mergedLight,
+      dark: mergedDark,
+    },
+  };
+}
+
+/** Canonical hex-set representation of one bucket, sorted ascending.
+ *  Treats both `AnnotationColorPreset[]` (renderer writes) and
+ *  `string[]` (backend echoes after normalisation) as the same
+ *  shape. Returns null when the bucket itself is null/undefined so
+ *  the caller can distinguish "absent" from "empty array". Empty
+ *  arrays canonicalise to the empty string `""`. */
+function bucketHexes(
+  bucket: ReadonlyArray<{ readonly hex: string } | string> | undefined | null,
+): string | null {
+  if (bucket === undefined || bucket === null) return null;
+  const hexes: string[] = [];
+  for (const entry of bucket) {
+    if (typeof entry === 'string') {
+      if (entry.length > 0) hexes.push(entry);
+    } else if (entry.hex.length > 0) {
+      hexes.push(entry.hex);
+    }
+  }
+  hexes.sort();
+  return hexes.join(',');
+}
 
 /** A custom preset the user added through the full-color picker. */
 export interface AnnotationColorPreset {
@@ -52,6 +162,134 @@ export function makePresetId(hex: string): string {
     return crypto.randomUUID();
   }
   return `${hex}-${Date.now().toString(36)}`;
+}
+
+// Phase 7 — picker math.
+//
+// The visible color picker is a saturation/value pad + a hue slider
+// (standard tool palette). The user drags / clicks on the pad and the
+// slider; the pad's local (x, y) translates into (saturation, value)
+// at the current hue, the slider's local (x) translates into the new
+// hue. All helpers below are pure — same input always returns the
+// same hex — so the picker stays testable in jsdom without a canvas.
+
+/** HSL in degrees / 0..1 / 0..1. The picker stores its current selection
+ *  in this shape; on Add we convert to the project-wide lowercase hex. */
+export interface Hsl {
+  /** Hue in degrees, 0..360. */
+  h: number;
+  /** Saturation, 0..1. */
+  s: number;
+  /** Value (lightness in HSV terms), 0..1. */
+  v: number;
+}
+
+/** Parse a `#rrggbb` (or `#rgb`) hex into HSL. Returns null on garbage —
+ *  the existing `normalizeHex` validates first, so this branch mostly
+ *  exists for tests. */
+export function hexToHsl(hex: string): Hsl | null {
+  if (!/^#[0-9a-f]{6}$/.test(hex)) {
+    if (!/^#[0-9a-f]{3}$/.test(hex)) return null;
+    const r = parseInt(hex[1] + hex[1], 16);
+    const g = parseInt(hex[2] + hex[2], 16);
+    const b = parseInt(hex[3] + hex[3], 16);
+    return rgbToHsl(r, g, b);
+  }
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return rgbToHsl(r, g, b);
+}
+
+function rgbToHsl(r: number, g: number, b: number): Hsl {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const d = max - min;
+  let h = 0;
+  if (d !== 0) {
+    if (max === rn) h = ((gn - bn) / d) % 6;
+    else if (max === gn) h = (bn - rn) / d + 2;
+    else h = (rn - gn) / d + 4;
+    h *= 60;
+    if (h < 0) h += 360;
+  }
+  const s = max === 0 ? 0 : d / max;
+  const v = max;
+  return { h, s, v };
+}
+
+/** HSL → lowercase `#rrggbb`. Saturates / desaturates values into the
+ *  standard ranges so callers don't have to clamp beforehand. */
+export function hslToHex({ h, s, v }: Hsl): string {
+  const hue = ((h % 360) + 360) % 360;
+  const sat = s < 0 ? 0 : s > 1 ? 1 : s;
+  const val = v < 0 ? 0 : v > 1 ? 1 : v;
+  const c = val * sat;
+  const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+  const m = val - c;
+  let r = 0;
+  let g = 0;
+  let b = 0;
+  if (hue < 60) { r = c; g = x; b = 0; }
+  else if (hue < 120) { r = x; g = c; b = 0; }
+  else if (hue < 180) { r = 0; g = c; b = x; }
+  else if (hue < 240) { r = 0; g = x; b = c; }
+  else if (hue < 300) { r = x; g = 0; b = c; }
+  else { r = c; g = 0; b = x; }
+  return `#${byteToHex(Math.round((r + m) * 255))}${byteToHex(Math.round((g + m) * 255))}${byteToHex(Math.round((b + m) * 255))}`;
+}
+
+/** Map a click / drag position inside the pad's content box to
+ *  saturation / value. `x` and `y` are CSS pixels relative to the pad
+ *  element; `width` and `height` are the pad's clientWidth /
+ *  clientHeight. The returned saturation rises with x (left = 0,
+ *  right = 1) and value FALLS with y (top = 1, bottom = 0) — that's
+ *  how Photoshop, GIMP, Figma, and every other tool palette orient
+ *  the pad. The hue is taken from the slider, not the pad. */
+export function pickFromPad(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): { s: number; v: number } {
+  if (width <= 0 || height <= 0) return { s: 0, v: 1 };
+  const sx = x < 0 ? 0 : x > width ? width : x;
+  const sy = y < 0 ? 0 : y > height ? height : y;
+  return {
+    s: sx / width,
+    v: 1 - sy / height,
+  };
+}
+
+/** Map a click / drag position on the hue strip to a hue in degrees.
+ *  `x` is CSS pixels relative to the slider element, `width` is its
+ *  clientWidth. The slider is left-to-right (0..360); values are
+ *  wrapped so dragging past either edge is fine. */
+export function pickFromHueSlider(
+  x: number,
+  width: number,
+): number {
+  if (width <= 0) return 0;
+  const sx = x < 0 ? 0 : x > width ? width : x;
+  return (sx / width) * 360;
+}
+
+/** Pure helper: build the full HSL pick (saturation + value at the
+ *  current hue) from a pad-pointer event. Kept separate from
+ *  `pickFromPad` so a future pad variant (e.g. a square with edges
+ *  clipped to the visible content box) can swap implementations
+ *  without changing the call site. */
+export function pickAtPad(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): Hsl {
+  const { s, v } = pickFromPad(x, y, width, height);
+  return { h: 0, s, v };
 }
 
 /** Validate a hex color string. Accepts #rgb, #rrggbb, and the bare forms

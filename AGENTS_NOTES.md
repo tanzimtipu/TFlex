@@ -1,5 +1,100 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-08-29: Frontend Phase 8 — Optimize + Audit Space renderer
+
+Phase 8 landed in the renderer (backend `engine.optimize` / `engine.auditSpace`
+were already wired and validated by backend-dev). Three renderer surfaces
+added:
+
+- `OptimizeDialog.tsx` — preset selector (`none` | `compact` | `max`),
+  best-effort audit hint ("Largest category: ..."), file-size FFT
+  comparison (Before / After / Reduction), confirm runs
+  `engine.optimize` and opens the resulting bytes as a brand-new tab
+  via the standard `openFromBytes` flow.
+- `AuditSpaceDialog.tsx` — read-only bar chart breakdown (Images /
+  Fonts / Content streams / Metadata / Other) with auto-fetch on open
+  and a Refresh button. Percentages sum to ~100 within rounding.
+- `Optimize` / `Audit Space` toolbar buttons and Tools Palette entries,
+  plus a `set-optimize-preset` reducer action + settings echo filter
+  so the preset survives restarts.
+
+Settings impact (per REQUIREMENTS.md): `optimizePreset` field added
+to `AppSettings` (`'none' | 'compact' | 'max'`, default `'none'`).
+Backend `settings.ts` normalises it preserve-if-valid.
+
+Notable mid-flight bug: the boot effect's `void (async () => {...})()`
+IIFE was silently dropping the async body under vite/React-19 StrictMode
+in dev mode (the discarded Promise was getting optimized away). Fixed
+by naming the IIFE `runBoot()` and calling it directly. Without this
+fix the renderer hung in the boot-gate forever and no Phase-8 surface
+ever rendered.
+
+In-scope edits (renderer domain only):
+
+- `src/renderer/App.tsx` — wired the Optimize / Audit dialogs, added
+  the `runOptimizeForActiveTab` / `runAuditSpaceForActiveTab` /
+  `onConfirmOptimize` callbacks, hooked the menu dispatcher to
+  `optimize` / `auditSpace`, threaded new toolbar / palette /
+  diagnostics props. `tflexDiagnostics()` now surfaces
+  `optimizeDialogOpen`, `auditDialogOpen`, `optimizePreset`,
+  `tabModified` (the last one is distinct from `engineState.modified`
+  — it tracks the tabs reducer's `meta.modified` so the e2e harness
+  can verify a freshly-optimised tab is marked modified).
+- `src/renderer/components/{OptimizeDialog,AuditSpaceDialog,Toolbar,
+  ToolsPalette,DocumentView}.tsx` — toolbar buttons + palette entries,
+  DialogView gets `onOptimize` / `onAuditSpace` props to thread through.
+- `src/renderer/engine/{types,engineClient,stubEngine}.ts` —
+  `optimize()` and `auditSpace()` methods added to `EngineApi`,
+  default preset for the dialog, defensive engine-error fallback.
+- `src/renderer/state/preferences.ts` — `set-optimize-preset` action +
+  `DEFAULT_OPTIMIZE_PRESET` + `OPTIMIZE_PRESETS` allowlist.
+- `src/renderer/state/settingsEcho.ts` — `optimizePreset` diff in
+  `sameSettings()` / `differsOnlyInRecentFiles()` so the echo filter
+  doesn't clobber the user's preset on stale echoes.
+- `src/renderer/state/menuActions.ts` — `optimize` / `auditSpace`
+  actions and context callbacks.
+- `src/shared/types.ts` — `OptimizePreset` and `SpaceAudit` types
+  exposed.
+- `src/renderer/styles.css` — `.optimize-*` and `.audit-*` styling
+  (FFT rows, bar tracks, percentages, biggest-category hint, error
+  states).
+
+Unit tests added (renderer domain): 14 new test cases across
+`preferences.test.ts`, `settingsEcho.test.ts`, `menuActions.test.ts`,
+`engineClient.test.ts`, `stubEngine.test.ts`, plus 14 new test cases
+in the dedicated `optimizeDialog.test.tsx` (8) and `auditSpaceDialog.test.tsx`
+(6) component tests. Total renderer tests: 883/883 pass.
+
+Verification (`C:\Users\tanzi\AppData\Local\Temp\opencode\verify\verify-phase8.cjs`):
+drives the production-built Electron app against the real engine,
+captures `screenshots/optimize.png` and `screenshots/audit-space.png`,
+exercises the full optimize round-trip (preset selection, run,
+FFT comparison, new-tab open, modified-flag, preset persistence on
+re-open), and asserts every success criterion from REQUIREMENTS.md
+Phase 8. Live verification completed successfully:
+- Baseline report.pdf: 34 pages, 33,028 bytes.
+- Audit: 5 categories, percentages sum to 100.00, largest = Content
+  streams (19.9 KB, 70.8% of 28.1 KB total).
+- Optimize (compact): produced 23,509-byte output, opened as new tab
+  with `pageCount=34` preserved and `modified=true`.
+- Preset persistence: re-opening the dialog still shows `compact`.
+
+Out of scope for this report: e2e spec under `e2e/` is QA domain
+(see AGENTS.md role boundaries); the live verifier above is the
+renderer-side equivalent. Both screenshots are committed.
+
+## 2026-08-28: settings-impact rule + Phase 7–12 appended
+
+- `AGENTS.md` "The job" now requires every phase plan to carry a **Settings impact**
+  line (new AppSettings fields: name, default, validation rule, IPC transport) so
+  feature buckets like Optimize/Create/Export/OCR never grow the settings shape
+  ad-hoc.
+- `REQUIREMENTS.md` appended: **Phase 7** (three Phase-6 fixes — visual color picker
+  replacing hex/RGB input, "+" control adjacent to rightmost tab, missing app menu),
+  then **Phases 8–12** in the operator-approved order: 8 Optimize, 9 Create+Export,
+  10 Edit content, 11 OCR, 12 residual page-organize + annotate parity. Each phase
+  includes a Settings impact line per the new rule; v1 text frozen.
+
 ## 2026-08-28: git-agent sub-agent added
 
 - New roster member: `.opencode/agents/git-agent.md`, `mode: subagent`,

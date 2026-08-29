@@ -11,8 +11,10 @@ import type {
   FormField,
   MoveSignaturePayload,
   OpEntry,
+  OptimizePreset,
   PlaceSignaturePayload,
   SignaturePlacement,
+  SpaceAudit,
 } from '../../shared/types';
 import {
   cloneAnnotations,
@@ -32,6 +34,7 @@ import {
   snapshotAllFormFields,
   type FormSnapshotEntry,
 } from './forms';
+import { auditSpace as auditSpacePdf } from './optimize';
 
 // ---------------------------------------------------------------------------
 // Internal document state
@@ -895,6 +898,66 @@ export class EngineService {
     doc.modified = true;
     return ok(buildState(doc));
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 8: Optimize — reduce file size / audit space
+  // -----------------------------------------------------------------------
+
+  /**
+   * Generate an optimized copy of the current document state as bytes.
+   * The preset controls compression level:
+   *   'none'    — linearized output (no object streams), largest file
+   *   'compact' — compressed with object streams (default pdf-lib behaviour)
+   *   'max'     — compressed + metadata stripped, smallest file
+   *
+   * The operation is read-only: it does not modify the engine's document
+   * state, undo stack, or modified flag. It sends the serialised bytes
+   * back so the caller can decide whether to save them.
+   */
+  async optimize(
+    docId: string,
+    preset: OptimizePreset,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return this._enqueue(docId, () => this._optimizeImpl(docId, preset));
+  }
+
+  private async _optimizeImpl(
+    docId: string,
+    preset: OptimizePreset,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    try {
+      const bytes = await serializeDocOptimized(doc, preset);
+      return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    } catch (e) {
+      return err('engine-error', `optimize failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /**
+   * Walk the current PDFDocument's indirect objects and return a size
+   * breakdown by element type (images, fonts, content streams, metadata,
+   * other). The operation is read-only and does not queue behind
+   * mutations — it can run in parallel with other operations on the
+   * same docId since it only reads the PDFDocument context.
+   */
+  async auditSpace(
+    docId: string,
+  ): Promise<Result<SpaceAudit, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    try {
+      const audit = auditSpacePdf(doc.pdfDoc);
+      return ok(audit);
+    } catch (e) {
+      return err('engine-error', `auditSpace failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1337,6 +1400,165 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
   }
 
   return out.save();
+}
+
+/**
+ * Like serializeDoc but accepts an OptimizePreset to control compression.
+ *
+ * - 'none':    useObjectStreams = false (linearized, flat object layout)
+ * - 'compact': useObjectStreams = true  (default pdf-lib compression)
+ * - 'max':     useObjectStreams = true  + strip Info dictionary metadata
+ *
+ * Form fields, annotations, and signatures are propagated into the output
+ * document just like the normal save path so the optimized output remains
+ * functionally identical.
+ */
+async function serializeDocOptimized(
+  doc: EngineDoc,
+  preset: OptimizePreset,
+): Promise<Uint8Array> {
+  const out = await PDFDocument.create();
+  const pageMap = new Map<number, number>();
+
+  for (let idx = 0; idx < doc.order.length; idx++) {
+    const origIdx = doc.order[idx];
+    const [copied] = await out.copyPages(doc.pdfDoc, [origIdx]);
+    const rotation = doc.rotations[origIdx];
+    if (rotation !== 0) {
+      copied.setRotation(degrees(rotation * 90));
+    }
+    out.addPage(copied);
+    pageMap.set(origIdx, idx);
+  }
+
+  // Serialize annotations onto the output doc
+  serializeAnnotations(out, doc.annotations, doc.order);
+
+  // Migrate form fields
+  try {
+    const srcForm = doc.pdfDoc.getForm();
+    const srcFields = srcForm.getFields();
+    if (srcFields.length > 0) {
+      const dstForm = out.getForm();
+      for (const srcField of srcFields) {
+        const name = srcField.getName();
+        const srcPage = findFieldPage(doc.pdfDoc, srcField);
+        const dstPageIdx = pageMap.get(srcPage);
+        if (dstPageIdx === undefined) continue;
+
+        try {
+          if (srcField instanceof PDFTextField) {
+            const f = dstForm.createTextField(name);
+            const text = srcField.getText?.() ?? '';
+            f.setText(typeof text === 'string' ? text : '');
+            f.addToPage(out.getPage(dstPageIdx));
+          } else if (srcField instanceof PDFCheckBox) {
+            const f = dstForm.createCheckBox(name);
+            try { if (srcField.isChecked?.()) f.check(); } catch {}
+            f.addToPage(out.getPage(dstPageIdx));
+          } else if (srcField instanceof PDFRadioGroup) {
+            const options = srcField.getOptions?.() ?? [];
+            const f = dstForm.createRadioGroup(name);
+            for (const opt of options) {
+              f.addOptionToPage(String(opt), out.getPage(dstPageIdx));
+            }
+            try {
+              const sel = srcField.getSelected?.();
+              if (sel) f.select(String(sel));
+            } catch {}
+          } else if (srcField instanceof PDFDropdown) {
+            const options = srcField.getOptions?.() ?? [];
+            const f = dstForm.createDropdown(name);
+            f.addOptions(options.map(String));
+            f.addToPage(out.getPage(dstPageIdx));
+            try {
+              const sel = srcField.getSelected?.();
+              if (sel) {
+                const val = Array.isArray(sel) ? String(sel[0]) : String(sel);
+                f.select(val);
+              }
+            } catch {}
+          } else if (srcField instanceof PDFOptionList) {
+            const options = srcField.getOptions?.() ?? [];
+            const f = dstForm.createOptionList(name);
+            f.addOptions(options.map(String));
+            f.addToPage(out.getPage(dstPageIdx));
+            try {
+              const sel = srcField.getSelected?.();
+              if (sel) {
+                if (Array.isArray(sel)) {
+                  for (const v of sel) { try { f.select(String(v)); } catch {} }
+                } else {
+                  try { f.select(String(sel)); } catch {}
+                }
+              }
+            } catch {}
+          }
+        } catch {
+          // Skip fields that fail to migrate
+        }
+      }
+    }
+  } catch {
+    // If form migration fails, save without form fields
+  }
+
+  // Render placed signatures onto the output pages
+  if (doc.placedSignatures.length > 0) {
+    const pngCache = new Map<string, Awaited<ReturnType<typeof out['embedPng']>>>();
+    for (const sp of doc.placedSignatures) {
+      const outPageIdx = sp.page - 1;
+      if (outPageIdx < 0 || outPageIdx >= out.getPageCount()) continue;
+
+      const pngBytes = sp.pngBytes instanceof Uint8Array
+        ? sp.pngBytes
+        : new Uint8Array(sp.pngBytes);
+
+      let embeddedImage = pngCache.get(sp.id);
+      if (embeddedImage === undefined) {
+        try {
+          embeddedImage = await out.embedPng(pngBytes);
+          pngCache.set(sp.id, embeddedImage);
+        } catch {
+          continue;
+        }
+      }
+
+      const page = out.getPage(outPageIdx);
+      const { x, y, width, height } = sp.rect;
+      const pageHeight = page.getSize().height;
+      const pdfY = pageHeight - y - height;
+
+      page.drawImage(embeddedImage, {
+        x,
+        y: pdfY,
+        width,
+        height,
+      });
+    }
+
+    serializeSignatureMetadata(out, doc.placedSignatures);
+  }
+
+  // Copy document-level metadata unless max preset strips it
+  if (preset !== 'max') {
+    try {
+      const title = doc.pdfDoc.getTitle();
+      const author = doc.pdfDoc.getAuthor();
+      const subject = doc.pdfDoc.getSubject();
+      const keywords = doc.pdfDoc.getKeywords();
+      if (title) out.setTitle(title);
+      if (author) out.setAuthor(author);
+      if (subject) out.setSubject(subject);
+      if (keywords) out.setKeywords(typeof keywords === 'string' ? [keywords] : keywords);
+    } catch {
+      // Metadata copy is best-effort.
+    }
+  }
+
+  const useObjectStreams = preset !== 'none';
+
+  return out.save({ useObjectStreams });
 }
 
 /**

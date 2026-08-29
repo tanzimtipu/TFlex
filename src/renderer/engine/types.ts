@@ -10,7 +10,9 @@ import type {
   EngineState as SharedEngineState,
   FillFormFieldPayload,
   FormField,
+  OptimizePreset,
   SignaturePlacement,
+  SpaceAudit,
 } from "../../shared/types";
 import type { Annotation, AnnotationPatch } from "../annotations/model";
 
@@ -175,6 +177,26 @@ export interface EngineApi {
     docId: string,
     placementId: string,
   ): Promise<Result<EngineState, EngineError>>;
+
+  // -- Phase 8: optimize / audit space --
+
+  /** Reduce file size: the engine returns fresh PDF bytes for the
+   *  optimized version of the current document state. The operation is
+   *  read-only — it does not touch the engine's undo stack, modified
+   *  flag, or page order. The renderer hands the returned bytes to the
+   *  same open-from-bytes flow that split/extract use, so the user can
+   *  inspect the result before saving. */
+  optimize(
+    docId: string,
+    preset: OptimizePreset,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+
+  /** Read the per-element-type size breakdown for the current document
+   *  (images / fonts / content streams / metadata / other). Returns the
+   *  total bytes plus a per-category breakdown so the renderer can
+   *  render a pie or bar chart with stable percentages. The operation is
+   *  read-only and safe to call while other ops are queued. */
+  auditSpace(docId: string): Promise<Result<SpaceAudit, EngineError>>;
 }
 
 /** Translate an engine error code into a user-friendly message. */

@@ -27,7 +27,9 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // mousedown and mouseup (DEF-034: state-churn click loss). The
   // resolver classifies the hit as activate / close / no-op, so
   // padding, gap, and inner title clicks all flow through the same
-  // path.
+  // path. Phase 7: the resolver walks up to `.tab` only, so a
+  // mousedown that lands on the "+ tab" button (a sibling of `.tab`
+  // inside `.tab-list`) cannot accidentally activate a tab.
   const onTabMouseDown = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>): void => {
       const action = resolveTabMouseDown(
@@ -54,6 +56,19 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     e.stopPropagation();
   }, []);
 
+  // "+ tab" button also stops mousedown so the tab strip's
+  // onTabMouseDown handler never sees it — the resolver already
+  // filters it out (no .tab ancestor) but stopping here is the
+  // structural guarantee.
+  const onNewTabMouseDown = useCallback((e: ReactMouseEvent<HTMLButtonElement>): void => {
+    e.stopPropagation();
+  }, []);
+
+  // Phase 7 — the "+ tab" button lives INSIDE the tab list as the
+  // last <li>, so it renders immediately adjacent to the rightmost
+  // tab (Phase 7 fix #2). The wrapper <li> keeps the button on the
+  // same flex row as the tabs, with no gap-eating margin between
+  // it and the last tab.
   return (
     <header className="app-header">
       <div className="brand">
@@ -61,69 +76,68 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         <span>TFlex</span>
       </div>
       <div className="tab-area" role="tablist" aria-label="Open documents">
-        {tabs.length === 0 ? (
-          <span style={{ color: "var(--fg-faint)", fontSize: 12, paddingLeft: 8 }}>
-            No documents open
-          </span>
-        ) : (
-          <ul className="tab-list">
-            {tabs.map((tab) => {
-              const isActive = tab.id === activeId;
-              return (
-                <li key={tab.id}>
-                  <div
-                    className={isActive ? "tab tab-active" : "tab"}
-                    role="tab"
-                    aria-selected={isActive}
-                    data-tab-id={tab.id}
-                    onMouseDown={onTabMouseDown}
+        <ul className="tab-list">
+          {tabs.length === 0 ? null : tabs.map((tab) => {
+            const isActive = tab.id === activeId;
+            return (
+              <li key={tab.id}>
+                <div
+                  className={isActive ? "tab tab-active" : "tab"}
+                  role="tab"
+                  aria-selected={isActive}
+                  data-tab-id={tab.id}
+                  onMouseDown={onTabMouseDown}
+                >
+                  <span
+                    className="tab-title"
+                    title={tab.title}
                   >
                     <span
-                      className="tab-title"
-                      title={tab.title}
-                    >
-                      <span
-                        className={
-                          tab.modified
-                            ? "tab-modified-dot"
-                            : "tab-modified-dot tab-modified-dot-hidden"
-                        }
-                        aria-hidden
-                      />
-                      {tab.title}
-                    </span>
-                    <button
-                      type="button"
-                      className="tab-close"
-                      onMouseDown={onCloseMouseDown}
-                      onClick={(e): void => {
-                        e.stopPropagation();
-                        onClose(tab.id);
-                      }}
-                      aria-label={`Close ${tab.title}`}
-                    >
-                      <X size={12} aria-hidden />
-                    </button>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-        {/* Phase 6 — "+ tab" affordance. Always visible (including when
-            no tabs are open), always rendered as its own button so it
-            doesn't accidentally get classified as a tab by the mousedown
-            resolver. */}
-        <button
-          type="button"
-          className="tab-new"
-          onClick={onNewEmptyTab}
-          aria-label="New empty tab"
-          title="New empty tab"
-          data-new-tab
-        >
-          <Plus size={14} aria-hidden />
-        </button>
+                      className={
+                        tab.modified
+                          ? "tab-modified-dot"
+                          : "tab-modified-dot tab-modified-dot-hidden"
+                      }
+                      aria-hidden
+                    />
+                    {tab.title}
+                  </span>
+                  <button
+                    type="button"
+                    className="tab-close"
+                    onMouseDown={onCloseMouseDown}
+                    onClick={(e): void => {
+                      e.stopPropagation();
+                      onClose(tab.id);
+                    }}
+                    aria-label={`Close ${tab.title}`}
+                  >
+                    <X size={12} aria-hidden />
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+          {/* Phase 7 — the "+ tab" affordance now sits immediately
+              after the rightmost tab (or first when there are none).
+              Rendered as its own <li> so it stays on the tab strip's
+              flex row and inherits the strip's baseline alignment,
+              but outside `.tab` so the mousedown resolver classifies
+              it as a no-op. */}
+          <li className="tab-list-new">
+            <button
+              type="button"
+              className="tab-new"
+              onMouseDown={onNewTabMouseDown}
+              onClick={onNewEmptyTab}
+              aria-label="New empty tab"
+              title="New empty tab"
+              data-new-tab
+            >
+              <Plus size={14} aria-hidden />
+            </button>
+          </li>
+        </ul>
       </div>
       <div className="header-actions">
         <button

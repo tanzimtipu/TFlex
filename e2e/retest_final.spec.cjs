@@ -119,9 +119,9 @@ test.describe('Phase 6 Final Verification Walkthrough', () => {
     await window.evaluate(() => {
         window.dispatchEvent(new CustomEvent('menu:action', { detail: { action: 'preferences' } }));
     });
-    await window.waitForSelector('.preferences-dialog');
-    await window.fill('.preferences-dialog input[name="recentsLimit"]', '12');
-    await window.click('.preferences-dialog button:has-text("Save")');
+    await window.waitForSelector('[data-prefs-dialog]');
+    await window.fill('[data-prefs-recents-cap]', '12');
+    await window.click('button[aria-label="Close preferences"]');
     console.log('SC 3 & 5 (Menu/About/Prefs) verified.');
 
     // --- Color Picker ---

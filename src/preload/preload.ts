@@ -11,9 +11,11 @@ import type {
   FormField,
   MoveSignaturePayload,
   OpEntry,
+  OptimizePreset,
   PlaceSignaturePayload,
   RecentFile,
   SampleDocument,
+  SpaceAudit,
   UpdateState,
 } from "../shared/types";
 import type { Result } from "../shared/result";
@@ -115,6 +117,18 @@ const engineApi = {
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineDeleteSignature, docId, sigPlacementId);
   },
+  // Phase 8: optimize — file size reduction and space audit
+  optimize(
+    docId: string,
+    preset: OptimizePreset,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineOptimize, docId, preset);
+  },
+  auditSpace(
+    docId: string,
+  ): Promise<Result<SpaceAudit, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineAuditSpace, docId);
+  },
 };
 
 const api = {
@@ -165,6 +179,16 @@ const api = {
       ipcRenderer.on(IPC.settingsChangedEvent, listener);
       return () => {
         ipcRenderer.removeListener(IPC.settingsChangedEvent, listener);
+      };
+    },
+  },
+  // Phase 7: application menu actions pushed from main to renderer
+  menu: {
+    onAction(cb: (action: string) => void): () => void {
+      const listener = (_event: unknown, payload: { action: string }): void => cb(payload.action);
+      ipcRenderer.on(IPC.menuActionEvent, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.menuActionEvent, listener);
       };
     },
   },

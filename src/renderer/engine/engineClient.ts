@@ -15,7 +15,9 @@ import type {
   FillFormFieldPayload,
   FormField,
   OpEntry,
+  OptimizePreset,
   SignaturePlacement,
+  SpaceAudit,
 } from "../../shared/types";
 import type { Annotation, AnnotationPatch, PagePoint, PageRect } from "../annotations/model";
 import { stubRendererEngine } from "./stubEngine";
@@ -192,6 +194,15 @@ export interface TFlexApiEngine {
     docId: string,
     placementId: string,
   ): Promise<Result<SharedEngineState, EngineError>>;
+  // Phase 8 — optimize + audit space. Optional: a pre-Phase-8 backend
+  // doesn't expose them; the adapter degrades with a friendly
+  // engine-error instead of crashing so the renderer keeps rendering
+  // (same defensive pattern as the Phase 3 / Phase 4 method gating).
+  optimize?(
+    docId: string,
+    preset: OptimizePreset,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
+  auditSpace?(docId: string): Promise<Result<SpaceAudit, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -278,6 +289,10 @@ function missingAnnotations(): Result<never, EngineError> {
 
 function missingPhase4(): Result<never, EngineError> {
   return err("engine-error", "forms/signatures require a backend engine update");
+}
+
+function missingPhase8(): Result<never, EngineError> {
+  return err("engine-error", "optimize requires a backend engine update");
 }
 
 /** Map a renderer-level `EngineOp` into the IPC-shaped `OpEntry`. The
@@ -489,6 +504,23 @@ class RealEngineAdapter implements EngineApi {
     if (this.inner.deleteSignature === undefined) return missingPhase4();
     const r = await this.inner.deleteSignature(docId, placementId);
     return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  // -- Phase 8: optimize / audit space --
+
+  async optimize(
+    docId: string,
+    preset: OptimizePreset,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    if (this.inner.optimize === undefined) return missingPhase8();
+    return this.inner.optimize(docId, preset);
+  }
+
+  async auditSpace(
+    docId: string,
+  ): Promise<Result<SpaceAudit, EngineError>> {
+    if (this.inner.auditSpace === undefined) return missingPhase8();
+    return this.inner.auditSpace(docId);
   }
 }
 

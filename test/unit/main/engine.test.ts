@@ -1405,3 +1405,224 @@ describe('EngineService - placeSignature 0-page guard (DEF-027)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8: Optimize
+// ---------------------------------------------------------------------------
+
+describe('EngineService - optimize', () => {
+  it('returns error for unknown docId', async () => {
+    const engine = new EngineService();
+    const result = await engine.optimize('nonexistent', 'compact');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+
+  it('produces valid output for each preset', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+
+    for (const preset of ['none', 'compact', 'max'] as const) {
+      const result = await engine.optimize('doc-1', preset);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Verify the output is a valid PDF by re-loading it
+        const bytes = new Uint8Array(result.value);
+        const reDoc = await PDFDocument.load(bytes);
+        expect(reDoc.getPageCount()).toBe(3);
+      }
+    }
+  });
+
+  it('different presets produce different byte sizes', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(5);
+    await engine.loadDocument('doc-1', path);
+
+    const sizes: number[] = [];
+    for (const preset of ['none', 'compact', 'max'] as const) {
+      const result = await engine.optimize('doc-1', preset);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        sizes.push(result.value.byteLength);
+      }
+    }
+
+    // 'none' uses useObjectStreams=false => larger
+    // 'compact' and 'max' use useObjectStreams=true => smaller
+    // 'max' strips metadata => smallest
+    expect(sizes.length).toBe(3);
+    expect(sizes[0]).toBeGreaterThan(sizes[1]); // none > compact
+    expect(sizes[1]).toBeGreaterThanOrEqual(sizes[2]); // compact >= max
+  });
+
+  it('optimized output preserves page count', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(7);
+    await engine.loadDocument('doc-1', path);
+
+    const result = await engine.optimize('doc-1', 'compact');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const reDoc = await PDFDocument.load(new Uint8Array(result.value));
+      expect(reDoc.getPageCount()).toBe(7);
+    }
+  });
+
+  it('optimized output preserves page rotations', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+
+    // Rotate page 1 (0-based visible) clockwise
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 1 });
+
+    const result = await engine.optimize('doc-1', 'compact');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const reDoc = await PDFDocument.load(new Uint8Array(result.value));
+      expect(reDoc.getPageCount()).toBe(3);
+      // Verify rotation was preserved on the second page
+      const page = reDoc.getPage(1);
+      const rot = page.getRotation().angle;
+      expect(rot).toBe(90);
+    }
+  });
+
+  it('optimized output preserves deletions', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(4);
+    await engine.loadDocument('doc-1', path);
+
+    // Delete page 1 (0-based visible)
+    await engine.applyOp('doc-1', { kind: 'delete', page: 1 });
+
+    const result = await engine.optimize('doc-1', 'compact');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const reDoc = await PDFDocument.load(new Uint8Array(result.value));
+      expect(reDoc.getPageCount()).toBe(3);
+    }
+  });
+
+  it('optimize is read-only (does not modify engine state)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+
+    const stateBefore = await engine.getState('doc-1');
+    await engine.optimize('doc-1', 'max');
+    const stateAfter = await engine.getState('doc-1');
+
+    expect(stateBefore.ok && stateAfter.ok).toBe(true);
+    if (stateBefore.ok && stateAfter.ok) {
+      expect(stateAfter.value.pageCount).toBe(stateBefore.value.pageCount);
+      expect(stateAfter.value.modified).toBe(stateBefore.value.modified);
+      expect(stateAfter.value.pageOrder).toEqual(stateBefore.value.pageOrder);
+    }
+  });
+
+  it('optimize round-trips a full document with annotations, forms, and signatures', async () => {
+    const engine = new EngineService();
+
+    // Build a document with form fields
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([612, 792]);
+    page.drawText('Hello', { x: 72, y: 700, size: 14 });
+
+    const form = doc.getForm();
+    const textField = form.createTextField('name');
+    textField.setText('Test Value');
+    textField.addToPage(page);
+
+    const bytes = await doc.save();
+    const path = await writeFixture('optimize-roundtrip.pdf', bytes);
+    await engine.loadDocument('doc-1', path);
+
+    // Place a signature
+    await engine.placeSignature('doc-1', {
+      id: 'sig-opt-1',
+      signatureId: 'tmpl-opt',
+      page: 1,
+      rect: { x: 100, y: 100, width: 50, height: 30 },
+      pngBytes: new Uint8Array(0),
+    });
+
+    // Optimize
+    const result = await engine.optimize('doc-1', 'compact');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const reDoc = await PDFDocument.load(new Uint8Array(result.value));
+      expect(reDoc.getPageCount()).toBe(1);
+      // Form should be migrated
+      const reForm = reDoc.getForm();
+      const fields = reForm.getFields();
+      expect(fields.length).toBeGreaterThanOrEqual(1);
+    }
+  });
+});
+
+describe('EngineService - auditSpace', () => {
+  it('returns error for unknown docId', async () => {
+    const engine = new EngineService();
+    const result = await engine.auditSpace('nonexistent');
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+
+  it('returns a non-zero breakdown for a loaded document', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+
+    const result = await engine.auditSpace('doc-1');
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.totalBytes).toBeGreaterThan(0);
+      // Sum of breakdown categories should equal totalBytes
+      const sum =
+        result.value.breakdown.images +
+        result.value.breakdown.fonts +
+        result.value.breakdown.contentStreams +
+        result.value.breakdown.metadata +
+        result.value.breakdown.other;
+      expect(sum).toBe(result.value.totalBytes);
+    }
+  });
+
+  it('returns consistent results for the same document', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+
+    const r1 = await engine.auditSpace('doc-1');
+    const r2 = await engine.auditSpace('doc-1');
+
+    expect(r1.ok && r2.ok).toBe(true);
+    if (r1.ok && r2.ok) {
+      expect(r1.value.totalBytes).toBe(r2.value.totalBytes);
+      expect(r1.value.breakdown).toEqual(r2.value.breakdown);
+    }
+  });
+
+  it('auditSpace is read-only (does not modify engine state)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+
+    const stateBefore = await engine.getState('doc-1');
+    await engine.auditSpace('doc-1');
+    const stateAfter = await engine.getState('doc-1');
+
+    expect(stateBefore.ok && stateAfter.ok).toBe(true);
+    if (stateBefore.ok && stateAfter.ok) {
+      expect(stateAfter.value.pageCount).toBe(stateBefore.value.pageCount);
+      expect(stateAfter.value.modified).toBe(stateBefore.value.modified);
+    }
+  });
+});

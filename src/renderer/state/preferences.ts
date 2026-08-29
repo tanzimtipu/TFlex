@@ -9,7 +9,7 @@
 // settings service normalises them on the way in (e.g. clamping the recents
 // cap to [1, 50]), so the renderer doesn't re-validate at write time.
 
-import type { AppSettings } from '../../shared/types';
+import type { AppSettings, OptimizePreset } from '../../shared/types';
 
 export const MIN_RECENTS_CAP = 1;
 export const MAX_RECENTS_CAP = 50;
@@ -20,10 +20,23 @@ export type ThemeDefault = 'light' | 'dark' | 'system';
 export type PreferencesAction =
   | { type: 'set-theme-default'; value: ThemeDefault }
   | { type: 'set-recents-cap'; value: number }
-  | { type: 'set-tools-palette-layout'; value: 'list' | 'grid' };
+  | { type: 'set-tools-palette-layout'; value: 'list' | 'grid' }
+  | { type: 'set-optimize-preset'; value: OptimizePreset };
 
-/** Apply a single preferences action. Returns the input settings when the
- *  change is a no-op (e.g. setting the same value twice in a row). */
+/** Default compression preset used by the Optimize dialog when the
+ *  user hasn't picked one yet. Matches the backend settings.ts default
+ *  ('none' = linearized, no compression — the safest baseline so a
+ *  first-time Optimize pass never accidentally downsamples images).
+ *  The user's choice lives in AppSettings.optimizePreset and survives
+ *  restarts via the settings.json preserve-if-valid pipeline. */
+export const DEFAULT_OPTIMIZE_PRESET: OptimizePreset = 'none';
+
+/** Render-side allowlist for OptimizePreset. Mirrors the shared type
+ *  and the backend's settings.ts validation. Keeping the allowlist in
+ *  one place lets the dialog pre-validate user input without importing
+ *  the shared type's underlying Zod-style union machinery. */
+export const OPTIMIZE_PRESETS: readonly OptimizePreset[] = ['none', 'compact', 'max'];
+
 export function preferencesReducer(
   state: AppSettings,
   action: PreferencesAction,
@@ -47,6 +60,11 @@ export function preferencesReducer(
       const current = state.toolsPaletteLayout ?? 'list';
       if (current === action.value) return state;
       return { ...state, toolsPaletteLayout: action.value };
+    }
+    case 'set-optimize-preset': {
+      const current: OptimizePreset = state.optimizePreset ?? DEFAULT_OPTIMIZE_PRESET;
+      if (current === action.value) return state;
+      return { ...state, optimizePreset: action.value };
     }
   }
 }

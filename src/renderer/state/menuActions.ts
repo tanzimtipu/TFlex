@@ -1,0 +1,100 @@
+// Phase 7 — application menu action dispatcher.
+//
+// The renderer's App component owns the actual side-effect handlers
+// (open, save, toggleTheme, ...). The menu IPC bridge
+// (`window.tflex.menu.onAction`) only delivers an action name string
+// — it has no opinion on what to do. We isolate the dispatch
+// decision here so the App effect can be a one-liner
+// (`onAction((action) => dispatchMenuAction(action, ctx))`) and the
+// action -> handler mapping stays unit-testable in isolation.
+//
+// The action set is the union of everything `src/main/menu.ts`
+// sends over IPC. If a new menu item is added there, add its name
+// here too; the switch's default branch returns `false` so a typo
+// is caught at the type level via `MenuAction` (the wire string is
+// narrowed before dispatch).
+//
+// `zoomIn` / `zoomOut` / `fitWidth` / `fitPage` are intentionally
+// routed through `DocumentView`'s own keyboard handler so the
+// menu accelerator reuses the same code path the toolbar's
+// keyboard shortcuts already use. We still return `true` here
+// so the IPC layer doesn't see the action as unhandled.
+
+export type MenuAction =
+  | 'open'
+  | 'merge'
+  | 'save'
+  | 'saveAs'
+  | 'closeTab'
+  | 'undo'
+  | 'redo'
+  | 'toggleTheme'
+  | 'zoomIn'
+  | 'zoomOut'
+  | 'fitWidth'
+  | 'fitPage'
+  | 'showToolsPalette'
+  | 'about'
+  | 'preferences'
+  | 'optimize'
+  | 'auditSpace';
+
+/** The bag of side-effect callbacks `App.tsx` hands the dispatcher.
+ *  Each entry mirrors a menu item the user can trigger from the
+ *  native menu bar. Keep these as plain functions — the dispatcher
+ *  itself is pure and synchronous. */
+export interface MenuActionContext {
+  open(): void;
+  merge(): void;
+  save(): void;
+  saveAs(): void;
+  closeTab(): void;
+  undo(): void;
+  redo(): void;
+  toggleTheme(): void;
+  showToolsPalette(): void;
+  about(): void;
+  preferences(): void;
+  /** Phase 8 — Optimize dialog. Opens the preset selector and, on
+   *  confirm, runs `engine.optimize` against the active tab's engine
+   *  doc and routes the result into a new tab. */
+  optimize(): void;
+  /** Phase 8 — Audit Space dialog. Opens the per-element-type size
+   *  breakdown chart for the active tab. Read-only. */
+  auditSpace(): void;
+}
+
+/** Dispatch a menu action string to its handler. Returns true if
+ *  the action was recognised (including the deliberately-no-op
+ *  zoom / fitWidth / fitPage actions that DocumentView handles
+ *  internally), false if the action name is unknown. Unknown
+ *  actions are silently ignored — main process may add new menu
+ *  items in a future release without crashing older renderer
+ *  builds. */
+export function dispatchMenuAction(action: string, ctx: MenuActionContext): boolean {
+  switch (action) {
+    case 'open':             ctx.open();              return true;
+    case 'merge':            ctx.merge();             return true;
+    case 'save':             ctx.save();              return true;
+    case 'saveAs':           ctx.saveAs();            return true;
+    case 'closeTab':         ctx.closeTab();          return true;
+    case 'undo':             ctx.undo();              return true;
+    case 'redo':             ctx.redo();              return true;
+    case 'toggleTheme':      ctx.toggleTheme();       return true;
+    case 'showToolsPalette': ctx.showToolsPalette();  return true;
+    case 'about':            ctx.about();             return true;
+    case 'preferences':      ctx.preferences();       return true;
+    case 'optimize':         ctx.optimize();          return true;
+    case 'auditSpace':       ctx.auditSpace();        return true;
+    case 'zoomIn':
+    case 'zoomOut':
+    case 'fitWidth':
+    case 'fitPage':
+      // Routed to DocumentView's keyboard handler — see the comment
+      // at the top of this file. The dispatcher still claims the
+      // action so callers can tell it was on the menu.
+      return true;
+    default:
+      return false;
+  }
+}

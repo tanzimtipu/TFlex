@@ -6,9 +6,12 @@ import {
   GitMerge,
   Layers,
   Minus,
+  Minimize2,
   MoveHorizontal,
   PanelRightOpen,
+  PieChart,
   Plus,
+  RotateCw,
   Save,
   Scissors,
   Search,
@@ -52,6 +55,15 @@ interface ToolbarProps {
    *  Mirrors the Ctrl+Shift+P accelerator the menu wires up. */
   toolsPaletteOpen: boolean;
   onToolsPaletteToggle: () => void;
+  /** Phase 8 — Optimize / Audit Space. Both are disabled when no
+   *  document is open. */
+  onOptimize: () => void;
+  onAuditSpace: () => void;
+  /** DEF-041 — Rotate-current-page. Exposed in the toolbar so the
+   *  user can rotate the visible page without selecting a thumbnail
+   *  in the SideRail first. Calls `engine.applyOp({kind:'rotate',
+   *  page, dir:'cw'})`. Disabled when no document is open. */
+  onRotateClockwise?: () => void;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -79,6 +91,9 @@ export function Toolbar(props: ToolbarProps) {
     onFlattenClick,
     toolsPaletteOpen,
     onToolsPaletteToggle,
+    onOptimize,
+    onAuditSpace,
+    onRotateClockwise,
   } = props;
 
   const [pageInput, setPageInput] = useState(String(page));
@@ -193,6 +208,22 @@ export function Toolbar(props: ToolbarProps) {
           <Expand size={15} aria-hidden />
         </button>
         <span className="toolbar-sep" aria-hidden />
+        {onRotateClockwise !== undefined && (
+          <button
+            type="button"
+            className="tool-btn"
+            // Phase 8 — disabled while no document is open (the host
+            // passes `undefined` in that case so the button doesn't
+            // render at all; this guard keeps the optional prop safe
+            // in tests too).
+            onClick={onRotateClockwise}
+            title="Rotate clockwise"
+            aria-label="Rotate clockwise"
+            data-toolbar-rotate-cw
+          >
+            <RotateCw size={15} aria-hidden />
+          </button>
+        )}
         <button
           type="button"
           className="tool-btn"
@@ -237,6 +268,29 @@ export function Toolbar(props: ToolbarProps) {
             <span className="tool-btn-label">Flatten</span>
           </button>
         )}
+        <span className="toolbar-sep" aria-hidden />
+        <button
+          type="button"
+          className="tool-btn tool-btn-optimize"
+          onClick={onOptimize}
+          title="Reduce file size: re-serialise the document with a compression preset"
+          aria-label="Reduce file size"
+          data-toolbar-optimize
+        >
+          <Minimize2 size={15} aria-hidden />
+          <span className="tool-btn-label">Optimize</span>
+        </button>
+        <button
+          type="button"
+          className="tool-btn tool-btn-audit"
+          onClick={onAuditSpace}
+          title="Audit space usage: see a per-element breakdown of the file size"
+          aria-label="Audit space usage"
+          data-toolbar-audit
+        >
+          <PieChart size={15} aria-hidden />
+          <span className="tool-btn-label">Audit</span>
+        </button>
         <span className="toolbar-sep" aria-hidden />
         <button
           type="button"

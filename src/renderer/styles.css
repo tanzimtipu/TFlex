@@ -286,8 +286,20 @@ textarea {
 }
 
 .tab-modified-dot-hidden {
-  /* Keep the slot reserved (no width jump) but make the dot invisible. */
+  /* Keep the slot reserved (no width jump) but make the dot invisible.
+   *
+   * We use BOTH opacity: 0 AND visibility: hidden. Opacity alone
+   * leaves the element in the accessibility tree and visible to
+   * hit-testing (pointer-events: none disables clicks, but the slot
+   * still counts as occupying space). `visibility: hidden` is the
+   * stronger hint — accessibility and Playwright treat the element
+   * as not rendered. Together they give us:
+   *   - opacity: 0    -> graceful fade transition between states
+   *   - visibility    -> correct "hidden" semantics for assistive tech
+   *                      and Playwright's `not.toBeVisible()` checks
+   */
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 
@@ -2319,6 +2331,20 @@ textarea {
 
 /* ----- "+ tab" button ----- */
 
+.tab-list-new {
+  /* The "+ tab" button's <li> sits as the last child of .tab-list so
+   * it renders immediately adjacent to the rightmost tab (Phase 7 fix
+   * #2). The <li> is a flex item with no padding so the button's own
+   * gap-from-tab is the .tab-new margin, not a flex gap that the tab
+   * strip would otherwise swallow. */
+  display: inline-flex;
+  align-items: end;
+  list-style: none;
+  flex: 0 0 auto;
+  padding: 0;
+  margin: 0;
+}
+
 .tab-new {
   display: inline-flex;
   align-items: center;
@@ -2894,4 +2920,373 @@ textarea {
   color: #ef4444;
   font-size: var(--fs-xs);
   padding: 2px 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 7 — visual picker (saturation/value pad + hue slider).
+ *
+ * Standard tool-palette geometry:
+ *   - .color-pad is a square box. Its background is the pure hue
+ *     (s=1, v=1). A white-to-transparent overlay paints left-to-right
+ *     (saturation 1 → 0). A black-to-transparent overlay paints
+ *     top-to-bottom (value 1 → 0). Layered, they produce the
+ *     Photoshop/Figma/Sketch pad.
+ *   - .color-hue-slider is a thin strip with a multi-stop linear
+ *     gradient of all 360 degrees. The cursor is a small white ring
+ *     with a black drop-shadow so it stays visible against any color.
+ *
+ * The cursor positions are set as percent-of-element, which means
+ * the cursors stay correctly placed as the parent flexes / the
+ * user resizes the window. Touch + mouse use the same handlers
+ * (pointer events), so no separate touch path is needed.
+ * ------------------------------------------------------------------------- */
+.color-pad {
+  position: relative;
+  width: 100%;
+  /* Square — height tracks the rendered width through the
+   * aspect-ratio property so the pad always reads as a square even
+   * when the picker is narrower than 280px. */
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius-2);
+  border: 1px solid var(--border-subtle);
+  cursor: crosshair;
+  /* backgroundColor is set inline (current hue, s=1, v=1). */
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  overflow: hidden;
+  transition: border-color var(--t-quick) var(--ease);
+}
+.color-pad:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.color-pad-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.color-pad-shade-white {
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 1) 0%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+.color-pad-shade-black {
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(0, 0, 0, 1) 100%
+  );
+}
+.color-pad-cursor {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  /* backgroundColor set inline (the picked hex). */
+  transition: background-color var(--t-quick) var(--ease);
+}
+
+.color-hue-slider {
+  position: relative;
+  width: 100%;
+  height: 12px;
+  border-radius: var(--radius-1);
+  /* The full spectrum at full saturation / value. */
+  background: linear-gradient(
+    to right,
+    hsl(0, 100%, 50%) 0%,
+    hsl(60, 100%, 50%) 16.666%,
+    hsl(120, 100%, 50%) 33.333%,
+    hsl(180, 100%, 50%) 50%,
+    hsl(240, 100%, 50%) 66.666%,
+    hsl(300, 100%, 50%) 83.333%,
+    hsl(360, 100%, 50%) 100%
+  );
+  margin-top: 8px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+  border: 1px solid var(--border-subtle);
+}
+.color-hue-cursor {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  background: transparent;
+}
+
+.color-palette-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--sp-2);
+}
+
+.color-palette-hex {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-strong);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+  font-weight: 500;
+  text-transform: none;
+  font-style: normal;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 8 - Optimize + Audit Space dialogs
+ * ------------------------------------------------------------------------- */
+
+.optimize-preset {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.optimize-preset-option {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.optimize-preset-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.optimize-preset-label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--fg-strong);
+}
+
+.optimize-preset-desc {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.optimize-audit-hint {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  padding: 6px 10px;
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+}
+
+.optimize-fft {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+  background: var(--bg-toolbar);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.optimize-fft-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.optimize-fft-title {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.optimize-fft-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.optimize-fft-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.optimize-fft-label {
+  color: var(--fg-muted);
+}
+
+.optimize-fft-value {
+  color: var(--fg-strong);
+  font-weight: 500;
+}
+
+.optimize-fft-muted { color: var(--fg-faint); font-weight: 400; }
+
+.optimize-fft-positive {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.optimize-fft-negative {
+  color: var(--warn-text, #b45309);
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .optimize-fft-negative { color: #fbbf24; }
+
+.optimize-error {
+  color: #b91c1c;
+}
+
+:root[data-theme="dark"] .optimize-error { color: #f87171; }
+
+.audit-dialog { width: min(520px, calc(100vw - 32px)); }
+
+.audit-summary {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-2);
+}
+
+.audit-summary-label {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.audit-summary-value {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--fg-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.audit-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.audit-bar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.audit-bar-label {
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  font-weight: 500;
+}
+
+.audit-bar-values {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.audit-bar-bytes {
+  font-size: var(--fs-sm);
+  color: var(--fg);
+}
+
+.audit-bar-percent {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  min-width: 44px;
+  text-align: right;
+}
+
+.audit-bar-track {
+  position: relative;
+  height: 8px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.audit-bar-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width var(--t-base) var(--ease);
+}
+
+.audit-bar-hint {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-faint);
+  line-height: 1.4;
+}
+
+.tool-btn-optimize { color: var(--fg-strong); }
+
+.tool-btn-audit { color: var(--fg-strong); }
+
+/* ---------------------------------------------------------------------------
+ * Phase 8 - Save-As linearize toggle (DEF-040)
+ * ------------------------------------------------------------------------- */
+
+.save-as-linearize {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.save-as-linearize-option {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 10px;
+  align-items: start;
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.save-as-linearize-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.save-as-linearize-label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--fg-strong);
+}
+
+.save-as-linearize-desc {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  line-height: 1.4;
 }

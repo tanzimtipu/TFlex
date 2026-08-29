@@ -67,6 +67,22 @@ export interface AppSettings {
   /** Phase 6 — per-theme annotation color overrides. See
    *  `AnnotationColors`. The picker reads + writes this list. */
   annotationColors?: AnnotationColors;
+  /** Phase 8 — optimize preset for file size reduction. Controls
+   *  compression level when the engine.optimize action is called.
+   *  'none' = linearized no compression, 'compact' = moderate
+   *  compression, 'max' = aggressive compression + metadata strip.
+   *  Default 'none'. Validated preserve-if-valid in settings.ts.
+   *
+   *  Also stores the Save-As "Fast web view (linearize)" choice
+   *  (DEF-040): the toggle writes preset='none' when ON (linearized
+   *  output) and preset='compact' when OFF (default compression).
+   *  This piggy-backs on the existing persist path so the user's
+   *  Save-As linearize choice survives across launches without
+   *  adding a new backend-validated field. The Optimize dialog
+   *  reads the same field, so the two flows stay in sync — if the
+   *  user picks 'max' in Optimize then opens Save-As, the toggle
+   *  starts OFF (any non-'none' preset is "not linearized"). */
+  optimizePreset?: OptimizePreset;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -99,6 +115,21 @@ export type UpdateState =
   | { kind: 'downloading'; progress: number }
   | { kind: 'downloaded'; version: string }
   | { kind: 'error'; message: string };
+
+// ---- Phase 8: Optimize ----
+
+export type OptimizePreset = 'none' | 'compact' | 'max';
+
+export interface SpaceAudit {
+  totalBytes: number;
+  breakdown: {
+    images: number;
+    fonts: number;
+    contentStreams: number;
+    metadata: number;
+    other: number;
+  };
+}
 
 // ---- Phase 2: Page organization engine ----
 

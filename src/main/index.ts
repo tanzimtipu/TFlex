@@ -8,6 +8,7 @@ import type {
   FillFormFieldPayload,
   MoveSignaturePayload,
   OpEntry,
+  OptimizePreset,
   PlaceSignaturePayload,
   RecentFile,
 } from '../shared/types';
@@ -59,7 +60,7 @@ export async function start(): Promise<void> {
     sendToFocused(_action: string, ...args: unknown[]): void {
       const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
       if (win !== undefined && !win.isDestroyed()) {
-        win.webContents.send('menu:action', ...args);
+        win.webContents.send(IPC.menuActionEvent, ...args);
       }
     },
   });
@@ -180,6 +181,14 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineDeleteSignature, (_event, docId: string, sigPlacementId: string) =>
     engine.deleteSignature(docId, sigPlacementId),
+  );
+
+  // Phase 8: optimize — file size reduction and space audit
+  ipcMain.handle(IPC.engineOptimize, (_event, docId: string, preset: OptimizePreset) =>
+    engine.optimize(docId, preset),
+  );
+  ipcMain.handle(IPC.engineAuditSpace, (_event, docId: string) =>
+    engine.auditSpace(docId),
   );
 
   // Phase 4: saved signatures service

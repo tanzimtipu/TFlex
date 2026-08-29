@@ -69,6 +69,12 @@ test('Phase 3: Annotations E2E', async () => {
       }
     }
     
+    // Robust check for annotation creation with polling
+    await window.waitForFunction(({ toolId, kind }) => {
+      const diag = window.tflexDiagnostics();
+      return diag.engineState.annotations.some(a => a.kind === toolId || (toolId === 'textbox' && a.kind === 'textbox'));
+    }, { toolId: tool.id }, { timeout: 5000 });
+    
     const diag = await getDiag();
     const found = diag.engineState.annotations.find(a => a.kind === tool.id || (tool.id === 'textbox' && a.kind === 'textbox'));
     expect(found).toBeDefined();
@@ -168,6 +174,10 @@ test('Phase 3: Annotations E2E', async () => {
       await recentItem.click();
   }
   await window.waitForSelector('.workspace', { timeout: 10000 });
+  
+  // Wait for annotations to be loaded into engine state
+  await window.waitForFunction(() => window.tflexDiagnostics().engineState.annotations.length === 8, { timeout: 5000 });
+
   await screenshot('phase3-doc-opened.png');
 
   const diagFinal = await getDiag();

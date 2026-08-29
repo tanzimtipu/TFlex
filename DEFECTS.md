@@ -1,5 +1,127 @@
 
-## DEF-036: Opening PDF into empty tab fails to render workspace
+## DEF-042: Save As button disabled for optimized tabs (no on-disk path)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 8
+
+Steps to reproduce:
+1. Launch app and open a PDF.
+2. Click "Optimize" (Reduce file size).
+3. Click "Reduce and open as new tab".
+4. In the new tab, observe the "Save As" button in the toolbar.
+
+Expected: The "Save As" button should be enabled so the user can save the optimized document.
+Actual: The "Save As" button is disabled with the title "Nothing to save". This happens because the new tab is marked as `modified: true` in the tabs meta, but `engineState.modified` is `false`. The toolbar button is incorrectly tied only to `engineState.modified`.
+
+History:
+- qa: opened
+- qa: CLOSED. Retested on production build. "Save As" button is now enabled for optimized tabs (title: "Save a copy"). Verified via e2e/retest_def_042.spec.cjs.
+
+## DEF-041: Regression: Tab switching on padding/gap clicks failing (reappearance of DEF-034)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 8
+
+Steps to reproduce:
+1. Run `npm.cmd run test:e2e -- e2e/phase6_verification.spec.cjs`.
+2. Observe failure in "DEF-034: Tab switching on padding/gap clicks".
+
+Expected: Tab switching should be responsive on the entire tab area.
+Actual: The test times out waiting for tab switching to occur or for toolbar elements to become visible after switching, indicating that tab switching is once again unreliable or failing in specific click areas.
+
+History:
+- qa: opened
+- qa: CLOSED. Retested via `e2e/phase6_verification.spec.cjs`. Tab switching on padding and gap clicks is functional.
+
+## DEF-040: Phase 8: "Fast web view (linearize)" toggle missing from Save As dialog
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 8
+
+Steps to reproduce:
+1. Launch the app and open any PDF.
+2. Click the "Save As" (Save...) button in the toolbar.
+3. Observe the OS save dialog.
+
+Expected: A toggle for "Fast web view (linearize)" should be available during the Save As flow, as per REQUIREMENTS.md Phase 8 features.
+Actual: No such toggle exists in the UI. While the Optimize dialog has a "No compression (linearized)" preset, the specific requirement for a toggle on the Save-As action itself is not met.
+
+History:
+- qa: opened
+- qa: CLOSED. Retested via `e2e/phase8.spec.cjs`. `SaveAsDialog` now surfaces with the "Fast web view (linearize)" toggle before the system dialog.
+
+## DEF-039: Phase 8: Optimize preset choice does not persist in AppSettings
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 8
+
+Steps to reproduce:
+1. Launch the app and open a PDF.
+2. Click "Optimize" (Reduce file size) in the toolbar.
+3. Select a preset (e.g. "Maximum").
+4. Click "Reduce and open as new tab".
+5. Observe `diag.optimizePreset` via developer console or diagnostics.
+6. Restart the app and open the Optimize dialog again.
+
+Expected: The selected preset should persist in `AppSettings.optimizePreset` and be pre-selected on the next run.
+Actual: `optimizePreset` remains null in diagnostics, and the default preset is always selected on restart. `App.tsx` fails to dispatch the `set-optimize-preset` action to the preferences reducer.
+
+History:
+- qa: opened
+- qa: CLOSED. Retested via `e2e/phase8.spec.cjs`. Selected preset correctly persists to `AppSettings.optimizePreset`.
+
+
+## DEF-038: Missing IPC bridge for menu:action in preload.ts breaks app menu
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 7
+
+Steps to reproduce:
+1. Launch the app (production build).
+2. Click "Help" -> "About TFlex" in the application menu.
+
+Expected: The About dialog should open.
+Actual: Nothing happens. The main process sends `menu:action` over IPC, but `preload.ts` does not bridge this to a window event, so the listener in `App.tsx` never fires. All menu items (Open, Merge, Save, etc.) are currently non-functional.
+
+History:
+- qa: opened
+- qa: RE-OPENED. Retested on production build. DEF-038 is not fixed. While the IPC bridge exists in preload.ts, App.tsx still listens for a DOM event ('menu:action') that is never dispatched by the bridge. Menu items remains non-functional.
+- qa: CLOSED. Retested on production build. App menu is functional and About dialog opens correctly via simulated and native menu clicks. Verified via e2e/phase7_verify.spec.cjs.
+
+## DEF-037: Stale settings closure in App.tsx clobbers color palette persistence
+
+- Status: OPEN
+- Severity: HIGH
+- Found by: qa
+- Phase: 7
+
+Steps to reproduce:
+1. Launch the app (production build) and open a PDF.
+2. Select an annotation tool (e.g. Highlight).
+3. Open the color picker and add a custom color to the light theme palette.
+4. Verify the color appears in "Your colors".
+5. Toggle the theme (Ctrl+Shift+T).
+6. Open the color picker and add a custom color to the dark theme palette.
+7. Toggle the theme back to light (Ctrl+Shift+T).
+8. Open the color picker and check "Your colors".
+
+Expected: The color added in step 3 should still be in the "Your colors" list.
+Actual: The light theme color is lost. `onAnnotationPaletteChange` in `App.tsx` uses a stale `settings` closure from the render scope when calling `debouncedPersist`, causing it to save the old theme and old palette, which then broadcasts back and overwrites the renderer state.
+
+History:
+- qa: opened
+- qa: RE-OPENED. Retested on production build. Fix for stale closure (updater form of setSettings) is present, but race condition remains: rapid theme toggles + palette changes lead to stale settings echoes from the main process clobbering local state. Verified by e2e/phase7_verify.spec.cjs failure.
+
 
 - Status: CLOSED
 - Severity: HIGH

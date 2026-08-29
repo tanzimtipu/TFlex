@@ -68,6 +68,45 @@ describe("preferencesReducer.set-tools-palette-layout", () => {
   });
 });
 
+describe("preferencesReducer.set-optimize-preset", () => {
+  it("stores the new preset", () => {
+    const s = makeSettings();
+    const next = preferencesReducer(s, {
+      type: "set-optimize-preset",
+      value: "compact",
+    });
+    expect(next.optimizePreset).toBe("compact");
+  });
+  it("switches from 'none' (the default) to 'compact'", () => {
+    // The default is 'none' and is implicit (the field is absent from
+    // AppSettings until the user picks something else). Verify that a
+    // user-driven switch to 'compact' persists the value.
+    const s = makeSettings();
+    const next = preferencesReducer(s, {
+      type: "set-optimize-preset",
+      value: "compact",
+    });
+    expect(next.optimizePreset).toBe("compact");
+    expect(next).not.toBe(s);
+  });
+  it("accepts 'max' as a valid preset", () => {
+    const s = makeSettings();
+    const next = preferencesReducer(s, {
+      type: "set-optimize-preset",
+      value: "max",
+    });
+    expect(next.optimizePreset).toBe("max");
+  });
+  it("is a no-op when the preset is unchanged", () => {
+    const s = makeSettings({ optimizePreset: "compact" });
+    const next = preferencesReducer(s, {
+      type: "set-optimize-preset",
+      value: "compact",
+    });
+    expect(next).toBe(s);
+  });
+});
+
 describe("clampRecentsCap", () => {
   it("clamps below the minimum", () => {
     expect(clampRecentsCap(-5)).toBe(MIN_RECENTS_CAP);

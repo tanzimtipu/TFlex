@@ -13,3 +13,11 @@ coverage/
 test-results/
 screenshots/
 test-fixtures/*.pdf
+
+# qa scratch scripts — ad-hoc debug launchers, DOM dumps and button probes.
+# Never committed; phase and retest specs (*.spec.cjs / *.spec.js) stay tracked.
+/debug_launch.cjs
+/dom.html
+/e2e/debug_*.cjs
+/e2e/check_data_tool.cjs
+/e2e/list_buttons.cjs

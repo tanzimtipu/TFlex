@@ -20,7 +20,9 @@ import {
   Layers,
   LayoutGrid,
   LayoutList,
+  Minimize2,
   Pen,
+  PieChart,
   RotateCw,
   Scissors,
   Trash2,
@@ -38,6 +40,8 @@ interface ToolsPaletteProps {
   onDelete: () => void;
   onSign: () => void;
   onForms: () => void;
+  onOptimize: () => void;
+  onAudit: () => void;
   onClose: () => void;
   /** True when a real document is open. The palette always renders,
    *  but every entry EXCEPT Sign is greyed out when no doc is open
@@ -68,6 +72,8 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     onDelete,
     onSign,
     onForms,
+    onOptimize,
+    onAudit,
     onClose,
     documentRequired,
     hasFormFields,
@@ -139,6 +145,22 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       icon: <Layers size={16} aria-hidden />,
       shortcut: '',
       action: onForms,
+    },
+    {
+      id: 'optimize',
+      label: 'Reduce file size',
+      description: 'Re-serialise the document with a compression preset.',
+      icon: <Minimize2 size={16} aria-hidden />,
+      shortcut: '',
+      action: onOptimize,
+    },
+    {
+      id: 'audit',
+      label: 'Audit space usage',
+      description: 'See a per-element breakdown of the file size.',
+      icon: <PieChart size={16} aria-hidden />,
+      shortcut: '',
+      action: onAudit,
     },
   ];
 

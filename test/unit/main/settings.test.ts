@@ -206,3 +206,39 @@ describe('SettingsService.load', () => {
     expect(valid.geometry.height).toBe(768);
   });
 });
+
+describe('Phase 8: optimizePreset validation', () => {
+  it('preserves valid optimizePreset values', () => {
+    expect(normalizeSettings({ optimizePreset: 'none' }).optimizePreset).toBe('none');
+    expect(normalizeSettings({ optimizePreset: 'compact' }).optimizePreset).toBe('compact');
+    expect(normalizeSettings({ optimizePreset: 'max' }).optimizePreset).toBe('max');
+  });
+
+  it('rejects invalid optimizePreset values (not set on output)', () => {
+    expect(normalizeSettings({ optimizePreset: 'screen' }).optimizePreset).toBeUndefined();
+    expect(normalizeSettings({ optimizePreset: 'ebook' }).optimizePreset).toBeUndefined();
+    expect(normalizeSettings({ optimizePreset: 123 }).optimizePreset).toBeUndefined();
+    expect(normalizeSettings({ optimizePreset: true }).optimizePreset).toBeUndefined();
+    expect(normalizeSettings({ optimizePreset: '' }).optimizePreset).toBeUndefined();
+  });
+
+  it('does not set optimizePreset when absent', () => {
+    expect(normalizeSettings({}).optimizePreset).toBeUndefined();
+  });
+
+  it('save/load round-trips optimizePreset', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      optimizePreset: 'compact' as const,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.optimizePreset).toBe('compact');
+    }
+  });
+});

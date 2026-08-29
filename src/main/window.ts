@@ -45,7 +45,7 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     minWidth: 640,
     minHeight: 480,
     show: false,
-    autoHideMenuBar: true,
+    autoHideMenuBar: false,
     webPreferences: {
       preload: resolvePreloadPath(),
       contextIsolation: true,

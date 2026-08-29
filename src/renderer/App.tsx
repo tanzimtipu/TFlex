@@ -4,11 +4,13 @@ import type {
   AppSettings,
   FillFormFieldPayload,
   FormField,
+  OptimizePreset,
   PdfOpenError,
   RecentFile,
   SampleDocument,
   SavedSignature,
   SignaturePlacement,
+  SpaceAudit,
 } from "../shared/types";
 import type { TFlexApi } from "../shared/ipc";
 import { Welcome } from "./components/Welcome";
@@ -21,9 +23,13 @@ import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./st
 import { applyTheme, nextTheme } from "./state/theme";
 import { resolveInitialSettings } from "./state/settings";
 import {
+  DEFAULT_OPTIMIZE_PRESET,
   DEFAULT_RECENTS_CAP,
   preferencesReducer,
 } from "./state/preferences";
+import { applyAnnotationPaletteChange } from "./state/colorPalette";
+import { dispatchMenuAction, type MenuActionContext } from "./state/menuActions";
+import { shouldApplyEcho } from "./state/settingsEcho";
 import { openPdfDocument, readOutline, type OutlineNode } from "./pdf/pdfjs";
 import {
   DocumentView,
@@ -34,10 +40,14 @@ import {
 import { splitRecentPath } from "./utils/recentPath";
 import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
+import { formatBytes as formatBytesForToast } from "./utils/formatBytes";
 import { removeRecent } from "./state/recentFiles";
 import { getEngine } from "./engine/engineClient";
 import { MergeDialog } from "./components/MergeDialog";
 import { SplitDialog } from "./components/SplitDialog";
+import { OptimizeDialog } from "./components/OptimizeDialog";
+import { AuditSpaceDialog } from "./components/AuditSpaceDialog";
+import { SaveAsDialog } from "./components/SaveAsDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
 import type { EngineApi, EngineOp, EngineState } from "./engine/types";
@@ -195,6 +205,19 @@ export function App(): ReactElement {
   // Phase 4 — signature manager modal + flatten confirm
   const [sigModalOpen, setSigModalOpen] = useState(false);
   const [flattenOpen, setFlattenOpen] = useState(false);
+  // Phase 8 — Optimize + Audit Space dialogs. Optimistic state: the
+  // dialogs themselves drive the engine IPC; the dialog result is
+  // routed back into `openFromBytes` (optimize) or rendered directly
+  // (audit, which is read-only).
+  const [optimizeOpen, setOptimizeOpen] = useState(false);
+  const [auditOpen, setAuditOpen] = useState(false);
+  // DEF-040 — renderer-side Save-As modal. The backend's engineSaveAs
+  // IPC pops the OS dialog directly and can't accept extra options;
+  // we surface our own modal first so the "Fast web view (linearize)"
+  // checkbox can write through the optimizePreset persist path
+  // before the OS save dialog opens.
+  const [saveAsOpen, setSaveAsOpen] = useState(false);
+  // Phase 6 — Tools palette state, About dialog, Preferences dialog.
   // Phase 6 — Tools palette state, About dialog, Preferences dialog.
   // Layout persists via settings.toolsPaletteLayout; open/close is
   // session-only. The toolbar's Tools button toggles the palette and
@@ -246,17 +269,67 @@ export function App(): ReactElement {
   );
   const debouncedPersist = debouncedPersistRef.current;
 
+  // Phase 7 — settings echo filter (DEF-037). The main process
+  // broadcasts every persisted write back to the renderer. When
+  // rapid theme toggles + palette changes happen, the broadcast
+  // for an older write can land AFTER we've already issued a
+  // newer write locally — applying it would clobber fresher local
+  // state (per-theme palette buckets, themeDefault, recentsCap).
+  // We track a monotonic local-write seq and the most-recent
+  // settings object we handed to main; the echo listener
+  // (see the `settings.changed` subscription below) uses
+  // `shouldApplyEcho(...)` to drop stale echoes.
+  const settingsWriteSeqRef = useRef(0);
+  const settingsPersistedRef = useRef<AppSettings | null>(null);
+
+  /** Wrap `debouncedPersist` so every local write bumps the seq
+   *  and snapshots the object that went out. The snapshot lets the
+   *  echo filter compare incoming echoes to our latest write
+   *  without depending on the wire contract carrying a seq field. */
+  const trackAndPersist = useCallback(
+    (s: AppSettings): void => {
+      settingsWriteSeqRef.current += 1;
+      settingsPersistedRef.current = s;
+      debouncedPersist(s);
+    },
+    [debouncedPersist],
+  );
+
+  /** Same tracking, but for immediate (non-debounced) settings
+   *  writes — used by the recent-files cleanup paths and the
+   *  recovered-on-boot write. They share the same echo channel
+   *  as the debounced ones, so they need the same seq. */
+  const trackAndSave = useCallback((s: AppSettings): void => {
+    settingsWriteSeqRef.current += 1;
+    settingsPersistedRef.current = s;
+    void window.tflex.saveSettings(s);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    void (async (): Promise<void> => {
+    const runBoot = async (): Promise<void> => {
       const b = await bootSettings();
       if (cancelled) return;
       setBootstrap(b);
       setSettings(b.settings);
       applyTheme(b.settings.theme);
       setBootDone(true);
-    })();
+    };
+    runBoot();
     const unsubscribe = window.tflex.settings.changed((s) => {
+      // DEF-037 — echo filter. If we've made a local write since
+      // this echo's underlying persist, AND the echo's content
+      // doesn't match our latest snapshot, the echo is stale —
+      // discard. Local state already carries fresher data.
+      if (
+        !shouldApplyEcho(
+          s,
+          settingsWriteSeqRef.current,
+          settingsPersistedRef.current,
+        )
+      ) {
+        return;
+      }
       setSettings(s);
       applyTheme(s.theme);
     });
@@ -272,10 +345,10 @@ export function App(): ReactElement {
       if (prev === null) return prev;
       const next: AppSettings = { ...prev, theme: nextTheme(prev.theme) };
       applyTheme(next.theme);
-      debouncedPersist(next);
+      trackAndPersist(next);
       return next;
     });
-  }, [debouncedPersist]);
+  }, [trackAndPersist]);
 
   const pushToast = useCallback((kind: Toast["kind"], text: string): void => {
     dispatchError({ type: "push", toast: { kind, text } });
@@ -307,8 +380,27 @@ export function App(): ReactElement {
   const setEngineUiFor = useCallback(
     (tabId: string, ui: EngineUiState): void => {
       setEngineUi((prev) => ({ ...prev, [tabId]: ui }));
-      const existing = openTabsRef.current[tabId];
-      if (existing !== undefined && existing.meta.modified !== ui.state.modified) {
+      // DEF-041 follow-up — read the canonical `modified` flag from
+      // the tabs reducer (which the AppHeader reads), NOT from
+      // openTabs.meta.modified. The two used to be kept in sync by
+      // every caller of setEngineUiFor setting openTabs.meta.modified
+      // alongside, but the pre-Phase-8 callers didn't always do
+      // that (only onConfirmOptimize did). That left openTabs.meta
+      // stuck at `false`, which made the equality guard below
+      // return false for subsequent ops — so a save that flipped
+      // engineUi.state.modified to false wouldn't dispatch the
+      // corresponding set-modified, and the AppHeader kept showing
+      // the dot as modified even after Ctrl+S. The tabs reducer
+      // IS authoritative for the header; the openTabs.meta field
+      // is the engine-state side of the same flag and doesn't need
+      // its own copy here. The openTabs.meta.modified value is
+      // best-effort and only consumed by tflexDiagnostics (the
+      // `tabModified` field), which intentionally reads from
+      // tabs2[activeId]?.meta.modified (the tabs reducer's view)
+      // instead — see `tflexDiagnostics` near the bottom of this
+      // file.
+      const tabsReducerModified = tabsRef.current.tabs.find((t) => t.id === tabId)?.modified;
+      if (tabsReducerModified !== undefined && tabsReducerModified !== ui.state.modified) {
         dispatchTabs({ type: "set-modified", id: tabId, modified: ui.state.modified });
       }
     },
@@ -482,7 +574,7 @@ export function App(): ReactElement {
           if (remaining.length !== settings.recentFiles.length) {
             const next: AppSettings = { ...settings, recentFiles: remaining };
             setSettings(next);
-            void window.tflex.saveSettings(next);
+            trackAndSave(next);
           }
         }
         return;
@@ -503,7 +595,7 @@ export function App(): ReactElement {
         await window.tflex.addRecentFile(recent);
       }
     },
-    [openFromBytes, pushToast, settings, toastForPdfError],
+    [openFromBytes, pushToast, settings, toastForPdfError, trackAndSave],
   );
 
   const onOpenClick = useCallback(async (): Promise<void> => {
@@ -557,9 +649,9 @@ export function App(): ReactElement {
       if (remaining.length === settings.recentFiles.length) return;
       const next: AppSettings = { ...settings, recentFiles: remaining };
       setSettings(next);
-      void window.tflex.saveSettings(next);
+      trackAndSave(next);
     },
-    [settings],
+    [settings, trackAndSave],
   );
 
   const closeTab = useCallback((id: string): void => {
@@ -632,6 +724,19 @@ export function App(): ReactElement {
     },
     [applyEngineOp],
   );
+
+  // DEF-041 — rotate the current page from the toolbar without
+  // selecting a thumbnail first. Reads the persisted viewer state
+  // for the tab to learn which page is "current" (the same page the
+  // toolbar page indicator shows); defaults to 1 when the persisted
+  // state isn't seeded yet (the very first frame after tab open,
+  // before DocumentView's useEffect runs).
+  const onRotateClockwise = useCallback((tabId: string): void => {
+    const open = openTabsRef.current[tabId];
+    if (open === undefined) return;
+    const currentPage = open.persisted.currentPage > 0 ? open.persisted.currentPage : 1;
+    void applyEngineOp(tabId, { kind: "rotate", page: currentPage, dir: "cw" });
+  }, [applyEngineOp]);
 
   const onDelete = useCallback(
     (tabId: string, pages: number[]): void => {
@@ -1242,15 +1347,33 @@ export function App(): ReactElement {
     [pushToast, setEngineUiFor],
   );
 
-  const onSaveAs = useCallback(
+  // DEF-040 — Save-As is now a two-step flow: the renderer modal
+  // (SaveAsDialog) collects the linearize choice first; on confirm,
+  // the existing engine.saveAs call fires. The modal writes the
+  // linearize toggle through the same optimizePreset path the
+  // Optimize dialog uses, so the user's choice persists across
+  // launches. `onSaveAs(tabId)` opens the modal; the actual save
+  // IPC runs from the modal's confirm handler. The keyboard
+  // accelerator, menu File -> Save As, and the toolbar's Save…
+  // button all funnel through this entry point.
+  const onSaveAs = useCallback((tabId: string): void => {
+    const tab = openTabsRef.current[tabId];
+    if (tab === undefined) return;
+    setSaveAsOpen(true);
+  }, []);
+
+  // The actual engine.saveAs call, dispatched by the modal's
+  // confirm handler. Kept separate from `onSaveAs` so the modal
+  // can call it once the linearize choice is captured. The renderer
+  // policy is identical to the pre-modal flow:
+  //   - cancelled   -> user dismissed the OS save dialog; stay quiet.
+  //   - write-error -> real failure (EPERM, locked disk, full disk).
+  //                    Surface as an error toast.
+  //   - anything else -> generic engine failure; surface it too.
+  const performSaveAs = useCallback(
     async (tabId: string): Promise<void> => {
       const tab = openTabsRef.current[tabId];
       if (tab === undefined) return;
-      // Renderer policy:
-      //   - cancelled   -> user dismissed the OS save dialog; stay quiet.
-      //   - write-error -> real failure (EPERM, locked disk, full disk).
-      //                    Surface as an error toast.
-      //   - anything else -> generic engine failure; surface it too.
       const result = await engineRef.current.saveAs(tab.session.engineDocId);
       if (!result.ok) {
         if (result.error.code === "cancelled") return;
@@ -1274,92 +1397,83 @@ export function App(): ReactElement {
     [pushToast, setEngineUiFor],
   );
 
-  // Phase 6 — native application menu. The backend builds the menu
-  // (see src/main/menu.ts) and dispatches every action over IPC as
-  // a single 'menu:action' channel carrying { action: string }. We
-  // route each action into the same single-source handler the
-  // toolbar / keyboard accelerator already use, so the menu is a
-  // thin dispatch surface — no business logic lives here.
+  // Phase 7 — native application menu. The backend builds the menu
+  // (see src/main/menu.ts) and pushes every action over IPC as a
+  // 'menu:action' channel carrying { action: string }. The preload
+  // exposes that channel via `tflex.menu.onAction(cb)`; we subscribe
+  // here and route each action through the pure dispatcher in
+  // `state/menuActions.ts`, which fans out to the same handlers the
+  // toolbar / keyboard accelerator already use. The menu is a thin
+  // dispatch surface — no business logic lives here.
+  //
+  // DEF-038: the renderer used to listen for a DOM CustomEvent
+  // named 'menu:action' that the preload bridge never dispatches.
+  // Every menu item (Help -> About, File -> Save, ...) silently
+  // failed. The fix wires App.tsx to the IPC bridge and removes the
+  // DOM listener entirely.
   useEffect(() => {
-    type MenuAction =
-      | 'open'
-      | 'merge'
-      | 'save'
-      | 'saveAs'
-      | 'closeTab'
-      | 'undo'
-      | 'redo'
-      | 'toggleTheme'
-      | 'zoomIn'
-      | 'zoomOut'
-      | 'fitWidth'
-      | 'fitPage'
-      | 'showToolsPalette'
-      | 'about'
-      | 'preferences';
-
-    const onMenuAction = (e: Event): void => {
-      const detail = (e as CustomEvent<{ action: string }>).detail;
-      const action = detail?.action as MenuAction | undefined;
-      if (action === undefined) return;
-      switch (action) {
-        case 'open':
-          void onOpenClick();
-          return;
-        case 'merge':
-          setMergeOpen(true);
-          return;
-        case 'save':
-          if (tabsRef.current.activeId !== null) {
-            void onSave(tabsRef.current.activeId);
-          }
-          return;
-        case 'saveAs':
-          if (tabsRef.current.activeId !== null) {
-            void onSaveAs(tabsRef.current.activeId);
-          }
-          return;
-        case 'closeTab':
-          if (tabsRef.current.activeId !== null) {
-            closeTab(tabsRef.current.activeId);
-          }
-          return;
-        case 'undo':
-          if (tabsRef.current.activeId !== null) {
-            void onUndo(tabsRef.current.activeId);
-          }
-          return;
-        case 'redo':
-          if (tabsRef.current.activeId !== null) {
-            void onRedo(tabsRef.current.activeId);
-          }
-          return;
-        case 'toggleTheme':
-          onToggleTheme();
-          return;
-        case 'showToolsPalette':
-          setToolsPaletteOpen((v) => !v);
-          return;
-        case 'about':
-          setAboutOpen(true);
-          return;
-        case 'preferences':
-          setPrefsOpen(true);
-          return;
-        // Zoom / fitWidth / fitPage are handled by DocumentView
-        // internally — the menu action is just a shortcut into the
-        // same keyboard accelerator DocumentView already listens for.
-        case 'zoomIn':
-        case 'zoomOut':
-        case 'fitWidth':
-        case 'fitPage':
-          return;
-      }
+    const ctx: MenuActionContext = {
+      open: (): void => {
+        void onOpenClick();
+      },
+      merge: (): void => {
+        setMergeOpen(true);
+      },
+      save: (): void => {
+        const activeId = tabsRef.current.activeId;
+        if (activeId !== null) {
+          void onSave(activeId);
+        }
+      },
+      saveAs: (): void => {
+        const activeId = tabsRef.current.activeId;
+        if (activeId !== null) {
+          void onSaveAs(activeId);
+        }
+      },
+      closeTab: (): void => {
+        const activeId = tabsRef.current.activeId;
+        if (activeId !== null) {
+          closeTab(activeId);
+        }
+      },
+      undo: (): void => {
+        const activeId = tabsRef.current.activeId;
+        if (activeId !== null) {
+          void onUndo(activeId);
+        }
+      },
+      redo: (): void => {
+        const activeId = tabsRef.current.activeId;
+        if (activeId !== null) {
+          void onRedo(activeId);
+        }
+      },
+      toggleTheme: (): void => {
+        onToggleTheme();
+      },
+      showToolsPalette: (): void => {
+        setToolsPaletteOpen((v) => !v);
+      },
+      about: (): void => {
+        setAboutOpen(true);
+      },
+      preferences: (): void => {
+        setPrefsOpen(true);
+      },
+      optimize: (): void => {
+        if (activeTabIdRefLocal.current === null) return;
+        setOptimizeOpen(true);
+      },
+      auditSpace: (): void => {
+        if (activeTabIdRefLocal.current === null) return;
+        setAuditOpen(true);
+      },
     };
-    window.addEventListener('menu:action', onMenuAction);
-    return (): void => {
-      window.removeEventListener('menu:action', onMenuAction);
-    };
+    const unsubscribe = window.tflex.menu.onAction((action) => {
+      dispatchMenuAction(action, ctx);
+    });
+    return unsubscribe;
   }, [
     onOpenClick,
     onSave,
@@ -1483,6 +1597,117 @@ export function App(): ReactElement {
 
   const onPickMergeFile = useCallback(async (): Promise<string | null> => {
     return window.tflex.openFileDialog();
+  }, []);
+
+  // ---- Phase 8: optimize + audit space ----
+
+  /** Open the Optimize dialog against the active tab. The toolbar /
+   *  Tools palette / menu all funnel through this. The dialog drives
+   *  its own engine.optimize call; we hand it a callback that closes
+   *  the dialog and routes the resulting bytes into a brand-new tab
+   *  via openEngineBytesAsTab (same path split/extract use). */
+  const onOptimizeClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setOptimizeOpen(true);
+  }, []);
+
+  const onCancelOptimize = useCallback((): void => {
+    setOptimizeOpen(false);
+  }, []);
+
+  /** Run engine.optimize with the active preset. Returns the bytes
+   *  plus a byte-length (the dialog uses it for the FFT comparison
+   *  and to render the success toast). */
+  const runOptimizeForActiveTab = useCallback(
+    async (
+      preset: OptimizePreset,
+    ): Promise<{ bytes: ArrayBuffer; size: number } | { error: string }> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      const result = await engineRef.current.optimize(
+        open.session.engineDocId,
+        preset,
+      );
+      if (!result.ok) {
+        return {
+          error: describeEngineError(result.error.code, result.error.message),
+        };
+      }
+      return { bytes: result.value, size: result.value.byteLength };
+    },
+    [],
+  );
+
+  const runAuditSpaceForActiveTab = useCallback(
+    async (): Promise<SpaceAudit | { error: string }> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      const result = await engineRef.current.auditSpace(
+        open.session.engineDocId,
+      );
+      if (!result.ok) {
+        return {
+          error: describeEngineError(result.error.code, result.error.message),
+        };
+      }
+      return result.value;
+    },
+    [],
+  );
+
+  const onConfirmOptimize = useCallback(
+    async (preset: OptimizePreset, bytes: ArrayBuffer): Promise<void> => {
+      setOptimizeOpen(false);
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      const presetLabel =
+        preset === 'none' ? 'linearized' : preset === 'compact' ? 'compact' : 'maximum';
+      const displayName = `${open.displayName} — optimized (${presetLabel})`;
+      const result = await openFromBytes(toArrayBuffer(bytes), {
+        kind: "file",
+        path: `<optimize>${open.displayName}`,
+        displayName,
+        onDiskPath: null,
+      });
+      if (result !== null) {
+        // Mark the new tab as modified so the user knows it hasn't been
+        // saved yet. The engine's `optimize` is read-only on the
+        // source doc, so the source tab's modified flag does NOT flip.
+        // We update BOTH the tabs reducer (for the AppHeader's
+        // modified-dot indicator) AND the App's openTabs map (for
+        // `tflexDiagnostics().tabModified`, which the e2e harness
+        // reads to verify the new tab needs saving).
+        dispatchTabs({ type: "set-modified", id: result.tabId, modified: true });
+        setOpenTabs((prev) => {
+          const tab = prev[result.tabId];
+          if (tab === undefined) return prev;
+          return {
+            ...prev,
+            [result.tabId]: { ...tab, meta: { ...tab.meta, modified: true } },
+          };
+        });
+      }
+      pushToast(
+        "info",
+        `Reduced ${formatBytesForToast(bytes.byteLength)} → open the new tab to save.`,
+      );
+    },
+    [openFromBytes, pushToast],
+  );
+
+  const onAuditClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setAuditOpen(true);
+  }, []);
+
+  const onCancelAudit = useCallback((): void => {
+    setAuditOpen(false);
   }, []);
 
   const searchIndexProgressRef = useRef<SearchIndexProgress | null>(null);
@@ -1784,6 +2009,21 @@ export function App(): ReactElement {
       // engine IPC keys everything by this; exposing it lets e2e
       // harnesses probe engine methods directly without scraping.
       engineDocId: tab?.session.engineDocId ?? null,
+      // Phase 8 — optimize / audit space. Expose the open flags so the
+      // e2e harness can drive the dialog open/closed state and read
+      // the active preset without scraping DOM. The audit dialog's
+      // last-seen audit data lives in a ref so the harness can poll
+      // for the bar percentages without waiting on a re-render.
+      optimizeDialogOpen: optimizeOpen,
+      auditDialogOpen: auditOpen,
+      optimizePreset: settingsRef.current?.optimizePreset ?? null,
+      // Per-tab reducer-level modified flag — distinct from
+      // engineState.modified (which tracks engine-level mutation
+      // only). Set for tabs whose only mutation is a render-side
+      // flag (e.g. the "needs saving" marker on the new tab an
+      // Optimize action creates). Surfaces the tabs reducer's
+      // truth so e2e harnesses can verify without scraping the DOM.
+      tabModified: activeId !== null ? tabs2[activeId]?.meta.modified ?? false : false,
     };
   };
 
@@ -1919,6 +2159,18 @@ export function App(): ReactElement {
               const ann = annotationHandlers(meta.id);
               const fs = formsAndSignaturesHandlers(meta.id);
               const saveInPlaceEnabled = open.session.onDiskPath !== null;
+              // DEF-042 — Save-As enablement. The toolbar's `modified`
+              // prop must reflect EITHER the engine's `modified` flag
+              // (set by rotate / delete / reorder / annotations /
+              // forms / signatures) OR the tabs reducer's `modified`
+              // flag (set explicitly when a brand-new tab is born
+              // unsaved, e.g. the "Reduce and open as new tab" path
+              // of Optimize or Split/Extract). Without the OR, the
+              // tab-dot indicator (which reads tabs.tabs) lights up
+              // but Save-As (which only read engineState.modified)
+              // stayed disabled with the "Nothing to save" tooltip.
+              const saveModified =
+                meta.modified || engine.engineState.modified;
               return (
                 <div
                   className="tab-pane"
@@ -1938,7 +2190,7 @@ export function App(): ReactElement {
                     onSearchIndexProgress={searchIndexProgressFor(meta.id)}
                     onToast={pushToast}
                     engineState={engine.engineState}
-                    modified={engine.engineState.modified}
+                    modified={saveModified}
                     canUndo={engine.canUndo}
                     saveInPlaceEnabled={saveInPlaceEnabled}
                     onRotate={engine.op}
@@ -1949,6 +2201,13 @@ export function App(): ReactElement {
                     onSaveAs={handlers.saveAs}
                     onMerge={onMergeClick}
                     onSplit={onSplitClick}
+                    onOptimize={onOptimizeClick}
+                    onAuditSpace={onAuditClick}
+                    // DEF-041 — toolbar Rotate clockwise button. The
+                    // page indicator's "current" page is what the
+                    // user sees on screen; rotating that page is
+                    // what the button does.
+                    onRotateClockwise={(): void => onRotateClockwise(meta.id)}
                     annotations={ann.annotations}
                     onCreateAnnotation={ann.createAnnotation}
                     onEditAnnotation={ann.editAnnotation}
@@ -1981,11 +2240,30 @@ export function App(): ReactElement {
                           }
                     }
                     onAnnotationPaletteChange={(next): void => {
+                      // DEF-037 — use the updater-form of `setSettings`
+                      // so `prev` is React's latest pending state, not
+                      // the render-scope `settings` (which can be stale
+                      // when the user toggles the theme and adds a
+                      // custom color back-to-back before a re-render).
+                      // Building the persisted object inside the
+                      // updater also guarantees the theme matches the
+                      // current renderer state — the previous
+                      // implementation wrote the captured-render
+                      // settings object with an old theme, which then
+                      // echoed back from the backend and clobbered the
+                      // per-theme palette buckets.
+                      //
+                      // The persist goes through `trackAndPersist`
+                      // so the echo filter in the settings.changed
+                      // listener can detect stale echoes that arrive
+                      // after a newer local write has already
+                      // superseded them.
                       setSettings((prev) => {
                         if (prev === null) return prev;
-                        return { ...prev, annotationColors: next };
+                        const updated = applyAnnotationPaletteChange(prev, next);
+                        if (updated !== prev) trackAndPersist(updated);
+                        return updated;
                       });
-                      debouncedPersist({ ...settings, annotationColors: next });
                     }}
                     themeName={settings.theme}
                   />
@@ -2004,7 +2282,7 @@ export function App(): ReactElement {
                   type: 'set-tools-palette-layout',
                   value: next,
                 });
-                debouncedPersist(updated);
+                trackAndPersist(updated);
                 return updated;
               });
             }}
@@ -2027,6 +2305,8 @@ export function App(): ReactElement {
               }
             }}
             onForms={(): void => setFlattenOpen(true)}
+            onOptimize={onOptimizeClick}
+            onAudit={onAuditClick}
             onClose={(): void => setToolsPaletteOpen(false)}
             documentRequired={activeTab !== null}
             hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
@@ -2071,6 +2351,69 @@ export function App(): ReactElement {
           void onFlattenConfirm();
         }}
       />
+      <OptimizeDialog
+        open={optimizeOpen}
+        initialPreset={settings.optimizePreset ?? DEFAULT_OPTIMIZE_PRESET}
+        originalBytes={activeTab?.session.fileSize ?? 0}
+        runOptimize={runOptimizeForActiveTab}
+        runAuditSpace={runAuditSpaceForActiveTab}
+        onConfirm={(preset, bytes): void => {
+          void onConfirmOptimize(preset, bytes);
+        }}
+        // DEF-039 — surface the user's preset choice through the
+        // preferences reducer so AppSettings.optimizePreset survives
+        // across launches. Same pattern as the Preferences sheet: the
+        // reducer is idempotent (equal value -> same reference), the
+        // updater-form of setSettings keeps the write inside React's
+        // latest pending state, and the persist goes through
+        // trackAndPersist so the settings echo filter can drop stale
+        // echoes that arrive after a newer local write.
+        onOptimizePresetChange={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, {
+              type: 'set-optimize-preset',
+              value: next,
+            });
+            if (updated !== prev) trackAndPersist(updated);
+            return updated;
+          });
+        }}
+        onClose={onCancelOptimize}
+      />
+      <AuditSpaceDialog
+        open={auditOpen}
+        runAuditSpace={runAuditSpaceForActiveTab}
+        onClose={onCancelAudit}
+      />
+      <SaveAsDialog
+        open={saveAsOpen}
+        optimizePreset={settings.optimizePreset}
+        // DEF-040 — the linearize checkbox writes through the same
+        // preferences reducer the Optimize dialog uses. ON writes
+        // preset='none' (linearized output), OFF writes preset='compact'
+        // (default compression). The reducer is idempotent so a same-
+        // value toggle no-ops.
+        onOptimizePresetChange={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, {
+              type: 'set-optimize-preset',
+              value: next,
+            });
+            if (updated !== prev) trackAndPersist(updated);
+            return updated;
+          });
+        }}
+        onConfirm={(): void => {
+          setSaveAsOpen(false);
+          const activeId = activeTabIdRefLocal.current;
+          if (activeId !== null) {
+            void performSaveAs(activeId);
+          }
+        }}
+        onClose={(): void => setSaveAsOpen(false)}
+      />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
       <AboutDialog open={aboutOpen} onClose={(): void => setAboutOpen(false)} />
       <PreferencesDialog
@@ -2079,14 +2422,20 @@ export function App(): ReactElement {
         themeDefault={settings.themeDefault ?? 'dark'}
         recentsCap={settings.recentsCap ?? DEFAULT_RECENTS_CAP}
         onSetThemeDefault={(next): void => {
-          const updated = preferencesReducer(settings, { type: 'set-theme-default', value: next });
-          setSettings(updated);
-          debouncedPersist(updated);
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, { type: 'set-theme-default', value: next });
+            trackAndPersist(updated);
+            return updated;
+          });
         }}
         onSetRecentsCap={(next): void => {
-          const updated = preferencesReducer(settings, { type: 'set-recents-cap', value: next });
-          setSettings(updated);
-          debouncedPersist(updated);
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, { type: 'set-recents-cap', value: next });
+            trackAndPersist(updated);
+            return updated;
+          });
         }}
       />
     </div>
