@@ -1,4 +1,25 @@
 
+## DEF-036: Opening PDF into empty tab fails to render workspace
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 6
+
+Steps to reproduce:
+1. Launch the app (production build).
+2. Click the "New empty tab" button (+) in the header.
+3. Observe the "Empty tab" placeholder appears and the Welcome screen is shown.
+4. From the Welcome screen in the empty tab, click "Open PDF" and select any valid PDF (e.g., report.pdf).
+5. Observe the tab is renamed to the PDF's filename.
+
+Expected: The Welcome screen should be replaced by the DocumentView (workspace) showing the PDF content.
+Actual: The Welcome screen persists. The workspace (`.workspace`) is not rendered. The app appears stuck on the Welcome screen for that tab, even though the tab metadata has been updated.
+
+History:
+- qa: opened. Root cause: `openFromBytes` always generates a new UUID for the tab, but `tabsReducer` reuses the active empty tab's ID when filling. This results in the document session being stored under a different ID than the one listed in the tab bar, causing a lookup failure in the renderer.
+- qa: CLOSED. Retested on production build: opening report.pdf from an empty tab correctly mounts the workspace and renders the PDF content. Verified via `e2e/retest_def_036.spec.cjs` and screenshot evidence.
+
 ## DEF-035: Production build fails to launch due to ESM/CommonJS shim error
 
 - Status: CLOSED

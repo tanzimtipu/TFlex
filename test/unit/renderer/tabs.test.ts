@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   initialTabsState,
+  resolveOpenId,
   tabsReducer,
   type TabMeta,
 } from "../../../src/renderer/state/tabs";
@@ -122,6 +123,10 @@ describe("tabs reducer — empty tab", () => {
   });
 
   it("opening a PDF while an empty tab is active fills the empty tab in place", () => {
+    // DEF-036 contract: the caller (`openFromBytes` via `resolveOpenId`)
+    // computes the id and dispatches with it on the meta. The reducer
+    // mutates the empty tab in place by id — it does NOT allocate a
+    // fresh id (that was the source of the lookup-mismatch bug).
     const withEmpty = tabsReducer(initialTabsState, {
       type: "open-empty",
       tab: {
@@ -132,9 +137,21 @@ describe("tabs reducer — empty tab", () => {
         modified: false,
       },
     });
+    const { id, fillsEmptyId } = resolveOpenId(withEmpty, {
+      kind: "file",
+      filePath: "a.pdf",
+    });
+    expect(id).toBe("empty-1");
+    expect(fillsEmptyId).toBe("empty-1");
     const filled = tabsReducer(withEmpty, {
       type: "open",
-      tab: make(1, "a.pdf"),
+      tab: {
+        id,
+        title: "1.pdf",
+        filePath: "a.pdf",
+        kind: "file",
+        modified: false,
+      },
     });
     expect(filled.tabs).toHaveLength(1);
     expect(filled.activeId).toBe("empty-1");
@@ -159,11 +176,168 @@ describe("tabs reducer — empty tab", () => {
     // open-empty runs without an explicit activate. Re-activate a
     // real tab to assert the fill-in-place path doesn't fire.
     const onReal = tabsReducer(withEmpty, { type: "activate", id: "tab-1" });
-    const next = tabsReducer(onReal, { type: "open", tab: make(2, "b.pdf") });
+    const { id, fillsEmptyId } = resolveOpenId(onReal, {
+      kind: "file",
+      filePath: "b.pdf",
+    });
+    expect(fillsEmptyId).toBeNull();
+    expect(id).not.toBe("empty-1");
+    const next = tabsReducer(onReal, {
+      type: "open",
+      tab: {
+        id,
+        title: "2.pdf",
+        filePath: "b.pdf",
+        kind: "file",
+        modified: false,
+      },
+    });
     expect(next.tabs).toHaveLength(3);
     // The empty tab is preserved (not filled because the active is
     // a real tab).
     expect(next.tabs.find((t) => t.id === "empty-1")?.kind).toBe("empty");
+  });
+
+  it("re-opening a PDF whose empty tab fill is in flight still keeps one tab", () => {
+    // DEF-036 regression guard: after the empty-fill, opening the same
+    // path again should NOT create a duplicate — it should activate the
+    // now-real tab. The reducer dedupes by filePath when the meta's id
+    // does not match an existing tab.
+    const withEmpty = tabsReducer(initialTabsState, {
+      type: "open-empty",
+      tab: {
+        id: "empty-1",
+        title: "Empty tab",
+        filePath: "",
+        kind: "empty",
+        modified: false,
+      },
+    });
+    const filled = tabsReducer(withEmpty, {
+      type: "open",
+      tab: {
+        id: "empty-1",
+        title: "report.pdf",
+        filePath: "/tmp/report.pdf",
+        kind: "file",
+        modified: false,
+      },
+    });
+    // Activate a different tab, then re-open the same path.
+    const back = tabsReducer(filled, { type: "activate", id: "tab-not-real" });
+    expect(back).toBe(filled); // unknown id -> no-op
+    const reopened = tabsReducer(filled, {
+      type: "open",
+      tab: {
+        id: "fresh-id-2",
+        title: "report.pdf",
+        filePath: "/tmp/report.pdf",
+        kind: "file",
+        modified: false,
+      },
+    });
+    expect(reopened.tabs).toHaveLength(1);
+    expect(reopened.activeId).toBe("empty-1");
+  });
+
+  it("single-source id: resolveOpenId is deterministic for empty fill", () => {
+    // The bug was that the meta and the session ended up under
+    // different ids. resolveOpenId is the single source of truth:
+    // callers must use `id` for both. This test pins the contract.
+    const state = tabsReducer(initialTabsState, {
+      type: "open-empty",
+      tab: {
+        id: "empty-9",
+        title: "Empty tab",
+        filePath: "",
+        kind: "empty",
+        modified: false,
+      },
+    });
+    const a = resolveOpenId(state, { kind: "file", filePath: "/x/a.pdf" });
+    const b = resolveOpenId(state, { kind: "sample", filePath: "samples/b.pdf" });
+    // Empty fill always reuses the empty tab's id, regardless of
+    // kind (file vs sample), because the user is opening a real
+    // document into the placeholder.
+    expect(a.id).toBe("empty-9");
+    expect(b.id).toBe("empty-9");
+    expect(a.fillsEmptyId).toBe("empty-9");
+    expect(b.fillsEmptyId).toBe("empty-9");
+  });
+
+  it("resolveOpenId mints when active is not empty", () => {
+    const state = tabsReducer(initialTabsState, {
+      type: "open",
+      tab: make(1, "a.pdf"),
+    });
+    let minted = 0;
+    const r = resolveOpenId(
+      state,
+      { kind: "file", filePath: "b.pdf" },
+      (): string => {
+        minted += 1;
+        return `fresh-${minted}`;
+      },
+    );
+    expect(r.fillsEmptyId).toBeNull();
+    expect(r.id).toBe("fresh-1");
+  });
+
+  it("resolveOpenId mints when no tab is active (empty state)", () => {
+    let minted = 0;
+    const r = resolveOpenId(
+      initialTabsState,
+      { kind: "file", filePath: "a.pdf" },
+      (): string => {
+        minted += 1;
+        return `fresh-${minted}`;
+      },
+    );
+    expect(r.fillsEmptyId).toBeNull();
+    expect(r.id).toBe("fresh-1");
+  });
+
+  it("DEF-036: openFromBytes's id and the reducer's active id agree after empty fill", () => {
+    // Reproduces the exact end-to-end shape of openFromBytes for the
+    // empty-tab case: compute id with resolveOpenId, build the meta
+    // with that id, dispatch. After the dispatch, the tab bar's
+    // activeId MUST equal the id the caller used for openTabs[id]
+    // (the document session map). Pre-fix, the reducer silently
+    // picked a different id and the lookup openTabs[activeId]
+    // returned undefined, leaving DocumentView unmounted.
+    let nextId = 100;
+    const mint = (): string => `fresh-${nextId++}`;
+    const state = tabsReducer(initialTabsState, {
+      type: "open-empty",
+      tab: {
+        id: "empty-1",
+        title: "Empty tab",
+        filePath: "",
+        kind: "empty",
+        modified: false,
+      },
+    });
+    const { id } = resolveOpenId(
+      state,
+      { kind: "file", filePath: "/disk/report.pdf" },
+      mint,
+    );
+    expect(id).toBe("empty-1");
+    const afterOpen = tabsReducer(state, {
+      type: "open",
+      tab: {
+        id,
+        title: "report.pdf",
+        filePath: "/disk/report.pdf",
+        kind: "file",
+        modified: false,
+      },
+    });
+    // The id used for the session is the same as activeId.
+    expect(afterOpen.activeId).toBe(id);
+    // The tab is now a real file tab in the original slot.
+    expect(afterOpen.tabs.find((t) => t.id === id)?.kind).toBe("file");
+    expect(afterOpen.tabs).toHaveLength(1);
   });
 
   it("fill-empty flips the empty tab to file kind", () => {

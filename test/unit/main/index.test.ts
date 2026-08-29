@@ -97,7 +97,7 @@ vi.mock('electron', () => ({
     on: _on,
     getPath: vi.fn((name: string) => name === 'userData' ? '/mock/user/data' : '/mock/app'),
     getAppPath: vi.fn().mockReturnValue('/mock/app'),
-    getVersion: vi.fn().mockReturnValue('0.1.0'),
+    getVersion: vi.fn().mockReturnValue('1.1.0'),
     isPackaged: false,
   },
   BrowserWindow: {

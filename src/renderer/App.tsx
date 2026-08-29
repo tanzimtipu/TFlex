@@ -17,7 +17,7 @@ import { Toasts, type Toast } from "./components/Toasts";
 import { ToolsPalette } from "./components/ToolsPalette";
 import { AboutDialog } from "./components/AboutDialog";
 import { PreferencesDialog } from "./components/PreferencesDialog";
-import { tabsReducer, initialTabsState, type TabMeta } from "./state/tabs";
+import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
 import { applyTheme, nextTheme } from "./state/theme";
 import { resolveInitialSettings } from "./state/settings";
 import {
@@ -350,7 +350,16 @@ export function App(): ReactElement {
         return null;
       }
       const engineDocId = crypto.randomUUID();
-      const id = crypto.randomUUID();
+      // DEF-036: single-source id. Compute the tab id BEFORE we touch
+      // openTabs / engineUi / dispatchTabs, so the id used for the
+      // session map (openTabs[id]) and the meta dispatched to the
+      // reducer are identical. resolveOpenId reuses the active empty
+      // tab's id when one is active ("+ tab" affordance fills in
+      // place), and mints a fresh UUID otherwise.
+      const { id } = resolveOpenId(
+        tabsRef.current,
+        { kind: source.kind, filePath: source.path },
+      );
       const meta: TabMeta = {
         id,
         title: source.displayName,

@@ -34,8 +34,8 @@ test.describe('Phase 6 Verification', () => {
 
     // Create empty tab for long.pdf
     console.log('Creating new tab...');
-    await window.click('button[aria-label="New Tab"]');
-    await window.waitForSelector('.welcome-screen');
+    await window.click('button[aria-label="New empty tab"]');
+    await window.waitForSelector('.welcome');
     console.log('New tab created.');
 
     // Open long.pdf in the second tab
@@ -60,8 +60,8 @@ test.describe('Phase 6 Verification', () => {
     await window.mouse.click(box.x + 5, box.y + 5);
     
     // Verify first tab is active
-    let diag = await window.evaluate(() => window.tflexDiagnostics());
-    expect(diag.activeTabTitle).toBe('report.pdf');
+    const activeTab = window.locator('.tab-item.tab-active');
+    await expect(activeTab).toContainText('report.pdf');
 
     // Click the second tab in the gap between title and close button
     const secondTab = tabs.nth(1);
@@ -69,16 +69,14 @@ test.describe('Phase 6 Verification', () => {
     // Assuming close button is on the right, click in the middle-right but not on the button
     await window.mouse.click(box2.x + box2.width - 40, box2.y + box2.height / 2);
 
-    diag = await window.evaluate(() => window.tflexDiagnostics());
-    expect(diag.activeTabTitle).toBe('long.pdf');
+    await expect(window.locator('.tab-item.tab-active')).toContainText('long.pdf');
 
     // Theme churn clicks work
     await window.keyboard.press('Control+T'); // Toggle theme
     // Immediately click first tab
     await window.mouse.click(box.x + 5, box.y + 5);
     
-    diag = await window.evaluate(() => window.tflexDiagnostics());
-    expect(diag.activeTabTitle).toBe('report.pdf');
+    await expect(window.locator('.tab-item.tab-active')).toContainText('report.pdf');
     
     await window.screenshot({ path: 'screenshots/p6-def-034-verified.png' });
   });
@@ -88,9 +86,9 @@ test.describe('Phase 6 Verification', () => {
     const tabsCount = await window.locator('.tab-item').count();
     
     // Click +
-    await window.click('button[aria-label="New Tab"]');
+    await window.click('button[aria-label="New empty tab"]');
     await expect(window.locator('.tab-item')).toHaveCount(tabsCount + 1);
-    await expect(window.locator('.welcome-screen')).toBeVisible();
+    await expect(window.locator('.welcome')).toBeVisible();
 
     // Opening a PDF fills the live empty tab
     const formPath = getSamplePath('form.pdf');
@@ -121,11 +119,11 @@ test.describe('Phase 6 Verification', () => {
 
   test('Tools palette: list/grid toggle persists', async () => {
     // Open tools palette
-    await window.click('button[aria-label="Tools"]');
+    await window.click('button[aria-label="Tools palette"]');
     await window.waitForSelector('.tools-palette');
     
     // Toggle to grid (assuming default is list)
-    const gridToggle = window.locator('button[aria-label="Grid view"]');
+    const gridToggle = window.locator('button[aria-label="Grid layout"]');
     await gridToggle.click();
     
     await window.screenshot({ path: 'screenshots/p6-tools-palette-grid.png' });
@@ -152,52 +150,40 @@ test.describe('Phase 6 Verification', () => {
     // Ctrl+S (Save)
     // For Save, we check if modified becomes false
     // First modify something
-    await window.click('button[aria-label="Rotate Clockwise"]');
-    let diag = await window.evaluate(() => window.tflexDiagnostics());
-    expect(diag.modified).toBe(true);
+    await window.click('button[aria-label="Rotate clockwise"]');
+    await expect(window.locator('.tab-active .tab-modified-dot')).not.toHaveClass(/tab-modified-dot-hidden/);
     
     await window.keyboard.press('Control+S');
-    await window.waitForFunction(() => !window.tflexDiagnostics().modified);
+    await window.waitForSelector('.tab-active .tab-modified-dot-hidden');
     
     await window.screenshot({ path: 'screenshots/p6-accelerators.png' });
   });
 
   test('About box and version', async () => {
-    // Open About from Help menu
-    // Since it's a native menu, we can't click it easily in Playwright.
-    // However, Phase 6 SC 3 says "standard app menu... Help/About with version badge"
-    // Developers usually implement a custom About dialog for Electron if they want to show it in-app.
-    // Or it might be the native About.
-    // Let's check if there's a way to trigger it. 
-    // Usually "About" is in the Help menu or can be triggered via IPC.
+    // If we can't trigger it via native menu, we check if the version is available via API
+    const appInfo = await window.evaluate(() => window.tflex.app.getInfo());
+    console.log('App Version:', appInfo.version);
+    expect(appInfo.version).toBeDefined();
     
-    // If there is an About dialog in the DOM:
+    // Trigger About via custom event if implemented for testing, or just look for it
     await window.evaluate(() => {
-        // Trigger via internal command if available, or just check if it exists
-        // Assuming there is a button or menu item to open it.
+        window.dispatchEvent(new CustomEvent('menu:action', { detail: { action: 'about' } }));
     });
-    
-    // If we can't trigger it, we'll check if the version is available in diagnostics.
-    const diag = await window.evaluate(() => window.tflexDiagnostics());
-    console.log('App Version:', diag.version);
-    expect(diag.version).toBeDefined();
-    
-    // Let's try to find an About button in the UI
-    const aboutBtn = window.locator('button:has-text("About"), [aria-label="About"]');
-    if (await aboutBtn.isVisible()) {
-        await aboutBtn.click();
-        await window.waitForSelector('.about-dialog');
-        const versionText = await window.textContent('.about-dialog .version');
-        expect(versionText).toContain(diag.version);
+
+    const aboutDialog = window.locator('.about-dialog, .sheet-about');
+    if (await aboutDialog.isVisible()) {
+        const versionText = await aboutDialog.textContent();
+        expect(versionText).toContain(appInfo.version);
         await window.screenshot({ path: 'screenshots/p6-about.png' });
-        await window.click('button:has-text("Close")');
+        await window.click('button:has-text("Close"), .sheet-close');
     }
   });
 
   test('Preferences: opens and changes persist', async () => {
-    // Open Preferences
-    const prefBtn = window.locator('button[aria-label="Preferences"]');
-    await prefBtn.click();
+    // Open Preferences via menu action
+    await window.evaluate(() => {
+        window.dispatchEvent(new CustomEvent('menu:action', { detail: { action: 'preferences' } }));
+    });
     await window.waitForSelector('.preferences-dialog');
     
     // Change recents limit
@@ -206,8 +192,6 @@ test.describe('Phase 6 Verification', () => {
     
     await window.screenshot({ path: 'screenshots/p6-preferences.png' });
     await window.click('button:has-text("Save")');
-    
-    // Restart will check persistence
   });
 
   test('Color palette swatch as rounded square', async () => {
@@ -261,12 +245,14 @@ test.describe('Phase 6 Persistence Verification (Restart)', () => {
     window = await electronApp.firstWindow();
     
     // Set Tools Palette to Grid
-    await window.click('button[aria-label="Tools"]');
+    await window.click('button[aria-label="Tools palette"]');
     await window.waitForSelector('.tools-palette');
-    await window.click('button[aria-label="Grid view"]');
+    await window.click('button[aria-label="Grid layout"]');
     
     // Set Recents Limit in Preferences
-    await window.click('button[aria-label="Preferences"]');
+    await window.evaluate(() => {
+        window.dispatchEvent(new CustomEvent('menu:action', { detail: { action: 'preferences' } }));
+    });
     await window.waitForSelector('.preferences-dialog');
     await window.locator('input[name="recentsLimit"]').fill('12');
     await window.click('button:has-text("Save")');
@@ -286,13 +272,17 @@ test.describe('Phase 6 Persistence Verification (Restart)', () => {
     window = await electronApp.firstWindow();
     
     // Verify Tools Palette Grid mode
-    await window.click('button[aria-label="Tools"]');
-    await expect(window.locator('.tools-palette.grid-view')).toBeVisible();
+    await window.click('button[aria-label="Tools palette"]');
+    await expect(window.locator('.tools-palette')).toHaveClass(/tools-palette-grid/);
     
     // Verify Preferences (recentsLimit)
-    await window.click('button[aria-label="Preferences"]');
+    await window.evaluate(() => {
+        window.dispatchEvent(new CustomEvent('menu:action', { detail: { action: 'preferences' } }));
+    });
+    await window.waitForSelector('.preferences-dialog');
     await expect(window.locator('input[name="recentsLimit"]')).toHaveValue('12');
     await window.click('button:has-text("Close")');
+
 
     // Verify Custom Color
     await window.click('button[aria-label="Highlight"]');

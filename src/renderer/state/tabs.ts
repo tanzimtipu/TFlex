@@ -40,6 +40,43 @@ export type TabsAction =
 
 export const initialTabsState: TabsState = { tabs: [], activeId: null };
 
+/** Decide which id the next `open` action should carry. Single source of
+ *  truth for tab id allocation — callers (`openFromBytes`) must use the
+ *  returned id for BOTH the per-tab document session (`openTabs[id]`)
+ *  AND the dispatched `tab` meta, so the tab bar and the session stay
+ *  in sync.
+ *
+ *  - If the active tab is an empty placeholder and we're not opening
+ *    another empty placeholder, the empty tab's id is reused and the
+ *    caller is signalling "fill this in place".
+ *  - Otherwise a fresh UUID is minted and the reducer will append.
+ *
+ *  Empty tabs hold `filePath === ''`, so the caller's `meta.filePath`
+ *  must be the real document path; only the `id` is reused.
+ */
+export function resolveOpenId(
+  state: TabsState,
+  incoming: { kind: DocKind; filePath: string },
+  mint: () => string = (): string => {
+    // crypto.randomUUID is available in the renderer; tests override
+    // `mint` for deterministic ids. The default branch (test envs
+    // without crypto.randomUUID) produces a recognisable id so unit
+    // tests can assert "a fresh id was minted".
+    const c = globalThis.crypto as { randomUUID?: () => string } | undefined;
+    if (c?.randomUUID !== undefined) return c.randomUUID();
+    return `fresh-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  },
+): { id: string; fillsEmptyId: string | null } {
+  if (
+    incoming.kind !== 'empty' &&
+    state.activeId !== null &&
+    state.tabs.some((t) => t.id === state.activeId && t.kind === 'empty')
+  ) {
+    return { id: state.activeId, fillsEmptyId: state.activeId };
+  }
+  return { id: mint(), fillsEmptyId: null };
+}
+
 /**
  * Tab bar state. Opening re-uses an existing tab for the same path; closing
  * the active tab activates its nearest neighbor (left if possible).
@@ -47,40 +84,46 @@ export const initialTabsState: TabsState = { tabs: [], activeId: null };
 export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
   switch (action.type) {
     case 'open': {
-      // Phase 6 — when the active tab is an empty placeholder, opening a
-      // PDF fills it in place instead of stacking a new tab. The user
-      // expects the "+ tab" affordance to behave as "the next PDF I open
-      // will land here".
-      if (
-        action.tab.kind !== 'empty' &&
-        state.activeId !== null &&
-        state.tabs.some((t) => t.id === state.activeId && t.kind === 'empty')
-      ) {
-        const targetId = state.activeId;
-        let changed = false;
-        const tabs = state.tabs.map((t) => {
-          if (t.id !== targetId) return t;
-          if (
-            t.kind === 'empty' &&
-            (t.title !== action.tab.title || t.filePath !== action.tab.filePath)
-          ) {
-            changed = true;
-            return {
-              ...t,
-              kind: 'file' as const,
-              title: action.tab.title,
-              filePath: action.tab.filePath,
-            };
-          }
-          return t;
-        });
-        if (changed) {
-          return { tabs, activeId: targetId };
+      // The caller (`openFromBytes` via `resolveOpenId`) decides the id
+      // before dispatching. The reducer trusts that id and performs one
+      // of three operations:
+      //
+      //   1. id matches an existing tab -> mutate in place (empty-fill
+      //      case: the caller reused the empty tab's id; we replace
+      //      its kind/title/filePath with the incoming meta so the
+      //      placeholder becomes a real document without moving the
+      //      slot).
+      //   2. filePath matches an existing real tab -> activate that
+      //      tab and drop the incoming meta (re-opening an already-open
+      //      document).
+      //   3. otherwise -> append.
+      //
+      // The pre-DEF-036 implementation did (1) implicitly using
+      // `state.activeId`. That silently allocated an id different from
+      // the one `openFromBytes` had stored the session under, breaking
+      // `openTabs[activeId]` lookups. Now the id is computed once in
+      // the caller and passed in on the meta.
+      const byId = state.tabs.find((t) => t.id === action.tab.id);
+      if (byId !== undefined) {
+        const isSame =
+          byId.kind === action.tab.kind &&
+          byId.title === action.tab.title &&
+          byId.filePath === action.tab.filePath &&
+          byId.modified === action.tab.modified;
+        if (isSame) {
+          // Nothing to update, but ensure the tab is activated (caller
+          // intent: this id is now the focus).
+          if (state.activeId === action.tab.id) return state;
+          return { ...state, activeId: action.tab.id };
         }
+        const tabs = state.tabs.map((t) => (t.id === action.tab.id ? action.tab : t));
+        return { tabs, activeId: action.tab.id };
       }
-      const existing = state.tabs.find((t) => t.filePath === action.tab.filePath);
-      if (existing !== undefined) {
-        return { ...state, activeId: existing.id };
+      if (action.tab.filePath !== '') {
+        const existing = state.tabs.find((t) => t.filePath === action.tab.filePath);
+        if (existing !== undefined) {
+          return { ...state, activeId: existing.id };
+        }
       }
       return { tabs: [...state.tabs, action.tab], activeId: action.tab.id };
     }
