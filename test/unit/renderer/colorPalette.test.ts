@@ -351,8 +351,13 @@ describe("applyAnnotationPaletteChange — per-theme bucket experiment (DEF-037 
     const after = applyAnnotationPaletteChange(before, next);
     // The fix: per-bucket merge falls back to `current.light` when
     // `next.light` is undefined. The light bucket content is
-    // preserved across the partial merge.
-    expect(after.annotationColors?.light).toEqual(['#aaaaaa']);
+    // preserved across the partial merge. The new normaliser
+    // canonicalises the legacy string shape to preset shape with
+    // `legacy-<hex>` ids — the same id convention App.tsx uses on
+    // read, so a downstream Remove on this entry would still find it.
+    expect(after.annotationColors?.light).toEqual([
+      { id: 'legacy-#aaaaaa', hex: '#aaaaaa' },
+    ]);
     expect(after.annotationColors?.dark).toEqual([
       { id: 'p-dark-1', hex: '#bbbbbb' },
       { id: 'p-dark-2', hex: '#cccccc' },
@@ -362,7 +367,9 @@ describe("applyAnnotationPaletteChange — per-theme bucket experiment (DEF-037 
   it("preserves the inactive bucket when `next` omits it entirely (undefined bucket)", () => {
     // Stronger version of the previous test: `next` has the dark
     // bucket only — the light bucket key is absent. The per-bucket
-    // merge uses `current.light` as the fallback.
+    // merge uses `current.light` as the fallback. The normaliser
+    // converts the legacy string shape into preset shape on the way
+    // out so the persist carries the canonical form.
     const before = makeSettings({
       theme: 'light',
       annotationColors: { light: ['#aaaaaa'], dark: ['#bbbbbb'] },
@@ -373,7 +380,9 @@ describe("applyAnnotationPaletteChange — per-theme bucket experiment (DEF-037 
       dark: [{ id: 'p-dark-2', hex: '#cccccc' }],
     };
     const after = applyAnnotationPaletteChange(before, next);
-    expect(after.annotationColors?.light).toEqual(['#aaaaaa']);
+    expect(after.annotationColors?.light).toEqual([
+      { id: 'legacy-#aaaaaa', hex: '#aaaaaa' },
+    ]);
     expect(after.annotationColors?.dark).toEqual([{ id: 'p-dark-2', hex: '#cccccc' }]);
   });
 
@@ -422,5 +431,229 @@ describe("applyAnnotationPaletteChange — per-theme bucket experiment (DEF-037 
     };
     const updated = applyAnnotationPaletteChange(settings, next);
     expect(updated).toBe(settings);
+  });
+});
+
+// DEF-037 / DEF-043 — strict per-theme bucket isolation.
+//
+// The in-session leakage reported in DEF-043 ("adding a color in
+// light theme makes it visible in dark theme within the same
+// session") had two contributing factors:
+//   (a) the merge accepted `next` partially and the picker's view
+//       could aliase a bucket across themes if upstream paths ever
+//       produced a wrong key;
+//   (b) the renderer never normalised the bucket shape on write —
+//       a stale echo arriving as `string[]` could leave the local
+//       state in `string[]` shape, and a subsequent picker round-trip
+//       would treat the legacy string as a stale entry to add.
+//
+// The new `normalizeBucket` in state/colorPalette.ts guarantees:
+//   - Each bucket in the result is a FRESH `AnnotationColorPreset[]`
+//     (no aliasing between light and dark, no aliasing with the
+//     input arrays).
+//   - Legacy `string[]` entries become `{ id: 'legacy-<hex>', hex }`,
+//     matching the legacy-id convention the App.tsx picker projection
+//     already uses on read — so add/remove-by-id stays consistent.
+//   - Each bucket dedupes by lower-case hex so a cross-contaminated
+//     upstream cannot grow a bucket past its expected size.
+//
+// The tests below pin the isolation invariants: a partial `next`
+// must never overwrite the OTHER bucket's content with stale or
+// cross-bucket data, and a write whose buckets cross-contaminate
+// must be decontaminated before it reaches `settings.json`.
+describe("applyAnnotationPaletteChange — strict per-theme bucket isolation (DEF-043)", () => {
+  const makeSettings = (overrides: Partial<AppSettings> = {}): AppSettings => ({
+    theme: 'dark',
+    geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false },
+    recentFiles: [],
+    ...overrides,
+  });
+
+  it("writes to settings.annotationColors.light ONLY when next.dark is undefined and current.dark exists", () => {
+    // Regression for DEF-043 in-session leakage: picker's `next` only
+    // carries the active bucket; the inactive bucket must come from
+    // `current`, NOT from the active bucket's content.
+    const before = makeSettings({
+      theme: 'light',
+      annotationColors: {
+        light: [{ id: 'p-light-1', hex: '#aaaaaa' }],
+        dark: [{ id: 'p-dark-1', hex: '#bbbbbb' }],
+      },
+    });
+    const next: SharedAnnotationColors = {
+      // Picker in light theme adds a new light color; dark bucket
+      // is not in `next` because the picker reducer spreads from
+      // its own state, which we simulate as undefined here.
+      light: [
+        { id: 'p-light-1', hex: '#aaaaaa' },
+        { id: 'p-light-2', hex: '#cccccc' },
+      ],
+    };
+    const after = applyAnnotationPaletteChange(before, next);
+    // Light bucket is updated.
+    expect(after.annotationColors?.light).toEqual([
+      { id: 'p-light-1', hex: '#aaaaaa' },
+      { id: 'p-light-2', hex: '#cccccc' },
+    ]);
+    // Dark bucket is preserved from `current`. Crucially, the light
+    // bucket's content (`#aaaaaa`, `#cccccc`) must NOT appear in the
+    // dark bucket — and the pre-existing `#bbbbbb` must NOT be lost.
+    expect(after.annotationColors?.dark).toEqual([
+      { id: 'p-dark-1', hex: '#bbbbbb' },
+    ]);
+  });
+
+  it("writes to settings.annotationColors.dark ONLY when next.light is undefined and current.light exists", () => {
+    // Mirror of the previous test for the dark bucket.
+    const before = makeSettings({
+      theme: 'dark',
+      annotationColors: {
+        light: [{ id: 'p-light-1', hex: '#aaaaaa' }],
+        dark: [{ id: 'p-dark-1', hex: '#bbbbbb' }],
+      },
+    });
+    const next: SharedAnnotationColors = {
+      dark: [
+        { id: 'p-dark-1', hex: '#bbbbbb' },
+        { id: 'p-dark-2', hex: '#dddddd' },
+      ],
+    };
+    const after = applyAnnotationPaletteChange(before, next);
+    expect(after.annotationColors?.light).toEqual([
+      { id: 'p-light-1', hex: '#aaaaaa' },
+    ]);
+    expect(after.annotationColors?.dark).toEqual([
+      { id: 'p-dark-1', hex: '#bbbbbb' },
+      { id: 'p-dark-2', hex: '#dddddd' },
+    ]);
+  });
+
+  it("normalises legacy string[] buckets to preset[] on the way out (DEF-043 normalisation fix)", () => {
+    // The backend normalises `AnnotationColorPreset[]` to `string[]`
+    // on persist. If a stale echo (or a freshly-loaded settings.json
+    // from before the preset-shape migration) brings back a string
+    // shape, the merge must convert it to preset shape so the next
+    // picker round-trip treats the entry as a tracked preset (the
+    // legacy-id pattern from App.tsx's picker projection).
+    const before = makeSettings({
+      theme: 'dark',
+      annotationColors: { light: [], dark: [] },
+    });
+    const next: SharedAnnotationColors = {
+      // Pretend an echo with string shape landed.
+      light: ['#aabbcc'],
+      dark: ['#112233'],
+    };
+    const after = applyAnnotationPaletteChange(before, next);
+    expect(after.annotationColors?.light).toEqual([
+      { id: 'legacy-#aabbcc', hex: '#aabbcc' },
+    ]);
+    expect(after.annotationColors?.dark).toEqual([
+      { id: 'legacy-#112233', hex: '#112233' },
+    ]);
+  });
+
+  it("lowercases hex on the way out so the persist carries canonical lowercase hexes", () => {
+    // The backend expects lowercase hex; the renderer should not
+    // round-trip a mixed-case entry back to settings.json. The
+    // normaliser lowercases every hex so a stale echo that arrived
+    // in upper case is sanitised on the next write.
+    const before = makeSettings({
+      theme: 'dark',
+      annotationColors: { light: [], dark: [] },
+    });
+    const next: SharedAnnotationColors = {
+      light: ['#AABBCC'],
+      dark: [{ id: 'p-dark-1', hex: '#DDeEfF' }],
+    };
+    const after = applyAnnotationPaletteChange(before, next);
+    expect(after.annotationColors?.light).toEqual([
+      { id: 'legacy-#aabbcc', hex: '#aabbcc' },
+    ]);
+    expect(after.annotationColors?.dark).toEqual([
+      { id: 'p-dark-1', hex: '#ddeeff' },
+    ]);
+  });
+
+  it("dedupes within a bucket so cross-contamination cannot grow a bucket", () => {
+    // Defence-in-depth: even if an upstream path ever aliased
+    // content (a future bug), the normaliser dedupes by lower-case
+    // hex so a bucket cannot contain the same hex twice. This pins
+    // the per-bucket size invariant — a hex that legitimately
+    // belongs to `light` cannot be re-added to `light` just because
+    // it already appears once.
+    const before = makeSettings({
+      theme: 'dark',
+      annotationColors: { light: [], dark: [] },
+    });
+    const next = {
+      // The same hex appears three times in different shapes. The
+      // runtime contract accepts both `string[]` and
+      // `AnnotationColorPreset[]` for each bucket; the cast widens
+      // the type so we can mix shapes in the test (the real picker
+      // does not mix shapes, but the normaliser must still dedupe).
+      light: ['#aaaaaa', { id: 'a', hex: '#aaaaaa' }, { id: 'b', hex: '#AAAAAA' }] as unknown as SharedAnnotationColors['light'],
+      dark: [] as SharedAnnotationColors['light'],
+    };
+    const after = applyAnnotationPaletteChange(before, next);
+    expect(after.annotationColors?.light).toHaveLength(1);
+    const firstEntry = after.annotationColors?.light?.[0];
+    // The normaliser always returns preset-shape entries (never
+    // raw strings), so the runtime type is `AnnotationColorPreset`
+    // here. The `as unknown as` cast below is a TS-only escape
+    // hatch for the union return type.
+    const first = firstEntry as unknown as { hex: string } | undefined;
+    expect(first?.hex).toBe('#aaaaaa');
+  });
+
+  it("never aliases the light and dark buckets to the same reference (isolation invariant)", () => {
+    // The single most important isolation invariant: the result's
+    // `light` and `dark` arrays MUST be distinct references. If a
+    // future refactor accidentally aliases them (e.g. `next` was
+    // patched to share arrays between keys), the normaliser breaks
+    // the alias by returning fresh arrays.
+    const before = makeSettings({
+      theme: 'dark',
+      annotationColors: { light: [], dark: [] },
+    });
+    // Construct a malformed `next` whose light and dark are the
+    // SAME reference — exactly the aliasing that would cause
+    // in-session leakage if the merge trusted the references.
+    const shared: ReadonlyArray<{ id: string; hex: string }> = [
+      { id: 'p-1', hex: '#aaaaaa' },
+    ];
+    const next = {
+      // The cast is intentional — TypeScript forbids this in the
+      // shared types but the runtime invariant is what we test.
+      light: shared as unknown as { id: string; hex: string }[],
+      dark: shared as unknown as { id: string; hex: string }[],
+    };
+    const after = applyAnnotationPaletteChange(before, next);
+    expect(after.annotationColors?.light).not.toBe(after.annotationColors?.dark);
+    // And both buckets end up with their own fresh copies.
+    expect(after.annotationColors?.light).toEqual([{ id: 'p-1', hex: '#aaaaaa' }]);
+    expect(after.annotationColors?.dark).toEqual([{ id: 'p-1', hex: '#aaaaaa' }]);
+  });
+
+  it("empty `next` bucket is an intentional clear (overrides current)", () => {
+    // The picker reducer can produce `next.light = []` if the user
+    // removed every entry in the active bucket via the X button.
+    // That is an INTENTIONAL clear and must take precedence over
+    // `current.light`'s preserved content — otherwise the user's
+    // "remove all" affordance would silently no-op.
+    const before = makeSettings({
+      theme: 'light',
+      annotationColors: {
+        light: [{ id: 'p-light-1', hex: '#aaaaaa' }],
+        dark: [{ id: 'p-dark-1', hex: '#bbbbbb' }],
+      },
+    });
+    const next: SharedAnnotationColors = {
+      light: [],
+      dark: [{ id: 'p-dark-1', hex: '#bbbbbb' }],
+    };
+    const after = applyAnnotationPaletteChange(before, next);
+    expect(after.annotationColors?.light).toEqual([]);
+    expect(after.annotationColors?.dark).toEqual([{ id: 'p-dark-1', hex: '#bbbbbb' }]);
   });
 });

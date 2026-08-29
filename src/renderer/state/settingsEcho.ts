@@ -13,9 +13,10 @@
 // The fix is a Lamport-style sequence number tracked entirely on
 // the renderer side:
 //
-//   - Every local settings write (`saveSettings` / debounced
-//     persist) bumps `writeSeq` and snapshots the settings object
-//     that went out in `persistedRef`.
+//   - Every local settings write (`saveSettings` immediate
+//     persist; see DEF-044 fix in App.tsx) bumps `writeSeq` and
+//     snapshots the settings object that went out in
+//     `persistedRef`.
 //   - The `settings.changed` echo callback asks
 //     `shouldApplyEcho(...)` whether the incoming payload still
 //     represents our most-recent local write.

@@ -242,3 +242,241 @@ describe('Phase 8: optimizePreset validation', () => {
     }
   });
 });
+
+// DEF-043: annotationColors normalization preserves AnnotationColorPreset objects
+describe('DEF-043: annotationColors normalization', () => {
+  it('preserves {id, hex} objects in light bucket', () => {
+    const result = normalizeSettings({
+      annotationColors: {
+        light: [{ id: 'custom-1', hex: '#ff0000' }, { id: 'custom-2', hex: '#00ff00' }],
+      },
+    });
+    expect(result.annotationColors).toBeDefined();
+    expect(result.annotationColors!.light).toEqual([
+      { id: 'custom-1', hex: '#ff0000' },
+      { id: 'custom-2', hex: '#00ff00' },
+    ]);
+  });
+
+  it('preserves {id, hex} objects in dark bucket', () => {
+    const result = normalizeSettings({
+      annotationColors: {
+        dark: [{ id: 'a', hex: '#123456' }],
+      },
+    });
+    expect(result.annotationColors).toBeDefined();
+    expect(result.annotationColors!.dark).toEqual([
+      { id: 'a', hex: '#123456' },
+    ]);
+  });
+
+  it('converts plain strings to {id: hex, hex} objects', () => {
+    const result = normalizeSettings({
+      annotationColors: {
+        light: ['#ff0000', '#00ff00'],
+      },
+    });
+    expect(result.annotationColors).toBeDefined();
+    expect(result.annotationColors!.light).toEqual([
+      { id: '#ff0000', hex: '#ff0000' },
+      { id: '#00ff00', hex: '#00ff00' },
+    ]);
+  });
+
+  it('handles mixed arrays of strings and objects', () => {
+    const result = normalizeSettings({
+      annotationColors: {
+        light: ['#ff0000', { id: 'custom-1', hex: '#00ff00' }, '#0000ff'],
+      },
+    });
+    expect(result.annotationColors).toBeDefined();
+    expect(result.annotationColors!.light).toEqual([
+      { id: '#ff0000', hex: '#ff0000' },
+      { id: 'custom-1', hex: '#00ff00' },
+      { id: '#0000ff', hex: '#0000ff' },
+    ]);
+  });
+
+  it('drops invalid entries (empty strings, missing fields, non-object non-string)', () => {
+    const result = normalizeSettings({
+      annotationColors: {
+        light: [
+          '',
+          { id: '', hex: '#abc' },
+          { id: 'valid', hex: '' },
+          { hex: '#bad' }, // missing id
+          { id: 'nohex' }, // missing hex
+          123,
+          true,
+          null,
+          '#ff0000',
+        ],
+      },
+    });
+    expect(result.annotationColors).toBeDefined();
+    expect(result.annotationColors!.light).toHaveLength(1);
+    expect(result.annotationColors!.light![0]).toEqual({ id: '#ff0000', hex: '#ff0000' });
+  });
+
+  it('preserves both light and dark buckets when both are present', () => {
+    const result = normalizeSettings({
+      annotationColors: {
+        light: [{ id: 'l', hex: '#aaa' }],
+        dark: ['#bbb'],
+      },
+    });
+    expect(result.annotationColors).toBeDefined();
+    expect(result.annotationColors!.light).toEqual([{ id: 'l', hex: '#aaa' }]);
+    expect(result.annotationColors!.dark).toEqual([{ id: '#bbb', hex: '#bbb' }]);
+  });
+
+  it('does not set annotationColors when bucket arrays are empty', () => {
+    const empty = normalizeSettings({
+      annotationColors: { light: [], dark: [] },
+    });
+    expect(empty.annotationColors).toBeUndefined();
+
+    const allInvalid = normalizeSettings({
+      annotationColors: { light: [null, 123, ''] },
+    });
+    expect(allInvalid.annotationColors).toBeUndefined();
+  });
+
+  it('does not set annotationColors when key is missing', () => {
+    expect(normalizeSettings({}).annotationColors).toBeUndefined();
+  });
+
+  it('does not set annotationColors when value is not an object', () => {
+    expect(normalizeSettings({ annotationColors: 'nope' }).annotationColors).toBeUndefined();
+    expect(normalizeSettings({ annotationColors: 123 }).annotationColors).toBeUndefined();
+  });
+
+  it('save/load round-trips annotationColors with objects', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      annotationColors: {
+        light: [{ id: 'c1', hex: '#ff0000' }, { id: 'c2', hex: '#00ff00' }],
+        dark: [{ id: 'c3', hex: '#0000ff' }],
+      },
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.annotationColors).toEqual({
+        light: [{ id: 'c1', hex: '#ff0000' }, { id: 'c2', hex: '#00ff00' }],
+        dark: [{ id: 'c3', hex: '#0000ff' }],
+      });
+    }
+  });
+});
+
+// DEF-044: saveCurrent reads state at execution time, not enqueue time
+describe('DEF-044: saveCurrent race-condition fix', () => {
+  it('saveCurrent reads this.current at execution time, not enqueue time', async () => {
+    const svc = new SettingsService(file);
+    // Load defaults into the service's in-memory state
+    const loaded = await svc.load();
+    expect(loaded.ok).toBe(true);
+
+    // Enqueue a renderer-style save with a new theme
+    const rendererSave = svc.save({
+      ...DEFAULT_SETTINGS,
+      theme: 'light' as const,
+      annotationColors: {
+        light: [{ id: 'c1', hex: '#ff0000' }],
+      },
+    });
+
+    // Immediately call saveCurrent — this mimics window-all-closed firing
+    // while the renderer save is still in the queue
+    const quitSave = svc.saveCurrent();
+
+    // Wait for both to complete
+    await Promise.all([rendererSave, quitSave]);
+
+    // The renderer save ran first (it was enqueued first),
+    // then saveCurrent should have read this.current (updated by renderer save)
+    // and written that to disk
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.theme).toBe('light');
+      expect(result.value.annotationColors).toBeDefined();
+      expect(result.value.annotationColors!.light).toEqual([{ id: 'c1', hex: '#ff0000' }]);
+    }
+  });
+
+  it('saveCurrent after a series of saves sees the latest state', async () => {
+    const svc = new SettingsService(file);
+    const loaded = await svc.load();
+    expect(loaded.ok).toBe(true);
+
+    // Simulate rapid theme toggles from the renderer
+    const save1 = svc.save({ ...DEFAULT_SETTINGS, theme: 'light' as const });
+    const save2 = svc.save({
+      ...DEFAULT_SETTINGS,
+      theme: 'dark' as const,
+      annotationColors: { light: [{ id: 'a', hex: '#111' }] },
+    });
+    const save3 = svc.save({
+      ...DEFAULT_SETTINGS,
+      theme: 'light' as const,
+      annotationColors: { light: [{ id: 'a', hex: '#111' }, { id: 'b', hex: '#222' }] },
+    });
+
+    // saveCurrent enqueued after all renderer saves — must see save3's state
+    const quitSave = svc.saveCurrent();
+
+    await Promise.all([save1, save2, save3, quitSave]);
+
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.theme).toBe('light');
+      expect(result.value.annotationColors!.light).toEqual([
+        { id: 'a', hex: '#111' },
+        { id: 'b', hex: '#222' },
+      ]);
+    }
+  });
+
+  it('saveCurrent without any prior save writes current in-memory state', async () => {
+    const svc = new SettingsService(file);
+    const loaded = await svc.load();
+    expect(loaded.ok).toBe(true);
+
+    await svc.saveCurrent();
+
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.theme).toBe(DEFAULT_SETTINGS.theme);
+    }
+  });
+
+  it('saveCurrent preserves changes from a fully-flushed renderer save', async () => {
+    const svc = new SettingsService(file);
+    await svc.load();
+
+    // Simulate a normal flow: renderer saves, then user quits
+    await svc.save({
+      ...DEFAULT_SETTINGS,
+      theme: 'light' as const,
+      annotationColors: { dark: [{ id: 'dc1', hex: '#333' }] },
+    });
+
+    // Now call saveCurrent (window-all-closed)
+    await svc.saveCurrent();
+
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.theme).toBe('light');
+      expect(result.value.annotationColors!.dark).toEqual([{ id: 'dc1', hex: '#333' }]);
+    }
+  });
+});

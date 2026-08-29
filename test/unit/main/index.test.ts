@@ -30,6 +30,7 @@ _buildAppMenu,
         value: { theme: 'dark', geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false }, recentFiles: [] },
       }),
       save: vi.fn().mockResolvedValue(undefined),
+      saveCurrent: vi.fn().mockResolvedValue(undefined),
       addRecentFile: vi.fn().mockResolvedValue(undefined),
       getCurrent: vi.fn().mockReturnValue({ theme: 'dark', geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false }, recentFiles: [] }),
     },
@@ -97,7 +98,7 @@ vi.mock('electron', () => ({
     on: _on,
     getPath: vi.fn((name: string) => name === 'userData' ? '/mock/user/data' : '/mock/app'),
     getAppPath: vi.fn().mockReturnValue('/mock/app'),
-    getVersion: vi.fn().mockReturnValue('1.1.0'),
+    getVersion: vi.fn().mockReturnValue('1.1.1'),
     isPackaged: false,
   },
   BrowserWindow: {
@@ -509,21 +510,33 @@ describe('main/index - window:maximize handler', () => {
 // ---------------------------------------------------------------------------
 
 describe('main/index - window-all-closed handler', () => {
-  it('saves settings and quits', async () => {
+  it('awaits saveCurrent before calling app.quit', async () => {
     vi.clearAllMocks();
     _handle.mockClear();
     _on.mockClear();
+
+    // Track call order
+    const callOrder: string[] = [];
+    _settingsInstance.saveCurrent.mockImplementation(() => {
+      callOrder.push('saveCurrent');
+      return Promise.resolve();
+    });
+    _quit.mockImplementation(() => {
+      callOrder.push('quit');
+    });
 
     await start();
 
     const windowAllClosedCall = _on.mock.calls.find((c: unknown[]) => c[0] === 'window-all-closed')!;
     expect(windowAllClosedCall).toBeDefined();
 
-    const handler = windowAllClosedCall[1] as () => void;
-    handler();
+    const handler = windowAllClosedCall[1] as () => Promise<void>;
+    await handler();
 
-    expect(_settingsInstance.save).toHaveBeenCalled();
+    expect(_settingsInstance.saveCurrent).toHaveBeenCalled();
     expect(_quit).toHaveBeenCalled();
+    // saveCurrent must complete before quit is called
+    expect(callOrder).toEqual(['saveCurrent', 'quit']);
   });
 });
 

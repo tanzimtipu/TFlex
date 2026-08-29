@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { err, ok } from '../../shared/result';
 import type {
+  AnnotationColorPreset,
   AppSettings,
   LoadSettingsResult,
   RecentFile,
@@ -57,6 +58,20 @@ function normalizeRecentFiles(raw: unknown, cap: number = RECENT_FILES_CAP): Rec
   return files.slice(0, effectiveCap);
 }
 
+function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
+  if (typeof raw === 'string' && raw.length > 0) {
+    return { id: raw, hex: raw };
+  }
+  if (raw !== null && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    if (typeof obj.id === 'string' && obj.id.length > 0 &&
+        typeof obj.hex === 'string' && obj.hex.length > 0) {
+      return { id: obj.id, hex: obj.hex };
+    }
+  }
+  return null;
+}
+
 export function normalizeSettings(raw: unknown): AppSettings {
   const rawObj = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const recentsCap = typeof rawObj.recentsCap === 'number' && Number.isFinite(rawObj.recentsCap) && rawObj.recentsCap >= 1 && rawObj.recentsCap <= 50
@@ -82,12 +97,22 @@ export function normalizeSettings(raw: unknown): AppSettings {
   }
   if (rawObj.annotationColors !== null && typeof rawObj.annotationColors === 'object') {
     const ac = rawObj.annotationColors as Record<string, unknown>;
-    const colors: { light?: string[]; dark?: string[] } = {};
+    const colors: { light?: AnnotationColorPreset[]; dark?: AnnotationColorPreset[] } = {};
     if (Array.isArray(ac.light)) {
-      colors.light = ac.light.filter((c): c is string => typeof c === 'string');
+      const lightEntries = ac.light
+        .map((c) => normalizeAnnotationColorEntry(c))
+        .filter((c): c is AnnotationColorPreset => c !== null);
+      if (lightEntries.length > 0) {
+        colors.light = lightEntries;
+      }
     }
     if (Array.isArray(ac.dark)) {
-      colors.dark = ac.dark.filter((c): c is string => typeof c === 'string');
+      const darkEntries = ac.dark
+        .map((c) => normalizeAnnotationColorEntry(c))
+        .filter((c): c is AnnotationColorPreset => c !== null);
+      if (darkEntries.length > 0) {
+        colors.dark = darkEntries;
+      }
     }
     if (colors.light || colors.dark) {
       settings.annotationColors = colors;
@@ -140,7 +165,18 @@ export class SettingsService {
   }
 
   save(settings: AppSettings): Promise<void> {
-    const task = this._saveQueue.then(() => this._doSave(settings));
+    this.current = normalizeSettings(settings);
+    const task = this._saveQueue.then(() => this._doSave(this.current));
+    this._saveQueue = task.catch(() => {});
+    return task;
+  }
+
+  /** Save the current in-memory settings at execution time (not enqueue time).
+   *  This avoids the race where a caller snapshots `getCurrent()` before a
+   *  pending renderer save has updated `this.current`.  The state is read when
+   *  the queued task actually runs, after all prior saves have completed. */
+  saveCurrent(): Promise<void> {
+    const task = this._saveQueue.then(() => this._doSave(structuredClone(this.current)));
     this._saveQueue = task.catch(() => {});
     return task;
   }

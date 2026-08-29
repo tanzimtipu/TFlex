@@ -1,4 +1,49 @@
 
+## DEF-044: Settings overwrite race condition on app quit
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 7
+
+Steps to reproduce:
+1. Launch the app.
+2. Toggle the theme (e.g. to Light).
+3. Immediately close the app (within 500ms).
+4. Restart the app.
+
+Expected: The app should start in the new theme (Light).
+Actual: The app restarts in the old theme (Dark). The `window-all-closed` handler in `src/main/index.ts` calls `saveCurrent()` which saves the main process's `current` state. Because the renderer's `settingsSave` IPC is debounced (300ms), it never reaches the main process before quit. `saveCurrent()` therefore writes the stale backend state back to disk, clobbering the change.
+
+History:
+- qa: opened
+- qa: OPEN. Retested. Theme toggle still lost on rapid quit. `saveCurrent()` in main process does not appear to resolve the race, likely because `app.quit()` is called immediately after without awaiting the async save.
+- qa: OPEN. Retested on production build. DEF-044 is NOT fixed. The race condition remains because the renderer's 300ms debounce prevents the main process from receiving the updated settings before `window-all-closed` fires. `saveCurrent()` then persists the stale backend state.
+- qa: CLOSED. Retested on production build. Immediate persistence (no renderer debounce) and awaiting `saveCurrent()` in `window-all-closed` resolves the race. Verified via e2e/retest_def_044.spec.cjs.
+
+## DEF-043: Main process normalization strips custom color objects
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 7
+
+Steps to reproduce:
+1. Launch the app and open a PDF.
+2. Select an annotation tool (e.g. Highlight).
+3. Open the color picker and add a custom color to the palette.
+4. Verify the color appears in "Your colors".
+5. Restart the app and open the color picker again.
+
+Expected: The custom color added in step 3 should be persisted.
+Actual: The color is lost. While the normalization typo in `src/main/services/settings.ts` was fixed, persistence still fails on restart, likely due to the same quit race as DEF-044. Additionally, custom colors leak between theme buckets during the session (verified by e2e/retest_def_043.spec.cjs failure).
+
+History:
+- qa: opened
+- qa: OPEN. Retested. Custom colors still lost on restart. Confirmed typo in `src/main/services/settings.ts` line 65: `typeof raw !== 'object'` should be `typeof raw === 'object'`. Strips all objects during normalization.
+- qa: OPEN. Retested on production build. DEF-043 is NOT fixed. Custom colors are still lost on restart. Confirmed the normalization typo is fixed in the source, but persistence fails, possibly due to the same debounce race as DEF-044. Also discovered internal leakage: adding a color in light theme makes it visible in dark theme within the same session.
+- qa: CLOSED. Retested on production build. Normalization correctly preserves color objects and bucket isolation is enforced in the renderer state. Verified via e2e/retest_def_043.spec.cjs.
+
 ## DEF-042: Save As button disabled for optimized tabs (no on-disk path)
 
 - Status: CLOSED
@@ -100,7 +145,7 @@ History:
 
 ## DEF-037: Stale settings closure in App.tsx clobbers color palette persistence
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: HIGH
 - Found by: qa
 - Phase: 7
@@ -121,6 +166,9 @@ Actual: The light theme color is lost. `onAnnotationPaletteChange` in `App.tsx` 
 History:
 - qa: opened
 - qa: RE-OPENED. Retested on production build. Fix for stale closure (updater form of setSettings) is present, but race condition remains: rapid theme toggles + palette changes lead to stale settings echoes from the main process clobbering local state. Verified by e2e/phase7_verify.spec.cjs failure.
+- qa: OPEN. Retested on production build. Stale closure and session-time echo clobbering are FIXED (colors survive theme toggles in the same session). However, persistence fails on restart. Finding: backend `normalizeSettings` strips color objects (DEF-043) and quit-race clobbers theme (DEF-044). Defect remains OPEN until restart persistence is verified.
+- qa: OPEN. Rerun retests. Independence of color buckets failed in e2e/phase7_verify.spec.cjs (light color leaked into dark theme). DEF-043/044 still fail retest. Internal leakage remains.
+- qa: CLOSED. Retested on production build. Functional updater in App.tsx and strict per-theme isolation in the state layer ensure color buckets are preserved independently. Verified via e2e/retest_def_037.spec.cjs.
 
 
 - Status: CLOSED

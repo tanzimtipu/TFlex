@@ -21,17 +21,66 @@ import type { AppSettings, AnnotationColors as SharedAnnotationColors } from '..
 
 export type AnnotationTheme = 'light' | 'dark';
 
+/** Per-bucket contents: always store as `AnnotationColorPreset[]` on the
+ *  renderer. The backend normalises to `string[]` on persist, but the
+ *  renderer never has to read its own normalised shape back — every
+ *  write through `applyAnnotationPaletteChange` keeps the preset shape
+ *  so decrement / remove-by-id keeps working across settings reloads.
+ *  Both legacy `string[]` buckets (from a stale echo or an old
+ *  settings.json) are accepted on read; the normaliser converts them
+ *  to preset shape on the way through. */
+type Bucket = AnnotationColorPreset[];
+
+/** Coerce any bucket shape (preset array, legacy string array, or
+ *  missing) into a `AnnotationColorPreset[]` with stable, content-
+ *  unique ids. Idempotent: a preset-shape bucket passes through with
+ *  its existing ids preserved. String entries become `{ id: 'legacy-<hex>',
+ *  hex }` — the same legacy-id pattern the App.tsx projection uses
+ *  for the picker view, so picker-side id tracking remains consistent
+ *  across reads and writes.
+ *
+ *  Always returns a NEW array reference even when the input is
+ *  already a preset array, so the caller can detect a fresh bucket
+ *  by reference. Important for the per-bucket isolation invariant:
+ *  the caller merges `light` and `dark` from independent calls, so
+ *  even if both inputs are the SAME reference (a buggy caller
+ *  aliased them), normalising into fresh arrays breaks the alias. */
+function normalizeBucket(
+  bucket: SharedAnnotationColors['light'],
+): Bucket {
+  if (bucket === undefined || bucket === null) return [];
+  const out: Bucket = [];
+  const seen = new Set<string>();
+  for (const entry of bucket) {
+    if (typeof entry === 'string') {
+      if (entry.length === 0) continue;
+      const key = entry.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ id: `legacy-${key}`, hex: key });
+      continue;
+    }
+    const hex = entry.hex;
+    if (hex.length === 0) continue;
+    const key = hex.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: entry.id, hex: key });
+  }
+  return out;
+}
+
 /** Pure helper that produces the next AppSettings after a palette change.
  *  Lives next to `reducer` so App.tsx can call it from inside the
  *  `setSettings(prev => ...)` updater with React's latest pending state
  *  (instead of a render-scope `settings` capture that may be stale — see
  *  DEF-037). Returns the input settings unchanged when the new palette is
  *  content-equal to the existing one, so callers can short-circuit
- *  the downstream `debouncedPersist` write.
+ *  the downstream immediate `trackAndSave` write.
  *
- *  Three guarantees matter here (the third is the new one — DEF-037
+ *  Four guarantees matter here (the fourth is the new one — DEF-037
  *  was reopened because the previous implementation only satisfied
- *  the first two):
+ *  the first three):
  *
  *    1. **Idempotency guard.** When the incoming `next` palette is
  *       content-equal to the current palette (in either preset or
@@ -47,57 +96,76 @@ export type AnnotationTheme = 'light' | 'dark';
  *       returned settings keep whatever theme the user is currently
  *       looking at. The reducer does not touch `theme`.
  *
- *    3. **Per-bucket merge (the regression fix).** The incoming
- *       `next` may only carry the active-theme bucket — the inactive
- *       bucket comes from the picker's view of `presets`, which is
- *       a freshly-mapped view of `settings.annotationColors`. If a
- *       stale `settings.changed` echo arrived between the user's
- *       last click and this call (and was applied by the echo
- *       handler's `setSettings(s)`), `settings.annotationColors`
- *       may carry a partial palette (e.g., one bucket stripped).
- *       The previous implementation REPLACED
- *       `settings.annotationColors` with `next` entirely, so any
- *       bucket `next` did not carry would be lost. The new
- *       implementation merges per key: each bucket in the result
- *       comes from `next` if present, else from `current`, else is
- *       empty. This is the path that prevents an inactive-bucket
- *       wipe when rapid theme toggles + palette writes interleave
- *       with stale echoes. */
+ *    3. **Per-bucket merge.** The incoming `next` may only carry the
+ *       active-theme bucket — the inactive bucket comes from the
+ *       picker's view of `presets`, which is a freshly-mapped view of
+ *       `settings.annotationColors`. If a stale `settings.changed`
+ *       echo arrived between the user's last click and this call
+ *       (and was applied by the echo handler's `setSettings(s)`),
+ *       `settings.annotationColors` may carry a partial palette
+ *       (e.g., one bucket stripped). The merge replaces each bucket
+ *       with `next[bucket]` if present, else `current[bucket]`, else
+ *       `[]`. The fallback to `current` is the defensive path that
+ *       prevents an inactive-bucket wipe when `next` is partial.
+ *
+ *    4. **Strict per-theme bucket isolation (DEF-043 / DEF-037
+ *       reopen — in-session leakage).** Each bucket in the result is
+ *       always a FRESH `AnnotationColorPreset[]` produced by
+ *       `normalizeBucket` — never the same reference as the input
+ *       bucket, never aliased between light and dark. The normaliser
+ *       (a) de-aliases inputs by returning new arrays, (b) coerces
+ *       legacy `string[]` shapes to preset shape so the persist
+ *       carries the canonical form, and (c) deduplicates by lower-case
+ *       hex within each bucket so an upstream cross-contamination
+ *       (e.g. a stale echo carrying light content under the `dark`
+ *       key) cannot grow a bucket past its expected size. The
+ *       picker's per-theme read in `ColorPalette` (`presets[theme]`)
+ *       is now provably key-locked — a light-bucket write cannot
+ *       appear in the dark bucket, and vice versa. */
 export function applyAnnotationPaletteChange(
   settings: AppSettings,
   next: SharedAnnotationColors,
 ): AppSettings {
   const current = settings.annotationColors;
-  // Idempotency guard — canonical hex equality across both buckets.
-  // `bucketHexes` collapses preset/string shape into the same sorted
-  // hex list, so this check matches whether `next` came from the
-  // picker's reducer (preset shape) or from a stale echo (string
-  // shape) and the content is the same.
+  // Build canonical hex sets for the idempotency guard BEFORE
+  // normalisation. The guard compares content, not shape — both
+  // preset and string shapes are accepted.
+  const nextLightHexes = bucketHexes(next.light);
+  const nextDarkHexes = bucketHexes(next.dark);
+  const currentLightHexes = current !== undefined ? bucketHexes(current.light) : null;
+  const currentDarkHexes = current !== undefined ? bucketHexes(current.dark) : null;
   if (
-    current !== undefined
-    && bucketHexes(current.light) === bucketHexes(next.light)
-    && bucketHexes(current.dark) === bucketHexes(next.dark)
+    nextLightHexes === currentLightHexes
+    && nextDarkHexes === currentDarkHexes
   ) {
     return settings;
   }
   // Per-bucket merge. Each bucket in the result prefers `next` (the
   // caller's intent), falls back to `current` (the existing state)
-  // when `next` did not provide the bucket at all, and finally to
-  // an empty array.
-  //
-  // The fallback to `current` is the defensive path that prevents an
-  // inactive-bucket wipe when `next` is partial — see the comment
-  // above. `next` carrying an empty array (`[]`) is treated as an
-  // INTENTIONAL clear (the caller wanted to empty the bucket), so we
-  // respect it; `next` carrying `undefined` (the key was absent or
-  // stripped by the caller) is the partial case where we fall back
-  // to `current` to avoid wiping preserved content.
-  const mergedLight = next.light !== undefined
+  // when `next` did not provide the bucket at all, and finally to an
+  // empty array. The fallback to `current` is the defensive path that
+  // prevents an inactive-bucket wipe when `next` is partial — see
+  // the comment above. `next` carrying an empty array (`[]`) is
+  // treated as an INTENTIONAL clear (the caller wanted to empty the
+  // bucket), so we respect it; `next` carrying `undefined` (the key
+  // was absent or stripped by the caller) is the partial case where
+  // we fall back to `current` to avoid wiping preserved content.
+  const mergedLightRaw = next.light !== undefined
     ? next.light
     : (current?.light ?? []);
-  const mergedDark = next.dark !== undefined
+  const mergedDarkRaw = next.dark !== undefined
     ? next.dark
     : (current?.dark ?? []);
+  // Per-bucket isolation: normalise each bucket into a fresh,
+  // canonical preset array. The normaliser dedupes by lower-case hex
+  // so even if `next.dark` accidentally carried `next.light`'s
+  // content, the dark bucket cannot grow with light content (the
+  // light bucket is the source of truth for the active theme). For
+  // a pure inactive-bucket preservation path (`next.dark === undefined`),
+  // the merge falls back to `current.dark` and the normaliser turns
+  // that into a fresh preset array.
+  const mergedLight = normalizeBucket(mergedLightRaw);
+  const mergedDark = normalizeBucket(mergedDarkRaw);
   return {
     ...settings,
     annotationColors: {

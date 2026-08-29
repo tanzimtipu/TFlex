@@ -74,10 +74,28 @@ import {
 import { getSignatureService } from "./signatures/service";
 import { rasterizeSavedSignatureToPng } from "./signatures/canvas";
 
-/** Coalesce rapid settings writes from the theme toggle so each click does not
- *  trigger its own settings.json rename. The theme itself flips immediately;
- *  only the persistence is debounced. */
-const SETTINGS_PERSIST_DEBOUNCE_MS = 300;
+/** Phase 7 — settings persist policy.
+ *
+ * Every settings write the renderer issues goes through the main
+ * process synchronously, not through the previous 300ms debouncer.
+ * The debounce was the root cause of DEF-044 (settings overwrite
+ * race on app quit): when the user toggled the theme and closed
+ * the window inside the debounce window, the pending write never
+ * reached main; main's `saveCurrent()` then persisted its stale
+ * in-memory state to disk, clobbering the change.
+ *
+ * Immediate persistence makes that race irrelevant — the IPC call
+ * for the latest local state is in-flight (or already resolved)
+ * before the window can close. `void window.tflex.saveSettings(s)`
+ * fires the IPC immediately, bumps the echo-filter seq, and
+ * snapshots the object that went out so the echo filter can drop
+ * stale echoes from earlier writes.
+ *
+ * The renderer used to coalesce rapid theme toggles into one write
+ * to avoid a settings.json rename per click. In practice every
+ * click already produced an echo that the echo filter accepted
+ * once the seq was bumped; the savings were negligible and the
+ * latency risk was real. The toggle path is immediate now too. */
 
 declare global {
   interface Window {
@@ -259,15 +277,14 @@ export function App(): ReactElement {
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
 
-  const debouncedPersistRef = useRef<ReturnType<typeof createDebouncer<[AppSettings]>>>(
-    createDebouncer<[AppSettings]>(
-      (s) => {
-        void window.tflex.saveSettings(s);
-      },
-      SETTINGS_PERSIST_DEBOUNCE_MS,
-    ),
-  );
-  const debouncedPersist = debouncedPersistRef.current;
+  /** Persist the latest settings to main immediately. Bumps the
+   *  echo-filter seq and snapshots the object that went out so the
+   *  `settings.changed` listener can drop stale echoes. Every
+   *  renderer-issued settings write — theme toggle, annotation
+   *  palette, preferences sheet, recents, optimize preset — routes
+   *  through here. See the immediate-persist policy comment block
+   *  above (search for "Phase 7 — settings persist policy") for the
+   *  DEF-044 quit-race rationale. */
 
   // Phase 7 — settings echo filter (DEF-037). The main process
   // broadcasts every persisted write back to the renderer. When
@@ -282,23 +299,6 @@ export function App(): ReactElement {
   const settingsWriteSeqRef = useRef(0);
   const settingsPersistedRef = useRef<AppSettings | null>(null);
 
-  /** Wrap `debouncedPersist` so every local write bumps the seq
-   *  and snapshots the object that went out. The snapshot lets the
-   *  echo filter compare incoming echoes to our latest write
-   *  without depending on the wire contract carrying a seq field. */
-  const trackAndPersist = useCallback(
-    (s: AppSettings): void => {
-      settingsWriteSeqRef.current += 1;
-      settingsPersistedRef.current = s;
-      debouncedPersist(s);
-    },
-    [debouncedPersist],
-  );
-
-  /** Same tracking, but for immediate (non-debounced) settings
-   *  writes — used by the recent-files cleanup paths and the
-   *  recovered-on-boot write. They share the same echo channel
-   *  as the debounced ones, so they need the same seq. */
   const trackAndSave = useCallback((s: AppSettings): void => {
     settingsWriteSeqRef.current += 1;
     settingsPersistedRef.current = s;
@@ -336,7 +336,6 @@ export function App(): ReactElement {
     return () => {
       cancelled = true;
       unsubscribe();
-      debouncedPersist.flush();
     };
   }, []);
 
@@ -345,10 +344,10 @@ export function App(): ReactElement {
       if (prev === null) return prev;
       const next: AppSettings = { ...prev, theme: nextTheme(prev.theme) };
       applyTheme(next.theme);
-      trackAndPersist(next);
+      trackAndSave(next);
       return next;
     });
-  }, [trackAndPersist]);
+  }, [trackAndSave]);
 
   const pushToast = useCallback((kind: Toast["kind"], text: string): void => {
     dispatchError({ type: "push", toast: { kind, text } });
@@ -2253,7 +2252,7 @@ export function App(): ReactElement {
                       // echoed back from the backend and clobbered the
                       // per-theme palette buckets.
                       //
-                      // The persist goes through `trackAndPersist`
+                      // The persist goes through `trackAndSave`
                       // so the echo filter in the settings.changed
                       // listener can detect stale echoes that arrive
                       // after a newer local write has already
@@ -2261,7 +2260,7 @@ export function App(): ReactElement {
                       setSettings((prev) => {
                         if (prev === null) return prev;
                         const updated = applyAnnotationPaletteChange(prev, next);
-                        if (updated !== prev) trackAndPersist(updated);
+                        if (updated !== prev) trackAndSave(updated);
                         return updated;
                       });
                     }}
@@ -2282,7 +2281,7 @@ export function App(): ReactElement {
                   type: 'set-tools-palette-layout',
                   value: next,
                 });
-                trackAndPersist(updated);
+                trackAndSave(updated);
                 return updated;
               });
             }}
@@ -2366,7 +2365,7 @@ export function App(): ReactElement {
         // reducer is idempotent (equal value -> same reference), the
         // updater-form of setSettings keeps the write inside React's
         // latest pending state, and the persist goes through
-        // trackAndPersist so the settings echo filter can drop stale
+        // trackAndSave so the settings echo filter can drop stale
         // echoes that arrive after a newer local write.
         onOptimizePresetChange={(next): void => {
           setSettings((prev) => {
@@ -2375,7 +2374,7 @@ export function App(): ReactElement {
               type: 'set-optimize-preset',
               value: next,
             });
-            if (updated !== prev) trackAndPersist(updated);
+            if (updated !== prev) trackAndSave(updated);
             return updated;
           });
         }}
@@ -2401,7 +2400,7 @@ export function App(): ReactElement {
               type: 'set-optimize-preset',
               value: next,
             });
-            if (updated !== prev) trackAndPersist(updated);
+            if (updated !== prev) trackAndSave(updated);
             return updated;
           });
         }}
@@ -2425,7 +2424,7 @@ export function App(): ReactElement {
           setSettings((prev) => {
             if (prev === null) return prev;
             const updated = preferencesReducer(prev, { type: 'set-theme-default', value: next });
-            trackAndPersist(updated);
+            trackAndSave(updated);
             return updated;
           });
         }}
@@ -2433,7 +2432,7 @@ export function App(): ReactElement {
           setSettings((prev) => {
             if (prev === null) return prev;
             const updated = preferencesReducer(prev, { type: 'set-recents-cap', value: next });
-            trackAndPersist(updated);
+            trackAndSave(updated);
             return updated;
           });
         }}

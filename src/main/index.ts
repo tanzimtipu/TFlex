@@ -257,9 +257,6 @@ export async function start(): Promise<void> {
     ? undefined
     : (process.env.ELECTRON_RENDERER_URL ?? 'http://localhost:5173');
 
-  const persistGeometry = (): void => {
-    void settings.save({ ...settings.getCurrent() });
-  };
   const onGeometryChanged = (geometry: AppSettings['geometry']): void => {
     const current = settings.getCurrent();
     void settings.save({ ...current, geometry });
@@ -274,8 +271,8 @@ export async function start(): Promise<void> {
   };
 createWindow();
 
-  app.on('window-all-closed', () => {
-    persistGeometry();
+  app.on('window-all-closed', async () => {
+    await settings.saveCurrent();
     app.quit();
   });
   app.on('activate', () => {

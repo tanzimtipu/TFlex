@@ -37,7 +37,7 @@ interface SaveAsDialogProps {
   optimizePreset: OptimizePreset | undefined;
   /** Fires when the user flips the linearize checkbox. The host
    *  dispatches `preferencesReducer(prev, {type: 'set-optimize-preset',
-   *  value: 'none' | 'compact'})` and writes through trackAndPersist.
+   *  value: 'none' | 'compact'})` and writes through trackAndSave.
    *  The value is `'none'` when the toggle is on, `'compact'` when off. */
   onOptimizePresetChange: (preset: OptimizePreset) => void;
   /** Fires when the user confirms Save-As. The host calls the

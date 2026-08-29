@@ -22,7 +22,7 @@ test.describe('Phase 7 Verification', () => {
 
   test('visual color picker works and persists per theme', async () => {
     // 1. Open a PDF from samples
-    await page.click('text=report.pdf');
+    await page.locator('.samples-grid').getByText('report.pdf').click();
     await page.waitForSelector('.workspace');
 
     // 2. Select Highlight tool
@@ -55,10 +55,14 @@ test.describe('Phase 7 Verification', () => {
     // 8. Capture screenshot
     await page.screenshot({ path: 'screenshots/p7-verify-color-picker-light.png' });
 
-    // 9. Change theme (Ctrl+Shift+T)
-    await page.keyboard.press('Control+Shift+T');
+    // 9. Change theme
+    await page.click('.theme-toggle');
     // Wait for theme transition and settings broadcast
     await page.waitForTimeout(1000);
+
+    const currentTheme = await page.evaluate(() => document.documentElement.dataset.theme);
+    const presetsCount = await page.locator('[data-palette-custom]').count();
+    console.log(`Theme after toggle: ${currentTheme}, Custom colors count: ${presetsCount}`);
 
     // 10. Re-open palette in dark theme
     if (!(await page.locator('.color-popover').isVisible())) {
@@ -83,7 +87,7 @@ test.describe('Phase 7 Verification', () => {
     await page.screenshot({ path: 'screenshots/p7-verify-color-picker-dark.png' });
 
     // 13. Switch back to light theme and verify persistence
-    await page.keyboard.press('Control+Shift+T');
+    await page.click('.theme-toggle');
     await page.waitForTimeout(1000);
     
     if (!(await page.locator('.color-popover').isVisible())) {
