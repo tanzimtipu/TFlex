@@ -259,6 +259,33 @@ describe("dispatchMenuAction — handler isolation (DEF-038 regression)", () => 
     expect(spies.save).not.toHaveBeenCalled();
   });
 
+  // DEF-066 — Help -> About must route to ctx.about() with no
+  // prerequisites (zero-document, single-document, or many-document
+  // tabs all route the same). The App wires `ctx.about()` to
+  // `setAboutOpen(true)`, which mounts <AboutDialog> with the
+  // `.sheet-about` selector the e2e suite waits for. If this
+  // dispatch ever starts returning false or wiring to the wrong
+  // handler, the e2e wait times out and DEF-066 reopens.
+  it("Help -> About routes to ctx.about() regardless of other dispatched actions (DEF-066)", () => {
+    const { ctx, spies } = buildCtx();
+
+    // The exact wire string the native Help menu sends. Pinning the
+    // string here guards against a rename in main/menu.ts that
+    // would silently desync the renderer.
+    expect(dispatchMenuAction("about", ctx)).toBe(true);
+    expect(spies.about).toHaveBeenCalledTimes(1);
+
+    // Firing About a second time must still route to ctx.about()
+    // — a regression that mistakenly cached "first fire only" would
+    // fail here.
+    expect(dispatchMenuAction("about", ctx)).toBe(true);
+    expect(spies.about).toHaveBeenCalledTimes(2);
+
+    // About must NOT require an active document (it works from the
+    // welcome screen too).
+    expect(menuActionRequiresActiveDoc("about")).toBe(false);
+  });
+
   it("every dispatched action invokes exactly one handler", () => {
     const { ctx, spies } = buildCtx();
     const actions = [

@@ -23,9 +23,9 @@ test('Retest DEF-038: App Menu Functionality', async () => {
   });
 
   // Verify About dialog appears
-  const aboutDialog = window.locator('.about-dialog');
+  const aboutDialog = window.locator('.sheet-about');
   await expect(aboutDialog).toBeVisible({ timeout: 5000 });
-  await window.click('.about-dialog .btn-close');
+  await window.click('.sheet-about .sheet-close');
   await expect(aboutDialog).not.toBeVisible();
 
   console.log('Verifying Open PDF via simulated menu:action...');
@@ -41,7 +41,7 @@ test('Retest DEF-038: App Menu Functionality', async () => {
   });
 
   await window.waitForSelector('.workspace', { timeout: 10000 });
-  await expect(window.locator('.tab-item.active')).toContainText('report.pdf');
+  await expect(window.locator('.tab-active')).toContainText('report.pdf');
 
   await electronApp.close();
 });
@@ -69,39 +69,35 @@ test('Retest DEF-037: Color Palette Persistence', async () => {
   }
 
   // 3. Add custom color to Light theme
-  await window.click('.active-tool-swatch');
-  await window.click('button:has-text("Custom...")');
+  await window.click('.ann-color-swatch-main');
   
-  // Use the visual picker (assuming it's implemented now)
-  // The visual picker has a HEX input too usually, or we can just click the gradient.
-  // Let's try to set a specific HEX if available.
+  // Use the visual picker HEX input
   const lightColor = '#ff5555';
-  await window.fill('.color-picker-hex', lightColor);
+  await window.fill('.color-palette-hex', lightColor);
   await window.keyboard.press('Enter');
   
-  // Verify it appeared in "Your colors"
-  await expect(window.locator(`.swatch-item[data-color="${lightColor}"]`)).toBeVisible();
+  // Verify it appeared in "Your colors" (data-palette-custom attribute)
+  await expect(window.locator(`[data-palette-custom="${lightColor}"]`)).toBeVisible();
 
   // 4. Toggle to Dark theme
   await window.keyboard.press('Control+Shift+T');
-  await window.waitForFunction(() => document.documentElement.classList.contains('dark'));
+  await window.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
   
   // 5. Add custom color to Dark theme
-  await window.click('.active-tool-swatch');
-  await window.click('button:has-text("Custom...")');
+  await window.click('.ann-color-swatch-main');
   const darkColor = '#55ff55';
-  await window.fill('.color-picker-hex', darkColor);
+  await window.fill('.color-palette-hex', darkColor);
   await window.keyboard.press('Enter');
   
-  await expect(window.locator(`.swatch-item[data-color="${darkColor}"]`)).toBeVisible();
+  await expect(window.locator(`[data-palette-custom="${darkColor}"]`)).toBeVisible();
 
   // 6. Toggle back to Light theme
   await window.keyboard.press('Control+Shift+T');
-  await window.waitForFunction(() => !document.documentElement.classList.contains('dark'));
+  await window.waitForFunction(() => document.documentElement.dataset.theme !== 'dark');
   
   // 7. Check Light theme color still exists
-  await window.click('.active-tool-swatch');
-  await expect(window.locator(`.swatch-item[data-color="${lightColor}"]`)).toBeVisible();
+  await window.click('.ann-color-swatch-main');
+  await expect(window.locator(`[data-palette-custom="${lightColor}"]`)).toBeVisible();
   
   // 8. Restart app and verify persistence
   await electronApp.close();
@@ -111,19 +107,19 @@ test('Retest DEF-037: Color Palette Persistence', async () => {
   await window2.waitForSelector('.welcome');
   
   // Open same PDF to see toolbar
-  await window2.click('.recent-item'); // report.pdf should be first
+  await window2.click('.recent-row-open'); // report.pdf should be first
   await window2.waitForSelector('.workspace');
   await window2.click('[data-tool="highlight"]');
-  await window2.click('.active-tool-swatch');
+  await window2.click('.ann-color-swatch-main');
   
   // Check Light theme color
-  await expect(window2.locator(`.swatch-item[data-color="${lightColor}"]`)).toBeVisible();
+  await expect(window2.locator(`[data-palette-custom="${lightColor}"]`)).toBeVisible();
   
   // Toggle to Dark and check
   await window2.keyboard.press('Control+Shift+T');
-  await window2.waitForFunction(() => document.documentElement.classList.contains('dark'));
-  await window2.click('.active-tool-swatch');
-  await expect(window2.locator(`.swatch-item[data-color="${darkColor}"]`)).toBeVisible();
+  await window2.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+  await window2.click('.ann-color-swatch-main');
+  await expect(window2.locator(`[data-palette-custom="${darkColor}"]`)).toBeVisible();
 
   await electronApp2.close();
 });

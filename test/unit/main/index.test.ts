@@ -392,6 +392,23 @@ describe('main/index - engineSaveAs handler', () => {
     });
     expect(_engineInstance.saveAs).toHaveBeenCalledWith('doc-1', '/mock/save-as.pdf');
   });
+
+  // DEF-067 / DEF-011 residual: the handler must forward the engine's
+  // write-error result unchanged so the renderer can raise the locked
+  // toast. It must not swallow or rewrite it.
+  it('forwards engine write-error result unchanged', async () => {
+    const writeError = {
+      ok: false,
+      error: { code: 'write-error', message: 'saveAs failed: EACCES' },
+    };
+    _engineInstance.saveAs.mockResolvedValueOnce(writeError);
+
+    const saveAsCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.engineSaveAs)!;
+    const handler = saveAsCall[1] as (...args: unknown[]) => unknown;
+    const result = await handler({}, 'doc-1');
+
+    expect(result).toEqual(writeError);
+  });
 });
 
 // ---------------------------------------------------------------------------

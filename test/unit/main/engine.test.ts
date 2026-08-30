@@ -750,6 +750,52 @@ describe('EngineService - save / saveAs', () => {
     const state = await engine.getState('doc-1');
     expect(state.ok && state.value.modified).toBe(false);
   });
+
+  // DEF-067 / DEF-011 residual: saveAs must surface a write-error (not
+  // silently swallow the failure) when the target path cannot be written.
+  // The renderer's locked toast connects to this code via the IPC contract,
+  // so a regression here would silently drop the toast.
+  it('saveAs returns write-error when the target path is unwritable', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+
+    // Target a path whose parent directory does not exist. On every
+    // supported platform writeFile rejects with ENOENT, which the engine
+    // wraps as a 'write-error' result rather than throwing.
+    const badPath = join(dir, 'does-not-exist', 'out.pdf');
+    const r = await engine.saveAs('doc-1', badPath);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('write-error');
+      expect(typeof r.error.message).toBe('string');
+      expect(r.error.message).toContain('saveAs failed');
+    }
+
+    // A failed write must NOT mutate the doc: path, modified and undo
+    // stack stay as they were so a retry can target a valid location.
+    const state = await engine.getState('doc-1');
+    expect(state.ok && state.value.modified).toBe(true);
+
+    // The original file is untouched and still readable.
+    const saved = await readFile(path);
+    const reparsed = await PDFDocument.load(saved.buffer.slice(
+      saved.byteOffset,
+      saved.byteOffset + saved.byteLength,
+    ) as ArrayBuffer);
+    expect(reparsed.getPageCount()).toBe(3);
+  });
+
+  it('saveAs returns cancelled for an unknown document id', async () => {
+    const engine = new EngineService();
+    const r = await engine.saveAs('no-such-doc', join(dir, 'out.pdf'));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('cancelled');
+    }
+  });
 });
 
 describe('EngineService - round-trip integrity', () => {

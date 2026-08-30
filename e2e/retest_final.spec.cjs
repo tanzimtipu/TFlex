@@ -105,8 +105,11 @@ test.describe('Phase 6 Final Verification Walkthrough', () => {
 
     // --- Menu & About & Preferences ---
     // About
-    await window.evaluate(() => {
-        window.dispatchEvent(new CustomEvent('menu:action', { detail: { action: 'about' } }));
+    await electronApp.evaluate(({ Menu }) => {
+      const menu = Menu.getApplicationMenu();
+      const helpMenu = menu.items.find(i => i.label.replace('&', '') === 'Help');
+      const aboutItem = helpMenu.submenu.items.find(i => i.label.replace('&', '') === 'About TFlex');
+      aboutItem.click();
     });
     await window.waitForSelector('.sheet-about');
     const versionBadge = await window.locator('[data-about-version]').textContent();
@@ -116,12 +119,16 @@ test.describe('Phase 6 Final Verification Walkthrough', () => {
     await window.click('.sheet-about .sheet-close');
 
     // Preferences
-    await window.evaluate(() => {
-        window.dispatchEvent(new CustomEvent('menu:action', { detail: { action: 'preferences' } }));
+    await electronApp.evaluate(({ Menu }) => {
+        const menu = Menu.getApplicationMenu();
+        const editMenu = menu.items.find(i => i.label.replace('&', '') === 'Edit');
+        const prefsItem = editMenu.submenu.items.find(i => i.label.replace('&', '') === 'Preferences...');
+        prefsItem.click();
     });
     await window.waitForSelector('[data-prefs-dialog]');
     await window.fill('[data-prefs-recents-cap]', '12');
     await window.click('button[aria-label="Close preferences"]');
+
     console.log('SC 3 & 5 (Menu/About/Prefs) verified.');
 
     // --- Color Picker ---
@@ -164,13 +171,16 @@ test.describe('Phase 6 Final Verification Walkthrough', () => {
     window = await electronApp.firstWindow();
     await window.waitForSelector('.welcome');
 
-    await window.evaluate(() => {
-        window.dispatchEvent(new CustomEvent('menu:action', { detail: { action: 'preferences' } }));
+    await electronApp.evaluate(({ Menu }) => {
+        const menu = Menu.getApplicationMenu();
+        const editMenu = menu.items.find(i => i.label.replace('&', '') === 'Edit');
+        const prefsItem = editMenu.submenu.items.find(i => i.label.replace('&', '') === 'Preferences...');
+        prefsItem.click();
     });
-    await window.waitForSelector('.preferences-dialog');
-    const limit = await window.locator('.preferences-dialog input[name="recentsLimit"]').inputValue();
+    await window.waitForSelector('[data-prefs-dialog]');
+    const limit = await window.locator('[data-prefs-recents-cap]').inputValue();
     expect(limit).toBe('12');
-    await window.click('.preferences-dialog button:has-text("Close")');
+    await window.click('button[aria-label="Close preferences"]');
 
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });

@@ -73,7 +73,13 @@ const engineApi = {
   save(docId: string): Promise<Result<string, EngineError>> {
     return ipcRenderer.invoke(IPC.engineSave, docId);
   },
-  saveAs(docId: string): Promise<Result<string, 'cancelled'>> {
+  saveAs(docId: string): Promise<Result<string, EngineError>> {
+    // The engine Save-As path can fail with 'write-error' (disk full,
+    // read-only target, permission denied) in addition to 'cancelled'
+    // when the user dismisses the OS save dialog. The shared IPC contract
+    // (shared/ipc.ts) types this as EngineError; the previous narrow
+    // `'cancelled'` here hid the write-error branch from the renderer and
+    // was the root of DEF-011's residual missing toast (DEF-067).
     return ipcRenderer.invoke(IPC.engineSaveAs, docId);
   },
   getState(docId: string): Promise<Result<EngineState, EngineError>> {

@@ -31,6 +31,7 @@
 - `retest_def_017.spec.cjs`: Specific defect retest.
 - `retest_def_031.spec.cjs`: Specific defect retest.
 - `retest_def_033.spec.cjs`: Specific defect retest.
+- `retest_def_055_065.spec.cjs`: Batch retest for defects DEF-055 through DEF-065.
 - `retest_harness.cjs`: (DELETED) Retest harness.
 - `retest_p4_defects.spec.cjs`: Phase 4 defect retests.
 - `test.js`: Legacy test script.
