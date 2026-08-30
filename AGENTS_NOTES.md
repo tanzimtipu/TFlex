@@ -1,5 +1,16 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-08-28: version discipline fixed (local + remote)
+
+Bug: the auto-push pipeline updated remote tags but did not bump the local
+`package.json` version, so local and pushed tags disagreed. Fixed:
+
+- `git-agent.md` "Your beat" now requires bumping BOTH — `npm version <level>
+  --no-git-tag-version` first, commit the version bump, then `git tag` + push; a tag
+  push without the local bump is a bug, not a pattern.
+- `REQUIREMENTS.md` Phase-6 auto-push line now concretizes the sequence and requires
+  tag/local to match.
+
 ## 2026-08-30: frontend-dev re-pinned to MiniMax M3 free route
 
 - From: `openrouter/minimax/minimax-m3` (paid)
@@ -581,3 +592,29 @@ Open issues / follow-ups:
   fields. A backend fix that walks `/Kids[0]/Rect` as a second
   try would restore in-place rendering; out of Phase 4 scope.
 
+
+## 2026-08-30: release-tag pipeline order (permanent rule)
+
+Per the operator's directive, every git-agent release-tag dispatch must run in this
+exact order, and this order is recorded here for all future runs:
+
+1. Verify the full verification pipeline passed (unit + e2e + packaging checks all
+   green) before any version bump or tag.
+2. `npm version <level> --no-git-tag-version` locally (patch for fixes, minor for
+   phase features). This rewrites `package.json` — the tag is NOT created yet.
+3. Commit that version bump (`git add package.json` + commit message
+   `version: 1.2.3`).
+4. `git tag v<same-version>` on that commit.
+5. `git push origin <tag>` (and the branch if the bump was committed on it).
+6. Verify: `git tag --list` shows the tag AND `package.json` version equals the tag
+   locally AND on the remote (grep package.json | head -1 against the tag commit).
+
+If the remote tag exists but local `package.json` was not bumped first, that is a bug:
+stop the pipeline and report; do not push again until the sequence is correct.
+
+Every tag push report must state: version committed, tag pushed, latest.yml verified
+against it (or explicitly deferred with reason).
+
+Historical audit note (2026-08-30): tags v1.1.0–v1.1.1 were created before this rule;
+v1.2.0–v1.5.0 matched the package version at tag time. v1.1.1's premature-tag incident
+was the trigger for this rule (git-agent flagged it and refused to mis-tag).

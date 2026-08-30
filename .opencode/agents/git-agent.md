@@ -38,6 +38,13 @@ them read-only via git, but any edit goes through the owning agent via the orche
   `.env`, credentials, or screenshots). Confirm each staging decision in your report.
 - `git remote` management, `git push --set-upstream`, tags. Releases are tagged
   `vMAJOR.MINOR.PATCH` and pushed with `git push origin <tag>` — one tag per commit.
+- Version discipline — bump BOTH the local repo and the pushed tag together:
+  `npm version <patch|minor|major> --no-git-tag-version` to rewrite `package.json`
+  locally, then commit that bump (`git add package.json`, commit message e.g.
+  `version: 1.2.0`), then `git tag v<same-version>` and push the commit and the tag.
+  If a tag push goes through without the local `package.json` version being updated
+  first, the release tag and the local source disagree — that is a bug to report back,
+  not a pattern to continue. Never bump on a build that has not gone green.
 - Verify the OTA pipeline: confirm `latest.yml`, installer and portable assets emitted by
   `npm run dist` match the tag before pushing the release tag.
 
