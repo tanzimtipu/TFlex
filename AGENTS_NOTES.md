@@ -1,5 +1,38 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-08-30: qa reverted to hosted Gemini Flash
+
+- From: `local/qwen2.5-vl-32b`
+- To: `openrouter/google/gemini-3-flash-preview`
+- Reason: the Qwen2.5-VL-32B pin hung at the orchestrator's probe gate on the vision
+  probe (server `/health` was ok but the model failed to answer READY). Hosted Gemini 3
+  Flash is the proven vision stack for screenshot review; the local VL was de-pinned for
+  reliability rather than capability. Other local pins (Qwen3-Coder-30B x2, Qwen3-4B)
+  stay as-is; adversary stays hosted.
+- AGENTS.md fallback table updated to `gemini-3-flash-preview -> deepseek/deepseek-v4-flash-vision-exp`
+  (same note as before: vision-exp is single-provider; stay on gemini-3-flash-preview if
+  the account data policy blocks it).
+
+## 2026-08-30: sub-agents migrated to local models
+
+Human-approved migration to offline GGUF sub-agent pins. This replaces the recent hosted
+swap history for four roles:
+
+- backend-dev: `openrouter/z-ai/glm-5.2` -> `local/qwen3-coder-30b`
+- frontend-dev: `openrouter/minimax/minimax-m3:free` -> `local/qwen3-coder-30b`
+- qa: `openrouter/google/gemini-3-flash-preview` -> `local/qwen2.5-vl-32b`
+- git-agent: `openrouter/z-ai/glm-5.3-flash` -> `local/qwen3-4b`
+- adversary: unchanged (`openrouter/deepseek/deepseek-v4-flash`)
+- orchestrator: unchanged (`openrouter/moonshotai/kimi-k3`)
+
+Local pins served via `llama-server` on `http://127.0.0.1:8080`. The orchestrator loads
+exactly one local model at a time, dispatches its agents sequentially, and stops the
+server before loading the next model (`.cmd` scripts in
+`C:\Users\tanzi\AppData\Local\Temp\opencode\llama.cpp\`). No fallbacks are declared for
+the local pins at this time. Pre-migration hosted pins live in
+`.opencode/backups/2026-08-30-pre-local-models/` and are committed + tagged
+`backup-pre-local-models` (commit b940e1f).
+
 ## 2026-08-28: version discipline fixed (local + remote)
 
 Bug: the auto-push pipeline updated remote tags but did not bump the local

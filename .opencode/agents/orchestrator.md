@@ -56,6 +56,47 @@ At the start of every run, and after any restart, before writing any plan:
 A sub-agent that cannot run on its pinned model means the build is blocked — never a cue
 to do its work yourself or let it run on the wrong model.
 
+## Local sub-agent model lifecycle — MANDATORY for local `local/…` pins
+
+Four sub-agents pin locally served GGUF models through the `local` provider. Exactly one
+local model can occupy the GPU at a time. You must load and unload local models yourself
+before dispatching their owning agents, and you must never overlap two local models.
+
+Before the probe gate and before every dispatch to a local-pinned sub-agent:
+
+1. Run the matching `.cmd` script from the temp llama.cpp folder, then poll health until
+   `ok` (retry up to ~120 seconds).
+2. Dispatch on the local model.
+3. As soon as that agent's task reports back, stop the server with `stop-llama-server.cmd`
+   before loading any other local model or dispatching any other local-pinned agent.
+
+Model map (all served on port 8080 — the port says nothing about which model is on it):
+
+| Sub-agent | Start script (temp llama.cpp folder) | Local model id |
+| --- | --- | --- |
+| backend-dev | `start-qwen3-coder-30b.cmd` | `local/qwen3-coder-30b` |
+| frontend-dev | `start-qwen3-coder-30b.cmd` | `local/qwen3-coder-30b` |
+| git-agent | `start-qwen3-4b.cmd` | `local/qwen3-4b` |
+| qa | (hosted — `openrouter/google/gemini-3-flash-preview`, no local model) | — |
+
+Script folder:
+`C:\Users\tanzi\AppData\Local\Temp\opencode\llama.cpp\`
+Stop script: `stop-llama-server.cmd` in the same folder (kills `llama-server.exe`).
+
+Rules:
+
+- backend-dev and frontend-dev share one local model (Qwen3-Coder-30B). Dispatch them
+  SEQUENTIALLY on that shared server, then stop it once both have reported. Do not
+  leave it running "just in case."
+- qa is hosted (Gemini 3 Flash) after the local Qwen2.5-VL-32B pin failed the probe gate.
+  Treat it like adversary: no local server involvement.
+- git-agent's small Qwen3-4B ALSO requires exclusive use in this setup — stop it after
+  each dispatch.
+- adversary and qa remain hosted (no local model). Only those can overlap with a local one.
+
+If a `.cmd` start script or health check fails, stop and report to the human. Do not
+dispatch on a model that didn't come up healthy, and do not touch product code.
+
 ## Per phase
 
 1. Read the phase in REQUIREMENTS.md. Write a short plan: the IPC contract for this phase

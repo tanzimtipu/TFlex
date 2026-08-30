@@ -38,11 +38,11 @@ Steps:
 
    The orchestrator will first run its **model verification gate**: a trivial probe task
    to each sub-agent to confirm it loads on its pinned model. Watch this: each probe's
-   task header must show that agent's own model (glm-5.2, minimax-m3:free,
-   gemini-3-flash-preview, deepseek-v4-flash — NOT kimi-k3). If any probe fails or shows
-   the wrong model, the build halts by design; fix the model/account issue and restart.
-   Do not override this gate — a silent fallback means paying orchestrator prices for
-   worker tokens.
+   task header must show that agent's own model (qwen3-coder-30b, qwen3-4b for local;
+   gemini-3-flash-preview for qa; deepseek-v4-flash for adversary — NOT kimi-k3). If
+   any probe fails or shows the wrong model, the build halts by design; fix the local
+   server or model and restart. Do not override this gate — a silent fallback means
+   paying orchestrator prices for worker tokens.
 
 While it runs:
 
@@ -55,13 +55,21 @@ While it runs:
 
 ## Model lineup
 
-| Agent | Model (OpenRouter) | Role |
+| Agent | Model | Role |
 | --- | --- | --- |
-| orchestrator | moonshotai/kimi-k3 | Plans, delegates, judges |
-| backend-dev | z-ai/glm-5.2 | PDF engine, main process |
-| frontend-dev | minimax/minimax-m3:free | React UI, PDF.js rendering |
-| qa | google/gemini-3-flash-preview | e2e tests, screenshot inspection |
-| adversary | deepseek/deepseek-v4-flash | Hostile inputs, edge cases |
+| orchestrator | openrouter/moonshotai/kimi-k3 | Plans, delegates, judges |
+| backend-dev | local/qwen3-coder-30b (Qwen3-Coder-30B-A3B GGUF via llama-server) | PDF engine, main process |
+| frontend-dev | local/qwen3-coder-30b (same shared local model) | React UI, PDF.js rendering |
+| qa | openrouter/google/gemini-3-flash-preview | e2e tests, screenshot inspection |
+| adversary | openrouter/deepseek/deepseek-v4-flash | Hostile inputs, edge cases |
+| git-agent | local/qwen3-4b (Qwen3-4B GGUF via llama-server) | Local git ops, OTA tags |
+
+Local sub-agent pins are served by `llama-server` on `http://127.0.0.1:8080`. The
+orchestrator loads exactly one local model at a time using the `.cmd` scripts in the
+temp llama.cpp folder, polls `/health` until `ok`, dispatches that agent's task, then
+runs `stop-llama-server.cmd` before loading the next model. Backend-dev and frontend-dev
+share Qwen3-Coder-30B and are dispatched sequentially on it. Prior hosted pins are in
+`.opencode/backups/2026-08-30-pre-local-models/` (commit `backup-pre-local-models`).
 
 Fallbacks are documented in AGENTS.md. **Verify the exact model IDs on
 openrouter.ai/models before running** — provider catalogs change, and an unknown model

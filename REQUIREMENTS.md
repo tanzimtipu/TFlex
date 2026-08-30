@@ -310,8 +310,9 @@ Features and success criteria:
    no-auto-update (documented); private repo credentials not committed. Success: bump
    version then simulated/published release surfaces "Update available" in app.
 6. Auto-push pipeline: after full green loop (build, unit+e2e, package checks) for a
-   phase/fix batch, git-agent tags v1.x.x (+ build metadata increment) and pushes.
-   Success: tag lands only on green builds.
+   phase/fix batch, git-agent tags v1.x.x (`npm version <level> --no-git-tag-version`,
+   commit bump, `git tag`, then push) and pushes. Success: tag lands only on green
+   builds, and the pushed tag's `package.json` version matches the local working copy.
 
 Repo-safety amendments:
 - Prune duplicate reduntant e2e/unused harnesses before first commit; no new debug

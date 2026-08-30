@@ -52,11 +52,11 @@ Read the model fields from the agent definitions instead of assuming them. As a 
 
 | Agent | Current expected endpoint |
 | --- | --- |
-| `backend-dev` | `openrouter/z-ai/glm-5.2` |
-| `frontend-dev` | `openrouter/minimax/minimax-m3:free` |
-| `qa` | `openrouter/google/gemini-3-flash-preview` |
+| `backend-dev` | `local/qwen3-coder-30b` |
+| `frontend-dev` | `local/qwen3-coder-30b` |
+| `qa` | `openrouter/google/gemini-3-flash-preview` (reverted from local Qwen2.5-VL-32B after probe-gate hang) |
 | `adversary` | `openrouter/deepseek/deepseek-v4-flash` |
-| `git-agent` | `openrouter/z-ai/glm-5.3-flash` |
+| `git-agent` | `local/qwen3-4b` |
 
 If an agent file differs, the agent file wins and the report must call out the difference.
 

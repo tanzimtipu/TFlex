@@ -1,4 +1,203 @@
-## DEF-053: FDF import fails due to %PDF header requirement
+## DEF-065: Native menu items (Save, Save As, etc.) enabled with no document open
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 6
+
+Steps to reproduce:
+1. Launch the app.
+2. Without opening any PDF, click the "File" menu in the native title bar.
+
+Expected: Items like "Save", "Save As", "Close Tab" should be disabled when no document is open.
+Actual: All items are enabled. Clicking "Save" with no document open performs no action or may cause silent errors in the background.
+
+History:
+- qa: opened
+
+## DEF-064: Delete page action from SideRail sometimes fails to update visual document
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Launch the app and open any PDF.
+2. Select a thumbnail in the SideRail.
+3. Click "Delete this page" in the rail actions bar.
+
+Expected: The page should be removed from the view and the rail.
+Actual: While the internal page count may update, the visual scroller or the rail sometimes fails to reflect the deletion immediately, or the wrong page appears to be deleted.
+
+History:
+- qa: opened
+
+## DEF-063: Stamp place-on-page does nothing
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 12
+
+Steps to reproduce:
+1. Launch the app and open any PDF.
+2. Open the Tools palette and click "Stamps".
+3. Select a stamp (e.g., "APPROVED") from the picker.
+4. Click anywhere on the page to place the stamp.
+
+Expected: A stamp annotation should appear at the click location.
+Actual: Nothing happens. The stamp is not placed, and no annotation is added to the document (verified by diagnostics).
+
+History:
+- qa: opened
+
+## DEF-062: Crop does not affect page dimensions or content
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 12
+
+Steps to reproduce:
+1. Launch the app and open any PDF.
+2. Open the Tools palette and click "Crop pages".
+3. Enter values in the Crop dialog (e.g., Top: 50) and click "Crop".
+4. Observe the page and the document's modified state.
+
+Expected: The page should visually crop, and the document should be marked as modified.
+Actual: The page remains unchanged, and the modified indicator does not light up.
+
+History:
+- qa: opened
+
+## DEF-061: Edit + select text shows black window
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 10
+
+Steps to reproduce:
+1. Launch the app and open any PDF with text (e.g., `report.pdf`).
+2. Click the "Edit" toggle in the toolbar to enter Edit mode.
+3. Click on a text run to edit it.
+
+Expected: An inline editor should appear over the text.
+Actual: A black window or rectangle appears, obscuring the text or the editor area.
+
+History:
+- qa: opened
+
+## DEF-060: Export-to-Word saves pages as images instead of editable text
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 9
+
+Steps to reproduce:
+1. Launch the app and open `report.pdf`.
+2. Open the Tools palette and click "Export to Word (.docx)".
+3. Click "Export" and save the file.
+4. Open the resulting `.docx` file in Microsoft Word.
+
+Expected: The document should contain editable text elements.
+Actual: The document contains one large image per page, making the text unselectable and uneditable.
+
+History:
+- qa: opened
+
+## DEF-059: Signature move inside PDF says "Item not found"
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 4
+
+Steps to reproduce:
+1. Launch the app and open any PDF.
+2. Add a signature to the page.
+3. Try to drag the signature to a new position.
+
+Expected: The signature should move smoothly to the new position.
+Actual: An error toast or message "Item not found" appears, and the move fails.
+
+History:
+- qa: opened
+
+## DEF-058: SideRail current page highlight stuck on page 1 after jump
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 1
+
+Steps to reproduce:
+1. Launch the app and open `long.pdf`.
+2. Scroll to page 10 or use the jump-to-page input in the toolbar to go to page 10.
+3. Observe the highlight in the left-rail thumbnail list.
+
+Expected: The thumbnail for page 10 should have the active highlight.
+Actual: The highlight remains on page 1, and the rail does not scroll to the current page.
+
+History:
+- qa: opened
+
+## DEF-057: Rotate current page from toolbar does nothing
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 2
+
+Steps to reproduce:
+1. Launch the app and open any PDF.
+2. Click the "Rotate clockwise" button in the toolbar.
+3. Observe the page rotation and diagnostics.
+
+Expected: The current page should rotate 90 degrees clockwise.
+Actual: Nothing happens. The rotation state remains at 0, and the visual page does not turn.
+
+History:
+- qa: opened
+
+## DEF-056: Text highlight color defaults to yellow, requirement says blue
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 3
+
+Steps to reproduce:
+1. Launch the app and open any PDF.
+2. Click the "Highlight" tool in the annotation toolbar.
+3. Observe the default color swatch.
+
+Expected: The default highlight color should be Blue 600 (`#2563eb`) per REQUIREMENTS.md.
+Actual: The default color is Yellow (`#eab308`).
+
+History:
+- qa: opened
+
+## DEF-055: "+" add-tab shows on welcome screen with no tabs open
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 6
+
+Steps to reproduce:
+1. Launch the app.
+2. On the welcome screen (no documents open), observe the tab bar area.
+
+Expected: The "+" add-tab button should appear only when at least one tab is open.
+Actual: The "+" button is visible and active on the welcome screen even when the tab list is empty.
+
+History:
+- qa: opened
+
+## DEF-054: FDF import fails due to %PDF header requirement
 
 - Status: CLOSED
 - Severity: HIGH

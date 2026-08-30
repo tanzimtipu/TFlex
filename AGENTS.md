@@ -134,13 +134,17 @@ No entry may remain PENDING when the final phase completes.
 Every agent runs only on the model pinned in its `.opencode/agents/*.md` definition.
 The orchestrator's model, `openrouter/moonshotai/kimi-k3`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
-other wrong model. If a sub-agent cannot load its pinned model (provider error, account
-data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
-no planning, no real task dispatch, no work on the fallback model. The orchestrator
-reports the failure to the human operator and waits. The orchestrator's startup probe
-gate (see its definition, "Model verification gate") enforces this. Only the human may
-resolve a model failure (fix the account setting, or swap the `model:` field per the
-fallback table below) and restart the build.
+other wrong model. A pin may be hosted (`openrouter/<id>`) or local (`local/<id>` served
+via `llama-server` on `http://127.0.0.1:8080`); both are valid. If a sub-agent cannot load
+its pinned model (provider error, account data-policy rejection, local server not running,
+invalid ID) or starts on any other model, the build **stops** —
+no planning, no real task dispatch, no work on the fallback model. For local-pinned
+agents, the orchestrator's model-loading rules in its definition ("Local sub-agent model
+lifecycle") decide which `.cmd` script must start/stop `llama-server`; a missing or
+unhealthy local server is a hard stop. The orchestrator's startup probe gate (see its
+definition, "Model verification gate") enforces this. Only the human may resolve a model
+failure (fix the account setting, start the local server, or swap the `model:` field per
+the fallback table below) and restart the build.
 
 ## Model fallbacks
 
@@ -148,19 +152,32 @@ Each agent's model is pinned in its definition in `.opencode/agents/`. If a mode
 repeatedly fails at its role (tool-call errors, ignoring formats, incoherent output),
 the human operator may swap that agent's `model:` field to the documented fallback:
 
-- backend-dev: z-ai/glm-5.2 -> deepseek/deepseek-v4-pro
-- frontend-dev: minimax/minimax-m3:free -> minimax/minimax-m3 (paid route — use when the
-  free route is rate-limited or unavailable; the free route was previously blocked by the
-  operator account's data policy and re-enabled 2026-08-30 after a policy change)
+- backend-dev: local/qwen3-coder-30b -> no fallback
+- frontend-dev: local/qwen3-coder-30b -> no fallback
 - qa: google/gemini-3-flash-preview -> deepseek/deepseek-v4-flash-vision-exp (note: the
-  vision-exp model is served by a single provider, DeepSeek; if your account's data policy
-  blocks it, stay on gemini-3-flash-preview)
-- adversary: deepseek/deepseek-v4-flash -> google/gemini-3-flash-preview
-- git-agent: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview
+  vision-exp model is single-provider; if the account data policy blocks it, stay on
+  gemini-3-flash-preview) — reverted from the local Qwen2.5-VL-32B pin after it failed
+  the probe gate (hung on vision probe)
+- adversary: openrouter/deepseek/deepseek-v4-flash -> no fallback
+- git-agent: local/qwen3-4b -> no fallback
 - orchestrator: no fallback — stop and ask the human.
+
+"local/…" pins are served by `llama-server` on `http://127.0.0.1:8080` (scripts
+`start-*.cmd` / `stop-llama-server.cmd` under the temp llama.cpp folder). If a local
+server cannot start or stays unhealthy, stop — do not dispatch on any other model.
+Historical OpenRouter pins for these roles are preserved in the
+`.opencode/backups/2026-08-30-pre-local-models/` snapshot (also tagged
+`backup-pre-local-models` in git).
 
 Fallback to the orchestrator's model (`openrouter/moonshotai/kimi-k3`) is never
 permitted for any sub-agent. The table above is the only valid fallback source.
+
+2026-08-30 (local migration): backend-dev/frontend-dev/qa/git-agent moved to local
+`local/…` GGUF models (Qwen3-Coder-30B, Qwen2.5-VL-32B, Qwen3-4B) served via `llama-server`
+on the operator's RTX 4090; adversary stays hosted on `openrouter/deepseek/deepseek-v4-flash`.
+No fallbacks declared at this time. Prior hosted pins remain in the
+`.opencode/backups/2026-08-30-pre-local-models/` snapshot (and are tagged
+`backup-pre-local-models` in git). Recorded here per this section's rule.
 
 2026-08-30 (third swap): frontend-dev re-pinned from minimax/minimax-m3 back to
 minimax/minimax-m3:free. The operator updated the OpenRouter account data policy to allow
