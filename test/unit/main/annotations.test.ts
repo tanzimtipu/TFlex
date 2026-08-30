@@ -1287,3 +1287,88 @@ describe('EngineService - annotation error codes', () => {
     if (!r.ok) expect(r.error.code).toBe('engine-error');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 12: callout annotation (FreeText with /Intent /FreeTextCallout + /Callout)
+// ---------------------------------------------------------------------------
+
+describe('Phase 12: callout annotation', () => {
+  it('creates a callout and round-trips through save/load', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-co', path);
+
+    const r = await engine.createAnnotation('doc-co', makePayload({
+      kind: 'callout' as any,
+      rects: [{ x: 100, y: 500, width: 200, height: 60 }],
+      points: [
+        { x: 50, y: 700 },
+        { x: 80, y: 620 },
+        { x: 100, y: 560 },
+      ],
+      color: 'red',
+      content: 'See this',
+    }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const anns = getAnns(r.value);
+    expect(anns.some((a: any) => a.kind === 'callout')).toBe(true);
+
+    // Save and reload — the callout kind must survive.
+    const savePath = join(dir, 'callout-rt.pdf');
+    const sr = await engine.saveAs('doc-co', savePath);
+    expect(sr.ok).toBe(true);
+    await engine.loadDocument('doc-co-reloaded', savePath);
+    const state = await engine.getState('doc-co-reloaded');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const reloaded = getAnns(state.value);
+      expect(reloaded.length).toBeGreaterThanOrEqual(1);
+      expect(reloaded.some((a: any) => a.kind === 'callout')).toBe(true);
+    }
+  });
+
+  it('serializes /Intent /FreeTextCallout and a /Callout array', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-co2', path);
+
+    await engine.createAnnotation('doc-co2', makePayload({
+      kind: 'callout' as any,
+      rects: [{ x: 100, y: 500, width: 200, height: 60 }],
+      points: [
+        { x: 50, y: 700 },
+        { x: 80, y: 620 },
+        { x: 100, y: 560 },
+      ],
+      color: 'red',
+      content: 'Note text',
+    }));
+
+    const savePath = join(dir, 'callout-dict.pdf');
+    const sr = await engine.saveAs('doc-co2', savePath);
+    expect(sr.ok).toBe(true);
+    if (!sr.ok) return;
+    const saved = await readFile(savePath);
+    const re = await PDFDocument.load(saved.buffer.slice(
+      saved.byteOffset, saved.byteOffset + saved.byteLength,
+    ) as ArrayBuffer);
+    const pageLeaf = (re.getPage(0) as any).node;
+    const annotsRef = pageLeaf.get(PDFName.of('Annots'));
+    expect(annotsRef).toBeDefined();
+    let annotsArray: any = annotsRef;
+    if (annotsRef && annotsRef.objectNumber !== undefined) {
+      annotsArray = re.context.lookup(annotsRef);
+    }
+    expect(annotsArray).toBeDefined();
+    expect(annotsArray.size()).toBeGreaterThanOrEqual(1);
+    const annotRef = annotsArray.get(0);
+    const annot = re.context.lookup(annotRef) as any;
+    const dict = annot?.dict ?? annot;
+    const intent = dict.get ? dict.get(PDFName.of('Intent')) : undefined;
+    const callout = dict.get ? dict.get(PDFName.of('Callout')) : undefined;
+    expect(intent).toBeDefined();
+    expect(intent.toString()).toBe('/FreeTextCallout');
+    expect(callout).toBeDefined();
+  });
+});

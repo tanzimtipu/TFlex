@@ -16,6 +16,7 @@ import {
   StickyNote,
   MousePointer2,
   Minus,
+  MessageCirclePlus,
 } from "lucide-react";
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
@@ -157,6 +158,11 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
         {toolBtn("rect", <Square size={15} aria-hidden />, "Rectangle")}
         {toolBtn("ellipse", <Circle size={15} aria-hidden />, "Ellipse")}
         {toolBtn("arrow", <ArrowUpRight size={15} aria-hidden />, "Arrow")}
+        {toolBtn(
+          "callout",
+          <MessageCirclePlus size={15} aria-hidden />,
+          "Callout",
+        )}
       </div>
 
       <span className="toolbar-sep" aria-hidden />

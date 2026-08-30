@@ -376,3 +376,45 @@ describe("qualityFractionToPercent / qualityPercentToFraction", () => {
     }
   });
 });
+
+describe("preferencesReducer.set-default-stamp-id", () => {
+  it("stores APPROVED as the default stamp id", () => {
+    const s = makeSettings();
+    const next = preferencesReducer(s, {
+      type: "set-default-stamp-id",
+      value: "APPROVED",
+    });
+    expect(next.defaultStampId).toBe("APPROVED");
+  });
+
+  it("switches to every other built-in stamp id", () => {
+    const others = ["DRAFT", "CONFIDENTIAL", "FINAL"] as const;
+    for (const id of others) {
+      const next = preferencesReducer(makeSettings(), {
+        type: "set-default-stamp-id",
+        value: id,
+      });
+      expect(next.defaultStampId).toBe(id);
+    }
+  });
+
+  it("drops unknown stamp ids (preserve-if-valid)", () => {
+    const s = makeSettings();
+    // The shared `StampId` union is exhaustive; ts would reject the
+    // unknown value at compile time, so we cast through unknown.
+    const next = preferencesReducer(s, {
+      type: "set-default-stamp-id",
+      value: "BOGUS" as unknown as "APPROVED",
+    });
+    expect(next).toBe(s);
+  });
+
+  it("no-ops when the new value equals the stored value", () => {
+    const s = makeSettings({ defaultStampId: "DRAFT" });
+    const next = preferencesReducer(s, {
+      type: "set-default-stamp-id",
+      value: "DRAFT",
+    });
+    expect(next).toBe(s);
+  });
+});

@@ -70,6 +70,7 @@ export function sameSettings(a: AppSettings, b: AppSettings): boolean {
   if (a.optimizePreset !== b.optimizePreset) return false;
   if (a.ocrLanguage !== b.ocrLanguage) return false;
   if (a.ocrDownsample !== b.ocrDownsample) return false;
+  if (a.defaultStampId !== b.defaultStampId) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   return sameAnnotationColors(a.annotationColors, b.annotationColors);
@@ -94,6 +95,7 @@ export function differsOnlyInRecentFiles(
   if (a.optimizePreset !== b.optimizePreset) return false;
   if (a.ocrLanguage !== b.ocrLanguage) return false;
   if (a.ocrDownsample !== b.ocrDownsample) return false;
+  if (a.defaultStampId !== b.defaultStampId) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   // All other fields agree; recentFiles must ACTUALLY differ for

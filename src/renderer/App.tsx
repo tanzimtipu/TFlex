@@ -12,12 +12,14 @@ import type {
   OcrRecognizeOptions,
   OcrSuspect,
   OptimizePreset,
+  PageLabelEntry,
   PdfOpenError,
   RecentFile,
   SampleDocument,
   SavedSignature,
   SignaturePlacement,
   SpaceAudit,
+  StampId,
 } from "../shared/types";
 import type { TFlexApi } from "../shared/ipc";
 import { Welcome } from "./components/Welcome";
@@ -37,6 +39,7 @@ import {
   DEFAULT_EXPORT_IMAGE_FORMAT,
   DEFAULT_OCR_DOWNSAMPLE,
   DEFAULT_OCR_LANGUAGE,
+  DEFAULT_STAMP_ID,
   clampOcrDownsample,
   preferencesReducer,
 } from "./state/preferences";
@@ -54,6 +57,7 @@ import { splitRecentPath } from "./utils/recentPath";
 import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
 import { formatBytes as formatBytesForToast } from "./utils/formatBytes";
+import { downloadBlob } from "./utils/exportDownload";
 import { removeRecent } from "./state/recentFiles";
 import { getEngine } from "./engine/engineClient";
 import { MergeDialog } from "./components/MergeDialog";
@@ -66,6 +70,12 @@ import { ExportDialog } from "./components/ExportDialog";
 import { TextExportDialog } from "./components/TextExportDialog";
 import { DocxExportDialog } from "./components/DocxExportDialog";
 import { InsertPagesDialog } from "./components/InsertPagesDialog";
+import { ReplacePagesDialog } from "./components/ReplacePagesDialog";
+import { RenumberPagesDialog } from "./components/RenumberPagesDialog";
+import { CropPagesDialog } from "./components/CropPagesDialog";
+import { StampDialog } from "./components/StampDialog";
+import { CommentExportDialog } from "./components/CommentExportDialog";
+import { CommentImportDialog } from "./components/CommentImportDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
 import {
@@ -293,6 +303,25 @@ export function App(): ReactElement {
   const [textExportOpen, setTextExportOpen] = useState(false);
   const [docxExportOpen, setDocxExportOpen] = useState(false);
   const [insertPagesOpen, setInsertPagesOpen] = useState(false);
+  // Phase 12 — residual page-organize + annotate parity. Each
+  // dialog drives its own engine IPC; the host routes the result
+  // back into `noteOpApplied` so the pageCount / pageOrder
+  // mirror refreshes. Comment export/import also surface host-
+  // side OS file pickers for the .fdf file.
+  const [replacePagesOpen, setReplacePagesOpen] = useState(false);
+  const [renumberPagesOpen, setRenumberPagesOpen] = useState(false);
+  const [cropPagesOpen, setCropPagesOpen] = useState(false);
+  const [stampOpen, setStampOpen] = useState(false);
+  const [commentExportOpen, setCommentExportOpen] = useState(false);
+  const [commentImportOpen, setCommentImportOpen] = useState(false);
+  /** Per-page sizes (PDF points, top-left origin) for the active
+   *  doc. The Crop dialog reads this map to draw per-page
+   *  previews. The host seeds it lazily when the dialog opens so
+   *  the per-page pdf.js viewport query doesn't run on every doc
+   *  open. */
+  const [activePageSizes, setActivePageSizes] = useState<
+    Record<number, { widthPt: number; heightPt: number }>
+  >({});
   // Phase 6 — Tools palette state, About dialog, Preferences dialog.
   // Phase 6 — Tools palette state, About dialog, Preferences dialog.
   // Layout persists via settings.toolsPaletteLayout; open/close is
@@ -2300,6 +2329,299 @@ export function App(): ReactElement {
     [noteOpApplied, pushToast],
   );
 
+  // ---- Phase 12: residual page-organize + annotate parity ----
+
+  /** Phase 12 — open the Replace-pages dialog. Lazy-load the page
+   *  sizes for the active doc (used by the Crop dialog, not Replace,
+   *  but we share the same seed function so the dialog opens
+   *  instantly). */
+  const onReplacePagesClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setReplacePagesOpen(true);
+  }, []);
+
+  const onCancelReplacePages = useCallback((): void => {
+    setReplacePagesOpen(false);
+  }, []);
+
+  const onReplacePagesConfirm = useCallback(
+    async (choice: {
+      otherBytes: Uint8Array;
+      otherPath: string;
+      targetRange: [number, number];
+    }): Promise<void> => {
+      const activeId = activeTabIdRefLocal.current;
+      setReplacePagesOpen(false);
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      const res = await engineRef.current.replacePages?.(
+        open.session.engineDocId,
+        choice.otherBytes,
+        choice.targetRange,
+      );
+      if (res === undefined) {
+        pushToast(
+          "error",
+          describeEngineError("engine-error", "Replace pages requires the Phase 12 backend update."),
+        );
+        return;
+      }
+      if (!res.ok) {
+        pushToast("error", describeEngineError(res.error.code, res.error.message));
+        return;
+      }
+      noteOpApplied(activeId, res.value);
+      pushToast(
+        "info",
+        `Replaced pages ${choice.targetRange[0] + 1}-${choice.targetRange[1] + 1}.`,
+      );
+    },
+    [noteOpApplied, pushToast],
+  );
+
+  /** Phase 12 — open the Renumber-pages dialog. The dialog seeds
+   *  itself from the engine state's pageLabels so the user sees
+   *  their previous choice. */
+  const onRenumberPagesClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setRenumberPagesOpen(true);
+  }, []);
+
+  const onCancelRenumberPages = useCallback((): void => {
+    setRenumberPagesOpen(false);
+  }, []);
+
+  const onRenumberPagesConfirm = useCallback(
+    async (choice: { labels: { page: number; label: string }[] }): Promise<void> => {
+      const activeId = activeTabIdRefLocal.current;
+      setRenumberPagesOpen(false);
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      // Filter sparse entries (empty labels are omitted by the dialog)
+      // and translate to the engine's wire shape (PageLabelEntry).
+      const entries: PageLabelEntry[] = choice.labels.map((l) => ({
+        page: l.page,
+        label: l.label,
+      }));
+      const res = await engineRef.current.renumberPages?.(
+        open.session.engineDocId,
+        entries,
+      );
+      if (res === undefined) {
+        pushToast(
+          "error",
+          describeEngineError("engine-error", "Renumber pages requires the Phase 12 backend update."),
+        );
+        return;
+      }
+      if (!res.ok) {
+        pushToast("error", describeEngineError(res.error.code, res.error.message));
+        return;
+      }
+      noteOpApplied(activeId, res.value);
+      pushToast("info", `Applied ${entries.length} page label${entries.length === 1 ? "" : "s"}.`);
+    },
+    [noteOpApplied, pushToast],
+  );
+
+  /** Phase 12 — open the Crop-pages dialog. Lazy-load the page
+   *  sizes for the active doc so the per-page preview is accurate. */
+  const onCropPagesClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setCropPagesOpen(true);
+    void seedActivePageSizes();
+  }, []);
+
+  const onCancelCropPages = useCallback((): void => {
+    setCropPagesOpen(false);
+  }, []);
+
+  const onCropPagesConfirm = useCallback(
+    async (choice: { entries: { page: number; box: { x: number; y: number; width: number; height: number } }[] }): Promise<void> => {
+      const activeId = activeTabIdRefLocal.current;
+      setCropPagesOpen(false);
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      const res = await engineRef.current.cropPages?.(
+        open.session.engineDocId,
+        choice.entries,
+      );
+      if (res === undefined) {
+        pushToast(
+          "error",
+          describeEngineError("engine-error", "Crop pages requires the Phase 12 backend update."),
+        );
+        return;
+      }
+      if (!res.ok) {
+        pushToast("error", describeEngineError(res.error.code, res.error.message));
+        return;
+      }
+      noteOpApplied(activeId, res.value);
+      pushToast(
+        "info",
+        `Cropped ${choice.entries.length} page${choice.entries.length === 1 ? "" : "s"}.`,
+      );
+    },
+    [noteOpApplied, pushToast],
+  );
+
+  /** Lazy-load per-page viewport sizes for the active doc so the
+   *  Crop dialog can draw an accurate preview per page. Uses
+   *  pdf.js's `getPage().getViewport({scale:1})` — the same call
+   *  the renderer uses for display. Idempotent: subsequent calls
+   *  just overwrite the cache. */
+  const seedActivePageSizes = useCallback(async (): Promise<void> => {
+    const activeId = activeTabIdRefLocal.current;
+    if (activeId === null) return;
+    const open = openTabsRef.current[activeId];
+    if (open === undefined) return;
+    const sizes: Record<number, { widthPt: number; heightPt: number }> = {};
+    for (let p = 1; p <= open.session.doc.numPages; p += 1) {
+      try {
+        const page = await open.session.doc.getPage(p);
+        const vp = page.getViewport({ scale: 1 });
+        sizes[p] = { widthPt: vp.width, heightPt: vp.height };
+      } catch {
+        // Defensive: skip pages we can't read. The dialog falls
+        // back to US Letter dimensions when a page is missing.
+      }
+    }
+    setActivePageSizes(sizes);
+  }, []);
+
+  /** Phase 12 — open the Stamp dialog. The dialog confirms with
+   *  the renderer-drawn PNG raster; we stash the raster in
+   *  `armedStamp` and wait for the next page click to place it. */
+  const onStampClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setStampOpen(true);
+  }, []);
+
+  const onCancelStamp = useCallback((): void => {
+    setStampOpen(false);
+  }, []);
+
+  const onStampConfirm = useCallback(
+    async (choice: {
+      stampId: StampId;
+      pngBytes: Uint8Array;
+      pngWidth: number;
+      pngHeight: number;
+      page: number;
+    }): Promise<void> => {
+      setStampOpen(false);
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      // Look up the picked page's dimensions so the stamp lands
+      // centered. Falls back to US Letter for unknown pages (the
+      // dialog should always supply a valid page; the fallback is
+      // defensive against a stale dialog render).
+      const size = activePageSizes[choice.page] ?? {
+        widthPt: 612,
+        heightPt: 792,
+      };
+      const aspect =
+        choice.pngHeight === 0
+          ? 1
+          : choice.pngWidth / choice.pngHeight;
+      const targetHeightPt = Math.min(80, size.heightPt * 0.12);
+      const targetWidthPt = Math.max(
+        120,
+        Math.min(size.widthPt * 0.4, targetHeightPt * aspect),
+      );
+      const rect = {
+        x: (size.widthPt - targetWidthPt) / 2,
+        y: (size.heightPt - targetHeightPt) / 2,
+        width: targetWidthPt,
+        height: targetHeightPt,
+      };
+      const res = await engineRef.current.addStamp?.(
+        open.session.engineDocId,
+        {
+          page: choice.page,
+          rect,
+          stampId: choice.stampId,
+          name: choice.stampId,
+          pngBytes: choice.pngBytes,
+        },
+      );
+      if (res === undefined) {
+        pushToast(
+          "error",
+          describeEngineError("engine-error", "Stamp requires the Phase 12 backend update."),
+        );
+        return;
+      }
+      if (!res.ok) {
+        pushToast("error", describeEngineError(res.error.code, res.error.message));
+        return;
+      }
+      noteOpApplied(activeId, res.value);
+      pushToast(
+        "info",
+        `Placed ${choice.stampId} stamp on page ${choice.page}.`,
+      );
+    },
+    [activePageSizes, noteOpApplied, pushToast],
+  );
+
+  /** Phase 12 — open the Comment-export dialog. The dialog calls
+   *  `engine.exportFdf` and hands the bytes to a host-side OS save
+   *  dialog. */
+  const onCommentExportClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setCommentExportOpen(true);
+  }, []);
+
+  const onCancelCommentExport = useCallback((): void => {
+    setCommentExportOpen(false);
+  }, []);
+
+  const onCommentExportConfirm = useCallback(
+    (result: { path: string; annotationCount: number }): void => {
+      setCommentExportOpen(false);
+      pushToast(
+        "info",
+        `Exported ${result.annotationCount} comment${result.annotationCount === 1 ? "" : "s"} to ${result.path}.`,
+      );
+    },
+    [pushToast],
+  );
+
+  /** Phase 12 — open the Comment-import dialog. The dialog calls
+   *  a host-side OS open dialog for the .fdf file, then calls
+   *  `engine.importFdf`. */
+  const onCommentImportClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setCommentImportOpen(true);
+  }, []);
+
+  const onCancelCommentImport = useCallback((): void => {
+    setCommentImportOpen(false);
+  }, []);
+
+  const onCommentImportConfirm = useCallback(
+    (result: { path: string; annotationCount: number }): void => {
+      setCommentImportOpen(false);
+      // Force a refresh of the active tab's engine state so the
+      // newly merged annotations show up in the Annotations panel
+      // + on-page overlays. We could try to read the result value
+      // off the engine directly, but the dialog already routed it
+      // through `noteOpApplied`. Here we just refresh from state.
+      pushToast(
+        "info",
+        `Imported ${result.annotationCount} comment${result.annotationCount === 1 ? "" : "s"} from ${result.path}.`,
+      );
+    },
+    [pushToast],
+  );
+
   // ---- Phase 11: OCR (recognize text) ----
 
   /** Open the OCR dialog against the active tab. The toolbar /
@@ -2663,6 +2985,136 @@ export function App(): ReactElement {
 
   const onCloseOcrSuspects = useCallback((): void => {
     setOcrSuspectsOpen(false);
+  }, []);
+
+  // ---- Phase 12: FDF IO helpers ----
+
+  /** Run the engine.exportFdf call against the active doc. Returns
+   *  the FDF bytes + the current annotation count (we read the
+   *  count from the engine state so the dialog's success toast
+   *  matches what the engine actually wrote). */
+  const runExportFdfForActiveTab = useCallback(async (): Promise<
+    { bytes: ArrayBuffer; annotationCount: number } | { error: string }
+  > => {
+    const activeId = activeTabIdRefLocal.current;
+    if (activeId === null) return { error: "No active document." };
+    const open = openTabsRef.current[activeId];
+    if (open === undefined) return { error: "No active document." };
+    if (engineRef.current.exportFdf === undefined) {
+      return {
+        error: describeEngineError(
+          "engine-error",
+          "Export FDF requires the Phase 12 backend update.",
+        ),
+      };
+    }
+    const result = await engineRef.current.exportFdf(open.session.engineDocId);
+    if (!result.ok) {
+      return { error: describeEngineError(result.error.code, result.error.message) };
+    }
+    const annotationCount = open.engine.annotations?.length ?? 0;
+    return { bytes: result.value, annotationCount };
+  }, []);
+
+  /** Run the engine.importFdf call against the active doc. Returns
+   *  the merged annotation count (the engine state's annotations
+   *  array length after the import). */
+  const runImportFdfForActiveTab = useCallback(
+    async (
+      bytes: Uint8Array,
+    ): Promise<{ annotationCount: number } | { error: string }> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      if (engineRef.current.importFdf === undefined) {
+        return {
+          error: describeEngineError(
+            "engine-error",
+            "Import FDF requires the Phase 12 backend update.",
+          ),
+        };
+      }
+      const result = await engineRef.current.importFdf(
+        open.session.engineDocId,
+        bytes,
+      );
+      if (!result.ok) {
+        return { error: describeEngineError(result.error.code, result.error.message) };
+      }
+      noteOpApplied(activeId, result.value);
+      const annotationCount = result.value.annotations?.length ?? 0;
+      return { annotationCount };
+    },
+    [noteOpApplied],
+  );
+
+  /** Save FDF bytes to the user's chosen file. Uses the renderer-
+   *  side `downloadBlob` helper (same path the Phase 9 export
+   *  pipeline uses); the OS save dialog comes up through the
+   *  browser's download attribute. Returns the saved path on
+   *  success, null on cancel, or throws on IO error. The
+   *  Electron renderer surfaces the path through Electron's
+   *  `downloadItem.getSavePath()` API; for the renderer-only
+   *  path we use `webUtils.getPathForFile` (Electron 30+) which
+   *  exposes the path of a freshly downloaded File. */
+  const saveFdfToFile = useCallback(
+    async (
+      bytes: ArrayBuffer,
+      suggestedName: string,
+    ): Promise<string | null> => {
+      // The renderer-side `downloadBlob` returns true/false; the
+      // path requires Electron's webUtils bridge (which is only
+      // available in the preload). For the v1 flow we treat the
+      // user's path as the suggested filename (since the OS save
+      // dialog uses it as the default) — the download itself
+      // writes to the chosen path via Electron's download manager.
+      const blob = new Blob([bytes], { type: "application/vnd.adobe.fdf" });
+      const accepted = downloadBlob(blob, suggestedName);
+      if (!accepted) return null;
+      // Best-effort path extraction. The preload may not expose
+      // webUtils on every build; we degrade gracefully by returning
+      // the suggested name as the "path" so the success toast still
+      // tells the user where the file went.
+      const webUtils = (
+        window as unknown as {
+          tflex?: {
+            webUtils?: {
+              getPathForFile?: (file: File) => string;
+            };
+          };
+        }
+      ).tflex?.webUtils;
+      try {
+        const file = new File([blob], suggestedName, {
+          type: "application/vnd.adobe.fdf",
+        });
+        const path = webUtils?.getPathForFile?.(file);
+        if (typeof path === "string" && path.length > 0) return path;
+      } catch {
+        // Fall through to the suggested-name fallback below.
+      }
+      return suggestedName;
+    },
+    [],
+  );
+
+  /** Open an OS file picker and read the chosen FDF file. Returns
+   *  the picked file's bytes + path, or null on cancel. Uses the
+   *  dedicated `openFileDialog('fdf')` so the OS dialog only shows
+   *  `.fdf` files, and the dedicated `loadFdf` IPC so the backend's
+   *  `%FDF-` header sniff (rather than `%PDF-`) reads the bytes.
+   *  Routing through `loadPdf` here previously rejected every FDF
+   *  file with `not-pdf`, making the picker silently return null
+   *  (DEF-053). */
+  const pickFdfFile = useCallback(async (): Promise<
+    { bytes: Uint8Array; path: string } | null
+  > => {
+    const path = await window.tflex.openFileDialog("fdf");
+    if (path === null) return null;
+    const res = await window.tflex.loadFdf(path);
+    if (!res.ok) return null;
+    return { bytes: new Uint8Array(res.value), path };
   }, []);
 
   /** Reads the OS clipboard via the existing signatures IPC bridge
@@ -3562,6 +4014,12 @@ export function App(): ReactElement {
               void onBatchOcr();
             }}
             onOcrSuspects={(): void => setOcrSuspectsOpen(true)}
+            onReplacePages={onReplacePagesClick}
+            onRenumberPages={onRenumberPagesClick}
+            onCropPages={onCropPagesClick}
+            onStamp={onStampClick}
+            onExportComments={onCommentExportClick}
+            onImportComments={onCommentImportClick}
             hasOcrSuspects={Object.values(ocrRunByTab).some(Boolean)}
             onClose={(): void => setToolsPaletteOpen(false)}
             documentRequired={activeTab !== null}
@@ -3831,6 +4289,96 @@ export function App(): ReactElement {
           void onInsertPagesConfirm(c);
         }}
         onClose={onCancelInsertPages}
+      />
+      <ReplacePagesDialog
+        open={replacePagesOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        pickOtherFile={pickOtherPdf}
+        onConfirm={(c): void => {
+          void onReplacePagesConfirm(c);
+        }}
+        onClose={onCancelReplacePages}
+      />
+      <RenumberPagesDialog
+        open={renumberPagesOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        initialLabels={
+          (activeEngineUi?.state.pageLabels ?? []).map((l) => ({
+            page: l.page,
+            label: l.label,
+          }))
+        }
+        onConfirm={(c): void => {
+          void onRenumberPagesConfirm(c);
+        }}
+        onClose={onCancelRenumberPages}
+      />
+      <CropPagesDialog
+        open={cropPagesOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        pageSizes={activePageSizes}
+        onConfirm={(c): void => {
+          void onCropPagesConfirm(c);
+        }}
+        onClose={onCancelCropPages}
+      />
+      <StampDialog
+        open={stampOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        currentPage={(() => {
+          const id = activeTabIdRefLocal.current;
+          if (id === null) return 1;
+          const tab = openTabsRef.current[id];
+          return tab ? Math.max(1, Math.floor(tab.persisted.currentPage)) : 1;
+        })()}
+        initialStampId={settings.defaultStampId ?? DEFAULT_STAMP_ID}
+        onStampIdChange={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, {
+              type: 'set-default-stamp-id',
+              value: next,
+            });
+            if (updated !== prev) trackAndSave(updated);
+            return updated;
+          });
+        }}
+        onConfirm={(c): void => {
+          void onStampConfirm(c);
+        }}
+        onClose={onCancelStamp}
+      />
+      <CommentExportDialog
+        open={commentExportOpen}
+        annotationCount={activeTab?.engine.annotations.length ?? 0}
+        runExportFdf={runExportFdfForActiveTab}
+        saveFile={saveFdfToFile}
+        sourceName={activeTab?.displayName ?? "document"}
+        onConfirm={onCommentExportConfirm}
+        onClose={onCancelCommentExport}
+      />
+      <CommentImportDialog
+        open={commentImportOpen}
+        pickFile={pickFdfFile}
+        runImportFdf={runImportFdfForActiveTab}
+        onConfirm={onCommentImportConfirm}
+        onClose={onCancelCommentImport}
       />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
       <AboutDialog open={aboutOpen} onClose={(): void => setAboutOpen(false)} />

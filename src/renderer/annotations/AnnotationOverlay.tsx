@@ -24,6 +24,7 @@ import type { CSSProperties, ReactElement, ReactNode } from "react";
 import {
   annotationBounds,
   arrowHead,
+  calloutEntryPoint,
   clientToPagePoint,
   dragMeetsMinimum,
   inkPathD,
@@ -141,6 +142,12 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   const [ink, setInk] = useState<PagePoint[] | null>(null);
   const [textboxEditor, setTextboxEditor] = useState<EditorState | null>(null);
   const [noteEditor, setNoteEditor] = useState<EditorState | null>(null);
+  /** Phase 12 — callout creation in progress. `box` is the
+   *  text-box rect; `at` is the anchor (the arrowhead target).
+   *  Drives the inline editor + live preview while the user types. */
+  const [calloutEditor, setCalloutEditor] = useState<
+    { box: PageRect; at: PagePoint; text: string } | null
+  >(null);
   const textItemsSnapRef = useRef<TextItemGeom[]>([]);
   // Markup drags keep their quads in a ref during pointermove (cheap) and
   // only push to state once per frame; for simplicity we compute quads in
@@ -155,6 +162,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     setInk(null);
     setTextboxEditor(null);
     setNoteEditor(null);
+    setCalloutEditor(null);
   }, [toolKind, cssScale]);
 
   const pagePoint = (e: React.PointerEvent): PagePoint => {
@@ -192,6 +200,13 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       e.preventDefault();
     } else if (toolKind === "note") {
       setNoteEditor({ at: pt, text: "" });
+      e.preventDefault();
+    } else if (toolKind === "callout") {
+      // Callout creation is a drag from the anchor (where the callout
+      // POINTS AT) to the text-box position. pointerdown captures the
+      // anchor; pointerup commits the box and opens the inline editor.
+      setDrag({ from: pt, to: pt });
+      e.currentTarget.setPointerCapture(e.pointerId);
       e.preventDefault();
     }
   };
@@ -247,6 +262,25 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           createdAt: nowIso(),
           rect: normalizeDragRect(from, to),
         });
+      } else if (toolKind === "callout") {
+        // Callout creation: drag from the anchor (the point the
+        // callout points at) to the text-box position. The release
+        // point becomes the box's top-left; the box is sized to the
+        // default text-box geometry. We open the inline text editor
+        // here rather than committing a zero-text callout, mirroring
+        // the textbox flow.
+        const box = normalizeDragRect(from, to);
+        if (box.width < TEXTBOX_MIN_WIDTH_PT) box.width = TEXTBOX_MIN_WIDTH_PT;
+        if (box.height < TEXTBOX_LINE_HEIGHT * TEXTBOX_FONT_PT + TEXTBOX_PAD_PT * 2) {
+          box.height = TEXTBOX_LINE_HEIGHT * TEXTBOX_FONT_PT + TEXTBOX_PAD_PT * 2;
+        }
+        // Clamp inside the page bounds.
+        if (box.x < 0) box.x = 0;
+        if (box.y < 0) box.y = 0;
+        if (box.x + box.width > widthPt) box.width = widthPt - box.x;
+        if (box.y + box.height > heightPt) box.height = heightPt - box.y;
+        setCalloutEditor({ box: box as PageRect, at: from, text: "" });
+        return;
       }
     } else if (ink !== null) {
       const points = ink;
@@ -312,8 +346,36 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     onFinishedOneShot?.();
   };
 
+  /** Phase 12 — commit the in-progress callout. The text-box rect is
+   *  fixed at drag-release time; the user typed into the inline editor
+   *  while the box was open. Empty-text callouts bail out like the
+   *  textbox/note flows so a stray drag doesn't litter the doc with
+   *  empty boxes. */
+  const commitCallout = (): void => {
+    if (calloutEditor === null) return;
+    const text = calloutEditor.text.trim();
+    const box = calloutEditor.box;
+    const at = calloutEditor.at;
+    setCalloutEditor(null);
+    if (text.length === 0) {
+      onFinishedOneShot?.();
+      return;
+    }
+    onCreate({
+      id: newId(),
+      kind: "callout",
+      page,
+      color: tool.color,
+      createdAt: nowIso(),
+      rect: { ...box },
+      at: { ...at },
+      text,
+    });
+    onFinishedOneShot?.();
+  };
+
   const interactive =
-    toolKind !== "select" || textboxEditor !== null || noteEditor !== null;
+    toolKind !== "select" || textboxEditor !== null || noteEditor !== null || calloutEditor !== null;
 
   // ---- previews ------------------------------------------------------------
 
@@ -356,6 +418,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         )}
         {drag !== null && toolKind === "arrow" && (
           <ArrowShape from={drag.from} to={drag.to} color={tool.color} preview />
+        )}
+        {drag !== null && toolKind === "callout" && dragMeetsMinimum(drag.from, drag.to) && (
+          <CalloutShapePreview from={drag.from} to={drag.to} color={tool.color} />
         )}
         {ink !== null && ink.length > 0 && (
           <path
@@ -404,6 +469,19 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           onCommit={commitNote}
           onCancel={(): void => {
             setNoteEditor(null);
+            onFinishedOneShot?.();
+          }}
+        />
+      )}
+      {calloutEditor !== null && (
+        <CalloutBoxEditor
+          box={calloutEditor.box}
+          text={calloutEditor.text}
+          cssScale={cssScale}
+          onChange={(text): void => setCalloutEditor({ ...calloutEditor, text })}
+          onCommit={commitCallout}
+          onCancel={(): void => {
+            setCalloutEditor(null);
             onFinishedOneShot?.();
           }}
         />
@@ -604,7 +682,13 @@ function SvgAnnotationInner({ ann }: { ann: Annotation; dimmed: boolean }): Reac
     }
     case "textbox":
     case "note":
-      return null; // textbox + note render as DOM
+    case "callout":
+      // textbox + note + callout render as DOM (so the textbox +
+      // callout inline editor can host a real <textarea>). The SVG
+      // arrow portion of a callout is rendered separately by the
+      // CalloutShape SVG component below for committed annotations;
+      // the in-progress editor shows it as part of the preview.
+      return null;
     default:
       // Exhaustiveness: never
       return null;
@@ -636,6 +720,43 @@ function ArrowShape({
       <polygon
         points={`${to.x},${to.y} ${w1.x},${w1.y} ${w2.x},${w2.y}`}
         fill={hex}
+      />
+    </g>
+  );
+}
+
+/** Phase 12 — preview the in-progress callout while the user drags.
+ *  Renders a placeholder text-box at the drag endpoint and an arrow
+ *  from the anchor (`from`) to the box. Used only as a preview
+ *  (semi-transparent); the committed annotation lives on the DOM
+ *  layer for proper text editing. */
+function CalloutShapePreview({
+  from,
+  to,
+  color,
+}: {
+  from: PagePoint;
+  to: PagePoint;
+  color: AnnotationColorValue;
+}): ReactElement {
+  const hex = annotationColorToCss(color);
+  const box = normalizeDragRect(to, to);
+  // Match the default text-box dimensions the create flow applies
+  // so the preview lines up with what the user is about to see.
+  if (box.width < TEXTBOX_MIN_WIDTH_PT) box.width = TEXTBOX_MIN_WIDTH_PT;
+  box.height = TEXTBOX_LINE_HEIGHT * TEXTBOX_FONT_PT + TEXTBOX_PAD_PT * 2;
+  return (
+    <g className="ann ann-callout ann-preview" data-kind="callout">
+      <ArrowShape from={from} to={to} color={color} preview />
+      <rect
+        x={box.x}
+        y={box.y}
+        width={box.width}
+        height={box.height}
+        fill={hexWithAlpha(hex, 0.08)}
+        stroke={hex}
+        strokeDasharray="4 3"
+        strokeWidth={1.5}
       />
     </g>
   );
@@ -771,6 +892,87 @@ function DomAnnotation({
       </div>
     );
   }
+  if (ann.kind === "callout") {
+    // Callout = text box + arrow to anchor. Render the text box as
+    // a styled div (same chrome as textbox) and the arrow as an SVG
+    // overlay on top of the page. Wire-shape fallback uses rects[0]
+    // and the rects[0].x/y as the anchor (the engine normalises the
+    // anchor to rects[0]'s top-left when there's no separate anchor
+    // surface — the renderer-side fallback avoids a hard crash on
+    // older serialized shapes).
+    const r = ann.rect ?? (ann as unknown as { rects?: { x: number; y: number; width: number; height: number }[] }).rects?.[0];
+    if (r === undefined) return null;
+    const anchor =
+      ann.at ??
+      (ann as unknown as { rects?: { x: number; y: number }[] }).rects?.[0];
+    if (anchor === undefined) return null;
+    const box = overlayRectToCss(r, cssScale);
+    const hex = annotationColorToCss(ann.color);
+    const style: CSSProperties = {
+      left: box.left,
+      top: box.top,
+      width: box.width,
+      height: box.height,
+      fontSize: TEXTBOX_FONT_PT * cssScale,
+      lineHeight: TEXTBOX_LINE_HEIGHT,
+      padding: TEXTBOX_PAD_PT * cssScale,
+      borderColor: hex,
+      background: hexWithAlpha(hex, 0.08),
+    };
+    const anchorCss = {
+      x: anchor.x * cssScale,
+      y: anchor.y * cssScale,
+    };
+    // Arrow from the nearest box edge to the anchor. Compute the
+    // entry point as the closest corner of the box to the anchor,
+    // then draw a stroked line + small arrowhead.
+    const entry = calloutEntryPoint(r, anchor);
+    const arrowScale = cssScale;
+    return (
+      <>
+        <svg
+          className="ann ann-callout-arrow"
+          data-annotation-id={ann.id}
+          data-kind="callout"
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            width: "100%",
+            height: "100%",
+            overflow: "visible",
+          }}
+        >
+          <line
+            x1={entry.x * arrowScale}
+            y1={entry.y * arrowScale}
+            x2={anchorCss.x}
+            y2={anchorCss.y}
+            stroke={hex}
+            strokeWidth={1.5}
+          />
+          {(() => {
+            const [w1, w2] = arrowHead(entry, anchor, ARROW_HEAD_PT);
+            return (
+              <polygon
+                points={`${anchorCss.x},${anchorCss.y} ${w1.x * arrowScale},${w1.y * arrowScale} ${w2.x * arrowScale},${w2.y * arrowScale}`}
+                fill={hex}
+              />
+            );
+          })()}
+        </svg>
+        <div
+          className="ann ann-callout"
+          data-annotation-id={ann.id}
+          data-kind="callout"
+          style={style}
+        >
+          {ann.text}
+        </div>
+      </>
+    );
+  }
   return null;
 }
 
@@ -897,5 +1099,59 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
         </button>
       </div>
     </div>
+  );
+}
+
+/** Phase 12 — inline editor for the in-progress callout. Positioned
+ *  at the callout's text-box rect (the box dimensions are fixed at
+ *  drag-release time, so the user can immediately type into the box
+ *  without re-positioning). Chrome matches the textbox editor so
+ *  the user sees the same input affordance across the two tools. */
+interface CalloutBoxEditorProps {
+  box: PageRect;
+  text: string;
+  cssScale: number;
+  onChange: (text: string) => void;
+  onCommit: () => void;
+  onCancel: () => void;
+}
+
+function CalloutBoxEditor(
+  props: CalloutBoxEditorProps,
+): ReactElement {
+  const { box, text, cssScale, onChange, onCommit, onCancel } = props;
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+  return (
+    <textarea
+      ref={ref}
+      className="ann-editor ann-textbox-editor"
+      data-annotation-editor="callout"
+      value={text}
+      placeholder="Type callout text..."
+      onChange={(e): void => onChange(e.target.value)}
+      onBlur={onCommit}
+      onKeyDown={(e): void => {
+        e.stopPropagation();
+        if (e.key === "Escape") {
+          e.preventDefault();
+          onCancel();
+        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          onCommit();
+        }
+      }}
+      onPointerDown={(e): void => e.stopPropagation()}
+      style={{
+        left: box.x * cssScale,
+        top: box.y * cssScale,
+        minWidth: TEXTBOX_MIN_WIDTH_PT * cssScale,
+        fontSize: TEXTBOX_FONT_PT * cssScale,
+        lineHeight: TEXTBOX_LINE_HEIGHT,
+        padding: TEXTBOX_PAD_PT * cssScale,
+      }}
+    />
   );
 }

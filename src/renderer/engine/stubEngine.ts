@@ -21,7 +21,9 @@
 import type { Result } from "../../shared/result";
 import { err, ok } from "../../shared/result";
 import type {
+  AddStampPayload,
   AddTextBoxPayload,
+  CropEntry,
   DocxImageEntry,
   EditImagePayload,
   EditTextRunPayload,
@@ -34,10 +36,12 @@ import type {
   OcrRecognizeOptions,
   OcrSuspect,
   OptimizePreset,
+  PageLabelEntry,
   SavedSignature,
   SignaturePlacement,
   SignatureSource,
   SpaceAudit,
+  StampId,
   TextPage,
 } from "../../shared/types";
 import { applyPatch, type Annotation, type AnnotationPatch } from "../annotations/model";
@@ -81,6 +85,14 @@ interface StubTab {
    *  no tesseract, so it records what the renderer asked for so unit
    *  tests can assert the options shape end-to-end. */
   ocrCalls: OcrCallRecord[];
+  /** Phase 12 — current logical page labels (/PageLabels). The stub
+   *  records renumberPages payloads so unit tests can assert the
+   *  renderer sent the expected entries. */
+  pageLabels: PageLabelEntry[];
+  /** Phase 12 — append-only log of replacePages, cropPages, addStamp,
+   *  and importFdf calls. The stub doesn't process bytes; it just
+   *  records what was asked for. */
+  phase12Log: Phase12Record[];
 }
 
 interface Snapshot {
@@ -98,6 +110,14 @@ interface Snapshot {
   /** Phase 11 — preserved across undo / redo so the OCR-call log
    *  is monotonic-friendly. Same shape as editLogLength. */
   ocrCallsLength: number;
+  /** Phase 12 — logical page labels (renumberPages state). Captured
+   *  by value so undo restores the labels that were set at snapshot
+   *  time. */
+  pageLabels: PageLabelEntry[];
+  /** Phase 12 — preserved across undo / redo so the Phase-12
+   *  forward-only log is monotonic-friendly. Same shape as
+   *  editLogLength / ocrCallsLength. */
+  phase12LogLength: number;
 }
 
 function snap(t: StubTab): Snapshot {
@@ -110,6 +130,10 @@ function snap(t: StubTab): Snapshot {
     signatures: t.signatures.slice(),
     editLogLength: t.editLog.length,
     ocrCallsLength: t.ocrCalls.length,
+    // Phase 12 — pageLabels + phase12 log captured at snapshot time
+    // so undo/redo preserves them through the snapshot/restore cycle.
+    pageLabels: t.pageLabels.slice(),
+    phase12LogLength: t.phase12Log.length,
   };
 }
 
@@ -127,6 +151,11 @@ function restore(t: StubTab, s: Snapshot): void {
   // Phase 11 — same shape as editLogLength; OCR-call log truncation
   // is the natural undo/redo op for the forward-only OCR log.
   t.ocrCalls = t.ocrCalls.slice(0, s.ocrCallsLength);
+  // Phase 12 — restore logical page labels and truncate the
+  // forward-only Phase-12 log back to its snapshot length. Same
+  // pattern as the edit/OCR logs.
+  t.pageLabels = s.pageLabels.slice();
+  t.phase12Log = t.phase12Log.slice(0, s.phase12LogLength);
 }
 
 function buildState(t: StubTab): EngineState {
@@ -152,6 +181,10 @@ function buildState(t: StubTab): EngineState {
     // read them on every round-trip.
     formFields: stubFormFields(t),
     signatures: t.signatures.slice(),
+    // Phase 12 — carry the logical page labels through so the
+    // renderer's mirror can observe renumberPages outputs without
+    // a separate getState round-trip.
+    pageLabels: t.pageLabels.length > 0 ? t.pageLabels.slice() : undefined,
   };
 }
 
@@ -183,6 +216,8 @@ export class StubRendererEngine implements EngineApi {
         signatures: [],
         editLog: [],
         ocrCalls: [],
+        pageLabels: [],
+        phase12Log: [],
       };
       this.tabs.set(docId, t);
     }
@@ -879,6 +914,214 @@ export class StubRendererEngine implements EngineApi {
       "getDocumentBytes requires the Phase 11 backend update (stub has no PDF bytes)",
     );
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 12: residual page-organize + annotate parity
+  //
+  // The stub implements just enough of these to keep the renderer-only
+  // path healthy in jsdom tests / pre-Phase-12 builds. replacePages
+  // renumbers the pageOrder array so mirror effects can observe the
+  // new count + indices; the others record what the renderer asked
+  // for so unit tests can assert the payload shape end-to-end. The
+  // real engine owns the production implementation.
+
+  /** Phase 12 — replace the visible page range with all pages of
+   *  `otherBytes`. The stub doesn't process the bytes (no pdf-lib);
+   *  it simulates the new page count by appending `targetRange[1] -
+   *  targetRange[0] + 1` synthetic placeholders onto the pageOrder
+   *  array and dropping the originals. Mirror effects then observe
+   *  the new count without a real engine. */
+  async replacePages(
+    docId: string,
+    otherBytes: Uint8Array,
+    targetRange: [number, number],
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (otherBytes.byteLength === 0) {
+      return err("empty-range", "replacePages: otherBytes is empty");
+    }
+    const [start, end] = targetRange;
+    if (start < 0 || end < start) {
+      return err("out-of-range", "replacePages: invalid target range");
+    }
+    const visible = buildState(t).pageOrder;
+    if (start >= visible.length || end >= visible.length) {
+      return err("out-of-range", "replacePages: target range exceeds pages");
+    }
+    pushUndo(t);
+    // We don't know how many pages the other PDF has, but for the
+    // stub's mirror-effect purposes, simulate a one-for-one swap (the
+    // most common case). Unit tests that need a multi-page swap use
+    // a dedicated mock engine instead.
+    const span = end - start + 1;
+    const visibleStart = visible[start];
+    if (visibleStart === undefined) {
+      return err("out-of-range", "replacePages: target start out of range");
+    }
+    // Synthesize `span` new placeholders after the original start
+    // index; mark the originals in [start, end] as deleted.
+    for (let i = start; i <= end; i += 1) {
+      const origIdx = visible[i];
+      if (origIdx !== undefined) t.deleted[origIdx] = true;
+    }
+    const newIndices: number[] = [];
+    for (let i = 0; i < span; i += 1) {
+      const idx = t.rotations.length + i;
+      t.rotations.push(0);
+      t.deleted.push(false);
+      newIndices.push(idx);
+    }
+    // Splice the new placeholders into pageOrder at the start slot.
+    t.pageOrder.splice(start, span, ...newIndices);
+    recordPhase12(t, {
+      kind: "replacePages",
+      payload: { otherBytesLen: otherBytes.byteLength, targetRange },
+    });
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Phase 12 — set logical page labels (/PageLabels number tree).
+   *  The stub stores the entries so undo / redo can restore them. */
+  async renumberPages(
+    docId: string,
+    labels: PageLabelEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const visible = buildState(t).pageOrder;
+    for (const l of labels) {
+      if (l.page < 1 || l.page > visible.length) {
+        return err("out-of-range", `renumberPages: page ${l.page} out of range`);
+      }
+      if (typeof l.label !== "string") {
+        return err("engine-error", "renumberPages: label must be a string");
+      }
+    }
+    pushUndo(t);
+    t.pageLabels = labels.slice();
+    recordPhase12(t, { kind: "renumberPages", payload: { labels: labels.slice() } });
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Phase 12 — set each listed page's CropBox/TrimBox. The stub
+   *  doesn't have crop geometry to mutate; it records the entries so
+   *  unit tests can assert the renderer sent the expected crop rects. */
+  async cropPages(
+    docId: string,
+    entries: CropEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const visible = buildState(t).pageOrder;
+    for (const e of entries) {
+      if (e.page < 1 || e.page > visible.length) {
+        return err("out-of-range", `cropPages: page ${e.page} out of range`);
+      }
+      if (e.box.width <= 0 || e.box.height <= 0) {
+        return err("empty-range", `cropPages: page ${e.page} has zero-size box`);
+      }
+    }
+    pushUndo(t);
+    recordPhase12(t, { kind: "cropPages", payload: { entries: entries.slice() } });
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Phase 12 — embed a renderer-drawn stamp raster. The stub
+   *  validates `stampId` against the built-in allowlist and records
+   *  the PNG byte length so unit tests can assert the renderer sent
+   *  the expected stamp. */
+  async addStamp(
+    docId: string,
+    payload: AddStampPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const visible = buildState(t).pageOrder;
+    if (payload.page < 1 || payload.page > visible.length) {
+      return err("out-of-range", `addStamp: page ${payload.page} out of range`);
+    }
+    if (payload.rect.width <= 0 || payload.rect.height <= 0) {
+      return err("empty-range", "addStamp: rect must be positive");
+    }
+    if (!STAMP_ID_ALLOWLIST.includes(payload.stampId)) {
+      return err(
+        "engine-error",
+        `addStamp: stampId ${payload.stampId} not in allowlist`,
+      );
+    }
+    const pngBytes = payload.pngBytes instanceof Uint8Array
+      ? payload.pngBytes
+      : new Uint8Array(payload.pngBytes);
+    if (pngBytes.byteLength === 0) {
+      return err("empty-range", "addStamp: pngBytes are empty");
+    }
+    pushUndo(t);
+    recordPhase12(t, {
+      kind: "addStamp",
+      payload: {
+        page: payload.page,
+        rect: { ...payload.rect },
+        stampId: payload.stampId,
+        name: payload.name,
+        pngBytesLen: pngBytes.byteLength,
+      },
+    });
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Phase 12 — export the document's annotations as FDF bytes.
+   *  The stub returns a small placeholder so the renderer-side
+   *  download flow can run. The real engine writes proper FDF
+   *  comment bytes that round-trip with importFdf. */
+  async exportFdf(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    recordPhase12(t, { kind: "exportFdf", payload: { annotationCount: t.annotations.length } });
+    return ok(new ArrayBuffer(0));
+  }
+
+  /** Phase 12 — import FDF comment bytes and merge the annotations
+   *  into the document. The stub accepts the bytes and emits
+   *  engine-error so the renderer treats it like a pre-Phase-12 build.
+   *  Unit tests exercise the FDF flow with a dedicated mock engine. */
+  async importFdf(
+    docId: string,
+    fdfBytes: Uint8Array,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (fdfBytes.byteLength === 0) {
+      return err("empty-range", "importFdf: fdfBytes are empty");
+    }
+    recordPhase12(t, { kind: "importFdf", payload: { fdfBytesLen: fdfBytes.byteLength } });
+    return err(
+      "engine-error",
+      "importFdf requires the Phase 12 backend update (stub has no FDF parser)",
+    );
+  }
+
+  /** Test-only: read back the most recent Phase 12 call recorded for
+   *  a tab. Used by unit tests to assert the renderer sent the
+   *  expected payload without standing up a real engine. */
+  getLastPhase12Call(tabId: string): Phase12Record | undefined {
+    const t = this.tabs.get(tabId);
+    if (t === undefined) return undefined;
+    return t.phase12Log[t.phase12Log.length - 1];
+  }
+
+  /** Test-only: snapshot of the full Phase 12 history for a tab. */
+  getPhase12Log(tabId: string): Phase12Record[] {
+    const t = this.tabs.get(tabId);
+    if (t === undefined) return [];
+    return t.phase12Log.slice();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -914,6 +1157,61 @@ export interface OcrCallRecord {
   language: string;
   downsample: number;
   pageCount: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12 — per-tab Phase-12 call log (stub-only) + stamp allowlist
+
+/** Built-in stamp id allowlist mirrored from
+ *  `src/shared/types.ts StampId`. The stub uses this to validate
+ *  addStamp payloads the same way the real engine will. */
+const STAMP_ID_ALLOWLIST: readonly StampId[] = [
+  "APPROVED",
+  "DRAFT",
+  "CONFIDENTIAL",
+  "FINAL",
+];
+
+/** What the stub records for each Phase 12 op. The image variant
+ *  carries the byte length rather than the bytes themselves so the
+ *  log stays cheap to inspect in tests. */
+export type Phase12Record =
+  | {
+    kind: "replacePages";
+    payload: {
+      otherBytesLen: number;
+      targetRange: [number, number];
+    };
+  }
+  | {
+    kind: "renumberPages";
+    payload: { labels: PageLabelEntry[] };
+  }
+  | {
+    kind: "cropPages";
+    payload: { entries: CropEntry[] };
+  }
+  | {
+    kind: "addStamp";
+    payload: {
+      page: number;
+      rect: AddStampPayload["rect"];
+      stampId: StampId;
+      name: string;
+      pngBytesLen: number;
+    };
+  }
+  | {
+    kind: "exportFdf";
+    payload: { annotationCount: number };
+  }
+  | {
+    kind: "importFdf";
+    payload: { fdfBytesLen: number };
+  };
+
+function recordPhase12(t: StubTab, rec: Phase12Record): void {
+  t.phase12Log.push(rec);
 }
 
 // Stub-only: returns the form fields the renderer last seeded via

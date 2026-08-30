@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { err, ok, type Result } from '../../shared/result';
-import type { PdfOpenError } from '../../shared/types';
+import type { FdfOpenError, PdfOpenError } from '../../shared/types';
 
 const HEADER_WINDOW = 1024;
 
@@ -37,5 +37,38 @@ export function sniff(buffer: Buffer, filePath: string): Result<ArrayBuffer, Pdf
   }
   const value = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   void filePath;
+  return ok(value as ArrayBuffer);
+}
+
+/**
+ * Phase 12 — Reads an FDF (Forms Data Format) comment file from disk and
+ * returns its bytes as an ArrayBuffer. FDF files start with `%FDF-` (not
+ * `%PDF-`), so they cannot go through `loadPdfFile`'s PDF header sniff.
+ * This path validates the `%FDF-` signature only; the engine's `importFdf`
+ * does the structural parse.
+ */
+export async function loadFdfFile(
+  filePath: string,
+): Promise<Result<ArrayBuffer, FdfOpenError>> {
+  let buffer: Buffer;
+  try {
+    buffer = await readFile(filePath);
+  } catch {
+    return err('io', `could not read: ${filePath}`);
+  }
+  return sniffFdf(buffer);
+}
+
+export function sniffFdf(buffer: Buffer): Result<ArrayBuffer, FdfOpenError> {
+  if (buffer.length === 0) {
+    return err('corrupt', 'file is empty');
+  }
+  const headWindow = buffer.subarray(0, Math.min(buffer.length, HEADER_WINDOW));
+  // %FDF- is the FDF header signature (e.g. "%FDF-1.2"). Stricter than the
+  // bare "%FDF" the parser accepts, so a real FDF file always passes here.
+  if (headWindow.indexOf('%FDF-') === -1) {
+    return err('not-fdf', 'file does not have a %FDF- header');
+  }
+  const value = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   return ok(value as ArrayBuffer);
 }

@@ -524,3 +524,61 @@ describe("echo guard — per-theme bucket invariants (DEF-037 reopened)", () => 
     expect(shouldApplyEcho(echoFromMain, 1, latest)).toBe(true);
   });
 });
+
+describe("sameSettings / differsOnlyInRecentFiles — defaultStampId echo handling", () => {
+  const recentsA: RecentFile[] = [
+    { path: "/a.pdf", name: "a.pdf", openedAt: "2026-01-01T00:00:00Z" },
+  ];
+  const recentsB: RecentFile[] = [
+    { path: "/b.pdf", name: "b.pdf", openedAt: "2026-01-02T00:00:00Z" },
+    { path: "/a.pdf", name: "a.pdf", openedAt: "2026-01-01T00:00:00Z" },
+  ];
+
+  it("sameSettings returns true when the only difference is defaultStampId matching", () => {
+    const a = baseSettings({ defaultStampId: "APPROVED" });
+    const b = baseSettings({ defaultStampId: "APPROVED" });
+    expect(sameSettings(a, b)).toBe(true);
+  });
+
+  it("sameSettings returns false when defaultStampId differs", () => {
+    const a = baseSettings({ defaultStampId: "APPROVED" });
+    const b = baseSettings({ defaultStampId: "DRAFT" });
+    expect(sameSettings(a, b)).toBe(false);
+  });
+
+  it("differsOnlyInRecentFiles returns false when defaultStampId also drifts", () => {
+    const a = baseSettings({
+      recentFiles: recentsA,
+      defaultStampId: "APPROVED",
+    });
+    const b = baseSettings({
+      recentFiles: recentsB,
+      defaultStampId: "DRAFT",
+    });
+    expect(differsOnlyInRecentFiles(a, b)).toBe(false);
+  });
+
+  it("differsOnlyInRecentFiles returns true when only recentFiles change and defaultStampId matches", () => {
+    const a = baseSettings({
+      recentFiles: recentsA,
+      defaultStampId: "DRAFT",
+    });
+    const b = baseSettings({
+      recentFiles: recentsB,
+      defaultStampId: "DRAFT",
+    });
+    expect(differsOnlyInRecentFiles(a, b)).toBe(true);
+  });
+
+  it("shouldApplyEcho applies an echo whose defaultStampId matches the local write", () => {
+    const localWrite = baseSettings({ defaultStampId: "CONFIDENTIAL" });
+    const echo = baseSettings({ defaultStampId: "CONFIDENTIAL" });
+    expect(shouldApplyEcho(echo, 2, localWrite)).toBe(true);
+  });
+
+  it("shouldApplyEcho rejects a stale echo that drifts defaultStampId", () => {
+    const localWrite = baseSettings({ defaultStampId: "DRAFT" });
+    const stale = baseSettings({ defaultStampId: "CONFIDENTIAL" });
+    expect(shouldApplyEcho(stale, 2, localWrite)).toBe(false);
+  });
+});

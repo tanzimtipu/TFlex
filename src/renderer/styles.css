@@ -1365,6 +1365,13 @@ textarea {
   grid-template-rows: auto 1fr auto;
 }
 
+/* Phase 12 — wider modal for the Crop / Renumber / Stamp dialogs.
+ * Used by any dialog whose layout needs more horizontal real
+ * estate than the standard 460 px. */
+.modal-dialog-wide {
+  width: min(720px, calc(100vw - 32px));
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -4051,4 +4058,256 @@ textarea {
   font-variant-numeric: tabular-nums;
   min-width: 28px;
   text-align: right;
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 12 — residual page-organize + annotate parity
+ *
+ * Visual chrome for the Replace / Renumber / Crop / Stamp / Comment
+ * Export / Comment Import dialogs + the callout annotation rendering
+ * in AnnotationOverlay. The neutral palette stays in the same
+ * zinc/slate accent system as the rest of the UI so the new
+ * entries look like they belong in the existing visual language.
+ */
+
+/* -- Renumber dialog: list of one input per page ------------------- */
+.renumber-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.renumber-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-1);
+  background: var(--bg-base);
+}
+
+.renumber-page {
+  flex-shrink: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.renumber-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-sm);
+}
+
+/* -- Crop dialog: the box-selector preview -------------------------- */
+.crop-editor-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 12px 0;
+}
+
+.crop-editor {
+  width: 100%;
+  max-width: 360px;
+  user-select: none;
+  touch-action: none;
+}
+
+.crop-editor-page {
+  position: relative;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-1);
+  margin: 0 auto;
+}
+
+.crop-editor-mask {
+  position: absolute;
+  background: rgba(37, 99, 235, 0.06);
+  border: 1.5px solid #2563eb;
+  border-radius: var(--radius-1);
+  cursor: move;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  box-sizing: border-box;
+}
+
+:root[data-theme="dark"] .crop-editor-mask {
+  background: rgba(96, 165, 250, 0.10);
+  border-color: #60a5fa;
+}
+
+.crop-editor-label {
+  position: absolute;
+  top: -22px;
+  left: 0;
+  font-size: var(--fs-xs);
+  color: #2563eb;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .crop-editor-label { color: #93c5fd; }
+
+.crop-editor-handle {
+  position: absolute;
+  background: #2563eb;
+  border: 1.5px solid #ffffff;
+  border-radius: 2px;
+  cursor: nwse-resize;
+  z-index: 1;
+}
+
+.crop-editor-handle-ne, .crop-editor-handle-sw { cursor: nesw-resize; }
+
+:root[data-theme="dark"] .crop-editor-handle {
+  background: #60a5fa;
+  border-color: #0f172a;
+}
+
+.crop-summary {
+  margin-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.crop-summary-header {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+}
+
+.crop-summary-rows {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.crop-summary-row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  background: var(--bg-base);
+  border-radius: var(--radius-1);
+}
+
+.crop-summary-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.crop-summary-value {
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-strong);
+}
+
+/* -- Stamp dialog: the picker + preview --------------------------- */
+.stamp-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-1);
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+
+.stamp-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.stamp-option-label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--fg-strong);
+}
+
+.stamp-option-desc {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+.stamp-preview-wrap {
+  margin-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 8px;
+}
+
+.stamp-preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+}
+
+.stamp-preview-title {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stamp-preview-meta {
+  font-size: 10px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.stamp-preview-frame {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0;
+  background:
+    repeating-linear-gradient(45deg, var(--bg-base) 0 4px, transparent 4px 8px);
+  border-radius: var(--radius-1);
+  overflow: hidden;
+}
+
+.stamp-preview-canvas {
+  max-width: 100%;
+  height: auto;
+  background: transparent;
+}
+
+/* -- Callout annotation rendering (page overlay) ------------------ */
+.ann-callout {
+  position: absolute;
+  border: 1.5px solid;
+  border-radius: var(--radius-1);
+  font-weight: 500;
+  white-space: pre-wrap;
+  word-break: break-word;
+  pointer-events: none;
+}
+
+.ann-callout-arrow {
+  z-index: 1;
+  pointer-events: none;
+}
+
+.ann-callout-preview-mask {
+  fill: rgba(37, 99, 235, 0.08);
+  stroke: #2563eb;
+  stroke-dasharray: 4 3;
+  stroke-width: 1.5;
+}
+
+:root[data-theme="dark"] .ann-callout-preview-mask {
+  fill: rgba(96, 165, 250, 0.12);
+  stroke: #60a5fa;
 }

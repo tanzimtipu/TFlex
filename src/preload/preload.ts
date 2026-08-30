@@ -3,8 +3,10 @@ import { IPC, type SavedSignaturesResult } from "../shared/ipc";
 import type {
   AppInfo,
   AppSettings,
+  AddStampPayload,
   AddTextBoxPayload,
   CreateAnnotationPayload,
+  CropEntry,
   DocxImageEntry,
   EditAnnotationPayload,
   EditImagePayload,
@@ -16,11 +18,13 @@ import type {
   FillFormFieldPayload,
   FormField,
   MoveSignaturePayload,
+  OpenFileDialogKind,
   OcrProgress,
   OcrRecognizeOptions,
   OcrSuspect,
   OpEntry,
   OptimizePreset,
+  PageLabelEntry,
   PlaceSignaturePayload,
   RecentFile,
   SampleDocument,
@@ -29,7 +33,7 @@ import type {
   UpdateState,
 } from "../shared/types";
 import type { Result } from "../shared/result";
-import type { PdfOpenError } from "../shared/types";
+import type { FdfOpenError, PdfOpenError } from "../shared/types";
 import type { SignatureSource } from "../shared/types";
 import { normalizeArrayBuffer } from "./to-array-buffer";
 
@@ -231,6 +235,43 @@ const engineApi = {
       ipcRenderer.removeListener(IPC.engineOcrProgressEvent, listener);
     };
   },
+  // Phase 12: residual page-organize + annotate parity
+  replacePages(
+    docId: string,
+    otherBytes: Uint8Array,
+    targetRange: [number, number],
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineReplacePages, docId, otherBytes, targetRange);
+  },
+  renumberPages(
+    docId: string,
+    labels: PageLabelEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineRenumberPages, docId, labels);
+  },
+  cropPages(
+    docId: string,
+    entries: CropEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineCropPages, docId, entries);
+  },
+  addStamp(
+    docId: string,
+    payload: AddStampPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineAddStamp, docId, payload);
+  },
+  exportFdf(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineExportFdf, docId);
+  },
+  importFdf(
+    docId: string,
+    fdfBytes: Uint8Array,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineImportFdf, docId, fdfBytes);
+  },
 };
 
 const api = {
@@ -243,11 +284,20 @@ const api = {
   closeWindow(): void {
     void ipcRenderer.invoke(IPC.windowClose);
   },
-  openFileDialog(): Promise<string | null> {
-    return ipcRenderer.invoke(IPC.openFileDialog);
+  openFileDialog(kind?: OpenFileDialogKind): Promise<string | null> {
+    return ipcRenderer.invoke(IPC.openFileDialog, kind);
   },
   async loadPdf(path: string): Promise<Result<ArrayBuffer, PdfOpenError>> {
     const result = (await ipcRenderer.invoke(IPC.pdfLoad, path)) as Result<ArrayBuffer, PdfOpenError>;
+    if (!result.ok) {
+      return result;
+    }
+    return { ok: true, value: normalizeArrayBuffer(result.value) };
+  },
+  // Phase 12 — separate FDF load path. FDF files start with %FDF- and would
+  // be rejected by the PDF sniff on loadPdf.
+  async loadFdf(path: string): Promise<Result<ArrayBuffer, FdfOpenError>> {
+    const result = (await ipcRenderer.invoke(IPC.fdfLoad, path)) as Result<ArrayBuffer, FdfOpenError>;
     if (!result.ok) {
       return result;
     }

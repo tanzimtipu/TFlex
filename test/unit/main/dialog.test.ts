@@ -50,7 +50,7 @@ describe('openPdfDialog', () => {
     expect(result).toBeNull();
   });
 
-  it('passes PDF filter to the dialog', async () => {
+  it('passes the PDF filter to the dialog by default', async () => {
     mockShowOpenDialog.mockResolvedValue({
       canceled: false,
       filePaths: ['/test/doc.pdf'],
@@ -62,6 +62,53 @@ describe('openPdfDialog', () => {
       title: 'Open PDF',
       properties: ['openFile'],
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+  });
+
+  it('passes the PDF filter when kind is "pdf"', async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/test/doc.pdf'],
+    });
+
+    await openPdfDialog('pdf');
+
+    expect(mockShowOpenDialog).toHaveBeenCalledWith({
+      title: 'Open PDF',
+      properties: ['openFile'],
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+  });
+
+  it('switches to the FDF filter when kind is "fdf"', async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/test/comments.fdf'],
+    });
+
+    const result = await openPdfDialog('fdf');
+
+    expect(mockShowOpenDialog).toHaveBeenCalledWith({
+      title: 'Import FDF Comments',
+      properties: ['openFile'],
+      filters: [{ name: 'FDF', extensions: ['fdf'] }],
+    });
+    // normalize() on Windows flips forward slashes to backslashes.
+    expect(result).toBe('\\test\\comments.fdf');
+  });
+
+  it('returns null when the FDF picker is canceled', async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: true,
+      filePaths: [],
+    });
+
+    const result = await openPdfDialog('fdf');
+    expect(result).toBeNull();
+    expect(mockShowOpenDialog).toHaveBeenCalledWith({
+      title: 'Import FDF Comments',
+      properties: ['openFile'],
+      filters: [{ name: 'FDF', extensions: ['fdf'] }],
     });
   });
 });

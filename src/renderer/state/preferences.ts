@@ -9,7 +9,14 @@
 // settings service normalises them on the way in (e.g. clamping the recents
 // cap to [1, 50]), so the renderer doesn't re-validate at write time.
 
-import type { AppSettings, EditFont, ExportImageFormat, OcrLanguage, OptimizePreset } from '../../shared/types';
+import type {
+  AppSettings,
+  EditFont,
+  ExportImageFormat,
+  OcrLanguage,
+  OptimizePreset,
+  StampId,
+} from '../../shared/types';
 
 export const MIN_RECENTS_CAP = 1;
 export const MAX_RECENTS_CAP = 50;
@@ -27,7 +34,8 @@ export type PreferencesAction =
   | { type: 'set-create-image-quality'; value: number }
   | { type: 'set-edit-default-font'; value: EditFont }
   | { type: 'set-ocr-language'; value: OcrLanguage }
-  | { type: 'set-ocr-downsample'; value: number };
+  | { type: 'set-ocr-downsample'; value: number }
+  | { type: 'set-default-stamp-id'; value: StampId };
 
 /** Default compression preset used by the Optimize dialog when the
  *  user hasn't picked one yet. Matches the backend settings.ts default
@@ -188,6 +196,15 @@ export function preferencesReducer(
       if (current === clamped) return state;
       return { ...state, ocrDownsample: clamped };
     }
+    case 'set-default-stamp-id': {
+      // Allowlist guard: drop anything the backend wouldn't accept.
+      // Mirrors the backend's settings.ts STAMP_IDS allowlist; the
+      // wire shape is `StampId = 'APPROVED' | 'DRAFT' | 'CONFIDENTIAL' | 'FINAL'`.
+      if (!STAMP_IDS.includes(action.value)) return state;
+      const current = state.defaultStampId;
+      if (current === action.value) return state;
+      return { ...state, defaultStampId: action.value };
+    }
   }
 }
 
@@ -249,3 +266,23 @@ export function clampOcrDownsample(value: number): number {
     Math.min(MAX_OCR_DOWNSAMPLE, Math.round(value)),
   );
 }
+
+// ---- Phase 12: Stamp default id ----
+
+/** Render-side allowlist for built-in stamp ids. Mirrors the shared
+ *  `StampId` union and the backend's STAMP_IDS list in
+ *  `src/main/services/settings.ts`. The renderer uses this to
+ *  populate the stamp picker and the preferences reducer uses it
+ *  for preserve-if-valid validation. Matches `STAMP_IDS` in
+ *  `src/renderer/annotations/stampRender.ts` (the latter is the
+ *  visual-config side; this is the preferences-allowlist side). */
+export const STAMP_IDS: readonly StampId[] = [
+  'APPROVED',
+  'DRAFT',
+  'CONFIDENTIAL',
+  'FINAL',
+];
+
+/** Default stamp id used by the Stamp tool when the user hasn't
+ *  picked one. Matches the backend's settings.ts default. */
+export const DEFAULT_STAMP_ID: StampId = 'APPROVED';

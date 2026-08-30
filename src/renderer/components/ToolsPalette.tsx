@@ -16,6 +16,8 @@
 import type { ReactElement } from 'react';
 import {
   ArrowDownToLine,
+  ArrowLeftRight,
+  Crop,
   FileImage,
   FilePlus2,
   FileText,
@@ -23,12 +25,15 @@ import {
   Layers,
   LayoutGrid,
   LayoutList,
+  MessagesSquare,
   Minimize2,
   Pen,
   PieChart,
+  Replace,
   RotateCw,
   ScanText,
   Scissors,
+  Stamp,
   Trash2,
 } from 'lucide-react';
 
@@ -71,6 +76,21 @@ interface ToolsPaletteProps {
   /** True when at least one tab has had an OCR run. Used to gate
    *  the OCR suspects button. */
   hasOcrSuspects: boolean;
+  /** Phase 12 — Replace pages (swap a contiguous range with every
+   *  page of another PDF, retaining the active doc's outline). */
+  onReplacePages?: () => void;
+  /** Phase 12 — Renumber pages (logical page labels, /PageLabels). */
+  onRenumberPages?: () => void;
+  /** Phase 12 — Crop pages (CropBox/TrimBox per page). */
+  onCropPages?: () => void;
+  /** Phase 12 — Stamp tool (built-in APPROVED / DRAFT /
+   *  CONFIDENTIAL / FINAL stamps). Renders to canvas, drops on
+   *  page click. */
+  onStamp?: () => void;
+  /** Phase 12 — Export comments to a local FDF file. */
+  onExportComments?: () => void;
+  /** Phase 12 — Import comments from a local FDF file. */
+  onImportComments?: () => void;
   /** True when a real document is open. The palette always renders,
    *  but every entry EXCEPT Sign is greyed out when no doc is open
    *  (Sign opens the manager modal regardless). */
@@ -111,6 +131,12 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     onRecognizeText,
     onBatchOcr,
     onOcrSuspects,
+    onReplacePages,
+    onRenumberPages,
+    onCropPages,
+    onStamp,
+    onExportComments,
+    onImportComments,
     hasOcrSuspects,
     documentRequired,
     hasFormFields,
@@ -144,6 +170,12 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     if (id === 'exportDocx') return onExportDocx !== undefined;
     if (id === 'insertPages') return onInsertPages !== undefined;
     if (id === 'recognizeText') return onRecognizeText !== undefined;
+    if (id === 'replacePages') return onReplacePages !== undefined;
+    if (id === 'renumberPages') return onRenumberPages !== undefined;
+    if (id === 'cropPages') return onCropPages !== undefined;
+    if (id === 'stamp') return onStamp !== undefined;
+    if (id === 'exportComments') return onExportComments !== undefined;
+    if (id === 'importComments') return onImportComments !== undefined;
     return true;
   };
 
@@ -305,6 +337,66 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           icon: <FilePlus2 size={16} aria-hidden />,
           shortcut: '',
           action: onInsertPages,
+        }]
+      : []),
+    ...(onReplacePages !== undefined
+      ? [{
+          id: 'replacePages' as const,
+          label: 'Replace pages',
+          description: 'Swap a contiguous range with another PDF; outline and links survive.',
+          icon: <Replace size={16} aria-hidden />,
+          shortcut: '',
+          action: onReplacePages,
+        }]
+      : []),
+    ...(onRenumberPages !== undefined
+      ? [{
+          id: 'renumberPages' as const,
+          label: 'Renumber pages',
+          description: 'Set logical page labels (e.g. i, ii, iii).',
+          icon: <ArrowLeftRight size={16} aria-hidden />,
+          shortcut: '',
+          action: onRenumberPages,
+        }]
+      : []),
+    ...(onCropPages !== undefined
+      ? [{
+          id: 'cropPages' as const,
+          label: 'Crop pages',
+          description: 'Set the CropBox/TrimBox for every page.',
+          icon: <Crop size={16} aria-hidden />,
+          shortcut: '',
+          action: onCropPages,
+        }]
+      : []),
+    ...(onStamp !== undefined
+      ? [{
+          id: 'stamp' as const,
+          label: 'Stamp',
+          description: 'Drop an APPROVED, DRAFT, CONFIDENTIAL or FINAL stamp.',
+          icon: <Stamp size={16} aria-hidden />,
+          shortcut: '',
+          action: onStamp,
+        }]
+      : []),
+    ...(onExportComments !== undefined
+      ? [{
+          id: 'exportComments' as const,
+          label: 'Export comments (FDF)',
+          description: 'Save every annotation to a local .fdf file.',
+          icon: <MessagesSquare size={16} aria-hidden />,
+          shortcut: '',
+          action: onExportComments,
+        }]
+      : []),
+    ...(onImportComments !== undefined
+      ? [{
+          id: 'importComments' as const,
+          label: 'Import comments (FDF)',
+          description: 'Merge a local .fdf file into the active document.',
+          icon: <MessagesSquare size={16} aria-hidden />,
+          shortcut: '',
+          action: onImportComments,
         }]
       : []),
   ];

@@ -6,7 +6,9 @@
 
 import type { Result } from "../../shared/result";
 import type {
+  AddStampPayload,
   AddTextBoxPayload,
+  CropEntry,
   DocxImageEntry,
   EditImagePayload,
   EditTextRunPayload,
@@ -20,6 +22,7 @@ import type {
   OcrRecognizeOptions,
   OcrSuspect,
   OptimizePreset,
+  PageLabelEntry,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -385,6 +388,61 @@ export interface EngineApi {
   getDocumentBytes?(
     docId: string,
   ): Promise<Result<ArrayBuffer, EngineError>>;
+
+  // -- Phase 12: residual page-organize + annotate parity --
+
+  /** Phase 12 — replace the visible page range `targetRange` (0-based
+   *  inclusive [start, end]) with all pages of `otherBytes`. Surviving
+   *  pages keep their annotations; the other PDF's annotations and
+   *  outline (bookmarks) are carried across via a page-ref remap.
+   *  Links are annotations and ride the per-page annotation carry.
+   *  Optional so a pre-Phase-12 backend degrades with a friendly
+   *  engine-error. */
+  replacePages?(
+    docId: string,
+    otherBytes: Uint8Array,
+    targetRange: [number, number],
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 12 — set logical page labels (/PageLabels number tree) from
+   *  `{page, label}` entries. `page` is 1-based visible. Replaces any
+   *  labels set by a previous call. Optional so a pre-Phase-12
+   *  backend degrades with a friendly engine-error. */
+  renumberPages?(
+    docId: string,
+    labels: PageLabelEntry[],
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 12 — set each listed page's CropBox AND TrimBox to `box`
+   *  (top-left origin, PDF points; the engine converts to bottom-left).
+   *  Optional so a pre-Phase-12 backend degrades with a friendly
+   *  engine-error. */
+  cropPages?(
+    docId: string,
+    entries: CropEntry[],
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 12 — embed a renderer-drawn stamp raster (`pngBytes`) at
+   *  `rect` on `page`. `stampId` is validated against the built-in
+   *  allowlist. Optional so a pre-Phase-12 backend degrades with a
+   *  friendly engine-error. */
+  addStamp?(
+    docId: string,
+    payload: AddStampPayload,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 12 — export the document's annotations as FDF (Forms Data
+   *  Format) comment bytes. Round-trips with `importFdf`. Optional so
+   *  a pre-Phase-12 backend degrades with a friendly engine-error. */
+  exportFdf?(docId: string): Promise<Result<ArrayBuffer, EngineError>>;
+
+  /** Phase 12 — import FDF comment bytes and merge the annotations
+   *  into the document's annotation state. Optional so a pre-Phase-12
+   *  backend degrades with a friendly engine-error. */
+  importFdf?(
+    docId: string,
+    fdfBytes: Uint8Array,
+  ): Promise<Result<EngineState, EngineError>>;
 }
 
 /** Translate an engine error code into a user-friendly message. */

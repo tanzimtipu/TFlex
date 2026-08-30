@@ -2,6 +2,19 @@ import type { Result } from './result';
 
 export type PdfOpenError = 'not-pdf' | 'corrupt' | 'encrypted' | 'io';
 
+/** Phase 12 — FDF (Forms Data Format) file-load errors. A separate load
+ *  path from `loadPdfFile`: FDF files start with `%FDF-`, not `%PDF-`, so
+ *  the PDF sniff would reject them. `not-fdf` covers a missing/invalid
+ *  `%FDF-` header; `corrupt` covers empty or trailer-less files; `io`
+ *  covers unreadable paths. */
+export type FdfOpenError = 'not-fdf' | 'corrupt' | 'io';
+
+/** Phase 12 — selects which file-type filter `openFileDialog` shows. `'pdf'`
+ *  (default) is the usual Open-PDF picker; `'fdf'` shows the FDF comments
+ *  filter used by the Import comments (FDF) flow so users can actually pick
+ *  `.fdf` files (the PDF-only filter hid them). */
+export type OpenFileDialogKind = 'pdf' | 'fdf';
+
 export type SaveFormat = 'nsis' | 'portable';
 
 export interface RecentFile {
@@ -102,6 +115,12 @@ export interface AppSettings {
    *  rasterises pages for recognition. Range 72..600; default 300.
    *  Higher DPI improves accuracy at the cost of slower recognition. */
   ocrDownsample?: number;
+  /** Phase 12 — default built-in stamp id used when the user opens the
+   *  Stamp tool without picking one. Allowlist APPROVED/DRAFT/CONFIDENTIAL/
+   *  FINAL; validated preserve-if-valid in settings.ts. Default 'APPROVED'
+   *  is applied by the consumer (the renderer's Stamp tool) when the field
+   *  is absent — same pattern as editDefaultFont/ocrLanguage. */
+  defaultStampId?: StampId;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -212,6 +231,11 @@ export interface EngineState {
    *  this to report which pages were skipped without the whole run
    *  aborting (DEF-051). See `OcrPageFailure`. */
   ocrFailures?: OcrPageFailure[];
+  /** Phase 12 — logical page labels set by `renumberPages`, in visible order.
+   *  Absent when no labels have been set. The engine applies these to the
+   *  serialized document's /PageLabels number tree so a viewer shows the
+   *  custom labels instead of raw page numbers. */
+  pageLabels?: PageLabelEntry[];
 }
 
 export interface OpEntry {
@@ -244,7 +268,8 @@ export type AnnKind =
   | 'highlight'
   | 'underline'
   | 'squiggly'
-  | 'strikeout';
+  | 'strikeout'
+  | 'callout';
 
 export type AnnColor =
   | 'yellow'
@@ -590,4 +615,43 @@ export interface OcrProgress {
   page: number; // 1-based visible
   totalPages: number;
   phase: 'recognizing' | 'writing';
+}
+
+// ---- Phase 12: residual page-organize + annotate parity ----
+
+/** Phase 12 — built-in stamp id allowlist. The renderer draws each id as a
+ *  raster (text + border on a canvas) and sends the PNG to the engine; the
+ *  engine embeds it (pdf-lib has no rasteriser). Validated against this
+ *  allowlist in settings.ts (defaultStampId) and in the addStamp engine op. */
+export type StampId = 'APPROVED' | 'DRAFT' | 'CONFIDENTIAL' | 'FINAL';
+
+/** Phase 12 — one logical page label entry for `renumberPages`. `page` is the
+ *  1-based VISIBLE page index; `label` is the display string the engine writes
+ *  into the document's /PageLabels number tree (as a pure-prefix label so a
+ *  viewer shows the string verbatim with no appended number). */
+export interface PageLabelEntry {
+  page: number;
+  label: string;
+}
+
+/** Phase 12 — one crop entry for `cropPages`. `page` is the 1-based VISIBLE
+ *  page; `box` is the crop rectangle in PAGE POINTS with a TOP-LEFT origin
+ *  (matching the renderer's AnnRect convention). The engine converts it to the
+ *  bottom-left CropBox/TrimBox convention used by PDF. */
+export interface CropEntry {
+  page: number;
+  box: AnnRect;
+}
+
+/** Phase 12 — payload for `addStamp`. `stampId` is one of the built-in stamp
+ *  allowlist; `name` is the user-visible label; `pngBytes` is the renderer-
+ *  drawn stamp raster the engine embeds at `rect` (top-left origin, PDF points).
+ *  Mirrors `PlaceSignaturePayload` — the renderer composites the stamp text +
+ *  border to a canvas and sends the PNG, exactly like signature placement. */
+export interface AddStampPayload {
+  page: number;
+  rect: AnnRect;
+  stampId: StampId;
+  name: string;
+  pngBytes: ArrayBuffer | Uint8Array;
 }

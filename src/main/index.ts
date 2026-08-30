@@ -3,8 +3,10 @@ import { join } from 'node:path';
 import { IPC } from '../shared/ipc';
 import type {
   AppSettings,
+  AddStampPayload,
   AddTextBoxPayload,
   CreateAnnotationPayload,
+  CropEntry,
   DocxImageEntry,
   EditAnnotationPayload,
   EditImagePayload,
@@ -12,10 +14,12 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   MoveSignaturePayload,
+  OpenFileDialogKind,
   OcrProgress,
   OcrRecognizeOptions,
   OpEntry,
   OptimizePreset,
+  PageLabelEntry,
   PlaceSignaturePayload,
   RecentFile,
 } from '../shared/types';
@@ -23,7 +27,7 @@ import type { SignatureSource } from '../shared/types';
 import { openPdfDialog } from './services/dialog';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
-import { loadPdfFile } from './services/pdf-file';
+import { loadPdfFile, loadFdfFile } from './services/pdf-file';
 import { SamplesService } from './services/samples';
 import { DEFAULT_SETTINGS, SettingsService } from './services/settings';
 import { SignatureService } from './services/signature-service';
@@ -108,8 +112,9 @@ export async function start(): Promise<void> {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
 
-  ipcMain.handle(IPC.openFileDialog, () => openPdfDialog());
+  ipcMain.handle(IPC.openFileDialog, (_event, kind?: OpenFileDialogKind) => openPdfDialog(kind));
   ipcMain.handle(IPC.pdfLoad, (_event, path: string) => loadPdfFile(path));
+  ipcMain.handle(IPC.fdfLoad, (_event, path: string) => loadFdfFile(path));
   ipcMain.handle(IPC.samplesList, () => samples.list());
   ipcMain.handle(IPC.samplesLoad, (_event, name: string) => samples.load(name));
   ipcMain.handle(IPC.samplesRead, (_event, name: string) => samples.read(name));
@@ -258,6 +263,26 @@ export async function start(): Promise<void> {
   });
   ipcMain.handle(IPC.engineOcrSuspects, (_event, docId: string) =>
     engine.ocrSuspects(docId),
+  );
+
+  // Phase 12: residual page-organize + annotate parity
+  ipcMain.handle(IPC.engineReplacePages, (_event, docId: string, otherBytes: Uint8Array, targetRange: [number, number]) =>
+    engine.replacePages(docId, otherBytes, targetRange),
+  );
+  ipcMain.handle(IPC.engineRenumberPages, (_event, docId: string, labels: PageLabelEntry[]) =>
+    engine.renumberPages(docId, labels),
+  );
+  ipcMain.handle(IPC.engineCropPages, (_event, docId: string, entries: CropEntry[]) =>
+    engine.cropPages(docId, entries),
+  );
+  ipcMain.handle(IPC.engineAddStamp, (_event, docId: string, payload: AddStampPayload) =>
+    engine.addStamp(docId, payload),
+  );
+  ipcMain.handle(IPC.engineExportFdf, (_event, docId: string) =>
+    engine.exportFdf(docId),
+  );
+  ipcMain.handle(IPC.engineImportFdf, (_event, docId: string, fdfBytes: Uint8Array) =>
+    engine.importFdf(docId, fdfBytes),
   );
 
   // Phase 4: saved signatures service

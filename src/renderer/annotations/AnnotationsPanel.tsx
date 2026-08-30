@@ -32,6 +32,7 @@ import {
   ArrowUpRight,
   StickyNote,
   Trash2,
+  MessageCirclePlus,
 } from "lucide-react";
 
 export interface AnnotationsPanelProps {
@@ -69,6 +70,8 @@ function rowIcon(a: Annotation): ReactElement {
       return <ArrowUpRight size={size} aria-hidden />;
     case "note":
       return <StickyNote size={size} aria-hidden />;
+    case "callout":
+      return <MessageCirclePlus size={size} aria-hidden />;
   }
 }
 

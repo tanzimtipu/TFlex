@@ -10,7 +10,9 @@
 import type { Result } from "../../shared/result";
 import { err } from "../../shared/result";
 import type {
+  AddStampPayload,
   AddTextBoxPayload,
+  CropEntry,
   DocxImageEntry,
   EditImagePayload,
   EditTextRunPayload,
@@ -25,6 +27,7 @@ import type {
   OcrSuspect,
   OpEntry,
   OptimizePreset,
+  PageLabelEntry,
   SignaturePlacement,
   SpaceAudit,
   TextPage,
@@ -108,7 +111,8 @@ function annotationFromWire(a: Annotation): Annotation {
   if (
     next.kind === "rect" ||
     next.kind === "ellipse" ||
-    next.kind === "textbox"
+    next.kind === "textbox" ||
+    next.kind === "callout"
   ) {
     const candidates = next as Annotation & {
       rect?: PageRect | undefined;
@@ -122,6 +126,21 @@ function annotationFromWire(a: Annotation): Annotation {
   // it in `rects[0]` (a 24×24 footprint). Backfill `at` to the rect's
   // top-left so DomAnnotation's existing fallback isn't doing the work.
   if (next.kind === "note") {
+    const candidates = next as Annotation & {
+      at?: PagePoint | undefined;
+      rects?: PageRect[] | undefined;
+    };
+    if (candidates.at === undefined && candidates.rects?.[0] !== undefined) {
+      const r0 = candidates.rects[0];
+      next = { ...next, at: { x: r0.x, y: r0.y } };
+    }
+  }
+  // Callout: the renderer carries both `rect` (text-box) and `at` (arrow
+  // anchor). The wire shape carries `rects[0]` for the box. Backfill
+  // `at` to the rect's top-left so DomAnnotation's fallback isn't doing
+  // the work for an old serialized callout. The real engine emits
+  // `at` directly so this is purely defensive.
+  if (next.kind === "callout") {
     const candidates = next as Annotation & {
       at?: PagePoint | undefined;
       rects?: PageRect[] | undefined;
@@ -310,6 +329,53 @@ export interface TFlexApiEngine {
   getDocumentBytes?(
     docId: string,
   ): Promise<Result<ArrayBuffer, EngineError>>;
+  /** Phase 12 — replace the visible page range `targetRange` (0-based
+   *  inclusive [start, end]) with all pages of `otherBytes`. Surviving
+   *  pages keep their annotations; the other PDF's annotations and
+   *  outline (bookmarks) are carried across via a page-ref remap.
+   *  Links are annotations and ride the per-page annotation carry.
+   *  Optional so a pre-Phase-12 backend degrades with a friendly
+   *  engine-error; the dialog surfaces a friendly toast. */
+  replacePages?(
+    docId: string,
+    otherBytes: Uint8Array,
+    targetRange: [number, number],
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 12 — set logical page labels (/PageLabels number tree) from
+   *  `{page, label}` entries. `page` is 1-based visible. Replaces any
+   *  labels set by a previous call. Optional so a pre-Phase-12
+   *  backend degrades with a friendly engine-error. */
+  renumberPages?(
+    docId: string,
+    labels: PageLabelEntry[],
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 12 — set each listed page's CropBox AND TrimBox to `box`
+   *  (top-left origin, PDF points; the engine converts to bottom-left).
+   *  Optional so a pre-Phase-12 backend degrades with a friendly
+   *  engine-error. */
+  cropPages?(
+    docId: string,
+    entries: CropEntry[],
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 12 — embed a renderer-drawn stamp raster (`pngBytes`) at
+   *  `rect` on `page`. `stampId` is validated against the built-in
+   *  allowlist. Optional so a pre-Phase-12 backend degrades with a
+   *  friendly engine-error. */
+  addStamp?(
+    docId: string,
+    payload: AddStampPayload,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 12 — export the document's annotations as FDF (Forms Data
+   *  Format) comment bytes. Round-trips with `importFdf`. Optional so
+   *  a pre-Phase-12 backend degrades with a friendly engine-error. */
+  exportFdf?(docId: string): Promise<Result<ArrayBuffer, EngineError>>;
+  /** Phase 12 — import FDF comment bytes and merge the annotations
+   *  into the document's annotation state. Optional so a pre-Phase-12
+   *  backend degrades with a friendly engine-error. */
+  importFdf?(
+    docId: string,
+    fdfBytes: Uint8Array,
+  ): Promise<Result<SharedEngineState, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -424,6 +490,13 @@ function missingPhase11(): Result<never, EngineError> {
   return err(
     "engine-error",
     "OCR requires the Phase 11 backend update",
+  );
+}
+
+function missingPhase12(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "replacePages / renumberPages / cropPages / addStamp / exportFdf / importFdf require the Phase 12 backend update",
   );
 }
 
@@ -797,6 +870,63 @@ class RealEngineAdapter implements EngineApi {
     const r = await this.inner.getDocumentBytes(docId);
     if (!r.ok) return r;
     return { ok: true, value: toArrayBuffer(r.value) };
+  }
+
+  // -- Phase 12: residual page-organize + annotate parity --
+
+  async replacePages(
+    docId: string,
+    otherBytes: Uint8Array,
+    targetRange: [number, number],
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.replacePages === undefined) return missingPhase12();
+    const r = await this.inner.replacePages(docId, otherBytes, targetRange);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  async renumberPages(
+    docId: string,
+    labels: PageLabelEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.renumberPages === undefined) return missingPhase12();
+    const r = await this.inner.renumberPages(docId, labels);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  async cropPages(
+    docId: string,
+    entries: CropEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.cropPages === undefined) return missingPhase12();
+    const r = await this.inner.cropPages(docId, entries);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  async addStamp(
+    docId: string,
+    payload: AddStampPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.addStamp === undefined) return missingPhase12();
+    const r = await this.inner.addStamp(docId, payload);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  async exportFdf(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    if (this.inner.exportFdf === undefined) return missingPhase12();
+    const r = await this.inner.exportFdf(docId);
+    if (!r.ok) return r;
+    return { ok: true, value: toArrayBuffer(r.value) };
+  }
+
+  async importFdf(
+    docId: string,
+    fdfBytes: Uint8Array,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.importFdf === undefined) return missingPhase12();
+    const r = await this.inner.importFdf(docId, fdfBytes);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
   }
 }
 

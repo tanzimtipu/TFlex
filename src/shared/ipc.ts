@@ -1,18 +1,23 @@
 import type { Result } from "./result";
 import type {
+  AddStampPayload,
   AddTextBoxPayload,
   AppInfo,
   AppSettings,
+  CropEntry,
   DocxImageEntry,
   EditImagePayload,
   EditTextRunPayload,
   EngineState,
   ExportPageEntry,
   ExportPagesPayload,
+  FdfOpenError,
   LoadSettingsResult,
+  OpenFileDialogKind,
   OcrProgress,
   OcrRecognizeOptions,
   OcrSuspect,
+  PageLabelEntry,
   PdfOpenError,
   RecentFile,
   SampleDocument,
@@ -28,6 +33,9 @@ export const IPC = {
   windowClose: "window:close",
   openFileDialog: "dialog:openFile",
   pdfLoad: "pdf:load",
+  // Phase 12 — separate FDF load path. FDF files start with %FDF- and would
+  // be rejected by the PDF sniff; this channel uses the FDF signature check.
+  fdfLoad: "fdf:load",
   samplesList: "samples:list",
   samplesLoad: "samples:load",
   samplesRead: "samples:read",
@@ -87,6 +95,13 @@ export const IPC = {
   engineOcrRecognize: "engine:ocrRecognize",
   engineOcrSuspects: "engine:ocrSuspects",
   engineOcrProgressEvent: "engine:ocrProgress",
+  // Phase 12: residual page-organize + annotate parity
+  engineReplacePages: "engine:replacePages",
+  engineRenumberPages: "engine:renumberPages",
+  engineCropPages: "engine:cropPages",
+  engineAddStamp: "engine:addStamp",
+  engineExportFdf: "engine:exportFdf",
+  engineImportFdf: "engine:importFdf",
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
@@ -259,14 +274,62 @@ export interface TFlexApiEngine {
   /** Phase 11 — subscribe to per-page OCR progress pushed from the main
    *  process while `ocrRecognize` runs. Returns an unsubscribe function. */
   onOcrProgress?(cb: (p: OcrProgress) => void): () => void;
+  /** Phase 12 — replace the visible page range `targetRange` (0-based,
+   *  inclusive [start, end]) with all pages of `otherBytes`. Surviving
+   *  pages keep their annotations; the other PDF's annotations and outline
+   *  (bookmarks) are carried across via a page-ref remap. Links are
+   *  annotations and ride the per-page annotation carry. */
+  replacePages?(
+    docId: string,
+    otherBytes: Uint8Array,
+    targetRange: [number, number],
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 12 — set logical page labels (/PageLabels number tree) from
+   *  `{page, label}` entries. `page` is 1-based visible. Replaces any
+   *  labels set by a previous call. */
+  renumberPages?(
+    docId: string,
+    labels: PageLabelEntry[],
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 12 — set each listed page's CropBox AND TrimBox to `box`
+   *  (top-left origin, PDF points; the engine converts to bottom-left). */
+  cropPages?(
+    docId: string,
+    entries: CropEntry[],
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 12 — embed a renderer-drawn stamp raster (`pngBytes`) at `rect`
+   *  on `page`. `stampId` is validated against the built-in allowlist. The
+   *  stamp is baked into the page content (one-way: not re-editable as a
+   *  stamp entity after save, though the pixels survive). */
+  addStamp?(
+    docId: string,
+    payload: AddStampPayload,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 12 — export the document's annotations as FDF (Forms Data Format)
+   *  comment bytes. Round-trips with `importFdf`. */
+  exportFdf?(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
+  /** Phase 12 — import FDF comment bytes and merge the annotations into the
+   *  document's annotation state (mapped to visible pages via /Page). */
+  importFdf?(
+    docId: string,
+    fdfBytes: Uint8Array,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
 }
 
 export interface TFlexApi {
   minimizeWindow(): void;
   maximizeWindow(): void;
   closeWindow(): void;
-  openFileDialog(): Promise<string | null>;
+  openFileDialog(kind?: OpenFileDialogKind): Promise<string | null>;
   loadPdf(path: string): Promise<Result<ArrayBuffer, PdfOpenError>>;
+  /** Phase 12 — load an FDF (Forms Data Format) comment file from disk.
+   *  Separate from `loadPdf` because FDF files start with `%FDF-`, not
+   *  `%PDF-`, and would be rejected by the PDF header sniff. Validates
+   *  the `%FDF-` signature and returns the raw bytes (no parsing — the
+   *  engine's `importFdf` does the structural parse). */
+  loadFdf(path: string): Promise<Result<ArrayBuffer, FdfOpenError>>;
   loadSample(name: string): Promise<Result<SampleDocument & { path: `samples/${string}` }, "not-found">>;
   readSample(name: string): Promise<Result<ArrayBuffer, "not-found">>;
   listSamples(): Promise<SampleDocument[]>;

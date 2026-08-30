@@ -720,3 +720,63 @@ describe('Phase 11: OCR settings validation', () => {
     }
   });
 });
+
+// Phase 12: defaultStampId validation
+describe('Phase 12: defaultStampId validation', () => {
+  it('preserves valid defaultStampId values', () => {
+    expect(normalizeSettings({ defaultStampId: 'APPROVED' }).defaultStampId).toBe('APPROVED');
+    expect(normalizeSettings({ defaultStampId: 'DRAFT' }).defaultStampId).toBe('DRAFT');
+    expect(normalizeSettings({ defaultStampId: 'CONFIDENTIAL' }).defaultStampId).toBe('CONFIDENTIAL');
+    expect(normalizeSettings({ defaultStampId: 'FINAL' }).defaultStampId).toBe('FINAL');
+  });
+
+  it('rejects defaultStampId values outside the allowlist', () => {
+    expect(normalizeSettings({ defaultStampId: 'approved' }).defaultStampId).toBeUndefined();
+    expect(normalizeSettings({ defaultStampId: 'REVIEWED' }).defaultStampId).toBeUndefined();
+    expect(normalizeSettings({ defaultStampId: 'SIGN' }).defaultStampId).toBeUndefined();
+    expect(normalizeSettings({ defaultStampId: '' }).defaultStampId).toBeUndefined();
+  });
+
+  it('rejects non-string defaultStampId values', () => {
+    expect(normalizeSettings({ defaultStampId: 123 }).defaultStampId).toBeUndefined();
+    expect(normalizeSettings({ defaultStampId: true }).defaultStampId).toBeUndefined();
+    expect(normalizeSettings({ defaultStampId: null }).defaultStampId).toBeUndefined();
+    expect(normalizeSettings({ defaultStampId: ['APPROVED'] }).defaultStampId).toBeUndefined();
+  });
+
+  it('does not set defaultStampId when absent (consumer applies the default)', () => {
+    expect(normalizeSettings({}).defaultStampId).toBeUndefined();
+  });
+
+  it('save/load round-trips defaultStampId', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      defaultStampId: 'DRAFT' as const,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.defaultStampId).toBe('DRAFT');
+    }
+  });
+
+  it('invalid defaultStampId on disk is dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      defaultStampId: 'NOTASTAMP',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.defaultStampId).toBeUndefined();
+      expect(result.value.theme).toBe('light');
+    }
+  });
+});

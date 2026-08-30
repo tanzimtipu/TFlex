@@ -32,6 +32,17 @@ export const OCR_LANGUAGES = [
 /** Phase 11 — default OCR downsample DPI. */
 export const DEFAULT_OCR_DOWNSAMPLE = 300;
 
+/** Phase 12 — built-in stamp id allowlist. The renderer draws each id as a
+ *  raster and sends the PNG to the engine (pdf-lib has no rasteriser).
+ *  `defaultStampId` is validated against this list (preserve-if-valid);
+ *  the default 'APPROVED' is applied by the consumer when the field is
+ *  absent (same pattern as editDefaultFont/ocrLanguage). */
+export const STAMP_IDS = ['APPROVED', 'DRAFT', 'CONFIDENTIAL', 'FINAL'] as const;
+
+/** Phase 12 — default stamp id applied by the consumer when `defaultStampId`
+ *  is absent. Mirrors the editDefaultFont/ocrLanguage default convention. */
+export const DEFAULT_STAMP_ID: (typeof STAMP_IDS)[number] = 'APPROVED';
+
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false },
@@ -171,6 +182,11 @@ export function normalizeSettings(raw: unknown): AppSettings {
   // Phase 11: preserve ocrDownsample if it is a number in 72..600
   if (typeof rawObj.ocrDownsample === 'number' && Number.isFinite(rawObj.ocrDownsample) && rawObj.ocrDownsample >= 72 && rawObj.ocrDownsample <= 600) {
     settings.ocrDownsample = rawObj.ocrDownsample;
+  }
+
+  // Phase 12: preserve defaultStampId if it is a valid STAMP_IDS allowlist value
+  if (typeof rawObj.defaultStampId === 'string' && (STAMP_IDS as readonly string[]).includes(rawObj.defaultStampId)) {
+    settings.defaultStampId = rawObj.defaultStampId as AppSettings['defaultStampId'];
   }
 
   return settings;

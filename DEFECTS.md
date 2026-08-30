@@ -1,3 +1,28 @@
+## DEF-053: FDF import fails due to %PDF header requirement
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 12
+
+Steps to reproduce:
+1. Launch the app and open any PDF (e.g., `report.pdf`).
+2. Add a sticky note annotation.
+3. Open the Tools palette and click "Export comments (FDF)".
+4. Save the `.fdf` file to disk.
+5. Delete the sticky note.
+6. In the Tools palette, click "Import comments (FDF)".
+7. Click "Import comments" in the dialog and select the exported `.fdf` file.
+
+Expected: The annotation should be imported back into the document.
+Actual: The dialog closes quietly, and no annotation is imported. 
+
+Root cause: `App.tsx`'s `pickFdfFile` helper uses `window.tflex.loadPdf(path)` to read the FDF file. The backend `loadPdfFile` service (in `src/main/services/pdf-file.ts`) contains a sniff that rejects any file without a `%PDF-` header. FDF files start with `%FDF-` and are thus rejected as "not-pdf", causing the picker to return `null` and the dialog to close without action.
+
+History:
+- qa: opened
+- qa: retested on production build. The `loadFdf` service now correctly handles `%FDF-` headers, and `App.tsx` uses the fixed `loadFdf('fdf')` path. Verified that exported FDF comments re-import correctly and persist after a PDF Save round-trip. CLOSED.
+
 ## DEF-052: Save As fails to produce a file after OCR
 
 - Status: CLOSED

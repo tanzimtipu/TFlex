@@ -1,12 +1,14 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
-import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, rgb, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState } from 'pdf-lib';
+import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFTextField, StandardFonts, rgb, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
+  AddStampPayload,
   AddTextBoxPayload,
   AnnModel,
   AnnRect,
   CreateAnnotationPayload,
+  CropEntry,
   DocxImageEntry,
   EditAnnotationPayload,
   EditFont,
@@ -25,6 +27,7 @@ import type {
   OpEntry,
   OptimizePreset,
   OcrPageFailure,
+  PageLabelEntry,
   PlaceSignaturePayload,
   SignaturePlacement,
   SpaceAudit,
@@ -39,6 +42,12 @@ import {
   parseAnnotationsFromDoc,
   serializeAnnotations,
 } from './annotations';
+import { exportFdf as exportFdfBytes, parseFdf } from './fdf';
+import {
+  applyPageLabels,
+  carryOutlines,
+  cropPagesInDoc,
+} from './page-organize';
 import {
   fillFormField,
   findFieldPage,
@@ -50,7 +59,7 @@ import {
 } from './forms';
 import { auditSpace as auditSpacePdf } from './optimize';
 import { OcrService, selectLowConfidence, type RawOcrWord, SUSPECT_CONFIDENCE_THRESHOLD } from './ocr';
-import { OCR_LANGUAGES } from './settings';
+import { OCR_LANGUAGES, STAMP_IDS } from './settings';
 
 // ---------------------------------------------------------------------------
 // Internal document state
@@ -71,6 +80,8 @@ interface Snapshot {
    *  page content streams directly, so only they capture this; other
    *  ops leave it undefined and restoreSnapshot skips the pdfDoc reset. */
   pdfBytes?: Uint8Array;
+  /** Phase 12 — logical page labels captured for undo of renumberPages. */
+  pageLabels?: PageLabelEntry[];
 }
 
 interface EngineDoc {
@@ -88,6 +99,10 @@ interface EngineDoc {
    *  stored so `ocrSuspects` can return the low-confidence subset without
    *  re-running tesseract. Each entry is in the VISIBLE page space. */
   lastOcrWords?: StoredOcrWord[];
+  /** Phase 12 — logical page labels set by `renumberPages`, in visible
+   *  order. Applied to the serialized document's /PageLabels number tree so
+   *  a viewer shows the custom labels instead of raw page numbers. */
+  pageLabels?: PageLabelEntry[];
 }
 
 /** Phase 11 — a recognised word persisted on the doc for suspects. `page`
@@ -1853,6 +1868,365 @@ export class EngineService {
     }));
     return ok(suspects);
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 12: replacePages — replace a visible page range with another PDF
+  // -----------------------------------------------------------------------
+  async replacePages(
+    docId: string,
+    otherBytes: Uint8Array,
+    targetRange: [number, number],
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._replacePagesImpl(docId, otherBytes, targetRange));
+  }
+
+  private async _replacePagesImpl(
+    docId: string,
+    otherBytes: Uint8Array,
+    targetRange: [number, number],
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const [start, end] = targetRange;
+    const visibleCount = doc.order.length;
+    if (
+      !Number.isInteger(start) || !Number.isInteger(end) ||
+      start < 0 || end < 0 || start > end || start >= visibleCount
+    ) {
+      return err('out-of-range', `targetRange [${start},${end}] out of bounds for ${visibleCount} pages`);
+    }
+
+    let otherDoc: PDFDocument;
+    try {
+      otherDoc = await PDFDocument.load(otherBytes);
+    } catch (e) {
+      return err('engine-error', `replacePages: could not parse other PDF: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    if (otherDoc.getPageCount() === 0) {
+      return err('empty-range', 'replacePages: source PDF has 0 pages');
+    }
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      const out = await PDFDocument.create();
+      const beforeIdxs = doc.order.slice(0, start); // visible 0..start-1 -> origIdx
+      const afterIdxs = doc.order.slice(end + 1);  // visible end+1.. -> origIdx
+      const otherCount = otherDoc.getPageCount();
+      const newAnnotations: AnnModel[][] = [];
+      // Separate page-ref maps per source: object-number ref tags are NOT
+      // globally unique across two PDFDocuments (each context numbers objects
+      // from 1), so a single shared map would collide a current-page ref with
+      // an other-page ref that happen to share an object number — remapping a
+      // dropped page's bookmark onto an unrelated inserted page. Keep one map
+      // per source so each outline's dests only resolve within their own doc.
+      const currentMap = new Map<string, PDFRef>();
+      const otherMap = new Map<string, PDFRef>();
+
+      // Before pages (kept from current doc).
+      for (const origIdx of beforeIdxs) {
+        const [copied] = await out.copyPages(doc.pdfDoc, [origIdx]);
+        const rotation = doc.rotations[origIdx];
+        if (rotation !== 0) copied.setRotation(degrees(rotation * 90));
+        out.addPage(copied);
+        newAnnotations.push(cloneAnnotations([doc.annotations[origIdx] ?? []])[0] ?? []);
+        const srcRef = doc.pdfDoc.getPage(origIdx).ref;
+        if (srcRef) currentMap.set(srcRef.tag, copied.ref);
+      }
+
+      // Other-doc pages (inserted).
+      const insertStart = beforeIdxs.length; // visible index where inserted pages begin
+      for (const oi of otherDoc.getPageIndices()) {
+        const [copied] = await out.copyPages(otherDoc, [oi]);
+        const srcRot = otherDoc.getPage(oi).getRotation().angle;
+        if (srcRot) copied.setRotation(degrees(srcRot));
+        out.addPage(copied);
+        newAnnotations.push([]);
+        const srcRef = otherDoc.getPage(oi).ref;
+        if (srcRef) otherMap.set(srcRef.tag, copied.ref);
+      }
+
+      // After pages (kept from current doc).
+      for (const origIdx of afterIdxs) {
+        const [copied] = await out.copyPages(doc.pdfDoc, [origIdx]);
+        const rotation = doc.rotations[origIdx];
+        if (rotation !== 0) copied.setRotation(degrees(rotation * 90));
+        out.addPage(copied);
+        newAnnotations.push(cloneAnnotations([doc.annotations[origIdx] ?? []])[0] ?? []);
+        const srcRef = doc.pdfDoc.getPage(origIdx).ref;
+        if (srcRef) currentMap.set(srcRef.tag, copied.ref);
+      }
+
+      // Carry the other doc's annotations onto the inserted pages (remap their
+      // page to the visible position they now occupy).
+      try {
+        const otherAnns = parseAnnotationsFromDoc(otherDoc);
+        for (let i = 0; i < otherAnns.length; i++) {
+          const pageAnns = otherAnns[i] ?? [];
+          for (const ann of pageAnns) {
+            ann.page = (insertStart + i) + 1; // 1-based visible in the new doc
+          }
+          newAnnotations[insertStart + i] = pageAnns;
+        }
+      } catch {
+        // Annotation carry from the other doc is best-effort.
+      }
+
+      // Carry outlines (bookmarks): current doc's outline (remapped for the
+      // surviving before/after pages) concatenated with the other doc's
+      // outline (remapped for the inserted pages). Links are annotations and
+      // ride the per-page annotation carry above.
+      try {
+        carryOutlines(out, [
+          { doc: doc.pdfDoc, map: currentMap },
+          { doc: otherDoc, map: otherMap },
+        ]);
+      } catch {
+        // Outline carry is best-effort — never block a replace on it.
+      }
+
+      // Remap placed signatures: before placements keep their page; the
+      // replaced range's placements are dropped; after placements shift by
+      // (otherCount - replacedCount).
+      const replacedCount = end - start + 1;
+      const shift = otherCount - replacedCount;
+      const newPlacedSignatures: SignaturePlacement[] = [];
+      for (const sp of doc.placedSignatures) {
+        const p1 = sp.page; // 1-based visible
+        if (p1 >= start + 1 && p1 <= end + 1) {
+          continue; // placement was on a replaced page — drop it
+        }
+        let newPage = p1;
+        if (p1 > end + 1) newPage = p1 + shift;
+        newPlacedSignatures.push({ ...sp, page: newPage, rect: { ...sp.rect } });
+      }
+
+      const newCount = out.getPageCount();
+      doc.pdfDoc = out;
+      doc.order = Array.from({ length: newCount }, (_, i) => i);
+      doc.deleted = Array.from({ length: newCount }, () => false);
+      doc.rotations = Array.from({ length: newCount }, () => 0);
+      doc.annotations = newAnnotations;
+      doc.placedSignatures = newPlacedSignatures;
+      // Page labels: the visible positions changed, so drop any previously-set
+      // labels (they no longer line up with the new page set). The renderer can
+      // re-apply renumberPages after a replace.
+      doc.pageLabels = undefined;
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `replacePages failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 12: renumberPages — set logical /PageLabels
+  // -----------------------------------------------------------------------
+  async renumberPages(
+    docId: string,
+    labels: PageLabelEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._renumberPagesImpl(docId, labels));
+  }
+
+  private async _renumberPagesImpl(
+    docId: string,
+    labels: PageLabelEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    if (!Array.isArray(labels)) {
+      return err('engine-error', 'renumberPages: labels must be an array');
+    }
+    const visibleCount = doc.order.length;
+    const cleaned: PageLabelEntry[] = [];
+    for (const entry of labels) {
+      if (entry === null || typeof entry !== 'object') continue;
+      const { page, label } = entry;
+      if (!Number.isInteger(page) || page < 1 || page > visibleCount) {
+        return err('out-of-range', `renumberPages: page ${String(page)} out of range [1,${visibleCount}]`);
+      }
+      if (typeof label !== 'string') {
+        return err('engine-error', 'renumberPages: label must be a string');
+      }
+      cleaned.push({ page, label });
+    }
+    const snapshot = snapshotDoc(doc);
+    doc.pageLabels = cleaned.length > 0 ? cleaned : undefined;
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok(buildState(doc));
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 12: cropPages — set CropBox AND TrimBox
+  // -----------------------------------------------------------------------
+  async cropPages(
+    docId: string,
+    entries: CropEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._cropPagesImpl(docId, entries));
+  }
+
+  private async _cropPagesImpl(
+    docId: string,
+    entries: CropEntry[],
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const snapshot = await snapshotDocWithPdf(doc);
+    const result = cropPagesInDoc(doc.pdfDoc, doc.order, entries);
+    if (!result.ok) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return result;
+    }
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok(buildState(doc));
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 12: addStamp — embed a renderer-drawn stamp raster
+  // -----------------------------------------------------------------------
+  async addStamp(
+    docId: string,
+    payload: AddStampPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._addStampImpl(docId, payload));
+  }
+
+  private async _addStampImpl(
+    docId: string,
+    payload: AddStampPayload,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    if (typeof payload.stampId !== 'string' || !(STAMP_IDS as readonly string[]).includes(payload.stampId)) {
+      return err('engine-error', `addStamp: invalid stampId ${String(payload.stampId)}`);
+    }
+    if (typeof payload.name !== 'string') {
+      return err('engine-error', 'addStamp: name must be a string');
+    }
+    const pageResult = resolveVisiblePage(doc, payload.page);
+    if (!pageResult.ok) return pageResult;
+    const box = payload.rect;
+    if (
+      box === null || typeof box !== 'object' ||
+      !Number.isFinite(box.x) || !Number.isFinite(box.y) ||
+      !Number.isFinite(box.width) || !Number.isFinite(box.height) ||
+      box.width <= 0 || box.height <= 0
+    ) {
+      return err('engine-error', 'addStamp: rect is invalid');
+    }
+    const pngBytes = payload.pngBytes instanceof Uint8Array
+      ? payload.pngBytes
+      : new Uint8Array(payload.pngBytes);
+    if (pngBytes.length === 0) {
+      return err('engine-error', 'addStamp: empty pngBytes');
+    }
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      const page = doc.pdfDoc.getPage(pageResult.value);
+      const pageHeight = page.getSize().height;
+      const { x, y, width, height } = box;
+      // Embed the renderer-drawn stamp raster (PNG) and draw it at the rect.
+      // pdf-lib has no rasteriser, so the renderer composites the stamp text +
+      // border to a canvas and sends the PNG — exactly like signature placement.
+      // The stamp is baked into the page content (one-way: not re-editable as a
+      // stamp entity after save, though the pixels survive the round-trip).
+      const image = detectImageFormat(pngBytes) === 'png'
+        ? await doc.pdfDoc.embedPng(pngBytes)
+        : await doc.pdfDoc.embedJpg(pngBytes);
+      page.drawImage(image, {
+        x,
+        y: pageHeight - y - height,
+        width,
+        height,
+      });
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `addStamp failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 12: exportFdf / importFdf — comments interchange
+  // -----------------------------------------------------------------------
+  async exportFdf(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return this._enqueue(docId, () => this._exportFdfImpl(docId));
+  }
+
+  private async _exportFdfImpl(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    try {
+      const bytes = exportFdfBytes(doc.annotations, doc.order);
+      return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    } catch (e) {
+      return err('engine-error', `exportFdf failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async importFdf(
+    docId: string,
+    fdfBytes: Uint8Array,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._importFdfImpl(docId, fdfBytes));
+  }
+
+  private async _importFdfImpl(
+    docId: string,
+    fdfBytes: Uint8Array,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const view = fdfBytes instanceof Uint8Array ? fdfBytes : new Uint8Array(fdfBytes);
+    let imported: AnnModel[];
+    try {
+      imported = parseFdf(view);
+    } catch (e) {
+      return err('engine-error', `importFdf: could not parse FDF: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    const snapshot = snapshotDoc(doc);
+    for (const ann of imported) {
+      // Place onto the visible page (1-based). /Page already mapped at parse
+      // time; clamp into range so a stale /Page can't index out of bounds.
+      const visiblePage = Math.max(1, Math.min(ann.page, doc.order.length));
+      const origIdx = doc.order[visiblePage - 1];
+      if (origIdx === undefined) continue;
+      if (doc.annotations[origIdx] === undefined) doc.annotations[origIdx] = [];
+      doc.annotations[origIdx].push({ ...ann, page: visiblePage });
+    }
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok(buildState(doc));
+  }
 }
 
 /** Clamp a number into [min, max]. */
@@ -2113,6 +2487,8 @@ function snapshotDoc(doc: EngineDoc): Snapshot {
     formFields: tryGetFormFields(doc),
     // DEF-028: capture rich form snapshot so flatten+undo can rebuild fields
     snapFormFields: trySnapshotAllFormFields(doc),
+    // Phase 12: capture page labels for renumberPages undo.
+    pageLabels: doc.pageLabels ? doc.pageLabels.map((l) => ({ ...l })) : undefined,
   };
 }
 
@@ -2144,6 +2520,8 @@ async function restoreSnapshot(doc: EngineDoc, snap: Snapshot): Promise<void> {
     ...sp,
     rect: { ...sp.rect },
   }));
+  // Phase 12: restore page labels (undefined means none were set).
+  doc.pageLabels = snap.pageLabels ? snap.pageLabels.map((l) => ({ ...l })) : undefined;
 
   // Phase 10: if the snapshot captured pdfDoc bytes, reload the pdfDoc
   // so content edits (drawn white rects / text / images) are reverted.
@@ -2248,6 +2626,10 @@ function buildState(doc: EngineDoc): EngineState {
     }
   } catch {
     // Document has no form or form is corrupt — omit formFields
+  }
+  // Phase 12: expose page labels set by renumberPages (visible order).
+  if (doc.pageLabels && doc.pageLabels.length > 0) {
+    state.pageLabels = doc.pageLabels.map((l) => ({ ...l }));
   }
   return state;
 }
@@ -2477,6 +2859,30 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
     serializeSignatureMetadata(out, doc.placedSignatures);
   }
 
+  // Phase 12 — carry the document outline (bookmarks) onto the output doc
+  // with a page-ref remap, so bookmarks survive a save. pageRefMap maps the
+  // source page ref tag to the matching output page ref (only surviving,
+  // visible pages are present; outline dests to dropped pages are left bare).
+  try {
+    const pageRefMap = new Map<string, PDFRef>();
+    for (const [origIdx, outIdx] of pageMap) {
+      const srcRef = doc.pdfDoc.getPage(origIdx).ref;
+      if (srcRef) pageRefMap.set(srcRef.tag, out.getPage(outIdx).ref);
+    }
+    carryOutlines(out, [{ doc: doc.pdfDoc, map: pageRefMap }]);
+  } catch {
+    // Outline carry is best-effort — never block a save on a malformed outline.
+  }
+
+  // Phase 12 — apply logical page labels to the output catalog's /PageLabels.
+  if (doc.pageLabels && doc.pageLabels.length > 0) {
+    try {
+      applyPageLabels(out, doc.pageLabels);
+    } catch {
+      // Best-effort — a bad label must not block a save.
+    }
+  }
+
   return out.save();
 }
 
@@ -2631,6 +3037,27 @@ async function serializeDocOptimized(
       if (keywords) out.setKeywords(typeof keywords === 'string' ? [keywords] : keywords);
     } catch {
       // Metadata copy is best-effort.
+    }
+  }
+
+  // Phase 12 — carry the outline (bookmarks) and page labels onto the
+  // optimized output, mirroring serializeDoc so an optimized save preserves
+  // them. Best-effort; never block a save on a malformed outline/label.
+  try {
+    const pageRefMap = new Map<string, PDFRef>();
+    for (const [origIdx, outIdx] of pageMap) {
+      const srcRef = doc.pdfDoc.getPage(origIdx).ref;
+      if (srcRef) pageRefMap.set(srcRef.tag, out.getPage(outIdx).ref);
+    }
+    carryOutlines(out, [{ doc: doc.pdfDoc, map: pageRefMap }]);
+  } catch {
+    // Best-effort.
+  }
+  if (doc.pageLabels && doc.pageLabels.length > 0) {
+    try {
+      applyPageLabels(out, doc.pageLabels);
+    } catch {
+      // Best-effort.
     }
   }
 

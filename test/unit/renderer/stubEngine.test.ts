@@ -957,3 +957,186 @@ describe("StubRendererEngine — edit log undo (Phase 10)", () => {
     expect(engine.getEditLog(tabId)).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 12 — replacePages / renumberPages / cropPages / addStamp /
+// exportFdf / importFdf.
+
+describe("StubRendererEngine — Phase 12 (residual page-organize + annotate)", () => {
+  it("replacePages records the call and reports a new page count", async () => {
+    const { engine, tabId } = setup(3);
+    const otherBytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+    const res = await engine.replacePages(tabId, otherBytes, [0, 0]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.modified).toBe(true);
+    const last = engine.getLastPhase12Call(tabId);
+    expect(last?.kind).toBe("replacePages");
+    if (last?.kind === "replacePages") {
+      expect(last.payload.otherBytesLen).toBe(8);
+      expect(last.payload.targetRange).toEqual([0, 0]);
+    }
+  });
+
+  it("replacePages rejects empty otherBytes", async () => {
+    const { engine, tabId } = setup(3);
+    const res = await engine.replacePages(tabId, new Uint8Array(0), [0, 0]);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("empty-range");
+  });
+
+  it("replacePages rejects an out-of-range target", async () => {
+    const { engine, tabId } = setup(3);
+    const res = await engine.replacePages(
+      tabId,
+      new Uint8Array([1, 2, 3]),
+      [10, 12],
+    );
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("out-of-range");
+  });
+
+  it("renumberPages stores labels and returns them on the engine state", async () => {
+    const { engine, tabId } = setup(4);
+    const res = await engine.renumberPages(tabId, [
+      { page: 1, label: "i" },
+      { page: 2, label: "ii" },
+    ]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.pageLabels).toEqual([
+      { page: 1, label: "i" },
+      { page: 2, label: "ii" },
+    ]);
+  });
+
+  it("renumberPages rejects a label on a page out of range", async () => {
+    const { engine, tabId } = setup(3);
+    const res = await engine.renumberPages(tabId, [
+      { page: 99, label: "x" },
+    ]);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("out-of-range");
+  });
+
+  it("renumberPages preserves labels across undo", async () => {
+    const { engine, tabId } = setup(3);
+    await engine.renumberPages(tabId, [{ page: 1, label: "i" }]);
+    await engine.renumberPages(tabId, [{ page: 1, label: "ii" }]);
+    const u = await engine.undo(tabId);
+    expect(u.ok).toBe(true);
+    if (!u.ok) return;
+    expect(u.value.pageLabels).toEqual([{ page: 1, label: "i" }]);
+  });
+
+  it("cropPages records entries and reports an unchanged page count", async () => {
+    const { engine, tabId } = setup(3);
+    const res = await engine.cropPages(tabId, [
+      { page: 1, box: { x: 10, y: 10, width: 500, height: 700 } },
+    ]);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const last = engine.getLastPhase12Call(tabId);
+    expect(last?.kind).toBe("cropPages");
+    if (last?.kind === "cropPages") {
+      expect(last.payload.entries).toEqual([
+        { page: 1, box: { x: 10, y: 10, width: 500, height: 700 } },
+      ]);
+    }
+  });
+
+  it("cropPages rejects zero-size boxes", async () => {
+    const { engine, tabId } = setup(3);
+    const res = await engine.cropPages(tabId, [
+      { page: 1, box: { x: 0, y: 0, width: 0, height: 0 } },
+    ]);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("empty-range");
+  });
+
+  it("addStamp records the payload and reports the modified flag", async () => {
+    const { engine, tabId } = setup(3);
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+    const res = await engine.addStamp(tabId, {
+      page: 1,
+      rect: { x: 100, y: 100, width: 200, height: 80 },
+      stampId: "APPROVED",
+      name: "APPROVED",
+      pngBytes,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value.modified).toBe(true);
+    const last = engine.getLastPhase12Call(tabId);
+    expect(last?.kind).toBe("addStamp");
+    if (last?.kind === "addStamp") {
+      expect(last.payload.stampId).toBe("APPROVED");
+      expect(last.payload.pngBytesLen).toBe(6);
+    }
+  });
+
+  it("addStamp rejects an unknown stamp id (allowlist guard)", async () => {
+    const { engine, tabId } = setup(3);
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const res = await engine.addStamp(tabId, {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 50 },
+      stampId: "BOGUS" as unknown as "APPROVED",
+      name: "BOGUS",
+      pngBytes,
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("engine-error");
+  });
+
+  it("addStamp rejects empty PNG bytes", async () => {
+    const { engine, tabId } = setup(3);
+    const res = await engine.addStamp(tabId, {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 50 },
+      stampId: "DRAFT",
+      name: "DRAFT",
+      pngBytes: new Uint8Array(0),
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("empty-range");
+  });
+
+  it("exportFdf records the call and returns placeholder bytes", async () => {
+    const { engine, tabId } = setup(3);
+    const res = await engine.exportFdf(tabId);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.value).toBeInstanceOf(ArrayBuffer);
+    const last = engine.getLastPhase12Call(tabId);
+    expect(last?.kind).toBe("exportFdf");
+  });
+
+  it("importFdf records the call but degrades to engine-error (no parser in stub)", async () => {
+    const { engine, tabId } = setup(3);
+    const fdfBytes = new Uint8Array([0x25, 0x25, 0x46, 0x44, 0x46]); // %%FDF
+    const res = await engine.importFdf(tabId, fdfBytes);
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("engine-error");
+    const last = engine.getLastPhase12Call(tabId);
+    expect(last?.kind).toBe("importFdf");
+    if (last?.kind === "importFdf") {
+      expect(last.payload.fdfBytesLen).toBe(5);
+    }
+  });
+
+  it("importFdf rejects empty bytes", async () => {
+    const { engine, tabId } = setup(3);
+    const res = await engine.importFdf(tabId, new Uint8Array(0));
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.error.code).toBe("empty-range");
+  });
+});

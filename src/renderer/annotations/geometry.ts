@@ -309,6 +309,7 @@ export function annotationBounds(a: Annotation): PageRect {
     case "textbox":
     case "rect":
     case "ellipse":
+    case "callout":
       return (a.rect ?? (a as unknown as { rects?: { x: number; y: number; width: number; height: number }[] }).rects?.[0]) ?? { x: 0, y: 0, width: 0, height: 0 };
     case "arrow": {
       // Wire-shape arrows carry the endpoints in `points[0]`/`points[1]`.
@@ -327,6 +328,84 @@ export function annotationBounds(a: Annotation): PageRect {
       // anchor point.
       return { x: a.at.x, y: a.at.y, width: 18, height: 18 };
   }
+}
+
+/** Phase 12 — return the page-point on the rect's perimeter that is
+ *  closest to `target` (typically the callout's anchor point). The
+ *  arrow draws from this entry point to the anchor so the line is
+ *  visually anchored to the box edge rather than crossing the box.
+ *  When `target` lies inside the rect (anchor dropped on the box),
+ *  the closest corner is returned (deterministic). */
+export function calloutEntryPoint(rect: PageRect, target: PagePoint): PagePoint {
+  const cx = rect.x + rect.width / 2;
+  const cy = rect.y + rect.height / 2;
+  const left = rect.x;
+  const right = rect.x + rect.width;
+  const top = rect.y;
+  const bottom = rect.y + rect.height;
+  const corners: PagePoint[] = [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: bottom },
+    { x: left, y: bottom },
+  ];
+  // Pick the corner closest to `target`. When the target is INSIDE
+  // the rect the closest corner is still well-defined (4 finite
+  // candidates), so the helper is total even for unusual anchor
+  // placements.
+  let best = corners[0];
+  if (best === undefined) {
+    return { x: cx, y: cy };
+  }
+  let bestD = Math.hypot(target.x - best.x, target.y - best.y);
+  for (let i = 1; i < corners.length; i += 1) {
+    const c = corners[i];
+    if (c === undefined) continue;
+    const d = Math.hypot(target.x - c.x, target.y - c.y);
+    if (d < bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  // Nudge the entry point along the rect's edge so the line
+  // approaches the anchor head-on rather than from the corner.
+  // Skip if the target is inside the rect (corner-only mode).
+  if (target.x < left || target.x > right || target.y < top || target.y > bottom) {
+    // Choose which edge to slide along: pick the edge that's
+    // closer to the target's perpendicular axis. For a target
+    // above/below the rect, slide along the TOP/BOTTOM edge; for
+    // a target to the left/right, slide along the LEFT/RIGHT edge.
+    // This matches the "head-on arrow" visual: the entry point is
+    // on the edge the anchor is most directly opposite.
+    const distAbove = target.y < top ? top - target.y : Infinity;
+    const distBelow = target.y > bottom ? target.y - bottom : Infinity;
+    const distLeftOf = target.x < left ? left - target.x : Infinity;
+    const distRightOf = target.x > right ? target.x - right : Infinity;
+    const minSideDist = Math.min(
+      distAbove,
+      distBelow,
+      distLeftOf,
+      distRightOf,
+    );
+    if (minSideDist === distAbove) {
+      // Slide along the TOP edge; clamp the x coordinate into the
+      // rect's horizontal extent.
+      const clampedX = Math.max(left, Math.min(right, target.x));
+      return { x: clampedX, y: top };
+    }
+    if (minSideDist === distBelow) {
+      const clampedX = Math.max(left, Math.min(right, target.x));
+      return { x: clampedX, y: bottom };
+    }
+    if (minSideDist === distLeftOf) {
+      const clampedY = Math.max(top, Math.min(bottom, target.y));
+      return { x: left, y: clampedY };
+    }
+    // distRightOf
+    const clampedY = Math.max(top, Math.min(bottom, target.y));
+    return { x: right, y: clampedY };
+  }
+  return best;
 }
 
 function round2(v: number): number {

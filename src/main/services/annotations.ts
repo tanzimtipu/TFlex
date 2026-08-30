@@ -331,8 +331,18 @@ function parseOneAnnotation(
   const subtype = parsePdfName(dict.get('Subtype'));
   if (subtype === undefined) return undefined;
 
-  const kind = SUBTYPE_MAP[subtype];
+  let kind = SUBTYPE_MAP[subtype];
   if (kind === undefined) return undefined;
+
+  // Phase 12 — a FreeText with /Intent /FreeTextCallout (or a /Callout entry)
+  // is a callout, not a plain text box.
+  if (subtype === 'FreeText') {
+    const intent = parsePdfName(dict.get('Intent'));
+    const hasCallout = dict.get('Callout') !== undefined;
+    if (intent === 'FreeTextCallout' || hasCallout) {
+      kind = 'callout';
+    }
+  }
 
   // Rect
   const rectArr = parsePdfArray(dict.get('Rect'));
@@ -397,6 +407,24 @@ function parseOneAnnotation(
     const maxX = Math.max(lineArr[0], lineArr[2]);
     const maxY = Math.max(lineArr[1], lineArr[3]);
     rects = [{ x: minX, y: minY, width: maxX - minX, height: maxY - minY }];
+  }
+
+  // Phase 12 — Callout (/Callout): [startX startY kneeX kneeY endX endY] or a
+  // 4-number [startX startY endX endY] form. Sets the leader-line points.
+  if (kind === 'callout') {
+    const calloutArr = parsePdfArray(dict.get('Callout'));
+    if (calloutArr !== undefined && calloutArr.length >= 6) {
+      points = [
+        { x: calloutArr[0], y: calloutArr[1] },
+        { x: calloutArr[2], y: calloutArr[3] },
+        { x: calloutArr[4], y: calloutArr[5] },
+      ];
+    } else if (calloutArr !== undefined && calloutArr.length >= 4) {
+      points = [
+        { x: calloutArr[0], y: calloutArr[1] },
+        { x: calloutArr[2], y: calloutArr[3] },
+      ];
+    }
   }
 
   // LineEnds (/LE)
@@ -617,6 +645,34 @@ function serializeAnnotation(
       dictEntries.push(['DA', PDFString.of('/Helv 12 Tf 0 0 0 rg')]);
       break;
     }
+    case 'callout': {
+      // A callout is a FreeText annotation with /Intent /FreeTextCallout and
+      // a /Callout array describing the leader line (start, optional knee,
+      // end). The cloud border the Phase 12 spec calls for is a proprietary
+      // Acrobat appearance effect pdf-lib does not generate, so the border is
+      // a solid line (/BS /S) — the dict carries the callout geometry so a
+      // compliant viewer renders the leader line and the text box. This is
+      // the documented Phase 12 callout limit.
+      const [r, g, b] = ANN_COLOR_RGB[ann.color];
+      dictEntries.push(['Intent', PDFName.of('FreeTextCallout')]);
+      dictEntries.push(['IT', PDFName.of('FreeTextCallout')]);
+      if (ann.points !== undefined && ann.points.length >= 2) {
+        const p0 = ann.points[0];
+        const pEnd = ann.points[ann.points.length - 1];
+        let calloutArr: number[];
+        if (ann.points.length >= 3) {
+          const knee = ann.points[1];
+          calloutArr = [p0.x, p0.y, knee.x, knee.y, pEnd.x, pEnd.y];
+        } else {
+          calloutArr = [p0.x, p0.y, p0.x, p0.y, pEnd.x, pEnd.y];
+        }
+        dictEntries.push(['Callout', doc.context.obj(calloutArr)]);
+      }
+      const w = ann.width ?? 1;
+      dictEntries.push(['BS', doc.context.obj({ W: w, S: 'S' })]);
+      dictEntries.push(['DA', PDFString.of(`/Helv 12 Tf ${r} ${g} ${b} rg`)]);
+      break;
+    }
     case 'note': {
       dictEntries.push(['Name', PDFName.of('Note')]);
       break;
@@ -683,6 +739,7 @@ dictEntries.push(['Contents', PDFString.of(ann.content)]);
 function subtypeName(kind: AnnKind): PDFName {
   switch (kind) {
     case 'text-box': return PDFName.of('FreeText');
+    case 'callout': return PDFName.of('FreeText');
     case 'rect': return PDFName.of('Square');
     case 'ellipse': return PDFName.of('Circle');
     case 'note': return PDFName.of('Text');
