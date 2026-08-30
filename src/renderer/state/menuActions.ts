@@ -42,7 +42,8 @@ export type MenuAction =
   | 'exportPages'
   | 'exportText'
   | 'exportDocx'
-  | 'insertPages';
+  | 'insertPages'
+  | 'recognizeText';
 
 /** The bag of side-effect callbacks `App.tsx` hands the dispatcher.
  *  Each entry mirrors a menu item the user can trigger from the
@@ -83,6 +84,10 @@ export interface MenuActionContext {
   exportDocx(): void;
   /** Phase 9 — Insert pages (blank or from another PDF). */
   insertPages(): void;
+  /** Phase 11 — Recognize Text (OCR). Opens the OCR dialog against
+   *  the active document. Same funnel as the toolbar's OCR button
+   *  and the Tools palette entry. */
+  recognizeText(): void;
 }
 
 /** Dispatch a menu action string to its handler. Returns true if
@@ -111,7 +116,8 @@ export function dispatchMenuAction(action: string, ctx: MenuActionContext): bool
     case 'exportPages':      ctx.exportPages();       return true;
     case 'exportText':       ctx.exportText();        return true;
     case 'exportDocx':       ctx.exportDocx();        return true;
-    case 'insertPages':      ctx.insertPages();       return true;
+case 'insertPages':      ctx.insertPages();        return true;
+    case 'recognizeText':    ctx.recognizeText();      return true;
     case 'zoomIn':
     case 'zoomOut':
     case 'fitWidth':

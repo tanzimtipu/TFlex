@@ -13,6 +13,25 @@ const RECENT_FILES_CAP = 10;
 const MIN_WINDOW_WIDTH = 640;
 const MIN_WINDOW_HEIGHT = 480;
 
+/** Phase 11 — OCR language allowlist. ISO-639 codes for which traineddata
+ *  can be bundled offline in `assets/tessdata/`. The renderer uses this
+ *  to populate the language picker; settings uses it for preserve-if-valid
+ *  validation. Only `eng` ships by default (size budget). */
+export const OCR_LANGUAGES = [
+  'eng',
+  'deu',
+  'fra',
+  'spa',
+  'ita',
+  'por',
+  'rus',
+  'chi_sim',
+  'jpn',
+] as const;
+
+/** Phase 11 — default OCR downsample DPI. */
+export const DEFAULT_OCR_DOWNSAMPLE = 300;
+
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false },
@@ -142,6 +161,16 @@ export function normalizeSettings(raw: unknown): AppSettings {
   // Phase 10: preserve editDefaultFont if it is a valid EditFont allowlist value
   if (typeof rawObj.editDefaultFont === 'string' && (rawObj.editDefaultFont === 'Helvetica' || rawObj.editDefaultFont === 'Times' || rawObj.editDefaultFont === 'Courier')) {
     settings.editDefaultFont = rawObj.editDefaultFont;
+  }
+
+  // Phase 11: preserve ocrLanguage if it is a valid ISO-639 allowlist value
+  if (typeof rawObj.ocrLanguage === 'string' && (OCR_LANGUAGES as readonly string[]).includes(rawObj.ocrLanguage)) {
+    settings.ocrLanguage = rawObj.ocrLanguage as AppSettings['ocrLanguage'];
+  }
+
+  // Phase 11: preserve ocrDownsample if it is a number in 72..600
+  if (typeof rawObj.ocrDownsample === 'number' && Number.isFinite(rawObj.ocrDownsample) && rawObj.ocrDownsample >= 72 && rawObj.ocrDownsample <= 600) {
+    settings.ocrDownsample = rawObj.ocrDownsample;
   }
 
   return settings;

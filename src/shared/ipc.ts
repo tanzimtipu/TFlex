@@ -10,6 +10,9 @@ import type {
   ExportPageEntry,
   ExportPagesPayload,
   LoadSettingsResult,
+  OcrProgress,
+  OcrRecognizeOptions,
+  OcrSuspect,
   PdfOpenError,
   RecentFile,
   SampleDocument,
@@ -49,7 +52,11 @@ export const IPC = {
   engineSave: "engine:save",
   engineSaveAs: "engine:saveAs",
   engineGetState: "engine:getState",
-// Phase 3: annotations
+  // Phase 11 — return the current serialized document bytes so the renderer
+  // can refresh its PDF.js proxy after a content-stream mutation that the
+  // original load bytes no longer reflect (e.g. OCR's invisible text layer).
+  engineGetDocumentBytes: "engine:getDocumentBytes",
+ // Phase 3: annotations
   engineCreateAnnotation: "engine:createAnnotation",
   engineEditAnnotation: "engine:editAnnotation",
   engineDeleteAnnotation: "engine:deleteAnnotation",
@@ -76,6 +83,10 @@ export const IPC = {
   engineEditTextRun: "engine:editTextRun",
   engineAddTextBox: "engine:addTextBox",
   engineEditImage: "engine:editImage",
+  // Phase 11: OCR
+  engineOcrRecognize: "engine:ocrRecognize",
+  engineOcrSuspects: "engine:ocrSuspects",
+  engineOcrProgressEvent: "engine:ocrProgress",
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
@@ -127,6 +138,17 @@ export interface TFlexApiEngine {
   save(docId: string): Promise<Result<string, import("./types").EngineError>>;
   saveAs(docId: string): Promise<Result<string, import("./types").EngineError>>;
   getState(docId: string): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 11 — return the current serialized document bytes (the same bytes
+   *  a `save` would write) so the renderer can rebuild its PDF.js proxy after
+   *  an operation that mutated page content streams the original load bytes
+   *  do not reflect — primarily OCR's invisible text layer, but it is a
+   *  generic refresh hook and works for any doc state. Read-only: does not
+   *  flip `modified` or clear the undo stack (unlike `save`/`saveAs`). Goes
+   *  through the per-doc queue so the returned bytes reflect every queued
+   *  mutation issued before it. */
+  getDocumentBytes(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, import("./types").EngineError>>;
   createAnnotation?(
     docId: string,
     annotation: unknown,
@@ -219,6 +241,24 @@ export interface TFlexApiEngine {
     docId: string,
     payload: EditImagePayload,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 11 — run OCR over renderer-rasterised page images and write an
+   *  invisible text layer (Tr 3) onto each matching page so the scanned
+   *  document becomes searchable. The renderer rasterises pages with
+   *  PDF.js and sends the PNGs in `options.pageImages`; the engine cannot
+   *  rasterise (pdf-lib has no rasteriser). Progress is pushed back via
+   *  `engine.onOcrProgress`. See OcrRecognizeOptions for the contract note. */
+  ocrRecognize?(
+    docId: string,
+    options: OcrRecognizeOptions,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 11 — return the low-confidence words from the most recent
+   *  `ocrRecognize` on this doc. Read-only. */
+  ocrSuspects?(
+    docId: string,
+  ): Promise<Result<OcrSuspect[], import("./types").EngineError>>;
+  /** Phase 11 — subscribe to per-page OCR progress pushed from the main
+   *  process while `ocrRecognize` runs. Returns an unsubscribe function. */
+  onOcrProgress?(cb: (p: OcrProgress) => void): () => void;
 }
 
 export interface TFlexApi {

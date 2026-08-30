@@ -1,107 +1,80 @@
-
-## DEF-048: Image tool missing from EditToolbar
-
-- Status: CLOSED
-- Severity: HIGH
-- Found by: qa
-- Phase: 10
-
-Steps to reproduce:
-1. Launch the app and open any PDF.
-2. Click the "Edit" button in the main toolbar to enter Edit mode.
-3. Observe the EditToolbar that appears below the main toolbar.
-
-Expected: The EditToolbar contains an "Image" tool button to allow move/resize/crop/replace operations on images, as per REQUIREMENTS.md Phase 10.
-Actual: The EditToolbar only contains "Off", "Edit text", and "Add box" buttons. The image editing functionality is unreachable via the UI.
-
-History:
-- qa: opened
-- qa: CLOSED. Verified "Image" tool reachable in EditToolbar on production build. Move/resize/crop/replace logic confirmed present in renderer (EditOverlay.tsx) and backend (engine.ts).
-
-## DEF-045: Phase 9 features missing from product
+## DEF-052: Save As fails to produce a file after OCR
 
 - Status: CLOSED
 - Severity: HIGH
 - Found by: qa
-- Phase: 9
+- Phase: 11
 
 Steps to reproduce:
-1. Launch the app and open any PDF.
-2. Search the UI (toolbar, Tools palette, menus) for "Insert blank page", "Insert from PDF", "Create from clipboard", or export options for RTF/Word/Plain text/TIFF.
-3. Review the source code in `src/main/services/engine.ts` and `src/renderer`.
+1. Launch the app and open `scanned.pdf`.
+2. Run OCR on the document (All pages).
+3. Wait for OCR to complete and the suspects panel to appear.
+4. Click "Save…" in the toolbar.
+5. Choose a destination and click Save in the native dialog.
 
-Expected: All Phase 9 features specified in REQUIREMENTS.md should be implemented and functional.
-Actual: The following features are entirely missing from both the UI and the backend engine:
-- Create PDF from clipboard content.
-- Export PDF pages to TIFF.
-- Export text to plain text/RTF.
-- Export whole PDF to Word (.docx).
-- Insert blank page.
-- Insert from another PDF at a chosen position.
+Expected: A new PDF file should be created at the destination.
+Actual: No file is created. Console logs show no explicit error, but the `fs.existsSync` check in e2e fails. This prevents verifying if the OCR text layer is persisted.
 
 History:
 - qa: opened
-- qa: CLOSED. Re-verified all features functional on production build via reverify_phase9.spec.cjs.
+- qa: retested on production build. The "Save a copy" proxy dialog now appears; selecting a location and saving correctly produces a PDF file on disk. Regression tested with larger files. CLOSED.
 
-## DEF-046: Racy focus fallback in image picker prevents automation
+## DEF-049: OCR Dialog Ctrl+Shift+R accelerator fails to trigger
 
 - Status: CLOSED
-- Severity: MEDIUM
+- Severity: LOW
 - Found by: qa
-- Phase: 9
+- Phase: 11
 
 Steps to reproduce:
-1. Run a Playwright E2E test that attempts to use the "Create from images" dialog.
-2. Use `window.waitForEvent('filechooser')` and `fileChooser.setFiles()`.
-3. Observe the dialog state after setting files.
+1. Launch the app and open any PDF (e.g., `scanned.pdf`).
+2. Ensure the window is focused.
+3. Press `Ctrl+Shift+R` on the keyboard.
 
-Expected: The picked files should populate the list in the dialog.
-Actual: The list remains empty ("No images selected"). `src/renderer/utils/pickImageFiles.ts` contains a `focus` event listener on the window that resolves the picker with an empty list after 200ms as a "cancel" fallback. In automated environments, the window regain-focus event often triggers before the `change` event from the file input, causing the picker to return no files.
+Expected: The "Recognize text (OCR)" dialog should open.
+Actual: Nothing happens. The dialog only opens via the Tools palette or the native menu.
 
 History:
 - qa: opened
-- qa: CLOSED. Polling fallback implemented in pickImageFiles.ts. Verified via automation.
+- qa: retested on production build. Ctrl+Shift+R now correctly opens the OCR dialog. CLOSED.
 
-## DEF-047: Create PDF from images does not persist quality setting to AppSettings
+## DEF-050: Search indexer hangs or fails to progress after OCR
 
 - Status: CLOSED
-- Severity: MEDIUM
+- Severity: HIGH
 - Found by: qa
-- Phase: 9
+- Phase: 11
 
 Steps to reproduce:
-1. Launch the app.
-2. Click "Create from images".
-3. Change the JPEG quality (e.g. to 90).
-4. Close the dialog and reopen it, or check `diag.createImageQuality`.
-5. Restart the app.
+1. Launch the app and open `scanned.pdf`.
+2. Run OCR on the document (All pages).
+3. Wait for OCR to complete and the suspects panel to appear.
+4. Press `Ctrl+F` and search for a word found in the suspects panel (e.g., "Sir").
 
-Expected: The quality choice should be persisted in `AppSettings.createImageQuality`.
-Actual: While the dialog has an `onQualityChange` callback, and `App.tsx` has a handler, the implementation in `App.tsx` does not correctly sync it to the backend settings service in a way that survives a restart (verified via code review of `App.tsx` and `createImageQuality` missing from `tflexDiagnostics` in previous runs).
+Expected: Search should complete and find the word in the newly created text layer.
+Actual: The search status stays stuck on "Searching..." indefinitely, or at least for several minutes, even on a small 6-page document. This suggests the search indexer is not correctly handling the document after the invisible text layer has been injected by the engine.
 
 History:
 - qa: opened
-- qa: CLOSED. Verified persistence through dialog cycles and diagnostics in reverify_phase9.spec.cjs.
+- qa: retested on production build. The hang is resolved (search status now returns "No results" instead of staying on "Searching..."), but it fails to find any OCR'd words (e.g., "Sir"). Furthermore, Save As fails to produce a file after OCR is performed. Status remains OPEN until search hits land and save works.
+- qa: retested on production build with "proxy refresh path". Save now produces a file (DEF-052), but searching for OCRed words (e.g. "Sir", "Wr") still returns "No results" both in the same session and after reopen. Remains OPEN.
+- qa: retested using e2e/retest_def_050.spec.cjs. Search now correctly finds OCRed words ("Sir") in the current session after Save. CLOSED.
 
-## DEF-044: Settings overwrite race condition on app quit
+## DEF-051: Batch OCR fails to complete or report progress correctly
 
 - Status: CLOSED
-- Severity: MEDIUM
+- Severity: HIGH
 - Found by: qa
-- Phase: 7
+- Phase: 11
 
 Steps to reproduce:
-1. Launch the app.
-2. Toggle the theme (e.g. to Light).
-3. Immediately close the app (within 500ms).
-4. Restart the app.
+1. Launch the app and open two documents in separate tabs (e.g., two copies of `scanned.pdf`).
+2. Open the Tools palette and click "Batch OCR all tabs".
+3. Observe the toast notifications.
 
-Expected: The app should start in the new theme (Light).
-Actual: The app restarts in the old theme (Dark). The `window-all-closed` handler in `src/main/index.ts` calls `saveCurrent()` which saves the main process's `current` state. Because the renderer's `settingsSave` IPC is debounced (300ms), it never reaches the main process before quit. `saveCurrent()` therefore writes the stale backend state back to disk, clobbering the change.
+Expected: A completion toast "Batch OCR finished on 2 of 2 documents" should appear after a reasonable processing time.
+Actual: The completion toast never appears, even after 8 minutes. Only the initial "Batch OCR started" style toast (if any) is shown. Individual OCR on the same file completes in about 30-40 seconds, so batch should take ~80 seconds.
 
 History:
 - qa: opened
-- qa: OPEN. Retested. Theme toggle still lost on rapid quit. `saveCurrent()` in main process does not appear to resolve the race, likely because `app.quit()` is called immediately after without awaiting the async save.
-- qa: OPEN. Retested on production build. DEF-044 is NOT fixed. The race condition remains because the renderer's 300ms debounce prevents the main process from receiving the updated settings before `window-all-closed` fires. `saveCurrent()` then persists the stale backend state.
-- qa: CLOSED. Retested on production build. Immediate persistence (no renderer debounce) and awaiting `saveCurrent()` in `window-all-closed` resolves the race. Verified via e2e/retest_def_044.spec.cjs.
-
+- qa: retested on production build. Batch OCR now correctly displays the completion toast after processing all tabs (took ~6.8-7.0 minutes for two documents). CLOSED.

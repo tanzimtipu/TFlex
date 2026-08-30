@@ -94,6 +94,14 @@ export interface AppSettings {
    *  WinAnsiEncoding (Helvetica/Times/Courier). Validated
    *  preserve-if-valid in settings.ts; default 'Helvetica'. */
   editDefaultFont?: EditFont;
+  /** Phase 11 — OCR language code. Allowlist is a bundled ISO-639 set
+   *  (see `OCR_LANGUAGES` in settings.ts). Validated preserve-if-valid;
+   *  default 'eng'. The engine re-validates the value before recognising. */
+  ocrLanguage?: OcrLanguage;
+  /** Phase 11 — OCR render/downsample DPI used when the renderer
+   *  rasterises pages for recognition. Range 72..600; default 300.
+   *  Higher DPI improves accuracy at the cost of slower recognition. */
+  ocrDownsample?: number;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -197,6 +205,13 @@ export interface EngineState {
    *  Populated by buildState so the renderer can seed form editors without
    *  a separate getFormFields call. Omitted when the document has no form. */
   formFields?: FormField[];
+  /** Phase 11 — per-page OCR failures accumulated by `ocrRecognize` when
+   *  recognition/writing of individual pages failed but at least one page
+   *  succeeded (partial success). Populated only on the OCR success path
+   *  when there were failures; absent otherwise. A batch caller can read
+   *  this to report which pages were skipped without the whole run
+   *  aborting (DEF-051). See `OcrPageFailure`. */
+  ocrFailures?: OcrPageFailure[];
 }
 
 export interface OpEntry {
@@ -482,4 +497,97 @@ export interface EditImagePayload {
   oldRect: AnnRect;
   newRect: AnnRect;
   imageBytes: Uint8Array;
+}
+
+// ---- Phase 11: OCR ----
+
+/** Phase 11 — OCR language allowlist. These are the ISO-639 codes for which
+ *  traineddata can be bundled offline in `assets/tessdata/`. Only `eng` is
+ *  shipped by default (size budget — see the Phase 11 report); the other
+ *  codes are accepted by the settings/engine validation so a build that
+ *  drops the matching `<code>.traineddata.gz` into `assets/tessdata/` works
+ *  without a code change. */
+export type OcrLanguage = 'eng' | 'deu' | 'fra' | 'spa' | 'ita' | 'por' | 'rus' | 'chi_sim' | 'jpn';
+
+/** Phase 11 — one rasterised page image sent to the engine for OCR. The
+ *  renderer produces these with PDF.js (it already renders pages for
+ *  display) at the requested `dpi` (= the `ocrDownsample` setting).
+ *
+ *  Why the renderer rasterises and not the engine: pdf-lib has no
+ *  rasteriser, and running pdf.js in the main process crashed the native
+ *  canvas backend (heap corruption) during feasibility testing. The
+ *  renderer's DOM-canvas PDF.js render is the existing, reliable path.
+ *  This is the documented Phase 11 architecture — see the report. */
+export interface OcrPageImage {
+  /** 1-based VISIBLE page index (matches EngineState.pageOrder). */
+  page: number;
+  pngBytes: Uint8Array;
+  /** Render DPI used to produce this image (72..600). The engine uses this
+   *  to map OCR pixel bboxes back to PDF points (pt = px * 72 / dpi). */
+  dpi: number;
+  widthPx: number;
+  heightPx: number;
+}
+
+/** Phase 11 — options for `engine.ocrRecognize`. The `pageImages` array
+ *  carries the renderer-rasterised pages; the engine runs tesseract on
+ *  each, builds an invisible text layer (pdf-lib Tr 3) on the matching
+ *  PDF page, and stores the recognised words for `ocrSuspects`.
+ *
+ *  CONTRACT NOTE: the original Phase 11 spec read
+ *    `ocrRecognize(docId, {language, downsample, pages?})`
+ *  That signature is incomplete for an offline engine — pdf-lib cannot
+ *  rasterise a page, so the engine has no pixel input to run OCR on. The
+ *  `pages?` selector is therefore handled renderer-side (the renderer only
+ *  sends `pageImages` for the pages it wants OCR'd), and `pageImages`
+ *  replaces `pages?` on the engine boundary. `downsample` is retained as
+ *  the intended DPI (the renderer matches it when rasterising) but the
+ *  authoritative value for coordinate mapping is each `OcrPageImage.dpi`.
+ *  See the Phase 11 report for the full rationale. */
+export interface OcrRecognizeOptions {
+  language: string; // OcrLanguage; engine validates against OCR_LANGUAGES
+  downsample: number; // 72..600
+  pageImages: OcrPageImage[];
+}
+
+/** Phase 11 — one low-confidence word returned by `engine.ocrSuspects`.
+ *  `page` is the 1-based VISIBLE page. `rect` is in PAGE POINTS with a
+ *  TOP-LEFT origin (same convention as annotations). `confidence` is the
+ *  tesseract per-word score in [0, 100]. */
+export interface OcrSuspect {
+  word: string;
+  page: number;
+  rect: AnnRect;
+  confidence: number;
+}
+
+/** Phase 11 — a per-page OCR failure accumulated by `ocrRecognize` when an
+ *  individual page's recognition or text-layer write failed but the run
+ *  continued (other pages may still have succeeded). `page` is the 1-based
+ *  VISIBLE page. `message` is a short reason suitable for a toast. Listed
+ *  on the returned `EngineState.ocrFailures` so a batch caller can see
+ *  which pages were skipped (DEF-051). */
+export interface OcrPageFailure {
+  page: number;
+  message: string;
+}
+
+/** Phase 11 — the tesseract confidence threshold the engine uses to
+ *  decide which words are "low confidence". Re-exported here so the
+ *  renderer can colour-code the suspect panel without re-importing
+ *  the backend module (the renderer and the engine must agree on the
+ *  same number or the panel would render the wrong colour for a
+ *  borderline word). Matches `SUSPECT_CONFIDENCE_THRESHOLD` in
+ *  `src/main/services/ocr.ts`. */
+export const SUSPECT_CONFIDENCE_THRESHOLD = 60;
+
+/** Phase 11 — progress pushed from main to the requesting renderer while
+ *  `engine.ocrRecognize` runs, one message per page. `phase` is
+ *  'recognizing' (tesseract on the page image) or 'writing' (drawing the
+ *  invisible text layer into the PDF page). */
+export interface OcrProgress {
+  docId: string;
+  page: number; // 1-based visible
+  totalPages: number;
+  phase: 'recognizing' | 'writing';
 }

@@ -87,6 +87,16 @@ interface DocumentViewProps {
   onPersist: (v: PersistedViewer) => void;
   onDiagnostics: (d: DocDiagnostics) => void;
   onSearchIndexProgress?: (p: SearchIndexProgress | null) => void;
+  /** Def-050 — register an imperative invalidator the host can call
+   *  when the underlying doc's text content has changed (e.g. after
+   *  OCR writes an invisible Tr=3 text layer to the engine's copy of
+   *  the doc). The invalidator clears the cached per-page
+   *  `PageTextIndex` entries and re-runs the search effect so the
+   *  next `findPageHits` walks `pdf.js`'s `getTextContent()` afresh
+   *  — picking up OCR words that the prior cache didn't have. The
+   *  callback runs synchronously; no-op when the search bar isn't
+   *  open. */
+  registerSearchIndexInvalidator?: (invalidate: () => void) => void;
   onToast?: (kind: "error" | "info", text: string) => void;
   /** Live engine state for the active tab. Drives the rail pageCount,
    *  thumbnail rotations, and toolbar modified indicator. */
@@ -269,6 +279,7 @@ export function DocumentView({
   onPersist,
   onDiagnostics,
   onSearchIndexProgress,
+  registerSearchIndexInvalidator,
   onToast,
   engineState,
   modified,
@@ -369,6 +380,14 @@ export function DocumentView({
   const [searchIndexProgress, setSearchIndexProgress] = useState<SearchIndexProgress | null>(null);
   const searchTokenRef = useRef(0);
   const indexesRef = useRef(new Map<number, PageTextIndex>());
+  // DEF-050 — invalidation bump. The host (App) calls the imperative
+  // search-index invalidator after OCR completes; this tick state is
+  // bumped so the search effect re-runs even though `query`, `doc`,
+  // and `pageCount` are unchanged. `indexesRef` is reset at the same
+  // moment so the rebuild path calls `pdf.js`'s `getTextContent()`
+  // fresh on every page — which is where OCR-injected text becomes
+  // visible to the indexer.
+  const [searchInvalidationTick, setSearchInvalidationTick] = useState(0);
 
   // Keep the latest `onSearchIndexProgress` in a ref so the search effect can
   // call it without making the callback itself a dependency (which would
@@ -376,6 +395,44 @@ export function DocumentView({
   // callback identity).
   const onSearchIndexProgressRef = useRef(onSearchIndexProgress);
   onSearchIndexProgressRef.current = onSearchIndexProgress;
+
+  // DEF-050 — wire the host's imperative search-index invalidator. The
+  // registered callback (a) clears `indexesRef` so the next search
+  // walks every page and re-fetches `getTextContent()`, and (b) bumps
+  // `searchInvalidationTick` to trigger the search effect's re-run
+  // even when `query` / `doc` / `pageCount` are unchanged. The
+  // invalidator is a no-op while the search bar isn't open — there
+  // is no in-flight search to invalidate.
+  //
+  // Note: we do not include `registerSearchIndexInvalidator` in the
+  // effect's dep array because the host passes a fresh function on
+  // every render (the App.tsx factory allocates one per tab, but it
+  // may re-render before pinning). The ref pattern below keeps the
+  // latest value and registers exactly once.
+  const registerSearchIndexInvalidatorRef = useRef(registerSearchIndexInvalidator);
+  registerSearchIndexInvalidatorRef.current = registerSearchIndexInvalidator;
+  const hasRegisteredInvalidatorRef = useRef(false);
+  useEffect(() => {
+    if (hasRegisteredInvalidatorRef.current) {
+      return;
+    }
+    const register = registerSearchIndexInvalidatorRef.current;
+    if (register === undefined) {
+      return;
+    }
+    const invalidate = (): void => {
+      // Drop every cached page index so the next search re-fetches
+      // getTextContent() from pdf.js. Clearing the map alone is not
+      // enough — the search effect's deps (`query`, `doc`,
+      // `pageCount`) are unchanged after OCR, so React would not
+      // re-run the effect. Bumping `searchInvalidationTick` is the
+      // explicit "kick" that forces a rebuild.
+      indexesRef.current = new Map();
+      setSearchInvalidationTick((prev) => prev + 1);
+    };
+    register(invalidate);
+    hasRegisteredInvalidatorRef.current = true;
+  }, []);
 
   // ---- effective scale ----------------------------------------------------
   const effectiveScale = useMemo(() => {
@@ -738,6 +795,27 @@ export function DocumentView({
   // renderer (scrolling, UI interactions) stays responsive on a 500+ page
   // doc. `searchIndexProgress` reports { built, total } so the diagnostics
   // snapshot in tflexDiagnostics can show what's going on.
+  //
+  // DEF-050 (OCR + stale cache): OCR writes an invisible Tr=3 text layer
+  // to the engine's copy of the doc — but the renderer's `doc` proxy is
+  // unchanged, so any cached `PageTextIndex` entries built before OCR
+  // still reflect pre-OCR content. The host registers an invalidator via
+  // `registerSearchIndexInvalidator`; on OCR completion (or any other
+  // mutation the host considers "text-content changed") it calls the
+  // invalidator, which clears `indexesRef` and bumps
+  // `searchInvalidationTick` (a dep of this effect). On the next run
+  // we walk every page, call `pdf.js`'s `getTextContent()` afresh, and
+  // rebuild the index — including any OCR-injected text items, since
+  // pdf.js returns TextItem-like objects regardless of rendering mode.
+  //
+  // DEF-050 (hang after OCR): the original "stuck on Searching..."
+  // symptom was caused by `pdf/ocrRasterize.ts` calling `doc.destroy()`
+  // per page (terminating pdf.js's worker); subsequent `doc.getPage(...)`
+  // calls in this loop rejected and left the UI stuck on "Searching..."
+  // because no catch block existed. The fix lives in `ocrRasterize.ts`;
+  // this loop is additionally hardened with a try/catch so any future
+  // pdf.js failure surfaces as "No results" instead of a permanent
+  // spinner.
   useEffect(() => {
     const token = ++searchTokenRef.current;
     const q = query.trim();
@@ -761,34 +839,66 @@ export function DocumentView({
     const run = async (): Promise<void> => {
       let built = 0;
       const total = pageCount;
-      for (let page = 1; page <= pageCount; page += 1) {
-        let index = indexesRef.current.get(page);
-        if (index === undefined) {
-          const pdfPage = await doc.getPage(page);
-          const textContent = await pdfPage.getTextContent();
-          const items = textContent.items.map((item) =>
-            "str" in item && typeof item.str === "string" ? item.str : "",
-          );
-          index = buildPageIndex(items);
-          indexesRef.current.set(page, index);
-          built += 1;
-        }
-        collected.push(...findPageHits(index, page, q));
-        if (cancelled || token !== searchTokenRef.current) {
-          return;
-        }
-        if (page % SEARCH_CHUNK_PAGES === 0) {
-          const snapshot = { built, total };
-          setSearchIndexProgress(snapshot);
-          onSearchIndexProgressRef.current?.(snapshot);
-          // Still mid-walk — push the idle window out so cleanup doesn't
-          // fire while the search loop is iterating pages.
-          idleCleanupRef.current?.noteActivity();
-          await new Promise<void>((r) => setTimeout(r, 0));
+      try {
+        for (let page = 1; page <= pageCount; page += 1) {
+          let index = indexesRef.current.get(page);
+          if (index === undefined) {
+            const pdfPage = await doc.getPage(page);
+            const textContent = await pdfPage.getTextContent();
+            // pdf.js returns TextItem-like objects regardless of the
+            // page's text rendering mode — visible text and OCR-injected
+            // invisible text (Tr=3) share the same `{ str, transform, ... }`
+            // shape. The map below collapses both to the same string
+            // representation so `buildPageIndex` doesn't need to know
+            // which mode produced each item.
+            const items = textContent.items.map((item) =>
+              "str" in item && typeof item.str === "string" ? item.str : "",
+            );
+            index = buildPageIndex(items);
+            indexesRef.current.set(page, index);
+            built += 1;
+          }
+          collected.push(...findPageHits(index, page, q));
           if (cancelled || token !== searchTokenRef.current) {
             return;
           }
+          if (page % SEARCH_CHUNK_PAGES === 0) {
+            const snapshot = { built, total };
+            setSearchIndexProgress(snapshot);
+            onSearchIndexProgressRef.current?.(snapshot);
+            // Still mid-walk — push the idle window out so cleanup doesn't
+            // fire while the search loop is iterating pages.
+            idleCleanupRef.current?.noteActivity();
+            await new Promise<void>((r) => setTimeout(r, 0));
+            if (cancelled || token !== searchTokenRef.current) {
+              return;
+            }
+          }
         }
+      } catch (err) {
+        // DEF-050: any pdf.js failure (worker torn down, destroyed
+        // doc, transient parse error) must clear "Searching..." so the
+        // UI doesn't sit on an indefinite spinner. We surface the
+        // collected hits up to the point of failure and report zero
+        // progress so the status text shows "No results" rather than
+        // claiming the loop is still mid-walk.
+        if (!cancelled && token === searchTokenRef.current) {
+          setHits(collected);
+          setSearching(false);
+          setActiveHitIndex(collected.length > 0 ? 0 : -1);
+          setSearchIndexProgress({ built, total });
+          onSearchIndexProgressRef.current?.({ built, total });
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        // Best-effort diagnostic; the toast surface is owned by the
+        // host (`onToast`) and may not be wired for every DocumentView
+        // instance. Swallow if absent.
+        try {
+          onToast?.("error", `Search failed: ${message}`);
+        } catch {
+          // ignore: onToast may not be provided
+        }
+        return;
       }
       if (!cancelled && token === searchTokenRef.current) {
         setHits(collected);
@@ -803,7 +913,7 @@ export function DocumentView({
     return () => {
       cancelled = true;
     };
-  }, [query, doc, pageCount]);
+  }, [query, doc, pageCount, searchInvalidationTick]);
 
   // Reset the cached search index when the document changes (different `doc`
   // reference). The `doc` identity changes whenever a new PDF is opened.

@@ -30,6 +30,9 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  OcrProgress,
+  OcrRecognizeOptions,
+  OcrSuspect,
   OptimizePreset,
   SavedSignature,
   SignaturePlacement,
@@ -74,6 +77,10 @@ interface StubTab {
    *  can assert the payload shape end-to-end. The real engine owns
    *  the actual content mutation. */
   editLog: EditRecord[];
+  /** Phase 11 — append-only log of ocrRecognize calls. The stub has
+   *  no tesseract, so it records what the renderer asked for so unit
+   *  tests can assert the options shape end-to-end. */
+  ocrCalls: OcrCallRecord[];
 }
 
 interface Snapshot {
@@ -88,6 +95,9 @@ interface Snapshot {
    *  not the entries themselves, so the snapshot stores the length
    *  captured at snapshot time. */
   editLogLength: number;
+  /** Phase 11 — preserved across undo / redo so the OCR-call log
+   *  is monotonic-friendly. Same shape as editLogLength. */
+  ocrCallsLength: number;
 }
 
 function snap(t: StubTab): Snapshot {
@@ -99,6 +109,7 @@ function snap(t: StubTab): Snapshot {
     formValues: new Map(t.formValues),
     signatures: t.signatures.slice(),
     editLogLength: t.editLog.length,
+    ocrCallsLength: t.ocrCalls.length,
   };
 }
 
@@ -113,6 +124,9 @@ function restore(t: StubTab, s: Snapshot): void {
   // length. We never need to recover old entries; truncation is the
   // natural undo/redo operation for a forward-only log.
   t.editLog = t.editLog.slice(0, s.editLogLength);
+  // Phase 11 — same shape as editLogLength; OCR-call log truncation
+  // is the natural undo/redo op for the forward-only OCR log.
+  t.ocrCalls = t.ocrCalls.slice(0, s.ocrCallsLength);
 }
 
 function buildState(t: StubTab): EngineState {
@@ -168,6 +182,7 @@ export class StubRendererEngine implements EngineApi {
         formValues: new Map(),
         signatures: [],
         editLog: [],
+        ocrCalls: [],
       };
       this.tabs.set(docId, t);
     }
@@ -781,6 +796,89 @@ export class StubRendererEngine implements EngineApi {
     if (t === undefined) return [];
     return t.editLog.slice();
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 11: OCR (recognize text)
+  //
+  // The stub has no tesseract worker, so ocrRecognize returns engine-error
+  // and ocrSuspects returns engine-error. The renderer treats this the
+  // same as a real backend that has not been upgraded (the dialog
+  // surfaces a friendly "OCR requires backend update" toast). The
+  // pre-Phase-11 stub renderer was unmodified; the new methods match
+  // the Phase 11 EngineApi surface so the renderer code paths can be
+  // exercised without the real engine.
+
+  /** Stub equivalent of `engine.ocrRecognize`. Returns engine-error
+   *  because the stub has no tesseract. Records the call so unit
+   *  tests can assert the renderer sent the expected options without
+   *  the stub pretending to succeed. The renderer treats this the
+   *  same way it treats a real backend that hasn't been upgraded. */
+  async ocrRecognize(
+    docId: string,
+    options: OcrRecognizeOptions,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    if (!Array.isArray(options.pageImages) || options.pageImages.length === 0) {
+      return err("empty-range", "pageImages is empty");
+    }
+    pushUndo(t);
+    t.ocrCalls.push({
+      language: options.language,
+      downsample: options.downsample,
+      pageCount: options.pageImages.length,
+    });
+    return err(
+      "engine-error",
+      "OCR requires the Phase 11 backend update (stub has no tesseract)",
+    );
+  }
+
+  /** Stub equivalent of `engine.ocrSuspects`. Returns engine-error
+   *  unless the stub recorded an ocrRecognize call (which always
+   *  failed above). The renderer surfaces a friendly toast. */
+  async ocrSuspects(
+    docId: string,
+  ): Promise<Result<OcrSuspect[], EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    return err(
+      "engine-error",
+      "no OCR has been run on this document (stub has no tesseract)",
+    );
+  }
+
+  /** Test-only: read back the most recent ocrRecognize call recorded
+   *  for a tab. Used by unit tests to assert the renderer sent the
+   *  expected options. */
+  getLastOcrCall(tabId: string): OcrCallRecord | undefined {
+    const t = this.tabs.get(tabId);
+    if (t === undefined) return undefined;
+    return t.ocrCalls[t.ocrCalls.length - 1];
+  }
+
+  /** Stub equivalent of `engine.onOcrProgress`. The stub has no
+   *  tesseract, so no progress events fire — the callback is never
+   *  called. Returns a no-op unsubscribe so callers don't have to
+   *  guard the call site. */
+  onOcrProgress(_cb: (p: OcrProgress) => void): () => void {
+    return (): void => undefined;
+  }
+
+  /** Phase 11 — refresh hook. The stub has no PDF bytes of its own
+   *  (it never parsed a real PDF), so it returns engine-error. The
+   *  renderer's OCR confirm handler treats this the same way as a
+   *  pre-Phase-11 backend: the existing search-index invalidator
+   *  keeps the per-page cache from going stale, and the user's next
+   *  Save writes the post-OCR bytes through the real engine. */
+  async getDocumentBytes(
+    _docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return err(
+      "engine-error",
+      "getDocumentBytes requires the Phase 11 backend update (stub has no PDF bytes)",
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -804,6 +902,18 @@ type EditRecord =
 
 function recordEdit(t: StubTab, rec: EditRecord): void {
   t.editLog.push(rec);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 11 — per-tab OCR call log (stub-only)
+
+/** What the stub records for each ocrRecognize call. Only the
+ *  options-shape we care about is captured; the PNG bytes themselves
+ *  are dropped so the log stays cheap to inspect in tests. */
+export interface OcrCallRecord {
+  language: string;
+  downsample: number;
+  pageCount: number;
 }
 
 // Stub-only: returns the form fields the renderer last seeded via

@@ -24,7 +24,7 @@ async function launchApp(extraArgs = [], userDataDir = null) {
   if (!fs.existsSync(tempUserData)) fs.mkdirSync(tempUserData, { recursive: true });
 
   const args = [projectRoot, `--user-data-dir=${tempUserData}`].concat(extraArgs);
-  return await electron.launch({
+  const electronApp = await electron.launch({
     args,
     env: {
       ...process.env,
@@ -34,6 +34,19 @@ async function launchApp(extraArgs = [], userDataDir = null) {
       ).href,
     },
   });
+
+  electronApp.on('window', window => {
+    window.on('console', msg => {
+      const text = msg.text();
+      // Forward everything to stdout so we see it in the build terminal
+      process.stdout.write(`[ELECTRON-WINDOW] ${text}\n`);
+    });
+    window.on('pageerror', err => {
+      process.stdout.write(`[ELECTRON-ERROR] ${err.message}\n`);
+    });
+  });
+
+  return electronApp;
 }
 
 /**

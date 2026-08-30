@@ -8,6 +8,9 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  OcrProgress,
+  OcrRecognizeOptions,
+  OcrSuspect,
   OptimizePreset,
   PdfOpenError,
   RecentFile,
@@ -32,6 +35,9 @@ import {
   DEFAULT_CREATE_IMAGE_QUALITY,
   DEFAULT_EXPORT_IMAGE_DPI,
   DEFAULT_EXPORT_IMAGE_FORMAT,
+  DEFAULT_OCR_DOWNSAMPLE,
+  DEFAULT_OCR_LANGUAGE,
+  clampOcrDownsample,
   preferencesReducer,
 } from "./state/preferences";
 import { applyAnnotationPaletteChange } from "./state/colorPalette";
@@ -62,6 +68,13 @@ import { DocxExportDialog } from "./components/DocxExportDialog";
 import { InsertPagesDialog } from "./components/InsertPagesDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
+import {
+  OcrDialog,
+  type OcrDialogConfirm,
+  type OcrScope,
+} from "./components/OcrDialog";
+import { OcrSuspectsPanel } from "./components/OcrSuspectsPanel";
+import { rasterizePagesForOcr } from "./pdf/ocrRasterize";
 import type { EngineApi, EngineOp, EngineState } from "./engine/types";
 import type { Annotation, AnnotationPatch } from "./annotations/model";
 import { describeEngineError } from "./engine/types";
@@ -295,6 +308,22 @@ export function App(): ReactElement {
   // active tool / selection / placements list is per-tab and
   // lives on `openTabs[id].edit`.
   const [editModeOpen, setEditModeOpen] = useState(false);
+  // Phase 11 — OCR dialog. The dialog drives its own engine call;
+  // the host routes the result back into a refresh of the active
+  // tab's engine state. The suspects panel is a side-rail overlay
+  // that pops up after a successful OCR run so the user can browse
+  // low-confidence words without leaving the document.
+  const [ocrOpen, setOcrOpen] = useState(false);
+  const [ocrSuspectsOpen, setOcrSuspectsOpen] = useState(false);
+  /** Per-tab OCR suspect list. The engine.ocrSuspects call returns
+   *  a fresh list each time; we cache it on the active tab so the
+   *  panel renders synchronously after the first load. Empty array
+   *  means "no suspects from the most recent run" — the panel
+   *  distinguishes that from "no run yet" via the matching
+   *  `hasOcrRun` flag. */
+  const [ocrSuspectsByTab, setOcrSuspectsByTab] = useState<Record<string, OcrSuspect[]>>({});
+  /** Per-tab "an OCR run has completed on this doc" flag. */
+  const [ocrRunByTab, setOcrRunByTab] = useState<Record<string, boolean>>({});
   // Saved signatures (renderer mirror). The signature service is the
   // source of truth; we cache the list locally so the modal renders
   // synchronously after the first load.
@@ -1737,6 +1766,12 @@ export function App(): ReactElement {
         if (activeTabIdRefLocal.current === null) return;
         setInsertPagesOpen(true);
       },
+      // Phase 11 — Recognize Text (OCR). Same funnel as the
+      // toolbar's OCR button and the Tools palette entry.
+      recognizeText: (): void => {
+        if (activeTabIdRefLocal.current === null) return;
+        setOcrOpen(true);
+      },
     };
     const unsubscribe = window.tflex.menu.onAction((action) => {
       dispatchMenuAction(action, ctx);
@@ -2264,6 +2299,371 @@ export function App(): ReactElement {
     },
     [noteOpApplied, pushToast],
   );
+
+  // ---- Phase 11: OCR (recognize text) ----
+
+  /** Open the OCR dialog against the active tab. The toolbar /
+   *  Tools palette / "Recognize Text" menu entry all funnel through
+   *  this. */
+  const onOcrClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setOcrOpen(true);
+  }, []);
+
+  const onCancelOcr = useCallback((): void => {
+    setOcrOpen(false);
+  }, []);
+
+  // DEF-050 — per-tab search-index invalidator. DocumentView registers
+  // a callback that clears its cached per-page `PageTextIndex` map and
+  // bumps a state tick so the search effect re-runs even when `query`,
+  // `doc`, and `pageCount` are unchanged. We call the invalidator from
+  // `onOcrConfirm` after a successful OCR run (and from `onBatchOcr`
+  // for each tab it processes), so the next `Ctrl+F` search rebuilds
+  // the per-page index from current `pdf.js` `getTextContent()` calls
+  // rather than returning pre-OCR cached entries.
+  //
+  // Keyed by tabId because each tab has its own DocumentView instance
+  // (and its own `indexesRef`). The invalidator ref holds one entry
+  // per tab; `registerSearchIndexInvalidatorFor` writes the callback
+  // the matching DocumentView passed in, `invalidateSearchIndexFor`
+  // looks it up by tabId and invokes it.
+  const searchIndexInvalidatorsRef = useRef(new Map<string, () => void>());
+  const registerSearchIndexInvalidatorFor = useCallback(
+    (tabId: string, fn: () => void): void => {
+      searchIndexInvalidatorsRef.current.set(tabId, fn);
+    },
+    [],
+  );
+  const invalidateSearchIndexFor = useCallback((tabId: string): void => {
+    searchIndexInvalidatorsRef.current.get(tabId)?.();
+  }, []);
+
+  // DEF-050 — rebuild the renderer's pdf.js proxy in-place after a
+  // content-stream mutation the engine wrote that the original load
+  // bytes no longer reflect. OCR is the primary caller: the engine
+  // writes an invisible Tr=3 text layer onto each page, and the
+  // renderer's `doc` proxy still points at the pre-OCR bytes until
+  // the user Saves and reopens. We call `engine.getDocumentBytes`
+  // (the "render-to-refresh hook" backend shipped for Phase 11),
+  // parse the fresh bytes with `openPdfDocument`, destroy the old
+  // proxy, and swap the new one into `openTabs[id].session.doc`.
+  // The new `doc` identity cascades through DocumentView's
+  // `useEffect([doc])` deps, so the first-page-dims fetch, the
+  // search effect, and any other doc-bound effect re-run afresh.
+  //
+  // Returns true on success, false on any failure (no active tab,
+  // backend missing the hook, or pdf.js parse error). Failures
+  // fall through to a soft toast — the existing search invalidator
+  // still keeps the index map from serving pre-OCR entries, so the
+  // search hit experience degrades gracefully rather than crashing.
+  const refreshDocProxyFor = useCallback(
+    async (tabId: string): Promise<boolean> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return false;
+      // No backend hook yet (pre-Phase-11 engine / stub) — nothing
+      // we can do beyond the search-index invalidator below.
+      if (engineRef.current.getDocumentBytes === undefined) {
+        return false;
+      }
+      const bytesRes = await engineRef.current.getDocumentBytes(
+        open.session.engineDocId,
+      );
+      if (!bytesRes.ok) {
+        pushToast(
+          "error",
+          `Could not refresh document proxy: ${describeEngineError(bytesRes.error.code, bytesRes.error.message)}`,
+        );
+        return false;
+      }
+      const bytes = toArrayBuffer(bytesRes.value);
+      const parsed = await openPdfDocument(bytes);
+      if (!("doc" in parsed)) {
+        pushToast(
+          "error",
+          `Could not refresh document proxy: ${toastForPdfError(parsed.error, open.displayName)}`,
+        );
+        return false;
+      }
+      const oldDoc = open.session.doc;
+      setOpenTabs((prev) => {
+        const existing = prev[tabId];
+        if (existing === undefined) {
+          // Tab closed between the read and the set; the new
+          // proxy is orphaned. Destroy it and bail.
+          void parsed.doc.destroy().catch(() => undefined);
+          return prev;
+        }
+        return {
+          ...prev,
+          [tabId]: {
+            ...existing,
+            session: {
+              ...existing.session,
+              doc: parsed.doc,
+              fileSize: bytes.byteLength,
+            },
+          },
+        };
+      });
+      // The `doc` prop on DocumentView changed identity, which
+      // re-runs every doc-bound useEffect. Destroy the old proxy
+      // after the swap commits so any in-flight per-page cleanup
+      // hooks (PageView's own `pdfPage.cleanup()` on unmount) can
+      // run before pdf.js tears the document down.
+      void oldDoc.destroy().catch(() => undefined);
+      return true;
+    },
+    [pushToast, toastForPdfError],
+  );
+
+  /** Resolve the active pdf.js document proxy for the OCR dialog.
+   *  Returns null when no tab is active (the dialog should not be
+   *  open in that case; we guard anyway). */
+  const resolveActiveDocForOcr = useCallback((): import("pdfjs-dist").PDFDocumentProxy | null => {
+    const activeId = activeTabIdRefLocal.current;
+    if (activeId === null) return null;
+    const open = openTabsRef.current[activeId];
+    return open?.session.doc ?? null;
+  }, []);
+
+  /** Subscribe to OCR progress events. Returns an unsubscribe
+   *  function. Routes through the engine client so the dialog sees
+   *  a unified surface. */
+  const subscribeOcrProgress = useCallback(
+    (cb: (p: OcrProgress) => void): (() => void) => {
+      // The Phase 11 progress channel is optional on the engine
+      // surface. Guard the call site so a pre-Phase-11 backend
+      // doesn't crash the renderer; the dialog treats a no-op
+      // unsubscribe as "engine doesn't surface progress", and
+      // the per-page progress still advances through the
+      // renderer's own rasterisation step.
+      if (engineRef.current.onOcrProgress === undefined) {
+        return (): void => undefined;
+      }
+      return engineRef.current.onOcrProgress(cb);
+    },
+    [],
+  );
+
+  /** Run engine.ocrRecognize against the active tab. Returns the
+   *  engine's echo on success, OR an error string. We follow up
+   *  with engine.ocrSuspects on success to populate the suspects
+   *  panel without a separate dialog interaction. */
+  const runOcrForActiveTab = useCallback(
+    async (
+      options: OcrRecognizeOptions,
+    ): Promise<{ ok: true; suspects: OcrSuspect[] } | { error: string }> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return { error: "No active document." };
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return { error: "No active document." };
+      const result = await engineRef.current.ocrRecognize(
+        open.session.engineDocId,
+        options,
+      );
+      if (!result.ok) {
+        return {
+          error: describeEngineError(result.error.code, result.error.message),
+        };
+      }
+      // Refresh the active tab's engine state mirror so any
+      // renderer-side readers (annotation overlays, undo counters)
+      // see the engine's authoritative post-OCR view.
+      noteOpApplied(activeId, result.value);
+      // Fetch the suspect list. ocrSuspects returns
+      // engine-error when the backend hasn't been upgraded; the
+      // dialog already surfaces that as an error toast, so we
+      // gracefully degrade here.
+      const suspectsResult = await engineRef.current.ocrSuspects(
+        open.session.engineDocId,
+      );
+      const suspects = suspectsResult.ok ? suspectsResult.value : [];
+      return { ok: true, suspects };
+    },
+    [noteOpApplied],
+  );
+
+  /** Dialog confirm: the dialog has already routed the engine
+   *  call; we close the dialog and surface a toast with the
+   *  suspect count, then auto-open the suspects panel so the user
+   *  can browse the results without a second click. */
+  const onOcrConfirm = useCallback(
+    (result: OcrDialogConfirm): void => {
+      setOcrOpen(false);
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return;
+      setOcrSuspectsByTab((prev) => ({
+        ...prev,
+        [activeId]: result.suspects,
+      }));
+      setOcrRunByTab((prev) => ({
+        ...prev,
+        [activeId]: true,
+      }));
+      setOcrSuspectsOpen(true);
+      // DEF-050 — OCR writes an invisible Tr=3 text layer onto each
+      // page in the engine's copy of the doc. The renderer's `doc`
+      // proxy still reflects the pre-OCR bytes until the proxy is
+      // rebuilt, so the next Ctrl+F search would walk pre-OCR items
+      // and miss every OCR word. We rebuild the proxy in place via
+      // `engine.getDocumentBytes` (the Phase 11 refresh hook) and
+      // `openPdfDocument`: parse the fresh bytes, destroy the old
+      // proxy, swap the new one into the same tab. The `doc` prop
+      // identity change cascades through DocumentView's
+      // `useEffect([doc])` deps so the search effect re-runs against
+      // post-OCR items — no new tab, no Save required to see OCR
+      // words. The search-index invalidator is still called as a
+      // belt-and-braces guard for the case where the backend doesn't
+      // expose the refresh hook.
+      void refreshDocProxyFor(activeId).then((refreshed) => {
+        if (!refreshed) {
+          invalidateSearchIndexFor(activeId);
+        }
+      });
+      const suspectCount = result.suspects.length;
+      const scopeLabel: OcrScope = result.scope;
+      const pageLabel = scopeLabel === "currentPage"
+        ? "current page"
+        : `${result.pages.length} pages`;
+      const verdict = suspectCount === 0
+        ? "no low-confidence words"
+        : `${suspectCount} low-confidence ${suspectCount === 1 ? "word" : "words"}`;
+      pushToast(
+        "info",
+        `Recognized text on ${pageLabel}: ${verdict}. Save the document to keep the searchable layer.`,
+      );
+    },
+    [invalidateSearchIndexFor, pushToast, refreshDocProxyFor],
+  );
+
+  /** Navigate to a suspect's page and pulse a short-lived
+   *  highlight so the user can spot the word on the page. The
+   *  navigation lands on the page; the highlight is a UI
+   *  affordance we surface through the existing page-jump
+   *  mechanism. The suspects panel does not edit text (the
+   *  correction flow is out of contract for Phase 11). */
+  const onSuspectNavigate = useCallback(
+    (suspect: OcrSuspect): void => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      // Persist the navigation target so DocumentView's per-tab
+      // `currentPage` advances to the suspect's page on next
+      // render. We use `setOpenTabs` directly because the tab is
+      // already active — the page input updates synchronously.
+      setOpenTabs((prev) => {
+        const existing = prev[activeId];
+        if (existing === undefined) return prev;
+        return {
+          ...prev,
+          [activeId]: {
+            ...existing,
+            persisted: {
+              ...existing.persisted,
+              currentPage: suspect.page,
+            },
+          },
+        };
+      });
+      // Also push to the diagnostics store so any consumer that
+      // reads currentPage from there sees the new value.
+      setDiagnostics((prev) => ({
+        ...prev,
+        currentPage: suspect.page,
+      }));
+      // Push a transient toast naming the suspect so the user
+      // can correlate the click with the word on the page.
+      pushToast(
+        "info",
+        `Navigated to page ${suspect.page} — "${suspect.word}" (${suspect.confidence.toFixed(0)}% confidence).`,
+      );
+    },
+    [pushToast],
+  );
+
+  /** Batch OCR — runs OCR against every open tab in turn. The
+   *  Tools palette's batch entry calls this. We surface a single
+   *  toast per tab so the user sees the progress without a modal
+   *  dialog overlay; the dialog remains available for the per-doc
+   *  user-driven flow. */
+  const onBatchOcr = useCallback(async (): Promise<void> => {
+    const tabIds = Object.keys(openTabsRef.current);
+    if (tabIds.length === 0) {
+      pushToast("info", "No documents open for batch OCR.");
+      return;
+    }
+    let completed = 0;
+    for (const tabId of tabIds) {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) continue;
+      const doc = open.session.doc;
+      const pages = Array.from({ length: doc.numPages }, (_, i) => i + 1);
+      const downsample = settingsRef.current?.ocrDownsample ?? DEFAULT_OCR_DOWNSAMPLE;
+      const language = settingsRef.current?.ocrLanguage ?? DEFAULT_OCR_LANGUAGE;
+      try {
+        // Rasterise every page through the same renderer-side
+        // helper the dialog uses, then send to the engine.
+        const pageImages = await rasterizePagesForOcr({
+          doc,
+          pages,
+          dpi: downsample,
+        });
+        const result = await engineRef.current.ocrRecognize(
+          open.session.engineDocId,
+          { language, downsample, pageImages },
+        );
+        if (!result.ok) {
+          pushToast(
+            "error",
+            `OCR failed on "${open.displayName}": ${describeEngineError(result.error.code, result.error.message)}`,
+          );
+          continue;
+        }
+        noteOpApplied(tabId, result.value);
+        const suspects = await engineRef.current.ocrSuspects(
+          open.session.engineDocId,
+        );
+        const suspectList = suspects.ok ? suspects.value : [];
+        setOcrSuspectsByTab((prev) => ({ ...prev, [tabId]: suspectList }));
+        setOcrRunByTab((prev) => ({ ...prev, [tabId]: true }));
+        // DEF-050 — rebuild this tab's pdf.js proxy in place so the
+        // search effect's `useEffect([doc])` re-runs against the
+        // post-OCR bytes. Same rationale as `onOcrConfirm`: OCR
+        // writes an invisible Tr=3 text layer onto each page and
+        // the renderer must observe it before the next Ctrl+F
+        // search. Falls back to the cached index invalidator when
+        // the backend doesn't expose the refresh hook.
+        const refreshed = await refreshDocProxyFor(tabId);
+        if (!refreshed) {
+          invalidateSearchIndexFor(tabId);
+        }
+        completed += 1;
+        pushToast(
+          "info",
+          `Recognized text on "${open.displayName}" (${pageImages.length} pages): ${suspectList.length} low-confidence ${suspectList.length === 1 ? "word" : "words"}.`,
+        );
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        pushToast(
+          "error",
+          `OCR failed on "${open.displayName}": ${msg}`,
+        );
+      }
+    }
+    if (completed > 0) {
+      setOcrSuspectsOpen(true);
+      pushToast(
+        "info",
+        `Batch OCR finished on ${completed} of ${tabIds.length} ${tabIds.length === 1 ? "document" : "documents"}.`,
+      );
+    }
+  }, [invalidateSearchIndexFor, noteOpApplied, pushToast, refreshDocProxyFor]);
+
+  const onCloseOcrSuspects = useCallback((): void => {
+    setOcrSuspectsOpen(false);
+  }, []);
 
   /** Reads the OS clipboard via the existing signatures IPC bridge
    *  is not appropriate (signatures save drawn signatures, not raw
@@ -2883,11 +3283,29 @@ export function App(): ReactElement {
       ) {
         e.preventDefault();
         void onRedo(tabs.activeId);
+      } else if (
+        // DEF-049 — Ctrl/Cmd+Shift+R opens the OCR dialog. The native
+        // menu already wires the same accelerator (src/main/menu.ts:
+        // Tools -> Recognize Text...), but Electron's menu
+        // accelerator occasionally races the focused renderer for the
+        // keystroke (modal children, focus transitions, native menu
+        // re-paint), and the action never reaches the renderer-side
+        // `tflex.menu.onAction` listener. We mirror the accelerator
+        // here as a fallback so the dialog opens reliably. Both
+        // paths route through `onOcrClick`, which is identical to
+        // the menu's `recognizeText` action.
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "r" &&
+        tabs.activeId !== null
+      ) {
+        e.preventDefault();
+        onOcrClick();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onOpenClick, closeTab, onSave, onUndo, onRedo, tabs.activeId]);
+  }, [onOpenClick, closeTab, onSave, onUndo, onRedo, onOcrClick, tabs.activeId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3009,6 +3427,9 @@ export function App(): ReactElement {
                     onPersist={persistFor(meta.id)}
                     onDiagnostics={diagnosticsFor(meta.id)}
                     onSearchIndexProgress={searchIndexProgressFor(meta.id)}
+                    registerSearchIndexInvalidator={(
+                      fn,
+                    ): void => registerSearchIndexInvalidatorFor(meta.id, fn)}
                     onToast={pushToast}
                     engineState={engine.engineState}
                     modified={saveModified}
@@ -3136,9 +3557,25 @@ export function App(): ReactElement {
             onExportText={onTextExportClick}
             onExportDocx={onDocxExportClick}
             onInsertPages={onInsertPagesClick}
+            onRecognizeText={onOcrClick}
+            onBatchOcr={(): void => {
+              void onBatchOcr();
+            }}
+            onOcrSuspects={(): void => setOcrSuspectsOpen(true)}
+            hasOcrSuspects={Object.values(ocrRunByTab).some(Boolean)}
             onClose={(): void => setToolsPaletteOpen(false)}
             documentRequired={activeTab !== null}
             hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
+          />
+        )}
+        {ocrSuspectsOpen && activeTabIdRefLocal.current !== null && (
+          <OcrSuspectsPanel
+            suspects={
+              ocrSuspectsByTab[activeTabIdRefLocal.current] ?? []
+            }
+            hasRun={ocrRunByTab[activeTabIdRefLocal.current] === true}
+            onNavigate={onSuspectNavigate}
+            onClose={onCloseOcrSuspects}
           />
         )}
       </div>
@@ -3281,6 +3718,53 @@ export function App(): ReactElement {
         open={auditOpen}
         runAuditSpace={runAuditSpaceForActiveTab}
         onClose={onCancelAudit}
+      />
+      <OcrDialog
+        open={ocrOpen}
+        totalPages={
+          activeTab?.session.doc.numPages ?? 0
+        }
+        currentPage={(() => {
+          const id = activeTabIdRefLocal.current;
+          if (id === null) return 1;
+          const tab = openTabsRef.current[id];
+          return tab ? Math.max(1, Math.floor(tab.persisted.currentPage)) : 1;
+        })()}
+        initialLanguage={
+          settings.ocrLanguage ?? DEFAULT_OCR_LANGUAGE
+        }
+        initialDownsample={
+          settings.ocrDownsample ?? DEFAULT_OCR_DOWNSAMPLE
+        }
+        onLanguageChange={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, {
+              type: 'set-ocr-language',
+              value: next,
+            });
+            if (updated !== prev) trackAndSave(updated);
+            return updated;
+          });
+        }}
+        onDownsampleChange={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, {
+              type: 'set-ocr-downsample',
+              value: clampOcrDownsample(next),
+            });
+            if (updated !== prev) trackAndSave(updated);
+            return updated;
+          });
+        }}
+        resolveActiveDoc={resolveActiveDocForOcr}
+        subscribeOcrProgress={subscribeOcrProgress}
+        runOcr={runOcrForActiveTab}
+        onConfirm={(result): void => {
+          onOcrConfirm(result);
+        }}
+        onClose={onCancelOcr}
       />
       <SaveAsDialog
         open={saveAsOpen}

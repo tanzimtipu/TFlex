@@ -629,3 +629,94 @@ describe('Phase 10: editDefaultFont validation', () => {
     }
   });
 });
+
+// Phase 11: ocrLanguage + ocrDownsample validation
+describe('Phase 11: OCR settings validation', () => {
+  const VALID_LANGS = ['eng', 'deu', 'fra', 'spa', 'ita', 'por', 'rus', 'chi_sim', 'jpn'];
+
+  it('preserves valid ocrLanguage values', () => {
+    for (const lang of VALID_LANGS) {
+      expect(normalizeSettings({ ocrLanguage: lang }).ocrLanguage).toBe(lang);
+    }
+  });
+
+  it('rejects ocrLanguage values outside the allowlist', () => {
+    expect(normalizeSettings({ ocrLanguage: 'english' }).ocrLanguage).toBeUndefined();
+    expect(normalizeSettings({ ocrLanguage: 'en' }).ocrLanguage).toBeUndefined();
+    expect(normalizeSettings({ ocrLanguage: 'chi' }).ocrLanguage).toBeUndefined();
+    expect(normalizeSettings({ ocrLanguage: 'ENG' }).ocrLanguage).toBeUndefined();
+    expect(normalizeSettings({ ocrLanguage: '' }).ocrLanguage).toBeUndefined();
+  });
+
+  it('rejects non-string ocrLanguage values', () => {
+    expect(normalizeSettings({ ocrLanguage: 123 }).ocrLanguage).toBeUndefined();
+    expect(normalizeSettings({ ocrLanguage: true }).ocrLanguage).toBeUndefined();
+    expect(normalizeSettings({ ocrLanguage: null }).ocrLanguage).toBeUndefined();
+    expect(normalizeSettings({ ocrLanguage: ['eng'] }).ocrLanguage).toBeUndefined();
+  });
+
+  it('does not set ocrLanguage when absent', () => {
+    expect(normalizeSettings({}).ocrLanguage).toBeUndefined();
+  });
+
+  it('preserves valid ocrDownsample values', () => {
+    expect(normalizeSettings({ ocrDownsample: 72 }).ocrDownsample).toBe(72);
+    expect(normalizeSettings({ ocrDownsample: 150 }).ocrDownsample).toBe(150);
+    expect(normalizeSettings({ ocrDownsample: 300 }).ocrDownsample).toBe(300);
+    expect(normalizeSettings({ ocrDownsample: 600 }).ocrDownsample).toBe(600);
+  });
+
+  it('rejects ocrDownsample outside 72-600 range', () => {
+    expect(normalizeSettings({ ocrDownsample: 71 }).ocrDownsample).toBeUndefined();
+    expect(normalizeSettings({ ocrDownsample: 601 }).ocrDownsample).toBeUndefined();
+    expect(normalizeSettings({ ocrDownsample: 0 }).ocrDownsample).toBeUndefined();
+    expect(normalizeSettings({ ocrDownsample: -1 }).ocrDownsample).toBeUndefined();
+  });
+
+  it('rejects non-numeric ocrDownsample values', () => {
+    expect(normalizeSettings({ ocrDownsample: '300' }).ocrDownsample).toBeUndefined();
+    expect(normalizeSettings({ ocrDownsample: true }).ocrDownsample).toBeUndefined();
+    expect(normalizeSettings({ ocrDownsample: NaN }).ocrDownsample).toBeUndefined();
+    expect(normalizeSettings({ ocrDownsample: Infinity }).ocrDownsample).toBeUndefined();
+  });
+
+  it('does not set ocrDownsample when absent', () => {
+    expect(normalizeSettings({}).ocrDownsample).toBeUndefined();
+  });
+
+  it('save/load round-trips ocrLanguage + ocrDownsample', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      ocrLanguage: 'deu' as const,
+      ocrDownsample: 200,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.ocrLanguage).toBe('deu');
+      expect(result.value.ocrDownsample).toBe(200);
+    }
+  });
+
+  it('invalid ocrLanguage/ocrDownsample on disk are dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      ocrLanguage: 'klingon',
+      ocrDownsample: 9999,
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.ocrLanguage).toBeUndefined();
+      expect(result.value.ocrDownsample).toBeUndefined();
+      expect(result.value.theme).toBe('light');
+    }
+  });
+});

@@ -12,6 +12,8 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   MoveSignaturePayload,
+  OcrProgress,
+  OcrRecognizeOptions,
   OpEntry,
   OptimizePreset,
   PlaceSignaturePayload,
@@ -20,6 +22,7 @@ import type {
 import type { SignatureSource } from '../shared/types';
 import { openPdfDialog } from './services/dialog';
 import { EngineService } from './services/engine';
+import { OcrService } from './services/ocr';
 import { loadPdfFile } from './services/pdf-file';
 import { SamplesService } from './services/samples';
 import { DEFAULT_SETTINGS, SettingsService } from './services/settings';
@@ -80,7 +83,12 @@ export async function start(): Promise<void> {
 
   const settings = new SettingsService(join(app.getPath('userData'), 'settings.json'), broadcast);
   const samples = new SamplesService(join(app.getAppPath(), 'assets', 'samples'));
-  const engine = new EngineService();
+  // Phase 11 — OCR runs tesseract.js with language data loaded from the
+  // bundled `assets/tessdata` directory so recognition is fully offline.
+  // The directory is resolved from the app root (`assets/tessdata`) in both
+  // dev and packaged builds (electron-builder ships `assets/**`).
+  const ocr = new OcrService(join(app.getAppPath(), 'assets', 'tessdata'));
+  const engine = new EngineService(ocr);
   const signatures = new SignatureService(join(app.getPath('userData'), 'signatures.json'));
 
   ipcMain.handle(IPC.windowMinimize, (event) => {
@@ -153,6 +161,9 @@ export async function start(): Promise<void> {
   });
   ipcMain.handle(IPC.engineGetState, (_event, docId: string) =>
     engine.getState(docId),
+  );
+  ipcMain.handle(IPC.engineGetDocumentBytes, (_event, docId: string) =>
+    engine.getDocumentBytes(docId),
   );
 
   // Phase 3: annotations
@@ -228,6 +239,25 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineEditImage, (_event, docId: string, payload: EditImagePayload) =>
     engine.editImage(docId, payload),
+  );
+
+  // Phase 11: OCR — recognize text (build invisible text layer) + suspects.
+  // Progress is forwarded only to the window that issued the request. The
+  // sender WebContents is captured once and re-checked on every emit: a long
+  // OCR run can outlive the invoking renderer, and `event.sender` becomes
+  // null/destroyed after the window closes. Calling `.send` (or even
+  // `.isDestroyed()`) on a null sender throws "sendWithPromise null" inside
+  // Electron, so both states must be guarded.
+  ipcMain.handle(IPC.engineOcrRecognize, (event, docId: string, options: OcrRecognizeOptions) => {
+    const sender = event.sender;
+    return engine.ocrRecognize(docId, options, (p: OcrProgress) => {
+      if (sender && !sender.isDestroyed()) {
+        sender.send(IPC.engineOcrProgressEvent, p);
+      }
+    });
+  });
+  ipcMain.handle(IPC.engineOcrSuspects, (_event, docId: string) =>
+    engine.ocrSuspects(docId),
   );
 
   // Phase 4: saved signatures service
@@ -312,6 +342,7 @@ createWindow();
 
   app.on('window-all-closed', async () => {
     await settings.saveCurrent();
+    await ocr.terminate();
     app.quit();
   });
   app.on('activate', () => {

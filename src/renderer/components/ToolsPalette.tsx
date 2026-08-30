@@ -27,6 +27,7 @@ import {
   Pen,
   PieChart,
   RotateCw,
+  ScanText,
   Scissors,
   Trash2,
 } from 'lucide-react';
@@ -58,6 +59,18 @@ interface ToolsPaletteProps {
   onExportDocx?: () => void;
   /** Phase 9 — Insert blank page or pages from another PDF. */
   onInsertPages?: () => void;
+  /** Phase 11 — Recognize Text (OCR) on the active document. */
+  onRecognizeText?: () => void;
+  /** Phase 11 — Batch OCR across every open tab. */
+  onBatchOcr?: () => void;
+  /** Phase 11 — Toggle the OCR suspects panel (lists low-confidence
+   *  words from the most recent OCR run). The button is enabled
+   *  whenever at least one tab has had OCR run on it; clicking
+   *  opens the panel as a right-side overlay. */
+  onOcrSuspects?: () => void;
+  /** True when at least one tab has had an OCR run. Used to gate
+   *  the OCR suspects button. */
+  hasOcrSuspects: boolean;
   /** True when a real document is open. The palette always renders,
    *  but every entry EXCEPT Sign is greyed out when no doc is open
    *  (Sign opens the manager modal regardless). */
@@ -95,6 +108,10 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     onExportText,
     onExportDocx,
     onInsertPages,
+    onRecognizeText,
+    onBatchOcr,
+    onOcrSuspects,
+    hasOcrSuspects,
     documentRequired,
     hasFormFields,
   } = props;
@@ -103,6 +120,18 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     if (id === 'createFromImages') {
       // Create-from-images is available regardless of doc state.
       return onCreateFromImages !== undefined;
+    }
+    if (id === 'ocrSuspects') {
+      // OCR suspects panel needs at least one tab that has had
+      // OCR run on it. The palette host owns the open flag and
+      // gates availability through `hasOcrSuspects`.
+      return hasOcrSuspects;
+    }
+    if (id === 'batchOcr') {
+      // Batch OCR is reachable as long as the host wired the
+      // callback; the host gates on open-tab count when the user
+      // actually clicks.
+      return onBatchOcr !== undefined;
     }
     if (!documentRequired) {
       // Without a document the only useful action is Sign, which opens
@@ -114,6 +143,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     if (id === 'exportText') return onExportText !== undefined;
     if (id === 'exportDocx') return onExportDocx !== undefined;
     if (id === 'insertPages') return onInsertPages !== undefined;
+    if (id === 'recognizeText') return onRecognizeText !== undefined;
     return true;
   };
 
@@ -190,6 +220,43 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       shortcut: '',
       action: onAudit,
     },
+    ...(onRecognizeText !== undefined
+      ? [{
+          id: 'recognizeText' as const,
+          label: 'Recognize text (OCR)',
+          description: 'Add a searchable text layer to a scanned PDF.',
+          icon: <ScanText size={16} aria-hidden />,
+          // DEF-049 — surface the renderer-side keyboard shortcut in
+          // the palette so users can discover it without opening the
+          // native menu. The accelerator is also wired on the menu
+          // (Tools -> Recognize Text...), but Electron's menu
+          // accelerator occasionally races the focused renderer and
+          // drops the keystroke; the renderer handler in App.tsx is
+          // the reliable path.
+          shortcut: 'Ctrl+Shift+R',
+          action: onRecognizeText,
+        }]
+      : []),
+    ...(onBatchOcr !== undefined
+      ? [{
+          id: 'batchOcr' as const,
+          label: 'Batch OCR all tabs',
+          description: 'Run OCR on every open document, sequentially.',
+          icon: <ScanText size={16} aria-hidden />,
+          shortcut: '',
+          action: onBatchOcr,
+        }]
+      : []),
+    ...(onOcrSuspects !== undefined
+      ? [{
+          id: 'ocrSuspects' as const,
+          label: 'OCR suspects',
+          description: 'Browse low-confidence words from the last OCR run.',
+          icon: <ScanText size={16} aria-hidden />,
+          shortcut: '',
+          action: onOcrSuspects,
+        }]
+      : []),
     ...(onCreateFromImages !== undefined
       ? [{
           id: 'createFromImages' as const,

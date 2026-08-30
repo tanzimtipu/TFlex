@@ -20,6 +20,9 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  OcrProgress,
+  OcrRecognizeOptions,
+  OcrSuspect,
   OpEntry,
   OptimizePreset,
   SignaturePlacement,
@@ -27,6 +30,7 @@ import type {
   TextPage,
 } from "../../shared/types";
 import type { Annotation, AnnotationPatch, PagePoint, PageRect } from "../annotations/model";
+import { toArrayBuffer } from "../utils/toArrayBuffer";
 import { stubRendererEngine } from "./stubEngine";
 import type {
   EngineApi,
@@ -267,14 +271,45 @@ export interface TFlexApiEngine {
     docId: string,
     payload: AddTextBoxPayload,
   ): Promise<Result<SharedEngineState, EngineError>>;
-  /** Phase 10 — edit an image (move / resize / replace / crop). The engine
+/** Phase 10 — edit an image (move / resize / replace / crop). The engine
    *  masks the original placement and draws the (renderer-supplied)
-   *  transformed bytes at the new rect. Optional like the other Phase 10
-   *  methods. */
+   *  transformed bytes at the new rect. Optional so a pre-Phase-10
+   *  backend degrades with a friendly engine-error. */
   editImage?(
     docId: string,
     payload: EditImagePayload,
   ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 11 — run OCR over renderer-rasterised page images and
+   *  write an invisible text layer onto each matching page so the
+   *  scanned document becomes searchable. Optional so a pre-Phase-11
+   *  backend degrades with a friendly engine-error. */
+  ocrRecognize?(
+    docId: string,
+    options: OcrRecognizeOptions,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 11 — return the low-confidence words from the most recent
+   *  `ocrRecognize` on this doc. Optional so a pre-Phase-11 backend
+   *  degrades with a friendly engine-error. */
+  ocrSuspects?(
+    docId: string,
+  ): Promise<Result<OcrSuspect[], EngineError>>;
+  /** Phase 11 — subscribe to per-page OCR progress pushed from main
+   *  while `ocrRecognize` runs. Returns an unsubscribe function.
+   *  Optional because pre-Phase-11 builds don't expose the channel. */
+  onOcrProgress?(cb: (p: OcrProgress) => void): () => void;
+  /** Phase 11 — return the engine's current serialized PDF bytes for
+   *  `docId`. The renderer uses this to refresh its pdf.js proxy
+   *  after a content-stream mutation (OCR's invisible text layer)
+   *  that the original load bytes do not reflect. The hook is
+   *  read-only — it does not flip `modified` or clear undo. Goes
+   *  through the per-doc queue so the returned bytes reflect every
+   *  queued mutation issued before the call. Optional so a pre-Phase-11
+   *  backend degrades with a friendly engine-error; the renderer
+   *  treats the absence as "no refresh possible" and lets the
+   *  existing search invalidator handle the case. */
+  getDocumentBytes?(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -382,6 +417,13 @@ function missingPhase10(): Result<never, EngineError> {
   return err(
     "engine-error",
     "edit-content (text run / text box / image) requires the Phase 10 backend update",
+  );
+}
+
+function missingPhase11(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "OCR requires the Phase 11 backend update",
   );
 }
 
@@ -702,6 +744,59 @@ class RealEngineAdapter implements EngineApi {
     if (this.inner.editImage === undefined) return missingPhase10();
     const r = await this.inner.editImage(docId, payload);
     return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  // -- Phase 11: OCR --
+
+  async ocrRecognize(
+    docId: string,
+    options: OcrRecognizeOptions,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.ocrRecognize === undefined) return missingPhase11();
+    const r = await this.inner.ocrRecognize(docId, options);
+    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+  }
+
+  async ocrSuspects(
+    docId: string,
+  ): Promise<Result<OcrSuspect[], EngineError>> {
+    if (this.inner.ocrSuspects === undefined) return missingPhase11();
+    return this.inner.ocrSuspects(docId);
+  }
+
+  /** Subscribe to per-page OCR progress pushed from main while
+   *  `ocrRecognize` runs. Returns a no-op unsubscribe function when
+   *  the backend doesn't expose the channel — this keeps callers
+   *  from having to guard the call site. */
+  onOcrProgress(cb: (p: OcrProgress) => void): () => void {
+    if (this.inner.onOcrProgress === undefined) {
+      return (): void => undefined;
+    }
+    return this.inner.onOcrProgress(cb);
+  }
+
+  /** Phase 11 — refresh hook. Returns the engine's current serialized
+   *  bytes for `docId` so the renderer can rebuild its pdf.js proxy
+   *  after a content-stream mutation the original load bytes do not
+   *  reflect (primarily OCR's invisible Tr=3 text layer). The
+   *  preload's typed signature declares `ArrayBuffer`; we normalize
+   *  the result through `toArrayBuffer` so downstream code always
+   *  sees a real `ArrayBuffer` even when the IPC layer hands us a
+   *  `Uint8Array` view. Returns engine-error when the backend predates
+   *  Phase 11 — the renderer falls back to its existing search-index
+   *  invalidator in that case. */
+  async getDocumentBytes(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    if (this.inner.getDocumentBytes === undefined) {
+      return err(
+        "engine-error",
+        "getDocumentBytes requires the Phase 11 backend update",
+      );
+    }
+    const r = await this.inner.getDocumentBytes(docId);
+    if (!r.ok) return r;
+    return { ok: true, value: toArrayBuffer(r.value) };
   }
 }
 

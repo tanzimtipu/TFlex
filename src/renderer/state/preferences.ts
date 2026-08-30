@@ -9,7 +9,7 @@
 // settings service normalises them on the way in (e.g. clamping the recents
 // cap to [1, 50]), so the renderer doesn't re-validate at write time.
 
-import type { AppSettings, EditFont, ExportImageFormat, OptimizePreset } from '../../shared/types';
+import type { AppSettings, EditFont, ExportImageFormat, OcrLanguage, OptimizePreset } from '../../shared/types';
 
 export const MIN_RECENTS_CAP = 1;
 export const MAX_RECENTS_CAP = 50;
@@ -25,7 +25,9 @@ export type PreferencesAction =
   | { type: 'set-export-image-format'; value: ExportImageFormat }
   | { type: 'set-export-image-dpi'; value: number }
   | { type: 'set-create-image-quality'; value: number }
-  | { type: 'set-edit-default-font'; value: EditFont };
+  | { type: 'set-edit-default-font'; value: EditFont }
+  | { type: 'set-ocr-language'; value: OcrLanguage }
+  | { type: 'set-ocr-downsample'; value: number };
 
 /** Default compression preset used by the Optimize dialog when the
  *  user hasn't picked one yet. Matches the backend settings.ts default
@@ -172,6 +174,20 @@ export function preferencesReducer(
       if (current === action.value) return state;
       return { ...state, editDefaultFont: action.value };
     }
+    case 'set-ocr-language': {
+      // Allowlist guard: drop anything the backend wouldn't accept.
+      // Mirrors the backend's settings.ts OCR_LANGUAGES allowlist.
+      if (!OCR_LANGUAGES.includes(action.value)) return state;
+      const current = state.ocrLanguage;
+      if (current === action.value) return state;
+      return { ...state, ocrLanguage: action.value };
+    }
+    case 'set-ocr-downsample': {
+      const clamped = clampOcrDownsample(action.value);
+      const current = state.ocrDownsample;
+      if (current === clamped) return state;
+      return { ...state, ocrDownsample: clamped };
+    }
   }
 }
 
@@ -193,5 +209,43 @@ export function clampRecentsCap(value: number): number {
   return Math.max(
     MIN_RECENTS_CAP,
     Math.min(MAX_RECENTS_CAP, Math.floor(value)),
+  );
+}
+
+// ---- Phase 11: OCR ----
+
+/** Render-side allowlist for OCR languages. Mirrors the shared
+ *  `OcrLanguage` union and the backend's `OCR_LANGUAGES` list in
+ *  `src/main/services/settings.ts`. The renderer uses this to populate
+ *  the language picker; the reducer uses it for preserve-if-valid
+ *  validation. The full allowlist is nine ISO-639 codes for which
+ *  traineddata can be bundled offline in `assets/tessdata/`. Only
+ *  `eng` ships by default (size budget). */
+export const OCR_LANGUAGES: readonly OcrLanguage[] = [
+  'eng',
+  'deu',
+  'fra',
+  'spa',
+  'ita',
+  'por',
+  'rus',
+  'chi_sim',
+  'jpn',
+];
+
+/** Default OCR language. Matches the backend's settings.ts default. */
+export const DEFAULT_OCR_LANGUAGE: OcrLanguage = 'eng';
+
+/** Default OCR downsample DPI. Matches the backend's settings.ts default. */
+export const DEFAULT_OCR_DOWNSAMPLE = 300;
+export const MIN_OCR_DOWNSAMPLE = 72;
+export const MAX_OCR_DOWNSAMPLE = 600;
+
+/** Clamp an OCR-downsample candidate to [72, 600]. Public so the
+ *  OCR dialog can pre-validate user input before dispatch. */
+export function clampOcrDownsample(value: number): number {
+  return Math.max(
+    MIN_OCR_DOWNSAMPLE,
+    Math.min(MAX_OCR_DOWNSAMPLE, Math.round(value)),
   );
 }

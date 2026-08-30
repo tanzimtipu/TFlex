@@ -40,6 +40,7 @@ interface Spies {
   exportText: Mock;
   exportDocx: Mock;
   insertPages: Mock;
+  recognizeText: Mock;
 }
 
 function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
@@ -61,6 +62,7 @@ function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
   const exportText = vi.fn();
   const exportDocx = vi.fn();
   const insertPages = vi.fn();
+  const recognizeText = vi.fn();
   const ctx: MenuActionContext = {
     open: () => open(),
     merge: () => merge(),
@@ -80,6 +82,7 @@ function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
     exportText: () => exportText(),
     exportDocx: () => exportDocx(),
     insertPages: () => insertPages(),
+    recognizeText: () => recognizeText(),
   };
   return {
     ctx,
@@ -87,6 +90,7 @@ function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
       open, merge, save, saveAs, closeTab, undo, redo, toggleTheme,
       showToolsPalette, about, preferences, optimize, auditSpace,
       createFromImages, exportPages, exportText, exportDocx, insertPages,
+      recognizeText,
     },
   };
 }
@@ -198,7 +202,13 @@ describe("dispatchMenuAction — every menu action routes to exactly one handler
     const { ctx, spies } = buildCtx();
     expect(dispatchMenuAction("insertPages", ctx)).toBe(true);
     expect(spies.insertPages).toHaveBeenCalledTimes(1);
-    expect(spies.exportPages).not.toHaveBeenCalled();
+  });
+
+  it("Tools -> Recognize Text opens the OCR dialog", () => {
+    const { ctx, spies } = buildCtx();
+    expect(dispatchMenuAction("recognizeText", ctx)).toBe(true);
+    expect(spies.recognizeText).toHaveBeenCalledTimes(1);
+    expect(spies.optimize).not.toHaveBeenCalled();
   });
 });
 
@@ -264,6 +274,7 @@ describe("dispatchMenuAction — handler isolation (DEF-038 regression)", () => 
       "exportText",
       "exportDocx",
       "insertPages",
+      "recognizeText",
     ] as const;
     for (const action of actions) {
       dispatchMenuAction(action, ctx);
@@ -286,5 +297,6 @@ describe("dispatchMenuAction — handler isolation (DEF-038 regression)", () => 
     expect(spies.exportText).toHaveBeenCalledTimes(1);
     expect(spies.exportDocx).toHaveBeenCalledTimes(1);
     expect(spies.insertPages).toHaveBeenCalledTimes(1);
+    expect(spies.recognizeText).toHaveBeenCalledTimes(1);
   });
 });

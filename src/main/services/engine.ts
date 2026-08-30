@@ -1,10 +1,11 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
-import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFRawStream, PDFTextField, StandardFonts, rgb } from 'pdf-lib';
+import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFTextField, StandardFonts, rgb, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AddTextBoxPayload,
   AnnModel,
+  AnnRect,
   CreateAnnotationPayload,
   DocxImageEntry,
   EditAnnotationPayload,
@@ -18,8 +19,12 @@ import type {
   FillFormFieldPayload,
   FormField,
   MoveSignaturePayload,
+  OcrProgress,
+  OcrRecognizeOptions,
+  OcrSuspect,
   OpEntry,
   OptimizePreset,
+  OcrPageFailure,
   PlaceSignaturePayload,
   SignaturePlacement,
   SpaceAudit,
@@ -44,6 +49,8 @@ import {
   type FormSnapshotEntry,
 } from './forms';
 import { auditSpace as auditSpacePdf } from './optimize';
+import { OcrService, selectLowConfidence, type RawOcrWord, SUSPECT_CONFIDENCE_THRESHOLD } from './ocr';
+import { OCR_LANGUAGES } from './settings';
 
 // ---------------------------------------------------------------------------
 // Internal document state
@@ -77,6 +84,19 @@ interface EngineDoc {
   path: string;
   modified: boolean;
   placedSignatures: SignaturePlacement[];
+  /** Phase 11 — words recognised by the most recent `ocrRecognize` call,
+   *  stored so `ocrSuspects` can return the low-confidence subset without
+   *  re-running tesseract. Each entry is in the VISIBLE page space. */
+  lastOcrWords?: StoredOcrWord[];
+}
+
+/** Phase 11 — a recognised word persisted on the doc for suspects. `page`
+ *  is the 1-based VISIBLE page; `rect` is top-left origin, PDF points. */
+interface StoredOcrWord {
+  text: string;
+  confidence: number;
+  page: number;
+  rect: AnnRect;
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +105,13 @@ interface EngineDoc {
 
 export class EngineService {
   private docs = new Map<string, EngineDoc>();
+
+  /** Phase 11 — OCR service (tesseract.js). Optional: an engine built
+   *  without it simply refuses `ocrRecognize` with `engine-error`. The
+   *  main process constructs one with the bundled `assets/tessdata`
+   *  langPath so recognition is fully offline. */
+  constructor(private readonly ocr: OcrService | null = null) {}
+
 
   // Per-document promise queue serialises every state-touching operation
   // (applyOp, undo, redo, merge, split, save, saveAs, loadDocument,
@@ -660,6 +687,40 @@ export class EngineService {
   }
 
   // -----------------------------------------------------------------------
+  // getDocumentBytes — Phase 11. Returns the current serialized document
+  // (the same bytes a save would write: page order, rotations, annotations,
+  // forms, signatures and any content-stream edits like the OCR text layer)
+  // so the renderer can rebuild its PDF.js proxy after a mutation that the
+  // original load bytes no longer reflect. Read-only: it does NOT touch
+  // `modified` or the undo stacks, so a subsequent save still persists.
+  // Goes through the per-doc queue so it observes every prior mutation.
+  // -----------------------------------------------------------------------
+  async getDocumentBytes(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    return this._enqueue(docId, () => this._getDocumentBytesImpl(docId));
+  }
+
+  private async _getDocumentBytesImpl(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    try {
+      const bytes = await serializeDoc(doc);
+      const ab = bytes.buffer.slice(
+        bytes.byteOffset,
+        bytes.byteOffset + bytes.byteLength,
+      ) as ArrayBuffer;
+      return ok(ab);
+    } catch (e) {
+      return err('engine-error', `getDocumentBytes failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Annotations — create / edit / delete
   // -----------------------------------------------------------------------
 
@@ -1126,8 +1187,9 @@ export class EngineService {
     const snapshot = snapshotDoc(doc);
 
     try {
-      // Create a blank page and add it to the pdfDoc
-      const blankPage = doc.pdfDoc.addPage([widthPx, heightPx]);
+      // Create a blank page and add it to the pdfDoc (addPage has the
+      // side effect of appending the page; the returned page is unused).
+      doc.pdfDoc.addPage([widthPx, heightPx]);
       const blankOrigIdx = doc.pdfDoc.getPageCount() - 1; // last added page
 
       // Extend the arrays for the new page
@@ -1574,6 +1636,229 @@ export class EngineService {
       return err('engine-error', `editImage failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  // -----------------------------------------------------------------------
+  // Phase 11: OCR — recognize text (build invisible text layer) + suspects
+  // -----------------------------------------------------------------------
+
+  /**
+   * Phase 11 — run OCR over the renderer-supplied page images and write an
+   * invisible text layer (pdf-lib `TextRenderingMode.Invisible`, i.e. PDF
+   * `Tr 3`) onto each matching PDF page so the scanned document becomes
+   * searchable/selectable while the original page image stays visible.
+   *
+   * The renderer rasterises pages with its existing PDF.js DOM-canvas path
+   * (pdf-lib cannot rasterise; main-side pdf.js crashed the native canvas
+   * backend during feasibility testing) and sends the PNG bytes in
+   * `pageImages`. The engine maps each word's pixel bbox back to PDF points
+   * using `dpi` (pt = px * 72 / dpi) and draws it invisibly at the right
+   * spot. Recognised words are stored on the doc for `ocrSuspects`.
+   *
+   * `onProgress` (optional) is invoked once per page for 'recognizing' and
+   * once for 'writing'; the main process forwards it to the requesting
+   * renderer window so batch OCR can show progress without freezing the UI.
+   *
+   * Undo: captures pre-OCR pdfDoc bytes so a revert restores the page
+   * content streams (the invisible text is removed along with them).
+   */
+  async ocrRecognize(
+    docId: string,
+    opts: OcrRecognizeOptions,
+    onProgress?: (p: OcrProgress) => void,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._ocrRecognizeImpl(docId, opts, onProgress));
+  }
+
+  private async _ocrRecognizeImpl(
+    docId: string,
+    opts: OcrRecognizeOptions,
+    onProgress?: (p: OcrProgress) => void,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.ocr === null) {
+      return err('engine-error', 'OCR service is not available in this build');
+    }
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    // Validate language against the bundled allowlist.
+    if (typeof opts.language !== 'string' || !(OCR_LANGUAGES as readonly string[]).includes(opts.language)) {
+      return err('engine-error', `unsupported OCR language: ${String(opts.language)}`);
+    }
+    // Validate downsample (informational; per-image dpi is authoritative).
+    if (typeof opts.downsample !== 'number' || !Number.isFinite(opts.downsample) || opts.downsample < 72 || opts.downsample > 600) {
+      return err('engine-error', `downsample must be in 72..600, got ${String(opts.downsample)}`);
+    }
+    if (!Array.isArray(opts.pageImages) || opts.pageImages.length === 0) {
+      return err('empty-range', 'no page images provided — the renderer must rasterise pages first');
+    }
+    const totalPages = opts.pageImages.length;
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      // Embed a single standard font for the whole text layer (Latin-1 only —
+      // non-Latin glyphs are dropped by sanitizeForStandardFont, the documented
+      // Phase 10/11 limitation for the bundled standard fonts).
+      const font = await doc.pdfDoc.embedFont(StandardFonts.Helvetica);
+      const storedWords: StoredOcrWord[] = [];
+      // Per-page failures are accumulated, not fatal. A single bad page (bad
+      // dpi, a tesseract throw, an out-of-range index) must NOT abort the
+      // whole run and roll back the pages that DID get a text layer — that
+      // early-return behaviour left a multi-page batch with no completion
+      // signal: every page error returned `err`, so a batch caller counting
+      // successes saw zero and never reported completion (DEF-051). The
+      // engine now skips the failing page, records why, and continues; the
+      // final Result lists every skipped page so the caller can surface them.
+      const failures: OcrPageFailure[] = [];
+      let written = 0;
+
+      for (let i = 0; i < opts.pageImages.length; i++) {
+        const img = opts.pageImages[i];
+        try {
+          const pageResult = resolveVisiblePage(doc, img.page);
+          if (!pageResult.ok) {
+            failures.push({ page: img.page, message: pageResult.error.message });
+            continue;
+          }
+          if (!(img.pngBytes instanceof Uint8Array)) {
+            failures.push({ page: img.page, message: 'page image has no pngBytes' });
+            continue;
+          }
+          if (typeof img.dpi !== 'number' || !Number.isFinite(img.dpi) || img.dpi < 72 || img.dpi > 600) {
+            failures.push({ page: img.page, message: `page image has invalid dpi ${String(img.dpi)}` });
+            continue;
+          }
+
+          onProgress?.({ docId, page: img.page, totalPages, phase: 'recognizing' });
+          let rawWords: RawOcrWord[];
+          try {
+            rawWords = await this.ocr.recognize(img.pngBytes, opts.language);
+          } catch (e) {
+            failures.push({
+              page: img.page,
+              message: `recognition failed: ${e instanceof Error ? e.message : String(e)}`,
+            });
+            continue;
+          }
+
+          onProgress?.({ docId, page: img.page, totalPages, phase: 'writing' });
+          const page = doc.pdfDoc.getPage(pageResult.value);
+          const pageHeight = page.getSize().height;
+          const scale = 72 / img.dpi; // pt per pixel
+          // pdf-lib's `drawText` does NOT honour a `renderMode` option (its
+          // typed options omit it and the runtime never reads it — verified
+          // against the source). So the invisible text layer is built the
+          // standard way: emit the PDF `Tr` text-state operator explicitly.
+          // We push `3 Tr` (Invisible) inside a `q`/`Q` graphics-state pair so
+          // the mode is scoped to the OCR words only — any text drawn on the
+          // page later (e.g. editTextRun) stays visible. drawText wraps each
+          // call in its own q/Q and inherits the outer Tr=3, so the glyphs are
+          // not painted but remain `Tj` operators -> searchable/selectable.
+          //
+          // The closing `Q` is emitted in a `finally` so a per-word `drawText`
+          // throw (a bad glyph, an embedFont hiccup) can never leave the page's
+          // content stream with an unbalanced `q 3 Tr` (more push than pop).
+          // An unbalanced stream does not corrupt the file structure, but it
+          // leaks the Tr=3 mode onto subsequent drawings on the same page and
+          // makes the saved content stream fail a strict q/Q balance check.
+          // DEF-052: the q/Q pair must always close per attempted page.
+          page.pushOperators(pushGraphicsState(), setTextRenderingMode(TextRenderingMode.Invisible));
+          try {
+            for (const w of rawWords) {
+              const { x0, y0, x1, y1 } = w.bbox;
+              const ptLeft = x0 * scale;
+              const ptTop = y0 * scale;
+              const ptWidth = (x1 - x0) * scale;
+              const ptHeight = (y1 - y0) * scale;
+              const size = clamp(ptHeight, 6, 96);
+              const safe = sanitizeForStandardFont(w.text);
+              if (safe.length === 0) continue;
+              // PDF baseline: image y grows downward, PDF y upward. Drop the
+              // font size below the top of the bbox so the glyph sits inside it.
+              page.drawText(safe, {
+                x: ptLeft,
+                y: pageHeight - ptTop - size,
+                size,
+                font,
+              });
+              storedWords.push({
+                text: w.text,
+                confidence: w.confidence,
+                page: img.page,
+                rect: { x: ptLeft, y: ptTop, width: ptWidth, height: ptHeight },
+              });
+            }
+          } finally {
+            page.pushOperators(popGraphicsState());
+          }
+          written += 1;
+        } catch (e) {
+          // Any unexpected per-page error: record it and keep going so the
+          // run still completes for the remaining pages (DEF-051).
+          failures.push({
+            page: img.page,
+            message: e instanceof Error ? e.message : String(e),
+          });
+        }
+      }
+
+      // If NO page produced a text layer, the whole run failed: revert and
+      // report every accumulated failure so the caller can show them.
+      if (written === 0) {
+        await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+        const detail = failures.map((f) => `page ${f.page}: ${f.message}`).join('; ');
+        return err(
+          'engine-error',
+          `ocrRecognize failed on all ${totalPages} page(s): ${detail}`,
+        );
+      }
+
+      doc.lastOcrWords = storedWords;
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      const state = buildState(doc);
+      if (failures.length > 0) {
+        (state as EngineState & { ocrFailures?: OcrPageFailure[] }).ocrFailures = failures;
+      }
+      return ok(state);
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `ocrRecognize failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /**
+   * Phase 11 — return the low-confidence words from the most recent
+   * `ocrRecognize` call (confidence below `SUSPECT_CONFIDENCE_THRESHOLD`).
+   * Read-only; does not queue behind mutations. Returns `engine-error` if
+   * no OCR has been run on the document yet.
+   */
+  async ocrSuspects(
+    docId: string,
+  ): Promise<Result<OcrSuspect[], EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    if (!doc.lastOcrWords || doc.lastOcrWords.length === 0) {
+      return err('engine-error', 'no OCR has been run on this document');
+    }
+    const low = selectLowConfidence(doc.lastOcrWords, SUSPECT_CONFIDENCE_THRESHOLD);
+    const suspects: OcrSuspect[] = low.map((w) => ({
+      word: w.text,
+      page: w.page,
+      rect: { ...w.rect },
+      confidence: w.confidence,
+    }));
+    return ok(suspects);
+  }
+}
+
+/** Clamp a number into [min, max]. */
+function clamp(v: number, min: number, max: number): number {
+  if (!Number.isFinite(v)) return min;
+  return v < min ? min : v > max ? max : v;
 }
 
 // ---------------------------------------------------------------------------
@@ -2520,8 +2805,6 @@ function parseXref(raw: string): Map<number, number> {
     const entryRegex = /^(\d{10}) (\d{5}) ([nf])\s*$/gm;
     let match: RegExpExecArray | null;
     while ((match = entryRegex.exec(xrefSection)) !== null) {
-      const offset = parseInt(match[1], 10);
-      const gen = parseInt(match[2], 10);
       const type = match[3];
       if (type === 'n') {
         // The object number is derived from the subsection header.

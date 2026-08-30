@@ -51,6 +51,7 @@ _buildAppMenu,
       save: vi.fn().mockResolvedValue({ ok: true, value: '/mock/path.pdf' }),
       saveAs: vi.fn().mockResolvedValue({ ok: true, value: '/mock/new.pdf' }),
       getState: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
+      getDocumentBytes: vi.fn().mockResolvedValue({ ok: true, value: new ArrayBuffer(8) }),
       createAnnotation: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
       editAnnotation: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
       deleteAnnotation: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
@@ -102,7 +103,7 @@ vi.mock('electron', () => ({
     on: _on,
     getPath: vi.fn((name: string) => name === 'userData' ? '/mock/user/data' : '/mock/app'),
     getAppPath: vi.fn().mockReturnValue('/mock/app'),
-    getVersion: vi.fn().mockReturnValue('1.2.0'),
+    getVersion: vi.fn().mockReturnValue('1.4.0'),
     isPackaged: false,
   },
   BrowserWindow: {
@@ -283,6 +284,10 @@ describe('main/index - start()', () => {
     expect(getRegisteredChannels()).toContain(IPC.engineGetState);
   });
 
+  it('registers engine:getDocumentBytes handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.engineGetDocumentBytes);
+  });
+
   it('registers engine:createAnnotation handler', () => {
     expect(getRegisteredChannels()).toContain(IPC.engineCreateAnnotation);
   });
@@ -409,6 +414,26 @@ describe('main/index - engineLoadDocumentBytes handler', () => {
     await handler({}, 'doc-1', view);
 
     expect(_engineInstance.loadDocumentBytes).toHaveBeenCalledWith('doc-1', view);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// engineGetDocumentBytes handler
+// ---------------------------------------------------------------------------
+
+describe('main/index - engineGetDocumentBytes handler', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    await start();
+  });
+
+  it('forwards the docId to engine.getDocumentBytes', async () => {
+    const call = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.engineGetDocumentBytes)!;
+    const handler = call[1] as (...args: unknown[]) => unknown;
+    await handler({}, 'doc-1');
+
+    expect(_engineInstance.getDocumentBytes).toHaveBeenCalledWith('doc-1');
   });
 });
 

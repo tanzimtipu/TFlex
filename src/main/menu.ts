@@ -124,6 +124,12 @@ export function buildAppMenu(deps: MenuDeps): void {
           accelerator: 'CmdOrCtrl+Shift+P',
           click: () => send('showToolsPalette'),
         },
+        { type: 'separator' },
+        {
+          label: 'Recognize Text...',
+          accelerator: 'CmdOrCtrl+Shift+R',
+          click: () => send('recognizeText'),
+        },
       ],
     },
     {

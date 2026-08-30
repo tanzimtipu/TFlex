@@ -16,6 +16,9 @@ import type {
   FillFormFieldPayload,
   FormField,
   MoveSignaturePayload,
+  OcrProgress,
+  OcrRecognizeOptions,
+  OcrSuspect,
   OpEntry,
   OptimizePreset,
   PlaceSignaturePayload,
@@ -71,6 +74,16 @@ const engineApi = {
   },
   getState(docId: string): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineGetState, docId);
+  },
+  // Phase 11 — current serialized bytes so the renderer can refresh its
+  // PDF.js proxy after OCR (or any content-stream mutation). Normalised
+  // to a fresh ArrayBuffer, matching loadDocumentBytes.
+  async getDocumentBytes(docId: string): Promise<Result<ArrayBuffer, EngineError>> {
+    const result = (await ipcRenderer.invoke(IPC.engineGetDocumentBytes, docId)) as Result<ArrayBuffer, EngineError>;
+    if (!result.ok) {
+      return result;
+    }
+    return { ok: true, value: normalizeArrayBuffer(result.value) };
   },
   // Phase 3: annotations — payloads are forwarded from the renderer as-is
   createAnnotation(
@@ -198,6 +211,25 @@ const engineApi = {
     payload: EditImagePayload,
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineEditImage, docId, payload);
+  },
+  // Phase 11: OCR — recognize text + suspects + progress
+  ocrRecognize(
+    docId: string,
+    options: OcrRecognizeOptions,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineOcrRecognize, docId, options);
+  },
+  ocrSuspects(
+    docId: string,
+  ): Promise<Result<OcrSuspect[], EngineError>> {
+    return ipcRenderer.invoke(IPC.engineOcrSuspects, docId);
+  },
+  onOcrProgress(cb: (p: OcrProgress) => void): () => void {
+    const listener = (_event: unknown, p: OcrProgress): void => cb(p);
+    ipcRenderer.on(IPC.engineOcrProgressEvent, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC.engineOcrProgressEvent, listener);
+    };
   },
 };
 

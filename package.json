@@ -1,6 +1,6 @@
 {
   "name": "tflex",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "TFlex - desktop PDF studio for Windows",
   "repository": "tanzimtipu/TFlex",
   "type": "module",
@@ -10,7 +10,7 @@
     "build": "npm run typecheck && npm run build:renderer && npm run build:node",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build:renderer": "vite build",
-    "build:node": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --target=node24 --outfile=dist/main/index.js && node -e \"require('fs').writeFileSync('dist/main/package.json', JSON.stringify({type:'commonjs'}))\" && esbuild src/preload/preload.ts --bundle --platform=node --format=cjs --external:electron --target=node24 --outfile=dist/preload/preload.cjs",
+    "build:node": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:tesseract.js --target=node24 --outfile=dist/main/index.js && node -e \"require('fs').writeFileSync('dist/main/package.json', JSON.stringify({type:'commonjs'}))\" && esbuild src/preload/preload.ts --bundle --platform=node --format=cjs --external:electron --target=node24 --outfile=dist/preload/preload.cjs",
     "start:prod": "electron .",
     "dist": "npm run build && electron-builder",
     "test:unit": "vitest run",
@@ -24,9 +24,11 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "4.10.38",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.8",
     "@playwright/test": "^1.62.1",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",

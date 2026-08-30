@@ -1949,3 +1949,192 @@ function makeBaseEngine(): {
     },
   };
 }
+
+describe("engineClient — Phase 11 OCR pass-through", () => {
+  // Minimal pre-Phase-11 engine surface — has every required
+  // method but none of the optional Phase 11 ones. The OCR
+  // adapter should degrade to engine-error when the backend
+  // predates Phase 11.
+  function makeBaseEngineNoOcr(): {
+    available: boolean;
+    loadDocument: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    loadDocumentBytes: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    applyOp: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    undo: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    redo: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    merge: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+    split: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    extract: () => Promise<{ ok: true; value: ArrayBuffer }>;
+    save: () => Promise<{ ok: true; value: string }>;
+    saveAs: () => Promise<{ ok: true; value: string }>;
+    getState: () => Promise<{ ok: true; value: Record<string, unknown> }>;
+  } {
+    return {
+      available: true,
+      async loadDocument() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async loadDocumentBytes() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async applyOp() {
+        return { ok: true as const, value: {} };
+      },
+      async undo() {
+        return { ok: true as const, value: {} };
+      },
+      async redo() {
+        return { ok: true as const, value: {} };
+      },
+      async merge() {
+        return { ok: true as const, value: {} };
+      },
+      async split() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async extract() {
+        return { ok: true as const, value: new ArrayBuffer(0) };
+      },
+      async save() {
+        return { ok: true as const, value: "/path" };
+      },
+      async saveAs() {
+        return { ok: true as const, value: "/path" };
+      },
+      async getState() {
+        return { ok: true as const, value: {} };
+      },
+    };
+  }
+
+  beforeEach(() => {
+    _resetEngineForTests();
+  });
+  afterEach(() => {
+    delete (window as unknown as { tflex?: unknown }).tflex;
+    _resetEngineForTests();
+  });
+
+  it("ocrRecognize returns engine-error when the backend predates Phase 11", async () => {
+    const fakeEngine = makeBaseEngineNoOcr();
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.ocrRecognize!("doc-1", {
+      language: 'eng',
+      downsample: 300,
+      pageImages: [{ page: 1, pngBytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]), dpi: 300, widthPx: 1, heightPx: 1 }],
+    });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('engine-error');
+  });
+
+  it("ocrSuspects returns engine-error when the backend predates Phase 11", async () => {
+    const fakeEngine = makeBaseEngineNoOcr();
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.ocrSuspects!("doc-1");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('engine-error');
+  });
+
+  it("onOcrProgress returns a no-op unsubscribe when the backend predates Phase 11", () => {
+    const fakeEngine = makeBaseEngineNoOcr();
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const unsub = e.onOcrProgress?.(() => undefined) ?? ((): void => undefined);
+    expect(typeof unsub).toBe('function');
+    // Must not throw when invoked.
+    expect((): void => unsub()).not.toThrow();
+  });
+
+  // DEF-050 — Phase 11 refresh hook. When the backend predates
+  // Phase 11 (no `getDocumentBytes` on the preload), the renderer
+  // falls back to the existing search-index invalidator. This test
+  // pins the adapter's pre-Phase-11 behaviour: the call resolves
+  // with engine-error so the host can branch on `ok` cleanly.
+  it("getDocumentBytes returns engine-error when the backend predates Phase 11", async () => {
+    const fakeEngine = makeBaseEngineNoOcr();
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.getDocumentBytes!("doc-1");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('engine-error');
+  });
+
+  // DEF-050 — when the backend DOES expose the refresh hook, the
+  // adapter should forward the bytes verbatim (normalized via
+  // toArrayBuffer). This pins the renderer-side wiring used by
+  // the OCR confirm handler to rebuild the pdf.js proxy in place.
+  it("getDocumentBytes forwards the engine's bytes when the backend is Phase 11", async () => {
+    const captured: { docId: string | null } = { docId: null };
+    const expected = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+    const fakeEngine = {
+      ...makeBaseEngineNoOcr(),
+      async getDocumentBytes(docId: string): Promise<{
+        ok: true;
+        value: ArrayBuffer;
+      }> {
+        captured.docId = docId;
+        // Return a Uint8Array view to exercise the toArrayBuffer
+        // normalization path inside the adapter.
+        const copy = new Uint8Array(expected.byteLength);
+        copy.set(expected);
+        return { ok: true, value: copy.buffer };
+      },
+    };
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.getDocumentBytes!("doc-abc");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(captured.docId).toBe('doc-abc');
+    // Result must be a real ArrayBuffer (not a Uint8Array view)
+    // so downstream code that hands it to pdf.js / openPdfDocument
+    // doesn't trip on the type narrowing.
+    expect(r.value).toBeInstanceOf(ArrayBuffer);
+    expect(new Uint8Array(r.value)).toEqual(expected);
+  });
+
+  // DEF-050 — engine error path. If the backend's refresh hook
+  // returns an error, the adapter must surface it verbatim so the
+  // host can decide whether to toast or fall back.
+  it("getDocumentBytes surfaces the engine's error when refresh fails", async () => {
+    const fakeEngine = {
+      ...makeBaseEngineNoOcr(),
+      async getDocumentBytes(_docId: string): Promise<{
+        ok: false;
+        error: { code: 'engine-error'; message: string };
+      }> {
+        return { ok: false, error: { code: 'engine-error', message: 'refresh failed' } };
+      },
+    };
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = {
+      engine: fakeEngine,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.getDocumentBytes!("doc-1");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error.code).toBe('engine-error');
+    expect(r.error.message).toBe('refresh failed');
+  });
+});

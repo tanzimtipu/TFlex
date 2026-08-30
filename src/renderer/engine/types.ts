@@ -16,6 +16,9 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  OcrProgress,
+  OcrRecognizeOptions,
+  OcrSuspect,
   OptimizePreset,
   SignaturePlacement,
   SpaceAudit,
@@ -342,6 +345,46 @@ export interface EngineApi {
     docId: string,
     payload: EditImagePayload,
   ): Promise<Result<EngineState, EngineError>>;
+
+  // -- Phase 11: OCR --
+
+  /** Run OCR over renderer-rasterised page images. The renderer is
+   *  responsible for producing the per-page PNG bytes (see
+   *  `pdf/rasterize.ts`'s `rasterizePageToBlob`) because pdf-lib
+   *  has no rasteriser and the engine cannot do it itself. The
+   *  engine writes an invisible Tr 3 text layer onto each matching
+   *  page so the document becomes searchable. Progress events are
+   *  pushed back via `onOcrProgress`. */
+  ocrRecognize(
+    docId: string,
+    options: OcrRecognizeOptions,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Return the low-confidence words from the most recent
+   *  `ocrRecognize` on this doc. Read-only — the renderer uses the
+   *  result for the OCR Suspects panel. */
+  ocrSuspects(
+    docId: string,
+  ): Promise<Result<OcrSuspect[], EngineError>>;
+
+  /** Subscribe to per-page OCR progress pushed from the main process
+   *  while `ocrRecognize` runs. Returns an unsubscribe function.
+   *  Optional because pre-Phase-11 builds don't expose the channel. */
+  onOcrProgress?(cb: (p: OcrProgress) => void): () => void;
+
+  /** Phase 11 — return the engine's current serialized PDF bytes for
+   *  `docId`. The renderer uses this to refresh its pdf.js proxy
+   *  after a content-stream mutation (OCR's invisible text layer)
+   *  that the original load bytes do not reflect. The hook is
+   *  read-only — it does not flip `modified` or clear undo. Goes
+   *  through the per-doc queue so the returned bytes reflect every
+   *  queued mutation issued before the call. Optional so a pre-Phase-11
+   *  backend degrades with a friendly engine-error; the renderer
+   *  falls back to the existing search-index invalidator in that
+   *  case. */
+  getDocumentBytes?(
+    docId: string,
+  ): Promise<Result<ArrayBuffer, EngineError>>;
 }
 
 /** Translate an engine error code into a user-friendly message. */

@@ -1127,6 +1127,140 @@ describe('EngineService - queue serialisation (DEF-009)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// getDocumentBytes — Phase 11: renderer proxy refresh after content-stream
+// mutations (OCR text layer). Returns the same bytes save would write, but
+// read-only (no modified/undo-stack reset). Round-trips and queues correctly.
+// ---------------------------------------------------------------------------
+
+describe('EngineService - getDocumentBytes', () => {
+  it('returns re-parseable bytes that match save output (round-trip)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(4);
+    await engine.loadDocument('doc-1', path);
+
+    // Apply ops so the bytes diverge from the original load bytes.
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+    await engine.applyOp('doc-1', { kind: 'delete', page: 2 });
+
+    const r = await engine.getDocumentBytes('doc-1');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    // Result is a standalone ArrayBuffer (not a shared view).
+    expect(r.value).toBeInstanceOf(ArrayBuffer);
+
+    // Re-parse the returned bytes and assert the mutations are present.
+    const reparsed = await PDFDocument.load(r.value);
+    // 4 - 1 deleted = 3 surviving pages.
+    expect(reparsed.getPageCount()).toBe(3);
+    // First page rotated 90deg.
+    expect(reparsed.getPage(0).getRotation().angle).toBe(90);
+
+    // The bytes from getDocumentBytes must match what save() writes to disk
+    // (same serializeDoc path), proving the renderer refresh matches a save.
+    const saveR = await engine.save('doc-1');
+    expect(saveR.ok).toBe(true);
+    const { readFile } = await import('node:fs/promises');
+    const saved = await readFile(path);
+    expect(saved.byteLength).toBe(r.value.byteLength);
+    const savedView = new Uint8Array(saved);
+    const gotView = new Uint8Array(r.value);
+    let same = savedView.length === gotView.length;
+    for (let i = 0; same && i < savedView.length; i++) {
+      if (savedView[i] !== gotView[i]) same = false;
+    }
+    expect(same).toBe(true);
+  });
+
+  it('is read-only: does not reset modified or clear the undo stack', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+    const before = await engine.getState('doc-1');
+    expect(before.ok && before.value.modified).toBe(true);
+
+    // getDocumentBytes must not flip modified or clear undo (unlike save).
+    const r = await engine.getDocumentBytes('doc-1');
+    expect(r.ok).toBe(true);
+
+    const after = await engine.getState('doc-1');
+    expect(after.ok && after.value.modified).toBe(true);
+
+    // Undo still works — the snapshot was preserved.
+    const u = await engine.undo('doc-1');
+    expect(u.ok).toBe(true);
+    if (u.ok) {
+      expect(u.value.modified).toBe(false);
+    }
+  });
+
+  it('returns engine-error for an unknown document', async () => {
+    const engine = new EngineService();
+    const r = await engine.getDocumentBytes('no-such-doc');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+    }
+  });
+
+  it('reflects queued mutations issued before it (queue ordering)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(8);
+    await engine.loadDocument('doc-1', path);
+
+    // Fire 3 deletes without awaiting, then getDocumentBytes. The bytes
+    // must reflect 8 - 3 = 5 pages because it queues behind the deletes.
+    const d1 = engine.applyOp('doc-1', { kind: 'delete', page: 0 });
+    const d2 = engine.applyOp('doc-1', { kind: 'delete', page: 1 });
+    const d3 = engine.applyOp('doc-1', { kind: 'delete', page: 2 });
+    const bytesP = engine.getDocumentBytes('doc-1');
+
+    const [, , , bytes] = await Promise.all([d1, d2, d3, bytesP]);
+    expect(bytes.ok).toBe(true);
+    if (!bytes.ok) return;
+
+    const reparsed = await PDFDocument.load(bytes.value);
+    expect(reparsed.getPageCount()).toBe(5);
+  });
+
+  it('bytes diverge from original load bytes after a content-stream edit', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const originalBytes = await doc.save();
+    const path = await writeFixture('gb-probe.pdf', originalBytes);
+    const loaded = await engine.loadDocument('doc-1', path);
+    expect(loaded.ok).toBe(true);
+
+    // Add a text box — a Phase 10 content-stream mutation that the original
+    // load bytes do not contain (analogous to OCR's invisible text layer).
+    const addR = await engine.addTextBox('doc-1', {
+      page: 1,
+      rect: { x: 72, y: 700, width: 200, height: 40 },
+      text: 'TFLEXPROBE',
+      font: 'Helvetica',
+      size: 14,
+      color: { r: 0, g: 0, b: 0 },
+      background: 'white',
+    });
+    expect(addR.ok).toBe(true);
+
+    const r = await engine.getDocumentBytes('doc-1');
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    // The refreshed bytes differ from the original load bytes (a content
+    // stream was mutated), and they re-parse to a valid 1-page PDF whose
+    // page-0 content stream now contains the drawn text as a Tj operand.
+    expect(r.value.byteLength).not.toBe(originalBytes.byteLength);
+    const refreshedPath = await writeFixture('gb-refreshed.pdf', new Uint8Array(r.value));
+    expect(await page0ContentHasText(refreshedPath, 'TFLEXPROBE')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // DEF-019: save-sequencing regression — getState must reflect in-flight ops
 // ---------------------------------------------------------------------------
 
