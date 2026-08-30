@@ -20,12 +20,13 @@ export function isPortableBuild(): boolean {
 /**
  * Reads the `repository` field from package.json.
  * The field should be in "owner/repo" format, e.g. "tanzimtipu/TFlex".
+ * In both dev and packaged builds `app.getAppPath()` resolves to the
+ * directory that contains package.json (the project root in dev, the
+ * app bundle root inside the ASAR archive when packaged).
  */
 function readRepo(): string | undefined {
   try {
-    const pkgPath = app.isPackaged
-      ? join(app.getAppPath(), 'package.json')
-      : join(app.getAppPath(), 'package.json');
+    const pkgPath = join(app.getAppPath(), 'package.json');
     const raw = readFileSync(pkgPath, 'utf8');
     const pkg = JSON.parse(raw) as Record<string, unknown>;
     return typeof pkg.repository === 'string' ? pkg.repository : undefined;
@@ -100,8 +101,33 @@ export class UpdateService {
       return;
     }
 
-    // Configure the auto-updater for a private GitHub repository.
-    // The token is read from the environment and never committed to source.
+    // Configure the auto-updater for a PRIVATE GitHub repository.
+    //
+    // `private: true` tells electron-updater's GitHubProvider to send
+    // `Authorization: token <TOKEN>` on BOTH the release-info API call AND
+    // the asset download request. Without it the provider would download
+    // without auth and get a 404 from GitHub — private release assets are
+    // invisible without the header. This is the private-bin vs public
+    // provider distinction: a public repo would omit `private` (or set it
+    // false) and need no token for downloads.
+    //
+    // Token env vars (read at RUNTIME from the process environment, never
+    // committed to source):
+    //   TFLEX_GH_TOKEN  — primary (TFlex-specific; avoids clashing with
+    //                    other tooling that reads GH_TOKEN)
+    //   GH_TOKEN        — fallback (matches electron-builder / gh CLI)
+    // The operator injects one of these into the environment before
+    // launching the app. Without a token the service sets 'error' state
+    // above and no update is offered.
+    //
+    // Feed assets consumed from the GitHub release (uploaded by the
+    // `electron-builder --publish` release pipeline — see
+    // electron-builder.yml for the exact asset names):
+    //   latest.yml                           — update manifest (version + sha512)
+    //   TFlex-Setup-<version>.exe             — NSIS installer
+    //   TFlex-Setup-<version>.exe.blockmap    — differential update blockmap
+    // The portable build (TFlex-<version>-portable.exe) is NOT listed in
+    // latest.yml and is gated by isPortableBuild() above.
     autoUpdater.setFeedURL({
       provider: 'github',
       owner: repoInfo.owner,
@@ -149,7 +175,10 @@ export class UpdateService {
       });
     });
 
-    // Start checking (but don't auto-download — the user triggers download).
+    // Start checking (but don't auto-download — the user is prompted to
+    // download via the About/toolbar indicator, per the Phase-6 requirement:
+    // "silent download + prompt restart" means the CHECK is silent on start
+    // and the DOWNLOAD is user-initiated, not auto-triggered on availability).
     autoUpdater.autoDownload = false;
     autoUpdater.autoInstallOnAppQuit = false;
 

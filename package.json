@@ -12,7 +12,7 @@
     "build:renderer": "vite build",
     "build:node": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --external:electron --external:tesseract.js --target=node24 --outfile=dist/main/index.js && node -e \"require('fs').writeFileSync('dist/main/package.json', JSON.stringify({type:'commonjs'}))\" && esbuild src/preload/preload.ts --bundle --platform=node --format=cjs --external:electron --target=node24 --outfile=dist/preload/preload.cjs",
     "start:prod": "electron .",
-    "dist": "npm run build && electron-builder",
+    "dist": "npm run build && electron-builder --publish never",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test"

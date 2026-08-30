@@ -172,6 +172,53 @@ describe('UpdateService — missing token', () => {
 });
 
 // ---------------------------------------------------------------------------
+// UpdateService — GH_TOKEN fallback (private provider token selection)
+// ---------------------------------------------------------------------------
+
+describe('UpdateService — GH_TOKEN fallback', () => {
+  beforeEach(() => {
+    clearEnv();
+    _mockReadFileSync.mockReturnValue(JSON.stringify({ repository: 'tanzimtipu/TFlex' }));
+    _autoUpdaterRemoveAll();
+    _autoUpdaterOn.mockClear();
+    _checkForUpdates.mockClear();
+    _checkForUpdates.mockResolvedValue(undefined);
+    _setFeedURL.mockClear();
+  });
+
+  afterEach(() => {
+    clearEnv();
+  });
+
+  it('uses GH_TOKEN when TFLEX_GH_TOKEN is not set', () => {
+    process.env.GH_TOKEN = 'gh-fallback-token';
+    const svc = new UpdateService();
+    svc.init();
+    expect(_setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: 'tanzimtipu',
+      repo: 'TFlex',
+      private: true,
+      token: 'gh-fallback-token',
+    });
+  });
+
+  it('prefers TFLEX_GH_TOKEN over GH_TOKEN', () => {
+    process.env.TFLEX_GH_TOKEN = 'primary-token';
+    process.env.GH_TOKEN = 'fallback-token';
+    const svc = new UpdateService();
+    svc.init();
+    expect(_setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: 'tanzimtipu',
+      repo: 'TFlex',
+      private: true,
+      token: 'primary-token',
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // UpdateService — missing repository
 // ---------------------------------------------------------------------------
 
@@ -280,6 +327,17 @@ describe('UpdateService — state transitions', () => {
     expect(status.kind).toBe('available');
     if (status.kind === 'available') {
       expect(status.version).toBe('2.0.0');
+    }
+  });
+
+  it('forwards releaseDate on update-available', () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '2.0.0', releaseDate: '2026-08-31T00:00:00Z' });
+    const status = svc.getStatus();
+    expect(status.kind).toBe('available');
+    if (status.kind === 'available') {
+      expect(status.releaseDate).toBe('2026-08-31T00:00:00Z');
     }
   });
 

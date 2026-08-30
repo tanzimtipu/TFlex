@@ -16,3 +16,23 @@ nsis:
   artifactName: TFlex-Setup-${version}.${ext}
 portable:
   artifactName: TFlex-${version}-portable.${ext}
+# Publish target for GitHub Releases. `npm run dist` passes `--publish never`
+# so artifacts are built locally without uploading; the operator publishes by
+# running `electron-builder --publish onTag` (or `always`) with `GH_TOKEN` set,
+# or via the GitHub Actions release workflow.
+#
+# When published, electron-builder uploads these release assets to the GitHub
+# release for the matching git tag (vMAJOR.MINOR.PATCH):
+#   TFlex-Setup-<version>.exe           — NSIS installer (auto-updateable)
+#   TFlex-Setup-<version>.exe.blockmap  — differential update blockmap
+#   latest.yml                          — update feed manifest consumed by
+#                                       electron-updater at runtime
+# The portable build (TFlex-<version>-portable.exe) is built but NOT listed
+# in latest.yml — it is not auto-updateable (see isPortableBuild() in
+# update-service.ts). electron-builder reads the publish token from the
+# `GH_TOKEN` / `GITHUB_TOKEN` env var at BUILD time; the in-app RUNTIME
+# token is `TFLEX_GH_TOKEN` (fallback `GH_TOKEN`) — see update-service.ts.
+publish:
+  provider: github
+  owner: tanzimtipu
+  repo: TFlex
