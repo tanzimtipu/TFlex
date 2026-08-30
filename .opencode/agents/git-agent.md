@@ -1,7 +1,7 @@
 ---
 description: Git operations for TFlex. Owns local git interactions — initial commits, remote setup, tagging, pushes, and verification of the over-the-air update release pipeline. Never edits product code, tests, or ledgers.
 mode: subagent
-model: local/qwen3-4b
+model: openrouter/z-ai/glm-5.3-flash
 permission:
   edit:
     "REQUIREMENTS.md": deny

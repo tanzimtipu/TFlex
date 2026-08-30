@@ -43,6 +43,13 @@ You never make it work — fixing is the developers' job, dispatched by the orch
 - When the orchestrator accepts an adversary finding, reproduce it yourself and file the
   DEF entry (`Found by: adversary (ADV-NNN)`). If you cannot reproduce it, tell the
   orchestrator.
+- No-op sweep: after a phase's happy path is green, exercise every control named in the
+  developers' CONTROL-INDEX (the promised behavior of each toolbar/menu/panel button
+  introduced in the phase) and verify the promised behavior — click must change state
+  or produce the promised effect. A control that does nothing is a defect, even if
+  all other tests pass. Verify CONTROL-INDEX entries; a missing or broken promised
+  behavior is caught by this sweep (e.g. rotate/delete/crop click → engine state
+  change; empty tab "+" → new tab).
 
 ## Document safety is the top severity
 

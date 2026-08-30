@@ -44,7 +44,12 @@ import {
   preferencesReducer,
 } from "./state/preferences";
 import { applyAnnotationPaletteChange } from "./state/colorPalette";
-import { dispatchMenuAction, type MenuActionContext } from "./state/menuActions";
+import {
+  dispatchMenuAction,
+  gateOnActiveDoc,
+  snapshotMenuEnabled,
+  type MenuActionContext,
+} from "./state/menuActions";
 import { shouldApplyEcho } from "./state/settingsEcho";
 import { openPdfDocument, readOutline, type OutlineNode } from "./pdf/pdfjs";
 import {
@@ -386,6 +391,14 @@ export function App(): ReactElement {
   // above so the listener doesn't churn.
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  // Forward declaration for `refreshDocProxyFor` (defined later in
+  // this component). The ref is filled in after the useCallback
+  // resolves; the early callers (e.g. `onCropPagesConfirm`) read
+  // through the ref so the function reference is always current
+  // without re-creating the useCallback when `refreshDocProxyFor`'s
+  // identity changes. Same forward-declared-ref pattern as
+  // `activeTabIdRefLocal` above (DEF-062).
+  const refreshDocProxyForRef = useRef<((tabId: string) => Promise<boolean>) | null>(null);
 
   /** Persist the latest settings to main immediately. Bumps the
    *  echo-filter seq and snapshots the object that went out so the
@@ -1222,7 +1235,23 @@ export function App(): ReactElement {
     async (tabId: string, placementId: string, rect: SignaturePlacement["rect"]): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
-      const result = await engineRef.current.moveSignature(open.session.engineDocId, placementId, rect);
+      // The engine's IPC contract is `moveSignature(docId, payload)` —
+      // see src/shared/ipc.ts and the `MoveSignaturePayload` type. We
+      // look up the placement's current page from this tab's local
+      // `placements` mirror (which the engine state also echoes back,
+      // but the local copy is the freshest source at drag time) and
+      // build the payload with the up-to-date page + id + rect. The
+      // previous adapter spread those into three positional args,
+      // which the real engine rejected (DEF-059).
+      const placement = open.placements.find((p) => p.id === placementId);
+      if (placement === undefined) {
+        pushToast("error", `Could not move signature: unknown placement ${placementId}.`);
+        return;
+      }
+      const result = await engineRef.current.moveSignature(
+        open.session.engineDocId,
+        { id: placementId, page: placement.page, rect },
+      );
       if (!result.ok) {
         pushToast("error", describeEngineError(result.error.code, result.error.message));
         return;
@@ -1717,36 +1746,59 @@ export function App(): ReactElement {
       merge: (): void => {
         setMergeOpen(true);
       },
-      save: (): void => {
-        const activeId = tabsRef.current.activeId;
-        if (activeId !== null) {
-          void onSave(activeId);
-        }
-      },
-      saveAs: (): void => {
-        const activeId = tabsRef.current.activeId;
-        if (activeId !== null) {
-          void onSaveAs(activeId);
-        }
-      },
-      closeTab: (): void => {
-        const activeId = tabsRef.current.activeId;
-        if (activeId !== null) {
-          closeTab(activeId);
-        }
-      },
-      undo: (): void => {
-        const activeId = tabsRef.current.activeId;
-        if (activeId !== null) {
-          void onUndo(activeId);
-        }
-      },
-      redo: (): void => {
-        const activeId = tabsRef.current.activeId;
-        if (activeId !== null) {
-          void onRedo(activeId);
-        }
-      },
+      // DEF-065 — Save / Save As / Close Tab / Undo / Redo are
+      // document-bound menu actions. The renderer's context
+      // handlers gate on `tabsRef.current.activeId` via
+      // `gateOnActiveDoc`, so clicking them on the welcome
+      // screen (zero tabs) is a clean no-op instead of a
+      // "silent error". The visual enable state of the menu
+      // itself is owned by the main process; this gate only
+      // covers the renderer's own side of the click.
+      save: gateOnActiveDoc(
+        () => tabsRef.current.activeId !== null,
+        (): void => {
+          const activeId = tabsRef.current.activeId;
+          if (activeId !== null) {
+            void onSave(activeId);
+          }
+        },
+      ),
+      saveAs: gateOnActiveDoc(
+        () => tabsRef.current.activeId !== null,
+        (): void => {
+          const activeId = tabsRef.current.activeId;
+          if (activeId !== null) {
+            void onSaveAs(activeId);
+          }
+        },
+      ),
+      closeTab: gateOnActiveDoc(
+        () => tabsRef.current.activeId !== null,
+        (): void => {
+          const activeId = tabsRef.current.activeId;
+          if (activeId !== null) {
+            closeTab(activeId);
+          }
+        },
+      ),
+      undo: gateOnActiveDoc(
+        () => tabsRef.current.activeId !== null,
+        (): void => {
+          const activeId = tabsRef.current.activeId;
+          if (activeId !== null) {
+            void onUndo(activeId);
+          }
+        },
+      ),
+      redo: gateOnActiveDoc(
+        () => tabsRef.current.activeId !== null,
+        (): void => {
+          const activeId = tabsRef.current.activeId;
+          if (activeId !== null) {
+            void onRedo(activeId);
+          }
+        },
+      ),
       toggleTheme: (): void => {
         onToggleTheme();
       },
@@ -2461,6 +2513,24 @@ export function App(): ReactElement {
         return;
       }
       noteOpApplied(activeId, res.value);
+      // DEF-062 — the engine writes the new CropBox / TrimBox to its
+      // copy of the doc, but the renderer's `doc` proxy still points
+      // at the pre-crop bytes. Without a refresh, every PageView on
+      // the affected pages continues to render at the pre-crop
+      // dimensions (the un-cropped viewport, then the un-cropped
+      // annotations + form fields + signatures layer laid out over
+      // it). Rebuild the proxy in place via the Phase 11 refresh
+      // hook — same pattern OCR uses after it writes the invisible
+      // text layer. The `doc` identity change cascades through
+      // DocumentView's `useEffect([doc])` deps so the search effect
+      // and any other doc-bound effect re-run against the post-crop
+      // bytes. If the backend predates Phase 11 (no `getDocumentBytes`),
+      // `refreshed` is false and the user can save + reopen to pick
+      // up the new dimensions — same fallback as the OCR path.
+      // The function is read through `refreshDocProxyForRef` because
+      // it's defined later in the component (forward-declared ref
+      // pattern, see the ref's declaration at the top of the file).
+      void refreshDocProxyForRef.current?.(activeId).catch(() => undefined);
       pushToast(
         "info",
         `Cropped ${choice.entries.length} page${choice.entries.length === 1 ? "" : "s"}.`,
@@ -2738,6 +2808,11 @@ export function App(): ReactElement {
     },
     [pushToast, toastForPdfError],
   );
+  // Mirror the latest reference into the forward-declared ref so
+  // early callers (e.g. onCropPagesConfirm at line ~2480) can read it
+  // without temporal-dead-zone complaints and without taking a dep on
+  // the useCallback identity (DEF-062).
+  refreshDocProxyForRef.current = refreshDocProxyFor;
 
   /** Resolve the active pdf.js document proxy for the OCR dialog.
    *  Returns null when no tab is active (the dialog should not be
@@ -3610,6 +3685,22 @@ export function App(): ReactElement {
     handleEditImage,
   ]);
 
+  // DEF-065 — push the active-doc snapshot to main on every
+  // active-tab change so the application menu items
+  // (Save / Save As / Close Tab / Undo / Redo) flip their
+  // `.enabled` state in lock-step with the renderer's view. The
+  // menu items are document-bound; with zero tabs open, the
+  // "click Save and get a silent error" path was the original
+  // bug. main looks each id up via
+  // `Menu.getApplicationMenu()?.getMenuItemById(id)` and sets
+  // `.enabled` accordingly. We push the snapshot after React
+  // commits the active-id change so the effect's dep is stable.
+  useEffect(() => {
+    window.tflex.menu.setEnabled(
+      snapshotMenuEnabled(tabs.activeId !== null),
+    );
+  }, [tabs.activeId]);
+
   activeTabIdRefLocal.current = tabs.activeId;
 
   const w = window as unknown as { tflexDiagnostics: () => unknown };
@@ -3873,7 +3964,7 @@ export function App(): ReactElement {
                 >
                   <DocumentView
                     doc={open.session.doc}
-                    pageCount={open.session.doc.numPages}
+                    pageCount={engine.engineState.pageCount}
                     outline={open.session.outline}
                     initial={open.persisted}
                     onPersist={persistFor(meta.id)}

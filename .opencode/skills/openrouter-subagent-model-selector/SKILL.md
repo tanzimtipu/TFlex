@@ -31,20 +31,48 @@ Fetch all of these at run time:
 3. `https://openrouter.ai/api/v1/models`
    - Authoritative source for canonical OpenRouter model IDs, pricing fields, context length, modality, and supported parameters.
    - Always cross-check every OpenRouter collection candidate against this API before recommending it.
-4. OpenRouter model detail pages, when needed:
+   - Warning: this API returns default-route pricing, which can be materially higher than the cheapest promoted route (observed: GLM 5.2 default $1.19/M vs $0.3276/M at StreamLake fp8). Never price-compare on this API alone.
+4. `https://openrouter.ai/api/v1/models/<id>/endpoints`
+   - Authoritative for the cheapest routable price per model: `pricing.prompt`, `pricing.completion`, `pricing.discount`, `quantization`, per-route `context_length`, and provider count.
+   - Required for every shortlisted candidate. Per-route context length is evidence: the same model can be 1M on one provider and 256K on another; single-provider routes are a reliability signal.
+5. OpenRouter model detail pages, when needed:
    - `https://openrouter.ai/<provider>/<model>`
    - Use these for capability descriptions, provider notes, data-policy warnings, quantization notes, tool support, reasoning support, and output limits.
-5. `https://huggingface.co/models`
+6. `https://huggingface.co/models`
    - Source for local candidates comparable to the OpenRouter candidates.
    - Search/filter for current instruction-tuned coding, agentic, tool-calling, and multimodal models as appropriate to each role.
-6. Hugging Face model cards and repository files for each local candidate.
+7. Hugging Face model cards and repository files for each local candidate.
    - Use the model card for parameter count, architecture, context length, license, intended use, quantization support, tool-calling support, benchmark claims, and hardware guidance.
    - Use repository files to verify downloadable artifacts such as GGUF, safetensors, AWQ, GPTQ, EXL2, or MLX files.
-7. Local inference documentation when needed:
+8. Local inference documentation when needed:
    - LM Studio, Ollama, llama.cpp, vLLM, Transformers, ExLlamaV2/TabbyAPI, or another mainstream runner.
    - Prefer the simplest reliable runner for the operator's Windows desktop and OpenCode workflow.
 
 If a collection page is incomplete in fetched markdown, use the model APIs plus targeted model detail pages to recover candidate details. Do not guess missing data.
+
+## Run-time fetch protocol (retry-proof)
+
+Follow these rules when fetching run-time data. They exist because this session previously produced empty prices, zero-byte sizes, and hard shell errors that forced repeated retries.
+
+1. PowerShell 5.1 rules (this environment):
+   - Use `Invoke-RestMethod` only. Never use `Invoke-WebRequest` — it hard-errors with "NonInteractive mode" on this machine.
+   - Never compute inside `-f` format strings over pipeline objects. Select the object into a local, compute scalars (e.g. `$p = [math]::Round([decimal]$best.pricing.prompt * 1e6, 4)`), then format. Inline math in format strings produced empty `in=/M out=/M` output before.
+   - Silence expected per-probe HTTP errors with `try/catch` or `-ErrorAction SilentlyContinue`, accumulate results into an array, and print once. Do not let the error stream flood the output.
+   - When looping over 10+ model IDs, set the shell command timeout >= 180000 ms with `-TimeoutSec 60` per HTTP call.
+2. Recipe A — OpenRouter sweep (known-good):
+   - Fetch `https://openrouter.ai/api/v1/models` once; filter candidate IDs; extract id, context_length, modality, pricing, `supported_parameters` (tools, structured_outputs), `hugging_face_id`.
+   - Then per shortlisted ID fetch `https://openrouter.ai/api/v1/models/<id>/endpoints`; sort endpoints by `[decimal]$_.pricing.prompt` ascending; take the first. Report provider name, in/out per 1M, discount %, quantization, per-route context length, and endpoint count.
+3. Recipe B — Hugging Face card and file sizes (known-good):
+   - Card/tags: `https://huggingface.co/api/models/<repo>` (downloads, tags, license).
+   - Sizes in one call: `https://huggingface.co/api/models/<repo>?blobs=true`; read `siblings[].size`. Never call the tree API per file (`/tree/main/<file>` errors like `.gitattributes does not exist on "main"` flood the output and yield 0 GB). Never probe `/resolve/...` with HEAD.
+4. Recipe C — HF GGUF discovery (known-good):
+   - `https://huggingface.co/api/models?search=<query>&limit=5`; verify the chosen repo via Recipe B.
+5. Sanity gates — stop and re-fetch, never score, when:
+   - Any price prints empty or shows `/M` with no number (formatting failure, not data).
+   - All sizes print `0 GB` for a repo that advertises GGUF (probe failure, not data).
+   - Only base-model pricing was used for a price comparison (endpoints sweep missing).
+   - A hosted candidate's cheapest-route context length was not recorded (route context can be 4x smaller than base API context).
+6. Gated HF repos (e.g. Gemma): detect the license-acceptance gate from the model card (`license:` tag) and record the gate as a risk. Do not treat a 401 from `/resolve` as "no downloadable artifact" — the HF API with `?blobs=true` still proves the artifacts exist.
 
 ## Current TFlex baseline discovery
 
@@ -52,11 +80,11 @@ Read the model fields from the agent definitions instead of assuming them. As a 
 
 | Agent | Current expected endpoint |
 | --- | --- |
-| `backend-dev` | `local/qwen3-coder-30b` |
-| `frontend-dev` | `local/qwen3-coder-30b` |
-| `qa` | `openrouter/google/gemini-3-flash-preview` (reverted from local Qwen2.5-VL-32B after probe-gate hang) |
+| `backend-dev` | `openrouter/z-ai/glm-5.2` |
+| `frontend-dev` | `openrouter/minimax/minimax-m3:free` |
+| `qa` | `openrouter/google/gemini-3-flash-preview` |
 | `adversary` | `openrouter/deepseek/deepseek-v4-flash` |
-| `git-agent` | `local/qwen3-4b` |
+| `git-agent` | `openrouter/z-ai/glm-5.3-flash` |
 
 If an agent file differs, the agent file wins and the report must call out the difference.
 
@@ -76,6 +104,7 @@ Start with the union of OpenRouter discounted and free collection models plus Hu
 - Known account data-policy incompatibility for this operator, when documented in `AGENTS_NOTES.md`.
 - Alias-only or redirect-only model where no canonical project endpoint can be resolved.
 - Non-text generators such as video, audio, speech, embedding, or reranking models unless the user explicitly asks to evaluate them for another purpose.
+- Base `/api/v1/models` pricing is default-route pricing only. Every hosted comparison must use the cheapest-route price from the endpoints API (`/api/v1/models/<id>/endpoints`), and must record per-route context length and provider count as reliability evidence.
 
 Free OpenRouter candidates need an additional reliability note: check whether the free route has tighter rate limits, data retention/training terms, reduced context compared with the paid route, or provider restrictions. A free model is not automatically the winner if it risks repeated failed attempts or blocked dispatches.
 

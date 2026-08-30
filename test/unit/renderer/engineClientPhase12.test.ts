@@ -43,6 +43,15 @@ interface FakeEngine {
     docId: string,
     fdfBytes: Uint8Array,
   ) => Promise<{ ok: true; value: unknown } | { ok: false; error: EngineError }>;
+  // DEF-062 — Phase 11 refresh hook, exposed alongside Phase 12 so the
+  // App.tsx cropPages flow can rebuild the renderer's pdf.js proxy
+  // in place after a successful crop. Optional because pre-Phase-11
+  // backends don't expose it; the renderer's refreshDocProxyFor
+  // helper returns false in that case and falls back to the
+  // existing search-index invalidator.
+  getDocumentBytes?: (
+    docId: string,
+  ) => Promise<{ ok: true; value: ArrayBuffer } | { ok: false; error: EngineError }>;
 }
 
 function withEngine(engine: FakeEngine): void {
@@ -219,6 +228,49 @@ describe("engineClient — Phase 12 adapter methods", () => {
       expect(r?.ok).toBe(false);
       if (r?.ok) return;
       expect(r!.error.code).toBe("engine-error");
+    });
+  });
+
+  // DEF-062 — the App.tsx cropPages handler now calls
+  // `refreshDocProxyFor` (which in turn calls
+  // `engine.getDocumentBytes`) after a successful cropPages. The
+  // adapter must expose BOTH methods on the same engine surface so
+  // the host's crop → refresh sequence is a single coherent flow.
+  // Pin the contract: cropPages and getDocumentBytes are both
+  // present on a Phase 11+ Phase 12 backend; the renderer's
+  // refreshDocProxyFor helper (see App.tsx) reads the latter to
+  // rebuild the pdf.js proxy in place.
+  describe("cropPages + getDocumentBytes (DEF-062)", () => {
+    beforeEach(() => {
+      withEngine({
+        cropPages: vi.fn(async () => ({
+          ok: true as const,
+          value: { pageCount: 3 },
+        })) as unknown as FakeEngine["cropPages"],
+        getDocumentBytes: vi.fn(async () => ({
+          ok: true as const,
+          value: new Uint8Array([0x25, 0x50, 0x44, 0x46]).buffer,
+        })),
+      });
+    });
+
+    it("cropPages then getDocumentBytes both succeed (host flow)", async () => {
+      const e = getEngine();
+      const cropRes = await e.cropPages?.("doc-1", [
+        { page: 1, box: { x: 10, y: 10, width: 500, height: 700 } },
+      ]);
+      expect(cropRes?.ok).toBe(true);
+      if (!cropRes?.ok) return;
+      // The App.tsx flow (after a successful cropPages) calls
+      // refreshDocProxyFor, which goes through getDocumentBytes.
+      // Pin the same shape: the bytes round-trip as a real
+      // ArrayBuffer (not a Uint8Array view) so the downstream
+      // openPdfDocument call doesn't trip on the type narrowing.
+      const refreshRes = await e.getDocumentBytes?.("doc-1");
+      expect(refreshRes?.ok).toBe(true);
+      if (!refreshRes?.ok) return;
+      expect(refreshRes.value).toBeInstanceOf(ArrayBuffer);
+      expect(new Uint8Array(refreshRes.value)[0]).toBe(0x25);
     });
   });
 });

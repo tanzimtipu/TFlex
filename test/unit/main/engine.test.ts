@@ -3183,3 +3183,272 @@ function minimalJpeg(): Uint8Array {
   ]);
 }
 
+// ---------------------------------------------------------------------------
+// DEF-060: createDocxFromDoc — text-first DOCX with image fallback
+// ---------------------------------------------------------------------------
+
+describe('DEF-060: createDocxFromDoc', () => {
+  it('emits real w:t runs for text-bearing pages (no wp:inline)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1); // page draws "Page 0"
+    await engine.loadDocument('doc-1', path);
+
+    const png = createMinimalPng(100, 80);
+    const entries = [{
+      pageNumber: 1,
+      pngBuffer: png,
+      width: 100,
+      height: 80,
+      pageWidth: 612,
+      pageHeight: 792,
+    }];
+
+    const result = await engine.createDocxFromDoc('doc-1', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const docXml = extractZipEntryText(result.value, 'word/document.xml');
+    expect(docXml).not.toBeNull();
+    // Text page must contain at least one w:t run with the page text.
+    expect(docXml!).toContain('<w:t');
+    expect(docXml!).toContain('Page 0');
+    // No inline image on a text page.
+    expect(docXml!).not.toContain('<wp:inline');
+  });
+
+  it('falls back to wp:inline image for text-free pages (no w:t)', async () => {
+    const engine = new EngineService();
+    // A page with no text operators at all (blank).
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('blank.pdf', bytes);
+    await engine.loadDocument('doc-1', path);
+
+    const png = createMinimalPng(100, 80);
+    const entries = [{
+      pageNumber: 1,
+      pngBuffer: png,
+      width: 100,
+      height: 80,
+      pageWidth: 612,
+      pageHeight: 792,
+    }];
+
+    const result = await engine.createDocxFromDoc('doc-1', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const docXml = extractZipEntryText(result.value, 'word/document.xml');
+    expect(docXml!).not.toBeNull();
+    // Image fallback: an inline drawing is present.
+    expect(docXml!).toContain('<wp:inline');
+    // No text run on a text-free page.
+    expect(docXml!).not.toContain('<w:t');
+    // The image relationship + media part must exist.
+    const rels = extractZipEntryText(result.value, 'word/_rels/document.xml.rels');
+    expect(rels!).toContain('image1.png');
+    const media = extractZipEntryBytes(result.value, 'word/media/image1.png');
+    expect(media).not.toBeNull();
+    // The media bytes should be the PNG we sent.
+    expect(media!.length).toBe(png.length);
+  });
+
+  it('mixed doc: text page emits w:t, image-only page emits wp:inline', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const p1 = doc.addPage([612, 792]);
+    p1.drawText('Hello World', { x: 72, y: 700, size: 14, font });
+    doc.addPage([612, 792]); // blank page 2
+    const bytes = await doc.save();
+    const path = await writeFixture('mixed.pdf', bytes);
+    await engine.loadDocument('doc-1', path);
+
+    const png = createMinimalPng(100, 80);
+    const entries = [
+      { pageNumber: 1, pngBuffer: png, width: 100, height: 80, pageWidth: 612, pageHeight: 792 },
+      { pageNumber: 2, pngBuffer: png, width: 100, height: 80, pageWidth: 612, pageHeight: 792 },
+    ];
+
+    const result = await engine.createDocxFromDoc('doc-1', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const docXml = extractZipEntryText(result.value, 'word/document.xml');
+    expect(docXml!).toContain('Hello World');
+    expect(docXml!).toContain('<w:t');
+    expect(docXml!).toContain('<wp:inline');
+    // Exactly one inline image (page 2 only).
+    expect((docXml!.match(/<wp:inline/g) || []).length).toBe(1);
+  });
+
+  it('page-break separator sits between pages so page count matches', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+
+    const png = createMinimalPng(50, 50);
+    const entries = [1, 2, 3].map((n) => ({
+      pageNumber: n, pngBuffer: png, width: 50, height: 50, pageWidth: 612, pageHeight: 792,
+    }));
+
+    const result = await engine.createDocxFromDoc('doc-1', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const docXml = extractZipEntryText(result.value, 'word/document.xml')!;
+    // Two page breaks for three pages (break before every page except the first).
+    expect((docXml.match(/w:br w:type="page"/g) || []).length).toBe(2);
+    expect(docXml).toContain('Page 0');
+    expect(docXml).toContain('Page 1');
+    expect(docXml).toContain('Page 2');
+  });
+
+  it('XML-escapes text content so <, &, > do not corrupt document.xml', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const page = doc.addPage([612, 792]);
+    page.drawText('a < b & c > d', { x: 72, y: 700, size: 14, font });
+    const bytes = await doc.save();
+    const path = await writeFixture('escape.pdf', bytes);
+    await engine.loadDocument('doc-1', path);
+
+    const png = createMinimalPng(50, 50);
+    const entries = [{
+      pageNumber: 1, pngBuffer: png, width: 50, height: 50, pageWidth: 612, pageHeight: 792,
+    }];
+
+    const result = await engine.createDocxFromDoc('doc-1', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const docXml = extractZipEntryText(result.value, 'word/document.xml')!;
+    // The raw special chars must NOT appear inside the w:t (escaped forms do).
+    expect(docXml).not.toContain('a < b & c > d');
+    expect(docXml).toContain('a &lt; b &amp; c &gt; d');
+    // The XML must still be well-formed enough to contain the closing tags.
+    expect(docXml).toContain('</w:t>');
+    expect(docXml).toContain('</w:document>');
+  });
+
+  it('returns engine-error for unknown docId', async () => {
+    const engine = new EngineService();
+    const png = createMinimalPng(50, 50);
+    const entries = [{
+      pageNumber: 1, pngBuffer: png, width: 50, height: 50, pageWidth: 612, pageHeight: 792,
+    }];
+    const result = await engine.createDocxFromDoc('nope', entries);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('engine-error');
+    }
+  });
+
+  it('returns empty-range for empty entries', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+    const result = await engine.createDocxFromDoc('doc-1', []);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('empty-range');
+    }
+  });
+
+  it('produced .docx is a valid ZIP (PK signature + EOCD)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+    const png = createMinimalPng(50, 50);
+    const entries = [{
+      pageNumber: 1, pngBuffer: png, width: 50, height: 50, pageWidth: 612, pageHeight: 792,
+    }];
+    const result = await engine.createDocxFromDoc('doc-1', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const zip = result.value;
+    expect(zip[0]).toBe(0x50); // P
+    expect(zip[1]).toBe(0x4b); // K
+    expect(findPkEndSignature(zip)).toBeGreaterThan(0);
+    // document.xml part must be reachable.
+    expect(extractZipEntryText(zip, 'word/document.xml')).not.toBeNull();
+  });
+
+  it('honours visible page order (reorder + delete)', async () => {
+    const engine = new EngineService();
+    // 3 pages: "AAAPAGE", "BBBPAGE", "CCCPAGE"
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    for (const label of ['AAAPAGE', 'BBBPAGE', 'CCCPAGE']) {
+      const p = doc.addPage([612, 792]);
+      p.drawText(label, { x: 72, y: 700, size: 14, font });
+    }
+    const bytes = await doc.save();
+    const path = await writeFixture('order.pdf', bytes);
+    await engine.loadDocument('doc-1', path);
+
+    // Reorder: move original page 3 (index 2) to the front -> visible [2,0,1]
+    // = CCCPAGE, AAAPAGE, BBBPAGE. Then delete visible page 2 (index 2,
+    // "BBBPAGE") -> visible [2,0] = CCCPAGE, AAAPAGE.
+    await engine.applyOp('doc-1', { kind: 'reorder', page: 2, param: 0 });
+    await engine.applyOp('doc-1', { kind: 'delete', page: 2 });
+
+    const state = await engine.getState('doc-1');
+    expect(state.ok && state.value.pageCount).toBe(2);
+
+    const png = createMinimalPng(50, 50);
+    const entries = [
+      { pageNumber: 1, pngBuffer: png, width: 50, height: 50, pageWidth: 612, pageHeight: 792 },
+      { pageNumber: 2, pngBuffer: png, width: 50, height: 50, pageWidth: 612, pageHeight: 792 },
+    ];
+    const result = await engine.createDocxFromDoc('doc-1', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const docXml = extractZipEntryText(result.value, 'word/document.xml')!;
+    // Visible page 1 is original page 3 ("CCCPAGE"), visible page 2 is
+    // original page 1 ("AAAPAGE"). "BBBPAGE" was deleted and must be absent.
+    expect(docXml).toContain('CCCPAGE');
+    expect(docXml).toContain('AAAPAGE');
+    expect(docXml).not.toContain('BBBPAGE');
+    // CCCPAGE (visible 1) must appear before AAAPAGE (visible 2).
+    expect(docXml.indexOf('CCCPAGE')).toBeLessThan(docXml.indexOf('AAAPAGE'));
+  });
+});
+
+/**
+ * Extract a store-only ZIP entry's bytes by name. Scans local file headers
+ * (PK\x03\x04), reads the filename, and slices the uncompressed data. Only
+ * supports compression method 0 (store) — which is all buildDocxFromDoc /
+ * buildDocxFromImages emit — so no inflate is needed.
+ */
+function extractZipEntryBytes(zip: Uint8Array, name: string): Uint8Array | null {
+  const dv = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  for (let i = 0; i + 30 <= zip.length; i++) {
+    if (zip[i] !== 0x50 || zip[i + 1] !== 0x4b || zip[i + 2] !== 0x03 || zip[i + 3] !== 0x04) continue;
+    const nameLen = dv.getUint16(i + 26, true);
+    const extraLen = dv.getUint16(i + 28, true);
+    const compSize = dv.getUint32(i + 18, true);
+    const method = dv.getUint16(i + 8, true);
+    const nameStart = i + 30;
+    const nameEnd = nameStart + nameLen;
+    if (nameEnd > zip.length) return null;
+    const entryName = new TextDecoder().decode(zip.slice(nameStart, nameEnd));
+    if (entryName !== name) {
+      continue;
+    }
+    if (method !== 0) return null; // only store supported
+    const dataStart = nameEnd + extraLen;
+    return zip.slice(dataStart, dataStart + compSize);
+  }
+  return null;
+}
+
+function extractZipEntryText(zip: Uint8Array, name: string): string | null {
+  const bytes = extractZipEntryBytes(zip, name);
+  return bytes === null ? null : new TextDecoder().decode(bytes);
+}
+

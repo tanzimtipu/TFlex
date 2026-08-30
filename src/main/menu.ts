@@ -1,4 +1,17 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron';
+import type { MenuEnabledState, MenuItemId } from '../shared/types';
+
+/** DEF-065 — the set of menu item ids whose enabled state the renderer can
+ *  toggle via `menu:setEnabled`. Kept here (next to the template that
+ *  assigns them) so a new toggle-able item is added in both places at once.
+ *  This must match `MenuItemId` in shared/types.ts exactly. */
+export const TOGGLEABLE_MENU_IDS: readonly MenuItemId[] = [
+  'menu.save',
+  'menu.saveAs',
+  'menu.closeTab',
+  'menu.undo',
+  'menu.redo',
+];
 
 interface MenuDeps {
   /** Called when a menu action needs the active window to send an IPC event. */
@@ -11,6 +24,10 @@ interface MenuDeps {
  * Menu actions send IPC events to the focused renderer window. The renderer
  * handles these events using the same handlers as toolbar/button interactions,
  * so the menu is a thin dispatch layer with no business logic.
+ *
+ * DEF-065: the Save / Save As / Close Tab / Undo / Redo items carry stable
+ * `id` fields so `applyMenuEnabledState` can look them up via
+ * `Menu.getApplicationMenu()?.getMenuItemById(id)` and flip `.enabled`.
  */
 export function buildAppMenu(deps: MenuDeps): void {
   const isMac = process.platform === 'darwin';
@@ -33,17 +50,20 @@ export function buildAppMenu(deps: MenuDeps): void {
         },
         { type: 'separator' },
         {
+          id: 'menu.save',
           label: 'Save',
           accelerator: 'CmdOrCtrl+S',
           click: () => send('save'),
         },
         {
+          id: 'menu.saveAs',
           label: 'Save As...',
           accelerator: 'CmdOrCtrl+Shift+S',
           click: () => send('saveAs'),
         },
         { type: 'separator' },
         {
+          id: 'menu.closeTab',
           label: 'Close Tab',
           accelerator: 'CmdOrCtrl+W',
           click: () => send('closeTab'),
@@ -60,11 +80,13 @@ export function buildAppMenu(deps: MenuDeps): void {
       label: 'Edit',
       submenu: [
         {
+          id: 'menu.undo',
           label: 'Undo',
           accelerator: 'CmdOrCtrl+Z',
           click: () => send('undo'),
         },
         {
+          id: 'menu.redo',
           label: 'Redo',
           accelerator: 'CmdOrCtrl+Shift+Z',
           click: () => send('redo'),
@@ -153,4 +175,24 @@ export function buildAppMenu(deps: MenuDeps): void {
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
+}
+
+/**
+ * DEF-065 — apply a partial `{ id -> enabled }` map to the current
+ * application menu. Looks each id up via `getMenuItemById` and flips
+ * `.enabled`. Ids that are absent from the map (or not present in the
+ * menu) are left untouched. Safe to call when no menu is set: a null
+ * `getApplicationMenu()` result is a no-op. Exported so the
+ * `menu:setEnabled` IPC listener in main/index.ts is a one-liner and
+ * the core logic is unit-testable without spinning up Electron.
+ */
+export function applyMenuEnabledState(state: MenuEnabledState): void {
+  const menu = Menu.getApplicationMenu();
+  if (menu === null) return;
+  for (const key of Object.keys(state) as MenuItemId[]) {
+    const item = menu.getMenuItemById(key);
+    if (item !== undefined && item !== null) {
+      item.enabled = Boolean(state[key]);
+    }
+  }
 }

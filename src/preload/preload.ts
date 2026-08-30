@@ -197,6 +197,14 @@ const engineApi = {
   ): Promise<Result<Uint8Array, EngineError>> {
     return ipcRenderer.invoke(IPC.engineCreateDocxFromImages, entries);
   },
+  // DEF-060 — build a .docx from the loaded document's own text, with an
+  // image fallback (from entries pngBuffer) for text-free pages.
+  createDocxFromDoc(
+    docId: string,
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineCreateDocxFromDoc, docId, entries);
+  },
   // Phase 10: edit content
   editTextRun(
     docId: string,
@@ -342,6 +350,10 @@ const api = {
       return () => {
         ipcRenderer.removeListener(IPC.menuActionEvent, listener);
       };
+    },
+    // DEF-065 — fire-and-forget: toggle named menu items' enabled state.
+    setEnabled(state: import("../shared/types").MenuEnabledState): void {
+      void ipcRenderer.send(IPC.menuSetEnabled, state);
     },
   },
   engine: engineApi,

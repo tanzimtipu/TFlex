@@ -130,3 +130,101 @@ case 'insertPages':      ctx.insertPages();        return true;
       return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// DEF-065 — active-doc gating helpers.
+//
+// The native menu (built in `src/main/menu.ts`) shows every File / Edit /
+// Tools item as enabled even when no document is open. The visual enabled
+// state lives in the main process; the renderer cannot toggle it directly
+// (no IPC contract exists for that, and per AGENTS rules neither main nor
+// preload can be edited from this role). What the renderer CAN do — and
+// does here — is guarantee that the click itself is a clean no-op when no
+// tab is active, so the bug's "silent error in the background" claim does
+// not reproduce even though the menu items still look enabled.
+//
+// The two helpers below are what `App.tsx` uses to wrap its context
+// handlers. They isolate the active-doc check so it's a single,
+// testable predicate rather than a duplicated `if (activeId !== null)`
+// branch scattered across the menu wiring.
+//
+// `snapshotMenuEnabled` is the shape the main process will consume once
+// the orchestrator amends the IPC contract (a new `menu:setEnabledState`
+// channel + a tiny listener in `src/main/menu.ts`). Today the renderer
+// can compute the snapshot but has nowhere to ship it; the helper exists
+// so the day the contract lands, App.tsx can call it without a
+// refactor.
+
+// Menu actions that require an active document. Any other action in
+// the menu (`open`, `merge`, `toggleTheme`, `about`, `preferences`,
+// the zoom / fit / Tools palette / OCR family) is document-agnostic
+// and can run with zero tabs.
+export type ActiveDocMenuAction =
+  | 'save'
+  | 'saveAs'
+  | 'closeTab'
+  | 'undo'
+  | 'redo';
+
+/** True iff the named action needs an active document to be useful.
+ *  Pure: depends only on its argument. */
+export function menuActionRequiresActiveDoc(
+  action: string,
+): action is ActiveDocMenuAction {
+  return (
+    action === 'save' ||
+    action === 'saveAs' ||
+    action === 'closeTab' ||
+    action === 'undo' ||
+    action === 'redo'
+  );
+}
+
+/** Wrap a document-required handler so it only fires when a doc is
+ *  open. The `hasActiveDoc` predicate is the single source of truth
+ *  for "is there a document right now?" — the App re-reads it on
+ *  every menu dispatch because the active id can change between
+ *  clicks. Returns a no-op thunk the dispatcher can call
+ *  unconditionally.
+ *
+ *  Pure: the wrapper is a function; the gating is a closure over
+ *  the predicate. Tests pass arbitrary `hasActiveDoc` values to
+ *  exercise the path the App's `useEffect` takes. */
+export function gateOnActiveDoc(
+  hasActiveDoc: () => boolean,
+  handler: () => void,
+): () => void {
+  return (): void => {
+    if (!hasActiveDoc()) return;
+    handler();
+  };
+}
+
+/** Snapshot the renderer's current menu enable state. The shape
+ *  matches the shared `MenuEnabledState` (Partial<Record<MenuItemId, boolean>>)
+ *  in `src/shared/types.ts` so App.tsx can hand the result straight
+ *  to `window.tflex.menu.setEnabled(...)` without re-mapping ids. The
+ *  keys use the canonical `'menu.save'` / `'menu.saveAs'` /
+ *  `'menu.closeTab'` / `'menu.undo'` / `'menu.redo'` ids from the
+ *  `MenuItemId` union, which line up with the `id:` field in
+ *  `src/main/menu.ts` (the two lists must stay in sync). The host
+ *  pushes a fresh snapshot on every active-tab change so main can
+ *  keep `MenuItem.enabled` in lock-step with the renderer's view
+ *  (DEF-065). */
+export function snapshotMenuEnabled(
+  hasActiveDoc: boolean,
+): {
+  "menu.save": boolean;
+  "menu.saveAs": boolean;
+  "menu.closeTab": boolean;
+  "menu.undo": boolean;
+  "menu.redo": boolean;
+} {
+  return {
+    "menu.save": hasActiveDoc,
+    "menu.saveAs": hasActiveDoc,
+    "menu.closeTab": hasActiveDoc,
+    "menu.undo": hasActiveDoc,
+    "menu.redo": hasActiveDoc,
+  };
+}

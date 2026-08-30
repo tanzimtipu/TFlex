@@ -563,7 +563,11 @@ describe("StubRendererEngine — placeSignature / moveSignature / deleteSignatur
   it("moveSignature updates the rect of the matching placement", async () => {
     const { engine, tabId } = setup(3);
     await engine.placeSignature(tabId, makePlacement());
-    const r = await engine.moveSignature(tabId, "pl-1", { x: 50, y: 60, width: 80, height: 30 });
+    const r = await engine.moveSignature(tabId, {
+      id: "pl-1",
+      page: 1,
+      rect: { x: 50, y: 60, width: 80, height: 30 },
+    });
     expect(r.ok).toBe(true);
     if (r.ok) {
       const pl = r.value.signatures?.find((p) => p.id === "pl-1");
@@ -573,9 +577,32 @@ describe("StubRendererEngine — placeSignature / moveSignature / deleteSignatur
 
   it("moveSignature returns not-found for an unknown placement id", async () => {
     const { engine, tabId } = setup(3);
-    const r = await engine.moveSignature(tabId, "missing", { x: 0, y: 0, width: 10, height: 10 });
+    const r = await engine.moveSignature(tabId, {
+      id: "missing",
+      page: 1,
+      rect: { x: 0, y: 0, width: 10, height: 10 },
+    });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.code).toBe("not-found");
+  });
+
+  it("moveSignature updates the placement's page when the payload carries a new page (DEF-059)", async () => {
+    // After a delete + re-place at a different page, the renderer's
+    // local mirror is the freshest source of the placement's current
+    // page. The stub must honor `payload.page` so the echoed engine
+    // state stays in sync with the renderer.
+    const { engine, tabId } = setup(3);
+    await engine.placeSignature(tabId, makePlacement({ id: "pl-1", page: 1 }));
+    const r = await engine.moveSignature(tabId, {
+      id: "pl-1",
+      page: 2,
+      rect: { x: 50, y: 60, width: 80, height: 30 },
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const pl = r.value.signatures?.find((p) => p.id === "pl-1");
+    expect(pl?.page).toBe(2);
+    expect(pl?.rect).toEqual({ x: 50, y: 60, width: 80, height: 30 });
   });
 
   it("deleteSignature removes the matching placement", async () => {

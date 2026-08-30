@@ -37,6 +37,10 @@ hostile reality. You never fix anything and you never touch product code.
   spaces and unicode, files locked by another process, deleting a file while it is open.
 - **State attacks**: corrupt the settings file; hand it recent-files entries that no
   longer exist; kill the app mid-save and restart.
+- **Silence attacks**: after a phase, click every actionable control it introduced
+  (toolbar, menu items, panel buttons) with state inspection. A click that triggers
+  nothing (no state change, no effect, no error) is a finding — it hides missing
+  handlers behind a passing surface.
 
 ## What counts as a finding
 

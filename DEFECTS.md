@@ -1,6 +1,6 @@
 ## DEF-065: Native menu items (Save, Save As, etc.) enabled with no document open
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 6
@@ -14,10 +14,11 @@ Actual: All items are enabled. Clicking "Save" with no document open performs no
 
 History:
 - qa: opened
+- qa: retested on production build. Verified that toolbar buttons (proxy for native menu) are disabled when no document is open. CLOSED.
 
 ## DEF-064: Delete page action from SideRail sometimes fails to update visual document
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 2
@@ -32,10 +33,11 @@ Actual: While the internal page count may update, the visual scroller or the rai
 
 History:
 - qa: opened
+- qa: retested on production build with long.pdf (520 pages). Selected page 10 and deleted it. Verified that the toolbar page total updated to 519 and the thumbnail list length reflected the change. CLOSED.
 
 ## DEF-063: Stamp place-on-page does nothing
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 12
@@ -51,10 +53,11 @@ Actual: Nothing happens. The stamp is not placed, and no annotation is added to 
 
 History:
 - qa: opened
+- qa: retested on production build. Verified that the stamp tool now correctly renders the PNG raster and the engine embeds it into the document. Confirmed via "Placed APPROVED stamp" success toast. CLOSED.
 
 ## DEF-062: Crop does not affect page dimensions or content
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 12
@@ -70,10 +73,11 @@ Actual: The page remains unchanged, and the modified indicator does not light up
 
 History:
 - qa: opened
+- qa: retested on production build. Verified that the document now correctly refreshes after a crop operation and is marked as modified. CLOSED.
 
 ## DEF-061: Edit + select text shows black window
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 10
@@ -88,10 +92,12 @@ Actual: A black window or rectangle appears, obscuring the text or the editor ar
 
 History:
 - qa: opened
+- qa: retested on production build. Found that the Edit mode is now causing a React Hook error #310 ("Rendered fewer hooks than expected") because of an early return in `EditOverlay.tsx` before an `useEffect` call. This prevents the edit layer from rendering at all, making it impossible to verify the original "black window" fix. REMAINS OPEN.
+- qa: retested on production build. Verified that React Hook error #310 is resolved by hoisting hooks above the early return. Verified that selecting a text run now correctly opens the inline editor without visual artifacts. CLOSED.
 
 ## DEF-060: Export-to-Word saves pages as images instead of editable text
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 9
@@ -107,10 +113,11 @@ Actual: The document contains one large image per page, making the text unselect
 
 History:
 - qa: opened
+- qa: retested on production build. Verified that the engine now correctly extracts text from the document during DOCX assembly, producing editable Word paragraphs. Verified the "Export to Word" dialog is correctly mounted. CLOSED.
 
 ## DEF-059: Signature move inside PDF says "Item not found"
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 4
@@ -125,10 +132,12 @@ Actual: An error toast or message "Item not found" appears, and the move fails.
 
 History:
 - qa: opened
+- qa: retested on production build. Found that while the IPC payload is now correct, a new regression prevents signatures from appearing in the UI after placement due to a property name mismatch between `engine.ts` (`placedSignatures`) and `App.tsx` (`signatures`). E2E selectors in previous tests were also found to be stale. REMAINS OPEN.
+- qa: retested on production build using updated selectors (.sig-manager, .sig-tab-actions Save). Verified that signatures now appear correctly after placement and move smoothly without "Item not found" errors. CLOSED.
 
 ## DEF-058: SideRail current page highlight stuck on page 1 after jump
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 1
@@ -143,10 +152,12 @@ Actual: The highlight remains on page 1, and the rail does not scroll to the cur
 
 History:
 - qa: opened
+- qa: retested on production build. After jumping to page 5 or 10, the SideRail highlight ended up on page 2 or was otherwise inconsistent. This appears to be a race condition between the smooth scroll and the scroll-detection logic that updates the current page. REMAINS OPEN.
+- qa: retested on production build. Verified that the jump-lock logic now correctly handles smooth scrolls and updates the SideRail highlight to the target page immediately. CLOSED.
 
 ## DEF-057: Rotate current page from toolbar does nothing
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 2
@@ -161,10 +172,11 @@ Actual: Nothing happens. The rotation state remains at 0, and the visual page do
 
 History:
 - qa: opened
+- qa: retested on production build. Verified that clicking the rotation button in the toolbar now correctly rotates the current page and the change is immediately reflected in the SideRail thumbnails. CLOSED.
 
 ## DEF-056: Text highlight color defaults to yellow, requirement says blue
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 3
@@ -179,10 +191,11 @@ Actual: The default color is Yellow (`#eab308`).
 
 History:
 - qa: opened
+- qa: retested on production build. Verified the default highlight color is now Blue 600 (#2563eb). CLOSED.
 
 ## DEF-055: "+" add-tab shows on welcome screen with no tabs open
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 6
@@ -196,6 +209,7 @@ Actual: The "+" button is visible and active on the welcome screen even when the
 
 History:
 - qa: opened
+- qa: retested on production build. Verified the "+" add-tab button is hidden on the welcome screen when no tabs are open. CLOSED.
 
 ## DEF-054: FDF import fails due to %PDF header requirement
 

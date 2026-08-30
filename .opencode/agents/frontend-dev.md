@@ -1,7 +1,7 @@
 ---
 description: Frontend developer for TFlex. Owns the Electron renderer: the React UI, PDF.js page rendering, annotation overlays, interactions, theming and animation, and renderer unit tests. Never touches main-process code.
 mode: subagent
-model: local/qwen3-coder-30b
+model: openrouter/minimax/minimax-m3:free
 permission:
   edit:
     "REQUIREMENTS.md": deny

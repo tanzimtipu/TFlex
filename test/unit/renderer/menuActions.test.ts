@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi, type Mock } from "vitest";
-import { dispatchMenuAction, type MenuActionContext } from "../../../src/renderer/state/menuActions";
+import {
+  dispatchMenuAction,
+  gateOnActiveDoc,
+  menuActionRequiresActiveDoc,
+  snapshotMenuEnabled,
+  type MenuActionContext,
+} from "../../../src/renderer/state/menuActions";
 
 /**
  * Phase 7 / DEF-038 — the renderer used to listen for a DOM
@@ -298,5 +304,127 @@ describe("dispatchMenuAction — handler isolation (DEF-038 regression)", () => 
     expect(spies.exportDocx).toHaveBeenCalledTimes(1);
     expect(spies.insertPages).toHaveBeenCalledTimes(1);
     expect(spies.recognizeText).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("DEF-065 — active-doc menu gating (renderer-side safety)", () => {
+  it("menuActionRequiresActiveDoc flags only document-bound actions", () => {
+    // The visual enable state of the menu is owned by the main
+    // process, but the renderer can only guarantee safe behaviour
+    // (no crash, no silent error) by gating its own context
+    // handlers. The list of "needs a doc" actions is the
+    // single source of truth for that gating.
+    expect(menuActionRequiresActiveDoc("save")).toBe(true);
+    expect(menuActionRequiresActiveDoc("saveAs")).toBe(true);
+    expect(menuActionRequiresActiveDoc("closeTab")).toBe(true);
+    expect(menuActionRequiresActiveDoc("undo")).toBe(true);
+    expect(menuActionRequiresActiveDoc("redo")).toBe(true);
+    // Document-agnostic actions.
+    expect(menuActionRequiresActiveDoc("open")).toBe(false);
+    expect(menuActionRequiresActiveDoc("merge")).toBe(false);
+    expect(menuActionRequiresActiveDoc("toggleTheme")).toBe(false);
+    expect(menuActionRequiresActiveDoc("about")).toBe(false);
+    expect(menuActionRequiresActiveDoc("preferences")).toBe(false);
+    expect(menuActionRequiresActiveDoc("zoomIn")).toBe(false);
+    expect(menuActionRequiresActiveDoc("fitWidth")).toBe(false);
+    expect(menuActionRequiresActiveDoc("showToolsPalette")).toBe(false);
+    // Defensive: future / unknown actions should NOT be flagged as
+    // doc-required — the renderer doesn't know what they do, so
+    // the safest default is to let main decide.
+    expect(menuActionRequiresActiveDoc("futurePhase99Action")).toBe(false);
+    expect(menuActionRequiresActiveDoc("")).toBe(false);
+  });
+
+  it("gateOnActiveDoc invokes the handler when hasActiveDoc is true", () => {
+    // Happy path: doc open -> handler runs.
+    const handler = vi.fn();
+    const wrapped = gateOnActiveDoc(() => true, handler);
+    wrapped();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("gateOnActiveDoc is a no-op when hasActiveDoc is false (no crash, no error)", () => {
+    // DEF-065: clicking "Save" with no doc open must be a clean
+    // no-op, not a "silent error in the background". The renderer's
+    // wrapper silently drops the call. The predicate is read on
+    // every invocation so a tab opened between two clicks is
+    // picked up immediately.
+    const handler = vi.fn();
+    const hasActiveDoc = vi.fn(() => false);
+    const wrapped = gateOnActiveDoc(hasActiveDoc, handler);
+    wrapped();
+    wrapped();
+    wrapped();
+    expect(handler).not.toHaveBeenCalled();
+    expect(hasActiveDoc).toHaveBeenCalledTimes(3);
+  });
+
+  it("gateOnActiveDoc re-reads the predicate on every call (state is fresh)", () => {
+    // The predicate is a closure, not a snapshot. The App's
+    // `tabsRef.current.activeId` is read at the moment the click
+    // arrives, so opening a tab between two menu clicks is
+    // reflected in the second call. This pins the contract: the
+    // wrapper does NOT capture state at wrap-time.
+    const handler = vi.fn();
+    let active = false;
+    const wrapped = gateOnActiveDoc(() => active, handler);
+    wrapped();
+    expect(handler).toHaveBeenCalledTimes(0);
+    active = true;
+    wrapped();
+    expect(handler).toHaveBeenCalledTimes(1);
+    active = false;
+    wrapped();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("snapshotMenuEnabled reports false for every active-doc action when no doc is open", () => {
+    // The shape main will consume once the orchestrator amends the
+    // IPC contract. The renderer computes the snapshot on every
+    // active-id change and ships it to main, which then toggles
+    // `MenuItem.enabled` for each matching id. The keys use the
+    // canonical `'menu.save'` / `'menu.saveAs'` ids from the
+    // shared `MenuItemId` union so the result hands straight to
+    // `window.tflex.menu.setEnabled(...)` without a re-map
+    // (DEF-065).
+    const snap = snapshotMenuEnabled(false);
+    expect(snap["menu.save"]).toBe(false);
+    expect(snap["menu.saveAs"]).toBe(false);
+    expect(snap["menu.closeTab"]).toBe(false);
+    expect(snap["menu.undo"]).toBe(false);
+    expect(snap["menu.redo"]).toBe(false);
+  });
+
+  it("snapshotMenuEnabled reports true for every active-doc action when a doc is open", () => {
+    const snap = snapshotMenuEnabled(true);
+    expect(snap["menu.save"]).toBe(true);
+    expect(snap["menu.saveAs"]).toBe(true);
+    expect(snap["menu.closeTab"]).toBe(true);
+    expect(snap["menu.undo"]).toBe(true);
+    expect(snap["menu.redo"]).toBe(true);
+  });
+
+  // DEF-065 — the snapshot's keys must match the shared MenuItemId
+  // union in src/shared/types.ts. main looks each id up via
+  // `Menu.getApplicationMenu()?.getMenuItemById(id)`; if the renderer
+  // ships a different key shape, main's lookup silently fails and
+  // the menu items stay enabled. Pin the contract: every shared id
+  // appears in the snapshot.
+  it("snapshotMenuEnabled keys match the shared MenuItemId union (DEF-065)", () => {
+    const snap = snapshotMenuEnabled(true);
+    const expectedKeys = [
+      "menu.save",
+      "menu.saveAs",
+      "menu.closeTab",
+      "menu.undo",
+      "menu.redo",
+    ];
+    for (const key of expectedKeys) {
+      expect(snap).toHaveProperty(key);
+    }
+    // And the snapshot only carries those keys — anything else
+    // would be a stray main-side menu id the renderer doesn't know
+    // about, which main would treat as "no change".
+    expect(Object.keys(snap).sort()).toEqual(expectedKeys.sort());
   });
 });

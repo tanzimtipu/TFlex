@@ -13,6 +13,7 @@ import type {
   EditTextRunPayload,
   ExportPagesPayload,
   FillFormFieldPayload,
+  MenuEnabledState,
   MoveSignaturePayload,
   OpenFileDialogKind,
   OcrProgress,
@@ -32,7 +33,7 @@ import { SamplesService } from './services/samples';
 import { DEFAULT_SETTINGS, SettingsService } from './services/settings';
 import { SignatureService } from './services/signature-service';
 import { UpdateService } from './services/update-service';
-import { buildAppMenu } from './menu';
+import { applyMenuEnabledState, buildAppMenu } from './menu';
 import { createMainWindow } from './window';
 
 function mainModuleDir(): string {
@@ -75,6 +76,15 @@ export async function start(): Promise<void> {
         win.webContents.send(IPC.menuActionEvent, ...args);
       }
     },
+  });
+
+  // DEF-065 — renderer -> main: toggle named menu items' enabled state so
+  // the native menu reflects doc-open / undo-stack / modified state. Uses
+  // `on` (not handle) because the renderer fire-and-forgets; main applies
+  // the partial map via applyMenuEnabledState, which is a no-op when no
+  // application menu is set.
+  ipcMain.on(IPC.menuSetEnabled, (_event, state: MenuEnabledState) => {
+    applyMenuEnabledState(state);
   });
 
   const broadcast = (settings: AppSettings): void => {
@@ -233,6 +243,12 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineCreateDocxFromImages, (_event, entries: DocxImageEntry[]) =>
     engine.createDocxFromImages(entries),
+  );
+  // DEF-060 — DOCX from the loaded document's own text (image fallback for
+  // text-free pages). The renderer rasterises every page ahead of time so
+  // the fallback always has pixels; the engine picks text where present.
+  ipcMain.handle(IPC.engineCreateDocxFromDoc, (_event, docId: string, entries: DocxImageEntry[]) =>
+    engine.createDocxFromDoc(docId, entries),
   );
 
   // Phase 10: edit content (text run, text box, image)

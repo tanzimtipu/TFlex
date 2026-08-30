@@ -120,3 +120,34 @@ export function visiblePageRange(
   const end = Math.min(pageCount - 1, last + bufferPages);
   return { start: start + 1, end: end + 1 };
 }
+
+/**
+ * Map a 1-based visible page slot to the 1-based source page the underlying
+ * pdf.js document should be asked to load.
+ *
+ * The engine's `EngineState.pageOrder` is an array of 0-based source indices
+ * keyed by 0-based visible position. After a delete, e.g. deleting visible
+ * page 3 from a 5-page doc, `pageOrder` becomes `[0, 1, 2, 4]` and the
+ * `pageCount` becomes 4 — so the visual scroller renders 4 slots, and the
+ * slot at visible position 3 must show the source page that was at original
+ * position 4 (i.e. `pageOrder[2] + 1 = 4`).
+ *
+ * `pageOrder` and the visible count are assumed to agree (`pageOrder.length
+ * >= visiblePage`). When they don't (defensive — should never happen in
+ * production), the helper falls back to the identity mapping so the
+ * scroller still renders something instead of throwing.
+ *
+ * Pure: no side effects, safe to call inside render.
+ */
+export function visibleToSourcePage(
+  visiblePage: number,
+  pageOrder: readonly number[],
+): number {
+  if (visiblePage < 1) return 1;
+  const orderIndex = visiblePage - 1;
+  const sourceIndex = pageOrder[orderIndex];
+  if (sourceIndex === undefined) {
+    return visiblePage;
+  }
+  return sourceIndex + 1;
+}

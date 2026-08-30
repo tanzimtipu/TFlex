@@ -32,6 +32,7 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  MoveSignaturePayload,
   OcrProgress,
   OcrRecognizeOptions,
   OcrSuspect,
@@ -510,15 +511,18 @@ export class StubRendererEngine implements EngineApi {
 
   async moveSignature(
     docId: string,
-    placementId: string,
-    rect: SignaturePlacement["rect"],
+    payload: MoveSignaturePayload,
   ): Promise<Result<EngineState, EngineError>> {
     const t = this.tabs.get(docId);
     if (t === undefined) return err("engine-error", "unknown document");
-    const idx = t.signatures.findIndex((p) => p.id === placementId);
-    if (idx === -1) return err("not-found", `unknown placement: ${placementId}`);
+    const idx = t.signatures.findIndex((p) => p.id === payload.id);
+    if (idx === -1) return err("not-found", `unknown placement: ${payload.id}`);
     pushUndo(t);
-    t.signatures[idx] = { ...t.signatures[idx], rect };
+    // The renderer supplies the page from its local placements mirror;
+    // the stub's local `t.signatures[idx].page` was the page at placement
+    // time. After a delete + re-place at a different page the mirror is
+    // authoritative, so prefer `payload.page` for the echoed placement.
+    t.signatures[idx] = { ...t.signatures[idx], page: payload.page, rect: payload.rect };
     t.modified = true;
     return ok(buildState(t));
   }

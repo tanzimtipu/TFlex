@@ -636,15 +636,91 @@ describe("engineClient — signature placement wire-shape (DEF-022)", () => {
     }).tflex = { engine: makeRealEngineWithPlaced(wire) };
     _resetEngineForTests();
     const e = getEngine();
+    // DEF-059 — the IPC contract is `moveSignature(docId, payload)`. The
+    // adapter accepts a `MoveSignaturePayload` (id, page, rect) and
+    // forwards it to the inner engine as a single arg, NOT three
+    // positional args. The pre-fix adapter spread them, which the real
+    // engine rejected.
     const r = await e.moveSignature!(
       "doc-1",
-      "sig-1",
-      { x: 110, y: 210, width: 160, height: 55 },
+      {
+        id: "sig-1",
+        page: 1,
+        rect: { x: 110, y: 210, width: 160, height: 55 },
+      },
     );
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.signatures).toBeDefined();
     expect(r.value.signatures?.length).toBe(1);
+  });
+
+  // DEF-059 — pin the adapter's contract: it must call the inner
+  // engine's moveSignature with a SINGLE MoveSignaturePayload arg, not
+  // three positional args (docId, placementId, rect). The pre-fix
+  // adapter spread the args, which the real engine rejected because
+  // the IPC contract is `moveSignature(docId, payload)`.
+  it("forwards moveSignature as a single payload arg (DEF-059)", async () => {
+    interface Call {
+      docId: string;
+      payload: { id: string; page: number; rect: { x: number; y: number; width: number; height: number } };
+    }
+    const captured: { calls: Call[] } = { calls: [] };
+    const fakeEngine = {
+      available: true,
+      async loadDocument(): Promise<{ ok: true; value: ArrayBuffer }> {
+        return { ok: true, value: new ArrayBuffer(0) };
+      },
+      async loadDocumentBytes(): Promise<{ ok: true; value: ArrayBuffer }> {
+        return { ok: true, value: new ArrayBuffer(0) };
+      },
+      async moveSignature(
+        docId: string,
+        payload: { id: string; page: number; rect: { x: number; y: number; width: number; height: number } },
+      ): Promise<{
+        ok: true;
+        value: {
+          pageCount: number;
+          modified: boolean;
+          pageOrder: number[];
+          rotations: number[];
+          deleted: boolean[];
+          signatures: Array<{ id: string; signatureId: string; page: number; rect: { x: number; y: number; width: number; height: number } }>;
+        };
+      }> {
+        captured.calls.push({ docId, payload });
+        return {
+          ok: true,
+          value: {
+            pageCount: 1,
+            modified: true,
+            pageOrder: [0],
+            rotations: [0],
+            deleted: [false],
+            signatures: [{ id: payload.id, signatureId: "saved-1", page: payload.page, rect: payload.rect }],
+          },
+        };
+      },
+    };
+    (window as unknown as { tflex: { engine: typeof fakeEngine } }).tflex = { engine: fakeEngine };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.moveSignature!(
+      "doc-x",
+      {
+        id: "pl-7",
+        page: 3,
+        rect: { x: 10, y: 20, width: 30, height: 40 },
+      },
+    );
+    expect(r.ok).toBe(true);
+    expect(captured.calls).toEqual([
+      {
+        docId: "doc-x",
+        payload: { id: "pl-7", page: 3, rect: { x: 10, y: 20, width: 30, height: 40 } },
+      },
+    ]);
+    void r;
   });
 
   it("renames placedSignatures -> signatures on deleteSignature round-trip", async () => {
@@ -723,6 +799,86 @@ describe("engineClient — signature placement wire-shape (DEF-022)", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.signatures?.[0]?.id).toBe("sig-1");
+  });
+
+  // DEF-059 residual — the App.tsx engineUi mirror reads
+  // `ui?.state.signatures`; normalizeState must therefore guarantee
+  // that the wire field name `placedSignatures` is fully consumed
+  // (and STRIPPED) so the renderer-facing EngineState carries only
+  // the renderer-side `signatures` key. Without the strip the
+  // `...maybe` spread leaks `placedSignatures` through to the
+  // renderer's state, which (a) is a wire-shape leak into a
+  // typed-to-renderer surface and (b) means any future code that
+  // reads `state.signatures` correctly works only by coincidence
+  // — the App.tsx mirror happens to also set `signatures` from
+  // `incomingSigs`. Pin both: the renderer-side `signatures` is
+  // populated, and the wire-side `placedSignatures` is absent.
+  it("strips wire-shape placedSignatures from the normalized state (DEF-059 residual)", async () => {
+    const wire = wireStateWithPlaced([samplePlacement]);
+    (window as unknown as {
+      tflex: { engine: ReturnType<typeof makeRealEngineWithPlaced> };
+    }).tflex = { engine: makeRealEngineWithPlaced(wire) };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.placeSignature!("doc-1", samplePlacement as never);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // (1) The renderer-facing `signatures` field is populated from
+    // the wire's `placedSignatures` array.
+    expect(r.value.signatures).toEqual([samplePlacement]);
+    // (2) The wire-shape `placedSignatures` key is NOT carried
+    // through. The engine's wire field name must not appear on the
+    // renderer's typed EngineState — its presence would indicate
+    // that the `...maybe` spread leaked the field through.
+    expect((r.value as unknown as Record<string, unknown>).placedSignatures).toBeUndefined();
+    // (3) The App.tsx mirror's lookup expression works without
+    // truthy coercion gymnastics. A naive `ui?.state.signatures`
+    // after a successful placement must produce a non-empty array,
+    // not an `undefined` (which would skip the mirror's update
+    // branch and leave the UI showing zero placements).
+    const fromEngine: unknown = r.value.signatures;
+    expect(Array.isArray(fromEngine)).toBe(true);
+    expect((fromEngine as unknown[]).length).toBe(1);
+  });
+
+  // DEF-059 residual — same shape as the placement test above, but
+  // pinned against the `moveSignature` round-trip that the previous
+  // DEF-059 fix targeted. The IPC payload fix alone is not enough;
+  // the state echo on the same path must also carry `signatures`
+  // (and not `placedSignatures`) so the App.tsx mirror observes the
+  // moved placement in the UI.
+  it("moveSignature echo carries signatures (no placedSignatures leak)", async () => {
+    const wire = wireStateWithPlaced([samplePlacement]);
+    (window as unknown as {
+      tflex: { engine: ReturnType<typeof makeRealEngineWithPlaced> };
+    }).tflex = { engine: makeRealEngineWithPlaced(wire) };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.moveSignature!(
+      "doc-1",
+      { id: "sig-1", page: 1, rect: { x: 110, y: 210, width: 160, height: 55 } },
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.signatures).toEqual([samplePlacement]);
+    expect((r.value as unknown as Record<string, unknown>).placedSignatures).toBeUndefined();
+  });
+
+  // DEF-059 residual — `getState` is the third path the App.tsx
+  // mirror observes (noteOpApplied routes its result through the
+  // same effect). Pin that path too.
+  it("getState echo carries signatures (no placedSignatures leak)", async () => {
+    const wire = wireStateWithPlaced([samplePlacement]);
+    (window as unknown as {
+      tflex: { engine: ReturnType<typeof makeRealEngineWithPlaced> };
+    }).tflex = { engine: makeRealEngineWithPlaced(wire) };
+    _resetEngineForTests();
+    const e = getEngine();
+    const r = await e.getState("doc-1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.signatures).toEqual([samplePlacement]);
+    expect((r.value as unknown as Record<string, unknown>).placedSignatures).toBeUndefined();
   });
 });
 

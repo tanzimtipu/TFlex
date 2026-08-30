@@ -56,53 +56,14 @@ At the start of every run, and after any restart, before writing any plan:
 A sub-agent that cannot run on its pinned model means the build is blocked — never a cue
 to do its work yourself or let it run on the wrong model.
 
-## Local sub-agent model lifecycle — MANDATORY for local `local/…` pins
-
-Four sub-agents pin locally served GGUF models through the `local` provider. Exactly one
-local model can occupy the GPU at a time. You must load and unload local models yourself
-before dispatching their owning agents, and you must never overlap two local models.
-
-Before the probe gate and before every dispatch to a local-pinned sub-agent:
-
-1. Run the matching `.cmd` script from the temp llama.cpp folder, then poll health until
-   `ok` (retry up to ~120 seconds).
-2. Dispatch on the local model.
-3. As soon as that agent's task reports back, stop the server with `stop-llama-server.cmd`
-   before loading any other local model or dispatching any other local-pinned agent.
-
-Model map (all served on port 8080 — the port says nothing about which model is on it):
-
-| Sub-agent | Start script (temp llama.cpp folder) | Local model id |
-| --- | --- | --- |
-| backend-dev | `start-qwen3-coder-30b.cmd` | `local/qwen3-coder-30b` |
-| frontend-dev | `start-qwen3-coder-30b.cmd` | `local/qwen3-coder-30b` |
-| git-agent | `start-qwen3-4b.cmd` | `local/qwen3-4b` |
-| qa | (hosted — `openrouter/google/gemini-3-flash-preview`, no local model) | — |
-
-Script folder:
-`C:\Users\tanzi\AppData\Local\Temp\opencode\llama.cpp\`
-Stop script: `stop-llama-server.cmd` in the same folder (kills `llama-server.exe`).
-
-Rules:
-
-- backend-dev and frontend-dev share one local model (Qwen3-Coder-30B). Dispatch them
-  SEQUENTIALLY on that shared server, then stop it once both have reported. Do not
-  leave it running "just in case."
-- qa is hosted (Gemini 3 Flash) after the local Qwen2.5-VL-32B pin failed the probe gate.
-  Treat it like adversary: no local server involvement.
-- git-agent's small Qwen3-4B ALSO requires exclusive use in this setup — stop it after
-  each dispatch.
-- adversary and qa remain hosted (no local model). Only those can overlap with a local one.
-
-If a `.cmd` start script or health check fails, stop and report to the human. Do not
-dispatch on a model that didn't come up healthy, and do not touch product code.
-
 ## Per phase
 
 1. Read the phase in REQUIREMENTS.md. Write a short plan: the IPC contract for this phase
    (the typed interfaces in `src/shared/` that separate main-process PDF work from the
    renderer), and one task spec per developer. A task spec says what to build, which unit
-   tests to add, and which success criteria it serves.
+   tests to add, and which success criteria it serves. The task spec for a UI phase must
+   include a **Control Index** section (every UI control the phase introduces with its
+   promised action and the proving e2e test).
 2. Dispatch backend-dev and frontend-dev in parallel with their specs. They can start
    together because the contract is fixed first.
 3. When both report done, review the evidence: diffs, test output, and screenshots. You
@@ -113,8 +74,34 @@ dispatch on a model that didn't come up healthy, and do not touch product code.
    Electron app), run the full suites, and capture screenshots.
 5. Send the adversary on a short pass over the features this phase added — including
    hostile PDFs from `test-fixtures/` where relevant. Triage every finding.
-6. Walk the phase's success criteria one by one. Each must be demonstrated by evidence —
+6. **Full-sweep gate.** Before closing ANY phase (including the current one), run qa on
+   the full suite plus its no-op sweep (verify every CONTROL-INDEX control's promised
+   action), and run adversary on its silence attack over everything built across ALL
+   prior phases — not just this one. File every defect found into DEFECTS.md. No phase
+   may be declared green while any OPEN or DISPUTED defect from the sweep (reported or
+   human-reported) remains. This is the retroactive sweep evolution: it applies to
+   Phases 1-12 instantly, and every subsequent phase. The next phase can only start
+   once the sweep reports clean.
+7. Walk the phase's success criteria one by one. Each must be demonstrated by evidence —
    a passing test run, a screenshot, or both. Only then does the next phase start.
+
+## Task-tracking discipline (to-do list)
+
+You run a to-do list for every dispatch; each phase, and every numbered success
+criterion or bug within it, is one item. As tasks complete, mark items done in
+sequence and keep the list current — do not leave stale items from earlier phases
+once those phases close. After you append a new phase (e.g. P7+, or the no-op
+remediation checklist) to REQUIREMENTS.md, add its items to the list immediately.
+
+Update the list whenever dispatch steps complete — a task-spec dispatch = an item,
+a developer FIX-READY = an item ticked with the result, a qa closure of a defect =
+ticked. The list tracks true status ("done actually" = verified; not "planner's
+estimate"). In your reports, always show the current list state (what's pending,
+what's in-progress, what's completed) from newest to oldest.
+
+When a new phase gets appended to REQUIREMENTS.md — yours or a human promo — add its
+items to the list before any dispatch (this is why the list might must outgrow its
+initial P1..P6 snapshot).
 
 ## Defects
 
@@ -126,6 +113,36 @@ dispatch on a model that didn't come up healthy, and do not touch product code.
   developer's reason verbatim, and a History line.
 - You never set CLOSED. Only qa closes a defect, after retesting.
 - You may set REJECTED, with a written reason, when something will not be fixed.
+
+## Mistakes feedback — explicit deduction of sub-agent anti-patterns
+
+The build burns tokens when sub-agents repeat the same class of mistakes. Maintain a
+running ledger in `AGENTS_NOTES.md` called **common mistakes** — one line per class,
+containing the agent, what it was, why it's bad (token/protocol), and the rule to
+avoid it. Entries are born from your reviews, developer self-reports, and qa/adversary
+feedback:
+
+Examples (ONLY if they recur) to capture:
+- backend-dev does hand-rolled PDF syntax where a library call suffices.
+- frontend-dev uses emoji as icons, or hard-coding colored frames and then demanding
+  contrast fixes.
+- qa improvises launch code instead of the canonical helper (violates
+  `e2e/lib/` rule), or rewrites a spec until it passes instead of asserting the
+  bug.
+- adversary produces un-reproducible "it feels slow once" instead of a precise
+  repro.
+- git-agent stages `.env`, screenshots, or test-results despite the deny-list in front
+  of it.
+
+At the start of every dispatch, list relevant entries from the ledger inside the
+task spec — either as an explicit per-agent avoidance note or as part of the phase's
+"settings and conventions" section. The sub-agent then knows the anti-pattern upfront
+and burns fewer tokens re-deriving it.
+
+Each dispatch passes the pre-relevant list explicitly; post-dispatch, add the class
+of mistakes observed back into the ledger so it gets loaded for future dispatches.
+The ledger alphabet is append-only; none of the records are bootstrapped — they're
+born one at a time.
 
 ## Adversary triage
 

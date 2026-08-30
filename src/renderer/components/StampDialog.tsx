@@ -111,10 +111,24 @@ export function StampDialog(
       // The canvas may not exist in jsdom without a polyfilled
       // 2D backend (we still returned a placeholder 1x1 PNG). Guard
       // against that case so the engine doesn't embed a no-op
-      // stamp and the user gets a clear error.
-      if (width <= 1 || height <= 1) {
+      // stamp and the user gets a clear error. We also check the
+      // byte length and PNG magic because the canvas may be
+      // present but fail to encode to data:URL — `canvas.toDataURL`
+      // can return `"data:image/png;base64,"` (empty base64) when
+      // the canvas is zero-area or the encoding backend is broken,
+      // and the previous check (`width <= 1`) wouldn't catch that
+      // because the function returns the requested STAMP_CANVAS_W/H
+      // regardless of how many bytes the encode actually produced.
+      // The engine would then receive a `pngBytes: []` stamp and
+      // bake a blank rectangle into the page (DEF-063).
+      const pngMagic = pngBytes.byteLength >= 4
+        && pngBytes[0] === 0x89
+        && pngBytes[1] === 0x50
+        && pngBytes[2] === 0x4e
+        && pngBytes[3] === 0x47;
+      if (width <= 1 || height <= 1 || pngBytes.byteLength === 0 || !pngMagic) {
         setError(
-          "Could not render the stamp raster — the browser canvas backend is unavailable. Try a different stamp or restart the app.",
+          "Could not render the stamp raster — the browser canvas backend is unavailable or the encode produced empty bytes. Try a different stamp or restart the app.",
         );
         return;
       }

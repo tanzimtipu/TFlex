@@ -1366,6 +1366,85 @@ export class EngineService {
       return err('engine-error', `createDocxFromImages failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+
+  // -----------------------------------------------------------------------
+  // DEF-060: createDocxFromDoc — assemble a .docx from the loaded document's
+  // own text. Reuses the exportText machinery (extractTextFromRawPdf) to pull
+  // per-page text from the engine's pdfDoc; text-bearing pages become real
+  // w:p/w:r/w:t paragraphs (editable in Word), text-free pages fall back to
+  // an inline image (wp:inline) from the matching DocxImageEntry pngBuffer.
+  // The renderer rasterises every page ahead of time so the fallback always
+  // has pixels even when a page is image-only / scanned.
+  // -----------------------------------------------------------------------
+  async createDocxFromDoc(
+    docId: string,
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>> {
+    return this._enqueue(docId, () => this._createDocxFromDocImpl(docId, entries));
+  }
+
+  private async _createDocxFromDocImpl(
+    docId: string,
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>> {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return err('empty-range', 'no image entries provided');
+    }
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    try {
+      // Serialize with useObjectStreams:false so every object (catalog, pages,
+      // page, content stream) appears as a direct "N G obj" in the raw bytes.
+      // The exportText machinery's regex parseXref cannot see objects that
+      // live inside a compressed ObjStm (pdf-lib's default save groups the
+      // catalog/pages/page objects into one), so a default save makes
+      // extractTextFromRawPdf return '' for every page. The flat layout keeps
+      // the content stream itself FlateDecode-compressed — decodeStream
+      // handles that — only the object wrapping is flattened. This is a
+      // read-only extraction pass; the engine's pdfDoc is not mutated.
+      //
+      // The saved bytes preserve the ORIGINAL pdfDoc page order (save does not
+      // apply doc.order/deletions), so extractTextFromRawPdf is indexed by the
+      // ORIGINAL page index. We iterate doc.order (visible pages) and map each
+      // visible position to its original index so the .docx reflects what the
+      // user actually sees (deleted pages dropped, reorders honoured). The
+      // renderer's DocxImageEntry.pageNumber is 1-based VISIBLE, matching the
+      // exportText / EngineState.pageOrder convention.
+      const bytes = await doc.pdfDoc.save({ useObjectStreams: false });
+      const visibleCount = doc.order.length;
+      const entryByPage = new Map<number, DocxImageEntry>();
+      for (const e of entries) {
+        if (e && typeof e.pageNumber === 'number') {
+          entryByPage.set(e.pageNumber, e);
+        }
+      }
+      const pages: DocxDocPage[] = [];
+      for (let vi = 0; vi < visibleCount; vi++) {
+        const origIdx = doc.order[vi];
+        const raw = extractTextFromRawPdf(bytes, origIdx);
+        if (raw.trim().length > 0) {
+          pages.push({ kind: 'text', text: raw });
+        } else {
+          // entry.pageNumber is 1-based VISIBLE, so it maps to vi + 1.
+          const entry = entryByPage.get(vi + 1);
+          if (entry === undefined) {
+            // No raster fallback for this page — emit an empty paragraph so
+            // the page still occupies a slot in the document (page count is
+            // otherwise driven by content + explicit page breaks).
+            pages.push({ kind: 'text', text: '' });
+          } else {
+            pages.push({ kind: 'image', entry });
+          }
+        }
+      }
+      const docxBytes = buildDocxFromDoc(pages);
+      return ok(docxBytes);
+    } catch (e) {
+      return err('engine-error', `createDocxFromDoc failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   async exportPages(
     docId: string,
     payload: ExportPagesPayload,
@@ -3158,6 +3237,28 @@ function parseSignaturesFromDoc(pdfDoc: PDFDocument): SignaturePlacement[] {
 // ---------------------------------------------------------------------------
 
 /**
+ * Convert a byte array to a string with a TRUE 1:1 byte->char mapping
+ * (U+0000..U+00FF), so `charCodeAt(i) & 0xff` always recovers the original
+ * byte. This matters because the raw-PDF text extractor searches the whole
+ * file as a string and `decodeStream` reconstructs stream bytes from that
+ * string before inflate.
+ *
+ * DEF-060: `new TextDecoder('latin1')` was used here previously, but the
+ * WHATWG Encoding spec makes 'latin1' an alias for 'windows-1252', which
+ * remaps bytes 0x80-0x9F (e.g. 0x9C -> U+0153 'œ'). When decodeStream then
+ * did `charCodeAt(i) & 0xff`, byte 0x9C became 0x53, corrupting the zlib
+ * header of every FlateDecode content stream and making inflate throw
+ * ("incorrect header check") — so extractTextFromRawPdf silently returned
+ * '' for every page and createDocxFromDoc fell back to images for all text.
+ * Node's Buffer 'latin1' encoding is a true 1:1 map (unlike WHATWG
+ * TextDecoder), so the round-trip is lossless. Buffer is already used
+ * elsewhere in this module for base64 signature metadata.
+ */
+function bytesToByteString(bytes: Uint8Array): string {
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('latin1');
+}
+
+/**
  * Extract text from a specific page of a raw PDF byte buffer. Uses a minimal
  * PDF parser that walks the cross-reference table and page tree to find
  * content streams, decodes them (FlateDecode), and extracts text from PDF
@@ -3165,7 +3266,7 @@ function parseSignaturesFromDoc(pdfDoc: PDFDocument): SignaturePlacement[] {
  */
 function extractTextFromRawPdf(bytes: Uint8Array, targetPageIndex: number): string {
   try {
-    const text = new TextDecoder('latin1').decode(bytes);
+    const text = bytesToByteString(bytes);
 
     // Parse xref table/stream to build an offset map: object number -> byte offset
     const objOffsets = parseXref(text);
@@ -3293,6 +3394,18 @@ function parseTrailerRootRef(raw: string): string | null {
  * Resolve an indirect reference string like "5 0 R" to its raw object text
  * using the offsets map. Returns the text from the object number marker to
  * the matching "endobj".
+ *
+ * DEF-060: a naive `raw.indexOf('endobj', offset)` is wrong for stream
+ * objects because the binary stream payload (FlateDecode-compressed content)
+ * can contain the 6-byte sequence "endobj" — that match truncates the object
+ * text mid-stream, `decodeStream` then slices the wrong bytes and inflate
+ * fails, so `extractTextFromRawPdf` silently returns '' for every page (the
+ * pre-DEF-060 exportText behaviour, which is why its tests only asserted
+ * `typeof text === 'string'`). For stream objects we parse the dict's
+ * /Length (a direct integer in pdf-lib output) to skip past the stream
+ * payload before searching for `endobj`; if /Length is missing or indirect
+ * we fall back to searching for `endstream` first. Non-stream objects keep
+ * the fast path.
  */
 function resolveObject(raw: string, ref: string, offsets: Map<number, number>): string | null {
   const refMatch = ref.match(/^(\d+)\s+\d+\s+R$/);
@@ -3301,8 +3414,40 @@ function resolveObject(raw: string, ref: string, offsets: Map<number, number>): 
   const offset = offsets.get(objNum);
   if (offset === undefined) return null;
 
-  // pdf-lib output has simple flat objects. The object text runs from the
-  // offset (start of "N G obj") to the next "endobj".
+  // Locate the `stream` keyword (followed by \n or \r\n) within this object.
+  // The keyword sits after the `<<...>>` dict, so the first hit after `offset`
+  // is this object's stream (objects do not nest).
+  let streamKeywordIdx = raw.indexOf('stream\n', offset);
+  const streamKeywordIdxRN = raw.indexOf('stream\r\n', offset);
+  if (streamKeywordIdxRN >= 0 && (streamKeywordIdx < 0 || streamKeywordIdxRN < streamKeywordIdx)) {
+    streamKeywordIdx = streamKeywordIdxRN;
+  }
+
+  if (streamKeywordIdx >= 0) {
+    const header = raw.slice(offset, streamKeywordIdx);
+    // dataStart points to the first byte after the stream keyword + EOL.
+    const dataStart = raw[streamKeywordIdx + 6] === '\r'
+      ? streamKeywordIdx + 8 // 'stream\r\n'
+      : streamKeywordIdx + 7; // 'stream\n'
+    // /Length is a direct integer for pdf-lib output. Use it to skip past
+    // the (possibly binary) payload before searching for endobj.
+    const lengthMatch = header.match(/\/Length\s+(\d+)/);
+    if (lengthMatch) {
+      const len = parseInt(lengthMatch[1], 10);
+      const afterPayload = dataStart + len;
+      const endIdx = raw.indexOf('endobj', afterPayload);
+      if (endIdx >= 0) return raw.slice(offset, endIdx + 6);
+    }
+    // Fallback: find endstream (9 bytes — far less likely to collide with
+    // binary payload than 6-byte "endobj") then endobj after it.
+    const endstreamIdx = raw.indexOf('endstream', dataStart);
+    if (endstreamIdx >= 0) {
+      const endIdx = raw.indexOf('endobj', endstreamIdx);
+      if (endIdx >= 0) return raw.slice(offset, endIdx + 6);
+    }
+  }
+
+  // Non-stream object (or stream lookup failed): fast path.
   const endIdx = raw.indexOf('endobj', offset);
   if (endIdx < 0) return null;
   return raw.slice(offset, endIdx + 6);
@@ -3404,10 +3549,10 @@ function decodeStream(raw: string, streamObjText: string): string | null {
     } else {
       decoded = streamBytes;
     }
-    return new TextDecoder('latin1').decode(decoded);
+    return bytesToByteString(decoded);
   } catch {
     // If decompression fails, return the raw bytes as text
-    return new TextDecoder('latin1').decode(streamBytes);
+    return bytesToByteString(streamBytes);
   }
 }
 
@@ -3416,7 +3561,7 @@ function decodeStream(raw: string, streamObjText: string): string | null {
  * is terminated by '~>'.
  */
 function decodeASCII85(data: Uint8Array): Uint8Array {
-  const ascii85Text = new TextDecoder('latin1').decode(data);
+  const ascii85Text = bytesToByteString(data);
   // Remove whitespace and find the data between the start and '~>'
   let cleaned = ascii85Text.replace(/\s/g, '');
   const endMarker = cleaned.indexOf('~>');
@@ -3591,6 +3736,176 @@ function decodePdfString(s: string): string {
 // ---------------------------------------------------------------------------
 // Phase 9: DOCX builder (minimal store-only ZIP of Office Open XML)
 // ---------------------------------------------------------------------------
+
+/** DEF-060 — one page of a text-first DOCX. A 'text' page emits real
+ *  w:p/w:r/w:t paragraphs (editable in Word); an 'image' page emits an
+ *  inline drawing (wp:inline) from the renderer-rasterised PNG fallback.
+ *  Pages are separated by explicit page breaks so the .docx page count
+ *  matches the source PDF. */
+type DocxDocPage =
+  | { kind: 'text'; text: string }
+  | { kind: 'image'; entry: DocxImageEntry };
+
+/**
+ * Escape a string for inclusion in an XML text node. Covers the five
+ * characters XML mandates (& < > " '). Used for w:t run text so a page
+ * containing `<` or `&` does not produce malformed document.xml.
+ */
+function escapeXml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * DEF-060 — build a .docx from per-page text, falling back to inline images
+ * for pages with no extractable text. The output is a valid store-only ZIP
+ * of Office Open XML; text pages contain real w:p/w:r/w:t runs (selectable
+ * and editable in Word) and image pages contain a wp:inline drawing sized to
+ * the source page in EMU (1 point = 12700 EMU).
+ *
+ * Page separation: every page after the first is preceded by a paragraph
+ * holding a `w:br w:type="page"` run, so the .docx page count matches the
+ * input page count regardless of how the text wraps.
+ */
+function buildDocxFromDoc(pages: DocxDocPage[]): Uint8Array {
+  const EMU_PER_POINT = 12700;
+
+  const docXmlHeader = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"
+            xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+            xmlns:o="urn:schemas-microsoft-com:office:office"
+            xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+            xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"
+            xmlns:v="urn:schemas-microsoft-com:vml"
+            xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+            xmlns:w10="urn:schemas-microsoft-com:office:word"
+            xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml"
+            xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"
+            xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">
+  <w:body>`;
+
+  const docRelsHeader = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">`;
+
+  let docXml = docXmlHeader;
+  let docRels = docRelsHeader;
+  let imageIdx = 0;
+  const imageEntries: DocxImageEntry[] = [];
+
+  for (let i = 0; i < pages.length; i++) {
+    // Page break before every page except the first. A page break lives in
+    // its own paragraph so the break is never the first child of body.
+    if (i > 0) {
+      docXml += `
+    <w:p>
+      <w:r>
+        <w:br w:type="page"/>
+      </w:r>
+    </w:p>`;
+    }
+
+    const page = pages[i];
+    if (page.kind === 'text') {
+      // Emit one w:p per line. Each line is a single w:r wrapping a w:t with
+      // xml:space="preserve" so leading/trailing spaces survive. An empty
+      // text page (no fallback raster available) still gets one paragraph
+      // so the page slot exists.
+      const lines = page.text.length === 0 ? [''] : page.text.split('\n');
+      for (const line of lines) {
+        docXml += `
+    <w:p>
+      <w:r>
+        <w:t xml:space="preserve">${escapeXml(line)}</w:t>
+      </w:r>
+    </w:p>`;
+      }
+    } else {
+      imageIdx += 1;
+      const relId = `rId${imageIdx}`;
+      const entry = page.entry;
+      const emuW = Math.round(entry.pageWidth * EMU_PER_POINT);
+      const emuH = Math.round(entry.pageHeight * EMU_PER_POINT);
+      docXml += `
+    <w:p>
+      <w:r>
+        <w:drawing>
+          <wp:inline distT="0" distB="0" distL="0" distR="0">
+            <wp:extent cx="${emuW}" cy="${emuH}"/>
+            <wp:docPr id="${imageIdx}" name="Page ${entry.pageNumber}"/>
+            <a:graphic>
+              <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">
+                <pic:pic>
+                  <pic:nvPicPr>
+                    <pic:cNvPr id="0" name="Page ${entry.pageNumber}"/>
+                    <pic:cNvPicPr/>
+                  </pic:nvPicPr>
+                  <pic:blipFill>
+                    <a:blip r:embed="${relId}"/>
+                    <a:stretch><a:fillRect/></a:stretch>
+                  </pic:blipFill>
+                  <pic:spPr>
+                    <a:xfrm>
+                      <a:off x="0" y="0"/>
+                      <a:ext cx="${emuW}" cy="${emuH}"/>
+                    </a:xfrm>
+                    <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+                  </pic:spPr>
+                </pic:pic>
+              </a:graphicData>
+            </a:graphic>
+          </wp:inline>
+        </w:drawing>
+      </w:r>
+    </w:p>`;
+      docRels += `
+  <Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image${imageIdx}.png"/>`;
+      imageEntries.push(entry);
+    }
+  }
+
+  docXml += `
+  </w:body>
+</w:document>`;
+
+  docRels += `
+</Relationships>`;
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`;
+
+  const rootRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`;
+
+  const encoder = new TextEncoder();
+
+  const zipFiles: { name: string; data: Uint8Array }[] = [
+    { name: '[Content_Types].xml', data: encoder.encode(contentTypes) },
+    { name: '_rels/.rels', data: encoder.encode(rootRels) },
+    { name: 'word/document.xml', data: encoder.encode(docXml) },
+    { name: 'word/_rels/document.xml.rels', data: encoder.encode(docRels) },
+  ];
+
+  for (let i = 0; i < imageEntries.length; i++) {
+    zipFiles.push({
+      name: `word/media/image${i + 1}.png`,
+      data: imageEntries[i].pngBuffer,
+    });
+  }
+
+  return createStoreZip(zipFiles);
+}
 
 /**
  * Build a minimal .docx file from rasterised page images. The output is a

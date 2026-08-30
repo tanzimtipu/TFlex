@@ -617,6 +617,27 @@ export interface OcrProgress {
   phase: 'recognizing' | 'writing';
 }
 
+// ---- Phase 9 / DEF-060: menu enable-state ----
+
+/** DEF-065 — stable ids assigned to application menu items whose enabled
+ *  state the renderer can toggle (e.g. disable Save / Save As / Close Tab /
+ *  Undo / Redo when no document is open). The renderer pushes a
+ *  `MenuEnabledState` over `menu:setEnabled`; main looks each id up via
+ *  `Menu.getApplicationMenu()?.getMenuItemById(id)` and flips `.enabled`.
+ *  Adding a new toggle-able menu item means adding its id here AND assigning
+ *  the same `id:` in `src/main/menu.ts` — the two lists must stay in sync. */
+export type MenuItemId =
+  | 'menu.save'
+  | 'menu.saveAs'
+  | 'menu.closeTab'
+  | 'menu.undo'
+  | 'menu.redo';
+
+/** DEF-065 — a partial map of menu-item id -> enabled. Only the ids present
+ *  are touched; omitted ids keep their current state. Sent from the
+ *  renderer whenever the doc-open / undo-stack / modified state changes. */
+export type MenuEnabledState = Partial<Record<MenuItemId, boolean>>;
+
 // ---- Phase 12: residual page-organize + annotate parity ----
 
 /** Phase 12 — built-in stamp id allowlist. The renderer draws each id as a

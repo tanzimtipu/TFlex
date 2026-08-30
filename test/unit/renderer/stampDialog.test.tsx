@@ -187,4 +187,75 @@ describe("StampDialog — render contract", () => {
     expect(onClose).toHaveBeenCalled();
     cleanup();
   });
+
+  // DEF-063 — the dialog must surface a clear error (and NOT call
+  // onConfirm) when the canvas encode produced empty bytes or a
+  // payload that doesn't look like a PNG. The pre-fix check only
+  // looked at `width <= 1`, which is fine for the "no 2D backend"
+  // fallback path but misses the "toDataURL returned a base64
+  // empty payload" case — a real-browser edge case where the
+  // canvas is present but the encode silently produced zero bytes.
+  // Without this check, the engine would receive `pngBytes: []`
+  // and bake a blank rectangle into the page.
+  it("shows an error and does NOT call onConfirm when the encode produced empty bytes", () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({ onConfirm });
+    // Override toDataURL to return an empty base64 payload (the
+    // "canvas is present but encode failed" edge case). The width
+    // and height in the returned object are still 480/200 (the
+    // function returns the requested canvas dims regardless of how
+    // many bytes the encode produced), so the pre-fix width-based
+    // check would have incorrectly let the call through.
+    (HTMLCanvasElement.prototype as unknown as {
+      toDataURL: (type?: string) => string;
+    }).toDataURL = function toDataURLEmptyStub(): string {
+      return "data:image/png;base64,";
+    };
+    const confirm = container.querySelector<HTMLButtonElement>(
+      "[data-stamp-confirm]",
+    );
+    expect(confirm).not.toBeNull();
+    if (confirm === null) return cleanup();
+    act((): void => {
+      confirm.click();
+    });
+    // onConfirm must NOT have been called — the empty bytes would
+    // have baked a blank rectangle into the page.
+    expect(onConfirm).not.toHaveBeenCalled();
+    // The error message should be visible to the user.
+    const status = container.querySelector<HTMLElement>(
+      "[role='alert']",
+    );
+    expect(status?.textContent ?? "").toMatch(/could not render the stamp raster/i);
+    cleanup();
+  });
+
+  it("shows an error and does NOT call onConfirm when bytes lack the PNG magic header", () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({ onConfirm });
+    // toDataURL returns a base64-encoded payload that decodes to
+    // non-empty bytes that are NOT a valid PNG (no 0x89 0x50 0x4e
+    // 0x47 magic header). The width-based check would have let
+    // this through; the byte-level guard catches it.
+    (HTMLCanvasElement.prototype as unknown as {
+      toDataURL: (type?: string) => string;
+    }).toDataURL = function toDataURLCorruptStub(): string {
+      // "AA==" decodes to [0x00]. Pad to 8 non-PNG bytes.
+      return "data:image/png;base64,AAAAAAAA";
+    };
+    const confirm = container.querySelector<HTMLButtonElement>(
+      "[data-stamp-confirm]",
+    );
+    expect(confirm).not.toBeNull();
+    if (confirm === null) return cleanup();
+    act((): void => {
+      confirm.click();
+    });
+    expect(onConfirm).not.toHaveBeenCalled();
+    const status = container.querySelector<HTMLElement>(
+      "[role='alert']",
+    );
+    expect(status?.textContent ?? "").toMatch(/could not render the stamp raster/i);
+    cleanup();
+  });
 });

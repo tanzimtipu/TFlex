@@ -65,4 +65,38 @@ describe("EditInlineEditor — render", () => {
     const select = host.querySelector(".edit-inline-field-font select") as HTMLSelectElement | null;
     expect(select?.value).toBe("Helvetica");
   });
+
+  it("renders an editor panel with a white background and black text — DEF-061", () => {
+    // The original defect: the editor's background was tied to
+    // `var(--bg-raised)`, which in dark mode resolves to #15181c
+    // (near black). The text colour is forced to #000000 because
+    // text-run replacements overwrite the original page text, so a
+    // dark background plus black text gave the user a "black
+    // window" they couldn't read. The panel is now pinned to a
+    // white background + black text in both themes (the PDF page
+    // is white, the editor sits over it, so white-on-black-text
+    // matches the page). This test guards the two key facts:
+    //   1. the editor element has no inline `background` style
+    //      (the CSS class provides white, an inline override
+    //      would clobber the fix).
+    //   2. the inline text colour stays black so the user's
+    //      committed text is readable on the white panel.
+    const { host } = mount({ initialText: "Hello", mode: "edit" });
+    const editor = host.querySelector(".edit-inline-editor") as HTMLElement | null;
+    expect(editor).not.toBeNull();
+    if (editor === null) return;
+    // No inline background on the wrapper — the CSS class owns it.
+    expect(editor.style.background).toBe("");
+    expect(editor.style.backgroundColor).toBe("");
+    // The textarea is the visible text surface; its inline color
+    // must be black so committed text is readable on the white
+    // panel. (The textarea's `background: transparent` is set by
+    // the CSS class, not inline — we don't assert it here.)
+    const textarea = host.querySelector("textarea") as HTMLTextAreaElement | null;
+    expect(textarea).not.toBeNull();
+    // `style.color` is the inline declaration. In a browser the
+    // computed colour resolves to rgb(0, 0, 0) — we assert the
+    // inline declaration is present and parses to black.
+    expect(textarea?.style.color).toBe("rgb(0, 0, 0)");
+  });
 });

@@ -474,6 +474,21 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
           // the document the rendered thumbnails move in lockstep. The
           // numeric label stays at the visible position so the engine
           // ops (which use the visible index) remain unambiguous.
+          //
+          // DEF-058 — `currentPage` is the 1-based VISIBLE page index
+          // (set by `jumpToPage` / scroll detection in DocumentView).
+          // `sourcePage` is the underlying pdf.js page (after reorder
+          // the two diverge: e.g. visible position 4 might come from
+          // source page 2). Comparing `sourcePage === currentPage`
+          // measured them on different scales, so after a jump the
+          // active highlight stayed on page 1 (the only place where
+          // the visible and source indices happened to agree at doc
+          // open). Compare on the visible scale instead: `page`
+          // (the loop index) is the 1-based visible slot, and
+          // `currentPage` is the visible page the user is on. The
+          // visual scroller's jump target uses visible indices, the
+          // rail's selected page emits visible indices, and now the
+          // rail's `isCurrent` highlight does too.
           return (
             <Thumb
               key={page}
@@ -481,7 +496,7 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
               page={sourcePage}
               aspectRatio={aspectRatio}
               shouldRender={visibleThumbs.has(page)}
-              isCurrent={sourcePage === currentPage}
+              isCurrent={page === currentPage}
               isSelected={isSel}
               isDragging={dragFromIndex === page}
               isDropTarget={dropTarget === page && dragFromIndex !== null && dragFromIndex !== page}

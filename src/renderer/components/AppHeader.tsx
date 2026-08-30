@@ -119,24 +119,33 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             );
           })}
           {/* Phase 7 — the "+ tab" affordance now sits immediately
-              after the rightmost tab (or first when there are none).
+              after the rightmost tab.
               Rendered as its own <li> so it stays on the tab strip's
               flex row and inherits the strip's baseline alignment,
               but outside `.tab` so the mousedown resolver classifies
-              it as a no-op. */}
-          <li className="tab-list-new">
-            <button
-              type="button"
-              className="tab-new"
-              onMouseDown={onNewTabMouseDown}
-              onClick={onNewEmptyTab}
-              aria-label="New empty tab"
-              title="New empty tab"
-              data-new-tab
-            >
-              <Plus size={14} aria-hidden />
-            </button>
-          </li>
+              it as a no-op.
+
+              DEF-055 — the affordance is gated on `tabs.length >= 1`.
+              On the welcome screen (zero tabs) the welcome pane is the
+              user's primary entry point and a stray "+" button invites
+              a useless empty tab. Only show "+" once at least one real
+              tab is open, so the strip stays visually clean when the
+              user is on the welcome pane. */}
+          {tabs.length >= 1 && (
+            <li className="tab-list-new">
+              <button
+                type="button"
+                className="tab-new"
+                onMouseDown={onNewTabMouseDown}
+                onClick={onNewEmptyTab}
+                aria-label="New empty tab"
+                title="New empty tab"
+                data-new-tab
+              >
+                <Plus size={14} aria-hidden />
+              </button>
+            </li>
+          )}
         </ul>
       </div>
       <div className="header-actions">

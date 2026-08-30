@@ -44,6 +44,7 @@ import {
   pageSlotHeight,
   slotOffsetTop,
   visiblePageRange,
+  visibleToSourcePage,
 } from "./pageGeometry";
 import {
   createIdleCleanupCoordinator,
@@ -689,6 +690,36 @@ export function DocumentView({
   }, [firstPageSize, pageCount]);
 
   // ---- scroll -> current page --------------------------------------------------
+  //
+  // DEF-058 — track an in-flight jump target so the scroll-event
+  // heuristic (which fires repeatedly during a smooth scroll) cannot
+  // drag `currentPage` back to an intermediate page while the scroll
+  // animation is still mid-flight. Without the guard, a jump from
+  // page 1 to page 10 in a 10-page doc would briefly put
+  // `currentPage` on the value the scroller is currently passing
+  // through (e.g. 2 or 3 mid-scroll) and the SideRail highlight
+  // would visibly flicker / land on the wrong slot. We freeze the
+  // jump target in a ref so the scroll handler can compare against
+  // it without making the ref a dep of any effect.
+  //
+  // The target is cleared in three ways:
+  //   1. `scrollend` (browsers that fire it) — definitive end of
+  //      the smooth scroll.
+  //   2. The scroll handler notices the scroller is now AT or PAST
+  //      the target page's top edge — same math as the initial
+  //      `jumpToPage` target — and clears the lock.
+  //   3. A fallback timer (`JUMP_LOCK_FALLBACK_MS`) — covers
+  //      browsers / harnesses that never fire `scrollend` and
+  //      that may interrupt the smooth scroll before reaching the
+  //      target.
+  const jumpTargetRef = useRef<number | null>(null);
+  const jumpLockTimerRef = useRef<number | null>(null);
+  // DEF-058 — last scrollTop we successfully validated as "past
+  // the jump target". When the user lands on the target we clear
+  // the lock; if a subsequent user-driven scroll moves away the
+  // heuristic must take over again immediately.
+  const JUMP_LOCK_FALLBACK_MS = 1200;
+
   const computeCurrentPage = useCallback(() => {
     const scroller = scrollerRef.current;
     if (scroller === null || firstPageSize === null) {
@@ -712,19 +743,82 @@ export function DocumentView({
       // Touching the document — push out any pending idle cleanup so
       // it doesn't fire mid-render. Resets the 5s window from "now".
       idleCleanupRef.current?.noteActivity();
+      // DEF-058 — while a jump is in flight, suppress the scroll-driven
+      // currentPage update UNLESS the scroller has reached the target
+      // (in which case we let the heuristic run, then clear the lock).
+      const target = jumpTargetRef.current;
+      if (target !== null && firstPageSize !== null) {
+        const targetTop = slotOffsetTop(
+          target,
+          firstPageSize.h,
+          effectiveScaleRef.current,
+        ) - CONTENT_PADDING_PX;
+        const scroller = scrollerRef.current;
+        if (scroller !== null && scroller.scrollTop >= targetTop - 1) {
+          jumpTargetRef.current = null;
+          if (jumpLockTimerRef.current !== null) {
+            window.clearTimeout(jumpLockTimerRef.current);
+            jumpLockTimerRef.current = null;
+          }
+          // The heuristic below will recompute from the final
+          // scrollTop; fall through to it.
+        } else {
+          // Still mid-jump. Re-arm the fallback timer in case the
+          // smooth scroll never fires `scrollend` (some harnesses).
+          if (jumpLockTimerRef.current === null) {
+            jumpLockTimerRef.current = window.setTimeout(() => {
+              jumpTargetRef.current = null;
+              jumpLockTimerRef.current = null;
+              // The heuristic isn't tied to a scroll event, so force
+              // a recompute from the current scrollTop.
+              computeCurrentPage();
+            }, JUMP_LOCK_FALLBACK_MS);
+          }
+          computeGeometryMountRef.current();
+          return;
+        }
+      }
       computeCurrentPage();
       computeGeometryMountRef.current();
     });
-  }, [computeCurrentPage]);
+  }, [computeCurrentPage, firstPageSize]);
 
   useEffect(
     () => () => {
       if (scrollRafRef.current !== 0) {
         window.cancelAnimationFrame(scrollRafRef.current);
       }
+      if (jumpLockTimerRef.current !== null) {
+        window.clearTimeout(jumpLockTimerRef.current);
+        jumpLockTimerRef.current = null;
+      }
     },
     [],
   );
+
+  // `scrollend` is the definitive "smooth scroll finished" event on
+  // modern browsers; attach it once and use it to drop the jump
+  // lock immediately. If the browser doesn't support `scrollend`
+  // (older Chromium, some WebKit), the fallback timer above covers
+  // us — see the JUMP_LOCK_FALLBACK_MS branch.
+  useEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    const onScrollEnd = (): void => {
+      if (jumpTargetRef.current !== null) {
+        jumpTargetRef.current = null;
+        if (jumpLockTimerRef.current !== null) {
+          window.clearTimeout(jumpLockTimerRef.current);
+          jumpLockTimerRef.current = null;
+        }
+        computeCurrentPage();
+      }
+    };
+    scroller.addEventListener("scrollend", onScrollEnd);
+    return () => {
+      scroller.removeEventListener("scrollend", onScrollEnd);
+    };
+  }, [computeCurrentPage]);
 
   // ---- jump ----------------------------------------------------------------------
   const jumpToPage = useCallback(
@@ -738,9 +832,24 @@ export function DocumentView({
         top: Math.max(target - CONTENT_PADDING_PX, 0),
         behavior: smooth ? "smooth" : "instant",
       });
+      // DEF-058 — set the jump target FIRST so the scroll heuristic
+      // sees the lock the moment the first scroll event fires (the
+      // browser may begin animating before the next microtask).
+      // Set the optimistic currentPage too so the SideRail highlight
+      // moves to the destination immediately, not after the smooth
+      // scroll lands.
+      jumpTargetRef.current = page;
+      if (jumpLockTimerRef.current !== null) {
+        window.clearTimeout(jumpLockTimerRef.current);
+      }
+      jumpLockTimerRef.current = window.setTimeout(() => {
+        jumpTargetRef.current = null;
+        jumpLockTimerRef.current = null;
+        computeCurrentPage();
+      }, JUMP_LOCK_FALLBACK_MS);
       setCurrentPage(page);
     },
-    [firstPageSize],
+    [firstPageSize, computeCurrentPage],
   );
 
   // ---- initial page restore -------------------------------------------------------
@@ -1327,14 +1436,47 @@ export function DocumentView({
         )}
         <div ref={scrollerRef} className="document-scroller" onScroll={onScroll}>
           <div className="document-content">
-            {Array.from({ length: pageCount }, (_, i) => i + 1).map((page) => {
-              const isMounted = mountedPages.has(page);
+            {Array.from({ length: pageCount }, (_, i) => i + 1).map((visiblePage) => {
+              // DEF-064 — after a delete / reorder the visual scroller
+              // used to keep its original `doc.numPages` slots while
+              // the rail correctly shrank to `engineState.pageCount`,
+              // so the scroller showed phantom slots for the deleted
+              // page. `pageCount` is now derived from the engine state
+              // (see App.tsx -> DocumentView), so the slot count
+              // agrees with the rail. The slot still has to map the
+              // visible page (the user-facing index) to the source
+              // page the underlying pdf.js document is asked to load:
+              // after deleting visible page 3, the new visible
+              // position 3 is the original source page 4. Without
+              // this translation, every PageView after a delete
+              // would render the same source page and the document
+              // would appear unchanged. `visibleToSourcePage` is
+              // the pure helper that does the translation (tested
+              // independently in pageGeometry.test.ts).
+              const sourcePage = visibleToSourcePage(
+                visiblePage,
+                engineState.pageOrder,
+              );
+              // DEF-057 — read the engine-applied quarter-turn rotation
+              // for this visible page slot and thread it down to the
+              // PageView. The engine's `rotations` array is indexed by
+              // VISIBLE position (the same order DocumentView's slots
+              // enumerate), so we use the visible page number to look
+              // it up. The PageView applies the rotation to pdf.js's
+              // viewport so the bitmap is rendered at the rotated
+              // orientation. Without this, rotate ops updated
+              // `engineState.rotations` but the main view kept
+              // rendering the un-rotated bitmap (the side rail's
+              // thumb CSS class flipped, the main view did not).
+              const pageRotation = engineState.rotations[visiblePage - 1] ?? 0;
+              const isMounted = mountedPages.has(visiblePage);
               return (
                 <div
-                  key={page}
-                  ref={(el) => registerSlot(page, el)}
+                  key={visiblePage}
+                  ref={(el) => registerSlot(visiblePage, el)}
                   className="page-slot"
-                  data-page={page}
+                  data-page={visiblePage}
+                  data-source-page={sourcePage}
                   style={{
                     height: slotHeightPx > 0 ? `${slotHeightPx - PAGE_GAP_PX}px` : 0,
                     width: pageWidthPx > 0 ? `${pageWidthPx}px` : undefined,
@@ -1343,27 +1485,28 @@ export function DocumentView({
                   {isMounted && (
                     <PageView
                       doc={doc}
-                      pageNumber={page}
+                      pageNumber={sourcePage}
                       widthPt={firstPageSize?.w ?? 612}
                       heightPt={firstPageSize?.h ?? 792}
                       cssScale={effectiveScale}
+                      rotation={pageRotation}
                       shouldRender={true}
-                      hits={hitsByPage.get(page) ?? EMPTY_HITS}
-                      activeHit={activeHit?.page === page ? activeHit : null}
+                      hits={hitsByPage.get(visiblePage) ?? EMPTY_HITS}
+                      activeHit={activeHit?.page === visiblePage ? activeHit : null}
                       registerPage={NOOP_REGISTER}
                       onPageSize={NOOP_PAGE_SIZE}
                       onActiveHitTop={onActiveHitTop}
-                      annotations={annotationsByPage.get(page) ?? EMPTY_ANNOTATIONS}
+                      annotations={annotationsByPage.get(visiblePage) ?? EMPTY_ANNOTATIONS}
                       annotationTool={annTool}
                       flashId={flashId}
                       onCreateAnnotation={(a): void => onCreateAnnotation?.(a)}
                       onFinishedOneShot={onAnnFinishedOneShot}
                       onRenderStart={onPageRenderStart}
                       onRenderEnd={onPageRenderEnd}
-                      formFields={formFieldsByPage.get(page) ?? EMPTY_FIELDS}
+                      formFields={formFieldsByPage.get(visiblePage) ?? EMPTY_FIELDS}
                       onFormValueChange={onFormValueChangeStable}
                       onFormListboxToggle={onFormListboxToggleStable}
-                      signatures={signaturesByPage.get(page) ?? EMPTY_PLACEMENTS}
+                      signatures={signaturesByPage.get(visiblePage) ?? EMPTY_PLACEMENTS}
                       savedSignatures={savedSignatureMap}
                       armedSignatureId={armedSignatureId}
                       onPlaceSignature={onPlaceSignatureStable}

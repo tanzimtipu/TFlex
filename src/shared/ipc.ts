@@ -45,6 +45,11 @@ export const IPC = {
   settingsChangedEvent: "settings:changed",
   // Phase 7: application menu actions pushed from main to renderer
   menuActionEvent: "menu:action",
+  // DEF-065: renderer -> main command that toggles the enabled state of
+  // named application menu items (menu.save, menu.saveAs, ...) so the
+  // native menu reflects doc-open / undo-stack state. Fire-and-forget
+  // (ipcMain.on, not handle): the renderer does not await a reply.
+  menuSetEnabled: "menu:setEnabled",
   // Phase 6 — About + preferences surface
   appGetInfo: "app:getInfo",
   appOpenPath: "app:openPath",
@@ -87,6 +92,9 @@ export const IPC = {
   engineExportPages: "engine:exportPages",
   engineExportText: "engine:exportText",
   engineCreateDocxFromImages: "engine:createDocxFromImages",
+  // DEF-060 — DOCX built from the loaded document's own text, with an
+  // image fallback (from entries pngBuffer) for text-free pages.
+  engineCreateDocxFromDoc: "engine:createDocxFromDoc",
   // Phase 10: edit content
   engineEditTextRun: "engine:editTextRun",
   engineAddTextBox: "engine:addTextBox",
@@ -238,6 +246,19 @@ export interface TFlexApiEngine {
   createDocxFromImages?(
     entries: DocxImageEntry[],
   ): Promise<Result<Uint8Array, import("./types").EngineError>>;
+  /** DEF-060 — build a .docx from the loaded document's own text. The
+   *  engine extracts per-page text from its pdfDoc (reusing the exportText
+   *  machinery) and emits real `w:p`/`w:r`/`w:t` paragraphs in
+   *  word/document.xml for text-bearing pages. Pages with no extractable
+   *  text fall back to an inline image (`wp:inline`) taken from the matching
+   *  `DocxImageEntry` (by `pageNumber`) — the renderer rasterises every page
+   *  with PDF.js ahead of time so the fallback always has pixels. Kept
+   *  alongside `createDocxFromImages` for compat; the renderer picks this
+   *  path when the source is a loaded doc (editable text where possible). */
+  createDocxFromDoc?(
+    docId: string,
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, import("./types").EngineError>>;
   /** Phase 10 — edit existing text run: mask the run's rect with a white
    *  rectangle and draw `newText` at the rect's top-left. */
   editTextRun?(
@@ -355,6 +376,12 @@ export interface TFlexApi {
    *  The callback receives the action name (e.g. 'open', 'saveAs'). */
   menu: {
     onAction(cb: (action: string) => void): () => void;
+    /** DEF-065 — toggle the enabled state of named menu items
+     *  (menu.save, menu.saveAs, menu.closeTab, menu.undo, menu.redo) to
+     *  match the renderer's doc-open / undo-stack state. Fire-and-forget:
+     *  the renderer does not await a reply; main flips `.enabled` on the
+     *  matching `MenuItem`. Omitted ids keep their current state. */
+    setEnabled(state: import("./types").MenuEnabledState): void;
   };
   /** Phase 6 — About + preferences. Backend fills `AppInfo` from
    *  `app.getVersion()` and the user-data path so the About dialog

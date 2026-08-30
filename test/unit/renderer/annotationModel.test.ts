@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   ANNOTATION_COLORS,
   applyPatch,
+  annotationColorToCss,
   annotationToolReducer,
   countByKind,
   hasEditableText,
@@ -46,7 +47,16 @@ function note(overrides: Partial<Annotation> = {}): Annotation {
 describe("annotationToolReducer", () => {
   it("initial state has tool=select and a default color and pen width", () => {
     expect(initialAnnotationToolState.tool).toBe("select");
-    expect(initialAnnotationToolState.color).toBe("yellow");
+    // DEF-056 — REQUIREMENTS.md sets the product accent to
+    // `#2563eb` (blue 600). The annotation tool's default color is
+    // that same hex so the swatch + the highlight the user paints
+    // both read as "the product accent" the moment the tool is
+    // armed. The previous default ("yellow" -> #eab308) clashed
+    // with the calm zinc/slate UI.
+    expect(initialAnnotationToolState.color).toBe("#2563eb");
+    expect(annotationColorToCss(initialAnnotationToolState.color)).toBe(
+      "#2563eb",
+    );
     expect(initialAnnotationToolState.penWidth).toBeGreaterThan(0);
   });
 

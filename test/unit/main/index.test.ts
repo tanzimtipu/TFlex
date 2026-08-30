@@ -17,9 +17,11 @@ const {
   _fromWebContents,
   _quit,
   _createMainWindow,
-_buildAppMenu,
+  _buildAppMenu,
     _updateServiceInstance,
     _openPath,
+    _ipcOn,
+    _applyMenuEnabled,
 } = vi.hoisted(() => {
   const engineState = { pageCount: 1, modified: false, pageOrder: [0], rotations: [0], deleted: [false] };
 
@@ -64,6 +66,7 @@ _buildAppMenu,
       optimize: vi.fn().mockResolvedValue({ ok: true, value: new ArrayBuffer(8) }),
       auditSpace: vi.fn().mockResolvedValue({ ok: true, value: { totalBytes: 0, breakdown: { images: 0, fonts: 0, contentStreams: 0, metadata: 0, other: 0 } } }),
       createFromImages: vi.fn().mockResolvedValue({ ok: true, value: new ArrayBuffer(8) }),
+      createDocxFromDoc: vi.fn().mockResolvedValue({ ok: true, value: new Uint8Array(8) }),
       exportPages: vi.fn().mockResolvedValue({ ok: true, value: [] }),
     },
     _sigInstance: {
@@ -82,6 +85,8 @@ _buildAppMenu,
     _openPath: vi.fn().mockResolvedValue(''),
     _handle: vi.fn(),
     _on: vi.fn(),
+    _ipcOn: vi.fn(),
+    _applyMenuEnabled: vi.fn(),
     _setApplicationMenu: vi.fn(),
     _showSaveDialog: vi.fn(),
     _getAllWindows: vi.fn().mockReturnValue([]),
@@ -113,6 +118,7 @@ vi.mock('electron', () => ({
   },
   ipcMain: {
     handle: _handle,
+    on: _ipcOn,
   },
   Menu: {
     setApplicationMenu: _setApplicationMenu,
@@ -158,6 +164,7 @@ vi.mock('../../../src/main/services/update-service', () => ({
 
 vi.mock('../../../src/main/menu', () => ({
   buildAppMenu: _buildAppMenu,
+  applyMenuEnabledState: _applyMenuEnabled,
 }));
 
 vi.mock('../../../src/main/services/dialog', () => ({
@@ -867,5 +874,72 @@ describe('main/index - application menu', () => {
     menuCall.sendToFocused('menu:action');
 
     expect(send).toHaveBeenCalledWith('menu:action');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-065: menu:setEnabled listener
+// ---------------------------------------------------------------------------
+
+describe('main/index - DEF-065 menu:setEnabled listener', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _ipcOn.mockClear();
+    _applyMenuEnabled.mockClear();
+    await start();
+  });
+
+  it('registers an ipcMain.on listener for menu:setEnabled', () => {
+    const channels = _ipcOn.mock.calls.map((call: unknown[]) => call[0] as string);
+    expect(channels).toContain(IPC.menuSetEnabled);
+  });
+
+  it('forwards the renderer state to applyMenuEnabledState', async () => {
+    const setEnabledCall = _ipcOn.mock.calls.find((c: unknown[]) => c[0] === IPC.menuSetEnabled)!;
+    const handler = setEnabledCall[1] as (...args: unknown[]) => void;
+    const state = { 'menu.save': false, 'menu.undo': false };
+    handler({}, state);
+
+    expect(_applyMenuEnabled).toHaveBeenCalledTimes(1);
+    expect(_applyMenuEnabled).toHaveBeenCalledWith(state);
+  });
+
+  it('does not register menu:setEnabled as a handle (it is fire-and-forget on)', () => {
+    // menu:setEnabled must NOT be in the handle() registrations — it uses on().
+    const handled = _handle.mock.calls.map((call: unknown[]) => call[0] as string);
+    expect(handled).not.toContain(IPC.menuSetEnabled);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-060: engine:createDocxFromDoc handler registration
+// ---------------------------------------------------------------------------
+
+describe('main/index - DEF-060 engine:createDocxFromDoc handler', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    await start();
+  });
+
+  it('registers engine:createDocxFromDoc handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.engineCreateDocxFromDoc);
+  });
+
+  it('forwards docId and entries to engine.createDocxFromDoc', async () => {
+    const call = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.engineCreateDocxFromDoc)!;
+    const handler = call[1] as (...args: unknown[]) => unknown;
+    const entries = [{
+      pageNumber: 1,
+      pngBuffer: new Uint8Array([1, 2, 3]),
+      width: 10,
+      height: 10,
+      pageWidth: 612,
+      pageHeight: 792,
+    }];
+    await handler({}, 'doc-1', entries);
+
+    expect(_engineInstance.createDocxFromDoc).toHaveBeenCalledWith('doc-1', entries);
   });
 });

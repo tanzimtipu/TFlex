@@ -149,6 +149,21 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   // a nudge is the local drag state.
   const [dragTick, setDragTick] = useState(0);
 
+  // Text-run hover hint: when the text tool is active, underline the
+  // run under the cursor so the user can see what's clickable. We
+  // track the hover index in a ref + a state tick to avoid
+  // re-rendering on every move.
+  //
+  // DEF-061 — every hook (useState / useEffect) MUST be called
+  // before any early return. Earlier versions of this file declared
+  // `hoverRect` after the `if (tool === "off") return null;` branch,
+  // so on a render that hit the early return React saw fewer hooks
+  // than the previous render and threw #310 ("Rendered fewer hooks
+  // than expected"). Both `hoverRect` and its pointermove effect are
+  // declared here, above the early return, so the hook count is
+  // stable across tool/visibility transitions.
+  const [hoverRect, setHoverRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+
   // Reset all transient state when the tool changes (so a stray
   // drag from one tool doesn't bleed into the next).
   useEffect(() => {
@@ -157,6 +172,31 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     setImageDrag(null);
     setCropDrag(null);
   }, [tool, page]);
+
+  useEffect(() => {
+    if (tool !== "text") {
+      setHoverRect(null);
+      return;
+    }
+    const onMove = (e: PointerEvent): void => {
+      const root = rootRef.current;
+      if (root === null) return;
+      const rect = root.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / cssScale;
+      const y = (e.clientY - rect.top) / cssScale;
+      const items = getTextItems();
+      const hit = items.find(
+        (it) =>
+          x >= it.x - 2 &&
+          x <= it.x + it.width + 2 &&
+          y >= it.y - 2 &&
+          y <= it.y + it.height + 2,
+      );
+      setHoverRect(hit === undefined ? null : { ...hit });
+    };
+    window.addEventListener("pointermove", onMove);
+    return () => window.removeEventListener("pointermove", onMove);
+  }, [tool, cssScale, getTextItems]);
 
   // Helpers ----------------------------------------------------------------
 
@@ -472,36 +512,6 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   // for the duration of the edit.
   const layerClass = "edit-layer edit-layer-active";
   const cursor = tool === "text" || tool === "box" || tool === "image" ? "crosshair" : undefined;
-
-  // Text-run hover hint: when the text tool is active, underline the
-  // run under the cursor so the user can see what's clickable. We
-  // track the hover index in a ref + a state tick to avoid
-  // re-rendering on every move.
-  const [hoverRect, setHoverRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  useEffect(() => {
-    if (tool !== "text") {
-      setHoverRect(null);
-      return;
-    }
-    const onMove = (e: PointerEvent): void => {
-      const root = rootRef.current;
-      if (root === null) return;
-      const rect = root.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / cssScale;
-      const y = (e.clientY - rect.top) / cssScale;
-      const items = getTextItems();
-      const hit = items.find(
-        (it) =>
-          x >= it.x - 2 &&
-          x <= it.x + it.width + 2 &&
-          y >= it.y - 2 &&
-          y <= it.y + it.height + 2,
-      );
-      setHoverRect(hit === undefined ? null : { ...hit });
-    };
-    window.addEventListener("pointermove", onMove);
-    return () => window.removeEventListener("pointermove", onMove);
-  }, [tool, cssScale, getTextItems]);
 
   // Image-create preview: the in-flight rect while the user is
   // dragging out a new image.

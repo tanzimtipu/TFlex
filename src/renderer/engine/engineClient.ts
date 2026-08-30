@@ -22,6 +22,7 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  MoveSignaturePayload,
   OcrProgress,
   OcrRecognizeOptions,
   OcrSuspect,
@@ -217,8 +218,7 @@ export interface TFlexApiEngine {
   ): Promise<Result<SharedEngineState, EngineError>>;
   moveSignature?(
     docId: string,
-    placementId: string,
-    rect: SignaturePlacement["rect"],
+    payload: MoveSignaturePayload,
   ): Promise<Result<SharedEngineState, EngineError>>;
   deleteSignature?(
     docId: string,
@@ -384,16 +384,30 @@ export interface TFlexApiEngine {
  *  wire-shape "text-box" kind is translated back to the renderer's
  *  "textbox" tag so the renderer's AnnotationKind union matches.
  *
- *  Wire-shape field-name note (DEF-022): the engine's `buildState` emits
- *  signature placements under the field name `placedSignatures`; the
- *  renderer surface (App.tsx mirror effect, DocumentView, stub engine)
- *  reads `signatures`. Without the rename below, every IPC round-trip
- *  for a signature op would return `{ placedSignatures: [...] }`, the
- *  renderer mirror would see `signatures === undefined`, and the
- *  placement list would be clobbered to `[]`. Accept both names —
- *  `signatures` wins when both are present, since the renderer's own
- *  StubRendererEngine already uses `signatures` and a future backend
- *  rename to `signatures` should be a one-line drop here.
+ *  Wire-shape field-name note (DEF-022 + DEF-059 residual): the engine's
+ *  `buildState` emits signature placements under the field name
+ *  `placedSignatures`; the renderer surface (App.tsx mirror effect,
+ *  DocumentView, stub engine) reads `signatures`. Without the rename
+ *  below, every IPC round-trip for a signature op would return
+ *  `{ placedSignatures: [...] }`, the renderer mirror would see
+ *  `signatures === undefined`, and the placement list would be
+ *  clobbered to `[]` — signatures would silently disappear from the
+ *  UI right after placement. The bridge has two parts:
+ *
+ *    1. Read either name. `signatures` wins when both are present
+ *       (forward-compat with the renderer's own StubRendererEngine
+ *       and any future backend rename — a single-line drop here
+ *       closes that gap).
+ *    2. STRIP `placedSignatures` from the returned object. The naive
+ *       `...maybe` spread would leak the wire field through to the
+ *       renderer's `EngineState`, which the App.tsx mirror would
+ *       then read as an unknown-typed extra property. Stripping it
+ *       keeps the renderer surface clean and means future readers
+ *       cannot accidentally bind to the wire shape.
+ *
+ *  The presence of a stripped `placedSignatures` is what the
+ *  DEF-059-residual unit test pins: if a future refactor reintroduces
+ *  the spread leak, the test fails immediately.
  *
  *  Phase 4 form-fields wire-shape (DEF-025): the engine's `buildState`
  *  is being updated to include `formFields` in every state echo, so
@@ -434,7 +448,13 @@ function normalizeState(
     placedSignatures?: SignaturePlacement[];
   };
   const incoming = Array.isArray(maybe.annotations) ? maybe.annotations : [];
-  const incomingSigs = Array.isArray(maybe.signatures)
+  // Wire-shape field-name bridge (DEF-022 + DEF-059 residual): the
+  // engine emits `placedSignatures`; the renderer reads `signatures`.
+  // Accept either, prefer `signatures` when both are present, and
+  // always emit a single `signatures` key in the returned state.
+  // `placedSignatures` is STRIPPED below — it must not leak through
+  // to the renderer's EngineState.
+  const incomingSigs: SignaturePlacement[] = Array.isArray(maybe.signatures)
     ? maybe.signatures
     : Array.isArray(maybe.placedSignatures)
       ? maybe.placedSignatures
@@ -448,8 +468,19 @@ function normalizeState(
   const incomingFields: FormField[] | undefined = Array.isArray(maybe.formFields)
     ? maybe.formFields
     : undefined;
+  // Strip wire-shape-only keys (`placedSignatures`) from the spread
+  // so the returned renderer state never carries the engine's wire
+  // field name. Without this strip, `placedSignatures` leaks through
+  // `...maybe` into the renderer's EngineState and the App.tsx
+  // mirror's `ui?.state.signatures` lookup is correct only by
+  // coincidence (it just happens to also set `signatures`). Future
+  // refactors must not regress this — the DEF-059-residual test
+  // pins the absence.
+  const { placedSignatures: _stripPlaced, ...maybeStripped } = maybe;
+  void _stripPlaced;
+  void _prev;
   return {
-    ...maybe,
+    ...maybeStripped,
     annotations: incoming.map(annotationFromWire),
     formFields: incomingFields,
     signatures: incomingSigs,
@@ -694,11 +725,17 @@ class RealEngineAdapter implements EngineApi {
 
   async moveSignature(
     docId: string,
-    placementId: string,
-    rect: SignaturePlacement["rect"],
+    payload: MoveSignaturePayload,
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.moveSignature === undefined) return missingPhase4();
-    const r = await this.inner.moveSignature(docId, placementId, rect);
+    // The renderer is the source of truth for the placement's current
+    // page (it tracks the placement in `openTabs[id].placements` and
+    // builds the payload with the up-to-date page from that mirror).
+    // The IPC contract takes the payload as a single arg — see
+    // `MoveSignaturePayload` and `src/shared/ipc.ts`. The previous
+    // adapter spread `{placementId, rect}` into three positional args,
+    // which the real engine rejected (DEF-059).
+    const r = await this.inner.moveSignature(docId, payload);
     return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
   }
 

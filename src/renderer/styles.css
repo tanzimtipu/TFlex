@@ -3595,10 +3595,28 @@ textarea {
  * Phase 10 - inline text editor
  * ------------------------------------------------------------------------- */
 
+/* DEF-061 — the inline editor used to share its background with
+ * `var(--bg-raised)`, which in dark mode is `#15181c` (near
+ * black). Combined with the editor's always-black text colour
+ * (`color: { r: 0, g: 0, b: 0 }`, since text-run replacements
+ * overwrite the original page text), the result was an almost-
+ * solid black window the moment the user clicked a run — text
+ * blended into a dark panel and the editor looked broken.
+ *
+ * The PDF page itself is white in both themes (the renderer's
+ * dark theme does not invert the page), so the inline editor
+ * that overlays it must also be white-on-black-text. Pin both
+ * colours explicitly and keep the editor's chrome (border, tool-
+ * bar) reading off `var(--bg-raised)` so the panel still looks
+ * "of the app" in both themes. The toolbar's background is a
+ * separate concern and stays on the theme tokens (it doesn't
+ * fight the textarea's text). */
+
 .edit-inline-editor {
   position: absolute;
   z-index: 6;
-  background: var(--bg-raised);
+  background: #ffffff;
+  color: #000000;
   border: 1px solid var(--accent);
   border-radius: var(--radius-2);
   padding: 0;
@@ -3607,7 +3625,6 @@ textarea {
   min-width: 200px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
-  color: var(--fg);
 }
 
 .edit-inline-toolbar {
@@ -3618,6 +3635,7 @@ textarea {
   padding: 6px 8px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar, var(--bg-raised));
+  color: var(--fg);
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
 }

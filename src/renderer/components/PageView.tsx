@@ -28,6 +28,14 @@ interface PageViewProps {
   registerPage?: (page: number, el: HTMLDivElement | null) => void;
   onPageSize: (page: number, widthPt: number, heightPt: number) => void;
   onActiveHitTop: (page: number, cssTop: number) => void;
+  /** Quarter-turn rotation (0..3) the engine has applied to this page
+   *  via the user's rotate ops. Threaded into `page.getViewport` so the
+   *  bitmap is rendered at the rotated orientation. Without this the
+   *  rotate op updated `engineState.rotations` but the rendered canvas
+   *  kept the un-rotated bitmap (the side rail's CSS class flipped,
+   *  the main view did not). The wrapper's CSS dimensions are derived
+   *  from the rotated viewport, so 90/270 swaps width/height — DEF-057. */
+  rotation?: number;
   /** Annotations for this page (filtered from the engine state). */
   annotations: Annotation[];
   /** Active annotation tool + color/width settings. */
@@ -187,6 +195,7 @@ export function PageView(props: PageViewProps) {
     onDeleteSignature,
     editModeOpen = false,
     edit = null,
+    rotation = 0,
   } = props;
 
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -285,7 +294,16 @@ export function PageView(props: PageViewProps) {
         endRender();
         return;
       }
-      const viewport = page.getViewport({ scale: cssScale });
+      // DEF-057 — thread the engine-applied quarter-turn rotation into
+      // pdf.js's viewport so the bitmap is rendered at the rotated
+      // orientation. The rotation is a 0..3 multiple of 90 degrees (the
+      // engine's unit). pdf.js's `getViewport({ rotation })` rotates the
+      // output content and, for 90/270, swaps the viewport's
+      // width/height to match the post-rotation page extent. The
+      // canvas + wrapper dims below use the rotated viewport's width /
+      // height so the bitmap is laid out at its real visual size.
+      const rotDeg = (rotation * 90) as 0 | 90 | 180 | 270;
+      const viewport = page.getViewport({ scale: cssScale, rotation: rotDeg });
       const canvas = canvasRef.current;
       const wrapper = wrapperRef.current;
       const textHost = textHostRef.current;
@@ -326,7 +344,7 @@ export function PageView(props: PageViewProps) {
       // render() operations" error during fast zoom in / out.
       const task = page.render({
         canvasContext: ctx,
-        viewport: page.getViewport({ scale: cssScale }),
+        viewport: page.getViewport({ scale: cssScale, rotation: rotDeg }),
       });
       renderTask = task;
       try {
@@ -422,7 +440,7 @@ export function PageView(props: PageViewProps) {
       releasePdfPage(pdfPage);
       pdfPage = null;
     };
-  }, [shouldRender, cssScale, doc, pageNumber, onPageSize, onRenderStart, onRenderEnd]);
+  }, [shouldRender, cssScale, doc, pageNumber, onPageSize, onRenderStart, onRenderEnd, rotation]);
 
   useLayoutEffect(() => {
     if (!ready || hits.length === 0) {
@@ -460,15 +478,32 @@ export function PageView(props: PageViewProps) {
 
   const getTextItems = useCallback((): TextItemGeom[] => textItemsRef.current, []);
 
+  // Wrapper dims follow the rotated viewport: at 90/270 the visible
+  // width and height swap. We compute the post-rotation width / height
+  // from the un-rotated page dims + rotation (0,1,2,3) so the slot
+  // reserves the correct scroll space, the bitmap fits without a
+  // CSS transform, and downstream overlays (annotation / form / signature /
+  // edit) lay out over the rotated page the user actually sees
+  // (DEF-057). Without this, the wrapper stays the un-rotated size and
+  // the rotated canvas overflows the slot for 90/270.
+  const rotForLayout = ((rotation % 4) + 4) % 4;
+  const isQuarterTurn = rotForLayout === 1 || rotForLayout === 3;
+  const wrapperW = isQuarterTurn ? heightPt * cssScale : widthPt * cssScale;
+  const wrapperH = isQuarterTurn ? widthPt * cssScale : heightPt * cssScale;
+  const rotClass =
+    rotForLayout === 0
+      ? undefined
+      : `pdf-page-rot-${(rotForLayout * 90) as 90 | 180 | 270}`;
+
   return (
     <div
       ref={(el) => {
         wrapperRef.current = el;
         registerPage?.(pageNumber, el);
       }}
-      className="pdf-page"
+      className={rotClass === undefined ? "pdf-page" : `pdf-page ${rotClass}`}
       data-page={pageNumber}
-      style={{ width: `${widthPt * cssScale}px`, height: `${heightPt * cssScale}px` }}
+      style={{ width: `${wrapperW}px`, height: `${wrapperH}px` }}
     >
       <canvas ref={canvasRef} className="pdf-page-canvas" />
       <div ref={textHostRef} className="textLayer" />

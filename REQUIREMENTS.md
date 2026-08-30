@@ -326,6 +326,29 @@ Completion demands: all Phase-6 green; tag v1.x.x pushed; OTA verified by a vers
 bump against tanzimtipu/TFlex; thumbnails/screenshots included per gate; timing per
 performance budget as RECheckWise for the new tab-switch/palette work.
 
+### Phase-6 no-op remediation checklist (required to close Phase 6)
+
+These bugs came out of the Phase-6 extension scope. qa files one DEF each (severity
+tagged inline/in parentheses), frontend/backend:frontend-dev owns renderer fixes
+(except #3 export and #2 sign where the backend path is implicated; coordinate via
+shared contract). qa defines entry, developer fixes, qa verifies → CLOSED. Each of
+these must be verified together with the CONTROL-INDEX per phase rule and a no-op
+sweep + silence attack audit before Phase 7 is allowed to start:
+
+1. The "+" for new tab visible on empty workload. It must only appear when at least
+   one tab exists. — LOW.
+2. Sign inside PDF returns "Item not found" — the promised new flow returns a
+   failure at engine/driver level. HIGH.
+3. Word export saves as an image (.docx containing a page rendered as picture); it
+   must contain editable text. HIGH — backend chose wrong export path.
+4. Click Edit then select text: the canvas goes blank. HIGH (silent canvas crash).
+5. Left-pane page selection reverts to page 2 of the long PDF. HIGH.
+6. Rotate page click: no-op. HIGH.
+7. Delete page click: no-op. HIGH.
+8. Highlight color default shows white; must be the accent blue (#2563eb). MEDIUM.
+9. Crop function click: no-op. HIGH.
+10. Stamp "place on page" click: no-op. HIGH.
+
 ## Phase 7 — Phase-6 fixes (must land before Phase 8 features)
 
 **Fixes (target the source, not workarounds):**

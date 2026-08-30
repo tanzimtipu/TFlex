@@ -28,6 +28,10 @@ function mouseDown(el: Element, button: 0 | 1 | 2 = 0): void {
  * as the last <li>, so it renders immediately adjacent to the
  * rightmost tab.
  *
+ * DEF-055 — welcome screen has no tabs, so the '+' button is
+ * gated on `tabs.length >= 1`. The "hides the '+' tab button when
+ * there are no tabs" test below pins that gate.
+ *
  * Phase 8 / DEF-041 — click-on-padding activates the tab. The
  * mousedown resolver in `state/tabMouseDown.ts` walks up from any
  * hit target to find `.tab`; the second test block below verifies
@@ -114,15 +118,32 @@ describe("AppHeader — '+ tab' placement (Phase 7 fix #2)", () => {
     expect(items[items.length - 1]?.querySelector("[data-new-tab]")).not.toBeNull();
   });
 
-  it("still renders the '+ tab' button when there are no tabs", () => {
+  it("hides the '+ tab' button when there are no tabs (DEF-055 welcome)", () => {
+    // The welcome screen is the user's primary entry point when no
+    // tabs are open. A stray '+' button invites a useless empty tab
+    // and looks out of place against the welcome pane. The '+' is
+    // gated on `tabs.length >= 1` — it only appears once the user has
+    // at least one real tab in the strip.
     const root = renderHeader({ tabs: [], activeId: null });
     const tabList = root.querySelector(".tab-list");
     expect(tabList).not.toBeNull();
-    // The tab list is present even with zero tabs (the '+' <li> is
-    // always visible).
-    const items = tabList!.children;
-    expect(items.length).toBe(1);
-    expect(items[0]?.querySelector("[data-new-tab]")).not.toBeNull();
+    // Zero tabs -> zero <li> children (no .tab rows and no '+' slot).
+    expect(tabList!.children.length).toBe(0);
+    expect(root.querySelector("[data-new-tab]")).toBeNull();
+  });
+
+  it("shows the '+ tab' button once at least one tab is open", () => {
+    // With exactly one tab the strip has two <li> children: the tab
+    // and the '+' slot. The Phase 7 fix-#2 ordering still applies —
+    // '+' sits immediately after the rightmost tab.
+    const root = renderHeader({
+      tabs: [{ id: "a", title: "a.pdf", modified: false }],
+      activeId: "a",
+    });
+    const items = Array.from(root.querySelectorAll(".tab-list > li"));
+    expect(items.length).toBe(2);
+    expect(items[0]?.querySelector("[data-tab-id='a']")).not.toBeNull();
+    expect(items[1]?.querySelector("[data-new-tab]")).not.toBeNull();
   });
 
   it("does not render the '+ tab' button outside .tab-list", () => {

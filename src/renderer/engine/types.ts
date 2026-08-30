@@ -18,6 +18,7 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  MoveSignaturePayload,
   OcrProgress,
   OcrRecognizeOptions,
   OcrSuspect,
@@ -178,11 +179,13 @@ export interface EngineApi {
 
   /** Move / resize an existing placement. The renderer calls this on
    *  every pointerup after a drag so the engine stays in sync with what
-   *  the user sees. */
+   *  the user sees. The renderer looks up the placement's current page
+   *  from its local `openTabs[id].placements` mirror and passes it
+   *  inside the payload — the engine doesn't have the lookup on its
+   *  side and the IPC contract is `moveSignature(docId, payload)`. */
   moveSignature(
     docId: string,
-    placementId: string,
-    rect: SignaturePlacement["rect"],
+    payload: MoveSignaturePayload,
   ): Promise<Result<EngineState, EngineError>>;
 
   /** Delete a placement. */
