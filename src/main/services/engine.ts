@@ -1812,6 +1812,15 @@ export class EngineService {
     if (doc === undefined) {
       return err('engine-error', `unknown document: ${docId}`);
     }
+    // B13 — guard a missing/empty options object. An empty tab (no docId)
+    // already returns engine-error above; this catches a renderer that
+    // forwards undefined/null opts with a valid docId so the language read
+    // below cannot crash the main process with "Cannot read properties of
+    // undefined (reading 'language')". Returns engine-error, matching the
+    // empty-tab contract, so the renderer's defensive gates degrade cleanly.
+    if (opts === null || typeof opts !== 'object') {
+      return err('engine-error', 'ocrRecognize: options is required');
+    }
     // Validate language against the bundled allowlist.
     if (typeof opts.language !== 'string' || !(OCR_LANGUAGES as readonly string[]).includes(opts.language)) {
       return err('engine-error', `unsupported OCR language: ${String(opts.language)}`);
