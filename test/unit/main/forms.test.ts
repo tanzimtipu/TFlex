@@ -385,6 +385,134 @@ describe('EngineService - fill then save/round-trip', () => {
 });
 
 // ---------------------------------------------------------------------------
+// DEF-069: the engine's `modified` flag must (a) flip to true after a form
+// fill and (b) clear after a successful save / saveAs, observable through
+// `getState` (the same channel the renderer's set-modified echo reads from
+// after it re-fetches state). The renderer's performSaveAs/onSave handlers
+// set engineUi.state.modified=false locally, but they ALSO rely on the
+// engine's getState returning modified=false for any subsequent read
+// (e.g. a tab switch that re-hydrates engineUi from getState, or a stale
+// engineUi ref falling back to getState). This block pins the backend side
+// of the contract so the renderer's set-modified echo has a correct source
+// to reflect.
+// ---------------------------------------------------------------------------
+
+describe('EngineService - modified flag echo (DEF-069)', () => {
+  it('fillFormField flips modified to true, observable via getState', async () => {
+    const engine = new EngineService();
+    const path = await copyFixtureToTemp('form.pdf');
+    await engine.loadDocument('doc-1', path);
+
+    // Pre-condition: a freshly loaded doc is unmodified.
+    const s0 = await engine.getState('doc-1');
+    expect(s0.ok).toBe(true);
+    if (s0.ok) expect(s0.value.modified).toBe(false);
+
+    const fields = await engine.getFormFields('doc-1');
+    expect(fields.ok).toBe(true);
+    if (!fields.ok) return;
+    const textField = fields.value.find((f) => f.name === 'application_date');
+    expect(textField).toBeDefined();
+
+    const r = await engine.fillFormField('doc-1', { id: textField!.id, value: '2026-08-28' });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.modified).toBe(true);
+
+    // getState (the channel the renderer re-reads after save) must agree.
+    const s1 = await engine.getState('doc-1');
+    expect(s1.ok).toBe(true);
+    if (s1.ok) expect(s1.value.modified).toBe(true);
+  });
+
+  it('save clears modified, observable via getState', async () => {
+    const engine = new EngineService();
+    const path = await copyFixtureToTemp('form.pdf');
+    await engine.loadDocument('doc-1', path);
+
+    const fields = await engine.getFormFields('doc-1');
+    expect(fields.ok).toBe(true);
+    if (!fields.ok) return;
+    const textField = fields.value.find((f) => f.name === 'application_date');
+    await engine.fillFormField('doc-1', { id: textField!.id, value: '2026-08-28' });
+
+    const before = await engine.getState('doc-1');
+    expect(before.ok && before.value.modified).toBe(true);
+
+    const saveR = await engine.save('doc-1');
+    expect(saveR.ok).toBe(true);
+
+    // After save, getState must report modified=false — the renderer's
+    // set-modified echo sources from this on any tab re-hydration.
+    const after = await engine.getState('doc-1');
+    expect(after.ok).toBe(true);
+    if (after.ok) expect(after.value.modified).toBe(false);
+  });
+
+  it('saveAs clears modified and updates doc path, observable via getState (DEF-069)', async () => {
+    const engine = new EngineService();
+    const path = await copyFixtureToTemp('form.pdf');
+    await engine.loadDocument('doc-1', path);
+
+    const fields = await engine.getFormFields('doc-1');
+    expect(fields.ok).toBe(true);
+    if (!fields.ok) return;
+    const textField = fields.value.find((f) => f.name === 'application_date');
+    await engine.fillFormField('doc-1', { id: textField!.id, value: '2026-08-28' });
+
+    const before = await engine.getState('doc-1');
+    expect(before.ok && before.value.modified).toBe(true);
+
+    const newPath = join(dir, 'saved-as.pdf');
+    const saveR = await engine.saveAs('doc-1', newPath);
+    expect(saveR.ok).toBe(true);
+    if (saveR.ok) expect(saveR.value).toBe(newPath);
+
+    // The Save-As path must clear modified. The renderer's performSaveAs
+    // sets engineUi.state.modified=false locally AND this getState must
+    // agree, so a later tab re-activation re-hydrating from getState does
+    // not resurrect the dot.
+    const after = await engine.getState('doc-1');
+    expect(after.ok).toBe(true);
+    if (after.ok) expect(after.value.modified).toBe(false);
+
+    // The undo/redo stacks were cleared by saveAs — a subsequent undo
+    // must report nothing-to-undo (not resurrect a pre-save snapshot that
+    // would flip modified back to true).
+    const undoR = await engine.undo('doc-1');
+    expect(undoR.ok).toBe(false);
+    if (!undoR.ok) expect(undoR.error.code).toBe('nothing-to-undo');
+    const stillClean = await engine.getState('doc-1');
+    expect(stillClean.ok && stillClean.value.modified).toBe(false);
+  });
+
+  it('a failed saveAs does NOT clear modified (write-error path)', async () => {
+    // If the write fails, the doc must remain modified so the user is not
+    // silently led to believe their edits are persisted. This is the
+    // invariant the renderer's set-modified echo relies on: only a
+    // successful save may drive modified to false.
+    const engine = new EngineService();
+    const path = await copyFixtureToTemp('form.pdf');
+    await engine.loadDocument('doc-1', path);
+
+    const fields = await engine.getFormFields('doc-1');
+    expect(fields.ok).toBe(true);
+    if (!fields.ok) return;
+    const textField = fields.value.find((f) => f.name === 'application_date');
+    await engine.fillFormField('doc-1', { id: textField!.id, value: '2026-08-28' });
+
+    // Target a path inside a non-existent directory -> ENOENT write failure.
+    const badPath = join(dir, 'no-such-dir', 'out.pdf');
+    const saveR = await engine.saveAs('doc-1', badPath);
+    expect(saveR.ok).toBe(false);
+    if (!saveR.ok) expect(saveR.error.code).toBe('write-error');
+
+    const after = await engine.getState('doc-1');
+    expect(after.ok).toBe(true);
+    if (after.ok) expect(after.value.modified).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // flattenForms
 // ---------------------------------------------------------------------------
 

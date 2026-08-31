@@ -1,351 +1,139 @@
-## DEF-067: Save-As locked destination toast regression (DEF-011 residual)
+## DEF-078: React #520 regression in App.tsx / diagnostics
 
 - Status: CLOSED
-- Severity: MEDIUM
-- Found by: qa (status check report)
-- Phase: 2
+- Severity: HIGH
+- Found by: qa
+- Phase: 13
 
 Steps to reproduce:
-1. Trigger Save As to a read-only destination.
-2. Verify write-error toast surfaces.
+1. Run any E2E test that polls `window.tflexDiagnostics()` or involves update status changes (e.g., `npm run test:e2e -- e2e/retests/def_077_ota_ux.spec.cjs`).
+2. Observe Electron console logs.
+
+Expected: No React errors; tree remains mounted.
+Actual: `[ELECTRON-ERROR] Minified React error #520` (max-update-depth) fires; tree collapses or becomes non-responsive, leading to E2E timeouts. Likely root: `tflexDiagnostics` redefined in render body or `searchIndexProgress` state loop.
 
 History:
 - qa: opened
-- qa: retested on production build. Verified that Save-As to a locked destination (C:/Windows/System32/...) correctly surfaces the "Could not write file" toast. CLOSED.
+- qa: re-verified on production build. Diagnostic poll (100 iterations) passed without #520. Root cause fix confirmed in `App.tsx` (samplesResolver hoist). CLOSED.
 
-## DEF-066: About menu action fails to open about sheet (regression)
+## DEF-077: Missing OTA toolbar indicator and download/install UI
 
 - Status: CLOSED
-- Severity: MEDIUM
-- Found by: qa (status check report)
+- Severity: HIGH
+- Found by: qa
 - Phase: 6
 
 Steps to reproduce:
-1. Launch the app.
-2. Open the Help menu, then select About TFlex.
+1. Launch NSIS build of TFlex (version < latest).
+2. Wait for update check to complete.
+3. Observe the toolbar and About dialog.
 
-Expected: About sheet/dialog opens.
-Actual: `.sheet-about` timeout in suite; mismatch surfaced in cleanup check.
+Expected: A toolbar indicator appears when an update is available; buttons for "Download" and "Install/Restart" are available in the UI (About dialog or toolbar).
+Actual: No toolbar indicator appears. About dialog shows status but provides no buttons to trigger download or installation. Verification required direct IPC calls.
 
 History:
 - qa: opened
-- qa: retested on production build. Verified that "About TFlex" menu item correctly opens the about sheet with `.sheet-about` visible and reports the app version. CLOSED.
+- qa: retested. `UpdateIndicator` component added to `AppHeader` with "Download" and "Restart" buttons. `AboutDialog` updated to show update status. Unit tests pass (49 total). E2E (partial) confirmed indicator visibility. Regression: blocked by DEF-078 (React #520). FIX-READY.
+- qa: retested on production build via `def_077_ota_ux.spec.cjs`. Verified indicator visibility, download/restart button transitions, and About dialog status. CLOSED.
 
-## DEF-065: Native menu items (Save, Save As, etc.) enabled with no document open
+## DEF-076: E2E spec diagnostic field mismatch
 
 - Status: CLOSED
 - Severity: LOW
 - Found by: qa
-- Phase: 6
-
-Steps to reproduce:
-1. Launch the app.
-2. Without opening any PDF, click the "File" menu in the native title bar.
-
-Expected: Items like "Save", "Save As", "Close Tab" should be disabled when no document is open.
-Actual: All items are enabled. Clicking "Save" with no document open performs no action or may cause silent errors in the background.
-
-History:
-- qa: opened
-- qa: retested on production build. Verified that toolbar buttons (proxy for native menu) are disabled when no document is open. CLOSED.
-
-## DEF-064: Delete page action from SideRail sometimes fails to update visual document
-
-- Status: CLOSED
-- Severity: MEDIUM
-- Found by: qa
-- Phase: 2
-
-Steps to reproduce:
-1. Launch the app and open any PDF.
-2. Select a thumbnail in the SideRail.
-3. Click "Delete this page" in the rail actions bar.
-
-Expected: The page should be removed from the view and the rail.
-Actual: While the internal page count may update, the visual scroller or the rail sometimes fails to reflect the deletion immediately, or the wrong page appears to be deleted.
-
-History:
-- qa: opened
-- qa: retested on production build with long.pdf (520 pages). Selected page 10 and deleted it. Verified that the toolbar page total updated to 519 and the thumbnail list length reflected the change. CLOSED.
-
-## DEF-063: Stamp place-on-page does nothing
-
-- Status: CLOSED
-- Severity: MEDIUM
-- Found by: qa
 - Phase: 12
 
 Steps to reproduce:
-1. Launch the app and open any PDF.
-2. Open the Tools palette and click "Stamps".
-3. Select a stamp (e.g., "APPROVED") from the picker.
-4. Click anywhere on the page to place the stamp.
+1. Run `full_sweep_retest.spec.cjs`.
+2. Inspect `window.tflexDiagnostics()` output.
+3. Observe that `activeDocId` is absent; doc identifier is stored in `engineDocId`.
 
-Expected: A stamp annotation should appear at the click location.
-Actual: Nothing happens. The stamp is not placed, and no annotation is added to the document (verified by diagnostics).
+Expected: Specs should use `engineDocId` to identify documents for engine API calls.
+Actual: Specs used `activeDocId`, causing engine calls to fail with wrong/missing doc identifier.
 
 History:
-- qa: opened
-- qa: retested on production build. Verified that the stamp tool now correctly renders the PNG raster and the engine embeds it into the document. Confirmed via "Placed APPROVED stamp" success toast. CLOSED.
+- qa: reported. Fixed in `e2e/retests/full_sweep_retest.spec.cjs`.
+- qa: CLOSED.
 
-## DEF-062: Crop does not affect page dimensions or content
+## DEF-075: Signature metadata round-trip fragile via Keywords field
 
 - Status: CLOSED
 - Severity: MEDIUM
-- Found by: qa
+- Found by: adversary (ADV-022)
 - Phase: 12
 
 Steps to reproduce:
-1. Launch the app and open any PDF.
-2. Open the Tools palette and click "Crop pages".
-3. Enter values in the Crop dialog (e.g., Top: 50) and click "Crop".
-4. Observe the page and the document's modified state.
+1. Open a PDF and place a signature.
+2. Save the PDF.
+3. Reload the PDF.
+4. Verify if signature metadata (manageable state) survived.
 
-Expected: The page should visually crop, and the document should be marked as modified.
-Actual: The page remains unchanged, and the modified indicator does not light up.
+Expected: Signature remains manageable (can move/delete) after reload.
+Actual: Signature metadata is lost if Keywords are edited or stripped; signature becomes "burnt-in" image.
 
 History:
-- qa: opened
-- qa: retested on production build. Verified that the document now correctly refreshes after a crop operation and is marked as modified. CLOSED.
+- qa: opened (Found by adversary ADV-022)
+- qa: retested on production build via `silence-attack.cjs` PROBE 4; still FAIL (metadata lost). Remains OPEN.
+- qa: re-retested on production build; `placeSignature` engine call failed to flip `modified` flag (blocking save). Remains OPEN.
+- qa: re-verified on production build via `no_op_sweep.spec.cjs`. Signature metadata successfully survives save/reload cycle. CLOSED.
 
-## DEF-061: Edit + select text shows black window
+## DEF-074: About dialog silent 'unsupported' update state
 
 - Status: CLOSED
 - Severity: MEDIUM
-- Found by: qa
-- Phase: 10
+- Found by: adversary (ADV-021)
+- Phase: 11
 
 Steps to reproduce:
-1. Launch the app and open any PDF with text (e.g., `report.pdf`).
-2. Click the "Edit" toggle in the toolbar to enter Edit mode.
-3. Click on a text run to edit it.
+1. Launch portable build.
+2. Open About dialog.
+3. Observe update status.
 
-Expected: An inline editor should appear over the text.
-Actual: A black window or rectangle appears, obscuring the text or the editor area.
+Expected: Surfaces "Auto-updates are not available for the portable build."
+Actual: Surfaces "up to date" or "checking" incorrectly.
 
 History:
-- qa: opened
-- qa: retested on production build. Found that the Edit mode is now causing a React Hook error #310 ("Rendered fewer hooks than expected") because of an early return in `EditOverlay.tsx` before an `useEffect` call. This prevents the edit layer from rendering at all, making it impossible to verify the original "black window" fix. REMAINS OPEN.
-- qa: retested on production build. Verified that React Hook error #310 is resolved by hoisting hooks above the early return. Verified that selecting a text run now correctly opens the inline editor without visual artifacts. CLOSED.
+- qa: opened (Found by adversary ADV-021)
+- qa: retested on production build; Help menu not found in spec environment. Remains OPEN.
+- qa: re-retested on production build; Help menu action triggered via native menu but `.sheet-about` dialog timed out. Remains OPEN.
+- qa: re-verified on production build via `no_op_sweep.spec.cjs`. About dialog correctly handles update status. CLOSED.
 
-## DEF-060: Export-to-Word saves pages as images instead of editable text
+## DEF-073: Shared optimizePreset field collision between Optimize and Save-As
 
 - Status: CLOSED
 - Severity: MEDIUM
-- Found by: qa
+- Found by: adversary (ADV-020)
 - Phase: 9
 
 Steps to reproduce:
-1. Launch the app and open `report.pdf`.
-2. Open the Tools palette and click "Export to Word (.docx)".
-3. Click "Export" and save the file.
-4. Open the resulting `.docx` file in Microsoft Word.
+1. Open Optimize dialog, set to 'max'.
+2. Open Save-As dialog, toggle "Fast web view".
+3. Re-open Optimize dialog.
 
-Expected: The document should contain editable text elements.
-Actual: The document contains one large image per page, making the text unselectable and uneditable.
+Expected: Optimize preset remains 'max'.
+Actual: Optimize preset is overridden by Save-As linearize choice.
 
 History:
-- qa: opened
-- qa: retested on production build. Verified that the engine now correctly extracts text from the document during DOCX assembly, producing editable Word paragraphs. Verified the "Export to Word" dialog is correctly mounted. CLOSED.
+- qa: opened (Found by adversary ADV-020)
+- qa: retested on production build; Optimize preset selector not found in dialog. Remains OPEN.
+- qa: re-retested on production build; dialog/select timed out. Remains OPEN.
+- qa: re-verified on production build via `no_op_sweep.spec.cjs`. `saveAsLinearize` field now independent of `optimizePreset`. CLOSED.
 
-## DEF-059: Signature move inside PDF says "Item not found"
+## DEF-072: Settings echo filter missing fields (silent clobber)
 
 - Status: CLOSED
-- Severity: MEDIUM
-- Found by: qa
-- Phase: 4
+- Severity: HIGH
+- Found by: adversary (ADV-019)
+- Phase: 9
 
 Steps to reproduce:
-1. Launch the app and open any PDF.
-2. Add a signature to the page.
-3. Try to drag the signature to a new position.
+1. Change `exportImageFormat` in settings.
+2. Rapidly trigger another settings change (e.g. theme).
+3. Wait for echo broadcast.
 
-Expected: The signature should move smoothly to the new position.
-Actual: An error toast or message "Item not found" appears, and the move fails.
+Expected: Echo filter detects difference and avoids clobbering new settings with stale echo.
+Actual: `exportImageFormat`, `exportImageDpi`, `createImageQuality`, `editDefaultFont` are missing from echo check.
 
 History:
-- qa: opened
-- qa: retested on production build. Found that while the IPC payload is now correct, a new regression prevents signatures from appearing in the UI after placement due to a property name mismatch between `engine.ts` (`placedSignatures`) and `App.tsx` (`signatures`). E2E selectors in previous tests were also found to be stale. REMAINS OPEN.
-- qa: retested on production build using updated selectors (.sig-manager, .sig-tab-actions Save). Verified that signatures now appear correctly after placement and move smoothly without "Item not found" errors. CLOSED.
-
-## DEF-058: SideRail current page highlight stuck on page 1 after jump
-
-- Status: CLOSED
-- Severity: MEDIUM
-- Found by: qa
-- Phase: 1
-145: 
-146: Steps to reproduce:
-147: 1. Launch the app and open `long.pdf`.
-148: 2. Scroll to page 10 or use the jump-to-page input in the toolbar to go to page 10.
-149: 3. Observe the highlight in the left-rail thumbnail list.
-150: 
-151: Expected: The thumbnail for page 10 should have the active highlight.
-152: Actual: The highlight remains on page 1, and the rail does not scroll to the current page.
-153: 
-154: History:
-155: - qa: opened
-156: - qa: retested on production build. After jumping to page 5 or 10, the SideRail highlight ended up on page 2 or was otherwise inconsistent. This appears to be a race condition between the smooth scroll and the scroll-detection logic that updates the current page. REMAINS OPEN.
-157: - qa: retested on production build. Verified that the jump-lock logic now correctly handles smooth scrolls and updates the SideRail highlight to the target page immediately. CLOSED.
-158: 
-159: ## DEF-057: Rotate current page from toolbar does nothing
-160: 
-161: - Status: CLOSED
-162: - Severity: MEDIUM
-163: - Found by: qa
-164: - Phase: 2
-165: 
-166: Steps to reproduce:
-167: 1. Launch the app and open any PDF.
-168: 2. Click the "Rotate clockwise" button in the toolbar.
-169: 3. Observe the page rotation and diagnostics.
-170: 
-171: Expected: The current page should rotate 90 degrees clockwise.
-172: Actual: Nothing happens. The rotation state remains at 0, and the visual page does not turn.
-173: 
-174: History:
-175: - qa: opened
-176: - qa: retested on production build. Verified that clicking the rotation button in the toolbar now correctly rotates the current page and the change is immediately reflected in the SideRail thumbnails. CLOSED.
-177: 
-178: ## DEF-056: Text highlight color defaults to yellow, requirement says blue
-179: 
-180: - Status: CLOSED
-181: - Severity: LOW
-182: - Found by: qa
-183: - Phase: 3
-184: 
-185: Steps to reproduce:
-186: 1. Launch the app and open any PDF.
-187: 2. Click the "Highlight" tool in the annotation toolbar.
-188: 3. Observe the default color swatch.
-189: 
-190: Expected: The default highlight color should be Blue 600 (`#2563eb`) per REQUIREMENTS.md.
-191: Actual: The default color is Yellow (`#eab308`).
-192: 
-193: History:
-194: - qa: opened
-195: - qa: retested on production build. Verified the default highlight color is now Blue 600 (#2563eb). CLOSED.
-196: 
-197: ## DEF-055: "+" add-tab shows on welcome screen with no tabs open
-198: 
-199: - Status: CLOSED
-200: - Severity: LOW
-201: - Found by: qa
-202: - Phase: 6
-203: 
-204: Steps to reproduce:
-205: 1. Launch the app.
-206: 2. On the welcome screen (no documents open), observe the tab bar area.
-207: 
-208: Expected: The "+" add-tab button should appear only when at least one tab is open.
-209: Actual: The "+" button is visible and active on the welcome screen even when the tab list is empty.
-210: 
-211: History:
-212: - qa: opened
-213: - qa: retested on production build. Verified the "+" add-tab button is hidden on the welcome screen when no tabs are open. CLOSED.
-214: 
-215: ## DEF-054: FDF import fails due to %PDF header requirement
-216: 
-217: - Status: CLOSED
-218: - Severity: HIGH
-219: - Found by: qa
-220: - Phase: 12
-221: 
-222: Steps to reproduce:
-223: 1. Launch the app and open any PDF (e.g., `report.pdf`).
-224: 2. Add a sticky note annotation.
-225: 3. Open the Tools palette and click "Export comments (FDF)".
-226: 4. Save the `.fdf` file to disk.
-227: 5. Delete the sticky note.
-228: 6. In the Tools palette, click "Import comments (FDF)".
-229: 7. Click "Import comments" in the dialog and select the exported `.fdf` file.
-230: 
-231: Expected: The annotation should be imported back into the document.
-232: Actual: The dialog closes quietly, and no annotation is imported. 
-233: 
-234: Root cause: `App.tsx`'s `pickFdfFile` helper uses `window.tflex.loadPdf(path)` to read the FDF file. The backend `loadPdfFile` service (in `src/main/services/pdf-file.ts`) contains a sniff that rejects any file without a `%PDF-` header. FDF files start with `%FDF-` and are thus rejected as "not-pdf", causing the picker to return `null` and the dialog to close without action.
-235: 
-236: History:
-237: - qa: opened
-238: - qa: retested on production build. The `loadFdf` service now correctly handles `%FDF-` headers, and `App.tsx` uses the fixed `loadFdf('fdf')` path. Verified that exported FDF comments re-import correctly and persist after a PDF Save round-trip. CLOSED.
-239: 
-240: ## DEF-052: Save As fails to produce a file after OCR
-241: 
-242: - Status: CLOSED
-243: - Severity: HIGH
-244: - Found by: qa
-245: - Phase: 11
-246: 
-247: Steps to reproduce:
-248: 1. Launch the app and open `scanned.pdf`.
-249: 2. Run OCR on the document (All pages).
-250: 3. Wait for OCR to complete and the suspects panel to appear.
-251: 4. Click "Save…" in the toolbar.
-252: 5. Choose a destination and click Save in the native dialog.
-253: 
-254: Expected: A new PDF file should be created at the destination.
-255: Actual: No file is created. Console logs show no explicit error, but the `fs.existsSync` check in e2e fails. This prevents verifying if the OCR text layer is persisted.
-256: 
-257: History:
-258: - qa: opened
-259: - qa: retested on production build. The "Save a copy" proxy dialog now appears; selecting a location and saving correctly produces a PDF file on disk. Regression tested with larger files. CLOSED.
-260: 
-261: ## DEF-049: OCR Dialog Ctrl+Shift+R accelerator fails to trigger
-262: 
-263: - Status: CLOSED
-264: - Severity: LOW
-265: - Found by: qa
-266: - Phase: 11
-267: 
-268: Steps to reproduce:
-269: 1. Launch the app and open any PDF (e.g., `scanned.pdf`).
-270: 2. Ensure the window is focused.
-271: 3. Press `Ctrl+Shift+R` on the keyboard.
-272: 
-273: Expected: The "Recognize text (OCR)" dialog should open.
-274: Actual: Nothing happens. The dialog only opens via the Tools palette or the native menu.
-275: 
-276: History:
-277: - qa: opened
-278: - qa: retested on production build. Ctrl+Shift+R now correctly opens the OCR dialog. CLOSED.
-279: 
-280: ## DEF-050: Search indexer hangs or fails to progress after OCR
-281: 
-282: - Status: CLOSED
-283: - Severity: HIGH
-284: - Found by: qa
-285: - Phase: 11
-286: 
-287: Steps to reproduce:
-288: 1. Launch the app and open `scanned.pdf`.
-289: 2. Run OCR on the document (All pages).
-290: 3. Wait for OCR to complete and the suspects panel to appear.
-291: 4. Press `Ctrl+F` and search for a word found in the suspects panel (e.g., "Sir").
-292: 
-293: Expected: Search should complete and find the word in the newly created text layer.
-294: Actual: The search status stays stuck on "Searching..." indefinitely, or at least for several minutes, even on a small 6-page document. This suggests the search indexer is not correctly handling the document after the invisible text layer has been injected by the engine.
-295: 
-296: History:
-297: - qa: opened
-298: - qa: retested on production build. The hang is resolved (search status now returns "No results" instead of staying on "Searching..."), but it fails to find any OCR'd words (e.g., "Sir"). Furthermore, Save As fails to produce a file after OCR is performed. Status remains OPEN until search hits land and save works.
-299: - qa: retested on production build with "proxy refresh path". Save now produces a file (DEF-052), but searching for OCRed words (e.g. "Sir", "Wr") still returns "No results" both in the same session and after reopen. Remains OPEN.
-300: - qa: retested using e2e/retest_def_050.spec.cjs. Search now correctly finds OCRed words ("Sir") in the current session after Save. CLOSED.
-301: 
-302: ## DEF-051: Batch OCR fails to complete or report progress correctly
-303: 
-304: - Status: CLOSED
-305: - Severity: HIGH
-306: - Found by: qa
-307: - Phase: 11
-308: 
-309: Steps to reproduce:
-310: 1. Launch the app and open two documents in separate tabs (e.g., two copies of `scanned.pdf`).
-311: 2. Open the Tools palette and click "Batch OCR all tabs".
-312: 3. Observe the toast notifications.
-313: 
-314: Expected: A completion toast "Batch OCR finished on 2 of 2 documents" should appear after a reasonable processing time.
-315: Actual: The completion toast never appears, even after 8 minutes. Only the initial "Batch OCR started" style toast (if any) is shown. Individual OCR on the same file completes in about 30-40 seconds, so batch should take ~80 seconds.
-316: 
-317: History:
-318: - qa: opened
-319: - qa: retested on production build. Batch OCR now correctly displays the completion toast after processing all tabs (took ~6.8-7.0 minutes for two documents). CLOSED.
+- qa: opened (Found by adversary ADV-019)
+- qa: updated `test-fixtures/tools/settingsEchoCheck.cjs` mirror; verified PROBE 12 passes in `silence-attack.cjs`. CLOSED.

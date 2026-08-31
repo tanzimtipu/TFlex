@@ -780,3 +780,58 @@ describe('Phase 12: defaultStampId validation', () => {
     }
   });
 });
+
+// Phase 13 / DEF-073: saveAsLinearize validation
+describe('Phase 13 / DEF-073: saveAsLinearize validation', () => {
+  it('preserves valid saveAsLinearize booleans', () => {
+    expect(normalizeSettings({ saveAsLinearize: true }).saveAsLinearize).toBe(true);
+    expect(normalizeSettings({ saveAsLinearize: false }).saveAsLinearize).toBe(false);
+  });
+
+  it('rejects non-boolean saveAsLinearize values (left unset; consumer applies default false)', () => {
+    expect(normalizeSettings({ saveAsLinearize: 'true' }).saveAsLinearize).toBeUndefined();
+    expect(normalizeSettings({ saveAsLinearize: 1 }).saveAsLinearize).toBeUndefined();
+    expect(normalizeSettings({ saveAsLinearize: 0 }).saveAsLinearize).toBeUndefined();
+    expect(normalizeSettings({ saveAsLinearize: 'false' }).saveAsLinearize).toBeUndefined();
+    expect(normalizeSettings({ saveAsLinearize: null }).saveAsLinearize).toBeUndefined();
+    expect(normalizeSettings({ saveAsLinearize: undefined }).saveAsLinearize).toBeUndefined();
+    expect(normalizeSettings({ saveAsLinearize: ['true'] }).saveAsLinearize).toBeUndefined();
+    expect(normalizeSettings({ saveAsLinearize: { value: true } }).saveAsLinearize).toBeUndefined();
+  });
+
+  it('does not set saveAsLinearize when absent', () => {
+    expect(normalizeSettings({}).saveAsLinearize).toBeUndefined();
+  });
+
+  it('save/load round-trips saveAsLinearize', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      saveAsLinearize: true,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.saveAsLinearize).toBe(true);
+    }
+  });
+
+  it('invalid saveAsLinearize on disk is dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      saveAsLinearize: 'yes',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.saveAsLinearize).toBeUndefined();
+      expect(result.value.theme).toBe('light');
+    }
+  });
+});

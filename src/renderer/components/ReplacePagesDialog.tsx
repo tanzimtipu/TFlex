@@ -160,7 +160,7 @@ export function ReplacePagesDialog(
       data-replace-pages-dialog
     >
       <div
-        className="modal-dialog"
+        className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

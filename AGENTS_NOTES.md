@@ -1,5 +1,16 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-08-28: to-do sequencing rule (list stall fix)
+
+Bug: the orchestrator's task list stayed on item #1 indefinitely — items were never
+flipped as sub-agents reported back. Fix:
+
+- `orchestrator.md` "Task-tracking discipline" gained a Sequencing paragraph: exactly
+  one item `in_progress`; on every sub-agent report (FIX READY, qa-close, sweep
+  completion, probe pass) the first action is to update the list — flip finished to
+  completed, next to in_progress — before the next dispatch starts. Three-at-once
+  reports tick all three. A list stalled on item #1 is a rule violation.
+
 ## 2026-08-28: mistakes feedback ledger (common-movement ledger)
 
 Operator directive: recurring anti-pattern mistakes by sub-agents burn tokens;
@@ -683,3 +694,20 @@ against it (or explicitly deferred with reason).
 Historical audit note (2026-08-30): tags v1.1.0–v1.1.1 were created before this rule;
 v1.2.0–v1.5.0 matched the package version at tag time. v1.1.1's premature-tag incident
 was the trigger for this rule (git-agent flagged it and refused to mis-tag).
+
+- orchestrator: pasted garbled tokens into task specs (e.g. stray "NOTwizard", "npc/ar").
+  Harm: backend-dev correctly flagged it as noise and asked for clarification — wasted
+  a dispatch cycle. Rule: orchestrator specs must be copy-edited before dispatch; never
+  ship stray fragments.
+
+- frontend-dev: React #520 diagnostics poll inside tflexDiagnostics() (getState inside
+  a pure read path). Harm: qa sweep re-ran the entire sweep before the cause was found;
+  several sweep defects closed only after a secondary fix round. Rule: diagnostics
+  functions must be pure reads; state convergence belongs in op handlers, never in
+  a getter.
+
+- frontend-dev: inline-arrow prop identity churn into effect-fed components (Welcome
+  samplesResolver). Same class as the earlier tabs/onDiagnostics churn. Rule: every
+  prop passed to a component with useEffect deps on it must be memoized (useCallback)
+  or be a stable singleton; sweep App.tsx for these patterns before declaring a phase
+  complete.

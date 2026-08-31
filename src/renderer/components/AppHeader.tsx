@@ -1,4 +1,4 @@
-import { useCallback, type ReactElement, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, type ReactElement, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { FolderOpen, Moon, Plus, Sun, X } from "lucide-react";
 import type { Theme } from "../state/theme";
 import { resolveTabMouseDown, type TabInput } from "../state/tabMouseDown";
@@ -17,10 +17,16 @@ interface AppHeaderProps {
    *  the user can fill by opening a PDF. The host owns the empty-tab
    *  state (see App.tsx -> tabs.openEmpty). */
   onNewEmptyTab: () => void;
+  /** DEF-077 — optional slot for the OTA update indicator. Renders
+   *  inside `.header-actions`, just before the theme toggle. The host
+   *  passes a fully-constructed `<UpdateIndicator />` (or null) so
+   *  AppHeader stays presentational and doesn't need to know about
+   *  the IPC channel shape. */
+  updateIndicator?: ReactNode;
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, onToggleTheme, onOpen, onNewEmptyTab } = props;
+  const { activeId, tabs, onActivate, onClose, theme, onToggleTheme, onOpen, onNewEmptyTab, updateIndicator = null } = props;
   // Single mousedown handler for the tab strip. We use mousedown (not
   // click) so the activate mutation lands synchronously and is not
   // dropped by a re-render that swaps the button element between
@@ -149,6 +155,11 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         </ul>
       </div>
       <div className="header-actions">
+        {/* DEF-077 — OTA update indicator slot. Rendered before the
+            theme toggle so the visual order (left-to-right) is
+            [update | theme | open] — matching the spec's "next to
+            the Tools/theme controls" placement. */}
+        {updateIndicator}
         <button
           type="button"
           className="theme-toggle"

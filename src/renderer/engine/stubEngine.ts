@@ -438,6 +438,18 @@ export class StubRendererEngine implements EngineApi {
     return ok(buildState(t));
   }
 
+  /** Peek the stub's current EngineState for `docId`. The stub keeps
+   *  its own per-tab source of truth (`this.tabs`), so a peek is
+   *  identical to a `getState` round-trip — but synchronous, so the
+   *  `tflexDiagnostics()` surface can read it without awaiting. The
+   *  stub engine is used by renderer-only tests; production goes
+   *  through the real-engine adapter's `previousStates` cache. */
+  peekLastState(docId: string): EngineState | undefined {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return undefined;
+    return buildState(t);
+  }
+
   /** Drop the per-tab stub state. Called on tab close. */
   dispose(docId: string): void {
     this.tabs.delete(docId);

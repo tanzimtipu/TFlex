@@ -418,3 +418,102 @@ describe("preferencesReducer.set-default-stamp-id", () => {
     expect(next).toBe(s);
   });
 });
+
+// DEF-073 — Save-As "Fast web view (linearize)" toggle now owns
+// its own `saveAsLinearize` boolean (Phase 13). The reducer must:
+//   - Materialise the field on the first ON write.
+//   - Treat undefined as the default (OFF) for equality guard
+//     short-circuit, so the first-time ON toggle does not produce
+//     an extra no-op write.
+//   - Toggle back to OFF cleanly.
+describe("preferencesReducer.set-save-as-linearize", () => {
+  it("stores true on the first ON toggle", () => {
+    const s = makeSettings();
+    const next = preferencesReducer(s, {
+      type: "set-save-as-linearize",
+      value: true,
+    });
+    expect(next.saveAsLinearize).toBe(true);
+  });
+
+  it("no-ops on the first OFF toggle (field is undefined -> default is false)", () => {
+    // The reducer treats `undefined` as the default (`false`)
+    // for the equality guard, so writing `false` when the
+    // field is absent is a no-op. The settings.json stays
+    // without the field; subsequent reads fall back to the
+    // default. This keeps a first-time open-then-close-without-
+    // touching dialog from producing a redundant IPC echo.
+    const s = makeSettings();
+    const next = preferencesReducer(s, {
+      type: "set-save-as-linearize",
+      value: false,
+    });
+    expect(next).toBe(s);
+  });
+
+  it("flips true -> false", () => {
+    const s = makeSettings({ saveAsLinearize: true });
+    const next = preferencesReducer(s, {
+      type: "set-save-as-linearize",
+      value: false,
+    });
+    expect(next.saveAsLinearize).toBe(false);
+  });
+
+  it("flips false -> true", () => {
+    const s = makeSettings({ saveAsLinearize: false });
+    const next = preferencesReducer(s, {
+      type: "set-save-as-linearize",
+      value: true,
+    });
+    expect(next.saveAsLinearize).toBe(true);
+  });
+
+  it("no-ops when the new value equals the stored value (true)", () => {
+    const s = makeSettings({ saveAsLinearize: true });
+    const next = preferencesReducer(s, {
+      type: "set-save-as-linearize",
+      value: true,
+    });
+    expect(next).toBe(s);
+  });
+
+  it("no-ops when the new value equals the stored value (false)", () => {
+    // Including the undefined -> false case: a dialog that
+    // mounts with saveAsLinearize=undefined and seeds its
+    // checkbox at false, then immediately persists false (the
+    // common "open + close" path) must NOT trigger a redundant
+    // IPC echo.
+    const s = makeSettings({ saveAsLinearize: false });
+    const next = preferencesReducer(s, {
+      type: "set-save-as-linearize",
+      value: false,
+    });
+    expect(next).toBe(s);
+  });
+
+  it("does not collide with optimizePreset — toggling linearize leaves preset intact", () => {
+    // DEF-073 regression: the previous Save-As design wrote
+    // through `optimizePreset`. A linearize toggle would
+    // silently overwrite the user's compression choice. With
+    // the dedicated boolean field, the two flows are
+    // independent.
+    const s = makeSettings({ optimizePreset: "max" });
+    const next = preferencesReducer(s, {
+      type: "set-save-as-linearize",
+      value: true,
+    });
+    expect(next.optimizePreset).toBe("max");
+    expect(next.saveAsLinearize).toBe(true);
+  });
+
+  it("does not collide with optimizePreset — toggling preset leaves linearize intact", () => {
+    const s = makeSettings({ saveAsLinearize: true });
+    const next = preferencesReducer(s, {
+      type: "set-optimize-preset",
+      value: "max",
+    });
+    expect(next.optimizePreset).toBe("max");
+    expect(next.saveAsLinearize).toBe(true);
+  });
+});

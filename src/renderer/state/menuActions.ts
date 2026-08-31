@@ -108,7 +108,8 @@ export function dispatchMenuAction(action: string, ctx: MenuActionContext): bool
     case 'redo':             ctx.redo();              return true;
     case 'toggleTheme':      ctx.toggleTheme();       return true;
     case 'showToolsPalette': ctx.showToolsPalette();  return true;
-    case 'about':            ctx.about();             return true;
+    case 'about':
+    case 'help.about':       ctx.about();             return true;
     case 'preferences':      ctx.preferences();       return true;
     case 'optimize':         ctx.optimize();          return true;
     case 'auditSpace':       ctx.auditSpace();        return true;

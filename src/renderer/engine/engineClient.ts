@@ -432,11 +432,32 @@ export interface TFlexApiEngine {
  *  legitimate wire value meaning "this doc has no AcroForm" and are
  *  consumed verbatim, so a post-flatten / form-free document correctly
  *  empties the local list once the backend starts emitting the key.
- *  The `_pre` parameter is accepted (and ignored on the
- *  fields-carrying path) so the calling code in `RealEngineAdapter`
- *  has a uniform signature; it exists for future expansion (e.g.
- *  carrying `annotations` forward across an op whose wire shape
- *  omits the key) without forcing a second refactor pass. */
+ *  The `_pre` parameter is consulted on the annotations path so the
+ *  calling code in `RealEngineAdapter` can carry `annotations`
+ *  forward across an op whose wire shape omits the key (DEF-068):
+ *  the renderer tracks the per-doc previous state in
+ *  `RealEngineAdapter.#previousStates`, and when the engine's
+ *  createAnnotation / editAnnotation / deleteAnnotation response
+ *  drops the annotations key entirely, we copy the previous list
+ *  forward so a freshly-created annotation is never lost from
+ *  the renderer's view.
+ *
+ *  Notes on the annotations carry-forward (DEF-068):
+ *   - The carry is only consulted when `Array.isArray(maybe.annotations)`
+ *     is false (the wire OMITTED the key). An empty array `[]` is
+ *     a legitimate wire value — the engine explicitly cleared every
+ *     annotation (reset / flatten / etc.) — and we respect it.
+ *   - We merge by-id rather than by index: any annotation whose id is
+ *     present in `_prev.annotations` but missing in the new list is
+ *     preserved in the carry set. The new list still wins for ids
+ *     that match — the engine is the source of truth for current
+ *     shape (color, rect, text, ...) — so a "delete annotation" the
+ *     engine echoed with an empty list correctly clears, while an
+ *     "omitted annotations" response preserves the prior list.
+ *   - On the merge, ids that exist in both lists appear once, in the
+ *     order the engine emitted them (the new list's order is the
+ *     source of truth); preserved prev-only ids are appended in
+ *     their original order. */
 function normalizeState(
   s: SharedEngineState,
   _prev: EngineState | undefined,
@@ -447,12 +468,41 @@ function normalizeState(
     signatures?: SignaturePlacement[];
     placedSignatures?: SignaturePlacement[];
   };
-  const incoming = Array.isArray(maybe.annotations) ? maybe.annotations : [];
+  const hasIncomingAnnotations = Array.isArray(maybe.annotations);
+  const incoming: Annotation[] = hasIncomingAnnotations ? maybe.annotations ?? [] : [];
+  // DEF-068 — annotations carry-forward. When the wire OMITS the
+  // `annotations` key, fall back to `_prev.annotations` so a
+  // freshly-created annotation that the engine echoed under
+  // `state.annotations` is never silently lost when a subsequent
+  // round-trip drops the key. When the wire carries `annotations`
+  // (even an empty array), we respect it verbatim — empty means
+  // "engine explicitly cleared", which is a legitimate op result.
+  let resolvedAnnotations: Annotation[];
+  if (hasIncomingAnnotations) {
+    resolvedAnnotations = incoming.map(annotationFromWire);
+  } else if (_prev !== undefined && Array.isArray(_prev.annotations) && _prev.annotations.length > 0) {
+    // Merge by id: keep the new list (here, empty) verbatim for any
+    // ids it carries, then append prev-only ids in their original
+    // order. When the new list is empty (the only realistic case
+    // where the wire omits annotations), this degenerates to a copy
+    // of the prev list.
+    const newIds = new Set<string>();
+    resolvedAnnotations = incoming.map(annotationFromWire);
+    for (const a of resolvedAnnotations) newIds.add(a.id);
+    for (const prevAnn of _prev.annotations) {
+      if (!newIds.has(prevAnn.id)) {
+        newIds.add(prevAnn.id);
+        resolvedAnnotations.push(prevAnn);
+      }
+    }
+  } else {
+    resolvedAnnotations = [];
+  }
   // Wire-shape field-name bridge (DEF-022 + DEF-059 residual): the
   // engine emits `placedSignatures`; the renderer reads `signatures`.
   // Accept either, prefer `signatures` when both are present, and
   // always emit a single `signatures` key in the returned state.
-  // `placedSignatures` is STRIPPED below — it must not leak through
+  // `placedSignacements` is STRIPPED below — it must not leak through
   // to the renderer's EngineState.
   const incomingSigs: SignaturePlacement[] = Array.isArray(maybe.signatures)
     ? maybe.signatures
@@ -478,10 +528,9 @@ function normalizeState(
   // pins the absence.
   const { placedSignatures: _stripPlaced, ...maybeStripped } = maybe;
   void _stripPlaced;
-  void _prev;
   return {
     ...maybeStripped,
-    annotations: incoming.map(annotationFromWire),
+    annotations: resolvedAnnotations,
     formFields: incomingFields,
     signatures: incomingSigs,
   };
@@ -553,15 +602,75 @@ function toOpEntry(op: EngineOp): OpEntry {
 class RealEngineAdapter implements EngineApi {
   readonly available = true;
   private readonly inner: TFlexApiEngine;
+  /**
+   * Per-doc previous EngineState cache (DEF-068). The renderer
+   * tracks the most-recent normalized state per doc so the
+   * `normalizeState` carry-forward path has something to consult
+   * when the engine's response omits the `annotations` key (a
+   * legitimate backend implementation choice — the spec doesn't
+   * require every op to echo annotations). Without this cache,
+   * `normalizeState(_prev = undefined)` would always drop the
+   * previous annotation list, and the renderer's `engineState.
+   * annotations` would lag behind the canonical engine state.
+   *
+   * The cache is best-effort: an IPC error path that bypasses
+   * `normalizeAndCache` simply leaves the previous value alone,
+   * which is the same behaviour as before the cache existed.
+   *
+   * Phase 13 — the cache is also the renderer-side source of truth
+   * for `tflexDiagnostics().engineState` / `modified`. Because the
+   * adapter wraps every preload-bound engine op, the cache is updated
+   * on EVERY state-returning call (applyOp, undo, redo, getState,
+   * merge, createAnnotation, placeSignature, etc.), regardless of
+   * whether the caller reached the adapter via `engineRef.current.*`
+   * (the renderer's own UI handlers) or via `window.tflex.engine.*`
+   * (the preload passthrough that e2e harnesses drive). After
+   * `getEngine()` rewrites `window.tflex.engine` to this adapter, a
+   * direct `window.tflex.engine.applyOp(...)` round-trip lands in
+   * the cache synchronously, and `tflexDiagnostics()` can read it
+   * without waiting for a React re-render. The QA retest spec
+   * (full_sweep_retest.spec.cjs) aligns with this: direct engine
+   * calls assert via the call's return value (or a follow-up
+   * `getState`), UI actions continue to drive the React mirror.
+   */
+  private readonly previousStates = new Map<string, EngineState>();
   constructor(inner: TFlexApiEngine) {
     this.inner = inner;
+  }
+
+  /** Run `normalizeState` against the cached previous state for
+   *  `docId`, then refresh the cache with the result so the next
+   *  round-trip has the right carry-forward source. Centralised
+   *  so every op site applies the same treatment. */
+  private normalizeAndCache(docId: string, raw: SharedEngineState): EngineState {
+    const prev = this.previousStates.get(docId);
+    const next = normalizeState(raw, prev);
+    this.previousStates.set(docId, next);
+    return next;
+  }
+
+  /** Read the renderer's most-recent normalized EngineState for
+   *  `docId` without an IPC round-trip. Returns `undefined` when
+   *  no op has populated the cache yet (e.g. right after
+   *  `loadDocument`); `tflexDiagnostics()` falls back to the React
+   *  `engineUi` mirror in that case. The mirror itself is kept in
+   *  sync with this cache by `noteOpApplied()`, so the two reads
+   *  converge once any UI-driven engine op completes. */
+  peekLastState(docId: string): EngineState | undefined {
+    return this.previousStates.get(docId);
   }
 
   async loadDocument(
     docId: string,
     path: string,
   ): Promise<Result<ArrayBuffer, "open-error">> {
-    return this.inner.loadDocument(docId, path);
+    const r = await this.inner.loadDocument(docId, path);
+    // Opening a fresh doc resets the carry-forward cache for that
+    // doc — the previous annotations, if any, are no longer
+    // authoritative. The next op's normalizeState will see
+    // `undefined` from this cache.
+    this.previousStates.delete(docId);
+    return r;
   }
 
   async loadDocumentBytes(
@@ -571,7 +680,9 @@ class RealEngineAdapter implements EngineApi {
     // The preload IPC channel takes a Uint8Array view (structured-cloned).
     // Normalise so the call site can hand us either shape.
     const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-    return this.inner.loadDocumentBytes(docId, view);
+    const r = await this.inner.loadDocumentBytes(docId, view);
+    this.previousStates.delete(docId);
+    return r;
   }
 
   async applyOp(
@@ -588,20 +699,20 @@ class RealEngineAdapter implements EngineApi {
         last = r;
       }
       const final = last ?? (await this.inner.getState(docId));
-      return final.ok ? { ok: true, value: normalizeState(final.value, undefined) } : final;
+      return final.ok ? { ok: true, value: this.normalizeAndCache(docId, final.value) } : final;
     }
     const r = await this.inner.applyOp(docId, toOpEntry(op));
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async undo(docId: string): Promise<Result<EngineState, EngineError>> {
     const r = await this.inner.undo(docId);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async redo(docId: string): Promise<Result<EngineState, EngineError>> {
     const r = await this.inner.redo(docId);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async merge(
@@ -610,7 +721,7 @@ class RealEngineAdapter implements EngineApi {
     position: "before" | "after",
   ): Promise<Result<EngineState, EngineError>> {
     const r = await this.inner.merge(docId, otherPaths, position);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async split(
@@ -651,7 +762,7 @@ class RealEngineAdapter implements EngineApi {
       docId,
       annotationToWire(annotation),
     );
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async editAnnotation(
@@ -661,7 +772,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.editAnnotation === undefined) return missingAnnotations();
     const r = await this.inner.editAnnotation(docId, id, patch);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async deleteAnnotation(
@@ -670,12 +781,12 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.deleteAnnotation === undefined) return missingAnnotations();
     const r = await this.inner.deleteAnnotation(docId, id);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async getState(docId: string): Promise<Result<EngineState, EngineError>> {
     const r = await this.inner.getState(docId);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   // -- Phase 4: forms --
@@ -695,12 +806,19 @@ class RealEngineAdapter implements EngineApi {
     if (this.inner.fillFormField === undefined) return missingPhase4();
     const r = await this.inner.fillFormField(docId, payload);
     if (!r.ok) return r;
-    // The real backend returns EngineState (not the typed FormField[]
-    // the renderer contract advertises). Re-fetch the canonical field
-    // list so the renderer gets the post-fill values without a
-    // shape-mismatch. Without this, `r.value.formFields` would be
-    // undefined and the renderer's `replaceFields(existing, value)`
-    // would blow up on the first `.map`.
+    // The wire contract returns FormField[] (the per-field echo with
+    // the post-fill values). Re-fetch the canonical field list so the
+    // renderer always sees the engine's authoritative values — the
+    // wire echo may have omitted an unrelated field id (some backend
+    // implementations only echo the field that was just filled), and
+    // `replaceFields(existing, value)` requires the full list. After
+    // the round-trip, getState (which the App.tsx fill paths already
+    // follow up with via syncEngineStateAfterFill) carries the
+    // post-fill `modified: true` flag through normalizeAndCache into
+    // the engineUi mirror (DEF-069). The getFormFields call here
+    // only seeds the renderer's local form mirror — the modified
+    // flag lives on the separate EngineState echo that the App
+    // explicitly follow-ups with.
     return this.getFormFields(docId);
   }
 
@@ -709,7 +827,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.flattenForms === undefined) return missingPhase4();
     const r = await this.inner.flattenForms(docId);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   // -- Phase 4: signatures --
@@ -720,7 +838,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.placeSignature === undefined) return missingPhase4();
     const r = await this.inner.placeSignature(docId, placement);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async moveSignature(
@@ -736,7 +854,7 @@ class RealEngineAdapter implements EngineApi {
     // adapter spread `{placementId, rect}` into three positional args,
     // which the real engine rejected (DEF-059).
     const r = await this.inner.moveSignature(docId, payload);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async deleteSignature(
@@ -745,7 +863,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.deleteSignature === undefined) return missingPhase4();
     const r = await this.inner.deleteSignature(docId, placementId);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   // -- Phase 8: optimize / audit space --
@@ -814,7 +932,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.insertBlankPage === undefined) return missingPhase9Extended();
     const r = await this.inner.insertBlankPage(docId, afterIndex, widthPx, heightPx);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async insertFromPdf(
@@ -824,7 +942,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.insertFromPdf === undefined) return missingPhase9Extended();
     const r = await this.inner.insertFromPdf(docId, otherBytes, position);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   // -- Phase 10: edit content --
@@ -835,7 +953,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.editTextRun === undefined) return missingPhase10();
     const r = await this.inner.editTextRun(docId, payload);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async addTextBox(
@@ -844,7 +962,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.addTextBox === undefined) return missingPhase10();
     const r = await this.inner.addTextBox(docId, payload);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async editImage(
@@ -853,7 +971,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.editImage === undefined) return missingPhase10();
     const r = await this.inner.editImage(docId, payload);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   // -- Phase 11: OCR --
@@ -864,7 +982,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.ocrRecognize === undefined) return missingPhase11();
     const r = await this.inner.ocrRecognize(docId, options);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async ocrSuspects(
@@ -918,7 +1036,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.replacePages === undefined) return missingPhase12();
     const r = await this.inner.replacePages(docId, otherBytes, targetRange);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async renumberPages(
@@ -927,7 +1045,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.renumberPages === undefined) return missingPhase12();
     const r = await this.inner.renumberPages(docId, labels);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async cropPages(
@@ -936,7 +1054,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.cropPages === undefined) return missingPhase12();
     const r = await this.inner.cropPages(docId, entries);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async addStamp(
@@ -945,7 +1063,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.addStamp === undefined) return missingPhase12();
     const r = await this.inner.addStamp(docId, payload);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 
   async exportFdf(
@@ -963,7 +1081,7 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.importFdf === undefined) return missingPhase12();
     const r = await this.inner.importFdf(docId, fdfBytes);
-    return r.ok ? { ok: true, value: normalizeState(r.value, undefined) } : r;
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 }
 
@@ -981,7 +1099,54 @@ function readWindowEngine(): TFlexApiEngine | undefined {
 export function getEngine(): EngineApi {
   if (cached !== undefined) return cached;
   const real = readWindowEngine();
-  cached = real !== undefined ? new RealEngineAdapter(real) : stubRendererEngine;
+  if (real !== undefined) {
+    cached = new RealEngineAdapter(real);
+    // Phase 13 — re-publish the adapter as `window.tflex.engine` so
+    // direct calls (e.g. an e2e harness doing
+    // `window.tflex.engine.applyOp(...)`) flow through the adapter and
+    // update the per-doc `previousStates` cache. Pre-Phase-13 the
+    // preload passthrough was exposed unchanged, which meant a direct
+    // call bypassed the adapter and the renderer's `engineUi` mirror
+    // only learned about the new state on the next React re-render
+    // (often "never" in a test that asserts synchronously after the
+    // call). With this re-publish, every state-returning engine op
+    // keeps the cache fresh in real time, and `tflexDiagnostics()`
+    // reads through it. The `TFlexApi` shape that preload exposes
+    // (`window.tflex.engine.*`) is a structural subset of
+    // `EngineApi.applyOp/undo/...`, so the swap is wire-compatible for
+    // direct callers — they just get normalized state back instead of
+    // the raw wire shape.
+    //
+    // DEF-078 — the assignment throws on Electron's contextBridge-
+    // frozen `window.tflex` (TypeError: Cannot assign to read only
+    // property 'engine'). The throw propagated through
+    // `useRef(getEngine())` during the first render, triggering a
+    // "Maximum update depth exceeded" / "There was an error during
+    // concurrent rendering" recovery loop on every boot. Wrap the
+    // assignment in try/catch so a frozen contextBridge (Electron's
+    // default with `contextIsolation: true`) degrades to the
+    // preload passthrough: direct callers still get the wire shape
+    // back from `ipcRenderer.invoke`, the adapter cache is no longer
+    // auto-updated by those direct calls. E2e tests that assert via
+    // `tflexDiagnostics()` after a direct call must now call
+    // `tflex.engine.getState(docId)` (or the equivalent React handler)
+    // to refresh the mirror; the adapter's `previousStates` is only
+    // populated when the renderer's React handlers call into it
+    // (which is the supported flow).
+    const w = window as unknown as { tflex?: { engine?: unknown } };
+    if (w.tflex !== undefined) {
+      try {
+        w.tflex.engine = cached;
+      } catch {
+        // contextBridge-frozen `window.tflex` rejects the assignment.
+        // The adapter is already cached in `cached` so React handlers
+        // (which reach it via `engineRef.current`) keep working; the
+        // re-publish is best-effort.
+      }
+    }
+  } else {
+    cached = stubRendererEngine;
+  }
   return cached;
 }
 

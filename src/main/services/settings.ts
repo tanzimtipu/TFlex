@@ -189,6 +189,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.defaultStampId = rawObj.defaultStampId as AppSettings['defaultStampId'];
   }
 
+  // Phase 13 / DEF-073: preserve saveAsLinearize if it is a real boolean.
+  // Independent of optimizePreset (see AppSettings.saveAsLinearize doc).
+  // Non-boolean values are rejected (left unset); the consumer applies the
+  // documented default `false` when the field is absent.
+  if (typeof rawObj.saveAsLinearize === 'boolean') {
+    settings.saveAsLinearize = rawObj.saveAsLinearize;
+  }
+
   return settings;
 }
 

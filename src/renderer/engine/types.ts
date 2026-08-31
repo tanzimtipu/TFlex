@@ -446,6 +446,20 @@ export interface EngineApi {
     docId: string,
     fdfBytes: Uint8Array,
   ): Promise<Result<EngineState, EngineError>>;
+
+  /** Peek the renderer's most-recent normalized EngineState for `docId`
+   *  without doing an IPC round-trip. The real-engine adapter populates
+   *  this cache on every successful state-returning op
+   *  (`applyOp`/`undo`/`getState`/etc.); the stub returns its current
+   *  per-tab snapshot. Returns `undefined` when nothing is cached yet
+   *  (e.g. immediately after `loadDocument`). The renderer's
+   *  `tflexDiagnostics()` reads through this so a direct
+   *  `window.tflex.engine.applyOp(...)` call "writes through" to the
+   *  diagnostics surface without needing a separate UI action.
+   *
+   *  Optional only because pre-Phase-13 backends may not expose it; the
+   *  renderer falls back to the React `engineUi` mirror when undefined. */
+  peekLastState?(docId: string): EngineState | undefined;
 }
 
 /** Translate an engine error code into a user-friendly message. */

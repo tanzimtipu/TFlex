@@ -93,6 +93,16 @@ sequence and keep the list current — do not leave stale items from earlier pha
 once those phases close. After you append a new phase (e.g. P7+, or the no-op
 remediation checklist) to REQUIREMENTS.md, add its items to the list immediately.
 
+**Sequencing — the fix for the stall.** Exactly one item is `in_progress` at any time.
+When a step completes (developer reports FIX READY, qa closes a defect, a sweep
+component finishes, the probe gate passes), the FIRST thing you do is update the list:
+flip the finished item from in_progress to completed and the next item to
+in_progress — before you begin any new dispatch. Never move to a new step while a
+finished item still shows pending/in_progress. If a developer reports back three
+items at once, tick all three and move to the next. This update happens after every
+sub-agent report, without exception — a stalled list (always sitting on item #1) is
+a rule violation.
+
 Update the list whenever dispatch steps complete — a task-spec dispatch = an item,
 a developer FIX-READY = an item ticked with the result, a qa closure of a defect =
 ticked. The list tracks true status ("done actually" = verified; not "planner's
@@ -100,7 +110,7 @@ estimate"). In your reports, always show the current list state (what's pending,
 what's in-progress, what's completed) from newest to oldest.
 
 When a new phase gets appended to REQUIREMENTS.md — yours or a human promo — add its
-items to the list before any dispatch (this is why the list might must outgrow its
+items to the list before any dispatch (this is why the list must outgrow its
 initial P1..P6 snapshot).
 
 ## Defects

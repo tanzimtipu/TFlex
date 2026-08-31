@@ -1,4 +1,4 @@
-// Phase 6 — About dialog.
+// Phase 6/13 — About dialog.
 //
 // Opens as a Sheet on top of the app. Reads `AppInfo` from the backend
 // over IPC (app.getInfo) — the contract entry is in src/shared/ipc.ts,
@@ -7,11 +7,19 @@
 // shows a sensible fallback ("Version unavailable") instead of
 // crashing. Once backend-dev lands the wiring, the real version and
 // electron / node versions will populate automatically.
+//
+// Phase 13 / DEF-074 — the dialog now also surfaces the OTA update
+// state. The update service reports one of seven `kind`s (see
+// UpdateState in src/shared/types.ts); each gets an explicit
+// renderer-side branch so the UI can never silently mislabel an
+// `'unsupported'` portable build as "Up to date". The reason string
+// for `'unsupported'` is rendered so the user sees why auto-update
+// isn't available (e.g. portable build vs missing publisher creds).
 
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import type { AppInfo } from '../../shared/types';
+import type { AppInfo, UpdateState } from '../../shared/types';
 
 interface AboutDialogProps {
   open: boolean;
@@ -30,10 +38,75 @@ const FALLBACK_INFO: AppInfo = {
   },
 };
 
+/** Map an UpdateState to the label the About dialog shows. Kept
+ *  here (not in shared/) because the strings are UI copy. The
+ *  switch is exhaustive over UpdateState's seven kinds — adding
+ *  a new kind to the union will trigger a TS error here, which
+ *  is exactly what we want so the label list never goes stale
+ *  relative to the backend contract.
+ *
+ *  DEF-074 — `'unsupported'` MUST show "Portable build (no
+ *  auto-update)" (or the build's `reason` if present) so the
+ *  user can distinguish a portable build from a build that's
+ *  actually up to date. The previous render path didn't have
+ *  this branch and fell through to the up-to-date label,
+ *  misleading the user. */
+export function describeUpdateState(state: UpdateState): string {
+  switch (state.kind) {
+    case 'unsupported':
+      // Phase 13 / DEF-074 — explicit portable-build label so
+      // users on an auto-update-incapable build can tell at a
+      // glance. Surface the backend's reason when it carries
+      // additional context (e.g. "Portable build does not
+      // support auto-update").
+      return state.reason.length > 0
+        ? `Portable build (${state.reason})`
+        : 'Portable build (no auto-update)';
+    case 'checking':
+      return 'Checking for updates…';
+    case 'up-to-date':
+      return `Up to date${state.version.length > 0 ? ` (v${state.version})` : ''}`;
+    case 'available':
+      return `Update available: v${state.version}`;
+    case 'downloading':
+      return `Downloading… ${Math.round(state.progress)}%`;
+    case 'downloaded':
+      return `Update ready: v${state.version}`;
+    case 'error':
+      return `Update error: ${state.message}`;
+  }
+}
+
+/** True when the update indicator carries a warning tone rather
+ *  than the neutral info tone. Used by the dialog to pick the
+ *  `.about-update-warn` class so the visual weight matches the
+ *  message (an `'unsupported'` portable-build notice is not an
+ *  error, but it isn't a positive status either; a true error or
+ *  a downloaded-but-not-installed update warrant the warning
+ *  tone). */
+export function updateStateIsWarning(state: UpdateState): boolean {
+  switch (state.kind) {
+    case 'unsupported':
+    case 'error':
+    case 'downloaded':
+      return true;
+    case 'checking':
+    case 'up-to-date':
+    case 'available':
+    case 'downloading':
+      return false;
+  }
+}
+
 export function AboutDialog(props: AboutDialogProps): ReactElement | null {
   const { open, onClose } = props;
   const [info, setInfo] = useState<AppInfo>(FALLBACK_INFO);
   const [unavailable, setUnavailable] = useState(false);
+  // Update state: undefined while we haven't yet asked, null when
+  // the IPC channel is absent (graceful fallback), or the actual
+  // UpdateState once it lands. The three-way state avoids a flash
+  // of "Update: unavailable" before the first getStatus() resolves.
+  const [updateState, setUpdateState] = useState<UpdateState | null | undefined>(undefined);
 
   useEffect(() => {
     if (!open) return;
@@ -57,12 +130,86 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
     };
   }, [open]);
 
+  // Fetch the OTA update state on open and subscribe to live
+  // changes. Same defensive pattern as the AppInfo fetch above —
+  // if `tflex.update` isn't wired yet, the row renders nothing
+  // rather than crashing. The subscription is unsubscribed on
+  // close so we don't leak listeners across multiple opens.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const w = window as unknown as {
+      tflex?: {
+        update?: {
+          getStatus?: () => Promise<UpdateState>;
+          onStatusChanged?: (cb: (state: UpdateState) => void) => () => void;
+        };
+      };
+    };
+    const updateApi = w.tflex?.update;
+    if (updateApi === undefined) {
+      // Channel absent — render nothing for the update row.
+      // We still set updateState to null so subsequent renders
+      // know the channel is missing (vs. "haven't asked yet").
+      setUpdateState(null);
+      return (): void => {
+        cancelled = true;
+      };
+    }
+    // Reset to "haven't asked yet" so the user briefly sees the
+    // empty row before the first response lands, instead of a
+    // stale value from a previous open.
+    setUpdateState(undefined);
+    if (typeof updateApi.getStatus === 'function') {
+      void updateApi.getStatus().then((state) => {
+        if (cancelled) return;
+        setUpdateState(state);
+      }).catch(() => {
+        if (cancelled) return;
+        setUpdateState(null);
+      });
+    }
+    const unsubscribe = typeof updateApi.onStatusChanged === 'function'
+      ? updateApi.onStatusChanged((state) => {
+        if (cancelled) return;
+        setUpdateState(state);
+      })
+      : (): void => undefined;
+    return (): void => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const handleOpenPath = (path: string): void => {
     const tflex = (window as unknown as { tflex?: { app?: { openPath?: (p: string) => Promise<void> } } }).tflex;
     if (tflex?.app?.openPath === undefined) return;
     void tflex.app.openPath(path).catch(() => undefined);
+  };
+
+  // Render the update row when we have a state. The
+  // three-way updateState (undefined | null | UpdateState)
+  // distinguishes "haven't asked yet" (no row yet),
+  // "channel absent" (no row), and "have a state" (show).
+  const renderUpdateRow = (): ReactElement | null => {
+    if (updateState === undefined || updateState === null) return null;
+    const label = describeUpdateState(updateState);
+    const warn = updateStateIsWarning(updateState);
+    return (
+      <div className="about-row">
+        <span className="about-row-label">Updates</span>
+        <span
+          className={warn ? 'about-row-value about-update-warn' : 'about-row-value'}
+          data-about-update
+          data-about-update-kind={updateState.kind}
+          data-about-update-warn={warn ? 'true' : 'false'}
+        >
+          {label}
+        </span>
+      </div>
+    );
   };
 
   return (
@@ -108,6 +255,7 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
               <span className="about-row-label">Node</span>
               <span className="about-row-value">{info.nodeVersion}</span>
             </div>
+            {renderUpdateRow()}
           </div>
           {unavailable && (
             <div className="about-warning">

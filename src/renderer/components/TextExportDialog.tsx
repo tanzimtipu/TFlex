@@ -143,7 +143,7 @@ export function TextExportDialog(
       data-text-export-dialog
     >
       <div
-        className="modal-dialog"
+        className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

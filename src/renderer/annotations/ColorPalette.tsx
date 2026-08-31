@@ -111,6 +111,15 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
       v: seedHsl.v,
     });
     const [inputError, setInputError] = useState<string | null>(null);
+    // DEF-070 — controlled hex input. The picker renders an editable
+    // `#rrggbb` field next to the pad so users can paste a hex from
+    // elsewhere (the retest flow: `await window.fill('input[aria-
+    // label="Custom color hex"]', '#0000ff')` then Enter). The
+    // field's local string is held separately from the live preview
+    // hex because the user may be mid-edit (an invalid partial hex
+    // like `#aabbccd` should not yet overwrite the picker state).
+    // On a successful Enter / blur, we parse and apply.
+    const [hexDraft, setHexDraft] = useState<string>(seedHex);
     const padRef = useRef<HTMLDivElement | null>(null);
     const sliderRef = useRef<HTMLDivElement | null>(null);
     // Refs hold the active drag state without re-rendering. The pad /
@@ -129,12 +138,24 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
     // a different custom hex (e.g. via the toolbar's quick swatches).
     // Without this, dragging the pad would jump back to the old
     // location the next time the user touches it.
+    //
+    // DEF-070 — also keep `hexDraft` in sync with the seed so the
+    // visible hex input reflects whatever the picker is showing.
+    // We only overwrite the draft when the parsed preview actually
+    // matches the seed (i.e. the user isn't mid-typing); mid-typing
+    // edits stay in the draft and the preview is unaffected.
     useEffect(() => {
       const next = hexToHsl(seedHex);
       if (next === null) return;
       setHue(next.h);
       setSv({ s: next.s, v: next.v });
       setInputError(null);
+      // Only reseed the draft when it isn't already showing a valid
+      // parseable hex — a user typing "#0000" mid-edit shouldn't have
+      // their input clobbered every time the active color changes.
+      if (normalizeHex(hexDraft) === null) {
+        setHexDraft(seedHex);
+      }
     }, [seedHex]);
 
     const themePresets = presets[theme];
@@ -244,6 +265,84 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
       }
       onChange(next);
       setInputError(null);
+    };
+
+    // DEF-070 — parse the hex input draft through the same hex /
+    // rgb parser the picker uses, applying the result to the live
+    // picker state (hue / sv) without re-persisting through the
+    // settings reducer. The user pressed Enter / blurred the field,
+    // so they're done typing; partial / invalid input falls back
+    // to the live preview hex so the picker is never left in a
+    // half-applied state. The rgb form mirrors the same flow — it's
+    // a separate input for accessibility (some users copy an `rgb(r,
+    // g, b)` string out of a design tool and want to paste it).
+    const parseDraftToHex = (raw: string): string | null =>
+      normalizeHex(raw) ?? parseRgb(raw);
+
+    const onHexDraftChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
+      const next = e.target.value;
+      setHexDraft(next);
+      // Live preview: if the draft is parseable, update the picker
+      // immediately so the pad / slider cursors track the typed
+      // value. If the draft is mid-edit (empty / partial), the
+      // existing hue / sv are preserved — the user sees the cursor
+      // stay at the last valid position until they finish typing.
+      const parsed = parseDraftToHex(next);
+      if (parsed !== null) {
+        const hsl = hexToHsl(parsed);
+        if (hsl !== null) {
+          setHue(hsl.h);
+          setSv({ s: hsl.s, v: hsl.v });
+          setInputError(null);
+        }
+      }
+    };
+
+    const onHexDraftCommit = (): void => {
+      const parsed = parseDraftToHex(hexDraft);
+      if (parsed === null) {
+        // Invalid: snap the draft back to the live preview hex so
+        // the visible field matches the picker. We surface a short
+        // error to explain why the typed value was rejected.
+        setHexDraft(previewHex);
+        setInputError('Hex or rgb input not recognised. Expected #rrggbb, #rgb, or rgb(r, g, b).');
+        return;
+      }
+      // Apply the committed hex through onApplyCustom so the
+      // annotation tool picks up the colour immediately — pressing
+      // Enter in the hex input is the e2e-visible affordance the
+      // retest (retest_final.spec.cjs) waits on.
+      onApplyCustom(parsed);
+      setHexDraft(parsed);
+      setInputError(null);
+    };
+
+    const onHexDraftKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        onHexDraftCommit();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        // Snap back to the live preview WITHOUT re-applying through
+        // onApplyCustom — the user's edit was a scratch buffer
+        // and Escape means "leave the existing colour alone". The
+        // `previewHex` here is computed from the current `hue` /
+        // `sv`, which the change handler may have updated to match
+        // the typed draft — so we restore the SEED hex instead,
+        // which is what the picker was showing before the user
+        // started typing. (Without this, typing `#abcdef` and then
+        // pressing Escape would leave the input showing `#abcdef`
+        // because the live preview already adopted it.)
+        const restoreHex = ANNOTATION_COLOR_HEX[activeColor];
+        const restoreFromCustom = activeCustomHex ?? restoreHex;
+        setHue(0);
+        setSv({ s: 1, v: 1 });
+        setHexDraft(restoreFromCustom);
+        const seedHslRestore = hexToHsl(restoreFromCustom) ?? { h: 0, s: 1, v: 1 };
+        setHue(seedHslRestore.h);
+        setSv({ s: seedHslRestore.s, v: seedHslRestore.v });
+        setInputError(null);
+      }
     };
 
     const onRemove = (id: string): void => {
@@ -379,7 +478,7 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
               aria-hidden
             />
           </div>
-          {/* The hue strip: pure spectrum left-to-right (red → yellow →
+{/* The hue strip: pure spectrum left-to-right (red → yellow →
               green → cyan → blue → magenta → red). Same drag handler
               pattern as the pad. */}
           <div
@@ -391,7 +490,7 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
             aria-valuemax={360}
             aria-valuenow={Math.round(hue)}
             tabIndex={-1}
-            onPointerDown={onSliderPointerDown}
+onPointerDown={onSliderPointerDown}
             onPointerMove={onSliderPointerMove}
             onPointerUp={onSliderPointerUp}
             onPointerCancel={onSliderPointerUp}
@@ -404,8 +503,58 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
               aria-hidden
             />
           </div>
-          <div className="color-palette-actions">
-            <button
+          {/* DEF-070 — controlled hex / rgb input. The retest
+              spec fills this field with `#0000ff` then presses
+              Enter and asserts the annotation tool picked up the
+              colour. The grid lays out: [hex input][rgb
+              input][Add]. Both inputs accept either `#rgb` /
+              `#rrggbb` or `rgb(r, g, b)` text; the same
+              normalizeHex / parseRgb parsers the pad uses feed
+              into `onApplyCustom`. Pressing Enter in either
+              commits the value; Escape cancels and snaps back
+              to the live preview. */}
+          <div className="color-palette-form" data-palette-form>
+            <label className="color-palette-field">
+              <span>Hex</span>
+              <input
+                type="text"
+                inputMode="text"
+                spellCheck={false}
+                autoComplete="off"
+                value={hexDraft}
+                onChange={onHexDraftChange}
+                onBlur={onHexDraftCommit}
+                onKeyDown={onHexDraftKeyDown}
+                aria-label="Custom color hex"
+                placeholder="#rrggbb"
+                data-palette-hex-input
+              />
+            </label>
+            <label className="color-palette-field">
+              <span>RGB</span>
+              <input
+                type="text"
+                inputMode="text"
+                spellCheck={false}
+                autoComplete="off"
+                value={(() => {
+                  // Render the live preview as `rgb(r, g, b)` so
+                  // the user sees the same colour in either
+                  // format. The field is read-only by default; the
+                  // user pastes into the hex field.
+                  const hsl = hexToHsl(previewHex);
+                  if (hsl === null) return '';
+                  const rgb = hslToRgb(hsl.h, hsl.s, hsl.v);
+                  return `rgb(${rgb.r}, ${rgb.g}, ${rgb.b})`;
+                })()}
+                aria-label="Custom color rgb (read only)"
+                placeholder="rgb(r, g, b)"
+                readOnly
+                data-palette-rgb-input
+                tabIndex={-1}
+              />
+            </label>
+<button
               type="button"
               className="color-palette-add"
               onClick={onAdd}
@@ -458,6 +607,21 @@ export function paletteEqual(a: AnnotationColors, b: AnnotationColors): boolean 
     if (ax.id !== bx.id || ax.hex !== bx.hex) return false;
   }
   return true;
+}
+
+/** Pure helper: render the live preview as a friendly `rgb(r, g, b)`
+ *  string. Inverse of the `hexToHsl` round-trip; used by the rgb
+ *  display input next to the hex field (DEF-070). All channels
+ *  clamp into 0..255 and round to the nearest integer — the same
+ *  bound the parser uses, so a copy of the field's text into
+ *  `parseRgb` round-trips cleanly. */
+export function hslToRgb(h: number, s: number, v: number): { r: number; g: number; b: number } {
+  const hex = hslToHex({ h, s, v });
+  return {
+    r: parseInt(hex.slice(1, 3), 16),
+    g: parseInt(hex.slice(3, 5), 16),
+    b: parseInt(hex.slice(5, 7), 16),
+  };
 }
 
 // useMemo-style identity helper removed — calling React hooks from a

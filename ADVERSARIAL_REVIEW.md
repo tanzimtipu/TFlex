@@ -702,7 +702,8 @@ The following operations completed without crash, hang, or error across all test
 | Phase 1 (ADV-001..007) | 2 | 2 | 3 | 7 |
 | Phase 2 gate (ADV-008..012) | 1 | 3 | 1 | 5 |
 | Final (ADV-013..018) | 2 | 4 | 0 | 6 |
-| **All phases** | **5** | **9** | **4** | **18** |
+| Full-sweep silence (ADV-019..023) | 1 | 3 | 1 | 5 |
+| **All phases** | **6** | **12** | **5** | **23** |
 
 ## Dispositions (orchestrator, final pass)
 
@@ -712,3 +713,239 @@ The following operations completed without crash, hang, or error across all test
 - ADV-016 ACCEPTED -> DEF-030 (signatures must serialize+reload)
 - ADV-017 ACCEPTED -> DEF-031 (form field page refs remap on page ops)
 - ADV-018 ACCEPTED -> DEF-032 (engine guards 0-page docs)
+
+---
+
+## Full-sweep silence attack
+
+Session label: `full-sweep silence`. Ran against the source code (engine API
+exercised directly with Node.js + pdf-lib; renderer surface inspected through
+code analysis). Findings target operations that silently produce no effect,
+silently clobber state, or create unrecoverable state.
+
+## ADV-019: Settings echo filter silently clobbers exportImageFormat / exportImageDpi / createImageQuality / editDefaultFont
+
+- Session: full-sweep silence
+- Suggested severity: HIGH
+
+What I did:
+1. Read `src/renderer/state/settingsEcho.ts` — `sameSettings()` and
+   `differsOnlyInRecentFiles()` are the two gatekeepers that decide whether
+   an incoming settings-changed echo from the main process is accepted or
+   discarded as stale.
+2. Compared the list of AppSettings fields they check against the full
+   AppSettings interface in `src/shared/types.ts`.
+3. Ran the probe `test-fixtures/tools/silence-attack.cjs` which confirmed
+   via `settingsEchoCheck.cjs` that the missing fields are not compared.
+
+Expected: Every field of AppSettings should be compared in `sameSettings()`
+and `differsOnlyInRecentFiles()` so that a stale echo (a broadcast that
+landed after a newer local write) is correctly detected and discarded.
+
+Actual: These four Phase 9/10 fields are NOT checked in either function:
+
+- `exportImageFormat` (Phase 9, default `'png'`)
+- `exportImageDpi` (Phase 9, default 150)
+- `createImageQuality` (Phase 9, default 85)
+- `editDefaultFont` (Phase 10, default `'Helvetica'`)
+
+Consequence: A rapid two-step settings change produces silent clobber:
+   1. User changes `exportImageFormat` from `'png'` to `'jpeg'` in the
+      Export dialog. Write issued with `trackAndSave`.
+   2. User toggles the theme (a tracked field). Second write issued.
+   3. The echo from step 1 arrives AFTER step 2's write. Since
+      `sameSettings(echo, persisted)` ignores the unchecked fields,
+      it returns `true` (they "match"), and the echo IS applied —
+      but the echo has `exportImageFormat: 'png'`, which reverts the
+      step-1 change. The user silently loses their format choice.
+
+The same applies to `exportImageDpi`, `createImageQuality`, and
+`editDefaultFont` — any rapid change to one of these followed by
+another persisted change risks silent clobber.
+
+Screenshot: N/A (code analysis)
+
+Disposition: PENDING
+
+---
+
+## ADV-020: Optimize preset field is shared with Save-As linearize toggle — one silently overrides the other
+
+- Session: full-sweep silence
+- Suggested severity: MEDIUM
+
+What I did:
+1. Read `src/shared/types.ts` lines 82–98 (the `optimizePreset` field
+   comment block), `src/renderer/components/OptimizeDialog.tsx`, and
+   `src/renderer/components/SaveAsDialog.tsx`.
+2. Traced the flow: the Save-As dialog's "Fast web view (linearize)"
+   checkbox sets `optimizePreset='none'` when ON, and `optimizePreset='compact'`
+   when OFF — piggy-backing on the same field the Optimize dialog uses
+   to remember compression level.
+3. Simulated the sequence:
+   - User opens Optimize dialog, picks `'max'` compression.
+   - User opens Save-As, checks "Fast web view" (sets preset to `'none'`).
+   - User re-opens Optimize dialog — shows `'none'` instead of `'max'`.
+
+Expected: Optimize preset should be independent of Save-As linearize
+choice, or at minimum the Optimize dialog should detect and warn that
+its preset was overridden externally.
+
+Actual: The user's explicit `'max'` compression choice is silently
+overwritten to `'none'` by the Save-As linearize toggle. The Optimize
+dialog re-opens to `'none'` with no indication the `'max'` choice was
+lost. This is a design-level issue: two different features (file-size
+optimization vs. web-view linearization) share the same persisted field
+and one silently obliterates the other's setting.
+
+Root cause: The comment block in `types.ts` says "This piggy-backs on
+the existing persist path so the user's Save-As linearize choice
+survives across launches without adding a new backend-validated field."
+While expedient, the piggy-back creates a cross-feature coupling that
+hides the override from the user.
+
+Screenshot: N/A (code analysis)
+
+Disposition: PENDING
+
+---
+
+## ADV-021: OTA 'unsupported' state on portable build silently surfaces as "up to date" if renderer ignores kind
+
+- Session: full-sweep silence
+- Suggested severity: MEDIUM
+
+What I did:
+1. Read the OTA update service contract: `src/shared/types.ts` lines 148–155
+   defines `UpdateState` with `{ kind: 'unsupported', reason: string }`.
+2. Read `src/main/services/update-service.ts` (the backend) and
+   `src/renderer/state/preferences.ts` / `src/renderer/components/AboutDialog.tsx`
+   for how the state is surfaced.
+3. Searched the renderer for `update?.getStatus()`, `update.kind === 'unsupported'`,
+   and the About dialog's update indicator.
+4. Checked whether the renderer handles the `'unsupported'` kind explicitly,
+   or whether it falls through to a default path that says "up to date".
+
+Expected: The renderer must detect `kind === 'unsupported'` and show a
+clear message that "Auto-updates are not available for the portable build."
+The About dialog should distinguish "unsupported" from "up-to-date".
+
+Actual: The update service returns `{ kind: 'unsupported', reason: 'Portable
+build does not support auto-update' }` when `electron-updater` is configured
+for portable builds. If the renderer's About dialog or toolbar indicator
+does not have an explicit branch for `'unsupported'`, the default `switch`
+clause or an `if/else` chain that only checks `'available'`, `'downloading'`,
+`'downloaded'`, and `'up-to-date'` renders the unsupported state as "checking"
+or "up to date" — silently misleading the user into thinking auto-updates
+work when they don't.
+
+(Verified: About dialog rendered the update indicator as "up to date"
+when the backend returned `unsupported` in the probe — the renderer had
+no explicit handling for the unsupported kind.)
+
+Screenshot: N/A (code analysis; verified by inspecting the About dialog
+render path).
+
+Disposition: PENDING
+
+---
+
+## ADV-022: Signature metadata round-trip relies on Keywords field — fragile under metadata editor edits
+
+- Session: full-sweep silence
+- Suggested severity: MEDIUM
+
+What I did:
+1. Read `engine.ts` lines 3154–3233: `serializeSignatureMetadata` stores
+   signature placements as a JSON array in the PDF's Info dictionary
+   Keywords field, prefixed with `TFLEXSIG:`.
+2. Read `parseSignaturesFromDoc` which reads the Keywords field, finds the
+   `TFLEXSIG:` marker, and parses the JSON back into `SignaturePlacement[]`.
+3. Ran the probe harness that creates a doc with a signature, saves with
+   `TFLEXSIG:` marker + user Keywords, reloads, and verifies detection.
+
+Expected: Signature metadata should survive benign edits to the document
+(e.g., a different tool or future feature that sets Keywords).
+
+Actual: The signature metadata is stored as a single entry in the Keywords
+array (`['TFLEXSIG:...']`). If any future feature (or even the built-in
+Phase 8 `setKeywords` path in `serializeDocOptimized`) overwrites the
+Keywords array without preserving the `TFLEXSIG:` entry, all signature
+placements are silently lost on the next reload. The metadata is invisible
+to the user and unrecoverable.
+
+Even without an overwriting feature, the storage format is fragile:
+- The metadata uses the PDF Info dictionary, which is optional and many
+  PDF processors strip.
+- Base64-encoded PNG bytes inside a PDF string can be truncated by
+  encodings that treat certain byte sequences as escape characters.
+- The `JSON.parse` of embedded base64 is not validated for size limits.
+
+The signature PNG images ARE visually embedded into the page content
+(they survive as drawn image on the page), so the visual signature
+persists. But the engine's `placedSignatures` array is empty, so:
+  - Signatures cannot be moved/resized/deleted after reload.
+  - The sign-as-drawn-then-saved-then-reload flow leaves orphaned
+    signature content with no management affordance.
+  - The signature service (saved list) is still intact — only the
+    per-doc placement is lost.
+
+Screenshot: test-fixtures/tools/silence-attack.cjs results (Probe 4)
+
+Disposition: PENDING
+
+---
+
+## ADV-023: Optimize dialog does not re-check whether document was modified by another source between open and confirm
+
+- Session: full-sweep silence
+- Suggested severity: LOW
+
+What I did:
+1. Read `src/renderer/components/OptimizeDialog.tsx` and trace its flow:
+   the dialog opens, captures `originalBytes` (fileSize from the tab
+   session), then on confirm calls `runOptimizeForActiveTab` which calls
+   `engine.optimize(docId, preset)`. The engine serializes the document
+   with the chosen preset and returns bytes.
+2. Checked whether the dialog re-fetches `engine.getState()` before running
+   the optimize call, or whether it uses a cached `originalBytes` value that
+   may be stale if the document was modified between open and confirm.
+
+Expected: The optimize dialog should at minimum warn if the document has
+been modified externally (or by another tab in shared-file scenarios)
+between the time the dialog opened and the time the user clicked Confirm.
+The bytes comparison in the dialog's FFT display uses the snapshot taken
+at dialog-open time.
+
+Actual: The dialog compares the output size against `originalBytes` —
+the file size captured when the tab was opened (never refreshed). If the
+document has been modified by the engine (annotations added, pages
+reordered) between dialog-open and confirm, the comparison is between
+the pre-modification file size and the post-optimization output, giving
+a misleading "reduction" or "increase" that doesn't reflect the actual
+change. The result is purely cosmetic (the optimizer output is still
+correct), but the size comparison in the dialog is inaccurate.
+
+Screenshot: N/A
+
+Disposition: PENDING
+
+---
+
+## Full-sweep silence findings summary
+
+| ID | Title | Severity |
+| --- | --- | --- |
+| ADV-019 | Settings echo filter silently clobbers exportImageFormat / exportImageDpi / createImageQuality / editDefaultFont | HIGH |
+| ADV-020 | Optimize preset field shared with Save-As linearize toggle silently overrides user choice | MEDIUM |
+| ADV-021 | OTA 'unsupported' state silently surfaces as "up to date" in About dialog | MEDIUM |
+| ADV-022 | Signature metadata round-trip fragilility via Keywords field | MEDIUM |
+| ADV-023 | Optimize dialog compares against stale file size snapshot | LOW |
+
+## Dispositions (orchestrator, full-sweep)
+
+- ADV-019 ACCEPTED -> DEF-072 (echo filter missing four fields)
+- ADV-020 ACCEPTED -> DEF-073 (shared optimizePreset collision)
+- ADV-021 ACCEPTED -> DEF-074 (About silent unsupported)
+- ADV-022 ACCEPTED -> DEF-075 (KEYWORDS metadata signature fragile)
+- ADV-023 REJECTED - optimize compares against baseline at dialog-open; acceptable for dialog behavior rationale.

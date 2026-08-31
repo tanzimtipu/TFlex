@@ -221,7 +221,7 @@ export function CreateFromImagesDialog(
       data-create-from-images-dialog
     >
       <div
-        className="modal-dialog"
+        className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

@@ -1,45 +1,44 @@
-// Phase 8 — Save-As modal (file size reduction linearize toggle).
+// Phase 8/13 — Save-As modal (file size reduction linearize toggle).
 //
 // A renderer-side modal that appears when the user clicks Save-As.
 // The user can opt in to "Fast web view (linearize)" before the OS
 // save dialog opens; the choice persists across launches by writing
-// through the existing `optimizePreset` AppSettings field.
+// through the dedicated `saveAsLinearize` AppSettings boolean.
 //
-// Why piggy-back on optimizePreset (DEF-040)?
-//   The Settings impact rule in AGENTS.md requires every new
-//   AppSettings field to ship with backend validation in
-//   src/main/services/settings.ts. Frontend-dev can't edit main, so
-//   we route through the existing optimizePreset field instead:
-//     - toggle ON  -> optimizePreset = 'none'  (linearized output)
-//     - toggle OFF -> optimizePreset = 'compact' (default compression)
-//   The Optimize dialog reads the same field, so the two flows stay
-//   in sync — if the user picks 'max' in Optimize, the Save-As
-//   toggle starts OFF; if they tick the toggle, the Optimize dialog
-//   will open with 'none' pre-selected.
+// DEF-073 / ADV-020 — independent of Optimize preset. The previous
+// design piggy-backed the linearize toggle on the Optimize
+// dialog's `optimizePreset` field ('none' = linearized, 'compact'
+// = not linearized). That coupled two unrelated features: opening
+// Optimize, picking 'max', then opening Save-As and checking
+// "linearize" silently overwrote 'max' with 'none'; the next
+// Optimize session showed 'none' with no indication the user's
+// compression choice was lost. The two flows now own their own
+// fields — `optimizePreset` for compression, `saveAsLinearize` for
+// the Save-As linearize choice — and never collide.
 //
 // Why a renderer modal (and not the OS dialog's native extras)?
-//   The backend's engineSaveAs IPC handler pops the OS dialog
-//   directly. We can't inject extra controls there from the
-//   renderer. The cleanest path is to surface our own modal first,
-//   persist the choice, and then fire the existing engine.saveAs
-//   call as before. The OS dialog still handles the path + filename.
+// The backend's engineSaveAs IPC handler pops the OS dialog
+// directly. We can't inject extra controls there from the
+// renderer. The cleanest path is to surface our own modal first,
+// persist the choice, and then fire the existing engine.saveAs
+// call as before. The OS dialog still handles the path + filename.
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { X } from 'lucide-react';
-import type { OptimizePreset } from '../../shared/types';
-import { DEFAULT_OPTIMIZE_PRESET, OPTIMIZE_PRESETS } from '../state/preferences';
 
 interface SaveAsDialogProps {
   open: boolean;
-  /** Mirror of AppSettings.optimizePreset. 'none' means the
-   *  linearize toggle should default ON; any other value means
-   *  OFF. The dialog re-syncs from this prop every time it opens. */
-  optimizePreset: OptimizePreset | undefined;
+  /** Mirror of AppSettings.saveAsLinearize. The checkbox state is
+   *  seeded from this prop on every open. `undefined` is treated
+   *  as the default (`false`) — the field is optional in
+   *  AppSettings and the dialog tolerates an absent field the
+   *  same way the previous `optimizePreset`-based design did. */
+  saveAsLinearize: boolean | undefined;
   /** Fires when the user flips the linearize checkbox. The host
-   *  dispatches `preferencesReducer(prev, {type: 'set-optimize-preset',
-   *  value: 'none' | 'compact'})` and writes through trackAndSave.
-   *  The value is `'none'` when the toggle is on, `'compact'` when off. */
-  onOptimizePresetChange: (preset: OptimizePreset) => void;
+   *  writes through `set-save-as-linearize` in the preferences
+   *  reducer and persists via trackAndSave so the choice survives
+   *  across launches. */
+  onSaveAsLinearizeChange: (value: boolean) => void;
   /** Fires when the user confirms Save-As. The host calls the
    *  existing engine.saveAs(tabId) IPC — the OS dialog still
    *  handles the path / filename. */
@@ -47,45 +46,23 @@ interface SaveAsDialogProps {
   onClose: () => void;
 }
 
-/** Map a toggle boolean to the optimizePreset enum. Centralised so
- *  the renderer never branches on raw strings and the field stays
- *  the single source of truth for the linearize preference. */
-export function linearizeToggleToPreset(on: boolean): OptimizePreset {
-  return on ? 'none' : 'compact';
-}
-
-/** Inverse of `linearizeToggleToPreset`. Anything other than 'none'
- *  counts as "not linearized"; the Optimize dialog has a richer
- *  surface (none / compact / max) but the Save-As toggle only has
- *  two states, so 'compact' and 'max' both map to toggle=off. */
-export function presetToLinearizeToggle(
-  preset: OptimizePreset | undefined,
-): boolean {
-  return preset === 'none';
-}
-
 export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
-  const { open, optimizePreset, onOptimizePresetChange, onConfirm, onClose } =
+  const { open, saveAsLinearize, onSaveAsLinearizeChange, onConfirm, onClose } =
     props;
 
-  // Local mirror of the checkbox state, seeded from optimizePreset.
-  // The dialog re-seeds whenever it opens so the latest persisted
-  // value is what the user sees — the Settings sheet or a previous
-  // Save-As session might have changed it since the last render.
-  const [linearize, setLinearize] = useState<boolean>(() =>
-    presetToLinearizeToggle(optimizePreset),
-  );
+  // Local mirror of the checkbox state, seeded from saveAsLinearize.
+  // `undefined` -> false default so the dialog handles the
+  // optional-field case gracefully on first open.
+  const [linearize, setLinearize] = useState<boolean>(() => saveAsLinearize ?? false);
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
-  // Re-seed on every open + every optimizePreset change so the
+  // Re-seed on every open + every saveAsLinearize change so the
   // checkbox tracks the persisted value. Without this, opening the
-  // dialog after a programmatic preset change would show stale
-  // state (DEF-040 verification: restart picks up the persisted
-  // value via the same prop).
+  // dialog after a programmatic toggle would show stale state.
   useEffect(() => {
     if (!open) return;
-    setLinearize(presetToLinearizeToggle(optimizePreset));
-  }, [open, optimizePreset]);
+    setLinearize(saveAsLinearize ?? false);
+  }, [open, saveAsLinearize]);
 
   // Esc closes; focus the first interactive control on open so the
   // keyboard user can tab through immediately.
@@ -114,7 +91,7 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
     // through the preferences reducer. Same pattern as the
     // Optimize dialog: every toggle surfaces, the reducer's
     // equality guard short-circuits no-op writes.
-    onOptimizePresetChange(linearizeToggleToPreset(next));
+    onSaveAsLinearizeChange(next);
   };
 
   const onConfirmClick = (): void => {
@@ -123,8 +100,8 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
     // every toggle, but a click-then-immediate-confirm sequence
     // could race the reducer. The local `linearize` is the
     // authoritative source at this moment.
-    if (presetToLinearizeToggle(optimizePreset) !== linearize) {
-      onOptimizePresetChange(linearizeToggleToPreset(linearize));
+    if (saveAsLinearize !== linearize) {
+      onSaveAsLinearizeChange(linearize);
     }
     onConfirm();
   };
@@ -132,7 +109,7 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal-dialog"
+        className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"
@@ -200,12 +177,3 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
     </div>
   );
 }
-
-/** Re-export the constants that the host's reducer depends on so
- *  callers can wire the dialog through the same module path as the
- *  Optimize dialog. The `OPTIMIZE_PRESETS` array doubles as the
- *  validator allowlist — the dialog only ever writes 'none' or
- *  'compact' through `linearizeToggleToPreset`, so the array isn't
- *  used directly here, but exposing it keeps the import surface
- *  consistent with OptimizeDialog. */
-export { DEFAULT_OPTIMIZE_PRESET, OPTIMIZE_PRESETS };

@@ -142,7 +142,7 @@ export function StampDialog(
   return (
     <div className="modal-backdrop" onClick={onClose} data-stamp-dialog>
       <div
-        className="modal-dialog"
+        className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

@@ -1,4 +1,4 @@
-// Phase 7 — settings.changed echo filter (DEF-037).
+// Phase 7 — settings.changed echo filter (DEF-037, DEF-072).
 //
 // The main process broadcasts every settings write it persists
 // back to the renderer via the `settings:changed` IPC event. Most
@@ -47,11 +47,23 @@
 // echo's annotationColors are hex strings while our local writes
 // are objects). We compare the canonical hex-set per theme
 // bucket instead.
+//
+// DEF-072 — every AppSettings field MUST participate in the
+// content comparison. The previous version missed four Phase 9/10
+// fields (`exportImageFormat`, `exportImageDpi`,
+// `createImageQuality`, `editDefaultFont`), so a rapid change to
+// one of those followed by a second persisted write would let a
+// stale echo from the FIRST write pass the filter and silently
+// clobber the second write's value. Every optional AppSettings
+// field now has a comparison line in `sameSettings` and
+// `differsOnlyInRecentFiles`; new fields added in future phases
+// must add their own lines here.
 
 import type {
   AnnotationColorPreset,
   AnnotationColors,
   AppSettings,
+  ExportImageFormat,
   RecentFile,
   WindowGeometry,
 } from '../../shared/types';
@@ -61,16 +73,25 @@ import type {
  *  geometry, recents, prefs, and palette hexes. AnnotationColors
  *  preset ids and object/array shape are normalised away (the
  *  backend persists `string[]`, the renderer writes
- *  `AnnotationColorPreset[]`; functionally identical). */
+ *  `AnnotationColorPreset[]`; functionally identical).
+ *
+ *  DEF-072 — must cover EVERY optional AppSettings field. A
+ *  rapid two-write race on a field this comparator misses would
+ *  let a stale echo silently clobber the newer local value. */
 export function sameSettings(a: AppSettings, b: AppSettings): boolean {
   if (a.theme !== b.theme) return false;
   if (a.themeDefault !== b.themeDefault) return false;
   if (a.recentsCap !== b.recentsCap) return false;
   if (a.toolsPaletteLayout !== b.toolsPaletteLayout) return false;
   if (a.optimizePreset !== b.optimizePreset) return false;
+  if (a.exportImageFormat !== b.exportImageFormat) return false;
+  if (a.exportImageDpi !== b.exportImageDpi) return false;
+  if (a.createImageQuality !== b.createImageQuality) return false;
+  if (a.editDefaultFont !== b.editDefaultFont) return false;
   if (a.ocrLanguage !== b.ocrLanguage) return false;
   if (a.ocrDownsample !== b.ocrDownsample) return false;
   if (a.defaultStampId !== b.defaultStampId) return false;
+  if (a.saveAsLinearize !== b.saveAsLinearize) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   return sameAnnotationColors(a.annotationColors, b.annotationColors);
@@ -81,7 +102,12 @@ export function sameSettings(a: AppSettings, b: AppSettings): boolean {
  *  directly; it goes through `tflex.addRecentFile`, which is a
  *  backend-authoritative write that always echoes back the
  *  canonical list. Echos that change ONLY recentFiles are
- *  legitimate, regardless of what `settingsPersistedRef` says. */
+ *  legitimate, regardless of what `settingsPersistedRef` says.
+ *
+ *  DEF-072 — must cover EVERY optional AppSettings field except
+ *  recentFiles, so a recent-files-only delta detector can correctly
+ *  recognise the canonical reflection of `addRecentFile` without
+ *  also accepting echos that drifted one of the OTHER fields. */
 export function differsOnlyInRecentFiles(
   a: AppSettings,
   b: AppSettings,
@@ -93,9 +119,14 @@ export function differsOnlyInRecentFiles(
   if (a.recentsCap !== b.recentsCap) return false;
   if (a.toolsPaletteLayout !== b.toolsPaletteLayout) return false;
   if (a.optimizePreset !== b.optimizePreset) return false;
+  if (a.exportImageFormat !== b.exportImageFormat) return false;
+  if (a.exportImageDpi !== b.exportImageDpi) return false;
+  if (a.createImageQuality !== b.createImageQuality) return false;
+  if (a.editDefaultFont !== b.editDefaultFont) return false;
   if (a.ocrLanguage !== b.ocrLanguage) return false;
   if (a.ocrDownsample !== b.ocrDownsample) return false;
   if (a.defaultStampId !== b.defaultStampId) return false;
+  if (a.saveAsLinearize !== b.saveAsLinearize) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   // All other fields agree; recentFiles must ACTUALLY differ for
@@ -105,6 +136,13 @@ export function differsOnlyInRecentFiles(
   // returned false, so recents MUST differ.)
   return !sameRecentFiles(a.recentFiles, b.recentFiles);
 }
+
+/** Suppress an "unused import" lint check while documenting the
+ *  canonical ExportImageFormat allowlist the comparator relies on.
+ *  The renderer's prefs reducer (preferences.ts) already enforces
+ *  the same allowlist on writes; this import is here so future
+ *  readers see the contract without diving into shared/types.ts. */
+export type { ExportImageFormat };
 
 function sameGeometry(a: WindowGeometry, b: WindowGeometry): boolean {
   return (

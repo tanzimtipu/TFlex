@@ -209,7 +209,7 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal-dialog"
+        className="modal-dialog dialog optimize-dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"
@@ -236,8 +236,12 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
             not modified.
           </p>
 
-          <fieldset className="modal-position optimize-preset">
-            <legend>Compression preset</legend>
+          <fieldset
+            className="modal-position optimize-preset"
+            role="radiogroup"
+            aria-label="Optimization preset"
+          >
+            <legend>Optimization preset</legend>
             {PRESET_OPTIONS.map((opt) => (
               <label key={opt.preset} className="optimize-preset-option">
                 <input
@@ -259,6 +263,7 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
                     onOptimizePresetChange?.(opt.preset);
                   }}
                   data-optimize-preset={opt.preset}
+                  aria-label={describePreset(opt.preset).label}
                 />
                 <span className="optimize-preset-text">
                   <span className="optimize-preset-label">{opt.label}</span>

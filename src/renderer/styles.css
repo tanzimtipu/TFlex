@@ -1177,6 +1177,119 @@ textarea {
   color: var(--fg-strong);
 }
 
+/* ---- Update indicator (DEF-077) ----
+   The indicator lives inside .header-actions, just before the
+   theme toggle. It surfaces OTA update availability without
+   stealing focus from the document. Each state has its own
+   visual treatment so the user can read availability at a
+   glance:
+     - 'checking'    : muted icon-only chip, animated spin
+     - 'available'   : accent-bordered pill, clickable
+     - 'downloading' : muted progress chip, non-interactive
+     - 'downloaded'  : primary-accent button, clickable
+     - 'error'       : muted outlined button, clickable (retry)
+   The 'unsupported' and 'up-to-date' states render nothing
+   (the indicator is hidden in `indicatorView`); the About
+   dialog remains the source of truth for the unsupported
+   reason. */
+
+.update-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-2);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  cursor: default;
+  transition: background var(--t-quick) var(--ease),
+    color var(--t-quick) var(--ease),
+    border-color var(--t-quick) var(--ease);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.update-indicator > svg {
+  flex: 0 0 auto;
+}
+
+/* 'checking' — icon-only muted chip with a slow spin so the
+   user knows something is happening without a spinner
+   blocking the header. */
+.update-indicator-checking {
+  width: 28px;
+  padding: 0;
+  justify-content: center;
+}
+
+.update-indicator-spin {
+  animation: update-indicator-spin 1.4s linear infinite;
+}
+
+@keyframes update-indicator-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 'available' — accent-bordered pill. Tells the user an update
+   is ready to fetch and invites a click. */
+.update-indicator-available {
+  cursor: pointer;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.update-indicator-available:hover {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  border-color: var(--accent);
+}
+
+/* 'downloading' — muted progress chip. Non-interactive so a
+   click doesn't queue a second download. The percentage
+   updates in place as the backend pushes progress. */
+.update-indicator-downloading {
+  background: var(--bg-hover);
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 'downloaded' — primary-accent button. Strongest visual
+   weight of any state because the user must restart to
+   pick up the new version; we want this to be impossible
+   to miss. */
+.update-indicator-downloaded {
+  cursor: pointer;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.update-indicator-downloaded:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--fg-on-accent);
+}
+
+/* 'error' — muted outlined button. Clicking retries the
+   download (same code path as 'available'). */
+.update-indicator-error {
+  cursor: pointer;
+  background: transparent;
+  border-color: var(--border);
+  color: var(--fg-muted);
+}
+
+.update-indicator-error:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+  border-color: var(--border-strong);
+}
+
 .tooltip-anchor { position: relative; }
 
 .tooltip-anchor [data-tooltip]:hover::after {

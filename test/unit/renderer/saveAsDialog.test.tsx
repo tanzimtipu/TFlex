@@ -5,39 +5,34 @@
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import {
-  SaveAsDialog,
-  linearizeToggleToPreset,
-  presetToLinearizeToggle,
-} from "../../../src/renderer/components/SaveAsDialog";
-import type { OptimizePreset } from "../../../src/shared/types";
+import { SaveAsDialog } from "../../../src/renderer/components/SaveAsDialog";
 
 /**
- * Phase 8 — Save-As modal tests (DEF-040).
+ * Phase 8/13 — Save-As modal tests (DEF-040, DEF-073).
  *
  * The Save-As modal surfaces the "Fast web view (linearize)" toggle
  * that was missing from the Save-As flow. The toggle writes through
- * the existing AppSettings.optimizePreset field:
- *   - toggle ON  -> preset='none' (linearized output)
- *   - toggle OFF -> preset='compact' (default compression)
+ * a dedicated `saveAsLinearize` AppSettings boolean — DEF-073
+ * moved it off the Optimize dialog's `optimizePreset` field so the
+ * two features no longer silently overwrite each other's setting.
  *
  * The tests below pin:
- *   1. The two preset<->toggle helpers agree for every valid preset
- *      (so a future preset added to the union doesn't silently break
- *      the toggle's initial state).
- *   2. The modal renders the checkbox with the persisted preset as
- *      the initial state, and re-seeds when the prop changes.
- *   3. Toggling the checkbox fires onOptimizePresetChange with the
- *      mapped preset on every change (so the host reducer sees it).
- *   4. Confirming the dialog fires onConfirm and Esc / backdrop /
- *      close-button all fire onClose.
- *   5. The dialog handles `optimizePreset === undefined` gracefully
- *      (the field is optional in AppSettings).
+ *   1. The checkbox's initial state matches the persisted
+ *      `saveAsLinearize` prop (true = checked, false/undefined = unchecked).
+ *   2. Toggling the checkbox fires `onSaveAsLinearizeChange` with the
+ *      new boolean on every change.
+ *   3. The checkbox re-seeds when `saveAsLinearize` changes while
+ *      the dialog is open (same defensive pattern as the Optimize
+ *      dialog's preset re-seed).
+ *   4. Confirming fires `onConfirm`; Esc / backdrop / close-button
+ *      fire `onClose`.
+ *   5. The dialog handles `saveAsLinearize === undefined` gracefully
+ *      (the field is optional in AppSettings; the default is false).
  */
 
 interface RenderArgs {
-  optimizePreset?: OptimizePreset | undefined;
-  onOptimizePresetChange?: (preset: OptimizePreset) => void;
+  saveAsLinearize?: boolean | undefined;
+  onSaveAsLinearizeChange?: (value: boolean) => void;
   onConfirm?: () => void;
   onClose?: () => void;
 }
@@ -54,8 +49,8 @@ function renderDialog(args: RenderArgs = {}): {
     root.render(
       <SaveAsDialog
         open={true}
-        optimizePreset={args.optimizePreset}
-        onOptimizePresetChange={args.onOptimizePresetChange ?? ((): void => undefined)}
+        saveAsLinearize={args.saveAsLinearize}
+        onSaveAsLinearizeChange={args.onSaveAsLinearizeChange ?? ((): void => undefined)}
         onConfirm={args.onConfirm ?? ((): void => undefined)}
         onClose={args.onClose ?? ((): void => undefined)}
       />,
@@ -73,42 +68,9 @@ function renderDialog(args: RenderArgs = {}): {
   };
 }
 
-describe("SaveAsDialog — preset <-> linearize helpers (DEF-040)", () => {
-  it("linearizeToggleToPreset returns 'none' when ON", () => {
-    expect(linearizeToggleToPreset(true)).toBe("none");
-  });
-
-  it("linearizeToggleToPreset returns 'compact' when OFF", () => {
-    expect(linearizeToggleToPreset(false)).toBe("compact");
-  });
-
-  it("presetToLinearizeToggle is true only for 'none'", () => {
-    expect(presetToLinearizeToggle("none")).toBe(true);
-    expect(presetToLinearizeToggle("compact")).toBe(false);
-    expect(presetToLinearizeToggle("max")).toBe(false);
-  });
-
-  it("presetToLinearizeToggle treats undefined as OFF (default)", () => {
-    // AppSettings.optimizePreset is optional. Until the user has
-    // picked one, the dialog defaults to OFF so the first Save-As
-    // doesn't surprise the user with a linearized copy.
-    expect(presetToLinearizeToggle(undefined)).toBe(false);
-  });
-
-  it("the round-trip agrees for every preset in the union", () => {
-    // Defensive: if a future preset is added, the toggle still has
-    // a well-defined initial state (not 'none').
-    const presets: OptimizePreset[] = ["none", "compact", "max"];
-    for (const p of presets) {
-      const on = presetToLinearizeToggle(p);
-      expect(linearizeToggleToPreset(on)).toBe(p === "none" ? "none" : "compact");
-    }
-  });
-});
-
-describe("SaveAsDialog — checkbox initial state (DEF-040)", () => {
-  it("checks the box when optimizePreset is 'none'", () => {
-    const { container, cleanup } = renderDialog({ optimizePreset: "none" });
+describe("SaveAsDialog — checkbox initial state (DEF-073)", () => {
+  it("checks the box when saveAsLinearize is true", () => {
+    const { container, cleanup } = renderDialog({ saveAsLinearize: true });
     const checkbox = container.querySelector<HTMLInputElement>(
       "[data-save-as-linearize]",
     );
@@ -117,8 +79,8 @@ describe("SaveAsDialog — checkbox initial state (DEF-040)", () => {
     cleanup();
   });
 
-  it("leaves the box unchecked when optimizePreset is 'compact'", () => {
-    const { container, cleanup } = renderDialog({ optimizePreset: "compact" });
+  it("leaves the box unchecked when saveAsLinearize is false", () => {
+    const { container, cleanup } = renderDialog({ saveAsLinearize: false });
     const checkbox = container.querySelector<HTMLInputElement>(
       "[data-save-as-linearize]",
     );
@@ -126,19 +88,11 @@ describe("SaveAsDialog — checkbox initial state (DEF-040)", () => {
     cleanup();
   });
 
-  it("leaves the box unchecked when optimizePreset is 'max'", () => {
-    // 'max' is a non-linearizing aggressive-compression preset.
-    // The Save-As toggle is OFF for it.
-    const { container, cleanup } = renderDialog({ optimizePreset: "max" });
-    const checkbox = container.querySelector<HTMLInputElement>(
-      "[data-save-as-linearize]",
-    );
-    expect(checkbox?.checked).toBe(false);
-    cleanup();
-  });
-
-  it("leaves the box unchecked when optimizePreset is undefined", () => {
-    const { container, cleanup } = renderDialog({ optimizePreset: undefined });
+  it("leaves the box unchecked when saveAsLinearize is undefined", () => {
+    // AppSettings.saveAsLinearize is optional. Until the user has
+    // picked one, the dialog defaults to OFF so the first Save-As
+    // doesn't surprise the user with a linearized copy.
+    const { container, cleanup } = renderDialog({ saveAsLinearize: undefined });
     const checkbox = container.querySelector<HTMLInputElement>(
       "[data-save-as-linearize]",
     );
@@ -153,12 +107,12 @@ describe("SaveAsDialog — checkbox initial state (DEF-040)", () => {
   });
 });
 
-describe("SaveAsDialog — toggle persistence (DEF-040)", () => {
-  it("fires onOptimizePresetChange with 'none' when the user ticks the box", () => {
-    const onOptimizePresetChange = vi.fn();
+describe("SaveAsDialog — toggle persistence (DEF-073)", () => {
+  it("fires onSaveAsLinearizeChange with true when the user ticks the box", () => {
+    const onSaveAsLinearizeChange = vi.fn();
     const { container, cleanup } = renderDialog({
-      optimizePreset: "compact",
-      onOptimizePresetChange,
+      saveAsLinearize: false,
+      onSaveAsLinearizeChange,
     });
     const checkbox = container.querySelector<HTMLInputElement>(
       "[data-save-as-linearize]",
@@ -168,15 +122,15 @@ describe("SaveAsDialog — toggle persistence (DEF-040)", () => {
     act((): void => {
       checkbox.click();
     });
-    expect(onOptimizePresetChange).toHaveBeenCalledWith("none");
+    expect(onSaveAsLinearizeChange).toHaveBeenCalledWith(true);
     cleanup();
   });
 
-  it("fires onOptimizePresetChange with 'compact' when the user unticks the box", () => {
-    const onOptimizePresetChange = vi.fn();
+  it("fires onSaveAsLinearizeChange with false when the user unticks the box", () => {
+    const onSaveAsLinearizeChange = vi.fn();
     const { container, cleanup } = renderDialog({
-      optimizePreset: "none",
-      onOptimizePresetChange,
+      saveAsLinearize: true,
+      onSaveAsLinearizeChange,
     });
     const checkbox = container.querySelector<HTMLInputElement>(
       "[data-save-as-linearize]",
@@ -186,26 +140,27 @@ describe("SaveAsDialog — toggle persistence (DEF-040)", () => {
     act((): void => {
       checkbox.click();
     });
-    expect(onOptimizePresetChange).toHaveBeenCalledWith("compact");
+    expect(onSaveAsLinearizeChange).toHaveBeenCalledWith(false);
     cleanup();
   });
 
-  it("re-seeds from the prop when optimizePreset changes while open", () => {
-    // The host can change optimizePreset while the dialog is open
-    // (e.g. the Optimize dialog runs in the background and writes
-    // the same field). The Save-As checkbox should re-sync so the
-    // visible state matches the persisted state.
+  it("re-seeds from the prop when saveAsLinearize changes while open", () => {
+    // The host can change saveAsLinearize while the dialog is open
+    // (e.g. an external settings write flows in). The Save-As
+    // checkbox should re-sync so the visible state matches the
+    // persisted state — same defensive pattern as the Optimize
+    // dialog's preset re-seed.
     const container = document.createElement("div");
     document.body.appendChild(container);
     const root = createRoot(container);
-    let currentPreset: OptimizePreset | undefined = "compact";
+    let current: boolean = false;
     const rerender = (): void => {
       act((): void => {
         root.render(
           <SaveAsDialog
             open={true}
-            optimizePreset={currentPreset}
-            onOptimizePresetChange={(): void => undefined}
+            saveAsLinearize={current}
+            onSaveAsLinearizeChange={(): void => undefined}
             onConfirm={(): void => undefined}
             onClose={(): void => undefined}
           />,
@@ -217,10 +172,10 @@ describe("SaveAsDialog — toggle persistence (DEF-040)", () => {
       "[data-save-as-linearize]",
     );
     expect(checkbox?.checked).toBe(false);
-    currentPreset = "none";
+    current = true;
     rerender();
     expect(checkbox?.checked).toBe(true);
-    currentPreset = "compact";
+    current = false;
     rerender();
     expect(checkbox?.checked).toBe(false);
     act((): void => {
@@ -230,7 +185,7 @@ describe("SaveAsDialog — toggle persistence (DEF-040)", () => {
   });
 });
 
-describe("SaveAsDialog — confirm / close (DEF-040)", () => {
+describe("SaveAsDialog — confirm / close (DEF-073)", () => {
   it("fires onConfirm when the confirm button is clicked", () => {
     const onConfirm = vi.fn();
     const { container, cleanup } = renderDialog({ onConfirm });
@@ -282,8 +237,8 @@ describe("SaveAsDialog — confirm / close (DEF-040)", () => {
       root.render(
         <SaveAsDialog
           open={false}
-          optimizePreset={undefined}
-          onOptimizePresetChange={(): void => undefined}
+          saveAsLinearize={false}
+          onSaveAsLinearizeChange={(): void => undefined}
           onConfirm={(): void => undefined}
           onClose={(): void => undefined}
         />,

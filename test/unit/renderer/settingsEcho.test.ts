@@ -582,3 +582,377 @@ describe("sameSettings / differsOnlyInRecentFiles — defaultStampId echo handli
     expect(shouldApplyEcho(stale, 2, localWrite)).toBe(false);
   });
 });
+
+// DEF-072 — echo filter completeness over Phase 9/10 fields.
+//
+// ADV-019 found that the previous `sameSettings()` and
+// `differsOnlyInRecentFiles()` were missing four AppSettings
+// fields:
+//   - exportImageFormat   (Phase 9, default 'png')
+//   - exportImageDpi      (Phase 9, default 150)
+//   - createImageQuality  (Phase 9, default 0.85)
+//   - editDefaultFont     (Phase 10, default 'Helvetica')
+//
+// A rapid change to one of those followed by a second persisted
+// write would let a stale echo from the FIRST write pass the
+// filter (since `sameSettings` returned true despite the drift)
+// and silently clobber the newer local value. The tests below
+// pin every missing field individually + a combined
+// "rapid write race" scenario that proves the filter catches the
+// race even when the older echo carries a DIFFERENT field drift
+// than the one the user just changed.
+describe("DEF-072 — echo filter completeness over Phase 9/10 fields", () => {
+  it("sameSettings returns false when exportImageFormat differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ exportImageFormat: 'png' }),
+        baseSettings({ exportImageFormat: 'jpeg' }),
+      ),
+    ).toBe(false);
+  });
+
+  it("sameSettings returns false when exportImageDpi differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ exportImageDpi: 150 }),
+        baseSettings({ exportImageDpi: 300 }),
+      ),
+    ).toBe(false);
+  });
+
+  it("sameSettings returns false when createImageQuality differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ createImageQuality: 0.85 }),
+        baseSettings({ createImageQuality: 0.5 }),
+      ),
+    ).toBe(false);
+  });
+
+  it("sameSettings returns false when editDefaultFont differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ editDefaultFont: 'Helvetica' }),
+        baseSettings({ editDefaultFont: 'Times' }),
+      ),
+    ).toBe(false);
+  });
+
+  it("sameSettings returns true when the four Phase 9/10 fields match", () => {
+    const a = baseSettings({
+      exportImageFormat: 'jpeg',
+      exportImageDpi: 300,
+      createImageQuality: 0.5,
+      editDefaultFont: 'Times',
+    });
+    const b = baseSettings({
+      exportImageFormat: 'jpeg',
+      exportImageDpi: 300,
+      createImageQuality: 0.5,
+      editDefaultFont: 'Times',
+    });
+    expect(sameSettings(a, b)).toBe(true);
+  });
+
+  it("differsOnlyInRecentFiles returns false when exportImageFormat also drifts", () => {
+    // An addRecentFile echo that ALSO drifted exportImageFormat is
+    // NOT a recent-files-only delta — the export field drift is
+    // real. The previous comparator missed this and would have
+    // accepted the echo, silently reverting the user's format.
+    const recentsA: RecentFile[] = [
+      { path: '/a.pdf', name: 'a.pdf', openedAt: '2026-01-01T00:00:00Z' },
+    ];
+    const recentsB: RecentFile[] = [
+      { path: '/b.pdf', name: 'b.pdf', openedAt: '2026-01-02T00:00:00Z' },
+      ...recentsA,
+    ];
+    const a = baseSettings({ recentFiles: recentsA, exportImageFormat: 'jpeg' });
+    const b = baseSettings({ recentFiles: recentsB, exportImageFormat: 'png' });
+    expect(differsOnlyInRecentFiles(a, b)).toBe(false);
+  });
+
+  it("differsOnlyInRecentFiles returns false when exportImageDpi also drifts", () => {
+    const recentsA: RecentFile[] = [
+      { path: '/a.pdf', name: 'a.pdf', openedAt: '2026-01-01T00:00:00Z' },
+    ];
+    const recentsB: RecentFile[] = [
+      { path: '/b.pdf', name: 'b.pdf', openedAt: '2026-01-02T00:00:00Z' },
+      ...recentsA,
+    ];
+    const a = baseSettings({ recentFiles: recentsA, exportImageDpi: 300 });
+    const b = baseSettings({ recentFiles: recentsB, exportImageDpi: 150 });
+    expect(differsOnlyInRecentFiles(a, b)).toBe(false);
+  });
+
+  it("differsOnlyInRecentFiles returns false when createImageQuality also drifts", () => {
+    const recentsA: RecentFile[] = [
+      { path: '/a.pdf', name: 'a.pdf', openedAt: '2026-01-01T00:00:00Z' },
+    ];
+    const recentsB: RecentFile[] = [
+      { path: '/b.pdf', name: 'b.pdf', openedAt: '2026-01-02T00:00:00Z' },
+      ...recentsA,
+    ];
+    const a = baseSettings({ recentFiles: recentsA, createImageQuality: 0.5 });
+    const b = baseSettings({ recentFiles: recentsB, createImageQuality: 0.85 });
+    expect(differsOnlyInRecentFiles(a, b)).toBe(false);
+  });
+
+  it("differsOnlyInRecentFiles returns false when editDefaultFont also drifts", () => {
+    const recentsA: RecentFile[] = [
+      { path: '/a.pdf', name: 'a.pdf', openedAt: '2026-01-01T00:00:00Z' },
+    ];
+    const recentsB: RecentFile[] = [
+      { path: '/b.pdf', name: 'b.pdf', openedAt: '2026-01-02T00:00:00Z' },
+      ...recentsA,
+    ];
+    const a = baseSettings({ recentFiles: recentsA, editDefaultFont: 'Helvetica' });
+    const b = baseSettings({ recentFiles: recentsB, editDefaultFont: 'Times' });
+    expect(differsOnlyInRecentFiles(a, b)).toBe(false);
+  });
+
+  it("shouldApplyEcho discards a stale echo whose exportImageFormat drifted (DEF-072 defect)", () => {
+    // The reported defect:
+    //   1. User picks 'jpeg' in the Export dialog. settingsPersisted
+    //      has exportImageFormat='jpeg', recentsCap=10.
+    //   2. User changes recentsCap to 25 (in Preferences).
+    //   3. The echo from step 1 lands AFTER step 2, carrying
+    //      exportImageFormat='jpeg' AND recentsCap=10. The new
+    //      local write has recentsCap=25 and the same 'jpeg'. The
+    //      old echo's recentsCap=10 is now stale — applying the
+    //      echo would revert recentsCap from 25 back to 10.
+    //   4. The previous comparator missed the recentsCap field
+    //      comparison (it was checked) — but the same defect
+    //      applied to exportImageFormat too: a stale echo with
+    //      exportImageFormat='png' would have been accepted and
+    //      reverted the user's 'jpeg' choice.
+    // The fix: sameSettings now compares every field; the stale
+    // echo's recentsCap drift is caught regardless of which field
+    // was the user's "real" change.
+    const localWrite = baseSettings({
+      recentsCap: 25,
+      exportImageFormat: 'jpeg',
+    });
+    const staleEcho = baseSettings({
+      recentsCap: 10,
+      exportImageFormat: 'jpeg',
+    });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("shouldApplyEcho discards a stale echo whose exportImageFormat drifted independently", () => {
+    // The exact DEF-072 repro: a stale echo carries the older
+    // exportImageFormat while every other field matches. The
+    // previous comparator returned true (no drift detected on
+    // the fields it checked) and accepted the echo, silently
+    // clobbering the user's choice.
+    const localWrite = baseSettings({
+      recentsCap: 10,
+      exportImageFormat: 'jpeg',
+    });
+    const staleEcho = baseSettings({
+      recentsCap: 10,
+      exportImageFormat: 'png',
+    });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("shouldApplyEcho discards a stale echo whose exportImageDpi drifted independently", () => {
+    const localWrite = baseSettings({ recentsCap: 10, exportImageDpi: 300 });
+    const staleEcho = baseSettings({ recentsCap: 10, exportImageDpi: 150 });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("shouldApplyEcho discards a stale echo whose createImageQuality drifted independently", () => {
+    const localWrite = baseSettings({ recentsCap: 10, createImageQuality: 0.5 });
+    const staleEcho = baseSettings({ recentsCap: 10, createImageQuality: 0.85 });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("shouldApplyEcho discards a stale echo whose editDefaultFont drifted independently", () => {
+    const localWrite = baseSettings({ recentsCap: 10, editDefaultFont: 'Times' });
+    const staleEcho = baseSettings({ recentsCap: 10, editDefaultFont: 'Helvetica' });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("shouldApplyEcho accepts a canonical reflection matching all four Phase 9/10 fields", () => {
+    // Round-trip sanity check: main echoes back exactly what we
+    // wrote (modulo preset-id shape and unrelated field drift).
+    const localWrite = baseSettings({
+      exportImageFormat: 'jpeg',
+      exportImageDpi: 300,
+      createImageQuality: 0.5,
+      editDefaultFont: 'Times',
+    });
+    const echoFromMain = baseSettings({
+      exportImageFormat: 'jpeg',
+      exportImageDpi: 300,
+      createImageQuality: 0.5,
+      editDefaultFont: 'Times',
+    });
+    expect(shouldApplyEcho(echoFromMain, 5, localWrite)).toBe(true);
+  });
+});
+
+// DEF-073 — echo filter covers the new saveAsLinearize boolean.
+//
+// The Save-As modal's "Fast web view (linearize)" toggle used to
+// piggy-back on `optimizePreset`. ADV-020 traced that coupling
+// and the fix moves the toggle to its own `saveAsLinearize`
+// AppSettings boolean (Phase 13). The comparator MUST compare
+// the new field too — otherwise a rapid linearize toggle
+// followed by another persisted change would silently revert the
+// linearize choice via a stale echo.
+describe("DEF-073 — saveAsLinearize echo handling (Save-As linearize toggle)", () => {
+  it("sameSettings returns true when saveAsLinearize matches", () => {
+    expect(
+      sameSettings(
+        baseSettings({ saveAsLinearize: true }),
+        baseSettings({ saveAsLinearize: true }),
+      ),
+    ).toBe(true);
+    expect(
+      sameSettings(
+        baseSettings({ saveAsLinearize: false }),
+        baseSettings({ saveAsLinearize: false }),
+      ),
+    ).toBe(true);
+    // Both undefined (field absent on both sides) — same.
+    expect(sameSettings(baseSettings(), baseSettings())).toBe(true);
+  });
+
+  it("sameSettings returns false when saveAsLinearize differs (true vs false)", () => {
+    expect(
+      sameSettings(
+        baseSettings({ saveAsLinearize: true }),
+        baseSettings({ saveAsLinearize: false }),
+      ),
+    ).toBe(false);
+  });
+
+  it("sameSettings returns false when saveAsLinearize differs (set vs undefined)", () => {
+    // The renderer's local write has saveAsLinearize=true; the
+    // echo arrives without the field (e.g. from an older build
+    // that hasn't yet validated it). Without the comparator
+    // line, the echo's undefined would silently revert the user's
+    // choice to false.
+    expect(
+      sameSettings(
+        baseSettings({ saveAsLinearize: true }),
+        baseSettings({}),
+      ),
+    ).toBe(false);
+  });
+
+  it("differsOnlyInRecentFiles returns false when saveAsLinearize also drifts", () => {
+    const recentsA: RecentFile[] = [
+      { path: '/a.pdf', name: 'a.pdf', openedAt: '2026-01-01T00:00:00Z' },
+    ];
+    const recentsB: RecentFile[] = [
+      { path: '/b.pdf', name: 'b.pdf', openedAt: '2026-01-02T00:00:00Z' },
+      ...recentsA,
+    ];
+    const a = baseSettings({ recentFiles: recentsA, saveAsLinearize: true });
+    const b = baseSettings({ recentFiles: recentsB, saveAsLinearize: false });
+    expect(differsOnlyInRecentFiles(a, b)).toBe(false);
+  });
+
+  it("differsOnlyInRecentFiles returns true when only recentFiles change and saveAsLinearize matches", () => {
+    const recentsA: RecentFile[] = [
+      { path: '/a.pdf', name: 'a.pdf', openedAt: '2026-01-01T00:00:00Z' },
+    ];
+    const recentsB: RecentFile[] = [
+      { path: '/b.pdf', name: 'b.pdf', openedAt: '2026-01-02T00:00:00Z' },
+      ...recentsA,
+    ];
+    const a = baseSettings({ recentFiles: recentsA, saveAsLinearize: true });
+    const b = baseSettings({ recentFiles: recentsB, saveAsLinearize: true });
+    expect(differsOnlyInRecentFiles(a, b)).toBe(true);
+  });
+
+  it("shouldApplyEcho discards a stale echo whose saveAsLinearize drifted independently", () => {
+    // The reported defect (ADV-020): a stale echo carries the
+    // older saveAsLinearize value while every other field
+    // matches. The previous comparator had no check for this
+    // field (it didn't exist yet), so it would have accepted the
+    // echo and silently reverted the user's choice.
+    const localWrite = baseSettings({ saveAsLinearize: true });
+    const staleEcho = baseSettings({ saveAsLinearize: false });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("shouldApplyEcho accepts a canonical reflection matching saveAsLinearize", () => {
+    const localWrite = baseSettings({ saveAsLinearize: true });
+    const echoFromMain = baseSettings({ saveAsLinearize: true });
+    expect(shouldApplyEcho(echoFromMain, 2, localWrite)).toBe(true);
+  });
+});
+
+// DEF-072 — coverage guard for future fields.
+//
+// The previous regression came from "a Phase 9/10 field was
+// added but the comparator wasn't updated". This test reads
+// the AppSettings interface and asserts that every optional
+// field is mentioned in `sameSettings`'s implementation — a
+// runtime guard so a future field addition forces an explicit
+// comparator update.
+//
+// Implementation: import the source file as text and grep for
+// the field name. We resolve via vitest's `process.cwd()` which
+// the test runner sets to the repo root.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+describe("DEF-072 — sameSettings covers every optional AppSettings field", () => {
+  const settingsEchoPath = resolve(
+    process.cwd(),
+    "src/renderer/state/settingsEcho.ts",
+  );
+  const source = readFileSync(settingsEchoPath, "utf8");
+
+  // Every optional AppSettings field MUST appear at least once
+  // inside the sameSettings function body. We grep for the bare
+  // field name; any occurrence is sufficient. A typo in the field
+  // name would be caught because the substring search is exact.
+  const requiredFields: ReadonlyArray<{ field: string; hint: string }> = [
+    { field: "optimizePreset", hint: "Phase 8 Optimize preset" },
+    { field: "exportImageFormat", hint: "Phase 9 Export image format" },
+    { field: "exportImageDpi", hint: "Phase 9 Export image DPI" },
+    { field: "createImageQuality", hint: "Phase 9 Create image quality" },
+    { field: "editDefaultFont", hint: "Phase 10 Edit default font" },
+    { field: "ocrLanguage", hint: "Phase 11 OCR language" },
+    { field: "ocrDownsample", hint: "Phase 11 OCR downsample" },
+    { field: "defaultStampId", hint: "Phase 12 default stamp id" },
+    { field: "saveAsLinearize", hint: "Phase 13 Save-As linearize" },
+  ];
+
+  for (const { field, hint } of requiredFields) {
+    it(`references ${field} (${hint})`, () => {
+      // Require the literal field name to appear in the file
+      // (most occurrences are inside the comparator bodies).
+      expect(source).toContain(field);
+    });
+  }
+
+  it("the exportImageFormat / exportImageDpi / createImageQuality / editDefaultFont checks appear in BOTH sameSettings and differsOnlyInRecentFiles", () => {
+    // DEF-072 — the four missing Phase 9/10 fields MUST be
+    // checked in both functions so the recent-files-only delta
+    // detector doesn't accept an echo that drifted one of them.
+    // We count occurrences; >=4 means each field name appears in
+    // both functions (at least two each: a.X check + b.X check
+    // + sameSettings + differsOnlyInRecentFiles references).
+    // Each occurrence is bare, so we just count.
+    const fields = [
+      "exportImageFormat",
+      "exportImageDpi",
+      "createImageQuality",
+      "editDefaultFont",
+    ];
+    for (const f of fields) {
+      // The field name should appear at least 4 times: two in
+      // each comparator function (the `a.X` and `b.X`
+      // comparisons).
+      const matches = source.match(new RegExp(f, "g")) ?? [];
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+});

@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { inflateSync } from 'node:zlib';
-import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFTextField, StandardFonts, rgb, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState } from 'pdf-lib';
+import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFTextField, StandardFonts, rgb, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AddStampPayload,
@@ -3146,15 +3146,40 @@ async function serializeDocOptimized(
 }
 
 /**
- * Serialize signature placement metadata into the output PDF's Keywords
- * field (document Info dictionary) so parseSignaturesFromDoc can rebuild
- * the placements on reload. The Keywords field contains a JSON array with
- * id, signatureId, page, rect, and base64-encoded PNG bytes. (DEF-030)
+ * Maximum byte length we are willing to JSON.parse for signature
+ * placement metadata (DEF-075). Realistic payloads are tiny (a few KB
+ * of base64 per placement), so 64 MiB is a generous ceiling that still
+ * stops a hostile/huge catalog entry from blowing up memory on reload.
+ */
+const MAX_SIG_META_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Serialize signature placement metadata into the output PDF's CATALOG
+ * under a private `/TFlexSig` key (DEF-030, DEF-075).
+ *
+ * Why the catalog and not the Info /Keywords field (ADV-022 / DEF-075)?
+ *   The previous implementation stored the placements JSON inside the
+ *   Info dictionary's Keywords field with a `TFLEXSIG:` prefix. That was
+ *   fragile: any feature (or an external metadata editor) that overwrites
+ *   Keywords silently destroyed every signature placement on the next
+ *   reload; the Info dictionary is optional and routinely stripped by PDF
+ *   processors; and base64 bytes inside a PDF literal string can be
+ *   mangled by re-encodings. The catalog is the document root and is not
+ *   touched by Info-dict edits; a private hex string `<...>` is raw bytes
+ *   and survives every re-encode. Standard viewers ignore unknown catalog
+ *   keys, so the entry is invisible to the user.
+ *
+ * The payload is a JSON array of `{id, signatureId, page, x, y, width,
+ * height, pngBase64}`. A size cap (MAX_SIG_META_BYTES) guards against
+ * hostile/huge payloads blowing up JSON.parse on reload; if exceeded, the
+ * metadata is dropped (the drawn signature images still persist on the
+ * pages — they are baked into page content, independent of this entry).
  */
 function serializeSignatureMetadata(
   out: PDFDocument,
   placements: SignaturePlacement[],
 ): void {
+  if (placements.length === 0) return;
   try {
     const data: Array<Record<string, unknown>> = [];
     for (const sp of placements) {
@@ -3175,61 +3200,107 @@ function serializeSignatureMetadata(
     }
 
     const jsonStr = JSON.stringify(data);
-    // Prefix with a marker so we can detect our data on reload without
-    // interfering with user-defined keywords.
-    out.setKeywords(['TFLEXSIG:' + jsonStr]);
+    if (jsonStr.length > MAX_SIG_META_BYTES) return;
+    out.catalog.set(PDFName.of('TFlexSig'), PDFHexString.of(jsonStr));
   } catch {
     // Best-effort: if serialization fails, the drawn images still persist
+    // on the pages (baked into page content, independent of this entry).
   }
 }
 
 /**
- * Parse signature placement metadata from a loaded PDFDocument by reading
- * the Keywords field from the document Info dictionary. Returns an empty
- * array if no metadata is found. (DEF-030)
+ * Parse signature placement metadata from a loaded PDFDocument (DEF-030,
+ * DEF-075).
+ *
+ * Primary path: read the private `/TFlexSig` catalog entry (a hex string
+ * of the placements JSON). This is independent of the Info /Keywords
+ * field and survives metadata edits / Info strips.
+ *
+ * Legacy fallback: files saved by the previous implementation stored the
+ * payload in the Info /Keywords field with a `TFLEXSIG:` prefix. We still
+ * honour that so documents saved before DEF-075 keep loading. New saves
+ * always write the catalog entry (and only the catalog entry).
  */
 function parseSignaturesFromDoc(pdfDoc: PDFDocument): SignaturePlacement[] {
+  // --- Primary: catalog /TFlexSig hex string -----------------------------
+  try {
+    const entry = pdfDoc.catalog.get(PDFName.of('TFlexSig'));
+    if (entry !== undefined) {
+      const jsonStr = sigMetaEntryToString(entry);
+      if (jsonStr !== undefined) {
+        const parsed = parseSigMetaJson(jsonStr);
+        if (parsed.length > 0) return parsed;
+      }
+    }
+  } catch {
+    // fall through to legacy path
+  }
+
+  // --- Legacy: Info /Keywords TFLEXSIG: marker ---------------------------
   try {
     const keywords = pdfDoc.getKeywords();
     if (!keywords) return [];
-    // getKeywords returns string[]; we look for the TFLEXSIG: prefix
     let markerStr: string | undefined;
     if (Array.isArray(keywords)) {
-      markerStr = keywords.find((k) => k.startsWith('TFLEXSIG:'));
+      markerStr = keywords.find((k) => typeof k === 'string' && k.startsWith('TFLEXSIG:'));
     } else if (typeof keywords === 'string') {
       markerStr = keywords.startsWith('TFLEXSIG:') ? keywords : undefined;
     }
     if (!markerStr) return [];
-
-    const jsonStr = markerStr.slice('TFLEXSIG:'.length);
-    const data = JSON.parse(jsonStr);
-    if (!Array.isArray(data)) return [];
-
-    const result: SignaturePlacement[] = [];
-    for (const entry of data) {
-      if (typeof entry !== 'object' || entry === null) continue;
-      if (typeof entry.id !== 'string' || typeof entry.signatureId !== 'string') continue;
-      if (typeof entry.page !== 'number') continue;
-      if (typeof entry.pngBase64 !== 'string') continue;
-
-      const pngBytes = Buffer.from(entry.pngBase64, 'base64');
-      result.push({
-        id: entry.id,
-        signatureId: entry.signatureId,
-        page: entry.page,
-        rect: {
-          x: typeof entry.x === 'number' ? entry.x : 0,
-          y: typeof entry.y === 'number' ? entry.y : 0,
-          width: typeof entry.width === 'number' ? entry.width : 0,
-          height: typeof entry.height === 'number' ? entry.height : 0,
-        },
-        pngBytes: new Uint8Array(pngBytes),
-      });
-    }
-    return result;
+    return parseSigMetaJson(markerStr.slice('TFLEXSIG:'.length));
   } catch {
     return [];
   }
+}
+
+/** Decode a catalog `/TFlexSig` value (PDFHexString or PDFString) back to
+ *  the raw JSON string. Returns undefined for unknown value types or
+ *  payloads that exceed the safety cap. ONLY `asString()` may be used —
+ *  `decodeText()` applies text-encoding heuristics that corrupt raw
+ *  JSON/base64 bytes. */
+function sigMetaEntryToString(entry: unknown): string | undefined {
+  if (typeof (entry as { asString?: unknown })?.asString !== 'function') return undefined;
+  let jsonStr: string;
+  try {
+    jsonStr = (entry as { asString(): string }).asString();
+  } catch {
+    return undefined;
+  }
+  if (typeof jsonStr !== 'string' || jsonStr.length > MAX_SIG_META_BYTES) {
+    return undefined;
+  }
+  return jsonStr;
+}
+
+/** Parse the placements JSON with structural validation. Returns an empty
+ *  array for any malformed shape so a corrupt/hostile entry never throws
+ *  out of the load path. */
+function parseSigMetaJson(jsonStr: string): SignaturePlacement[] {
+  const data = JSON.parse(jsonStr);
+  if (!Array.isArray(data)) return [];
+
+  const result: SignaturePlacement[] = [];
+  for (const entry of data) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    if (typeof entry.id !== 'string' || typeof entry.signatureId !== 'string') continue;
+    if (typeof entry.page !== 'number') continue;
+    if (typeof entry.pngBase64 !== 'string') continue;
+
+    const pngBytes = Buffer.from(entry.pngBase64, 'base64');
+    result.push({
+      id: entry.id,
+      signatureId: entry.signatureId,
+      page: entry.page,
+      rect: {
+        x: typeof entry.x === 'number' ? entry.x : 0,
+        y: typeof entry.y === 'number' ? entry.y : 0,
+        width: typeof entry.width === 'number' ? entry.width : 0,
+        height: typeof entry.height === 'number' ? entry.height : 0,
+      },
+      pngBytes: new Uint8Array(pngBytes),
+    });
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------

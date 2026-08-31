@@ -257,7 +257,7 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
   return (
     <div className="modal-backdrop" onClick={running ? undefined : onClose}>
       <div
-        className="modal-dialog"
+        className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

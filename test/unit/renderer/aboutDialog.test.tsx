@@ -5,8 +5,12 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { AboutDialog } from "../../../src/renderer/components/AboutDialog";
-import type { AppInfo } from "../../../src/shared/types";
+import {
+  AboutDialog,
+  describeUpdateState,
+  updateStateIsWarning,
+} from "../../../src/renderer/components/AboutDialog";
+import type { AppInfo, UpdateState } from "../../../src/shared/types";
 
 /**
  * DEF-066 — AboutDialog regression tests.
@@ -37,6 +41,10 @@ interface WindowWithTflex {
       getInfo?: () => Promise<AppInfo>;
       openPath?: (p: string) => Promise<void>;
     };
+    update?: {
+      getStatus?: () => Promise<UpdateState>;
+      onStatusChanged?: (cb: (state: UpdateState) => void) => () => void;
+    };
   };
 }
 
@@ -58,13 +66,21 @@ function renderDialog(args: {
   open: boolean;
   onClose?: () => void;
   getInfo?: () => Promise<AppInfo>;
+  updateGetStatus?: () => Promise<UpdateState>;
+  updateOnStatusChanged?: (cb: (state: UpdateState) => void) => () => void;
 }): { root: Root; container: HTMLElement; cleanup: () => void } {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
   const win = window as unknown as WindowWithTflex;
-  if (args.getInfo !== undefined) {
-    win.tflex = { app: { getInfo: args.getInfo } };
+  if (args.getInfo !== undefined || args.updateGetStatus !== undefined) {
+    win.tflex = {
+      app: { getInfo: args.getInfo },
+      update: {
+        getStatus: args.updateGetStatus,
+        onStatusChanged: args.updateOnStatusChanged,
+      },
+    };
   }
   act((): void => {
     root.render(
@@ -209,5 +225,314 @@ describe("AboutDialog — selector contract (DEF-066)", () => {
     );
     expect(propsKey).toBeDefined();
     cleanup();
+  });
+});
+
+// DEF-074 — UpdateState label mapping (render-side exhaustive).
+//
+// ADV-021 traced that an OTA `'unsupported'` state was previously
+// surfaced as "up to date" because the renderer didn't have an
+// explicit branch for it. These pure-function tests pin every
+// kind in the UpdateState union to a non-empty label and to the
+// right warning-tone flag, so a future union member is caught
+// at compile time (TS exhaustiveness) AND at runtime.
+describe("describeUpdateState / updateStateIsWarning (DEF-074)", () => {
+  it("labels 'unsupported' as a portable-build notice (NOT up to date)", () => {
+    const label = describeUpdateState({
+      kind: "unsupported",
+      reason: "",
+    });
+    expect(label).toContain("Portable build");
+    expect(label.toLowerCase()).not.toContain("up to date");
+  });
+
+  it("surfaces the backend's reason string in the unsupported label", () => {
+    // The backend's update service sets this on portable builds.
+    const label = describeUpdateState({
+      kind: "unsupported",
+      reason: "Portable build does not support auto-update",
+    });
+    expect(label).toContain("Portable build does not support auto-update");
+  });
+
+  it("labels 'checking' as 'Checking for updates…'", () => {
+    expect(describeUpdateState({ kind: "checking" })).toMatch(/Checking/);
+  });
+
+  it("labels 'up-to-date' with the running version", () => {
+    const label = describeUpdateState({
+      kind: "up-to-date",
+      version: "1.5.2",
+    });
+    expect(label).toContain("Up to date");
+    expect(label).toContain("1.5.2");
+  });
+
+  it("labels 'available' with the new version", () => {
+    const label = describeUpdateState({
+      kind: "available",
+      version: "1.6.0",
+    });
+    expect(label).toContain("Update available");
+    expect(label).toContain("1.6.0");
+  });
+
+  it("labels 'downloading' with the progress percentage", () => {
+    const label = describeUpdateState({
+      kind: "downloading",
+      progress: 42,
+    });
+    expect(label).toContain("42%");
+  });
+
+  it("labels 'downloaded' with the new version", () => {
+    const label = describeUpdateState({
+      kind: "downloaded",
+      version: "1.6.0",
+    });
+    expect(label).toContain("1.6.0");
+  });
+
+  it("labels 'error' with the message", () => {
+    const label = describeUpdateState({
+      kind: "error",
+      message: "network timeout",
+    });
+    expect(label.toLowerCase()).toContain("error");
+    expect(label).toContain("network timeout");
+  });
+
+  it("updateStateIsWarning flags unsupported, error, and downloaded as warnings", () => {
+    // These three states warrant the warning visual tone — the
+    // user should look at them rather than glance over them.
+    expect(updateStateIsWarning({ kind: "unsupported", reason: "" })).toBe(true);
+    expect(updateStateIsWarning({ kind: "error", message: "x" })).toBe(true);
+    expect(updateStateIsWarning({ kind: "downloaded", version: "x" })).toBe(true);
+  });
+
+  it("updateStateIsWarning leaves checking, up-to-date, available, downloading as info", () => {
+    expect(updateStateIsWarning({ kind: "checking" })).toBe(false);
+    expect(updateStateIsWarning({ kind: "up-to-date", version: "x" })).toBe(false);
+    expect(updateStateIsWarning({ kind: "available", version: "x" })).toBe(false);
+    expect(updateStateIsWarning({ kind: "downloading", progress: 1 })).toBe(false);
+  });
+});
+
+// DEF-074 — UpdateState -> About dialog row.
+//
+// The dialog must:
+//   - Render NO row when the IPC channel is absent (graceful
+//     fallback — same shape as the missing getInfo channel).
+//   - Render NO row while getStatus() is in flight (avoids a
+//     flash of stale state).
+//   - Render the row with the correct label + warn-tone class
+//     once getStatus() resolves, for EVERY kind in the union.
+//   - Re-render the row when `onStatusChanged` pushes a fresh
+//     state while the dialog is open.
+//   - Carry `data-about-update-kind="<kind>"` so e2e harnesses
+//     can pin the branch without scraping the label.
+describe("AboutDialog — update indicator (DEF-074)", () => {
+  it("renders no update row when the update IPC channel is absent", async () => {
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+    });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.querySelector("[data-about-update]")).toBeNull();
+    cleanup();
+  });
+
+  it("renders the 'unsupported' label as 'Portable build (no auto-update)' when reason is empty", async () => {
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      updateGetStatus: async (): Promise<UpdateState> => ({
+        kind: "unsupported",
+        reason: "",
+      }),
+    });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const row = container.querySelector("[data-about-update]");
+    expect(row).not.toBeNull();
+    expect(row?.getAttribute("data-about-update-kind")).toBe("unsupported");
+    expect(row?.getAttribute("data-about-update-warn")).toBe("true");
+    // The label MUST mention portable and MUST NOT say "up to date".
+    expect(row?.textContent).toMatch(/Portable build/);
+    expect(row?.textContent?.toLowerCase()).not.toContain("up to date");
+    cleanup();
+  });
+
+  it("surfaces the backend's reason string for the unsupported state", async () => {
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      updateGetStatus: async (): Promise<UpdateState> => ({
+        kind: "unsupported",
+        reason: "Portable build does not support auto-update",
+      }),
+    });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const row = container.querySelector("[data-about-update]");
+    expect(row?.textContent).toContain(
+      "Portable build does not support auto-update",
+    );
+    cleanup();
+  });
+
+  it("renders 'Up to date' for kind='up-to-date'", async () => {
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      updateGetStatus: async (): Promise<UpdateState> => ({
+        kind: "up-to-date",
+        version: "1.5.2",
+      }),
+    });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const row = container.querySelector("[data-about-update]");
+    expect(row?.getAttribute("data-about-update-kind")).toBe("up-to-date");
+    expect(row?.textContent).toContain("Up to date");
+    expect(row?.textContent).toContain("1.5.2");
+    cleanup();
+  });
+
+  it("renders 'Update available: vX.Y.Z' for kind='available'", async () => {
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      updateGetStatus: async (): Promise<UpdateState> => ({
+        kind: "available",
+        version: "1.6.0",
+      }),
+    });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const row = container.querySelector("[data-about-update]");
+    expect(row?.textContent).toContain("Update available");
+    expect(row?.textContent).toContain("1.6.0");
+    cleanup();
+  });
+
+  it("renders 'Downloading… X%' for kind='downloading'", async () => {
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      updateGetStatus: async (): Promise<UpdateState> => ({
+        kind: "downloading",
+        progress: 75,
+      }),
+    });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const row = container.querySelector("[data-about-update]");
+    expect(row?.textContent).toContain("75%");
+    cleanup();
+  });
+
+  it("renders the error message verbatim for kind='error'", async () => {
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      updateGetStatus: async (): Promise<UpdateState> => ({
+        kind: "error",
+        message: "network unreachable",
+      }),
+    });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const row = container.querySelector("[data-about-update]");
+    expect(row?.getAttribute("data-about-update-warn")).toBe("true");
+    expect(row?.textContent).toContain("network unreachable");
+    cleanup();
+  });
+
+  it("re-renders when onStatusChanged pushes a fresh state", async () => {
+    let statusCb: ((state: UpdateState) => void) | null = null;
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      updateGetStatus: async (): Promise<UpdateState> => ({
+        kind: "checking",
+      }),
+      updateOnStatusChanged: (cb): (() => void) => {
+        statusCb = cb;
+        return (): void => undefined;
+      },
+    });
+    // Flush the initial getStatus() resolve.
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    let row = container.querySelector("[data-about-update]");
+    expect(row?.getAttribute("data-about-update-kind")).toBe("checking");
+
+    // Simulate the backend pushing a transition.
+    await act(async (): Promise<void> => {
+      statusCb?.({ kind: "available", version: "2.0.0" });
+    });
+    row = container.querySelector("[data-about-update]");
+    expect(row?.getAttribute("data-about-update-kind")).toBe("available");
+    expect(row?.textContent).toContain("2.0.0");
+    cleanup();
+  });
+
+  it("unsubscribes the onStatusChanged listener when the dialog closes", () => {
+    // Verify the cleanup function returned by onStatusChanged is
+    // called when the dialog unmounts. This guards against a
+    // listener leak across multiple opens.
+    let unsubscribeCount = 0;
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const win = window as unknown as WindowWithTflex;
+    win.tflex = {
+      app: {
+        getInfo: async (): Promise<AppInfo> => makeInfo(),
+      },
+      update: {
+        getStatus: async (): Promise<UpdateState> => ({
+          kind: "up-to-date",
+          version: "1.0.0",
+        }),
+        onStatusChanged: (): (() => void) => {
+          return (): void => {
+            unsubscribeCount += 1;
+          };
+        },
+      },
+    };
+    act((): void => {
+      root.render(
+        <AboutDialog
+          open={true}
+          onClose={(): void => undefined}
+        />,
+      );
+    });
+    act((): void => {
+      root.unmount();
+    });
+    container.remove();
+    expect(unsubscribeCount).toBeGreaterThanOrEqual(1);
+    delete win.tflex;
   });
 });

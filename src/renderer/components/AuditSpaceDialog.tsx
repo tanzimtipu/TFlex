@@ -123,7 +123,7 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div
-        className="modal-dialog audit-dialog"
+        className="modal-dialog dialog audit-dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

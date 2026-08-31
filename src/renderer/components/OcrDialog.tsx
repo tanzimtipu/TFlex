@@ -361,7 +361,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
   return (
     <div className="modal-backdrop" onClick={running ? undefined : onClose}>
       <div
-        className="modal-dialog ocr-dialog"
+        className="modal-dialog dialog ocr-dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

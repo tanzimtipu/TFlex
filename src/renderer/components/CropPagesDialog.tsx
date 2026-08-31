@@ -168,7 +168,7 @@ export function CropPagesDialog(
   return (
     <div className="modal-backdrop" onClick={onClose} data-crop-pages-dialog>
       <div
-        className="modal-dialog modal-dialog-wide"
+        className="modal-dialog modal-dialog-wide dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
         role="dialog"

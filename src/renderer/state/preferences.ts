@@ -35,7 +35,8 @@ export type PreferencesAction =
   | { type: 'set-edit-default-font'; value: EditFont }
   | { type: 'set-ocr-language'; value: OcrLanguage }
   | { type: 'set-ocr-downsample'; value: number }
-  | { type: 'set-default-stamp-id'; value: StampId };
+  | { type: 'set-default-stamp-id'; value: StampId }
+  | { type: 'set-save-as-linearize'; value: boolean };
 
 /** Default compression preset used by the Optimize dialog when the
  *  user hasn't picked one yet. Matches the backend settings.ts default
@@ -205,8 +206,26 @@ export function preferencesReducer(
       if (current === action.value) return state;
       return { ...state, defaultStampId: action.value };
     }
+    case 'set-save-as-linearize': {
+      // DEF-073 — Save-As linearize choice now lives on its own
+      // boolean field rather than piggy-backing on `optimizePreset`
+      // (which the Optimize dialog owns). The reducer treats
+      // `undefined` as the default (linearize off) so the equality
+      // guard correctly short-circuits the first-time write when
+      // the user starts with the field absent and toggles to the
+      // same value the default already produces.
+      const current = state.saveAsLinearize ?? false;
+      if (current === action.value) return state;
+      return { ...state, saveAsLinearize: action.value };
+    }
   }
 }
+
+/** Default for the Save-As "Fast web view (linearize)" toggle.
+ *  Matches the default the Save-As dialog seeds its checkbox with
+ *  when the AppSettings field is absent. The backend
+ *  `normalizeSettings` mirrors the same default for new installs. */
+export const DEFAULT_SAVE_AS_LINEARIZE = false;
 
 // ---- Phase 10: Edit-content default font ----
 //

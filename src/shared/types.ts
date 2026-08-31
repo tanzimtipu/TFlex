@@ -84,18 +84,17 @@ export interface AppSettings {
    *  compression level when the engine.optimize action is called.
    *  'none' = linearized no compression, 'compact' = moderate
    *  compression, 'max' = aggressive compression + metadata strip.
-   *  Default 'none'. Validated preserve-if-valid in settings.ts.
-   *
-   *  Also stores the Save-As "Fast web view (linearize)" choice
-   *  (DEF-040): the toggle writes preset='none' when ON (linearized
-   *  output) and preset='compact' when OFF (default compression).
-   *  This piggy-backs on the existing persist path so the user's
-   *  Save-As linearize choice survives across launches without
-   *  adding a new backend-validated field. The Optimize dialog
-   *  reads the same field, so the two flows stay in sync — if the
-   *  user picks 'max' in Optimize then opens Save-As, the toggle
-   *  starts OFF (any non-'none' preset is "not linearized"). */
+   *  Default 'none'. Validated preserve-if-valid in settings.ts. */
   optimizePreset?: OptimizePreset;
+  /** Phase 13 / DEF-073 — Save-As "Fast web view (linearize)"
+   *  toggle state. Independent of `optimizePreset`: the previous
+   *  implementation piggy-backed on the Optimize dialog's preset
+   *  field, which silently overwrote the user's compression
+   *  choice whenever they toggled linearize (and vice versa). The
+   *  Save-As toggle now owns its own boolean field so the two
+   *  features no longer collide. Validated preserve-if-valid in
+   *  settings.ts (backend-dev task); default `false`. */
+  saveAsLinearize?: boolean;
   /** Phase 9 — image export format for `exportPages`. */
   exportImageFormat?: ExportImageFormat;
   /** Phase 9 — export image DPI (72–600). */

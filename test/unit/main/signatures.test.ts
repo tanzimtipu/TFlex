@@ -627,3 +627,284 @@ describe('EngineService - signature save/reload (DEF-030)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// DEF-075: signature metadata must survive Info/Keywords edits (catalog
+// storage, not the Keywords field). ADV-022 found that the previous
+// Keywords-based TFLEXSIG: marker was silently destroyed by any feature or
+// external editor that overwrote Keywords, and by the 'max' optimize preset
+// that strips the Info dictionary.
+// ---------------------------------------------------------------------------
+
+describe('EngineService - signature metadata safety (DEF-075)', () => {
+  it('signature placements survive an external Keywords/Title overwrite', async () => {
+    // The core ADV-022 scenario: a metadata editor (or a future feature)
+    // overwrites the Info Keywords + Title after TFlex saved. The signature
+    // placements must still reload because they live in the catalog, not
+    // the Info dictionary.
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-1', path);
+
+    const a = makePlacementPayload({ page: 1 });
+    const b = makePlacementPayload({ page: 2 });
+    await engine.placeSignature('doc-1', a);
+    await engine.placeSignature('doc-1', b);
+    await engine.save('doc-1');
+
+    // Externally overwrite Keywords + Title (simulating another tool).
+    const buf = await readFile(path);
+    const ext = await PDFDocument.load(
+      buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+    );
+    ext.setKeywords(['edited', 'by', 'another', 'tool']);
+    ext.setTitle('Edited externally');
+    await writeFile(path, Buffer.from(await ext.save()));
+
+    // Reload through the engine — placements must survive.
+    await engine.loadDocument('doc-reloaded', path);
+    const state = await engine.getState('doc-reloaded');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const sigs = getPlacedSigs(state.value);
+      expect(sigs.length).toBe(2);
+      const ids = sigs.map((s) => s.id).sort();
+      expect(ids).toEqual([a.id, b.id].sort());
+    }
+  });
+
+  it('signature placements survive an optimize "max" save (Info strip)', async () => {
+    // The 'max' preset skips copying the Info dictionary. Signature
+    // metadata must still reload because it lives in the catalog.
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    const payload = makePlacementPayload({ page: 1 });
+    await engine.placeSignature('doc-1', payload);
+
+    const result = await engine.optimize('doc-1', 'max');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const maxPath = join(dir, 'sig-max.pdf');
+    await writeFile(maxPath, Buffer.from(new Uint8Array(result.value)));
+
+    await engine.loadDocument('doc-max', maxPath);
+    const state = await engine.getState('doc-max');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const sigs = getPlacedSigs(state.value);
+      expect(sigs.length).toBe(1);
+      expect(sigs[0].id).toBe(payload.id);
+    }
+  });
+
+  it('saving signatures does not write a TFLEXSIG marker into Keywords', async () => {
+    // The metadata must live in the catalog only, so it does not pollute
+    // the user-visible Keywords field (the old behaviour overwrote
+    // Keywords with ['TFLEXSIG:...']).
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    await engine.placeSignature('doc-1', makePlacementPayload({ page: 1 }));
+    await engine.save('doc-1');
+
+    const buf = await readFile(path);
+    const reparsed = await PDFDocument.load(
+      buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+    );
+    const keywords = reparsed.getKeywords();
+    const flat = Array.isArray(keywords)
+      ? keywords
+      : keywords !== undefined
+        ? [keywords]
+        : [];
+    expect(flat.some((k) => typeof k === 'string' && k.startsWith('TFLEXSIG:'))).toBe(false);
+  });
+
+  it('loads legacy files that stored signature metadata in the Keywords TFLEXSIG: marker', async () => {
+    // Backwards compatibility: a file saved by the previous (pre-DEF-075)
+    // implementation stored placements in Keywords with the TFLEXSIG:
+    // prefix. Such a file must still load its placements via the legacy
+    // fallback path, then a re-save migrates it to the catalog entry.
+    const legacyId = 'legacy-sig-1';
+    const legacySigId = 'tmpl-legacy';
+    const png = minimalPngBytes();
+    const legacyJson = JSON.stringify([
+      {
+        id: legacyId,
+        signatureId: legacySigId,
+        page: 1,
+        x: 40,
+        y: 40,
+        width: 120,
+        height: 40,
+        pngBase64: Buffer.from(png).toString('base64'),
+      },
+    ]);
+
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    doc.setKeywords(['TFLEXSIG:' + legacyJson]);
+    const legacyPath = join(dir, 'legacy-sig.pdf');
+    await writeFile(legacyPath, Buffer.from(await doc.save()));
+
+    const engine = new EngineService();
+    await engine.loadDocument('doc-legacy', legacyPath);
+    const state = await engine.getState('doc-legacy');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const sigs = getPlacedSigs(state.value);
+      expect(sigs.length).toBe(1);
+      expect(sigs[0].id).toBe(legacyId);
+      expect(sigs[0].signatureId).toBe(legacySigId);
+      expect(sigs[0].page).toBe(1);
+    }
+
+    // Re-saving migrates to the catalog entry; after migration the
+    // Keywords field carries no TFLEXSIG marker.
+    await engine.save('doc-legacy');
+    const buf = await readFile(legacyPath);
+    const reparsed = await PDFDocument.load(
+      buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+    );
+    const keywords = reparsed.getKeywords();
+    const flat = Array.isArray(keywords)
+      ? keywords
+      : keywords !== undefined
+        ? [keywords]
+        : [];
+    expect(flat.some((k) => typeof k === 'string' && k.startsWith('TFLEXSIG:'))).toBe(false);
+
+    // And the placements still reload from the catalog entry.
+    await engine.loadDocument('doc-migrated', legacyPath);
+    const state2 = await engine.getState('doc-migrated');
+    expect(state2.ok).toBe(true);
+    if (state2.ok) {
+      expect(getPlacedSigs(state2.value).length).toBe(1);
+    }
+  });
+
+  it('a corrupt catalog TFlexSig entry does not throw and yields no placements', async () => {
+    // A hostile/hand-edited file could put a malformed value in the
+    // catalog. The load path must return a typed Result, not throw.
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    // Inject a corrupt JSON payload directly into the catalog.
+    const { PDFHexString, PDFName } = await import('pdf-lib');
+    doc.catalog.set(PDFName.of('TFlexSig'), PDFHexString.of('not-valid-json{'));
+    const badPath = join(dir, 'corrupt-sigmeta.pdf');
+    await writeFile(badPath, Buffer.from(await doc.save()));
+
+    const engine = new EngineService();
+    const loadResult = await engine.loadDocument('doc-bad', badPath);
+    expect(loadResult.ok).toBe(true);
+    if (loadResult.ok) {
+      const state = await engine.getState('doc-bad');
+      expect(state.ok).toBe(true);
+      if (state.ok) {
+        expect(getPlacedSigs(state.value).length).toBe(0);
+      }
+    }
+  });
+
+  // The ADV-022 / DEF-075 fail evidence: an external metadata editor
+  // (or a future feature) overwrites Keywords after TFlex saved. Then the
+  // user re-opens the file and runs Optimize with each preset ('none',
+  // 'compact', 'max'), saves the optimized output, and re-opens THAT.
+  // Signature placements must survive the whole chain because they live
+  // in the catalog /TFlexSig entry, which is independent of the Info
+  // dictionary the 'max' preset strips. Each preset is a separate case so
+  // a regression on one is reported on its own.
+  for (const preset of ['none', 'compact', 'max'] as const) {
+    it(`placements survive overwrite -> optimize '${preset}' -> reload`, async () => {
+      const engine = new EngineService();
+      const { path } = await createNPagePdf(2);
+      await engine.loadDocument('doc-src', path);
+
+      const a = makePlacementPayload({ page: 1 });
+      const b = makePlacementPayload({ page: 2 });
+      await engine.placeSignature('doc-src', a);
+      await engine.placeSignature('doc-src', b);
+      await engine.save('doc-src');
+
+      // Externally overwrite Info Keywords + Title (ADV-022 scenario).
+      const buf = await readFile(path);
+      const ext = await PDFDocument.load(
+        buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+      );
+      ext.setKeywords(['edited', 'by', 'another', 'tool']);
+      ext.setTitle('Edited externally');
+      await writeFile(path, Buffer.from(await ext.save()));
+
+      // Re-open the overwritten file through the engine, then optimize.
+      await engine.loadDocument('doc-ovr', path);
+      const ovrState = await engine.getState('doc-ovr');
+      expect(ovrState.ok).toBe(true);
+      if (ovrState.ok) {
+        // Placements must have survived the Info overwrite (catalog path).
+        expect(getPlacedSigs(ovrState.value).length).toBe(2);
+      }
+
+      const opt = await engine.optimize('doc-ovr', preset);
+      expect(opt.ok).toBe(true);
+      if (!opt.ok) return;
+
+      const optPath = join(dir, `sig-opt-${preset}.pdf`);
+      await writeFile(optPath, Buffer.from(new Uint8Array(opt.value)));
+
+      // Re-open the optimized output. The 'max' preset strips the Info
+      // dictionary; the catalog entry must still carry the placements.
+      await engine.loadDocument('doc-opt', optPath);
+      const optState = await engine.getState('doc-opt');
+      expect(optState.ok).toBe(true);
+      if (optState.ok) {
+        const sigs = getPlacedSigs(optState.value);
+        expect(sigs.length).toBe(2);
+        const ids = sigs.map((s) => s.id).sort();
+        expect(ids).toEqual([a.id, b.id].sort());
+      }
+    });
+  }
+
+  it('placements survive load-and-resave (no optimize) after Info overwrite', async () => {
+    // The non-optimize save path (serializeDoc) must also keep the
+    // catalog entry intact after an external Info overwrite. This is the
+    // plain "open, save, reopen" round-trip the e2e retest exercises.
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    const payload = makePlacementPayload({ page: 1 });
+    await engine.placeSignature('doc-1', payload);
+    await engine.save('doc-1');
+
+    // Overwrite Info Keywords + Title externally.
+    const buf = await readFile(path);
+    const ext = await PDFDocument.load(
+      buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+    );
+    ext.setKeywords(['overwritten']);
+    ext.setTitle('Externally edited');
+    await writeFile(path, Buffer.from(await ext.save()));
+
+    // Reload, re-save (serializeDoc), reload once more.
+    await engine.loadDocument('doc-r1', path);
+    const r1 = await engine.getState('doc-r1');
+    expect(r1.ok && getPlacedSigs(r1.value).length).toBe(1);
+
+    const saveR = await engine.save('doc-r1');
+    expect(saveR.ok).toBe(true);
+
+    await engine.loadDocument('doc-r2', path);
+    const r2 = await engine.getState('doc-r2');
+    expect(r2.ok).toBe(true);
+    if (r2.ok) {
+      const sigs = getPlacedSigs(r2.value);
+      expect(sigs.length).toBe(1);
+      expect(sigs[0].id).toBe(payload.id);
+    }
+  });
+});

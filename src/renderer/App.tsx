@@ -28,6 +28,7 @@ import { Toasts, type Toast } from "./components/Toasts";
 import { ToolsPalette } from "./components/ToolsPalette";
 import { AboutDialog } from "./components/AboutDialog";
 import { PreferencesDialog } from "./components/PreferencesDialog";
+import { UpdateIndicator } from "./components/UpdateIndicator";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
 import { applyTheme, nextTheme } from "./state/theme";
 import { resolveInitialSettings } from "./state/settings";
@@ -127,6 +128,7 @@ import {
 } from "./forms/model";
 import { getSignatureService } from "./signatures/service";
 import { rasterizeSavedSignatureToPng } from "./signatures/canvas";
+import { resolveEngineStateForDiagnostics } from "./diagnostics/resolve";
 
 /** Phase 7 — settings persist policy.
  *
@@ -502,25 +504,6 @@ export function App(): ReactElement {
   const setEngineUiFor = useCallback(
     (tabId: string, ui: EngineUiState): void => {
       setEngineUi((prev) => ({ ...prev, [tabId]: ui }));
-      // DEF-041 follow-up — read the canonical `modified` flag from
-      // the tabs reducer (which the AppHeader reads), NOT from
-      // openTabs.meta.modified. The two used to be kept in sync by
-      // every caller of setEngineUiFor setting openTabs.meta.modified
-      // alongside, but the pre-Phase-8 callers didn't always do
-      // that (only onConfirmOptimize did). That left openTabs.meta
-      // stuck at `false`, which made the equality guard below
-      // return false for subsequent ops — so a save that flipped
-      // engineUi.state.modified to false wouldn't dispatch the
-      // corresponding set-modified, and the AppHeader kept showing
-      // the dot as modified even after Ctrl+S. The tabs reducer
-      // IS authoritative for the header; the openTabs.meta field
-      // is the engine-state side of the same flag and doesn't need
-      // its own copy here. The openTabs.meta.modified value is
-      // best-effort and only consumed by tflexDiagnostics (the
-      // `tabModified` field), which intentionally reads from
-      // tabs2[activeId]?.meta.modified (the tabs reducer's view)
-      // instead — see `tflexDiagnostics` near the bottom of this
-      // file.
       const tabsReducerModified = tabsRef.current.tabs.find((t) => t.id === tabId)?.modified;
       if (tabsReducerModified !== undefined && tabsReducerModified !== ui.state.modified) {
         dispatchTabs({ type: "set-modified", id: tabId, modified: ui.state.modified });
@@ -3710,10 +3693,45 @@ export function App(): ReactElement {
     const ui = engineUiRef.current;
     const tab = activeId !== null ? tabs2[activeId] ?? null : null;
     const livePageCount = tab?.session.doc.numPages ?? 0;
-    const enginePageCount = activeId !== null ? ui[activeId]?.state.pageCount : null;
+
+    // DEF-077 — tflexDiagnostics is a PURE read. No IPC, no React
+    // state updates, no fire-and-forget `getState` poll. The previous
+    // implementation scheduled a `getState` round-trip + a
+    // `setEngineUiFor` dispatch on every call, which tripped
+    // React-19's max-update-depth guard (Error #520) when an e2e
+    // harness polled `tflexDiagnostics()` in a tight loop: each
+    // scheduled dispatch queued more renders, the renderer ran out
+    // of update budget, and the tree collapsed.
+    //
+    // Read priority: React `engineUi` mirror first (UI-handler-
+    // fresh), engine adapter's `peekLastState` cache as the fallback.
+    // The mirror is updated by every op-completion handler
+    // (`noteOpApplied` for state-returning ops, `setEngineUiFor` for
+    // non-state-returning ops like save / saveAs / split / extract /
+    // optimize), so it converges with the engine the moment any UI
+    // op lands. The cache is the synchronous snapshot used when the
+    // mirror hasn't been seeded yet — e.g. between a direct
+    // `window.tflex.engine.applyOp(...)` call and the next React
+    // render — so an e2e harness that asserts against the
+    // diagnostics surface right after a direct engine call still
+    // sees the post-op value.
+    const engineDocId = tab?.session.engineDocId ?? null;
+    const mirroredEngineState =
+      activeId !== null ? ui[activeId]?.state ?? null : null;
+    const cachedEngineState =
+      mirroredEngineState !== null
+        ? null
+        : engineDocId !== null && engineRef.current.peekLastState !== undefined
+          ? engineRef.current.peekLastState(engineDocId) ?? null
+          : null;
+    const activeEngineState = resolveEngineStateForDiagnostics(
+      mirroredEngineState,
+      cachedEngineState,
+    );
+    const cachedPageCount = activeEngineState?.pageCount;
     const pageCount =
-      enginePageCount !== null && enginePageCount !== undefined
-        ? enginePageCount
+      cachedPageCount !== null && cachedPageCount !== undefined
+        ? cachedPageCount
         : livePageCount > 0
           ? livePageCount
           : (diagnosticsRef.current["pageCount"] as number | undefined) ?? 0;
@@ -3724,6 +3742,18 @@ export function App(): ReactElement {
       (diagnosticsRef.current["searchQuery"] as string | undefined) ?? "";
     const searchHits =
       (diagnosticsRef.current["searchHits"] as number | undefined) ?? 0;
+
+    // DEF-077 — the fire-and-forget `getState` poll that used to
+    // live here was removed. Scheduling a state-returning IPC +
+    // a `setEngineUiFor` dispatch on every read tripped
+    // React-19's max-update-depth guard (Error #520) when an
+    // e2e harness polled `tflexDiagnostics()` in a tight loop.
+    // The mirror converges via op-completion handlers
+    // (`noteOpApplied` / `setEngineUiFor`) — the React UI
+    // (AppHeader tab dot / Save button enabled) reflects every
+    // op exactly as it lands, without diagnostics driving
+    // additional renders.
+
     return {
       pageCount,
       currentPage,
@@ -3739,13 +3769,15 @@ export function App(): ReactElement {
       sampleCount,
       recovered: bootstrapRef.current?.recovered ?? false,
       engineAvailable: engineRef.current.available,
-      // Convenience top-level mirror of the active tab's engine modified
-      // flag, so QA harnesses don't have to dig into engineState.modified.
-      modified: activeId !== null ? ui[activeId]?.state.modified ?? false : false,
+      modified: activeEngineState?.modified ?? false,
       // Full engine state for the active tab — exposed via the QA hook
       // so e2e harnesses can verify rotate / delete / reorder / undo
-      // behaviour without scraping the DOM.
-      engineState: activeId !== null ? ui[activeId]?.state ?? null : null,
+      // behaviour without scraping the DOM. Priority: React
+      // `engineUi` mirror first (UI-handler-fresh); adapter
+      // `peekLastState` cache as the fallback when the mirror is
+      // still null (DEF-077 — the previous getState-poll was the
+      // React #520 cause and has been removed).
+      engineState: activeEngineState,
       canUndo: activeId !== null ? ui[activeId]?.canUndo ?? false : false,
       canRedo: activeId !== null ? ui[activeId]?.canRedo ?? false : false,
       // Phase 4 — mirror of the active tab's form fields / signature
@@ -3763,7 +3795,7 @@ export function App(): ReactElement {
       // Engine-side document id (distinct from the tab id). The real
       // engine IPC keys everything by this; exposing it lets e2e
       // harnesses probe engine methods directly without scraping.
-      engineDocId: tab?.session.engineDocId ?? null,
+      engineDocId,
       // Phase 8 — optimize / audit space. Expose the open flags so the
       // e2e harness can drive the dialog open/closed state and read
       // the active preset without scraping DOM. The audit dialog's
@@ -3860,6 +3892,76 @@ export function App(): ReactElement {
     };
   }, []);
 
+  // DEF-077 / DEF-078 residual — Welcome `samplesResolver` inline arrow
+  // identity churn (React-19 Error #520 on boot).
+  //
+  // Welcome's samples list lives in component-local state set inside
+  // `useEffect([samplesResolver])`. Every App render that rebuilt the
+  // inline `samplesResolver` arrow created a new function reference,
+  // retriggered the effect, called `setSamples(list)`, queued another
+  // App render, rebuilt the arrow again, and so on — the loop tripped
+  // React-19's max-update-depth guard (Error #520) and collapsed the
+  // tree on initial boot, when no tab is open and Welcome mounts as
+  // the visible surface.
+  //
+  // The fix mirrors the `openFromBytes` useCallback pattern: hoist
+  // the resolver into a stable useCallback with empty deps so its
+  // identity survives across App renders. Welcome's effect runs once
+  // on mount, samples settle, no churn.
+  //
+  // The same apply-everywhere pass audited every inline callback fed
+  // from App.tsx to a child component whose `useEffect` dep array
+  // references the prop (DEF-078 scope). The complete inventory:
+  //
+  //   - `<Welcome samplesResolver={...}>` — THIS prop. Welcome has
+  //     `useEffect([samplesResolver])` and calls setSamples inside.
+  //     Fixed by extracting this useCallback.
+  //
+  //   - `<DocumentView onPersist={persistFor(meta.id)}>` — already
+  //     routed through the persistFor cache so per-tab identity is
+  //     stable across re-renders.
+  //   - `<DocumentView onDiagnostics={diagnosticsFor(meta.id)}>` —
+  //     same diagnosticsFor pattern.
+  //   - `<DocumentView onSearchIndexProgress={searchIndexProgressFor(meta.id)}>`
+  //     — same factory pattern.
+  //   - `<Toasts onDismiss={dismissToast}>` — dismissToast is a
+  //     useCallback; Toasts's `useEffect([toast.id, onDismiss])` is
+  //     stable.
+  //   - `<OcrDialog subscribeOcrProgress={subscribeOcrProgress}>` —
+  //     subscribeOcrProgress is a useCallback; OcrDialog's effect
+  //     dep `[open, running, subscribeOcrProgress]` is stable.
+  //   - `<PageView onActiveHitTop={onActiveHitTop}>` (via DocumentView)
+  //     — onActiveHitTop is a useCallback inside DocumentView.
+  //   - `<PageView onPageSize={NOOP_PAGE_SIZE}>` (via DocumentView)
+  //     — module-level stable no-op.
+  //   - `<PageView onRenderStart / onRenderEnd>` (via DocumentView)
+  //     — useCallback'd inside DocumentView.
+  //
+  // Every other inline arrow in the App return (ToolsPalette buttons,
+  // Dialog `onConfirm` / `onLanguageChange` / `onOptimizePresetChange`
+  // / `onFormatChange` / `onDpiChange` / `onSaveAsLinearizeChange` /
+  // `onStampIdChange` / `onQualityChange` / `onSetThemeDefault` /
+  // `onSetRecentsCap` / `onAnnotationPaletteChange` / `onLayoutChange`
+  // / `onEditModeToggle` / `onToolsPaletteToggle` / `onRotateClockwise`
+  // / `onExtract` / `onRotate` / `onDelete` / `onSign` / `onForms` /
+  // `onBatchOcr` / `onOcrSuspects` / `onClose` / `onCancel` /
+  // `onCreateFromClipboard`) does NOT appear in any child component's
+  // `useEffect` dep array. They are wired to user-event callbacks
+  // (onClick / onChange / onConfirm), which fire only on user input
+  // and don't drive the boot-time render loop. They're left as
+  // inline arrows for now — converting them to useCallbacks would
+  // add ~30 memoized handlers for zero React #520 benefit and
+  // obscure the existing inline-closure-over-settings pattern that
+  // captures the latest `settings` reference inside each dialog's
+  // settings write (DEF-037 / DEF-039 / DEF-073 etc. rely on the
+  // closure seeing the freshest settings). The orchestrator's task
+  // scope is "components with useEffect deps"; those other arrows
+  // are intentionally out of scope.
+  const samplesResolver = useCallback(
+    async (): Promise<SampleDocument[]> => window.tflex.listSamples(),
+    [],
+  );
+
   const allRecents = settings?.recentFiles ?? [];
   const recentDisplays = useMemo(
     () => allRecents.map((entry) => ({ entry, meta: splitRecentPath(entry.path) })),
@@ -3914,6 +4016,13 @@ export function App(): ReactElement {
         onToggleTheme={onToggleTheme}
         onOpen={onOpenClick}
         onNewEmptyTab={onNewEmptyTab}
+        // DEF-077 — the OTA update indicator. The component owns its
+        // own subscription to `tflex.update.onStatusChanged` and
+        // self-hides when the state is `'unsupported'` (handled in
+        // `indicatorView`). Mounted next to the theme toggle inside
+        // `.header-actions` to match the spec's "next to the
+        // Tools/theme controls" placement.
+        updateIndicator={<UpdateIndicator />}
       />
       <div className="app-main">
         <div className="tab-stage">
@@ -3927,9 +4036,7 @@ export function App(): ReactElement {
                 onSampleClick={onSampleClick}
                 onMergeClick={onMergeClick}
                 onCreateFromImages={onCreateClick}
-                samplesResolver={async (): Promise<SampleDocument[]> =>
-                  window.tflex.listSamples()
-                }
+                samplesResolver={samplesResolver}
               />
             </div>
           ) : (
@@ -4317,17 +4424,20 @@ export function App(): ReactElement {
       />
       <SaveAsDialog
         open={saveAsOpen}
-        optimizePreset={settings.optimizePreset}
-        // DEF-040 — the linearize checkbox writes through the same
-        // preferences reducer the Optimize dialog uses. ON writes
-        // preset='none' (linearized output), OFF writes preset='compact'
-        // (default compression). The reducer is idempotent so a same-
-        // value toggle no-ops.
-        onOptimizePresetChange={(next): void => {
+        // DEF-073 / ADV-020 — the linearize checkbox now owns its
+        // own `saveAsLinearize` AppSettings boolean instead of
+        // piggy-backing on `optimizePreset`. The previous design
+        // coupled two unrelated features (Optimize compression
+        // level vs Save-As linearization) — opening Optimize, picking
+        // 'max', then opening Save-As and toggling linearize
+        // silently overwrote 'max' with 'none'. The two flows now
+        // share no state and never collide.
+        saveAsLinearize={settings.saveAsLinearize ?? false}
+        onSaveAsLinearizeChange={(next): void => {
           setSettings((prev) => {
             if (prev === null) return prev;
             const updated = preferencesReducer(prev, {
-              type: 'set-optimize-preset',
+              type: 'set-save-as-linearize',
               value: next,
             });
             if (updated !== prev) trackAndSave(updated);

@@ -2,8 +2,8 @@
 
 | Metric | Target | Result | Status |
 | --- | --- | --- | --- |
-| Cold start to interactive | < 3000ms | 449ms | PASS |
-| Open long.pdf (520 pages) | < 3000ms | 683ms | PASS |
+| Cold start to interactive | < 3000ms | 382ms | PASS |
+| Open long.pdf (520 pages) | < 3000ms | 538ms | PASS |
 | Tab switch duration | < 300ms | 61ms | PASS |
 | Idle memory (1 document) | < 400MB | 517.32MB | FAIL* |
 
