@@ -261,6 +261,14 @@ function ThumbnailRail({
 }: ThumbnailRailProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const thumbElsRef = useRef(new Map<number, HTMLElement>());
+  // Bug 3 — the page the rail itself wants to scroll into view.
+  // When the user clicks a thumbnail we set this to the click's
+  // visible-index so the recentre effect (above) only fires when
+  // the jump originated from a rail click, not when DocumentView
+  // pushed a new currentPage as the user scrolled through the
+  // main view. Cleared at the start of that effect so a single
+  // click only recentres once.
+  const railJumpTargetRef = useRef<number | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const ioExtraThumbsRef = useRef<Set<number>>(new Set());
   const [visibleThumbs, setVisibleThumbs] = useState<Set<number>>(new Set());
@@ -395,6 +403,17 @@ function ThumbnailRail({
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (scroller === null || pageCount <= 0) return;
+    // Bug 3 — only recentre the thumb rail when the jump was
+    // triggered by THIS rail (a thumb click), not when
+    // `currentPage` is just reflecting the user's main-view
+    // scroll position. Without this gate every scroll through
+    // the main document re-pinned `scroller.scrollTop`,
+    // snapping the rail back to the active page on every tick.
+    // The ref is set by the rail's `Thumb.onClick` handler below
+    // and cleared at the start of this effect so a single click
+    // only recentres once.
+    if (railJumpTargetRef.current !== currentPage) return;
+    railJumpTargetRef.current = null;
     const slot = thumbSlotHeight(aspectRatio);
     if (slot <= 0) return;
     const targetTop = (currentPage - 1) * slot + THUMB_OUTER_PADDING;
@@ -517,6 +536,12 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
                 thumbElsRef.current.set(p, el);
                 observerRef.current?.observe(el);
               }}
+              onJumpFromRail={(label): void => {
+                // Bug 3 — flag the recentre effect so the rail
+                // pins the selected thumb into view. Cleared at
+                // the top of the effect.
+                railJumpTargetRef.current = label;
+              }}
             />
           );
         })}
@@ -565,6 +590,12 @@ interface ThumbProps {
   onDrop: (e: React.DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   registerThumb: (page: number, el: HTMLElement | null) => void;
+  /** Bug 3 — handler invoked when the user clicks the thumb to
+   *  jump, before the page jumps. The parent (ThumbnailRail)
+   *  uses this to flag "the recentre effect should fire for
+   *  this jump" via its railJumpTargetRef. We can't pass the
+   *  ref directly because ThumbnailRail owns it. */
+  onJumpFromRail: (label: number) => void;
 }
 
 function Thumb({
@@ -586,6 +617,7 @@ function Thumb({
   onDrop,
   onDragEnd,
   registerThumb,
+  onJumpFromRail,
 }: ThumbProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [rendered, setRendered] = useState(false);
@@ -697,6 +729,13 @@ function Thumb({
         if (e.shiftKey || e.metaKey || e.ctrlKey) {
           onSelect(label);
         } else {
+          // Bug 3 — flag this jump as "I came from the rail" so
+          // the recentre effect pins the selected thumb into
+          // view. Without this hint the recentre only fires for
+          // the first thumb click; subsequent clicks update
+          // `currentPage` but the effect skips because the ref
+          // is stale.
+          onJumpFromRail(label);
           onJump(label);
         }
       }}

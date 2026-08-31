@@ -114,6 +114,114 @@ describe('EngineService - getState', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// DEF-085 (Bug 4): isModified — cheap dirty-check the renderer calls before
+// closing a tab to decide whether to prompt "save unsaved changes?".
+// ---------------------------------------------------------------------------
+
+describe('EngineService - isModified', () => {
+  it('returns false for a freshly loaded document (no mutations)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+    const r = await engine.isModified('doc-1');
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value).toBe(false);
+    }
+  });
+
+  it('returns true after a mutating op (rotate-cw)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+    const r = await engine.isModified('doc-1');
+    expect(r.ok && r.value).toBe(true);
+  });
+
+  it('returns true after a delete', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+    await engine.applyOp('doc-1', { kind: 'delete', page: 1 });
+    const r = await engine.isModified('doc-1');
+    expect(r.ok && r.value).toBe(true);
+  });
+
+  it('returns false after save clears the modified flag', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-1', path);
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+    const beforeSave = await engine.isModified('doc-1');
+    expect(beforeSave.ok && beforeSave.value).toBe(true);
+    const saveR = await engine.save('doc-1');
+    expect(saveR.ok).toBe(true);
+    const r = await engine.isModified('doc-1');
+    expect(r.ok && r.value).toBe(false);
+  });
+
+  it('returns false after saveAs clears the modified flag', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-1', path);
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+    const saveAsR = await engine.saveAs('doc-1', join(dir, 'saved.pdf'));
+    expect(saveAsR.ok).toBe(true);
+    const r = await engine.isModified('doc-1');
+    expect(r.ok && r.value).toBe(false);
+  });
+
+  it('returns false after undo back to an empty stack (initial state)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-1', path);
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+    const beforeUndo = await engine.isModified('doc-1');
+    expect(beforeUndo.ok && beforeUndo.value).toBe(true);
+    await engine.undo('doc-1');
+    const r = await engine.isModified('doc-1');
+    // undo all the way back to the initial state clears the modified flag
+    // (engine._undoImpl sets modified = undoStack.length > 0).
+    expect(r.ok && r.value).toBe(false);
+  });
+
+  it('returns true after undo when more undo entries remain', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-1', path);
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+    await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+    await engine.undo('doc-1');
+    // One undo entry remains (the first rotate), so modified stays true.
+    const r = await engine.isModified('doc-1');
+    expect(r.ok && r.value).toBe(true);
+  });
+
+  it('reflects a queued mutation issued before the call (queue ordering)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-1', path);
+    // Issue a mutation and the isModified call back-to-back; the queue
+    // serialises them so isModified must observe the mutation's effect.
+    const mutateP = engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
+    const checkP = engine.isModified('doc-1');
+    await mutateP;
+    const r = await checkP;
+    expect(r.ok && r.value).toBe(true);
+  });
+
+  it('returns engine-error for an unknown docId', async () => {
+    const engine = new EngineService();
+    const r = await engine.isModified('no-such-doc');
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+    }
+  });
+});
+
 describe('EngineService - rotate', () => {
   it('rotate-cw increments rotation by 1 quarter-turn', async () => {
     const engine = new EngineService();
@@ -2429,11 +2537,14 @@ describe('Phase 9: exportText', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.length).toBe(1);
-      // Text extraction is best-effort: content streams may use font
-      // encodings that are not trivially decoded. The engine must not
-      // crash and must return a string (possibly empty for complex
-      // encodings). The renderer handles failed extractions gracefully.
-      expect(typeof result.value[0].text).toBe('string');
+      // DEF-085 (Bug 5): the extractor must return the REAL text drawn on
+      // the page, not just a string of any length. The pre-fix save() used
+      // object streams so the catalog/pages lived inside an ObjStm and
+      // extractTextFromRawPdf silently returned '' for every page; the old
+      // `typeof text === 'string'` assertion let that regression through.
+      expect(result.value[0].text.length).toBeGreaterThan(0);
+      expect(result.value[0].text).toContain('Hello World');
+      expect(result.value[0].text).toContain('Second line');
     }
   });
 
@@ -2453,12 +2564,44 @@ describe('Phase 9: exportText', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value).toHaveLength(3);
-      for (const page of result.value) {
+      for (let i = 0; i < result.value.length; i++) {
+        const page = result.value[i];
         expect(page.pageIndex).toBeGreaterThanOrEqual(1);
         expect(page.pageIndex).toBeLessThanOrEqual(3);
         expect(typeof page.text).toBe('string');
+        // DEF-085 (Bug 5): each page must carry its real drawn text.
+        expect(page.text.length).toBeGreaterThan(0);
+        expect(page.text).toContain(`Page ${i + 1}`);
       }
     }
+  });
+
+  it('extracts real text from report.pdf (Bug 5 regression)', async () => {
+    const engine = new EngineService();
+    const reportPath = join(process.cwd(), 'test-fixtures', 'report.pdf');
+    const buf = await readFile(reportPath);
+    const r = await engine.loadDocumentBytes('doc-report', new Uint8Array(buf));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    const result = await engine.exportText('doc-report');
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // report.pdf has 34 pages and every page carries real text content.
+    expect(result.value.length).toBe(34);
+    let nonEmpty = 0;
+    for (const p of result.value) {
+      if (p.text.trim().length > 0) nonEmpty++;
+    }
+    // Every page should produce non-empty text — the Bug 5 regression
+    // returned 0/34 non-empty pages because the default save() packed
+    // the catalog/pages into an ObjStm extractTextFromRawPdf could not
+    // see into.
+    expect(nonEmpty).toBe(34);
+    // Page 1 is the cover: "TFlex Technical Report" +
+    // "A study in PDF orchestration and performance."
+    expect(result.value[0].text).toContain('TFlex');
+    expect(result.value[0].text).toContain('Technical Report');
   });
 
   it('returns engine-error for unknown docId', async () => {
@@ -3462,6 +3605,45 @@ describe('DEF-060: createDocxFromDoc', () => {
     expect(docXml).not.toContain('BBBPAGE');
     // CCCPAGE (visible 1) must appear before AAAPAGE (visible 2).
     expect(docXml.indexOf('CCCPAGE')).toBeLessThan(docXml.indexOf('AAAPAGE'));
+  });
+
+  // DEF-085 (Bug 6): the engine side of createDocxFromDoc must emit real
+  // w:t runs for a real text PDF (not just rasterise every page to a
+  // wp:inline image like createDocxFromImages does). This nails down that
+  // the engine contract is correct; the visible "Word export still
+  // rasterizes" bug is the renderer calling createDocxFromImages instead
+  // of this method (frontend-dev must switch the call site).
+  it('createDocxFromDoc on report.pdf emits real w:t runs with real text (Bug 6 engine-side)', async () => {
+    const engine = new EngineService();
+    const reportPath = join(process.cwd(), 'test-fixtures', 'report.pdf');
+    const buf = await readFile(reportPath);
+    const loadR = await engine.loadDocumentBytes('doc-report', new Uint8Array(buf));
+    expect(loadR.ok).toBe(true);
+    if (!loadR.ok) return;
+
+    const png = createMinimalPng(50, 50);
+    const entries = Array.from({ length: 34 }, (_, i) => ({
+      pageNumber: i + 1,
+      pngBuffer: png,
+      width: 50,
+      height: 50,
+      pageWidth: 612,
+      pageHeight: 792,
+    }));
+    const result = await engine.createDocxFromDoc('doc-report', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const docXml = extractZipEntryText(result.value, 'word/document.xml')!;
+    // Real w:t runs must be present (the text-first path).
+    expect(docXml).toContain('<w:t');
+    // Page 1's text ("TFlex Technical Report") must appear as a w:t run.
+    expect(docXml).toContain('TFlex');
+    expect(docXml).toContain('Technical Report');
+    // And at least one page must NOT be a wp:inline image (text pages have
+    // no inline drawing). The raster-only createDocxFromImages would have
+    // every page as wp:inline and zero w:t runs.
+    expect((docXml.match(/<w:t/g) || []).length).toBeGreaterThan(0);
   });
 });
 

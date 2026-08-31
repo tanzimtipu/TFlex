@@ -275,6 +275,23 @@ export interface EngineApi {
   createDocxFromImages(
     entries: DocxImageEntry[],
   ): Promise<Result<Uint8Array, EngineError>>;
+  /** DEF-060 (Bug 6) — assemble a .docx from the loaded document's
+   *  OWN text, with an inline-image fallback (drawn from each
+   *  `DocxImageEntry.pngBuffer`) for text-free pages. The engine
+   *  reuses `exportText` to pull per-page text from its pdfDoc and
+   *  emits real `w:p` / `w:r` / `w:t` paragraphs for text-bearing
+   *  pages; pages with no extractable text fall back to an inline
+   *  `wp:inline` drawing. The renderer rasterises every page ahead
+   *  of time so the fallback always has pixels. The renderer picks
+   *  THIS path when the source is a loaded doc — `createDocxFromImages`
+   *  is retained for callers that only have image bytes (no
+   *  docId). The two methods are mutually exclusive per call site
+   *  but coexist on the engine so a pre-DEF-060 backend can still
+   *  serve the image-only path. */
+  createDocxFromDoc?(
+    docId: string,
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>>;
 
   /** Phase 9 — create a brand-new PDF from clipboard content. The
    *  renderer reads the OS clipboard (text or image bytes) and

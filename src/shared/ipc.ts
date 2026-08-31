@@ -65,6 +65,12 @@ export const IPC = {
   engineSave: "engine:save",
   engineSaveAs: "engine:saveAs",
   engineGetState: "engine:getState",
+  // DEF-085 (Bug 4): cheap dirty-check the renderer calls before closing a
+  // tab so it can prompt "save unsaved changes?" without pulling a full
+  // EngineState. Goes through the per-doc queue like getState so the
+  // returned flag reflects every prior queued mutation (e.g. an in-flight
+  // applyOp that hasn't resolved when the user clicks the tab close X).
+  engineIsModified: "engine:isModified",
   // Phase 11 — return the current serialized document bytes so the renderer
   // can refresh its PDF.js proxy after a content-stream mutation that the
   // original load bytes no longer reflect (e.g. OCR's invisible text layer).
@@ -168,6 +174,17 @@ export interface TFlexApiEngine {
   save(docId: string): Promise<Result<string, import("./types").EngineError>>;
   saveAs(docId: string): Promise<Result<string, import("./types").EngineError>>;
   getState(docId: string): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** DEF-085 (Bug 4) — cheap dirty-check used by the renderer's tab-close
+   *  path to decide whether to prompt "save unsaved changes?" without
+   *  pulling a full EngineState. Returns the engine's `modified` flag for
+   *  the doc: true after any mutating op (applyOp, annotations, form fill,
+   *  signature placement, crop, stamp, OCR, content edit), false after a
+   *  loadDocument/loadDocumentBytes, after save/saveAs, and after undo
+   *  back to an empty undo stack. Goes through the per-doc queue like
+   *  `getState` so the flag reflects every prior queued mutation; an
+   *  unknown docId resolves to `engine-error` (the renderer only calls
+   *  this for an open doc). */
+  isModified(docId: string): Promise<Result<boolean, import("./types").EngineError>>;
   /** Phase 11 — return the current serialized document bytes (the same bytes
    *  a `save` would write) so the renderer can rebuild its PDF.js proxy after
    *  an operation that mutated page content streams the original load bytes

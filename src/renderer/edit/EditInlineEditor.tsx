@@ -128,6 +128,13 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
           <span className="edit-inline-label">Font</span>
           <select
             value={style.font}
+            // Bug 9 — keep focus on the textarea when the user
+            // interacts with the toolbar. Without `onMouseDown`
+            // calling `preventDefault`, clicking the font picker
+            // (or any toolbar button) moves focus to it, the
+            // textarea fires `onBlur`, and the editor dismisses
+            // itself before the user has typed anything.
+            onMouseDown={(e): void => e.preventDefault()}
             onChange={(e: ChangeEvent<HTMLSelectElement>): void => {
               const next = e.target.value;
               if (ALLOWED_FONTS.includes(next as EditFont)) {
@@ -151,6 +158,8 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
             max={SIZE_MAX}
             step={1}
             value={style.size}
+            // Bug 9 — see comment on the font select above.
+            onMouseDown={(e): void => e.preventDefault()}
             onChange={(e: ChangeEvent<HTMLInputElement>): void => {
               const n = Number.parseFloat(e.target.value);
               if (Number.isFinite(n)) {
@@ -165,6 +174,8 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
           <input
             type="color"
             value={colorToHex(style.color)}
+            // Bug 9 — see comment on the font select above.
+            onMouseDown={(e): void => e.preventDefault()}
             onChange={(e: ChangeEvent<HTMLInputElement>): void => {
               setStyle({ ...style, color: hexToColor(e.target.value) });
             }}
@@ -176,6 +187,8 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
             <span className="edit-inline-label">Background</span>
             <select
               value={background}
+              // Bug 9 — see comment on the font select above.
+              onMouseDown={(e): void => e.preventDefault()}
               onChange={(e: ChangeEvent<HTMLSelectElement>): void => {
                 const v = e.target.value;
                 if (v === "white" || v === "none") {
@@ -193,6 +206,11 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
           <button
             type="button"
             className="edit-inline-btn edit-inline-btn-cancel"
+            // Bug 9 — keep focus on the textarea until the user
+            // explicitly clicks Apply / Cancel. Without this guard
+            // the textarea's `onBlur` would commit / cancel
+            // before the click reaches the button.
+            onMouseDown={(e): void => e.preventDefault()}
             onClick={onCancel}
             aria-label="Cancel edit"
             title="Cancel (Esc)"
@@ -202,6 +220,8 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
           <button
             type="button"
             className="edit-inline-btn edit-inline-btn-commit"
+            // Bug 9 — same focus guard as the Cancel button.
+            onMouseDown={(e): void => e.preventDefault()}
             onClick={commit}
             aria-label="Apply edit"
             title="Apply (Ctrl+Enter)"

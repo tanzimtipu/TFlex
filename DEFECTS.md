@@ -1,3 +1,23 @@
+## DEF-085: Theme and Open buttons not right-aligned in TitleBar
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex production build.
+2. Observe the position of the Update Indicator (Retry), Theme Toggle, and Open button in the title bar.
+
+Expected: These controls should be right-aligned (pushed to the trailing edge of the window caption).
+Actual: They are clustered on the left next to the brand mark. The .header-actions container has `margin-left: auto` but is being constrained by the .tab-area which has not expanded to fill available space.
+Screenshot: screenshots/retest-17-welcome.png
+
+History:
+- qa: opened
+- qa: retested on production build. Alignment check FAILED. Theme toggle and Open buttons remain on the left (X=225/261 in 1442px window). Root cause: .app-header lacks width:100% or flex:1 inside the .titlebar-slot, preventing justify-content:space-between from expanding the header. REMAINS OPEN.
+- qa: re-verified on production build via `def_085_alignment.spec.cjs`. Header actions are now correctly right-aligned (Gap to window controls < 20px). CLOSED.
+
 ## DEF-084: Missing Phase 13 Control Index
 
 - Status: CLOSED

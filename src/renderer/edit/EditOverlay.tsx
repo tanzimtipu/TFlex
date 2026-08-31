@@ -252,7 +252,18 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     }
     const pt = pagePoint(e);
     if (pt.x < 0 || pt.y < 0 || pt.x > pageWidthPt || pt.y > pageHeightPt) return;
-    e.currentTarget.setPointerCapture(e.pointerId);
+    // Bug 9 — pointer capture is only meaningful for drag tools
+    // (box / image), where it keeps the live drag preview
+    // updating even when the cursor strays off the page. For
+    // the text tool the gesture is a single click with no
+    // follow-up drag; capturing the pointer here would redirect
+    // the editor's own pointer events away from its handler
+    // (the textarea's caret placement and the toolbar's
+    // focus-guard both rely on the native event flow), so the
+    // click would visually do nothing. Skip capture for text.
+    if (tool !== "text") {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
 
     if (tool === "text") {
       onClickTextRun(pt);

@@ -53,6 +53,7 @@ const {
       save: vi.fn().mockResolvedValue({ ok: true, value: '/mock/path.pdf' }),
       saveAs: vi.fn().mockResolvedValue({ ok: true, value: '/mock/new.pdf' }),
       getState: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
+      isModified: vi.fn().mockResolvedValue({ ok: true, value: false }),
       getDocumentBytes: vi.fn().mockResolvedValue({ ok: true, value: new ArrayBuffer(8) }),
       createAnnotation: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
       editAnnotation: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
@@ -990,5 +991,28 @@ describe('main/index - DEF-060 engine:createDocxFromDoc handler', () => {
     await handler({}, 'doc-1', entries);
 
     expect(_engineInstance.createDocxFromDoc).toHaveBeenCalledWith('doc-1', entries);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-085 (Bug 4): engine:isModified handler registration
+// ---------------------------------------------------------------------------
+
+describe('main/index - DEF-085 engine:isModified handler', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    await start();
+  });
+
+  it('registers engine:isModified handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.engineIsModified);
+  });
+
+  it('forwards docId to engine.isModified', async () => {
+    const call = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.engineIsModified)!;
+    const handler = call[1] as (...args: unknown[]) => unknown;
+    await handler({}, 'doc-1');
+    expect(_engineInstance.isModified).toHaveBeenCalledWith('doc-1');
   });
 });

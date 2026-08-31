@@ -747,6 +747,23 @@ export class StubRendererEngine implements EngineApi {
     return err("engine-error", "createDocxFromImages requires backend engine update");
   }
 
+  /** DEF-060 (Bug 6) — text-first DOCX assembler. The stub has no
+   *  pdfDoc (no actual bytes), so it cannot extract real text from
+   *  the loaded doc. It degrades with `engine-error` so the host can
+   *  detect the missing backend and fall back to
+   *  `createDocxFromImages`. Same shape as `createDocxFromImages`
+   *  so the renderer's per-call error handling doesn't have to
+   *  branch on the method. */
+  async createDocxFromDoc(
+    _docId: string,
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>> {
+    if (entries.length === 0) {
+      return err("empty-range", "no image entries provided");
+    }
+    return err("engine-error", "createDocxFromDoc requires backend engine update");
+  }
+
   // -----------------------------------------------------------------------
   // Phase 10: edit content (text run / text box / image)
   //

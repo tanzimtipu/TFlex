@@ -85,6 +85,12 @@ const engineApi = {
   getState(docId: string): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineGetState, docId);
   },
+  // DEF-085 (Bug 4) — cheap dirty-check the renderer calls before closing
+  // a tab to decide whether to prompt "save unsaved changes?". Avoids a
+  // full getState/buildState round-trip; queue-ordered like getState.
+  isModified(docId: string): Promise<Result<boolean, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineIsModified, docId);
+  },
   // Phase 11 — current serialized bytes so the renderer can refresh its
   // PDF.js proxy after OCR (or any content-stream mutation). Normalised
   // to a fresh ArrayBuffer, matching loadDocumentBytes.

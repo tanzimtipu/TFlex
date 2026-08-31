@@ -2431,18 +2431,67 @@ useEffect(() => {
     setDocxExportOpen(false);
   }, []);
 
-  /** DOCX assembly — runs after the renderer has rasterised every
+/** DOCX assembly — runs after the renderer has rasterised every
    *  page to PNG. The renderer owns the rasterization step; the
-   *  engine just assembles the .docx ZIP. */
+   *  engine just assembles the .docx ZIP.
+   *
+   *  Bug 6 (DEF-060): The renderer always calls
+   *  `engine.createDocxFromDoc(docId, entries)` for the loaded-doc
+   *  flow — the engine reuses its own `exportText` machinery to pull
+   *  per-page text from the pdfDoc and emits real `w:p` / `w:r` /
+   *  `w:t` paragraphs in the .docx (editable text in Word / Google
+   *  Docs / LibreOffice). Text-free pages fall back to an inline
+   *  image (`wp:inline`) drawn from the matching `DocxImageEntry`
+   *  by page number — the renderer rasterises every page ahead of
+   *  time so the fallback always has pixels.
+   *
+   *  Pre-DEF-060 backends don't expose `createDocxFromDoc`; we
+   *  detect that case and fall back to `createDocxFromImages`,
+   *  which produces a one-image-per-page .docx with no editable
+   *  text. The fallback is a graceful degradation, not a hard error
+   *  — the user gets a usable file either way (the rasterised
+   *  pages are still in the .docx). The dialog surfaces the
+   *  fallback's product identically to the text-first path (the
+   *  rendered raster is the source of truth in both cases).
+   *
+   *  The dialog's `runAssemble` prop signature is `(entries) => Promise<Uint8Array | { error: string }>`
+   *  — same shape as before — so the existing DocxExportDialog
+   *  component doesn't change. We resolve the active tab's
+   *  `engineDocId` here so the host (which owns the tab state) is
+   *  the only place that knows the docId; the dialog stays a
+   *  pure-presentational renderer of the export form. */
   const runAssembleDocx = useCallback(
     async (
       entries: DocxImageEntry[],
     ): Promise<Uint8Array | { error: string }> => {
-      const result = await engineRef.current.createDocxFromImages(entries);
-      if (!result.ok) {
-        return { error: describeEngineError(result.error.code, result.error.message) };
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) {
+        return { error: describeEngineError("engine-error", "no active document for DOCX assembly") };
       }
-      return result.value;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) {
+        return { error: describeEngineError("engine-error", "active document closed before DOCX assembly") };
+      }
+      const docId = open.session.engineDocId;
+      // Preferred path — text-first DOCX with image fallback.
+      const docxFn = engineRef.current.createDocxFromDoc;
+      if (typeof docxFn === "function") {
+        const result = await docxFn(docId, entries);
+        if (!result.ok) {
+          return {
+            error: describeEngineError(result.error.code, result.error.message),
+          };
+        }
+        return result.value;
+      }
+      // Fallback path — image-only DOCX for pre-DEF-060 backends.
+      const fallback = await engineRef.current.createDocxFromImages(entries);
+      if (!fallback.ok) {
+        return {
+          error: describeEngineError(fallback.error.code, fallback.error.message),
+        };
+      }
+      return fallback.value;
     },
     [],
   );
@@ -2692,15 +2741,23 @@ useEffect(() => {
       // hook — same pattern OCR uses after it writes the invisible
       // text layer. The `doc` identity change cascades through
       // DocumentView's `useEffect([doc])` deps so the search effect
-      // and any other doc-bound effect re-run against the post-crop
+      // and any doc-bound effect re-run against the post-crop
       // bytes. If the backend predates Phase 11 (no `getDocumentBytes`),
       // `refreshed` is false and the user can save + reopen to pick
       // up the new dimensions — same fallback as the OCR path.
       // The function is read through `refreshDocProxyForRef` because
       // it's defined later in the component (forward-declared ref
       // pattern, see the ref's declaration at the top of the file).
-      void refreshDocProxyForRef.current?.(activeId).catch(() => undefined);
-      pushToast(
+      //
+      // Bug 7 (visual half): guard the optional chain so a stale
+      // null ref (first render, post-unmount) does not throw a
+      // TypeError on `.catch()` of an undefined return — only
+      // attach the catch when the function reference is present.
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(activeId).catch(() => undefined);
+      }
+pushToast(
         "info",
         `Cropped ${choice.entries.length} page${choice.entries.length === 1 ? "" : "s"}.`,
       );
@@ -4449,12 +4506,35 @@ useEffect(() => {
             onSplit={onSplitClick}
             onExtract={(): void => setSplitOpen(true)}
             onRotate={(): void => {
-              // No-op stub: rotate happens per-page in the rail.
-              // The palette keeps the entry visible so the user can
-              // discover the rail action via the same label.
+              // DEF: palette rotate was a no-op stub (the
+              // comment claimed "rotate happens per-page in the
+              // rail" but the palette entry is reachable without
+              // a rail thumbnail selection — e.g. after closing
+              // the rail tab to the annotations panel). Wire it
+              // through the same path the toolbar's Rotate
+              // clockwise button uses (which reads the active
+              // tab's persisted currentPage and dispatches the
+              // engine rotate op).
+              const id = activeTabIdRefLocal.current;
+              if (id === null) return;
+              onRotateClockwise(id);
             }}
             onDelete={(): void => {
-              // Same — delete lives on the rail selection.
+              // No-op on purpose — delete is a per-selection rail
+              // action and the palette has no selection state to
+              // delete from. The palette keeps the entry visible
+              // so the user can discover the rail action via the
+              // same label, but the click surfaces a hint that
+              // tells them where to delete.
+              const id = activeTabIdRefLocal.current;
+              if (id === null) return;
+              const open = openTabsRef.current[id];
+              const pageCount = open?.session.doc.numPages ?? 0;
+              if (pageCount <= 1) {
+                pushToast("error", "Documents must keep at least one page.");
+                return;
+              }
+              pushToast("info", "Select a thumbnail in the left rail to delete a page.");
             }}
             onSign={(): void => {
               if (armedSignatureId !== null) {

@@ -277,6 +277,16 @@ export interface TFlexApiEngine {
   createDocxFromImages?(
     entries: DocxImageEntry[],
   ): Promise<Result<Uint8Array, EngineError>>;
+  /** DEF-060 (Bug 6) — assemble a .docx from the loaded document's
+   *  OWN text (with image fallback for text-free pages). Pre-DEF-060
+   *  backends don't expose this; the renderer falls back to
+   *  `createDocxFromImages` in that case (a degraded result, but no
+   *  hard error). The renderer ALWAYS prefers this path for a
+   *  loaded doc. */
+  createDocxFromDoc?(
+    docId: string,
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>>;
   /** Phase 10 — edit an existing text run by masking its rect and redrawing
    *  `newText` at the rect's top-left baseline. Optional so a pre-Phase-10
    *  backend degrades with a friendly engine-error. */
@@ -914,6 +924,27 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<Uint8Array, EngineError>> {
     if (this.inner.createDocxFromImages === undefined) return missingPhase9Extended();
     return this.inner.createDocxFromImages(entries);
+  }
+
+  /** DEF-060 (Bug 6) — text-first DOCX assembler. The renderer
+   *  ALWAYS prefers this path for a loaded doc: the engine reuses
+   *  its own `exportText` machinery to pull real per-page text from
+   *  the pdfDoc and emits editable `w:t` runs for text-bearing pages
+   *  (image fallback only for text-free pages). Pre-DEF-060 backends
+   *  don't expose the method; we surface `missingPhase9Extended` so
+   *  the host can detect and fall back to `createDocxFromImages`
+   *  (a degraded result — one image per page with no editable text).
+   *
+   *  Unlike the per-doc queue ops (rotate / crop / etc.), DOCX
+   *  assembly is a fire-and-read call against an opaque byte blob,
+   *  so it intentionally does NOT route through `normalizeAndCache`
+   *  — there is no `EngineState` to carry forward. */
+  async createDocxFromDoc(
+    docId: string,
+    entries: DocxImageEntry[],
+  ): Promise<Result<Uint8Array, EngineError>> {
+    if (this.inner.createDocxFromDoc === undefined) return missingPhase9Extended();
+    return this.inner.createDocxFromDoc(docId, entries);
   }
 
   async createFromClipboard(

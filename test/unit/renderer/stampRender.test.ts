@@ -74,6 +74,30 @@ function installPolyfills(): void {
   }).toDataURL = function toDataURLStub(): string {
     return polyfillState.toDataURL;
   };
+  // Bug 8 (DEF-063) — the renderer now samples pixels via
+  // getImageData to detect silent-draw failures. The jsdom Proxy
+  // stub above returns a no-op function for every method access
+  // (including getImageData), so the renderer's blank-canvas check
+  // would treat the call as "could not read" and assume the canvas
+  // drew. To preserve the original "happy path" assertions (real
+  // bytes out) we polyfill getImageData to return a synthetic
+  // ImageData with alpha=255 so the renderer thinks the draw
+  // landed. The blank-canvas branches are covered by the new
+  // bug008_stampBlankBytes.test.ts file.
+  (HTMLCanvasElement.prototype as unknown as {
+    getImageData: (x: number, y: number, w: number, h: number) => ImageData;
+  }).getImageData = function getImageDataStub(
+    _x: number,
+    _y: number,
+    w: number,
+    h: number,
+  ): ImageData {
+    const data = new Uint8ClampedArray(w * h * 4);
+    for (let i = 3; i < data.length; i += 4) {
+      data[i] = 255;
+    }
+    return { data, width: w, height: h, colorSpace: "srgb" } as ImageData;
+  };
 }
 
 describe("stampRender — built-in stamps", () => {

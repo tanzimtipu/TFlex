@@ -574,11 +574,97 @@ describe('Phase 12: cropPages', () => {
     if (!saveR.ok) return;
     const saved = await readFile(saveR.value);
     const re = await PDFDocument.load(saved.buffer.slice(
-      saved.byteOffset, saved.byteOffset + saved.byteLength,
+      saved.byteOffset,
+      saved.byteOffset + saved.byteLength,
     ) as ArrayBuffer);
     const page = re.getPage(0);
     // After undo, the crop should be gone (no CropBox on the page).
     expect(page.node.CropBox()).toBeUndefined();
+  });
+
+  // DEF-085 (Bug 7): crop -> assert dims changed -> undo -> assert restored.
+  // Uses getDocumentBytes (read-only, does NOT clear the undo stack) to
+  // inspect the CropBox/TrimBox at each step without saving between crop
+  // and undo (save would wipe the undo stack and break the round-trip).
+  it('crop changes dims, undo restores them (round-trip via getDocumentBytes)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-1', path);
+
+    // Before crop: page 0 has no CropBox (pdf-lib addPage sets only MediaBox).
+    const beforeR = await engine.getDocumentBytes('doc-1');
+    expect(beforeR.ok).toBe(true);
+    if (!beforeR.ok) return;
+    const before = await PDFDocument.load(beforeR.value);
+    expect(before.getPage(0).node.CropBox()).toBeUndefined();
+
+    // Crop page 1 (visible) -> original page 0. Top-left box (50,50,100,100)
+    // on a 792-tall page -> bottom-left (50, 642, 100, 100).
+    const cropR = await engine.cropPages('doc-1', [
+      { page: 1, box: { x: 50, y: 50, width: 100, height: 100 } },
+    ]);
+    expect(cropR.ok).toBe(true);
+    if (!cropR.ok) return;
+
+    // After crop: CropBox AND TrimBox are set on the page and match the box.
+    const afterCropR = await engine.getDocumentBytes('doc-1');
+    expect(afterCropR.ok).toBe(true);
+    if (!afterCropR.ok) return;
+    const afterCrop = await PDFDocument.load(afterCropR.value);
+    const croppedPage = afterCrop.getPage(0);
+    const cropBox = croppedPage.node.CropBox();
+    const trimBox = croppedPage.node.TrimBox();
+    expect(cropBox).toBeDefined();
+    expect(trimBox).toBeDefined();
+    const c = cropBox!.asArray().map((x: any) => x.asNumber());
+    expect(c[0]).toBe(50);                  // llx
+    expect(c[1]).toBe(642);                 // lly = 792 - 50 - 100
+    expect(c[2]).toBe(50 + 100);            // urx
+    expect(c[3]).toBe(642 + 100);           // ury
+    const t = trimBox!.asArray().map((x: any) => x.asNumber());
+    expect(t).toEqual(c);
+    // MediaBox must be unchanged (crop does not touch MediaBox).
+    const mediaBox = croppedPage.node.MediaBox()!;
+    const m = mediaBox.asArray().map((x: any) => x.asNumber());
+    expect(m[0]).toBe(0);
+    expect(m[1]).toBe(0);
+    expect(m[2]).toBe(612);
+    expect(m[3]).toBe(792);
+
+    // Undo: restores the pre-crop pdfDoc bytes (no CropBox).
+    const undoR = await engine.undo('doc-1');
+    expect(undoR.ok).toBe(true);
+    if (!undoR.ok) return;
+
+    const afterUndoR = await engine.getDocumentBytes('doc-1');
+    expect(afterUndoR.ok).toBe(true);
+    if (!afterUndoR.ok) return;
+    const afterUndo = await PDFDocument.load(afterUndoR.value);
+    const restoredPage = afterUndo.getPage(0);
+    // CropBox and TrimBox must be gone (the original page had none).
+    expect(restoredPage.node.CropBox()).toBeUndefined();
+    expect(restoredPage.node.TrimBox()).toBeUndefined();
+    // MediaBox is still the full page.
+    const m2 = restoredPage.node.MediaBox()!.asArray().map((x: any) => x.asNumber());
+    expect(m2[0]).toBe(0);
+    expect(m2[1]).toBe(0);
+    expect(m2[2]).toBe(612);
+    expect(m2[3]).toBe(792);
+    // Redo restores the crop (proves the redo stack captured the cropped state).
+    const redoR = await engine.redo('doc-1');
+    expect(redoR.ok).toBe(true);
+    if (!redoR.ok) return;
+    const afterRedoR = await engine.getDocumentBytes('doc-1');
+    expect(afterRedoR.ok).toBe(true);
+    if (!afterRedoR.ok) return;
+    const afterRedo = await PDFDocument.load(afterRedoR.value);
+    const redoCropBox = afterRedo.getPage(0).node.CropBox();
+    expect(redoCropBox).toBeDefined();
+    const rc = redoCropBox!.asArray().map((x: any) => x.asNumber());
+    expect(rc[0]).toBe(50);
+    expect(rc[1]).toBe(642);
+    expect(rc[2]).toBe(50 + 100);
+    expect(rc[3]).toBe(642 + 100);
   });
 
   it('returns out-of-range for a bad page', async () => {

@@ -702,6 +702,29 @@ export class EngineService {
   }
 
   // -----------------------------------------------------------------------
+  // isModified — DEF-085 (Bug 4): cheap dirty-check the renderer calls
+  // before closing a tab to decide whether to prompt "save unsaved
+  // changes?". Goes through the per-doc queue so the returned flag
+  // reflects every prior queued mutation; an unknown docId resolves to
+  // engine-error (the renderer only calls this for an open doc).
+  // -----------------------------------------------------------------------
+  async isModified(
+    docId: string,
+  ): Promise<Result<boolean, EngineError>> {
+    return this._enqueue(docId, () => this._isModifiedImpl(docId));
+  }
+
+  private async _isModifiedImpl(
+    docId: string,
+  ): Promise<Result<boolean, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    return ok(doc.modified);
+  }
+
+  // -----------------------------------------------------------------------
   // getDocumentBytes — Phase 11. Returns the current serialized document
   // (the same bytes a save would write: page order, rotations, annotations,
   // forms, signatures and any content-stream edits like the OCR text layer)
@@ -1335,7 +1358,21 @@ export class EngineService {
       // Serialize the document to bytes and extract text from the raw PDF.
       // This is more reliable than trying to access content streams through
       // pdf-lib's internal API, which may not expose the resolved streams.
-      const bytes = await doc.pdfDoc.save();
+      //
+      // DEF-085 (Bug 5): save() with the default `useObjectStreams: true`
+      // packs the catalog, pages tree and page objects into a compressed
+      // /Type /ObjStm object. extractTextFromRawPdf's regex parser walks
+      // the cross-reference table and top-level `N G obj` headers; it cannot
+      // see objects that live inside an ObjStm, so every page's /Contents
+      // ref resolved to nothing and exportText silently returned '' for
+      // every page (the existing engine test only asserted
+      // `typeof text === 'string'`, so the regression slipped through). The
+      // flat save keeps every object as a direct `N G obj` so the parser
+      // can walk from /Root -> /Pages -> /Kids -> page -> /Contents ->
+      // FlateDecode stream -> Tj/TJ text operators. createDocxFromDoc
+      // already used `useObjectStreams: false` for the same reason; this
+      // brings exportText in line.
+      const bytes = await doc.pdfDoc.save({ useObjectStreams: false });
       const pages: TextPage[] = [];
       const pageCount = doc.pdfDoc.getPageCount();
 

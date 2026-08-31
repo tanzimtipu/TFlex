@@ -177,6 +177,12 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.engineGetState, (_event, docId: string) =>
     engine.getState(docId),
   );
+  // DEF-085 (Bug 4) — dirty-check the renderer calls before closing a tab
+  // to decide whether to prompt "save unsaved changes?". Cheap (no
+  // buildState) and queue-ordered so it reflects every prior mutation.
+  ipcMain.handle(IPC.engineIsModified, (_event, docId: string) =>
+    engine.isModified(docId),
+  );
   ipcMain.handle(IPC.engineGetDocumentBytes, (_event, docId: string) =>
     engine.getDocumentBytes(docId),
   );

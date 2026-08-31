@@ -123,6 +123,128 @@ describe('Phase 12: addStamp', () => {
     expect(xobj.asMap().size).toBeGreaterThanOrEqual(1);
   });
 
+  // DEF-085 (Bug 8): the engine must embed the EXACT PNG bytes the renderer
+  // sends — the image XObject's /Width and /Height must match the input
+  // PNG's pixel dimensions, proving the bytes round-trip into the saved
+  // file as a real image (not a blank or zero-byte placeholder). If the
+  // renderer sends an empty canvas (all-transparent or zero-byte PNG),
+  // the engine embeds THAT — the "stamp placed but not visible" bug is
+  // the renderer producing blank bytes, not the engine dropping them.
+  it('embedded image dimensions match the input PNG (Bug 8 engine-side)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-st8', path);
+    const pngW = 120;
+    const pngH = 60;
+    const png = createMinimalPng(pngW, pngH);
+
+    const r = await engine.addStamp('doc-st8', {
+      page: 1,
+      rect: { x: 72, y: 72, width: pngW, height: pngH },
+      stampId: 'APPROVED',
+      name: 'Approved',
+      pngBytes: png,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    // Inspect the in-memory pdfDoc via getDocumentBytes so we don't save
+    // (save would wipe the undo stack and isn't needed to verify the embed).
+    const bytesR = await engine.getDocumentBytes('doc-st8');
+    expect(bytesR.ok).toBe(true);
+    if (!bytesR.ok) return;
+    const re = await PDFDocument.load(bytesR.value);
+    const page = re.getPage(0);
+    const res = page.node.Resources();
+    expect(res).toBeDefined();
+    const xobjRef = res!.get(PDFName.of('XObject'));
+    expect(xobjRef).toBeDefined();
+    const xobj = re.context.lookup(xobjRef) as any;
+    expect(xobj.asMap().size).toBeGreaterThanOrEqual(1);
+    // Walk the XObject dict and find the image entry (/Subtype /Image).
+    let imageEntry: any = null;
+    const map = xobj.asMap();
+    for (const [name, ref] of Array.from(map.entries() as Iterable<[string, any]>)) {
+      const obj = re.context.lookup(ref) as any;
+      const dict = obj?.dict ?? obj;
+      const sub = dict.get ? dict.get(PDFName.of('Subtype')) : undefined;
+      if (sub && sub.toString() === '/Image') {
+        imageEntry = { name, ref, dict, obj };
+        break;
+      }
+    }
+    expect(imageEntry).not.toBeNull();
+    // /Width and /Height must match the input PNG's pixel dimensions.
+    const w = imageEntry.dict.get(PDFName.of('Width')).asNumber();
+    const h = imageEntry.dict.get(PDFName.of('Height')).asNumber();
+    expect(w).toBe(pngW);
+    expect(h).toBe(pngH);
+    // /Subtype must be /Image and /ColorSpace must be present (RGB for the
+    // solid-colour PNG createMinimalPng produces — IHDR bit depth 8, colour
+    // type 2).
+    const subtype = imageEntry.dict.get(PDFName.of('Subtype')).toString();
+    expect(subtype).toBe('/Image');
+    const filter = imageEntry.dict.get(PDFName.of('Filter'));
+    // PNG embeds use /FlateDecode (pdf-lib embedPng re-encodes as FlateDecode).
+    expect(filter).toBeDefined();
+    // The image stream bytes must be non-empty (the raw image data).
+    const streamObj = imageEntry.obj;
+    expect(streamObj?.contents).toBeDefined();
+    expect(streamObj.contents.length).toBeGreaterThan(0);
+
+    // The page's content stream must reference the image via a Do operator
+    // (i.e. the image is actually drawn, not just embedded). Decode the
+    // content stream and look for the XObject's resource name in a Do op.
+    const { inflateSync } = require('node:zlib') as typeof import('node:zlib');
+    const contents = page.node.Contents();
+    expect(contents).toBeDefined();
+    let contentText = '';
+    const lookupContent = (ref: any): string => {
+      const obj = re.context.lookup(ref) as any;
+      if (!obj) return '';
+      if (obj.constructor && obj.constructor.name === 'PDFArray') {
+        let out = '';
+        for (let i = 0; i < obj.size(); i++) out += lookupContent(obj.get(i));
+        return out;
+      }
+      if (obj?.contents && typeof obj.contents.length === 'number') {
+        try {
+          const dec = inflateSync(obj.contents as Uint8Array);
+          return new TextDecoder('latin1').decode(dec);
+        } catch {
+          return new TextDecoder('latin1').decode(obj.contents as Uint8Array);
+        }
+      }
+      return '';
+    };
+    contentText = lookupContent(contents);
+    // pdf-lib names embedded images with /Image-<n> (or /Im<n>); the
+    // content stream must run a `Do` operator referencing that name. A
+    // drawn image's content-stream slice looks like `... /Image-X Do`.
+    // Assert at least one Do op runs, and the image's resource name (from
+    // the XObject dict) appears in the content stream before a Do.
+    expect(contentText).toMatch(/Do/);
+    // Find the image's resource name in the XObject dict and assert the
+    // content stream references that exact name.
+    const xobjMap = xobj.asMap();
+    let imageResourceName: string | null = null;
+    for (const [name, ref] of Array.from(xobjMap.entries() as Iterable<[string, any]>)) {
+      const obj2 = re.context.lookup(ref) as any;
+      const dict2 = obj2?.dict ?? obj2;
+      const sub2 = dict2.get ? dict2.get(PDFName.of('Subtype')) : undefined;
+      if (sub2 && sub2.toString() === '/Image') {
+        imageResourceName = name;
+        break;
+      }
+    }
+    expect(imageResourceName).not.toBeNull();
+    // The name in the content stream is the PDFName without the leading '/'
+    // (e.g. "Image-123"); the Do op references it as "/Image-123 Do".
+    expect(contentText).toContain(imageResourceName as string);
+    // And the Do operator must follow the name reference.
+    expect(contentText).toMatch(new RegExp(imageResourceName as string + '\\s+Do'));
+  });
+
   it('each built-in stampId is accepted', async () => {
     const engine = new EngineService();
     const { path } = await createNPagePdf(1);

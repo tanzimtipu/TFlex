@@ -39,6 +39,14 @@
   --t-base: 200ms;
   --t-slow: 250ms;
 
+  /* Layout sizing tokens — kept in :root so absolutely positioned
+   * siblings of the toolbar (.tools-palette) can offset themselves
+   * below the toolbar without hardcoding the value in two places
+   * (DEF: palette overlaps toolbar options). The toolbar can wrap
+   * to two rows on narrow widths; this is the single-row baseline
+   * that the palette currently uses as its top offset. */
+  --toolbar-h: 56px;
+
   /* Semantic color tokens (Phase 13 — for status toasts, status pills,
    * validation hints, etc.). The accent stays the single primary
    * action color; these tokens ONLY communicate state, never claim
@@ -240,8 +248,18 @@ textarea {
  * form one continuous caption strip the OS treats as a caption area. */
 .app-header {
   display: flex;
+  /* DEF-085 — fill the host .titlebar-slot's full width so
+   * space-between distributes the three children (brand, tab-area,
+   * header-actions) across the entire caption strip rather than
+   * across the intrinsic content width. Without this, the slot
+   * gives us width via `flex: 1 1 auto` but the .app-header — itself
+   * a flex container, not a flex item — shrinks to its children's
+   * natural width, and the trailing header-actions cluster attaches
+   * to the brand on the left. The brand's own padding-right provides
+   * the leading-edge separation. */
+  width: 100%;
+  justify-content: space-between;
   align-items: center;
-  gap: var(--sp-3);
   padding: 0 var(--sp-4);
   height: 44px;
   border-bottom: 1px solid var(--border);
@@ -482,7 +500,13 @@ textarea {
 }
 
 .tab-area {
-  flex: 1 1 auto;
+  /* DEF-085 — flex:1 1 0 (basis 0) plus min-width:0 makes the area
+   * absorb all remaining horizontal space once the brand and
+   * header-actions have taken their natural widths. min-width:0
+   * stops a long tab list from forcing the strip wider than the
+   * viewport — the .tab-list child handles its own overflow-x:auto. */
+  flex: 1 1 0;
+  min-width: 0;
   display: flex;
   align-items: end;
   height: 100%;
@@ -618,6 +642,15 @@ textarea {
   padding-left: var(--sp-3);
   border-left: 1px solid var(--border-subtle);
   height: 100%;
+  /* DEF-085 — right alignment now comes from `.app-header`'s
+   * `justify-content: space-between`, which pins this cluster to
+   * the trailing edge. The earlier `margin-left: auto` looked
+   * correct but did nothing because .tab-area's old `flex: 1 1
+   * auto` basis consumed all available space via its `.tab-list`
+   * child's `width: 100%`. We drop the margin so the layout
+   * intent lives in one place (the parent's space-between) and
+   * survives future flex-basis tweaks on .tab-area. */
+  flex: 0 0 auto;
 }
 
 .tab-stage {
@@ -1752,7 +1785,24 @@ textarea {
 /* ---- Toolbar: modified-flavored Save + Merge/Split labels ---- */
 
 .tool-btn-modified {
+  /* The Save button adopts this class whenever the active tab is
+   * dirty, so the user can see the same "modified" affordance the
+   * tab dot already shows. The icon (a Lucide Save stroke) uses
+   * `currentColor`, so tinting the button's color tints the icon. */
   color: var(--accent);
+}
+
+/* When the doc is read-only (samples / unsaved on-disk copy),
+ * the Save button stays disabled but the modified-state must still
+ * light the icon — otherwise the user sees the tab dot AND a grey
+ * save button, which reads as "nothing to save" (DEF: save icon
+ * not lighting on modified). We override the generic disabled
+ * treatment only for the accent color, leaving the click target
+ * untouched. */
+.tool-btn-modified[disabled] {
+  opacity: 1;
+  color: var(--accent);
+  cursor: not-allowed;
 }
 
 .tool-btn-modified:hover:not([disabled]) {
@@ -2635,7 +2685,86 @@ textarea {
 .sig-handle-nw { left: -5px; top: -5px; cursor: nwse-resize; }
 .sig-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
 .sig-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.sig-handle-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.sig-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.sig-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .sig-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
+/* Bug 11 — cursor ghost preview. Drawn at half opacity so the
+ * user can still see the underlying page content; the dashed
+ * accent border advertises "this is a preview, not yet a
+ * placement". pointer-events: none on the wrapper keeps clicks
+ * landing on the page so the click still creates a placement. */
+.sig-ghost {
+  border: 1px dashed var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-1);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Bug 2 — pending placement. Sits in local state until the
+ * user confirms via the action bar. */
+.sig-pending {
+  border: 1.5px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-1);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.18);
+  z-index: 4;
+  opacity: 0.95;
+  user-select: none;
+}
+
+.sig-action-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  padding: 3px;
+  box-shadow: var(--shadow-popover);
+  font-size: var(--fs-xs);
+  color: var(--fg);
+  z-index: 5;
+}
+
+.sig-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: var(--radius-1);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+}
+.sig-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+.sig-action-btn-confirm {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  border-color: var(--accent);
+}
+.sig-action-btn-confirm:hover {
+  background: var(--accent-hover);
+  color: var(--fg-on-accent);
+  border-color: var(--accent-hover);
+}
+.sig-action-btn-delete {
+  color: var(--error);
+}
+.sig-action-btn-delete:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
 
 .sig-manager {
   width: min(560px, calc(100vw - 32px));
@@ -2823,12 +2952,19 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Match .tab exactly so the "+ tab" affordance sits on the same
+   * baseline as the rightmost tab — previously a 24px button against
+   * a 34px tab left a 10px visual offset that read as a misalignment
+   * (DEF: tab + button height mismatch). Width stays smaller so the
+   * affordance still reads as a compact plus button next to the
+   * title text, not as a duplicate tab. */
   width: 24px;
-  height: 24px;
+  height: 34px;
   margin-left: 4px;
   padding: 0;
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
+  border-bottom: 1px solid var(--border-subtle);
   border-radius: var(--radius-1);
   color: var(--fg-muted);
   cursor: pointer;
@@ -2845,7 +2981,16 @@ textarea {
 
 .tools-palette {
   position: absolute;
-  top: 0;
+  /* Anchor the palette to the BOTTOM of the workspace (just below
+   * the toolbar's natural height) and stretch to the bottom edge.
+   * Previously `top: 0` made the palette overlay the toolbar's
+   * right-side controls, hiding Tools/Edit/Optimize/etc. (DEF:
+   * palette overlaps toolbar options). The toolbar in
+   * .workspace-main uses `grid-template-rows: auto auto 1fr` with
+   * min-height 44px and can wrap to multiple rows; the
+   * calc(--toolbar-h + var(--sp-1)) below matches the current
+   * single-row toolbar height plus a hairline gap. */
+  top: var(--toolbar-h, 44px);
   right: 0;
   bottom: 0;
   width: 280px;
@@ -2853,7 +2998,11 @@ textarea {
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  z-index: 4;
+  /* Lift the palette above the workspace overlays (text / forms /
+   * edit-image-toolbar at z-index:2-6) but below modal sheets
+   * (z-index:100+) so the dialogs still cover the palette when
+   * both are open. */
+  z-index: 30;
   animation: tools-palette-in var(--t-base) var(--ease);
 }
 @keyframes tools-palette-in {
@@ -2917,6 +3066,20 @@ textarea {
   flex: 1 1 auto;
   overflow-y: auto;
   padding: var(--sp-2);
+  /* Grid mode: lay entries out in actual rows (3 per row on the
+   * 168px-wide palette, scaling up on wider windows) instead of
+   * stacking one per row, which used to happen because each
+   * entry had width:100% inside a block container with no grid /
+   * flex layout applied (DEF: tools grid layout is single
+   * horizontal line). The list layout keeps its single-row
+   * appearance via the .tools-palette-entry-list rules below.
+   * `dense` packs short entries into gaps so the visible column
+   * count stays consistent. */
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  grid-auto-rows: auto;
+  gap: var(--sp-2);
+  align-content: start;
 }
 
 .tools-palette-entry {
@@ -2941,6 +3104,11 @@ textarea {
 .tools-palette-entry-list {
   flex-direction: row;
   height: 56px;
+  /* In list mode the body is grid but each entry occupies a full
+   * row via grid-column: 1 / -1. Without this, the grid would
+   * lay labelled entries into 3 columns which is the wrong
+   * layout for the list view. */
+  grid-column: 1 / -1;
   width: 100%;
   text-align: left;
 }
@@ -2948,7 +3116,10 @@ textarea {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  width: 100%;
+  /* Grid mode: each tile fills its grid cell (set by the body's
+   * `repeat(auto-fill, minmax(64px, 1fr))`). The tile stays
+   * square via `aspect-ratio: 1 / 1` below. */
+  width: auto;
   aspect-ratio: 1 / 1;
   padding: var(--sp-2);
   text-align: center;
@@ -3182,6 +3353,38 @@ textarea {
 .update-prompt-text strong {
   color: var(--fg-strong);
   font-weight: 600;
+}
+
+/* Download progress UI (Bug 16). When the user clicks Update the
+ * live state transitions to `downloading` (mapped to the dialog's
+ * "checking" kind). The progress bar + label gives the user
+ * visible feedback so the dialog doesn't look frozen; the
+ * existing Cancel button below already dismisses the dialog. */
+.update-prompt-progress {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  background: var(--bg-input);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  margin-top: var(--sp-2);
+}
+.update-prompt-progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--accent);
+  border-radius: 999px;
+  /* Width is set inline via the progress percent. The transition
+   * smooths the visible jumps between progress events without
+   * lagging behind a fast download. */
+  transition: width var(--t-quick) var(--ease);
+}
+.update-prompt-progress-label {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .update-prompt-actions {
