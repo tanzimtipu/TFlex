@@ -46,6 +46,15 @@ proposes, the orchestrator amends the task spec).
 
 ## Repository conventions
 
+- Distribution layout — two zones, never mixed. `release/` (electron-builder output)
+  is the ONLY folder for user-sharable application files: the NSIS installer, the
+  portable build, and `latest.yml`. Everything else is dev-only: source (`src/`),
+  tests (`e2e/`, `test/`), fixtures, screenshots, ledgers, orchestration
+  (`.opencode/`, `AGENTS*.md`), build intermediates (`dist/`), and tooling configs.
+  No dev file may be placed under `release/`, and no packaging step may emit user
+  artifacts anywhere else. Sample PDFs bundled INTO the installer are assets
+  (`assets/`), referenced by the builder — they are not copies dropped into
+  `release/` by hand.
 - Fail loud: no silent no-ops. Every control introduced in a phase must implement its
   promised behavior; a click that does nothing is a defect, not polish. Developers
   return a CONTROL-INDEX with each phase — a list of every control it introduces with

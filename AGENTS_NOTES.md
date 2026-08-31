@@ -1,5 +1,17 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-08-28: distribution layout rule (release/ vs dev-only)
+
+Operator directive: one folder holds everything user-sharable; dev files must never
+mix into it.
+
+- `AGENTS.md` "Repository conventions" gained the Distribution layout rule: `release/`
+  (electron-builder output) is the ONLY user-artifact folder — installer, portable,
+  `latest.yml`. All source, tests, fixtures, screenshots, ledgers, orchestration and
+  build intermediates are dev-only and never land in `release/`; bundled samples
+  belong in `assets/` and are referenced by the builder, not hand-copied.
+- `backend-dev.md` carries the same rule on its packaging line.
+
 ## 2026-08-28: to-do sequencing rule (list stall fix)
 
 Bug: the orchestrator's task list stayed on item #1 indefinitely — items were never

@@ -31,6 +31,9 @@ You own everything behind the UI: the PDF engine, the file system, persistence, 
 - `src/preload/` — the contextBridge surface exposing typed IPC to the renderer.
 - `src/shared/` — typed contracts (with frontend-dev, via orchestrator-approved specs).
 - Packaging: electron-builder config producing a Windows NSIS installer and portable build.
+  `release/` is the only folder for user-sharable artifacts (installer, portable,
+  `latest.yml`) — never copy dev files, test outputs, or screenshots into it, and
+  never emit user artifacts anywhere else.
 - Backend unit tests under `test/unit/main/`.
 
 ## How you work
