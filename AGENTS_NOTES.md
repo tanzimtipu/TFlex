@@ -711,3 +711,13 @@ was the trigger for this rule (git-agent flagged it and refused to mis-tag).
   prop passed to a component with useEffect deps on it must be memoized (useCallback)
   or be a stable singleton; sweep App.tsx for these patterns before declaring a phase
   complete.
+## 2026-08-31: local release/ must track latest tag
+
+Rule (per operator correction, 2026-08-31): when git-agent pushes a release tag,
+rebuilding the matching local release/ artifacts is part of the tag dispatch, not an
+optional separate task. The local folder never drifts: each tag push must be followed
+by a fresh `npm.cmd run dist` (through backend-dev) so `TFlex-Setup-<version>.exe`,
+`<version>-portable.exe`, `latest.yml`, and the blockmap match the pushed tag
+locally as well as on the GitHub Release. Failure to refresh = the orchestrator left
+a stale local build; qa verifies the local release/ content matches the tag before
+closing the push dispatch.

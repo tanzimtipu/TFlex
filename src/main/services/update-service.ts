@@ -52,6 +52,12 @@ export class UpdateService {
   private _callbacks: StatusCallback[] = [];
   private _state: UpdateState;
   private _initialised = false;
+  /** True once `init()` has configured the autoUpdater with a real feed
+   *  (not portable, repo resolved, token present). Gates the manual
+   *  `checkForUpdates()` path so it is a clean no-op when there is no
+   *  feed to query instead of calling autoUpdater with an unconfigured
+   *  client. */
+  private _feedConfigured = false;
 
   constructor() {
     this._state = { kind: 'checking' };
@@ -135,6 +141,7 @@ export class UpdateService {
       private: true,
       token,
     });
+    this._feedConfigured = true;
 
     // Wire up autoUpdater events to our state machine.
     // Event types use the electron-updater UpdateInfo / UpdateDownloadedEvent
@@ -193,6 +200,43 @@ export class UpdateService {
 
   /** Returns the current update state synchronously. */
   getStatus(): UpdateState {
+    return this._state;
+  }
+
+  /** DEF-079 / DEF-080 — manually re-trigger an update check
+   *  (Help -> Check for Update). Mirrors the start-path check in
+   *  `init()` but driven by the user instead of launch. Reuses the
+   *  same `autoUpdater` instance, so the `autoDownload = false`
+   *  semantics set in `init()` carry over: the check never
+   *  auto-downloads; the renderer prompts the user to download via
+   *  `update.download()` once the state flips to 'available'. Both
+   *  the launch check and this manual check therefore share the
+   *  same "check, then let the user download" semantics.
+   *
+   *  Returns the resulting `UpdateState` after the check resolves.
+   *  Portable builds and misconfigured feeds (no token / no repo)
+   *  return their current state without re-checking — there is no
+   *  feed to query. An in-progress download or a ready-to-install
+   *  update is not interrupted (the user should finish or install
+   *  those, not re-check). */
+  async checkForUpdates(): Promise<UpdateState> {
+    if (!this._feedConfigured) {
+      return this._state;
+    }
+    // Don't interrupt an active download or a ready-to-install update.
+    if (this._state.kind === 'downloading' || this._state.kind === 'downloaded') {
+      return this._state;
+    }
+    // autoDownload stays false (set in init): the manual check never
+    // auto-downloads; the user is prompted via the UI, matching the
+    // start-path check.
+    this._setState({ kind: 'checking' });
+    try {
+      await autoUpdater.checkForUpdates();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this._setState({ kind: 'error', message: msg });
+    }
     return this._state;
   }
 

@@ -39,6 +39,41 @@
   --t-base: 200ms;
   --t-slow: 250ms;
 
+  /* Semantic color tokens (Phase 13 — for status toasts, status pills,
+   * validation hints, etc.). The accent stays the single primary
+   * action color; these tokens ONLY communicate state, never claim
+   * a primary action slot. They are tuned per-theme so a warning
+   * remains clearly readable against the panel background in both
+   * light and dark. Hex values are also stored alongside the rgba
+   * accent-soft pair so callers that need a hard color (SVG fills,
+   * solid borders) can reach the canonical swatch without recomputing
+   * it themselves. */
+  --info: #2563eb;
+  --info-soft: rgba(37, 99, 235, 0.12);
+  --success: #16a34a;
+  --success-soft: rgba(22, 163, 74, 0.12);
+  --warning: #d97706;
+  --warning-soft: rgba(217, 119, 6, 0.14);
+  --error: #dc2626;
+  --error-soft: rgba(220, 38, 38, 0.12);
+
+  /* Annotation color swatches — richer palette than the original
+   * four. The four legacy entries (`yellow`, `red`, `green`, `blue`)
+   * keep their hex so wire-shape compatibility with annotations
+   * stored in pre-Phase-13 PDFs survives. The richer set is what the
+   * toolbar's quick swatch row renders; the names are localised at the
+   * edges (the picker read + write), not hardcoded into the rendering
+   * stylesheet. */
+  --ann-yellow: #eab308;
+  --ann-red: #ef4444;
+  --ann-green: #22c55e;
+  --ann-blue: #3b82f6;
+  --ann-orange: #f97316;
+  --ann-pink: #ec4899;
+  --ann-purple: #a855f7;
+  --ann-teal: #14b8a6;
+  --ann-gray: #64748b;
+
   /* Light theme tokens */
   --bg-base: #ffffff;
   --bg-sunken: #f8fafc;
@@ -106,11 +141,33 @@
   --hit: rgba(96, 165, 250, 0.32);
   --hit-active: rgba(96, 165, 250, 0.6);
 
+  /* Semantic tokens — dark variants keep saturation up so the toasts
+   * stay readable against the dark toolbar / canvas. The accent
+   * brightens slightly in dark mode for the same contrast reason
+   * (`--info: #60a5fa` rather than `#2563eb`). */
+  --info: #60a5fa;
+  --info-soft: rgba(96, 165, 250, 0.16);
+  --success: #4ade80;
+  --success-soft: rgba(74, 222, 128, 0.16);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.16);
+  --error: #f87171;
+  --error-soft: rgba(248, 113, 113, 0.16);
+
   color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
 
+/* DEF-083 — Phase 13 light theme polish. Both <html> and <body>
+ * carry an explicit background of the themed --bg-base so the
+ * native window background never bleeds through when the React
+ * tree is empty or transitioning between themes. The Electron
+ * BrowserWindow has `frame: false` and no explicit
+ * `backgroundColor`, so the default native background shows
+ * wherever the renderer's painted surface ends. Painting html +
+ * body with --bg-base guarantees the window chrome above the
+ * caption strip matches the active theme in both directions. */
 html,
 body,
 #root {
@@ -118,6 +175,10 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
+}
+
+html {
+  background: var(--bg-base);
 }
 
 body {
@@ -147,6 +208,18 @@ textarea {
 
 .app {
   display: grid;
+  /* Phase 13 — DEF-081. The TitleBar now hosts the AppHeader inside
+   * its `.titlebar-slot`, so the caption strip is one continuous
+   * row at the top of the window. Two rows: TitleBar (caption strip
+   * with brand + tabs + actions + window controls; height grows to
+   * fit its tallest child, currently 44px for the AppHeader) +
+   * app-main (1fr, fills the rest of the viewport). The earlier
+   * `auto auto 1fr` layout left row 2 (intended for an out-of-grid
+   * AppHeader) empty and row 3 (1fr) with no element — so app-main
+   * ended up collapsed to 0px even when it had a Welcome screen
+   * inside it. The fix collapses to two rows: the TitleBar
+   * self-sizes to its content (the AppHeader's 44px), and app-main
+   * takes everything below it. */
   grid-template-rows: auto 1fr;
   height: 100vh;
   background: var(--bg-base);
@@ -160,6 +233,11 @@ textarea {
   position: relative;
 }
 
+/* Phase 13 — frameless window. The TitleBar is the drag region; the
+ * AppHeader inside it is a regular toolbar row (every interactive
+ * child gets `no-drag` via the universal child selector). The TitleBar
+ * carries its own `drag` rule on its outer container; together they
+ * form one continuous caption strip the OS treats as a caption area. */
 .app-header {
   display: flex;
   align-items: center;
@@ -169,11 +247,213 @@ textarea {
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar);
   flex-shrink: 0;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
 }
 
 .app-header > * {
   -webkit-app-region: no-drag;
+}
+
+/* The TitleBar wraps the existing .app-header so the caption strip
+ * can host the leading-edge menu button + trailing-edge window
+ * controls alongside the brand/tabs. It is positioned at the very top
+ * of `.app`; the host App.tsx renders it as a direct child of the
+ * grid above the existing `.app-header` element. The .app-header
+ * remains the strip inside the slot, with its own drag region (the
+ * OS treats the union as the caption area).
+ *
+ * Phase 13 — DEF-081. The caption strip is one continuous row in the
+ * grid; the TitleBar self-sizes to its tallest child (the
+ * AppHeader inside the slot, 44px). We no longer hardcode 32px so a
+ * refactor that nudges the AppHeader's height doesn't silently clip
+ * the strip. The min-height keeps the title region usable when the
+ * AppHeader renders nothing (e.g. before boot completes). */
+.titlebar {
+  display: flex;
+  align-items: stretch;
+  min-height: 32px;
+  height: auto;
+  width: 100%;
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+  -webkit-app-region: drag;
+  position: relative;
+  z-index: 2;
+}
+
+.titlebar > * {
+  -webkit-app-region: no-drag;
+}
+
+/* The brand/tabs slot — fills the space between the menu button
+ * (leading edge) and the window controls (trailing edge). The host
+ * slots the existing AppHeader here. */
+.titlebar-slot {
+  display: flex;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The menu button — leading edge. Its popover anchors to its
+ * bottom-left corner. */
+.titlebar-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--sp-1) 0 var(--sp-2);
+}
+
+.titlebar-menu-button {
+  width: 28px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-2);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--t-quick) var(--ease),
+    color var(--t-quick) var(--ease),
+    border-color var(--t-quick) var(--ease);
+}
+
+.titlebar-menu-button:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.titlebar-menu-button-active {
+  background: var(--bg-active);
+  color: var(--fg-strong);
+}
+
+/* Menu popover — vertically flush with the title bar's bottom edge.
+ * Animates in via the same ease curve the rest of the UI uses (150-250ms).
+ * Width is large enough for a 3-letter shortcut chip on the right. */
+.titlebar-menu-popover {
+  position: absolute;
+  top: 100%;
+  left: var(--sp-1);
+  margin-top: 2px;
+  min-width: 260px;
+  max-height: min(560px, calc(100vh - 40px));
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-popover);
+  padding: 6px;
+  z-index: 50;
+  animation: titlebar-popover-in var(--t-base) var(--ease);
+}
+
+@keyframes titlebar-popover-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.titlebar-menu-heading {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--fg-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px var(--sp-2) 2px;
+}
+
+.titlebar-menu-sep {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 6px;
+}
+
+.titlebar-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  width: 100%;
+  padding: 6px var(--sp-2) 6px var(--sp-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-1);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background var(--t-quick) var(--ease),
+    color var(--t-quick) var(--ease);
+}
+
+.titlebar-menu-row:hover,
+.titlebar-menu-row:focus-visible {
+  outline: none;
+  background: var(--accent-soft);
+  color: var(--fg-strong);
+}
+
+.titlebar-menu-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.titlebar-menu-row-icon {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+
+.titlebar-menu-row-kbd {
+  flex: 0 0 auto;
+}
+
+/* Window controls — trailing edge. Three identical rounded squares;
+ * the close button switches to the semantic error color on hover so
+ * the destructive affordance is unmistakable. All transitions stay
+ * in the 150-250ms range. */
+.titlebar-controls {
+  display: inline-flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+}
+
+.titlebar-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--t-quick) var(--ease),
+    color var(--t-quick) var(--ease);
+}
+
+.titlebar-control:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.titlebar-control:focus-visible {
+  outline: none;
+  background: var(--bg-active);
+  color: var(--fg-strong);
+}
+
+.titlebar-control-close:hover,
+.titlebar-control-close:focus-visible {
+  background: var(--error);
+  color: #ffffff;
 }
 
 .brand {
@@ -1118,8 +1398,34 @@ textarea {
   animation: toast-in var(--t-base) var(--ease);
 }
 
-.toast-error { border-left-color: #ef4444; color: var(--fg-strong); }
-.toast-info { border-left-color: var(--accent); }
+/* Toast variants — each uses the semantic color token rather than a
+ * raw hex so dark-mode contrast stays correct without duplicating the
+ * theme palette. The 3px left bar is the primary state cue; the icon
+ * color picks up the same token via `color: currentColor` inheritance
+ * from the toast-text span (the icon is set explicitly per kind below). */
+.toast-error {
+  border-left-color: var(--error);
+  color: var(--fg-strong);
+}
+.toast-error .toast-icon { color: var(--error); }
+
+.toast-info {
+  border-left-color: var(--info);
+  color: var(--fg-strong);
+}
+.toast-info .toast-icon { color: var(--info); }
+
+.toast-success {
+  border-left-color: var(--success);
+  color: var(--fg-strong);
+}
+.toast-success .toast-icon { color: var(--success); }
+
+.toast-warning {
+  border-left-color: var(--warning);
+  color: var(--fg-strong);
+}
+.toast-warning .toast-icon { color: var(--warning); }
 
 .toast-text { line-height: 1.35; }
 
@@ -1275,19 +1581,24 @@ textarea {
   color: var(--fg-on-accent);
 }
 
-/* 'error' — muted outlined button. Clicking retries the
-   download (same code path as 'available'). */
+/* 'error' — DEF-082. Semantic error colour so the chip is
+   unambiguously an error state, not a regular muted button. We use
+   the soft-tinted background + error-token colour/border in both
+   themes so the contrast holds against the toolbar in either
+   direction; the strong red foreground + 1px error border is the
+   primary affordance. Hover swaps to the solid error background so
+   the retry intent reads on click. */
 .update-indicator-error {
   cursor: pointer;
-  background: transparent;
-  border-color: var(--border);
-  color: var(--fg-muted);
+  background: var(--error-soft);
+  border-color: var(--error);
+  color: var(--error);
 }
 
 .update-indicator-error:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-  border-color: var(--border-strong);
+  background: var(--error);
+  color: #ffffff;
+  border-color: var(--error);
 }
 
 .tooltip-anchor { position: relative; }
@@ -2782,6 +3093,25 @@ textarea {
   padding-top: var(--sp-3);
   margin-top: var(--sp-3);
 }
+
+.about-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.about-actions .btn-secondary {
+  /* Matches the "secondary" affordance used elsewhere — the
+     Check for Updates button is a less-frequent action than the
+     dialog's primary close, so it sits one rung below in the
+     visual weight ladder. */
+  height: 30px;
+  padding: 0 12px;
+  font-size: var(--fs-sm);
+}
 .about-row {
   display: flex;
   align-items: center;
@@ -2820,6 +3150,51 @@ textarea {
   border-radius: var(--radius-2);
   color: var(--fg-muted);
   font-size: var(--fs-xs);
+}
+
+/* ----- Update prompt dialog (OTA UX) -----
+   Sheet styled to match About / Preferences. The body is a
+   short paragraph + a row of action buttons (primary Update /
+   Restart on the right, secondary Cancel / Later on the left).
+   No new colors: reuses --accent / --fg / --fg-muted / --border
+   tokens. */
+
+.sheet-body-update-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+}
+
+.update-prompt-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.update-prompt-text {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: 1.5;
+  color: var(--fg);
+}
+
+.update-prompt-text strong {
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
+.update-prompt-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  align-items: center;
+}
+
+.update-prompt-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ----- Preferences dialog ----- */
@@ -2977,7 +3352,10 @@ textarea {
 }
 .color-palette-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* Phase 13 — five columns. Nine built-in swatches over a 5-wide
+   * grid wraps to 2 rows of 4-5, which reads as a deliberate swatch
+   * palette rather than a thin color strip. */
+  grid-template-columns: repeat(5, 1fr);
   gap: var(--sp-2);
 }
 .color-swatch-wrap {

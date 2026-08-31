@@ -103,6 +103,15 @@ export interface UpdateIndicatorProps {
    *  `enabled={false}` to skip the IPC entirely — useful in tests
    *  that don't want the indicator to fire IPC on mount. */
   enabled?: boolean;
+  /** OTA UX — when the host owns the onStatusChanged
+   *  subscription (so the UpdatePromptDialog can react to the
+   *  same push), the indicator can be told to read its state
+   *  from this prop instead of subscribing on its own. The
+   *  default `undefined` keeps the existing single-surface
+   *  behaviour so callers that don't care about the prompt
+   *  continue to work. Tests pass `enabled={false}` + the
+   *  prop to lock behaviour without IPC. */
+  externalState?: UpdateState | null;
 }
 
 /** Toolbar indicator. Mounts once and stays mounted for the lifetime
@@ -110,12 +119,24 @@ export interface UpdateIndicatorProps {
  *  render. The initial state is fetched via `getStatus()`; subsequent
  *  state changes come from the `onStatusChanged` push. */
 export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | null {
-  const { enabled = true } = props;
+  const { enabled = true, externalState } = props;
   // undefined = haven't asked yet, null = channel absent,
-  // UpdateState = live state from the backend.
-  const [state, setState] = useState<UpdateState | null | undefined>(undefined);
+  // UpdateState = live state from the backend. When the host
+  // passes `externalState`, the indicator reads from there and
+  // skips its own subscription entirely — used by App.tsx to
+  // share one onStatusChanged listener between the toolbar chip
+  // and the UpdatePromptDialog.
+  const [state, setState] = useState<UpdateState | null | undefined>(
+    externalState,
+  );
 
   useEffect(() => {
+    // Host-supplied state wins — sync on every prop change so the
+    // indicator reflects whatever the host's subscription sees.
+    if (externalState !== undefined) {
+      setState(externalState);
+      return undefined;
+    }
     if (!enabled) return undefined;
     const api = readUpdateApi();
     if (api === null) {
@@ -141,7 +162,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
       cancelled = true;
       unsubscribe();
     };
-  }, [enabled]);
+  }, [enabled, externalState]);
 
   const onDownload = useCallback((): void => {
     const api = readUpdateApi();

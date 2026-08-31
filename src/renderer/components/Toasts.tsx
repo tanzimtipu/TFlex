@@ -1,10 +1,26 @@
-import { AlertCircle, Info, X } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle, Info, X } from 'lucide-react';
 import { useEffect } from 'react';
 
+/** Toast kind. Phase 13 adds `success` + `warning` so the renderer can
+ *  surface non-error non-info results distinctly. The accent still
+ *  claims only the `info` slot — success / warning / error are
+ *  status-only colours, never primary actions. Every existing call
+ *  site passes `'info'` or `'error'`; the new kinds are opt-in. */
 export interface Toast {
   id: number;
-  kind: 'error' | 'info';
+  kind: 'error' | 'info' | 'success' | 'warning';
   text: string;
+}
+
+/** Pure mapping from kind to icon component. Extracted so tests can
+ *  pin the kind -> icon contract without rendering the component. */
+export function toastIcon(kind: Toast['kind']): typeof AlertCircle {
+  switch (kind) {
+    case 'error': return AlertCircle;
+    case 'success': return CheckCircle;
+    case 'warning': return AlertTriangle;
+    case 'info': return Info;
+  }
 }
 
 export function Toasts({
@@ -29,10 +45,10 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
     return () => window.clearTimeout(timer);
   }, [toast.id, onDismiss]);
 
-  const Icon = toast.kind === 'error' ? AlertCircle : Info;
+  const Icon = toastIcon(toast.kind);
   return (
     <div className={`toast toast-${toast.kind}`}>
-      <Icon size={14} aria-hidden />
+      <Icon size={14} aria-hidden className="toast-icon" />
       <span className="toast-text">{toast.text}</span>
       <button
         type="button"

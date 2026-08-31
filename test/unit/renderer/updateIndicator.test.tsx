@@ -607,3 +607,134 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
     container.remove();
   });
 });
+
+// ---------------------------------------------------------------------------
+// OTA UX — `externalState` prop. The App.tsx wiring owns the
+// single shared onStatusChanged subscription (so the prompt
+// dialog and the toolbar chip see the same push). The indicator
+// reads its state from the prop and skips its own subscription
+// to avoid double-listener + double-fetch on mount.
+//
+// These tests pin the contract:
+//   1. When `externalState` is provided, the indicator renders
+//      the matching visual treatment and never calls IPC.
+//   2. When `externalState` changes (push from the host), the
+//      indicator re-renders with the new state.
+//   3. `getStatus()` is NOT called when `externalState` is set
+//      (no double-fetch).
+//   4. `onStatusChanged` is NOT subscribed when `externalState`
+//      is set (no double-listener).
+// ---------------------------------------------------------------------------
+describe("UpdateIndicator — externalState prop (OTA UX shared subscription)", () => {
+  beforeEach(() => {
+    clearTflex();
+  });
+  afterEach(() => {
+    clearTflex();
+    vi.restoreAllMocks();
+  });
+
+  it("renders using externalState without subscribing to onStatusChanged or calling getStatus", async () => {
+    const getStatus = vi.fn(async (): Promise<UpdateState> => ({
+      kind: "up-to-date",
+      version: "1.5.3",
+    }));
+    const onStatusChanged = vi.fn(
+      (): (() => void) => (): void => undefined,
+    );
+    setTflex({
+      update: { getStatus, onStatusChanged },
+    });
+    const { cleanup } = renderIndicator({});
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // No externalState prop -> the indicator uses its own
+    // subscription (legacy behaviour). getStatus should have
+    // been called once at mount.
+    expect(getStatus).toHaveBeenCalledTimes(1);
+    expect(onStatusChanged).toHaveBeenCalledTimes(1);
+    cleanup();
+  });
+
+  it("with externalState set, the indicator renders the matching treatment without touching IPC", async () => {
+    const getStatus = vi.fn(async (): Promise<UpdateState> => ({
+      kind: "up-to-date",
+      version: "1.5.3",
+    }));
+    const onStatusChanged = vi.fn(
+      (): (() => void) => (): void => undefined,
+    );
+    setTflex({
+      update: { getStatus, onStatusChanged },
+    });
+    // Mount a fresh indicator with externalState passed in.
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    act((): void => {
+      root.render(
+        <UpdateIndicator externalState={{ kind: "available", version: "1.6.0" }} />,
+      );
+    });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    const pill = container.querySelector(
+      "[data-update-indicator-kind='available']",
+    );
+    expect(pill).not.toBeNull();
+    expect(pill?.getAttribute("data-update-indicator-version")).toBe("1.6.0");
+    // externalState short-circuits the IPC subscription: the
+    // host owns the listener, the indicator reads the prop.
+    expect(getStatus).not.toHaveBeenCalled();
+    expect(onStatusChanged).not.toHaveBeenCalled();
+    act((): void => {
+      root.unmount();
+    });
+    container.remove();
+  });
+
+  it("re-renders when externalState changes (host-side push)", async () => {
+    const getStatus = vi.fn(async (): Promise<UpdateState> => ({
+      kind: "up-to-date",
+      version: "1.5.3",
+    }));
+    setTflex({ update: { getStatus } });
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    // Render the indicator with an updating externalState via
+    // a parent that re-renders on every tick. We use a simple
+    // component wrapper so React re-renders when state changes.
+    let stateRef: UpdateState = { kind: "checking" };
+    const setState = (next: UpdateState): void => {
+      stateRef = next;
+      act((): void => {
+        root.render(<UpdateIndicator externalState={stateRef} />);
+      });
+    };
+    act((): void => {
+      root.render(<UpdateIndicator externalState={stateRef} />);
+    });
+    await act(async (): Promise<void> => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    let chip = container.querySelector("[data-update-indicator]");
+    expect(chip?.getAttribute("data-update-indicator-kind")).toBe("checking");
+
+    setState({ kind: "available", version: "2.0.0" });
+    chip = container.querySelector("[data-update-indicator]");
+    expect(chip?.getAttribute("data-update-indicator-kind")).toBe("available");
+    expect(chip?.getAttribute("data-update-indicator-version")).toBe("2.0.0");
+    // The IPC layer must remain untouched (host owns it).
+    expect(getStatus).not.toHaveBeenCalled();
+    act((): void => {
+      root.unmount();
+    });
+    container.remove();
+  });
+});

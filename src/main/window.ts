@@ -37,6 +37,23 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
   const geometry = settings.geometry;
   const visible = geometry.maximized || rectOnSomeDisplay(geometry);
 
+  // Phase 13 — frameless window. The renderer draws its own title bar
+  // (the window-drag region is declared with CSS `-webkit-app-region: drag`
+  // on the renderer's title element, and `-webkit-app-region: no-drag` on
+  // any interactive children inside it) and its own caption buttons over
+  // the existing window:minimize / window:maximize / window:close IPC.
+  //
+  // `frame: false` is the cleanest fully-frameless Windows path: it removes
+  // the native title bar AND the native caption buttons, so there is no
+  // double set of controls. We deliberately do NOT pair it with
+  // `titleBarStyle: 'hidden'` + `titleBarOverlay` — that combination would
+  // re-introduce native caption buttons that duplicate the renderer's
+  // custom controls. `resizable` defaults to true; it is restated
+  // explicitly so the OS edge resize handles survive the frameless switch
+  // (`frame: false` still exposes the thin edge resize border on Windows).
+  // Aero Snap (drag the `-webkit-app-region: drag` region to a screen edge
+  // to maximize/snap) keeps working because the OS treats that region as a
+  // caption area.
   const win = new BrowserWindow({
     width: geometry.width,
     height: geometry.height,
@@ -44,6 +61,8 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     y: visible ? geometry.y : undefined,
     minWidth: 640,
     minHeight: 480,
+    frame: false,
+    resizable: true,
     show: false,
     autoHideMenuBar: false,
     webPreferences: {

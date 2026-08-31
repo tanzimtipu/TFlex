@@ -80,6 +80,7 @@ const {
       getStatus: vi.fn().mockReturnValue({ kind: 'up-to-date', version: '1.0.0' }),
       download: vi.fn().mockResolvedValue({ kind: 'downloading', progress: 0 }),
       install: vi.fn(),
+      checkForUpdates: vi.fn().mockResolvedValue({ kind: 'checking' }),
       onStatusChanged: vi.fn().mockReturnValue(() => {}),
     },
     _openPath: vi.fn().mockResolvedValue(''),
@@ -808,6 +809,37 @@ describe('main/index - update:install handler', () => {
     const handler = instCall[1] as (...args: unknown[]) => unknown;
     await handler();
     expect(_updateServiceInstance.install).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-079 / DEF-080: update:check handler
+// ---------------------------------------------------------------------------
+
+describe('main/index - DEF-080 update:check handler', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    await start();
+  });
+
+  it('registers update:check handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.updateCheck);
+  });
+
+  it('triggers checkForUpdates on the update service', async () => {
+    const call = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.updateCheck)!;
+    expect(call).toBeDefined();
+    const handler = call[1] as (...args: unknown[]) => unknown;
+    const result = await handler();
+    expect(_updateServiceInstance.checkForUpdates).toHaveBeenCalled();
+    expect(result).toEqual({ kind: 'checking' });
+  });
+
+  it('does not register update:check as a fire-and-forget on() listener', () => {
+    // update:check returns a value, so it must be a handle(), not on().
+    const onChannels = _ipcOn.mock.calls.map((c: unknown[]) => c[0] as string);
+    expect(onChannels).not.toContain(IPC.updateCheck);
   });
 });
 

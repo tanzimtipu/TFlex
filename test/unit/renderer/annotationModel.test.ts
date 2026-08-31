@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ANNOTATION_COLORS,
+  ANNOTATION_COLOR_HEX,
   applyPatch,
   annotationColorToCss,
   annotationToolReducer,
@@ -232,7 +233,33 @@ describe("kindLabel", () => {
 });
 
 describe("Annotation colors", () => {
-  it("ANNOTATION_COLORS lists exactly red/yellow/green/blue", () => {
-    expect(ANNOTATION_COLORS).toEqual(["yellow", "red", "green", "blue"]);
+  it("ANNOTATION_COLORS lists the full built-in palette in visual reading order", () => {
+    // Phase 13 — the picker renders a richer 9-color row. The order
+    // is warm -> cool -> accent (yellow, orange, red, pink, purple,
+    // teal, green, blue, gray). Changing this order is a visual
+    // change, not a wire-compat one — annotations persisted as
+    // {color: 'red'} still resolve to the same hex regardless of
+    // position in this list.
+    expect(ANNOTATION_COLORS).toEqual([
+      "yellow",
+      "orange",
+      "red",
+      "pink",
+      "purple",
+      "teal",
+      "green",
+      "blue",
+      "gray",
+    ]);
+  });
+
+  it("ANNOTATION_COLOR_HEX covers every name in ANNOTATION_COLORS", () => {
+    // Belt-and-braces: a name added to ANNOTATION_COLORS without a
+    // matching hex would surface as a `currentColor` fallback in
+    // the overlay — the highlight would render transparent. This
+    // guard pins a 1-to-1 mapping.
+    for (const name of ANNOTATION_COLORS) {
+      expect(ANNOTATION_COLOR_HEX[name]).toMatch(/^#[0-9a-f]{6}$/);
+    }
   });
 });

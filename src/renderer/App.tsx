@@ -20,15 +20,18 @@ import type {
   SignaturePlacement,
   SpaceAudit,
   StampId,
+  UpdateState,
 } from "../shared/types";
 import type { TFlexApi } from "../shared/ipc";
 import { Welcome } from "./components/Welcome";
 import { AppHeader } from "./components/AppHeader";
 import { Toasts, type Toast } from "./components/Toasts";
+import { TitleBar, type MenuGroup } from "./components/TitleBar";
 import { ToolsPalette } from "./components/ToolsPalette";
 import { AboutDialog } from "./components/AboutDialog";
 import { PreferencesDialog } from "./components/PreferencesDialog";
 import { UpdateIndicator } from "./components/UpdateIndicator";
+import { UpdatePromptDialog } from "./components/UpdatePromptDialog";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
 import { applyTheme, nextTheme } from "./state/theme";
 import { resolveInitialSettings } from "./state/settings";
@@ -337,6 +340,25 @@ export function App(): ReactElement {
   const [toolsPaletteOpen, setToolsPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  // OTA UX — the update prompt. Opens automatically when the
+  // backend pushes an `available` (Update to X.Y.Z available) or
+  // `downloaded` (Restart to update) UpdateState over
+  // `tflex.update.onStatusChanged`. Also opens on demand via the
+  // Help -> Check for Update menu action and the About dialog's
+  // "Check for Updates" button. The toolbar UpdateIndicator
+  // continues to render its own affordance independently — the
+  // prompt is the *notification*, the indicator is the *always-
+  // visible affordance*. Both can coexist; dismissing the prompt
+  // does NOT dismiss the indicator (the user can re-open the
+  // prompt by clicking the indicator chip, which still routes
+  // through the IPC handlers).
+  const [updatePromptOpen, setUpdatePromptOpen] = useState(false);
+  /** Live UpdateState mirror — feeds both the toolbar indicator
+   *  (via UpdateIndicator's own subscription, refactored to read
+   *  through this prop) and the prompt dialog. Hoisted here so
+   *  the same subscription serves both surfaces and we never
+   *  double-subscribe to onStatusChanged. */
+  const [updateState, setUpdateState] = useState<UpdateState | null | undefined>(undefined);
   // Phase 10 — Edit-content mode. The toolbar shows the Edit
   // button; clicking it (or pressing the menu shortcut) toggles
   // this. When on, the per-page EditOverlay becomes pointer-active
@@ -464,6 +486,70 @@ export function App(): ReactElement {
     };
   }, []);
 
+  // OTA UX — one shared subscription to `tflex.update.onStatusChanged`
+  // feeds both the toolbar UpdateIndicator (via `externalState`)
+  // and the UpdatePromptDialog (via the `updateState` prop). The
+  // auto-open effect below reacts to `updateState` transitions
+  // into `available` / `downloaded` and pops the prompt. Manual
+  // checks (Help -> Check for Update, About button) call
+  // `update.checkForUpdates()` if the preload wired it, otherwise
+  // they fall back to `getStatus()` so the user still sees a
+  // result instead of a no-op.
+  //
+  // We mount this subscription in a dedicated effect so it survives
+  // across the rest of the App's re-renders (the toolbar indicator
+  // no longer subscribes itself when App passes that prop — see
+  // UpdateIndicator's `externalState` for the contract).
+  useEffect(() => {
+    const updateApi = window.tflex.update;
+    if (updateApi === undefined) {
+      // Preload predates OTA — silently degrade. The toolbar
+      // indicator renders nothing and the prompt never opens.
+      return (): void => undefined;
+    }
+    let cancelled = false;
+    // Seed the initial state from getStatus() so the toolbar
+    // renders synchronously without waiting for the first push.
+    if (typeof updateApi.getStatus === "function") {
+      void updateApi.getStatus()
+        .then((next) => {
+          if (!cancelled) setUpdateState(next);
+        })
+        .catch(() => {
+          if (!cancelled) setUpdateState(null);
+        });
+    }
+    if (typeof updateApi.onStatusChanged !== "function") return;
+    const unsubscribe = updateApi.onStatusChanged((next) => {
+      if (!cancelled) setUpdateState(next);
+    });
+    return (): void => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  // OTA UX — when the live UpdateState becomes 'available' or
+  // 'downloaded', auto-open the prompt. The toolbar indicator
+  // also reflects these states, but the prompt is the *push*
+  // that nudges the user to act. Cancelling the prompt does
+  // NOT clear `updateState` — the toolbar chip stays visible
+  // so the user can still act via the toolbar (and clicking
+  // the toolbar chip routes through the IPC directly without
+  // re-opening the prompt; that's by design — the prompt is
+  // for the first push, the chip is the always-on affordance).
+  //
+  // We only auto-open when the dialog is currently closed, so
+  // a user who already cancelled the prompt isn't re-prompted
+  // by the same push (the indicator has the state, that's enough).
+  useEffect(() => {
+    if (updateState === null || updateState === undefined) return;
+    if (updatePromptOpen) return;
+    if (updateState.kind === "available" || updateState.kind === "downloaded") {
+      setUpdatePromptOpen(true);
+    }
+  }, [updateState, updatePromptOpen]);
+
   const onToggleTheme = useCallback((): void => {
     setSettings((prev) => {
       if (prev === null) return prev;
@@ -479,6 +565,65 @@ export function App(): ReactElement {
   }, []);
   const dismissToast = useCallback((id: number): void => {
     dispatchError({ type: "dismiss", id });
+  }, []);
+
+  // OTA UX — manual re-check handler. Wires Help -> Check for
+  // Update and the About dialog's "Check for Updates" button.
+  // Calls `update.check()` — the renderer -> main IPC that
+  // re-runs electron-updater's check with autoDownload=false.
+  // The result lands via the shared onStatusChanged
+  // subscription and the auto-open effect reacts if the result
+  // is `available` / `downloaded`. We open the prompt
+  // proactively so the user sees immediate feedback (the body
+  // shows "Checking for updates" while the backend runs); the
+  // auto-open effect is a no-op when the prompt is already
+  // open, so the proactive open and the push path converge.
+  //
+  // The IPC channel predates this wiring (DEF-079 / DEF-080);
+  // `update.check()` resolves with the resulting UpdateState.
+  // The toast fallback below triggers only when the IPC
+  // surface is absent entirely (very old builds), which is
+  // not a realistic runtime condition — included for unit
+  // tests and very-stale preload builds.
+  const onCheckForUpdate = useCallback((): void => {
+    const updateApi = window.tflex.update;
+    if (updateApi === undefined || typeof updateApi.check !== "function") {
+      pushToast(
+        "info",
+        "Update checks are not available in this build of TFlex.",
+      );
+      return;
+    }
+    setUpdatePromptOpen(true);
+    void updateApi.check().catch(() => undefined);
+  }, [pushToast]);
+
+  // OTA UX — Update button handler. Fires `update.download()`;
+  // the dialog stays open while the backend pushes 'downloading'
+  // progress and re-prompts on 'downloaded'. No-op if the IPC
+  // channel is absent (the prompt would have been open by a
+  // push we already received, so we know the channel exists,
+  // but defensively guard anyway).
+  const onUpdateDownload = useCallback((): void => {
+    const updateApi = window.tflex.update;
+    if (updateApi?.download === undefined) return;
+    void updateApi.download().catch(() => undefined);
+  }, []);
+
+  // OTA UX — Install / Restart button handler. Fires
+  // `update.install()` which triggers quitAndInstall. The
+  // dialog can stay open — the backend closes the window.
+  const onUpdateInstall = useCallback((): void => {
+    const updateApi = window.tflex.update;
+    if (updateApi?.install === undefined) return;
+    void updateApi.install().catch(() => undefined);
+  }, []);
+
+  // OTA UX — close handler. Called from Cancel / Later / X /
+  // backdrop / Escape. The toolbar indicator continues to
+  // reflect the underlying state independently.
+  const onCloseUpdatePrompt = useCallback((): void => {
+    setUpdatePromptOpen(false);
   }, []);
 
   const toastForPdfError = useCallback(
@@ -1721,8 +1866,30 @@ export function App(): ReactElement {
   // Every menu item (Help -> About, File -> Save, ...) silently
   // failed. The fix wires App.tsx to the IPC bridge and removes the
   // DOM listener entirely.
-  useEffect(() => {
-    const ctx: MenuActionContext = {
+  // Phase 7 — native application menu + Phase 13 menu popover.
+// The backend builds the menu (see src/main/menu.ts) and pushes every
+// action over IPC as a 'menu:action' channel carrying
+// { action: string }. The preload exposes that channel via
+// `tflex.menu.onAction(cb)`. Both the native-menu listener AND the
+// custom TitleBar's menu popover route through the SAME
+// `dispatchMenuAction(action, ctx)` call — they share the same bag of
+// handlers, so the two surfaces always behave identically. The menu
+// is a thin dispatch surface — no business logic lives here.
+//
+// We hoist the context into a `useMemo` with stable deps so both
+// consumers see the SAME reference across App renders. Resubscribing
+// to `onAction` on every render would churn the IPC subscription; the
+// menu listener's `useEffect` watches the memoised context's identity
+// (deps below) and unsubscribes/resubscribes only when the underlying
+// handler identities change — same pattern the rest of the App uses.
+//
+// DEF-038: the renderer used to listen for a DOM CustomEvent
+// named 'menu:action' that the preload bridge never dispatches.
+// Every menu item (Help -> About, File -> Save, ...) silently
+// failed. The fix wires App.tsx to the IPC bridge and removes the
+// DOM listener entirely.
+const menuContext: MenuActionContext = useMemo<MenuActionContext>(
+    () => ({
       open: (): void => {
         void onOpenClick();
       },
@@ -1836,20 +2003,39 @@ export function App(): ReactElement {
         if (activeTabIdRefLocal.current === null) return;
         setOcrOpen(true);
       },
-    };
+      // OTA UX — Help -> Check for Update. Asks the backend to
+      // re-run the electron-updater check (when the preload
+      // exposes `update.checkForUpdates()`) or falls back to a
+      // `getStatus()` round-trip so the user always sees a
+      // result. The prompt auto-opens from the subscription if
+      // the result is `available` / `downloaded`. Document-
+      // agnostic — reachable from the welcome screen too.
+      checkForUpdate: (): void => {
+        onCheckForUpdate();
+      },
+    }),
+    // The memoised deps are the underlying handler identities
+    // (useCallbacks / useStates that change rarely). The setters
+    // are stable; the callback identities only change when their
+    // own deps change.
+    [
+      onOpenClick,
+      onSave,
+      onSaveAs,
+      closeTab,
+      onUndo,
+      onRedo,
+      onToggleTheme,
+      onCheckForUpdate,
+    ],
+  );
+
+useEffect(() => {
     const unsubscribe = window.tflex.menu.onAction((action) => {
-      dispatchMenuAction(action, ctx);
+      dispatchMenuAction(action, menuContext);
     });
     return unsubscribe;
-  }, [
-    onOpenClick,
-    onSave,
-    onSaveAs,
-    closeTab,
-    onUndo,
-    onRedo,
-    onToggleTheme,
-  ]);
+  }, [menuContext]);
 
   // ---- merge / split dialogs ----
   const onMergeClick = useCallback((): void => {
@@ -3969,18 +4155,88 @@ export function App(): ReactElement {
   );
 
   // Stable projection of tabs.tabs for AppHeader. We rebuild this list
-  // only when the underlying tabs array actually changes (open / close
-  // / activate / set-modified / rename). Without the memo, every App
-  // re-render (theme toggle, settings echo, engine state mirror effects)
-  // would produce new outer tab objects, which would force AppHeader
-  // to re-render every tab element and — combined with a mousedown /
-  // mouseup crossing the re-render — lose the click. Identity-stable
-  // props keep the React tree stable so the mousedown semantics in
-  // AppHeader resolve to the same DOM node the user pressed
-  // (DEF-034: state-churn click loss).
+    // only when the underlying tabs array actually changes (open / close
+    // / activate / set-modified / rename). Without the memo, every App
+    // re-render (theme toggle, settings echo, engine state mirror effects)
+    // would produce new outer tab objects, which would force AppHeader
+    // to re-render every tab element and — combined with a mousedown /
+    // mouseup crossing the re-render — lose the click. Identity-stable
+    // props keep the React tree stable so the mousedown semantics in
+    // AppHeader resolve to the same DOM node the user pressed
+    // (DEF-034: state-churn click loss).
   const headerTabs = useMemo(
     () => tabs.tabs.map((meta) => ({ id: meta.id, title: meta.title, modified: meta.modified })),
     [tabs.tabs],
+  );
+
+  // Phase 13 — maximize / restore icon for the custom title bar.
+  // The geometry echo from main (loadSettings / settings.changed)
+  // carries `geometry.maximized`; we read it directly off the
+  // settings snapshot and pass it through to TitleBar. The host
+  // also has the IPC handler `tflex.maximizeWindow()` toggle the
+  // window; the geometry echo lands in `settings.changed` within
+  // ~300ms (the existing GEOMETRY_DEBOUNCE_MS window) and updates
+  // this state. Reading from settings keeps it in sync with the
+  // rest of the App; no separate state slot needed. `settings` is
+  // narrowed to non-null below the `bootDone && settings !== null`
+  // guard, so the read is type-safe.
+  const isMaximized = settings !== null ? settings.geometry.maximized : false;
+
+  // Phase 13 — menu popover entries. The TitleBar renders a popover
+  // listing every menu action with its accelerator; clicking an entry
+  // routes through the same `dispatchMenuAction` the native menu
+  // listener uses. The `menuContext` mirrors the one App.tsx hands to
+  // `tflex.menu.onAction` (same handlers, same gating). Defined here
+  // as a memoised constant so its reference is stable across App
+  // re-renders — the popover only re-mounts when the dependency set
+  // actually changes (theme toggle, dialog open state, etc).
+  const menuGroups = useMemo<MenuGroup[]>(
+    () => [
+      {
+        id: "file",
+        label: "File",
+        entries: [
+          { id: "open", label: "Open...", accelerator: "Ctrl+O", action: "open" },
+          { id: "merge", label: "Merge...", accelerator: "Ctrl+Shift+O", action: "merge" },
+          { id: "save", label: "Save", accelerator: "Ctrl+S", action: "save" },
+          { id: "saveAs", label: "Save As...", accelerator: "Ctrl+Shift+S", action: "saveAs" },
+          { id: "closeTab", label: "Close Tab", accelerator: "Ctrl+W", action: "closeTab" },
+        ],
+      },
+      {
+        id: "edit",
+        label: "Edit",
+        entries: [
+          { id: "undo", label: "Undo", accelerator: "Ctrl+Z", action: "undo" },
+          { id: "redo", label: "Redo", accelerator: "Ctrl+Shift+Z", action: "redo" },
+          { id: "prefs", label: "Preferences...", accelerator: "Ctrl+,", action: "preferences" },
+        ],
+      },
+      {
+        id: "view",
+        label: "View",
+        entries: [
+          { id: "theme", label: "Toggle Theme", accelerator: "Ctrl+Shift+T", action: "toggleTheme" },
+          { id: "tools", label: "Show Tools Palette", accelerator: "Ctrl+Shift+P", action: "showToolsPalette" },
+        ],
+      },
+      {
+        id: "tools",
+        label: "Tools",
+        entries: [
+          { id: "ocr", label: "Recognize Text...", accelerator: "Ctrl+Shift+R", action: "recognizeText" },
+        ],
+      },
+      {
+        id: "help",
+        label: "Help",
+        entries: [
+          { id: "check", label: "Check for Update...", accelerator: "Ctrl+Shift+U", action: "checkForUpdate" },
+          { id: "about", label: "About TFlex", action: "about" },
+        ],
+      },
+    ],
+    [],
   );
 
   /** True when the active tab is an empty placeholder (no document).
@@ -3995,6 +4251,7 @@ export function App(): ReactElement {
   if (!bootDone || settings === null) {
     return (
       <div className="app">
+        <TitleBar maximized={false} />
         <div className="app-main" />
         <Toasts items={[]} onDismiss={dismissToast} />
       </div>
@@ -4003,27 +4260,34 @@ export function App(): ReactElement {
 
   return (
     <div className="app">
-      <AppHeader
-        activeId={tabs.activeId}
-        // `headerTabs` is memoised above so its reference is stable
-        // across App re-renders that don't actually change tab state.
-        // AppHeader reads `modified` from this list (mirrored by the
-        // tabs reducer on every successful engine op).
-        tabs={headerTabs}
-        onActivate={activateTab}
-        onClose={closeTab}
-        theme={settings.theme}
-        onToggleTheme={onToggleTheme}
-        onOpen={onOpenClick}
-        onNewEmptyTab={onNewEmptyTab}
-        // DEF-077 — the OTA update indicator. The component owns its
-        // own subscription to `tflex.update.onStatusChanged` and
-        // self-hides when the state is `'unsupported'` (handled in
-        // `indicatorView`). Mounted next to the theme toggle inside
-        // `.header-actions` to match the spec's "next to the
-        // Tools/theme controls" placement.
-        updateIndicator={<UpdateIndicator />}
-      />
+      <TitleBar
+        menuGroups={menuGroups}
+        menuContext={menuContext}
+        maximized={isMaximized}
+      >
+        <AppHeader
+          activeId={tabs.activeId}
+          // `headerTabs` is memoised above so its reference is stable
+          // across App re-renders that don't actually change tab state.
+          // AppHeader reads `modified` from this list (mirrored by the
+          // tabs reducer on every successful engine op).
+          tabs={headerTabs}
+          onActivate={activateTab}
+          onClose={closeTab}
+          theme={settings.theme}
+          onToggleTheme={onToggleTheme}
+          onOpen={onOpenClick}
+          onNewEmptyTab={onNewEmptyTab}
+          // OTA UX — the toolbar update indicator reads its state
+          // from the App's shared `onStatusChanged` subscription via
+          // `externalState` so the same push that opens the prompt
+          // also drives the toolbar chip. We disable the indicator's
+          // own IPC subscription (`enabled={false}` would also work,
+          // but `externalState !== undefined` short-circuits it
+          // internally — same effect) so we never double-subscribe.
+          updateIndicator={<UpdateIndicator externalState={updateState} />}
+        />
+      </TitleBar>
       <div className="app-main">
         <div className="tab-stage">
           {tabs.tabs.length === 0 || activeIsEmpty ? (
@@ -4582,7 +4846,21 @@ export function App(): ReactElement {
         onClose={onCancelCommentImport}
       />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
-      <AboutDialog open={aboutOpen} onClose={(): void => setAboutOpen(false)} />
+      <AboutDialog
+        open={aboutOpen}
+        onClose={(): void => setAboutOpen(false)}
+        // OTA UX — Help -> Check for Update shortcut inside the
+        // About sheet. Same handler the menu routes through; opens
+        // the prompt and triggers a backend re-check.
+        onCheckForUpdate={onCheckForUpdate}
+      />
+      <UpdatePromptDialog
+        open={updatePromptOpen}
+        state={updateState}
+        onUpdate={onUpdateDownload}
+        onInstall={onUpdateInstall}
+        onClose={onCloseUpdatePrompt}
+      />
       <PreferencesDialog
         open={prefsOpen}
         onClose={(): void => setPrefsOpen(false)}

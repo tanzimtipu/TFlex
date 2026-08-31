@@ -1,3 +1,74 @@
+## DEF-084: Missing Phase 13 Control Index
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 13
+
+Expected: Developers return a CONTROL-INDEX with each phase (per AGENTS.md).
+Actual: No `CONTROL-INDEX.md` or equivalent record provided for Phase 13 features (frameless window, custom controls, menu popover).
+
+History:
+- qa: opened
+- qa: verified `CONTROL-INDEX.md` exists and covers all Phase 13 features. CLOSED.
+
+## DEF-083: Light theme remains dark/black
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Toggle to Light theme via the sun/moon icon.
+3. Observe the background and title bar colors.
+
+Expected: Light theme should have a light neutral base (`--bg-base: #ffffff`).
+Actual: The UI remains extremely dark. Screenshots (`gate-p13-theme-light.png`) show a background color of Zinc 950 (`#09090b` or similar) even when `data-theme="light"` is set.
+
+History:
+- qa: opened
+- qa: retested. Light theme now has white background (`#ffffff`) as confirmed by `gate-p13-theme-light.png`. CLOSED.
+
+## DEF-082: Update error indicator lacks semantic color
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex and trigger an update error (e.g. by not setting `TFLEX_GH_TOKEN`).
+2. Observe the "Retry" button in the title bar.
+
+Expected: The error indicator should use intentional semantic color (red-ish) per Phase 13 requirements ("UI text and icons pop... with intentional semantic color").
+Actual: `.update-indicator-error` uses `background: transparent` and `color: var(--fg-muted)`, making it look like a regular muted button rather than an error state.
+
+History:
+- qa: opened
+- qa: retested. Verified `rgba(248, 113, 113, 0.16)` background (soft red) in `e2e/phase13_gate_final.spec.cjs`. CLOSED.
+
+## DEF-081: Broken application layout (zero-height workspace)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex production build (`npm run build && electron .`).
+2. Observe the application window.
+3. Attempt to open a PDF or interact with the Welcome screen.
+
+Expected: The Welcome screen or Workspace fills the window below the title bar.
+Actual: The `app-main` container has 0px height. The window area below the title bar is empty (showing the black background of the `.app` container). The `Workspace` element is marked as "hidden" by Playwright because its container has no size.
+Root cause: `.app` grid template is `auto auto 1fr`. Row 1 is `TitleBar` (32px). Row 2 is `app-main` (auto). Row 3 is empty (1fr). Since `AppHeader` is a child of `TitleBar` rather than a sibling, there is no element to occupy Row 2 or expand Row 3 correctly.
+
+History:
+- qa: opened
+- qa: retested. Layout fixed, workspace visible and fills window in both themes. Verified via `phase13_gate_final.spec.cjs` and screenshots. CLOSED.
+
 ## DEF-078: React #520 regression in App.tsx / diagnostics
 
 - Status: CLOSED

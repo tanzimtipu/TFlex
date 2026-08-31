@@ -166,6 +166,20 @@ export function buildAppMenu(deps: MenuDeps): void {
       label: 'Help',
       submenu: [
         {
+          // DEF-080 — manual re-check. Emits the `checkForUpdate`
+          // action; the renderer's menu dispatcher routes it to
+          // `ctx.checkForUpdate()`, which opens the UpdatePromptDialog
+          // and calls `tflex.update.check()` -> the `update:check` IPC
+          // -> `updateService.checkForUpdates()` (autoDownload=false,
+          // same semantics as the start-path check). The accelerator
+          // is CmdOrCtrl+Shift+U (U for Update) — free of collisions
+          // with the File/Edit/View/Tools accelerators above.
+          label: 'Check for Update...',
+          accelerator: 'CmdOrCtrl+Shift+U',
+          click: () => send('checkForUpdate'),
+        },
+        { type: 'separator' },
+        {
           label: 'About TFlex',
           click: () => send('about'),
         },

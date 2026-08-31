@@ -137,10 +137,19 @@ describe("annotation model — callout kind", () => {
     expect(toggleTool(armed, "callout")).toBe("select");
   });
 
-  it("ANNOTATION_COLORS list still has its four built-ins", () => {
-    // Sanity: the callout additions did not perturb the legacy
-    // color list (the color picker UI depends on its shape).
-    expect(ANNOTATION_COLORS).toEqual(["yellow", "red", "green", "blue"]);
+  it("ANNOTATION_COLORS list keeps the four legacy built-ins in order", () => {
+    // Phase 13 — the legacy four remain in the front of the list so
+    // annotations persisted against an older renderer (which only
+    // knew yellow/red/green/blue) keep resolving to the same hex.
+    // Five additional names slot in after for a richer toolbar
+    // picker. The full list shape is checked in annotationModel.test.ts.
+    // The reading order is warm -> cool -> accent (yellow, orange,
+    // red, pink, ...); the legacy four map onto indexes 0/2/6/7 in
+    // the new list, so we assert by name lookup rather than slice.
+    const legacyNames = ["yellow", "red", "green", "blue"] as const;
+    for (const name of legacyNames) {
+      expect(ANNOTATION_COLORS).toContain(name);
+    }
   });
 
   it("isMarkup returns false for callouts", () => {

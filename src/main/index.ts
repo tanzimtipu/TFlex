@@ -347,6 +347,16 @@ export async function start(): Promise<void> {
     updateService.install();
   });
 
+  // DEF-079 / DEF-080 — manual re-check (Help -> Check for Update).
+  // Re-runs autoUpdater.checkForUpdates() with autoDownload=false (the
+  // same semantics as the start-path check in updateService.init()) and
+  // resolves with the resulting UpdateState. Routed from the
+  // `checkForUpdate` menu action the renderer dispatches to
+  // `tflex.update.check()` -> this `update:check` channel.
+  ipcMain.handle(IPC.updateCheck, () => {
+    return updateService.checkForUpdates();
+  });
+
   // Push update status changes to all windows
   updateService.onStatusChanged((state) => {
     for (const win of BrowserWindow.getAllWindows()) {

@@ -326,6 +326,37 @@ describe('createMainWindow', () => {
     });
   });
 
+  // Phase 13 — frameless window. The renderer draws its own title bar
+  // (drag region via CSS -webkit-app-region) and caption buttons (over the
+  // existing window:minimize/maximize/close IPC). frame:false removes the
+  // native title bar AND native caption buttons so the controls are not
+  // doubled. resizable stays true so the OS edge resize handles survive.
+  it('creates a frameless window (frame:false) and keeps resize handles', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const win = lastWindow();
+    const opts = win._opts as Record<string, unknown>;
+    expect(opts.frame).toBe(false);
+    expect(opts.resizable).toBe(true);
+  });
+
+  it('does not enable titleBarOverlay (no native caption-button duplication)', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const win = lastWindow();
+    const opts = win._opts as Record<string, unknown>;
+    // frame:false is the fully-frameless path; titleBarOverlay would
+    // re-introduce native caption buttons that duplicate the renderer's
+    // custom controls, so it must be absent (or false).
+    expect(opts.titleBarOverlay ?? false).toBe(false);
+  });
+
   it('clears previous debounce timer when a second event fires quickly', () => {
     vi.useFakeTimers();
     const onGeometryChanged = vi.fn();

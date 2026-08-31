@@ -24,6 +24,13 @@ import type { AppInfo, UpdateState } from '../../shared/types';
 interface AboutDialogProps {
   open: boolean;
   onClose: () => void;
+  /** OTA UX — Help -> Check for Update handler. The host wires
+   *  this to the same trigger that drives UpdatePromptDialog
+   *  (calls `update.checkForUpdates()` if available, opens the
+   *  prompt). The About dialog surfaces it as a button in the
+   *  meta footer so users on the about sheet have a direct path
+   *  to manual update checks without going through the menu. */
+  onCheckForUpdate?: () => void;
 }
 
 const FALLBACK_INFO: AppInfo = {
@@ -99,7 +106,7 @@ export function updateStateIsWarning(state: UpdateState): boolean {
 }
 
 export function AboutDialog(props: AboutDialogProps): ReactElement | null {
-  const { open, onClose } = props;
+  const { open, onClose, onCheckForUpdate } = props;
   const [info, setInfo] = useState<AppInfo>(FALLBACK_INFO);
   const [unavailable, setUnavailable] = useState(false);
   // Update state: undefined while we haven't yet asked, null when
@@ -257,6 +264,18 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
             </div>
             {renderUpdateRow()}
           </div>
+          {onCheckForUpdate !== undefined && (
+            <div className="about-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={onCheckForUpdate}
+                data-about-check-update
+              >
+                Check for Updates
+              </button>
+            </div>
+          )}
           {unavailable && (
             <div className="about-warning">
               The app info channel isn't wired yet. The About dialog will populate

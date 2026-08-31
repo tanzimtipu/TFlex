@@ -118,6 +118,13 @@ export const IPC = {
   updateDownload: "update:download",
   updateInstall: "update:install",
   updateStatusChangedEvent: "update:statusChanged",
+  // DEF-079 / DEF-080 — manual re-check IPC. The renderer fires
+  // this from Help -> Check for Update (and the About dialog's
+  // Check for Updates button). The backend re-runs
+  // `autoUpdater.checkForUpdates()` with `autoDownload = false`
+  // and the result lands via `update:statusChanged` exactly
+  // like the launch-time auto-check.
+  updateCheck: "update:check",
 } as const;
 
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
@@ -396,11 +403,20 @@ export interface TFlexApi {
   };
   /** Phase 6 — OTA updates. Backend manages the update lifecycle
    *  through electron-updater; the renderer polls status and can
-   *  trigger download/install. Status changes are pushed as events. */
+   *  trigger download/install. Status changes are pushed as events.
+   *
+   *  `check()` (DEF-079 / DEF-080) is the manual re-check entry
+   *  point — Help -> Check for Update emits the `update.check` menu
+   *  action, which the renderer routes to this call. The backend
+   *  re-runs `autoUpdater.checkForUpdates()` with `autoDownload =
+   *  false` (the same semantics as the start-path check) and the
+   *  result lands via `onStatusChanged` exactly like the launch-time
+   *  auto-check. */
   update?: {
     getStatus(): Promise<UpdateState>;
     download(): Promise<UpdateState>;
     install(): Promise<void>;
+    check(): Promise<UpdateState>;
     onStatusChanged(cb: (state: UpdateState) => void): () => void;
   };
   /** Phase 9 — engine surface (matches `window.tflex.engine` at

@@ -481,3 +481,30 @@ code from a bundled allowlist, preserve-if-valid); `ocrDownsample?: number` (def
 
 **Settings impact:** `defaultStampId?: string` (default `'APPROVED'`; validation:
 string from a bundled allowlist, preserve-if-valid).
+## Phase 13 — UX polish: borderless window + professional color
+
+**Features**
+
+1. Borderless app window (frame: false) with a custom title bar (drag region,
+   window controls min/max/close wired through existing IPC), modern industry-
+   standard styling, smooth animations (150-250ms ease-out per existing design
+   rules).
+2. Professional color: UI text and icons pop against the neutral base with
+   intentional semantic color (info/success/warning/error, action accent,
+   annotation colors) rather than a flat all-gray palette. Both themes equally
+   considered.
+
+**Success criteria**
+
+1. App launches frameless with a custom title bar that drags and window controls
+   that work; no OS chrome visible.
+2. The installer window also appears borderless/modern (electron-builder NSIS
+   appearance configured to the extent it supports; document limits).
+3. Typography and icons are visibly more readable and colorful in both themes,
+   while keeping the single accent color rule for primary actions; no emojis,
+   proper icon set throughout.
+4. Unit tests for the title bar state + any new renderer reducers; e2e covers
+   frameless launch + window controls + theme colors; performance budget
+   re-timed (cold start, long-doc open) and unchanged or improved.
+
+**Settings impact:** none (theme already stored; this phase refines it).

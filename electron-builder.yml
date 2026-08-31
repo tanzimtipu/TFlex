@@ -10,6 +10,24 @@ win:
   target:
     - nsis
     - portable
+# Phase 13 review — borderless / frameless NSIS installer is NOT supportable
+# via electron-builder, and the limit is recorded here honestly:
+#
+#   - electron-builder exposes no `frame`/`titleBarStyle` analog for the
+#     installer window. The NSIS wizard (MUI2) is a standard Win32 dialog with
+#     a fixed OS title bar; that chrome cannot be removed from config.
+#   - There is NO stylesheet theming for the installer UI. The only visual
+#     customisations are bitmaps (`installerIcon`, `uninstallerIcon`,
+#     `installerHeader`, `installerSidebar`, `uninstallerSidebar`) and the
+#     language selector (`displayLanguageSelector`, `installerLanguages`).
+#   - A custom NSIS include script (`nsis.include` -> a `.nsh` that is
+#     `!include`d) can add extra `nsDialogs` pages and run arbitrary NSIS
+#     commands, but every page is still a standard Win32 dialog with a title
+#     bar. It cannot make the wizard frameless.
+#   - A truly borderless installer would require replacing the entire NSIS
+#     UI executable (a custom-skinned installer host), which electron-builder
+#     does not expose. Out of scope for v1; the installer keeps its native
+#     frame. Only the runtime app window is frameless (see src/main/window.ts).
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

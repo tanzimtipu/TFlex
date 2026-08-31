@@ -47,6 +47,7 @@ interface Spies {
   exportDocx: Mock;
   insertPages: Mock;
   recognizeText: Mock;
+  checkForUpdate: Mock;
 }
 
 function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
@@ -69,6 +70,7 @@ function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
   const exportDocx = vi.fn();
   const insertPages = vi.fn();
   const recognizeText = vi.fn();
+  const checkForUpdate = vi.fn();
   const ctx: MenuActionContext = {
     open: () => open(),
     merge: () => merge(),
@@ -89,6 +91,7 @@ function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
     exportDocx: () => exportDocx(),
     insertPages: () => insertPages(),
     recognizeText: () => recognizeText(),
+    checkForUpdate: () => checkForUpdate(),
   };
   return {
     ctx,
@@ -96,7 +99,7 @@ function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
       open, merge, save, saveAs, closeTab, undo, redo, toggleTheme,
       showToolsPalette, about, preferences, optimize, auditSpace,
       createFromImages, exportPages, exportText, exportDocx, insertPages,
-      recognizeText,
+      recognizeText, checkForUpdate,
     },
   };
 }
@@ -216,6 +219,20 @@ describe("dispatchMenuAction — every menu action routes to exactly one handler
     expect(spies.recognizeText).toHaveBeenCalledTimes(1);
     expect(spies.optimize).not.toHaveBeenCalled();
   });
+
+  it("Help -> Check for Update routes to ctx.checkForUpdate() (OTA UX)", () => {
+    // The OTA UX wiring: Help -> Check for Update fires the
+    // 'checkForUpdate' menu action, which dispatches to the
+    // host's manual re-check handler (calls update.check()).
+    // The host then opens the prompt if the result is
+    // actionable. Pin the wiring contract.
+    const { ctx, spies } = buildCtx();
+    expect(dispatchMenuAction("checkForUpdate", ctx)).toBe(true);
+    expect(spies.checkForUpdate).toHaveBeenCalledTimes(1);
+    expect(spies.about).not.toHaveBeenCalled();
+    expect(spies.preferences).not.toHaveBeenCalled();
+    expect(spies.open).not.toHaveBeenCalled();
+  });
 });
 
 describe("dispatchMenuAction — zoom / fit actions are claimed (DocumentView handles them)", () => {
@@ -308,6 +325,7 @@ describe("dispatchMenuAction — handler isolation (DEF-038 regression)", () => 
       "exportDocx",
       "insertPages",
       "recognizeText",
+      "checkForUpdate",
     ] as const;
     for (const action of actions) {
       dispatchMenuAction(action, ctx);
@@ -331,6 +349,7 @@ describe("dispatchMenuAction — handler isolation (DEF-038 regression)", () => 
     expect(spies.exportDocx).toHaveBeenCalledTimes(1);
     expect(spies.insertPages).toHaveBeenCalledTimes(1);
     expect(spies.recognizeText).toHaveBeenCalledTimes(1);
+    expect(spies.checkForUpdate).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -355,6 +374,10 @@ describe("DEF-065 — active-doc menu gating (renderer-side safety)", () => {
     expect(menuActionRequiresActiveDoc("zoomIn")).toBe(false);
     expect(menuActionRequiresActiveDoc("fitWidth")).toBe(false);
     expect(menuActionRequiresActiveDoc("showToolsPalette")).toBe(false);
+    // OTA UX — Check for Update is reachable from the welcome
+    // screen with no doc open, so it must NOT require an active
+    // document.
+    expect(menuActionRequiresActiveDoc("checkForUpdate")).toBe(false);
     // Defensive: future / unknown actions should NOT be flagged as
     // doc-required — the renderer doesn't know what they do, so
     // the safest default is to let main decide.

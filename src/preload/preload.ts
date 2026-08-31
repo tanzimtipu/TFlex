@@ -394,6 +394,14 @@ const api = {
     install(): Promise<void> {
       return ipcRenderer.invoke(IPC.updateInstall);
     },
+    // DEF-079 / DEF-080 — manual re-check (Help -> Check for Update).
+    // The backend re-runs autoUpdater.checkForUpdates() with
+    // autoDownload=false and resolves with the resulting state; the
+    // next state also arrives over onStatusChanged like the launch
+    // check. Routed from the `update.check` menu action.
+    check(): Promise<UpdateState> {
+      return ipcRenderer.invoke(IPC.updateCheck);
+    },
     onStatusChanged(cb: (state: UpdateState) => void): () => void {
       const listener = (_event: unknown, state: UpdateState): void => cb(state);
       ipcRenderer.on(IPC.updateStatusChangedEvent, listener);

@@ -43,7 +43,8 @@ export type MenuAction =
   | 'exportText'
   | 'exportDocx'
   | 'insertPages'
-  | 'recognizeText';
+  | 'recognizeText'
+  | 'checkForUpdate';
 
 /** The bag of side-effect callbacks `App.tsx` hands the dispatcher.
  *  Each entry mirrors a menu item the user can trigger from the
@@ -88,6 +89,12 @@ export interface MenuActionContext {
    *  the active document. Same funnel as the toolbar's OCR button
    *  and the Tools palette entry. */
   recognizeText(): void;
+  /** OTA UX — Help -> Check for Update. Triggers a fresh
+   *  electron-updater check and opens the update prompt if a new
+   *  version surfaces. Document-agnostic: reachable from the
+   *  welcome screen too. The host wires this to the same prompt
+   *  the auto-check-on-launch path uses (UpdatePromptDialog). */
+  checkForUpdate(): void;
 }
 
 /** Dispatch a menu action string to its handler. Returns true if
@@ -119,6 +126,7 @@ export function dispatchMenuAction(action: string, ctx: MenuActionContext): bool
     case 'exportDocx':       ctx.exportDocx();        return true;
 case 'insertPages':      ctx.insertPages();        return true;
     case 'recognizeText':    ctx.recognizeText();      return true;
+    case 'checkForUpdate':   ctx.checkForUpdate();     return true;
     case 'zoomIn':
     case 'zoomOut':
     case 'fitWidth':

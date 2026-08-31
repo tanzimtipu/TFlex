@@ -64,6 +64,7 @@ function buildCtx(): { ctx: MenuActionContext; spies: Spies } {
     exportDocx: (): void => undefined,
     insertPages: (): void => undefined,
     recognizeText: (): void => undefined,
+    checkForUpdate: (): void => undefined,
   };
   return { ctx, spies: { about, preferences, open, save } };
 }

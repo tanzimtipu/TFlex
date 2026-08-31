@@ -28,7 +28,16 @@ export interface PageRect {
  *  through the ColorPalette; that path produces a free-form hex string
  *  instead of one of these literals. The `hexOrBuiltIn` alias is the
  *  union shape used everywhere annotations touch the color channel. */
-export type AnnotationColor = "yellow" | "red" | "green" | "blue";
+export type AnnotationColor =
+  | "yellow"
+  | "red"
+  | "green"
+  | "blue"
+  | "orange"
+  | "pink"
+  | "purple"
+  | "teal"
+  | "gray";
 
 /** Any valid color for an annotation: either a built-in name or a
  *  hex string (#rgb / #rrggbb, normalised to lowercase). Custom
@@ -36,18 +45,34 @@ export type AnnotationColor = "yellow" | "red" | "green" | "blue";
  *  overlay at render time. */
 export type AnnotationColorValue = AnnotationColor | string;
 
+/** Built-in palette (Phase 13 — was 4 names, now 9). The original four
+ *  names stay at the front so any annotation persisted against an
+ *  older renderer keeps resolving to the same hex; the five new names
+ *  slot in after for a richer toolbar picker. Order is the visual
+ *  reading order in the toolbar's quick swatch row (warm -> cool ->
+ *  accent). */
 export const ANNOTATION_COLORS: readonly AnnotationColor[] = [
   "yellow",
+  "orange",
   "red",
+  "pink",
+  "purple",
+  "teal",
   "green",
   "blue",
+  "gray",
 ];
 
 export const ANNOTATION_COLOR_HEX: Record<AnnotationColor, string> = {
   yellow: "#eab308",
+  orange: "#f97316",
   red: "#ef4444",
+  pink: "#ec4899",
+  purple: "#a855f7",
+  teal: "#14b8a6",
   green: "#22c55e",
   blue: "#3b82f6",
+  gray: "#64748b",
 };
 
 /** Resolve any annotation color value (built-in name OR raw hex) to a
@@ -68,9 +93,8 @@ export function annotationColorToCss(value: AnnotationColorValue): string {
 }
 
 export function isAnnotationColor(v: unknown): v is AnnotationColor {
-  return (
-    v === "yellow" || v === "red" || v === "green" || v === "blue"
-  );
+  if (typeof v !== "string") return false;
+  return v in ANNOTATION_COLOR_HEX;
 }
 
 // ---------------------------------------------------------------------------

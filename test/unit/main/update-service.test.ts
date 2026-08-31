@@ -509,3 +509,134 @@ describe('UpdateService — init idempotency', () => {
     expect(_checkForUpdates).toHaveBeenCalledTimes(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// UpdateService — checkForUpdates (manual re-check, DEF-079 / DEF-080)
+// ---------------------------------------------------------------------------
+
+describe('UpdateService — checkForUpdates (manual re-check)', () => {
+  beforeEach(() => {
+    clearEnv();
+    setupInstalledEnv();
+    _autoUpdaterRemoveAll();
+    _autoUpdaterOn.mockClear();
+    _checkForUpdates.mockClear();
+    _checkForUpdates.mockResolvedValue(undefined);
+    _setFeedURL.mockClear();
+  });
+
+  function getHandler(event: string): (...args: unknown[]) => void {
+    const calls = _autoUpdaterOn.mock.calls.filter((c: unknown[]) => c[0] === event);
+    return calls.length > 0
+      ? calls[calls.length - 1][1] as (...args: unknown[]) => void
+      : vi.fn();
+  }
+
+  it('re-runs autoUpdater.checkForUpdates and sets state to checking', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    _checkForUpdates.mockClear();
+    const result = await svc.checkForUpdates();
+    expect(_checkForUpdates).toHaveBeenCalled();
+    expect(result.kind).toBe('checking');
+  });
+
+  it('transitions to available when the check finds an update', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    // The mock's checkForUpdates resolves without firing events, so
+    // we emit update-available ourselves to model what the real
+    // electron-updater check would emit when 1.5.4 > installed.
+    await svc.checkForUpdates();
+    getHandler('update-available')({ version: '1.5.4' });
+    const status = svc.getStatus();
+    expect(status.kind).toBe('available');
+    if (status.kind === 'available') {
+      expect(status.version).toBe('1.5.4');
+    }
+  });
+
+  it('transitions to up-to-date when the check finds no update', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    await svc.checkForUpdates();
+    getHandler('update-not-available')({ version: '1.5.3' });
+    expect(svc.getStatus().kind).toBe('up-to-date');
+  });
+
+  it('sets error state when the check rejects', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    _checkForUpdates.mockRejectedValueOnce(new Error('network down'));
+    const result = await svc.checkForUpdates();
+    expect(result.kind).toBe('error');
+    if (result.kind === 'error') {
+      expect(result.message).toBe('network down');
+    }
+  });
+
+  it('is a no-op on a portable build (no feed configured)', async () => {
+    process.env.PORTABLE_EXECUTABLE_DIR = 'C:\\temp\\tflex';
+    const svc = new UpdateService();
+    svc.init();
+    _checkForUpdates.mockClear();
+    const result = await svc.checkForUpdates();
+    expect(_checkForUpdates).not.toHaveBeenCalled();
+    expect(result.kind).toBe('unsupported');
+  });
+
+  it('is a no-op when the token is missing (no feed configured)', async () => {
+    delete process.env.TFLEX_GH_TOKEN;
+    delete process.env.GH_TOKEN;
+    const svc = new UpdateService();
+    svc.init();
+    _checkForUpdates.mockClear();
+    const result = await svc.checkForUpdates();
+    expect(_checkForUpdates).not.toHaveBeenCalled();
+    expect(result.kind).toBe('error');
+  });
+
+  it('does not interrupt an in-progress download', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '2.0.0' });
+    getHandler('download-progress')({ percent: 50 });
+    _checkForUpdates.mockClear();
+    const result = await svc.checkForUpdates();
+    expect(_checkForUpdates).not.toHaveBeenCalled();
+    expect(result.kind).toBe('downloading');
+  });
+
+  it('does not interrupt a ready-to-install update', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '2.0.0' });
+    getHandler('update-downloaded')({ version: '2.0.0' });
+    _checkForUpdates.mockClear();
+    const result = await svc.checkForUpdates();
+    expect(_checkForUpdates).not.toHaveBeenCalled();
+    expect(result.kind).toBe('downloaded');
+  });
+
+  it('notifies subscribers when transitioning to checking', async () => {
+    const svc = new UpdateService();
+    const cb = vi.fn();
+    svc.onStatusChanged(cb);
+    svc.init();
+    cb.mockClear();
+    await svc.checkForUpdates();
+    expect(cb).toHaveBeenCalledWith(expect.objectContaining({ kind: 'checking' }));
+  });
+
+  it('shares the autoDownload=false semantics (never auto-downloads)', async () => {
+    // The manual check reuses the same autoUpdater instance configured
+    // in init(); autoDownload stays false, so a manual check that finds
+    // an update must NOT call downloadUpdate — the user is prompted via
+    // the UI. We assert downloadUpdate is not invoked by checkForUpdates.
+    const svc = new UpdateService();
+    svc.init();
+    _downloadUpdate.mockClear();
+    await svc.checkForUpdates();
+    expect(_downloadUpdate).not.toHaveBeenCalled();
+  });
+});

@@ -2,9 +2,10 @@
 
 | Metric | Target | Result | Status |
 | --- | --- | --- | --- |
-| Cold start to interactive | < 3000ms | 382ms | PASS |
-| Open long.pdf (520 pages) | < 3000ms | 538ms | PASS |
+| Cold start to interactive | < 3000ms | 397ms | PASS |
+| Open long.pdf (520 pages) | < 3000ms | 525ms | PASS |
 | Tab switch duration | < 300ms | 61ms | PASS |
-| Idle memory (1 document) | < 400MB | 517.32MB | FAIL* |
+| Idle memory (main process) | < 400MB | 124.08MB | PASS |
+| Idle memory (whole app) | < 400MB | 517.32MB | FAIL* |
 
 \* *Method: Measurements taken via Playwright Electron harness (Phase 5). Fresh production build (npm run build). long.pdf (520 pages) open, 10s idle. Process breakdown: Browser 116.96MB, GPU 111.88MB, Utility 49.37MB, Tab 239.12MB. Note: Whole-app < 400MB target rejected as architecturally unreachable for Electron (DEF-016). Revised Tab budget < 250MB is MET (239.12MB).*

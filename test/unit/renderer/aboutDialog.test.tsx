@@ -65,6 +65,7 @@ function makeInfo(): AppInfo {
 function renderDialog(args: {
   open: boolean;
   onClose?: () => void;
+  onCheckForUpdate?: () => void;
   getInfo?: () => Promise<AppInfo>;
   updateGetStatus?: () => Promise<UpdateState>;
   updateOnStatusChanged?: (cb: (state: UpdateState) => void) => () => void;
@@ -87,6 +88,7 @@ function renderDialog(args: {
       <AboutDialog
         open={args.open}
         onClose={args.onClose ?? ((): void => undefined)}
+        onCheckForUpdate={args.onCheckForUpdate}
       />,
     );
   });
@@ -315,6 +317,82 @@ describe("describeUpdateState / updateStateIsWarning (DEF-074)", () => {
     expect(updateStateIsWarning({ kind: "up-to-date", version: "x" })).toBe(false);
     expect(updateStateIsWarning({ kind: "available", version: "x" })).toBe(false);
     expect(updateStateIsWarning({ kind: "downloading", progress: 1 })).toBe(false);
+  });
+});
+
+// DEF-074 / OTA UX — the About dialog exposes a "Check for
+// Updates" button when the host passes `onCheckForUpdate`. The
+// button routes to the same handler as Help -> Check for Update
+// (calls `update.check()` and opens the prompt). The button is
+// rendered with `data-about-check-update` so e2e harnesses can
+// target it directly. Pin the contract.
+describe("AboutDialog — Check for Updates button (OTA UX)", () => {
+  it("renders no Check for Updates button when onCheckForUpdate is omitted", () => {
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+    });
+    expect(
+      container.querySelector("[data-about-check-update]"),
+    ).toBeNull();
+    cleanup();
+  });
+
+  it("renders the Check for Updates button when onCheckForUpdate is provided", () => {
+    const onCheckForUpdate = vi.fn();
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      onCheckForUpdate,
+    });
+    const btn = container.querySelector<HTMLButtonElement>(
+      "[data-about-check-update]",
+    );
+    expect(btn).not.toBeNull();
+    expect(btn?.textContent).toMatch(/Check for Updates/);
+    cleanup();
+  });
+
+  it("clicking the Check for Updates button calls onCheckForUpdate exactly once", () => {
+    const onCheckForUpdate = vi.fn();
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      onCheckForUpdate,
+    });
+    const btn = container.querySelector<HTMLButtonElement>(
+      "[data-about-check-update]",
+    );
+    expect(btn).not.toBeNull();
+    act((): void => {
+      btn?.click();
+    });
+    expect(onCheckForUpdate).toHaveBeenCalledTimes(1);
+    cleanup();
+  });
+
+  it("renders the Check for Updates button next to the Update row inside the sheet", () => {
+    const onCheckForUpdate = vi.fn();
+    const { container, cleanup } = renderDialog({
+      open: true,
+      getInfo: async (): Promise<AppInfo> => makeInfo(),
+      updateGetStatus: async (): Promise<UpdateState> => ({
+        kind: "up-to-date",
+        version: "1.5.3",
+      }),
+      onCheckForUpdate,
+    });
+    const sheet = container.querySelector<HTMLElement>(".sheet-about");
+    expect(sheet).not.toBeNull();
+    // The button is rendered inside the sheet so the dialog
+    // scrolls it with the rest of the metadata. Pinned because
+    // a future layout refactor could float it to the header
+    // (and that would change the visual hierarchy).
+    const btn = sheet?.querySelector<HTMLButtonElement>(
+      "[data-about-check-update]",
+    );
+    expect(btn).not.toBeNull();
+    cleanup();
   });
 });
 
