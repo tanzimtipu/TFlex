@@ -38,10 +38,12 @@ import {
   type AnnotationToolAction,
 } from "../annotations/model";
 import {
+  buildPageLabelMap,
   CONTENT_PADDING_PX,
   PAGE_GAP_PX,
   pageAtScrollTop,
   pageSlotHeight,
+  resolvePageLabel,
   slotOffsetTop,
   visiblePageRange,
   visibleToSourcePage,
@@ -665,8 +667,22 @@ export function DocumentView({
   // the very first paint already shows real bitmaps. No IO round-trip, no
   // async — by definition available on the first paint.
   useEffect(() => {
-    if (firstPageSize === null) {
-      return;
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    // B6 — firstPageSize just resolved (or the tab became ready
+    // to scroll). If a jump was queued while firstPageSize was
+    // still null, the queued jump set `currentPage` but the
+    // scrollTo call bailed out. Now that we have the geometry,
+    // drive the scroller to the currently-active page so the
+    // viewport catches up with the user's intent. The optimistic
+    // currentPage update from `jumpToPage` already moved the rail
+    // highlight; this effect only has to land the scroll position.
+    if (firstPageSize !== null) {
+      const target = jumpTargetRef.current ?? currentPage;
+      const top = slotOffsetTop(target, firstPageSize.h, effectiveScaleRef.current) - CONTENT_PADDING_PX;
+      if (Math.abs(scroller.scrollTop - top) > 1) {
+        scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
+      }
     }
     const initialEnd = Math.min(pageCount, INITIAL_MOUNT_PAGES);
     setMountedPages((prev) => {
@@ -687,7 +703,7 @@ export function DocumentView({
     }
     // Run a geometry mount so the state converges with the IO extras.
     computeGeometryMountRef.current();
-  }, [firstPageSize, pageCount]);
+  }, [firstPageSize, pageCount, currentPage]);
 
   // ---- scroll -> current page --------------------------------------------------
   //
@@ -824,7 +840,35 @@ export function DocumentView({
   const jumpToPage = useCallback(
     (page: number, smooth = true) => {
       const scroller = scrollerRef.current;
+      // B6 — always update `currentPage` so the SideRail highlight
+      // and the toolbar page indicator reflect the new active page
+      // even when the scroller geometry isn't ready yet (e.g. the
+      // user clicks a thumb before the first page has reported its
+      // viewport size, which happens when firstPageSize is still
+      // null on the very first render after tab open). The previous
+      // implementation returned early in that case, leaving the
+      // click visually a no-op (the rail highlight stayed on page
+      // 1, the toolbar indicator stayed on page 1). We still defer
+      // the actual `scrollTo` call until `firstPageSize` resolves
+      // (the geometry-based offset is meaningless without it); a
+      // later render after the size arrives will run the scroll via
+      // the fallback path below. The optimistic currentPage update
+      // is what makes the click feel responsive at first paint.
+      setCurrentPage(page);
+      jumpTargetRef.current = page;
+      if (jumpLockTimerRef.current !== null) {
+        window.clearTimeout(jumpLockTimerRef.current);
+      }
+      jumpLockTimerRef.current = window.setTimeout(() => {
+        jumpTargetRef.current = null;
+        jumpLockTimerRef.current = null;
+        computeCurrentPage();
+      }, JUMP_LOCK_FALLBACK_MS);
       if (scroller === null || firstPageSize === null) {
+        // Geometry not ready yet — currentPage is set, but the
+        // scrollTo call has nothing to land on. The
+        // `firstPageSize`-dependent effect above will trigger a
+        // re-render and the next interaction will scroll normally.
         return;
       }
       const target = slotOffsetTop(page, firstPageSize.h, effectiveScaleRef.current);
@@ -838,16 +882,7 @@ export function DocumentView({
       // Set the optimistic currentPage too so the SideRail highlight
       // moves to the destination immediately, not after the smooth
       // scroll lands.
-      jumpTargetRef.current = page;
-      if (jumpLockTimerRef.current !== null) {
-        window.clearTimeout(jumpLockTimerRef.current);
-      }
-      jumpLockTimerRef.current = window.setTimeout(() => {
-        jumpTargetRef.current = null;
-        jumpLockTimerRef.current = null;
-        computeCurrentPage();
-      }, JUMP_LOCK_FALLBACK_MS);
-      setCurrentPage(page);
+      void target;
     },
     [firstPageSize, computeCurrentPage],
   );
@@ -1352,6 +1387,7 @@ export function DocumentView({
         <Toolbar
           page={currentPage}
           pageCount={pageCount}
+          pageLabel={resolvePageLabel(currentPage, engineState.pageLabels)}
           zoomPercent={Math.round(effectiveScale * 100)}
           zoomMode={zoom.mode}
           modified={modified}
@@ -1393,6 +1429,7 @@ export function DocumentView({
         <AnnotationToolbar
           state={annTool}
           onAction={onAnnToolAction}
+          editModeOpen={editModeOpen}
           palette={
             annotationPalette === undefined || annotationPalette === null
               ? undefined

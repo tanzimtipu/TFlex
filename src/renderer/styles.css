@@ -1254,6 +1254,33 @@ textarea {
 
 .page-total { color: var(--fg-muted); }
 
+/* Phase 12 — logical page label (e.g. "iv", "A1") shown next to the
+ * page indicator when `renumberPages` has set a custom label for the
+ * active page. Calmer typography (muted colour, slightly smaller font)
+ * so it reads as supplementary metadata, not a primary control. The
+ * value is read from the engine's `pageLabels` map; the toolbar
+ * surfaces it as a chip that the user can hover to confirm the
+ * underlying page number. */
+.page-label-hint {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-1);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid transparent;
+}
+
+:root[data-theme="dark"] .page-label-hint {
+  background: rgba(96, 165, 250, 0.14);
+  color: #93c5fd;
+}
+
 .zoom-percent {
   display: inline-block;
   min-width: 44px;
@@ -2714,6 +2741,13 @@ textarea {
   z-index: 4;
   opacity: 0.95;
   user-select: none;
+  /* B5 — explicit pointer-events so the floating action bar
+   * (which is absolutely positioned partly above / below the
+   * rect) stays clickable. The inline style on the JSX side
+   * also sets `pointerEvents: "auto"`; this CSS rule is a
+   * belt-and-braces guard for any future refactor that drops
+   * the inline prop. */
+  pointer-events: auto;
 }
 
 .sig-action-bar {
@@ -2728,6 +2762,25 @@ textarea {
   font-size: var(--fs-xs);
   color: var(--fg);
   z-index: 5;
+  /* B5 — explicit pointer-events so the Confirm / Cancel / Delete
+   * buttons inside remain clickable even when the bar is rendered
+   * outside its parent's overflow clip (the bar is absolutely
+   * positioned inside .sig-pending, with `top` going negative when
+   * the bar lands above the rect — so the bar lives partly
+   * outside the parent's box). Without this rule the bar inherits
+   * pointer-events from whichever ancestor has it disabled, and
+   * clicks fall through to the page canvas. */
+  pointer-events: auto;
+}
+
+.sig-pending {
+  /* B5 — the inline style already sets `position: absolute`, but
+   * we restate the rule here so the action bar's own
+   * `position: absolute` finds a positioning context anchored to
+   * the pending rect (not the page canvas). Without this, the
+   * bar's `top` lands relative to the nearest positioned
+   * ancestor and the bar floats to the wrong spot. */
+  position: relative;
 }
 
 .sig-action-btn {

@@ -151,3 +151,52 @@ export function visibleToSourcePage(
   }
   return sourceIndex + 1;
 }
+
+/** Resolve the logical page label for a visible 1-based page slot.
+ *
+ *  Phase 12 — `renumberPages` lets the user override the displayed
+ *  label for any page (e.g. roman numerals, chapter prefixes). The
+ *  engine echoes a sparse `{page, label}` array; we look up the
+ *  matching entry by page number and return the override string, or
+ *  `null` when no override is set so the caller can fall back to the
+ *  default `n / total` display.
+ *
+ *  Pure: no side effects, safe to call inside render. The lookup is
+ *  O(n) over the labels array; callers that hit this on every page
+ *  render should memoize the resulting `Map<page, label>` once per
+ *  `pageLabels` change (the sidebar's `labelForPage` does exactly
+ *  that — see `SideRail.tsx`). */
+export interface PageLabelEntry {
+  page: number;
+  label: string;
+}
+
+export function resolvePageLabel(
+  visiblePage: number,
+  pageLabels: readonly PageLabelEntry[] | undefined,
+): string | null {
+  if (pageLabels === undefined || pageLabels.length === 0) return null;
+  for (const entry of pageLabels) {
+    if (entry.page === visiblePage && entry.label.trim().length > 0) {
+      return entry.label;
+    }
+  }
+  return null;
+}
+
+/** Build a `Map<page, label>` from a sparse label array. Used by the
+ *  toolbar / sidebar to do O(1) per-page lookups when rendering many
+ *  pages. Returns `null` when there are no labels (callers short-
+ *  circuit on null). */
+export function buildPageLabelMap(
+  pageLabels: readonly PageLabelEntry[] | undefined,
+): Map<number, string> | null {
+  if (pageLabels === undefined || pageLabels.length === 0) return null;
+  let map: Map<number, string> | null = null;
+  for (const entry of pageLabels) {
+    if (entry.label.trim().length === 0) continue;
+    if (map === null) map = new Map();
+    map.set(entry.page, entry.label);
+  }
+  return map;
+}

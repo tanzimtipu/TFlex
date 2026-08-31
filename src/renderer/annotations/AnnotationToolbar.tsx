@@ -42,6 +42,20 @@ export interface AnnotationToolbarProps {
   /** Disabled when no document is open (the toolbar always renders so the
    *  rail panel can show its empty state, but the tools can't be armed). */
   disabled?: boolean;
+  /** B1 — Phase 10 edit-content mode. When true the per-page
+   *  EditOverlay is pointer-active and the EditToolbar is rendered
+   *  above the document; arming an annotation tool would either
+   *  silently lose its input to the EditOverlay or visually confuse
+   *  the user (two parallel pointer-active layers). We mirror the
+   *  host's gating here: while editModeOpen, every tool button is
+   *  rendered with `aria-disabled` + a "disabled" treatment so the
+   *  toolbar reads as inert, and clicking a tool is a no-op. The
+   *  host also disables the EditOverlay's pointer-events when an
+   *  annotation tool is armed, so the two surfaces don't
+   *  double-handle the same click. The "Select" tool stays
+   *  enabled — it's a neutral viewer mode and harmless even when
+   *  Edit is open. */
+  editModeOpen?: boolean;
   /** Phase 6 — custom annotation color palette, keyed by theme. The
    *  picker surfaces the saved colors alongside the built-ins; new
    *  presets added through the picker flow back through `onPaletteChange`
@@ -56,10 +70,19 @@ export interface AnnotationToolbarProps {
 const MARKUP_TOOLS: AnnotationTool[] = ["highlight", "underline", "strikeout"];
 
 export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
-  const { state, onAction, disabled = false, palette, onPaletteChange, theme = 'dark' } = props;
+  const { state, onAction, disabled = false, editModeOpen = false, palette, onPaletteChange, theme = 'dark' } = props;
   const dispatch = (a: AnnotationToolAction): void => onAction(a);
-  const armTool = (tool: AnnotationTool): void =>
+  // B1 — when Edit mode is open, every annotation tool except "select"
+  // is inert (selecting a tool would clash with the per-page
+  // EditOverlay, which is also pointer-active). We gate per-button
+  // rather than globally so the Select button still works — that's
+  // a neutral viewer mode and harmless to leave active while editing.
+  const editBlocksTool = (tool: AnnotationTool): boolean =>
+    editModeOpen && tool !== "select";
+  const armTool = (tool: AnnotationTool): void => {
+    if (editBlocksTool(tool)) return;
     dispatch({ type: "set-tool", tool: toggleTool(state, tool) });
+  };
   const setColor = (color: AnnotationColorValue): void => dispatch({ type: "set-color", color });
   const setPenWidth = (width: number): void => dispatch({ type: "set-pen-width", width });
 
@@ -97,7 +120,23 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
 
   const isMarkup = MARKUP_TOOLS.includes(state.tool as AnnotationTool);
   const isInk = state.tool === "ink";
-  const showColorRow = (isMarkup || isInk) && !disabled;
+  // B3 — color picker now surfaces for markup, ink, AND the shape
+  // / textbox / callout tools. Every annotation kind respects the
+  // `color` field, so the picker is the same affordance regardless
+  // of tool — hiding it for non-markup tools was an unnecessary
+  // limitation that left rect/ellipse/arrow/callout/textbox users
+  // unable to customise their accent. The pen-width row stays ink-
+  // only (no other tool consumes penWidth).
+  const isColorTool =
+    isMarkup ||
+    isInk ||
+    state.tool === "rect" ||
+    state.tool === "ellipse" ||
+    state.tool === "arrow" ||
+    state.tool === "textbox" ||
+    state.tool === "callout" ||
+    state.tool === "note";
+  const showColorRow = isColorTool && !disabled;
 
   // The active color: built-in name or custom hex. The swatch paints
   // the resolved CSS color so the picker surface matches what the
@@ -111,16 +150,19 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
     label: string,
   ): ReactElement => {
     const active = state.tool === tool;
+    const isBlocked = editBlocksTool(tool);
+    const isDisabled = disabled || isBlocked;
     return (
       <button
         key={tool}
         type="button"
         className={active ? "tool-btn tool-btn-active ann-tool-btn" : "tool-btn ann-tool-btn"}
         onClick={(): void => armTool(tool)}
-        disabled={disabled}
+        disabled={isDisabled}
         aria-pressed={active}
+        aria-disabled={isDisabled}
         aria-label={label}
-        title={label}
+        title={isBlocked ? "Edit mode is open — close Edit to use annotation tools" : label}
         data-tool={tool}
       >
         {icon}

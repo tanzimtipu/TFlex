@@ -23,6 +23,11 @@ import type { ZoomMode } from '../state/zoom';
 interface ToolbarProps {
   page: number;
   pageCount: number;
+  /** Phase 12 — logical page label for the active page (e.g. "iv", "A1").
+   *  When set, the toolbar shows the label in the page indicator instead
+   *  of the raw page number. The page-input still accepts numeric jumps;
+   *  the label is purely a display affordance. */
+  pageLabel?: string | null;
   zoomPercent: number;
   zoomMode: ZoomMode;
   /** Whether the active tab has unsaved engine changes (Save is enabled). */
@@ -77,6 +82,7 @@ export function Toolbar(props: ToolbarProps) {
   const {
     page,
     pageCount,
+    pageLabel = null,
     zoomPercent,
     zoomMode,
     modified,
@@ -109,6 +115,15 @@ export function Toolbar(props: ToolbarProps) {
   useEffect(() => {
     setPageInput(String(page));
   }, [page]);
+
+  // Phase 12 — show the logical label in the input when present.
+  // The user can still type a numeric page number to jump; the
+  // label re-appears on the next page navigation. We don't try
+  // to parse the label back into a number (roman numerals etc.
+  // would need a converter we don't ship); the input is purely
+  // numeric-driven, the label is a display affordance that
+  // mirrors what a /PageLabels-aware PDF viewer shows.
+  const indicatorValue = pageLabel ?? String(page);
 
   const commit = (): void => {
     onJump(pageInput);
@@ -148,8 +163,18 @@ export function Toolbar(props: ToolbarProps) {
               }
             }}
             aria-label="Current page"
+            title={pageLabel !== null ? `Page ${page} (label: ${pageLabel})` : undefined}
           />
           <span className="page-total">/ {pageCount}</span>
+          {pageLabel !== null && (
+            <span
+              className="page-label-hint"
+              data-page-label={pageLabel}
+              title={`Logical page label for page ${page}`}
+            >
+              {pageLabel}
+            </span>
+          )}
         </div>
         <button
           type="button"

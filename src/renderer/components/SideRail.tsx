@@ -1,12 +1,13 @@
 import { Images, List, MessageSquare, Undo2, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveOutlinePage, type OutlineNode } from '../pdf/pdfjs';
 import { computeThumbGeometry } from './thumbGeometry';
 import type { EngineState } from '../engine/types';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
+import { buildPageLabelMap, resolvePageLabel } from './pageGeometry';
 
 interface SideRailProps {
   doc: PDFDocumentProxy;
@@ -97,6 +98,20 @@ export function SideRail(props: SideRailProps) {
     return m;
   }, [engineState.pageOrder]);
 
+  // Phase 12 — logical page labels (e.g. "iv", "A1"). The engine
+  // echoes a sparse list of `{page, label}` overrides; we build an
+  // O(1) Map so every thumbnail / page indicator can render in
+  // one pass without re-scanning the array. Null when there are no
+  // labels (callers short-circuit).
+  const pageLabelMap = useMemo(
+    () => buildPageLabelMap(engineState.pageLabels),
+    [engineState.pageLabels],
+  );
+  const labelForPage = useCallback(
+    (page: number): string | null => resolvePageLabel(page, engineState.pageLabels),
+    [engineState.pageLabels],
+  );
+
   const jumpToAnnotation = (page: number, id: string): void => {
     onJump(page);
     onJumpToAnnotation?.(page, id);
@@ -142,6 +157,7 @@ export function SideRail(props: SideRailProps) {
             aspectRatio={aspect}
             rotations={engineState.rotations}
             visibleToSource={visibleToSource}
+            pageLabelMap={pageLabelMap}
             canUndo={canUndo}
             onOp={onOp}
             onDelete={onDelete}
@@ -237,6 +253,11 @@ interface ThumbnailRailProps {
    *  PDF.js document. Identity map for the stub; the real engine may
    *  reorder. */
   visibleToSource: Map<number, number>;
+  /** Phase 12 — logical page labels per visible 1-based page. Null when
+   //  no labels have been set (the common case); passed through to
+   //  each Thumb so the rail can show the user's custom label instead
+   //  of the raw page number. */
+  pageLabelMap?: Map<number, string> | null;
   canUndo: boolean;
   onOp?: (op: { kind: 'rotate'; page: number; dir: 'cw' | 'ccw' }) => void;
   onDelete?: (pages: number[]) => void;
@@ -252,6 +273,7 @@ function ThumbnailRail({
   aspectRatio,
   rotations,
   visibleToSource,
+  pageLabelMap = null,
   canUndo,
   onOp,
   onDelete,
@@ -521,6 +543,7 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
               isDropTarget={dropTarget === page && dragFromIndex !== null && dragFromIndex !== page}
               rotation={rot}
               label={page}
+              pageLabel={pageLabelMap === null ? null : pageLabelMap.get(page) ?? null}
               onJump={onJump}
               onSelect={setSelected}
               onDragStart={onDragStart(page)}
@@ -582,6 +605,11 @@ interface ThumbProps {
   /** Quarter-turn rotation, 0-3 (the engine's rotation unit). */
   rotation: number;
   label: number;
+  /** Phase 12 — logical page label for this visible slot (e.g. "iv").
+   *  When set, the thumb label renders the override instead of the raw
+   *  page number so the user can see their renumberPages choice without
+   *  opening the Renumber dialog. */
+  pageLabel?: string | null;
   onJump: (page: number) => void;
   onSelect: (page: number) => void;
   onDragStart: (e: React.DragEvent<HTMLElement>) => void;
@@ -590,7 +618,7 @@ interface ThumbProps {
   onDrop: (e: React.DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   registerThumb: (page: number, el: HTMLElement | null) => void;
-  /** Bug 3 — handler invoked when the user clicks the thumb to
+  /** Bug 3 — handler invoked from the rail when the user clicks the thumb to
    *  jump, before the page jumps. The parent (ThumbnailRail)
    *  uses this to flag "the recentre effect should fire for
    *  this jump" via its railJumpTargetRef. We can't pass the
@@ -609,6 +637,7 @@ function Thumb({
   isDropTarget,
   rotation,
   label,
+  pageLabel = null,
   onJump,
   onSelect,
   onDragStart,
@@ -747,13 +776,15 @@ function Thumb({
       onDragEnd={onDragEnd}
       data-page={label}
       data-source-page={page}
-      title={`Page ${label}`}
+      title={pageLabel !== null ? `Page ${label} (label: ${pageLabel})` : `Page ${label}`}
     >
       <span className="thumb-canvas-wrap" style={{ width, height }}>
         <canvas ref={canvasRef} className="thumb-canvas" />
         {!rendered && <span className="thumb-placeholder" aria-hidden />}
       </span>
-      <span className="thumb-label">{label}</span>
+      <span className="thumb-label">
+        {pageLabel !== null ? pageLabel : label}
+      </span>
     </button>
   );
 }

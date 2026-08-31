@@ -87,6 +87,26 @@ interface EditorState {
   text: string;
 }
 
+/** B2 — pending placement for one-shot editors (textbox, callout).
+ *  Mirrors the signature pending-placement surface: the user types
+ *  into an inline editor, then commits via a floating Confirm
+ *  button (or cancels / discards). The pending state lives in the
+ *  overlay's local state so the editor can dismiss without
+ *  committing — the previous blur-to-commit pattern dropped the
+ *  editor the moment focus left, which meant a click on the
+ *  Cancel/Delete button closed the editor without committing but
+ *  also without a clear "cancel" affordance. */
+interface PendingTextboxState {
+  rect: PageRect;
+  text: string;
+}
+
+interface PendingCalloutState {
+  box: PageRect;
+  at: PagePoint;
+  text: string;
+}
+
 function newId(): string {
   return crypto.randomUUID();
 }
@@ -874,6 +894,31 @@ function DomAnnotation({
     if (at === undefined) return null;
     const size = NOTE_ICON_PT * cssScale;
     const hex = annotationColorToCss(ann.color);
+    const hasText = ann.text.trim().length > 0;
+    // B4 — sticky-note content must be visible on the page, not
+    // hidden behind a `title` tooltip. The popover mirrors the
+    // NoteEditor's shape (a small box anchored next to the icon)
+    // and stays pointer-transparent so the page underneath still
+    // scrolls / text-selects. The icon stays clickable so the
+    // user can flash the annotation through the panel without
+    // jumping through it.
+    const noteTextStyle: CSSProperties = {
+      position: "absolute",
+      left: (at.x + NOTE_ICON_PT) * cssScale + 4,
+      top: at.y * cssScale,
+      maxWidth: Math.max(140 * cssScale, 160),
+      padding: `${4 * cssScale}px ${8 * cssScale}px`,
+      borderRadius: "var(--radius-1)",
+      background: hexWithAlpha(hex, 0.18),
+      border: `1px solid ${hexWithAlpha(hex, 0.55)}`,
+      color: "var(--fg-strong)",
+      fontSize: 11 * cssScale + 2,
+      lineHeight: 1.4,
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word",
+      pointerEvents: "none",
+      boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)",
+    };
     return (
       <div
         className="ann ann-note"
@@ -889,6 +934,11 @@ function DomAnnotation({
         }}
       >
         <MessageSquare size={size} strokeWidth={2} aria-hidden />
+        {hasText && (
+          <div className="ann-note-text" data-ann-note-text style={noteTextStyle}>
+            {ann.text}
+          </div>
+        )}
       </div>
     );
   }

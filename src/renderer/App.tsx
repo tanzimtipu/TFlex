@@ -1669,8 +1669,20 @@ export function App(): ReactElement {
       };
     });
     noteOpApplied(activeId, result.value);
+    // B15 / B19 — flatten bakes every AcroForm widget into the
+    // page content and removes the form field dictionaries from
+    // the engine's pdfDoc. The renderer's `doc` proxy still points
+    // at the pre-flatten bytes; without a refresh, the FormsOverlay
+    // keeps rendering the now-removed widgets and the search index
+    // keeps walking the stale field-derived text. Rebuild the
+    // proxy via the Phase 11 refresh hook so the visual state and
+    // the engine state converge without a save+reopen.
+    const refreshFn = refreshDocProxyForRef.current;
+    if (refreshFn !== null) {
+      void refreshFn(activeId).catch(() => undefined);
+    }
     pushToast("info", "Form fields flattened.");
-  }, [pushToast, noteOpApplied]);
+  }, [noteOpApplied, pushToast]);
 
   // Refresh the saved-signature list every time the modal closes so the
   // host's mirror stays current (the modal itself updates its local copy
@@ -2063,8 +2075,21 @@ useEffect(() => {
         return;
       }
       noteOpApplied(activeId, result.value);
+      // B14 / B19 — merge mutates page content (the engine writes
+      // the merged-in pages into its pdfDoc). The renderer's `doc`
+      // proxy still points at the pre-merge bytes; without a
+      // refresh, every PageView on the merged-in pages continues to
+      // render at the pre-merge viewport, the thumbnails show stale
+      // bitmaps, and the search / annotations layers walk stale
+      // items. Rebuild the proxy in place via the Phase 11 refresh
+      // hook — same pattern crop / stamp / replace / OCR / flatten
+      // already use.
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(activeId).catch(() => undefined);
+      }
     },
-    [pushToast, noteOpApplied],
+    [noteOpApplied, pushToast],
   );
 
   const onSplitClick = useCallback((): void => {
@@ -2135,6 +2160,18 @@ useEffect(() => {
         const refreshed = await engine.getState(open.session.engineDocId);
         if (refreshed.ok) {
           noteOpApplied(activeId, refreshed.value);
+        }
+        // B19 — split is a content-stream mutation: the engine
+        // re-serialised the remaining pages into a new pdfDoc. The
+        // renderer's `doc` proxy still points at the pre-split
+        // bytes; without a refresh the pageCount change is hidden
+        // behind the stale proxy and the surviving pages continue
+        // to render at the wrong viewport. Rebuild the proxy via
+        // the Phase 11 refresh hook (same pattern crop / merge /
+        // OCR / flatten use).
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(activeId).catch(() => undefined);
         }
       }
       await openEngineBytesAsTab(result.value, open.displayName, choice.mode, choice.range);
@@ -2589,6 +2626,18 @@ useEffect(() => {
         const stateResult = await engineRef.current.getState(open.session.engineDocId);
         if (stateResult.ok) noteOpApplied(activeId, stateResult.value);
       }
+      // B17 / B19 — both insert paths (blank page + pages from
+      // another PDF) mutate page content. The engine writes a new
+      // page / range of pages into its pdfDoc; the renderer's
+      // `doc` proxy still points at the pre-insert bytes and shows
+      // the wrong pageCount until rebuilt. Refresh the proxy via
+      // the Phase 11 hook so the inserted pages render at the
+      // correct viewport and the search / annotations / forms /
+      // signatures layers see the updated document.
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(activeId).catch(() => undefined);
+      }
       pushToast(
         "info",
         choice.mode === "blank"
@@ -2642,6 +2691,18 @@ useEffect(() => {
         return;
       }
       noteOpApplied(activeId, res.value);
+      // B14 / B16 / B19 — replace mutates page content: the engine
+      // swaps the target range with the new PDF's pages in its
+      // pdfDoc. The renderer's `doc` proxy still points at the
+      // pre-replace bytes; without a refresh every PageView on the
+      // affected pages continues to render at the un-replaced
+      // viewport, and annotations / form fields / signatures on
+      // surviving pages stay at their old positions. Rebuild the
+      // proxy via the Phase 11 refresh hook.
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(activeId).catch(() => undefined);
+      }
       pushToast(
         "info",
         `Replaced pages ${choice.targetRange[0] + 1}-${choice.targetRange[1] + 1}.`,
@@ -2859,6 +2920,16 @@ pushToast(
         return;
       }
       noteOpApplied(activeId, res.value);
+      // B10 / B19 — addStamp bakes the renderer-drawn stamp raster
+      // into the engine's pdfDoc. The renderer's `doc` proxy still
+      // points at the pre-stamp bytes; without a refresh the stamp
+      // is invisible until the user saves + reopens. Rebuild the
+      // proxy via the Phase 11 refresh hook — same pattern crop /
+      // merge / replace / OCR / flatten use.
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(activeId).catch(() => undefined);
+      }
       pushToast(
         "info",
         `Placed ${choice.stampId} stamp on page ${choice.page}.`,
