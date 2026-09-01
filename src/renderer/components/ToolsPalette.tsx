@@ -147,6 +147,17 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       // Create-from-images is available regardless of doc state.
       return onCreateFromImages !== undefined;
     }
+    // B11 / DEF-102 — every document-required entry must bail
+    // BEFORE its per-entry checks. The previous order evaluated
+    // `ocrSuspects` / `batchOcr` before the `!documentRequired`
+    // branch, so those two stayed enabled on doc-less tabs even
+    // when the host correctly passed `documentRequired={false}`.
+    // `sign` is the only entry that stays available without a
+    // document (it opens the signature manager, which works
+    // regardless of doc state).
+    if (!documentRequired) {
+      return id === 'sign';
+    }
     if (id === 'ocrSuspects') {
       // OCR suspects panel needs at least one tab that has had
       // OCR run on it. The palette host owns the open flag and
@@ -158,11 +169,6 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       // callback; the host gates on open-tab count when the user
       // actually clicks.
       return onBatchOcr !== undefined;
-    }
-    if (!documentRequired) {
-      // Without a document the only useful action is Sign, which opens
-      // the signature manager modal regardless of doc state.
-      return id === 'sign';
     }
     if (id === 'forms') return hasFormFields;
     if (id === 'exportPages') return onExportPages !== undefined;

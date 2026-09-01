@@ -59,8 +59,20 @@ export function DeletePageDialog(
     setError(null);
   }, [open, currentPage]);
 
+// B13 — focus the first interactive control ONLY on the rising
+  // edge of `open`. The previous effect re-ran on every
+  // dependency change (the host passes a fresh `onClose`
+  // identity on every render), which stole focus from any
+  // `<input>` the user was actively typing into. Microtask
+  // deferral so the focus call lands after React's commit phase.
+  const focusedOnceRef = useRef<boolean>(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      focusedOnceRef.current = false;
+      return;
+    }
+    if (focusedOnceRef.current) return;
+    focusedOnceRef.current = true;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -68,10 +80,12 @@ export function DeletePageDialog(
       }
     };
     window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
+    queueMicrotask((): void => {
+      const first = dialogRef.current?.querySelector<HTMLElement>(
+        "button, input, [tabindex]",
+      );
+      first?.focus();
+    });
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 

@@ -52,3 +52,24 @@ export function resolveEngineStateForDiagnostics(
 ): EngineState | null {
   return mirrored ?? cached;
 }
+
+/** True when a tab's diagnostics publish may update the shared
+ *  diagnostics mirror. Publishes from tabs that are no longer open
+ *  are DROPPED (DEF-097).
+ *
+ *  Rationale: `closeTab` resets `activeTool: null` in the mirror so
+ *  a read after the close is honest. The closing tab's DocumentView
+ *  (and any late effect / async callback keyed to that tab id) may
+ *  still fire a diagnostics publish during the close commit; without
+ *  this gate that publish re-spreads the stale `activeTool` (e.g.
+ *  "highlight") over the reset and the diagnostics surface keeps
+ *  reporting the closed tab's tool. Gating on the tab still being
+ *  present in `openTabs` makes every publish from a closed tab a
+ *  no-op, so the reset is the final word — no ordering race
+ *  (document-unmount publish vs reset write) can lose. */
+export function diagnosticsPublishAllowed(
+  openTabs: Readonly<Record<string, unknown>>,
+  tabId: string,
+): boolean {
+  return openTabs[tabId] !== undefined;
+}

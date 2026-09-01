@@ -61,8 +61,24 @@ export function ReplacePagesDialog(
     setError(null);
   }, [open, totalPages]);
 
+// B13 — focus the first interactive control ONLY on the rising
+  // edge of `open`. The previous effect re-ran on every `onClose`
+  // identity change; the host passes a fresh `onClose` identity
+  // whenever it re-renders, which re-ran the focus call on every
+  // re-render and stole focus from any `<input>` the user was
+  // actively interacting with. The `focusedOnceRef` gate runs the
+  // focus call exactly once per dialog open; the ref resets on
+  // close so the next open re-focuses. Microtask deferral so
+  // focus lands after React's commit phase and doesn't race the
+  // parent click that opened the dialog.
+  const focusedOnceRef = useRef<boolean>(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      focusedOnceRef.current = false;
+      return;
+    }
+    if (focusedOnceRef.current) return;
+    focusedOnceRef.current = true;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -70,12 +86,30 @@ export function ReplacePagesDialog(
       }
     };
     window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
+    queueMicrotask((): void => {
+      const first = dialogRef.current?.querySelector<HTMLElement>(
+        "button, input, [tabindex]",
+      );
+      first?.focus();
+    });
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // B18 — modal blocking while the OS file picker is open. Same
+  // pattern as MergeDialog / InsertPagesDialog: bind the backdrop
+  // to a no-op while `picking` is true and swallow Esc in the
+  // capture phase so the picker owns input.
+  useEffect(() => {
+    if (!picking) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return (): void => window.removeEventListener("keydown", onKey, true);
+  }, [picking]);
 
   // The user's range text parses to a list of 1-based pages; the
   // engine consumes the [start, end] inclusive slice. We accept only
@@ -156,7 +190,10 @@ export function ReplacePagesDialog(
   return (
     <div
       className="modal-backdrop"
-      onClick={onClose}
+      // B18 — backdrop click is a no-op while the OS file picker
+      // is open. Same modal-blocking pattern as MergeDialog.
+      onClick={picking ? undefined : onClose}
+      data-picking={picking ? "true" : "false"}
       data-replace-pages-dialog
     >
       <div

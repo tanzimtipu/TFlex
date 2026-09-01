@@ -388,7 +388,15 @@ describe("B2 followup — action bar buttons stay clickable (no preventDefault o
     }
   });
 
-  it("note editor's Add note button stays clickable", () => {
+  it("note editor's Confirm button stays clickable", () => {
+    // B4 — the sticky-note editor's action bar has the same
+    // Confirm / Cancel / Delete shape as the textbox / callout
+    // editors (no more "Add note" / "Cancel" pair). The Confirm
+    // button is the one wired to `onCreate`; the test below
+    // selects it via `data-annotation-action='note-confirm'` so
+    // a future refactor that re-renames the button can't break
+    // this contract silently — the action attribute is the
+    // stable contract.
     const { host, onCreate, cleanup } = mountOverlay({
       onCreate: (): void => undefined,
       tool: { tool: "note", color: "yellow", penWidth: 2 },
@@ -420,7 +428,7 @@ describe("B2 followup — action bar buttons stay clickable (no preventDefault o
         textarea.dispatchEvent(new Event("input", { bubbles: true }));
       });
       const addBtn = host.querySelector<HTMLButtonElement>(
-        "button.ann-note-btn.btn-primary",
+        "[data-annotation-action='note-confirm']",
       );
       expect(addBtn).not.toBeNull();
       if (addBtn === null) return;

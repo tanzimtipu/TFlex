@@ -175,6 +175,10 @@ interface DocumentViewProps {
     pngWidth: number;
     pngHeight: number;
   } | null;
+  /** B10 / DEF-101 — successfully placed stamps for this tab
+   *  (recorded by the host on `addStamp` success). Rendered as
+   *  `.stamp-annotation` DOM surfaces per page. */
+  stampAnnotations?: import("../annotations/StampAnnotations").PlacedStamp[];
   onPlaceStamp?: (args: {
     stampId: import("../../shared/types").StampId;
     pngBytes: Uint8Array;
@@ -352,6 +356,7 @@ export function DocumentView({
   armedSignatureId = null,
   armedStamp = null,
   onPlaceStamp,
+  stampAnnotations = [],
   onPlaceSignature,
   onMoveSignature,
   onDeleteSignature,
@@ -713,37 +718,68 @@ export function DocumentView({
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (scroller === null) return;
-    // B6 — firstPageSize just resolved (or the tab became ready
-    // to scroll). If a jump was queued while firstPageSize was
-    // still null, the queued jump set `currentPage` but the
-    // scrollTo call bailed out. Now that we have the geometry,
-    // drive the scroller to the currently-active page so the
-    // viewport catches up with the user's intent. The optimistic
-    // currentPage update from `jumpToPage` already moved the rail
-    // highlight; this effect only has to land the scroll position.
-    if (firstPageSize !== null) {
-      const target = jumpTargetRef.current ?? currentPage;
-      const top = slotOffsetTop(target, firstPageSize.h, effectiveScaleRef.current) - CONTENT_PADDING_PX;
+    // DEF-098 — the mount-sync block must ONLY land a *pending*
+    // jump (one whose scrollTo bailed for lack of geometry). The
+    // previous shape — `jumpTargetRef.current ?? currentPage` —
+    // re-ran this effect on EVERY `currentPage` change and
+    // INSTANT-scrolled the scroller to whatever page the heuristic
+    // last computed. Mid-smooth-scroll that dragged `currentPage`
+    // to an intermediate page (the DEF-058 lock only holds while
+    // scroll events flow), so this effect snapped the scroller back
+    // to that intermediate page — the "jump starts then snaps
+    // back" failure. With the pending-flag gate the effect only
+    // ever applies a jump the user clicked but the scroller has not
+    // yet landed, and it clears itself afterwards: after a jump
+    // completes (or a user scroll runs), `currentPage` changes
+    // never touch the scroll position again.
+    const pending = jumpTargetRef.current;
+    if (pending !== null && pendingJumpLandingRef.current && firstPageSize !== null) {
+      const top =
+        slotOffsetTop(pending, firstPageSize.h, effectiveScaleRef.current) -
+        CONTENT_PADDING_PX;
+      if (Math.abs(scroller.scrollTop - top) > 1) {
+        scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
+      }
+      pendingJumpLandingRef.current = false;
+    } else if (
+      pending === null &&
+      firstPageSize !== null &&
+      (syncGuardRef.current.firstPageSize !== firstPageSize ||
+        syncGuardRef.current.pageCount !== pageCount)
+    ) {
+      // No jump in flight, but the geometry (or page count) just
+      // changed — e.g. the doc opened and `firstPageSize` finally
+      // resolved, or a delete/reorder changed `pageCount`. Keep the
+      // scroller on the currently-active page. This runs only on
+      // the transition (guarded by the ref), never on `currentPage`
+      // changes driven by the heuristic.
+      const top =
+        slotOffsetTop(currentPage, firstPageSize.h, effectiveScaleRef.current) -
+        CONTENT_PADDING_PX;
       if (Math.abs(scroller.scrollTop - top) > 1) {
         scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
       }
     }
-    const initialEnd = Math.min(pageCount, INITIAL_MOUNT_PAGES);
-    setMountedPages((prev) => {
-      let changed = false;
-      const next = new Set(prev);
-      for (let p = 1; p <= initialEnd; p += 1) {
-        if (!next.has(p)) {
-          next.add(p);
-          changed = true;
+    syncGuardRef.current = { firstPageSize, pageCount };
+    if (!mountSeededRef.current) {
+      mountSeededRef.current = true;
+      const initialEnd = Math.min(pageCount, INITIAL_MOUNT_PAGES);
+      setMountedPages((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (let p = 1; p <= initialEnd; p += 1) {
+          if (!next.has(p)) {
+            next.add(p);
+            changed = true;
+          }
         }
+        return changed ? next : prev;
+      });
+      // Also seed the IO extras with the initial range so the geometry mount
+      // doesn't immediately prune what we just added.
+      for (let p = 1; p <= initialEnd; p += 1) {
+        ioExtraPagesRef.current.add(p);
       }
-      return changed ? next : prev;
-    });
-    // Also seed the IO extras with the initial range so the geometry mount
-    // doesn't immediately prune what we just added.
-    for (let p = 1; p <= initialEnd; p += 1) {
-      ioExtraPagesRef.current.add(p);
     }
     // Run a geometry mount so the state converges with the IO extras.
     computeGeometryMountRef.current();
@@ -774,6 +810,34 @@ export function DocumentView({
   //      target.
   const jumpTargetRef = useRef<number | null>(null);
   const jumpLockTimerRef = useRef<number | null>(null);
+  // DEF-098 — a queued jump whose `scrollTo` bailed because the
+  // geometry (`firstPageSize`) wasn't ready yet. Set inside
+  // `jumpToPage` when it returns early; the mount-sync effect below
+  // lands the scroller on the jump target the moment the geometry
+  // arrives, then clears the flag. The flag is what stops the
+  // mount-sync effect from INSTANT-killing an in-flight smooth
+  // scroll: a click that *did* scroll must never be re-applied.
+  const pendingJumpLandingRef = useRef(false);
+  // DEF-098 — gates the initial-page-restore effect to a single run
+  // per DocumentView mount (see the effect for the why).
+  const didInitialRestoreRef = useRef(false);
+  // DEF-098 — last `{firstPageSize, pageCount}` pair the mount-sync
+  // effect synced against. The effect's post-open / post-delete
+  // "keep the current page in view" re-sync must fire only on those
+  // transitions, never on `currentPage` changes (which the
+  // scroll-heuristic drives). Without the guard, every heuristic
+  // update re-triggered the sync and INSTANT-snapped the scroller.
+  const syncGuardRef = useRef<{ firstPageSize: { w: number; h: number } | null; pageCount: number }>({
+    firstPageSize: null,
+    pageCount: 0,
+  });
+  // DEF-098 — the mount-sync effect's INITIAL_MOUNT_PAGES seeding
+  // (pages 1..3 + IO extras) is an open-time one-shot. Previously it
+  // re-ran on every `currentPage` change, re-adding the first pages
+  // to the mounted set on every page turn — the geometry mount then
+  // pruned them again, churning PageView mount/unmount cycles (each
+  // a pdf.js getPage render) on every jump.
+  const mountSeededRef = useRef(false);
   // DEF-058 — last scrollTop we successfully validated as "past
   // the jump target". When the user lands on the target we clear
   // the lock; if a subsequent user-driven scroll moves away the
@@ -829,9 +893,15 @@ export function DocumentView({
             jumpLockTimerRef.current = window.setTimeout(() => {
               jumpTargetRef.current = null;
               jumpLockTimerRef.current = null;
-              // The heuristic isn't tied to a scroll event, so force
-              // a recompute from the current scrollTop.
-              computeCurrentPage();
+              // DEF-098 — release the lock WITHOUT recomputing
+              // `currentPage`. The scroller may still be advancing
+              // toward the jump target on a throttled main thread;
+              // forcing a recompute from the mid-flight scrollTop
+              // here would flick `currentPage` to the page the
+              // view is currently passing and let the mount-sync
+              // effect snap the scroller back to it. The jump
+              // target stays sticky: the next real scroll event
+              // (or `scrollend`) resumes the heuristic.
             }, JUMP_LOCK_FALLBACK_MS);
           }
           computeGeometryMountRef.current();
@@ -906,16 +976,29 @@ export function DocumentView({
       jumpLockTimerRef.current = window.setTimeout(() => {
         jumpTargetRef.current = null;
         jumpLockTimerRef.current = null;
-        computeCurrentPage();
+        // DEF-098 — release-only. No forced recompute from whatever
+        // scrollTop the scroller happens to hold now (it may still
+        // be gliding toward the target on a busy main thread). The
+        // jump target stays sticky; the heuristic resumes on the
+        // next real scroll event or `scrollend`.
       }, JUMP_LOCK_FALLBACK_MS);
       if (scroller === null || firstPageSize === null) {
         // Geometry not ready yet — currentPage is set, but the
         // scrollTo call has nothing to land on. The
         // `firstPageSize`-dependent effect above will trigger a
         // re-render and the next interaction will scroll normally.
+        // DEF-098 — flag the queued jump so the mount-sync effect
+        // lands the scroller the moment the geometry arrives (and
+        // so it does NOT try to re-apply a click that *did* scroll).
+        pendingJumpLandingRef.current = true;
         return;
       }
       const target = slotOffsetTop(page, firstPageSize.h, effectiveScaleRef.current);
+      // DEF-098 — the click's own scroll runs now; make sure the
+      // mount-sync effect does not re-apply it as a queued jump
+      // (which would INSTANT-kill this smooth scroll). A subsequent
+      // bail (geometry missing) re-flags it above.
+      pendingJumpLandingRef.current = false;
       scroller.scrollTo({
         top: Math.max(target - CONTENT_PADDING_PX, 0),
         behavior: smooth ? "smooth" : "instant",
@@ -928,11 +1011,28 @@ export function DocumentView({
       // scroll lands.
       void target;
     },
-    [firstPageSize, computeCurrentPage],
+    // DEF-098 — `computeCurrentPage` is no longer called from this
+    // body (the fallback timer is release-only), so it is not a dep
+    // anymore. `firstPageSize` alone drives the identity: the body
+    // closes over it for the scroll target.
+    [firstPageSize],
   );
 
   // ---- initial page restore -------------------------------------------------------
   useEffect(() => {
+    // DEF-098 — this effect must fire at most ONCE per DocumentView
+    // mount. The previous deps (`[jumpToPage, initial.currentPage]`)
+    // re-ran it on every App persist round-trip: `jumpToPage`
+    // recreated its identity whenever `firstPageSize`/`pageCount`
+    // changed, and `initial.currentPage` changed the moment the
+    // optimistic page update round-tripped through the host
+    // (`onPersist` -> App -> `initial` prop). Each re-run re-armed
+    // the 60ms timer and re-issued `jumpToPage`, re-arming the
+    // jump lock and fighting the user's actual navigation target.
+    if (didInitialRestoreRef.current) {
+      return;
+    }
+    didInitialRestoreRef.current = true;
     const target = initial.currentPage;
     if (target <= 1) {
       return;
@@ -1613,6 +1713,11 @@ export function DocumentView({
                       flashId={flashId}
                       onCreateAnnotation={(a): void => onCreateAnnotation?.(a)}
                       onFinishedOneShot={onAnnFinishedOneShot}
+                      // DEF-096 — committed note icons open their
+                      // editor; Confirm/Delete route through these
+                      // (same AnnotationPatch path as the panel).
+                      onEditAnnotation={onEditAnnotation}
+                      onDeleteAnnotation={onDeleteAnnotation}
                       onRenderStart={onPageRenderStart}
                       onRenderEnd={onPageRenderEnd}
                       formFields={formFieldsByPage.get(visiblePage) ?? EMPTY_FIELDS}
@@ -1638,6 +1743,9 @@ export function DocumentView({
                       // the click point.
                       armedStamp={armedStamp}
                       onPlaceStamp={onPlaceStamp}
+                      stampAnnotations={stampAnnotations.filter(
+                        (s) => s.page === visiblePage,
+                      )}
                       editModeOpen={editModeOpen}
                       edit={editProp}
                     />

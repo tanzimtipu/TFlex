@@ -84,8 +84,22 @@ export function InsertPagesDialog(
     setError(null);
   }, [open, totalPages]);
 
+// B13 — focus the first interactive control ONLY on the rising
+  // edge of `open`. The previous implementation re-ran the focus
+  // call on every `onClose` identity change; for a dialog with a
+  // `<select>` (the page-position picker) that stole focus from
+  // the dropdown the user was actively hovering. The `focusedOnceRef`
+  // gate runs the focus call exactly once per dialog open — same
+  // microtask deferral as the OCR / Stamp dialog so the focus
+  // lands cleanly after React's commit phase.
+  const focusedOnceRef = useRef<boolean>(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      focusedOnceRef.current = false;
+      return;
+    }
+    if (focusedOnceRef.current) return;
+    focusedOnceRef.current = true;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -93,12 +107,32 @@ export function InsertPagesDialog(
       }
     };
     window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
+    queueMicrotask((): void => {
+      const first = dialogRef.current?.querySelector<HTMLElement>(
+        "button, input, [tabindex]",
+      );
+      first?.focus();
+    });
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // B18 — modal blocking while the OS file picker is open. The
+  // dialog's pick button is disabled during `picking`, but the
+  // backdrop click handler still fired `onClose` and dismissed
+  // the picker mid-pick. The same pattern MergeDialog uses: bind
+  // the backdrop to a no-op while `picking` is true and swallow
+  // Esc in the capture phase so the picker owns input.
+  useEffect(() => {
+    if (!picking) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return (): void => window.removeEventListener("keydown", onKey, true);
+  }, [picking]);
 
   // Position validation. Accepts an integer 1..totalPages+1, or "end".
   const parsed = useMemo((): { position: number; valid: boolean } => {
@@ -162,7 +196,14 @@ export function InsertPagesDialog(
   return (
     <div
       className="modal-backdrop"
-      onClick={onClose}
+      // B18 — backdrop click is a no-op while the OS file picker
+      // is open. Same modal-blocking pattern as MergeDialog. The
+      // close button in the header remains the only way out
+      // during `picking`; once the picker returns (success or
+      // cancel) the backdrop returns to its normal close-on-click
+      // behaviour.
+      onClick={picking ? undefined : onClose}
+      data-picking={picking ? "true" : "false"}
       data-insert-pages-dialog
     >
       <div

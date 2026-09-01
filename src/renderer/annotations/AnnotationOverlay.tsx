@@ -42,6 +42,7 @@ import {
   annotationColorToCss,
   type Annotation,
   type AnnotationColorValue,
+  type AnnotationPatch,
   type AnnotationToolState,
   type PagePoint,
   type PageRect,
@@ -75,6 +76,16 @@ export interface AnnotationOverlayProps {
   /** Called after a one-shot tool (textbox, note) commits so the host can
    *  return to the select tool. */
   onFinishedOneShot?: () => void;
+  /** DEF-096 — edit / delete a COMMITTED annotation from the page.
+   *  Clicking a committed sticky-note icon opens the note editor
+   *  pre-filled with the note's existing text; Confirm routes here
+   *  (same `AnnotationPatch` shape the AnnotationsPanel uses),
+   *  Delete routes to `onDeleteAnnotation`. This is the actual
+   *  click behavior the "note icon not clickable" report asked
+   *  for — a click that only registered pointer-events but had no
+   *  handler was a silent no-op. */
+  onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
+  onDeleteAnnotation?: (id: string) => void;
 }
 
 interface DragState {
@@ -132,6 +143,8 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     getTextItems,
     onCreate,
     onFinishedOneShot,
+    onEditAnnotation,
+    onDeleteAnnotation,
   } = props;
 
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -148,6 +161,15 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   const [calloutEditor, setCalloutEditor] = useState<
     { box: PageRect; at: PagePoint; text: string } | null
   >(null);
+  /** DEF-096 — editing a COMMITTED note in place. Clicking the
+   *  note's icon opens the same NoteEditor popover pre-filled with
+   *  the note's existing text; Confirm applies the text via
+   *  `onEditAnnotation`, Delete removes the note, Cancel closes
+   *  without changes. Null when no committed note is being edited. */
+  const [editingNote, setEditingNote] = useState<{
+    id: string;
+    text: string;
+  } | null>(null);
   const textItemsSnapRef = useRef<TextItemGeom[]>([]);
   // Markup drags keep their quads in a ref during pointermove (cheap) and
   // only push to state once per frame; for simplicity we compute quads in
@@ -163,6 +185,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     setTextboxEditor(null);
     setNoteEditor(null);
     setCalloutEditor(null);
+    setEditingNote(null);
   }, [toolKind, cssScale]);
 
   const pagePoint = (e: React.PointerEvent): PagePoint => {
@@ -198,8 +221,13 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     if (e.button !== 0) return;
     const target = e.target as Element | null;
     if (target !== null && typeof target.closest === "function") {
+      // DEF-096 — `.ann-note` is in the bail-out list: clicking a
+      // COMMITTED note icon must not fall through to the page-canvas
+      // pointerdown branches (which would open a blank CREATE editor
+      // on top of the existing note). The icon's own onClick opens
+      // the EDIT editor instead.
       const interactive = target.closest(
-        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
+        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, .ann-note, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
       );
       if (interactive !== null) {
         // The click is on a UI control — let the original handler
@@ -417,7 +445,14 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   };
 
   const interactive =
-    toolKind !== "select" || textboxEditor !== null || noteEditor !== null || calloutEditor !== null;
+    toolKind !== "select" ||
+    textboxEditor !== null ||
+    noteEditor !== null ||
+    calloutEditor !== null ||
+    // DEF-096 — a committed-note edit popover is open; the layer
+    // must stay pointer-active so the editor's textarea and action
+    // bar receive interactions.
+    editingNote !== null;
 
   // ---- previews ------------------------------------------------------------
 
@@ -478,7 +513,12 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       </svg>
 
       {annotations.map((a) => (
-        <DomAnnotation key={a.id} ann={a} cssScale={cssScale} />
+        <DomAnnotation
+          key={a.id}
+          ann={a}
+          cssScale={cssScale}
+          onEditNote={(id, text): void => setEditingNote({ id, text })}
+        />
       ))}
 
       {flashId !== null &&
@@ -521,6 +561,16 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
             setNoteEditor(null);
             onFinishedOneShot?.();
           }}
+          // B4 — explicit Discard / Delete path so the user can
+          // drop the in-progress note without committing. The
+          // Sign-like action bar requires a third button beside
+          // Confirm / Cancel; this is it. Identical semantics to
+          // Cancel today; the separate verb matches the textbox /
+          // callout editor so every one-shot tool looks the same.
+          onDelete={(): void => {
+            setNoteEditor(null);
+            onFinishedOneShot?.();
+          }}
         />
       )}
       {calloutEditor !== null && (
@@ -536,6 +586,42 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           }}
         />
       )}
+      {/* DEF-096 — editing a committed note. The committed icon's
+       * onClick opens this editor pre-filled with the note's
+       * existing text; Confirm routes through `onEditAnnotation`
+       * (the same AnnotationPatch path the AnnotationsPanel uses),
+       * Delete through `onDeleteAnnotation`, Cancel just closes. */}
+      {editingNote !== null &&
+        ((): ReactElement | null => {
+          const target = annotations.find(
+            (a) => a.id === editingNote.id && a.kind === "note",
+          );
+          if (target === undefined || target.kind !== "note") return null;
+          const at =
+            target.at ??
+            (target as unknown as { rects?: { x: number; y: number }[] }).rects?.[0];
+          if (at === undefined) return null;
+          return (
+            <NoteEditor
+              at={at}
+              text={editingNote.text}
+              cssScale={cssScale}
+              pageWidthCss={widthPt * cssScale}
+              onChange={(text): void => setEditingNote({ ...editingNote, text })}
+              onCommit={(): void => {
+                const trimmed = editingNote.text.trim();
+                setEditingNote(null);
+                if (trimmed === target.text) return;
+                onEditAnnotation?.(target.id, { text: trimmed });
+              }}
+              onCancel={(): void => setEditingNote(null)}
+              onDelete={(): void => {
+                setEditingNote(null);
+                onDeleteAnnotation?.(target.id);
+              }}
+            />
+          );
+        })()}
     </div>
   );
 }
@@ -884,9 +970,14 @@ function ShapePreview({
 function DomAnnotation({
   ann,
   cssScale,
+  onEditNote,
 }: {
   ann: Annotation;
   cssScale: number;
+  /** DEF-096 — Clicking a committed note icon opens the editor
+   *  pre-filled with the note's text. The overlay owns the editor
+   *  state; the icon just reports the click + current text. */
+  onEditNote?: (id: string, text: string) => void;
 }): ReactElement | null {
   if (ann.kind === "textbox") {
     const r = ann.rect ?? (ann as unknown as { rects?: { x: number; y: number; width: number; height: number }[] }).rects?.[0];
@@ -955,6 +1046,27 @@ function DomAnnotation({
         data-annotation-id={ann.id}
         data-kind="note"
         title={ann.text.length > 0 ? ann.text : "Note"}
+        role="button"
+        tabIndex={0}
+        // DEF-096 — the actual click behavior behind the
+        // "note icon not clickable" report. The icon's
+        // pointer-events/z-index were already fixed; what was
+        // still missing was a handler that does something on
+        // click. Opening the editor pre-filled with the note's
+        // existing text makes the icon a real annotation surface:
+        // the user can re-read the note, correct it (Confirm →
+        // `onEditAnnotation`), or drop it (Delete →
+        // `onDeleteAnnotation`).
+        onClick={(e): void => {
+          e.stopPropagation();
+          onEditNote?.(ann.id, ann.text);
+        }}
+        onKeyDown={(e): void => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onEditNote?.(ann.id, ann.text);
+          }
+        }}
         style={{
           left: at.x * cssScale,
           top: at.y * cssScale,
@@ -1150,40 +1262,102 @@ function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
           fontSize: TEXTBOX_FONT_PT * cssScale,
           lineHeight: TEXTBOX_LINE_HEIGHT,
           padding: TEXTBOX_PAD_PT * cssScale,
+          // DEF-095 — the textarea must participate in the wrapper's
+          // flex column. The shared `.ann-editor` rule (position:
+          // absolute, z-index: 3) applies to this textarea too; pulled
+          // out of flow it lands its box over the action bar below and
+          // intercepts every click on Confirm / Cancel / Delete. The
+          // inline `position: static` pins the flow layout regardless
+          // of the stylesheet, so the bar is a separate hit surface
+          // beneath the textarea.
+          position: "static",
         }}
       />
-      <div className="ann-textbox-actions" data-annotation-action-bar="textbox">
-        <button
-          type="button"
-          className="ann-textbox-action-btn ann-textbox-action-confirm"
-          onClick={onCommit}
-          data-annotation-action="textbox-confirm"
-          aria-label="Confirm text box"
-          title="Confirm (Ctrl+Enter)"
-        >
-          Confirm
-        </button>
-        <button
-          type="button"
-          className="ann-textbox-action-btn ann-textbox-action-cancel"
-          onClick={onCancel}
-          data-annotation-action="textbox-cancel"
-          aria-label="Cancel text box"
-          title="Cancel (Esc)"
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="ann-textbox-action-btn ann-textbox-action-delete"
-          onClick={onCancel}
-          data-annotation-action="textbox-delete"
-          aria-label="Discard text box"
-          title="Discard without saving"
-        >
-          Delete
-        </button>
-      </div>
+      {/* DEF-095 — render the floating action bar through a
+       * dedicated component. The bar shares the same unmount
+       * lifetime as the editor (both are siblings under
+       * `textboxEditor !== null`), but extracting it into its own
+       * component makes the conditional explicit: a future refactor
+       * that hoists the bar out of the editor wrapper (or pins it
+       * to a different state slot) would leave the conditional on
+       * the bar's own mount, not on a shared wrapper. The previous
+       * shape was implicitly correct only because both DOM nodes
+       * happened to live inside the same conditional block; a
+       * refactor that broke that alignment would silently leave
+       * the bar visible after Confirm while the textarea
+       * unmounted. The fix pins the unmount to the bar's own
+       * component identity, so each surface tears down
+       * independently when its owning state flips. */}
+      <TextBoxActionBar onCommit={onCommit} onCancel={onCancel} />
+    </div>
+  );
+}
+
+/**
+ * DEF-095 — dedicated floating action bar component for the textbox
+ * editor. Lives as a sibling of the textarea inside
+ * `<TextBoxEditor>` but is a separate component so its lifecycle is
+ * pinned to its own mount/unmount. When the editor commits, this
+ * bar's parent unmounts alongside the textarea — and because the
+ * bar is a child component rather than inline JSX, a future
+ * refactor cannot accidentally promote it to App-level state and
+ * leave it visible after Confirm.
+ */
+interface TextBoxActionBarProps {
+  onCommit: () => void;
+  onCancel: () => void;
+}
+
+function TextBoxActionBar(props: TextBoxActionBarProps): ReactElement {
+  const { onCommit, onCancel } = props;
+  return (
+    <div
+      className="ann-textbox-actions"
+      data-annotation-action-bar="textbox"
+      // DEF-095 — pointer-events on the action bar must remain
+      // auto (the layer above the bar can otherwise swallow clicks
+      // on the Confirm / Cancel / Delete buttons). Belt-and-braces
+      // against a future refactor that disables pointer-events on
+      // the bar's parent. `position: relative` + `zIndex: 5` also
+      // pin the bar ABOVE the textarea inside the wrapper's
+      // stacking context — the buttons are the topmost hit
+      // surfaces regardless of any future overlap.
+      style={{
+        pointerEvents: "auto",
+        position: "relative",
+        zIndex: 5,
+      }}
+    >
+      <button
+        type="button"
+        className="ann-textbox-action-btn ann-textbox-action-confirm"
+        onClick={onCommit}
+        data-annotation-action="textbox-confirm"
+        aria-label="Confirm text box"
+        title="Confirm (Ctrl+Enter)"
+      >
+        Confirm
+      </button>
+      <button
+        type="button"
+        className="ann-textbox-action-btn ann-textbox-action-cancel"
+        onClick={onCancel}
+        data-annotation-action="textbox-cancel"
+        aria-label="Cancel text box"
+        title="Cancel (Esc)"
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        className="ann-textbox-action-btn ann-textbox-action-delete"
+        onClick={onCancel}
+        data-annotation-action="textbox-delete"
+        aria-label="Discard text box"
+        title="Discard without saving"
+      >
+        Delete
+      </button>
     </div>
   );
 }
@@ -1196,18 +1370,29 @@ interface NoteEditorProps {
   onChange: (text: string) => void;
   onCommit: () => void;
   onCancel: () => void;
+  /** B4 — discard the in-progress note (drops the editor without
+   *  creating an annotation). Mirrors the textbox / callout
+   *  Delete button so the user has the same affordance for every
+   *  one-shot tool. */
+  onDelete: () => void;
 }
 
-const NOTE_POPOVER_W = 210;
+const NOTE_POPOVER_W = 240;
 
 function NoteEditor(props: NoteEditorProps): ReactElement {
-  const { at, text, cssScale, pageWidthCss, onChange, onCommit, onCancel } = props;
+  const { at, text, cssScale, pageWidthCss, onChange, onCommit, onCancel, onDelete } = props;
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     ref.current?.focus();
   }, []);
+  // B4 — sticky-note floating selector. The icon and the textarea
+  // are co-located in the same wrapper (the icon on the left, the
+  // textarea on the right), so the user sees them together as a
+  // single visual unit instead of two disconnected surfaces.
+  // Width was bumped from 210 -> 240 to accommodate the icon +
+  // 3 action buttons without crowding.
   const left = Math.min(at.x * cssScale, Math.max(pageWidthCss - NOTE_POPOVER_W - 8, 0));
-  const top = at.y * cssScale + NOTE_ICON_PT * cssScale + 4;
+  const top = at.y * cssScale;
   return (
     <div
       className="ann-editor ann-note-editor"
@@ -1215,29 +1400,67 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
       style={{ left, top, width: NOTE_POPOVER_W }}
       onPointerDown={(e): void => e.stopPropagation()}
     >
-      <textarea
-        ref={ref}
-        value={text}
-        placeholder="Add a note..."
-        rows={3}
-        onChange={(e): void => onChange(e.target.value)}
-        onKeyDown={(e): void => {
-          e.stopPropagation();
-          if (e.key === "Escape") {
-            e.preventDefault();
-            onCancel();
-          } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault();
-            onCommit();
-          }
-        }}
-      />
+      <div className="ann-note-editor-row">
+        <MessageSquare
+          size={NOTE_ICON_PT * cssScale}
+          strokeWidth={2}
+          aria-hidden
+          className="ann-note-editor-icon"
+          style={{ color: "var(--accent)" }}
+        />
+        <textarea
+          ref={ref}
+          value={text}
+          placeholder="Add a note..."
+          rows={3}
+          onChange={(e): void => onChange(e.target.value)}
+          onKeyDown={(e): void => {
+            e.stopPropagation();
+            if (e.key === "Escape") {
+              e.preventDefault();
+              onCancel();
+            } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault();
+              onCommit();
+            }
+          }}
+          onPointerDown={(e): void => e.stopPropagation()}
+        />
+      </div>
+      {/* B4 — Sign-like floating action bar. Three buttons (Confirm
+        / Cancel / Delete) — the same affordance every other
+        one-shot tool exposes. Confirm commits the annotation,
+        Cancel drops the editor without saving, Delete discards
+        the note (alias of Cancel but matches the textbox/callout
+        action bar vocabulary so the user sees one consistent set
+        of buttons regardless of the tool). */}
       <div className="ann-note-editor-actions">
-        <button type="button" className="btn btn-secondary ann-note-btn" onClick={onCancel}>
+        <button
+          type="button"
+          className="ann-textbox-action-btn ann-textbox-action-confirm ann-note-btn"
+          onClick={onCommit}
+          data-annotation-action="note-confirm"
+          title="Confirm (Ctrl+Enter)"
+        >
+          Confirm
+        </button>
+        <button
+          type="button"
+          className="ann-textbox-action-btn ann-textbox-action-cancel ann-note-btn"
+          onClick={onCancel}
+          data-annotation-action="note-cancel"
+          title="Cancel (Esc)"
+        >
           Cancel
         </button>
-        <button type="button" className="btn btn-primary ann-note-btn" onClick={onCommit}>
-          Add note
+        <button
+          type="button"
+          className="ann-textbox-action-btn ann-textbox-action-delete ann-note-btn"
+          onClick={onDelete}
+          data-annotation-action="note-delete"
+          title="Discard without saving"
+        >
+          Delete
         </button>
       </div>
     </div>
@@ -1309,9 +1532,23 @@ function CalloutBoxEditor(
           fontSize: TEXTBOX_FONT_PT * cssScale,
           lineHeight: TEXTBOX_LINE_HEIGHT,
           padding: TEXTBOX_PAD_PT * cssScale,
+          // DEF-095 — same flow fix as the textbox editor: the
+          // textarea must stay in the wrapper's flex column so the
+          // action bar below is a separate, clickable hit surface.
+          position: "static",
         }}
       />
-      <div className="ann-textbox-actions" data-annotation-action-bar="callout">
+      <div
+        className="ann-textbox-actions"
+        data-annotation-action-bar="callout"
+        style={{
+          // DEF-095 — the bar is a real hit target, stacked above
+          // the textarea (see TextBoxActionBar).
+          pointerEvents: "auto",
+          position: "relative",
+          zIndex: 5,
+        }}
+      >
         <button
           type="button"
           className="ann-textbox-action-btn ann-textbox-action-confirm"

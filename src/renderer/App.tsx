@@ -97,6 +97,7 @@ import {
 import { OcrSuspectsPanel } from "./components/OcrSuspectsPanel";
 import { rasterizePagesForOcr } from "./pdf/ocrRasterize";
 import type { EngineApi, EngineOp, EngineState } from "./engine/types";
+import type { PlacedStamp } from "./annotations/StampAnnotations";
 import type { Annotation, AnnotationPatch } from "./annotations/model";
 import { describeEngineError } from "./engine/types";
 import { stubRendererEngine } from "./engine/stubEngine";
@@ -133,7 +134,10 @@ import {
 } from "./forms/model";
 import { getSignatureService } from "./signatures/service";
 import { rasterizeSavedSignatureToPng } from "./signatures/canvas";
-import { resolveEngineStateForDiagnostics } from "./diagnostics/resolve";
+import {
+  diagnosticsPublishAllowed,
+  resolveEngineStateForDiagnostics,
+} from "./diagnostics/resolve";
 
 /** Phase 7 — settings persist policy.
  *
@@ -422,6 +426,14 @@ export function App(): ReactElement {
     pngWidth: number;
     pngHeight: number;
   } | null>(null);
+  /** B10 / DEF-101 — per-tab record of successfully placed stamps.
+   *  The engine bakes the stamp into the page bitmap; this mirror
+   *  list drives the `.stamp-annotation` DOM surfaces so a placement
+   *  is visible/verifiable in the renderer. Each entry is appended
+   *  on `addStamp` success and pruned on tab close. */
+  const [placedStampsByTab, setPlacedStampsByTab] = useState<
+    Record<string, PlacedStamp[]>
+  >({});
   // Page the user last clicked while the Sign tool was armed. We use
   // this to scroll-to-page in the placement flow so the click target is
   // visible (DocumentView's overlay catches the pointerdown and places
@@ -1051,6 +1063,41 @@ export function App(): ReactElement {
     if (editModeOpenRef.current) {
       setEditModeOpen(false);
     }
+    // B6 — drop the closed tab's per-tab OCR suspect / OCR run
+    // maps so a freshly-opened tab (or the welcome screen) doesn't
+    // inherit stale "OCR has run on this doc" markers. The maps
+    // become inert once the tab id disappears, but explicitly
+    // pruning the entries closes the loop so a future refactor
+    // that passes the wrong id through can't surface an old
+    // suspect list against a new doc.
+    setOcrSuspectsByTab((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setOcrRunByTab((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    // B10 / DEF-101 — drop the closed tab's placed-stamp mirror so
+    // a freshly-opened tab (or the welcome screen) doesn't inherit
+    // stale stamp surfaces. Same pattern as the OCR maps above.
+    setPlacedStampsByTab((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    // B6 — if the OCR suspects panel was open against this tab,
+    // close it. The panel's render gate already requires a
+    // non-null active tab id, so closing the active tab would
+    // unmount it on the next render anyway — but explicitly
+    // closing here keeps the "open" flag consistent with the
+    // visible state.
+    setOcrSuspectsOpen(false);
     // Drop any open dialog that targeted the now-closed tab. The
     // menus / toolbar buttons that opened these dialogs all gate
     // on `activeTabIdRefLocal.current`, so once the tab is gone
@@ -1072,6 +1119,30 @@ export function App(): ReactElement {
     setDocxExportOpen(false);
     setCommentExportOpen(false);
     setCommentImportOpen(false);
+    setDeletePageOpen(false);
+    // B6 — pending close-tab prompt state. If the user closed a
+    // tab via the prompt and the dialog is still showing (the
+    // save flow is in flight, the error message is rendering),
+    // close it so a future tab doesn't see a stuck "Save" prompt.
+    setPendingCloseTabId(null);
+    setPendingCloseError(null);
+    setPendingCloseSaving(false);
+    // DEF-097 — clear the per-tab activeTool from the diagnostics
+    // mirror so a fresh `tflexDiagnostics()` read after the close
+    // returns `null` rather than the closed tab's stale tool.
+    // DocumentView's per-tab `annTool` reducer unmounts with the
+    // tab (the tab-pane is keyed on `meta.id`), so the renderer's
+    // own tool state can't leak — but `diagnosticsRef.current`
+    // retains the last published value until a new DocumentView
+    // (or no DocumentView, on the welcome screen) overwrites it.
+    // Resetting `activeTool: null` here makes the surface honest
+    // immediately and closes the gap that qa retest exposed.
+    setDiagnostics((prev) => {
+      if (prev["activeTool"] === null || prev["activeTool"] === undefined) {
+        return prev;
+      }
+      return { ...prev, activeTool: null };
+    });
   }, []);
 
   const activateTab = useCallback((id: string): void => {
@@ -1103,6 +1174,29 @@ export function App(): ReactElement {
   }, []);
 
   // ---- engine ops ----
+  // B19 — refresh the renderer's pdf.js proxy in-place after ANY
+  // engine mutation that mutates the document's page stream. The
+  // engine writes the new content into its `pdfDoc` and returns
+  // the authoritative `EngineState`; the renderer's `doc` proxy
+  // still points at the pre-mutation bytes until a proxy refresh
+  // tears down the stale proxy and parses the fresh ones.
+  //
+  // Op-kind → does the page stream change?
+  //   rotate  → no (page stream unchanged; only orientation
+  //             flips)
+  //   delete  → YES (the engine removes pages; the proxy's
+  //             source indices shift, so source-page lookups via
+  //             `doc.getPage(n)` start returning the wrong page)
+  //   reorder → no (source pages unchanged; the pageOrder array
+  //             shifts but the proxy's pages are the same set in
+  //             the same order)
+  //
+  // We refresh after every `applyOp` result so any future op
+  // that mutates the page stream automatically inherits the
+  // refresh. The cost is one extra `getDocumentBytes` round-trip
+  // for rotate / reorder (a no-op stream-wise) — cheap relative
+  // to the user-visible cost of a stale page being painted after
+  // a delete.
   const applyEngineOp = useCallback(
     async (tabId: string, op: EngineOp): Promise<void> => {
       const open = openTabsRef.current[tabId];
@@ -1113,6 +1207,16 @@ export function App(): ReactElement {
         return;
       }
       noteOpApplied(tabId, result.value);
+      // B19 — rebuild the proxy in place so the next
+      // `doc.getPage(sourcePage)` call resolves against the
+      // post-mutation stream. Without this, deleting page 2 from
+      // a 3-page doc leaves the proxy with 3 stale pages — every
+      // subsequent PageView on visible 3 fetches source 3, which
+      // is now a different page in the engine's pdfDoc.
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(tabId).catch(() => undefined);
+      }
     },
     [pushToast, noteOpApplied],
   );
@@ -3284,6 +3388,29 @@ pushToast(
         return;
       }
       noteOpApplied(activeId, res.value);
+      // B10 / DEF-101 — record the placement for the `.stamp-annotation`
+      // DOM surface. The engine bakes the pixels into the page
+      // bitmap; this mirror makes the placement visible/verifiable
+      // in the renderer (and gives QA a stable selector). Keyed by
+      // the active tab; pruned on tab close.
+      setPlacedStampsByTab((prev) => {
+        const existing = prev[activeId] ?? [];
+        return {
+          ...prev,
+          [activeId]: [
+            ...existing,
+            {
+              id: crypto.randomUUID(),
+              stampId: args.stampId,
+              page: args.page,
+              rect,
+              pngBytes: args.pngBytes,
+              pngWidth: args.pngWidth,
+              pngHeight: args.pngHeight,
+            },
+          ],
+        };
+      });
       // B10 / B19 — refresh the proxy so the baked stamp is
       // visible without a save+reopen cycle (same pattern as
       // crop / merge / replace / OCR / flatten).
@@ -4016,10 +4143,19 @@ pushToast(
 
   const onDiagnosticsFor = useCallback(
     (tabId: string, d: Record<string, unknown>): void => {
-      setOpenTabs((prev) => {
-        if (prev[tabId] === undefined) return prev;
-        return prev;
-      });
+      // DEF-097 — drop diagnostics publishes for tabs that are no
+      // longer open. `closeTab` resets `activeTool: null` in the
+      // mirror; the closing tab's DocumentView unmount (or a late
+      // effect / async callback keyed to the closed id) may still
+      // fire a diagnostics publish during the close commit. Without
+      // this gate that publish re-spreads the stale tool over the
+      // reset and the diagnostics surface keeps reporting the
+      // closed tab's tool. `diagnosticsPublishAllowed` is the pure
+      // helper (unit-tested); the ref read here keeps the decision
+      // synchronous with the last committed openTabs.
+      if (!diagnosticsPublishAllowed(openTabsRef.current, tabId)) {
+        return;
+      }
       const ip = d["searchIndexProgress"];
       if (ip === null || ip === undefined) {
         searchIndexProgressRef.current = null;
@@ -4973,6 +5109,9 @@ pushToast(
                     // B10 — armed stamp ghost + click-to-embed.
                     armedStamp={armedStamp}
                     onPlaceStamp={onPlaceStamp}
+                    // B10 / DEF-101 — placed-stamp DOM surfaces for
+                    // this tab (mirror of successful addStamp ops).
+                    stampAnnotations={placedStampsByTab[meta.id] ?? []}
                     toolsPaletteOpen={toolsPaletteOpen}
                     onToolsPaletteToggle={(): void => setToolsPaletteOpen((v) => !v)}
                     annotationPalette={
@@ -5103,7 +5242,18 @@ pushToast(
             onImportComments={onCommentImportClick}
             hasOcrSuspects={Object.values(ocrRunByTab).some(Boolean)}
             onClose={(): void => setToolsPaletteOpen(false)}
-            documentRequired={activeTab !== null}
+            // B11 / DEF-102 — `documentRequired` must be false on an
+            // empty tab. The previous shape was
+            // `activeTab !== null`; on an empty tab `openTabs[id]`
+            // has NO entry (empty tabs only exist in the tab bar),
+            // so `activeTab` is `undefined` — and
+            // `undefined !== null` is TRUE, which told the palette
+            // "a document is active" and enabled Recognize Text /
+            // OCR on a doc-less tab. Gating on the active tab not
+            // being empty makes every document-required entry
+            // (Recognize text, OCR suspects, batch OCR, ...)
+            // disabled on the welcome screen and on empty tabs.
+            documentRequired={tabs.activeId !== null && !activeIsEmpty}
             hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
           />
         )}

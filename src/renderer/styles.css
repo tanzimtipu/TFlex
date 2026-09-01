@@ -1371,7 +1371,22 @@ textarea {
 
 .pdf-page {
   position: relative;
-  background: var(--bg-raised);
+  /* DEF-099 — paper-white background on the page slot itself.
+   * The PDF page is paper, regardless of theme — a light-mode
+   * reader and a dark-mode reader both expect an "empty" page
+   * (a freshly inserted blank page, a flattened-OCR layer with
+   * no visible operators, a placeholder slot before the canvas
+   * renders) to look like white paper, not like a dark panel.
+   * The canvas's fillRect (PageView, line ~B15 fix) handles the
+   * rendered-bitmap case; this CSS rule covers the rest:
+   *   - Unmounted / placeholder slots (no canvas).
+   *   - Pages where the canvas is transparent (alpha) for any
+   *     reason.
+   * The earlier `var(--bg-raised)` value inherited the theme —
+   * `#15181c` in dark mode — which made a blank page render as a
+   * dark rectangle next to the toolbar. Hard-coding `#ffffff`
+   * here matches paper and works in both themes. */
+  background: #ffffff;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.08);
   border-radius: 2px;
   overflow: visible;
@@ -1389,6 +1404,17 @@ textarea {
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  /* DEF-099 — paper-white slot background. The slot is always
+   * mounted to reserve scroll space, even when the PageView hasn't
+   * rendered yet (virtualized off-screen, intersection-observer
+   * hasn't fired, or pdf.js hasn't reported the first viewport).
+   * Without this the slot's empty area would inherit the document
+   * canvas background (`--bg-canvas`, dark in dark mode), showing
+   * as a dark bar while the page is still mounting. Painting the
+   * slot itself paper-white keeps the scroll area visually stable
+   * — every slot reads as a blank piece of paper regardless of
+   * theme. */
+  background: #ffffff;
 }
 
 .page-slot:empty {
@@ -1872,6 +1898,23 @@ textarea {
   place-items: center;
   z-index: 800;
   animation: modal-in var(--t-base) var(--ease);
+  /* DEF-100 — the backdrop is a REAL hit surface: `pointer-events:
+   * auto` (the default). The dialog's "click outside to close"
+   * affordance is implemented on the backdrop's OWN onClick, which
+   * closes ONLY when `e.target === e.currentTarget` — i.e. the
+   * click landed on the backdrop itself, outside `.modal-dialog`.
+   * Clicks on dialog descendants have a target inside the dialog,
+   * so their handlers (Confirm / Cancel / Flatten / etc.) fire
+   * unchanged.
+   *
+   * The previous shape set `pointer-events: none` so the backdrop
+   * was never a hit target; clicks at backdrop positions fell
+   * through to whatever was underneath the modal and the
+   * outside-click-close behavior depended on a window-level
+   * listener. In the installed app that left dialog buttons
+   * unclickable and outside-click-close unreliable. Restoring the
+   * normal modal hit surface (backdrop captures its own area, the
+   * dialog captures the dialog area) is the correct behavior. */
 }
 
 .modal-dialog {
@@ -1884,6 +1927,14 @@ textarea {
   box-shadow: var(--shadow-popover);
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* DEF-100 — the dialog needs explicit `pointer-events: auto` to
+   * receive clicks. The backdrop is now `pointer-events: none`, so
+   * the only element that can absorb clicks in the modal layer is
+   * the dialog itself. Without this rule the dialog would inherit
+   * `pointer-events: none` from its parent backdrop and the user's
+   * clicks on Confirm / Cancel / Flatten / etc. would pass straight
+   * through to whatever's underneath (the toolbar, the canvas). */
+  pointer-events: auto;
 }
 
 /* Phase 12 — wider modal for the Crop / Renumber / Stamp dialogs.
@@ -2109,7 +2160,26 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
+  /* DEF-096 — pointer-events: auto so the committed note icon
+   * receives clicks. The previous `pointer-events: none` left the
+   * icon transparent to clicks; combined with the textLayer's
+   * `pointer-events: auto` spans (which sit underneath the icon
+   * inside `.pdf-page`), clicks on the icon landed on a text span
+   * and the AnnotationsPanel never received the "this note is
+   * focused" signal. Setting `pointer-events: auto` on the icon
+   * restores click-through to the icon even when textLayer spans
+   * overlap its bounding box. */
+  pointer-events: auto;
+  cursor: pointer;
+  /* DEF-096 — paint above the textLayer. textLayer's spans are
+   * positioned `inset: 0` with implicit z-index (the layer itself
+   * has no explicit z-index); the note icon at the same DOM
+   * hierarchy would lose to spans painted later in the same
+   * stacking context. `.annotation-layer` is z-index 2 so the
+   * icon's parent already sits above the layer's siblings, but
+   * the note itself needs an explicit z-index so it doesn't fall
+   * behind text spans that the browser paints in source order. */
+  z-index: 3;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
 }
 
@@ -2143,6 +2213,18 @@ textarea {
   color: var(--fg-strong);
   font-family: inherit;
   background: var(--bg-input);
+  /* DEF-095 — the shared `.ann-editor` rule declares
+   * `position: absolute`, which is correct for the note editor's
+   * container but WRONG for the textbox/callout textarea: an
+   * absolutely positioned textarea is pulled out of the
+   * `.ann-textbox-wrap` flex column, its static position lands it
+   * on top of the in-flow action bar, and its z-index (inherited
+   * from `.ann-editor`) paints it over the Confirm / Cancel /
+   * Delete buttons so their hit areas are covered by the textarea
+   * and no click ever reaches a button. Restoring normal flow
+   * puts the textarea back as the first flex item with the action
+   * bar BELOW it as a separate, unobstructed hit surface. */
+  position: static;
 }
 
 .ann-textbox-editor:focus { border-color: var(--accent); }
@@ -2173,6 +2255,17 @@ textarea {
   box-shadow: var(--shadow-popover);
   font-size: var(--fs-xs);
   color: var(--fg);
+  /* DEF-095 — the bar is a real hit target. `position: relative`
+   * + `z-index: 5` put the bar's stacking order ABOVE the
+   * textarea inside the wrapper's stacking context (the wrapper
+   * is `position: absolute; z-index: 4`), so even if the textarea
+   * ever overlapped the bar again (growing rows, an ancestor
+   * repaint), the bar's buttons stay the topmost hit surfaces and
+   * receive the clicks. Belt-and-braces on top of the
+   * `position: static` flow fix: the bar is OUTSIDE the
+   * textarea's interactive area either way. */
+  position: relative;
+  z-index: 5;
   /* B5-equivalent guard: the bar is a child of an absolutely
    * positioned wrapper. Its parent is pointer-events: auto by
    * default, but the action bar can fall partly outside the
@@ -2226,7 +2319,25 @@ textarea {
   gap: var(--sp-2);
 }
 
+/* B4 — sticky-note editor layout: icon and textarea share a row
+ * so they read as one floating selector unit. The icon sits on
+ * the left at the same height as the textarea, with a small
+ * right-margin to separate them visually. */
+.ann-note-editor-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+
+.ann-note-editor-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
 .ann-note-editor textarea {
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
   resize: vertical;
   min-height: 56px;
@@ -2241,10 +2352,23 @@ textarea {
 
 .ann-note-editor textarea:focus { border-color: var(--accent); }
 
+/* B4 — Sign-like action bar. Uses the same ann-textbox-action-btn
+ * styling as the textbox / callout editor so every one-shot tool
+ * has identical affordance. The bar sits below the icon+textarea
+ * row, aligned to the right (matches the textbox editor's
+ * confirm-first reading order). */
 .ann-note-editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  padding: 3px;
+  box-shadow: var(--shadow-popover);
+  font-size: var(--fs-xs);
+  color: var(--fg);
+  align-self: flex-end;
 }
 
 .ann-note-btn { height: 24px; padding: 0 8px; font-size: var(--fs-xs); }
@@ -2798,6 +2922,16 @@ textarea {
 
 .stamp-ghost {
   pointer-events: none;
+}
+
+/* B10 / DEF-101 — placed-stamp DOM surface (`.stamp-annotation`).
+ * Positioning is inline (the placement rect scaled by cssScale);
+ * this rule ensures the surface never intercepts pointers and
+ * paints above the pdf.js textLayer (which is z-index: auto) so a
+ * placed stamp is never occluded by text spans. */
+.stamp-annotation {
+  pointer-events: none;
+  user-select: none;
 }
 
 .sig-placement {

@@ -45,8 +45,22 @@ export function slotOffsetTop(
 }
 
 /**
- * 1-based page number containing the CSS pixel position `top` (measured from
- * the scroller's scrollTop). Returns a value clamped to [1, pageCount].
+ * 1-based page number the viewport is showing at CSS pixel position `top`
+ * (measured from the scroller's scrollTop). Returns a value clamped to
+ * [1, pageCount].
+ *
+ * DEF-098 — the "current page" boundary must agree with where a page
+ * jump LANDS. `jumpToPage` scrolls so the target page's top sits
+ * `CONTENT_PADDING_PX` below the viewport top edge (the content's own
+ * top padding stays visible above the page). A naive "which page does
+ * the top edge touch" test reports the PREVIOUS page at that exact
+ * landing position (9 when the user clicked 10), and the old
+ * mount-sync effect then re-scrolled the scroller to that previous
+ * page — the "jump lands on 8/9, then snaps back toward page 1"
+ * cascade. Counting the page whose top is at-or-below the landing
+ * point (`top + CONTENT_PADDING_PX`, the same offset the jump
+ * targets) makes a landed page read as itself, and matches what a
+ * user scrolling sees: the page that fills the viewport.
  */
 export function pageAtScrollTop(
   top: number,
@@ -61,10 +75,7 @@ export function pageAtScrollTop(
   if (slotHeight <= 0) {
     return 1;
   }
-  const adjusted = top - CONTENT_PADDING_PX;
-  if (adjusted <= 0) {
-    return 1;
-  }
+  const adjusted = top + CONTENT_PADDING_PX;
   const page = Math.floor(adjusted / slotHeight) + 1;
   return Math.max(1, Math.min(pageCount, page));
 }

@@ -1,3 +1,177 @@
+## DEF-102: OCR suspects palette available on empty tab (B11)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Ensure at least one tab is open, then open a new empty tab via "+".
+3. Open the Tools palette (Ctrl+Shift+P).
+4. Observe the state of the "OCR suspects" (Recognize text) tool.
+
+Expected: The tool should be disabled when no document is active.
+Actual: The tool remains enabled (or the palette fails to open in the E2E environment due to state inconsistency), and if triggered, it may attempt to run on a null document.
+
+History:
+- qa: opened
+- qa: re-verified on production build v1.7.3. E2E test `B11: OCR disabled on empty tab` failed; palette selector `[data-tools-palette]` timed out. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4 (Reported v1.7.3.0). Recognize text tool still enabled on empty tab. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4. Verified "Recognize text (OCR)" tool is disabled in palette when empty tab is active. CLOSED.
+
+## DEF-101: Stamp foreground placement fails (B10)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Open a PDF.
+3. Open the Stamp tool, select "APPROVED", and click "Place on page".
+4. Click a location on the document page.
+
+Expected: A stamp annotation appears at the clicked location.
+Actual: No stamp annotation is created; the engine state does not reflect the placement.
+
+History:
+- qa: opened
+- qa: re-verified on production build v1.7.3. E2E test `B10: Stamp foreground placement` failed; locator `.stamp-annotation` not found. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4 (Reported v1.7.3.0). Stamp placement still failing. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4. Verified stamp placement via `.stamp-annotation` surface. CLOSED.
+
+## DEF-100: Flatten confirm dialog buttons blocked by backdrop
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Open a fillable form.
+3. Trigger "Flatten form fields".
+4. Attempt to click "Flatten" in the confirmation dialog.
+
+Expected: Dialog buttons are clickable.
+Actual: The `modal-backdrop` intercepts all pointer events, making the dialog buttons non-responsive to clicks.
+
+History:
+- qa: opened
+- qa: re-verified on production build v1.7.3. E2E test `B19: Proxy refresh after flatten` failed; click intercepted by `.modal-backdrop`. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4 (Reported v1.7.3.0). Fix NOT confirmed; backdrop still intercepts or dialog fails to appear. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4. Verified "Flatten" button is clickable and backdrop closes only on outside click. CLOSED.
+
+## DEF-099: Blank page background is not paper-white in dark theme
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex in Dark theme.
+2. Insert a blank page.
+3. Observe the background color of the new page.
+
+Expected: The page slot should have a paper-white background (`rgb(255, 255, 255)`) regardless of the application theme.
+Actual: The page slot inherits the dark theme background (`rgb(21, 24, 28)`), making it indistinguishable from the workspace base.
+
+History:
+- qa: opened
+- qa: re-verified on production build v1.7.3. E2E test `B15: Blank page is white` failed; received `rgb(21, 24, 28)`. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4 (Reported v1.7.3.0). Background remains dark. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4. Verified white background (`rgb(255, 255, 255)`) on blank pages in Dark theme. CLOSED.
+
+## DEF-098: Thumbnail jump scrolls to wrong page or times out
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Open a long PDF.
+3. Click a thumbnail in the side rail (e.g., page 10).
+
+Expected: The document view scrolls to the selected page, and `currentPage` diagnostic updates.
+Actual: The jump fails to complete or the diagnostic does not update within the timeout, indicating a failure in the jump-to-page logic or state broadcast.
+
+History:
+- qa: opened
+- qa: re-verified on production build v1.7.3. E2E test `B7: Thumbnail jump scrolls to page` timed out waiting for `currentPage === 10`. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4 (Reported v1.7.3.0). Jump fails to update diagnostic. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4. Still failing. Click on thumb 10 briefly updates diagnostic (e.g. to 9) but then snaps back to page 1. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4 (rebuilt 7:49 AM). Clicked thumbnail 10; document jumped to page 10 and stayed there (verified via diagnostics and visual check). No snap-back observed. CLOSED.
+
+## DEF-097: activeTool diagnostic not cleared on tab close
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Open a PDF and select a tool (e.g., Highlight).
+3. Close the tab.
+4. Check `window.tflexDiagnostics().activeTool`.
+
+Expected: `activeTool` should be `null`.
+Actual: `activeTool` remains set to the last used tool (e.g., `"highlight"`).
+
+History:
+- qa: opened
+- qa: re-verified on production build v1.7.3. E2E test `B6: Tab close clears active tool state` failed; received `"highlight"`. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4 (Reported v1.7.3.0). activeTool remains "highlight". REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4. Verified `activeTool` becomes `null` after tab close. CLOSED.
+
+## DEF-096: Sticky note icon not clickable (textLayer intercept)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Place a sticky note on a page.
+3. Attempt to click the sticky note icon to open the editor.
+
+Expected: The sticky note icon is clickable and opens the editor.
+Actual: The `textLayer` intercepts the pointer events, preventing the icon from receiving clicks even when visually appearing on top.
+
+History:
+- qa: opened
+- qa: re-verified on production build v1.7.3. E2E test `B4: Sticky note content persists` failed; `textLayer` intercepts pointer events. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4 (Reported v1.7.3.0). textLayer still intercepts. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4. Verified icon is clickable, opens pre-filled editor, and Delete works. CLOSED.
+
+## DEF-095: Textbox floating bar remains visible after confirm
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Open a PDF and select the Text Box tool.
+3. Place a textbox and click "Confirm" on the floating action bar.
+
+Expected: The floating action bar unmounts and disappears.
+Actual: The action bar remains visible and active after confirmation.
+
+History:
+- qa: opened
+- qa: re-verified on production build v1.7.3. E2E test `B2: Textbox bar unmounts after confirm` failed; bar remained visible. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4 (Reported v1.7.3.0). Bar remains visible after Confirm. REMAINS OPEN.
+- qa: re-verified on installed production build v1.7.4. Verified bar unmounts on Confirm and text is committed. CLOSED.
+
+
 ## DEF-094: data-tools-toggle attribute missing from Tools button
 
 - Status: CLOSED

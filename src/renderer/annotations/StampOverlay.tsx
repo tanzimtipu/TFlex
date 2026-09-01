@@ -130,7 +130,7 @@ export function StampOverlay(props: StampOverlayProps): ReactElement | null {
       if (typeof t.closest !== "function") return false;
       return (
         t.closest(
-          ".ann-editor, .sig-action-bar, .ann-textbox-wrap, .ann-note-editor, button, input, textarea, select, a[href], [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
+          ".ann-editor, .sig-action-bar, .ann-textbox-wrap, .ann-note-editor, .ann-note, button, input, textarea, select, a[href], [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
         ) !== null
       );
     };

@@ -5,7 +5,7 @@
 // a deliberate click before sending `engine.flattenForms`. Also offers
 // "Cancel" as the obvious exit.
 
-import { useEffect, useRef, type ReactElement } from "react";
+import { useEffect, type ReactElement } from "react";
 
 interface FlattenConfirmDialogProps {
   open: boolean;
@@ -16,7 +16,6 @@ interface FlattenConfirmDialogProps {
 
 export function FlattenConfirmDialog(props: FlattenConfirmDialogProps): ReactElement | null {
   const { open, fieldCount, onCancel, onConfirm } = props;
-  const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -30,17 +29,34 @@ export function FlattenConfirmDialog(props: FlattenConfirmDialogProps): ReactEle
       }
     };
     window.addEventListener("keydown", onKey);
-    dialogRef.current?.querySelector<HTMLElement>("button")?.focus();
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
   }, [open, onCancel, onConfirm]);
 
   if (!open) return null;
   return (
-    <div className="modal-backdrop" onClick={onCancel}>
+    <div
+      className="modal-backdrop"
+      // DEF-100 — click-outside-to-close. The backdrop keeps
+      // `pointer-events: auto` (the CSS rule) and closes ONLY when
+      // the click target IS the backdrop element itself. A click on
+      // a dialog descendant (Confirm / Cancel / body) has a target
+      // inside `.modal-dialog`, which never equals the backdrop, so
+      // the dialog's own buttons fire their handlers unchanged. The
+      // target-equality check is load-bearing: the previous fix
+      // disabled backdrop hit-testing entirely (`pointer-events:
+      // none` + a window-level click listener), which let clicks
+      // fall through to whatever was underneath the modal and made
+      // outside-click-close unreliable in the real app.
+      onClick={(e): void => {
+        if (e.target === e.currentTarget) {
+          onCancel();
+        }
+      }}
+    >
       <div
         className="modal-dialog"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="flatten-title"

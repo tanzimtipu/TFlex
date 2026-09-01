@@ -3,6 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { measureHitRects, type HitRect } from '../pdf/highlight';
 import type { SearchHit } from '../search/searchIndex';
 import { AnnotationOverlay, type TextItemGeom } from '../annotations/AnnotationOverlay';
+import { StampAnnotations, type PlacedStamp } from '../annotations/StampAnnotations';
 import { FormsOverlay } from '../forms/FormsOverlay';
 import { SignaturesOverlay } from '../signatures/SignaturesOverlay';
 import { EditOverlay } from '../edit/EditOverlay';
@@ -14,6 +15,7 @@ import type {
 } from '../../shared/types';
 import type {
   Annotation,
+  AnnotationPatch,
   AnnotationToolState,
 } from '../annotations/model';
 
@@ -48,6 +50,17 @@ interface PageViewProps {
   /** One-shot tools (textbox, note) call this after committing so the host
    *  can return to plain viewer mode. */
   onFinishedOneShot?: () => void;
+  /** DEF-096 — edit / delete a committed annotation from the page
+   *  (clicking a sticky-note icon opens its editor). Threaded to
+   *  the AnnotationOverlay; the host applies the patch / delete
+   *  through the engine. */
+  onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
+  onDeleteAnnotation?: (id: string) => void;
+  /** B10 / DEF-101 — successfully placed stamps for this page
+   *  (rect + raster as recorded by the host on `addStamp` success).
+   *  Rendered as `.stamp-annotation` DOM surfaces so a placed stamp
+   *  is visible/verifiable in addition to the baked page bitmap. */
+  stampAnnotations?: PlacedStamp[];
   /** Called when this PageView starts a render task (getPage → render →
    *  getTextContent → TextLayer). The host uses this as part of the
    *  document-wide "anything in flight?" probe that gates pdf.js's
@@ -205,6 +218,9 @@ export function PageView(props: PageViewProps) {
     flashId,
     onCreateAnnotation,
     onFinishedOneShot,
+    onEditAnnotation,
+    onDeleteAnnotation,
+    stampAnnotations = [],
     onRenderStart,
     onRenderEnd,
     formFields,
@@ -363,6 +379,22 @@ export function PageView(props: PageViewProps) {
         endRender();
         return;
       }
+      // B15 — fill the canvas with opaque paper-white BEFORE the
+      // pdf.js render starts. The canvas is created with
+      // `{ alpha: false }` (above) so an UNFILLED canvas starts
+      // opaque-black; if the underlying PDF page is blank (no
+      // operators, or only an invisible text layer — common after
+      // the engine's `insertBlankPage` or a flat /OCR layer)
+      // pdf.js paints nothing onto the canvas and the page would
+      // render as a black rectangle. Painting a white background
+      // first gives every blank / empty page the same
+      // paper-colour identity regardless of theme; the user's
+      // document content still paints on top in the usual way
+      // (pdf.js's operator list writes opaque pixels over the
+      // fill). This is the renderer-side fix for the "blank page
+      // shows as black in dark mode" report.
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       // Track the active render task so a stale cssScale (or other dep change)
       // can cancel it BEFORE a new render begins on the same canvas. pdf.js
       // refuses two concurrent renders against the same canvas, which used
@@ -560,7 +592,13 @@ export function PageView(props: PageViewProps) {
         getTextItems={getTextItems}
         onCreate={onCreateAnnotation}
         onFinishedOneShot={onFinishedOneShot}
+        onEditAnnotation={onEditAnnotation}
+        onDeleteAnnotation={onDeleteAnnotation}
       />
+      {/* B10 / DEF-101 — placed-stamp DOM surfaces. Painted above
+       * the textLayer, pointer-transparent; the engine bakes the
+       * pixels, this mirrors them as a verifiable node. */}
+      <StampAnnotations cssScale={cssScale} items={stampAnnotations} />
       <FormsOverlay
         page={pageNumber}
         cssScale={cssScale}

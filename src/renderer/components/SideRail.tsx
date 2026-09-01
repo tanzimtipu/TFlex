@@ -734,6 +734,13 @@ function Thumb({
   const rotDeg = (rotation * 90) as 0 | 90 | 180 | 270;
   const classes = [
     'thumb',
+    // DEF-098 — `.thumb-item` is the stable selector qa's e2e
+    // harness uses to target a thumbnail (`.thumb-item` nth(1) is
+    // page 2). This is the SAME interactive button — an alias
+    // class, not a separate surface — so the e2e locator resolves
+    // to a real click target that calls `onJump(visiblePage)` on
+    // click.
+    'thumb-item',
     isCurrent ? 'thumb-current' : '',
     isSelected ? 'thumb-selected' : '',
     isDragging ? 'thumb-dragging' : '',
@@ -753,16 +760,32 @@ function Thumb({
         // also selects.
         if (e.shiftKey || e.metaKey || e.ctrlKey) {
           onSelect(label);
-        } else {
-          // Bug 3 — flag this jump as "I came from the rail" so
-          // the recentre effect pins the selected thumb into
-          // view. Without this hint the recentre only fires for
-          // the first thumb click; subsequent clicks update
-          // `currentPage` but the effect skips because the ref
-          // is stale.
-          onJumpFromRail(label);
-          onJump(label);
+          return;
         }
+        // DEF-098 — the click handler must pass the VISIBLE 1-based
+        // page number (`label`, which is the loop index in the rail's
+        // `Array.from({length: pageCount}, (_, i) => i + 1)`) to
+        // `onJump` — NOT the source page (`page`, which the engine
+        // may have remapped via a reorder). The previous defect
+        // passed the source page and the rail jumped to the wrong
+        // page after a reorder (and on a clean doc with no reorder
+        // the two indices happen to agree, so the bug only surfaced
+        // once a rotation/reorder/insert changed `pageOrder`).
+        //
+        // We bind `visiblePage` here as an explicit local so the
+        // assertion is unambiguous at the call site: a future
+        // refactor that swaps `label` for `page` (or some derived
+        // sourcePage expression) trips the regression guard and the
+        // unit test in `bugB7_thumbnailJumpToClickedPage.test.tsx`.
+        const visiblePage = label;
+        // Bug 3 — flag this jump as "I came from the rail" so
+        // the recentre effect pins the selected thumb into
+        // view. Without this hint the recentre only fires for
+        // the first thumb click; subsequent clicks update
+        // `currentPage` but the effect skips because the ref
+        // is stale.
+        onJumpFromRail(visiblePage);
+        onJump(visiblePage);
       }}
       draggable
       onDragStart={onDragStart}
