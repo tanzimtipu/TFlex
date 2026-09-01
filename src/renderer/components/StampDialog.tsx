@@ -86,8 +86,21 @@ export function StampDialog(
     setError(null);
   }, [open, initialStampId, currentPage]);
 
+  // B13 — focus the first interactive control ONLY on the rising
+  // edge of `open`. The previous effect also fired on every
+  // `onClose` identity change, which can shift focus to the
+  // language / page-number `<select>` and dismiss the popup the
+  // user is actively hovering. Same microtask deferral as the
+  // OCR dialog so the focus lands cleanly after React's commit
+  // phase.
+  const focusedOnceRef = useRef<boolean>(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      focusedOnceRef.current = false;
+      return;
+    }
+    if (focusedOnceRef.current) return;
+    focusedOnceRef.current = true;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -95,10 +108,12 @@ export function StampDialog(
       }
     };
     window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
+    queueMicrotask((): void => {
+      const first = dialogRef.current?.querySelector<HTMLElement>(
+        "button, input, [tabindex]",
+      );
+      first?.focus();
+    });
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 

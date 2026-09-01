@@ -53,6 +53,14 @@ interface SignaturesOverlayProps {
   onPlace: (sigId: string, rect: SignaturePlacement["rect"]) => void;
   onMove: (placementId: string, rect: SignaturePlacement["rect"]) => void;
   onDelete: (placementId: string) => void;
+  /** B1 — exit the Sign tool entirely (drop the pending placement
+   *  AND clear the host's armed signature id). Wired to the
+   *  pending action bar's Cancel button: the user explicitly
+   *  cancelled the Sign session, so the next page click should
+   *  NOT create another pending placement. The overlay already
+   *  drops the pending placement internally; this callback only
+   *  needs to clear the App-level `armedSignatureId`. */
+  onCancelArm?: () => void;
 }
 
 export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement | null {
@@ -67,6 +75,7 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
     onPlace,
     onMove,
     onDelete,
+    onCancelArm,
   } = props;
   const pagePlacements = useMemo(
     () => placements.filter((p) => p.page === page),
@@ -102,12 +111,20 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
 
   // Esc clears the selection; Delete removes it. Escape also drops
   // a pending (uncommitted) placement so the user can dismiss a
-  // mid-air placement without committing it (Bug 2).
+  // mid-air placement without committing it (Bug 2). B1 — Esc
+  // also exits Sign mode entirely (clears the armed signature
+  // via `onCancelArm`) so the next page click doesn't immediately
+  // spawn a new pending placement.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         if (pendingPlacement !== null) {
           setPendingPlacement(null);
+          // B1 — Esc on a pending placement also tears down the
+          // Sign tool, mirroring the Cancel button. The Delete
+          // button stays armed for the next click; Esc leaves
+          // the host unarmed (the user is done with Sign).
+          onCancelArm?.();
           return;
         }
         if (selectedId === null) return;
@@ -121,7 +138,7 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, onDelete, pendingPlacement]);
+  }, [selectedId, onDelete, pendingPlacement, onCancelArm]);
 
   // Bug 11 — listen for pointer moves over the page while a
   // signature is armed so the ghost preview follows the cursor.
@@ -289,19 +306,44 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
     [armedSignatureId, cssScale, pageWidthPt, pageHeightPt],
   );
 
-  // Bug 2 — pending placement confirm / cancel / delete. The
+  // B1 — pending placement confirm / cancel / delete. The
   // confirm handler routes the placement through the existing
   // `onPlace` callback (same path the engine consumes), so the
   // undo stack and modified flag behave exactly as if the user
-  // had committed directly. Cancel/Delete just drop the pending
-  // placement without touching the engine.
+  // had committed directly. The host-side `onPlaceSignature`
+  // now leaves `armedSignatureId` set on success (B1 — post-
+  // placement click re-enters Sign mode) so the user can place
+  // another signature without re-clicking the Sign button.
+  // Cancel tears down the pending placement AND the host's
+  // armed signature id (via `onCancelArm`) so the Sign session
+  // is over. Delete just drops the pending placement — the
+  // ghost preview disappears (Bug 1: "Delete must NOT show
+  // pre-placement") but the Sign tool stays armed so the next
+  // page click spawns a fresh pending placement.
   const onConfirmPending = useCallback((): void => {
     if (pendingPlacement === null) return;
     onPlace(pendingPlacement.signatureId, pendingPlacement.rect);
     setPendingPlacement(null);
   }, [pendingPlacement, onPlace]);
 
+  // B1 — Cancel: drop pending placement AND exit Sign mode.
+  // The host's `onCancelArm` (when supplied) clears
+  // `armedSignatureId`; the overlay keeps rendering normally
+  // for committed placements, but the crosshair / ghost go
+  // away because the App's `armedSignatureId` is now null.
   const onCancelPending = useCallback((): void => {
+    setPendingPlacement(null);
+    onCancelArm?.();
+  }, [onCancelArm]);
+
+  // B1 — Delete: drop the pending placement but STAY armed.
+  // The ghost preview is hidden because there's no cursor
+  // point to track (pendingPlacement is null), but the host
+  // still has an armed signature id, so the next page click
+  // spawns a fresh pending placement with the action bar
+  // visible (Bug 1: "post-placement click on sign re-enters
+  // sign mode with Delete shown").
+  const onDeletePending = useCallback((): void => {
     setPendingPlacement(null);
   }, []);
 
@@ -372,7 +414,8 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
           body + an action bar above the rect. The action bar's
           confirm / cancel / delete buttons route through the same
           `onPlace` / local-state handlers the overlay already
-          uses. */}
+          uses. B1 — Cancel exits Sign mode; Delete drops only
+          the pending placement. */}
       {pendingPlacement !== null && (
         <PendingPlacementView
           rect={pendingPlacement.rect}
@@ -380,6 +423,7 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
           cssScale={cssScale}
           onConfirm={onConfirmPending}
           onCancel={onCancelPending}
+          onDelete={onDeletePending}
         />
       )}
 
@@ -409,6 +453,10 @@ interface PendingPlacementViewProps {
   cssScale: number;
   onConfirm: () => void;
   onCancel: () => void;
+  /** B1 — Delete drops the pending placement without exiting
+   *  Sign mode (the ghost preview disappears; the next page
+   *  click spawns a fresh pending placement). */
+  onDelete: () => void;
 }
 
 /** Bug 2 — pending placement view. Renders the in-flight
@@ -417,7 +465,7 @@ interface PendingPlacementViewProps {
  *  user can decide whether to keep or discard the placement before
  *  it enters the engine. */
 function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
-  const { rect, signature, cssScale, onConfirm, onCancel } = props;
+  const { rect, signature, cssScale, onConfirm, onCancel, onDelete } = props;
   const leftPx = rect.x * cssScale;
   const topPx = rect.y * cssScale;
   const widthPx = rect.width * cssScale;
@@ -469,8 +517,8 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
           className="sig-action-btn sig-action-btn-cancel"
           onClick={onCancel}
           data-sig-action="cancel"
-          aria-label="Cancel signature placement"
-          title="Cancel (Esc)"
+          aria-label="Cancel signature placement and exit Sign mode"
+          title="Cancel (Esc) — exits Sign mode"
           style={{ pointerEvents: "auto" }}
         >
           Cancel
@@ -478,10 +526,10 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
         <button
           type="button"
           className="sig-action-btn sig-action-btn-delete"
-          onClick={onCancel}
+          onClick={onDelete}
           data-sig-action="delete"
           aria-label="Discard signature placement"
-          title="Discard"
+          title="Discard (stay in Sign mode)"
           style={{ pointerEvents: "auto" }}
         >
           Delete

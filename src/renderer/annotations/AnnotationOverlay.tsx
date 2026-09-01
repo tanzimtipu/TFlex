@@ -178,10 +178,35 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     toolKind === "rect" || toolKind === "ellipse" || toolKind === "arrow";
   const isDragTool = isMarkupTool || isShapeTool;
 
+  // B2 / DEF-087-088-090 followup — bail out of pointerdown
+  // when the target is inside any UI control (action bar, button,
+  // editor wrapper, textarea, etc.). Calling `e.preventDefault()`
+  // on a pointerdown that targets a button suppresses the
+  // subsequent `click` event on that button (Pointer Events spec),
+  // which is what made the textbox/callout Confirm / Cancel /
+  // Delete buttons unresponsive. The old code only checked
+  // `.ann-editor` (the textarea); the action bar sits outside the
+  // textarea so clicks on the buttons fell through to the layer's
+  // handler, which then called preventDefault and prevented the
+  // click from firing. The fix walks the target's ancestor chain
+  // for every interactive surface — same pattern SignaturesOverlay
+  // and StampOverlay already use — and lets those events flow
+  // through unchanged. Tool disarm still belongs on the bubble
+  // phase `click` event (AGENTS.md cross-bubbling rule), never on
+  // pointerdown capture.
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0) return;
-    // Let editors handle their own events.
-    if ((e.target as HTMLElement).closest(".ann-editor") !== null) return;
+    const target = e.target as Element | null;
+    if (target !== null && typeof target.closest === "function") {
+      const interactive = target.closest(
+        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
+      );
+      if (interactive !== null) {
+        // The click is on a UI control — let the original handler
+        // run. Do NOT preventDefault, do NOT consume the event.
+        return;
+      }
+    }
     const pt = pagePoint(e);
     if (pt.x < 0 || pt.y < 0 || pt.x > widthPt || pt.y > heightPt) return;
     if (isDragTool) {
@@ -301,10 +326,27 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
 
   // ---- editors -------------------------------------------------------------
 
+  // DEF-092 — the textbox editor's "Confirm" handler must clear
+  // pending state AND unmount the editor. The unconditional
+  // `setTextboxEditor(null)` at the top of the function takes care
+  // of both: clearing the local state and (because the editor is
+  // only rendered behind `textboxEditor !== null`) unmounting the
+  // floating bar. The function is also defensive against double
+  // invocations (e.g. a synthetic click racing a Ctrl+Enter
+  // keydown) — once the state is null, the early `return` is a
+  // no-op.
   const commitTextbox = (): void => {
     if (textboxEditor === null) return;
     const text = textboxEditor.text.trim();
     const at = textboxEditor.at;
+    // Drop the editor first so the floating bar unmounts before any
+    // further state work (tool switch via `onFinishedOneShot`,
+    // engine op via `onCreate`). The conditional `{textboxEditor !==
+    // null && <TextBoxEditor />}` evaluates false on the next
+    // render and React removes the action bar from the DOM. If the
+    // engine op fails or `onFinishedOneShot` is undefined the
+    // unmount still happens — only the annotation persistence and
+    // tool reset are skipped.
     setTextboxEditor(null);
     if (text.length === 0) {
       onFinishedOneShot?.();
@@ -451,7 +493,15 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           at={textboxEditor.at}
           text={textboxEditor.text}
           cssScale={cssScale}
-          onChange={(text): void => setTextboxEditor({ ...textboxEditor, text })}
+          // Functional setter form — the closure previously read
+          // `textboxEditor` from the surrounding render, which goes
+          // stale when several keystrokes fire before React commits
+          // the first update (e.g. paste, IME composition end). The
+          // updater receives the latest committed state from React,
+          // so the `at` is always the live value and the typed text
+          // always appends onto the previous text rather than over-
+          // writing the initial empty string.
+          onChange={(text): void => setTextboxEditor((prev) => (prev === null ? null : { ...prev, text }))}
           onCommit={commitTextbox}
           onCancel={(): void => {
             setTextboxEditor(null);

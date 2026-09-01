@@ -5,14 +5,19 @@
 // would close a tab with the Sign tool active, open a different
 // tab, and the "Sign tool active" pill would still be on the
 // toolbar — armed against the wrong document. The fix is in
-// `closeTab` (App.tsx): every tool / arm state and every open
-// dialog is reset on tab close.
+// `performCloseTab` (App.tsx), which is the unconditional close
+// side-effects function that BOTH `closeTab` (no-prompt path:
+// empty tab / unmodified doc) AND the B8 close-prompt path
+// ("Save" / "Don't save" outcomes) call into. Every tool / arm
+// state and every open dialog is reset there so a stale "Sign
+// tool active" pill doesn't carry over to the next tab the user
+// opens.
 //
-// Pin the closeTab wiring:
+// Pin the performCloseTab wiring:
 //   - Every App-level armed/tool state has a `set*(null)` (or
-//     equivalent) call inside closeTab.
+//     equivalent) call inside performCloseTab.
 //   - Every dialog that targets the now-closed tab has a
-//     `set*Open(false)` call inside closeTab.
+//     `set*Open(false)` call inside performCloseTab.
 //   - The cleanup runs even when no tab state existed (defensive
 //     against a stale close during async init).
 //
@@ -34,30 +39,30 @@ const appPath = path.join(
 );
 const appSource = fs.readFileSync(appPath, "utf8");
 
-describe("B7 — tab close clears tool state", () => {
-  it("closeTab resets armedSignatureId", () => {
+describe("B7 — performCloseTab resets tool state", () => {
+  it("performCloseTab resets armedSignatureId", () => {
     expect(appSource).toMatch(
-      /const closeTab[\s\S]*?setArmedSignatureId\(null\)/,
+      /const performCloseTab = useCallback\([\s\S]*?setArmedSignatureId\(null\)/,
     );
   });
 
-  it("closeTab resets armedStamp (B10)", () => {
+  it("performCloseTab resets armedStamp (B10)", () => {
     expect(appSource).toMatch(
-      /const closeTab[\s\S]*?setArmedStamp\(null\)/,
+      /const performCloseTab = useCallback\([\s\S]*?setArmedStamp\(null\)/,
     );
   });
 
-  it("closeTab closes the edit mode toggle", () => {
+  it("performCloseTab closes the edit mode toggle", () => {
     // The implementation uses an editModeOpenRef so the value is
     // read synchronously without taking it as a dep.
     expect(appSource).toMatch(
-      /const closeTab[\s\S]*?editModeOpenRef\.current[\s\S]*?setEditModeOpen\(false\)/,
+      /const performCloseTab = useCallback\([\s\S]*?editModeOpenRef\.current[\s\S]*?setEditModeOpen\(false\)/,
     );
   });
 
-  it("closeTab closes every tab-bound dialog", () => {
-    // Find the closeTab body and assert each dialog setter fires.
-    const match = appSource.match(/const closeTab[\s\S]*?^  \},\s*\[\]\);/m);
+  it("performCloseTab closes every tab-bound dialog", () => {
+    // Find the performCloseTab body and assert each dialog setter fires.
+    const match = appSource.match(/const performCloseTab[\s\S]*?^  \},\s*\[\]\);/m);
     expect(match).not.toBeNull();
     if (match === null) return;
     const body = match[0];
@@ -84,8 +89,8 @@ describe("B7 — tab close clears tool state", () => {
     }
   });
 
-  it("closeTab drops per-tab openTabs / engineUi / engine state", () => {
-    const match = appSource.match(/const closeTab[\s\S]*?^  \},\s*\[\]\);/m);
+  it("performCloseTab drops per-tab openTabs / engineUi / engine state", () => {
+    const match = appSource.match(/const performCloseTab[\s\S]*?^  \},\s*\[\]\);/m);
     expect(match).not.toBeNull();
     if (match === null) return;
     const body = match[0];

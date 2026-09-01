@@ -1222,12 +1222,49 @@ export class EngineService {
     if (doc === undefined) {
       return err('engine-error', `unknown document: ${docId}`);
     }
+    // B15 — guard out-of-range. afterIndex is the 0-based visible index
+    // AFTER which the blank page is inserted; -1 inserts before the first
+    // page and doc.order.length appends after the last. Values outside
+    // [-1, doc.order.length] (or non-finite) come from a renderer that
+    // derived the position from a stale current page after the doc shrank;
+    // the previous code silently clamped them, which landed the blank page
+    // at an unexpected position and the renderer then rendered a
+    // page-out-of-range / black canvas. Reject with a clean out-of-range
+    // so the renderer surfaces a toast instead of a broken view.
+    if (!Number.isFinite(afterIndex) || afterIndex < -1 || afterIndex > doc.order.length) {
+      return err(
+        'out-of-range',
+        `insertBlankPage afterIndex ${afterIndex} out of range [-1,${doc.order.length}]`,
+      );
+    }
+    // B15 — blank page dimensions are PDF points. Reject non-finite or
+    // non-positive sizes: a 0/negative MediaBox produces a degenerate page
+    // that PDF.js renders as a black/invalid canvas ("blank page black").
+    if (!Number.isFinite(widthPx) || widthPx <= 0 ||
+        !Number.isFinite(heightPx) || heightPx <= 0) {
+      return err(
+        'out-of-range',
+        `insertBlankPage dimensions ${widthPx}x${heightPx} must be finite positive numbers`,
+      );
+    }
     const snapshot = snapshotDoc(doc);
 
     try {
-      // Create a blank page and add it to the pdfDoc (addPage has the
-      // side effect of appending the page; the returned page is unused).
-      doc.pdfDoc.addPage([widthPx, heightPx]);
+      // Create a blank page and add it to the pdfDoc. B15: pdf-lib's
+      // addPage creates a page with an EMPTY content stream, which PDF.js
+      // renders transparent — in a dark-themed viewer the page container's
+      // background shows through and the "blank page" looks black. Fill
+      // the page with an explicit white rectangle so it renders white
+      // regardless of the viewer chrome. The fill is real content and
+      // survives the save round-trip (serializeDoc copyPages carries it).
+      const blankPage = doc.pdfDoc.addPage([widthPx, heightPx]);
+      blankPage.drawRectangle({
+        x: 0,
+        y: 0,
+        width: widthPx,
+        height: heightPx,
+        color: rgb(1, 1, 1),
+      });
       const blankOrigIdx = doc.pdfDoc.getPageCount() - 1; // last added page
 
       // Extend the arrays for the new page
@@ -1236,7 +1273,8 @@ export class EngineService {
       doc.annotations.push([]);
 
       // Determine insertion position in visible order
-      // afterIndex is 0-based visible index; -1 means insert at beginning
+      // afterIndex is 0-based visible index; -1 means insert at beginning.
+      // afterIndex === doc.order.length means append after the last page.
       const insertAt = afterIndex < 0 ? 0 : afterIndex + 1;
       const clamped = Math.min(insertAt, doc.order.length);
       doc.order.splice(clamped, 0, blankOrigIdx);

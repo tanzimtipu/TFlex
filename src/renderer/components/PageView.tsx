@@ -68,6 +68,10 @@ interface PageViewProps {
   onPlaceSignature?: (signatureId: string, page: number, rect: SignaturePlacement["rect"]) => void;
   onMoveSignature?: (placementId: string, rect: SignaturePlacement["rect"]) => void;
   onDeleteSignature?: (placementId: string) => void;
+  /** B1 — exit Sign mode entirely. Wired to the pending action
+   *  bar's Cancel button; the page-level wrapper forwards the
+   *  call to the SignaturesOverlay. */
+  onCancelSignatureArm?: () => void;
   // -- Phase 12 / B10: stamp --
   /** When non-null, the page shows a ghost preview of the
    *  armed stamp following the cursor; clicking embeds the
@@ -212,6 +216,7 @@ export function PageView(props: PageViewProps) {
     onPlaceSignature,
     onMoveSignature,
     onDeleteSignature,
+    onCancelSignatureArm,
     armedStamp = null,
     onPlaceStamp,
     editModeOpen = false,
@@ -574,6 +579,10 @@ export function PageView(props: PageViewProps) {
         onPlace={(id, r): void => onPlaceSignature?.(id, pageNumber, r)}
         onMove={(id, r): void => onMoveSignature?.(id, r)}
         onDelete={(id): void => onDeleteSignature?.(id)}
+        // B1 — exit Sign mode. The overlay's pending action bar
+        // Cancel button calls through this; the host's
+        // `armedSignatureId` setter clears the crosshair / ghost.
+        onCancelArm={onCancelSignatureArm}
       />
       {/* B10 — stamp ghost + click-to-embed. Renders nothing when
           no stamp is armed; otherwise follows the cursor and

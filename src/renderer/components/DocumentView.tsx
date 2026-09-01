@@ -35,6 +35,7 @@ import {
   initialAnnotationToolState,
   type Annotation,
   type AnnotationPatch,
+  type AnnotationTool,
   type AnnotationToolAction,
 } from "../annotations/model";
 import {
@@ -79,6 +80,17 @@ export interface DocDiagnostics {
   searchQuery: string;
   searchHits: number;
   searchIndexProgress: SearchIndexProgress | null;
+  // DEF-093 — the active annotation tool (null when no tool is armed,
+  // i.e. when the user is in plain "select" mode). The renderer state
+  // holds an `AnnotationTool` enum whose `"select"` value means "no
+  // tool active"; e2e harnesses had been getting `undefined` for this
+  // field because it was never reported through the diagnostics
+  // channel. Mirroring the `"select"` -> `null` mapping here keeps the
+  // contract uniform across the surface (every key is either a value
+  // or `null`, never `undefined`). The previous behaviour — omitting
+  // the key entirely — left harnesses with an `undefined` they had to
+  // special-case.
+  activeTool: AnnotationTool | null;
 }
 
 interface DocumentViewProps {
@@ -178,6 +190,11 @@ interface DocumentViewProps {
   onPlaceSignature?: (signatureId: string, page: number, rect: SignaturePlacement["rect"]) => void;
   onMoveSignature?: (placementId: string, rect: SignaturePlacement["rect"]) => void;
   onDeleteSignature?: (placementId: string) => void;
+  /** B1 — exit Sign mode. The host wires this to the same setter
+   *  that the toolbar's Sign toggle uses; the pending action bar's
+   *  Cancel button calls it through this callback so the overlay
+   *  doesn't need a direct reference to App-level state. */
+  onCancelSignatureArm?: () => void;
   /** Phase 6 — Tools palette. App owns the open/closed state; this view
    *  just threads it into the toolbar so the toggle button can render
    *  the active treatment when the palette is up. */
@@ -338,6 +355,7 @@ export function DocumentView({
   onPlaceSignature,
   onMoveSignature,
   onDeleteSignature,
+  onCancelSignatureArm,
   toolsPaletteOpen = false,
   onToolsPaletteToggle,
   annotationPalette,
@@ -1201,6 +1219,11 @@ export function DocumentView({
     },
     [onDeleteSignature],
   );
+  // B1 — stable wrapper for the host's "exit Sign mode" setter.
+  // The pending action bar's Cancel button calls through this.
+  const onCancelSignatureArmStable = useCallback((): void => {
+    onCancelSignatureArm?.();
+  }, [onCancelSignatureArm]);
 
   // Phase 10 — pass the edit state through to PageView with a
   // stable callback so child re-renders are isolated. The host
@@ -1209,6 +1232,24 @@ export function DocumentView({
     if (!editModeOpen || edit === null) return null;
     return edit;
   }, [editModeOpen, edit]);
+
+  // B5 / B14 — when Edit mode opens, force the annotation tool
+  // back to "select". The toolbar's `editBlocksTool` gate already
+  // prevents arming shape / markup tools while Edit is open, but
+  // it does NOT reset a tool that was already active when the
+  // user opened Edit. Without this effect, the user could leave
+  // a rectangle armed, open Edit mode, and the AnnotationOverlay
+  // would still respond to shape drags — over the Edit overlay
+  // (B14). Forcing the reducer to "select" on the rising edge
+  // of `editModeOpen` keeps the AnnotationOverlay inert while
+  // Edit is open.
+  const prevEditModeOpenRef = useRef<boolean>(editModeOpen);
+  useEffect(() => {
+    if (editModeOpen && !prevEditModeOpenRef.current) {
+      dispatchAnnTool({ type: "set-tool", tool: "select" });
+    }
+    prevEditModeOpenRef.current = editModeOpen;
+  }, [editModeOpen]);
 
   const editToolbarHint = edit !== null ? defaultEditHint(edit.state.tool) : defaultEditHint("off");
 
@@ -1351,6 +1392,11 @@ export function DocumentView({
       searchQuery: query,
       searchHits: hits.length,
       searchIndexProgress,
+      // DEF-093 — expose the annotation tool through the diagnostics
+      // surface. `"select"` is the renderer's "no tool" sentinel; map
+      // it to `null` so e2e harnesses see the same shape every other
+      // field uses (value or null, never undefined).
+      activeTool: annTool.tool === "select" ? null : annTool.tool,
     });
   }, [
     pageCount,
@@ -1360,6 +1406,7 @@ export function DocumentView({
     query,
     hits.length,
     searchIndexProgress,
+    annTool.tool,
     onDiagnostics,
   ]);
 
@@ -1577,6 +1624,14 @@ export function DocumentView({
                       onPlaceSignature={onPlaceSignatureStable}
                       onMoveSignature={onMoveSignatureStable}
                       onDeleteSignature={onDeleteSignatureStable}
+                      // B1 — exit Sign mode. Wired to the pending
+                      // action bar's Cancel button (and to the
+                      // overlay's Esc handler for a pending
+                      // placement). Delete drops only the
+                      // pending placement; Confirm commits and
+                      // leaves the Sign tool armed for the next
+                      // page click.
+                      onCancelSignatureArm={onCancelSignatureArmStable}
                       // B10 — armed stamp ghost + click-to-embed.
                       // The stamp ghost follows the cursor on
                       // every page; clicking embeds the stamp at

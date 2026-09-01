@@ -733,3 +733,20 @@ by a fresh `npm.cmd run dist` (through backend-dev) so `TFlex-Setup-<version>.ex
 locally as well as on the GitHub Release. Failure to refresh = the orchestrator left
 a stale local build; qa verifies the local release/ content matches the tag before
 closing the push dispatch.
+
+## 2026-09-01: release pipeline order — backend-dev dist first, then git-agent publish
+
+Per operator directive, the release pipeline from now on runs in this exact order:
+
+1. QA verifies the phase/defect batch is green.
+2. backend-dev runs `npm.cmd run test:unit` then `npm.cmd run dist` — this
+   rebuilds `release/` with the current version number and produces the installer,
+   portable, latest.yml, and blockmap artifacts needed for the GitHub Release.
+3. git-agent then executes: version commit -> tag -> push -> `gh release create`
+   with the freshly-built `release/` assets. The `latest.yml` published to GitHub
+   must match the tag version exactly (no stale-versioned latest.yml like DEF-086).
+
+This eliminates the class of defect where git-agent pushed a tag without a GitHub
+Release (DEF-086) or where the local release/ held stale-version artifacts. Every
+push dispatch to git-agent must include backend-dev's dist refresh as a blocking
+prerequisite — if release/ wasn't rebuilt, the tag push is blocked.

@@ -1,6 +1,65 @@
+## DEF-094: data-tools-toggle attribute missing from Tools button
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex v1.7.2.
+2. Open any PDF.
+3. Inspect the "Tools" button in the toolbar.
+
+Expected: The button should have a `data-tools-toggle` attribute for stable E2E selection.
+Actual: The attribute is missing in the production build, causing multiple E2E timeouts (Merge, Export, OCR, etc.).
+
+History:
+- qa: opened
+- qa: re-verified on production build via `e2e/retests/def_092_093_094.spec.cjs`. Attribute `data-tools-toggle` is present and usable for selection. CLOSED.
+
+## DEF-093: activeTool diagnostic returns undefined instead of null
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Close all tabs.
+3. Call `window.tflexDiagnostics()`.
+
+Expected: `activeTool` should be `null` when no tool is active.
+Actual: `activeTool` is `undefined`.
+
+History:
+- qa: opened
+- qa: re-verified on production build via `e2e/retests/def_092_093_094.spec.cjs`. `activeTool` is now explicitly `null` when no tabs/tools are active. CLOSED.
+
+## DEF-092: Textbox floating bar remains visible after confirm
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Open a PDF.
+3. Select the Text Box tool.
+4. Click on the page to place a textbox.
+5. Click the "Confirm" (Checkmark) button on the floating action bar.
+
+Expected: The floating action bar should disappear after confirming the textbox placement.
+Actual: The action bar remains visible and active.
+
+History:
+- qa: opened
+- qa: re-verified on production build via `e2e/retests/def_092_093_094.spec.cjs`. Action bar correctly unmounts after `Ctrl+Enter` confirm; placement verified in engine state. CLOSED.
+
 ## DEF-091: Test suite regression: .document-view selector is missing from DOM
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 13
@@ -14,6 +73,7 @@ Actual: The `.document-view` class was removed or renamed in the renderer (likel
 
 History:
 - qa: opened
+- qa: Fixed `.document-view` selector in `e2e/installed-app-test.spec.cjs` and verified other specs use `.workspace`. Cleaned up redundant/old e2e tests from the workspace. Updated `e2e/DIRECTORY.md`. CLOSED.
 
 ## DEF-090: Armed stamp swallows all application clicks
 
@@ -341,5 +401,3 @@ Actual: tag exists but no GitHub Release published → update service sees no ne
 History:
 - qa: opened
 - qa: verified v1.7.0 release exists on GitHub with 3 assets (latest.yml, TFlex-Setup-1.7.0.exe, TFlex-Setup-1.7.0.exe.blockmap). Verified latest.yml contains correct version metadata (1.7.0). Verified app at v1.7.0 successfully initializes update service and starts check (status transitions to 'checking'). Fixed release publishing confirmed. CLOSED.
-
-

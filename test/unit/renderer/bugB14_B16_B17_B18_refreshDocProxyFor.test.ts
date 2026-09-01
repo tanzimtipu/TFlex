@@ -58,8 +58,9 @@ describe("refreshDocProxyFor wiring (B14 / B16 / B17 / B18)", () => {
   it("B14 — onConfirmMerge refreshes the proxy after a successful merge", () => {
     expectRefresh("onConfirmMerge");
     const body = findHandler("onConfirmMerge");
-    // The merge engine op is engineRef.current.merge.
-    expect(body).toMatch(/engineRef\.current\.merge\(/);
+    // The merge engine op is engineRef.current.merge (or
+    // aliased via `const engine = engineRef.current`).
+    expect(body).toMatch(/(?:engineRef\.current|engine)\.merge\(/);
     // The refresh call sits AFTER noteOpApplied (success branch).
     const noteOpIdx = body.indexOf("noteOpApplied(activeId, result.value)");
     const refreshIdx = body.indexOf("refreshFn(activeId)");

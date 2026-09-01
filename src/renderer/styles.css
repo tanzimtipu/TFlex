@@ -2767,10 +2767,17 @@ textarea {
 /* ---------------------------------------------------------------------------
  * Phase 12 - Stamp ghost overlay (B10 click-to-embed).
  *
- * Sits above the signatures layer (z-index 3) so the ghost
- * stays visible when both tools are armed, but below the
- * annotation / forms layers (2 / 5) so text selection and form
- * fields still pass through. The overlay is `pointer-events:
+ * Sits above every other per-page layer (annotation 2, signatures 3,
+ * forms 5) so the ghost stays visible when both the stamp tool AND
+ * a form / signature / annotation tool are armed at the same time
+ * — the original "stamp behind background" report (B10 follow-up)
+ * had the layer at z-index 4, which collided with `.edit-layer`
+ * (also z-index 4) and was below `.forms-layer` (z-index 5), so a
+ * stamp placed over a form field rendered behind the form's white
+ * background and disappeared. Bumping to z-index 6 puts the stamp
+ * above forms / annotations / signatures, with a 1-unit gap so
+ * any future per-page layer (forms-extension, etc.) can claim z-5
+ * without re-covering the stamp. The overlay is `pointer-events:
  * none` because placement is driven by the window-level
  * pointerdown listener inside StampOverlay — the layer is
  * purely a visual mount point. The ghost body itself is
@@ -2781,7 +2788,7 @@ textarea {
 .stamp-layer {
   position: absolute;
   inset: 0;
-  z-index: 4;
+  z-index: 6;
   pointer-events: none;
 }
 

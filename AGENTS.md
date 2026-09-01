@@ -215,3 +215,37 @@ about the root cause, a different approach to try, or an amended task spec or sh
 contract if the spec is the problem — then re-dispatches the same sub-agent to
 continue. The orchestrator never takes over the fix and never writes code; the same
 agent keeps doing its own work.
+
+## Cross-bubbling event rules (to prevent ghost/unclickable regressions)
+
+These patterns caused DEF-087/088/090 (sign ghost wrong content, action buttons
+unclickable, tool disarm on pointerdown). They must be enforced at code review
+and unit-test time:
+
+- **Never call `e.preventDefault()` or `e.stopPropagation()` in a catch-all
+  pointerdown/click handler.** If an overlay (annotation, signature, stamp,
+  edit) registers a document-level click listener to place content, it must
+  first walk the event target's ancestor chain and bail out on interactive
+  elements (`button`, `input`, `textarea`, `select`, `[role='button']`, etc.)
+  rather than swallowing the event. The check belongs at the handler's top.
+
+- **Tool disarm belongs on `click`, not `pointerdown`.** Capture-phase disarms
+  (e.g. "armed stamp swallows Theme toggle") unmount the target before the
+  pointerup `click` event can fire. Disarm on the bubble phase `click` event
+  only when the target has no interactive ancestor — same class as the
+  `samplesResolver` memoization rule (churn prevention).
+
+- **Ghost previews must render the selected content's actual source.** For
+  signatures (drawn/typed/saved) the ghost pulls from the SavedSignature.source
+  shape identity — if it falls back to a stamp icon or empty space, the lookup
+  is wrong. Unit tests must cover drawn, typed, and saved sources.
+
+- **Overlay layers (`.sig-layer`, `.stamp-layer`, `.edit-layer`) must have
+  `pointer-events: none` on the layer and `pointer-events: auto` on the
+  action-bar child.** This keeps clicks off the page canvas while the action
+  bar responds.
+
+When writing a unit test for an overlay interaction, include a click that lands
+on the action bar's confirm button and assert it fires (not swallowed), and
+include a click on a disarm-eligible element asserting the tool disarms while
+the click still completes.

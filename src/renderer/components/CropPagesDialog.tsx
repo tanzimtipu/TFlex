@@ -16,6 +16,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { X, Crop } from "lucide-react";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CropEntry } from "../../shared/types";
 
 export type CropMode = "allPages" | "perPage";
@@ -35,6 +36,13 @@ interface CropPagesDialogProps {
    *  pre-fill this from pdf.js's `getPage().getViewport({scale:1})`
    *  after the active doc loads. */
   pageSizes: Record<number, { widthPt: number; heightPt: number }>;
+  /** B16 — the active document's pdf.js proxy. The CropEditor
+   *  uses this to render an actual page preview (via pdf.js
+   *  `getPage().render()`) at the current dialog scale so the
+   *  user sees the page they're cropping, not a black canvas.
+   *  Optional: when no doc is open (e.g. empty placeholder tab)
+   *  the editor falls back to the dashed-rect-only surface. */
+  doc?: PDFDocumentProxy | null;
   onConfirm: (choice: CropPagesConfirm) => void;
   onClose: () => void;
 }
@@ -78,7 +86,7 @@ function normalizeBox(
 export function CropPagesDialog(
   props: CropPagesDialogProps,
 ): ReactElement | null {
-  const { open, totalPages, pageSizes, onConfirm, onClose } = props;
+  const { open, totalPages, pageSizes, doc = null, onConfirm, onClose } = props;
   const [mode, setMode] = useState<CropMode>("allPages");
   const [sharedBox, setSharedBox] = useState<BoxState | null>(null);
   const [perPageBoxes, setPerPageBoxes] = useState<Record<number, BoxState>>({});
@@ -94,8 +102,21 @@ export function CropPagesDialog(
     setEditorPage(null);
   }, [open, totalPages]);
 
+  // B13 — focus the first interactive control ONLY on the rising
+  // edge of `open`. The previous implementation re-ran the focus
+  // call on every `onClose` identity change; for a dialog with a
+  // `<select>` (per-page crop mode picker) that stole focus from
+  // the dropdown the user was actively hovering. Same microtask
+  // deferral as the OCR / Stamp dialog so the focus lands cleanly
+  // after React's commit phase.
+  const focusedOnceRef = useRef<boolean>(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      focusedOnceRef.current = false;
+      return;
+    }
+    if (focusedOnceRef.current) return;
+    focusedOnceRef.current = true;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
         e.preventDefault();
@@ -103,10 +124,12 @@ export function CropPagesDialog(
       }
     };
     window.addEventListener("keydown", onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      "button, input, [tabindex]",
-    );
-    first?.focus();
+    queueMicrotask((): void => {
+      const first = dialogRef.current?.querySelector<HTMLElement>(
+        "button, input, [tabindex]",
+      );
+      first?.focus();
+    });
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
@@ -248,6 +271,15 @@ export function CropPagesDialog(
               initial={currentBox}
               onCommit={onCommitBox}
               label={mode === "allPages" ? "All pages" : `Page ${editorPage ?? 1}`}
+              // B16 — render the actual page behind the dashed
+              // crop box so the user sees what they're cropping.
+              // `page` uses the visible 1-based slot; the host's
+              // `doc.getPage(page)` returns the underlying pdf.js
+              // page object (post-reorder mapping happens at
+              // `getState` time — the engine state mirrors the
+              // active document's visible order).
+              doc={doc}
+              page={editorPage ?? 1}
             />
           </div>
 
@@ -298,18 +330,39 @@ export function CropPagesDialog(
  *  draggable rect handle. The preview scales to fit the dialog's
  *  available width; the handle's page-point coordinates are kept
  *  in sync with the displayed pixel coordinates so the value the
- *  user sees is what the engine receives. */
+ *  user sees is what the engine receives.
+ *
+ *  B16 — when `doc` is supplied, the editor renders the actual
+ * page behind the dashed crop box (via pdf.js
+ * `getPage().render()` at the current dialog scale). Without
+ * this, the editor surface is whatever the parent's background
+ * happens to be — operators reported a "black canvas" on
+ * systems where the dialog's wrap background is dark, leaving
+ * the crop rect floating without any visual reference. With a
+ * doc, the user sees the page they're about to crop and can
+ * visually verify the chosen rect against the page content. */
 interface CropEditorProps {
   widthPt: number;
   heightPt: number;
   initial: BoxState;
   onCommit: (next: BoxState) => void;
   label: string;
+  /** pdf.js proxy for the active document. Optional: when null
+   *  the editor renders the dashed crop rect without a page
+   *  preview (matches the pre-fix behaviour; same fall-back for
+   *  empty / placeholder tabs that don't have a doc). */
+  doc: PDFDocumentProxy | null;
+  /** 1-based visible page to render in the preview. The editor
+   *  only renders when this matches the `page` prop's last value
+   *  the user saw; switching `page` cancels the in-flight render
+   *  and starts a fresh one. */
+  page: number;
 }
 
 function CropEditor(props: CropEditorProps): ReactElement {
-  const { widthPt, heightPt, initial, onCommit, label } = props;
+  const { widthPt, heightPt, initial, onCommit, label, doc, page } = props;
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [scale, setScale] = useState<number>(1);
   const [box, setBox] = useState<BoxState>(initial);
   const [drag, setDrag] = useState<
@@ -325,6 +378,7 @@ function CropEditor(props: CropEditorProps): ReactElement {
       }
     | null
   >(null);
+  const [previewReady, setPreviewReady] = useState<boolean>(false);
 
   // Recompute the displayed scale whenever the wrap changes size.
   // We use a ResizeObserver so the editor responds to dialog
@@ -350,6 +404,64 @@ function CropEditor(props: CropEditorProps): ReactElement {
   useEffect(() => {
     setBox(initial);
   }, [initial]);
+
+  // B16 — render the actual page via pdf.js at the dialog scale.
+  // We re-render whenever `doc`, `page`, or `scale` changes
+  // (i.e. on dialog resize / mode switch / page select). The
+  // canvas's internal viewport comes from
+  // `pdfPage.getViewport({ scale: renderScale })` where
+  // `renderScale = cssScale * dpr` so the bitmap is
+  // device-pixel-aware (no blur on HiDPI). The canvas's CSS size
+  // is `widthPt * cssScale` (so it scales with the dialog); the
+  // bitmap backing-store is `widthPt * renderScale` (so it stays
+  // crisp at the device pixel ratio). Cancellation: when `page`
+  // changes mid-render, the next effect tears down the in-flight
+  // `pdfPage.render()` task via `RenderTask.cancel()`.
+  useEffect(() => {
+    if (doc === null) {
+      setPreviewReady(false);
+      return;
+    }
+    let disposed = false;
+    let renderTask: { cancel: () => void } | null = null;
+    setPreviewReady(false);
+    void (async (): Promise<void> => {
+      const pdfPage = await doc.getPage(page);
+      if (disposed) return;
+      const dpr = window.devicePixelRatio || 1;
+      const cssWidth = widthPt * scale;
+      const cssHeight = heightPt * scale;
+      const renderScale = (cssWidth / widthPt) * dpr;
+      const renderViewport = pdfPage.getViewport({ scale: renderScale });
+      const canvas = canvasRef.current;
+      if (canvas === null) return;
+      canvas.width = renderViewport.width;
+      canvas.height = renderViewport.height;
+      canvas.style.width = `${cssWidth}px`;
+      canvas.style.height = `${cssHeight}px`;
+      const ctx = canvas.getContext("2d");
+      if (ctx === null) return;
+      const task = pdfPage.render({ canvasContext: ctx, viewport: renderViewport });
+      renderTask = task;
+      try {
+        await task.promise;
+      } catch (error) {
+        if ((error as { name?: string }).name !== "RenderingCancelledException") {
+          // unexpected render failure: leave the canvas blank
+        }
+        return;
+      }
+      if (!disposed) setPreviewReady(true);
+    })();
+    return (): void => {
+      disposed = true;
+      try {
+        renderTask?.cancel();
+      } catch {
+        // ignore: cancel can throw if the task already finished
+      }
+    };
+  }, [doc, page, scale, widthPt, heightPt]);
 
   // Pointermove + pointerup handlers, attached at window level so
   // the user can drag outside the editor surface without losing
@@ -461,6 +573,31 @@ function CropEditor(props: CropEditorProps): ReactElement {
           height: heightPt * scale,
         }}
       >
+        {/* B16 — page preview. When a doc is supplied, the canvas
+            underneath paints the actual page so the user can
+            visually verify the crop rect. When the canvas is
+            still rendering (previewReady=false) we paint a soft
+            placeholder so the surface doesn't blink to the
+            parent's background colour. The canvas sits BELOW
+            the dashed crop mask (z-order via DOM order) so the
+            mask stays interactive. */}
+        {doc !== null && (
+          <canvas
+            ref={canvasRef}
+            className="crop-editor-canvas"
+            data-crop-canvas
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              opacity: previewReady ? 1 : 0,
+              transition: "opacity 120ms ease-out",
+              pointerEvents: "none",
+            }}
+          />
+        )}
         <div
           className="crop-editor-mask"
           style={{

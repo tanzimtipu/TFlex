@@ -206,9 +206,27 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     };
   }, [open, running, subscribeOcrProgress]);
 
-  // Esc closes; focus the first interactive control on open.
+  // Esc closes; focus the first interactive control ONLY on open.
+  // B13 — the previous implementation also depended on `running`,
+  // so a long-running OCR's progress update flipped the dep and
+  // the effect re-ran `first?.focus()`, stealing focus from the
+  // user mid-interaction. Worse, the focus selector matched the
+  // first `input, button, [tabindex]` — the language `<select>` is
+  // itself an `input`, so a fresh focus call while the user was
+  // hovering over a different `<select>` (e.g. page-scope)
+  // shifted focus to the language dropdown and dismissed the
+  // popup the user was actively engaging with. We now only run
+  // the focus call when `open` flips true (and only on the rising
+  // edge — not when it goes false), so a state change deep inside
+  // the dialog never steals focus.
+  const focusedOnceRef = useRef<boolean>(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      focusedOnceRef.current = false;
+      return;
+    }
+    if (focusedOnceRef.current) return;
+    focusedOnceRef.current = true;
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -220,10 +238,18 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
       }
     };
     window.addEventListener('keydown', onKey);
-    const first = dialogRef.current?.querySelector<HTMLElement>(
-      'input, button, [tabindex]',
-    );
-    first?.focus();
+    // Defer the focus call to the next microtask so React has
+    // finished its commit phase. Without this, a synchronous
+    // focus() inside the effect races with the parent click event
+    // that opened the dialog, and the focus can land on the wrong
+    // element (especially if the opening click landed on a button
+    // that just transitioned to disabled state).
+    queueMicrotask((): void => {
+      const first = dialogRef.current?.querySelector<HTMLElement>(
+        'input, button, [tabindex]',
+      );
+      first?.focus();
+    });
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose, running]);
 

@@ -33,8 +33,19 @@ import type { Annotation, AnnotationPatch } from "../annotations/model";
 /** Renderer-facing rotation angle (multiples of 90 degrees). */
 export type PageRotation = 0 | 90 | 180 | 270;
 
-/** Where a merged document is inserted relative to the active one. */
-export type MergePosition = "before" | "after";
+/** Where a merged document is inserted relative to the active one.
+ *
+ *  - `"before"` / `"after"` map to the engine's `merge()` IPC, which
+ *    prepends / appends the picked PDF's pages wholesale.
+ *  - `"afterPage"` is a renderer-level position the dialog surfaces
+ *    when the active doc has at least one page. The renderer converts
+ *    it to a per-page insert call (`insertFromPdf`) at the chosen
+ *    1-based page (afterPage); the engine IPC stays the same
+ *    `position: number` it already accepts.
+ *
+ *  Renderer-only — the engine IPC still receives `"before" | "after"`
+ *  for the `merge` op, and the per-page case bypasses `merge` entirely. */
+export type MergePosition = "before" | "after" | "afterPage";
 
 /** A renderer-level engine op. Indexes are 1-based against the engine's
  *  CURRENT order. The engine client translates these into the IPC's

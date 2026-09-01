@@ -79,17 +79,41 @@ export const ANNOTATION_COLOR_HEX: Record<AnnotationColor, string> = {
  *  CSS color string. Unknown values fall through to `currentColor`,
  *  which lets the overlay degrade gracefully instead of painting
  *  nothing — the worst case is "the highlight isn't visible," not
- *  a crash. */
+ *  a crash.
+ *
+ *  Custom hexes may come from older persisted presets (a custom hex
+ *  written before the picker normalised to lowercase, a saved
+ *  preset round-tripped through main and back, or a value the user
+ *  hand-typed in DevTools). We accept any case (#RGB, #RrGgBb) and
+ *  length (3 or 6), expand 3-digit shorthand, then return a clean
+ *  lowercase hex so every consumer sees the same canonical form.
+ *  Returning the normalised hex (instead of the input verbatim) also
+ *  means the overlay's paint path never has to care about case —
+ *  older round-trips can't paint a different shade just because
+ *  someone wrote `#FF0000` once. */
 export function annotationColorToCss(value: AnnotationColorValue): string {
   if (typeof value !== "string") return "currentColor";
   if (value in ANNOTATION_COLOR_HEX) {
     return ANNOTATION_COLOR_HEX[value as AnnotationColor];
   }
-  // Custom hex (lowercase, with leading #, length 4 or 7).
-  if (/^#[0-9a-f]{3}$/.test(value) || /^#[0-9a-f]{6}$/.test(value)) {
-    return value;
+  // Custom hex — accept any case + length, normalise to #rrggbb.
+  // The picker normally produces lowercase, but we never want a
+  // stale / legacy / hand-typed uppercase hex to fall through to
+  // `currentColor` and leave the highlight invisible. The 3-digit
+  // shorthand (#rgb -> #rrggbb) is expanded for completeness so a
+  // user who typed `#0f0` ends up with the same green as `#00ff00`.
+  const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(value.trim());
+  if (m === null) return "currentColor";
+  const raw = m[1];
+  if (raw === undefined) return "currentColor";
+  if (raw.length === 3) {
+    const r = raw[0];
+    const g = raw[1];
+    const b = raw[2];
+    if (r === undefined || g === undefined || b === undefined) return "currentColor";
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
   }
-  return "currentColor";
+  return `#${raw}`.toLowerCase();
 }
 
 export function isAnnotationColor(v: unknown): v is AnnotationColor {

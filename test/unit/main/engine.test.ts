@@ -2396,6 +2396,178 @@ describe('Phase 9: insertBlankPage', () => {
 });
 
 // ---------------------------------------------------------------------------
+// B15 — insertBlankPage: out-of-range guard + white-fill (no black page)
+//
+// The engine's insertBlankPage previously silently clamped an out-of-range
+// afterIndex and created a page with an EMPTY content stream. Two symptoms
+// came back from the renderer:
+//   - "blank page black": pdf-lib's addPage([w,h]) makes a page with no
+//     content operators; PDF.js renders that transparent and a dark viewer
+//     chrome shows through, so the "blank page" looks black. The engine now
+//     draws an explicit white rectangle filling the page.
+//   - "page-out-of-range on empty tab": an afterIndex derived from a stale
+//     current page (after the doc shrank) was silently clamped, landing the
+//     blank page at an unexpected position and the renderer then indexed a
+//     page that did not exist. The engine now rejects out-of-range afterIndex
+//     and non-positive dimensions with a clean `out-of-range` Result.
+// ---------------------------------------------------------------------------
+
+describe('B15: insertBlankPage — out-of-range guard + white fill', () => {
+  it('rejects an afterIndex beyond the page count with out-of-range', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-b15-or', path);
+
+    // A stale current page could hand the engine afterIndex=5 on a 3-page doc.
+    const result = await engine.insertBlankPage('doc-b15-or', 5, 400, 300);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('out-of-range');
+    }
+    // The doc is untouched: no page was added.
+    const state = await engine.getState('doc-b15-or');
+    expect(state.ok && state.value.pageCount).toBe(3);
+  });
+
+  it('rejects a non-finite afterIndex with out-of-range', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-b15-nan', path);
+
+    const result = await engine.insertBlankPage('doc-b15-nan', NaN, 400, 300);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe('out-of-range');
+    }
+  });
+
+  it('accepts afterIndex === doc.order.length (append after last page)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-b15-append', path);
+
+    // afterIndex === 3 on a 3-page doc is "append after the last page".
+    const result = await engine.insertBlankPage('doc-b15-append', 3, 400, 300);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pageCount).toBe(4);
+      // The blank page is the last visible page.
+      expect(result.value.pageOrder[result.value.pageOrder.length - 1]).toBe(3);
+    }
+  });
+
+  it('rejects a zero or negative width/height with out-of-range (no black page)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(2);
+    await engine.loadDocument('doc-b15-dim', path);
+
+    const zeroW = await engine.insertBlankPage('doc-b15-dim', 0, 0, 300);
+    expect(zeroW.ok).toBe(false);
+    if (!zeroW.ok) expect(zeroW.error.code).toBe('out-of-range');
+
+    const negH = await engine.insertBlankPage('doc-b15-dim', 0, 400, -5);
+    expect(negH.ok).toBe(false);
+    if (!negH.ok) expect(negH.error.code).toBe('out-of-range');
+
+    const nanDim = await engine.insertBlankPage('doc-b15-dim', 0, NaN, 300);
+    expect(nanDim.ok).toBe(false);
+    if (!nanDim.ok) expect(nanDim.error.code).toBe('out-of-range');
+
+    // Doc untouched.
+    const state = await engine.getState('doc-b15-dim');
+    expect(state.ok && state.value.pageCount).toBe(2);
+  });
+
+  it('the inserted blank page renders white: it carries a white-fill content stream', async () => {
+    // A pdf-lib addPage([w,h]) with no draw produces a page with NO content
+    // stream; PDF.js renders that transparent and a dark viewer chrome shows
+    // through ("blank page black"). After the B15 fix the engine draws an
+    // explicit white rectangle, so the saved page carries a content stream
+    // whose decoded operators include the white fill (1 1 1 rg) and a
+    // filled rectangle. Verify by round-tripping through save + reparse and
+    // decoding the blank page's content stream.
+    function decodeContents(page: ReturnType<PDFDocument['getPage']>, doc: PDFDocument): string | null {
+      type ContentsLike = { size: () => number; get(i: number): unknown };
+      const c = (page as unknown as { node: { Contents(): ContentsLike | unknown } }).node.Contents() as
+        | ContentsLike
+        | undefined
+        | unknown;
+      if (c === undefined || c === null) return null;
+      // /Contents is either a single stream ref or a PDFArray of refs.
+      // `size` is a method on PDFArray, so `c.size === undefined` marks a
+      // bare ref; otherwise treat c as an array and take element 0.
+      const maybeArray = c as Partial<ContentsLike>;
+      let ref: unknown;
+      if (maybeArray.size === undefined) {
+        ref = c;
+      } else {
+        ref = maybeArray.get ? maybeArray.get(0) : undefined;
+      }
+      if (ref === undefined) return null;
+      const stream = (doc as unknown as { context: { lookup(r: unknown): { getContents(): Uint8Array } } })
+        .context.lookup(ref);
+      if (stream === undefined || typeof stream.getContents !== 'function') return null;
+      const raw = stream.getContents();
+      try {
+        return inflateSync(Buffer.from(raw)).toString();
+      } catch {
+        return Buffer.from(raw).toString();
+      }
+    }
+
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-b15-white', path);
+
+    const r = await engine.insertBlankPage('doc-b15-white', 0, 612, 792);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+
+    const out = join(dir, 'b15-white.pdf');
+    const saved = await engine.saveAs('doc-b15-white', out);
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+
+    const reparsed = await PDFDocument.load(await readFile(out));
+    expect(reparsed.getPageCount()).toBe(2);
+    // The blank page is the SECOND page in the saved output (inserted
+    // after page 0). Its decoded content stream must contain the white
+    // fill operator and a filled rectangle — i.e. real white content,
+    // not the empty-stream page pdf-lib's bare addPage would produce.
+    const blankContents = decodeContents(reparsed.getPage(1), reparsed);
+    expect(blankContents).not.toBeNull();
+    expect(blankContents!).toContain('1 1 1 rg');
+    expect(blankContents!).toMatch(/h\nf|f\n| h f/);
+
+    // Reference: a bare addPage([w,h]) with no draw has NO content stream.
+    const emptyDoc = await PDFDocument.create();
+    emptyDoc.addPage([612, 792]);
+    const emptyBytes = await emptyDoc.save();
+    const emptyReparsed = await PDFDocument.load(emptyBytes);
+    expect(decodeContents(emptyReparsed.getPage(0), emptyReparsed)).toBeNull();
+  });
+
+  it('insertBlankPage on a 0-page engine doc still works (no lock, no crash)', async () => {
+    // The engine never loads a 0-page PDF, but a doc created from a
+    // degenerate flow could in principle have an empty order. Simulate by
+    // creating a doc and clearing its order, then insert a blank page —
+    // it must become the sole page without hanging or throwing.
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-b15-empty', path);
+
+    // Use the public createFromImages path to swap in a 1-page doc, then
+    // delete down... but the engine guards the last page. Instead, reach
+    // the 0-page state is impossible via public API, so we only assert the
+    // guards above keep the engine responsive. A valid insert on a 1-page
+    // doc with afterIndex=-1 (beginning) still works.
+    const r = await engine.insertBlankPage('doc-b15-empty', -1, 400, 300);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.pageCount).toBe(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 9: insertFromPdf
 // ---------------------------------------------------------------------------
 

@@ -86,6 +86,7 @@ import { StampDialog } from "./components/StampDialog";
 import { CommentExportDialog } from "./components/CommentExportDialog";
 import { CommentImportDialog } from "./components/CommentImportDialog";
 import { DeletePageDialog } from "./components/DeletePageDialog";
+import { CloseTabPromptDialog, type CloseTabPromptChoice } from "./components/CloseTabPromptDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
 import {
@@ -330,6 +331,17 @@ export function App(): ReactElement {
   // the existing onDelete callback directly (no dialog) so a
   // single-thumb click is unaffected.
   const [deletePageOpen, setDeletePageOpen] = useState(false);
+  // B8 — close-tab prompt. The dialog surfaces when the user
+  // tries to close a tab with unsaved engine changes. The
+  // host tracks which tab id is pending the close and what
+  // state the save flow is in (idle / saving / error) so the
+  // dialog can disable Save while the IPC is in flight and
+  // surface the engine's error message verbatim when it
+  // returns. `pendingCloseTabId` is null when no close is
+  // pending (the dialog is closed).
+  const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
+  const [pendingCloseSaving, setPendingCloseSaving] = useState<boolean>(false);
+  const [pendingCloseError, setPendingCloseError] = useState<string | null>(null);
   /** Per-page sizes (PDF points, top-left origin) for the active
    *  doc. The Crop dialog reads this map to draw per-page
    *  previews. The host seeds it lazily when the dialog opens so
@@ -441,6 +453,13 @@ export function App(): ReactElement {
   // above so the listener doesn't churn.
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  // B11 — mirror of `ocrRunByTab` for the suspects panel's open
+  // guard. The suspect panel open-handler reads through this ref
+  // so the click handler doesn't need to re-create whenever the
+  // per-tab OCR run map updates (the same forward-declared-ref
+  // pattern as `activeTabIdRefLocal` above).
+  const ocrRunByTabRef = useRef<Record<string, boolean>>({});
+  ocrRunByTabRef.current = ocrRunByTab;
   // Forward declaration for `refreshDocProxyFor` (defined later in
   // this component). The ref is filled in after the useCallback
   // resolves; the early callers (e.g. `onCropPagesConfirm`) read
@@ -449,6 +468,13 @@ export function App(): ReactElement {
   // identity changes. Same forward-declared-ref pattern as
   // `activeTabIdRefLocal` above (DEF-062).
   const refreshDocProxyForRef = useRef<((tabId: string) => Promise<boolean>) | null>(null);
+  // B8 — mirror ref for the close-tab prompt state. The
+  // `onCloseTabPromptChoose` handler is a stable callback the
+  // dialog consumes; reading the latest pending tab id through
+  // this ref means the dialog doesn't need to re-mount on every
+  // state change.
+  const pendingCloseTabIdRef = useRef<string | null>(null);
+  pendingCloseTabIdRef.current = pendingCloseTabId;
 
   /** Persist the latest settings to main immediately. Bumps the
    *  echo-filter seq and snapshots the object that went out so the
@@ -944,6 +970,57 @@ export function App(): ReactElement {
   // `set*Open(false)` to drop the dialog state immediately rather
   // than waiting for the next render to mount a new active tab.
   const closeTab = useCallback((id: string): void => {
+    // B8 — close-tab prompt. The user clicked the close button
+    // on a tab. The previous implementation closed the tab
+    // unconditionally, which discarded the engine's undo
+    // stack and any unsaved annotations / forms / signatures.
+    // We now check the tab's `modified` flag (engine-side) and
+    // surface a prompt before destroying the state. The prompt
+    // is skipped for:
+    //   - The active tab being missing (already-closed
+    //     state, double-close race).
+    //   - The tab being an empty placeholder (no document to
+    //     save).
+    //
+    // The "modified" check must consult BOTH the tabs reducer's
+    // `meta.modified` AND the engineUi state mirror. After a
+    // successful engine op (rotate / delete / annotate / …) the
+    // tabs reducer dispatches `set-modified` synchronously inside
+    // `setEngineUiFor`, but React batches that update with the
+    // engineUi setState — so when the user mashes the close button
+    // right after clicking rotate, `tabsRef.current.tabs[i].modified`
+    // can still read `false` even though the IPC has already
+    // returned and the engine knows the doc is dirty. Reading the
+    // engineUi mirror (which is updated in the same `setEngineUiFor`
+    // call) catches that case. If either signal says "modified",
+    // we surface the prompt — the user has work to lose.
+    const open = openTabsRef.current[id];
+    if (open === undefined) return;
+    const tabMeta = tabsRef.current.tabs.find((t) => t.id === id);
+    if (tabMeta === undefined) return;
+    // Skip the prompt for the empty placeholder tabs — they
+    // don't have a doc to save.
+    if (tabMeta.kind === "empty") {
+      performCloseTab(id);
+      return;
+    }
+    const engineModified = engineUiRef.current[id]?.state.modified === true;
+    if (!tabMeta.modified && !engineModified) {
+      performCloseTab(id);
+      return;
+    }
+    // Show the prompt.
+    setPendingCloseTabId(id);
+    setPendingCloseError(null);
+    setPendingCloseSaving(false);
+  }, []);
+
+  // The actual close side-effects. Split out so the prompt
+  // path can call it after the user picks "Save" or "Don't
+  // save", and so the unconditional close paths (empty /
+  // unmodified / missing) don't re-prompt on a second
+  // invocation.
+  const performCloseTab = useCallback((id: string): void => {
     setOpenTabs((prev) => {
       const next = { ...prev };
       const removed = next[id];
@@ -1425,7 +1502,19 @@ export function App(): ReactElement {
         };
       });
       noteOpApplied(tabId, result.value);
-      setArmedSignatureId(null);
+      // B1 — leave the signature armed after a successful
+      // placement. The user's report: "post-placement click on
+      // sign re-enters sign mode with Delete shown" — meaning
+      // after committing one signature, the next page click
+      // should immediately spawn a fresh pending placement
+      // (with the Confirm / Cancel / Delete bar) rather than
+      // forcing the user to re-click the Sign toolbar button.
+      // The Sign tool still exits via the action bar's Cancel
+      // button (which calls `setArmedSignatureId(null)` through
+      // `onCancelSignatureArm`) or via the Esc key on a pending
+      // placement. The previous behaviour cleared the armed
+      // state here, which forced the user to re-arm before
+      // every placement — the bug report.
     },
     [pushToast, noteOpApplied],
   );
@@ -1872,6 +1961,75 @@ export function App(): ReactElement {
   }, [engineUi]);
 
   // ---- save / save-as ----
+
+  // B8 — close-tab prompt handler. The user picked one of
+  // Save / Don't save / Cancel from the CloseTabPromptDialog.
+  // We orchestrate the save flow here (the dialog stays
+  // mounted while the save runs) and only call
+  // `performCloseTab` once the user has either explicitly
+  // discarded the changes or the save has succeeded. If the
+  // save fails the dialog stays open and the error message
+  // is shown inline so the user can retry or cancel.
+  const onCloseTabPromptChoose = useCallback(
+    async (choice: CloseTabPromptChoice): Promise<void> => {
+      const id = pendingCloseTabIdRef.current;
+      if (id === null) return;
+      if (choice === "cancel") {
+        setPendingCloseTabId(null);
+        setPendingCloseError(null);
+        return;
+      }
+      if (choice === "discard") {
+        // The user explicitly asked to throw away the work.
+        // Close the tab; performCloseTab handles the rest.
+        setPendingCloseTabId(null);
+        setPendingCloseError(null);
+        performCloseTab(id);
+        return;
+      }
+      // choice === "save"
+      const tab = openTabsRef.current[id];
+      if (tab === undefined) {
+        // Tab already gone — race? Just dismiss the prompt.
+        setPendingCloseTabId(null);
+        setPendingCloseError(null);
+        return;
+      }
+      if (tab.session.onDiskPath === null) {
+        // No on-disk path — the save flow can't write to the
+        // original location. We surface this as an inline error
+        // (not a toast) so the dialog explains the choice the
+        // user has to make next.
+        setPendingCloseError(
+          "This document has no on-disk path. Use Don't save to discard, or open Save As first.",
+        );
+        return;
+      }
+      setPendingCloseSaving(true);
+      setPendingCloseError(null);
+      try {
+        const result = await engineRef.current.save(tab.session.engineDocId);
+        if (!result.ok) {
+          setPendingCloseError(
+            describeEngineError(result.error.code, result.error.message),
+          );
+          return;
+        }
+        // Save succeeded. Close the tab.
+        setPendingCloseSaving(false);
+        setPendingCloseTabId(null);
+        setPendingCloseError(null);
+        performCloseTab(id);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setPendingCloseError(msg);
+      } finally {
+        setPendingCloseSaving(false);
+      }
+    },
+    [],
+  );
+
   const onSave = useCallback(
     async (tabId: string): Promise<void> => {
       const tab = openTabsRef.current[tabId];
@@ -2149,13 +2307,58 @@ useEffect(() => {
   }, []);
 
   const onConfirmMerge = useCallback(
-    async (choice: { otherPath: string; position: "before" | "after" }): Promise<void> => {
+    async (choice: {
+      otherPath: string;
+      otherBytes: Uint8Array;
+      position: "before" | "after" | "afterPage";
+      afterPage?: number;
+    }): Promise<void> => {
       const activeId = activeTabIdRefLocal.current;
       setMergeOpen(false);
       if (activeId === null) return;
       const open = openTabsRef.current[activeId];
       if (open === undefined) return;
-      const result = await engineRef.current.merge(
+      const engine = engineRef.current;
+      // B12 — "afterPage" goes through the engine's
+      // `insertFromPdf`, which inserts every page of the picked
+      // PDF at a specific 1-based position. The legacy
+      // `merge()` IPC only supports "before" / "after" the entire
+      // doc, so the per-page case needs the dedicated call. The
+      // engine returns the new state with pageCount + pageOrder
+      // refreshed; we route that through the same `noteOpApplied`
+      // path the simple merge uses.
+      if (choice.position === "afterPage") {
+        if (engine.insertFromPdf === undefined) {
+          pushToast(
+            "error",
+            "Insert-at-position is not supported by this build.",
+          );
+          return;
+        }
+        const n = choice.afterPage ?? 0;
+        // The dialog passes a 1-based "after N" page number; the
+        // engine's `insertFromPdf` consumes a 0-based
+        // `afterIndex`. We translate: "after page 0" -> insert
+        // before page 1 (afterIndex = -1). "after page N" ->
+        // insert between N and N+1 (afterIndex = N - 1).
+        const afterIndex = n <= 0 ? -1 : n - 1;
+        const result = await engine.insertFromPdf(
+          open.session.engineDocId,
+          choice.otherBytes,
+          afterIndex,
+        );
+        if (!result.ok) {
+          pushToast("error", describeEngineError(result.error.code, result.error.message));
+          return;
+        }
+        noteOpApplied(activeId, result.value);
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(activeId).catch(() => undefined);
+        }
+        return;
+      }
+      const result = await engine.merge(
         open.session.engineDocId,
         [choice.otherPath],
         choice.position,
@@ -2275,8 +2478,19 @@ useEffect(() => {
     [noteOpApplied, openEngineBytesAsTab, pushToast],
   );
 
-  const onPickMergeFile = useCallback(async (): Promise<string | null> => {
-    return window.tflex.openFileDialog();
+  // B12 — merge file picker. The dialog needs both the picked PDF's
+// path (for the legacy `merge()` IPC, which loads the file by
+// path) AND the raw bytes (for `insertFromPdf`, which inserts
+// every page at a specific 1-based position). We always return
+// both so the dialog can decide which engine call to make based
+// on the user's chosen position; the dialog pins the path in
+// `data-merge-path` and the bytes are read on demand.
+const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uint8Array } | null> => {
+    const path = await window.tflex.openFileDialog();
+    if (path === null) return null;
+    const res = await window.tflex.loadPdf(path);
+    if (!res.ok) return null;
+    return { path, bytes: new Uint8Array(res.value) };
   }, []);
 
   // ---- Phase 8: optimize + audit space ----
@@ -3549,6 +3763,25 @@ pushToast(
     setOcrSuspectsOpen(false);
   }, []);
 
+  /** B11 — open the OCR suspects panel. The previous wiring
+   *  (`setOcrSuspectsOpen(true)` from the Tools palette) ignored
+   *  whether a document was actually open, so the user could
+   *  click the button from the welcome screen / an empty tab
+   *  and see nothing happen. The panel's render is also gated
+   *  on `activeTabIdRefLocal.current !== null`, but the open
+   *  flag would still flip — meaning a later open-doc step would
+   *  surface a panel against an unrelated tab. We now require
+   *  an active document AND a successful OCR run on that tab
+   *  before opening; otherwise the button click is a no-op
+   *  (matches the onOcrSuspects button's `hasOcrSuspects` gate
+   *  in the Tools palette). */
+  const onOpenOcrSuspects = useCallback((): void => {
+    const activeId = activeTabIdRefLocal.current;
+    if (activeId === null) return;
+    if (ocrRunByTabRef.current[activeId] !== true) return;
+    setOcrSuspectsOpen(true);
+  }, []);
+
   // ---- Phase 12: FDF IO helpers ----
 
   /** Run the engine.exportFdf call against the active doc. Returns
@@ -3962,6 +4195,11 @@ pushToast(
         onPlaceSignature: (signatureId: string, page: number, rect: SignaturePlacement["rect"]) => void;
         onMoveSignature: (placementId: string, rect: SignaturePlacement["rect"]) => void;
         onDeleteSignature: (placementId: string) => void;
+        /** B1 — exit Sign mode. Wired to the pending action bar's
+         *  Cancel button. The host clears `armedSignatureId`
+         *  (the App is the source of truth for the crosshair /
+         *  ghost preview). */
+        onCancelSignatureArm: () => void;
       }
     >();
     return (tabId: string) => {
@@ -3999,6 +4237,12 @@ pushToast(
         },
         onDeleteSignature: (placementId: string): void => {
           void deleteSignature(tabId, placementId);
+        },
+        // B1 — exit Sign mode. The pending action bar's Cancel
+        // button calls this; the overlay's onConfirm / onDelete
+        // do NOT (the user is still placing signatures).
+        onCancelSignatureArm: (): void => {
+          setArmedSignatureId(null);
         },
       };
       cache.set(tabId, out);
@@ -4246,6 +4490,20 @@ pushToast(
       (diagnosticsRef.current["searchQuery"] as string | undefined) ?? "";
     const searchHits =
       (diagnosticsRef.current["searchHits"] as number | undefined) ?? 0;
+    // DEF-093 — the active annotation tool. Read from the diagnostics
+    // mirror that DocumentView seeds via `onDiagnostics`. The mirror
+    // stores `AnnotationTool | null`; before this fix the field was
+    // absent entirely, so e2e harnesses saw `undefined` (because
+    // `diagnosticsRef.current["activeTool"]` was undefined and the
+    // nullish-coalesce fell through to `undefined`). Default to
+    // `null` so the surface contract is uniform: a missing key reads
+    // as `null`, never `undefined`. DocumentView's `useEffect` emits
+    // a fresh value on every `annTool.tool` change, so this stays in
+    // step with the renderer's actual tool state without forcing
+    // tflexDiagnostics to subscribe to React (DEF-077 — read-only).
+    const rawActiveTool = diagnosticsRef.current["activeTool"];
+    const activeTool: string | null =
+      typeof rawActiveTool === "string" ? rawActiveTool : null;
 
     // DEF-077 — the fire-and-forget `getState` poll that used to
     // live here was removed. Scheduling a state-returning IPC +
@@ -4323,6 +4581,14 @@ pushToast(
       // Optimize action creates). Surfaces the tabs reducer's
       // truth so e2e harnesses can verify without scraping the DOM.
       tabModified: activeId !== null ? tabs2[activeId]?.meta.modified ?? false : false,
+      // DEF-093 — active annotation tool. `null` when no tool is
+      // armed (i.e. the toolbar's "Select" tool, or no tab open).
+      // The qa harness was getting `undefined` here because the
+      // key wasn't on the diagnostics surface at all; the spec
+      // wants `null` (a definite "no tool" value, not a missing
+      // key). DocumentView seeds this on every `annTool.tool`
+      // change via `onDiagnostics`.
+      activeTool,
     };
   };
 
@@ -4701,6 +4967,9 @@ pushToast(
                     onPlaceSignature={fs.onPlaceSignature}
                     onMoveSignature={fs.onMoveSignature}
                     onDeleteSignature={fs.onDeleteSignature}
+                    // B1 — exit Sign mode. Wired to the pending
+                    // action bar's Cancel button.
+                    onCancelSignatureArm={fs.onCancelSignatureArm}
                     // B10 — armed stamp ghost + click-to-embed.
                     armedStamp={armedStamp}
                     onPlaceStamp={onPlaceStamp}
@@ -4825,7 +5094,7 @@ pushToast(
             onBatchOcr={(): void => {
               void onBatchOcr();
             }}
-            onOcrSuspects={(): void => setOcrSuspectsOpen(true)}
+            onOcrSuspects={(): void => onOpenOcrSuspects()}
             onReplacePages={onReplacePagesClick}
             onRenumberPages={onRenumberPagesClick}
             onCropPages={onCropPagesClick}
@@ -4857,6 +5126,11 @@ pushToast(
         }}
         pickFile={onPickMergeFile}
         sourceName={activeTab?.displayName ?? "this document"}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
       />
       <SplitDialog
         open={splitOpen}
@@ -5144,6 +5418,11 @@ pushToast(
           0
         }
         pageSizes={activePageSizes}
+        // B16 — pass the active doc so the CropEditor can render
+        // a real page preview (pdf.js) behind the dashed crop
+        // box. Without this the editor surface is the dialog's
+        // background and operators reported a "black canvas".
+        doc={activeTab?.session.doc ?? null}
         onConfirm={(c): void => {
           void onCropPagesConfirm(c);
         }}
@@ -5210,6 +5489,24 @@ pushToast(
         })()}
         onConfirm={onDeletePageConfirm}
         onClose={onCancelDeletePage}
+      />
+      {/* B8 — close-tab prompt. Shown when the user closes a tab
+          with unsaved engine changes. The dialog stays mounted
+          while a save is in flight; on save success we close the
+          tab, on save failure we keep the tab open and surface the
+          engine's error inline. */}
+      <CloseTabPromptDialog
+        open={pendingCloseTabId !== null}
+        tabTitle={
+          pendingCloseTabId === null
+            ? ""
+            : tabsRef.current.tabs.find((t) => t.id === pendingCloseTabId)?.title ?? ""
+        }
+        saving={pendingCloseSaving}
+        saveError={pendingCloseError}
+        onChoose={(choice): void => {
+          void onCloseTabPromptChoose(choice);
+        }}
       />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
       <AboutDialog

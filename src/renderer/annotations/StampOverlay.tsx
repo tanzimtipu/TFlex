@@ -246,7 +246,15 @@ export function StampOverlay(props: StampOverlayProps): ReactElement | null {
     opacity: 0.55,
     pointerEvents: "none",
     boxShadow: "0 1px 4px rgba(15, 23, 42, 0.10)",
-    zIndex: 4,
+    // B10 — the ghost's z-index mirrors the .stamp-layer CSS
+    // (z-index: 6) so the inline style stays in lockstep with
+    // the stylesheet. Promoting the layer above forms / edit /
+    // annotations was the fix for the "stamp behind background"
+    // report; without the inline bump the ghost would still
+    // paint at z-index 4 even though its parent is at 6 (the
+    // inline style on the ghost overrides the parent, since the
+    // ghost's own stacking context is at 4 inside the layer's 6).
+    zIndex: 6,
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
