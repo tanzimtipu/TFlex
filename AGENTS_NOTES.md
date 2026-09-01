@@ -1,5 +1,54 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-08-28: orchestrator model changed to DeepSeek V4 Pro 0813
+
+- From: `openrouter/moonshotai/kimi-k3`
+- To: `openrouter/deepseek/deepseek-v4-pro-0813` (verified live in the OpenRouter
+  catalog, dated 0813 snapshot — a stable pinned ID, not an alias).
+- The reserved-model rule follows the new pin: `deepseek/deepseek-v4-pro-0813` is now
+  the orchestrator-reserved model everywhere — AGENTS.md hard-stop and fallback
+  clauses, all five sub-agent model-integrity rules, the probe gate's silent-fallback
+  check, README (status-line + lineup table), and the model-selector skill.
+- kimi-k3 is no longer in use anywhere; it remains available as a manual re-pin if
+  needed, but the fallback table for the orchestrator stays "no fallback — stop and
+  ask the human."
+- Backups under `.opencode/backups/` intentionally untouched (historical snapshots).
+
+## 2026-08-28: frontend-dev re-pinned to the flash-latest alias (tilde route)
+
+- Probe gate had rejected `deepseek/deepseek-v4-flash-latest` — the alias needs the
+  leading tilde: `~deepseek/deepseek-v4-flash-latest`. Verified against the live
+  OpenRouter catalog (it is an official redirect alias, "always redirects to the
+  latest model in the DeepSeek V4 Flash family", ~$0.05/M in / ~$0.10/M out).
+- frontend-dev pin is now `openrouter/~deepseek/deepseek-v4-flash-latest`.
+- Fallback chain per AGENTS.md: ~deepseek/deepseek-v4-flash-latest ->
+  deepseek/deepseek-v4-flash -> minimax/minimax-m3:free -> minimax/minimax-m3 (paid).
+- Caution for future edits: tilde-prefixed aliases (`~z-ai/glm-latest`, etc.) are
+  valid on OpenRouter; dropping the tilde produces an invalid ID.
+
+## 2026-08-28: frontend-dev flash-latest route rejected — corrected to v4-flash
+
+- Probe gate caught it: `deepseek/deepseek-v4-flash-latest` is not a valid OpenRouter
+  model ID (no -latest suffix on this route). Build halted per the hard-stop rule.
+- Fix: frontend-dev now pinned `openrouter/deepseek/deepseek-v4-flash` (same model
+  family as adversary — both text-only workloads). Fallback chain per AGENTS.md:
+  deepseek/deepseek-v4-flash -> minimax/minimax-m3:free -> minimax/minimax-m3 (paid).
+- AGENTS.md fallback table now includes the explicit warning against the -latest
+  suffix so the same mistake cannot be re-entered.
+
+## 2026-08-28: frontend-dev re-pinned to DeepSeek V4 Flash (no vision needed)
+
+- From: `openrouter/minimax/minimax-m3:free`
+- To: `openrouter/deepseek/deepseek-v4-flash-latest`
+- Reason: operator decision. frontend-dev needs no vision — screenshot judgment is
+  formally qa's job (qa owns all visual inspection); frontend-dev now only captures
+  shots on request, never self-judges them.
+- Fallback chain per AGENTS.md: deepseek/deepseek-v4-flash-latest ->
+  minimax/minimax-m3:free -> minimax/minimax-m3 (paid).
+- `frontend-dev.md` look-and-feel section now states the capture-vs-judge split
+  explicitly. If the new route fails the probe gate, revert to the fallback and
+  record it here.
+
 ## 2026-08-28: distribution layout rule (release/ vs dev-only)
 
 Operator directive: one folder holds everything user-sharable; dev files must never

@@ -57,7 +57,7 @@ them read-only via git, but any edit goes through the owning agent via the orche
   If `git status` shows an unexpected untracked file, stop and report it to the
   orchestrator instead of staging blindly.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/moonshotai/kimi-k3` belongs to the orchestrator — running on
+  frontmatter. `openrouter/deepseek/deepseek-v4-pro-0813` belongs to the orchestrator — running on
   it is a silent fallback, and you must report it instead of working on the wrong model.
 - Stuck protocol: after three failed attempts on the same git operation (e.g. a push or
   a tag), stop and report back with all logs — the exact failing command, its full

@@ -67,7 +67,7 @@ requirement or reasoning that supports it).
 - Never edit renderer code, e2e tests, DEFECTS.md, ADVERSARIAL_REVIEW.md, REQUIREMENTS.md
   or AGENTS.md.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/moonshotai/kimi-k3` belongs to the orchestrator — running on
+  frontmatter. `openrouter/deepseek/deepseek-v4-pro-0813` belongs to the orchestrator — running on
   it is a silent fallback, and you must report it instead of working on the wrong model.
 - Stuck protocol: if you have failed to fix the same issue after three attempts, stop
   and report back with all logs — the exact failing command, its full output, and what

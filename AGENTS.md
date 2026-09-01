@@ -27,10 +27,12 @@ never grow the settings shape ad-hoc.
 
 - **orchestrator** (primary) — plans, delegates, reviews, gates phases. Does not write code.
 - **frontend-dev** — all renderer code (React UI, PDF.js display, interactions) and
-  renderer unit tests.
+  renderer unit tests. Text-only model: it captures screenshots on request, but visual
+  judgment belongs to qa.
 - **backend-dev** — all main-process code: the PDF engine (pdf-lib), file I/O, persistence,
   IPC services, packaging — and backend unit tests.
 - **qa** — end-to-end tests, test runs, screenshots, DEFECTS.md. Does not fix code.
+  Owns all visual judgment of screenshots.
 - **adversary** — tries to break the running app and its PDF handling; records findings in
   ADVERSARIAL_REVIEW.md.
 - **git-agent** — local git operations: initial commits, remote setup, tagging, pushes to
@@ -146,7 +148,7 @@ No entry may remain PENDING when the final phase completes.
 ## Model integrity — hard stop rule
 
 Every agent runs only on the model pinned in its `.opencode/agents/*.md` definition.
-The orchestrator's model, `openrouter/moonshotai/kimi-k3`, is reserved for the
+The orchestrator's model, `openrouter/deepseek/deepseek-v4-pro-0813`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
 other wrong model. If a sub-agent cannot load its pinned model (provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
@@ -163,9 +165,11 @@ repeatedly fails at its role (tool-call errors, ignoring formats, incoherent out
 the human operator may swap that agent's `model:` field to the documented fallback:
 
 - backend-dev: z-ai/glm-5.2 -> deepseek/deepseek-v4-pro
-- frontend-dev: minimax/minimax-m3:free -> minimax/minimax-m3 (paid route — use when the
-  free route is rate-limited or unavailable; the free route was previously blocked by the
-  operator account's data policy and re-enabled 2026-08-30 after a policy change)
+- frontend-dev: ~deepseek/deepseek-v4-flash-latest -> deepseek/deepseek-v4-flash
+  (no vision needed — screenshot judgment belongs to qa, so any text-capable fallback
+  is valid; then minimax/minimax-m3:free, then minimax/minimax-m3 paid. Note: the
+  alias carries a leading tilde — the plain `deepseek/deepseek-v4-flash-latest` is NOT
+  a valid OpenRouter ID)
 - qa: google/gemini-3-flash-preview -> deepseek/deepseek-v4-flash-vision-exp (note: the
   vision-exp model is served by a single provider, DeepSeek; if your account's data policy
   blocks it, stay on gemini-3-flash-preview)
@@ -173,7 +177,10 @@ the human operator may swap that agent's `model:` field to the documented fallba
 - git-agent: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview
 - orchestrator: no fallback — stop and ask the human.
 
-Fallback to the orchestrator's model (`openrouter/moonshotai/kimi-k3`) is never
+Note: frontend-dev and adversary intentionally share the `deepseek/deepseek-v4-flash`
+pin — both are text-only workloads.
+
+Fallback to the orchestrator's model (`openrouter/deepseek/deepseek-v4-pro-0813`) is never
 permitted for any sub-agent. The table above is the only valid fallback source.
 
 2026-08-30 (third swap): frontend-dev re-pinned from minimax/minimax-m3 back to

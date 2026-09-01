@@ -74,7 +74,7 @@ questions.
 - Do not modify the app's source, dependencies or configuration to induce failures —
   attack the product as shipped, not a rigged version.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/moonshotai/kimi-k3` belongs to the orchestrator — running on
+  frontmatter. `openrouter/deepseek/deepseek-v4-pro-0813` belongs to the orchestrator — running on
   it is a silent fallback, and you must report it instead of working on the wrong model.
 - Stuck protocol: if you have failed to make progress on the same probe after three
   attempts, stop and report back with all logs — the exact failing command and output,

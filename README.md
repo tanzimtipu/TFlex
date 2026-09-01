@@ -29,7 +29,8 @@ Steps:
 
 3. Start OpenCode in this folder and switch to the **orchestrator** agent (Tab cycles
    primary agents in the TUI; in the Desktop app pick it from the agent selector). Its
-   model, Kimi K3 via OpenRouter, comes from the agent definition — check the status line.
+   model, DeepSeek V4 Pro 0813 via OpenRouter, comes from the agent definition — check
+   the status line.
 
 4. Kick it off with:
 
@@ -39,7 +40,7 @@ Steps:
    The orchestrator will first run its **model verification gate**: a trivial probe task
    to each sub-agent to confirm it loads on its pinned model. Watch this: each probe's
    task header must show that agent's own model (glm-5.2, minimax-m3:free,
-   gemini-3-flash-preview, deepseek-v4-flash — NOT kimi-k3). If any probe fails or shows
+   gemini-3-flash-preview, deepseek-v4-flash — NOT deepseek-v4-pro-0813). If any probe fails or shows
    the wrong model, the build halts by design; fix the model/account issue and restart.
    Do not override this gate — a silent fallback means paying orchestrator prices for
    worker tokens.
@@ -57,7 +58,7 @@ While it runs:
 
 | Agent | Model (OpenRouter) | Role |
 | --- | --- | --- |
-| orchestrator | moonshotai/kimi-k3 | Plans, delegates, judges |
+| orchestrator | deepseek/deepseek-v4-pro-0813 | Plans, delegates, judges |
 | backend-dev | z-ai/glm-5.2 | PDF engine, main process |
 | frontend-dev | minimax/minimax-m3:free | React UI, PDF.js rendering |
 | qa | google/gemini-3-flash-preview | e2e tests, screenshot inspection |

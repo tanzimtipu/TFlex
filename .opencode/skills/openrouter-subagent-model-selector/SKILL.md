@@ -12,8 +12,8 @@ This skill is analysis-first. Do not edit `.opencode/agents/*.md`, `AGENTS.md`, 
 ## Scope and hard rules
 
 - Analyze only sub-agents: `backend-dev`, `frontend-dev`, `qa`, `adversary`, and `git-agent`.
-- Never analyze or replace the orchestrator's `openrouter/moonshotai/kimi-k3` model.
-- Never recommend `openrouter/moonshotai/kimi-k3` for any sub-agent; TFlex reserves it for the orchestrator.
+- Never analyze or replace the orchestrator's `openrouter/deepseek/deepseek-v4-pro-0813` model.
+- Never recommend `openrouter/deepseek/deepseek-v4-pro-0813` for any sub-agent; TFlex reserves it for the orchestrator.
 - Read `AGENTS.md` and `.opencode/agents/*.md` before comparing. Treat their model-integrity and fallback rules as constraints.
 - A recommendation is not an applied swap. State clearly that only the human may approve and apply model changes, and that swaps must be recorded in `AGENTS_NOTES.md` when applied.
 - Do not use stale benchmark or pricing knowledge. Refresh all prices and model IDs at run time.
@@ -88,7 +88,7 @@ Read the model fields from the agent definitions instead of assuming them. As a 
 
 If an agent file differs, the agent file wins and the report must call out the difference.
 
-Exclude `orchestrator.md` from the candidate comparison except to enforce the no-kimi-k3 rule.
+Exclude `orchestrator.md` from the candidate comparison except to enforce the reserved-orchestrator-model rule.
 
 ## Candidate filtering
 

@@ -1,7 +1,7 @@
 ---
 description: Frontend developer for TFlex. Owns the Electron renderer: the React UI, PDF.js page rendering, annotation overlays, interactions, theming and animation, and renderer unit tests. Never touches main-process code.
 mode: subagent
-model: openrouter/minimax/minimax-m3
+model: openrouter/~deepseek/deepseek-v4-flash-latest
 permission:
   edit:
     "REQUIREMENTS.md": deny
@@ -61,7 +61,9 @@ Follow the "Look and feel" section of REQUIREMENTS.md precisely:
 - No generated-design tells: no gradient hero backgrounds, no purple-dominated themes,
   no one-sided accent borders, no uniform oversized corner radii.
 - Capture screenshots of your work as you go (into `screenshots/`) when the orchestrator
-  asks — and make sure what you ship actually looks like a commercial product.
+  asks — your model has no vision capability, so capture is a hand-off: you produce the
+  shot, qa and the orchestrator judge it. Never self-declare a screen "looks right";
+  visual judgment is qa's job, not yours.
 
 ## Reporting
 
@@ -77,7 +79,7 @@ requirement or reasoning that supports it).
 - Never edit main-process code, preload, packaging config, e2e tests, DEFECTS.md,
   ADVERSARIAL_REVIEW.md, REQUIREMENTS.md or AGENTS.md.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/moonshotai/kimi-k3` belongs to the orchestrator — running on
+  frontmatter. `openrouter/deepseek/deepseek-v4-pro-0813` belongs to the orchestrator — running on
   it is a silent fallback, and you must report it instead of working on the wrong model.
 - Stuck protocol: if you have failed to fix the same issue after three attempts, stop
   and report back with all logs — the exact failing command, its full output, and what

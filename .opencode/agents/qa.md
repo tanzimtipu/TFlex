@@ -93,7 +93,7 @@ For a DISPUTED defect (a developer says CANNOT REPRODUCE or WORKING AS INTENDED)
   or it does not get committed. If the same launch issue survives three attempts on the
   helper, apply the stuck protocol below — do not spawn another one-off debug script.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/moonshotai/kimi-k3` belongs to the orchestrator — running on
+  frontmatter. `openrouter/deepseek/deepseek-v4-pro-0813` belongs to the orchestrator — running on
   it is a silent fallback, and you must report it instead of working on the wrong model.
 - Stuck protocol: if you have failed to fix the same issue (e.g. a retest or suite run)
   after three attempts, stop and report back with all logs — the exact failing command,
