@@ -21,3 +21,10 @@ test-fixtures/*.pdf
 /e2e/debug_*.cjs
 /e2e/check_data_tool.cjs
 /e2e/list_buttons.cjs
+
+# Root-level OTA manifest strays. The legitimate latest.yml lives under release/
+# (ignored above); these root-level copies are electron-builder/auto-update
+# artifacts that must never be committed.
+/latest.yml
+/latest_gh.yml
+/dev-app-update.yml
