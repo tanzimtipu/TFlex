@@ -182,4 +182,133 @@ describe("B10 — StampOverlay ghost + click-to-embed", () => {
     });
     expect(onPlace).not.toHaveBeenCalled();
   });
+
+  // Cross-arm guard (orchestrator dispatch, B10 follow-up).
+  // The stamp overlay's window-level pointerdown handler used
+  // to call e.stopPropagation() on every click while armed —
+  // that swallowed toolbar / rail / signature-pending-bar
+  // clicks too, leaving the user stuck. The fix removes the
+  // stopPropagation call and lets the event bubble normally.
+  // We verify by dispatching a click event while armed and
+  // confirming `event.cancelBubble` stays false afterwards.
+  it("does NOT stopPropagation on pointerdown while armed", () => {
+    mountOverlay({
+      armed: makeArmed(),
+      onPlace: (): void => undefined,
+    });
+    let captured: PointerEvent | null = null;
+    const onCapture = (e: Event): void => {
+      captured = e as PointerEvent;
+    };
+    // Listen on the capture phase so we see the event before
+    // any element handler potentially mangles it. The stamp
+    // overlay listens on the bubble phase (window.addEventListener
+    // with `true` flag = capture, but the overlay's listener
+    // was registered without `true` in this test — checking
+    // the bubble phase also works).
+    window.addEventListener("pointerdown", onCapture);
+    act((): void => {
+      window.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          clientX: 200,
+          clientY: 150,
+        }),
+      );
+    });
+    expect(captured).not.toBeNull();
+    const capturedNonNull = captured as PointerEvent | null;
+    if (capturedNonNull !== null) {
+      // The overlay must not have called stopPropagation — if
+      // it did, `cancelBubble` would be true and the toolbar /
+      // rail / signature bar wouldn't have seen the click.
+      expect(capturedNonNull.cancelBubble).toBe(false);
+    }
+    window.removeEventListener("pointerdown", onCapture);
+  });
+
+  // Cross-arm guard — clicking outside the page bounds while
+  // armed used to leave the stamp armed (no listener handled
+  // it), then any subsequent click inside the page would
+  // stamp an unexpected location. The fix dispatches
+  // `tflex:stamp-disarm` on outside-page clicks so the host
+  // can clear `armedStamp`, mirroring the Esc disarm path.
+  it("clicking outside the page bounds dispatches tflex:stamp-disarm", () => {
+    const { host } = mountOverlay({
+      armed: makeArmed(),
+      onPlace: (): void => undefined,
+    });
+    void host; // mount to install listeners
+    let disarmEvent: Event | null = null;
+    const onDisarm = (e: Event): void => {
+      disarmEvent = e;
+    };
+    window.addEventListener("tflex:stamp-disarm", onDisarm);
+    act((): void => {
+      window.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          // clientX > 800 = past the right edge of the host,
+          // which is the only thing the overlay uses to decide
+          // "this click landed on the page".
+          clientX: 1200,
+          clientY: 400,
+        }),
+      );
+    });
+    expect(disarmEvent).not.toBeNull();
+    const disarmNonNull = disarmEvent as Event | null;
+    if (disarmNonNull !== null) {
+      expect(disarmNonNull.type).toBe("tflex:stamp-disarm");
+    }
+    window.removeEventListener("tflex:stamp-disarm", onDisarm);
+  });
+
+  // Cross-arm guard — clicking a textbox / callout editor or
+  // the signature action bar should be a no-op (NOT disarm, NOT
+  // place). The user is mid-edit and a stray disarm would
+  // silently cancel their work. We simulate the closest-match
+  // ancestor with a real DOM element and a synthetic pointer
+  // event whose `target` resolves to that element via
+  // Object.defineProperty — jsdom dispatches the event with
+  // `target` set to the dispatch target, but Element.closest()
+  // walks from `target` upward, so we just need the event's
+  // `target.closest(...)` call to return non-null. We do that
+  // by attaching a sentinel .sig-action-bar element to the
+  // document and dispatching the click on it; the overlay's
+  // pointerdown handler reads `e.target` and walks the tree.
+  it("clicking inside an editor / action bar does not place and does not disarm", () => {
+    const { onPlace } = mountOverlay({
+      armed: makeArmed(),
+      onPlace: (): void => undefined,
+    });
+    // Build a synthetic editor ancestor and dispatch a click
+    // on a child inside it. The overlay's pointerdown handler
+    // checks `e.target.closest('.ann-editor, .sig-action-bar,
+    // .ann-textbox-wrap, .ann-note-editor')`.
+    const wrap = document.createElement("div");
+    wrap.className = "sig-action-bar";
+    const inner = document.createElement("button");
+    inner.textContent = "Place";
+    wrap.appendChild(inner);
+    document.body.appendChild(wrap);
+    let disarmEvent: Event | null = null;
+    const onDisarm = (e: Event): void => {
+      disarmEvent = e;
+    };
+    window.addEventListener("tflex:stamp-disarm", onDisarm);
+    act((): void => {
+      inner.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          clientX: 100,
+          clientY: 100,
+        }),
+      );
+    });
+    expect(onPlace).not.toHaveBeenCalled();
+    expect(disarmEvent).toBeNull();
+    document.body.removeChild(wrap);
+    window.removeEventListener("tflex:stamp-disarm", onDisarm);
+  });
 });

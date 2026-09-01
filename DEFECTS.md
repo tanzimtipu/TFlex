@@ -1,4 +1,83 @@
+## DEF-090: Armed stamp swallows all application clicks
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 12
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Open a PDF.
+3. Open Tools palette and select "Stamp".
+4. Pick any stamp and click "Confirm" to arm.
+5. Attempt to click the theme toggle or any other toolbar button.
+
+Expected: Application controls remain interactive while a stamp is armed.
+Actual: The stamp overlay swallowed all pointer events, preventing any interaction with the UI until the stamp was placed or Esc was pressed.
+
+History:
+- qa: opened
+- qa: verified on production build. Clicks now pass through to the toolbar/rails correctly. CLOSED.
+
+## DEF-089: Cross-arming (Sign vs Stamp) doesn't disarm previous tool
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 12
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Arm the Sign tool.
+3. While Sign is armed, arm the Stamp tool.
+
+Expected: Only one tool should be armed at a time; arming Stamp should disarm Sign.
+Actual: Both tool overlays remained active, showing both the signature ghost and the stamp ghost simultaneously.
+
+History:
+- qa: opened
+- qa: verified on production build. Arming one tool now correctly disarms the other. CLOSED.
+
+## DEF-088: Signature pending action buttons not clickable
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 4
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Place a signature on a page.
+3. Attempt to click the "Confirm" or "Cancel" buttons on the floating action bar.
+
+Expected: Action buttons should be enabled and clickable.
+Actual: Buttons were visible but non-responsive to clicks in certain states.
+
+History:
+- qa: opened
+- qa: verified on production build via e2e test B5. Buttons are enabled and responsive. CLOSED.
+
+## DEF-087: Sign ghost shows stamp icon instead of signature content
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 4
+
+Steps to reproduce:
+1. Launch TFlex.
+2. Arm the Sign tool with a typed or drawn signature.
+3. Hover over the document page.
+
+Expected: The cursor ghost should show a preview of the actual signature content.
+Actual: The ghost showed a generic stamp icon or dashed placeholder.
+
+History:
+- qa: opened
+- qa: verified on production build. Ghost now renders the actual vector paths (drawn) or text (typed). CLOSED.
+
 ## DEF-085: Theme and Open buttons not right-aligned in TitleBar
+
 
 - Status: CLOSED
 - Severity: MEDIUM
@@ -228,3 +307,19 @@ Actual: `exportImageFormat`, `exportImageDpi`, `createImageQuality`, `editDefaul
 History:
 - qa: opened (Found by adversary ADV-019)
 - qa: updated `test-fixtures/tools/settingsEchoCheck.cjs` mirror; verified PROBE 12 passes in `silence-attack.cjs`. CLOSED.
+
+## DEF-086: OTA reports up-to-date because v1.7.0 was never published as GitHub Release
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: human
+- Phase: 6
+
+Expected: v1.7.0 tag pushed + GitHub Release published with installer + latest.yml assets so the installed app can detect it.
+Actual: tag exists but no GitHub Release published → update service sees no newer release.
+
+History:
+- qa: opened
+- qa: verified v1.7.0 release exists on GitHub with 3 assets (latest.yml, TFlex-Setup-1.7.0.exe, TFlex-Setup-1.7.0.exe.blockmap). Verified latest.yml contains correct version metadata (1.7.0). Verified app at v1.7.0 successfully initializes update service and starts check (status transitions to 'checking'). Fixed release publishing confirmed. CLOSED.
+
+

@@ -100,6 +100,14 @@ export function StampOverlay(props: StampOverlayProps): ReactElement | null {
       // textbox/callout editor or the action bar — those have
       // their own pointer handling and shouldn't trigger a
       // stamp embed.
+      //
+      // We do NOT call stopPropagation / preventDefault here.
+      // Doing so used to swallow every click while the stamp
+      // was armed — including toolbar / rail / dialog clicks,
+      // which meant the user couldn't even dismiss a pending
+      // signature bar after arming a stamp. The placement
+      // check below decides what to do; everything else passes
+      // through unchanged so the rest of the UI keeps working.
       const t = e.target;
       if (t instanceof Element) {
         if (t.closest(".ann-editor, .sig-action-bar, .ann-textbox-wrap, .ann-note-editor") !== null) {
@@ -115,10 +123,16 @@ export function StampOverlay(props: StampOverlayProps): ReactElement | null {
         x > pageWidthPt ||
         y > pageHeightPt
       ) {
+        // Click landed outside the page — toolbar / rail /
+        // dialog / window chrome. Disarm the stamp so the ghost
+        // stops following the cursor, then drop the event so the
+        // original click handler still runs (we never swallowed
+        // it in the first place). The host listens for the
+        // CustomEvent below and resets `armedStamp` accordingly,
+        // mirroring the Esc disarm path.
+        window.dispatchEvent(new CustomEvent("tflex:stamp-disarm"));
         return;
       }
-      e.preventDefault();
-      e.stopPropagation();
       onPlace({ ...armed, page, atPt: { x, y } });
     };
     const onKey = (e: KeyboardEvent): void => {

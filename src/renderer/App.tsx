@@ -1689,6 +1689,15 @@ export function App(): ReactElement {
   // of App state.
   useEffect(() => {
     const onSignButton = (): void => {
+      // Cross-arming guard — arming the Sign tool while the Stamp
+      // tool is armed would leave both overlays visible (the
+      // stamp ghost following the cursor AND the signatures
+      // crosshair). Tear down the stamp overlay first so the
+      // user only ever sees one armed tool at a time. The
+      // toolbar's Stamp button does the same in `onStampClick`.
+      if (armedStamp !== null) {
+        setArmedStamp(null);
+      }
       if (armedSignatureId !== null) {
         // Already armed -> toggle off.
         setArmedSignatureId(null);
@@ -1715,7 +1724,7 @@ export function App(): ReactElement {
       window.removeEventListener("tflex:flatten-button", onFlattenButton);
       window.removeEventListener("tflex:stamp-disarm", onStampDisarm);
     };
-  }, [armedSignatureId]);
+  }, [armedSignatureId, armedStamp]);
 
   const onSigManagerApply = useCallback((signatureId: string): void => {
     setArmedSignatureId(signatureId);
@@ -2945,6 +2954,14 @@ pushToast(
       setArmedStamp(null);
       return;
     }
+    // Cross-arming guard — mirror of `onSignButton` above. If
+    // the Sign tool is armed, the user would otherwise see both
+    // the stamp ghost and the signatures crosshair at once. Tear
+    // down the signatures arm first so only one tool is active
+    // at a time.
+    if (armedSignatureIdRef.current !== null) {
+      setArmedSignatureId(null);
+    }
     setStampOpen(true);
   }, []);
 
@@ -3071,6 +3088,15 @@ pushToast(
 
   const armedStampRef = useRef(armedStamp);
   armedStampRef.current = armedStamp;
+  // Mirror ref for `armedSignatureId` so `onStampClick` can read
+  // the latest arm state without taking it as a useCallback
+  // dependency. Same forward-declared-ref pattern as
+  // `armedStampRef` above and `activeTabIdRefLocal` higher up.
+  // Without this, `onStampClick` would have to depend on
+  // `armedSignatureId` and be re-created on every signature arm,
+  // which the toolbar's stable listener doesn't need.
+  const armedSignatureIdRef = useRef(armedSignatureId);
+  armedSignatureIdRef.current = armedSignatureId;
 
   /** Phase 12 — open the Comment-export dialog. The dialog calls
    *  `engine.exportFdf` and hands the bytes to a host-side OS save

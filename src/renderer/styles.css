@@ -2764,6 +2764,35 @@ textarea {
 
 .signatures-layer-active { pointer-events: auto; }
 
+/* ---------------------------------------------------------------------------
+ * Phase 12 - Stamp ghost overlay (B10 click-to-embed).
+ *
+ * Sits above the signatures layer (z-index 3) so the ghost
+ * stays visible when both tools are armed, but below the
+ * annotation / forms layers (2 / 5) so text selection and form
+ * fields still pass through. The overlay is `pointer-events:
+ * none` because placement is driven by the window-level
+ * pointerdown listener inside StampOverlay — the layer is
+ * purely a visual mount point. The ghost body itself is
+ * inline-styled by the component (CSS variables + the active
+ * accent).
+ * ------------------------------------------------------------------------- */
+
+.stamp-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+
+.stamp-layer[data-armed="true"] {
+  cursor: crosshair;
+}
+
+.stamp-ghost {
+  pointer-events: none;
+}
+
 .sig-placement {
   border: 1px dashed transparent;
   border-radius: var(--radius-1);
@@ -2887,6 +2916,14 @@ textarea {
   font-size: var(--fs-xs);
   font-weight: 500;
   cursor: pointer;
+  /* B-sig-pointer — explicit pointer-events so the action-bar
+   * buttons stay clickable even if a future CSS refactor on
+   * .signatures-layer / .sig-pending toggles pointer-events off.
+   * The .sig-action-bar container also sets pointer-events: auto
+   * (above) and the JSX adds an inline pointerEvents: "auto" on
+   * each button — three layers of defense so the Confirm /
+   * Cancel / Delete buttons never silently swallow clicks. */
+  pointer-events: auto;
   transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
 }
 .sig-action-btn:hover {

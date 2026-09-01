@@ -302,14 +302,22 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
       data-armed={armedSignatureId !== null ? "true" : "false"}
       onPointerDown={onGhostClick}
     >
-      {/* Bug 11 — ghost preview. A translucent rectangle that
-          follows the cursor while the signature tool is armed.
-          Rendered behind the actual placements so the live raster
-          (when present) sits on top. */}
+      {/* B-sig-ghost — cursor preview. Renders the armed signature's
+          source content (drawn strokes / typed text) so the user sees
+          exactly what will land on the page on click. The wrapper has
+          `pointer-events: none` so clicks fall through to the layer's
+          pointerdown handler (which creates the pending placement).
+          IMPORTANT: the ghost must NEVER render the stamp icon — even
+          if both tools have ever been armed in the same session, the
+          stamp overlay (StampOverlay) is a separate sibling and its
+          ghost is independent. We render the signature's vector
+          source only; the placeholder for an unloaded signature is a
+          plain empty SVG, not a stamp glyph. */}
       {ghostRect !== null && (
         <div
           className="sig-ghost"
           data-sig-ghost
+          data-sig-ghost-source={armedSig !== undefined ? armedSig.source.kind : "none"}
           style={{
             position: "absolute",
             left: ghostRect.x * cssScale,
@@ -320,7 +328,7 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
           }}
           aria-hidden
         >
-          <SignatureRaster
+          <SignatureGhostContent
             signature={armedSig ?? null}
             rect={ghostRect}
             cssScale={cssScale}
@@ -420,6 +428,7 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
           data-sig-action="confirm"
           aria-label="Confirm signature placement"
           title="Confirm placement"
+          style={{ pointerEvents: "auto" }}
         >
           Confirm
         </button>
@@ -430,6 +439,7 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
           data-sig-action="cancel"
           aria-label="Cancel signature placement"
           title="Cancel (Esc)"
+          style={{ pointerEvents: "auto" }}
         >
           Cancel
         </button>
@@ -440,6 +450,7 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
           data-sig-action="delete"
           aria-label="Discard signature placement"
           title="Discard"
+          style={{ pointerEvents: "auto" }}
         >
           Delete
         </button>
@@ -497,6 +508,53 @@ function SignaturePlacementView(props: SignaturePlacementViewProps): ReactElemen
   );
 }
 
+// B-sig-ghost — ghost preview content. Always pulls from
+// `signature.source` (drawn strokes / typed text). When the
+// saved signature hasn't loaded yet we render an EMPTY svg with
+// `data-sig-ghost-empty="true"` so the test (and the visual
+// layout) can confirm we never accidentally surface a stamp
+// glyph / icon as the signature preview.
+//
+// Historically the ghost's empty-source fallback drew a small
+// dashed-border rect, which read at small sizes like a stamp
+// icon. Operators reported the ghost looked like a stamp — that
+// was the empty-fallback rendering. This component removes that
+// fallback entirely: the cursor ghost shows nothing until the
+// signature's source resolves, and once it does the ghost shows
+// the actual vector content.
+function SignatureGhostContent({
+  signature,
+  rect,
+  cssScale,
+}: {
+  signature: SavedSignature | null;
+  rect: SignaturePlacement["rect"];
+  cssScale: number;
+}): ReactElement {
+  const source = signature?.source ?? null;
+  if (source === null) {
+    // Empty ghost — no dashed border, no icon, no stamp.
+    // The CSS border + accent-soft background on the parent
+    // .sig-ghost div are the only visible elements; this child
+    // svg is a 0-content placeholder so the layout reserves the
+    // rect footprint.
+    return (
+      <svg
+        className="sig-raster sig-raster-empty"
+        data-sig-ghost-empty="true"
+        viewBox={`0 0 ${rect.width} ${rect.height}`}
+        width={rect.width * cssScale}
+        height={rect.height * cssScale}
+        aria-hidden
+      />
+    );
+  }
+  // Source resolved — delegate to the shared raster so the
+  // ghost's content exactly matches what the committed
+  // placement will look like on the page.
+  return <SignatureRaster signature={signature} rect={rect} cssScale={cssScale} />;
+}
+
 // Render the signature's vector source into a fitted <svg>. Drawn sigs
 // use polyline points; typed sigs are rendered as a <text> at a fitted
 // script-style font. We deliberately avoid canvas here so the SVG is
@@ -512,14 +570,19 @@ function SignatureRaster({
 }): ReactElement {
   const svgW = rect.width;
   const svgH = rect.height;
-  // The ghost state may fire before signatures[armedId] resolves —
-  // render an empty rect with a label so the user still sees a
-  // placement-shaped preview while the saved signature loads.
+  // The ghost state may fire before signatures[armedId] resolves.
+  // The ghost path (SignatureGhostContent) now handles the empty
+  // case explicitly; the placement path (here) keeps the dashed
+  // placeholder as a "this is a real placement but the saved
+  // signature failed to load" indicator for committed placements.
+  // Both paths surface the source kind via a data attribute so
+  // tests can verify the right content is rendered.
   const source = signature?.source ?? null;
   if (source === null) {
     return (
       <svg
-        className="sig-raster"
+        className="sig-raster sig-raster-empty"
+        data-sig-raster-empty="true"
         viewBox={`0 0 ${svgW} ${svgH}`}
         width={svgW * cssScale}
         height={svgH * cssScale}
@@ -544,6 +607,7 @@ function SignatureRaster({
     return (
       <svg
         className="sig-raster"
+        data-sig-raster-source="drawn"
         viewBox={`0 0 ${svgW} ${svgH}`}
         width={svgW * cssScale}
         height={svgH * cssScale}
@@ -582,6 +646,7 @@ function SignatureRaster({
   return (
     <svg
       className="sig-raster"
+      data-sig-raster-source="typed"
       viewBox={`0 0 ${svgW} ${svgH}`}
       width={svgW * cssScale}
       height={svgH * cssScale}
