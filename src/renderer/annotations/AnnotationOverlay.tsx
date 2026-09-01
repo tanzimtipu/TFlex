@@ -87,26 +87,6 @@ interface EditorState {
   text: string;
 }
 
-/** B2 — pending placement for one-shot editors (textbox, callout).
- *  Mirrors the signature pending-placement surface: the user types
- *  into an inline editor, then commits via a floating Confirm
- *  button (or cancels / discards). The pending state lives in the
- *  overlay's local state so the editor can dismiss without
- *  committing — the previous blur-to-commit pattern dropped the
- *  editor the moment focus left, which meant a click on the
- *  Cancel/Delete button closed the editor without committing but
- *  also without a clear "cancel" affordance. */
-interface PendingTextboxState {
-  rect: PageRect;
-  text: string;
-}
-
-interface PendingCalloutState {
-  box: PageRect;
-  at: PagePoint;
-  text: string;
-}
-
 function newId(): string {
   return crypto.randomUUID();
 }
@@ -1064,35 +1044,97 @@ function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
   useEffect(() => {
     ref.current?.focus();
   }, []);
+  // B2 — textbox / callout floating action bar (Confirm / Cancel /
+  // Delete). Mirrors the sig-pending pattern: the user explicitly
+  // commits via Confirm (or Ctrl+Enter, or click-outside), and can
+  // also delete the in-progress box without committing via the
+  // Delete button. Without these buttons an accidental page click
+  // would create a stray empty textbox on commit; the user had no
+  // affordance to drop the in-flight placement. The bar renders
+  // below the textarea, positioned in a small floating surface
+  // that is itself positioned absolutely inside the editor wrapper
+  // so it doesn't scroll the textarea out of view as the user
+  // types.
+  const widthCss = Math.max(
+    TEXTBOX_MIN_WIDTH_PT * cssScale,
+    Math.max(text.length, 6) * TEXTBOX_FONT_PT * 0.6 * cssScale + TEXTBOX_PAD_PT * 2 * cssScale,
+  );
   return (
-    <textarea
-      ref={ref}
-      className="ann-editor ann-textbox-editor"
-      data-annotation-editor="textbox"
-      value={text}
-      placeholder="Type text..."
-      onChange={(e): void => onChange(e.target.value)}
-      onBlur={onCommit}
-      onKeyDown={(e): void => {
-        e.stopPropagation();
-        if (e.key === "Escape") {
-          e.preventDefault();
-          onCancel();
-        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          onCommit();
-        }
-      }}
-      onPointerDown={(e): void => e.stopPropagation()}
+    <div
+      className="ann-textbox-wrap"
+      data-annotation-editor-wrap="textbox"
       style={{
+        position: "absolute",
         left: at.x * cssScale,
         top: at.y * cssScale,
         minWidth: TEXTBOX_MIN_WIDTH_PT * cssScale,
-        fontSize: TEXTBOX_FONT_PT * cssScale,
-        lineHeight: TEXTBOX_LINE_HEIGHT,
-        padding: TEXTBOX_PAD_PT * cssScale,
       }}
-    />
+      onPointerDown={(e): void => e.stopPropagation()}
+    >
+      <textarea
+        ref={ref}
+        className="ann-editor ann-textbox-editor"
+        data-annotation-editor="textbox"
+        value={text}
+        placeholder="Type text..."
+        onChange={(e): void => onChange(e.target.value)}
+        // Removed onBlur commit — Confirm button is now the explicit
+        // commit affordance. The textarea losing focus to the
+        // Confirm button (or anywhere else outside the editor) would
+        // otherwise fire onBlur and commit before the user clicked
+        // Cancel / Delete. We keep keyboard shortcuts for
+        // power-users (Ctrl+Enter = commit, Esc = cancel).
+        onKeyDown={(e): void => {
+          e.stopPropagation();
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            onCommit();
+          }
+        }}
+        onPointerDown={(e): void => e.stopPropagation()}
+        style={{
+          width: widthCss,
+          fontSize: TEXTBOX_FONT_PT * cssScale,
+          lineHeight: TEXTBOX_LINE_HEIGHT,
+          padding: TEXTBOX_PAD_PT * cssScale,
+        }}
+      />
+      <div className="ann-textbox-actions" data-annotation-action-bar="textbox">
+        <button
+          type="button"
+          className="ann-textbox-action-btn ann-textbox-action-confirm"
+          onClick={onCommit}
+          data-annotation-action="textbox-confirm"
+          aria-label="Confirm text box"
+          title="Confirm (Ctrl+Enter)"
+        >
+          Confirm
+        </button>
+        <button
+          type="button"
+          className="ann-textbox-action-btn ann-textbox-action-cancel"
+          onClick={onCancel}
+          data-annotation-action="textbox-cancel"
+          aria-label="Cancel text box"
+          title="Cancel (Esc)"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="ann-textbox-action-btn ann-textbox-action-delete"
+          onClick={onCancel}
+          data-annotation-action="textbox-delete"
+          aria-label="Discard text box"
+          title="Discard without saving"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1174,34 +1216,83 @@ function CalloutBoxEditor(
   useEffect(() => {
     ref.current?.focus();
   }, []);
+  // B2 — callout floating action bar. Same affordance as the
+  // textbox editor (see TextBoxEditor for the rationale): Confirm
+  // commits, Cancel / Delete drop the in-flight callout without
+  // touching the engine. Ctrl+Enter / Esc keyboard shortcuts
+  // remain for power users.
   return (
-    <textarea
-      ref={ref}
-      className="ann-editor ann-textbox-editor"
-      data-annotation-editor="callout"
-      value={text}
-      placeholder="Type callout text..."
-      onChange={(e): void => onChange(e.target.value)}
-      onBlur={onCommit}
-      onKeyDown={(e): void => {
-        e.stopPropagation();
-        if (e.key === "Escape") {
-          e.preventDefault();
-          onCancel();
-        } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-          e.preventDefault();
-          onCommit();
-        }
-      }}
-      onPointerDown={(e): void => e.stopPropagation()}
+    <div
+      className="ann-textbox-wrap"
+      data-annotation-editor-wrap="callout"
       style={{
+        position: "absolute",
         left: box.x * cssScale,
         top: box.y * cssScale,
         minWidth: TEXTBOX_MIN_WIDTH_PT * cssScale,
-        fontSize: TEXTBOX_FONT_PT * cssScale,
-        lineHeight: TEXTBOX_LINE_HEIGHT,
-        padding: TEXTBOX_PAD_PT * cssScale,
       }}
-    />
+      onPointerDown={(e): void => e.stopPropagation()}
+    >
+      <textarea
+        ref={ref}
+        className="ann-editor ann-textbox-editor"
+        data-annotation-editor="callout"
+        value={text}
+        placeholder="Type callout text..."
+        onChange={(e): void => onChange(e.target.value)}
+        onKeyDown={(e): void => {
+          e.stopPropagation();
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            onCommit();
+          }
+        }}
+        onPointerDown={(e): void => e.stopPropagation()}
+        style={{
+          width: Math.max(
+            box.width * cssScale,
+            TEXTBOX_MIN_WIDTH_PT * cssScale,
+          ),
+          fontSize: TEXTBOX_FONT_PT * cssScale,
+          lineHeight: TEXTBOX_LINE_HEIGHT,
+          padding: TEXTBOX_PAD_PT * cssScale,
+        }}
+      />
+      <div className="ann-textbox-actions" data-annotation-action-bar="callout">
+        <button
+          type="button"
+          className="ann-textbox-action-btn ann-textbox-action-confirm"
+          onClick={onCommit}
+          data-annotation-action="callout-confirm"
+          aria-label="Confirm callout"
+          title="Confirm (Ctrl+Enter)"
+        >
+          Confirm
+        </button>
+        <button
+          type="button"
+          className="ann-textbox-action-btn ann-textbox-action-cancel"
+          onClick={onCancel}
+          data-annotation-action="callout-cancel"
+          aria-label="Cancel callout"
+          title="Cancel (Esc)"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="ann-textbox-action-btn ann-textbox-action-delete"
+          onClick={onCancel}
+          data-annotation-action="callout-delete"
+          aria-label="Discard callout"
+          title="Discard without saving"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
   );
 }

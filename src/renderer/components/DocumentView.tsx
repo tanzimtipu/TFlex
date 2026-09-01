@@ -38,7 +38,6 @@ import {
   type AnnotationToolAction,
 } from "../annotations/model";
 import {
-  buildPageLabelMap,
   CONTENT_PADDING_PX,
   PAGE_GAP_PX,
   pageAtScrollTop,
@@ -134,6 +133,12 @@ interface DocumentViewProps {
    *  toolbar button only renders when this is wired, so missing
    *  wiring (e.g. tests) doesn't surface a no-op button. */
   onRotateClockwise?: () => void;
+  /** B8 — Delete pages (current / custom range). The toolbar
+   *  button only renders when this is wired, mirroring the
+   *  `onRotateClockwise` opt-in. Disabled when there's only one
+   *  page left. */
+  onDeletePage?: () => void;
+  canDeletePage?: boolean;
   /** Phase 3 — annotations. The host (App) holds the canonical list; this
    *  view threads it through to each PageView's overlay and the rail's
    *  annotations panel. */
@@ -149,6 +154,23 @@ interface DocumentViewProps {
   signatures?: SignaturePlacement[];
   savedSignatures?: SavedSignature[];
   armedSignatureId?: string | null;
+  /** B10 — armed stamp. When non-null, every PageView shows a
+   *  ghost preview following the cursor; clicking a page embeds
+   *  the stamp at the click point. */
+  armedStamp?: {
+    stampId: import("../../shared/types").StampId;
+    pngBytes: Uint8Array;
+    pngWidth: number;
+    pngHeight: number;
+  } | null;
+  onPlaceStamp?: (args: {
+    stampId: import("../../shared/types").StampId;
+    pngBytes: Uint8Array;
+    pngWidth: number;
+    pngHeight: number;
+    page: number;
+    atPt: { x: number; y: number };
+  }) => Promise<void> | void;
   /** Place a saved signature on a specific page at the given rect. The
    *  page number is threaded through so the host doesn't have to track
    *  which page the click landed on; SignaturesOverlay already knows
@@ -299,6 +321,8 @@ export function DocumentView({
   onOptimize,
   onAuditSpace,
   onRotateClockwise,
+  onDeletePage,
+  canDeletePage = true,
   annotations = [],
   onCreateAnnotation,
   onEditAnnotation,
@@ -309,6 +333,8 @@ export function DocumentView({
   signatures = [],
   savedSignatures = [],
   armedSignatureId = null,
+  armedStamp = null,
+  onPlaceStamp,
   onPlaceSignature,
   onMoveSignature,
   onDeleteSignature,
@@ -1425,6 +1451,8 @@ export function DocumentView({
           onOptimize={(): void => onOptimize?.()}
           onAuditSpace={(): void => onAuditSpace?.()}
           onRotateClockwise={onRotateClockwise}
+          onDeletePage={onDeletePage}
+          canDeletePage={canDeletePage}
         />
         <AnnotationToolbar
           state={annTool}
@@ -1549,6 +1577,12 @@ export function DocumentView({
                       onPlaceSignature={onPlaceSignatureStable}
                       onMoveSignature={onMoveSignatureStable}
                       onDeleteSignature={onDeleteSignatureStable}
+                      // B10 — armed stamp ghost + click-to-embed.
+                      // The stamp ghost follows the cursor on
+                      // every page; clicking embeds the stamp at
+                      // the click point.
+                      armedStamp={armedStamp}
+                      onPlaceStamp={onPlaceStamp}
                       editModeOpen={editModeOpen}
                       edit={editProp}
                     />

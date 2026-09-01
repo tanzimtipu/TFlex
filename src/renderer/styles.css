@@ -746,6 +746,26 @@ textarea {
   border-color: var(--accent-hover);
 }
 
+/* B8 — destructive primary (e.g. Delete). The accent colour reads
+ * as "go", but a destructive action should be visually distinct so
+ * the user doesn't accidentally commit. The error token's solid
+ * colour + matching border + white text on hover gives the
+ * button a clear "this will destroy data" affordance without
+ * crossing into alarm-red. */
+.btn-danger {
+  background: var(--error);
+  color: #ffffff;
+  border-color: var(--error);
+}
+.btn-danger:hover:not([disabled]) {
+  background: var(--error-hover, #b91c1c);
+  border-color: var(--error-hover, #b91c1c);
+}
+.btn-danger[disabled] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .btn-secondary {
   background: var(--bg-raised);
   color: var(--fg-strong);
@@ -2126,6 +2146,78 @@ textarea {
 }
 
 .ann-textbox-editor:focus { border-color: var(--accent); }
+
+/* B2 — textbox / callout editor wrapper. The wrapper is
+ * absolutely positioned at the click point (its inline style on
+ * the JSX side). It contains the textarea + a floating action
+ * bar (Confirm / Cancel / Delete) below it. The wrapper itself
+ * is position: absolute so the action bar's negative `top` (for
+ * the above-rect placement when the user typed near the bottom
+ * of the page) has a predictable positioning context — same
+ * pattern as the sig-pending wrapper. */
+.ann-textbox-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 4;
+}
+
+.ann-textbox-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  padding: 3px;
+  box-shadow: var(--shadow-popover);
+  font-size: var(--fs-xs);
+  color: var(--fg);
+  /* B5-equivalent guard: the bar is a child of an absolutely
+   * positioned wrapper. Its parent is pointer-events: auto by
+   * default, but the action bar can fall partly outside the
+   * parent's bounding box (when anchored above) — keep this
+   * explicit so any future refactor that disables the parent's
+   * pointer-events still leaves the bar clickable. */
+  pointer-events: auto;
+  align-self: flex-start;
+}
+
+.ann-textbox-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: var(--radius-1);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+}
+.ann-textbox-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+.ann-textbox-action-confirm {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  border-color: var(--accent);
+}
+.ann-textbox-action-confirm:hover {
+  background: var(--accent-hover);
+  color: var(--fg-on-accent);
+  border-color: var(--accent-hover);
+}
+.ann-textbox-action-delete {
+  color: var(--error);
+}
+.ann-textbox-action-delete:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
 
 .ann-note-editor {
   padding: var(--sp-2);

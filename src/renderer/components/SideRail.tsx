@@ -1,13 +1,13 @@
 import { Images, List, MessageSquare, Undo2, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveOutlinePage, type OutlineNode } from '../pdf/pdfjs';
 import { computeThumbGeometry } from './thumbGeometry';
 import type { EngineState } from '../engine/types';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
-import { buildPageLabelMap, resolvePageLabel } from './pageGeometry';
+import { buildPageLabelMap } from './pageGeometry';
 
 interface SideRailProps {
   doc: PDFDocumentProxy;
@@ -105,10 +105,6 @@ export function SideRail(props: SideRailProps) {
   // labels (callers short-circuit).
   const pageLabelMap = useMemo(
     () => buildPageLabelMap(engineState.pageLabels),
-    [engineState.pageLabels],
-  );
-  const labelForPage = useCallback(
-    (page: number): string | null => resolvePageLabel(page, engineState.pageLabels),
     [engineState.pageLabels],
   );
 

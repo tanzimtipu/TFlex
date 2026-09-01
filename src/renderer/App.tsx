@@ -85,6 +85,7 @@ import { CropPagesDialog } from "./components/CropPagesDialog";
 import { StampDialog } from "./components/StampDialog";
 import { CommentExportDialog } from "./components/CommentExportDialog";
 import { CommentImportDialog } from "./components/CommentImportDialog";
+import { DeletePageDialog } from "./components/DeletePageDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
 import {
@@ -324,6 +325,11 @@ export function App(): ReactElement {
   const [stampOpen, setStampOpen] = useState(false);
   const [commentExportOpen, setCommentExportOpen] = useState(false);
   const [commentImportOpen, setCommentImportOpen] = useState(false);
+  // B8 — delete pages dialog. The toolbar's Delete control opens
+  // this dialog; the rail's per-thumb delete still flows through
+  // the existing onDelete callback directly (no dialog) so a
+  // single-thumb click is unaffected.
+  const [deletePageOpen, setDeletePageOpen] = useState(false);
   /** Per-page sizes (PDF points, top-left origin) for the active
    *  doc. The Crop dialog reads this map to draw per-page
    *  previews. The host seeds it lazily when the dialog opens so
@@ -390,6 +396,20 @@ export function App(): ReactElement {
   // While non-null, the next click on a page places it there. The
   // toolbar's Sign button toggles between this and "open the manager".
   const [armedSignatureId, setArmedSignatureId] = useState<string | null>(null);
+  // B10 — armed stamp. While non-null, the next click on a page
+  // embeds the renderer-drawn stamp raster at the click point. The
+  // ghost overlay (rendered by PageView when this is set) follows
+  // the cursor while the user mouses over the page so they can
+  // see exactly where the stamp will land. The shape matches
+  // `armedSignatureId` so the existing per-tab-override plumbing
+  // (PageView re-renders only when its prop identity changes) needs
+  // no special handling.
+  const [armedStamp, setArmedStamp] = useState<{
+    stampId: StampId;
+    pngBytes: Uint8Array;
+    pngWidth: number;
+    pngHeight: number;
+  } | null>(null);
   // Page the user last clicked while the Sign tool was armed. We use
   // this to scroll-to-page in the placement flow so the click target is
   // visible (DocumentView's overlay catches the pointerdown and places
@@ -410,6 +430,12 @@ export function App(): ReactElement {
   const savedSignaturesRef = useRef(savedSignatures);
   savedSignaturesRef.current = savedSignatures;
   const activeTabIdRefLocal = useRef<string | null>(null);
+  // B7 — keep the latest `editModeOpen` in a ref so the tab close
+  // handler can read it synchronously without taking the value as
+  // a dependency (the close handler is otherwise stable and we
+  // don't want to re-create it on every toggle).
+  const editModeOpenRef = useRef(editModeOpen);
+  editModeOpenRef.current = editModeOpen;
   // Menu-action handler reads the latest tabs / active id without
   // re-subscribing on every change. Mirrors the openTabsRef pattern
   // above so the listener doesn't churn.
@@ -905,6 +931,18 @@ export function App(): ReactElement {
     [settings, trackAndSave],
   );
 
+  // B7 — clear every tool/arm state on tab close. The annotation
+  // tool state + edit state are per-tab (lives in DocumentView +
+  // openTabs[id].edit) and unmount with the tab, so they don't
+  // need explicit cleanup. App-level state (the edit mode toggle,
+  // the armed signature id, the in-flight flatten/optimize
+  // confirmations) must be reset explicitly so a stale "Sign tool
+  // active" pill doesn't carry over to the next tab the user
+  // opens. The flatten / optimize / audit / stamp / crop / renumber
+  // dialogs gate on `activeTabIdRefLocal.current !== null` so they
+  // auto-close when the active tab disappears; the host still calls
+  // `set*Open(false)` to drop the dialog state immediately rather
+  // than waiting for the next render to mount a new active tab.
   const closeTab = useCallback((id: string): void => {
     setOpenTabs((prev) => {
       const next = { ...prev };
@@ -924,6 +962,39 @@ export function App(): ReactElement {
       stubRendererEngine.dispose(open.session.engineDocId);
     }
     dispatchTabs({ type: "close", id });
+    // B7 — tool / arm state cleanup. The user armed the Sign tool
+    // and the "armed" pill stays on the toolbar after the active
+    // tab is closed (because the App-level state outlives the
+    // tab). Reset it so the next open tab doesn't inherit a stale
+    // armed state. The same applies to Edit mode (a per-tab
+    // toggle that lives App-level for the toolbar/palette) and
+    // to every dialog that was scoped to the now-closed tab.
+    setArmedSignatureId(null);
+    setArmedStamp(null);
+    if (editModeOpenRef.current) {
+      setEditModeOpen(false);
+    }
+    // Drop any open dialog that targeted the now-closed tab. The
+    // menus / toolbar buttons that opened these dialogs all gate
+    // on `activeTabIdRefLocal.current`, so once the tab is gone
+    // the dialogs would be "zombie" modals. Closing them here
+    // keeps the UI clean.
+    setFlattenOpen(false);
+    setOptimizeOpen(false);
+    setAuditOpen(false);
+    setSaveAsOpen(false);
+    setOcrOpen(false);
+    setCropPagesOpen(false);
+    setStampOpen(false);
+    setRenumberPagesOpen(false);
+    setReplacePagesOpen(false);
+    setInsertPagesOpen(false);
+    setCreateOpen(false);
+    setExportOpen(false);
+    setTextExportOpen(false);
+    setDocxExportOpen(false);
+    setCommentExportOpen(false);
+    setCommentImportOpen(false);
   }, []);
 
   const activateTab = useCallback((id: string): void => {
@@ -1628,11 +1699,21 @@ export function App(): ReactElement {
     const onFlattenButton = (): void => {
       setFlattenOpen(true);
     };
+    // B10 — Esc inside the StampOverlay dispatches this event so
+    // the overlay can disarm without owning the host's stamp
+    // state. The toolbar's stamp button has the same effect
+    // (re-clicking an armed stamp toggles it off via
+    // `onStampClick`).
+    const onStampDisarm = (): void => {
+      setArmedStamp(null);
+    };
     window.addEventListener("tflex:sign-button", onSignButton);
     window.addEventListener("tflex:flatten-button", onFlattenButton);
+    window.addEventListener("tflex:stamp-disarm", onStampDisarm);
     return (): void => {
       window.removeEventListener("tflex:sign-button", onSignButton);
       window.removeEventListener("tflex:flatten-button", onFlattenButton);
+      window.removeEventListener("tflex:stamp-disarm", onStampDisarm);
     };
   }, [armedSignatureId]);
 
@@ -2852,9 +2933,18 @@ pushToast(
 
   /** Phase 12 — open the Stamp dialog. The dialog confirms with
    *  the renderer-drawn PNG raster; we stash the raster in
-   *  `armedStamp` and wait for the next page click to place it. */
+   *  `armedStamp` and wait for the next page click to place it
+   *  (B10 click-to-embed flow). The dialog's "Place on page" button
+   *  no longer bakes the stamp directly — instead it arms the
+   *  stamp so the next page click embeds it at the cursor point.
+   *  Esc / a second Stamp toolbar click disarms. */
   const onStampClick = useCallback((): void => {
     if (activeTabIdRefLocal.current === null) return;
+    if (armedStampRef.current !== null) {
+      // Already armed — toggle off.
+      setArmedStamp(null);
+      return;
+    }
     setStampOpen(true);
   }, []);
 
@@ -2863,49 +2953,92 @@ pushToast(
   }, []);
 
   const onStampConfirm = useCallback(
-    async (choice: {
+    (choice: {
       stampId: StampId;
       pngBytes: Uint8Array;
       pngWidth: number;
       pngHeight: number;
       page: number;
-    }): Promise<void> => {
+    }): void => {
       setStampOpen(false);
+      // B10 — arm the stamp instead of immediately embedding. The
+      // ghost overlay appears on every page and follows the
+      // cursor; the next click on a page embeds the stamp at the
+      // click point. The dialog's `page` field is ignored in the
+      // click-to-place flow — the click wins, the dialog's page
+      // is just a default-size hint. We retain the page count
+      // (via `size`) so the ghost's default width / height match
+      // what the embedded stamp would have been on the dialog's
+      // picked page.
+      void choice.page;
+      setArmedStamp({
+        stampId: choice.stampId,
+        pngBytes: choice.pngBytes,
+        pngWidth: choice.pngWidth,
+        pngHeight: choice.pngHeight,
+      });
+      pushToast(
+        "info",
+        `Click a page to place the ${choice.stampId} stamp. Press Esc to cancel.`,
+      );
+    },
+    [pushToast],
+  );
+
+  /** B10 — handle a stamp click on a page. Resolves the click
+   *  point in page-space, computes the stamp's rect, and calls
+   *  `engine.addStamp`. On success the proxy is refreshed (same
+   *  pattern as the old centered flow) and the armed stamp is
+   *  cleared. */
+  const onPlaceStamp = useCallback(
+    async (args: {
+      stampId: StampId;
+      pngBytes: Uint8Array;
+      pngWidth: number;
+      pngHeight: number;
+      page: number;
+      atPt: { x: number; y: number };
+    }): Promise<void> => {
       const activeId = activeTabIdRefLocal.current;
       if (activeId === null) return;
       const open = openTabsRef.current[activeId];
       if (open === undefined) return;
-      // Look up the picked page's dimensions so the stamp lands
-      // centered. Falls back to US Letter for unknown pages (the
-      // dialog should always supply a valid page; the fallback is
-      // defensive against a stale dialog render).
-      const size = activePageSizes[choice.page] ?? {
+      const size = activePageSizes[args.page] ?? {
         widthPt: 612,
         heightPt: 792,
       };
       const aspect =
-        choice.pngHeight === 0
-          ? 1
-          : choice.pngWidth / choice.pngHeight;
+        args.pngHeight === 0 ? 1 : args.pngWidth / args.pngHeight;
       const targetHeightPt = Math.min(80, size.heightPt * 0.12);
       const targetWidthPt = Math.max(
         120,
         Math.min(size.widthPt * 0.4, targetHeightPt * aspect),
       );
+      // Anchor the stamp so the click point lands at the stamp's
+      // top-left corner, with a small visual inset so the click
+      // point sits inside the stamp body rather than on its edge.
+      const x = Math.max(
+        0,
+        Math.min(size.widthPt - targetWidthPt, args.atPt.x),
+      );
+      const y = Math.max(
+        0,
+        Math.min(size.heightPt - targetHeightPt, args.atPt.y),
+      );
       const rect = {
-        x: (size.widthPt - targetWidthPt) / 2,
-        y: (size.heightPt - targetHeightPt) / 2,
+        x,
+        y,
         width: targetWidthPt,
         height: targetHeightPt,
       };
       const res = await engineRef.current.addStamp?.(
         open.session.engineDocId,
         {
-          page: choice.page,
+          page: args.page,
           rect,
-          stampId: choice.stampId,
-          name: choice.stampId,
-          pngBytes: choice.pngBytes,
+          stampId: args.stampId,
+          name: args.stampId,
+          pngBytes: args.pngBytes,
         },
       );
       if (res === undefined) {
@@ -2920,23 +3053,24 @@ pushToast(
         return;
       }
       noteOpApplied(activeId, res.value);
-      // B10 / B19 — addStamp bakes the renderer-drawn stamp raster
-      // into the engine's pdfDoc. The renderer's `doc` proxy still
-      // points at the pre-stamp bytes; without a refresh the stamp
-      // is invisible until the user saves + reopens. Rebuild the
-      // proxy via the Phase 11 refresh hook — same pattern crop /
-      // merge / replace / OCR / flatten use.
+      // B10 / B19 — refresh the proxy so the baked stamp is
+      // visible without a save+reopen cycle (same pattern as
+      // crop / merge / replace / OCR / flatten).
       const refreshFn = refreshDocProxyForRef.current;
       if (refreshFn !== null) {
         void refreshFn(activeId).catch(() => undefined);
       }
+      setArmedStamp(null);
       pushToast(
         "info",
-        `Placed ${choice.stampId} stamp on page ${choice.page}.`,
+        `Placed ${args.stampId} stamp on page ${args.page}.`,
       );
     },
     [activePageSizes, noteOpApplied, pushToast],
   );
+
+  const armedStampRef = useRef(armedStamp);
+  armedStampRef.current = armedStamp;
 
   /** Phase 12 — open the Comment-export dialog. The dialog calls
    *  `engine.exportFdf` and hands the bytes to a host-side OS save
@@ -2987,6 +3121,36 @@ pushToast(
       );
     },
     [pushToast],
+  );
+
+  // ---- Phase 12: Delete pages dialog (B8) ----
+
+  /** Open the B8 delete pages dialog against the active tab. The
+   *  toolbar / Tools palette both funnel through this; the rail's
+   *  per-thumb delete still uses `onDelete(tabId, [page])`
+   *  directly (no dialog) for the single-thumb case. */
+  const onDeletePageClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setDeletePageOpen(true);
+  }, []);
+
+  const onCancelDeletePage = useCallback((): void => {
+    setDeletePageOpen(false);
+  }, []);
+
+  const onDeletePageConfirm = useCallback(
+    (choice: { mode: "current" | "range"; pages: number[] }): void => {
+      setDeletePageOpen(false);
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return;
+      if (choice.pages.length === 0) return;
+      void applyEngineOp(activeId, { kind: "delete", pages: choice.pages });
+      pushToast(
+        "info",
+        `Deleted ${choice.pages.length} page${choice.pages.length === 1 ? "" : "s"}.`,
+      );
+    },
+    [applyEngineOp, pushToast],
   );
 
   // ---- Phase 11: OCR (recognize text) ----
@@ -4492,6 +4656,12 @@ pushToast(
                     // user sees on screen; rotating that page is
                     // what the button does.
                     onRotateClockwise={(): void => onRotateClockwise(meta.id)}
+                    // B8 — toolbar Delete pages button. Disabled
+                    // when only one page remains so the user can't
+                    // drop below the "must keep at least one"
+                    // floor.
+                    onDeletePage={onDeletePageClick}
+                    canDeletePage={engine.engineState.pageCount > 1}
                     annotations={ann.annotations}
                     onCreateAnnotation={ann.createAnnotation}
                     onEditAnnotation={ann.editAnnotation}
@@ -4505,6 +4675,9 @@ pushToast(
                     onPlaceSignature={fs.onPlaceSignature}
                     onMoveSignature={fs.onMoveSignature}
                     onDeleteSignature={fs.onDeleteSignature}
+                    // B10 — armed stamp ghost + click-to-embed.
+                    armedStamp={armedStamp}
+                    onPlaceStamp={onPlaceStamp}
                     toolsPaletteOpen={toolsPaletteOpen}
                     onToolsPaletteToggle={(): void => setToolsPaletteOpen((v) => !v)}
                     annotationPalette={
@@ -4995,6 +5168,22 @@ pushToast(
         runImportFdf={runImportFdfForActiveTab}
         onConfirm={onCommentImportConfirm}
         onClose={onCancelCommentImport}
+      />
+      <DeletePageDialog
+        open={deletePageOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        currentPage={(() => {
+          const id = activeTabIdRefLocal.current;
+          if (id === null) return 1;
+          const tab = openTabsRef.current[id];
+          return tab ? Math.max(1, Math.floor(tab.persisted.currentPage)) : 1;
+        })()}
+        onConfirm={onDeletePageConfirm}
+        onClose={onCancelDeletePage}
       />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
       <AboutDialog

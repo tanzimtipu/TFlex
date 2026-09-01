@@ -6,6 +6,7 @@ import { AnnotationOverlay, type TextItemGeom } from '../annotations/AnnotationO
 import { FormsOverlay } from '../forms/FormsOverlay';
 import { SignaturesOverlay } from '../signatures/SignaturesOverlay';
 import { EditOverlay } from '../edit/EditOverlay';
+import { StampOverlay } from '../annotations/StampOverlay';
 import type {
   FormField,
   SavedSignature,
@@ -67,6 +68,24 @@ interface PageViewProps {
   onPlaceSignature?: (signatureId: string, page: number, rect: SignaturePlacement["rect"]) => void;
   onMoveSignature?: (placementId: string, rect: SignaturePlacement["rect"]) => void;
   onDeleteSignature?: (placementId: string) => void;
+  // -- Phase 12 / B10: stamp --
+  /** When non-null, the page shows a ghost preview of the
+   *  armed stamp following the cursor; clicking embeds the
+   *  stamp at the click point. */
+  armedStamp?: {
+    stampId: import('../../shared/types').StampId;
+    pngBytes: Uint8Array;
+    pngWidth: number;
+    pngHeight: number;
+  } | null;
+  onPlaceStamp?: (args: {
+    stampId: import('../../shared/types').StampId;
+    pngBytes: Uint8Array;
+    pngWidth: number;
+    pngHeight: number;
+    page: number;
+    atPt: { x: number; y: number };
+  }) => void;
   // -- Phase 10: Edit-content overlay --
   /** Edit mode is open. The EditOverlay is mounted only when this
    *  is true; with it false the layer is invisible and pointer-
@@ -193,6 +212,8 @@ export function PageView(props: PageViewProps) {
     onPlaceSignature,
     onMoveSignature,
     onDeleteSignature,
+    armedStamp = null,
+    onPlaceStamp,
     editModeOpen = false,
     edit = null,
     rotation = 0,
@@ -553,6 +574,28 @@ export function PageView(props: PageViewProps) {
         onPlace={(id, r): void => onPlaceSignature?.(id, pageNumber, r)}
         onMove={(id, r): void => onMoveSignature?.(id, r)}
         onDelete={(id): void => onDeleteSignature?.(id)}
+      />
+      {/* B10 — stamp ghost + click-to-embed. Renders nothing when
+          no stamp is armed; otherwise follows the cursor and
+          embeds the stamp on the next pointerdown. */}
+      <StampOverlay
+        page={pageNumber}
+        pageWidthPt={widthPt}
+        pageHeightPt={heightPt}
+        cssScale={cssScale}
+        armed={armedStamp}
+        onPlace={(args): void => {
+          if (onPlaceStamp !== undefined) {
+            void onPlaceStamp({
+              stampId: args.stampId,
+              pngBytes: args.pngBytes,
+              pngWidth: args.pngWidth,
+              pngHeight: args.pngHeight,
+              page: args.page,
+              atPt: args.atPt,
+            });
+          }
+        }}
       />
       {editModeOpen && edit !== null && (
         <EditOverlay

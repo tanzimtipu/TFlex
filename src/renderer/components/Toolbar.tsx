@@ -16,6 +16,7 @@ import {
   Save,
   Scissors,
   Search,
+  Trash2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import type { ZoomMode } from '../state/zoom';
@@ -76,6 +77,11 @@ interface ToolbarProps {
    *  owns the open/closed state. */
   editModeOpen?: boolean;
   onEditModeToggle?: () => void;
+  /** B8 — Delete pages. Opens a dialog (current / custom range)
+   *  that the host wires to `engine.applyOp({kind:"delete"})`.
+   *  Disabled when there's only one page left. */
+  onDeletePage?: () => void;
+  canDeletePage?: boolean;
 }
 
 export function Toolbar(props: ToolbarProps) {
@@ -109,21 +115,14 @@ export function Toolbar(props: ToolbarProps) {
     onRotateClockwise,
     editModeOpen = false,
     onEditModeToggle,
+    onDeletePage,
+    canDeletePage = true,
   } = props;
 
   const [pageInput, setPageInput] = useState(String(page));
   useEffect(() => {
     setPageInput(String(page));
   }, [page]);
-
-  // Phase 12 — show the logical label in the input when present.
-  // The user can still type a numeric page number to jump; the
-  // label re-appears on the next page navigation. We don't try
-  // to parse the label back into a number (roman numerals etc.
-  // would need a converter we don't ship); the input is purely
-  // numeric-driven, the label is a display affordance that
-  // mirrors what a /PageLabels-aware PDF viewer shows.
-  const indicatorValue = pageLabel ?? String(page);
 
   const commit = (): void => {
     onJump(pageInput);
@@ -350,6 +349,20 @@ export function Toolbar(props: ToolbarProps) {
           >
             <Pencil size={15} aria-hidden />
             <span className="tool-btn-label">Edit</span>
+          </button>
+        )}
+        {onDeletePage !== undefined && (
+          <button
+            type="button"
+            className="tool-btn tool-btn-with-label"
+            onClick={onDeletePage}
+            disabled={!canDeletePage}
+            title={canDeletePage ? 'Delete current page or a custom range' : 'Documents must keep at least one page'}
+            aria-label="Delete pages"
+            data-toolbar-delete-pages
+          >
+            <Trash2 size={15} aria-hidden />
+            <span className="tool-btn-label">Delete</span>
           </button>
         )}
       </div>
