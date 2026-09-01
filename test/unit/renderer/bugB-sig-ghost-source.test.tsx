@@ -12,10 +12,16 @@
 //     <path> strokes at the source's drawn coordinates.
 //   - When `signature.source` is a typed signature, the ghost shows
 //     a <text> element with the typed string.
-//   - When `signature` is null (not loaded yet), the ghost renders an
-//     EMPTY svg — no dashed placeholder, no icon. The parent .sig-ghost
-//     div still shows its translucent accent-soft background so the
-//     user can see where the cursor is, but the inside is blank.
+//   - When `signature` is null (not loaded yet), the ghost renders
+//     an "armed footprint" placeholder — a dashed <rect> + a
+//     centered "Signature" <text> label — so the user sees a
+//     clearly-visible armed marker even before the saved
+//     signature's source bytes arrive. The placeholder is NOT a
+//     stamp icon: it's a vector SVG inside a dashed rect, with a
+//     text label that names it. The parent .sig-ghost div still
+//     shows its translucent accent-soft background so the user
+//     can see where the cursor is. The placeholder disappears the
+//     moment the source resolves (real vector content takes over).
 //
 // The ghost must also stamp the source kind onto the wrapper element
 // as a data attribute so tests / future analytics can confirm the
@@ -212,7 +218,7 @@ describe("B-sig-ghost — ghost renders the signature source, not the stamp", ()
     expect(ghost?.querySelector("img")).toBeNull();
   });
 
-  it("with an armed ID that doesn't resolve to a saved signature, the ghost renders an empty svg (not the stamp icon)", () => {
+  it("with an armed ID that doesn't resolve to a saved signature, the ghost renders a visible 'armed footprint' placeholder (not invisible, not a stamp icon)", () => {
     // The host arms an ID before the signature list has loaded.
     const { host } = mountOverlay({
       signatures: {}, // empty
@@ -225,15 +231,31 @@ describe("B-sig-ghost — ghost renders the signature source, not the stamp", ()
     // The wrapper reports the source is "none" so the host (and
     // tests) can detect the unloaded state.
     expect(ghost?.getAttribute("data-sig-ghost-source")).toBe("none");
-    // The ghost's inner svg must carry data-sig-ghost-empty="true"
-    // and must contain NO <path>, <text>, <rect>, or <img> children —
-    // i.e. nothing that could be visually misread as a stamp icon.
-    const empty = ghost?.querySelector("[data-sig-ghost-empty='true']");
-    expect(empty).not.toBeNull();
-    expect(empty?.querySelector("path")).toBeNull();
-    expect(empty?.querySelector("text")).toBeNull();
-    expect(empty?.querySelector("rect")).toBeNull();
-    expect(empty?.querySelector("img")).toBeNull();
+    // B-sig-armed-placeholder — the ghost placeholder must be
+    // clearly VISIBLE when the armed signature's source hasn't
+    // resolved yet (the prior empty-svg fallback was reported as
+    // "invisible"). The placeholder paints a dashed footprint
+    // <rect> + a centered "Signature" <text> label inside the
+    // ghost's <svg>, both with data-sig-ghost-empty="true" on
+    // the wrapper so tests / analytics can confirm the
+    // unloaded-but-armed state. The dashed rect + label are the
+    // EXPLICIT fix for the "ghost looks empty" report.
+    const placeholder = ghost?.querySelector("[data-sig-ghost-empty='true']");
+    expect(placeholder).not.toBeNull();
+    // The placeholder contains exactly one footprint <rect> and
+    // exactly one <text> label — both visible.
+    const rects = placeholder?.querySelectorAll("rect");
+    expect(rects?.length).toBe(1);
+    expect(placeholder?.querySelector("text")).not.toBeNull();
+    expect(placeholder?.querySelector("text")?.textContent).toBe("Signature");
+    // No stamp PNG / <img> present — the placeholder is a vector
+    // SVG, never an image. This guards against future
+    // regressions that accidentally surface a stamp glyph in
+    // the signature ghost path.
+    expect(placeholder?.querySelector("img")).toBeNull();
+    // No drawn-source <path> either — those only appear once the
+    // signature's vector source resolves.
+    expect(placeholder?.querySelector("path")).toBeNull();
   });
 
   it("the ghost wrapper itself has pointer-events: none so clicks fall through to the layer's pointerdown", () => {

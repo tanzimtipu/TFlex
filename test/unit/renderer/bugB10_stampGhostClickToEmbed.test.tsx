@@ -233,7 +233,18 @@ describe("B10 — StampOverlay ghost + click-to-embed", () => {
   // stamp an unexpected location. The fix dispatches
   // `tflex:stamp-disarm` on outside-page clicks so the host
   // can clear `armedStamp`, mirroring the Esc disarm path.
-  it("clicking outside the page bounds dispatches tflex:stamp-disarm", () => {
+  //
+  // Updated (B10-followup): disarm now fires on the `click`
+  // event phase, NOT on `pointerdown`. The previous
+  // pointerdown disarm raced the host's React onClick handlers
+  // (theme toggle, toolbar buttons) — the re-render between
+  // pointerdown and click swallowed the click, so the user
+  // had to click the toolbar button twice. The fix routes the
+  // disarm through the click event so the host's click
+  // handler runs first. This test exercises both arms of the
+  // contract: pointerdown alone does NOT disarm, but the
+  // followup click DOES.
+  it("clicking outside the page bounds dispatches tflex:stamp-disarm on click (not on pointerdown)", () => {
     const { host } = mountOverlay({
       armed: makeArmed(),
       onPlace: (): void => undefined,
@@ -244,6 +255,9 @@ describe("B10 — StampOverlay ghost + click-to-embed", () => {
       disarmEvent = e;
     };
     window.addEventListener("tflex:stamp-disarm", onDisarm);
+    // Pointerdown alone MUST NOT disarm (the disarm-on-pointerdown
+    // regression was the root cause of the "theme toggle needs 2
+    // clicks" defect).
     act((): void => {
       window.dispatchEvent(
         new PointerEvent("pointerdown", {
@@ -251,6 +265,17 @@ describe("B10 — StampOverlay ghost + click-to-embed", () => {
           // clientX > 800 = past the right edge of the host,
           // which is the only thing the overlay uses to decide
           // "this click landed on the page".
+          clientX: 1200,
+          clientY: 400,
+        }),
+      );
+    });
+    expect(disarmEvent).toBeNull();
+    // The followup click DOES disarm (mirroring the Esc path).
+    act((): void => {
+      window.dispatchEvent(
+        new MouseEvent("click", {
+          bubbles: true,
           clientX: 1200,
           clientY: 400,
         }),

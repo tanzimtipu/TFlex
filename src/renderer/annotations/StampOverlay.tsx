@@ -81,8 +81,8 @@ export function StampOverlay(props: StampOverlayProps): ReactElement | null {
       const y = (e.clientY - rect.top) / cssScale;
       // Only update the ghost when the cursor is inside the page
       // bounds; otherwise we keep the last on-page position so the
-      // preview doesn't snap to (0,0) when the user moves the
-      // cursor over a sibling panel.
+      // preview doesn't snap to (0,0) when the cursor moves over a
+      // sibling panel.
       if (
         x < 0 ||
         y < 0 ||
@@ -93,13 +93,52 @@ export function StampOverlay(props: StampOverlayProps): ReactElement | null {
       }
       setPt({ x, y });
     };
+    // B10-followup — disarm logic. The previous implementation
+    // listened on `pointerdown` capture and disarmed as soon as
+    // a click landed outside the page bounds. That raced with the
+    // host's click handlers: the React `onClick` on the theme
+    // toggle / toolbar buttons needs the full pointerdown →
+    // pointerup → click chain to fire. Disarming on `pointerdown`
+    // re-rendered the React tree (armedStamp: non-null → null)
+    // between pointerdown and click, which meant the click
+    // element was either gone (component unmounted) or the React
+    // synthetic click was suppressed — the user had to click
+    // the theme toggle twice.
+    //
+    // Fix: route the disarm through the `click` event phase
+    // (after pointerup, when the click is fully resolved), AND
+    // only disarm when the click target is NOT an interactive
+    // UI control. The previous inside-editor/action-bar guard
+    // stays on the pointerdown handler (so clicking those still
+    // suppresses the embed), but the disarm itself is deferred
+    // to the click event so the host's own click handlers run
+    // first.
+    //
+    // Two listeners:
+    //   - onDown (pointerdown): suppress the embed if the target
+    //     sits inside an editor / action bar; do NOT disarm.
+    //   - onClick (click): place the stamp if the click is on
+    //     the page; otherwise disarm (only when the target is not
+    //     an interactive UI control — so toolbar buttons receive
+    //     their click handler before we tear down the arming).
+    const isInteractive = (target: EventTarget | null): boolean => {
+      if (target === null) return false;
+      if (!(target instanceof Element)) return false;
+      const t = target as Element & {
+        closest?: (sel: string) => Element | null;
+      };
+      if (typeof t.closest !== "function") return false;
+      return (
+        t.closest(
+          ".ann-editor, .sig-action-bar, .ann-textbox-wrap, .ann-note-editor, button, input, textarea, select, a[href], [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
+        ) !== null
+      );
+    };
     const onDown = (e: PointerEvent): void => {
-      // Catch pointerdown at the window level so the user can
-      // place the stamp anywhere on the page (including over
-      // other overlays). We bail if the click target is a
-      // textbox/callout editor or the action bar — those have
-      // their own pointer handling and shouldn't trigger a
-      // stamp embed.
+      // Bail if the click target is a textbox/callout editor,
+      // the signature action bar, or any interactive UI control.
+      // These have their own pointer handling and shouldn't
+      // trigger a stamp embed.
       //
       // We do NOT call stopPropagation / preventDefault here.
       // Doing so used to swallow every click while the stamp
@@ -108,12 +147,15 @@ export function StampOverlay(props: StampOverlayProps): ReactElement | null {
       // signature bar after arming a stamp. The placement
       // check below decides what to do; everything else passes
       // through unchanged so the rest of the UI keeps working.
-      const t = e.target;
-      if (t instanceof Element) {
-        if (t.closest(".ann-editor, .sig-action-bar, .ann-textbox-wrap, .ann-note-editor") !== null) {
-          return;
-        }
+      if (isInteractive(e.target)) {
+        return;
       }
+      // For page-canvas clicks we do the placement math on the
+      // pointerdown event itself: the layer's getBoundingClientRect
+      // and cssScale are stable, the host's `onPlace` only needs
+      // the resolved atPt, and routing through pointerdown keeps
+      // a single fast feedback loop. The user can disarm after
+      // (Esc / outside-page click).
       const rect = layer.getBoundingClientRect();
       const x = (e.clientX - rect.left) / cssScale;
       const y = (e.clientY - rect.top) / cssScale;
@@ -124,16 +166,43 @@ export function StampOverlay(props: StampOverlayProps): ReactElement | null {
         y > pageHeightPt
       ) {
         // Click landed outside the page — toolbar / rail /
-        // dialog / window chrome. Disarm the stamp so the ghost
-        // stops following the cursor, then drop the event so the
-        // original click handler still runs (we never swallowed
-        // it in the first place). The host listens for the
-        // CustomEvent below and resets `armedStamp` accordingly,
-        // mirroring the Esc disarm path.
-        window.dispatchEvent(new CustomEvent("tflex:stamp-disarm"));
+        // dialog / window chrome. We do NOT disarm here on
+        // pointerdown (the disarming used to fire on this
+        // branch and swallow toolbar clicks). The disarm is
+        // deferred to the `click` event below.
         return;
       }
       onPlace({ ...armed, page, atPt: { x, y } });
+    };
+    const onClick = (e: MouseEvent): void => {
+      // Disarm on click — fires AFTER pointerup so the host's
+      // React click handlers run first. We disarm only when the
+      // target is NOT an interactive UI control (toolbar
+      // buttons, etc.): those should receive their click handler
+      // before we tear down the arming. For inside-editor /
+      // action-bar targets the placement was already suppressed
+      // by onDown, so we don't disarm here either.
+      if (isInteractive(e.target)) {
+        return;
+      }
+      const rect = layer.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / cssScale;
+      const y = (e.clientY - rect.top) / cssScale;
+      if (
+        x >= 0 &&
+        y >= 0 &&
+        x <= pageWidthPt &&
+        y <= pageHeightPt
+      ) {
+        // On-page click — placement already fired via onDown;
+        // the stamp is now committed and armedStamp will be
+        // cleared by the host. Don't re-fire disarm here.
+        return;
+      }
+      // Outside-page click on a non-interactive target — safe
+      // to disarm now (the original target already finished its
+      // click chain, if any).
+      window.dispatchEvent(new CustomEvent("tflex:stamp-disarm"));
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") {
@@ -145,10 +214,12 @@ export function StampOverlay(props: StampOverlayProps): ReactElement | null {
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("click", onClick, true);
     window.addEventListener("keydown", onKey);
     return (): void => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("click", onClick, true);
       window.removeEventListener("keydown", onKey);
     };
   }, [armed, cssScale, pageWidthPt, pageHeightPt, onPlace, page]);

@@ -1,3 +1,20 @@
+## DEF-091: Test suite regression: .document-view selector is missing from DOM
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 13
+
+Steps to reproduce:
+1. Run `npm run test:e2e -- e2e/installed-app-test.spec.cjs` or `e2e/full_retest.spec.js`.
+2. Observe the timeout waiting for `.document-view`.
+
+Expected: The test suite should use stable, existing selectors to identify the document workspace.
+Actual: The `.document-view` class was removed or renamed in the renderer (likely to `.workspace` or `.document-scroller`), causing multiple e2e tests to fail.
+
+History:
+- qa: opened
+
 ## DEF-090: Armed stamp swallows all application clicks
 
 - Status: CLOSED
@@ -18,6 +35,7 @@ Actual: The stamp overlay swallowed all pointer events, preventing any interacti
 History:
 - qa: opened
 - qa: verified on production build. Clicks now pass through to the toolbar/rails correctly. CLOSED.
+- qa: re-verified on production build v1.7.1. Theme toggle responds on the first click while tool is armed. STAY CLOSED.
 
 ## DEF-089: Cross-arming (Sign vs Stamp) doesn't disarm previous tool
 
@@ -56,6 +74,7 @@ Actual: Buttons were visible but non-responsive to clicks in certain states.
 History:
 - qa: opened
 - qa: verified on production build via e2e test B5. Buttons are enabled and responsive. CLOSED.
+- qa: re-verified on production build v1.7.1. Confirm/Cancel buttons are responsive and correctly disarm the tool after action. STAY CLOSED.
 
 ## DEF-087: Sign ghost shows stamp icon instead of signature content
 
@@ -75,6 +94,7 @@ Actual: The ghost showed a generic stamp icon or dashed placeholder.
 History:
 - qa: opened
 - qa: verified on production build. Ghost now renders the actual vector paths (drawn) or text (typed). CLOSED.
+- qa: re-verified on production build v1.7.1. Ghost renders typed text correctly. STAY CLOSED.
 
 ## DEF-085: Theme and Open buttons not right-aligned in TitleBar
 

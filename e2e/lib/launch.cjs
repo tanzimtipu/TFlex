@@ -9,31 +9,56 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { pathToFileURL } = require('node:url');
 
-async function launchApp(extraArgs = [], userDataDir = null) {
+async function launchApp(extraArgs = [], userDataDir = null, executablePath = null) {
   const projectRoot = path.resolve(__dirname, '../..');
-  const mainPath = path.join(projectRoot, 'dist', 'main', 'index.js');
-  if (!fs.existsSync(mainPath)) {
-    throw new Error(
-      `TFlex e2e launch: ${path.relative(projectRoot, mainPath)} missing.\n` +
-      `Run the build first (npm.cmd run build) before any spec/harness that imports this launcher.`
-    );
+  
+  // If no executablePath is provided, we launch the development build (main index.js)
+  // using Playwright's default Electron.
+  const isDev = !executablePath;
+  
+  if (isDev) {
+    const mainPath = path.join(projectRoot, 'dist', 'main', 'index.js');
+    if (!fs.existsSync(mainPath)) {
+      throw new Error(
+        `TFlex e2e launch: ${path.relative(projectRoot, mainPath)} missing.\n` +
+        `Run the build first (npm.cmd run build) before any spec/harness that imports this launcher.`
+      );
+    }
   }
   
   const uniqueId = `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
-  const tempUserData = userDataDir || path.join(os.tmpdir(), `tflex-test-userData-${uniqueId}`);
-  if (!fs.existsSync(tempUserData)) fs.mkdirSync(tempUserData, { recursive: true });
+  let tempUserData = null;
+  if (userDataDir !== 'default') {
+    tempUserData = userDataDir || path.join(os.tmpdir(), `tflex-test-userData-${uniqueId}`);
+    if (!fs.existsSync(tempUserData)) fs.mkdirSync(tempUserData, { recursive: true });
+  }
 
-  const args = [projectRoot, `--user-data-dir=${tempUserData}`].concat(extraArgs);
-  const electronApp = await electron.launch({
+  const args = isDev 
+    ? [projectRoot]
+    : [];
+  
+  if (tempUserData) {
+    args.push(`--user-data-dir=${tempUserData}`);
+  }
+  args.push(...extraArgs);
+
+  const launchOptions = {
     args,
     env: {
       ...process.env,
       ELECTRON_ENABLE_LOGGING: '1',
-      ELECTRON_RENDERER_URL: pathToFileURL(
-        path.join(projectRoot, 'dist', 'renderer', 'index.html')
-      ).href,
     },
-  });
+  };
+
+  if (executablePath) {
+    launchOptions.executablePath = executablePath;
+  } else {
+    launchOptions.env.ELECTRON_RENDERER_URL = pathToFileURL(
+      path.join(projectRoot, 'dist', 'renderer', 'index.html')
+    ).href;
+  }
+
+  const electronApp = await electron.launch(launchOptions);
 
   electronApp.on('window', window => {
     window.on('console', msg => {

@@ -230,6 +230,39 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
   const onGhostClick = useCallback(
     (e: React.PointerEvent<HTMLDivElement>): void => {
       if (armedSignatureId === null) return;
+      // B-sig-pending-click — pending action-bar buttons must
+      // remain clickable. The pointerdown bubbles from the
+      // Confirm / Cancel / Delete buttons up to this layer-level
+      // handler; previously the handler called `e.preventDefault()`
+      // unconditionally, which prevented the subsequent click
+      // event from reaching those buttons (the user had to click
+      // twice: once to "land" the pointerdown, once to fire the
+      // click). The fix: if the event's target sits inside any
+      // interactive UI control — the .sig-action-bar (Confirm /
+      // Cancel / Delete), the pending placement itself, or any
+      // signature placement / handle — we let the event flow
+      // through (no preventDefault, no pending placement
+      // creation). For everything else we treat the click as a
+      // page-canvas arm-fire and create the pending placement.
+      //
+      // We deliberately do NOT stopPropagation here either:
+      // letting the event bubble keeps the surrounding UI
+      // (toolbar, rail) consistent with normal click behavior.
+      const target = e.target as Element | null;
+      if (target !== null) {
+        const t = target as Element & { closest?: (sel: string) => Element | null };
+        if (typeof t.closest === "function") {
+          const interactive = t.closest(
+            ".sig-action-bar, .sig-action-btn, .sig-pending, .sig-placement, .sig-handle, button, input, textarea, select, [role='button']",
+          );
+          if (interactive !== null) {
+            // The click is on a UI control — let the original
+            // handler run. Do NOT preventDefault, do NOT create
+            // a new pending placement, do NOT swallow the click.
+            return;
+          }
+        }
+      }
       // Bug 2 — pending placement. Clicking with the signature
       // tool armed no longer commits straight to the engine. We
       // create a local pending placement with a floating action
@@ -250,7 +283,6 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
         pageWidthPt,
         pageHeightPt,
       );
-      e.preventDefault();
       setPendingPlacement({ signatureId: armedSignatureId, rect });
       setGhostPt(null);
     },
@@ -510,18 +542,25 @@ function SignaturePlacementView(props: SignaturePlacementViewProps): ReactElemen
 
 // B-sig-ghost — ghost preview content. Always pulls from
 // `signature.source` (drawn strokes / typed text). When the
-// saved signature hasn't loaded yet we render an EMPTY svg with
-// `data-sig-ghost-empty="true"` so the test (and the visual
-// layout) can confirm we never accidentally surface a stamp
-// glyph / icon as the signature preview.
+// saved signature hasn't loaded yet we render a CLEAR
+// "armed footprint" placeholder so the user can see exactly
+// where the placement will land. Previously this branch drew
+// an empty <svg> which read at small sizes as invisible /
+// indistinguishable from a stamp icon — operators reported
+// the ghost "looks empty". The placeholder now paints a
+// dashed footprint rect + a small label so the user always
+// sees a clearly-visible armed marker, regardless of whether
+// the saved signature's vector source has resolved yet.
 //
-// Historically the ghost's empty-source fallback drew a small
-// dashed-border rect, which read at small sizes like a stamp
-// icon. Operators reported the ghost looked like a stamp — that
-// was the empty-fallback rendering. This component removes that
-// fallback entirely: the cursor ghost shows nothing until the
-// signature's source resolves, and once it does the ghost shows
-// the actual vector content.
+// The placeholder is intentionally NOT a stamp icon: the
+// wrapper stamps `data-sig-ghost-source="none"` so tests /
+// analytics can confirm the source kind. The arming state is
+// also stamped on the wrapper (`data-armed="true"` on the
+// layer), so the visual difference between "loaded" and
+// "unresolved-but-armed" is the inner content (typed text /
+// drawn paths vs. dashed footprint + label), not the
+// wrapper. Once the source resolves the ghost swaps to the
+// real vector content via SignatureRaster.
 function SignatureGhostContent({
   signature,
   rect,
@@ -533,20 +572,47 @@ function SignatureGhostContent({
 }): ReactElement {
   const source = signature?.source ?? null;
   if (source === null) {
-    // Empty ghost — no dashed border, no icon, no stamp.
-    // The CSS border + accent-soft background on the parent
-    // .sig-ghost div are the only visible elements; this child
-    // svg is a 0-content placeholder so the layout reserves the
-    // rect footprint.
+    // Armed but unresolved — render a clearly visible footprint
+    // placeholder. The dashed border + accent-soft background on
+    // the parent .sig-ghost div frame the rect; inside we paint a
+    // dashed sub-rect and a small "Signature" label so the user
+    // can see the ghost is armed even before the saved signature's
+    // source bytes arrive. This is the explicit fix for the
+    // "ghost looks empty" report: the footprint placeholder is
+    // intentional, distinct from a stamp icon, and disappears the
+    // moment the source resolves.
     return (
       <svg
-        className="sig-raster sig-raster-empty"
+        className="sig-raster sig-raster-armed-placeholder"
         data-sig-ghost-empty="true"
         viewBox={`0 0 ${rect.width} ${rect.height}`}
         width={rect.width * cssScale}
         height={rect.height * cssScale}
         aria-hidden
-      />
+      >
+        <rect
+          x={1}
+          y={1}
+          width={Math.max(0, rect.width - 2)}
+          height={Math.max(0, rect.height - 2)}
+          fill="none"
+          stroke={DRAW_PEN_COLOR}
+          strokeWidth={0.6}
+          strokeDasharray="2 2"
+          opacity={0.85}
+        />
+        <text
+          x={rect.width / 2}
+          y={rect.height / 2 + 2}
+          fontSize={Math.max(6, Math.min(rect.height * 0.5, 9))}
+          fontFamily="Inter, system-ui, sans-serif"
+          fill={DRAW_PEN_COLOR}
+          textAnchor="middle"
+          opacity={0.85}
+        >
+          Signature
+        </text>
+      </svg>
     );
   }
   // Source resolved — delegate to the shared raster so the
