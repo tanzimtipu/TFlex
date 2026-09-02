@@ -1,8 +1,8 @@
 import { Images, List, MessageSquare, Undo2, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import type { ReactElement } from 'react';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { resolveOutlinePage, type OutlineNode } from '../pdf/pdfjs';
+import { resolveOutlinePage, isInvalidPageRequest, type OutlineNode } from '../pdf/pdfjs';
 import { computeThumbGeometry } from './thumbGeometry';
 import type { EngineState } from '../engine/types';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
@@ -656,7 +656,22 @@ function Thumb({
     let disposed = false;
     let renderTask: { cancel: () => void } | null = null;
     void (async () => {
-      const pdfPage = await doc.getPage(page);
+      let pdfPage: PDFPageProxy;
+      try {
+        pdfPage = await doc.getPage(page);
+      } catch (error) {
+        // DEF-121 — stale page index during a post-op proxy refresh:
+        // the engine's pageOrder can reference a source page the
+        // not-yet-refreshed `doc` proxy does not have ("Invalid page
+        // request.", e.g. a mid-document insert asks for page 35 of a
+        // still-34-page doc). The doc identity swaps immediately after
+        // and re-runs this effect, so drop the attempt and keep the
+        // shimmer placeholder; any other failure keeps surfacing.
+        if (isInvalidPageRequest(error)) {
+          return;
+        }
+        throw error;
+      }
       if (disposed) {
         return;
       }

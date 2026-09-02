@@ -65,6 +65,20 @@ function renderDialog(args: RenderArgs = {}): {
   };
 }
 
+/** Set an input's value the way a user typing would (React 19
+ *  tracks the input's built-in setter, so a plain value assignment
+ *  plus `input` event is the canonical test harness). */
+function setInputValue(el: HTMLInputElement, value: string): void {
+  act((): void => {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(el, value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
 describe("InsertPagesDialog — render contract", () => {
   it("renders both mode radios and the confirm button", () => {
     const { container, cleanup } = renderDialog();
@@ -140,6 +154,165 @@ describe("InsertPagesDialog — close paths", () => {
       backdrop.click();
     });
     expect(onClose).toHaveBeenCalled();
+    cleanup();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-122 — the position value is the 1-based page number the new
+// content BECOMES (rank semantics: 2 = after page 1, TotalPages+1 =
+// append, "end" = append). Blank mode cannot insert before page 1 of
+// a non-empty doc (the engine's afterIndex -1 means append, DEF-114),
+// so its minimum is 2; from-PDF mode keeps 1 = before page 1. The
+// dialog emits the 0-based rank slot (v - 1; -1 = append) and the
+// host translates it per engine contract (App.tsx).
+// ---------------------------------------------------------------------------
+describe("InsertPagesDialog — DEF-122 position semantics", () => {
+  function positionOf(container: HTMLElement): HTMLInputElement | null {
+    return container.querySelector("[data-insert-position]");
+  }
+
+  function confirmOf(container: HTMLElement): HTMLButtonElement | null {
+    return container.querySelector("[data-insert-confirm]");
+  }
+
+  it("blank mode rejects 1 on a non-empty doc (cannot insert before page 1)", () => {
+    const { container, cleanup } = renderDialog({ totalPages: 5 });
+    const position = positionOf(container);
+    const confirm = confirmOf(container);
+    if (position === null || confirm === null) return cleanup();
+    setInputValue(position, "1");
+    expect(confirm.disabled).toBe(true);
+    cleanup();
+  });
+
+  it("blank mode accepts 2 (after page 1) and confirms rank slot 1", () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({ totalPages: 5, onConfirm });
+    const position = positionOf(container);
+    const confirm = confirmOf(container);
+    if (position === null || confirm === null) return cleanup();
+    setInputValue(position, "2");
+    expect(confirm.disabled).toBe(false);
+    act((): void => {
+      confirm.click();
+    });
+    // Rank slot v - 1: "2" -> slot 1 -> the blank becomes page 2.
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "blank", position: 1 }),
+    );
+    cleanup();
+  });
+
+  it("blank mode confirms slot 4 for value 5 (becomes page 5, between 4 and 5)", () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({ totalPages: 5, onConfirm });
+    const position = positionOf(container);
+    const confirm = confirmOf(container);
+    if (position === null || confirm === null) return cleanup();
+    setInputValue(position, "5");
+    expect(confirm.disabled).toBe(false);
+    act((): void => {
+      confirm.click();
+    });
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "blank", position: 4 }),
+    );
+    cleanup();
+  });
+
+  it("fromPdf mode keeps 1 = before page 1 and confirms slot 0", () => {
+    const onConfirm = vi.fn();
+    const pickOtherFile = async (): Promise<{ bytes: Uint8Array; path: string } | null> => ({
+      bytes: new Uint8Array([1, 2, 3]),
+      path: "other.pdf",
+    });
+    const { container, cleanup } = renderDialog({ totalPages: 5, pickOtherFile, onConfirm });
+    const fromPdf = container.querySelector<HTMLInputElement>(
+      "[data-insert-mode='fromPdf']",
+    );
+    const pick = container.querySelector<HTMLButtonElement>("[data-insert-pick]");
+    const position = positionOf(container);
+    const confirm = confirmOf(container);
+    if (fromPdf === null || pick === null || position === null || confirm === null) {
+      return cleanup();
+    }
+    act((): void => {
+      fromPdf.click();
+    });
+    void act(async (): Promise<void> => {
+      pick.click();
+    });
+    setInputValue(position, "1");
+    expect(confirm.disabled).toBe(false);
+    act((): void => {
+      confirm.click();
+    });
+    // "1" -> slot 0 -> the copied pages start before page 1.
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "fromPdf", position: 0 }),
+    );
+    cleanup();
+  });
+
+  it("'end' still confirms position -1 (append) in blank mode", () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({ totalPages: 5, onConfirm });
+    const position = positionOf(container);
+    const confirm = confirmOf(container);
+    if (position === null || confirm === null) return cleanup();
+    setInputValue(position, "end");
+    expect(confirm.disabled).toBe(false);
+    act((): void => {
+      confirm.click();
+    });
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "blank", position: -1 }),
+    );
+    cleanup();
+  });
+
+  it("blank mode accepts 1 on an empty doc (the only slot) and confirms slot 0", () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({ totalPages: 0, onConfirm });
+    const position = positionOf(container);
+    const confirm = confirmOf(container);
+    // defaultInsertPosition(0) seeds the field to "1".
+    expect(position?.value).toBe("1");
+    if (position === null || confirm === null) return cleanup();
+    expect(confirm.disabled).toBe(false);
+    act((): void => {
+      confirm.click();
+    });
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "blank", position: 0 }),
+    );
+    cleanup();
+  });
+
+  it("blank hint phrases placement as 'after page N' and states the 2 minimum", () => {
+    const { container, cleanup } = renderDialog({ totalPages: 5 });
+    const hint = container.querySelector<HTMLElement>(".modal-hint");
+    const text = hint?.textContent ?? "";
+    expect(text).toContain("after page 1");
+    expect(text).toContain("appends after the last page");
+    expect(text).toContain("cannot be inserted before page 1");
+    cleanup();
+  });
+
+  it("fromPdf hint keeps 1 = before page 1 and '2 after page 1' wording", () => {
+    const { container, cleanup } = renderDialog({ totalPages: 5 });
+    const fromPdf = container.querySelector<HTMLInputElement>(
+      "[data-insert-mode='fromPdf']",
+    );
+    if (fromPdf === null) return cleanup();
+    act((): void => {
+      fromPdf.click();
+    });
+    const hint = container.querySelector<HTMLElement>(".modal-hint");
+    const text = hint?.textContent ?? "";
+    expect(text).toContain("1 inserts before page 1");
+    expect(text).toContain("2 after page 1");
     cleanup();
   });
 });

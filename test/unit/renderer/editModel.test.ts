@@ -16,6 +16,7 @@ import {
   initialEditState,
   type EditState,
   type ImagePlacement,
+  type TextBoxPlacement,
 } from "../../../src/renderer/edit/model";
 
 function makePlacement(overrides: Partial<ImagePlacement> = {}): ImagePlacement {
@@ -137,8 +138,10 @@ describe("editReducer — reset", () => {
     const start: EditState = {
       tool: "image",
       selectedImage: { id: "p" },
+      selectedTextBox: "t",
       pendingReplace: null,
       placements: [makePlacement()],
+      textBoxes: [],
       cropping: true,
     };
     const next = editReducer(start, { type: "reset" });
@@ -207,5 +210,83 @@ describe("defaultTextBoxRect", () => {
     // The default size is bounded by pageWidthPt * 0.25, pageHeightPt * 0.06.
     expect(r.width).toBeLessThanOrEqual(180);
     expect(r.height).toBeLessThanOrEqual(48);
+  });
+});
+
+describe("editReducer — B5 text-box registry", () => {
+  function makeTextBox(overrides: Partial<TextBoxPlacement> = {}): TextBoxPlacement {
+    return {
+      id: "tb-1",
+      page: 1,
+      rect: { x: 100, y: 100, width: 180, height: 40 },
+      text: "Hello box",
+      style: { font: "Helvetica", size: 12, color: { r: 0, g: 0, b: 0 } },
+      background: "white",
+      ...overrides,
+    };
+  }
+
+  it("upsert-text-box appends a new committed box", () => {
+    const state = initialEditState;
+    const next = editReducer(state, { type: "upsert-text-box", placement: makeTextBox() });
+    expect(next.textBoxes).toHaveLength(1);
+    expect(next.textBoxes[0]?.text).toBe("Hello box");
+  });
+
+  it("upsert-text-box replaces an existing box with the same id", () => {
+    const state: EditState = {
+      ...initialEditState,
+      textBoxes: [makeTextBox()],
+    };
+    const next = editReducer(state, {
+      type: "upsert-text-box",
+      placement: makeTextBox({ text: "Updated" }),
+    });
+    expect(next.textBoxes).toHaveLength(1);
+    expect(next.textBoxes[0]?.text).toBe("Updated");
+  });
+
+  it("set-text-box-rect moves only the target box's rect", () => {
+    const state: EditState = {
+      ...initialEditState,
+      textBoxes: [makeTextBox({ id: "tb-a" }), makeTextBox({ id: "tb-b" })],
+    };
+    const next = editReducer(state, {
+      type: "set-text-box-rect",
+      id: "tb-b",
+      rect: { x: 300, y: 120, width: 180, height: 40 },
+    });
+    expect(next.textBoxes[0]?.rect.x).toBe(100); // unaffected
+    expect(next.textBoxes[1]?.rect).toEqual({ x: 300, y: 120, width: 180, height: 40 });
+  });
+
+  it("set-text-box-rect is a no-op for an unknown id", () => {
+    const state: EditState = { ...initialEditState, textBoxes: [makeTextBox()] };
+    const next = editReducer(state, {
+      type: "set-text-box-rect",
+      id: "missing",
+      rect: { x: 9, y: 9, width: 9, height: 9 },
+    });
+    expect(next).toBe(state);
+    expect(next.textBoxes[0]?.rect.x).toBe(100);
+  });
+
+  it("select-text-box records the selection and clears cropping", () => {
+    const state: EditState = { ...initialEditState, cropping: true };
+    const next = editReducer(state, { type: "select-text-box", textBoxId: "tb-1" });
+    expect(next.selectedTextBox).toBe("tb-1");
+    expect(next.cropping).toBe(false);
+  });
+
+  it("set-tool off clears the text-box selection but preserves the registry", () => {
+    const state: EditState = {
+      ...initialEditState,
+      tool: "box",
+      selectedTextBox: "tb-1",
+      textBoxes: [makeTextBox()],
+    };
+    const next = editReducer(state, { type: "set-tool", tool: "off" });
+    expect(next.selectedTextBox).toBeNull();
+    expect(next.textBoxes).toHaveLength(1);
   });
 });

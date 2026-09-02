@@ -202,11 +202,18 @@ describe("SaveAsDialog — confirm / close (DEF-073)", () => {
   });
 
   it("fires onClose when the backdrop is clicked", () => {
+    // B3/B6 — genuine outside click = mousedown + click on the
+    // backdrop.
     const onClose = vi.fn();
     const { container, cleanup } = renderDialog({ onClose });
     const backdrop = container.querySelector<HTMLElement>(".modal-backdrop");
     expect(backdrop).not.toBeNull();
     if (backdrop === null) return cleanup();
+    act((): void => {
+      backdrop.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+      );
+    });
     act((): void => {
       backdrop.click();
     });

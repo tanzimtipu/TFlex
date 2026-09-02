@@ -19,6 +19,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X, Stamp } from "lucide-react";
+import { useBackdropClose } from "./modalBackdrop";
 import type { StampId } from "../../shared/types";
 import {
   DEFAULT_STAMP_ID,
@@ -117,6 +118,10 @@ export function StampDialog(
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop (a drag from the stamp picker must not dismiss).
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   const onConfirmClick = (): void => {
@@ -155,7 +160,7 @@ export function StampDialog(
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose} data-stamp-dialog>
+    <div className="modal-backdrop" {...backdrop} data-stamp-dialog>
       <div
         className="modal-dialog dialog"
         ref={dialogRef}

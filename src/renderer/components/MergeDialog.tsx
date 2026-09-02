@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
 import type { MergePosition } from "../engine/types";
+import { useBackdropClose } from "./modalBackdrop";
 
 export interface MergeConfirm {
   otherPath: string;
@@ -115,6 +116,11 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
     return (): void => window.removeEventListener("keydown", onKey, true);
   }, [picking]);
 
+  // B3/B6 + B12 — backdrop close only when the interaction started
+  // on the backdrop; blocked entirely while the OS file picker is
+  // open (the dialog must stay put until the picker returns).
+  const backdrop = useBackdropClose(onClose, picking);
+
   if (!open) return null;
 
   const onPick = async (): Promise<void> => {
@@ -150,11 +156,7 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
   return (
     <div
       className="modal-backdrop"
-      // B12 — modal blocking. The dialog is non-interactive (no
-      // close-on-backdrop-click) while the OS file picker is open,
-      // so the user can't accidentally dismiss the picker. Outside
-      // the picker the backdrop click still closes (Cancel).
-      onClick={picking ? undefined : onClose}
+      {...backdrop}
       data-picking={picking ? "true" : "false"}
     >
       <div

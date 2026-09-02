@@ -29,6 +29,7 @@
 
 import { useEffect, useRef, type ReactElement } from "react";
 import { X } from "lucide-react";
+import { useBackdropClose } from "./modalBackdrop";
 
 export type CloseTabPromptChoice = "save" | "discard" | "cancel";
 
@@ -75,18 +76,20 @@ export function CloseTabPromptDialog(
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onChoose]);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop. Clicking the backdrop cancels the close (keeps the
+  // tab open); a drag that started on a button and released over
+  // the backdrop must not fire it.
+  const backdrop = useBackdropClose(() => onChoose("cancel"));
+
   if (!open) return null;
 
   return (
     <div
       className="modal-backdrop"
+      {...backdrop}
       data-close-tab-prompt
       data-close-prompt
-      onClick={(e): void => {
-        // Clicking the backdrop cancels — keeps the tab open.
-        // The user can dismiss via the Cancel button too.
-        if (e.target === e.currentTarget) onChoose("cancel");
-      }}
     >
       <div
         ref={dialogRef}

@@ -188,6 +188,41 @@ describe("TitleBar — window controls wire to tflex.* IPC", () => {
     }
     clearTflex();
   });
+
+  it("uses a DISTINCT restore glyph — never the minimize icon (B10)", () => {
+    // B10 — the restore button used `Minimize2` when maximized, so
+    // minimize and restore were visually identical. The restore
+    // glyph must be the overlapping-squares `Copy` icon, and the
+    // maximize (pre-maximize) glyph must stay `Maximize2`.
+    setTflex({
+      minimizeWindow: vi.fn(),
+      maximizeWindow: vi.fn(),
+      closeWindow: vi.fn(),
+      menu: { onAction: vi.fn() },
+    });
+    // Maximized: restore icon is Copy (NOT Minimize2).
+    {
+      const { container, cleanup } = renderTitleBar({ maximized: true });
+      const maxBtn = container.querySelector<HTMLElement>("[data-window-maximize]");
+      const minBtn = container.querySelector<HTMLElement>("[data-window-minimize]");
+      expect(maxBtn?.querySelector("svg.lucide-copy")).not.toBeNull();
+      expect(maxBtn?.querySelector("svg.lucide-minimize-2")).toBeNull();
+      expect(maxBtn?.querySelector("svg.lucide-maximize-2")).toBeNull();
+      // The minimize button still shows its own Minimize2 glyph, so
+      // the two controls are visually unambiguous.
+      expect(minBtn?.querySelector("svg.lucide-minimize-2")).not.toBeNull();
+      cleanup();
+    }
+    // Restored: the maximize button shows Maximize2.
+    {
+      const { container, cleanup } = renderTitleBar({ maximized: false });
+      const maxBtn = container.querySelector<HTMLElement>("[data-window-maximize]");
+      expect(maxBtn?.querySelector("svg.lucide-maximize-2")).not.toBeNull();
+      expect(maxBtn?.querySelector("svg.lucide-copy")).toBeNull();
+      cleanup();
+    }
+    clearTflex();
+  });
 });
 
 describe("TitleBar — drag region + interactive children", () => {

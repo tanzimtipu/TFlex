@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X, Download } from "lucide-react";
+import { useBackdropClose } from "./modalBackdrop";
 
 export interface CommentExportConfirm {
   path: string;
@@ -83,6 +84,10 @@ export function CommentExportDialog(
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop.
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   const onConfirmClick = async (): Promise<void> => {
@@ -117,7 +122,7 @@ export function CommentExportDialog(
   return (
     <div
       className="modal-backdrop"
-      onClick={onClose}
+      {...backdrop}
       data-comment-export-dialog
     >
       <div

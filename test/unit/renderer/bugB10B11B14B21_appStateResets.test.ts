@@ -89,19 +89,24 @@ describe("B14 — OCR suspects panel placement and empty-tab guard", () => {
     expect(text).toMatch(/ocrSuspectsOpen\s*&&\s*activeTab\s*!==\s*null/);
   });
 
-  it("the .ocr-suspects-panel CSS anchors the panel to the right edge (not x:0)", async () => {
+  it("the .ocr-suspects-panel CSS is a full-width TOP BAR above the tools palette (B4)", async () => {
     const styles = await readFile(STYLES_PATH, "utf8");
     const rule = styles.match(/\.ocr-suspects-panel\s*\{[^}]*\}/);
     expect(rule).not.toBeNull();
     if (rule === null) return;
-    // The panel is a right-side rail overlay: absolute, right: 0,
-    // full height, above the workspace content but below the
-    // tools palette (z-index 29 < 30). Without `position:
-    // absolute; right: 0` it fell into the .app-main flex flow at
-    // x:0 and covered the annotation toolbar at x:220.
+    // B4 — the panel is a top bar over the workspace: absolute,
+    // left:0 + right:0 (full width), z-index 40 ABOVE the Tools
+    // palette (30) so an open palette can never cover the suspect
+    // entries. Without `position: absolute` it fell into the
+    // .app-main flex flow at x:0 and covered the workspace; as a
+    // 280px right rail at z-index 29 it sat UNDER the palette.
     expect(rule[0]).toMatch(/position:\s*absolute\s*;/);
+    expect(rule[0]).toMatch(/left:\s*0\s*;/);
     expect(rule[0]).toMatch(/right:\s*0\s*;/);
-    expect(rule[0]).toMatch(/z-index:\s*29\s*;/);
+    expect(rule[0]).toMatch(/z-index:\s*40\s*;/);
+    expect(rule[0]).not.toMatch(/z-index:\s*29\s*;/);
+    // The 280px right-rail form is gone.
+    expect(rule[0]).not.toMatch(/width:\s*280px\s*;/);
   });
 
   it("the .ocr-suspects-panel CSS starts BELOW the toolbar strip (DEF-107: no 280x40 overlap)", async () => {

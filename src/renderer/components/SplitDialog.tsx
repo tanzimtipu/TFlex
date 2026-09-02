@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
 import { defaultPageRange, parsePageRange } from "../engine/types";
+import { useBackdropClose } from "./modalBackdrop";
 
 export type SplitMode = "extract" | "split";
 
@@ -49,10 +50,14 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
   const parsed = useMemo(() => parsePageRange(text, totalPages), [text, totalPages]);
   const valid = parsed !== null && parsed.length > 0;
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop (a drag from the range input must not dismiss).
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div
         className="modal-dialog dialog"
         ref={dialogRef}

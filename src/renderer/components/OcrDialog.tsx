@@ -39,6 +39,7 @@ import {
   clampOcrDownsample,
 } from "../state/preferences";
 import { rasterizePagesForOcr, type OcrRasterizeFormField } from "../pdf/ocrRasterize";
+import { useBackdropClose } from "./modalBackdrop";
 import type {
   OcrLanguage,
   OcrPageImage,
@@ -289,6 +290,10 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     return true;
   }, [open, running, totalPages, scope, currentPage, language, downsample]);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop; blocked entirely while OCR is running.
+  const backdrop = useBackdropClose(onClose, running);
+
   if (!open) return null;
 
   const onConfirmClick = async (): Promise<void> => {
@@ -393,7 +398,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
   const progressPercent = Math.round(progressFraction * 100);
 
   return (
-    <div className="modal-backdrop" onClick={running ? undefined : onClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div
         className="modal-dialog dialog ocr-dialog"
         ref={dialogRef}

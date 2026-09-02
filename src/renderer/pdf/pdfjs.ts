@@ -31,6 +31,31 @@ export function mapPdfjsError(error: unknown): PdfOpenError {
 }
 
 /**
+ * Detect pdf.js's "Invalid page request" rejection — thrown by
+ * `doc.getPage(pageNumber)` when the 1-based page number is outside the
+ * proxy's current `numPages`.
+ *
+ * DEF-121 — during a post-op proxy refresh the engine's pageOrder (new
+ * page count) is committed BEFORE the renderer's pdf.js `doc` proxy is
+ * rebuilt against the post-op bytes. A mid-document insert therefore
+ * briefly asks for a source page the still-old proxy does not have
+ * (inserting a blank at the front of a 34-page doc: the new pageOrder
+ * references source page 35, `doc.numPages` is still 34). That is a
+ * stale index, not corruption: `refreshDocProxyFor` swaps the doc
+ * identity immediately after and every doc-bound render effect re-runs
+ * with the full page count, so render paths tolerate the stale attempt
+ * (drop it, keep the placeholder) instead of surfacing an unhandled
+ * rejection. Any other getPage failure is not this condition and must
+ * keep failing loudly.
+ */
+export function isInvalidPageRequest(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.toLowerCase().includes('invalid page request')
+  );
+}
+
+/**
  * The shape of `getDocument`'s options object the renderer actually uses.
  * Exported as a dedicated type so the option-builder below has a precise
  * return type that can be unit-tested without importing the whole

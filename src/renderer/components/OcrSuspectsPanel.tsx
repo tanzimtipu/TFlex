@@ -1,10 +1,13 @@
 // Phase 11 — OCR suspects panel.
 //
 // Lists the low-confidence words the engine returned from the most
-// recent `ocrRecognize` run on the active document. The panel sits in
-// the same side-rail position as the Outline / Annotations panels —
-// the host decides which panel is visible (the OCR panel is its own
-// toggle so it doesn't compete with the existing tabs).
+// recent `ocrRecognize` run on the active document. Rendered as a
+// TOP BAR over the workspace (B4): the previous right-side rail
+// overlay sat at z-index 29, just below the Tools palette (30) in
+// the same right-rail position, so an open palette covered the
+// suspect entries and the panel was unusable. As a full-width bar
+// at the top of the workspace (z-index 40, above the palette) the
+// panel is never covered; the suspect list scrolls horizontally.
 //
 // Each entry shows:
 //   - the word text (with the confidence percentage next to it)
@@ -17,9 +20,6 @@
 // short-lived highlight overlay so the user can spot the word on
 // the page. The panel never edits the suspect text — that's the
 // documented Phase 11 limitation (correction is not in contract).
-//
-// The panel surfaces its current state via the OCR suspect list
-// plus an empty-state hint when no OCR has run on the active doc.
 
 import type { ReactElement } from 'react';
 import { ScanText, X } from 'lucide-react';
@@ -62,6 +62,21 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
           <ScanText size={13} aria-hidden />
           OCR suspects
         </span>
+        <div className="ocr-suspects-summary" aria-live="polite">
+          {hasRun ? (
+            <>
+              <span>
+                {suspects.length} low-confidence{' '}
+                {suspects.length === 1 ? 'word' : 'words'}
+              </span>
+              {totalPages > 1 && (
+                <span className="ocr-suspects-pages">across {totalPages} pages</span>
+              )}
+            </>
+          ) : (
+            <span>Run OCR on this document to populate suspects.</span>
+          )}
+        </div>
         <button
           type="button"
           className="ocr-suspects-close"
@@ -72,21 +87,6 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
           <X size={13} aria-hidden />
         </button>
       </header>
-      <div className="ocr-suspects-summary" aria-live="polite">
-        {hasRun ? (
-          <>
-            <span>
-              {suspects.length} low-confidence{' '}
-              {suspects.length === 1 ? 'word' : 'words'}
-            </span>
-            {totalPages > 1 && (
-              <span className="ocr-suspects-pages">across {totalPages} pages</span>
-            )}
-          </>
-        ) : (
-          <span>Run OCR on this document to populate suspects.</span>
-        )}
-      </div>
       <div className="ocr-suspects-body">
         {hasRun && suspects.length === 0 && (
           <div className="ocr-suspects-empty" data-ocr-suspects-empty>

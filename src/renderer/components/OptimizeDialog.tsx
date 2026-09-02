@@ -24,6 +24,7 @@ import { X } from 'lucide-react';
 import type { OptimizePreset, SpaceAudit } from '../../shared/types';
 import { DEFAULT_OPTIMIZE_PRESET, OPTIMIZE_PRESETS } from '../state/preferences';
 import { formatBytes } from '../utils/formatBytes';
+import { useBackdropClose } from './modalBackdrop';
 
 interface OptimizeDialogProps {
   open: boolean;
@@ -184,6 +185,11 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
     return { name: top.name, bytes: top.bytes, percent: (top.bytes / audit.totalBytes) * 100 };
   }, [audit]);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop (a drag from the preset picker / inputs must not
+  // dismiss).
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   const onConfirmClick = async (): Promise<void> => {
@@ -207,7 +213,7 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div
         className="modal-dialog dialog optimize-dialog"
         ref={dialogRef}

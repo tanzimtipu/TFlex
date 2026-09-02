@@ -10,21 +10,19 @@
 // bind the backdrop to a no-op while `picking` is true and
 // swallow Esc in the capture phase so the picker owns input.
 //
-// B17 (this file's update) — the backdrop close-on-click must
-// ALSO require that the pointer interaction STARTED on the
-// backdrop (tracked via an onMouseDown handler + ref): a text-
-// selection drag that starts in the input and releases over the
-// backdrop dispatches its click on the backdrop, which used to
-// close the dialog. The click handler now checks BOTH the
-// mousedown origin AND `e.target === e.currentTarget` before
-// closing.
+// B3/B6 (this file's update) — every backdrop now routes through
+// the shared `useBackdropClose(onClose, picking)` hook, which:
+//   - records where the pointer interaction STARTED (an onMouseDown
+//     handler + ref), so a text-selection drag that starts in the
+//     input and releases over the backdrop does NOT close (the
+//     click handler requires the mousedown origin AND
+//     target === currentTarget);
+//   - disables backdrop-close entirely while `picking` is true.
 //
 // We exercise this by reading the dialog source and asserting:
-//   1. The backdrop's onClick is a no-op while `picking` is true.
-//   2. The backdrop records where the mousedown started
-//      (backdropDownRef) and the click handler requires the
-//      mousedown origin + target===currentTarget before closing.
-//   3. The dialog has a picking-state effect that swallows Esc
+//   1. Each backdrop is wired through `useBackdropClose` with the
+//      picking gate.
+//   2. The dialog has a picking-state effect that swallows Esc
 //      in the capture phase (so any other Esc listener can't
 //      dismiss the dialog underneath the picker).
 import { describe, expect, it } from "vitest";
@@ -67,26 +65,23 @@ const mergeSource = fs.readFileSync(mergePath, "utf8");
 
 describe("B18 — Insert / Replace dialogs are modal-blocked while the OS file picker is open", () => {
   it("MergeDialog backdrop is modal-blocked while picking (regression guard)", () => {
-    expect(mergeSource).toMatch(/onClick=\{picking\s*\?\s*undefined\s*:\s*onClose\}/);
+    expect(mergeSource).toMatch(/useBackdropClose\(onClose,\s*picking\)/);
     expect(mergeSource).toMatch(/addEventListener\("keydown",\s*onKey,\s*true\)/);
   });
 
-  it("InsertPagesDialog backdrop is modal-blocked while picking AND drag-safe (B17)", () => {
-    // B18: while picking, the backdrop click is a no-op.
-    expect(insertSource).toMatch(/onClick=\{\s*picking\s*\?/);
+  it("InsertPagesDialog backdrop is modal-blocked while picking AND drag-safe (B3/B6)", () => {
+    // B18: while picking, the backdrop close is a no-op (the hook
+    // is gated on `picking`).
+    expect(insertSource).toMatch(/useBackdropClose\(onClose,\s*picking\)/);
     expect(insertSource).toMatch(/addEventListener\("keydown",\s*onKey,\s*true\)/);
-    // B17: the close path records the mousedown origin and only
-    // closes when the interaction started on the backdrop AND the
-    // click target is the backdrop itself.
-    expect(insertSource).toMatch(/backdropDownRef\.current\s*=\s*e\.target\s*===\s*e\.currentTarget/);
-    expect(insertSource).toMatch(/backdropDownRef\.current\s*&&\s*e\.target\s*===\s*e\.currentTarget/);
+    // The hook is spread onto the backdrop element itself.
+    expect(insertSource).toMatch(/\{\.\.\.backdrop\}/);
   });
 
-  it("ReplacePagesDialog backdrop is modal-blocked while picking AND drag-safe (B17)", () => {
-    expect(replaceSource).toMatch(/onClick=\{\s*picking\s*\?/);
+  it("ReplacePagesDialog backdrop is modal-blocked while picking AND drag-safe (B3/B6)", () => {
+    expect(replaceSource).toMatch(/useBackdropClose\(onClose,\s*picking\)/);
     expect(replaceSource).toMatch(/addEventListener\("keydown",\s*onKey,\s*true\)/);
-    expect(replaceSource).toMatch(/backdropDownRef\.current\s*=\s*e\.target\s*===\s*e\.currentTarget/);
-    expect(replaceSource).toMatch(/backdropDownRef\.current\s*&&\s*e\.target\s*===\s*e\.currentTarget/);
+    expect(replaceSource).toMatch(/\{\.\.\.backdrop\}/);
   });
 
   it("the Esc-swallower stops propagation so the picker owns input", () => {

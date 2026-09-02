@@ -360,11 +360,19 @@ describe("OcrDialog — confirm / cancel (Phase 11)", () => {
   });
 
   it("onClose fires when the backdrop is clicked (idle)", () => {
+    // B3/B6 — a genuine outside click includes the mousedown on the
+    // backdrop; a bare click() alone no longer closes (a drag that
+    // started elsewhere must not).
     const onClose = vi.fn();
     const { container, cleanup } = renderDialog({ onClose });
     const backdrop = container.querySelector<HTMLElement>('.modal-backdrop');
     expect(backdrop).not.toBeNull();
     if (backdrop === null) return cleanup();
+    act((): void => {
+      backdrop.dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true, cancelable: true }),
+      );
+    });
     act((): void => {
       backdrop.click();
     });

@@ -24,6 +24,7 @@ import {
   useState,
   type ReactElement,
 } from "react";
+import { useBackdropClose } from "../components/modalBackdrop";
 import type { SavedSignature, SignatureSource } from "../../shared/types";
 import {
   DRAW_CANVAS_H,
@@ -68,11 +69,12 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
     setSaved(savedSignatures);
   }, [savedSignatures]);
 
-  if (!open) return null;
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop (a drag that starts in the Type input / draw canvas
+  // and releases over the backdrop must not dismiss).
+  const backdrop = useBackdropClose(onClose);
 
-  const closeOnBackdrop = (e: React.MouseEvent<HTMLDivElement>): void => {
-    if (e.target === e.currentTarget) onClose();
-  };
+  if (!open) return null;
 
   const onPick = (id: string): void => {
     onApply(id);
@@ -85,7 +87,7 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
   };
 
   return (
-    <div className="modal-backdrop" onClick={closeOnBackdrop}>
+    <div className="modal-backdrop" {...backdrop}>
       <div
         className="modal-dialog sig-manager"
         role="dialog"

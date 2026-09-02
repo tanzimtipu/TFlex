@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
+import { useBackdropClose } from "./modalBackdrop";
 
 export interface RenumberPagesConfirm {
   /** One label per page, in 1-based visible order. An empty string
@@ -71,6 +72,10 @@ export function RenumberPagesDialog(
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop (a drag from a page-label input must not dismiss).
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   const onConfirmClick = (): void => {
@@ -104,7 +109,7 @@ export function RenumberPagesDialog(
   return (
     <div
       className="modal-backdrop"
-      onClick={onClose}
+      {...backdrop}
       data-renumber-pages-dialog
     >
       <div

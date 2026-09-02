@@ -40,6 +40,7 @@ import {
   downloadBlob,
   mimeForExportFormat,
 } from "../utils/exportDownload";
+import { useBackdropClose } from "./modalBackdrop";
 import type {
   ExportImageFormat,
   ExportPageEntry,
@@ -155,6 +156,10 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
   );
   const valid = parsed !== null && parsed.length > 0 && !running;
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop; blocked entirely while an export is running.
+  const backdrop = useBackdropClose(onClose, running);
+
   if (!open) return null;
 
   const onConfirmClick = async (): Promise<void> => {
@@ -255,7 +260,7 @@ export function ExportDialog(props: ExportDialogProps): ReactElement | null {
   };
 
   return (
-    <div className="modal-backdrop" onClick={running ? undefined : onClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div
         className="modal-dialog dialog"
         ref={dialogRef}

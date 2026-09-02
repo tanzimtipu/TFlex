@@ -145,8 +145,9 @@ describe("DEF-100 — Flatten confirm dialog buttons are not blocked by the back
   it("clicking the backdrop itself (target === backdrop) calls onCancel", () => {
     // The "click outside the dialog to close" affordance must work:
     // a click whose target IS the backdrop (nothing above it) closes
-    // the dialog. The backdrop's onClick gates on
-    // `e.target === e.currentTarget`.
+    // the dialog. The backdrop's onClick gates on the mousedown
+    // origin + `e.target === e.currentTarget` (the shared
+    // useBackdropClose hook).
     const { host, onCancel, cleanup } = mountDialog({
       open: true,
     });
@@ -154,6 +155,11 @@ describe("DEF-100 — Flatten confirm dialog buttons are not blocked by the back
       const backdrop = host.querySelector<HTMLElement>(".modal-backdrop");
       expect(backdrop).not.toBeNull();
       if (backdrop === null) return;
+      act((): void => {
+        backdrop.dispatchEvent(
+          new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+        );
+      });
       act((): void => {
         backdrop.click();
       });
@@ -179,12 +185,14 @@ describe("DEF-100 — Flatten confirm dialog buttons are not blocked by the back
     expect(rule).not.toMatch(/pointer-events:\s*none/);
   });
 
-  it("FlattenConfirmDialog source gates backdrop close on target === currentTarget", () => {
-    // The load-bearing check. The backdrop's onClick must close ONLY
-    // when the click target IS the backdrop — never for a click on a
-    // dialog descendant. We assert the wiring is present instead of
-    // a window-level listener or an unguarded onClick.
-    expect(dialogSource).toMatch(/e\.target === e\.currentTarget/);
+  it("FlattenConfirmDialog source gates backdrop close on the shared hook", () => {
+    // The load-bearing check. The backdrop closes ONLY when the
+    // interaction started on the backdrop AND the click target IS
+    // the backdrop — never for a click on a dialog descendant. The
+    // dialog wires the shared `useBackdropClose` hook (which owns
+    // the target === currentTarget + mousedown-origin guards).
+    expect(dialogSource).toMatch(/useBackdropClose/);
+    expect(dialogSource).toMatch(/\{\.\.\.backdrop\}/);
     // And there is no window-level click listener any more (the
     // previous none-backdrop approach installed one) — the backdrop
     // handles its own clicks.

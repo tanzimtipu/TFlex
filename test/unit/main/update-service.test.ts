@@ -484,6 +484,111 @@ describe('UpdateService — download and install', () => {
     svc.install();
     expect(_quitAndInstall).toHaveBeenCalled();
   });
+
+  // Bug 9 — download() must push a `downloading` state with progress: 0
+  // IMMEDIATELY (synchronously, before the first `await`), so the
+  // renderer's `update:statusChanged` listener receives it as soon as the
+  // user clicks Download — not after electron-updater's first
+  // `download-progress` event (which can lag by seconds while the HTTP
+  // connection opens). Without this push the state stays `available`
+  // during the gap and the frontend has no `downloading` state to render.
+  it('download() pushes downloading(0) to onStatusChanged before downloadUpdate resolves', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '2.0.0' });
+    const cb = vi.fn();
+    svc.onStatusChanged(cb);
+    // Do NOT await — the state push is synchronous before the first await.
+    const promise = svc.download();
+    expect(cb).toHaveBeenCalledWith({ kind: 'downloading', progress: 0 });
+    await promise;
+  });
+
+  it('download() sets status to downloading(0) synchronously', () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '2.0.0' });
+    // Don't await — check state is already downloading before downloadUpdate resolves.
+    void svc.download();
+    const status = svc.getStatus();
+    expect(status.kind).toBe('downloading');
+    if (status.kind === 'downloading') {
+      expect(status.progress).toBe(0);
+    }
+  });
+
+  it('download() does not push downloading state when not in available state', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    const cb = vi.fn();
+    svc.onStatusChanged(cb);
+    // State is 'checking' (init called checkForUpdates); download is a no-op.
+    await svc.download();
+    // The only callback invocation is from init's checkForUpdates setting
+    // 'checking' — download() must not have pushed a 'downloading' state.
+    const downloadingCalls = cb.mock.calls.filter(
+      ([s]) => (s as { kind?: string }).kind === 'downloading',
+    );
+    expect(downloadingCalls).toHaveLength(0);
+    expect(_downloadUpdate).not.toHaveBeenCalled();
+  });
+
+  it('download-progress events update progress continuously after the initial push', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '2.0.0' });
+    const states: Array<{ kind: string; progress?: number }> = [];
+    svc.onStatusChanged((s) => states.push({ kind: s.kind, progress: s.kind === 'downloading' ? s.progress : undefined }));
+    await svc.download();
+    // Initial push at 0.
+    expect(states[states.length - 1]).toEqual({ kind: 'downloading', progress: 0 });
+    // Simulate continuous progress events from electron-updater.
+    getHandler('download-progress')({ percent: 25.5 });
+    expect(states[states.length - 1]).toEqual({ kind: 'downloading', progress: 25.5 });
+    getHandler('download-progress')({ percent: 73.33 });
+    expect(states[states.length - 1]).toEqual({ kind: 'downloading', progress: 73.33 });
+  });
+
+  it('full sequence: checking -> available -> downloading(0) -> downloaded with no gaps', async () => {
+    const svc = new UpdateService();
+    const states: string[] = [];
+    svc.onStatusChanged((s) => states.push(s.kind));
+    svc.init();
+    // init pushes 'checking' via the checkForUpdates path (state starts as
+    // 'checking' in the constructor, but the callback only sees post-init
+    // pushes; the constructor's initial state does not fire the callback).
+    getHandler('update-available')({ version: '2.0.0' });
+    await svc.download();
+    getHandler('update-downloaded')({ version: '2.0.0' });
+    // The callback should have seen: available -> downloading -> downloaded.
+    expect(states).toContain('available');
+    expect(states).toContain('downloading');
+    expect(states).toContain('downloaded');
+    // available must come before downloading, which must come before downloaded.
+    const availIdx = states.indexOf('available');
+    const dlIdx = states.indexOf('downloading');
+    const doneIdx = states.indexOf('downloaded');
+    expect(availIdx).toBeLessThan(dlIdx);
+    expect(dlIdx).toBeLessThan(doneIdx);
+    // The final state must be 'downloaded' with the version.
+    const final = svc.getStatus();
+    expect(final.kind).toBe('downloaded');
+    if (final.kind === 'downloaded') {
+      expect(final.version).toBe('2.0.0');
+    }
+  });
+
+  it('download() sets error state when downloadUpdate rejects', async () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '2.0.0' });
+    _downloadUpdate.mockRejectedValueOnce(new Error('disk full'));
+    const result = await svc.download();
+    expect(result.kind).toBe('error');
+    if (result.kind === 'error') {
+      expect(result.message).toBe('disk full');
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

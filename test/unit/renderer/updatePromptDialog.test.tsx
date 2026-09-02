@@ -77,8 +77,9 @@ function renderDialog(args: RenderArgs): {
 // Pure mapping (promptKindFromState).
 //
 // Exhaustive over UpdateState: each kind maps to a precise kind.
-// `downloading` is folded into `checking` because the toolbar
-// indicator already surfaces progress; the dialog stays passive.
+// `downloading` maps to its own "downloading" kind (Bug 9) so the
+// dialog renders immediate progress feedback (spinner + "Downloading…"
+// + live percent) instead of sitting passive.
 // A new kind added to the union without a mapping here will fail
 // TS exhaustiveness — same shape as `indicatorView` /
 // `describeUpdateState`.
@@ -101,9 +102,13 @@ describe("promptKindFromState — pure UpdateState -> UpdatePromptKind", () => {
     ).toBe("downloaded");
   });
 
-  it("folds 'downloading' into 'checking' (toolbar owns progress)", () => {
+  it("maps 'downloading' to the 'downloading' kind (Bug 9 progress presentation)", () => {
+    // Bug 9 — the dialog renders its own progress presentation for
+    // the `downloading` state (spinner + "Downloading…" + live
+    // percent), so the pure mapping keeps it distinct from the
+    // passive "checking" kind.
     expect(promptKindFromState({ kind: "downloading", progress: 42 })).toBe(
-      "checking",
+      "downloading",
     );
   });
 
@@ -136,6 +141,7 @@ describe("promptKindFromState — pure UpdateState -> UpdatePromptKind", () => {
     // Pin that every kind has at least one input that produces it.
     const kinds: UpdatePromptKind[] = [
       "available",
+      "downloading",
       "downloaded",
       "checking",
       "up-to-date",

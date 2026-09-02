@@ -1,5 +1,15 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-08-28: qa re-pinned to deepseek-v4-flash-vision-exp
+
+- From: `openrouter/google/gemini-3-flash-preview`
+- To: `openrouter/deepseek/deepseek-v4-flash-vision-exp`
+- Reason: operator directive. This restores the model qa was originally pinned to on
+  2026-08-27 (before it was rejected by the account's data policy — "No endpoints
+  available matching your guardrail restrictions"). If the probe gate rejects it
+  again, revert to `openrouter/google/gemini-3-flash-preview` per the fallback table.
+- `AGENTS.md` fallback table updated (vision-exp -> gemini-3-flash-preview).
+
 ## 2026-08-28: orchestrator model changed to DeepSeek V4 Pro 0813
 
 - From: `openrouter/moonshotai/kimi-k3`

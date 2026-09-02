@@ -240,11 +240,20 @@ export class UpdateService {
     return this._state;
   }
 
-  /** Trigger download of the available update. No-op if not in 'available' state. */
+  /** Trigger download of the available update. No-op if not in 'available' state.
+   *
+   *  Pushes a `downloading` state with `progress: 0` IMMEDIATELY before calling
+   *  `autoUpdater.downloadUpdate()`, so the renderer receives the
+   *  `downloading` state via `update:statusChanged` as soon as the user
+   *  clicks Download — not after the first `download-progress` event (which
+   *  can lag by seconds while electron-updater opens the HTTP connection and
+   *  waits for the first bytes). Subsequent `download-progress` events update
+   *  the progress continuously; `update-downloaded` flips to `downloaded`. */
   async download(): Promise<UpdateState> {
     if (this._state.kind !== 'available') {
       return this._state;
     }
+    this._setState({ kind: 'downloading', progress: 0 });
     try {
       await autoUpdater.downloadUpdate();
     } catch (err: unknown) {

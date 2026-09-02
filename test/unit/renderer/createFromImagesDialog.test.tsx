@@ -186,12 +186,20 @@ describe("CreateFromImagesDialog — quality control", () => {
 });
 
 describe("CreateFromImagesDialog — close paths", () => {
-  it("fires onClose when the backdrop is clicked", () => {
+  it("fires onClose when the backdrop is clicked (genuine outside click)", () => {
+    // B3/B6 — a REAL outside click (mousedown AND click both on the
+    // backdrop) still closes; `backdrop.click()` alone dispatches
+    // only the click, so the mousedown must fire first.
     const onClose = vi.fn();
     const { container, cleanup } = renderDialog({ onClose });
     const backdrop = container.querySelector<HTMLElement>(".modal-backdrop");
     expect(backdrop).not.toBeNull();
     if (backdrop === null) return cleanup();
+    act((): void => {
+      backdrop.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+      );
+    });
     act((): void => {
       backdrop.click();
     });

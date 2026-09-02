@@ -1446,12 +1446,30 @@ textarea {
   pointer-events: auto;
 }
 
+/* The textLayer is a search/selection overlay, not visual content.
+ * The spans MUST stay transparent so the OCR invisible layer (the
+ * engine's Tr=3 text written by `ocrRecognize`) never paints
+ * visible glyphs over the page — the "overlapping white text after
+ * OCR" artifact. `-webkit-text-fill-color` pins the fill at the
+ * WebKit/Chromium layer too, so no inherited / selected fill can
+ * leak through the plain `color` guard. */
 .textLayer :is(span, br) {
   color: transparent;
+  -webkit-text-fill-color: transparent;
   position: absolute;
   white-space: pre;
   cursor: text;
   transform-origin: 0% 0%;
+}
+
+/* Selecting text over an OCR'd / hybrid page must NOT paint the
+ * invisible overlay glyphs (they can be misaligned with the page
+ * content and read as white-on-white). Keep the fill transparent on
+ * selection — the UA selection background still shows where the
+ * range is. */
+.textLayer :is(span, br)::selection {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
 }
 
 .highlight-layer {
@@ -3749,6 +3767,34 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
+/* Bug 9 — immediate download feedback. The moment the user clicks
+   Update the dialog (and the toolbar indicator) shows progress with
+   no blank moment: a small inline spinner next to the "Downloading…"
+   copy, and an indeterminate animated bar until the first progress
+   event turns the bar determinate. Reuses the existing spin
+   keyframes; tokens only, no new colours. */
+.update-prompt-downloading-text {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.update-prompt-spinner {
+  flex: 0 0 auto;
+  color: var(--accent);
+  animation: update-indicator-spin 1.4s linear infinite;
+}
+
+.update-prompt-progress-indeterminate .update-prompt-progress-bar {
+  width: 40%;
+  animation: update-prompt-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes update-prompt-indeterminate {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(360%); }
+}
+
 .update-prompt-actions {
   display: flex;
   justify-content: flex-end;
@@ -4583,6 +4629,42 @@ textarea {
 .edit-image-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
 .edit-image-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 
+/* B5 — committed text-box selection surface. The box tool renders
+ * a dashed outline at each committed box's rect so the baked box
+ * can be selected and dragged. The box's text stays on the page
+ * canvas underneath; the surface is the editable affordance. */
+.edit-box {
+  position: absolute;
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-1);
+  background: rgba(37, 99, 235, 0.04);
+  cursor: move;
+  user-select: none;
+  pointer-events: auto;
+}
+
+.edit-box-selected {
+  border-color: var(--accent);
+  border-style: solid;
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.edit-box-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--bg-raised);
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: auto;
+  z-index: 2;
+}
+
+.edit-box-handle-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.edit-box-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.edit-box-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.edit-box-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+
 /* Image-create preview: dashed rect while the user is dragging out
  * a new placement. Slightly different treatment from the box
  * preview so the two tools are visually distinct. */
@@ -4955,53 +5037,36 @@ textarea {
   padding: 4px 0;
 }
 
-/* Suspects panel (right-side rail) */
+/* Suspects panel (top bar over the workspace) */
 .ocr-suspects-panel {
   display: flex;
   flex-direction: column;
-  width: 280px;
-  min-width: 280px;
   background: var(--bg-rail);
-  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
-  min-height: 0;
-  overflow: hidden;
-  /* B14 — right-side rail overlay. The panel is a direct child of
-   * `.app-main` (a flex column); without an explicit position it
-   * fell into the flex flow and rendered at the LEFT edge
-   * (x: 0, width: 280) where it covered the side rail AND the
-   * annotation toolbar (`.ann-toolbar` starts at x: 220) — the
-   * "hides behind the shapes bar" report. Pinning it to the
-   * right edge of `.app-main` (which is `position: relative`)
-   * turns it into a proper right-side rail, mirroring the Tools
-   * palette. z-index 29 sits just below the palette (30) so the
-   * two right-side surfaces stack cleanly when both are open.
-   *
-   * DEF-107 (B14) — `top` starts BELOW the workspace toolbar
-   * strip instead of `top: 0`. The `.ann-toolbar` runs the full
-   * workspace width (x: 220..right edge) as a horizontal strip,
-   * so a full-height panel at `top: 0` overlapped its Shapes
-   * group by 280x40px. `--toolbar-h` skips the page-toolbar row,
-   * and the added `--ann-toolbar-h` skip the annotation-toolbar
-   * row itself (40px min-height), plus a hairline gap — the same
-   * offset strategy the Tools palette uses, extended past both
-   * toolbar rows. `height` is left unset so `top` + `bottom`
-   * define the panel's extent (a `height: 100%` combined with a
-   * nonzero `top` would push the bottom 100px past app-main). */
+  /* B4 — the suspects surface is a TOP BAR, not a right-side rail.
+   * As a 280px right-rail overlay at z-index 29 it sat UNDER the
+   * Tools palette (z-index 30) in the same right-rail slot, so an
+   * open palette covered the suspect entries and made the panel
+   * unusable. Anchored to the top of `.app-main` (position:
+   * relative) spanning the full width, with z-index 40 (ABOVE the
+   * palette's 30), the bar is never covered — palette or not. */
   position: absolute;
   top: calc(var(--toolbar-h, 56px) + var(--ann-toolbar-h, 40px) + var(--sp-1));
+  left: 0;
   right: 0;
-  bottom: 0;
-  z-index: 29;
+  max-height: 172px;
+  z-index: 40;
+  overflow: hidden;
 }
 
 .ocr-suspects-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: var(--sp-3);
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border-subtle);
+  flex: 0 0 auto;
 }
 
 .ocr-suspects-title {
@@ -5013,6 +5078,7 @@ textarea {
   color: var(--fg-strong);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 .ocr-suspects-close {
@@ -5027,6 +5093,7 @@ textarea {
   cursor: pointer;
   border-radius: var(--radius-1);
   transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  margin-left: auto;
 }
 
 .ocr-suspects-close:hover {
@@ -5035,14 +5102,12 @@ textarea {
 }
 
 .ocr-suspects-summary {
-  display: flex;
+  display: inline-flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 8px;
-  padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border-subtle);
   font-size: var(--fs-xs);
   color: var(--fg-muted);
+  white-space: nowrap;
 }
 
 .ocr-suspects-pages {
@@ -5051,28 +5116,39 @@ textarea {
 
 .ocr-suspects-body {
   flex: 1 1 auto;
-  overflow-y: auto;
-  padding: var(--sp-2) 0;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
 }
 
 .ocr-suspects-empty {
-  padding: var(--sp-3) var(--sp-3) var(--sp-4);
+  padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-xs);
   color: var(--fg-muted);
   font-style: italic;
+  white-space: nowrap;
 }
 
 .ocr-suspects-page {
-  padding: 0 var(--sp-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: max-content;
+  flex: 0 0 auto;
+  padding: 2px 0;
 }
 
 .ocr-suspects-page-header {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
-  padding: var(--sp-2) var(--sp-2) 4px;
+  gap: 8px;
   font-size: var(--fs-xs);
   color: var(--fg-muted);
+  white-space: nowrap;
 }
 
 .ocr-suspects-page-label {
@@ -5089,7 +5165,9 @@ textarea {
   margin: 0;
   padding: 0;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 320px;
 }
 
 .ocr-suspects-entry {
@@ -5098,45 +5176,45 @@ textarea {
 }
 
 .ocr-suspects-entry-btn {
-  display: grid;
-  grid-template-columns: 1fr auto;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 6px var(--sp-2);
-  background: transparent;
-  border: none;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-1);
   cursor: pointer;
   text-align: left;
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
   color: var(--fg);
-  transition: background var(--t-quick) var(--ease);
+  white-space: nowrap;
+  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
 }
 
 .ocr-suspects-entry-btn:hover {
   background: var(--bg-hover);
+  border-color: var(--border);
 }
 
 .ocr-suspects-word {
   font-size: var(--fs-sm);
   font-weight: 500;
   color: var(--fg-strong);
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .ocr-suspects-confidence {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-width: 78px;
+  min-width: 66px;
 }
 
 .ocr-suspects-confidence-bar {
   display: inline-block;
-  width: 56px;
+  width: 44px;
   height: 4px;
   background: var(--bg-base);
   border-radius: 999px;

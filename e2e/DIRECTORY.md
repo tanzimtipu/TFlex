@@ -14,6 +14,7 @@
 - `retests/def_085_alignment.spec.cjs`: Verification of title bar control alignment.
 - `retests/def_079_080.spec.cjs`: Verification of OTA IPC surface stability.
 - `retests/def_108_115_verify.spec.cjs`: Decisive verification of DEF-108..DEF-115 on the installed app (edit-text live render, size arrow/spinner, context-window bar press, DOCX page range, OCR form value, add-box live render, insert blank page end, crop no-flash).
+- `retests/release_gate_117_verify.spec.cjs`: v1.7.7 release-gate verification on the installed app — DEF-117 fix (all dialogs open without #310), B1 (sign re-click handles), B3/B6 (drag-out stays open + backdrop click closes), B4 (OCR suspects top bar), B5 (add-box movable + font live), B7 (insert blank after page 1 -> 35 pages, no dup), B8a (crop mode-switch no flicker), B8b (per-page crop only the adjusted page), B8c (undo after page op reverts), B10 (restore icon distinct).
 - `retests/remaining_sweep.spec.cjs`: Miscellaneous feature verification.
 
 ## Support / Library

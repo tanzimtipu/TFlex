@@ -38,6 +38,7 @@ import {
   type EditTextStyle,
   type EditTool,
   type ImagePlacement,
+  type TextBoxPlacement,
 } from "./model";
 import {
   cropImageRect,
@@ -116,6 +117,21 @@ interface ImageDragState {
   startRect: { x: number; y: number; width: number; height: number };
 }
 
+/** B5 — in-flight drag on a committed text box. `kind` tells the
+ *  pointer handlers whether the user is moving the box body or
+ *  pulling a corner handle (resize). No engine op exists to move a
+ *  baked box, so the drag is renderer-local: it updates the box's
+ *  rect in the local registry and the overlay re-draws `.edit-box`
+ *  at the new rect (the authorized at-minimum — see the B5 report
+ *  for the persistence limit). */
+interface TextBoxDragState {
+  kind: "move" | "resize";
+  id: string;
+  handle?: ImageResizeHandle;
+  origin: { x: number; y: number };
+  startRect: { x: number; y: number; width: number; height: number };
+}
+
 interface CropDragState {
   /** Crop rect in the image's local coordinate system (0..1). */
   from: { x: number; y: number };
@@ -142,6 +158,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   const [textTarget, setTextTarget] = useState<TextEditTarget | null>(null);
   const [boxDrag, setBoxDrag] = useState<BoxDragState | null>(null);
   const [imageDrag, setImageDrag] = useState<ImageDragState | null>(null);
+  const [textBoxDrag, setTextBoxDrag] = useState<TextBoxDragState | null>(null);
   const [cropDrag, setCropDrag] = useState<CropDragState | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Force a re-render after async image-byte operations; the
@@ -170,6 +187,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     setTextTarget(null);
     setBoxDrag(null);
     setImageDrag(null);
+    setTextBoxDrag(null);
     setCropDrag(null);
   }, [tool, page]);
 
@@ -192,6 +210,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   const selectedPlacement = edit.selectedImage !== null
     ? placementsForPage.find((p) => p.id === edit.selectedImage?.id) ?? null
     : null;
+  const boxesForPage = edit.textBoxes.filter((b) => b.page === page);
   void dragTick; // referenced to keep React happy
 
   // Click on a text run (text tool) ---------------------------------------
@@ -323,6 +342,22 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       return;
     }
     if (tool === "box") {
+      // B5 — did the user press on an already-committed text box?
+      // If so, select it and start a move drag on it. Otherwise
+      // deselect and start a drag-to-create (which opens the inline
+      // editor).
+      const hit = hitTextBox(boxesForPage, pt);
+      if (hit !== null) {
+        dispatch({ type: "select-text-box", textBoxId: hit.id });
+        setTextBoxDrag({
+          kind: "move",
+          id: hit.id,
+          origin: { x: e.clientX, y: e.clientY },
+          startRect: { ...hit.rect },
+        });
+        return;
+      }
+      dispatch({ type: "select-text-box", textBoxId: null });
       setBoxDrag({ from: pt, to: pt });
       e.preventDefault();
       return;
@@ -389,6 +424,31 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           pageHeightPt,
         );
         dispatch({ type: "set-image-rect", id: imageDrag.id, rect: next });
+        return;
+      }
+    }
+    if (textBoxDrag !== null) {
+      const dx = (e.clientX - textBoxDrag.origin.x) / cssScale;
+      const dy = (e.clientY - textBoxDrag.origin.y) / cssScale;
+      if (textBoxDrag.kind === "move") {
+        const next = moveImageRect(
+          textBoxDrag.startRect,
+          { x: dx, y: dy },
+          pageWidthPt,
+          pageHeightPt,
+        );
+        dispatch({ type: "set-text-box-rect", id: textBoxDrag.id, rect: next });
+        return;
+      }
+      if (textBoxDrag.kind === "resize" && textBoxDrag.handle !== undefined) {
+        const next = resizeImageRect(
+          textBoxDrag.startRect,
+          textBoxDrag.handle,
+          { x: dx, y: dy },
+          pageWidthPt,
+          pageHeightPt,
+        );
+        dispatch({ type: "set-text-box-rect", id: textBoxDrag.id, rect: next });
         return;
       }
     }
@@ -474,6 +534,16 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         });
         return;
       }
+    }
+    if (textBoxDrag !== null) {
+      // B5 — commit the box drag. The rect was already updated in
+      // the local registry during pointermove; no engine op exists
+      // to move a baked box, so this just ends the drag. See the B5
+      // report for the persistence limit and the proposed contract
+      // addition that would persist it.
+      (e.target as Element).releasePointerCapture?.(e.pointerId);
+      setTextBoxDrag(null);
+      return;
     }
     if (boxDrag !== null) {
       const from = boxDrag.from;
@@ -624,6 +694,29 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         />
       )}
 
+      {tool === "box" && boxesForPage.map((b) => (
+        <TextBoxView
+          key={b.id}
+          box={b}
+          cssScale={cssScale}
+          selected={edit.selectedTextBox === b.id}
+          onPointerDownHandle={(e, handle): void => {
+            // B5 — corner-handle drag resizes the committed box.
+            e.stopPropagation();
+            e.preventDefault();
+            (e.target as Element).setPointerCapture(e.pointerId);
+            setTextBoxDrag({
+              kind: "resize",
+              id: b.id,
+              handle,
+              origin: { x: e.clientX, y: e.clientY },
+              startRect: { ...b.rect },
+            });
+            dispatch({ type: "select-text-box", textBoxId: b.id });
+          }}
+        />
+      ))}
+
       {tool === "image" && (
         <>
           {placementsForPage.map((p) => (
@@ -760,6 +853,27 @@ function hitPlacement(
   return null;
 }
 
+/** B5 — hit-test for a committed text box. Same reverse-iteration
+ *  rule as `hitPlacement` (most-recently-added wins on overlap). */
+function hitTextBox(
+  boxes: TextBoxPlacement[],
+  pt: { x: number; y: number },
+): TextBoxPlacement | null {
+  for (let i = boxes.length - 1; i >= 0; i -= 1) {
+    const b = boxes[i];
+    if (b === undefined) continue;
+    if (
+      pt.x >= b.rect.x &&
+      pt.x <= b.rect.x + b.rect.width &&
+      pt.y >= b.rect.y &&
+      pt.y <= b.rect.y + b.rect.height
+    ) {
+      return b;
+    }
+  }
+  return null;
+}
+
 interface PlacementViewProps {
   placement: ImagePlacement;
   cssScale: number;
@@ -809,6 +923,50 @@ function PlacementView(props: PlacementViewProps): ReactElement {
           a thin border without the dashed selected border being
           misleading. */}
       {isResizing && <div className="edit-image-placement-resizing" />}
+    </div>
+  );
+}
+
+interface TextBoxViewProps {
+  box: TextBoxPlacement;
+  cssScale: number;
+  selected: boolean;
+  onPointerDownHandle: (e: ReactPointerEvent<HTMLDivElement>, handle: ImageResizeHandle) => void;
+}
+
+/** B5 — a committed text box's selection + drag surface. It draws a
+ *  dashed outline (and corner handles when selected) at the box's
+ *  rect so the box tool can select / move the baked box. The box's
+ *  text itself stays on the page canvas underneath; the surface is
+ *  the editable affordance (mirrors the image-placement surface). */
+function TextBoxView(props: TextBoxViewProps): ReactElement {
+  const { box, cssScale, selected, onPointerDownHandle } = props;
+  const style: CSSProperties = {
+    position: "absolute",
+    left: box.rect.x * cssScale,
+    top: box.rect.y * cssScale,
+    width: box.rect.width * cssScale,
+    height: box.rect.height * cssScale,
+  };
+  return (
+    <div
+      className={
+        selected
+          ? "edit-box edit-box-selected"
+          : "edit-box"
+      }
+      data-edit-box-id={box.id}
+      style={style}
+    >
+      {selected &&
+        (["nw", "ne", "sw", "se"] as const).map((h) => (
+          <div
+            key={h}
+            className={`edit-box-handle edit-box-handle-${h}`}
+            data-edit-box-handle={h}
+            onPointerDown={(e): void => onPointerDownHandle(e, h)}
+          />
+        ))}
     </div>
   );
 }

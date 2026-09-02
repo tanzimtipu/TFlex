@@ -25,6 +25,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { X } from 'lucide-react';
+import { useBackdropClose } from './modalBackdrop';
 
 interface SaveAsDialogProps {
   open: boolean;
@@ -82,6 +83,10 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop (a drag from the linearize checkbox must not dismiss).
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   const onToggleLinearize = (e: React.ChangeEvent<HTMLInputElement>): void => {
@@ -107,7 +112,7 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div
         className="modal-dialog dialog"
         ref={dialogRef}

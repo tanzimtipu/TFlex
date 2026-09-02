@@ -68,6 +68,24 @@ export function hexToColor(hex: string): { r: number; g: number; b: number } {
   };
 }
 
+/** B5 — the CSS font-family that mirrors a PDF standard font so
+ *  the live textarea preview reflects the chosen font immediately.
+ *  The engine draws `Times` as Times-Roman and `Courier` as
+ *  Courier (the PDF standard-14 families); the preview maps each to
+ *  the nearest locally-installed font so picking Times/Courier in
+ *  the Font select changes the on-screen glyphs right away. */
+export function fontFamilyFor(font: EditFont): string {
+  switch (font) {
+    case "Times":
+      return '"Times New Roman", Times, serif';
+    case "Courier":
+      return '"Courier New", Courier, monospace';
+    case "Helvetica":
+    default:
+      return "Helvetica, Arial, sans-serif";
+  }
+}
+
 export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
   const { rect, cssScale, initialText, initialStyle, mode, onCommit, onCancel } = props;
   const [text, setText] = useState<string>(initialText);
@@ -332,6 +350,11 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
           height: heightCss,
           color: colorToHex(style.color),
           fontSize: `${style.size * cssScale}px`,
+          // B5 — the preview must reflect the chosen font live.
+          // The previous style omitted fontFamily, so picking
+          // Times/Courier in the Font select changed nothing on
+          // screen until commit.
+          fontFamily: fontFamilyFor(style.font),
         }}
         placeholder={mode === "edit" ? "Replace text..." : "Add text..."}
       />

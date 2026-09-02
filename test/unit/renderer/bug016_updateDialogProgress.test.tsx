@@ -10,8 +10,8 @@
 //      while the live state transitions through `checking` and
 //      `downloading`.
 //   2. Renders a progress bar + label when the live state is
-//      `downloading` (or a post-click `checking` with no
-//      progress yet) so the dialog gives visible feedback.
+//      `downloading` (or right after the Update click, before the
+//      first progress event) so the dialog gives visible feedback.
 //   3. Replaces the passive "Close" button with a "Cancel"
 //      action during the post-click download, so the user can
 //      dismiss the dialog without waiting for the download to
@@ -67,14 +67,12 @@ function renderDialog(args: {
 }
 
 describe("Bug 16 — UpdatePromptDialog progress + cancel transitions", () => {
-  it("promptKindFromState maps 'downloading' to the checking kind (progress state)", () => {
-    // The dialog's `kind` enum is coarser than the live state —
-    // both 'checking' and 'downloading' map to "checking" so the
-    // body+actions branches don't need a new variant. The
-    // progress bar appears inside the "checking" branch when
-    // the live state is `downloading` OR when a post-click
-    // version snapshot exists.
-    expect(promptKindFromState(makeDownloading(50))).toBe("checking");
+  it("promptKindFromState maps 'downloading' to the 'downloading' kind (Bug 9 progress state)", () => {
+    // Bug 9 — the dialog renders its own progress presentation for
+    // the `downloading` state (spinner + "Downloading…" + live
+    // percent) instead of folding it into the passive "checking"
+    // kind, so the pure mapping keeps them distinct.
+    expect(promptKindFromState(makeDownloading(50))).toBe("downloading");
   });
 
   it("renders the download progress bar when state is 'downloading'", () => {

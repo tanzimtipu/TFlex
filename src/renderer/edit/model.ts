@@ -59,6 +59,9 @@ export interface EditState {
    *  points). `null` when no placement is selected — the overlay
    *  then doesn't draw handles. */
   selectedImage: SelectedImage | null;
+  /** Currently selected committed text box (B5). `null` when no
+   *  box is selected. */
+  selectedTextBox: string | null;
   /** Bytes the user picked from a file dialog for an in-flight
    *  "replace" op. The overlay's "Replace" button applies them
    *  through `engine.editImage(op: 'replace', ...)`. `null` when
@@ -72,6 +75,13 @@ export interface EditState {
    *  is updated here with the new rect + bytes, so the next
    *  edit (move/resize/crop) has the right starting point. */
   placements: ImagePlacement[];
+  /** B5 — per-tab registry of committed text boxes (the boxes the
+   *  user added via the "Add box" tool). The engine draws the box
+   *  into its copy of the PDF but exposes no per-box rect, so the
+   *  renderer keeps a local list — exactly like the image
+   *  placements — so the committed boxes can be selected and their
+   *  rect re-drawn at a new position (the box-tool move). */
+  textBoxes: TextBoxPlacement[];
   /** True while the crop-drag is in progress. The overlay draws
    *  a marquee inside the selected placement; on pointerup the
    *  crop is committed through `engine.editImage(op: 'crop')`. */
@@ -101,6 +111,20 @@ export interface SelectedImage {
   id: string;
 }
 
+/** B5 — a committed text box the renderer mirrors locally so the
+ *  "Add box" tool can select / move the box. The id is local to
+ *  the tab; it never reaches the wire (the engine only knows the
+ *  baked drawing). */
+export interface TextBoxPlacement {
+  id: string;
+  /** 1-based visible page the box lives on. */
+  page: number;
+  rect: { x: number; y: number; width: number; height: number };
+  text: string;
+  style: EditTextStyle;
+  background: "white" | "none";
+}
+
 export interface PendingImage {
   page: number;
   oldRect: { x: number; y: number; width: number; height: number };
@@ -116,8 +140,10 @@ export interface PendingImage {
 export const initialEditState: EditState = {
   tool: "off",
   selectedImage: null,
+  selectedTextBox: null,
   pendingReplace: null,
   placements: [],
+  textBoxes: [],
   cropping: false,
 };
 
@@ -131,6 +157,9 @@ export type EditAction =
   | { type: "arm-replace"; pending: PendingImage | null }
   | { type: "upsert-placement"; placement: ImagePlacement }
   | { type: "delete-placement"; id: string }
+  | { type: "select-text-box"; textBoxId: string | null }
+  | { type: "set-text-box-rect"; id: string; rect: TextBoxPlacement["rect"] }
+  | { type: "upsert-text-box"; placement: TextBoxPlacement }
   | { type: "set-cropping"; cropping: boolean }
   | { type: "reset" };
 
@@ -149,8 +178,11 @@ export function editReducer(state: EditState, action: EditAction): EditState {
           // Preserved across close: the placements list keeps
           // the user's edits visible after they re-open the
           // palette (matches the annotation overlay's "selection
-          // is preserved until tool change" pattern).
+          // is preserved until tool change" pattern). The
+          // committed text-box list is preserved the same way
+          // (B5).
           placements: state.placements,
+          textBoxes: state.textBoxes,
         };
       }
       return { ...state, tool: action.tool, cropping: false };
@@ -184,6 +216,26 @@ export function editReducer(state: EditState, action: EditAction): EditState {
       const next = state.placements.filter((p) => p.id !== action.id);
       const stillSelected = state.selectedImage?.id === action.id ? null : state.selectedImage;
       return { ...state, placements: next, selectedImage: stillSelected };
+    }
+    case "select-text-box":
+      return { ...state, selectedTextBox: action.textBoxId, cropping: false };
+    case "set-text-box-rect": {
+      const idx = state.textBoxes.findIndex((b) => b.id === action.id);
+      if (idx === -1) return state;
+      const next = state.textBoxes.slice();
+      const target = next[idx];
+      if (target === undefined) return state;
+      next[idx] = { ...target, rect: action.rect };
+      return { ...state, textBoxes: next };
+    }
+    case "upsert-text-box": {
+      const idx = state.textBoxes.findIndex((b) => b.id === action.placement.id);
+      if (idx === -1) {
+        return { ...state, textBoxes: [...state.textBoxes, action.placement] };
+      }
+      const next = state.textBoxes.slice();
+      next[idx] = action.placement;
+      return { ...state, textBoxes: next };
     }
     case "set-cropping":
       return { ...state, cropping: action.cropping };

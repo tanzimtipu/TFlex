@@ -10,6 +10,12 @@
 //        Primary button: Update   -> calls update.download()
 //        Secondary:      Cancel   -> dismisses the dialog
 //
+//   - 'downloading' state (Bug 9): immediate progress feedback
+//     after Update is clicked (spinner + "Downloading…", then the
+//     live percent once events flow). The host dismisses the popup
+//     to the background on Update click and the toolbar indicator
+//     keeps surfacing progress, so the user can keep working.
+//
 //   - 'downloaded' state: "Restart to update to X.Y.Z"
 //        Primary button: Restart  -> calls update.install()
 //        Secondary:      Later    -> dismisses the dialog
@@ -39,7 +45,7 @@
 
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
-import { Download, RefreshCw, X } from "lucide-react";
+import { Download, RefreshCw, RotateCw, X } from "lucide-react";
 import type { UpdateState } from "../../shared/types";
 
 /** What the dialog can render. Mirrors the live backend state
@@ -47,6 +53,11 @@ import type { UpdateState } from "../../shared/types";
  *  the wrong prompt for the wrong state. Pure: see unit tests. */
 export type UpdatePromptKind =
   | "available"
+  // Bug 9 — the "downloading" presentation (immediate progress on
+  // the Update click) is its own kind; `promptKindFromState` maps
+  // the backend's `downloading` here and `dialogKind` pins the
+  // dialog here right after an Update click.
+  | "downloading"
   | "downloaded"
   | "unsupported"
   | "error"
@@ -77,12 +88,12 @@ export function promptKindFromState(
     case "downloaded":
       return "downloaded";
     case "downloading":
-      // The dialog handles the transitional "downloading" state
-      // the same as a passive update-info state — the toolbar
-      // indicator is already rendering the progress chip, so the
-      // prompt stays a passive "checking" affordance rather than
-      // duplicating it.
-      return "checking";
+      // The transitional "downloading" state renders the progress
+      // presentation directly (Bug 9): an indeterminate spinner +
+      // "Downloading…" the instant the user commits, then the live
+      // percent as progress events flow. No more "no progress for
+      // seconds" blank after the Update click.
+      return "downloading";
     case "unsupported":
       return "unsupported";
     case "error":
@@ -94,6 +105,34 @@ export function promptKindFromState(
     default:
       return assertNever(kind);
   }
+}
+
+/** Effective presentation kind for the dialog. Once the user clicks
+ *  Update (`pendingVersion` set), the dialog pins itself to the
+ *  "downloading" presentation IMMEDIATELY — independent of the
+ *  backend's progress events — so the Update click always gets
+ *  instant progress feedback instead of a blank moment (Bug 9). A
+ *  terminal state (`downloaded` / `error` / `unsupported`)
+ *  supersedes it. Pure: exported for unit tests. */
+export function dialogKind(
+  state: UpdateState | null | undefined,
+  pendingVersion: string | null,
+): UpdatePromptKind {
+  if (pendingVersion !== null && state !== null && state !== undefined) {
+    switch (state.kind) {
+      case "downloaded":
+        return "downloaded";
+      case "error":
+        return "error";
+      case "unsupported":
+        return "unsupported";
+      default:
+        // available / checking / downloading / up-to-date — all stay
+        // on the download progress the user just asked for.
+        return "downloading";
+    }
+  }
+  return promptKindFromState(state);
 }
 
 interface UpdatePromptDialogProps {
@@ -167,7 +206,11 @@ export function UpdatePromptDialog(
     return null;
   }
 
-  const kind = promptKindFromState(state);
+  // Bug 9 — the effective kind takes the post-click `pendingVersion`
+  // into account so the dialog flips to the "downloading" progress
+  // presentation the moment the user clicks Update, without waiting
+  // for the backend's first progress event to arrive.
+  const kind = dialogKind(state, pendingVersion);
 
   const renderHeader = (): ReactElement => {
     // Exhaustive switch over UpdatePromptKind. New kinds added
@@ -187,19 +230,23 @@ export function UpdatePromptDialog(
             Restart to update
           </h2>
         );
+      case "downloading":
+        // Immediate feedback on the Update click. `pendingVersion`
+        // is normally set (the user just clicked Update); fall back
+        // to a generic label if the dialog somehow renders this kind
+        // without a committed version.
+        return (
+          <h2 id="update-prompt-title" className="sheet-title">
+            {pendingVersion !== null
+              ? `Downloading update to v${pendingVersion}`
+              : "Downloading update…"}
+          </h2>
+        );
       case "checking":
-        // While downloading, the live state may briefly flip to
-        // `checking` (the backend re-resolves metadata); show the
-        // post-click progress header instead so the user still
-        // sees what's happening. Falls back to "Checking for
-        // updates" when no post-click snapshot is set yet.
-        if (pendingVersion !== null) {
-          return (
-            <h2 id="update-prompt-title" className="sheet-title">
-              Downloading update to v{pendingVersion}
-            </h2>
-          );
-        }
+        // Headline for the passive "Looking for the latest version"
+        // copy below. Reached only when no post-click version is
+        // pending (a manual re-check); the post-click path renders
+        // the "downloading" kind instead (see `dialogKind`).
         return (
           <h2 id="update-prompt-title" className="sheet-title">
             Checking for updates
@@ -265,57 +312,72 @@ export function UpdatePromptDialog(
           </div>
         );
       }
-      case "checking":
-        // Two reasons we land here:
-        //   1. The backend is genuinely "checking" (a manual re-check
-        //      started from somewhere else).
-        //   2. The user clicked Update and the live state is now
-        //      `downloading` (mapped to "checking" above). The dialog
-        //      should show a progress bar and a Cancel action —
-        //      previously it sat on the passive "Looking for the
-        //      latest version" copy with no feedback (DEF: update
-        //      pop-up doesn't dismiss or show download progress).
-        const isDownloading =
-          state !== null &&
-          state !== undefined &&
-          state.kind === "downloading";
-        const liveProgress =
-          isDownloading && state.kind === "downloading"
-            ? Math.max(0, Math.min(100, Math.round(state.progress)))
-            : null;
-        // When we're post-click but the live state hasn't pushed a
-        // progress event yet, show an indeterminate progress bar so
-        // the user gets immediate feedback after the click.
-        const effectiveProgress =
-          liveProgress ?? (pendingVersion !== null ? 0 : null);
-        if (effectiveProgress !== null) {
+      case "downloading":
+        // Immediate feedback on the Update click (Bug 9). The moment
+        // the user commits, the dialog shows an indeterminate spinner
+        // + animated bar ("Downloading…"); once `downloading(N)`
+        // events flow (the backend pushes `downloading(0)` with no
+        // gap), the bar + label go determinate with the live percent.
+        // The host dismisses this to the background on Update click;
+        // if it ever renders while open (or the IPC is absent), the
+        // user still sees progress instantly instead of a blank.
+        {
+          const liveProgress =
+            state !== null &&
+            state !== undefined &&
+            state.kind === "downloading"
+              ? Math.max(0, Math.min(100, Math.round(state.progress)))
+              : null;
+          const indeterminate = liveProgress === null;
           return (
-            <div className="update-prompt-body" data-update-prompt-kind="downloading">
-              <p className="update-prompt-text">
-                Downloading the update in the background. You can keep
-                working — TFlex will prompt you when the new version is
-                ready to install.
+            <div
+              className="update-prompt-body"
+              data-update-prompt-kind="downloading"
+              data-update-prompt-downloading
+            >
+              <p className="update-prompt-text update-prompt-downloading-text">
+                <RotateCw
+                  size={14}
+                  aria-hidden
+                  className="update-prompt-spinner"
+                />
+                <span>
+                  {indeterminate
+                    ? "Downloading the update…"
+                    : "Downloading the update in the background."}
+                </span>
               </p>
               <div
-                className="update-prompt-progress"
+                className={
+                  indeterminate
+                    ? "update-prompt-progress update-prompt-progress-indeterminate"
+                    : "update-prompt-progress"
+                }
                 role="progressbar"
+                aria-label="Update download progress"
+                aria-busy={indeterminate}
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-valuenow={effectiveProgress}
-                aria-label="Update download progress"
-                data-update-prompt-progress={effectiveProgress}
+                aria-valuenow={liveProgress ?? 0}
+                data-update-prompt-progress={liveProgress}
               >
                 <div
                   className="update-prompt-progress-bar"
-                  style={{ width: `${effectiveProgress}%` }}
+                  style={
+                    indeterminate ? undefined : { width: `${liveProgress}%` }
+                  }
                 />
               </div>
-              <p className="update-prompt-progress-label">
-                {effectiveProgress}%
-              </p>
+              {!indeterminate && (
+                <p className="update-prompt-progress-label">{liveProgress}%</p>
+              )}
             </div>
           );
         }
+      case "checking":
+        // Passive "Looking for the latest version" (a manual re-check).
+        // The post-click download path renders the "downloading" kind
+        // instead (see `dialogKind`).
         return (
           <div className="update-prompt-body" data-update-prompt-kind="checking">
             <p className="update-prompt-text">
@@ -430,30 +492,45 @@ export function UpdatePromptDialog(
             </button>
           </div>
         );
-      // Non-actionable states get a single OK button that just
+      // Non-actionable states get a single OK/Close button that just
       // dismisses — the dialog stays useful as an explanation
       // surface without offering a false primary action.
-      case "checking": {
-        // During a post-click download the user expects a Cancel
-        // action that closes the dialog (the toolbar indicator
-        // continues to surface the progress independently). Before
-        // the user clicks Update we render the passive "Close"
-        // affordance.
-        const isPostClick = pendingVersion !== null;
+      case "downloading":
+        // Bug 9 — the only action while the (background) download
+        // runs is "Cancel", which dismisses the prompt to the
+        // background: the download continues and the toolbar
+        // indicator keeps showing the progress. The host closes the
+        // popup on the Update click itself, so this is mostly the
+        // path for a dialog that stays open during downloading.
         return (
-          <div className="update-prompt-actions" data-update-prompt-actions={isPostClick ? "downloading" : "checking"}>
+          <div className="update-prompt-actions" data-update-prompt-actions="downloading">
             <button
               type="button"
               className="btn btn-secondary"
               onClick={onClose}
-              data-update-prompt-cancel={isPostClick ? "true" : undefined}
-              data-update-prompt-close={isPostClick ? undefined : "true"}
+              data-update-prompt-cancel
             >
-              {isPostClick ? "Cancel" : "Close"}
+              Cancel
             </button>
           </div>
         );
-      }
+      case "checking":
+        // Passive manual re-check — a single Close (no action).
+        return (
+          <div className="update-prompt-actions" data-update-prompt-actions="checking">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onClose}
+              data-update-prompt-close
+            >
+              Close
+            </button>
+          </div>
+        );
+      // Non-actionable states get a single OK button that just
+      // dismisses — the dialog stays useful as an explanation
+      // surface without offering a false primary action.
       case "up-to-date":
       case "unsupported":
       case "error":

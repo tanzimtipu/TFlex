@@ -1,3 +1,135 @@
+## DEF-121: Insert-blank-page (mid-document) throws unhandled pdf.js "Invalid page request" twice
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.7, rebuilt + reinstalled 11:24 PM).
+2. Open report.pdf (34 pages).
+3. Tools palette -> "Insert pages", leave mode "Blank page", set "Insert at page" to `1` (which lands the blank right after page 1), click Insert.
+4. Watch the renderer console (`pageerror`).
+
+Expected: The insert completes cleanly with no unhandled renderer errors.
+Actual: Immediately after the insert (during the post-op pdf.js proxy rebuild / side-rail thumbnail render) the renderer throws `Error: Invalid page request.` from `pdfjs getPage` TWICE. The engine state and rendered result are correct (35 pages, blank at rank 2, pageOrder `[0,34,1,2,...]`, no duplicate pages), and the saved file re-opens as a valid 35-page PDF (document-safety check: save -> reopen -> pageCount 35, unique 35) — so this is NOT corruption. The error also does NOT occur on the append (`end`) path; it is specific to inserting a blank page into the MIDDLE of the document (a reorder). Recorded as an unhandled console error in a core user flow; no visible degradation, but the developer should confirm whether it should be caught.
+
+History:
+- qa: opened (ground-truth on installed v1.7.7; reproduced while running e2e/retests/release_gate_117_verify.spec.cjs B7; `pageerror` stack points to pdf.js `getPage` from within the renderer bundle during the post-insert proxy refresh).
+
+## DEF-122: "Insert at page" hint contradicts actual placement — position N inserts AFTER page N, hint says it lands AS page N
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.7, rebuilt + reinstalled 11:24 PM).
+2. Open report.pdf (34 pages).
+3. Tools palette -> "Insert pages", mode "Blank page". The field help says: `Page number where the new content lands. Use end to append. 1 means "before page 1"; {totalPages + 1} means "appended after the last page"`.
+4. Enter `1` and observe the placed page; then re-insert with `2` and observe.
+
+Expected: Following the hint, entering `1` should make the blank page the FIRST page (before page 1), and entering `2` should make it the SECOND page (page 2).
+Actual: Entering `1` makes the blank page the SECOND page (pageOrder `[0,34,1,2,...]`), and entering `2` makes it the THIRD page (pageOrder `[0,1,34,2,...]`). Every numeric position is off by one from the hint: the engine treats the value as "insert AFTER page N" (`afterIndex = N-1` -> `insertAt = N`), so position `N` lands the new page at rank `N+1`. Only the `end` sentinel and the `{totalPages+1}` extreme clamp to a correct append. A user following the written hint (e.g. "insert after page 1" -> entering `2`) gets the page one slot later than intended.
+
+Root cause: InsertPagesDialog.tsx `parsed.position = N - 1` is passed as the engine `afterIndex` (0-based index AFTER which to insert), and `_insertBlankPageImpl` (engine.ts:1284) does `insertAt = afterIndex + 1`. The dialog's user-facing hint describes the value as "the rank the new content lands", which contradicts the engine's "after page N" contract. (The DEF-114 `end`/append fix is unaffected and still correct.)
+
+History:
+- qa: opened (ground-truth on installed v1.7.7; the "insert after page 1" flow is asserted in e2e/retests/release_gate_117_verify.spec.cjs B7 via position "1", and the off-by-one was characterized against position "1" and "2").
+
+## DEF-117: Modal dialogs cannot open — React #310 (Rules of Hooks) from the B3/B6 backdrop refactor; whole UI unmounts to a black window
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (v1.7.7 regression)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.7, rebuilt 22:45, exe newer than all src).
+2. Open report.pdf (34 pages).
+3. Click the "Sign" toolbar button (`button[aria-label="Sign tool"]`).
+
+Expected: The Signature manager modal (`.sig-manager`) opens so a signature can be drawn, typed, or a saved one picked and armed for placement.
+Actual: The renderer throws `Minified React error #310` ("Rendered more hooks than during the previous render") and the ENTIRE app UI unmounts to a black window (screenshots/def-117-sign-flow-broken.png) — no modal, no toolbar, no page. The identical #310 fires when any other modal-opening control is clicked (Export to Word, Insert pages, Crop pages, Recognize text, Save-As, Optimize, Merge, Split, Stamp, Flatten, etc.), so it is not specific to Sign.
+
+Root cause: The B3/B6 fix re-wired every modal backdrop through the shared `useBackdropClose` hook (src/renderer/components/modalBackdrop.ts). In 21 dialogs the hook is called AFTER the component's `if (!open) return null;` early return (e.g. SignatureManagerModal.tsx:72-77, DocxExportDialog.tsx:132-138, CropPagesDialog.tsx:168-174, InsertPagesDialog.tsx:156-162, OcrDialog.tsx:293-297). That violates the Rules of Hooks: when `open` flips false→true the hook count grows by one (`useRef` inside `useBackdropClose`), so React throws #310. The error is uncaught (no error boundary) and React unmounts the whole root, leaving a black window.
+
+Affected dialogs (21, all with the hook after `if (!open) return null;`): SignatureManagerModal, DocxExportDialog, CropPagesDialog, InsertPagesDialog, OcrDialog, DeletePageDialog, RenumberPagesDialog, ReplacePagesDialog, SaveAsDialog, OptimizeDialog, AuditSpaceDialog, MergeDialog, SplitDialog, ExportDialog, TextExportDialog, CreateFromImagesDialog, StampDialog, CommentExportDialog, CommentImportDialog, CloseTabPromptDialog, FlattenConfirmDialog.
+
+Impact: This blocks the v1.7.7 verification of B1 (sign placement + re-click handles), B3/B6 (DOCX/Crop/Insert dialog stays open on a text-selection drag-out; genuine backdrop click still closes), B4 (OCR suspects panel as a top bar + no overlapping white text after OCR), B7 (insert blank page after page 1 shows exactly 35 thumbnails with no duplicate / stray "Page 17"), B8a (crop mode-switch no flicker) and B8b (per-page crop crops only the adjusted page). None of those flows can be exercised because the modal they live in never mounts. Repro note: B1/B3/B6/B7/B8a/B8b all timeout at `waitForSelector` for their dialog/modal, and each is accompanied by React #310 in `pageerror`.
+
+Screenshot: screenshots/def-117-sign-flow-broken.png (black window after the Sign click; the #310 was captured in the renderer `pageerror`). Same black-window result captured at screenshots/gt-bug10-restored.png vicinity (any dialog open) and temp probes (b4_ocr.png).
+
+History:
+- qa: opened (ground-truth reproduction on installed v1.7.7, rebuilt 22:45). Reproduced via the Sign toolbar button, the Tools-palette Sign entry, a direct `window.dispatchEvent(new CustomEvent('tflex:sign-button'))`, and the Export-to-Word tool — all yield React #310 and a black-unmounted UI. The `useBackdropClose` hook is placed after `if (!open) return null;` in all 21 dialogs above; before the B3/B6 change these dialogs used a plain non-hook `closeOnBackdrop` (e.g. `git diff` on SignatureManagerModal.tsx shows `useRef` now added after the early return).
+- qa: re-verified on installed v1.7.7 (reinstalled 11:24 PM, exe 23:24 newer than all src) via e2e/retests/release_gate_117_verify.spec.cjs (10 tests, all PASS). Source-level check: all 21 dialogs now place `useBackdropClose` BEFORE the `if (!open) return null;` guard (verified by scanning each dialog: hook line < early-return line). Runtime: opened Sign, DOCX, Crop, Insert and OCR dialogs in sequence — each mount (`.modal-backdrop` present, app not black) and `pageerror` captures ZERO React #310/#520 hook errors across the whole run. The entire DEF-117-blocked surface is now exercisable and verified: B1 (sign re-click shows select handles), B3/B6 (DOCX + Insert stay open on a text-selection drag-out; a genuine backdrop click still closes), B4 (OCR suspects panel renders as a full-width TOP BAR at z-index 40 above the tools palette 30, y=145, not behind it), B7 (insert blank after page 1 -> 35 pages, no duplicate, blank at rank 2, save+reopen valid), B8a (crop mode/page switch keeps the canvas node stable, no opacity-0 flash, no jump to 612x792), B8b (per-page crop crops only page 1 — toast "Cropped 1 page." + page 1 renders smaller than unadjusted pages 2/3), B8c (undo after a page op visually reverts), B10 (maximize/restore icon distinct from minimize). CLOSED.
+
+## DEF-120: Undo (Ctrl+Z) after a page-mutating op does not refresh the pdf.js proxy — visual stays stale
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.7 fix)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.7, rebuilt 22:45).
+2. Open report.pdf.
+3. Rotate page 1 via the toolbar "Rotate clockwise" button; confirm the page paints landscape.
+4. Press Ctrl+Z.
+
+Expected: The page visually reverts — the pdf.js proxy repaints the pre-rotate state (portrait).
+Actual: Before the fix, the engine's undo reverted the model but the renderer's pdf.js `doc` proxy was never rebuilt, so the canvas kept painting the PRE-undo bytes and the page stayed stale.
+
+Root cause: `App.onUndo`/`onRedo` updated the engine UI mirror (`setEngineUiFor`) but never called `refreshDocProxyFor`, so the visible page did not reflect the reverted engine state.
+
+History:
+- qa: opened (B8c ground-truth)
+- qa: re-verified on installed v1.7.7 (rebuilt 22:45). The undo-refresh mechanism is now exercised: rotate page 1 -> `engineState.rotations[0]` 0 -> 1 and the page canvas swaps 1156x1496 -> 1496x1156 (proxy refreshed, paints rotated page); Ctrl+Z -> `rotations[0]` back to 0, `modified` false, `canRedo` true, and the canvas swaps back to 1156x1496 (proxy refreshed, visual reverts). The `onUndo`/`onRedo` handlers now invoke `refreshDocProxyForRef.current` after `setEngineUiFor` (pinned by test/unit/renderer/bugB8c_undoRedoProxyRefresh.test.ts). NOTE: the named crop/delete variants are separately blocked by DEF-117 (their dialogs cannot open); the undo proxy-refresh itself is verified and working. CLOSED.
+
+## DEF-119: Max/restore titlebar icon is identical to the minimize icon when the window is maximized
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.7 fix)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.7, rebuilt 22:45).
+2. Open report.pdf.
+3. Click the maximize window control, then inspect the restore (maximize) button glyph vs the minimize glyph.
+
+Expected: When maximized, the button's glyph is a distinct "restore down" overlapping-squares icon (and the tooltip reads "Restore window"), NOT the two inward arrows used by minimize.
+Actual (pre-fix): `maximized ? Minimize2 : Maximize2` reused the minimize icon when maximized, so the two window controls were visually identical.
+
+Root cause: TitleBar.tsx picked `Minimize2` for the maximize button while maximized, duplicating the minimize glyph.
+
+History:
+- qa: opened (B10 ground-truth)
+- qa: re-verified on installed v1.7.7 (rebuilt 22:45). `[data-window-maximize]` now renders `Copy` (two overlapping squares) when maximized — `maximized maxLabel= Restore window`, and `minimize svg outerHTML !== maximize svg outerHTML` (`distinct=true`). When restored it renders `Maximize2` with label "Maximize window" and also differs from minimize. Verified programmatically via the titlebar controls and visually. CLOSED.
+
+## DEF-118: Committed add-box text is not selectable/movable in Edit mode; editor does not preview the chosen font
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (v1.7.7 fix)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.7, rebuilt 22:45).
+2. Open report.pdf, click the Edit toggle, then the "Add box" tool.
+3. Drag/place a text box, type "MOVABLE BOX 999" and press Ctrl+Enter to confirm.
+4. Switch back into the box tool and try to drag the committed box; also pick Times/Courier in the editor before committing.
+
+Expected: The committed box renders its full text live and is draggable/movable in Edit mode; the Font dropdown live-updates the editor textarea's fontFamily.
+Actual (pre-fix): `engine.addTextBox` baked the box into the PDF and the renderer kept no registry, so the mouse could not drag a committed box (and it also did not render live, DEF-113).
+
+Root cause: No per-tab text-box registry. The "box" tool now renders committed boxes as selectable `.edit-box` surfaces with corner handles; pointerdown selects and starts a move drag, pointermove dispatches `set-text-box-rect`.
+
+History:
+- qa: opened (B5 ground-truth)
+- qa: re-verified on installed v1.7.7 (rebuilt 22:45). Committed box renders full text live (`.textLayer` contains "MOVABLE BOX 999"; full string, no truncated fragment). In the box tool the committed box is a `.edit-box` surface that MOVES when dragged: rect left/top 428/395 -> 548/495 (moved=true, size 240x140 unchanged, clamped to page). Font picker live: selecting Times makes the editor textarea `fontFamily = "Times New Roman", Times, serif` and Courier makes it `"Courier New", Courier, monospace` before commit (the Font dropdown feeds the textarea's computed fontFamily live). Pinned by test/unit/renderer/bugB5_textBoxMove.test.tsx. CLOSED.
+
 ## DEF-116: Edit-text leaves the original run in the PDF — old title remains searchable/selectable after the edit
 
 - Status: REJECTED

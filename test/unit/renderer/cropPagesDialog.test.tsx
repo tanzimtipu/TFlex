@@ -117,13 +117,17 @@ describe("CropPagesDialog — render contract", () => {
     cleanup();
   });
 
-  it("emits one crop entry per page in perPage mode", () => {
+  it("perPage mode with no adjustments emits ZERO entries (B8b)", () => {
+    // B8b — per-page mode used to emit one entry for EVERY page,
+    // filling pages the user never touched with the centred default
+    // box: dragging on a single page silently cropped the whole
+    // document. The fix crops ONLY the pages the user actually
+    // adjusted. With no adjustments, confirm emits nothing.
     const onConfirm = vi.fn();
     const { container, cleanup } = renderDialog({
       totalPages: 2,
       onConfirm,
     });
-    // Switch to perPage mode.
     const perPageRadio = container.querySelector<HTMLInputElement>(
       "[data-crop-mode='perPage']",
     );
@@ -140,8 +144,72 @@ describe("CropPagesDialog — render contract", () => {
     act((): void => {
       confirm.click();
     });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
     const entries = onConfirm.mock.calls[0]?.[0].entries;
-    expect(entries.length).toBe(2);
+    expect(entries).toEqual([]);
+    cleanup();
+  });
+
+  it("perPage mode emits ONLY the page the user adjusted (B8b)", () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({
+      totalPages: 3,
+      onConfirm,
+    });
+    // Switch to perPage mode (editor defaults to page 1).
+    const perPageRadio = container.querySelector<HTMLInputElement>(
+      "[data-crop-mode='perPage']",
+    );
+    expect(perPageRadio).not.toBeNull();
+    if (perPageRadio === null) return cleanup();
+    act((): void => {
+      perPageRadio.click();
+    });
+    // Drag the crop mask on page 1 to commit a real box for it.
+    const mask = container.querySelector<HTMLElement>("[data-crop-handle='move']");
+    expect(mask).not.toBeNull();
+    if (mask === null) return cleanup();
+    act((): void => {
+      mask.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          clientX: 100,
+          clientY: 100,
+        }),
+      );
+    });
+    act((): void => {
+      window.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          clientX: 150,
+          clientY: 120,
+        }),
+      );
+    });
+    act((): void => {
+      window.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          clientX: 150,
+          clientY: 120,
+        }),
+      );
+    });
+    // Page 2 and 3 were never touched — they must NOT be cropped.
+    const confirm = container.querySelector<HTMLButtonElement>(
+      "[data-crop-confirm]",
+    );
+    expect(confirm).not.toBeNull();
+    if (confirm === null) return cleanup();
+    act((): void => {
+      confirm.click();
+    });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    const entries = onConfirm.mock.calls[0]?.[0].entries;
+    expect(entries.length).toBe(1);
+    expect(entries[0].page).toBe(1);
     cleanup();
   });
 
@@ -217,6 +285,44 @@ describe("CropPagesDialog — render contract", () => {
     if (maskAfter === null) return cleanup();
     expect(maskAfter.style.left).not.toBe(leftBefore);
     expect(maskAfter.style.top).not.toBe(topBefore);
+    cleanup();
+  });
+
+  it("mode / page switches do NOT remount the editor canvas (B8a)", () => {
+    // B8a — the CropEditor used to be keyed on `${mode}-${page}`,
+    // so switching modes or picking a different per-page target
+    // REMOUNTED the whole editor: the canvas node was recreated and
+    // briefly flashed at opacity 0 with its intrinsic 612x792 frame
+    // before the render effect sized it. The fix drops the key
+    // entirely — mode/page flow through props, so the canvas node
+    // stays stable for the dialog's whole lifetime.
+    const { container, cleanup } = renderDialog({ totalPages: 3 });
+    const editorBefore = container.querySelector<HTMLElement>("[data-crop-editor]");
+    expect(editorBefore).not.toBeNull();
+    if (editorBefore === null) return cleanup();
+    // Switch to perPage mode.
+    const perPageRadio = container.querySelector<HTMLInputElement>(
+      "[data-crop-mode='perPage']",
+    );
+    expect(perPageRadio).not.toBeNull();
+    if (perPageRadio === null) return cleanup();
+    act((): void => {
+      perPageRadio.click();
+    });
+    expect(container.querySelector<HTMLElement>("[data-crop-editor]")).toBe(
+      editorBefore,
+    );
+    // Pick page 3 in the per-page select.
+    const select = container.querySelector<HTMLSelectElement>("[data-crop-page-select]");
+    expect(select).not.toBeNull();
+    if (select === null) return cleanup();
+    act((): void => {
+      select.value = "3";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(container.querySelector<HTMLElement>("[data-crop-editor]")).toBe(
+      editorBefore,
+    );
     cleanup();
   });
 });

@@ -20,6 +20,7 @@ import {
   defaultTextExportFilename,
   downloadBlob,
 } from "../utils/exportDownload";
+import { useBackdropClose } from "./modalBackdrop";
 
 export type TextExportFormat = "txt" | "rtf";
 
@@ -92,6 +93,10 @@ export function TextExportDialog(
   );
   const valid = parsed !== null && parsed.length > 0 && !running;
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop; blocked entirely while an export is running.
+  const backdrop = useBackdropClose(onClose, running);
+
   if (!open) return null;
 
   const onConfirmClick = async (): Promise<void> => {
@@ -139,7 +144,7 @@ export function TextExportDialog(
   return (
     <div
       className="modal-backdrop"
-      onClick={running ? undefined : onClose}
+      {...backdrop}
       data-text-export-dialog
     >
       <div

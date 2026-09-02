@@ -1,6 +1,7 @@
-import { TextLayer, type PDFDocumentProxy } from 'pdfjs-dist';
+import { TextLayer, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { measureHitRects, type HitRect } from '../pdf/highlight';
+import { isInvalidPageRequest } from '../pdf/pdfjs';
 import type { SearchHit } from '../search/searchIndex';
 import { AnnotationOverlay, type TextItemGeom } from '../annotations/AnnotationOverlay';
 import { StampAnnotations, type PlacedStamp } from '../annotations/StampAnnotations';
@@ -324,7 +325,27 @@ export function PageView(props: PageViewProps) {
     };
     const run = async (): Promise<void> => {
       beginRender();
-      const page = await doc.getPage(pageNumber);
+      let page: PDFPageProxy;
+      try {
+        page = await doc.getPage(pageNumber);
+      } catch (error) {
+        // DEF-121 — stale page index during a post-op proxy refresh.
+        // The engine commits its new pageOrder (page count) before the
+        // renderer's pdf.js `doc` proxy is rebuilt, so a mount for a
+        // source page the still-old proxy does not have rejects with
+        // pdf.js's "Invalid page request." (inserting a blank
+        // mid-document: 34-page doc, new pageOrder references source
+        // page 35 while doc.numPages is still 34). The refresh swaps
+        // the doc identity immediately after and re-runs this effect
+        // with the full page count, so the correct response is to drop
+        // the stale attempt rather than surface an unhandled
+        // rejection. Any other getPage failure keeps failing loudly.
+        if (isInvalidPageRequest(error)) {
+          endRender();
+          return;
+        }
+        throw error;
+      }
       pdfPage = page;
       if (disposed) {
         endRender();

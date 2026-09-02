@@ -32,6 +32,11 @@ import { AboutDialog } from "./components/AboutDialog";
 import { PreferencesDialog } from "./components/PreferencesDialog";
 import { UpdateIndicator } from "./components/UpdateIndicator";
 import { UpdatePromptDialog } from "./components/UpdatePromptDialog";
+import {
+  decideUpdatePromptOpen,
+  isUpdatePromptActionable,
+  updateActionableKey,
+} from "./components/updatePromptMachine";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
 import { applyTheme, nextTheme } from "./state/theme";
 import { resolveInitialSettings } from "./state/settings";
@@ -381,6 +386,18 @@ export function App(): ReactElement {
    *  the same subscription serves both surfaces and we never
    *  double-subscribe to onStatusChanged. */
   const [updateState, setUpdateState] = useState<UpdateState | null | undefined>(undefined);
+  // Bug 9 — OTA UX. True from the moment the user clicks Update
+  // until the download reaches a terminal state. Guards the
+  // auto-open effect below so a stale `available` push can't re-arm
+  // the "Update" prompt while a download runs in the background
+  // (the toolbar indicator shows the progress instead).
+  const [updateDownloadInFlight, setUpdateDownloadInFlight] = useState(false);
+  /** Bug 9 — key of the last actionable update state the user
+   *  dismissed (Cancel / Later / X / backdrop). Keeps a dismissed
+   *  prompt dismissed for the SAME state (the toolbar chip remains
+   *  the always-on affordance); a *different* state (available ->
+   *  downloaded) still opens a fresh prompt. */
+  const [updateDismissedKey, setUpdateDismissedKey] = useState<string | null>(null);
   // Phase 10 — Edit-content mode. The toolbar shows the Edit
   // button; clicking it (or pressing the menu shortcut) toggles
   // this. When on, the per-page EditOverlay becomes pointer-active
@@ -603,16 +620,40 @@ export function App(): ReactElement {
   // re-opening the prompt; that's by design — the prompt is
   // for the first push, the chip is the always-on affordance).
   //
-  // We only auto-open when the dialog is currently closed, so
-  // a user who already cancelled the prompt isn't re-prompted
-  // by the same push (the indicator has the state, that's enough).
+  // Bug 9 — the decision is delegated to the pure
+  // `decideUpdatePromptOpen` so it is testable and so the two
+  // regressions stay fixed:
+  //   - The dialog never auto-closes here; this effect only
+  //     OPENS (a user who already dismissed a prompt isn't
+  //     re-prompted by the same state — see `updateDismissedKey`).
+  //   - While a download is in flight the prompt is NOT re-armed
+  //     on a lingering `available` state (outside-click during a
+  //     background download). A completed download (downloaded)
+  //     always arms the restart/cancel prompt.
+  // Terminal states clear the in-flight latch so a future
+  // `available` push may prompt again.
   useEffect(() => {
     if (updateState === null || updateState === undefined) return;
+    if (
+      updateState.kind === "downloaded" ||
+      updateState.kind === "error" ||
+      updateState.kind === "up-to-date"
+    ) {
+      setUpdateDownloadInFlight(false);
+    }
+    // Only ever OPEN the prompt here — the user's dismiss routes
+    // through onCloseUpdatePrompt (which sets updateDismissedKey).
     if (updatePromptOpen) return;
-    if (updateState.kind === "available" || updateState.kind === "downloaded") {
+    const decision = decideUpdatePromptOpen({
+      state: updateState,
+      open: false,
+      downloadInFlight: updateDownloadInFlight,
+      dismissedKey: updateDismissedKey,
+    });
+    if (decision.shouldOpen) {
       setUpdatePromptOpen(true);
     }
-  }, [updateState, updatePromptOpen]);
+  }, [updateState, updatePromptOpen, updateDownloadInFlight, updateDismissedKey]);
 
   const onToggleTheme = useCallback((): void => {
     setSettings((prev) => {
@@ -662,15 +703,19 @@ export function App(): ReactElement {
     void updateApi.check().catch(() => undefined);
   }, [pushToast]);
 
-  // OTA UX — Update button handler. Fires `update.download()`;
-  // the dialog stays open while the backend pushes 'downloading'
-  // progress and re-prompts on 'downloaded'. No-op if the IPC
-  // channel is absent (the prompt would have been open by a
-  // push we already received, so we know the channel exists,
-  // but defensively guard anyway).
+  // OTA UX — Update button handler. Bug 9: clicking Update dismisses
+  // the prompt and runs the download in the BACKGROUND — the toolbar
+  // indicator shows the progress (the backend pushes
+  // `downloading(0)` immediately, no gap) and the user can keep
+  // working. The in-flight latch stops the auto-open effect from
+  // re-arming the "Update" prompt on any stale `available` state
+  // while the background download runs; when the download completes
+  // ('downloaded') the effect opens a fresh restart/cancel prompt.
   const onUpdateDownload = useCallback((): void => {
     const updateApi = window.tflex.update;
     if (updateApi?.download === undefined) return;
+    setUpdateDownloadInFlight(true);
+    setUpdatePromptOpen(false);
     void updateApi.download().catch(() => undefined);
   }, []);
 
@@ -684,11 +729,18 @@ export function App(): ReactElement {
   }, []);
 
   // OTA UX — close handler. Called from Cancel / Later / X /
-  // backdrop / Escape. The toolbar indicator continues to
-  // reflect the underlying state independently.
+  // backdrop / Escape. The toolbar indicator continues to reflect
+  // the underlying state independently. Bug 9 — the dismissed
+  // prompt is recorded by key so the auto-open effect doesn't
+  // immediately re-show the same state; the toolbar chip remains
+  // the always-on affordance for it.
   const onCloseUpdatePrompt = useCallback((): void => {
     setUpdatePromptOpen(false);
-  }, []);
+    const s = updateState;
+    if (isUpdatePromptActionable(s)) {
+      setUpdateDismissedKey(updateActionableKey(s));
+    }
+  }, [updateState]);
 
   const toastForPdfError = useCallback(
     (errCode: PdfOpenError, path: string): string => {
@@ -1313,6 +1365,17 @@ export function App(): ReactElement {
           canUndo: flags.canUndo,
           canRedo: flags.canRedo,
         });
+        // B8c — undo can revert page-mutating ops (crop, delete,
+        // reorder, rotate, OCR, …). The renderer's pdf.js `doc`
+        // proxy still paints the PRE-undo bytes, so the visible
+        // page stays stale until a save/reopen. Rebuild the proxy
+        // in place via the same refresh hook every state-returning
+        // op uses — same pattern as OCR / crop / merge / flatten
+        // (see DEF-062 for why this reads through the ref).
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(tabId).catch(() => undefined);
+        }
       });
     },
     [pushToast, setEngineUiFor],
@@ -1340,6 +1403,13 @@ export function App(): ReactElement {
           canUndo: flags.canUndo,
           canRedo: flags.canRedo,
         });
+        // B8c — redo re-applies page-mutating ops; the pdf.js proxy
+        // must follow the engine bytes so the visible page reverts
+        // (same refresh path as undo).
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(tabId).catch(() => undefined);
+        }
       });
     },
     [pushToast, setEngineUiFor],
@@ -1818,6 +1888,32 @@ export function App(): ReactElement {
         return;
       }
       noteOpApplied(tabId, result.value);
+      // B5 — register the committed box in the per-tab edit
+      // registry so the box tool can select / move it. The engine
+      // bakes the box into its PDF copy but exposes no per-box
+      // rect; the renderer mirrors the box locally (same pattern
+      // as the image placements) for the selection + drag surface.
+      setOpenTabs((prev) => {
+        const t = prev[tabId];
+        if (t === undefined) return prev;
+        return {
+          ...prev,
+          [tabId]: {
+            ...t,
+            edit: editReducer(t.edit, {
+              type: "upsert-text-box",
+              placement: {
+                id: crypto.randomUUID(),
+                page: currentPageOfTab(tabId, openTabsRef),
+                rect: args.rect,
+                text: args.text,
+                style: args.style,
+                background: args.background,
+              },
+            }),
+          },
+        };
+      });
       // DEF-113 — the engine drew the new text box into its copy of
       // the PDF. The renderer's pdf.js `doc` proxy still paints the
       // pre-edit bytes, so the committed box is invisible in the
@@ -3062,13 +3158,25 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
       if (choice.mode === "blank") {
         const width = choice.widthPt ?? 612;
         const height = choice.heightPt ?? 792;
+        // DEF-122 — the dialog's `position` is the 0-based rank slot
+        // the new page becomes (field value v -> slot v - 1; -1 =
+        // append). The engine's `insertBlankPage` consumes an
+        // `afterIndex` (0-based index AFTER which to insert; -1 =
+        // append per DEF-114), so the two contracts are offset by
+        // one: a rank slot S maps to afterIndex S - 1, and the append
+        // sentinel passes straight through. Field "2" (slot 1)
+        // therefore becomes afterIndex 0 — the blank lands between
+        // page 1 and page 2, i.e. after page 1, becoming page 2.
+        const afterIndex = choice.position < 0 ? -1 : choice.position - 1;
         res = await engineRef.current.insertBlankPage(
           open.session.engineDocId,
-          choice.position,
+          afterIndex,
           width,
           height,
         );
       } else {
+        // insertFromPdf consumes the slot directly (position is the
+        // 0-based index at which the copied pages start inserting).
         if (choice.otherBytes === undefined) {
           setInsertPagesOpen(false);
           return;

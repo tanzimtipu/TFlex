@@ -39,6 +39,8 @@ const EMPTY_STATE: EditState = {
   tool: "text",
   placements: [],
   selectedImage: null,
+  selectedTextBox: null,
+  textBoxes: [],
   pendingReplace: null,
   cropping: false,
 };

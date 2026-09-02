@@ -40,6 +40,7 @@
 //      contract that survives React re-renders.
 
 import {
+  Copy,
   Maximize2,
   Menu,
   Minimize2,
@@ -212,7 +213,13 @@ export function TitleBar(props: TitleBarProps): ReactElement {
 
   const flattened = menuGroups !== undefined ? flattenMenuGroups(menuGroups) : [];
 
-  const MaximizeIcon = maximized ? Minimize2 : Maximize2;
+  // B10 — the restore glyph must be DISTINCT from the minimize
+  // glyph. The previous `maximized ? Minimize2 : Maximize2` reused
+  // the minimize button's icon when maximized, so the two window
+  // controls were visually identical. `Copy` (two overlapping
+  // squares) is the conventional "restore down" glyph; the maximize
+  // button still shows `Maximize2` before the window is maximized.
+  const MaximizeIcon = maximized ? Copy : Maximize2;
   const maximizeLabel = maximized ? "Restore window" : "Maximize window";
 
   return (

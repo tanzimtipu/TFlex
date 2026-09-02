@@ -16,6 +16,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { RefreshCw, X } from 'lucide-react';
 import type { SpaceAudit } from '../../shared/types';
 import { formatBytes } from '../utils/formatBytes';
+import { useBackdropClose } from './modalBackdrop';
 
 interface AuditSpaceDialogProps {
   open: boolean;
@@ -105,6 +106,10 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
     return () => window.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop (a drag from the retry button / body must not dismiss).
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   const total = audit?.totalBytes ?? 0;
@@ -121,7 +126,7 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
       }));
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" {...backdrop}>
       <div
         className="modal-dialog dialog audit-dialog"
         ref={dialogRef}

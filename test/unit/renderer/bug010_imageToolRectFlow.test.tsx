@@ -33,6 +33,8 @@ const BASE_STATE: EditState = {
   tool: "image",
   placements: [],
   selectedImage: null,
+  selectedTextBox: null,
+  textBoxes: [],
   pendingReplace: null,
   cropping: false,
 };

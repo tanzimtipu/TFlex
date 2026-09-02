@@ -19,12 +19,17 @@ import { FilePlus2, X } from "lucide-react";
 import {
   defaultInsertPosition,
 } from "../engine/types";
+import { useBackdropClose } from "./modalBackdrop";
 
 export type InsertMode = "blank" | "fromPdf";
 
 export interface InsertPagesConfirm {
   mode: InsertMode;
-  /** 0-based visible index. -1 means "appended at end". */
+  /** Rank slot the new content lands at, 0-based: field value v maps
+   *  to slot v - 1 ("the new content becomes page v"). -1 means
+   *  "appended at end". The host translates per engine contract
+   *  (insertBlankPage's afterIndex is one less than this slot, while
+   *  insertFromPdf consumes it directly — DEF-122). */
   position: number;
   /** Blank-page dimensions in PDF points (only used when mode = "blank"). */
   widthPt?: number;
@@ -70,15 +75,6 @@ export function InsertPagesDialog(
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
-  // B17 — where the current pointer interaction started. A
-  // text-selection drag that begins in the input and releases
-  // over the backdrop dispatches its `click` on the backdrop
-  // (the common ancestor of the mousedown and mouseup targets),
-  // which used to close the dialog mid-edit. We only close on a
-  // backdrop click when the mousedown ALSO started on the
-  // backdrop — a real outside click still closes, a drag that
-  // ended outside does not.
-  const backdropDownRef = useRef<boolean>(false);
 
   // Reset every time we re-open so stale state from a previous open
   // doesn't leak in.
@@ -143,25 +139,73 @@ export function InsertPagesDialog(
     return (): void => window.removeEventListener("keydown", onKey, true);
   }, [picking]);
 
-  // Position validation. Accepts an integer 1..totalPages+1, or "end".
+  // Position validation. The field value is the 1-based page number
+  // the new content BECOMES (rank semantics: 1 = before page 1,
+  // 2 = after page 1, ..., totalPages + 1 = appended after the last
+  // page). "end" / empty maps to the append sentinel (-1). Blank mode
+  // cannot land before page 1 of a non-empty doc — the engine's
+  // `insertBlankPage` treats afterIndex -1 as append (DEF-114), so no
+  // afterIndex expresses "before page 1" — hence its minimum is 2
+  // (after page 1) except on an empty document where 1 is the only
+  // slot. The from-PDF mode accepts 1..totalPages+1.
   const parsed = useMemo((): { position: number; valid: boolean } => {
     const trimmed = positionText.trim().toLowerCase();
     if (trimmed === "end" || trimmed === "") {
       return { position: -1, valid: true };
     }
     const n = Number.parseInt(trimmed, 10);
-    if (!Number.isFinite(n) || n < 1 || n > totalPages + 1) {
+    const min = mode === "blank" && totalPages > 0 ? 2 : 1;
+    if (!Number.isFinite(n) || n < min || n > totalPages + 1) {
       return { position: -1, valid: false };
     }
     return { position: n - 1, valid: true };
-  }, [positionText, totalPages]);
+  }, [positionText, totalPages, mode]);
 
   const valid =
     parsed.valid &&
     (mode === "blank" ||
       (mode === "fromPdf" && pickedBytes !== null && pickedPath !== null));
 
+  // B3/B6 + B17/B18 — backdrop close only when the interaction
+  // STARTED on the backdrop (a drag that begins in the position
+  // input and releases over the backdrop must not dismiss);
+  // blocked entirely while the OS file picker is open.
+  const backdrop = useBackdropClose(onClose, picking);
+
   if (!open) return null;
+
+  // DEF-122 — the field value is the rank the new content lands at
+  // ("becomes page v"), but users reason about placement in terms of
+  // "after page N". The hint phrases the value in those terms so the
+  // intent matches the result: entering 2 means "after page 1" (the
+  // new content becomes page 2). Blank mode additionally cannot
+  // insert before page 1 of a non-empty doc (the engine's -1
+  // afterIndex means append, DEF-114), so its hint states the 2
+  // minimum; the from-PDF mode does keep 1 = before page 1.
+  let positionHint: ReactElement;
+  if (mode === "blank") {
+    positionHint = totalPages > 0 ? (
+      <>
+        The blank page becomes this page number — 2 inserts it after
+        page 1, {totalPages + 1} appends after the last page. A blank
+        page cannot be inserted before page 1. Use <code>end</code> to
+        append.
+      </>
+    ) : (
+      <>
+        The blank page becomes page 1 (the document is empty). Use{" "}
+        <code>end</code> to append.
+      </>
+    );
+  } else {
+    positionHint = (
+      <>
+        The inserted pages start at this page number — 1 inserts
+        before page 1, 2 after page 1, {totalPages + 1} appends after
+        the last page. Use <code>end</code> to append.
+      </>
+    );
+  }
 
   const onPickFile = async (): Promise<void> => {
     setPicking(true);
@@ -205,31 +249,7 @@ export function InsertPagesDialog(
   return (
     <div
       className="modal-backdrop"
-      // B18 — backdrop click is a no-op while the OS file picker
-      // is open. Same modal-blocking pattern as MergeDialog. The
-      // close button in the header remains the only way out
-      // during `picking`; once the picker returns (success or
-      // cancel) the backdrop returns to its normal close-on-click
-      // behaviour.
-      // B17 — the close-on-click only fires when the interaction
-      // STARTED on the backdrop (see backdropDownRef): a drag that
-      // starts in the input and releases over the backdrop must
-      // not dismiss the dialog.
-      onMouseDown={(e): void => {
-        backdropDownRef.current = e.target === e.currentTarget;
-      }}
-      onClick={
-        picking
-          ? undefined
-          : (e): void => {
-              if (
-                backdropDownRef.current &&
-                e.target === e.currentTarget
-              ) {
-                onClose();
-              }
-            }
-      }
+      {...backdrop}
       data-picking={picking ? "true" : "false"}
       data-insert-pages-dialog
     >
@@ -297,11 +317,7 @@ export function InsertPagesDialog(
               placeholder={defaultInsertPosition(totalPages)}
               data-insert-position
             />
-            <span className="modal-hint">
-              Page number where the new content lands. Use{" "}
-              <code>end</code> to append. 1 means "before page 1";{" "}
-              {totalPages + 1} means "appended after the last page".
-            </span>
+            <span className="modal-hint">{positionHint}</span>
           </label>
 
           {mode === "blank" && (

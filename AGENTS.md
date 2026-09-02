@@ -170,9 +170,9 @@ the human operator may swap that agent's `model:` field to the documented fallba
   is valid; then minimax/minimax-m3:free, then minimax/minimax-m3 paid. Note: the
   alias carries a leading tilde — the plain `deepseek/deepseek-v4-flash-latest` is NOT
   a valid OpenRouter ID)
-- qa: google/gemini-3-flash-preview -> deepseek/deepseek-v4-flash-vision-exp (note: the
+- qa: deepseek/deepseek-v4-flash-vision-exp -> google/gemini-3-flash-preview (note: the
   vision-exp model is served by a single provider, DeepSeek; if your account's data policy
-  blocks it, stay on gemini-3-flash-preview)
+  blocks it, stay on gemini-3-flash-preview, or the flash-vision-exp provider rejection)
 - adversary: deepseek/deepseek-v4-flash -> google/gemini-3-flash-preview
 - git-agent: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview
 - orchestrator: no fallback — stop and ask the human.

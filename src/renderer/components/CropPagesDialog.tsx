@@ -18,6 +18,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { X, Crop } from "lucide-react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CropEntry } from "../../shared/types";
+import { useBackdropClose } from "./modalBackdrop";
 
 export type CropMode = "allPages" | "perPage";
 
@@ -164,6 +165,12 @@ export function CropPagesDialog(
     }
   };
 
+  // B3/B6 — backdrop close only when the interaction STARTED on the
+  // backdrop (a text-selection drag that begins in the per-page
+  // select/inputs and releases over the backdrop must not dismiss
+  // the dialog).
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   const onConfirmClick = (): void => {
@@ -175,7 +182,16 @@ export function CropPagesDialog(
         entries.push({ page: p, box: { ...box } });
       }
     } else {
-      for (let p = 1; p <= totalPages; p += 1) {
+      // B8b — per-page mode crops ONLY the pages the user actually
+      // adjusted. `perPageBoxes` only ever holds entries after a
+      // committed drag on that page; the previous loop iterated
+      // 1..totalPages and filled unset pages with the centred
+      // default box, silently cropping the whole document the
+      // moment the user dragged on a single page.
+      const adjustedPages = Object.keys(perPageBoxes)
+        .map(Number)
+        .sort((a, b) => a - b);
+      for (const p of adjustedPages) {
         const size = pageSizes[p] ?? { widthPt: 612, heightPt: 792 };
         const box = normalizeBox(
           perPageBoxes[p] ?? null,
@@ -189,7 +205,7 @@ export function CropPagesDialog(
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose} data-crop-pages-dialog>
+    <div className="modal-backdrop" {...backdrop} data-crop-pages-dialog>
       <div
         className="modal-dialog modal-dialog-wide dialog"
         ref={dialogRef}
@@ -269,13 +285,19 @@ export function CropPagesDialog(
                 CropEditor on every committed box change, recreating the
                 canvas (previewReady -> opacity 0) and briefly leaving it
                 at its intrinsic unscaled CSS size — a visible flash /
-                "larger crop window" artifact. Key on mode + page only:
-                switching modes/pages is a deliberate remount (the canvas
-                must paint a different page), while box adjustments flow
-                through the `initial` -> local-box sync effect and keep
-                the canvas node stable. */}
+                "larger crop window" artifact.
+                B8a — the key must not be mode+page either. Mode/page
+                changes flow through the CropEditor's props: the `page`
+                effect re-renders the canvas (cancelling the in-flight
+                task, then painting the new page) and the `initial`
+                effect syncs the local box, so the canvas NODE stays
+                stable across mode/page switches. A remount on mode/page
+                would recreate the canvas node, flashing it to opacity 0
+                at its intrinsic 612x792 frame before the render effect
+                sizes it again. No key at all keeps the node stable for
+                the dialog's whole lifetime; the page/mode props drive
+                the re-render. */}
             <CropEditor
-              key={`${mode}-${editorPage ?? 1}`}
               widthPt={editorPageSize.widthPt}
               heightPt={editorPageSize.heightPt}
               initial={currentBox}

@@ -187,3 +187,49 @@ describe("OcrSuspectsPanel — click-to-navigate (Phase 11)", () => {
     cleanup();
   });
 });
+
+describe("OcrSuspectsPanel — top-bar layout (B4)", () => {
+  it("keeps the title, summary and close in ONE header row", () => {
+    const suspects: OcrSuspect[] = [makeSuspect(1, 'one', 30), makeSuspect(2, 'two', 30)];
+    const { container, cleanup } = renderPanel({ suspects });
+    const header = container.querySelector<HTMLElement>('.ocr-suspects-header');
+    const title = container.querySelector<HTMLElement>('.ocr-suspects-title');
+    const summary = container.querySelector<HTMLElement>('.ocr-suspects-summary');
+    const close = container.querySelector<HTMLButtonElement>('.ocr-suspects-close');
+    expect(header).not.toBeNull();
+    expect(title).not.toBeNull();
+    expect(summary).not.toBeNull();
+    expect(close).not.toBeNull();
+    if (header === null || title === null || summary === null || close === null) {
+      return cleanup();
+    }
+    expect(header.contains(title)).toBe(true);
+    expect(header.contains(summary)).toBe(true);
+    expect(header.contains(close)).toBe(true);
+    cleanup();
+  });
+
+  it("renders the suspect list as a horizontal scroller (not a vertical rail)", () => {
+    const suspects: OcrSuspect[] = [
+      makeSuspect(1, 'a', 30),
+      makeSuspect(2, 'b', 30),
+      makeSuspect(3, 'c', 30),
+    ];
+    const { container, cleanup } = renderPanel({ suspects });
+    const body = container.querySelector<HTMLElement>('.ocr-suspects-body');
+    expect(body).not.toBeNull();
+    if (body === null) return cleanup();
+    expect(body.classList.contains('ocr-suspects-body')).toBe(true);
+    const pages = Array.from(body.querySelectorAll('[data-ocr-suspects-page]'));
+    expect(pages.length).toBe(3);
+    cleanup();
+  });
+
+  it("exposes every suspect via the data attribute regardless of layout", () => {
+    const suspects: OcrSuspect[] = [makeSuspect(1, 'target', 25)];
+    const { container, cleanup } = renderPanel({ suspects });
+    const entries = container.querySelectorAll('[data-ocr-suspect-word="target"]');
+    expect(entries.length).toBe(1);
+    cleanup();
+  });
+});

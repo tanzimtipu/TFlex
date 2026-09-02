@@ -6,6 +6,7 @@
 // "Cancel" as the obvious exit.
 
 import { useEffect, type ReactElement } from "react";
+import { useBackdropClose } from "../components/modalBackdrop";
 
 interface FlattenConfirmDialogProps {
   open: boolean;
@@ -34,26 +35,18 @@ export function FlattenConfirmDialog(props: FlattenConfirmDialogProps): ReactEle
     };
   }, [open, onCancel, onConfirm]);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop. DEF-100 — the click must ALSO target the backdrop
+  // element itself (a dialog descendant's click never equals the
+  // backdrop), so the Confirm / Cancel buttons fire unchanged.
+  const backdrop = useBackdropClose(onCancel);
+
   if (!open) return null;
+
   return (
     <div
       className="modal-backdrop"
-      // DEF-100 — click-outside-to-close. The backdrop keeps
-      // `pointer-events: auto` (the CSS rule) and closes ONLY when
-      // the click target IS the backdrop element itself. A click on
-      // a dialog descendant (Confirm / Cancel / body) has a target
-      // inside `.modal-dialog`, which never equals the backdrop, so
-      // the dialog's own buttons fire their handlers unchanged. The
-      // target-equality check is load-bearing: the previous fix
-      // disabled backdrop hit-testing entirely (`pointer-events:
-      // none` + a window-level click listener), which let clicks
-      // fall through to whatever was underneath the modal and made
-      // outside-click-close unreliable in the real app.
-      onClick={(e): void => {
-        if (e.target === e.currentTarget) {
-          onCancel();
-        }
-      }}
+      {...backdrop}
     >
       <div
         className="modal-dialog"

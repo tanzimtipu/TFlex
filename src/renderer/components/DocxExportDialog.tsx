@@ -19,6 +19,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
+import { useBackdropClose } from "./modalBackdrop";
 import { defaultPageRange, parsePageRange } from "../engine/types";
 import {
   clampExportImageDpi,
@@ -128,6 +129,12 @@ export function DocxExportDialog(
   );
   const valid = parsed !== null && parsed.length > 0 && !running;
 
+  // B3/B6 — backdrop close only when the interaction STARTED on the
+  // backdrop (a text-selection drag that begins in the range/DPI
+  // input and releases over the backdrop must not dismiss the
+  // dialog). Blocked entirely while an export is running.
+  const backdrop = useBackdropClose(onClose, running);
+
   if (!open) return null;
 
   const onConfirmClick = async (): Promise<void> => {
@@ -233,7 +240,7 @@ export function DocxExportDialog(
   return (
     <div
       className="modal-backdrop"
-      onClick={running ? undefined : onClose}
+      {...backdrop}
       data-docx-export-dialog
     >
       <div

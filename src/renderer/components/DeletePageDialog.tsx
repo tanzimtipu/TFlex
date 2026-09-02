@@ -17,6 +17,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { Trash2, X } from "lucide-react";
 import { parsePageRange } from "../engine/types";
+import { useBackdropClose } from "./modalBackdrop";
 
 export type DeletePageMode = "current" | "range";
 
@@ -134,6 +135,10 @@ export function DeletePageDialog(
   const displayError =
     error ?? parsedRange.error ?? (currentValid.valid ? null : currentValid.error);
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop (a drag from the range input must not dismiss).
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   const onConfirmClick = (): void => {
@@ -150,7 +155,7 @@ export function DeletePageDialog(
   return (
     <div
       className="modal-backdrop"
-      onClick={onClose}
+      {...backdrop}
       data-delete-pages-dialog
     >
       <div

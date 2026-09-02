@@ -10,7 +10,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act, createElement, type ReactElement } from "react";
-import { EditInlineEditor } from "../../../src/renderer/edit/EditInlineEditor";
+import { EditInlineEditor, fontFamilyFor } from "../../../src/renderer/edit/EditInlineEditor";
 
 function mount(props: {
   initialText: string;
@@ -47,6 +47,33 @@ describe("EditInlineEditor — render", () => {
     // The textbox mode shows the background picker; the edit mode
     // does not (a text-run replacement always overwrites).
     expect(host.querySelector(".edit-inline-field-bg")).toBeNull();
+  });
+
+  it("the textarea style applies the chosen font live (B5a)", () => {
+    // B5 — the textarea's inline style used to set color + fontSize
+    // but NOT fontFamily, so picking Times/Courier in the Font
+    // select previewed nothing. The preview must reflect the chosen
+    // font immediately.
+    const { host } = mount({ initialText: "Hello", mode: "edit" });
+    const textarea = host.querySelector("textarea") as HTMLTextAreaElement | null;
+    const select = host.querySelector<HTMLSelectElement>(
+      ".edit-inline-field-font select",
+    );
+    expect(textarea).not.toBeNull();
+    expect(select).not.toBeNull();
+    if (textarea === null || select === null) return;
+    // Default: Helvetica stack.
+    expect(textarea.style.fontFamily).toContain("Helvetica");
+    act((): void => {
+      select.value = "Times";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(textarea.style.fontFamily).toContain("Times New Roman");
+    act((): void => {
+      select.value = "Courier";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(textarea.style.fontFamily).toContain("Courier New");
   });
 
   it("renders the background picker when mode is 'box'", () => {
@@ -98,5 +125,22 @@ describe("EditInlineEditor — render", () => {
     // computed colour resolves to rgb(0, 0, 0) — we assert the
     // inline declaration is present and parses to black.
     expect(textarea?.style.color).toBe("rgb(0, 0, 0)");
+  });
+});
+
+describe("fontFamilyFor — B5 live-font mapping", () => {
+  it("maps each PDF standard font to a locally-installed CSS stack", () => {
+    expect(fontFamilyFor("Helvetica")).toMatch(/Helvetica/);
+    expect(fontFamilyFor("Times")).toMatch(/Times New Roman/);
+    expect(fontFamilyFor("Courier")).toMatch(/Courier/);
+  });
+
+  it("always maps to a serif / monospace / sans stack (never the UI font)", () => {
+    // The preview must look like the PDF-standard font family the
+    // engine will draw, so picking Times/Courier changes the glyph
+    // shapes on screen.
+    expect(fontFamilyFor("Times")).toMatch(/serif/);
+    expect(fontFamilyFor("Courier")).toMatch(/monospace/);
+    expect(fontFamilyFor("Helvetica")).toMatch(/sans-serif/);
   });
 });

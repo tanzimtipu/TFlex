@@ -32,6 +32,7 @@
 
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { ClipboardPaste, X } from "lucide-react";
+import { useBackdropClose } from "./modalBackdrop";
 import {
   DEFAULT_CREATE_IMAGE_QUALITY,
   clampCreateImageQuality,
@@ -202,6 +203,11 @@ export function CreateFromImagesDialog(
     }
   };
 
+  // B3/B6 — backdrop close only when the interaction started on the
+  // backdrop (a drag from the file-picker / clipboard button must
+  // not dismiss).
+  const backdrop = useBackdropClose(onClose);
+
   if (!open) return null;
 
   // Surface every quality change as the fraction (0..1) so the
@@ -217,7 +223,7 @@ export function CreateFromImagesDialog(
   return (
     <div
       className="modal-backdrop"
-      onClick={onClose}
+      {...backdrop}
       data-create-from-images-dialog
     >
       <div

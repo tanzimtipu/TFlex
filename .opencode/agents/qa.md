@@ -1,7 +1,7 @@
 ---
 description: QA for TFlex. Writes and runs the Playwright end-to-end suite against the real Electron app, runs full test suites, captures and visually inspects screenshots, verifies the performance budget, and owns DEFECTS.md. Never fixes product code; only qa may close a defect.
 mode: subagent
-model: openrouter/google/gemini-3-flash-preview
+model: openrouter/deepseek/deepseek-v4-flash-vision-exp
 permission:
   edit:
     "REQUIREMENTS.md": deny

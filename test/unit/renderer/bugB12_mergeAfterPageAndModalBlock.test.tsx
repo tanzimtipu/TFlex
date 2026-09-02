@@ -105,6 +105,14 @@ function clickBackdrop(host: HTMLElement): void {
   const backdrop = host.querySelector<HTMLElement>(".modal-backdrop");
   if (backdrop === null) throw new Error("backdrop not found");
   act((): void => {
+    // B3/B6 — a genuine outside click includes the mousedown on the
+    // backdrop; the backdrop only closes when the interaction
+    // STARTED there too.
+    backdrop.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+    );
+  });
+  act((): void => {
     backdrop.dispatchEvent(
       new MouseEvent("click", { bubbles: true, cancelable: true }),
     );
