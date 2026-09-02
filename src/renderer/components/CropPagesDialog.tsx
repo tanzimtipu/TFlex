@@ -264,8 +264,18 @@ export function CropPagesDialog(
           )}
 
           <div className="crop-editor-wrap">
+            {/* DEF-115 — the key must NOT embed the box coordinates.
+                The old key (`...currentBox.x-y-width-height`) remounted
+                CropEditor on every committed box change, recreating the
+                canvas (previewReady -> opacity 0) and briefly leaving it
+                at its intrinsic unscaled CSS size — a visible flash /
+                "larger crop window" artifact. Key on mode + page only:
+                switching modes/pages is a deliberate remount (the canvas
+                must paint a different page), while box adjustments flow
+                through the `initial` -> local-box sync effect and keep
+                the canvas node stable. */}
             <CropEditor
-              key={`${mode}-${editorPage ?? 1}-${currentBox.x}-${currentBox.y}-${currentBox.width}-${currentBox.height}`}
+              key={`${mode}-${editorPage ?? 1}`}
               widthPt={editorPageSize.widthPt}
               heightPt={editorPageSize.heightPt}
               initial={currentBox}

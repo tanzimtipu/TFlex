@@ -1223,13 +1223,14 @@ export class EngineService {
       return err('engine-error', `unknown document: ${docId}`);
     }
     // B15 — guard out-of-range. afterIndex is the 0-based visible index
-    // AFTER which the blank page is inserted; -1 inserts before the first
-    // page and doc.order.length appends after the last. Values outside
-    // [-1, doc.order.length] (or non-finite) come from a renderer that
-    // derived the position from a stale current page after the doc shrank;
-    // the previous code silently clamped them, which landed the blank page
-    // at an unexpected position and the renderer then rendered a
-    // page-out-of-range / black canvas. Reject with a clean out-of-range
+    // AFTER which the blank page is inserted; -1 and doc.order.length both
+    // append after the last page (DEF-114: -1 is the renderer's "end" /
+    // "append" sentinel, matching insertFromPdf's -1 semantics). Values
+    // outside [-1, doc.order.length] (or non-finite) come from a renderer
+    // that derived the position from a stale current page after the doc
+    // shrank; the previous code silently clamped them, which landed the
+    // blank page at an unexpected position and the renderer then rendered
+    // a page-out-of-range / black canvas. Reject with a clean out-of-range
     // so the renderer surfaces a toast instead of a broken view.
     if (!Number.isFinite(afterIndex) || afterIndex < -1 || afterIndex > doc.order.length) {
       return err(
@@ -1272,10 +1273,15 @@ export class EngineService {
       doc.rotations.push(0);
       doc.annotations.push([]);
 
-      // Determine insertion position in visible order
-      // afterIndex is 0-based visible index; -1 means insert at beginning.
-      // afterIndex === doc.order.length means append after the last page.
-      const insertAt = afterIndex < 0 ? 0 : afterIndex + 1;
+      // Determine insertion position in visible order.
+      // DEF-114: afterIndex is the 0-based visible index AFTER which the
+      // blank page is inserted. The renderer's InsertPagesDialog sends
+      // afterIndex = -1 for "end"/"append"; the previous code treated -1
+      // as "insert before page 1" (insertAt = 0), so the blank page landed
+      // at the FRONT instead of the end. -1 now appends after the last
+      // page (matching insertFromPdf's -1 = append semantics); an explicit
+      // afterIndex === doc.order.length also appends.
+      const insertAt = afterIndex < 0 ? doc.order.length : afterIndex + 1;
       const clamped = Math.min(insertAt, doc.order.length);
       doc.order.splice(clamped, 0, blankOrigIdx);
 
@@ -1495,23 +1501,31 @@ export class EngineService {
           entryByPage.set(e.pageNumber, e);
         }
       }
+      // DEF-111: honor the selected page set. The renderer's
+      // DocxExportDialog exports only the user-chosen range and sends one
+      // DocxImageEntry per selected page (entry.pageNumber is 1-based
+      // VISIBLE). The previous loop iterated `0..visibleCount` over the
+      // WHOLE document, so a single-page selection still exported every
+      // page. Iterate only the entries' page numbers (sorted ascending,
+      // de-duplicated via the entryByPage map) so selecting page 1
+      // exports exactly 1 page.
       const pages: DocxDocPage[] = [];
-      for (let vi = 0; vi < visibleCount; vi++) {
+      const selectedPages = Array.from(entryByPage.keys()).sort((a, b) => a - b);
+      for (const pn of selectedPages) {
+        // pn is 1-based visible; map to the 0-based visible index.
+        const vi = pn - 1;
+        if (!Number.isFinite(vi) || vi < 0 || vi >= visibleCount) {
+          // Out-of-range page number — skip rather than emit a bogus page.
+          continue;
+        }
+        const entry = entryByPage.get(pn);
+        if (entry === undefined) continue;
         const origIdx = doc.order[vi];
         const raw = extractTextFromRawPdf(bytes, origIdx);
         if (raw.trim().length > 0) {
           pages.push({ kind: 'text', text: raw });
         } else {
-          // entry.pageNumber is 1-based VISIBLE, so it maps to vi + 1.
-          const entry = entryByPage.get(vi + 1);
-          if (entry === undefined) {
-            // No raster fallback for this page — emit an empty paragraph so
-            // the page still occupies a slot in the document (page count is
-            // otherwise driven by content + explicit page breaks).
-            pages.push({ kind: 'text', text: '' });
-          } else {
-            pages.push({ kind: 'image', entry });
-          }
+          pages.push({ kind: 'image', entry });
         }
       }
       const docxBytes = buildDocxFromDoc(pages);
@@ -1707,14 +1721,36 @@ export class EngineService {
 
       const fontName = payload.font ?? 'Helvetica';
       const font = await doc.pdfDoc.embedFont(standardFontFor(fontName));
-      const size = payload.size ?? 12;
       const color = payload.color ?? { r: 0, g: 0, b: 0 };
+
+      // Auto-fit: wrap to width, then shrink the font size so ALL
+      // wrapped lines fit within the box height. Without this, an
+      // oversized font (e.g. a box whose CSS height yields a large
+      // requested size) wraps each word onto many hard-broken lines
+      // and the old height clip silently dropped everything after the
+      // first fragment — losing committed content (DEF-113).
+      const MIN_FIT_SIZE = 4;
+      let size = payload.size ?? 12;
+      let lines = wrapTextToWidth(payload.text, font, size, width);
+      if (height > 0 && lines.length > 0) {
+        const needed = lines.length * size * 1.2;
+        if (needed > height) {
+          size = Math.max(MIN_FIT_SIZE, height / (lines.length * 1.2));
+          // Re-wrap at the smaller size. A smaller font can only
+          // produce fewer-or-equal lines, so the new line set is
+          // guaranteed to fit: newLen <= oldLen implies
+          // newLen * size * 1.2 <= oldLen * size * 1.2 == height.
+          lines = wrapTextToWidth(payload.text, font, size, width);
+        }
+      }
       const lineHeight = size * 1.2;
 
-      const lines = wrapTextToWidth(payload.text, font, size, width);
+      // Draw every wrapped line — never drop content that overflows
+      // the box bottom. The auto-fit above ensures the lines fit; in
+      // the degenerate case (box too small even for MIN_FIT_SIZE) we
+      // still draw all lines rather than silently losing text.
       let cursorY = pageHeight - y - size; // baseline of first line
       for (const line of lines) {
-        if (cursorY < pageHeight - y - height) break; // stop at box bottom
         page.drawText(sanitizeForStandardFont(line), {
           x,
           y: cursorY,

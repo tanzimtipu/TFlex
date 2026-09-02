@@ -95,6 +95,7 @@ describe("OcrDialog — DEF-071 class shell", () => {
         open={true}
         totalPages={3}
         currentPage={1}
+        formFields={[]}
         initialLanguage="eng"
         initialDownsample={300}
         resolveActiveDoc={(): null => null}

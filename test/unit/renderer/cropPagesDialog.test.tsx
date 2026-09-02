@@ -159,4 +159,64 @@ describe("CropPagesDialog — render contract", () => {
     expect(onClose).toHaveBeenCalled();
     cleanup();
   });
+
+  it("adjusting the crop box does NOT remount the editor (canvas node stable — DEF-115)", () => {
+    // DEF-115 — the CropEditor used to be keyed on the box
+    // coordinates, so every committed box change unmounted and
+    // remounted the editor, recreating the canvas: opacity flashed to
+    // 0 (previewReady reset) and the canvas briefly sat at its
+    // intrinsic unscaled CSS size. The fix keys on mode + page only;
+    // a box commit must keep the SAME editor / canvas node while the
+    // mask moves to the new rect.
+    const { container, cleanup } = renderDialog();
+    const editorBefore = container.querySelector<HTMLElement>("[data-crop-editor]");
+    const maskBefore = container.querySelector<HTMLElement>("[data-crop-handle='move']");
+    expect(editorBefore).not.toBeNull();
+    expect(maskBefore).not.toBeNull();
+    if (editorBefore === null || maskBefore === null) return cleanup();
+    const leftBefore = maskBefore.style.left;
+    const topBefore = maskBefore.style.top;
+    // Drag the crop mask: press, move, release (the window-level
+    // listeners the editor attaches handle move/up).
+    act((): void => {
+      maskBefore.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          bubbles: true,
+          button: 0,
+          clientX: 100,
+          clientY: 100,
+        }),
+      );
+    });
+    act((): void => {
+      window.dispatchEvent(
+        new PointerEvent("pointermove", {
+          bubbles: true,
+          clientX: 160,
+          clientY: 130,
+        }),
+      );
+    });
+    act((): void => {
+      window.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          clientX: 160,
+          clientY: 130,
+        }),
+      );
+    });
+    // The editor root must be the SAME DOM node after the commit —
+    // no remount, no flash.
+    const editorAfter = container.querySelector<HTMLElement>("[data-crop-editor]");
+    expect(editorAfter).toBe(editorBefore);
+    // The box actually moved (the drag + commit path ran) and the
+    // mask re-rendered to the new rect on the stable editor.
+    const maskAfter = container.querySelector<HTMLElement>("[data-crop-handle='move']");
+    expect(maskAfter).not.toBeNull();
+    if (maskAfter === null) return cleanup();
+    expect(maskAfter.style.left).not.toBe(leftBefore);
+    expect(maskAfter.style.top).not.toBe(topBefore);
+    cleanup();
+  });
 });

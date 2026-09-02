@@ -76,6 +76,14 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
     mode === "box" ? "white" : "none",
   );
   const ref = useRef<HTMLTextAreaElement | null>(null);
+  // DEF-110 — the toolbar's label spans and bar chrome are
+  // non-focusable: mousedown on them moves focus to the body, so the
+  // textarea's onBlur sees `relatedTarget === null` and wrongly
+  // treated the bar press as an outside click, committing/cancelling
+  // and unmounting the editor. This ref records pointer presses that
+  // START inside the editor window so onTextareaBlur can tell a bar
+  // press from a genuine outside click.
+  const insidePressRef = useRef(false);
 
   // Focus on mount so the user can type immediately. The overlay's
   // pointerdown handler ignores clicks inside the editor surface, so
@@ -139,6 +147,16 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
     ) {
       return;
     }
+    // DEF-110 — a pointer press that STARTED inside the editor (on a
+    // non-focusable label, the toolbar bar, or the editor's own
+    // padding) moved focus to the body: Chromium reports
+    // `relatedTarget === null` although the press never left the
+    // window. That is an inside click, not an outside click — keep
+    // the editor mounted. The flag is cleared a tick after the press
+    // so the NEXT (genuinely outside) press commits normally.
+    if (insidePressRef.current) {
+      return;
+    }
     // Defer to next tick so a click on Cancel/Apply (which
     // unmounts the editor anyway) doesn't fire a duplicate
     // commit. The overlay's own pointerdown handler will see
@@ -173,7 +191,19 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
       className="edit-inline-editor"
       data-edit-editor={mode}
       style={{ left: leftCss, top: topCss, width: widthCss }}
-      onPointerDown={(e): void => e.stopPropagation()}
+      onPointerDown={(e): void => {
+        e.stopPropagation();
+        // DEF-110 — remember that this press started inside the
+        // editor. onTextareaBlur uses the flag to keep the editor
+        // mounted when a non-focusable label / bar press blurs the
+        // textarea to the body (relatedTarget null). Cleared a tick
+        // after the press so a later genuine outside click commits
+        // normally.
+        insidePressRef.current = true;
+        window.setTimeout(() => {
+          insidePressRef.current = false;
+        }, 0);
+      }}
     >
       <div className="edit-inline-toolbar">
         <label className="edit-inline-field edit-inline-field-font">
@@ -210,8 +240,14 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
             max={SIZE_MAX}
             step={1}
             value={style.size}
-            // Bug 9 — see comment on the font select above.
-            onMouseDown={(e): void => e.preventDefault()}
+            // DEF-109 — NO preventDefault on mousedown. The old
+            // Bug-9 focus guard on this number input suppressed the
+            // native spinner/arrow auto-increment (and Chromium's
+            // arrow-up on a focused number input), so the size
+            // control was inert — only direct typing changed it.
+            // The input is focusable and lives inside the editor, so
+            // the textarea's onBlur guard keeps the editor mounted
+            // when focus moves here.
             onChange={(e: ChangeEvent<HTMLInputElement>): void => {
               const n = Number.parseFloat(e.target.value);
               if (Number.isFinite(n)) {

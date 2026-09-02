@@ -2312,7 +2312,7 @@ describe('Phase 9: createFromClipboard', () => {
 // ---------------------------------------------------------------------------
 
 describe('Phase 9: insertBlankPage', () => {
-  it('inserts a blank page at the beginning', async () => {
+  it('inserts a blank page at the end when afterIndex is -1 (DEF-114: -1 means append)', async () => {
     const engine = new EngineService();
     const { path } = await createNPagePdf(3);
     await engine.loadDocument('doc-bp', path);
@@ -2321,8 +2321,11 @@ describe('Phase 9: insertBlankPage', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.pageCount).toBe(4);
-      // The new blank page should be first in the visible order
       expect(result.value.pageOrder.length).toBe(4);
+      // DEF-114: -1 means append — the blank page is the LAST visible
+      // page. On a 3-page doc the blank gets original index 3 (added
+      // last to pdfDoc); appending puts it at visible position 3.
+      expect(result.value.pageOrder[3]).toBe(3);
     }
   });
 
@@ -2456,6 +2459,28 @@ describe('B15: insertBlankPage — out-of-range guard + white fill', () => {
     }
   });
 
+  // DEF-114: the renderer's InsertPagesDialog sends afterIndex = -1 for
+  // "end"/"append", but _insertBlankPageImpl previously treated -1 as
+  // "insert before page 1" (insertAt = 0) so the blank page landed at the
+  // FRONT. -1 must append — the blank page is the LAST visible page.
+  it('DEF-114: afterIndex -1 (end/append) lands the blank page LAST, not first', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-def114', path);
+
+    const result = await engine.insertBlankPage('doc-def114', -1, 400, 300);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.pageCount).toBe(4);
+    expect(result.value.pageOrder.length).toBe(4);
+    // The three original pages keep their order (0,1,2) and the blank
+    // (original index 3) is the last visible page — append, not prepend.
+    expect(result.value.pageOrder).toEqual([0, 1, 2, 3]);
+    expect(result.value.pageOrder[result.value.pageOrder.length - 1]).toBe(3);
+    // The first visible page is still original page 0 (not the blank).
+    expect(result.value.pageOrder[0]).toBe(0);
+  });
+
   it('rejects a zero or negative width/height with out-of-range (no black page)', async () => {
     const engine = new EngineService();
     const { path } = await createNPagePdf(2);
@@ -2560,7 +2585,7 @@ describe('B15: insertBlankPage — out-of-range guard + white fill', () => {
     // delete down... but the engine guards the last page. Instead, reach
     // the 0-page state is impossible via public API, so we only assert the
     // guards above keep the engine responsive. A valid insert on a 1-page
-    // doc with afterIndex=-1 (beginning) still works.
+    // doc with afterIndex=-1 (DEF-114: append) still works.
     const r = await engine.insertBlankPage('doc-b15-empty', -1, 400, 300);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.value.pageCount).toBe(2);
@@ -3313,6 +3338,70 @@ describe('Phase 10: addTextBox', () => {
     expect(content.includes(hexOperand('LINETWO'))).toBe(true);
     expect(content.includes(hexOperand('LINETHREE'))).toBe(true);
   });
+
+  // DEF-113: an oversized font in a modest box must NOT silently drop
+  // content. The old height-clip break dropped every line after the
+  // first hard-broken fragment (only "HELL" of "HELLO BOX ADDED 456"
+  // rendered). The fix auto-shrinks the font so all words fit and
+  // draws every line.
+  it('DEF-113: multi-word text with an oversized font renders all words (no truncation)', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('box-def113.pdf', bytes);
+    await engine.loadDocument('doc-def113', path);
+
+    // 72pt font in a 200x100 box: each word wraps to its own line and
+    // the old code dropped everything after the first hard-broken
+    // fragment ("HELL"). The fix auto-shrinks so all words fit.
+    const result = await engine.addTextBox('doc-def113', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 100 },
+      text: 'HELLO BOX ADDED 456',
+      font: 'Helvetica',
+      size: 72,
+      color: { r: 0, g: 0, b: 0 },
+      background: 'white',
+    });
+    expect(result.ok).toBe(true);
+
+    const sr = await engine.save('doc-def113');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    // Every word must be present — not just the first fragment "HELL".
+    expect(content.includes(hexOperand('HELLO'))).toBe(true);
+    expect(content.includes(hexOperand('BOX'))).toBe(true);
+    expect(content.includes(hexOperand('ADDED'))).toBe(true);
+    expect(content.includes(hexOperand('456'))).toBe(true);
+  });
+
+  // DEF-113 (large-box variant): same oversized font, larger rect —
+  // the old code still dropped all but the first fragment because the
+  // height clip fired after one 72*1.2 line. Auto-fit must keep all.
+  it('DEF-113: multi-word text with oversized font in a larger box also renders all words', async () => {
+    const engine = new EngineService();
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    const bytes = await doc.save();
+    const path = await writeFixture('box-def113-lg.pdf', bytes);
+    await engine.loadDocument('doc-def113-lg', path);
+
+    const result = await engine.addTextBox('doc-def113-lg', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 200 },
+      text: 'HELLO BOX ADDED 456',
+      font: 'Helvetica',
+      size: 72,
+    });
+    expect(result.ok).toBe(true);
+
+    const sr = await engine.save('doc-def113-lg');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    expect(content.includes(hexOperand('HELLO'))).toBe(true);
+    expect(content.includes(hexOperand('BOX'))).toBe(true);
+    expect(content.includes(hexOperand('ADDED'))).toBe(true);
+    expect(content.includes(hexOperand('456'))).toBe(true);
+  });
 });
 
 describe('Phase 10: editImage', () => {
@@ -3664,6 +3753,67 @@ describe('DEF-060: createDocxFromDoc', () => {
     expect(docXml).toContain('Page 0');
     expect(docXml).toContain('Page 1');
     expect(docXml).toContain('Page 2');
+  });
+
+  // DEF-111: createDocxFromDoc previously looped `for vi in 0..visibleCount`
+  // over the WHOLE document, so a single-page selection still exported every
+  // page. The renderer's DocxExportDialog sends one DocxImageEntry per
+  // SELECTED page (entry.pageNumber = the 1-based visible page); the engine
+  // must iterate the entries' page numbers, not the whole doc. Selecting
+  // page 1 of a 3-page doc must export exactly 1 page — Page 0's text, no
+  // Page 1 / Page 2 content, and no page break (1 page => 0 separators).
+  it('DEF-111: a single-entry selection exports exactly 1 page (range honored)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(3);
+    await engine.loadDocument('doc-def111', path);
+
+    const png = createMinimalPng(50, 50);
+    // Only page 1 is selected — the other two pages must NOT appear.
+    const entries = [{
+      pageNumber: 1, pngBuffer: png, width: 50, height: 50, pageWidth: 612, pageHeight: 792,
+    }];
+
+    const result = await engine.createDocxFromDoc('doc-def111', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const docXml = extractZipEntryText(result.value, 'word/document.xml')!;
+    // Exactly 1 page's worth of content: Page 0's text is present...
+    expect(docXml).toContain('Page 0');
+    // ...and the other pages' text is absent (Page 1 / Page 2 belong to
+    // pages the user did NOT select).
+    expect(docXml).not.toContain('Page 1');
+    expect(docXml).not.toContain('Page 2');
+    // 1 page => 0 page-break separators (breaks sit BETWEEN pages).
+    expect((docXml.match(/w:br w:type="page"/g) || []).length).toBe(0);
+    // No inline image on a text-bearing page.
+    expect(docXml).not.toContain('<wp:inline');
+  });
+
+  it('DEF-111: a multi-page selection exports only the selected pages', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(4);
+    await engine.loadDocument('doc-def111-multi', path);
+
+    const png = createMinimalPng(50, 50);
+    // Select pages 2 and 4 (1-based visible) of a 4-page doc.
+    const entries = [2, 4].map((n) => ({
+      pageNumber: n, pngBuffer: png, width: 50, height: 50, pageWidth: 612, pageHeight: 792,
+    }));
+
+    const result = await engine.createDocxFromDoc('doc-def111-multi', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const docXml = extractZipEntryText(result.value, 'word/document.xml')!;
+    // Pages 2 and 4 (1-based) => "Page 1" and "Page 3" (0-based text).
+    expect(docXml).toContain('Page 1');
+    expect(docXml).toContain('Page 3');
+    // Pages 1 and 3 (1-based) => "Page 0" and "Page 2" must be absent.
+    expect(docXml).not.toContain('Page 0');
+    expect(docXml).not.toContain('Page 2');
+    // 2 pages => 1 page break between them.
+    expect((docXml.match(/w:br w:type="page"/g) || []).length).toBe(1);
   });
 
   it('XML-escapes text content so <, &, > do not corrupt document.xml', async () => {

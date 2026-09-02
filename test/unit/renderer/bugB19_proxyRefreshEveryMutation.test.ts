@@ -131,4 +131,25 @@ describe("B19 — proxy refresh after every engine mutation", () => {
     );
     expect(findHandler("onOcrConfirm")).toMatch(/refreshDocProxyFor\(activeId\)/);
   });
+
+  it("handleEditTextRun + handleAddTextBox refresh the proxy after a successful edit (DEF-108 / DEF-113)", () => {
+    // The renderer's pdf.js proxy stays pinned to the pre-edit
+    // bytes otherwise: the live view keeps showing the ORIGINAL
+    // run and hides the committed text box until a save/reopen.
+    // Both edit handlers must rebuild the proxy after
+    // noteOpApplied, exactly like merge / crop / flatten.
+    for (const name of ["handleEditTextRun", "handleAddTextBox"]) {
+      const body = findHandler(name);
+      expect(body, `${name} handler exists`).not.toBe("");
+      expect(body, `${name} reads the forward-declared ref`).toMatch(
+        /refreshDocProxyForRef\.current/,
+      );
+      expect(body, `${name} calls refreshFn(tabId)`).toMatch(/refreshFn\(tabId\)/);
+      // The refresh call sits AFTER noteOpApplied (success branch).
+      const noteOpIdx = body.indexOf("noteOpApplied(tabId, result.value)");
+      const refreshIdx = body.indexOf("refreshFn(tabId)");
+      expect(noteOpIdx, `${name} calls noteOpApplied`).toBeGreaterThan(-1);
+      expect(refreshIdx, `${name} refresh is inside the success branch`).toBeGreaterThan(noteOpIdx);
+    }
+  });
 });

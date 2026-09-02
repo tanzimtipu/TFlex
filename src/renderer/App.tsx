@@ -1777,6 +1777,19 @@ export function App(): ReactElement {
         return;
       }
       noteOpApplied(tabId, result.value);
+      // DEF-108 — the engine masked the old run and drew the new
+      // text into its copy of the PDF. The renderer's pdf.js `doc`
+      // proxy still paints the pre-edit bytes, so the live view
+      // keeps showing the ORIGINAL run until a save/reopen. Rebuild
+      // the proxy in place via the Phase 11 refresh hook — same
+      // pattern OCR / crop / merge / flatten use. Read through the
+      // forward-declared ref (refreshDocProxyFor is defined later in
+      // this component; a direct dep would be a TDZ reference, see
+      // DEF-062).
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(tabId).catch(() => undefined);
+      }
     },
     [pushToast, noteOpApplied],
   );
@@ -1805,6 +1818,16 @@ export function App(): ReactElement {
         return;
       }
       noteOpApplied(tabId, result.value);
+      // DEF-113 — the engine drew the new text box into its copy of
+      // the PDF. The renderer's pdf.js `doc` proxy still paints the
+      // pre-edit bytes, so the committed box is invisible in the
+      // live view until a save/reopen. Rebuild the proxy via the
+      // Phase 11 refresh hook — same pattern as OCR / crop / merge /
+      // flatten (and the DEF-108 fix right above).
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(tabId).catch(() => undefined);
+      }
     },
     [pushToast, noteOpApplied],
   );
@@ -3868,11 +3891,16 @@ pushToast(
       const language = settingsRef.current?.ocrLanguage ?? DEFAULT_OCR_LANGUAGE;
       try {
         // Rasterise every page through the same renderer-side
-        // helper the dialog uses, then send to the engine.
+        // helper the dialog uses, then send to the engine. The
+        // tab's current form values are seeded into pdf.js's
+        // AnnotationStorage first so typed form text ("John Doe")
+        // and checkbox/radio state are visible to tesseract
+        // (DEF-112).
         const pageImages = await rasterizePagesForOcr({
           doc,
           pages,
           dpi: downsample,
+          formFields: open.forms.fields,
         });
         const result = await engineRef.current.ocrRecognize(
           open.session.engineDocId,
@@ -5471,6 +5499,7 @@ pushToast(
           const tab = openTabsRef.current[id];
           return tab ? Math.max(1, Math.floor(tab.persisted.currentPage)) : 1;
         })()}
+        formFields={activeTab?.forms.fields ?? []}
         initialLanguage={
           settings.ocrLanguage ?? DEFAULT_OCR_LANGUAGE
         }

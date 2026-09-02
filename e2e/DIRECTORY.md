@@ -13,6 +13,7 @@
 - `retests/def_077_ota_ux.spec.cjs`: Verification of OTA update UI (UpdateIndicator, About dialog).
 - `retests/def_085_alignment.spec.cjs`: Verification of title bar control alignment.
 - `retests/def_079_080.spec.cjs`: Verification of OTA IPC surface stability.
+- `retests/def_108_115_verify.spec.cjs`: Decisive verification of DEF-108..DEF-115 on the installed app (edit-text live render, size arrow/spinner, context-window bar press, DOCX page range, OCR form value, add-box live render, insert blank page end, crop no-flash).
 - `retests/remaining_sweep.spec.cjs`: Miscellaneous feature verification.
 
 ## Support / Library

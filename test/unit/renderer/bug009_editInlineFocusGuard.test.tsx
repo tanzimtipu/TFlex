@@ -95,14 +95,27 @@ describe("Bug 9 / B16 — EditInlineEditor toolbar focus guard", () => {
     expect(dispatchMouseDown(bgSelect)).toBe(false);
   });
 
-  it("text inputs (size / color) and the Cancel / Apply buttons still preventDefault on mousedown", () => {
-    // The focus-lock is kept where it is actually needed: the
-    // number input, the color input and the action buttons. These
-    // are not native dropdowns, so the guard does not break them.
+  it("the size number input does NOT preventDefault on mousedown (native spinner / arrows work — DEF-109)", () => {
+    // DEF-109 — the old Bug-9 focus guard on the number input
+    // suppressed the native spinner/arrow auto-increment (and
+    // Chromium's arrow-up), making the size control inert. The
+    // guard is REMOVED from the number input; the textarea's onBlur
+    // guard keeps the editor mounted because the number input is
+    // focusable and inside the editor.
     const { host } = mountEditor();
     const sizeInput = host.querySelector<HTMLInputElement>(
       ".edit-inline-field-size input",
     );
+    expect(sizeInput).not.toBeNull();
+    if (sizeInput === null) return;
+    expect(dispatchMouseDown(sizeInput)).toBe(false);
+  });
+
+  it("the color input and the Cancel / Apply buttons still preventDefault on mousedown", () => {
+    // The focus-lock is kept where it is actually needed: the color
+    // input (not a native dropdown, and its picker opens on click,
+    // not on the suppressed default action) and the action buttons.
+    const { host } = mountEditor();
     const colorInput = host.querySelector<HTMLInputElement>(
       ".edit-inline-field-color input",
     );
@@ -112,18 +125,17 @@ describe("Bug 9 / B16 — EditInlineEditor toolbar focus guard", () => {
     const commitBtn = host.querySelector<HTMLButtonElement>(
       ".edit-inline-btn-commit",
     );
-    for (const el of [sizeInput, colorInput, cancelBtn, commitBtn]) {
+    for (const el of [colorInput, cancelBtn, commitBtn]) {
       expect(el).not.toBeNull();
     }
     if (
-      sizeInput === null ||
       colorInput === null ||
       cancelBtn === null ||
       commitBtn === null
     ) {
       return;
     }
-    for (const el of [sizeInput, colorInput, cancelBtn, commitBtn]) {
+    for (const el of [colorInput, cancelBtn, commitBtn]) {
       expect(dispatchMouseDown(el)).toBe(true);
     }
   });

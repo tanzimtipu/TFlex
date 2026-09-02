@@ -1,3 +1,202 @@
+## DEF-116: Edit-text leaves the original run in the PDF — old title remains searchable/selectable after the edit
+
+- Status: REJECTED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.6 build).
+2. Open report.pdf, click the Edit toggle, then the "Edit text" tool.
+3. Click the "TFlex Technical Report" title run so the inline editor opens pre-filled.
+4. Replace the text with "ZZZ REPLACEMENT TEXT 123" and press Ctrl+Enter to confirm.
+
+Expected: The edited run is replaced — the old "TFlex Technical Report" text is removed from the document, so it is no longer selectable/searchable/copyable and no longer present in the saved file.
+Actual: The canvas paints the NEW title (DEF-108 is fixed), but the engine edits by MASKING the old run with a white rectangle and DRAWING the new text on top (`engine._editTextRunImpl`). The original "TFlex Technical Report" string stays in the PDF content stream; after the proxy refresh the live `.textLayer` still contains a visible-size stale span for "TFlex Technical Report" (x594,y327,w461,h45) at the SAME location as the new span (x594,y325,w515,h36). Selecting/copying the title area surfaces the hidden old title, and the saved PDF still contains the original run. (The app's own search index is rebuilt from the proxy and does NOT match the old title, so in-app Ctrl+F is correct; the issue is the document's own content.)
+Root cause: `_editTextRunImpl` (engine.ts:1645) masks the old rect with `page.drawRectangle({color: rgb(1,1,1)})` instead of removing the original glyphs; pdf-lib's drawRectangle does not delete the underlying text operators, so pdf.js still extracts the masked old run into the textLayer.
+Screenshot: screenshots/def-108-after-commit.png (shows new title live; the stale old-title span is in the textLayer), also screenshots/probe-108-search-old.png
+
+History:
+- qa: opened (discovered during DEF-108 retest on installed v1.7.6)
+- orchestrator: REJECTED - pdf-lib has no content-stream tokenizer; stripping old text operators is a hand-rolled ~500-line high-risk rewrite. Mask-and-redraw is visually correct (old text hidden, only exposed by selection/extraction). Documented as v1 limitation; native dependency (qpdf/pdfcpu) is a future-phase item.
+
+## DEF-115: Crop box adjustment flashes a larger crop-window artifact on commit
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf.
+3. Open the Tools palette -> "Crop pages" and wait for the crop editor to render the page.
+4. Drag the SE corner handle of the crop box so the box grows, then release (commit).
+
+Expected: The crop box updates smoothly with no visual flash; the page preview stays scaled and painted continuously.
+Actual: Immediately after the mouseup commit the crop editor REMOUNTS — the page canvas disappears (opacity flashes to 0) and its CSS size jumps to the full unscaled 612x792 for one frame (a "larger crop window" artifact) before settling to the correct ~360x466. Verified by sampling post-commit frames: frame 0 yields canvasTag=null (new canvas node), canvasOpacity=0, canvasRect 612x792; frame 1+ settle to opacity 1, rect 360x466.
+Root cause: CropPagesDialog.tsx line 268 renders `<CropEditor key={...currentBox.x-y-width-height}>`; the key embeds the box coordinates, so every committed box change unmounts/remounts CropEditor, recreating the canvas (previewReady false -> opacity 0) and briefly leaving the canvas at its intrinsic 612x792 CSS size before the render effect sets the scaled rect.
+Screenshot: screenshots/gt-bug8-post-0.png (also gt-bug8-crop-open.png, gt-bug8-before-mouseup.png, gt-bug8-crop-after-drag.png)
+
+History:
+- qa: opened (ground-truth reproduction on installed v1.7.5)
+- qa: re-verified on installed v1.7.6 (exe 1:05 PM, newer than src). Drag SE handle then release; canvas keeps `data-canvas-tag=CANVAS-A` across all 6 post-commit frames (no remount), computed opacity stays `1` (no 0-flash), canvas rect stays 360x466 (never jumps to the intrinsic 612x792). `CropEditor` key is now mode+page only. CLOSED.
+
+## DEF-114: Insert blank page with "end"/empty position lands at the FRONT, not the end
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf (34 pages).
+3. Open the Tools palette -> "Insert pages".
+4. Leave mode as "Blank page" and type `end` into the "Insert at page" field (the field help says `end` = append; clearing the field maps to the same sentinel). Click Insert.
+
+Expected: The blank page is appended as the LAST page (page 35); the existing 34 pages keep their order.
+Actual: The blank page is inserted as the FIRST page of the visible order. `tflexDiagnostics().engineState.pageOrder` becomes `[34,0,1,2,…,33]` (the newly added blank origIdx 34 at index 0), and the view/rail render a scrambled result (blank page at the front, two blank-looking thumbs, a mislabeled "Page N"). Note the engine page count is correct (34 -> 35); this is NOT a literal two-page duplication, but an incorrect placement that scrambles the document. Inserting with the DEFAULT numeric position ("35") works correctly (pageOrder ends with 34).
+Root cause: InsertPagesDialog.tsx maps `end`/empty to `position:-1` ("appended at end"), but onInsertPagesConfirm (App.tsx:3019) passes that value straight to `engine.insertBlankPage(docId, position, …)`; engine `_insertBlankPageImpl` (engine.ts:1215) treats `afterIndex = -1` as "insert before the first page" (`insertAt = 0`). Two different -1 contracts collide.
+Screenshot: screenshots/gt-bug7-after.png (also gt-bug7-before.png, gt-bug7-insert-dialog.png)
+
+History:
+- qa: opened (ground-truth reproduction on installed v1.7.5)
+- qa: re-verified on installed v1.7.6 (exe 1:05 PM, newer than src). Blank mode + position `end`: engineState pageCount 34 -> 35, modified=true, pageOrder=[0,1,...,33,34] — first=0 and last=34 (the new origIdx-34 blank page is the FINAL element, not the front). `_insertBlankPageImpl` now maps afterIndex<0 to `doc.order.length` (append). CLOSED.
+
+## DEF-113: Add Box text is not rendered in the live view after confirming
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf.
+3. Click the Edit toggle, then the "Add box" tool.
+4. Drag on the page to place a text box, type "HELLO BOX ADDED 456" in the editor and press Ctrl+Enter to confirm.
+
+Expected: The committed text box renders its text on the page in the live document view.
+Actual: The editor closes and the engine `modified` flag flips to true, but the new text is NOT rendered — the pdf.js textLayer contains no element with "HELLO BOX ADDED 456" and the page canvas still shows the pre-edit content. The edit only becomes visible after a save/reopen (the engine wrote it, the live view is stale).
+Root cause: App.tsx `handleAddTextBox` (line 1785) calls `engine.addTextBox` + `noteOpApplied` but never rebuilds the renderer pdf.js `doc` proxy (unlike the OCR path which calls `refreshDocProxyFor` in `onOcrConfirm`). The DocumentView continues to render the pre-edit document.
+Screenshot: screenshots/gt-bug5-after-commit.png (also gt-bug5-box-editor-open.png)
+
+History:
+- qa: opened (ground-truth reproduction on installed v1.7.5)
+- qa: re-verified on installed v1.7.6 (exe 1:05 PM, newer than src). The proxy IS now rebuilt (handleAddTextBox calls refreshDocProxyFor), so the box text DOES appear in the live canvas — but only "HELL" of the committed "HELLO BOX ADDED 456" renders. Committed textarea value was verified as the full "HELLO BOX ADDED 456"; the `.textLayer` after commit contains a single span "HELL" (visible SIZE_BIG, x548,y568,w161,h64) and no span with the full string; the DOM has no element with the full text; engine `annotations=[]`. Reproduced with BOTH a small box (200x214 CSS) and a large box (800x388 CSS) — always "HELL". Root cause is now the default font size for a new box, `EditInlineEditor`/`EditOverlay` `size = Math.round(textTarget.rect.height * 0.8)` (capped at SIZE_MAX=72), which is enormous for a box whose height is large; `wrapTextToWidth` hard-breaks "HELLO" -> "HELL"+"O" when "HELLO" exceeds the box width, and the box height only fits that first fragment line, SILENTLY DROPPING the rest of the user's text. Content is lost in the committed box. REMAINS OPEN (severity raised to HIGH — committed content silently dropped).
+- qa: re-verified on installed v1.7.6 (rebuilt 17:29). Add box in report.pdf, type "HELLO BOX ADDED 456" + Ctrl+Enter: the editor closes (count=0) and the FULL committed text renders live — the `.textLayer` contains a single span "HELLO BOX ADDED 456" (boxTextVisibleFull=true, joined=true, truncatedOnly=false; no lone "HELL" fragment). Screenshot screenshots/def-113-after-commit.png shows the full string on the page at a normal legible size. The oversized default box font is gone — the box no longer hard-breaks and drops content. CLOSED.
+
+## DEF-112: OCR does not make form field values (e.g. "John Doe") searchable
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open form.pdf (the page visibly shows a "John Doe" text field, plus "Engineering" and a listbox with "TypeScript" highlighted).
+3. Open the Tools palette -> "Recognize text (OCR)", set scope to "Current page", click "Recognize text".
+4. Wait for completion, then try to search (Ctrl+F) for "John Doe".
+
+Expected: OCR makes the form's field value "John Doe" searchable/selectable.
+Actual: OCR completes and the rebuilt textLayer gains the static content ("JavaScript", "Node.js", "React", "PDF Spec") but NOT the form field values — after-OCR textLayer = [ "TFlex Application Form", "TFlex", "Application", "Form", "JavaScript", "Node.js", "React", "PDF", "Spec" ]; `hasJohnDoe=false`; searching "John Doe" returns 0 hits. "John Doe", "Engineering" and "TypeScript" stay unsearchable.
+Root cause: src/renderer/pdf/ocrRasterize.ts `rasterizeOnePage` (line 134) renders via `pdfPage.render({ canvasContext, viewport })` with pdf.js defaults (no `renderInteractiveForms`), so interactive AcroForm field-value appearance streams are never painted into the OCR PNG; tesseract therefore never sees "John Doe" and never writes it into the invisible text layer.
+Screenshot: screenshots/gt-bug4-form-before-ocr.png, gt-bug4-after-ocr.png, gt-bug4-search-john-doe.png
+
+History:
+- qa: opened (ground-truth reproduction on installed v1.7.5)
+- qa: re-verified on installed v1.7.6 (exe 1:05 PM, newer than src). `window.tflex.engine.getFormFields` returns 8 fields INCLUDING `applicant_name` = "John Doe" (and `department`="Engineering"), and the FormsOverlay renders `[data-form-field="form-0-applicant_name"]` with value "John Doe" — so the renderer form state DOES hold the value and OCR seeds it into AnnotationStorage (seedAnnotationStorage) with `annotationMode: AnnotationMode.ENABLE_STORAGE`. Yet after OCR the `.textLayer` is ["TFlex Application Form","TFlex"," ","Application"," ","Form","[]","JavaScript","TypeScript","Node.js","React"] — `hasJohnDoe=false`; searching "John Doe" returns 0 hits. The form-field appearance is still NOT baked into the OCR raster. REMAINS OPEN.
+- qa: re-verified on installed v1.7.6 (rebuilt 17:29). Filled applicant_name with "John Doe" (renderer form state confirmed hasJohnDoe=true), ran OCR current page. After OCR the rebuilt `.textLayer` contains "John"," ","Doe" (joined "John Doe"), and Ctrl+F "John Doe" returns searchHits=1, searchIndexProgress built=1/total=1, search status "1 of 1". Screenshot screenshots/def-112-search-john-doe.png shows the search bar with "John Doe" and "1 of 1". The e2e assertion was updated to use `window.tflexDiagnostics().searchHits` (>=1) instead of the old per-span regex, because the textLayer splits "John"/"Doe" across spans. CLOSED.
+
+## DEF-111: DOCX export ignores the selected page range and exports ALL pages
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf (34 pages).
+3. Open the Tools palette -> "Export to Word (.docx)".
+4. Set the "Page range" field to `1` (a single page), then click "Export".
+
+Expected: The resulting .docx contains only page 1 (0 page breaks, one image/paragraph).
+Actual: The export succeeds but produces a 34-page .docx — the extracted word/document.xml has 33 `<w:br w:type="page"/>` breaks (34 pages) and 34 `<w:t>` text runs; the file is byte-identical in size (56376) to the all-pages default export. The page range is ignored.
+Root cause: src/main/services/engine.ts `_createDocxFromDocImpl` (line 1461) iterates `for (let vi = 0; vi < doc.order.length; vi++)` over the ENTIRE visible document (all `doc.order` pages), and only consults the passed `entries` to decide text-vs-image per page — it never uses `entries` to restrict the page set. The dialog's `runEngineExport` does limit `entries` to the range, but the assembly step re-expands to the whole doc.
+Screenshot: screenshots/gt-bug3-docx-dialog.png, gt-bug3-docx-after-export.png
+
+History:
+- qa: opened (ground-truth reproduction on installed v1.7.5)
+- qa: re-verified on installed v1.7.6 (exe 1:05 PM, newer than src). Exporting page range "1" on report.pdf produces a real .docx (will-download state=completed, 2607 bytes, valid OOXML PK) whose extracted word/document.xml contains 0 `<w:br w:type="page"/>` page-break marks (exactly 1 page) and 0 `<w:t>` text runs (one image) — no `inner` error, dialog no error. `_createDocxFromDocImpl` now respects `entries` as the page set. CLOSED.
+
+## DEF-110: Edit context-window bar press registers as an outside click and closes the editor
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf, click the Edit toggle, then the "Edit text" tool.
+3. Click a text run so the inline editor opens (textarea pre-filled).
+4. Press (mousedown/up) on a NON-focusable label inside the editor's toolbar bar (e.g. the "Font" label span), WITHOUT clicking outside the editor.
+
+Expected: The editor stays mounted — a click on its own chrome is not an outside click. Context windows should only close on an explicit close/Cancel.
+Actual: Pressing the "Font" label span closes the editor (`[data-edit-editor]` count -> 0); it is treated as an outside click. The textarea's onBlur fires because focus leaves the textarea to the body (relatedTarget null), the blur guard only bails when the new focus target is inside `.edit-inline-editor`, and a non-focusable label has no focusable target, so it commits/cancels and unmounts.
+Root cause: EditInlineEditor.tsx `onTextareaBlur` (line 133) + the toolbar bar's non-focusable labels. There is no text-drag-outside / bar-press guard equivalent to InsertPagesDialog's B17 `backdropDownRef`. (Note: a text highlight-drag that starts inside the textarea and releases OUTSIDE the editor did NOT close it in the same test — the bar chrome press is the deterministically-reproducing path.)
+Screenshot: screenshots/gt-bug6-after-bar-click.png (also gt-bug6-editor-open.png, gt-bug6-after-drag-outside.png)
+
+History:
+- qa: opened (ground-truth reproduction on installed v1.7.5)
+- qa: re-verified on installed v1.7.6 (exe 1:05 PM, newer than src). Pressing (mousedown/up) on the editor's own "Font" label (non-focusable chrome) leaves `[data-edit-editor="edit"]` mounted (count=1 after press); a positive control on the explicit Cancel button closes it (count=0). The editor now guards bar chrome via `insidePressRef` set on the editor's `onPointerDown`. CLOSED.
+
+## DEF-109: Edit inline editor size (arrow/spinner) control is inert
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf, click the Edit toggle, then the "Edit text" tool, and click a text run so the inline editor opens.
+3. Focus the "Font size (pt)" number input. Press the up-arrow key, and also click the native spin-arrow zone.
+
+Expected: The size value increments via the keyboard up-arrow and the spinner arrows.
+Actual: The value stays at 19 after ArrowUp and after a spin-arrow click (`before=19, afterArrowUp=19, afterSpinClick=19`); the only way to change it is to select-all and type a new number (fill('48') -> 48). The editor stays open after these interactions (so it is not the outside-click path).
+Root cause: EditInlineEditor.tsx line 214 sets `onMouseDown={(e): void => e.preventDefault()}` on the size `<input type="number">` (the Bug-9 focus guard). preventDefault on mousedown suppresses the native spinner/arrow auto-increment (and Chromium's arrow-up on a focused number input), so the arrows do nothing; direct typing bypasses mousedown and works.
+Screenshot: screenshots/gt-bug2b-size-control.png
+
+History:
+- qa: opened (ground-truth reproduction on installed v1.7.5)
+- qa: re-verified on installed v1.7.6 (exe 1:05 PM, newer than src). Focus the size input: ArrowUp increments 19 -> 20; the native spinner up-arrow increments 19 -> 20 -> 21 when clicked on the top-right hit zone; the editor stays mounted throughout. The `onMouseDown preventDefault` was removed from the number input. CLOSED.
+
+## DEF-108: Edit-text confirm does not render the updated text in the live view
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf, click the Edit toggle, then the "Edit text" tool.
+3. Click the "TFlex Technical Report" title run so the inline editor opens pre-filled.
+4. Replace the text with "ZZZ REPLACEMENT TEXT 123" and press Ctrl+Enter to confirm.
+
+Expected: The title on the page updates to the new text in the live document view.
+Actual: The editor closes and the engine `modified` flag flips to true, but the live pdf.js textLayer still reports the old run ("TFlex Technical Report" present, "ZZZ REPLACEMENT TEXT 123" absent). The canvas continues to paint the original text; the edit only appears after a save/reopen.
+Root cause: App.tsx `handleEditTextRun` (line 1759) calls `engine.editTextRun` + `noteOpApplied` but never rebuilds the renderer pdf.js `doc` proxy (contrast the OCR path, `onOcrConfirm`, which calls `refreshDocProxyFor`). The DocumentView keeps rendering the stale pre-edit proxy.
+Screenshot: screenshots/gt-bug2a-before-commit.png, gt-bug2a-after-commit.png
+
+History:
+- qa: opened (ground-truth reproduction on installed v1.7.5)
+- qa: re-verified on installed v1.7.6 (exe 1:05 PM, newer than src). Edit the title to "ZZZ REPLACEMENT TEXT 123" + Ctrl+Enter: the editor closes (count 0), `modified` = true, the canvas paints the NEW title, and the live `.textLayer` contains "ZZZ REPLACEMENT TEXT 123" (newVisible=true). `handleEditTextRun` now rebuilds the pdf.js proxy via `refreshDocProxyFor`. CLOSED. (NOTE: the original masked run still remains as hidden text in the PDF/textLayer — filed separately as DEF-116.)
+
 ## DEF-107: OCR suspects panel overlaps annotation/shapes toolbar (B14)
 
 - Status: CLOSED

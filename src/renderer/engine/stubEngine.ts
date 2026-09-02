@@ -689,10 +689,13 @@ export class StubRendererEngine implements EngineApi {
     // observe the new count. Width / height are recorded in
     // rotations as a stand-in (the stub doesn't track page sizes).
     pushUndo(t);
-    const insertAt =
-      afterIndex < 0
-        ? 0
-        : Math.min(afterIndex + 1, t.pageOrder.length);
+    // DEF-114 parity: afterIndex = -1 is the renderer's "end"/"append"
+    // sentinel. `Array.prototype.splice` clamps an out-of-range index to
+    // the array length, so a plain `afterIndex + 1` appends for -1 and
+    // inserts after the given 0-based index otherwise — exactly the real
+    // engine's
+    // `insertAt = afterIndex < 0 ? doc.order.length : afterIndex + 1`.
+    const insertAt = afterIndex < 0 ? t.pageOrder.length : afterIndex + 1;
     t.pageOrder.splice(insertAt, 0, t.pageOrder.length);
     t.rotations.push(0);
     t.deleted.push(false);

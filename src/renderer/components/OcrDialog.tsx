@@ -38,7 +38,7 @@ import {
   OCR_LANGUAGES,
   clampOcrDownsample,
 } from "../state/preferences";
-import { rasterizePagesForOcr } from "../pdf/ocrRasterize";
+import { rasterizePagesForOcr, type OcrRasterizeFormField } from "../pdf/ocrRasterize";
 import type {
   OcrLanguage,
   OcrPageImage,
@@ -73,6 +73,12 @@ interface OcrDialogProps {
   /** The 1-based visible page the user is currently looking at.
    *  Used by the "Current page" scope. */
   currentPage: number;
+  /** The active document's current form-field values (name + kind +
+   *  value) from the host's per-tab forms state. The dialog seeds
+   *  pdf.js's AnnotationStorage with these before rasterising so
+   *  typed form values ("John Doe") and checkbox/radio selections
+   *  are baked into the OCR bitmaps (DEF-112). */
+  formFields: readonly OcrRasterizeFormField[];
   /** Mirrors AppSettings.ocrLanguage. Re-seeds on open. */
   initialLanguage: OcrLanguage;
   /** Mirrors AppSettings.ocrDownsample. Re-seeds on open. */
@@ -134,6 +140,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
     open,
     totalPages,
     currentPage,
+    formFields,
     initialLanguage,
     initialDownsample,
     onLanguageChange,
@@ -320,6 +327,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
         doc,
         pages,
         dpi: downsample,
+        formFields,
         onProgress: (page): void => {
           setProgress((prev) => ({
             ...prev,

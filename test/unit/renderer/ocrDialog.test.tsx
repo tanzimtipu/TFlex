@@ -106,6 +106,7 @@ function renderDialog(args: RenderArgs = {}): {
         open={true}
         totalPages={args.totalPages ?? 3}
         currentPage={args.currentPage ?? 1}
+        formFields={[]}
         initialLanguage={args.initialLanguage ?? 'eng'}
         initialDownsample={args.initialDownsample ?? 300}
         onLanguageChange={args.onLanguageChange}
@@ -381,6 +382,7 @@ describe("OcrDialog — confirm / cancel (Phase 11)", () => {
           open={false}
           totalPages={1}
           currentPage={1}
+          formFields={[]}
           initialLanguage={'eng'}
           initialDownsample={300}
           resolveActiveDoc={(): null => null}

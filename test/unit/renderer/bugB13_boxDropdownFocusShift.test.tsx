@@ -99,6 +99,7 @@ function mountDialog(args: RenderArgs = {}): {
           open={true}
           totalPages={5}
           currentPage={2}
+          formFields={[]}
           initialLanguage={current.initialLanguage ?? "eng"}
           initialDownsample={current.initialDownsample ?? 150}
           onLanguageChange={current.onLanguageChange}
