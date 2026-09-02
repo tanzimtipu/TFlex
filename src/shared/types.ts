@@ -281,6 +281,14 @@ export type AnnColor =
   | 'magenta'
   | 'white';
 
+/** An annotation color value: either one of the named presets above, or a
+ *  free-form hex string (#rgb / #rrggbb). The engine preserves a custom hex
+ *  exactly through create -> save -> reparse (it is carried verbatim in a
+ *  private /TFlexColor entry on the annotation dict); named presets continue
+ *  to round-trip by name. `AnnColor` is the named-preset union used by the
+ *  palette map; `AnnColorValue` is the full wire shape stored on AnnModel. */
+export type AnnColorValue = AnnColor | string;
+
 export interface AnnRect {
   x: number;
   y: number;
@@ -301,7 +309,7 @@ export interface AnnModel {
   page: number; // visible 1-based page index
   rects: AnnRect[];
   points?: AnnPoint[];
-  color: AnnColor;
+  color: AnnColorValue;
   content?: string;
   text?: string;
   opacity?: number; // 0..1

@@ -80,12 +80,32 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
   // Focus on mount so the user can type immediately. The overlay's
   // pointerdown handler ignores clicks inside the editor surface, so
   // stealing focus is safe.
+  //
+  // DEF-105 (B6) — the focus is DEFERRED to the next animation frame.
+  // The editor mounts synchronously DURING the opening gesture's
+  // pointerdown dispatch (the window-capture listener flushes React
+  // synchronously), and Chromium's mousedown focus-clearing fires
+  // right after on the non-focusable page target. If the textarea is
+  // focused at that instant, the browser blurs it (relatedTarget
+  // null), onTextareaBlur commits/cancels, and the editor closes the
+  // moment it opened — the B6 "click is inert" report: the editor
+  // flashed open and auto-committed the original run text (the doc
+  // went modified with a no-op edit). Waiting for the next frame
+  // means the gesture (pointerdown/up/click + the browser's focus
+  // fixup) has fully finished before the textarea takes focus, so
+  // nothing blurs it. The typing latency is one frame (~16ms) —
+  // imperceptible, and the same API every editor uses to avoid
+  // mount-during-gesture focus races.
   useEffect(() => {
-    ref.current?.focus();
-    ref.current?.setSelectionRange(0, text.length);
+    const frame = requestAnimationFrame(() => {
+      ref.current?.focus();
+      ref.current?.setSelectionRange(0, text.length);
+    });
     // Only on mount — `text` is captured at mount time, the user
-    // can edit it freely.
+    // can edit it freely. The rAF id is cleared on unmount so a
+    // closed editor never steals focus back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>): void => {
@@ -96,6 +116,38 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
     } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       commit();
+    }
+  };
+
+  // B16 — inside-editor blur guard. The Font / Background selects
+  // no longer call preventDefault on mousedown (that blocked the
+  // native dropdown from opening — the B16 report). Without the
+  // guard, clicking a select moves focus off the textarea, its
+  // onBlur fires, and the editor commits/cancels before the user
+  // has chosen anything. The guard checks where focus is going:
+  // if it stays INSIDE the editor (a select / input / button),
+  // the editor stays mounted — the focus-lock behaviour is now
+  // enforced at the blur site, exactly where it is needed, instead
+  // of suppressing the native control's mousedown. Blurring to
+  // the page / outside still commits (or cancels for empty text).
+  const onTextareaBlur = (e: React.FocusEvent<HTMLTextAreaElement>): void => {
+    const related = e.relatedTarget as Element | null;
+    if (
+      related !== null &&
+      typeof related.closest === "function" &&
+      related.closest(".edit-inline-editor") !== null
+    ) {
+      return;
+    }
+    // Defer to next tick so a click on Cancel/Apply (which
+    // unmounts the editor anyway) doesn't fire a duplicate
+    // commit. The overlay's own pointerdown handler will see
+    // the editor's mousedown via stopPropagation and won't
+    // start a new drag.
+    if (text.trim().length > 0) {
+      commit();
+    } else {
+      onCancel();
     }
   };
 
@@ -128,13 +180,13 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
           <span className="edit-inline-label">Font</span>
           <select
             value={style.font}
-            // Bug 9 — keep focus on the textarea when the user
-            // interacts with the toolbar. Without `onMouseDown`
-            // calling `preventDefault`, clicking the font picker
-            // (or any toolbar button) moves focus to it, the
-            // textarea fires `onBlur`, and the editor dismisses
-            // itself before the user has typed anything.
-            onMouseDown={(e): void => e.preventDefault()}
+            // B16 — NO preventDefault on mousedown. The old Bug-9
+            // focus guard blocked the native dropdown from opening
+            // (the select never expanded). Focus-lock is now
+            // enforced by the textarea's onBlur guard (see
+            // onTextareaBlur): clicking the select moves focus but
+            // the editor stays mounted because the new focus
+            // target is inside the editor.
             onChange={(e: ChangeEvent<HTMLSelectElement>): void => {
               const next = e.target.value;
               if (ALLOWED_FONTS.includes(next as EditFont)) {
@@ -187,8 +239,10 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
             <span className="edit-inline-label">Background</span>
             <select
               value={background}
-              // Bug 9 — see comment on the font select above.
-              onMouseDown={(e): void => e.preventDefault()}
+              // B16 — NO preventDefault on mousedown (same fix as
+              // the Font select: the old focus guard blocked the
+              // native dropdown). The textarea's onBlur guard
+              // keeps the editor mounted while focus is inside.
               onChange={(e: ChangeEvent<HTMLSelectElement>): void => {
                 const v = e.target.value;
                 if (v === "white" || v === "none") {
@@ -237,18 +291,7 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
         value={text}
         onChange={(e: ChangeEvent<HTMLTextAreaElement>): void => setText(e.target.value)}
         onKeyDown={onKeyDown}
-        onBlur={(): void => {
-          // Defer to next tick so a click on Cancel/Apply (which
-          // unmounts the editor anyway) doesn't fire a duplicate
-          // commit. The overlay's own pointerdown handler will see
-          // the editor's mousedown via stopPropagation and won't
-          // start a new drag.
-          if (text.trim().length > 0) {
-            commit();
-          } else {
-            onCancel();
-          }
-        }}
+        onBlur={onTextareaBlur}
         style={{
           height: heightCss,
           color: colorToHex(style.color),

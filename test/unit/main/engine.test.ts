@@ -3817,6 +3817,43 @@ describe('DEF-060: createDocxFromDoc', () => {
     // every page as wp:inline and zero w:t runs.
     expect((docXml.match(/<w:t/g) || []).length).toBeGreaterThan(0);
   });
+
+  // B12: the "Cannot read properties of undefined (reading 'inner')" thrown
+  // by DOCX export is a RENDERER-side bug, not an engine-side one. App.tsx
+  // extracts `engineRef.current.createDocxFromDoc` DETACHED (stored in a
+  // local `docxFn` then invoked without its receiver), so when engineClient
+  // .createDocxFromDoc runs `this.inner.createDocxFromDoc(...)` its `this` is
+  // undefined and the access throws on `inner`. The engine build itself is
+  // clean: it has no `.inner` access and is fully try/caught. This test pins
+  // the engine contract — a valid doc + valid entries returns a valid .docx
+  // with no throw — so the fix is correctly attributed to the renderer call
+  // site (frontend-dev must call the method on its receiver, not detached).
+  it('B12: engine-side createDocxFromDoc returns a valid docx for a valid doc + entries (no .inner throw)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1); // page draws "Page 0"
+    await engine.loadDocument('doc-1', path);
+    const png = createMinimalPng(50, 50);
+    const entries = [{
+      pageNumber: 1, pngBuffer: png, width: 50, height: 50, pageWidth: 612, pageHeight: 792,
+    }];
+
+    const result = await engine.createDocxFromDoc('doc-1', entries);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Valid store-only ZIP (PK signature) carrying the required OOXML parts.
+    expect(result.value[0]).toBe(0x50); // P
+    expect(result.value[1]).toBe(0x4b); // K
+    expect(findPkEndSignature(result.value)).toBeGreaterThan(0);
+    expect(extractZipEntryText(result.value, '[Content_Types].xml')).not.toBeNull();
+    expect(extractZipEntryText(result.value, '_rels/.rels')).not.toBeNull();
+    const docXml = extractZipEntryText(result.value, 'word/document.xml');
+    expect(docXml).not.toBeNull();
+    // Text-bearing page emits a real w:t run with the page text (text-first
+    // path, not raster-only).
+    expect(docXml!).toContain('<w:t');
+    expect(docXml!).toContain('Page 0');
+  });
 });
 
 /**

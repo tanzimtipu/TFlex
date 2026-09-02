@@ -1,12 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import type {
-  AnnColor,
   AnnKind,
   AnnModel,
   AnnPoint,
   AnnRect,
 } from '../../shared/types';
-import { ANN_COLOR_RGB, nearestAnnColor } from './annotations';
+import { colorToRgb, isValidColorValue, nearestAnnColor } from './annotations';
 
 // ---------------------------------------------------------------------------
 // Phase 12 — FDF (Forms Data Format) comments export/import
@@ -124,13 +123,17 @@ export function exportFdf(
 
 function serializeFdfAnnot(ann: AnnModel, visiblePage0: number): string {
   const rect = ann.rects[0] ?? { x: 0, y: 0, width: 0, height: 0 };
-  const [r, g, b] = ANN_COLOR_RGB[ann.color] ?? ANN_COLOR_RGB.yellow;
+  const [r, g, b] = colorToRgb(ann.color);
   const parts: string[] = [];
   parts.push('<<');
   parts.push('/Type /Annot');
   parts.push(`/Subtype /${kindToSubtype(ann.kind)}`);
   parts.push(`/Rect [${pdfNum(rect.x)} ${pdfNum(rect.y)} ${pdfNum(rect.x + rect.width)} ${pdfNum(rect.y + rect.height)}]`);
   parts.push(`/C [${pdfNum(r)} ${pdfNum(g)} ${pdfNum(b)}]`);
+  // Carry the source color (named preset OR free-form hex) verbatim so a
+  // custom hex round-trips exactly through FDF import (mirrors the PDF
+  // /TFlexColor sidecar used by serializeAnnotations).
+  parts.push(`/TFlexColor (${pdfEscape(ann.color)})`);
   parts.push(`/Page ${visiblePage0}`);
   if (ann.content !== undefined && ann.content.length > 0) {
     parts.push(`/Contents (${pdfEscape(ann.content)})`);
@@ -449,8 +452,11 @@ function parseFdfAnnot(dictText: string): AnnModel | null {
   }
 
   const colorArr = parseNumberArray(extractValueText(dictText, '/C'));
-  let color: AnnColor = 'yellow';
-  if (colorArr.length >= 3) {
+  let color: string = 'yellow';
+  const tflexColor = parseString(extractValueText(dictText, '/TFlexColor'));
+  if (tflexColor.length > 0 && isValidColorValue(tflexColor)) {
+    color = tflexColor;
+  } else if (colorArr.length >= 3) {
     color = nearestAnnColor(colorArr[0], colorArr[1], colorArr[2]);
   }
 

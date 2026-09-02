@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 //
-// B1 — sign ghost: Cancel must exit Sign mode (not just dismiss
+// B1/B2 — sign ghost: Cancel must exit Sign mode (not just dismiss
 // the pending placement); Delete must NOT show pre-placement
 // (drops the pending placement but the Sign tool stays armed);
-// post-placement click on sign re-enters sign mode with Delete
-// shown (the host leaves `armedSignatureId` set after a
-// successful placement so the next page click spawns a fresh
-// pending placement).
+// Confirm must ALSO exit Sign mode (the operator's explicit
+// requirement: "after confirming a sign, exit Sign mode, no
+// ghost"). Previously Confirm left the host armed, so the next
+// Text Box / Rect / Ellipse click landed on the still-armed Sign
+// overlay and a sig-pending appeared where the annotation should
+// have been (B1/B2).
 //
 // We exercise the SignaturesOverlay in isolation:
 //   1. Cancel button: drops pending AND fires onCancelArm.
@@ -14,16 +16,19 @@
 //      onCancelArm (sign mode stays armed).
 //   3. Esc on a pending placement: same as Cancel — drops
 //      pending AND fires onCancelArm.
-//   4. Confirm: fires onPlace (no onCancelArm — the user
-//      explicitly committed and wants to keep placing).
+//   4. Confirm: fires onPlace AND fires onCancelArm (Sign
+//      session over, ghost gone — B1/B2).
 //   5. Action bar shows all three buttons (Confirm, Cancel,
 //      Delete) — the original bug was that Delete was hidden
 //      after the first placement.
+//   6. After Confirm the host is disarmed; a re-render with
+//      armedSignatureId=null renders no ghost and the next page
+//      click spawns no pending placement.
 //
 // Structural contract test: the App-side `placeSignatureFull`
-// no longer calls `setArmedSignatureId(null)` after a
-// successful placement (so post-placement clicks re-enter the
-// pending flow without re-clicking the Sign toolbar button).
+// does NOT clear the armed state itself — the overlay's Confirm /
+// Cancel bar owns the disarm so the placement commit and the
+// Sign-mode exit happen in one gesture.
 import { describe, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -169,7 +174,7 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
     expect(onCancelArm).not.toHaveBeenCalled();
   });
 
-  it("Confirm button fires onPlace but does NOT fire onCancelArm", () => {
+  it("Confirm button fires onPlace AND fires onCancelArm (exits Sign mode — B1/B2)", () => {
     const { host, onPlace, onCancelArm } = mountOverlay({
       signatures: { "sig-typed": TYPED_SIG },
       armedSignatureId: "sig-typed",
@@ -184,9 +189,12 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
       confirmBtn.click();
     });
     expect(onPlace).toHaveBeenCalledTimes(1);
-    // Confirming does NOT exit Sign mode — the next page click
-    // should spawn a fresh pending placement.
-    expect(onCancelArm).not.toHaveBeenCalled();
+    // Confirming EXITS Sign mode — the operator's explicit
+    // requirement. The host clears the armed signature id so
+    // the ghost disappears and the next page click is a plain
+    // annotation-tool click (B1/B2: the still-armed overlay
+    // used to swallow the Text Box / Rect / Ellipse click).
+    expect(onCancelArm).toHaveBeenCalledTimes(1);
   });
 
   it("Esc on a pending placement fires onCancelArm (exits Sign mode)", () => {
@@ -223,48 +231,100 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
     expect(cancel).not.toBeNull();
   });
 
-  it("after Confirm the next page click spawns a fresh pending placement (post-placement re-enter)", () => {
-    // B1 — "post-placement click on sign re-enters sign mode
-    // with Delete shown". After Confirm, the Sign tool stays
-    // armed. The next click on the page spawns a fresh pending
-    // placement (with the action bar visible). We simulate by
-    // rendering with the same armedSignatureId throughout the
-    // Confirm -> next click sequence and asserting that the
-    // second click produces a new [data-sig-pending].
-    const { host, onPlace } = mountOverlay({
-      signatures: { "sig-typed": TYPED_SIG },
-      armedSignatureId: "sig-typed",
+  it("after Confirm the host is disarmed: no ghost, and no pending on a re-rendered non-armed layer", () => {
+    // B1/B2 — "after confirming a sign, exit Sign mode, no
+    // ghost". Confirm fires onPlace + onCancelArm; when the host
+    // honours the disarm (armedSignatureId becomes null) the
+    // layer renders without a ghost and the next page click does
+    // NOT spawn a pending placement (the armed overlay that used
+    // to swallow the following Text Box / Rect / Ellipse click is
+    // gone).
+    const host = document.createElement("div");
+    host.style.position = "absolute";
+    host.style.left = "0px";
+    host.style.top = "0px";
+    host.style.width = "800px";
+    host.style.height = "600px";
+    document.body.appendChild(host);
+    host.getBoundingClientRect = (): DOMRect => ({
+      x: 0, y: 0, left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600,
+      toJSON: () => ({}),
     });
-    clickOnLayer(host, 100, 100);
-    const confirmBtn = host.querySelector<HTMLButtonElement>(
-      "[data-sig-action='confirm']",
-    );
-    expect(confirmBtn).not.toBeNull();
-    if (confirmBtn === null) return;
-    act((): void => {
-      confirmBtn.click();
-    });
-    expect(onPlace).toHaveBeenCalledTimes(1);
-    // First pending is gone.
-    expect(host.querySelector("[data-sig-pending]")).toBeNull();
-    // The next page click re-enters Sign mode (overlay still
-    // armed) and spawns a fresh pending placement.
-    clickOnLayer(host, 200, 200);
-    expect(host.querySelector("[data-sig-pending]")).not.toBeNull();
-    const delAfter = host.querySelector("[data-sig-action='delete']");
-    expect(delAfter).not.toBeNull();
+    const root = createRoot(host);
+    const onPlace = vi.fn();
+    const onCancelArm = vi.fn();
+    const render = (armed: string | null): void => {
+      act((): void => {
+        root.render(
+          <SignaturesOverlay
+            page={1}
+            pageWidthPt={612}
+            pageHeightPt={792}
+            cssScale={1}
+            placements={[]}
+            signatures={{ "sig-typed": TYPED_SIG }}
+            armedSignatureId={armed}
+            onPlace={onPlace}
+            onMove={(): void => undefined}
+            onDelete={(): void => undefined}
+            onCancelArm={onCancelArm}
+          />,
+        );
+      });
+    };
+    const clickPage = (x: number, y: number): void => {
+      const layer = host.querySelector("[data-page='1']") as HTMLElement | null;
+      if (layer === null) throw new Error("layer not found");
+      act((): void => {
+        layer.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, clientX: x, clientY: y }),
+        );
+      });
+    };
+    try {
+      render("sig-typed");
+      clickPage(100, 100);
+      const confirmBtn = host.querySelector<HTMLButtonElement>(
+        "[data-sig-action='confirm']",
+      );
+      expect(confirmBtn).not.toBeNull();
+      if (confirmBtn === null) return;
+      act((): void => {
+        confirmBtn.click();
+      });
+      expect(onPlace).toHaveBeenCalledTimes(1);
+      expect(onCancelArm).toHaveBeenCalledTimes(1);
+      // The Confirm handler cleared the local ghost point: no
+      // ghost surface while the host still holds the (now-stale)
+      // armed id in this harness.
+      expect(host.querySelector("[data-sig-ghost]")).toBeNull();
+      expect(host.querySelector("[data-sig-pending]")).toBeNull();
+      // Host honours the disarm (the real App does: Confirm ->
+      // onCancelArm -> setArmedSignatureId(null)). Re-render with
+      // armedSignatureId=null: the layer must not create pending
+      // placements on the next page click.
+      render(null);
+      clickPage(200, 200);
+      expect(host.querySelector("[data-sig-pending]")).toBeNull();
+      expect(onPlace).toHaveBeenCalledTimes(1);
+    } finally {
+      act((): void => {
+        root.unmount();
+      });
+      host.remove();
+    }
   });
 });
 
-describe("B1 — App leaves armedSignatureId set after a successful placement", () => {
+describe("B1/B2 — App leaves armed state to the overlay's action bar (no clear inside placeSignatureFull)", () => {
   // Structural contract: the host-side `placeSignatureFull`
-  // no longer calls `setArmedSignatureId(null)` at the end of a
-  // successful placement. The previous implementation cleared
-  // the armed state immediately after the engine confirmed the
-  // placement, forcing the user to re-click the Sign toolbar
-  // button before the next placement. The fix leaves the tool
-  // armed so the next page click spawns a fresh pending
-  // placement automatically.
+  // does NOT call `setArmedSignatureId(null)` on a successful
+  // placement. The disarm belongs to the overlay's Confirm /
+  // Cancel action-bar buttons (`onCancelSignatureArm`), which
+  // fire AFTER `onPlace` returns — so confirming a sign exits
+  // Sign mode in the same gesture (B1/B2). Clearing here would
+  // either race the pending-bar unmount or leave the tool armed
+  // on engine failure; the overlay owns the exit.
   it("placeSignatureFull does NOT call setArmedSignatureId(null) on success", () => {
     const match = appSource.match(
       /const placeSignatureFull = useCallback\([\s\S]*?\},\s*\[/,

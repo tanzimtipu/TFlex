@@ -517,6 +517,11 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           key={a.id}
           ann={a}
           cssScale={cssScale}
+          // B4/B5 — the committed note whose editor is open reads
+          // as "selected" (Sign-like selection chrome: accent ring
+          // on the icon while its floating Confirm / Cancel /
+          // Delete action bar is up).
+          selected={editingNote?.id === a.id}
           onEditNote={(id, text): void => setEditingNote({ id, text })}
         />
       ))}
@@ -971,6 +976,7 @@ function DomAnnotation({
   ann,
   cssScale,
   onEditNote,
+  selected = false,
 }: {
   ann: Annotation;
   cssScale: number;
@@ -978,6 +984,11 @@ function DomAnnotation({
    *  pre-filled with the note's text. The overlay owns the editor
    *  state; the icon just reports the click + current text. */
   onEditNote?: (id: string, text: string) => void;
+  /** B4/B5 — Sign-like selection state. True while this note's
+   *  floating editor (Confirm / Cancel / Delete action bar) is
+   *  open; the icon renders an accent ring so the selection is
+   *  visible on the page. */
+  selected?: boolean;
 }): ReactElement | null {
   if (ann.kind === "textbox") {
     const r = ann.rect ?? (ann as unknown as { rects?: { x: number; y: number; width: number; height: number }[] }).rects?.[0];
@@ -1016,18 +1027,50 @@ function DomAnnotation({
     const size = NOTE_ICON_PT * cssScale;
     const hex = annotationColorToCss(ann.color);
     const hasText = ann.text.trim().length > 0;
-    // B4 — sticky-note content must be visible on the page, not
+    // B4/B5 — sticky-note content must be visible on the page, not
     // hidden behind a `title` tooltip. The popover mirrors the
     // NoteEditor's shape (a small box anchored next to the icon)
     // and stays pointer-transparent so the page underneath still
     // scrolls / text-selects. The icon stays clickable so the
     // user can flash the annotation through the panel without
     // jumping through it.
+    //
+    // B4/B5 — the text is positioned relative to the NOTE ICON
+    // div (which is already translated to `at`), NOT in page
+    // coords. The previous `left: (at.x + NOTE_ICON_PT) * cssScale`
+    // double-offset the text: the `.ann-note` wrapper sits at
+    // `at.x` and the inner text added `at.x` AGAIN, pushing the
+    // note text far to the right of its icon. Anchoring to the
+    // icon's own box (`left: NOTE_ICON_PT * cssScale + 4`) keeps
+    // icon + text co-located at every zoom.
+    // DEF-104 (B4/B5) — the text must lay out horizontally beside
+    // the icon. The earlier fix anchored it to the icon box but left
+    // the width `auto`: an absolutely-positioned child with only
+    // `left` set shrink-fits against its containing block (the
+    // ~48px icon box), so the usable width collapsed to
+    // `iconWidth - leftOffset` (~one glyph) and the note rendered
+    // as a 48px-wide x 431px-tall vertical column, one character
+    // per line. An explicit `width: max-content` breaks that
+    // shrink-fit: the box is exactly as wide as the unwrapped
+    // text needs, capped by `maxWidth`. `whiteSpace: "normal"`
+    // lets a multi-word note keep words on the same line up to
+    // that cap (pre-wrap's preferred width is the widest word, so
+    // the box would have re-wrapped mid-phrase); the cap still
+    // wraps long notes. The text overflows the icon's box to the
+    // right — `.ann-note` has no `overflow: hidden`, and the
+    // note label is a floating annotation surface, so that is the
+    // intended "text visible inside / alongside the marker" look.
     const noteTextStyle: CSSProperties = {
       position: "absolute",
-      left: (at.x + NOTE_ICON_PT) * cssScale + 4,
-      top: at.y * cssScale,
+      left: NOTE_ICON_PT * cssScale + 4,
+      top: 0,
+      width: "max-content",
       maxWidth: Math.max(140 * cssScale, 160),
+      whiteSpace: "normal",
+      // DEF-104 — long tokens (URLs etc.) still need to wrap
+      // inside the maxWidth cap rather than pushing the label past
+      // the page edge.
+      overflowWrap: "break-word",
       padding: `${4 * cssScale}px ${8 * cssScale}px`,
       borderRadius: "var(--radius-1)",
       background: hexWithAlpha(hex, 0.18),
@@ -1035,16 +1078,19 @@ function DomAnnotation({
       color: "var(--fg-strong)",
       fontSize: 11 * cssScale + 2,
       lineHeight: 1.4,
-      whiteSpace: "pre-wrap",
-      wordBreak: "break-word",
       pointerEvents: "none",
       boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)",
     };
     return (
       <div
-        className="ann ann-note"
+        className={
+          selected
+            ? "ann ann-note ann-note-selected"
+            : "ann ann-note"
+        }
         data-annotation-id={ann.id}
         data-kind="note"
+        data-note-selected={selected ? "true" : "false"}
         title={ann.text.length > 0 ? ann.text : "Note"}
         role="button"
         tabIndex={0}

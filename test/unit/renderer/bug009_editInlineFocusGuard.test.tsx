@@ -1,13 +1,23 @@
 // @vitest-environment jsdom
-// Bug 9 — Edit text click does nothing + box dismisses on click.
+// Bug 9 + B16 — Edit text click does nothing + box dismisses on click.
 //
 // Part 1: the textarea's onBlur was firing prematurely when the
 // user clicked any toolbar button (font / size / color / bg
 // picker, Cancel, Apply). The button's mousedown moved focus off
 // the textarea, the textarea fired `onBlur`, and the editor
 // committed (or cancelled for an empty box) before the click
-// reached the button. The fix calls `e.preventDefault()` on the
-// toolbar buttons' `onMouseDown` so focus stays on the textarea.
+// reached the button. The original fix called `e.preventDefault()`
+// on the toolbar buttons' `onMouseDown` so focus stays on the
+// textarea.
+//
+// B16 (this file's update): the preventDefault guard on the Font /
+// Background SELECT elements blocked the native dropdown from
+// opening — the user could never change the font. The guard is
+// REMOVED from the selects; the focus-lock now lives at the blur
+// site: the textarea's onBlur checks where focus is going and
+// keeps the editor mounted when the new focus target is inside
+// the editor. Text inputs (size / color) and the Cancel / Apply
+// buttons keep the mousedown guard.
 //
 // Part 2: text-tool clicks on text runs were captured by the
 // overlay's pointer handler and never reached the editor because
@@ -21,7 +31,10 @@ import { createRoot } from "react-dom/client";
 import { act, createElement, type ReactElement } from "react";
 import { EditInlineEditor } from "../../../src/renderer/edit/EditInlineEditor";
 
-function mountEditor(): {
+function mountEditor(args?: {
+  initialText?: string;
+  mode?: "edit" | "box";
+}): {
   host: HTMLElement;
   commit: ReturnType<typeof vi.fn>;
   cancel: ReturnType<typeof vi.fn>;
@@ -35,9 +48,9 @@ function mountEditor(): {
     return createElement(EditInlineEditor, {
       rect: { x: 50, y: 50, width: 200, height: 30 },
       cssScale: 1,
-      initialText: "Original",
+      initialText: args?.initialText ?? "Original",
       initialStyle: { font: "Helvetica", size: 12, color: { r: 0, g: 0, b: 0 } },
-      mode: "edit",
+      mode: args?.mode ?? "edit",
       onCommit: commit,
       onCancel: cancel,
     });
@@ -48,19 +61,45 @@ function mountEditor(): {
   return { host, commit, cancel };
 }
 
-describe("Bug 9 — EditInlineEditor toolbar focus guard", () => {
-  it("toolbar buttons call preventDefault on mousedown so the textarea keeps focus", () => {
-    // The focus guard is the structural fix for "box dismisses on
-    // click". Each interactive toolbar control (font / size /
-    // color pickers, Cancel, Apply) installs an onMouseDown
-    // handler that calls e.preventDefault() — that prevents the
-    // browser from moving focus to the control when the user
-    // clicks it, so the textarea never fires `onBlur` and the
-    // editor stays mounted.
+function dispatchMouseDown(el: Element): boolean {
+  let prevented = false;
+  act((): void => {
+    const evt = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
+    el.dispatchEvent(evt);
+    prevented = evt.defaultPrevented;
+  });
+  return prevented;
+}
+
+describe("Bug 9 / B16 — EditInlineEditor toolbar focus guard", () => {
+  it("the Font SELECT does NOT preventDefault on mousedown (native dropdown opens — B16)", () => {
+    // B16 — the old focus guard called e.preventDefault() on the
+    // select's mousedown, which blocked the native dropdown from
+    // opening. The select must let the browser open the list.
     const { host } = mountEditor();
     const fontSelect = host.querySelector<HTMLSelectElement>(
       ".edit-inline-field-font select",
     );
+    expect(fontSelect).not.toBeNull();
+    if (fontSelect === null) return;
+    expect(dispatchMouseDown(fontSelect)).toBe(false);
+  });
+
+  it("the Background SELECT does NOT preventDefault on mousedown when mode is box (B16)", () => {
+    const { host } = mountEditor({ mode: "box" });
+    const bgSelect = host.querySelector<HTMLSelectElement>(
+      ".edit-inline-field-bg select",
+    );
+    expect(bgSelect).not.toBeNull();
+    if (bgSelect === null) return;
+    expect(dispatchMouseDown(bgSelect)).toBe(false);
+  });
+
+  it("text inputs (size / color) and the Cancel / Apply buttons still preventDefault on mousedown", () => {
+    // The focus-lock is kept where it is actually needed: the
+    // number input, the color input and the action buttons. These
+    // are not native dropdowns, so the guard does not break them.
+    const { host } = mountEditor();
     const sizeInput = host.querySelector<HTMLInputElement>(
       ".edit-inline-field-size input",
     );
@@ -73,11 +112,10 @@ describe("Bug 9 — EditInlineEditor toolbar focus guard", () => {
     const commitBtn = host.querySelector<HTMLButtonElement>(
       ".edit-inline-btn-commit",
     );
-    for (const el of [fontSelect, sizeInput, colorInput, cancelBtn, commitBtn]) {
+    for (const el of [sizeInput, colorInput, cancelBtn, commitBtn]) {
       expect(el).not.toBeNull();
     }
     if (
-      fontSelect === null ||
       sizeInput === null ||
       colorInput === null ||
       cancelBtn === null ||
@@ -85,23 +123,55 @@ describe("Bug 9 — EditInlineEditor toolbar focus guard", () => {
     ) {
       return;
     }
-    // Synthesize a mousedown on each control and assert the
-    // event's defaultPrevented is true. This is exactly the
-    // contract the bug fix relies on — the fix calls
-    // `e.preventDefault()` on the React MouseEvent handler.
-    for (const el of [fontSelect, sizeInput, colorInput, cancelBtn, commitBtn]) {
-      let prevented = false;
-      act((): void => {
-        const evt = new MouseEvent("mousedown", { bubbles: true, cancelable: true });
-        // Track whether the React handler called preventDefault.
-        // React's synthetic event wraps the native event, so
-        // we observe the native event's `defaultPrevented` flag
-        // after dispatch.
-        el.dispatchEvent(evt);
-        prevented = evt.defaultPrevented;
-      });
-      expect(prevented).toBe(true);
+    for (const el of [sizeInput, colorInput, cancelBtn, commitBtn]) {
+      expect(dispatchMouseDown(el)).toBe(true);
     }
+  });
+
+  it("clicking the Font select keeps the editor mounted (blur guard — B16)", () => {
+    // With the mousedown guard removed, clicking the select moves
+    // focus off the textarea. The textarea's onBlur must NOT
+    // commit/cancel when the new focus target is inside the
+    // editor — otherwise the dropdown would dismiss the editor
+    // before the user picks a font. We simulate the real focus
+    // transition: blur the textarea with relatedTarget = the
+    // select.
+    const { host, commit, cancel } = mountEditor();
+    const textarea = host.querySelector("textarea") as HTMLTextAreaElement | null;
+    const fontSelect = host.querySelector<HTMLSelectElement>(
+      ".edit-inline-field-font select",
+    );
+    expect(textarea).not.toBeNull();
+    expect(fontSelect).not.toBeNull();
+    if (textarea === null || fontSelect === null) return;
+    act((): void => {
+      // React's onBlur is wired to the native `focusout` event
+      // (which bubbles); a bare `blur` event never reaches React.
+      textarea.dispatchEvent(
+        new FocusEvent("focusout", { bubbles: true, relatedTarget: fontSelect }),
+      );
+    });
+    // Editor still mounted; nothing committed or cancelled.
+    expect(host.querySelector(".edit-inline-editor")).not.toBeNull();
+    expect(commit).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  it("blurring to the page (outside the editor) still commits the edit", () => {
+    // The click-outside-commit behaviour is preserved: when focus
+    // leaves the editor entirely (relatedTarget null — e.g. a
+    // click on the page canvas), the edit commits.
+    const { host, commit, cancel } = mountEditor();
+    const textarea = host.querySelector("textarea") as HTMLTextAreaElement | null;
+    expect(textarea).not.toBeNull();
+    if (textarea === null) return;
+    act((): void => {
+      textarea.dispatchEvent(
+        new FocusEvent("focusout", { bubbles: true, relatedTarget: null }),
+      );
+    });
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(cancel).not.toHaveBeenCalled();
   });
 
   it("clicking the Cancel button dismisses via onCancel (not the textarea onBlur path)", () => {

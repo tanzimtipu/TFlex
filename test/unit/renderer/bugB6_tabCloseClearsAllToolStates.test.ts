@@ -119,6 +119,10 @@ describe("B6 — tab close clears ALL tool states (App + per-tab)", () => {
       "setDocxExportOpen(false)",
       "setCommentExportOpen(false)",
       "setCommentImportOpen(false)",
+      // B21 — the tools palette is App-level and would otherwise
+      // stay mounted over the home / welcome screen after the
+      // last tab closes.
+      "setToolsPaletteOpen(false)",
     ]) {
       expect(body).toContain(setter);
     }

@@ -49,6 +49,15 @@ export function ReplacePagesDialog(
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // B17 — where the current pointer interaction started. A
+  // text-selection drag that begins in the input and releases
+  // over the backdrop dispatches its `click` on the backdrop
+  // (the common ancestor of the mousedown and mouseup targets),
+  // which used to close the dialog mid-edit. We only close on a
+  // backdrop click when the mousedown ALSO started on the
+  // backdrop — a real outside click still closes, a drag that
+  // ended outside does not.
+  const backdropDownRef = useRef<boolean>(false);
 
   // Reset every time we re-open so stale state from a previous open
   // doesn't leak in.
@@ -192,7 +201,25 @@ export function ReplacePagesDialog(
       className="modal-backdrop"
       // B18 — backdrop click is a no-op while the OS file picker
       // is open. Same modal-blocking pattern as MergeDialog.
-      onClick={picking ? undefined : onClose}
+      // B17 — the close-on-click only fires when the interaction
+      // STARTED on the backdrop (see backdropDownRef): a drag that
+      // starts in the input and releases over the backdrop must
+      // not dismiss the dialog.
+      onMouseDown={(e): void => {
+        backdropDownRef.current = e.target === e.currentTarget;
+      }}
+      onClick={
+        picking
+          ? undefined
+          : (e): void => {
+              if (
+                backdropDownRef.current &&
+                e.target === e.currentTarget
+              ) {
+                onClose();
+              }
+            }
+      }
       data-picking={picking ? "true" : "false"}
       data-replace-pages-dialog
     >

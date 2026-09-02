@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 //
-// B9 — DOCX assembly must call engine.createDocxFromDoc(docId,
-// entries) directly, not via the older detached createDocxFromImages
-// path.
+// B9 + DEF-106 — DOCX assembly must call
+// engine.createDocxFromDoc(docId, entries) directly, not via the
+// older detached createDocxFromImages path, AND the invocation must
+// be a MEMBER call on the engine client.
 //
 // History: the original DOCX flow used `createDocxFromImages(entries)`
 // exclusively — a one-image-per-page .docx with no editable
@@ -14,20 +15,24 @@
 // route through `createDocxFromDoc(docId, entries)` for the
 // loaded-doc flow so the result has editable text.
 //
-// The bug surfaced when a refactor accidentally re-introduced
-// the detached path: the host called `createDocxFromImages`
-// first and only fell back to `createDocxFromDoc` when the
-// fallback failed. The user got an image-only DOCX with no
-// editable text — exactly the bug we want to prevent.
+// The bug (B12 / DEF-106) surfaced when a refactor extracted the
+// method into a local then called the local: `const docxFn =
+// engineRef.current.createDocxFromDoc; await docxFn(docId, ...)`.
+// The engine client's `createDocxFromDoc` reads `this.inner`, and a
+// detached call loses the `this` binding (undefined in strict
+// mode), so every export threw "Cannot read properties of undefined
+// (reading 'inner')". The invocation must be
+// `engineRef.current.createDocxFromDoc(docId, entries)`.
 //
 // We pin the App-level wiring:
 //   1. The host's `runAssembleDocx` resolves the active tab's
 //      `engineDocId` (not the entry count).
-//   2. `engineRef.current.createDocxFromDoc` is called FIRST
-//      with the docId.
-//   3. `createDocxFromImages` is only the FALLBACK path (when
+//   2. `engineRef.current.createDocxFromDoc` is called FIRST as a
+//      MEMBER call with the docId.
+//   3. No detached `docxFn(...)` extraction remains.
+//   4. `createDocxFromImages` is only the FALLBACK path (when
 //      `createDocxFromDoc` is undefined or returns engine-error).
-//   4. The dialog's `runAssemble` prop routes through
+//   5. The dialog's `runAssemble` prop routes through
 //      `runAssembleDocx` (not a direct engine call).
 //
 // We also pin the engine-client / stub-engine contract so a
@@ -84,24 +89,36 @@ const engineClientSource = fs.readFileSync(engineClientPath, "utf8");
 const stubEngineSource = fs.readFileSync(stubEnginePath, "utf8");
 const engineTypesSource = fs.readFileSync(engineTypesPath, "utf8");
 
-describe("B9 — DOCX assembly is wired through createDocxFromDoc, not detached", () => {
-  it("runAssembleDocx calls engineRef.current.createDocxFromDoc(docId, entries) FIRST", () => {
+describe("B9 / DEF-106 — DOCX assembly is wired through createDocxFromDoc, not detached", () => {
+  it("runAssembleDocx calls engineRef.current.createDocxFromDoc(docId, entries) FIRST as a MEMBER call", () => {
     const match = appSource.match(
       /const runAssembleDocx = useCallback\([\s\S]*?\},\s*\[\]\);/,
     );
     expect(match).not.toBeNull();
     if (match === null) return;
     const body = match[0];
-    // The body must reference createDocxFromDoc with the docId
-    // argument (not detached) and createDocxFromImages only as
-    // a fallback (when createDocxFromDoc is undefined).
-    expect(body).toMatch(/engineRef\.current\.createDocxFromDoc/);
-    expect(body).toMatch(/docxFn\(docId, entries\)/);
+    // The body must invoke createDocxFromDoc AS A MEMBER of the
+    // engine client (so `this.inner` resolves) with the docId
+    // argument, and createDocxFromImages only as a fallback (when
+    // createDocxFromDoc is undefined). The current host extracts
+    // `const engine = engineRef.current` — a local ALIAS of the
+    // client instance, which still binds `this` to the client; the
+    // forbidden form is a DETACHED method reference (`const docxFn =
+    // engineRef.current.createDocxFromDoc; docxFn(...)`).
+    expect(body).toMatch(/const engine = engineRef\.current\s*;/);
+    expect(body).toMatch(/engine\.createDocxFromDoc\(docId, entries\)/);
+    // DEF-106 — the detached-extraction pattern must be GONE. The
+    // `const docxFn = engineRef.current.createDocxFromDoc; await
+    // docxFn(docId, entries)` form loses `this` (the client method
+    // reads `this.inner`) and threw "reading 'inner'" on every
+    // export (B12). A member call keeps the binding.
+    expect(body).not.toMatch(/const docxFn\s*=/);
+    expect(body).not.toMatch(/docxFn\(/);
     expect(body).toMatch(/engineRef\.current\.createDocxFromImages\(entries\)/);
     // The text-first path must precede the fallback path in the
     // function body so a future refactor that swaps the order
     // (fallback first, primary on failure) fails this test.
-    const primaryIdx = body.indexOf("docxFn(docId, entries)");
+    const primaryIdx = body.indexOf("engine.createDocxFromDoc(docId, entries)");
     const fallbackIdx = body.indexOf(
       "engineRef.current.createDocxFromImages(entries)",
     );

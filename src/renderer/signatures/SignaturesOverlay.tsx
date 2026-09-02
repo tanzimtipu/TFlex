@@ -53,13 +53,16 @@ interface SignaturesOverlayProps {
   onPlace: (sigId: string, rect: SignaturePlacement["rect"]) => void;
   onMove: (placementId: string, rect: SignaturePlacement["rect"]) => void;
   onDelete: (placementId: string) => void;
-  /** B1 — exit the Sign tool entirely (drop the pending placement
-   *  AND clear the host's armed signature id). Wired to the
-   *  pending action bar's Cancel button: the user explicitly
-   *  cancelled the Sign session, so the next page click should
-   *  NOT create another pending placement. The overlay already
-   *  drops the pending placement internally; this callback only
-   *  needs to clear the App-level `armedSignatureId`. */
+  /** B1/B2 — exit the Sign tool entirely (drop the pending
+   *  placement AND clear the host's armed signature id). Wired
+   *  to the pending action bar's Cancel AND Confirm buttons:
+   *  the user explicitly cancelled OR committed the session, so
+   *  the next page click must NOT create another pending
+   *  placement (a still-armed overlay swallowed the following
+   *  Text Box / Rect / Ellipse click — B1/B2). The overlay
+   *  already drops the pending placement internally; this
+   *  callback only needs to clear the App-level
+   *  `armedSignatureId`. */
   onCancelArm?: () => void;
 }
 
@@ -306,25 +309,37 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
     [armedSignatureId, cssScale, pageWidthPt, pageHeightPt],
   );
 
-  // B1 — pending placement confirm / cancel / delete. The
+  // B1/B2 — pending placement confirm / cancel / delete. The
   // confirm handler routes the placement through the existing
   // `onPlace` callback (same path the engine consumes), so the
   // undo stack and modified flag behave exactly as if the user
-  // had committed directly. The host-side `onPlaceSignature`
-  // now leaves `armedSignatureId` set on success (B1 — post-
-  // placement click re-enters Sign mode) so the user can place
-  // another signature without re-clicking the Sign button.
+  // had committed directly.
+  //
+  // Confirm ALSO exits Sign mode: the operator's explicit
+  // requirement is "after confirming a sign, exit Sign mode,
+  // no ghost". Previously Confirm left `armedSignatureId` set
+  // on the host, so the still-armed Sign overlay swallowed the
+  // NEXT page click — the user clicked Text Box / Rect /
+  // Ellipse and a sig-pending appeared where the annotation
+  // should have been (B1/B2). Confirm now mirrors Cancel: it
+  // drops the pending placement, clears the ghost preview, and
+  // fires `onCancelArm` so the host clears the armed signature
+  // id. The Sign toolbar button returns to its un-pressed
+  // state and every annotation tool works again.
   // Cancel tears down the pending placement AND the host's
   // armed signature id (via `onCancelArm`) so the Sign session
   // is over. Delete just drops the pending placement — the
-  // ghost preview disappears (Bug 1: "Delete must NOT show
-  // pre-placement") but the Sign tool stays armed so the next
-  // page click spawns a fresh pending placement.
+  // ghost preview disappears but the Sign tool stays armed so
+  // the next page click spawns a fresh pending placement.
   const onConfirmPending = useCallback((): void => {
     if (pendingPlacement === null) return;
     onPlace(pendingPlacement.signatureId, pendingPlacement.rect);
     setPendingPlacement(null);
-  }, [pendingPlacement, onPlace]);
+    // B1/B2 — disarm + drop the ghost so the Sign session is
+    // over after a confirmed placement (operator requirement).
+    setGhostPt(null);
+    onCancelArm?.();
+  }, [pendingPlacement, onPlace, onCancelArm]);
 
   // B1 — Cancel: drop pending placement AND exit Sign mode.
   // The host's `onCancelArm` (when supplied) clears
@@ -347,7 +362,19 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
     setPendingPlacement(null);
   }, []);
 
-  const interactive = armedSignatureId !== null || pagePlacements.length > 0;
+  // DEF-103 (B2) — pointer-active ONLY while armed. The previous
+  // `armedSignatureId !== null || pagePlacements.length > 0` kept
+  // `.signatures-layer-active` (pointer-events: auto) on any page
+  // that had committed placements — including the one just confirmed
+  // (Confirm → `onPlace` adds a placement, B1's `onCancelArm` clears
+  // the arm, length stays > 0). The layer sits at z-index 3 ABOVE
+  // the annotation layer (z-index 2), so the next Text Box / Rect /
+  // Ellipse page click was swallowed by the signatures layer and the
+  // annotation tool placed nothing (B1/B2 regression). Committed
+  // placement divs are individually `pointerEvents: "auto"` (see
+  // SignaturePlacementView), so move / resize / select keep working
+  // with the layer itself pointer-transparent.
+  const interactive = armedSignatureId !== null;
   const armedSig = armedSignatureId !== null ? signatures[armedSignatureId] : undefined;
 
   // Bug 11 — ghost preview rect. Anchored at the cursor's

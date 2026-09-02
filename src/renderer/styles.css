@@ -46,6 +46,11 @@
    * to two rows on narrow widths; this is the single-row baseline
    * that the palette currently uses as its top offset. */
   --toolbar-h: 56px;
+  /* DEF-107 — the annotation toolbar (`.ann-toolbar`) is a second
+   * horizontal strip under the page-toolbar row (min-height 40px).
+   * Right-side rail overlays that must clear BOTH rows (the OCR
+   * suspects panel) offset their top by the sum of the two tokens. */
+  --ann-toolbar-h: 40px;
 
   /* Semantic color tokens (Phase 13 — for status toasts, status pills,
    * validation hints, etc.). The accent stays the single primary
@@ -2183,6 +2188,18 @@ textarea {
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
 }
 
+/* B4/B5 — Sign-like selection state for a committed note. While
+ * the note's floating editor (Confirm / Cancel / Delete action
+ * bar) is open, the icon carries an accent ring so the selected
+ * note is visible on the page — the same visual vocabulary the
+ * signature placements use for their selected state. */
+.ann-note-selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+  background: var(--accent-soft);
+}
+
 .ann-flash {
   position: absolute;
   border: 2px solid var(--accent);
@@ -3400,7 +3417,11 @@ textarea {
    * count stays consistent. */
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-  grid-auto-rows: auto;
+  /* B21 — consistent tile rows. `grid-auto-rows: auto` let a
+   * tile's overflowing label bleed into the next row; a
+   * `minmax(72px, auto)` row keeps every tile at a uniform
+   * height with room for the icon + label. */
+  grid-auto-rows: minmax(72px, auto);
   gap: var(--sp-2);
   align-content: start;
 }
@@ -3440,18 +3461,25 @@ textarea {
   align-items: center;
   justify-content: center;
   /* Grid mode: each tile fills its grid cell (set by the body's
-   * `repeat(auto-fill, minmax(64px, 1fr))`). The tile stays
-   * square via `aspect-ratio: 1 / 1` below. */
+   * `repeat(auto-fill, minmax(64px, 1fr))`). The tile keeps a
+   * consistent size via `min-height` below. */
   width: auto;
-  aspect-ratio: 1 / 1;
+  /* B21 — tile polish. The previous square-tile sizing (a 1:1
+   * aspect ratio) let the label overflow the box and bleed into
+   * the next row (labels overlapped). A fixed min-height plus a
+   * small internal gap keeps the icon centered and the label
+   * below it, never overlapping. */
+  min-height: 72px;
   padding: var(--sp-2);
   text-align: center;
+  gap: var(--sp-1);
 }
 .tools-palette-entry-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   color: var(--fg-muted);
+  flex: 0 0 auto;
 }
 .tools-palette-entry-grid .tools-palette-entry-icon {
   color: var(--fg-strong);
@@ -3464,6 +3492,10 @@ textarea {
 }
 .tools-palette-entry-grid .tools-palette-entry-text {
   align-items: center;
+  /* B21 — the label sits on its own line under the icon; it must
+   * not stretch the tile or push the icon off-center. */
+  flex: 0 0 auto;
+  max-width: 100%;
 }
 .tools-palette-entry-label {
   font-size: var(--fs-sm);
@@ -3473,6 +3505,13 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
+}
+/* B21 — grid tiles use the smaller label size so long tool names
+ * ("Create PDF from images", "Export comments (FDF)") fit one
+ * line with an ellipsis instead of crowding the tile. */
+.tools-palette-entry-grid .tools-palette-entry-label {
+  font-size: var(--fs-xs);
+  display: block;
 }
 .tools-palette-entry-desc {
   font-size: var(--fs-xs);
@@ -4450,7 +4489,15 @@ textarea {
 .edit-layer {
   position: absolute;
   inset: 0;
-  z-index: 4; /* above signatures-layer (3), below textLayer for click-passthrough */
+  /* B6 — z-index 4: above the annotation (2) and signatures (3)
+   * layers. The forms layer (5) and stamp layer (6) paint above
+   * but are pointer-transparent outside their own controls, so
+   * the edit layer still receives page clicks. The text tool's
+   * click is additionally handled by a window-level capture
+   * pointerdown listener (EditOverlay) so a pointerdown that a
+   * sibling (e.g. the pdf.js textLayer's pointer-events: auto
+   * spans) intercepts still opens the inline editor. */
+  z-index: 4;
   pointer-events: none;
 }
 
@@ -4917,8 +4964,35 @@ textarea {
   background: var(--bg-rail);
   border-left: 1px solid var(--border);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
-  height: 100%;
+  min-height: 0;
   overflow: hidden;
+  /* B14 — right-side rail overlay. The panel is a direct child of
+   * `.app-main` (a flex column); without an explicit position it
+   * fell into the flex flow and rendered at the LEFT edge
+   * (x: 0, width: 280) where it covered the side rail AND the
+   * annotation toolbar (`.ann-toolbar` starts at x: 220) — the
+   * "hides behind the shapes bar" report. Pinning it to the
+   * right edge of `.app-main` (which is `position: relative`)
+   * turns it into a proper right-side rail, mirroring the Tools
+   * palette. z-index 29 sits just below the palette (30) so the
+   * two right-side surfaces stack cleanly when both are open.
+   *
+   * DEF-107 (B14) — `top` starts BELOW the workspace toolbar
+   * strip instead of `top: 0`. The `.ann-toolbar` runs the full
+   * workspace width (x: 220..right edge) as a horizontal strip,
+   * so a full-height panel at `top: 0` overlapped its Shapes
+   * group by 280x40px. `--toolbar-h` skips the page-toolbar row,
+   * and the added `--ann-toolbar-h` skip the annotation-toolbar
+   * row itself (40px min-height), plus a hairline gap — the same
+   * offset strategy the Tools palette uses, extended past both
+   * toolbar rows. `height` is left unset so `top` + `bottom`
+   * define the panel's extent (a `height: 100%` combined with a
+   * nonzero `top` would push the bottom 100px past app-main). */
+  position: absolute;
+  top: calc(var(--toolbar-h, 56px) + var(--ann-toolbar-h, 40px) + var(--sp-1));
+  right: 0;
+  bottom: 0;
+  z-index: 29;
 }
 
 .ocr-suspects-header {

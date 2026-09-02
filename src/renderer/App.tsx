@@ -1120,6 +1120,12 @@ export function App(): ReactElement {
     setCommentExportOpen(false);
     setCommentImportOpen(false);
     setDeletePageOpen(false);
+    // B21 — the tools palette is App-level (not per-tab) and
+    // renders over the workspace even when no tab is active.
+    // Closing the last tab left it mounted on the home / welcome
+    // screen. Reset it on close so the palette disappears with
+    // the document it belonged to.
+    setToolsPaletteOpen(false);
     // B6 — pending close-tab prompt state. If the user closed a
     // tab via the prompt and the dialog is still showing (the
     // save flow is in flight, the error message is rendering),
@@ -1147,6 +1153,20 @@ export function App(): ReactElement {
 
   const activateTab = useCallback((id: string): void => {
     dispatchTabs({ type: "activate", id });
+    // B10 — tool-state reset on tab switch. The active tab
+    // changes; App-level tool state (armed Sign / Stamp, Edit
+    // mode, the OCR suspects panel) must NOT carry into the
+    // newly-activated tab. Previously only `performCloseTab`
+    // cleared these, so a tab switch inherited the previous
+    // tab's arming — the Sign pill stayed lit and the next page
+    // click in the new tab spawned a signature instead of the
+    // annotation the user reached for. Per-tab state (annotation
+    // tool, edit placements) lives in DocumentView keyed on
+    // meta.id and is untouched by this reset.
+    setArmedSignatureId(null);
+    setArmedStamp(null);
+    setEditModeOpen(false);
+    setOcrSuspectsOpen(false);
   }, []);
 
   /** Phase 6 — "+ tab" affordance. Appends an empty placeholder tab
@@ -1163,6 +1183,18 @@ export function App(): ReactElement {
       modified: false,
     };
     dispatchTabs({ type: 'open-empty', tab: meta });
+    // B10 — a brand-new tab must not inherit tool state from the
+    // previous tab. The "+" affordance previously left
+    // `armedSignatureId` / `armedStamp` / `editModeOpen` set, so
+    // the new (or next) tab carried a stale Sign pill / stamp
+    // ghost / Edit toolbar into a document the user had never
+    // armed. Same reset set as `activateTab` and
+    // `performCloseTab`; the OCR suspects panel is also closed so
+    // it can't surface against a doc-less tab (B14).
+    setArmedSignatureId(null);
+    setArmedStamp(null);
+    setEditModeOpen(false);
+    setOcrSuspectsOpen(false);
   }, []);
 
   const onPersist = useCallback((tabId: string, viewer: PersistedViewer): void => {
@@ -1606,19 +1638,17 @@ export function App(): ReactElement {
         };
       });
       noteOpApplied(tabId, result.value);
-      // B1 — leave the signature armed after a successful
-      // placement. The user's report: "post-placement click on
-      // sign re-enters sign mode with Delete shown" — meaning
-      // after committing one signature, the next page click
-      // should immediately spawn a fresh pending placement
-      // (with the Confirm / Cancel / Delete bar) rather than
-      // forcing the user to re-click the Sign toolbar button.
-      // The Sign tool still exits via the action bar's Cancel
-      // button (which calls `setArmedSignatureId(null)` through
-      // `onCancelSignatureArm`) or via the Esc key on a pending
-      // placement. The previous behaviour cleared the armed
-      // state here, which forced the user to re-arm before
-      // every placement — the bug report.
+      // B1/B2 — the armed state is NOT touched here: the Sign
+      // overlay's Confirm action bar button clears it via
+      // `onCancelSignatureArm` right after `onPlace` returns
+      // (operator requirement: "after confirming a sign, exit
+      // Sign mode, no ghost"). Keeping the clear out of the
+      // engine-completion path means the placement commit and
+      // the Sign-mode exit happen in one user gesture; the
+      // engine echo (placements + state) lands after. The
+      // overlay's Delete path leaves the tool armed (the user
+      // is still placing signatures). The only defensive clear
+      // here is the missing-saved-signature guard above.
     },
     [pushToast, noteOpApplied],
   );
@@ -2919,9 +2949,18 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
       }
       const docId = open.session.engineDocId;
       // Preferred path — text-first DOCX with image fallback.
-      const docxFn = engineRef.current.createDocxFromDoc;
-      if (typeof docxFn === "function") {
-        const result = await docxFn(docId, entries);
+      // DEF-106 (B12) — MUST be a MEMBER call, never a detached
+      // extraction (`const f = engineRef.current.createDocxFromDoc;
+      // await f(...)`): the engine client's createDocxFromDoc reads
+      // `this.inner`, and a detached reference loses the `this`
+      // binding (undefined in strict mode), so every export threw
+      // "Cannot read properties of undefined (reading 'inner')".
+      // The feature-detection stays (pre-DEF-060 backends degrade
+      // to the image-only fallback), but the invocation is on the
+      // client instance.
+      const engine = engineRef.current;
+      if (typeof engine.createDocxFromDoc === "function") {
+        const result = await engine.createDocxFromDoc(docId, entries);
         if (!result.ok) {
           return {
             error: describeEngineError(result.error.code, result.error.message),
@@ -4374,9 +4413,11 @@ pushToast(
         onDeleteSignature: (placementId: string): void => {
           void deleteSignature(tabId, placementId);
         },
-        // B1 — exit Sign mode. The pending action bar's Cancel
-        // button calls this; the overlay's onConfirm / onDelete
-        // do NOT (the user is still placing signatures).
+        // B1/B2 — exit Sign mode. The pending action bar's
+        // Confirm AND Cancel buttons call this (after a confirmed
+        // placement the Sign session is over — the operator's
+        // explicit requirement); the overlay's Delete does NOT
+        // (the user is still placing signatures).
         onCancelSignatureArm: (): void => {
           setArmedSignatureId(null);
         },
@@ -5198,21 +5239,17 @@ pushToast(
               onRotateClockwise(id);
             }}
             onDelete={(): void => {
-              // No-op on purpose — delete is a per-selection rail
-              // action and the palette has no selection state to
-              // delete from. The palette keeps the entry visible
-              // so the user can discover the rail action via the
-              // same label, but the click surfaces a hint that
-              // tells them where to delete.
-              const id = activeTabIdRefLocal.current;
-              if (id === null) return;
-              const open = openTabsRef.current[id];
-              const pageCount = open?.session.doc.numPages ?? 0;
-              if (pageCount <= 1) {
-                pushToast("error", "Documents must keep at least one page.");
-                return;
-              }
-              pushToast("info", "Select a thumbnail in the left rail to delete a page.");
+              // B11 — the palette's Delete entry opens the SAME
+              // DeletePageDialog the toolbar's Delete button uses
+              // (current page / custom range, with the "must keep
+              // at least one page" validation inside the dialog).
+              // The previous wiring was a toast no-op ("Select a
+              // thumbnail in the left rail…") that told the user
+              // to go elsewhere — a silent dead end for an entry
+              // that looks exactly like the toolbar control. The
+              // dialog gates on the active tab and resolves the
+              // current page itself.
+              onDeletePageClick();
             }}
             onSign={(): void => {
               if (armedSignatureId !== null) {
@@ -5257,12 +5294,22 @@ pushToast(
             hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
           />
         )}
-        {ocrSuspectsOpen && activeTabIdRefLocal.current !== null && (
+        {/* B14 — the suspects panel must only render against a
+            REAL document. The previous guard checked
+            `activeTabIdRefLocal.current !== null`, which is true
+            on an empty tab too (empty tabs have an id but no
+            openTabs entry) — so a stale `ocrSuspectsOpen` flag
+            surfaced the panel over the welcome / empty-tab
+            screen. `activeTab` (openTabs[activeId]) is null on
+            empty tabs, so the panel can never render without a
+            document. The flag is also reset on new-tab / tab-
+            switch / close (B10 / B14). */}
+        {ocrSuspectsOpen && activeTab !== null && (
           <OcrSuspectsPanel
             suspects={
-              ocrSuspectsByTab[activeTabIdRefLocal.current] ?? []
+              ocrSuspectsByTab[activeTabIdRefLocal.current ?? ""] ?? []
             }
-            hasRun={ocrRunByTab[activeTabIdRefLocal.current] === true}
+            hasRun={ocrRunByTab[activeTabIdRefLocal.current ?? ""] === true}
             onNavigate={onSuspectNavigate}
             onClose={onCloseOcrSuspects}
           />

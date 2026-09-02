@@ -1372,3 +1372,170 @@ describe('Phase 12: callout annotation', () => {
     expect(callout).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// B3: custom hex color survives create -> save -> reparse
+//
+// The renderer's ColorPalette can emit a free-form hex string (e.g. #00ff00)
+// instead of a named preset. The engine must preserve that hex verbatim
+// through createAnnotation, PDF serialization, and parse-on-load — it must
+// NOT snap an unknown hex to the nearest named preset (which previously
+// collapsed #00ff00 to "yellow" at create time).
+// ---------------------------------------------------------------------------
+
+describe('B3: custom hex color round-trip', () => {
+  it('createAnnotation preserves a custom hex color verbatim', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    const r = await engine.createAnnotation('doc-1', makePayload({
+      kind: 'text-box',
+      color: '#00ff00',
+      content: 'custom green',
+    }));
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const ann = getAnns(r.value).find((a: any) => a.kind === 'text-box');
+      expect(ann).toBeDefined();
+      expect(ann?.color).toBe('#00ff00');
+    }
+  });
+
+  it('a custom hex survives save/reload (not collapsed to a named preset)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    await engine.createAnnotation('doc-1', makePayload({
+      kind: 'rect',
+      rects: [{ x: 50, y: 400, width: 150, height: 100 }],
+      color: '#00ff00',
+    }));
+
+    const savePath = join(dir, 'b3-hex.pdf');
+    const sr = await engine.saveAs('doc-1', savePath);
+    expect(sr.ok).toBe(true);
+    await engine.loadDocument('doc-1-reloaded', savePath);
+
+    const state = await engine.getState('doc-1-reloaded');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const anns = getAnns(state.value);
+      expect(anns.length).toBe(1);
+      expect(anns[0].color).toBe('#00ff00');
+    }
+  });
+
+  it('a hex whose RGB matches a named preset still round-trips as the hex', async () => {
+    // #00ff00 -> RGB [0,1,0], which is exactly the 'green' preset's RGB.
+    // Without the /TFlexColor sidecar, parse-on-load would snap [0,1,0] back
+    // to 'green' (and the renderer would then render 'green' as #22c55e, not
+    // #00ff00). The sidecar must keep the original hex.
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    await engine.createAnnotation('doc-1', makePayload({
+      kind: 'highlight',
+      rects: [{ x: 100, y: 500, width: 200, height: 15 }],
+      color: '#00ff00',
+    }));
+
+    const savePath = join(dir, 'b3-collision.pdf');
+    await engine.saveAs('doc-1', savePath);
+    await engine.loadDocument('doc-1-reloaded', savePath);
+
+    const state = await engine.getState('doc-1-reloaded');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const anns = getAnns(state.value);
+      expect(anns.length).toBe(1);
+      expect(anns[0].color).toBe('#00ff00');
+      expect(anns[0].color).not.toBe('green');
+    }
+  });
+
+  it('a 3-digit hex (#0f0) round-trips verbatim', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    await engine.createAnnotation('doc-1', makePayload({
+      kind: 'rect',
+      rects: [{ x: 10, y: 10, width: 80, height: 80 }],
+      color: '#0f0',
+    }));
+
+    const savePath = join(dir, 'b3-short.pdf');
+    await engine.saveAs('doc-1', savePath);
+    await engine.loadDocument('doc-1-reloaded', savePath);
+
+    const state = await engine.getState('doc-1-reloaded');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const anns = getAnns(state.value);
+      expect(anns.length).toBe(1);
+      expect(anns[0].color).toBe('#0f0');
+    }
+  });
+
+  it('editAnnotation accepts a custom hex color', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    await engine.createAnnotation('doc-1', makePayload({
+      id: 'b3-edit',
+      kind: 'text-box',
+      color: 'yellow',
+    }));
+
+    const edited = await engine.editAnnotation('doc-1', 'b3-edit', { color: '#ff00aa' });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'b3-edit');
+      expect(ann?.color).toBe('#ff00aa');
+    }
+  });
+
+  it('an invalid color still falls back to yellow (no regression)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    const r = await engine.createAnnotation('doc-1', makePayload({
+      kind: 'text-box',
+      color: 'not-a-real-color',
+    }));
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const ann = getAnns(r.value).find((a: any) => a.kind === 'text-box');
+      expect(ann?.color).toBe('yellow');
+    }
+  });
+
+  it('a named preset still round-trips by name (no regression)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-1', path);
+
+    await engine.createAnnotation('doc-1', makePayload({
+      kind: 'rect',
+      rects: [{ x: 50, y: 400, width: 150, height: 100 }],
+      color: 'red',
+    }));
+
+    const savePath = join(dir, 'b3-named.pdf');
+    await engine.saveAs('doc-1', savePath);
+    await engine.loadDocument('doc-1-reloaded', savePath);
+
+    const state = await engine.getState('doc-1-reloaded');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const anns = getAnns(state.value);
+      expect(anns.length).toBe(1);
+      expect(anns[0].color).toBe('red');
+    }
+  });
+});

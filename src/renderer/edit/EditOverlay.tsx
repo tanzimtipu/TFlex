@@ -173,31 +173,6 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     setCropDrag(null);
   }, [tool, page]);
 
-  useEffect(() => {
-    if (tool !== "text") {
-      setHoverRect(null);
-      return;
-    }
-    const onMove = (e: PointerEvent): void => {
-      const root = rootRef.current;
-      if (root === null) return;
-      const rect = root.getBoundingClientRect();
-      const x = (e.clientX - rect.left) / cssScale;
-      const y = (e.clientY - rect.top) / cssScale;
-      const items = getTextItems();
-      const hit = items.find(
-        (it) =>
-          x >= it.x - 2 &&
-          x <= it.x + it.width + 2 &&
-          y >= it.y - 2 &&
-          y <= it.y + it.height + 2,
-      );
-      setHoverRect(hit === undefined ? null : { ...hit });
-    };
-    window.addEventListener("pointermove", onMove);
-    return () => window.removeEventListener("pointermove", onMove);
-  }, [tool, cssScale, getTextItems]);
-
   // Helpers ----------------------------------------------------------------
 
   const pagePoint = useCallback(
@@ -238,6 +213,84 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     },
     [getTextItems],
   );
+
+  // Text-run hover hint + B6 click handling. When the text tool is
+  // active, underline the run under the cursor so the user can see
+  // what's clickable, and open the inline editor on click. Both
+  // listeners live at WINDOW level (the hover on pointermove, the
+  // click on a capture-phase pointerdown) so a sibling layer that
+  // swallows the pointerdown for the neutral select tool cannot
+  // block the editor from mounting (B6).
+  //
+  // DEF-061 — every hook (useState / useEffect) MUST be called
+  // before any early return. This effect sits after `onClickTextRun`
+  // (which its deps reference — the deps array is evaluated during
+  // render, so referencing a later `const` would throw a TDZ
+  // ReferenceError) but still before the `if (tool === "off")
+  // return null;` branch, so the hook count stays stable across
+  // tool/visibility transitions.
+  useEffect(() => {
+    if (tool !== "text") {
+      setHoverRect(null);
+      return;
+    }
+    const onMove = (e: PointerEvent): void => {
+      const root = rootRef.current;
+      if (root === null) return;
+      const rect = root.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / cssScale;
+      const y = (e.clientY - rect.top) / cssScale;
+      const items = getTextItems();
+      const hit = items.find(
+        (it) =>
+          x >= it.x - 2 &&
+          x <= it.x + it.width + 2 &&
+          y >= it.y - 2 &&
+          y <= it.y + it.height + 2,
+      );
+      setHoverRect(hit === undefined ? null : { ...hit });
+    };
+    window.addEventListener("pointermove", onMove);
+    // B6 — text-run CLICK. The hover hint above works because it
+    // listens at window level; the layer's own onPointerDown never
+    // fired on a plain click in the installed app — a sibling
+    // (the pdf.js textLayer's pointer-events: auto spans, or the
+    // annotation layer) swallowed the pointerdown before it
+    // reached the edit-layer, so the inline editor never mounted.
+    // The same window-level pattern fixes the click: a capture-
+    // phase pointerdown listener computes the page point and opens
+    // the editor directly, exactly like the hover listener does
+    // for the cursor position. Guards (AGENTS.md cross-bubbling
+    // rule): bail out when the event target sits inside any
+    // interactive control (the editor itself, an image placement /
+    // toolbar, or a native control), and only treat left-button
+    // presses inside the page bounds as text-run clicks. The
+    // layer's own onPointerDown text branch stays as a fallback —
+    // both paths converge on the same onClickTextRun and are
+    // idempotent.
+    const onDown = (e: PointerEvent): void => {
+      if (e.button !== 0) return;
+      const target = e.target as Element | null;
+      if (target !== null && typeof target.closest === "function") {
+        const interactive = target.closest(
+          ".edit-inline-editor, .edit-image-toolbar, .edit-image-placement, .edit-image-crop-overlay, button, input, textarea, select, [role='button'], .ann-editor, .ann-note, .sig-action-bar, .sig-pending",
+        );
+        if (interactive !== null) return;
+      }
+      const root = rootRef.current;
+      if (root === null) return;
+      const rect = root.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / cssScale;
+      const y = (e.clientY - rect.top) / cssScale;
+      if (x < 0 || y < 0 || x > pageWidthPt || y > pageHeightPt) return;
+      onClickTextRun({ x, y });
+    };
+    window.addEventListener("pointerdown", onDown, true);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerdown", onDown, true);
+    };
+  }, [tool, cssScale, getTextItems, onClickTextRun, pageWidthPt, pageHeightPt]);
 
   // Pointer handlers -----------------------------------------------------
 

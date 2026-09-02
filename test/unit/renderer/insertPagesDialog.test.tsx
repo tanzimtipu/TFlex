@@ -120,12 +120,22 @@ describe("InsertPagesDialog — render contract", () => {
 });
 
 describe("InsertPagesDialog — close paths", () => {
-  it("fires onClose when the backdrop is clicked", () => {
+  it("fires onClose when the backdrop is clicked (mousedown + click both on the backdrop)", () => {
+    // B17 — the backdrop close requires the pointer interaction to
+    // START on the backdrop (tracked via onMouseDown). A real
+    // outside click is mousedown + click on the backdrop; a drag
+    // that starts in the input and releases over the backdrop must
+    // NOT close (covered by bugB17_backdropDragClose).
     const onClose = vi.fn();
     const { container, cleanup } = renderDialog({ onClose });
     const backdrop = container.querySelector<HTMLElement>(".modal-backdrop");
     expect(backdrop).not.toBeNull();
     if (backdrop === null) return cleanup();
+    act((): void => {
+      backdrop.dispatchEvent(
+        new MouseEvent("mousedown", { bubbles: true, cancelable: true }),
+      );
+    });
     act((): void => {
       backdrop.click();
     });

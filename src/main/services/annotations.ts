@@ -11,6 +11,7 @@ import {
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AnnColor,
+  AnnColorValue,
   AnnKind,
   AnnLineEnd,
   AnnModel,
@@ -67,6 +68,58 @@ function isAnnColor(v: string): v is AnnColor {
   return (ANN_COLORS as readonly string[]).includes(v);
 }
 
+/**
+ * A hex color string (#rgb or #rrggbb, any case). Detected by a leading '#'.
+ * Free-form custom colors picked through the renderer's ColorPalette arrive
+ * as this shape; the engine must preserve them verbatim instead of snapping
+ * to the nearest named preset.
+ */
+const HEX_COLOR_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
+export function isHexColor(v: string): boolean {
+  return HEX_COLOR_RE.test(v);
+}
+
+/** True for any color value the engine accepts: a named preset or a hex. */
+export function isValidColorValue(v: string): boolean {
+  return isAnnColor(v) || isHexColor(v);
+}
+
+/** Parse a hex color (#rgb / #rrggbb) to a 0..1 RGB triple, or null. */
+export function hexToRgb(hex: string): [number, number, number] | null {
+  if (!isHexColor(hex)) return null;
+  const raw = hex.slice(1);
+  let r: string, g: string, b: string;
+  if (raw.length === 3) {
+    r = raw[0]!; g = raw[1]!; b = raw[2]!;
+    r = r + r; g = g + g; b = b + b;
+  } else {
+    r = raw.slice(0, 2); g = raw.slice(2, 4); b = raw.slice(4, 6);
+  }
+  return [
+    parseInt(r, 16) / 255,
+    parseInt(g, 16) / 255,
+    parseInt(b, 16) / 255,
+  ];
+}
+
+/** Resolve any stored color (named preset OR hex) to a 0..1 RGB triple for
+ *  the PDF /C array. Unknown values degrade to yellow's RGB. */
+export function colorToRgb(color: string): [number, number, number] {
+  if (isAnnColor(color)) return ANN_COLOR_RGB[color];
+  const hex = hexToRgb(color);
+  if (hex !== null) return hex;
+  return ANN_COLOR_RGB.yellow;
+}
+
+/** Normalize an incoming color string from the wire. A named preset or a hex
+ *  is preserved verbatim; anything else (missing/empty/unknown) falls back to
+ *  'yellow' so the annotation is still created with a usable color. */
+export function normalizeColorValue(color: string | undefined): string {
+  if (color !== undefined && isValidColorValue(color)) return color;
+  return 'yellow';
+}
+
 // ---------------------------------------------------------------------------
 // Renderer Annotation -> internal AnnModel conversion
 // ---------------------------------------------------------------------------
@@ -78,7 +131,7 @@ function isAnnColor(v: string): v is AnnColor {
  */
 function normalizeAnnotationPayload(payload: CreateAnnotationPayload): AnnModel {
   const kind: AnnKind = normalizeKind(payload.kind);
-  const color: AnnColor = isAnnColor(payload.color) ? payload.color : 'yellow';
+  const color: AnnColorValue = normalizeColorValue(payload.color);
 
   let rects: AnnRect[];
   if (payload.rects !== undefined && payload.rects.length > 0) {
@@ -217,7 +270,7 @@ export function editAnnotation(
   const ann = annotations[origIdx][i];
 
   if (payload.color !== undefined) {
-    ann.color = isAnnColor(payload.color) ? payload.color : ann.color;
+    ann.color = isValidColorValue(payload.color) ? payload.color : ann.color;
   }
   if (payload.content !== undefined) {
     ann.content = payload.content;
@@ -359,10 +412,16 @@ function parseOneAnnotation(
   // Contents
   const contents = parsePdfString(dict.get('Contents'));
 
-  // Color from /C array
+  // Color: prefer the verbatim /TFlexColor sidecar (named preset OR free-form
+  // hex) so a custom hex round-trips exactly instead of snapping to the
+  // nearest named preset. Fall back to /C -> nearestAnnColor for annotations
+  // authored by other tools (or older TFlex builds without /TFlexColor).
   const colorArr = parsePdfArray(dict.get('C'));
-  let color: AnnColor = 'yellow';
-  if (colorArr !== undefined && colorArr.length >= 3) {
+  let color: string = 'yellow';
+  const tflexColor = parsePdfString(dict.get('TFlexColor'));
+  if (tflexColor !== undefined && isValidColorValue(tflexColor)) {
+    color = tflexColor;
+  } else if (colorArr !== undefined && colorArr.length >= 3) {
     color = nearestAnnColor(colorArr[0], colorArr[1], colorArr[2]);
   }
 
@@ -539,8 +598,8 @@ export function parseAnnotationsFromDoc(pdfDoc: PDFDocument): AnnModel[][] {
 // Serialization: build real /Annots dicts on each page via doc.context.obj
 // ---------------------------------------------------------------------------
 
-function makeColorArray(doc: PDFDocument, color: AnnColor): PDFArray {
-  const [r, g, b] = ANN_COLOR_RGB[color];
+function makeColorArray(doc: PDFDocument, color: string): PDFArray {
+  const [r, g, b] = colorToRgb(color);
   return doc.context.obj([r, g, b]) as PDFArray;
 }
 
@@ -565,7 +624,7 @@ function buildInkAPStream(
   doc: PDFDocument,
   ann: AnnModel,
 ): PDFRef {
-  const [r, g, b] = ANN_COLOR_RGB[ann.color];
+  const [r, g, b] = colorToRgb(ann.color);
   const bbox = ann.rects[0];
   if (bbox === undefined) {
     const stream = doc.context.stream(new Uint8Array(0));
@@ -624,6 +683,14 @@ function serializeAnnotation(
     ['C', makeColorArray(doc, ann.color)],
   ];
 
+  // Carry the source color (named preset OR free-form hex) verbatim so the
+  // exact value survives parse-on-load. The /C RGB array alone cannot
+  // distinguish a custom hex from a named preset whose RGB happens to match
+  // (e.g. #00ff00 and the 'green' preset both map to [0,1,0]), which would
+  // collapse custom hexes to the nearest named preset on reparse. /TFlexColor
+  // is a private, non-standard field ignored by other PDF viewers.
+  dictEntries.push(['TFlexColor', PDFString.of(ann.color)]);
+
   if (ann.content !== undefined && ann.content.length > 0) {
     dictEntries.push(['Contents', PDFString.of(ann.content)]);
   }
@@ -653,7 +720,7 @@ function serializeAnnotation(
       // a solid line (/BS /S) — the dict carries the callout geometry so a
       // compliant viewer renders the leader line and the text box. This is
       // the documented Phase 12 callout limit.
-      const [r, g, b] = ANN_COLOR_RGB[ann.color];
+      const [r, g, b] = colorToRgb(ann.color);
       dictEntries.push(['Intent', PDFName.of('FreeTextCallout')]);
       dictEntries.push(['IT', PDFName.of('FreeTextCallout')]);
       if (ann.points !== undefined && ann.points.length >= 2) {

@@ -10,9 +10,21 @@
 // bind the backdrop to a no-op while `picking` is true and
 // swallow Esc in the capture phase so the picker owns input.
 //
+// B17 (this file's update) — the backdrop close-on-click must
+// ALSO require that the pointer interaction STARTED on the
+// backdrop (tracked via an onMouseDown handler + ref): a text-
+// selection drag that starts in the input and releases over the
+// backdrop dispatches its click on the backdrop, which used to
+// close the dialog. The click handler now checks BOTH the
+// mousedown origin AND `e.target === e.currentTarget` before
+// closing.
+//
 // We exercise this by reading the dialog source and asserting:
-//   1. The backdrop's onClick is `picking ? undefined : onClose`.
-//   2. The dialog has a picking-state effect that swallows Esc
+//   1. The backdrop's onClick is a no-op while `picking` is true.
+//   2. The backdrop records where the mousedown started
+//      (backdropDownRef) and the click handler requires the
+//      mousedown origin + target===currentTarget before closing.
+//   3. The dialog has a picking-state effect that swallows Esc
 //      in the capture phase (so any other Esc listener can't
 //      dismiss the dialog underneath the picker).
 import { describe, expect, it } from "vitest";
@@ -59,14 +71,22 @@ describe("B18 — Insert / Replace dialogs are modal-blocked while the OS file p
     expect(mergeSource).toMatch(/addEventListener\("keydown",\s*onKey,\s*true\)/);
   });
 
-  it("InsertPagesDialog backdrop is modal-blocked while picking", () => {
-    expect(insertSource).toMatch(/onClick=\{picking\s*\?\s*undefined\s*:\s*onClose\}/);
+  it("InsertPagesDialog backdrop is modal-blocked while picking AND drag-safe (B17)", () => {
+    // B18: while picking, the backdrop click is a no-op.
+    expect(insertSource).toMatch(/onClick=\{\s*picking\s*\?/);
     expect(insertSource).toMatch(/addEventListener\("keydown",\s*onKey,\s*true\)/);
+    // B17: the close path records the mousedown origin and only
+    // closes when the interaction started on the backdrop AND the
+    // click target is the backdrop itself.
+    expect(insertSource).toMatch(/backdropDownRef\.current\s*=\s*e\.target\s*===\s*e\.currentTarget/);
+    expect(insertSource).toMatch(/backdropDownRef\.current\s*&&\s*e\.target\s*===\s*e\.currentTarget/);
   });
 
-  it("ReplacePagesDialog backdrop is modal-blocked while picking", () => {
-    expect(replaceSource).toMatch(/onClick=\{picking\s*\?\s*undefined\s*:\s*onClose\}/);
+  it("ReplacePagesDialog backdrop is modal-blocked while picking AND drag-safe (B17)", () => {
+    expect(replaceSource).toMatch(/onClick=\{\s*picking\s*\?/);
     expect(replaceSource).toMatch(/addEventListener\("keydown",\s*onKey,\s*true\)/);
+    expect(replaceSource).toMatch(/backdropDownRef\.current\s*=\s*e\.target\s*===\s*e\.currentTarget/);
+    expect(replaceSource).toMatch(/backdropDownRef\.current\s*&&\s*e\.target\s*===\s*e\.currentTarget/);
   });
 
   it("the Esc-swallower stops propagation so the picker owns input", () => {

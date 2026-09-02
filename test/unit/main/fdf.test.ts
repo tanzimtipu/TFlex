@@ -109,6 +109,23 @@ describe('Phase 12: FDF export/import (pure helpers)', () => {
     expect(parsed.length).toBe(1);
     expect(parsed[0].page).toBe(2);
   });
+
+  it('parseFdf round-trips a custom hex color verbatim (B3)', () => {
+    // A free-form hex must survive FDF export -> import instead of snapping
+    // to the nearest named preset via the /C RGB array.
+    const anns: AnnModel[][] = [[
+      {
+        id: 'h1', kind: 'text-box', page: 1,
+        rects: [{ x: 10, y: 20, width: 100, height: 30 }],
+        color: '#00ff00', content: 'hex color',
+      },
+    ]];
+    const bytes = exportFdf(anns, [0]);
+    const parsed = parseFdf(bytes);
+    expect(parsed.length).toBe(1);
+    expect(parsed[0].color).toBe('#00ff00');
+    expect(parsed[0].color).not.toBe('green');
+  });
 });
 
 describe('Phase 12: engine exportFdf / importFdf', () => {

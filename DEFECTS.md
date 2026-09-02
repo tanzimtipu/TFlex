@@ -1,3 +1,112 @@
+## DEF-107: OCR suspects panel overlaps annotation/shapes toolbar (B14)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open the scanned.pdf sample.
+3. Open the Tools palette and choose "Recognize text (OCR)".
+4. Set scope to "Current page" and click Recognize.
+5. Wait for the OCR suspects panel to open on the right.
+
+Expected: The OCR suspects panel opens in its own space and does not overlap the annotation/shapes toolbar (`.ann-toolbar`).
+Actual: The panel (x1162-1442, y45-904) overlaps the annotation/shapes toolbar (x220-1442, y89-129) by 280x40 px; the toolbar's right portion (Shapes group area) sits behind/in the panel. Verified by a true 2D intersection check across the OCR-suspects panel and `.ann-toolbar`. (Note: the panel correctly does NOT open on an empty tab and does NOT persist to a new tab.)
+Screenshot: screenshots/b14-precise-overlap.png
+
+History:
+- qa: opened
+- qa: re-verified on installed build v1.7.5 (rebuilt 11:23 AM; SHA matches win-unpacked). OCR suspects panel now opens at y=145, below the `.ann-toolbar` (y89-129, h40); true 2D intersection check gives overlapH=0, overlaps=false. CLOSED.
+
+## DEF-106: DOCX export crashes with "Cannot read properties of undefined (reading 'inner')" (B12)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf.
+3. Open the Tools palette and choose "Export to Word (docx)".
+4. In the "Export to Word" dialog leave the defaults (Page range 1-34, Resolution DPI 150) and click "Export".
+
+Expected: The export completes without error and produces a .docx.
+Actual: The dialog shows a red status message "DOCX export failed: Cannot read properties of undefined (reading 'inner')" and no document is produced. Reproducible on every run.
+Screenshot: screenshots/bug12-after-export.png
+
+History:
+- qa: opened
+- qa: re-verified on installed build v1.7.5 (rebuilt 11:23 AM; SHA matches win-unpacked). DOCX export completes with no error (dialog status null, no `inner` error, no console/page errors) and produces a real non-empty .docx — captured via main-process `will-download`, state `completed`, size 56376 bytes, valid OOXML ZIP (PK magic). CLOSED.
+
+## DEF-105: Edit mode click on a text run does not open the text editor (B6)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf.
+3. Click the Edit toolbar toggle, then the "Edit text" tool.
+4. Hover over a text run (e.g. the "TFlex Technical Report" title). A dashed hover border and "Click a text run to replace it" hint appear.
+5. Click that text run.
+
+Expected: A text editor (textarea) opens loaded with the run's text so it can be edited.
+Actual: No editor appears. After the click, `[data-edit-editor="text"]`, `[data-edit-textarea]`, `.edit-overlay`, and any input/textarea are all absent; `activeTool` stays null. The hover affordance shows but the click is inert.
+Screenshot: screenshots/b6-click-after.png
+
+History:
+- qa: opened
+- qa: re-verified on installed build v1.7.5 (rebuilt 11:23 AM; SHA matches win-unpacked). Edit-mode click on a text run opens the text editor pre-loaded with that run's text ("TFlex Technical Report"), and the editor is STILL present after a 3s wait — it does not auto-close. CLOSED.
+
+## DEF-104: Sticky note text renders vertically, not co-located inside the note (B4/B5)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf.
+3. Select the Note tool and click a point on the page.
+4. In the note editor type "Hello sticky note" and Confirm.
+5. Observe the placed sticky note.
+
+Expected: The note text renders horizontally, wrapped and co-located inside/with the note marker.
+Actual: The text is stored and the marker is clickable (opens the pre-filled editor), but the text renders as a narrow vertical column (`.ann-note-text` ~48px wide x ~431px tall) — one character per line — beside the marker rather than as wrapped text in a note container. Violates "text visible inside / icon+text co-located".
+Screenshot: screenshots/bug4-committed-note.png
+
+History:
+- qa: opened
+- qa: re-verified on installed build v1.7.5 (rebuilt 11:23 AM; SHA matches win-unpacked). Note text now renders horizontally, wrapped (210x48 px) and co-located inside/with the note marker; clicking the note icon opens the pre-filled editor (editorOpenAfterClick=true). CLOSED.
+
+## DEF-103: After signing, Text Box/Rectangle/Circle tools stop placing annotations (B2)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.5 build).
+2. Open report.pdf.
+3. Arm the Sign tool (Type "QA Suite", Save, pick the saved signature).
+4. Click a point on the page and Confirm on the floating action bar to place the signature (Sign mode exits, ghost gone).
+5. Click the Text Box tool (it activates, aria-pressed=true), then click another point on the page.
+
+Expected: A Text Box action bar / editor appears so the user can type; Rectangle and Ellipse also place normally afterwards.
+Actual: The tools activate but clicking the page creates nothing — no textbox bar, no editor, no committed annotation, no lingering signature pending state. Verified via isolation: a Text Box single-click creates the bar on a fresh doc, but does NOT after a Sign placement (bar=1 fresh vs bar=0 after sign). Rectangle/Ellipse clicks likewise place nothing.
+Screenshot: screenshots/b2-after-sign-textbox.png
+
+History:
+- qa: opened
+- qa: re-verified on installed build v1.7.5 (rebuilt 11:23 AM; SHA matches win-unpacked). After a Sign placement + confirm, Text Box places (bar=1, editor=1, aria-pressed=true), and Rectangle (.ann rect=1) and Ellipse (.ann ellipse=1) also place; engine annotations = ["rect","ellipse"]. Sign mode exits (aria-pressed false). CLOSED.
+
 ## DEF-102: OCR suspects palette available on empty tab (B11)
 
 - Status: CLOSED
