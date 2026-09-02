@@ -19,6 +19,9 @@
 // TotalPages+1 = append, "end" = append). Blank mode's rank slot maps
 // to the engine's `afterIndex` — which is one less — inside
 // onInsertPagesConfirm; the from-PDF mode consumes the slot directly.
+// DEF-129 — slot 0 ("before page 1") is valid in blank mode too: it
+// maps to the engine's afterIndex -2 PREPEND sentinel, so the new
+// blank page becomes page 1 (pageOrder[0]).
 //
 // We exercise the shared helper directly and the wiring by scanning
 // the renderer sources (same pattern as bugB19_proxyRefreshEveryMutation).
@@ -97,10 +100,10 @@ describe("DEF-122 — rank slot to afterIndex translation in App.tsx", () => {
     return m === null ? "" : m[0];
   }
 
-  it("blank branch maps the rank slot to the engine's afterIndex (slot - 1)", () => {
+  it("blank branch maps the rank slot to the engine's afterIndex (slot 0 -> -2 prepend, else slot - 1)", () => {
     const body = findOnInsertPagesConfirm();
     expect(body).toMatch(
-      /const afterIndex = choice\.position < 0 \? -1 : choice\.position - 1;/,
+      /const afterIndex =\s+choice\.position === 0\s+\? -2\s+: choice\.position < 0\s+\? -1\s+: choice\.position - 1;/,
     );
     // The translated afterIndex feeds insertBlankPage...
     const blankCall = body.indexOf("engineRef.current.insertBlankPage(");
@@ -119,17 +122,27 @@ describe("DEF-122 — rank slot to afterIndex translation in App.tsx", () => {
 
   it("does not regress the DEF-114 append sentinel (end/empty -> -1)", () => {
     const body = findOnInsertPagesConfirm();
-    // An append sentinel (-1) passes straight through as afterIndex -1.
-    expect(body).toMatch(/choice\.position < 0 \? -1 : choice\.position - 1/);
+    // An append sentinel (-1) passes straight through as afterIndex -1
+    // while slot 0 routes to the -2 prepend sentinel.
+    expect(body).toMatch(/choice\.position < 0[\s\S]*?\? -1[\s\S]*?: choice\.position - 1/);
+    expect(body).toMatch(/choice\.position === 0\s*\? -2/);
     const dialog = src("components/InsertPagesDialog.tsx");
     expect(dialog).toMatch(/return \{ position: -1, valid: true \};/);
   });
 
-  it("dialog validation is mode-aware: blank min is 2 on a non-empty doc, 1 otherwise", () => {
+  it("dialog validation keeps 1 valid in blank mode (DEF-129): slot 0 becomes the -2 prepend, no error-toast guard", () => {
     const dialog = src("components/InsertPagesDialog.tsx");
-    expect(dialog).toMatch(
-      /const min = mode === "blank" && totalPages > 0 \? 2 : 1;/,
-    );
+    // The DEF-114-era special case (blank min is 2 on a non-empty
+    // doc) is gone: min is 1 for every mode.
+    expect(dialog).toMatch(/const min = 1;/);
     expect(dialog).toMatch(/n < min \|\| n > totalPages \+ 1/);
+    // The DEF-129-era error-toast guard is gone: slot 0 is no longer
+    // surfaced as an engine gap; it maps to the -2 PREPEND sentinel.
+    const app = src("App.tsx");
+    const insertConfirmRe = /const onInsertPagesConfirm = useCallback\([\s\S]*?\n\s*\}, \[[^\]]*\]\);/m;
+    const m = app.match(insertConfirmRe);
+    expect(m, "onInsertPagesConfirm handler exists").not.toBeNull();
+    expect(m?.[0] ?? "").toMatch(/choice\.position === 0\s*\? -2/);
+    expect(m?.[0] ?? "").not.toMatch(/cannot insert a blank page before page 1/);
   });
 });

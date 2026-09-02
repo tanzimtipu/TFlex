@@ -25,6 +25,7 @@ import {
   defaultImageEncoder,
   detectImageFormat,
   facadeFromImage,
+  rasterizeTextBoxToPng,
   rectToPixelSize,
   resizeImageToBytes,
   type DecodedImage,
@@ -51,8 +52,13 @@ function makeFake2dContext(): Record<string, unknown> {
   const noop = (): void => undefined;
   return {
     fillStyle: "",
+    font: "",
     fillRect: noop,
     drawImage: noop,
+    fillText: noop,
+    // Approximate glyph metrics: each character is ~4px wide so the
+    // text-box rasterizer's wrap + auto-fit logic can be exercised.
+    measureText: (t: string): { width: number } => ({ width: t.length * 4 }),
   };
 }
 
@@ -211,6 +217,84 @@ describe("resizeImageToBytes", () => {
   });
 });
 
+describe("rasterizeTextBoxToPng", () => {
+  const STYLE = { font: "Helvetica" as const, size: 12, color: { r: 0, g: 0, b: 0 } };
+
+  it("white-background boxes fill white, size the canvas to the rect (72 DPI), and return the encoded bytes", async () => {
+    const fillStyleWrites: string[] = [];
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = trackedGetContext(fillStyleWrites) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    try {
+      const encoder = jestEncoder({ bytes: new Uint8Array([1, 2, 3]) });
+      const out = await rasterizeTextBoxToPng({
+        text: "Committed box",
+        rect: { x: 0, y: 0, width: 180, height: 40 },
+        style: STYLE,
+        background: "white",
+        encoder,
+      });
+      expect(out).toEqual(new Uint8Array([1, 2, 3]));
+      const canvas = encoder.lastCanvas();
+      expect(canvas?.width).toBe(180);
+      expect(canvas?.height).toBe(40);
+      // White fill first (box background), then the text colour.
+      expect(fillStyleWrites[0]).toBe("#ffffff");
+      expect(fillStyleWrites[fillStyleWrites.length - 1]).toBe("#000000");
+    } finally {
+      HTMLCanvasElement.prototype.getContext = originalGetContext;
+    }
+  });
+
+  it("'none'-background boxes stay transparent (no white fill painted)", async () => {
+    const fillStyleWrites: string[] = [];
+    const original = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = trackedGetContext(fillStyleWrites) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    try {
+      const encoder = jestEncoder({ bytes: new Uint8Array([0]) });
+      await rasterizeTextBoxToPng({
+        text: "Committed box",
+        rect: { x: 0, y: 0, width: 180, height: 40 },
+        style: STYLE,
+        background: "none",
+        encoder,
+      });
+      // No white fill was written — the first (and only) fillStyle
+      // write is the text colour (#000000).
+      expect(fillStyleWrites).not.toContain("#ffffff");
+      expect(fillStyleWrites[0]).toBe("#000000");
+    } finally {
+      HTMLCanvasElement.prototype.getContext = original;
+    }
+  });
+
+  it("shrinks the font to fit the box height (engine-matching auto-fit)", async () => {
+    const fontWrites: string[] = [];
+    const originalGetContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = trackedFontContext(fontWrites) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    try {
+      const encoder = jestEncoder({ bytes: new Uint8Array([0]) });
+      // 40px wide -> the 2 wrapped lines at 12px need 28.8px, more
+      // than the 16px box height -> the font must shrink.
+      await rasterizeTextBoxToPng({
+        text: "Committed box",
+        rect: { x: 0, y: 0, width: 40, height: 16 },
+        style: STYLE,
+        background: "white",
+        encoder,
+      });
+      const lastFont = fontWrites[fontWrites.length - 1] ?? "";
+      expect(lastFont).toMatch(/^[0-9.]+px Helvetica/);
+      const size = Number.parseFloat(lastFont);
+      expect(size).toBeGreaterThanOrEqual(4);
+      expect(size).toBeLessThan(12);
+      // 16 / (2 lines * 1.2) = 6.67
+      expect(size).toBeCloseTo(6.67, 1);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = originalGetContext;
+    }
+  });
+});
+
 describe("facadeFromImage", () => {
   it("captures naturalWidth / naturalHeight (with fallback to width/height)", () => {
     const facade = facadeFromImage({ naturalWidth: 100, naturalHeight: 50, width: 0, height: 0 } as unknown as HTMLImageElement);
@@ -237,6 +321,38 @@ describe("defaultImageEncoder / defaultImageDecoder (smoke)", () => {
 
 // ---------------------------------------------------------------------------
 // Test helpers
+
+/** Build a fake 2D context whose `fillStyle` writes are recorded
+ *  in `writes`. The accessors are defined via defineProperty (not
+ *  Object.assign) so the rasterizer's writes actually run them. */
+function trackedGetContext(writes: string[]): () => Record<string, unknown> {
+  return (): Record<string, unknown> => {
+    const ctx = makeFake2dContext() as Record<string, unknown>;
+    Object.defineProperty(ctx, "fillStyle", {
+      get: (): string => writes[writes.length - 1] ?? "",
+      set: (v: string): void => {
+        writes.push(v);
+      },
+      configurable: true,
+    });
+    return ctx;
+  };
+}
+
+/** Build a fake 2D context whose `font` writes are recorded. */
+function trackedFontContext(writes: string[]): () => Record<string, unknown> {
+  return (): Record<string, unknown> => {
+    const ctx = makeFake2dContext() as Record<string, unknown>;
+    Object.defineProperty(ctx, "font", {
+      get: (): string => writes[writes.length - 1] ?? "",
+      set: (v: string): void => {
+        writes.push(v);
+      },
+      configurable: true,
+    });
+    return ctx;
+  };
+}
 
 /** A recording stub for the encoder. Captures the most-recent
  *  canvas so the test can assert the pixel dimensions the

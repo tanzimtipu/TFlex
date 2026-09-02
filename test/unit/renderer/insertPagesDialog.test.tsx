@@ -161,11 +161,12 @@ describe("InsertPagesDialog — close paths", () => {
 // ---------------------------------------------------------------------------
 // DEF-122 — the position value is the 1-based page number the new
 // content BECOMES (rank semantics: 2 = after page 1, TotalPages+1 =
-// append, "end" = append). Blank mode cannot insert before page 1 of
-// a non-empty doc (the engine's afterIndex -1 means append, DEF-114),
-// so its minimum is 2; from-PDF mode keeps 1 = before page 1. The
-// dialog emits the 0-based rank slot (v - 1; -1 = append) and the
-// host translates it per engine contract (App.tsx).
+// append, "end" = append). Position 1 (before page 1) is valid in
+// BOTH modes (DEF-129): blank mode maps slot 0 to the engine's -2
+// PREPEND sentinel, so the new blank page becomes page 1 (pageOrder[0]
+// is the new index). The dialog emits the 0-based rank slot (v - 1;
+// -1 = append) and the host translates it per engine contract
+// (App.tsx).
 // ---------------------------------------------------------------------------
 describe("InsertPagesDialog — DEF-122 position semantics", () => {
   function positionOf(container: HTMLElement): HTMLInputElement | null {
@@ -176,13 +177,25 @@ describe("InsertPagesDialog — DEF-122 position semantics", () => {
     return container.querySelector("[data-insert-confirm]");
   }
 
-  it("blank mode rejects 1 on a non-empty doc (cannot insert before page 1)", () => {
-    const { container, cleanup } = renderDialog({ totalPages: 5 });
+  it("blank mode accepts 1 on a non-empty doc (before page 1 — DEF-129) and confirms slot 0", () => {
+    const onConfirm = vi.fn();
+    const { container, cleanup } = renderDialog({ totalPages: 5, onConfirm });
     const position = positionOf(container);
     const confirm = confirmOf(container);
     if (position === null || confirm === null) return cleanup();
     setInputValue(position, "1");
-    expect(confirm.disabled).toBe(true);
+    // DEF-129 — position 1 is a legitimate choice in blank mode:
+    // the Insert button must NOT silently disable. The host owns
+    // the engine translation (slot 0 -> afterIndex -2, so the blank
+    // becomes page 1 — see App.tsx onInsertPagesConfirm).
+    expect(confirm.disabled).toBe(false);
+    act((): void => {
+      confirm.click();
+    });
+    // "1" -> rank slot 0 (the blank page becomes page 1).
+    expect(onConfirm).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "blank", position: 0 }),
+    );
     cleanup();
   });
 
@@ -290,13 +303,16 @@ describe("InsertPagesDialog — DEF-122 position semantics", () => {
     cleanup();
   });
 
-  it("blank hint phrases placement as 'after page N' and states the 2 minimum", () => {
+  it("blank hint phrases placement as 'after page N' with 1 = before page 1 (DEF-129)", () => {
     const { container, cleanup } = renderDialog({ totalPages: 5 });
     const hint = container.querySelector<HTMLElement>(".modal-hint");
     const text = hint?.textContent ?? "";
+    expect(text).toContain("1 inserts before page 1");
     expect(text).toContain("after page 1");
     expect(text).toContain("appends after the last page");
-    expect(text).toContain("cannot be inserted before page 1");
+    // The DEF-114-era "cannot be inserted before page 1" caveat
+    // is gone — position 1 is a valid dialog choice again.
+    expect(text).not.toContain("cannot be inserted before page 1");
     cleanup();
   });
 

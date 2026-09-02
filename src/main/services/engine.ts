@@ -1223,19 +1223,25 @@ export class EngineService {
       return err('engine-error', `unknown document: ${docId}`);
     }
     // B15 — guard out-of-range. afterIndex is the 0-based visible index
-    // AFTER which the blank page is inserted; -1 and doc.order.length both
-    // append after the last page (DEF-114: -1 is the renderer's "end" /
-    // "append" sentinel, matching insertFromPdf's -1 semantics). Values
-    // outside [-1, doc.order.length] (or non-finite) come from a renderer
-    // that derived the position from a stale current page after the doc
+    // AFTER which the blank page is inserted. DEF-114: -1 and
+    // doc.order.length both append after the last page (-1 is the
+    // renderer's "end"/"append" sentinel, matching insertFromPdf's -1
+    // semantics). DEF-129: -2 is the PREPEND sentinel — the new blank
+    // page becomes the FIRST visible page (pageOrder[0]); the renderer's
+    // InsertPagesDialog maps "insert before page 1" (position 0 in blank
+    // mode) to afterIndex = -2 via
+    //   `afterIndex = position === 0 ? -2 : position - 1`.
+    // 0..n-1 inserts after that page; n appends. Values outside
+    // [-2, doc.order.length] (or non-finite) come from a renderer that
+    // derived the position from a stale current page after the doc
     // shrank; the previous code silently clamped them, which landed the
     // blank page at an unexpected position and the renderer then rendered
     // a page-out-of-range / black canvas. Reject with a clean out-of-range
     // so the renderer surfaces a toast instead of a broken view.
-    if (!Number.isFinite(afterIndex) || afterIndex < -1 || afterIndex > doc.order.length) {
+    if (!Number.isFinite(afterIndex) || afterIndex < -2 || afterIndex > doc.order.length) {
       return err(
         'out-of-range',
-        `insertBlankPage afterIndex ${afterIndex} out of range [-1,${doc.order.length}]`,
+        `insertBlankPage afterIndex ${afterIndex} out of range [-2,${doc.order.length}]`,
       );
     }
     // B15 — blank page dimensions are PDF points. Reject non-finite or
@@ -1248,7 +1254,18 @@ export class EngineService {
         `insertBlankPage dimensions ${widthPx}x${heightPx} must be finite positive numbers`,
       );
     }
-    const snapshot = snapshotDoc(doc);
+    // DEF-130: capture the pre-insert pdfDoc bytes so a subsequent undo
+    // can revert the pdfDoc (restoreSnapshot reloads it via
+    // tryRestorePdfBytes). The previous code used snapshotDoc (no
+    // pdfBytes), so undo reverted doc.order/doc.rotations but left the
+    // inserted page in the pdfDoc. A re-insert then added ANOTHER page
+    // at a higher origIdx than the rotations array had a slot for, so
+    // serializeDoc read `doc.rotations[origIdx]` === undefined and
+    // passed undefined*90 -> NaN to degrees(), which threw
+    // "degreeAngle must be of type number, but was actually of type
+    // NaN" out of getDocumentBytes. Capturing the bytes here lets
+    // undo revert the pdfDoc to the exact pre-insert page count.
+    const snapshot = await snapshotDocWithPdf(doc);
 
     try {
       // Create a blank page and add it to the pdfDoc. B15: pdf-lib's
@@ -1281,7 +1298,18 @@ export class EngineService {
       // at the FRONT instead of the end. -1 now appends after the last
       // page (matching insertFromPdf's -1 = append semantics); an explicit
       // afterIndex === doc.order.length also appends.
-      const insertAt = afterIndex < 0 ? doc.order.length : afterIndex + 1;
+      // DEF-129: afterIndex === -2 is the PREPEND sentinel — the new blank
+      // page becomes the FIRST visible page (pageOrder[0]). The renderer
+      // maps "insert before page 1" (position 0 in blank mode) to -2; the
+      // originals follow unchanged ([0..n-1] shifted right by one).
+      let insertAt: number;
+      if (afterIndex === -2) {
+        insertAt = 0; // prepend — new blank page is the first visible page
+      } else if (afterIndex < 0) {
+        insertAt = doc.order.length; // -1: append after the last page
+      } else {
+        insertAt = afterIndex + 1; // 0..n-1: after that page; n: append (clamped)
+      }
       const clamped = Math.min(insertAt, doc.order.length);
       doc.order.splice(clamped, 0, blankOrigIdx);
 
@@ -1298,6 +1326,10 @@ export class EngineService {
       doc.modified = true;
       return ok(buildState(doc));
     } catch (e) {
+      // DEF-130: if the insert itself failed after we already added the
+      // page to the pdfDoc, revert the pdfDoc to the pre-insert bytes so
+      // a retry starts from a clean state (no leftover half-added page).
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
       return err('engine-error', `insertBlankPage failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -1335,7 +1367,12 @@ export class EngineService {
       return err('empty-range', 'insertFromPdf: source PDF has 0 pages');
     }
 
-    const snapshot = snapshotDoc(doc);
+    // DEF-130: capture the pre-insert pdfDoc bytes so a subsequent undo
+    // can revert the pdfDoc (same fix as insertBlankPage). The previous
+    // snapshotDoc (no pdfBytes) left the inserted pages in the pdfDoc
+    // after undo, so a re-insert grew the pdfDoc past the rotations
+    // array and serializeDoc read undefined -> NaN.
+    const snapshot = await snapshotDocWithPdf(doc);
 
     try {
       const otherIndices = otherDoc.getPageIndices();
@@ -1377,6 +1414,8 @@ export class EngineService {
       doc.modified = true;
       return ok(buildState(doc));
     } catch (e) {
+      // DEF-130: revert the pdfDoc on failure so a retry starts clean.
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
       return err('engine-error', `insertFromPdf failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
@@ -1642,20 +1681,48 @@ export class EngineService {
       const pageHeight = page.getSize().height;
       const { x, y, width, height } = payload.rect;
 
-      // Mask the old run region with a white rectangle (PDF coords).
-      page.drawRectangle({
-        x,
-        y: pageHeight - y - height,
-        width,
-        height,
-        color: rgb(1, 1, 1),
-      });
-
       const fontName = payload.font ?? 'Helvetica';
       const font = await doc.pdfDoc.embedFont(standardFontFor(fontName));
       const size = payload.size ?? 12;
       const color = payload.color ?? { r: 0, g: 0, b: 0 };
       const safe = sanitizeForStandardFont(payload.newText);
+
+      // DEF-124: the pdf.js text-item bbox (payload.rect) is the
+      // glyphs' tight ink box. The font's ascender rises above it and
+      // the descender (plus anti-aliased pixels) extends below it, so a
+      // mask that covers only the bbox leaves a faint gray trace of
+      // the old run behind/below the new text. Widen the white mask
+      // symmetrically by PAD points on each side and extend the top by
+      // the font's ascent and the bottom by the descent so the mask
+      // fully hides the old glyphs. The new text uses a pdf-lib
+      // StandardFont (Helvetica/Times/Courier); the ascent/descent of
+      // the standard font is a close-enough proxy for the old run's
+      // font metrics that the mask covers the old ink in practice.
+      // (The mask-and-redraw approach is the documented v1 limitation
+      // — DEF-116 REJECTED — so the old text operators stay in the
+      // content stream; this fix only widens the visual mask so the
+      // old glyphs are not painted through it.)
+      const PAD = 2;
+      // pdf-lib's `heightAtSize(size)` defaults `descender: true`, so
+      // it returns the ascent + descent. Pass `descender: false` to get
+      // the ascent-only height; the difference is the descent.
+      const fontFullHeight = font.heightAtSize(size);
+      const fontAscent = font.heightAtSize(size, { descender: false } as { descender?: boolean });
+      const fontDescent = Math.max(0, fontFullHeight - fontAscent);
+      const maskX = x - PAD;
+      const maskW = width + 2 * PAD;
+      const maskTop = y - PAD - fontAscent;
+      const maskBottom = y + height + PAD + fontDescent;
+      const maskH = maskBottom - maskTop;
+
+      // Mask the old run region with a white rectangle (PDF coords).
+      page.drawRectangle({
+        x: maskX,
+        y: pageHeight - maskBottom,
+        width: maskW,
+        height: maskH,
+        color: rgb(1, 1, 1),
+      });
 
       // Draw the new text at the rect's top-left, baseline dropped by
       // `size` from the top so glyphs sit inside the rect.
@@ -2434,6 +2501,42 @@ function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }
 
+/**
+ * DEF-131 — strip a `/CropBox` or `/TrimBox` from `dstLeaf` when the
+ * `srcLeaf` did not carry one on its own node. pdf-lib's `copyPages`
+ * walks `PDFPageLeaf.InheritableEntries` and pulls any value the
+ * cloned leaf was inheriting from its source /Pages parent DOWN onto
+ * the cloned leaf so the value survives the copy (the dest /Pages
+ * root does not carry it). For /Resources, /MediaBox and /Rotate that
+ * is the correct behaviour; for /CropBox and /TrimBox it propagates a
+ * source-level (often global) box onto every dest leaf whose source
+ * leaf did not have its own. A per-page crop on page 1 of a doc whose
+ * /Pages root carried a /CropBox then rendered every page at the
+ * inherited crop. The dest /Pages root never carries a /CropBox
+ * (`PDFDocument.create()` builds a bare root), so the pulled-down leaf
+ * value is the ONLY place the inherited box lives in the output —
+ * deleting it when the source leaf did not have one leaves the dest
+ * leaf with no box, matching the source leaf's effective state.
+ */
+function neutralizeInheritedBox(
+  dstLeaf: { delete?: (name1: any, name2?: any) => void; get?: (name: any) => any },
+  srcLeaf: { get?: (name: any) => any },
+  key: string,
+): void {
+  try {
+    if (typeof dstLeaf.delete !== 'function') return;
+    if (typeof srcLeaf.get !== 'function') return;
+    // Only strip when the SOURCE leaf did not carry the box on its own
+    // node. A leaf that carried its own box (e.g. a page the user just
+    // cropped) keeps it; the box is not inherited, it is intentional.
+    if (srcLeaf.get(PDFName.of(key)) === undefined) {
+      dstLeaf.delete(PDFName.of(key));
+    }
+  } catch {
+    // Best-effort: never block a save on a box-strip failure.
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -2935,10 +3038,46 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
   for (let idx = 0; idx < doc.order.length; idx++) {
     const origIdx = doc.order[idx];
     const [copied] = await out.copyPages(doc.pdfDoc, [origIdx]);
-    const rotation = doc.rotations[origIdx];
+    // DEF-130: normalize the rotation slot to a finite integer in [0,3]
+    // before passing it to degrees(). A snapshot/restore mismatch (the
+    // original DEF-130 root cause: insertBlankPage used snapshotDoc so
+    // undo did not revert the pdfDoc, leaving a "ghost" page whose
+    // origIdx exceeded the rotations array length) left
+    // `doc.rotations[origIdx]` === undefined, and `undefined * 90` ->
+    // NaN threw "degreeAngle must be of type number" out of
+    // getDocumentBytes. The snapshot fix above closes the hole at the
+    // source; this guard closes it at the serialization site so a
+    // future array-length mismatch can never reproduce the throw.
+    const rawRot = doc.rotations[origIdx];
+    const rotation = Number.isFinite(rawRot) && Number.isInteger(rawRot)
+      ? ((rawRot % 4) + 4) % 4
+      : 0;
     if (rotation !== 0) {
       copied.setRotation(degrees(rotation * 90));
     }
+    // DEF-131: pdf-lib's `copyPages` walks `PDFPageLeaf.InheritableEntries`
+    // (`Resources`, `MediaBox`, `CropBox`, `Rotate`) and pulls any value
+    // the cloned leaf is inheriting from its source /Pages parent DOWN
+    // onto the cloned leaf so it survives the copy. That is correct for
+    // /Resources, /MediaBox and /Rotate (the dest /Pages root does not
+    // carry them), but it propagates a SOURCE /CropBox (or /TrimBox,
+    // which pdf-lib also pulls down even though it is not in the
+    // inheritable list — see copyPDFPage's InheritableEntries loop)
+    // onto every dest leaf whose source leaf did not have its own. A
+    // per-page crop on page 1 of a doc whose /Pages root carried a
+    // /CropBox (e.g. a scanned PDF with a global crop) then rendered
+    // every page at the inherited crop instead of only page 1. The
+    // dest /Pages root never carries a /CropBox (PDFDocument.create()
+    // builds a bare /Type /Pages /Kids /Count root), so the cloned
+    // leaf's pulled-down /CropBox is the ONLY place the inherited
+    // value lives in the output — deleting it when the source leaf
+    // did not have one leaves the dest leaf with no /CropBox, matching
+    // the source leaf's effective state (no leaf /CropBox). This
+    // neutralizes the propagation: only pages whose source leaf
+    // carried a /CropBox (i.e. pages the user actually cropped) keep
+    // one in the output.
+    neutralizeInheritedBox(copied.node, doc.pdfDoc.getPage(origIdx).node, 'CropBox');
+    neutralizeInheritedBox(copied.node, doc.pdfDoc.getPage(origIdx).node, 'TrimBox');
     out.addPage(copied);
     pageMap.set(origIdx, idx);
   }
@@ -3106,10 +3245,18 @@ async function serializeDocOptimized(
   for (let idx = 0; idx < doc.order.length; idx++) {
     const origIdx = doc.order[idx];
     const [copied] = await out.copyPages(doc.pdfDoc, [origIdx]);
-    const rotation = doc.rotations[origIdx];
+    // DEF-130: normalize the rotation slot (see serializeDoc).
+    const rawRot = doc.rotations[origIdx];
+    const rotation = Number.isFinite(rawRot) && Number.isInteger(rawRot)
+      ? ((rawRot % 4) + 4) % 4
+      : 0;
     if (rotation !== 0) {
       copied.setRotation(degrees(rotation * 90));
     }
+    // DEF-131: neutralize the inherited /CropBox /TrimBox propagation
+    // (see serializeDoc).
+    neutralizeInheritedBox(copied.node, doc.pdfDoc.getPage(origIdx).node, 'CropBox');
+    neutralizeInheritedBox(copied.node, doc.pdfDoc.getPage(origIdx).node, 'TrimBox');
     out.addPage(copied);
     pageMap.set(origIdx, idx);
   }

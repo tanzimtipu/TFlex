@@ -82,6 +82,7 @@ function mountTextTool(): {
         onCommitTextEdit: (): void => undefined,
         onCommitTextBox: (): void => undefined,
         onCommitImageEdit: (): void => undefined,
+        onCommitTextBoxMove: (): void => undefined,
       }),
     );
   });

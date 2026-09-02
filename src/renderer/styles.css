@@ -51,6 +51,15 @@
    * Right-side rail overlays that must clear BOTH rows (the OCR
    * suspects panel) offset their top by the sum of the two tokens. */
   --ann-toolbar-h: 40px;
+  /* DEF-126 — fixed height of the OCR suspects bar. The bar is a
+   * FLOW element at the top of `.app-main` (it reserves space, it
+   * never overlays the workspace), and the aside uses this token
+   * for its height so the Tools palette (an absolutely positioned
+   * sibling) can offset itself below the bar deterministically:
+   * `.app-main:has(.ocr-suspects-panel) .tools-palette` adds the
+   * same token to its top. Keeping the height fixed (content
+   * scrolls horizontally) is what makes the sibling offset exact. */
+  --ocr-bar-h: 148px;
 
   /* Semantic color tokens (Phase 13 — for status toasts, status pills,
    * validation hints, etc.). The accent stays the single primary
@@ -4631,8 +4640,10 @@ textarea {
 
 /* B5 — committed text-box selection surface. The box tool renders
  * a dashed outline at each committed box's rect so the baked box
- * can be selected and dragged. The box's text stays on the page
- * canvas underneath; the surface is the editable affordance. */
+ * can be selected and dragged. DEF-127 — the surface mirrors the
+ * box's baked content (white fill + wrapped text) so a drag
+ * visibly carries the whole box; the text layers are
+ * pointer-transparent so the surface stays the drag target. */
 .edit-box {
   position: absolute;
   border: 1px dashed var(--accent);
@@ -4647,6 +4658,22 @@ textarea {
   border-color: var(--accent);
   border-style: solid;
   background: rgba(37, 99, 235, 0.06);
+}
+
+/* DEF-127 — the white background mirror for `background: 'white'`
+ * boxes. Sits under the text mirror, above the dashed border's
+ * background tint (the inner layers are painted in the order the
+ * JSX mounts them: fill then text). */
+.edit-box-fill {
+  border-radius: var(--radius-1);
+}
+
+/* DEF-127 — the text mirror. The inline style carries the box's
+ * font family / size / color (same mapping as the inline editor's
+ * live preview), so the drag preview and the re-baked PDF match.
+ * pointer-events: none keeps the mirror out of the drag path. */
+.edit-box-text {
+  pointer-events: none;
 }
 
 .edit-box-handle {
@@ -5041,23 +5068,48 @@ textarea {
 .ocr-suspects-panel {
   display: flex;
   flex-direction: column;
-  background: var(--bg-rail);
+  /* DEF-126 — the suspect bar is a FLOW element, not an absolute
+   * overlay. It sits at the top of `.app-main`'s flex column
+   * (order: -1 puts it above the tab-stage; flex-shrink: 0 keeps
+   * its height) and RESERVES its own space, so it can never cover
+   * the thumbnail rail, the toolbars, or the Tools palette — the
+   * workspace simply starts below it. The old rule was a
+   * full-width absolute bar sitting at a stale pixel offset
+   * (its 56px token didn't match the real 44px toolbar — a dead
+   * 16px gap), fully opaque, and overlapping the left rail. */
+  order: -1;
+  flex-shrink: 0;
+  height: var(--ocr-bar-h, 148px);
+  /* DEF-126 — semi-transparent rail-tinted background + backdrop
+   * blur so the bar reads as a floating strip over the page
+   * content, not an opaque slab. */
+  background: rgba(244, 244, 245, 0.88);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--border);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
-  /* B4 — the suspects surface is a TOP BAR, not a right-side rail.
-   * As a 280px right-rail overlay at z-index 29 it sat UNDER the
-   * Tools palette (z-index 30) in the same right-rail slot, so an
-   * open palette covered the suspect entries and made the panel
-   * unusable. Anchored to the top of `.app-main` (position:
-   * relative) spanning the full width, with z-index 40 (ABOVE the
-   * palette's 30), the bar is never covered — palette or not. */
-  position: absolute;
-  top: calc(var(--toolbar-h, 56px) + var(--ann-toolbar-h, 40px) + var(--sp-1));
-  left: 0;
-  right: 0;
-  max-height: 172px;
-  z-index: 40;
   overflow: hidden;
+  /* Quiet rise-in so the bar's appearance doesn't jolt the flow
+   * (150-250ms ease-out per the motion spec). */
+  animation: ocr-bar-in var(--t-base) var(--ease);
+}
+@keyframes ocr-bar-in {
+  from { transform: translateY(-6px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+
+:root[data-theme="dark"] .ocr-suspects-panel {
+  background: rgba(14, 17, 21, 0.82);
+}
+
+/* DEF-126 — Tools palette downshift. The palette is an
+ * absolutely positioned sibling of `.ocr-suspects-panel` inside
+ * `.app-main` (top: var(--toolbar-h)). With the suspect bar open
+ * the toolbar row starts BELOW the bar, so the palette must add
+ * the bar's height to its own top or it would overlap the bar's
+ * right edge. Electron ships Chromium 105+, so `:has` is safe. */
+.app-main:has(.ocr-suspects-panel) .tools-palette {
+  top: calc(var(--ocr-bar-h, 148px) + var(--toolbar-h, 56px));
 }
 
 .ocr-suspects-header {

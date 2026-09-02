@@ -690,12 +690,15 @@ export class StubRendererEngine implements EngineApi {
     // rotations as a stand-in (the stub doesn't track page sizes).
     pushUndo(t);
     // DEF-114 parity: afterIndex = -1 is the renderer's "end"/"append"
-    // sentinel. `Array.prototype.splice` clamps an out-of-range index to
-    // the array length, so a plain `afterIndex + 1` appends for -1 and
-    // inserts after the given 0-based index otherwise — exactly the real
-    // engine's
-    // `insertAt = afterIndex < 0 ? doc.order.length : afterIndex + 1`.
-    const insertAt = afterIndex < 0 ? t.pageOrder.length : afterIndex + 1;
+    // sentinel. DEF-129: afterIndex = -2 is the PREPEND sentinel — the
+    // blank page becomes the FIRST visible page (pageOrder[0]), exactly
+    // like the real engine's
+    // `insertAt = afterIndex === -2 ? 0 : afterIndex < 0 ? doc.order.length : afterIndex + 1`.
+    // `Array.prototype.splice` clamps an out-of-range index to the
+    // array length, so a plain `afterIndex + 1` appends for -1 and
+    // inserts after the given 0-based index otherwise.
+    const insertAt =
+      afterIndex === -2 ? 0 : afterIndex < 0 ? t.pageOrder.length : afterIndex + 1;
     t.pageOrder.splice(insertAt, 0, t.pageOrder.length);
     t.rotations.push(0);
     t.deleted.push(false);

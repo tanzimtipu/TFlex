@@ -85,6 +85,19 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
     [placements, page],
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // DEF-123 — uncommitted drag result for a COMMITTED placement.
+  // Dragging a committed placement used to call `onMove` straight
+  // from pointerup, and the selection showed only the resize
+  // handles — no action bar. Now a drag stores the new rect here
+  // (the placement renders at it), and the floating action bar's
+  // Confirm commits the move via `onMove`, Cancel reverts the rect
+  // (clears the override — the DOM re-renders at the committed
+  // rect), Delete removes the placement. `null` when the selected
+  // placement has no in-flight position change.
+  const [pendingMoveRect, setPendingMoveRect] = useState<{
+    placementId: string;
+    rect: SignaturePlacement["rect"];
+  } | null>(null);
   const dragRef = useRef<SignatureDragMode | null>(null);
   // Layer root ref. The ghost-cursor pointermove effect needs
   // the layer's bounding rect to translate client coords into
@@ -107,9 +120,11 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
   } | null>(null);
 
   // Drop the selection when the page changes — no point keeping a
-  // selection across pages.
+  // selection across pages. The uncommitted move rect goes with it
+  // (the drag result belongs to the page it happened on).
   useEffect(() => {
     setSelectedId(null);
+    setPendingMoveRect(null);
   }, [page]);
 
   // Esc clears the selection; Delete removes it. Escape also drops
@@ -131,17 +146,22 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
           return;
         }
         if (selectedId === null) return;
+        // DEF-123 — Esc on a committed selection mirrors the
+        // action bar's Cancel: revert any uncommitted position
+        // change and drop the selection.
+        setPendingMoveRect(null);
         setSelectedId(null);
       } else if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedId === null) return;
         e.preventDefault();
         onDelete(selectedId);
+        setPendingMoveRect(null);
         setSelectedId(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, onDelete, pendingPlacement, onCancelArm]);
+  }, [selectedId, onDelete, pendingPlacement, onCancelArm, pendingMoveRect]);
 
   // Bug 11 — listen for pointer moves over the page while a
   // signature is armed so the ghost preview follows the cursor.
@@ -184,16 +204,24 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
     (
       e: React.PointerEvent<HTMLDivElement>,
       placement: SignaturePlacement,
+      displayRect: SignaturePlacement["rect"],
       handle?: "nw" | "ne" | "sw" | "se",
     ): void => {
       e.stopPropagation();
       e.preventDefault();
       (e.target as Element).setPointerCapture(e.pointerId);
+      // DEF-123 — a fresh selection starts with no uncommitted
+      // position change. The drag's start rect is the placement's
+      // CURRENT visual rect (the uncommitted one, if the user is
+      // dragging a second time before confirming), so a follow-up
+      // drag continues from where the preview sits — not from the
+      // last committed rect.
+      setPendingMoveRect(null);
       setSelectedId(placement.id);
       dragRef.current = {
         kind: handle === undefined ? "move" : "resize",
         origin: { x: e.clientX, y: e.clientY },
-        startRect: { ...placement.rect },
+        startRect: { ...displayRect },
         ...(handle !== undefined ? { handle } : {}),
       } as SignatureDragMode;
     },
@@ -225,7 +253,10 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
   );
 
   const onPointerUpPlacement = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>, placement: SignaturePlacement): void => {
+    (
+      e: React.PointerEvent<HTMLDivElement>,
+      placement: SignaturePlacement,
+    ): void => {
       const drag = dragRef.current;
       if (drag === null) return;
       (e.target as Element).releasePointerCapture?.(e.pointerId);
@@ -242,10 +273,48 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
         nextRect = clampPlacementToPage(resizePlacement(drag.startRect, drag.handle, { x: dx, y: dy }), pageWidthPt, pageHeightPt);
       }
       dragRef.current = null;
-      onMove(placement.id, nextRect);
+      // DEF-123 — the drag result is HELD as an uncommitted
+      // position change: the placement renders at `nextRect` and
+      // the floating action bar appears above it. The engine only
+      // sees the move when the user clicks Confirm (Cancel reverts
+      // the rect, Delete removes the placement).
+      const unchanged =
+        nextRect.x === drag.startRect.x &&
+        nextRect.y === drag.startRect.y &&
+        nextRect.width === drag.startRect.width &&
+        nextRect.height === drag.startRect.height;
+      setPendingMoveRect(
+        unchanged ? null : { placementId: placement.id, rect: nextRect },
+      );
     },
-    [cssScale, onMove, pageWidthPt, pageHeightPt],
+    [cssScale, pageWidthPt, pageHeightPt],
   );
+
+  // DEF-123 — action bar for a SELECTED COMMITTED placement.
+  // Confirm commits the held position change (if any) through
+  // `onMove` and ends the selection; Cancel reverts the position
+  // (drops the pending rect) and ends the selection; Delete
+  // removes the placement via `onDelete`.
+  const onConfirmSelected = useCallback((): void => {
+    if (selectedId === null) return;
+    if (pendingMoveRect !== null && pendingMoveRect.placementId === selectedId) {
+      onMove(selectedId, pendingMoveRect.rect);
+    }
+    setPendingMoveRect(null);
+    setSelectedId(null);
+  }, [selectedId, pendingMoveRect, onMove]);
+
+  const onCancelSelected = useCallback((): void => {
+    setPendingMoveRect(null);
+    setSelectedId(null);
+  }, []);
+
+  const onDeleteSelected = useCallback((): void => {
+    if (selectedId === null) return;
+    onDelete(selectedId);
+    setPendingMoveRect(null);
+    setSelectedId(null);
+  }, [selectedId, onDelete]);
 
   const onGhostClick = useCallback(
     (e: React.PointerEvent<HTMLDivElement>): void => {
@@ -456,20 +525,64 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
 
       {pagePlacements.map((p) => {
         const sig = signatures[p.signatureId];
+        // DEF-123 — a selected placement with an uncommitted drag
+        // renders at the held rect so the moved preview stays in
+        // place until the user confirms/reverts via the action bar.
+        const displayRect =
+          pendingMoveRect !== null && pendingMoveRect.placementId === p.id
+            ? pendingMoveRect.rect
+            : p.rect;
         return (
           <SignaturePlacementView
             key={p.id}
             placement={p}
+            displayRect={displayRect}
             signature={sig}
             cssScale={cssScale}
             selected={selectedId === p.id}
-            onPointerDown={(e, h): void => onPointerDownPlacement(e, p, h)}
+            onPointerDown={(e, h): void => onPointerDownPlacement(e, p, displayRect, h)}
             onPointerMove={onPointerMovePlacement}
             onPointerUp={(e): void => onPointerUpPlacement(e, p)}
-            onSelect={(): void => setSelectedId(p.id)}
+            onSelect={(): void => {
+              // DEF-123 — selecting a committed placement starts a
+              // fresh session: no held position change. (A click
+              // without a drag therefore shows the action bar with
+              // nothing to commit — Confirm just ends the
+              // selection, Cancel deselects, Delete removes.)
+              setPendingMoveRect(null);
+              setSelectedId(p.id);
+            }}
           />
         );
       })}
+
+      {/* DEF-123 — floating action bar for the SELECTED COMMITTED
+          placement. Rendered as a layer sibling (NOT inside the
+          placement's pointer surface) so bar-button presses never
+          start a drag on the placement underneath. The bar anchors
+          to the placement's current visual rect — the held
+          uncommitted rect while one exists, the committed rect
+          otherwise. */}
+      {selectedId !== null &&
+        (() => {
+          const selected = pagePlacements.find((p) => p.id === selectedId);
+          if (selected === undefined) return null;
+          const barRect =
+            pendingMoveRect !== null && pendingMoveRect.placementId === selectedId
+              ? pendingMoveRect.rect
+              : selected.rect;
+          return (
+            <SignatureActionBar
+              base={{ x: barRect.x * cssScale, y: barRect.y * cssScale, width: barRect.width * cssScale, height: barRect.height * cssScale }}
+              confirmTitle="Commit position changes"
+              cancelTitle="Cancel (Esc) — revert selection"
+              deleteTitle="Delete signature"
+              onConfirm={onConfirmSelected}
+              onCancel={onCancelSelected}
+              onDelete={onDeleteSelected}
+            />
+          );
+        })()}
     </div>
   );
 }
@@ -497,13 +610,6 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
   const topPx = rect.y * cssScale;
   const widthPx = rect.width * cssScale;
   const heightPx = rect.height * cssScale;
-  // Anchor the action bar above the rect. If there isn't enough
-  // room above (top of page), flip it below the rect.
-  const ACTION_BAR_HEIGHT_PX = 32;
-  const useAbove = topPx >= ACTION_BAR_HEIGHT_PX + 4;
-  const actionBarTopCss = useAbove
-    ? topPx - ACTION_BAR_HEIGHT_PX - 4
-    : topPx + heightPx + 4;
   return (
     <div
       className="sig-pending"
@@ -515,59 +621,97 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
         rect={rect}
         cssScale={cssScale}
       />
-      <div
-        className="sig-action-bar"
-        data-sig-action-bar
-        style={{
-          position: "absolute",
-          left: 0,
-          top: actionBarTopCss - topPx,
-          // Bar width is clamped to the rect width but grows if
-          // the user has a long label.
-          minWidth: 200,
-          pointerEvents: "auto",
-        }}
+      <SignatureActionBar
+        base={{ x: 0, y: 0, width: widthPx, height: heightPx }}
+        confirmTitle="Confirm placement"
+        cancelTitle="Cancel (Esc) — exits Sign mode"
+        deleteTitle="Discard (stay in Sign mode)"
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+        onDelete={onDelete}
+      />
+    </div>
+  );
+}
+
+/** DEF-123 — the shared floating action bar (Confirm / Cancel /
+ *  Delete). Used by BOTH the pending (uncommitted) placement and
+ *  a selected COMMITTED placement. `base` is the anchor rect in
+ *  the CONTAINING BLOCK's CSS-pixel coordinates (for the pending
+ *  wrapper: the rect inside the wrapper; for a committed
+ *  selection: the rect inside the layer). The bar renders above
+ *  the rect, flipping below it when there's no room above. */
+function SignatureActionBar(props: {
+  base: { x: number; y: number; width: number; height: number };
+  confirmTitle: string;
+  cancelTitle: string;
+  deleteTitle: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}): ReactElement {
+  const { base, confirmTitle, cancelTitle, deleteTitle, onConfirm, onCancel, onDelete } = props;
+  // Anchor the action bar above the rect. If there isn't enough
+  // room above (top of page), flip it below the rect.
+  const ACTION_BAR_HEIGHT_PX = 32;
+  const useAbove = base.y >= ACTION_BAR_HEIGHT_PX + 4;
+  const barTop = useAbove ? base.y - ACTION_BAR_HEIGHT_PX - 4 : base.y + base.height + 4;
+  return (
+    <div
+      className="sig-action-bar"
+      data-sig-action-bar
+      style={{
+        position: "absolute",
+        left: base.x,
+        top: barTop,
+        // Bar width is clamped to the rect width but grows if
+        // the user has a long label.
+        minWidth: 200,
+        pointerEvents: "auto",
+      }}
+    >
+      <button
+        type="button"
+        className="sig-action-btn sig-action-btn-confirm"
+        onClick={onConfirm}
+        data-sig-action="confirm"
+        aria-label="Confirm"
+        title={confirmTitle}
+        style={{ pointerEvents: "auto" }}
       >
-        <button
-          type="button"
-          className="sig-action-btn sig-action-btn-confirm"
-          onClick={onConfirm}
-          data-sig-action="confirm"
-          aria-label="Confirm signature placement"
-          title="Confirm placement"
-          style={{ pointerEvents: "auto" }}
-        >
-          Confirm
-        </button>
-        <button
-          type="button"
-          className="sig-action-btn sig-action-btn-cancel"
-          onClick={onCancel}
-          data-sig-action="cancel"
-          aria-label="Cancel signature placement and exit Sign mode"
-          title="Cancel (Esc) — exits Sign mode"
-          style={{ pointerEvents: "auto" }}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="sig-action-btn sig-action-btn-delete"
-          onClick={onDelete}
-          data-sig-action="delete"
-          aria-label="Discard signature placement"
-          title="Discard (stay in Sign mode)"
-          style={{ pointerEvents: "auto" }}
-        >
-          Delete
-        </button>
-      </div>
+        Confirm
+      </button>
+      <button
+        type="button"
+        className="sig-action-btn sig-action-btn-cancel"
+        onClick={onCancel}
+        data-sig-action="cancel"
+        aria-label="Cancel"
+        title={cancelTitle}
+        style={{ pointerEvents: "auto" }}
+      >
+        Cancel
+      </button>
+      <button
+        type="button"
+        className="sig-action-btn sig-action-btn-delete"
+        onClick={onDelete}
+        data-sig-action="delete"
+        aria-label="Delete"
+        title={deleteTitle}
+        style={{ pointerEvents: "auto" }}
+      >
+        Delete
+      </button>
     </div>
   );
 }
 
 interface SignaturePlacementViewProps {
   placement: SignaturePlacement;
+  /** DEF-123 — the rect to render at. Equals `placement.rect`
+   *  unless an uncommitted drag is held for this placement. */
+  displayRect: SignaturePlacement["rect"];
   signature: SavedSignature | undefined;
   cssScale: number;
   selected: boolean;
@@ -578,13 +722,13 @@ interface SignaturePlacementViewProps {
 }
 
 function SignaturePlacementView(props: SignaturePlacementViewProps): ReactElement | null {
-  const { placement, signature, cssScale, selected, onPointerDown, onPointerMove, onPointerUp, onSelect } = props;
+  const { placement, displayRect, signature, cssScale, selected, onPointerDown, onPointerMove, onPointerUp, onSelect } = props;
   const style: CSSProperties = {
     position: "absolute",
-    left: placement.rect.x * cssScale,
-    top: placement.rect.y * cssScale,
-    width: placement.rect.width * cssScale,
-    height: placement.rect.height * cssScale,
+    left: displayRect.x * cssScale,
+    top: displayRect.y * cssScale,
+    width: displayRect.width * cssScale,
+    height: displayRect.height * cssScale,
     pointerEvents: "auto",
   };
   if (signature === undefined) return null;
@@ -602,7 +746,7 @@ function SignaturePlacementView(props: SignaturePlacementViewProps): ReactElemen
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
     >
-      <SignatureRaster signature={signature} rect={placement.rect} cssScale={cssScale} />
+      <SignatureRaster signature={signature} rect={displayRect} cssScale={cssScale} />
       {selected && (
         <>
           <div className="sig-handle sig-handle-nw" data-handle="nw" onPointerDown={(e) => onPointerDown(e, "nw")} />

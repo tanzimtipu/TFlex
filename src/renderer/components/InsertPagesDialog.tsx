@@ -28,8 +28,11 @@ export interface InsertPagesConfirm {
   /** Rank slot the new content lands at, 0-based: field value v maps
    *  to slot v - 1 ("the new content becomes page v"). -1 means
    *  "appended at end". The host translates per engine contract
-   *  (insertBlankPage's afterIndex is one less than this slot, while
-   *  insertFromPdf consumes it directly — DEF-122). */
+   *  (insertBlankPage's afterIndex is one less than this slot — slot 0
+   *  maps to the -2 PREPEND sentinel so the blank becomes page 1 —
+   *  while insertFromPdf consumes the slot directly — DEF-122). Slot
+   *  0 ("before page 1") is a VALID dialog choice in both modes
+   *  (DEF-129). */
   position: number;
   /** Blank-page dimensions in PDF points (only used when mode = "blank"). */
   widthPt?: number;
@@ -142,19 +145,19 @@ export function InsertPagesDialog(
   // Position validation. The field value is the 1-based page number
   // the new content BECOMES (rank semantics: 1 = before page 1,
   // 2 = after page 1, ..., totalPages + 1 = appended after the last
-  // page). "end" / empty maps to the append sentinel (-1). Blank mode
-  // cannot land before page 1 of a non-empty doc — the engine's
-  // `insertBlankPage` treats afterIndex -1 as append (DEF-114), so no
-  // afterIndex expresses "before page 1" — hence its minimum is 2
-  // (after page 1) except on an empty document where 1 is the only
-  // slot. The from-PDF mode accepts 1..totalPages+1.
+  // page). "end" / empty maps to the append sentinel (-1). Position 1
+  // is valid in BOTH modes (DEF-129): the DEF-114-era blanket
+  // "blank mode minimum is 2 on a non-empty doc" silently disabled a
+  // legitimate position on the engine's behalf. The dialog no longer
+  // hides the choice; the host owns the engine-contract translation
+  // (slot 0 -> afterIndex -2, the PREPEND sentinel; -1 = append).
   const parsed = useMemo((): { position: number; valid: boolean } => {
     const trimmed = positionText.trim().toLowerCase();
     if (trimmed === "end" || trimmed === "") {
       return { position: -1, valid: true };
     }
     const n = Number.parseInt(trimmed, 10);
-    const min = mode === "blank" && totalPages > 0 ? 2 : 1;
+    const min = 1;
     if (!Number.isFinite(n) || n < min || n > totalPages + 1) {
       return { position: -1, valid: false };
     }
@@ -178,18 +181,16 @@ export function InsertPagesDialog(
   // ("becomes page v"), but users reason about placement in terms of
   // "after page N". The hint phrases the value in those terms so the
   // intent matches the result: entering 2 means "after page 1" (the
-  // new content becomes page 2). Blank mode additionally cannot
-  // insert before page 1 of a non-empty doc (the engine's -1
-  // afterIndex means append, DEF-114), so its hint states the 2
-  // minimum; the from-PDF mode does keep 1 = before page 1.
+  // new content becomes page 2). DEF-129 — position 1 (before page
+  // 1) is offered in blank mode too and maps to the engine's -2
+  // prepend sentinel.
   let positionHint: ReactElement;
   if (mode === "blank") {
     positionHint = totalPages > 0 ? (
       <>
-        The blank page becomes this page number — 2 inserts it after
-        page 1, {totalPages + 1} appends after the last page. A blank
-        page cannot be inserted before page 1. Use <code>end</code> to
-        append.
+        The blank page becomes this page number — 1 inserts before
+        page 1, 2 after page 1, {totalPages + 1} appends after the
+        last page. Use <code>end</code> to append.
       </>
     ) : (
       <>

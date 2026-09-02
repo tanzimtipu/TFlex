@@ -118,6 +118,7 @@ import {
   defaultImageEncoder,
   resizeImageToBytes,
   cropImageToBytes,
+  rasterizeTextBoxToPng,
   detectImageFormat,
 } from "./edit/rasterize";
 import {
@@ -1928,6 +1929,86 @@ export function App(): ReactElement {
     [pushToast, noteOpApplied],
   );
 
+  /** DEF-127/127b — commit a COMMITTED text box's drag (move or
+   *  resize). The smallest correct engine call is the EXISTING
+   *  `editImage` contract ("mask `oldRect`, draw `imageBytes` at
+   *  `newRect`"): the renderer rasterises the box at `newRect`
+   *  (white fill when the box was added with one + wrapped text in
+   *  its font/size/color), and the engine masks the old baked text
+   *  and draws the raster where the box now sits. No new shared op
+   *  is required — `editImage` never knows the bytes came from a
+   *  text box — and the undo stack gets a single entry. On failure
+   *  the registry rect is reverted so no orphan surface survives
+   *  (the box visually snaps back to its committed position). */
+  const handleTextBoxMove = useCallback(
+    async (tabId: string, args: {
+      oldRect: { x: number; y: number; width: number; height: number };
+      newRect: { x: number; y: number; width: number; height: number };
+      text: string;
+      style: EditTextStyle;
+      background: "white" | "none";
+      id: string;
+    }): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      // Revert helper — restore the registry rect to the committed
+      // position (a failed re-bake must not leave a phantom box).
+      const revertRect = (): void => {
+        setOpenTabs((prev) => {
+          const t = prev[tabId];
+          if (t === undefined) return prev;
+          return {
+            ...prev,
+            [tabId]: {
+              ...t,
+              edit: editReducer(t.edit, {
+                type: "set-text-box-rect",
+                id: args.id,
+                rect: args.oldRect,
+              }),
+            },
+          };
+        });
+      };
+      let png: Uint8Array;
+      try {
+        png = await rasterizeTextBoxToPng({
+          text: args.text,
+          rect: args.newRect,
+          style: args.style,
+          background: args.background,
+          encoder: defaultImageEncoder(),
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "text box rasterization failed";
+        pushToast("error", `Move text box failed: ${message}`);
+        revertRect();
+        return;
+      }
+      const result = await engineRef.current.editImage(open.session.engineDocId, {
+        page: currentPageOfTab(tabId, openTabsRef),
+        op: "move",
+        oldRect: args.oldRect,
+        newRect: args.newRect,
+        imageBytes: png,
+      });
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        revertRect();
+        return;
+      }
+      noteOpApplied(tabId, result.value);
+      // B17 / B19 — the engine masked the old position and baked
+      // the raster at the new one; refresh the pdf.js proxy so the
+      // moved text renders without a save/reopen.
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(tabId).catch(() => undefined);
+      }
+    },
+    [pushToast, noteOpApplied],
+  );
+
   /** Commit an image edit. The renderer produces the transformed
    *  bytes (resize / crop / replace) and hands them to the engine.
    *  For `move` the bytes are passed through unchanged; for
@@ -2040,6 +2121,16 @@ export function App(): ReactElement {
       if (armedStamp !== null) {
         setArmedStamp(null);
       }
+      // DEF-125 — clicking Sign while Edit mode is active must
+      // exit Edit mode. The edit layer (z-index 4) sits ABOVE the
+      // signatures layer (z-index 3), so with Edit mode open the
+      // placement click is swallowed by the edit overlay and the
+      // signature never lands. Exiting Edit mode (same
+      // cross-disarm pattern as Sign↔Stamp) drops the edit layer
+      // so the Sign placement works on the page.
+      if (editModeOpenRef.current) {
+        setEditMode(false);
+      }
       if (armedSignatureId !== null) {
         // Already armed -> toggle off.
         setArmedSignatureId(null);
@@ -2069,6 +2160,13 @@ export function App(): ReactElement {
   }, [armedSignatureId, armedStamp]);
 
   const onSigManagerApply = useCallback((signatureId: string): void => {
+    // DEF-125 — the modal-confirm arm also exits Edit mode (the
+    // user may have opened the manager before reaching the Edit
+    // toggle; the placement click must hit the signatures layer,
+    // not the edit overlay).
+    if (editModeOpenRef.current) {
+      setEditMode(false);
+    }
     setArmedSignatureId(signatureId);
   }, []);
 
@@ -2249,13 +2347,51 @@ export function App(): ReactElement {
         return;
       }
       if (tab.session.onDiskPath === null) {
-        // No on-disk path — the save flow can't write to the
-        // original location. We surface this as an inline error
-        // (not a toast) so the dialog explains the choice the
-        // user has to make next.
-        setPendingCloseError(
-          "This document has no on-disk path. Use Don't save to discard, or open Save As first.",
-        );
+        // DEF-128 — the tab has no on-disk path (a bytes-loaded /
+        // sample tab). The Save choice MUST NOT hard-block with an
+        // inline error: route it through the engine's Save-As flow
+        // (an OS save dialog). The tab closes only after a
+        // successful Save-As; a user cancel (or a write failure)
+        // keeps the tab open so the user can retry or discard.
+        setPendingCloseSaving(true);
+        setPendingCloseError(null);
+        try {
+          const saved = await engineRef.current.saveAs(
+            tab.session.engineDocId,
+          );
+          if (!saved.ok) {
+            if (saved.error.code === "cancelled") {
+              // User dismissed the OS save dialog — the tab stays
+              // open, still modified. Stay in the prompt.
+              return;
+            }
+            setPendingCloseError(
+              describeEngineError(saved.error.code, saved.error.message),
+            );
+            return;
+          }
+          // Save-As succeeded: mark the tab unmodified (mirrors the
+          // normal save flow), then close it.
+          const ui = engineUiRef.current[id];
+          const nextState = ui?.state ?? tab.engine;
+          const counters = countersAfterSave(ui?.counters ?? ZERO_COUNTERS);
+          const flags = flagsFromCounters(counters);
+          setEngineUiFor(id, {
+            state: { ...nextState, modified: false },
+            counters,
+            canUndo: flags.canUndo,
+            canRedo: flags.canRedo,
+          });
+          setPendingCloseSaving(false);
+          setPendingCloseTabId(null);
+          setPendingCloseError(null);
+          performCloseTab(id);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setPendingCloseError(msg);
+        } finally {
+          setPendingCloseSaving(false);
+        }
         return;
       }
       setPendingCloseSaving(true);
@@ -3158,16 +3294,28 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
       if (choice.mode === "blank") {
         const width = choice.widthPt ?? 612;
         const height = choice.heightPt ?? 792;
+        // DEF-129 — "before page 1" (slot 0) is a legitimate dialog
+        // position in blank mode too. The engine now consumes an
+        // `afterIndex` of -2 as the PREPEND sentinel, so the renderer
+        // maps slot 0 to -2: the new blank page becomes page 1
+        // (pageOrder[0] is the new page's index) and the originals
+        // shift right by one.
         // DEF-122 — the dialog's `position` is the 0-based rank slot
         // the new page becomes (field value v -> slot v - 1; -1 =
         // append). The engine's `insertBlankPage` consumes an
         // `afterIndex` (0-based index AFTER which to insert; -1 =
         // append per DEF-114), so the two contracts are offset by
-        // one: a rank slot S maps to afterIndex S - 1, and the append
-        // sentinel passes straight through. Field "2" (slot 1)
-        // therefore becomes afterIndex 0 — the blank lands between
-        // page 1 and page 2, i.e. after page 1, becoming page 2.
-        const afterIndex = choice.position < 0 ? -1 : choice.position - 1;
+        // one: a rank slot S maps to afterIndex S - 1, slot 0 maps to
+        // the -2 prepend sentinel, and the append sentinel passes
+        // straight through. Field "2" (slot 1) therefore becomes
+        // afterIndex 0 — the blank lands between page 1 and page 2,
+        // i.e. after page 1, becoming page 2.
+        const afterIndex =
+          choice.position === 0
+            ? -2
+            : choice.position < 0
+              ? -1
+              : choice.position - 1;
         res = await engineRef.current.insertBlankPage(
           open.session.engineDocId,
           afterIndex,
@@ -4655,6 +4803,14 @@ pushToast(
           format: "png" | "jpeg";
           id: string;
         }) => void;
+        onCommitTextBoxMove: (args: {
+          oldRect: { x: number; y: number; width: number; height: number };
+          newRect: { x: number; y: number; width: number; height: number };
+          text: string;
+          style: EditTextStyle;
+          background: "white" | "none";
+          id: string;
+        }) => void;
       }
     >();
     return (tabId: string) => {
@@ -4670,6 +4826,7 @@ pushToast(
           onCommitTextEdit: (): void => undefined,
           onCommitTextBox: (): void => undefined,
           onCommitImageEdit: (): void => undefined,
+          onCommitTextBoxMove: (): void => undefined,
         };
       }
       if (cached !== undefined && cached.state === tab.edit) {
@@ -4715,6 +4872,16 @@ pushToast(
         }): void => {
           void handleEditImage(tabId, args);
         },
+        onCommitTextBoxMove: (args: {
+          oldRect: { x: number; y: number; width: number; height: number };
+          newRect: { x: number; y: number; width: number; height: number };
+          text: string;
+          style: EditTextStyle;
+          background: "white" | "none";
+          id: string;
+        }): void => {
+          void handleTextBoxMove(tabId, args);
+        },
       };
       cache.set(tabId, out);
       return out;
@@ -4727,6 +4894,7 @@ pushToast(
     handleEditTextRun,
     handleAddTextBox,
     handleEditImage,
+    handleTextBoxMove,
   ]);
 
   // DEF-065 — push the active-doc snapshot to main on every
@@ -5391,6 +5559,13 @@ pushToast(
               if (armedSignatureId !== null) {
                 setArmedSignatureId(null);
               } else {
+                // DEF-125 — arming Sign from the palette exits Edit
+                // mode too (same cross-disarm as the toolbar path):
+                // the edit layer would otherwise swallow the
+                // placement click.
+                if (editModeOpenRef.current) {
+                  setEditMode(false);
+                }
                 setSigModalOpen(true);
               }
             }}
@@ -5835,6 +6010,13 @@ pushToast(
           pendingCloseTabId === null
             ? ""
             : tabsRef.current.tabs.find((t) => t.id === pendingCloseTabId)?.title ?? ""
+        }
+        // DEF-128 — bytes-loaded / sample tabs have no on-disk path;
+        // their Save button must read "Save As…" so the user expects
+        // the OS path picker the save flow will pop.
+        saveAsMode={
+          pendingCloseTabId !== null &&
+          (openTabsRef.current[pendingCloseTabId]?.session.onDiskPath ?? null) === null
         }
         saving={pendingCloseSaving}
         saveError={pendingCloseError}

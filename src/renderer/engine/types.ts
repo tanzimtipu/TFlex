@@ -314,10 +314,12 @@ export interface EngineApi {
     content: Uint8Array | string,
   ): Promise<Result<ArrayBuffer, EngineError>>;
 
-  /** Phase 9 — insert a blank page at the given 0-based visible
-   *  position (afterIndex=-1 means "at the very beginning"). Width
-   *  and height are in PDF points. Returns the updated EngineState so
-   *  the renderer's mirror can refresh pageCount + pageOrder. */
+  /** Phase 9 — insert a blank page after the given 0-based visible
+   *  index (afterIndex=-1 appends after the last page — DEF-114;
+   *  afterIndex=-2 PREPENDS, the blank becomes pageOrder[0] —
+   *  DEF-129). Width and height are in PDF points. Returns the
+   *  updated EngineState so the renderer's mirror can refresh
+   *  pageCount + pageOrder. */
   insertBlankPage(
     docId: string,
     afterIndex: number,

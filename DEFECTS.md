@@ -1,6 +1,203 @@
+## DEF-131: "Per page" crop applies the crop to EVERY page, not just the selected one
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.8 binary = v1.7.7 code).
+2. Open report.pdf (34 pages, every page 612x792 pt).
+3. Tools palette -> "Crop pages", switch mode to "Per page".
+4. On the page-1 editor drag the SE crop handle inward (shrink the box) — summary reads e.g. x 61.2 / y 79.2 / width 285.6 / height 429.6 pt.
+5. Click "Apply crop".
+
+Expected: Only page 1 is cropped; pages 2+ keep their full 612x792 box.
+Actual: The toast reads `Cropped 1 page.`, but EVERY page renders at the cropped size. Measured `.pdf-page[data-page]` BEFORE crop: pages 1-3 all `1156x1496 px` (`--scale-factor: 1.888`, i.e. full 612x792). AFTER crop: pages 1-3 all `1156x1739 px` (`--scale-factor: 4.047`, i.e. 285.6x429.6). So a per-page crop on page 1 silently cropped the whole document.
+Screenshot: screenshots/gt_b11_after_crop.png (before/after page sizes in the run log).
+
+History:
+- qa: opened (ground-truth on installed v1.7.8 = v1.7.7 code; per-page crop sent one entry — toast "Cropped 1 page." — yet all pages render cropped after the post-crop proxy refresh).
+- qa: retested on installed v1.7.9 (FileVersion 1.7.9, exe 02:56 newer than all src). Crop page 1 per-page (drag SE inward), Apply -> toast "Cropped 1 page."; after the proxy refresh page 1 renders at aspect 0.7458 (=cropped, deviates from full 0.7727) and is NARROWER than pages 2/3, while pages 2 and 3 stay full-aspect 0.7729 and identical to each other — the crop no longer propagates to the other pages. Definite: the post-crop global re-fit scale changes the absolute px of pages 2/3 (the zoom jumps to fit the current page), which is pre-existing fit-to-current-page behaviour, not the crop-propagation bug; the CropBox/TrimBox are NOT copied onto the other leaves (pinned by test/unit/main/def130_131_124.test.ts). Regression checked: save is unaffected, no pageerror. Screenshot screenshots/def-131-after-crop.png. CLOSED.
+
+## DEF-130: Re-inserting a blank page after an undo throws "degreeAngle must be of type number, but was actually of type NaN"
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.8 binary = v1.7.7 code).
+2. Open report.pdf (34 pages).
+3. Tools palette -> "Insert pages", blank mode, "Insert at page" = 2 (blank lands after page 1), Insert.
+4. Undo (rail "Undo last change") — pageCount returns to 34.
+5. Insert a blank page again (same settings).
+
+Expected: The second insert completes cleanly.
+Actual: A toast appears: `Could not refresh document proxy: Engine error: getDocumentBytes failed: `degreeAngle` must be of type `number`, but was actually of type `NaN``. The post-insert proxy refresh (`refreshDocProxyFor` -> `engine.getDocumentBytes`) throws.
+Screenshot: screenshots/gt_b9_reinsert.png
+
+History:
+- qa: opened (ground-truth on installed v1.7.8 = v1.7.7 code; the reported error string is reproduced verbatim).
+- qa: retested on installed v1.7.9 (exe 02:56 newer than all src). Insert blank after page 1 ("2"), Undo -> pageCount 34, re-insert -> pageCount 35, pageOrder [0,34,1,2,...] with no duplicates, thumbCount 35 (proxy refreshed). NO "degreeAngle ... NaN" toast, NO `degreeAngle`/`NaN` pageerror, no React #310. Root cause fixed: insertBlankPage now snapshots the pdfDoc bytes (snapshotDocWithPdf) so undo reverts the pdfDoc too, plus a finite-guard at the serialize site; pinned by test/unit/main/def130_131_124.test.ts. Screenshot screenshots/def-130-after-reinsert.png. CLOSED.
+
+## DEF-129: Insert-blank page at position 1 is impossible — the Insert button is disabled
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.8 binary = v1.7.7 code).
+2. Open report.pdf (34 pages).
+3. Tools palette -> "Insert pages", mode "Blank page".
+4. Set "Insert at page" to `1`.
+
+Expected: Inserting a blank page at position 1 (before page 1) is allowed.
+Actual: The Insert button is `disabled`. Entering `2` enables it. (The dialog hint also states "A blank page cannot be inserted before page 1.")
+Screenshot: screenshots/gt_b8_pos1_disabled.png
+
+History:
+- qa: opened (ground-truth on installed v1.7.8 = v1.7.7 code).
+- qa: retested on installed v1.7.9 (exe 02:56 newer than all src). Insert pages -> blank mode -> "Insert at page" = 1: the Insert button is ENABLED (confirmDisabled=false), and Inserting prepends a blank page that becomes page 1 (pageCount 34 -> 35, pageOrder [34,0,1,2,...], unique 35, original page 1 now page 2). The dialog hint now reads "1 inserts before page 1" and the result matches (DEF-122 semantics consistent). No "Invalid page request" pageerror (DEF-121 regression). Pinned by the new `-2` PREPEND sentinel (slot 0 -> afterIndex -2) in App.tsx + test/unit/main/def130_131_124.test.ts. Screenshot screenshots/def-129-after-prepend.png. CLOSED.
+
+## DEF-128: Closing an unsaved SAMPLE (bytes-loaded) tab with "Save" fails with "no on-disk path" instead of offering Save As
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.8 binary = v1.7.7 code).
+2. Open the report.pdf sample (bytes-loaded, no on-disk path).
+3. Make an edit (e.g. rotate a page — toolbar Rotate clockwise) so the tab is modified.
+4. Click the tab's close button.
+5. In the "Unsaved changes" prompt click "Save".
+
+Expected: The prompt offers Save As (or routes Save to Save As for a bytes-loaded doc) and closes the tab after saving a copy.
+Actual: The prompt shows an inline red error `This document has no on-disk path. Use Don't save to discard, or open Save As first.` and stays open — the user cannot save their work first.
+Screenshot: screenshots/gt_b7_after_save.png
+
+History:
+- qa: opened (ground-truth on installed v1.7.8 = v1.7.7 code).
+- qa: retested on installed v1.7.9 (exe 02:56 newer than all src). Open report.pdf sample (bytes-loaded), rotate a page (modified=true), click tab close -> the "Unsaved changes" prompt's Save button reads "Save As…" (no inline "no on-disk path" hard-block error). Stubbed the OS save dialog to a temp path and clicked "Save As…": the tab saves-and-closes (prompt gone, 0 tabs), and the saved file is a real, re-parseable 34-page PDF (pdf-lib getPageCount=34). Pinned by test/unit/renderer/bugDEF128_closePromptSaveAs.test.tsx. Screenshot screenshots/def-128-prompt-save-as.png. CLOSED.
+
+## DEF-127: Add-box: dragging a committed text box moves only the surface (text stays put); clicking it does not reopen the editor
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.8 binary = v1.7.7 code).
+2. Open report.pdf, toggle Edit (toolbar "Edit content"), choose "Add box".
+3. Drag a rectangle on the page; type text ("My test box"); Apply.
+4. Drag the committed box 120px right / 60px down.
+5. Click the (moved) box.
+
+Expected: The box AND its text move together; clicking the placed box reopens the inline editor.
+Actual: Only the dashed `.edit-box` surface moves (its rect goes from 448,345 -> 568,405); the baked text "My test box" stays at the original spot (an empty blue box moves and persists). Clicking the box does NOT reopen the editor (no `.edit-inline-editor` mounts).
+Screenshot: screenshots/gt_b5_box_after_drag.png
+
+History:
+- qa: opened (ground-truth on installed v1.7.8 = v1.7.7 code).
+- qa: retested on installed v1.7.9 (exe 02:56 newer than all src). Report.pdf, Edit -> Add box -> drag a box, type "DEF127 MOVABLE BOX", Ctrl+Enter. The committed box surface mirrors its content ([data-edit-box-text-mirror] = "DEF127 MOVABLE BOX" + .edit-box-fill). Re-arm box tool and drag the box: the whole box moves (rect 428,366 -> 538,436, moved=true) AND the text mirror travels with it -> no empty phantom at the old spot (boxCount stays 1). Clicking the moved box reopens the inline editor pre-filled with "DEF127 MOVABLE BOX". Pinned by test/unit/renderer/bugDEF127_textBoxMoveRebake.test.tsx. Screenshots screenshots/def-127-after-drag.png, def-127-click-reopens-editor.png. CLOSED.
+
+## DEF-126: OCR suspects top bar has dead space, overlaps the Tools panel and left thumbnail rail, and is opaque
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.8 binary = v1.7.7 code).
+2. Open scanned.pdf, Tools palette -> "Recognize text (OCR)", set scope to "Current page", Recognize.
+3. After the run the OCR suspects panel opens.
+
+Expected: The suspects bar sits flush below the toolbars, inside the document area, with the doc/tools/rail content reflowing around it and a translucent background.
+Actual:
+  (a) Dead empty space — the bar's computed `top` is 100px, but the real toolbar (44px) + ann-toolbar (40px) bottom is 84px, leaving a ~16px unexplained gap.
+  (b) The bar spans `left:0; right:0` (1442px) over the left thumbnail rail (x 0..220) and over the right Tools palette (x 1162..1442).
+  (c) It does not reflow the content — it is an absolute overlay with `max-height:172px; overflow:hidden`, covering the rail/palette/document.
+  (d) Background is fully opaque `rgb(14,17,21)` (not translucent).
+Screenshot: screenshots/gt_b4_ocr_full.png
+
+History:
+- qa: opened (ground-truth on installed v1.7.8 = v1.7.7 code; layout measured: panel y=144.67, w=1442, bg rgb(14,17,21), top:100px, z-index 40).
+- qa: retested on installed v1.7.9 (exe 02:56 newer than all src). scanned.pdf -> Recognize text -> current page -> OCR; the suspects panel is now a FLOW element (position static) at the very top of app-main: panel.top == appMain.top == 44.67 (flush, no dead gap under the top bar), panel.bottom (192.67) == rail.top (192.67) (the content reflows directly beneath it), background rgba(14,17,21,0.82) = translucent, and true 2D intersection with the left thumbnail rail and the right Tools palette is 0 (overlapRail=0, overlapPalette=0; the palette downshifts via `.app-main:has(.ocr-suspects-panel) .tools-palette`). No longer a stale-offset opaque absolute overlay. Pinned by test/unit/renderer/bugB4_ocrTopBarCss.test.ts. Screenshot screenshots/def-126-suspects-panel.png. CLOSED.
+
+## DEF-125: Sign tool cannot be applied while Edit mode is active, and clicking Sign does not exit Edit mode
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.8 binary = v1.7.7 code).
+2. Open report.pdf, toggle Edit (toolbar "Edit content"), choose the "Edit text" tool (the per-page `.edit-layer` becomes `edit-layer-active`).
+3. Click toolbar "Sign tool", save + pick a signature in the manager.
+4. Click the page to place the signature.
+
+Expected: Clicking Sign exits Edit mode, or the signature still lands on the page.
+Actual: Edit mode stays active (Edit toggle `aria-pressed=true`, edit toolbar present, `.edit-layer` `edit-layer-active`); the signature click produces NO pending placement (`[data-sig-pending]` false, `[data-sig-action-bar]` false, `.sig-placement` 0). The signature cannot be applied while an edit tool is active.
+Screenshot: screenshots/gt_b3b_place_attempt.png
+
+History:
+- qa: opened (ground-truth on installed v1.7.8 = v1.7.7 code).
+- qa: retested on installed v1.7.9 (exe 02:56 newer than all src). Report.pdf, Edit toggle -> Edit text tool (.edit-layer-active). Click the Sign tool: Edit mode exits (Edit toggle aria-pressed=false, edit toolbar gone, edit layer no longer active). Create + arm a typed signature, click the page -> the pending placement + action bar appear, and Confirm commits a `.sig-placement` on the page (placementCount=1). No React #310 anywhere. The arm sites (toolbar tflex:sign-button, palette Sign, onSigManagerApply) all call setEditMode(false) guarded by editModeOpenRef; pinned by test/unit/renderer/bugDEF125_signExitsEditMode.test.ts. Screenshot screenshots/def-125-placed-on-page.png. CLOSED.
+
+## DEF-124: Edit-text leaves a faint trace of the old run behind — the white mask does not cover the full glyph rect
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.8 binary = v1.7.7 code).
+2. Open report.pdf, toggle Edit, choose the "Edit text" tool.
+3. Click the subtitle run "A study in PDF orchestration and performance."; the inline editor opens (mode "edit").
+4. Replace with a longer string, then "Apply" (Ctrl+Enter or the apply button).
+
+Expected: The old run is fully replaced with no ghost, and is no longer present in the document content.
+Actual: The new text renders with a faint gray trace of the OLD run behind/below it — the white mask covers only the pdf.js text-item bbox, not the full painted glyph extents. The page's `.textLayer` still contains the original run string, so the old text remains selectable/searchable in the content stream.
+Screenshot: screenshots/gt_b2_clean_zoomed.png (old-run ghost visible behind the new text)
+
+History:
+- qa: opened (ground-truth on installed v1.7.8 = v1.7.7 code).
+- qa: retested on installed v1.7.9 (exe 02:56 newer than all src). Report.pdf, Edit -> Edit text -> click the "TFlex Technical Report" title run (editor opens pre-filled), replace with "ZZZ REPLACEMENT 987654", Ctrl+Enter. The new text renders in the live textLayer (proxy refreshed) and the screenshot shows NO faint gray trace of the old run behind/below it (subtitle and title area are clean after the mask is widened). The white mask now covers the old run's bbox + symmetric PAD + font ascent above + descent below (mask width > bbox width and mask height > bbox height, verified in the saved content stream); pinned by test/unit/main/def130_131_124.test.ts. NOTE: mask-and-redraw remains the v1 approach (DEF-116 was REJECTED) — the old run is still in the content stream, but the visual ghost is gone. Screenshot screenshots/def-124-after-edit.png. CLOSED.
+
+## DEF-123: Placed signature click shows only move/resize handles, not the Confirm/Cancel/Delete action bar
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.7)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.8 binary = v1.7.7 code).
+2. Open report.pdf, click toolbar "Sign tool", Type tab -> type "QA Ground" -> Save, pick the saved signature.
+3. Click the page to create a pending placement; the action bar (Confirm/Cancel/Delete) appears.
+4. Click Confirm to commit the placement.
+5. Click the now-placed signature.
+
+Expected: Clicking a committed placement re-shows the same Confirm/Cancel/Delete action bar (parity with placement time).
+Actual: Only the four corner move/resize handles appear (`.sig-handle`). There is NO `[data-sig-action-bar]` and no `[data-sig-action]` buttons for a committed placement.
+Screenshot: screenshots/gt_b1_clicked_placed.png
+
+History:
+- qa: opened (ground-truth on installed v1.7.8 = v1.7.7 code).
+- qa: retested on installed v1.7.9 (exe 02:56 newer than all src). Report.pdf, Sign tool -> Type "QA Ground" -> Save -> pick; click the page, Confirm to commit. Clicking the committed `.sig-placement` now re-shows the SAME Confirm/Cancel/Delete action bar ([data-sig-action-bar] + confirm/cancel/delete all present) AND selects the placement (corner handles). Dragging the committed placement moves its placeholder rect (568,456 -> 628,501, moved=true) while the bar stays (uncommitted hold), and clicking Confirm commits the move and ends the selection (bar gone, placement still present, no #310). Bar-button press does not start a drag / no swallow. Pinned by test/unit/renderer/bugDEF123_committedSigActionBar.test.tsx. Screenshots screenshots/def-123-after-click-bar.png, def-123-after-drag.png. CLOSED.
+
 ## DEF-121: Insert-blank-page (mid-document) throws unhandled pdf.js "Invalid page request" twice
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 14 (v1.7.7)
@@ -16,10 +213,11 @@ Actual: Immediately after the insert (during the post-op pdf.js proxy rebuild / 
 
 History:
 - qa: opened (ground-truth on installed v1.7.7; reproduced while running e2e/retests/release_gate_117_verify.spec.cjs B7; `pageerror` stack points to pdf.js `getPage` from within the renderer bundle during the post-insert proxy refresh).
+- qa: closed (retested on installed v1.7.9, exe 02:56 newer than all src). Mid-document insert no longer throws "Invalid page request": e2e e2e/retests/def_123_131_verify_1.7.9.spec.cjs DEF-129 (insert blank at position 1 -> order0 [34,0,1,...], unique 35) asserts the pageerror filter "Invalid page request|degreeAngle|NaN" is empty and it PASSED (badErrors=[]); the re-insert path (DEF-130) also stays clean. Root cause fixed: the render paths now tolerate the temporarily-stale page index via `isInvalidPageRequest` (drop the attempt, let the doc-identity swap in `refreshDocProxyFor` re-run the render effect). Pinned by test/unit/renderer/defDEF121_122_insertRefreshGuard.test.ts — `isInvalidPageRequest` helper (recognizes the rejection, ignores unrelated failures) + PageView.run/SideRail.Thumb guards import it. Unit suite green: 187 files / 2369 tests. Screenshot screenshots/def-129-after-prepend.png. CLOSED.)
 
 ## DEF-122: "Insert at page" hint contradicts actual placement — position N inserts AFTER page N, hint says it lands AS page N
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 14 (v1.7.7)
@@ -37,6 +235,7 @@ Root cause: InsertPagesDialog.tsx `parsed.position = N - 1` is passed as the eng
 
 History:
 - qa: opened (ground-truth on installed v1.7.7; the "insert after page 1" flow is asserted in e2e/retests/release_gate_117_verify.spec.cjs B7 via position "1", and the off-by-one was characterized against position "1" and "2").
+- qa: closed (retested on installed v1.7.9, exe 02:56 newer than all src). The position value now uses rank semantics — the page number the new content BECOMES — so the hint and the placement agree, and the off-by-one is gone: e2e e2e/retests/def_123_131_verify_1.7.9.spec.cjs DEF-129 inserted blank at "1" -> blank becomes page 1 (order0 [34,0,1,...], order[0]=34); DEF-130 inserted at "2" -> blank becomes page 2 (order0 [0,34,1,...]). Slot 0 maps to the engine afterIndex -2 PREPEND sentinel (valid in blank mode, no "cannot insert before page 1" guard) and the dialog min is now 1. DEF-114 append sentinel (end/empty -> -1) unchanged. Pinned by test/unit/renderer/defDEF121_122_insertRefreshGuard.test.ts (slot-to-afterIndex translation + dialog min=1). Unit suite green: 187 files / 2369 tests. Screenshot screenshots/def-129-position1.png. CLOSED.)
 
 ## DEF-117: Modal dialogs cannot open — React #310 (Rules of Hooks) from the B3/B6 backdrop refactor; whole UI unmounts to a black window
 

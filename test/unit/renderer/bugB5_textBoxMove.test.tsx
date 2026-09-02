@@ -99,6 +99,7 @@ function mountBoxTool(initial: EditState = { ...initialEditState, tool: "box" })
           onCommitTextEdit: (): void => undefined,
           onCommitTextBox: (): void => undefined,
           onCommitImageEdit: (): void => undefined,
+          onCommitTextBoxMove: (): void => undefined,
         }),
       );
     });

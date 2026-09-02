@@ -103,6 +103,7 @@ function mountHarness(args: HarnessArgs): {
           onCommitTextEdit: (): void => undefined,
           onCommitTextBox: (): void => undefined,
           onCommitImageEdit: args.onCommitImageEdit as never,
+          onCommitTextBoxMove: (): void => undefined,
         }),
       );
     });

@@ -249,6 +249,17 @@ interface DocumentViewProps {
       format: "png" | "jpeg";
       id: string;
     }) => void;
+    /** DEF-127 — commit a committed text box's drag (move/resize):
+     *  the host re-bakes the box at `newRect` through the engine's
+     *  existing editImage contract. */
+    onCommitTextBoxMove: (args: {
+      oldRect: { x: number; y: number; width: number; height: number };
+      newRect: { x: number; y: number; width: number; height: number };
+      text: string;
+      style: import("../edit/model").EditTextStyle;
+      background: "white" | "none";
+      id: string;
+    }) => void;
   } | null;
 }
 

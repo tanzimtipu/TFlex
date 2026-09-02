@@ -47,7 +47,7 @@ import {
   resizeImageRect,
   type ImageResizeHandle,
 } from "./geometry";
-import { EditInlineEditor } from "./EditInlineEditor";
+import { EditInlineEditor, colorToHex, fontFamilyFor } from "./EditInlineEditor";
 
 export interface EditOverlayProps {
   page: number;
@@ -92,6 +92,18 @@ export interface EditOverlayProps {
     format: "png" | "jpeg";
     id: string;
   }) => void;
+  /** DEF-127/127b — commit a COMMITTED text box's drag (move or
+   *  resize). The host rasterises the box at `newRect` and re-bakes
+   *  it through the existing `editImage` contract, so the baked
+   *  text moves WITH the box (no decoupled local surface). */
+  onCommitTextBoxMove: (args: {
+    oldRect: { x: number; y: number; width: number; height: number };
+    newRect: { x: number; y: number; width: number; height: number };
+    text: string;
+    style: EditTextStyle;
+    background: "white" | "none";
+    id: string;
+  }) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -102,6 +114,15 @@ export interface EditOverlayProps {
 interface TextEditTarget {
   rect: { x: number; y: number; width: number; height: number };
   initialText: string;
+  /** DEF-127 — when the editor was reopened for a COMMITTED text
+   *  box: the box's registry id (so the committed text round-trips
+   *  back into the registry), its style (so the editor opens with
+   *  the box's real font/size/color, not the tab default), and its
+   *  background (so a re-commit never silently drops the white
+   *  fill). Omitted for text-run edits. */
+  textBoxId?: string;
+  style?: EditTextStyle;
+  background?: "white" | "none";
 }
 
 interface BoxDragState {
@@ -153,6 +174,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     onCommitTextEdit,
     onCommitTextBox,
     onCommitImageEdit,
+    onCommitTextBoxMove,
   } = props;
 
   const [textTarget, setTextTarget] = useState<TextEditTarget | null>(null);
@@ -536,13 +558,43 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       }
     }
     if (textBoxDrag !== null) {
-      // B5 — commit the box drag. The rect was already updated in
-      // the local registry during pointermove; no engine op exists
-      // to move a baked box, so this just ends the drag. See the B5
-      // report for the persistence limit and the proposed contract
-      // addition that would persist it.
+      // DEF-127/127b — a committed text box drag ends in one of
+      // two ways:
+      //   - the rect actually moved: commit a re-bake of the box
+      //     at the new rect through `onCommitTextBoxMove` (the
+      //     host calls the engine's editImage mask-and-draw, so
+      //     the baked text follows the box — no phantom surface).
+      //   - the gesture was a click (no meaningful movement):
+      //     reopen the inline editor for the box, restoring the
+      //     registry rect to the committed position so pointer
+      //     jitter can't nudge the box without an engine call.
       (e.target as Element).releasePointerCapture?.(e.pointerId);
+      const id = textBoxDrag.id;
+      const current = edit.textBoxes.find((b) => b.id === id);
       setTextBoxDrag(null);
+      if (current === undefined) return;
+      const moved = !rectsClose(current.rect, textBoxDrag.startRect, 2);
+      if (!moved) {
+        const committed = { ...textBoxDrag.startRect };
+        dispatch({ type: "set-text-box-rect", id, rect: committed });
+        setTextTarget({
+          rect: committed,
+          initialText: current.text,
+          textBoxId: id,
+          style: { ...current.style },
+          background: current.background,
+        });
+        return;
+      }
+      const newRect = { ...current.rect };
+      onCommitTextBoxMove({
+        oldRect: { ...textBoxDrag.startRect },
+        newRect,
+        text: current.text,
+        style: current.style,
+        background: current.background,
+        id,
+      });
       return;
     }
     if (boxDrag !== null) {
@@ -799,11 +851,13 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           rect={textTarget.rect}
           cssScale={cssScale}
           initialText={textTarget.initialText}
-          initialStyle={{
-            font: defaultFont,
-            size: Math.round(textTarget.rect.height * 0.8),
-            color: { r: 0, g: 0, b: 0 },
-          }}
+          initialStyle={
+            textTarget.style ?? {
+              font: defaultFont,
+              size: Math.round(textTarget.rect.height * 0.8),
+              color: { r: 0, g: 0, b: 0 },
+            }
+          }
           mode={textTarget.initialText.length > 0 ? "edit" : "box"}
           onCommit={(text, style, options): void => {
             setTextTarget(null);
@@ -813,6 +867,23 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
                 newText: text,
                 style,
               });
+              // DEF-127 — a re-opened COMMITTED box round-trips the
+              // commit back into the registry so the next re-open
+              // shows the committed text (and the white-bg flag
+              // survives the engine's white-mask rebake).
+              if (textTarget.textBoxId !== undefined) {
+                dispatch({
+                  type: "upsert-text-box",
+                  placement: {
+                    id: textTarget.textBoxId,
+                    page,
+                    rect: textTarget.rect,
+                    text,
+                    style,
+                    background: textTarget.background ?? "none",
+                  },
+                });
+              }
             } else {
               onCommitTextBox({
                 rect: textTarget.rect,
@@ -934,11 +1005,18 @@ interface TextBoxViewProps {
   onPointerDownHandle: (e: ReactPointerEvent<HTMLDivElement>, handle: ImageResizeHandle) => void;
 }
 
-/** B5 — a committed text box's selection + drag surface. It draws a
- *  dashed outline (and corner handles when selected) at the box's
- *  rect so the box tool can select / move the baked box. The box's
- *  text itself stays on the page canvas underneath; the surface is
- *  the editable affordance (mirrors the image-placement surface). */
+/** B5 + DEF-127 — a committed text box's selection + drag surface.
+ *  It draws the box's BAKED CONTENT as a live mirror — the white
+ *  background fill (when the box was added with one) and the wrapped
+ *  text in the box's font/size/color — so a drag visibly carries the
+ *  whole box (text included), not an empty blue outline. The
+ *  DEF-127b complaint ("moving a text box moves only an empty blue
+ *  .edit-box local surface — the baked text stays put") had two
+ *  halves: this mirror fixes the visual half (the text follows the
+ *  drag), and the pointerup commit re-bakes the box at the new rect
+ *  through `onCommitTextBoxMove` so the engine's copy follows too.
+ *  Both inner layers are pointer-transparent — the surface itself
+ *  stays the drag + handle target. */
 function TextBoxView(props: TextBoxViewProps): ReactElement {
   const { box, cssScale, selected, onPointerDownHandle } = props;
   const style: CSSProperties = {
@@ -956,8 +1034,36 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
           : "edit-box"
       }
       data-edit-box-id={box.id}
+      data-edit-box-text={box.text}
       style={style}
     >
+      {box.background === "white" && (
+        <div
+          className="edit-box-fill"
+          style={{ position: "absolute", inset: 0, background: "#ffffff", pointerEvents: "none" }}
+          aria-hidden
+        />
+      )}
+      <div
+        className="edit-box-text"
+        data-edit-box-text-mirror={box.text}
+        style={{
+          position: "absolute",
+          inset: 0,
+          padding: "2px 3px",
+          color: colorToHex(box.style.color),
+          fontFamily: fontFamilyFor(box.style.font),
+          fontSize: `${box.style.size * cssScale}px`,
+          lineHeight: 1.2,
+          overflow: "hidden",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          pointerEvents: "none",
+        }}
+        aria-hidden
+      >
+        {box.text}
+      </div>
       {selected &&
         (["nw", "ne", "sw", "se"] as const).map((h) => (
           <div

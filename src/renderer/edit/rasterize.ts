@@ -31,6 +31,8 @@
 // without a real GPU.
 
 import type { ImageRect } from "./geometry";
+import { colorToHex, fontFamilyFor } from "./EditInlineEditor";
+import type { EditFont } from "../../shared/types";
 
 /** Detect the image format from magic bytes. Mirrors the engine's
  *  "PNG or JPEG" requirement on `EditImagePayload.imageBytes`:
@@ -176,6 +178,90 @@ export async function cropImageToBytes(args: {
   return encoder(canvas);
 }
 
+/** DEF-127/127b — rasterize a COMMITTED text box (text + optional
+ *  white background) to PNG bytes so the box can be re-baked at a
+ *  new rect through the EXISTING `editImage` contract ("mask
+ *  oldRect, draw bytes at newRect"). No new shared op is required:
+ *  the engine never knows the box was text. The raster mirrors the
+ *  engine's `addTextBox` drawing as closely as the local canvas
+ *  allows — white fill for `background: 'white'`, wrapped lines
+ *  with a top-left baseline, and the same shrink-to-fit auto sizing
+ *  (wrap at the box width, then scale the font down so every line
+ *  fits the box height). The transparent `background: 'none'` case
+ *  keeps alpha so the moved text draws over whatever content it
+ *  lands on (the old position is white-masked by the engine, the
+ *  documented Phase 10 visual-redact behavior). */
+export function rasterizeTextBoxToPng(args: {
+  text: string;
+  rect: ImageRect;
+  style: {
+    font: EditFont;
+    size: number;
+    color: { r: number; g: number; b: number };
+  };
+  background: "white" | "none";
+  dpi?: number;
+  /** Encode a canvas to PNG bytes. The real renderer uses
+   *  `OffscreenCanvas.convertToBlob`; the tests pass a stub. */
+  encoder: (canvas: OffscreenCanvas | HTMLCanvasElement) => Promise<Uint8Array>;
+}): Promise<Uint8Array> {
+  const { text, rect, style, background } = args;
+  const dpi = args.dpi ?? 72;
+  const outSize = rectToPixelSize(
+    { x: 0, y: 0, width: rect.width, height: rect.height },
+    dpi,
+  );
+  const canvas = createCanvas(outSize.width, outSize.height);
+  // "none" boxes need alpha so pdf-lib's embedPng keeps the
+  // transparency; "white" boxes are fully opaque.
+  const ctx = getContext(canvas, background === "none");
+  if (ctx === null) {
+    throw new Error("rasterizeTextBoxToPng: failed to acquire 2D context");
+  }
+  const c = ctx as CanvasRenderingContext2D;
+  if (background === "white") {
+    c.fillStyle = "#ffffff";
+    c.fillRect(0, 0, outSize.width, outSize.height);
+  }
+
+  // Engine-matching auto-fit: wrap to the box width, then shrink
+  // the font so all wrapped lines fit the box height (mirrors
+  // `addTextBox`'s DEF-113 auto-fit).
+  let size = style.size;
+  c.font = `${size}px ${fontFamilyFor(style.font)}`;
+  const padPx = 2 * (dpi / 72);
+  const maxWidth = Math.max(1, outSize.width - padPx * 2);
+  const words = text.split(/\s+/).filter((w) => w.length > 0);
+  let lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line.length === 0 ? word : `${line} ${word}`;
+    if (line.length > 0 && c.measureText(candidate).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line.length > 0) lines.push(line);
+  if (lines.length === 0) lines = [""];
+  const lineHeight = size * 1.2 * (dpi / 72);
+  const needed = lines.length * lineHeight;
+  if (needed > outSize.height) {
+    size = Math.max(4 * (dpi / 72), outSize.height / (lines.length * 1.2));
+    c.font = `${size}px ${fontFamilyFor(style.font)}`;
+  }
+
+  c.fillStyle = colorToHex(style.color);
+  const topPad = 2 * (dpi / 72);
+  let cursorY = topPad + size;
+  for (const ln of lines) {
+    c.fillText(ln, padPx, cursorY);
+    cursorY += lineHeight;
+  }
+  return args.encoder(canvas);
+}
+
 /** Resize / re-encode a source image to the target rect's pixel
  *  dimensions. Used for the `resize` and `replace` ops. */
 export async function resizeImageToBytes(args: {
@@ -302,12 +388,15 @@ function createCanvas(width: number, height: number): OffscreenCanvas | HTMLCanv
 }
 
 /** Get a 2D context or null. Both OffscreenCanvas and
- *  HTMLCanvasElement expose the same call. */
+ *  HTMLCanvasElement expose the same call. `alpha` follows the
+ *  backing surface's needs: opaque for image transforms / white
+ *  text boxes, transparent for `background: 'none'` text boxes. */
 function getContext(
   canvas: OffscreenCanvas | HTMLCanvasElement,
+  alpha: boolean = false,
 ): OffscreenCanvasRenderingContext2D | CanvasRenderingContext2D | null {
   if (typeof OffscreenCanvas !== "undefined" && canvas instanceof OffscreenCanvas) {
-    return canvas.getContext("2d", { alpha: false });
+    return canvas.getContext("2d", { alpha });
   }
-  return (canvas as HTMLCanvasElement).getContext("2d", { alpha: false });
+  return (canvas as HTMLCanvasElement).getContext("2d", { alpha });
 }

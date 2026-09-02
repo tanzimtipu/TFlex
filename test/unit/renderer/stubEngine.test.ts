@@ -802,16 +802,19 @@ describe("StubRendererEngine — Phase 9 advanced methods", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 9 — insertBlankPage append semantics (DEF-114 parity)
+// Phase 9 — insertBlankPage append semantics (DEF-114 parity) + prepend
+// semantics (DEF-129)
 //
 // The real engine treats afterIndex = -1 as the renderer's "end"/"append"
 // sentinel and inserts the blank page AFTER the last page; the old stub
 // treated -1 as "insert before page 1" (insertAt = 0). These tests pin the
 // stub to the real engine's behaviour: -1 (and an explicit
 // afterIndex === pageCount) appends, while a non-negative afterIndex still
-// inserts immediately after that page. The synthetic page index the stub
-// pushes is the pre-insert pageOrder length (3 for a 3-page doc), so an
-// append shows as [0, 1, 2, 3] and a (wrong) prepend would show [3, 0, 1, 2].
+// inserts immediately after that page. DEF-129: afterIndex = -2 is the
+// PREPEND sentinel — the blank page becomes pageOrder[0]. The synthetic
+// page index the stub pushes is the pre-insert pageOrder length (3 for a
+// 3-page doc), so an append shows as [0, 1, 2, 3] and a prepend shows as
+// [3, 0, 1, 2].
 describe("StubRendererEngine — insertBlankPage append semantics (DEF-114 parity)", () => {
   it("afterIndex -1 appends the blank page after the last page", async () => {
     const { engine, tabId } = setup(3);
@@ -837,6 +840,19 @@ describe("StubRendererEngine — insertBlankPage append semantics (DEF-114 parit
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.pageOrder).toEqual([0, 1, 3, 2]);
+  });
+
+  // DEF-129 — the renderer's "insert before page 1" (rank slot 0,
+  // afterIndex -2) lands the blank at the FRONT: pageOrder[0] is the
+  // new synthetic page index (3), the originals follow unchanged.
+  it("afterIndex -2 (PREPEND sentinel) makes the blank page page 1", async () => {
+    const { engine, tabId } = setup(3);
+    const r = await engine.insertBlankPage(tabId, -2, 612, 792);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.pageCount).toBe(4);
+    expect(r.value.pageOrder).toEqual([3, 0, 1, 2]);
+    expect(r.value.modified).toBe(true);
   });
 });
 

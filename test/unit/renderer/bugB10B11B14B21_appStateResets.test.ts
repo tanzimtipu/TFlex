@@ -89,48 +89,43 @@ describe("B14 — OCR suspects panel placement and empty-tab guard", () => {
     expect(text).toMatch(/ocrSuspectsOpen\s*&&\s*activeTab\s*!==\s*null/);
   });
 
-  it("the .ocr-suspects-panel CSS is a full-width TOP BAR above the tools palette (B4)", async () => {
+  it("the .ocr-suspects-panel CSS is a FLOW TOP BAR that reserves its own space (DEF-126)", async () => {
     const styles = await readFile(STYLES_PATH, "utf8");
     const rule = styles.match(/\.ocr-suspects-panel\s*\{[^}]*\}/);
     expect(rule).not.toBeNull();
     if (rule === null) return;
-    // B4 — the panel is a top bar over the workspace: absolute,
-    // left:0 + right:0 (full width), z-index 40 ABOVE the Tools
-    // palette (30) so an open palette can never cover the suspect
-    // entries. Without `position: absolute` it fell into the
-    // .app-main flex flow at x:0 and covered the workspace; as a
-    // 280px right rail at z-index 29 it sat UNDER the palette.
-    expect(rule[0]).toMatch(/position:\s*absolute\s*;/);
-    expect(rule[0]).toMatch(/left:\s*0\s*;/);
-    expect(rule[0]).toMatch(/right:\s*0\s*;/);
-    expect(rule[0]).toMatch(/z-index:\s*40\s*;/);
-    expect(rule[0]).not.toMatch(/z-index:\s*29\s*;/);
-    // The 280px right-rail form is gone.
+    // DEF-126 — the panel is a flow element at the top of
+    // `.app-main`'s flex column (order: -1) with a fixed height
+    // (--ocr-bar-h). It RESERVES space instead of overlaying the
+    // workspace, so it can never cover the thumbnail rail / the
+    // toolbars / the Tools palette — the old absolute bar (B4) and
+    // the old 280px right rail are both gone.
+    expect(rule[0]).toMatch(/order:\s*-1\s*;/);
+    expect(rule[0]).toMatch(/flex-shrink:\s*0\s*;/);
+    expect(rule[0]).toMatch(/height:\s*var\(--ocr-bar-h/);
+    expect(rule[0]).not.toMatch(/position:\s*absolute\s*;/);
+    expect(rule[0]).not.toMatch(/z-index:\s*40\s*;/);
     expect(rule[0]).not.toMatch(/width:\s*280px\s*;/);
+    // The shared height token exists (the palette downshift reads
+    // it, see the :has rule below).
+    expect(styles).toMatch(/--ocr-bar-h:\s*148px\s*;/);
   });
 
-  it("the .ocr-suspects-panel CSS starts BELOW the toolbar strip (DEF-107: no 280x40 overlap)", async () => {
+  it("the Tools palette shifts below the bar via the :has downshift (DEF-126: no overlap)", async () => {
     const styles = await readFile(STYLES_PATH, "utf8");
-    const rule = styles.match(/\.ocr-suspects-panel\s*\{[^}]*\}/);
-    expect(rule).not.toBeNull();
-    if (rule === null) return;
-    // DEF-107 — the panel must not overlap the `.ann-toolbar`, which
-    // runs the full workspace width as a horizontal strip. `top: 0`
-    // made the panel cover the toolbar's Shapes group by 280x40px.
-    // The top is now offset below BOTH toolbar rows (the page-toolbar
-    // row tracked by --toolbar-h and the annotation-toolbar row
-    // tracked by --ann-toolbar-h), so the panel opens in its own
-    // space under the toolbar.
-    expect(rule[0]).toMatch(
-      /top:\s*calc\(var\(--toolbar-h, 56px\)\s*\+\s*var\(--ann-toolbar-h, 40px\)\s*\+\s*var\(--sp-1\)\)\s*;/,
+    const downshiftStart = styles.lastIndexOf(
+      ".app-main:has(.ocr-suspects-panel) .tools-palette {",
     );
-    // The old full-height-over-the-toolbar form is gone (a fixed
-    // height:100% combined with a nonzero top would push the panel's
-    // bottom past the app-main edge; top+bottom now define the extent).
-    expect(rule[0]).not.toMatch(/height:\s*100%\s*;/);
-    // The second toolbar-row token exists so the offset is not a
-    // magic number.
-    expect(styles).toMatch(/--ann-toolbar-h:\s*40px\s*;/);
+    expect(downshiftStart).toBeGreaterThan(-1);
+    const rule = styles.slice(
+      downshiftStart,
+      styles.indexOf(".ocr-suspects-header"),
+    );
+    // With the bar open, the palette's top adds the bar's height so
+    // it never overlaps the bar's right edge.
+    expect(rule).toMatch(
+      /top:\s*calc\(var\(--ocr-bar-h, 148px\)\s*\+\s*var\(--toolbar-h, 56px\)\)\s*;/,
+    );
   });
 });
 

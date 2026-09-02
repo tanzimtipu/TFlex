@@ -94,6 +94,7 @@ function mountHarness(props: HarnessProps): {
           onCommitTextEdit: (): void => undefined,
           onCommitTextBox: (): void => undefined,
           onCommitImageEdit: (): void => undefined,
+          onCommitTextBoxMove: (): void => undefined,
         }),
       );
     });

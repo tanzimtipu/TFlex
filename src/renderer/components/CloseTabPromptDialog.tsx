@@ -41,6 +41,12 @@ interface CloseTabPromptDialogProps {
    *  disabled and shows "Saving…". The host sets this when
    *  the user clicks Save and the engine IPC hasn't returned. */
   saving: boolean;
+  /** DEF-128 — true when the tab has no on-disk path (bytes-loaded
+   *  / sample tab). The Save choice then routes through the host's
+   *  Save-As flow (an OS save dialog) instead of an in-place save;
+   *  the button is labelled "Save As…" so the user knows a path
+   *  picker will appear. */
+  saveAsMode?: boolean;
   /** True when the save itself failed (engine error / OS
    *  dialog cancelled). The dialog surfaces an inline error
    *  block and the Save button stays clickable so the user
@@ -52,7 +58,7 @@ interface CloseTabPromptDialogProps {
 export function CloseTabPromptDialog(
   props: CloseTabPromptDialogProps,
 ): ReactElement | null {
-  const { open, tabTitle, saving, saveError, onChoose } = props;
+  const { open, tabTitle, saving, saveError, saveAsMode = false, onChoose } = props;
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   // Esc cancels the close — the same afford every other modal
@@ -150,7 +156,7 @@ export function CloseTabPromptDialog(
             data-close-prompt-action="save"
             data-close-prompt-default
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? "Saving…" : saveAsMode ? "Save As…" : "Save"}
           </button>
         </div>
       </div>
