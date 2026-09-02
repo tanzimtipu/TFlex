@@ -412,6 +412,22 @@ export function DocumentView({
   const idleCleanupRef = useRef<IdleCleanupCoordinator | null>(null);
 
   const [firstPageSize, setFirstPageSize] = useState<{ w: number; h: number } | null>(null);
+  // The page-1 dimensions the fit modes (fit-width / fit-page) anchor
+  // their scale to. Deliberately decoupled from the LIVE `firstPageSize`
+  // layout reference above: the live size must track the current bytes
+  // (slots, rail ratios, wrapper dims), while the fit anchor must NOT
+  // move when a proxy refresh merely shrinks page 1 in place. Before
+  // this split, a crop committed through `refreshDocProxyFor` re-fetched
+  // page 1's (smaller) dims, the fit recomputed from them, and every
+  // OTHER uncropped page re-rendered at a bigger absolute scale — the
+  // "zoom jump after crop" defect (crop undo showed the reverse jump).
+  // The anchor only moves on:
+  //   - first resolution (open),
+  //   - an explicit user fit action (fit-width / fit-page button),
+  //   - a doc refresh whose page-1 size is NOT an inset of the anchor
+  //     (a genuine page identity change — delete / reorder / insert —
+  //     which legitimately re-fits to the new first page).
+  const [fitAnchor, setFitAnchor] = useState<{ w: number; h: number } | null>(null);
   // `mountedPages` are the only pages that get a real PageView (canvas +
   // TextLayer + search-hit overlays). Every other page is just a fixed-height
   // slot that reserves scroll space. This is what keeps a 520-page doc from
@@ -498,20 +514,27 @@ export function DocumentView({
   }, []);
 
   // ---- effective scale ----------------------------------------------------
+  //
+  // Fit modes anchor to `fitAnchor` (see its declaration) instead of the
+  // live `firstPageSize`. This is what keeps a crop from re-scaling every
+  // uncropped page: the refresh re-fetches the cropped page-1 dims into
+  // `firstPageSize` (so slots / wrappers track reality), but the fit scale
+  // stays anchored to the pre-crop reference until the user explicitly
+  // re-fits or the first page genuinely changes identity.
   const effectiveScale = useMemo(() => {
-    if (firstPageSize === null) {
+    if (fitAnchor === null) {
       return 1;
     }
     const availW = Math.max(viewportBox.w - CONTENT_PADDING_PX * 2, 50);
     const availH = Math.max(viewportBox.h - CONTENT_PADDING_PX * 2, 50);
     if (zoom.mode === "fit-width") {
-      return availW / firstPageSize.w;
+      return availW / fitAnchor.w;
     }
     if (zoom.mode === "fit-page") {
-      return Math.min(availW / firstPageSize.w, availH / firstPageSize.h);
+      return Math.min(availW / fitAnchor.w, availH / fitAnchor.h);
     }
     return zoom.manualScale;
-  }, [zoom, viewportBox, firstPageSize]);
+  }, [zoom, viewportBox, fitAnchor]);
   const effectiveScaleRef = useRef(effectiveScale);
   effectiveScaleRef.current = effectiveScale;
 
@@ -529,9 +552,26 @@ export function DocumentView({
       if (disposed) {
         return;
       }
-      setFirstPageSize({
+      const size = {
         w: page.view[2] - page.view[0],
         h: page.view[3] - page.view[1],
+      };
+      setFirstPageSize(size);
+      // Fit-anchor rule: a proxy refresh (crop / OCR / undo) whose new
+      // page-1 size is an INSET of the current anchor (same physical
+      // page, just smaller — a crop) must NOT re-anchor the fit, or
+      // every uncropped page re-scales with the refresh. A refresh that
+      // is not an inset is a genuine page identity change (delete /
+      // reorder / insert / a new file) and legitimately re-fits. First
+      // resolution (anchor null) always anchors.
+      setFitAnchor((prev) => {
+        if (prev === null) {
+          return size;
+        }
+        if (size.w <= prev.w && size.h <= prev.h) {
+          return prev;
+        }
+        return size;
       });
       // Drop page 1's per-page worker state right after we read the
       // dims. The next time page 1 is touched (the initial mount's
@@ -1057,9 +1097,20 @@ export function DocumentView({
     const next = stepTowards(effectiveScaleRef.current, direction);
     dispatchZoom({ type: "set-manual-scale", scale: next });
   }, []);
-  const setMode = useCallback((mode: ZoomMode) => {
-    dispatchZoom({ type: "set-mode", mode });
-  }, []);
+  const setMode = useCallback(
+    (mode: ZoomMode) => {
+      if ((mode === "fit-width" || mode === "fit-page") && firstPageSize !== null) {
+        // Explicit user fit: re-anchor the fit to the LIVE page-1 size.
+        // A prior crop kept the old anchor so the refresh didn't jump;
+        // an explicit fit click means "fit now" and must use the current
+        // bytes (post-crop), restoring the pre-split semantics for
+        // deliberate fit actions.
+        setFitAnchor(firstPageSize);
+      }
+      dispatchZoom({ type: "set-mode", mode });
+    },
+    [firstPageSize],
+  );
 
   // ---- ctrl+wheel zoom -----------------------------------------------------------------
   useEffect(() => {
