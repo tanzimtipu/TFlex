@@ -1,3 +1,55 @@
+## DEF-138: Page rotation is lost on save + reopen — the rotated page silently reverts to its original orientation
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 2 (regression on installed v1.7.11)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.11 binary = 9dcf83c source), open the report.pdf sample.
+2. Click the toolbar "Rotate clockwise" (`[data-toolbar-rotate-cw]`). The page-1 canvas swaps 1156x1496 -> 1496x1156 (landscape); `window.tflexDiagnostics().engineState.rotations[0]` becomes 1.
+3. Click "Save As" (`button[aria-label="Save As"]`), confirm the save.
+4. Close the tab and re-open the saved file.
+
+Expected: The rotated page stays rotated (renders landscape) after reopen — the /Rotate value written to the PDF is honored. Phase 2 criterion 4: "Save-As writes a valid PDF; reopening it in TFlex shows the reorganized pages."
+
+Actual: The page-1 canvas renders 1156x1496 (portrait, aspect 0.773) after reopen, and `engineState.rotations[0]` is 0 — the rotation is silently gone. Reopening the file in TFlex loses the rotation (the saved file itself does carry `/Rotate=90` on page 1 when parsed with pdf-lib into a fresh document, but TFlex does not re-read it into its render/engine model). The user's page transformation is silently discarded on save+reopen.
+
+Screenshot: measured page-1 canvas aspect before save = 1.294 (landscape) vs after reopen = 0.773 (portrait). (SEE `e2e/probe_rotate.spec.cjs`.)
+
+History:
+- qa: opened
+- qa: closed (retested on installed v1.7.12 binary = FileVersion 1.7.12, e2e/retests/verify_1712_sweep.spec.cjs DEF-138). Open report.pdf, click `[data-toolbar-rotate-cw]` -> `engineState.rotations[0]` becomes 1 and the page-1 canvas swaps to 1496x1156 (aspect 1.294 landscape). Save As to a temp path, then close the tab and re-open the saved file: after reopen `engineState.rotations[0]` is still 1, `rotations[1]` is 0, and the page-1 canvas renders 1496x1156 (aspect 1.294 landscape) — the rotation is no longer silently dropped. Screenshot screenshots/def-138-1712-after-reopen.png. Regression checked: no pageerror during rotate/save/reopen; the rest of the save path is unaffected (a subsequent rotate re-save again round-trips). CLOSED.
+
+
+
+## DEF-137: Drawn/created annotations are silently dropped on save — no PDF annotation object, no baked content, not reloadable
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 3 (regression on installed v1.7.11)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.11 binary = 9dcf83c source), open the report.pdf sample.
+2. Arm the Pen (annotation toolbar `[data-tool="ink"]`) and draw a stroke on page 1.
+3. Arm the Sticky note (`[data-tool="note"]`), click a point on page 1, type "DEFECT NOTE 137", confirm (note icon + text render on the page).
+4. Verify both annotations are present: `window.tflexDiagnostics().engineState.annotations` has 2 entries (kind "ink" and kind "note" with content "DEFECT NOTE 137"), and the page shows the stroke + note icon + text.
+5. Click the toolbar "Save As" (button[aria-label="Save As"]), confirm the save (file is written).
+6. Re-open the saved file (close the tab, re-open the saved path).
+
+Expected: The annotations are written into the PDF as standard annotation objects (Phase 3 criterion 4), so they appear when the file is re-opened in TFlex and in any other PDF reader; the note content survives.
+
+Actual: The saved PDF contains ZERO annotation objects and ZERO per-page `/Annots` entries (parsed with pdf-lib: `PDFDocument.load` then enumerating every indirect object yields no `/Type /Annot` dict on any page, and every page's `/Annots` array has size 0). The ink stroke and the note are NOT baked into the page content either. Re-opening the saved file in TFlex shows a completely clean page-1 (no ink stroke, no note icon, no note text) and `engineState.annotations` is `[]`. The user's annotations are silently lost on save. (Note: the saved file is ~1 KB larger than a rotation-only save, consistent with the annotation dicts being registered as orphaned objects that no page `/Annots` references.)
+
+Screenshot: screenshots/def-137-before-save.png (ink stroke + "DEFECT NOTE 137" note visible on page 1) vs screenshots/def-137-after-reopen.png (the same page after save+reopen is clean — both annotations gone).
+
+History:
+- qa: opened
+- qa: closed (retested on installed v1.7.12 binary = FileVersion 1.7.12, e2e/retests/verify_1712_sweep.spec.cjs DEF-137). Open report.pdf, arm the Pen `[data-tool="ink"]` and draw a stroke on page 1, arm the Sticky note `[data-tool="note"]`, click a point, type "DEFECT NOTE 137", confirm. Pre-save: `engineState.annotations` = [{kind ink,page 1},{kind note,content "DEFECT NOTE 137",page 1}]. Save As to a temp path, then close the tab and re-open the saved file. pdf-lib parse of the saved bytes: pageCount 34, per-page /Annots counts [2,0,0,0,0,0], with 1 `/Subtype /Ink` and 1 `/Subtype /Text` (note) annotation object on page 1 — the annotations are real PDF annotation objects, not orphaned. After reopen: `engineState.annotations` hydrates back to [{kind ink,page 1},{kind note,content "DEFECT NOTE 137",page 1}], and the page renders `.ann-ink` = 1 and `.ann-note` = 1 with the note text visible (screenshots def-137-1712-before-save.png vs def-137-1712-after-reopen.png — both the ink stroke and the "DEFECT NOTE 137" note render before save AND after reopen). Regression checked: no pageerror during annotate/save/reopen. CLOSED.
+
+
+
 ## DEF-136: Selecting a placed Add-box text box offers no Delete/Remove option
 
 - Status: CLOSED

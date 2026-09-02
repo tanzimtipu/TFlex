@@ -949,3 +949,71 @@ Disposition: PENDING
 - ADV-021 ACCEPTED -> DEF-074 (About silent unsupported)
 - ADV-022 ACCEPTED -> DEF-075 (KEYWORDS metadata signature fragile)
 - ADV-023 REJECTED - optimize compares against baseline at dialog-open; acceptable for dialog behavior rationale.
+---
+
+## Deep-sweep final adversarial review
+
+Session label: `deep-sweep-final`. Ran against the production build
+(npm.cmd run build; dist main + dist renderer launched with
+ELECTRON_RENDERER_URL=file://.../dist/renderer/index.html). Harnesses:
+`test-fixtures/tools/deep_sweep_final.cjs`, `deep_sweep_probes.cjs`,
+`deep_sweep_final3.cjs`.
+
+## ADV-039: ADV-008 save-race regression confirmed — deletes during an in-flight save are silently lost
+
+- Session: deep-sweep-final
+- Suggested severity: HIGH
+
+What I did:
+1. Built production bundle and launched the app with Playwright Electron driver.
+2. Via the renderer's engine API (window.tflex.engine):
+   - loadDocument(docId, report.pdf-copy) (34 pages);
+   - merge(docId, [sameCopy], 'after') (now 68 pages);
+   - fired save(docId) and immediately (without awaiting it) fired three
+     applyOp(delete) calls;
+   - awaited all four, then getState(docId) for in-memory page count and
+     re-loaded the same path to count the on-disk pages.
+3. Repeated the sequence 3 times across the probe harnesses.
+
+Expected:
+- Operations dispatched while a save is in flight must be applied to the saved
+  bytes (sequentialized by the queue) or the save must capture them. The
+  output was expected to match the final memory state: 68 - 3 = 65 pages.
+
+Actual:
+- Every run: save returned ok, all three deletes returned ok, and memory
+  showed 66 pages (one delete's effect seems to be absorbed by the save
+  narrowing the window) while the disk file retained 68 pages. The deletes
+  were silently lost in the saved output.
+- This is an exact reproduction of ADV-008 (filed as DEF-009). Either the fix
+  for DEF-009 was incomplete, or the fix regressed. The root cause in
+  engine.save() / serializeDoc() is that the save is not serialized
+  against applyOp — the queue (_enqueue) SHOULD serialize them, but the
+  race suggests the save releases its serialization hold before the deletes
+  are applied to the in-memory state, and then save clears the undo stacks
+  and resets modified=false.
+
+Screenshot: N/A (reproducible via engine API)
+
+Disposition: REJECTED - repro used out-of-range delete index (page 68 on a 68-page 0-indexed doc = correctly rejected op). Re-verified with in-range deletes: memory 65, disk 68, modified=true, undo intact. The ADV-008 invariant does not reproduce.
+
+---
+
+## Cumulative totals — deep-sweep-final
+
+| ID | Title | Severity |
+|---|---|---|
+| ADV-039 | ADV-008 save-race regression — deletes during save silently lost | HIGH |
+
+**Total new findings: 1 (1 HIGH)**
+
+## Cumulative total across all sessions
+
+| Source | HIGH | MEDIUM | LOW | Total |
+|---|---|---|---|---|
+| Phase 1 (ADV-001..007) | 2 | 2 | 3 | 7 |
+| Phase 2 gate (ADV-008..012) | 1 | 3 | 1 | 5 |
+| Final (ADV-013..018) | 2 | 4 | 0 | 6 |
+| Full-sweep silence (ADV-019..023) | 1 | 3 | 1 | 5 |
+| Deep-sweep final (ADV-039) | 1 | 0 | 0 | 1 |
+| **All phases** | **7** | **12** | **5** | **24** |

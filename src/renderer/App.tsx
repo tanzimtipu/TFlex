@@ -282,6 +282,41 @@ const initialUiState = (pageCount: number): EngineUiState => {
   };
 };
 
+/** DEF-137 renderer half — build a tab's seeded EngineUiState from the
+ *  engine's authoritative post-load state. The engine parses
+ *  annotations, rotations, text boxes, form fields and page labels
+ *  into its doc state during loadDocument / loadDocumentBytes, so the
+ *  tab-open flow calls `getState` right after a successful load and
+ *  passes the result here: a reopened saved file renders the saved
+ *  content (annotations, rotations, boxes, fields, labels) instead of
+ *  an empty fresh document — the old path seeded `initialUiState`
+ *  (empty annotations, zero rotations) and never asked the engine
+ *  again, so everything the engine had loaded was invisible until the
+ *  first UI op forced a getState round-trip (DEF-138 renderer half).
+ *
+ *  A fresh open carries an empty undo/redo stack, so the counters
+ *  start at zero regardless of what the engine reports. `null`
+ *  (getState failed, or an older backend) falls back to the same
+ *  empty initial state the tab used before — the sync is best-effort
+ *  and must never break the open.
+ *
+ *  Exported for the renderer unit tests (bugDEF137...); the product
+ *  code paths only ever call it from `openFromBytes`. */
+export function seededEngineUiState(
+  hydrated: EngineState | null,
+  pageCount: number,
+): EngineUiState {
+  if (hydrated !== null) {
+    return {
+      state: hydrated,
+      counters: ZERO_COUNTERS,
+      canUndo: false,
+      canRedo: false,
+    };
+  }
+  return initialUiState(pageCount);
+}
+
 export function App(): ReactElement {
   const [bootDone, setBootDone] = useState(false);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
@@ -888,6 +923,24 @@ export function App(): ReactElement {
           stubRendererEngine.registerTab(engineDocId, parsed.doc.numPages);
         }
       }
+      // DEF-137 renderer half — the engine parses annotations,
+      // rotations, text boxes, form fields and page labels into its
+      // doc state during loadDocument / loadDocumentBytes, but the
+      // tab-open path used to seed an empty `initialUiState` and
+      // never asked the engine for its state again, so a reopened
+      // saved file rendered clean even though the engine had the
+      // content loaded. Pull the authoritative EngineState right
+      // after a successful load (both the disk `loadDocument` path
+      // and the bytes `loadDocumentBytes` path) and seed the tab's
+      // engine / engineUi mirrors from it. A getState failure
+      // (transient IPC error, older backend) must not break the
+      // open — `seededEngineUiState` falls back to the empty
+      // initial state exactly as before.
+      const stateResult = await engineRef.current.getState(engineDocId);
+      const seeded = seededEngineUiState(
+        stateResult.ok ? stateResult.value : null,
+        parsed.doc.numPages,
+      );
       setOpenTabs((prev) => ({
         ...prev,
         [id]: {
@@ -895,7 +948,7 @@ export function App(): ReactElement {
           session,
           persisted,
           displayName: source.displayName,
-          engine: initialUiState(parsed.doc.numPages).state,
+          engine: seeded.state,
           forms: initialFormsState,
           placements: [],
           edit: initialEditState,
@@ -903,7 +956,7 @@ export function App(): ReactElement {
       }));
       setEngineUi((prev) => ({
         ...prev,
-        [id]: initialUiState(parsed.doc.numPages),
+        [id]: seeded,
       }));
       dispatchTabs({ type: "open", tab: meta });
 

@@ -198,11 +198,12 @@ export class EngineService {
       const annotations = parseAnnotationsFromDoc(pdfDoc);
       const placedSignatures = parseSignaturesFromDoc(pdfDoc);
       const textBoxes = parseTextBoxesFromDoc(pdfDoc);
+      const rotations = parseRotationsFromDoc(pdfDoc, count);
       const doc: EngineDoc = {
         pdfDoc,
         order: Array.from({ length: count }, (_, i) => i),
         deleted: Array.from({ length: count }, () => false),
-        rotations: Array.from({ length: count }, () => 0),
+        rotations,
         annotations,
         undoStack: [],
         redoStack: [],
@@ -247,11 +248,12 @@ export class EngineService {
       const annotations = parseAnnotationsFromDoc(pdfDoc);
       const placedSignatures = parseSignaturesFromDoc(pdfDoc);
       const textBoxes = parseTextBoxesFromDoc(pdfDoc);
+      const rotations = parseRotationsFromDoc(pdfDoc, count);
       const doc: EngineDoc = {
         pdfDoc,
         order: Array.from({ length: count }, (_, i) => i),
         deleted: Array.from({ length: count }, () => false),
-        rotations: Array.from({ length: count }, () => 0),
+        rotations,
         annotations,
         undoStack: [],
         redoStack: [],
@@ -3603,6 +3605,34 @@ function serializeSignatureMetadata(
  * honour that so documents saved before DEF-075 keep loading. New saves
  * always write the catalog entry (and only the catalog entry).
  */
+
+/**
+ * DEF-138 — read each page's /Rotate (in degrees) and convert it to
+ * quarter-turns (0/1/2/3) so a rotated page stays rotated across save/reopen.
+ * `page.getRotation().angle` walks the inheritable /Rotate entry (the page
+ * leaf's own /Rotate, or the parent /Pages /Rotate) via pdf-lib's
+ * `getInheritableAttribute`, so an inherited rotation is honoured too. A
+ * non-multiple-of-90 angle is rounded to the nearest quarter-turn; an
+ * unparseable /Rotate degrades to 0 (upright) so a malformed entry never
+ * blocks the load.
+ */
+function parseRotationsFromDoc(pdfDoc: PDFDocument, count: number): number[] {
+  const rotations = Array.from({ length: count }, () => 0);
+  for (let i = 0; i < count; i++) {
+    try {
+      const angle = pdfDoc.getPage(i).getRotation().angle;
+      if (Number.isFinite(angle)) {
+        // Normalise to [0,3]: round to the nearest 90, then mod 4.
+        const quarters = Math.round(angle / 90) % 4;
+        rotations[i] = ((quarters % 4) + 4) % 4;
+      }
+    } catch {
+      // Best-effort: a malformed /Rotate leaves the page upright.
+    }
+  }
+  return rotations;
+}
+
 function parseSignaturesFromDoc(pdfDoc: PDFDocument): SignaturePlacement[] {
   // --- Primary: catalog /TFlexSig hex string -----------------------------
   try {
