@@ -1,4 +1,5 @@
 import { readFile, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
 import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFTextField, StandardFonts, rgb, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
@@ -31,6 +32,7 @@ import type {
   PlaceSignaturePayload,
   SignaturePlacement,
   SpaceAudit,
+  TextBoxModel,
   TextPage,
 } from '../../shared/types';
 import {
@@ -71,6 +73,10 @@ interface Snapshot {
   rotations: number[];
   annotations: AnnModel[][];
   placedSignatures: SignaturePlacement[];
+  /** Phase 14 / DEF-135 / DEF-136 — text-box registry captured for undo of
+   *  addTextBox/moveTextBox/deleteTextBox. Cloned the same way as
+   *  placedSignatures (deep per-entry rect). */
+  textBoxes?: TextBoxModel[];
   /** Snapshot of form field values for undo. Keyed by field id. */
   formFields?: FormField[];
   /** Rich form snapshot for rebuilding fields after flatten (DEF-028). */
@@ -95,6 +101,11 @@ interface EngineDoc {
   path: string;
   modified: boolean;
   placedSignatures: SignaturePlacement[];
+  /** Phase 14 / DEF-135 / DEF-136 — text boxes held in the engine-side
+   *  placement registry. Boxes are NOT baked into the page at add time;
+   *  they are drawn once at their FINAL rect at save time (serializeDoc),
+   *  so moving a box never masks the content under its old rect. */
+  textBoxes: TextBoxModel[];
   /** Phase 11 — words recognised by the most recent `ocrRecognize` call,
    *  stored so `ocrSuspects` can return the low-confidence subset without
    *  re-running tesseract. Each entry is in the VISIBLE page space. */
@@ -186,6 +197,7 @@ export class EngineService {
       }
       const annotations = parseAnnotationsFromDoc(pdfDoc);
       const placedSignatures = parseSignaturesFromDoc(pdfDoc);
+      const textBoxes = parseTextBoxesFromDoc(pdfDoc);
       const doc: EngineDoc = {
         pdfDoc,
         order: Array.from({ length: count }, (_, i) => i),
@@ -197,6 +209,7 @@ export class EngineService {
         path: filePath,
         modified: false,
         placedSignatures,
+        textBoxes,
       };
       this.docs.set(docId, doc);
       return ok(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer);
@@ -233,6 +246,7 @@ export class EngineService {
       }
       const annotations = parseAnnotationsFromDoc(pdfDoc);
       const placedSignatures = parseSignaturesFromDoc(pdfDoc);
+      const textBoxes = parseTextBoxesFromDoc(pdfDoc);
       const doc: EngineDoc = {
         pdfDoc,
         order: Array.from({ length: count }, (_, i) => i),
@@ -244,6 +258,7 @@ export class EngineService {
         path: '',
         modified: false,
         placedSignatures,
+        textBoxes,
       };
       this.docs.set(docId, doc);
       // Return the original bytes so the renderer can feed them to PDF.js.
@@ -1123,6 +1138,7 @@ export class EngineService {
         path: '',
         modified: true,
         placedSignatures: [],
+        textBoxes: [],
       };
       this.docs.set(docId, newDoc);
 
@@ -1191,6 +1207,7 @@ export class EngineService {
         path: '',
         modified: true,
         placedSignatures: [],
+        textBoxes: [],
       };
       this.docs.set(docId, newDoc);
 
@@ -1747,10 +1764,19 @@ export class EngineService {
   }
 
   /**
-   * Phase 10 — add a new text box. Draws `text` wrapped inside `rect`
-   * (top-left origin, PDF points). When `background` is 'white' an
-   * opaque white fill is drawn behind the text first so it stays
-   * readable over existing page content.
+   * Phase 10 / Phase 14 / DEF-135 / DEF-136 — add a new text box. As of
+   * Phase 14 this pushes a `TextBoxModel` into the engine-side placement
+   * registry (NO immediate draw); the box is drawn once at its FINAL rect
+   * at save time (serializeDoc), so moving it never masks the content
+   * under its old rect. The previous implementation baked the box into the
+   * page at add time and used `editImage` mask-and-draw to move it, which
+   * white-masked the OLD rect and erased any document content under it
+   * (DEF-135). The registry approach mirrors `placeSignature`.
+   *
+   * `payload.id` is optional — the renderer may pass its own uuid; if
+   * absent the engine generates one and returns it on
+   * `EngineState.textBoxes`. `color` (legacy `EditColor`) is normalised to
+   * a hex string for the stored `TextBoxModel`.
    */
   async addTextBox(
     docId: string,
@@ -1767,75 +1793,113 @@ export class EngineService {
     if (doc === undefined) {
       return err('engine-error', `unknown document: ${docId}`);
     }
-    const pageResult = resolveVisiblePage(doc, payload.page);
-    if (!pageResult.ok) return pageResult;
-
-    const snapshot = await snapshotDocWithPdf(doc);
-    try {
-      const page = doc.pdfDoc.getPage(pageResult.value);
-      const pageHeight = page.getSize().height;
-      const { x, y, width, height } = payload.rect;
-
-      if (payload.background === 'white') {
-        page.drawRectangle({
-          x,
-          y: pageHeight - y - height,
-          width,
-          height,
-          color: rgb(1, 1, 1),
-        });
-      }
-
-      const fontName = payload.font ?? 'Helvetica';
-      const font = await doc.pdfDoc.embedFont(standardFontFor(fontName));
-      const color = payload.color ?? { r: 0, g: 0, b: 0 };
-
-      // Auto-fit: wrap to width, then shrink the font size so ALL
-      // wrapped lines fit within the box height. Without this, an
-      // oversized font (e.g. a box whose CSS height yields a large
-      // requested size) wraps each word onto many hard-broken lines
-      // and the old height clip silently dropped everything after the
-      // first fragment — losing committed content (DEF-113).
-      const MIN_FIT_SIZE = 4;
-      let size = payload.size ?? 12;
-      let lines = wrapTextToWidth(payload.text, font, size, width);
-      if (height > 0 && lines.length > 0) {
-        const needed = lines.length * size * 1.2;
-        if (needed > height) {
-          size = Math.max(MIN_FIT_SIZE, height / (lines.length * 1.2));
-          // Re-wrap at the smaller size. A smaller font can only
-          // produce fewer-or-equal lines, so the new line set is
-          // guaranteed to fit: newLen <= oldLen implies
-          // newLen * size * 1.2 <= oldLen * size * 1.2 == height.
-          lines = wrapTextToWidth(payload.text, font, size, width);
-        }
-      }
-      const lineHeight = size * 1.2;
-
-      // Draw every wrapped line — never drop content that overflows
-      // the box bottom. The auto-fit above ensures the lines fit; in
-      // the degenerate case (box too small even for MIN_FIT_SIZE) we
-      // still draw all lines rather than silently losing text.
-      let cursorY = pageHeight - y - size; // baseline of first line
-      for (const line of lines) {
-        page.drawText(sanitizeForStandardFont(line), {
-          x,
-          y: cursorY,
-          size,
-          font,
-          color: rgb(color.r, color.g, color.b),
-        });
-        cursorY -= lineHeight;
-      }
-
-      doc.undoStack.push(snapshot);
-      doc.redoStack = [];
-      doc.modified = true;
-      return ok(buildState(doc));
-    } catch (e) {
-      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
-      return err('engine-error', `addTextBox failed: ${e instanceof Error ? e.message : String(e)}`);
+    if (doc.order.length === 0) {
+      return err('out-of-range', `cannot add a text box to a document with 0 pages`);
     }
+    if (payload.page < 1 || payload.page > doc.order.length) {
+      return err('out-of-range', `page ${payload.page} out of range [1,${doc.order.length}]`);
+    }
+    if (typeof payload.text !== 'string' || payload.text.length === 0) {
+      return err('engine-error', 'addTextBox requires non-empty text');
+    }
+    // Registry op: no pdfDoc mutation, so a plain snapshot (no pdfBytes)
+    // suffices for undo — restoreSnapshot reverts the registry directly.
+    const snapshot = snapshotDoc(doc);
+    const font: EditFont = payload.font === 'Times' || payload.font === 'Courier'
+      ? payload.font
+      : 'Helvetica';
+    const size = typeof payload.size === 'number' && payload.size > 0 ? payload.size : 12;
+    const color = payload.color ? editColorToHex(payload.color) : undefined;
+    const box: TextBoxModel = {
+      id: typeof payload.id === 'string' && payload.id.length > 0 ? payload.id : randomUUID(),
+      page: payload.page,
+      rect: {
+        x: payload.rect.x,
+        y: payload.rect.y,
+        width: payload.rect.width,
+        height: payload.rect.height,
+      },
+      text: payload.text,
+      font,
+      size,
+      color,
+      background: payload.background,
+    };
+    doc.textBoxes.push(box);
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok(buildState(doc));
+  }
+
+  /**
+   * Phase 14 / DEF-135 / DEF-136 — move a registry text box to `rect`.
+   * Updates the box's rect in the registry; the box is redrawn at its new
+   * rect on the next save/getDocumentBytes. No masking of the old rect —
+   * underlying content is never erased (the root cause of DEF-135).
+   */
+  async moveTextBox(
+    docId: string,
+    id: string,
+    rect: AnnRect,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._moveTextBoxImpl(docId, id, rect));
+  }
+
+  private async _moveTextBoxImpl(
+    docId: string,
+    id: string,
+    rect: AnnRect,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const idx = doc.textBoxes.findIndex((tb) => tb.id === id);
+    if (idx === -1) {
+      return err('not-found', `text box ${id} not found`);
+    }
+    const snapshot = snapshotDoc(doc);
+    doc.textBoxes[idx] = {
+      ...doc.textBoxes[idx],
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    };
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok(buildState(doc));
+  }
+
+  /**
+   * Phase 14 / DEF-136 — delete a registry text box by id. Removes it from
+   * the registry so it is no longer drawn at save time. This is the Delete
+   * op that was missing for committed text boxes (DEF-136).
+   */
+  async deleteTextBox(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._deleteTextBoxImpl(docId, id));
+  }
+
+  private async _deleteTextBoxImpl(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const idx = doc.textBoxes.findIndex((tb) => tb.id === id);
+    if (idx === -1) {
+      return err('not-found', `text box ${id} not found`);
+    }
+    const snapshot = snapshotDoc(doc);
+    doc.textBoxes.splice(idx, 1);
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok(buildState(doc));
   }
 
   /**
@@ -2786,6 +2850,10 @@ function snapshotDoc(doc: EngineDoc): Snapshot {
       ...sp,
       rect: { ...sp.rect },
     })),
+    textBoxes: doc.textBoxes.map((tb) => ({
+      ...tb,
+      rect: { ...tb.rect },
+    })),
     formFields: tryGetFormFields(doc),
     // DEF-028: capture rich form snapshot so flatten+undo can rebuild fields
     snapFormFields: trySnapshotAllFormFields(doc),
@@ -2821,6 +2889,13 @@ async function restoreSnapshot(doc: EngineDoc, snap: Snapshot): Promise<void> {
   doc.placedSignatures = snap.placedSignatures.map((sp) => ({
     ...sp,
     rect: { ...sp.rect },
+  }));
+  // Phase 14 / DEF-135 / DEF-136: restore the text-box registry so undo of
+  // addTextBox/moveTextBox/deleteTextBox reverts the registry (a registry
+  // op captures a plain snapshotDoc, so snap.textBoxes is always present).
+  doc.textBoxes = (snap.textBoxes ?? []).map((tb) => ({
+    ...tb,
+    rect: { ...tb.rect },
   }));
   // Phase 12: restore page labels (undefined means none were set).
   doc.pageLabels = snap.pageLabels ? snap.pageLabels.map((l) => ({ ...l })) : undefined;
@@ -2919,6 +2994,18 @@ function buildState(doc: EngineDoc): EngineState {
     page: sp.page,
     rect: { ...sp.rect },
   }));
+  // Phase 14 / DEF-135 / DEF-136: attach the text-box registry so the
+  // renderer can render/move/delete committed boxes from EngineState.
+  state.textBoxes = doc.textBoxes.map((tb) => ({
+    id: tb.id,
+    page: tb.page,
+    rect: { ...tb.rect },
+    text: tb.text,
+    font: tb.font,
+    size: tb.size,
+    color: tb.color,
+    background: tb.background,
+  }));
   // Attach form fields with remapped page numbers (DEF-031)
   try {
     const rawFields = getFormFields(doc.pdfDoc);
@@ -3005,6 +3092,21 @@ function applyOpToDoc(doc: EngineDoc, op: OpEntry): Result<void, EngineError> {
         }
       }
       doc.placedSignatures = newPlaced;
+      // Phase 14 / DEF-135 / DEF-136: drop text boxes on the deleted page and
+      // shift boxes after it, mirroring the signature handling above so the
+      // registry stays consistent with the visible page numbering.
+      const newBoxes: TextBoxModel[] = [];
+      for (const tb of doc.textBoxes) {
+        if (tb.page === deletedVisiblePage) {
+          continue; // Remove box on deleted page
+        }
+        if (tb.page > deletedVisiblePage) {
+          newBoxes.push({ ...tb, page: tb.page - 1, rect: { ...tb.rect } });
+        } else {
+          newBoxes.push({ ...tb, rect: { ...tb.rect } });
+        }
+      }
+      doc.textBoxes = newBoxes;
       return ok(undefined);
     }
     case 'reorder': {
@@ -3197,6 +3299,13 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
     serializeSignatureMetadata(out, doc.placedSignatures);
   }
 
+  // Phase 14 / DEF-135 / DEF-136 — draw every registry text box once at its
+  // FINAL rect (no masking of any prior rect), then persist the registry into
+  // a custom catalog entry so boxes survive save/reload and can be moved/
+  // deleted after a reopen (mirrors signature placements).
+  await drawTextBoxes(out, doc.textBoxes);
+  serializeTextBoxMetadata(out, doc.textBoxes);
+
   // Phase 12 — carry the document outline (bookmarks) onto the output doc
   // with a page-ref remap, so bookmarks survive a save. pageRefMap maps the
   // source page ref tag to the matching output page ref (only surviving,
@@ -3369,6 +3478,12 @@ async function serializeDocOptimized(
 
     serializeSignatureMetadata(out, doc.placedSignatures);
   }
+
+  // Phase 14 / DEF-135 / DEF-136 — draw registry text boxes at their final
+  // rect and persist the registry (mirrors serializeDoc so an optimized save
+  // preserves boxes the same way).
+  await drawTextBoxes(out, doc.textBoxes);
+  serializeTextBoxMetadata(out, doc.textBoxes);
 
   // Copy document-level metadata unless max preset strips it
   if (preset !== 'max') {
@@ -3568,6 +3683,230 @@ function parseSigMetaJson(jsonStr: string): SignaturePlacement[] {
     });
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 14 / DEF-135 / DEF-136: text-box placement registry (serialization)
+// ---------------------------------------------------------------------------
+//
+// Text boxes live in an engine-side registry (like signature placements) and
+// are only drawn at save time, once, at their FINAL rect — so moving a box
+// never masks the content under its old rect (the root cause of DEF-135).
+// The registry is persisted into a private `/TFlexBox` catalog entry (a hex
+// string of the boxes JSON) so boxes survive save/reload and can be moved/
+// deleted after a reopen. Standard viewers ignore unknown catalog keys, so
+// the entry is invisible to the user.
+
+/** Maximum byte length we are willing to JSON.parse for text-box metadata.
+ *  Realistic payloads are tiny (no images — just text + geometry), so 16 MiB
+ *  is a generous ceiling that still stops a hostile/huge catalog entry from
+ *  blowing up memory on reload. */
+const MAX_TEXTBOX_META_BYTES = 16 * 1024 * 1024;
+
+/** Draw every registry text box at its FINAL rect on the output document.
+ *  No masking of any prior rect — the box is drawn exactly once. Word-wraps
+ *  the text, auto-fits the font size so all lines fit the box height, draws
+ *  an optional opaque white background fill, and converts the top-left-origin
+ *  rect to PDF's bottom-left coordinate system. Mirrors the legacy
+ *  `_addTextBoxImpl` draw logic but applied to the registry at save time. */
+async function drawTextBoxes(out: PDFDocument, boxes: TextBoxModel[]): Promise<void> {
+  if (boxes.length === 0) return;
+  // Cache the embedded StandardFont by font name so a doc with many boxes
+  // does not re-embed the same base-14 font once per box (mirrors the
+  // signatures path's pngCache by id).
+  type EmbeddedFont = Awaited<ReturnType<typeof out['embedFont']>>;
+  const fontCache = new Map<EditFont, EmbeddedFont>();
+  const getFont = async (name: EditFont): Promise<EmbeddedFont> => {
+    const cached = fontCache.get(name);
+    if (cached !== undefined) return cached;
+    const embedded = await out.embedFont(standardFontFor(name));
+    fontCache.set(name, embedded);
+    return embedded;
+  };
+  for (const box of boxes) {
+    // `box.page` is the 1-based VISIBLE page; the output doc's pages are
+    // built in visible order (serializeDoc iterates doc.order), so the
+    // output page index is `box.page - 1`. Same mapping as signatures.
+    const outPageIdx = box.page - 1;
+    if (outPageIdx < 0 || outPageIdx >= out.getPageCount()) continue;
+
+    const page = out.getPage(outPageIdx);
+    const pageHeight = page.getSize().height;
+    const { x, y, width, height } = box.rect;
+
+    if (box.background === 'white') {
+      page.drawRectangle({
+        x,
+        y: pageHeight - y - height,
+        width,
+        height,
+        color: rgb(1, 1, 1),
+      });
+    }
+
+    const font = await getFont(box.font);
+    const color = box.color ? hexToRgb(box.color) : { r: 0, g: 0, b: 0 };
+
+    // Auto-fit: wrap to width, then shrink the font size so ALL wrapped
+    // lines fit within the box height (DEF-113 — never silently drop text).
+    const MIN_FIT_SIZE = 4;
+    let size = box.size;
+    let lines = wrapTextToWidth(box.text, font, size, width);
+    if (height > 0 && lines.length > 0) {
+      const needed = lines.length * size * 1.2;
+      if (needed > height) {
+        size = Math.max(MIN_FIT_SIZE, height / (lines.length * 1.2));
+        lines = wrapTextToWidth(box.text, font, size, width);
+      }
+    }
+    const lineHeight = size * 1.2;
+
+    // Draw every wrapped line (never drop overflow). Top-left -> bottom-left:
+    // the first baseline sits `size` below the rect's top.
+    let cursorY = pageHeight - y - size;
+    for (const line of lines) {
+      page.drawText(sanitizeForStandardFont(line), {
+        x,
+        y: cursorY,
+        size,
+        font,
+        color: rgb(color.r, color.g, color.b),
+      });
+      cursorY -= lineHeight;
+    }
+  }
+}
+
+/** Serialize the text-box registry into the output PDF's CATALOG under a
+ *  private `/TFlexBox` key (a hex string of the boxes JSON). A size cap
+ *  guards against hostile/huge payloads; if exceeded, the metadata is
+ *  dropped (the drawn text still persists on the pages — it is baked into
+ *  page content at save, independent of this entry). */
+function serializeTextBoxMetadata(out: PDFDocument, boxes: TextBoxModel[]): void {
+  if (boxes.length === 0) return;
+  try {
+    const data = boxes.map((tb) => ({
+      id: tb.id,
+      page: tb.page,
+      rect: {
+        x: tb.rect.x,
+        y: tb.rect.y,
+        width: tb.rect.width,
+        height: tb.rect.height,
+      },
+      text: tb.text,
+      font: tb.font,
+      size: tb.size,
+      color: tb.color,
+      background: tb.background,
+    }));
+    const jsonStr = JSON.stringify(data);
+    if (jsonStr.length > MAX_TEXTBOX_META_BYTES) return;
+    out.catalog.set(PDFName.of('TFlexBox'), PDFHexString.of(jsonStr));
+  } catch {
+    // Best-effort: the drawn text still persists on the pages.
+  }
+}
+
+/** Parse the text-box registry from a loaded PDFDocument. Returns an empty
+ *  array when the doc has no `/TFlexBox` catalog entry or the entry is
+ *  malformed/hostile — never throws out of the load path. */
+function parseTextBoxesFromDoc(pdfDoc: PDFDocument): TextBoxModel[] {
+  try {
+    const entry = pdfDoc.catalog.get(PDFName.of('TFlexBox'));
+    if (entry === undefined) return [];
+    const jsonStr = textBoxMetaEntryToString(entry);
+    if (jsonStr === undefined) return [];
+    return parseTextBoxMetaJson(jsonStr);
+  } catch {
+    return [];
+  }
+}
+
+/** Decode a catalog `/TFlexBox` value (PDFHexString or PDFString) back to the
+ *  raw JSON string. Returns undefined for unknown value types or payloads
+ *  that exceed the safety cap. ONLY `asString()` may be used — `decodeText()`
+ *  applies text-encoding heuristics that corrupt raw JSON bytes (same rule as
+ *  the signature metadata path). */
+function textBoxMetaEntryToString(entry: unknown): string | undefined {
+  if (typeof (entry as { asString?: unknown })?.asString !== 'function') return undefined;
+  let jsonStr: string;
+  try {
+    jsonStr = (entry as { asString(): string }).asString();
+  } catch {
+    return undefined;
+  }
+  if (typeof jsonStr !== 'string' || jsonStr.length > MAX_TEXTBOX_META_BYTES) {
+    return undefined;
+  }
+  return jsonStr;
+}
+
+/** Parse the boxes JSON with structural validation. Returns an empty array
+ *  for any malformed shape so a corrupt/hostile entry never throws out of
+ *  the load path. `font`/`size`/`color`/`background` are normalised to the
+ *  `TextBoxModel` shape with safe defaults. */
+function parseTextBoxMetaJson(jsonStr: string): TextBoxModel[] {
+  const data = JSON.parse(jsonStr);
+  if (!Array.isArray(data)) return [];
+  const result: TextBoxModel[] = [];
+  for (const entry of data) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    if (typeof entry.id !== 'string') continue;
+    if (typeof entry.page !== 'number') continue;
+    if (typeof entry.text !== 'string') continue;
+    const rect = entry.rect;
+    if (typeof rect !== 'object' || rect === null) continue;
+    if (typeof rect.x !== 'number' || typeof rect.y !== 'number'
+      || typeof rect.width !== 'number' || typeof rect.height !== 'number') continue;
+    const font: EditFont =
+      entry.font === 'Times' || entry.font === 'Courier' ? entry.font : 'Helvetica';
+    const size = typeof entry.size === 'number' && entry.size > 0 ? entry.size : 12;
+    const color = typeof entry.color === 'string' ? entry.color : undefined;
+    const background: 'white' | 'none' | undefined =
+      entry.background === 'white' || entry.background === 'none' ? entry.background : undefined;
+    result.push({
+      id: entry.id,
+      page: entry.page,
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      text: entry.text,
+      font,
+      size,
+      color,
+      background,
+    });
+  }
+  return result;
+}
+
+/** Convert a legacy `EditColor` ({r,g,b} in [0,1]) to a `#rrggbb` hex string
+ *  for the stored `TextBoxModel.color`. Components are clamped to [0,1] then
+ *  scaled to [0,255]. */
+function editColorToHex(c: { r: number; g: number; b: number }): string {
+  const toByte = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255)));
+  const hex = (n: number) => n.toString(16).padStart(2, '0');
+  return `#${hex(toByte(c.r))}${hex(toByte(c.g))}${hex(toByte(c.b))}`;
+}
+
+/** Parse a hex color string (#rgb or #rrggbb) to pdf-lib's `rgb()` range
+ *  ({r,g,b} in [0,1]). Used when drawing a registry box at save time. Falls
+ *  back to black for an unparseable string so a bad color never blocks a
+ *  save. */
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  let h = String(hex).trim();
+  if (h.startsWith('#')) h = h.slice(1);
+  if (h.length === 3) {
+    h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+  }
+  if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) {
+    return { r: 0, g: 0, b: 0 };
+  }
+  const num = parseInt(h, 16);
+  return {
+    r: ((num >> 16) & 0xff) / 255,
+    g: ((num >> 8) & 0xff) / 255,
+    b: (num & 0xff) / 255,
+  };
 }
 
 // ---------------------------------------------------------------------------

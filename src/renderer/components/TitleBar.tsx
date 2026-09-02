@@ -33,10 +33,12 @@
 //      a 4x4 rounded square so it reads as a deliberate logotype
 //      instead of a pictogram.
 //
-//   3. The `-webkit-app-region` CSS contract: this component sets
-//      `drag` on its outer container (CSS rule on `.app-header`),
-//      and `no-drag` on every interactive child (CSS rule on
-//      `.app-header > *`). No JS toggles this — it is a stylesheet
+//   3. The `-webkit-app-region` CSS contract: this component's outer
+//      `.titlebar` carries `drag` (declared in styles.css); the
+//      `.titlebar-slot` / `.app-header` inside it inherit that drag
+//      region, and ONLY interactive children (window controls, menu
+//      button + popover, tab surfaces, buttons, inputs) carry
+//      `no-drag` (DEF-132). No JS toggles this — it is a stylesheet
 //      contract that survives React re-renders.
 
 import {

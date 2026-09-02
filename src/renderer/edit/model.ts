@@ -160,6 +160,8 @@ export type EditAction =
   | { type: "select-text-box"; textBoxId: string | null }
   | { type: "set-text-box-rect"; id: string; rect: TextBoxPlacement["rect"] }
   | { type: "upsert-text-box"; placement: TextBoxPlacement }
+  | { type: "delete-text-box"; id: string }
+  | { type: "replace-text-boxes"; boxes: TextBoxPlacement[] }
   | { type: "set-cropping"; cropping: boolean }
   | { type: "reset" };
 
@@ -237,6 +239,23 @@ export function editReducer(state: EditState, action: EditAction): EditState {
       next[idx] = action.placement;
       return { ...state, textBoxes: next };
     }
+    case "delete-text-box": {
+      const next = state.textBoxes.filter((b) => b.id !== action.id);
+      const stillSelected = state.selectedTextBox === action.id ? null : state.selectedTextBox;
+      return { ...state, textBoxes: next, selectedTextBox: stillSelected };
+    }
+    case "replace-text-boxes": {
+      // DEF-135/136 — adopt the engine's authoritative registry list
+      // verbatim (the mirror effect dispatches this after every
+      // state-returning op that echoes `EngineState.textBoxes`). The
+      // engine is the source of truth for which boxes exist and where
+      // they are; the local list is only a renderer mirror.
+      const stillSelected =
+        action.boxes.some((b) => b.id === state.selectedTextBox)
+          ? state.selectedTextBox
+          : null;
+      return { ...state, textBoxes: action.boxes, selectedTextBox: stillSelected };
+    }
     case "set-cropping":
       return { ...state, cropping: action.cropping };
     case "reset":
@@ -301,4 +320,88 @@ export function clampRectToPage(
   const width = clamp(rect.width, 1, pageWidthPt - x);
   const height = clamp(rect.height, 1, pageHeightPt - y);
   return { x, y, width, height };
+}
+
+/** DEF-135/136 — convert the engine's text-box registry entries
+ *  (shared `TextBoxModel`, Phase 14 contract) into the renderer's
+ *  `TextBoxPlacement` mirror shape. The engine is the source of
+ *  truth: its `id` is kept verbatim (move / delete go back to the
+ *  engine keyed by it), and its hex color string (`#rrggbb`) is
+ *  parsed back to the editor's `EditColor`. Missing optional fields
+ *  fall back to the tab's default font (size 12, black) so a
+ *  re-opened editor always shows a sensible style. */
+export function engineTextBoxesToPlacements(
+  boxes: ReadonlyArray<{
+    id: string;
+    page: number;
+    rect: { x: number; y: number; width: number; height: number };
+    text: string;
+    font?: EditFont;
+    size?: number;
+    color?: string;
+    background?: "white" | "none";
+  }>,
+  defaultFont: EditFont,
+): TextBoxPlacement[] {
+  return boxes.map((b) => ({
+    id: b.id,
+    page: b.page,
+    rect: { ...b.rect },
+    text: b.text,
+    style: {
+      font: b.font ?? defaultFont,
+      size: b.size ?? 12,
+      color: hexToEditColor(b.color),
+    },
+    background: b.background ?? "none",
+  }));
+}
+
+/** Parse a `#rrggbb` color string into the editor's `EditColor`
+ *  ({r,g,b} in [0,1]). Falls back to black on any malformed input so
+ *  the mirror never produces an invalid color object. */
+export function hexToEditColor(hex: string | undefined): EditColor {
+  if (typeof hex !== "string" || !/^#[0-9a-fA-F]{6}$/.test(hex)) {
+    return { r: 0, g: 0, b: 0 };
+  }
+  return {
+    r: Number.parseInt(hex.slice(1, 3), 16) / 255,
+    g: Number.parseInt(hex.slice(3, 5), 16) / 255,
+    b: Number.parseInt(hex.slice(5, 7), 16) / 255,
+  };
+}
+
+/** DEF-135/136 — content-equality for two text-box lists. The engine
+ *  echoes a fresh array (new identity) on every state round-trip even
+ *  when nothing about the boxes changed; the App mirror effect uses
+ *  this to skip the reducer dispatch (and the resulting openTabs
+ *  object churn) when the boxes are identical. Follows the
+ *  `sameFormFields` pattern from forms/model.ts. */
+export function sameTextBoxes(
+  a: ReadonlyArray<TextBoxPlacement>,
+  b: ReadonlyArray<TextBoxPlacement>,
+): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const x = a[i];
+    const y = b[i];
+    if (x === undefined || y === undefined) return false;
+    if (x.id !== y.id || x.page !== y.page || x.text !== y.text || x.background !== y.background) {
+      return false;
+    }
+    const xr = x.rect;
+    const yr = y.rect;
+    if (xr.x !== yr.x || xr.y !== yr.y || xr.width !== yr.width || xr.height !== yr.height) {
+      return false;
+    }
+    if (x.style.font !== y.style.font || x.style.size !== y.style.size) {
+      return false;
+    }
+    const xc = x.style.color;
+    const yc = y.style.color;
+    if (xc.r !== yc.r || xc.g !== yc.g || xc.b !== yc.b) {
+      return false;
+    }
+  }
+  return true;
 }

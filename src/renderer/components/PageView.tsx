@@ -22,7 +22,20 @@ import type {
 
 interface PageViewProps {
   doc: PDFDocumentProxy;
-  pageNumber: number; // 1-based
+  /** 1-based VISIBLE page index (the engine-ordered position the
+   *  user sees). Used for every overlay (annotations / forms /
+   *  signatures / stamps / edit), the slot registration, and the
+   *  data-page marker. DEF-133 — overlays must create content on
+   *  the VISIBLE page; the engine interprets every `page` field
+   *  against its current pageOrder, while the pdf.js proxy is
+   *  still keyed by SOURCE order. */
+  page: number;
+  /** 1-based SOURCE page index into the pdf.js proxy. After a
+   *  delete / reorder / insert the visible and source indices
+   *  diverge (`visibleToSourcePage` in DocumentView computes
+   *  this). Only `doc.getPage(sourcePage)` uses this — everything
+   *  the user can create on the page uses `page`. */
+  sourcePage: number;
   widthPt: number; // fallback dims at scale 1 (placeholder sizing)
   heightPt: number;
   cssScale: number;
@@ -147,6 +160,9 @@ interface PageViewProps {
       background: "white" | "none";
       id: string;
     }) => void;
+    /** DEF-135/136 — delete a committed text box through the engine's
+     *  registry. Threaded to the EditOverlay's box placement toolbar. */
+    onDeleteTextBox?: (id: string) => void;
   } | null;
 }
 
@@ -215,7 +231,8 @@ function releasePdfPage(page: unknown): void {
 export function PageView(props: PageViewProps) {
   const {
     doc,
-    pageNumber,
+    page,
+    sourcePage,
     widthPt,
     heightPt,
     cssScale,
@@ -336,9 +353,9 @@ export function PageView(props: PageViewProps) {
     };
     const run = async (): Promise<void> => {
       beginRender();
-      let page: PDFPageProxy;
+      let pageProxy: PDFPageProxy;
       try {
-        page = await doc.getPage(pageNumber);
+        pageProxy = await doc.getPage(sourcePage);
       } catch (error) {
         // DEF-121 — stale page index during a post-op proxy refresh.
         // The engine commits its new pageOrder (page count) before the
@@ -357,13 +374,13 @@ export function PageView(props: PageViewProps) {
         }
         throw error;
       }
-      pdfPage = page;
+      pdfPage = pageProxy;
       if (disposed) {
         endRender();
         return;
       }
-      const pdfPageHeight = page.view[3] - page.view[1];
-      onPageSize(pageNumber, page.view[2] - page.view[0], pdfPageHeight);
+      const pdfPageHeight = pageProxy.view[3] - pageProxy.view[1];
+      onPageSize(page, pageProxy.view[2] - pageProxy.view[0], pdfPageHeight);
       if (disposed) {
         endRender();
         return;
@@ -377,7 +394,7 @@ export function PageView(props: PageViewProps) {
       // canvas + wrapper dims below use the rotated viewport's width /
       // height so the bitmap is laid out at its real visual size.
       const rotDeg = (rotation * 90) as 0 | 90 | 180 | 270;
-      const viewport = page.getViewport({ scale: cssScale, rotation: rotDeg });
+      const viewport = pageProxy.getViewport({ scale: cssScale, rotation: rotDeg });
       const canvas = canvasRef.current;
       const wrapper = wrapperRef.current;
       const textHost = textHostRef.current;
@@ -432,9 +449,9 @@ export function PageView(props: PageViewProps) {
       // refuses two concurrent renders against the same canvas, which used
       // to surface as a hard "Cannot use the same canvas during multiple
       // render() operations" error during fast zoom in / out.
-      const task = page.render({
+      const task = pageProxy.render({
         canvasContext: ctx,
-        viewport: page.getViewport({ scale: cssScale, rotation: rotDeg }),
+        viewport: pageProxy.getViewport({ scale: cssScale, rotation: rotDeg }),
       });
       renderTask = task;
       try {
@@ -458,7 +475,7 @@ export function PageView(props: PageViewProps) {
       // doesn't always include `styles` with the first batch of items, which
       // makes TextLayer.#appendText throw on an undefined style entry and
       // leave the textHost empty (no text-selection, no search highlights).
-      const textContent = await page.getTextContent();
+      const textContent = await pageProxy.getTextContent();
       if (disposed) {
         endRender();
         return;
@@ -530,7 +547,7 @@ export function PageView(props: PageViewProps) {
       releasePdfPage(pdfPage);
       pdfPage = null;
     };
-  }, [shouldRender, cssScale, doc, pageNumber, onPageSize, onRenderStart, onRenderEnd, rotation]);
+  }, [shouldRender, cssScale, doc, sourcePage, onPageSize, onRenderStart, onRenderEnd, rotation]);
 
   useLayoutEffect(() => {
     if (!ready || hits.length === 0) {
@@ -562,9 +579,9 @@ export function PageView(props: PageViewProps) {
     }
     const rects = measureHitRects(wrapper, textLayer.textDivs as HTMLElement[], activeHit);
     if (rects.length > 0) {
-      onActiveHitTop(pageNumber, rects[0].top);
+      onActiveHitTop(page, rects[0].top);
     }
-  }, [ready, activeHit, pageNumber, onActiveHitTop]);
+  }, [ready, activeHit, page, onActiveHitTop]);
 
   const getTextItems = useCallback((): TextItemGeom[] => textItemsRef.current, []);
 
@@ -589,10 +606,10 @@ export function PageView(props: PageViewProps) {
     <div
       ref={(el) => {
         wrapperRef.current = el;
-        registerPage?.(pageNumber, el);
+        registerPage?.(page, el);
       }}
       className={rotClass === undefined ? "pdf-page" : `pdf-page ${rotClass}`}
-      data-page={pageNumber}
+      data-page={page}
       style={{ width: `${wrapperW}px`, height: `${wrapperH}px` }}
     >
       <canvas ref={canvasRef} className="pdf-page-canvas" />
@@ -614,7 +631,7 @@ export function PageView(props: PageViewProps) {
         )}
       </div>
       <AnnotationOverlay
-        page={pageNumber}
+        page={page}
         widthPt={widthPt}
         heightPt={heightPt}
         cssScale={cssScale}
@@ -632,21 +649,21 @@ export function PageView(props: PageViewProps) {
        * pixels, this mirrors them as a verifiable node. */}
       <StampAnnotations cssScale={cssScale} items={stampAnnotations} />
       <FormsOverlay
-        page={pageNumber}
+        page={page}
         cssScale={cssScale}
         fields={formFields ?? EMPTY_FIELDS}
         onValueChange={(id, v): void => onFormValueChange?.(id, v)}
         onToggleListbox={(id, opt): void => onFormListboxToggle?.(id, opt)}
       />
       <SignaturesOverlay
-        page={pageNumber}
+        page={page}
         pageWidthPt={widthPt}
         pageHeightPt={heightPt}
         cssScale={cssScale}
         placements={signatures ?? EMPTY_PLACEMENTS}
         signatures={savedSignatures ?? EMPTY_SAVED}
         armedSignatureId={armedSignatureId ?? null}
-        onPlace={(id, r): void => onPlaceSignature?.(id, pageNumber, r)}
+        onPlace={(id, r): void => onPlaceSignature?.(id, page, r)}
         onMove={(id, r): void => onMoveSignature?.(id, r)}
         onDelete={(id): void => onDeleteSignature?.(id)}
         // B1 — exit Sign mode. The overlay's pending action bar
@@ -658,7 +675,7 @@ export function PageView(props: PageViewProps) {
           no stamp is armed; otherwise follows the cursor and
           embeds the stamp on the next pointerdown. */}
       <StampOverlay
-        page={pageNumber}
+        page={page}
         pageWidthPt={widthPt}
         pageHeightPt={heightPt}
         cssScale={cssScale}
@@ -678,7 +695,7 @@ export function PageView(props: PageViewProps) {
       />
       {editModeOpen && edit !== null && (
         <EditOverlay
-          page={pageNumber}
+          page={page}
           pageWidthPt={widthPt}
           pageHeightPt={heightPt}
           cssScale={cssScale}
@@ -692,6 +709,7 @@ export function PageView(props: PageViewProps) {
           onCommitTextBox={edit.onCommitTextBox}
           onCommitImageEdit={edit.onCommitImageEdit}
           onCommitTextBoxMove={edit.onCommitTextBoxMove}
+          onDeleteTextBox={edit.onDeleteTextBox}
         />
       )}
       {!ready && <div className="page-placeholder" aria-hidden />}

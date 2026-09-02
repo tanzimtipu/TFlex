@@ -1,3 +1,103 @@
+## DEF-136: Selecting a placed Add-box text box offers no Delete/Remove option
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.10)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.10 binary = 0dab4cb source).
+2. Open report.pdf, toggle Edit (toolbar "Edit content"), choose "Add box".
+3. Drag a rectangle on the page, type "MY BOX", Ctrl+Enter to commit.
+4. Click the placed box (either to move or just to select it).
+
+Expected: A placed text box can be deleted (a Delete/Remove action, parity with the Edit-image tool's "Remove" button).
+Actual: The box shows only the inline editor (Font / Size / Color / confirm / cancel) and corner handles — there is NO Delete/Remove affordance. The Edit-image tool shows a toolbar with Replace / Crop / Remove; the Edit-toolbox tool has no equivalent, so a committed text box cannot be removed without undoing the whole add. Screenshot: screenshots/def-137-box-selected.png (the selected box's chrome has no Delete/Remove control).
+Root cause: `src/renderer/edit/EditOverlay.tsx` `TextBoxView` renders only the box surface + resize handles (no `.edit-box-toolbar`). Only `PlacementToolbar` (the image tool) provides a Delete/Remove button; the box tool has no action bar wired to remove a committed box from the registry / engine.
+History:
+- qa: opened (ground-truth on installed v1.7.10; box selected => `selected:true`, no `.edit-box-toolbar` / delete button in the box chrome).
+- qa: retested on installed v1.7.11 (FileVersion 1.7.11, exe 05:42 newer than all src). Place an Add-box, commit, click it -> the inline editor reopens; Escape closes it, leaving the box `.edit-box-selected`. A `.edit-box-toolbar` appears with BOTH `[data-edit-box-action="edit"]` (reopens the editor with the box's committed content) and `[data-edit-box-action="delete"]` (engine.deleteTextBox). Clicking Delete removes the box: the rendered `.edit-box` for that id count = 0 AND the engine registry `EngineState.textBoxes` no longer holds it. Text boxes are an engine-side placement registry (addTextBox / moveTextBox / deleteTextBox + `EngineState.textBoxes`). Screenshots screenshots/def-136-box-toolbar-delete-edit.png, def-136-after-delete.png. CLOSED.
+
+## DEF-135: Moving an Add-box text box that covered text erases that text (white-mask artifact)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (v1.7.10)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.10 binary = 0dab4cb source).
+2. Open report.pdf, toggle Edit (toolbar "Edit content"), choose "Add box".
+3. Drag a rectangle directly over the title run "TFlex Technical Report"; type "MY BOX"; Ctrl+Enter to commit.
+4. Drag the box body (e.g. 120px right / 120px down) to move it to a new spot.
+
+Expected: Moving a text box moves the box (and its text) to the new spot, leaving the page content it covered intact.
+Actual: The box moves, but the area where the box originally sat is permanently masked with a white rectangle — the title "TFlex Technical Report" is visually erased (blank) even after the box moves away. The string stays in the pdf.js textLayer (so it remains selectable in the DOM), but the painted page no longer shows it. Screenshot: screenshots/def-137-after-move.png (title gone where the box was; "MY BOX" sits at the new spot).
+Root cause: `EditOverlay.tsx` `onPointerUp` textBoxMove path -> `onCommitTextBoxMove` -> the host re-bakes the box through the engine's `editImage` mask-and-draw contract (white `drawRectangle` over `oldRect`), which erases whatever content was under the box's ORIGINAL rect. This is the same mask-and-draw limitation as DEF-116/124 (mask, don't strip) now surfaced when moving a box over real content — content under a moved box's old position is lost from the visible page.
+History:
+- qa: opened (ground-truth on installed v1.7.10; box placed over the title, moved 120px, title area masked/erased).
+- qa: retested on installed v1.7.11 (FileVersion 1.7.11, exe 05:42 newer than all src). Place an Add-box directly over the title "TFlex Technical Report", commit ("MY BOX"), then drag the box 120px right / 120px down. The title REGION of the page-1 canvas keeps dark-fraction 0.2178 BOTH before and after the move (pixel-identical — NO white-mask artifact), and the "TFlex Technical Report" span stays in the textLayer; the title is visibly intact. Text boxes are now an engine-side placement registry (addTextBox pushes a `TextBoxModel`, no pdfDoc mutation; moveTextBox updates the rect; drawn ONCE at the FINAL rect at save), so moving a box never masks the content under its old rect. Save + re-parse with pdf-lib: valid 34-page PDF. Screenshot screenshots/def-135-after-move.png. CLOSED.
+
+## DEF-134: Dragging a committed signature, then clicking it, reverts to the previous position
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (v1.7.10)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.10 binary = 0dab4cb source).
+2. Open report.pdf, click toolbar "Sign tool", Type tab -> type "QA" -> Save -> pick the saved signature.
+3. Click the page to place, Confirm to commit (placement rect left 200 / top 200).
+4. Drag the committed placement 120px right / 60px down (it renders at left 320 / top 260 — the uncommitted move rect).
+5. Click the placement again WITHOUT pressing Confirm on the floating action bar.
+
+Expected: The signature keeps the dragged position (the move is applied live); a click should not discard an in-progress move.
+Actual: The click reverts the placement back to its PREVIOUS (committed) position — left 200 / top 200 — and the drag result is lost. The new position is not applied; the user must click Confirm, but any incidental click on the placement discards the move. Screenshots: screenshots/def-135-after-drag.png (moved to 320,260) and screenshots/def-135-after-click.png (reverted to 200,200).
+Root cause: `SignaturesOverlay.tsx` `onPointerDownPlacement` calls `setPendingMoveRect(null)` at the very top (line ~219) on EVERY new pointerdown on a placement, including a plain click. That clears the held (uncommitted) `pendingMoveRect` before the drag/commit can happen, so the placement re-renders at the committed `p.rect` and the move is discarded.
+History:
+- qa: opened (ground-truth on installed v1.7.10; placement rect 200,200 -> drag -> 320,260 -> click -> 200,200).
+- qa: retested on installed v1.7.11 (FileVersion 1.7.11, exe 05:42 newer than all src). Place a typed signature at rect 200,200 and Confirm. Drag 120px right / 60px down -> the placement rect becomes 320,260 (the move is applied LIVE, visible before confirm). Click the placement WITHOUT pressing Confirm -> rect STAYS 320,260 (no revert; dxFromInitial=120). Click Confirm -> the new position 320,260 is committed. Root cause fixed: `onPointerDownPlacement` no longer clears a held `pendingMoveRect` that belongs to the SAME placement (the `SIG_CLICK_TOLERANCE_PX` = 4 click path preserves it), so a post-drag click no longer snaps the signature back. Screenshots screenshots/def-134-after-drag.png, def-134-after-click-no-revert.png, def-134-after-confirm-commit.png. CLOSED.
+
+## DEF-133: After inserting a blank page, drawing an annotation on pages 2/3 silently places it on the wrong page
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (v1.7.10)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.10 binary = 0dab4cb source).
+2. Open report.pdf (34 pages), Tools palette -> "Insert pages", blank mode, "Insert at page" = 2, Insert (pageCount 34 -> 35).
+3. Scroll to the visible page 2 (the new blank) and confirm the page order is correct: engineState.pageOrder becomes [0,34,1,2,...] — the new blank IS page 2. (The page-order claim does NOT reproduce; see note.)
+4. Arm the Pen (annotation toolbar "Pen" / data-tool="ink") and draw a stroke on visible page 2; then draw a Rectangle on visible page 3.
+
+Expected: The ink stroke / rectangle appears on the page the user drew on (visible pages 2 and 3).
+Actual: No annotation appears on the page that was drawn on. The engine state records 1 annotation (`engineState.annotations.length === 1`), and the stroke actually renders on the LAST visible page (page 35) — a pen stroke drawn on visible page 2 lands on visible page 35; a rect drawn on visible page 3 lands on page 2. The user's mark is silently placed at the wrong position in the document. Screenshot: screenshots/def-133-pen-misplaced.png (ink drawn on page 2; appears on page 35).
+Root cause: `DocumentView.tsx` renders `<PageView pageNumber={sourcePage} ...>` where `sourcePage = visibleToSourcePage(visiblePage, engineState.pageOrder)` (the pdf.js SOURCE page, origIdx+1). `PageView.tsx` passes `page={pageNumber}` (the source page) to `<AnnotationOverlay>`, which stamps the created annotation's `page = sourcePage`. The engine's `annotations.createAnnotation` (`src/main/services/annotations.ts:246`) treats `payload.page` as the VISIBLE page and computes `origIdx = order[visiblePage - 1]`. After a reorder these differ (visible page 2 -> source page 35 / origIdx 34), so the annotation is stored on the WRONG origIdx and rendered on the wrong visible page.
+NOTE: The report's "LAST page gets moved to position 2 and the NEW page lands at position 3" page-order claim is NOT reproduced — `pageOrder[1]` === 34 (the new blank), i.e. the blank correctly becomes page 2 and the original last page stays at the end. The defect is the annotation page-number mismatch, which makes drawing tools appear broken on pages 2/3.
+History:
+- qa: opened (ground-truth on installed v1.7.10; page order correct, but ink on visible page 2 -> page 35, engine annotations = 1).
+- qa: retested on installed v1.7.11 (FileVersion 1.7.11, exe 05:42 newer than all src). Insert blank at position 2 -> pageCount 34->35, pageOrder [0,34,1,2,...], the new blank IS visible page 2, unique 35 (insert-blank regression clean, no duplicate). Arm the Pen and draw a stroke on VISIBLE page 2; arm the Rectangle and draw on VISIBLE page 3: engine annotations = [{kind:ink,page:2},{kind:rect,page:3}] — the pen lands on visible page 2 and the rectangle on visible page 3 (was page 35 / page 2). Committed ink is rendered on the visible page-2 slot. Root cause fixed: PageView now threads BOTH `page` (the VISIBLE index, used by every overlay to create content) and `sourcePage` (the pdf.js proxy index, used only by `doc.getPage(sourcePage)` to render), so an overlay no longer stamps the SOURCE page number into the annotation. Screenshot screenshots/def-133-pen-correct-page.png. CLOSED.
+
+## DEF-132: Frameless window cannot be moved by dragging the title bar
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (v1.7.10)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.10 binary = 0dab4cb source). The window is created with `frame: false` (no native title bar).
+2. Attempt to move the window by pressing and dragging anywhere on the top title bar (the brand / tab strip / empty caption area).
+
+Expected: The window behaves as a normal draggable Windows window — dragging the caption strip moves it (and Aero Snap works at the screen edges).
+Actual: The window cannot be moved by dragging the title bar. Sampling the computed `-webkit-app-region` across the title bar yields `draggablePx = 0` and `noDragPx = 60480` — every pixel of the 1442x44 title bar resolves to `no-drag`; the full-width `.titlebar-slot` (1264px, flex:1) and the `.app-header` inside it are both `-webkit-app-region: no-drag`. With `frame: false` there is also no native caption area to grab, so the window has no mouse-drag affordance at all. Screenshot: screenshots/def-132-titlebar-region.png.
+Root cause: `src/renderer/styles.css` — `.titlebar { -webkit-app-region: drag }` (line 312) is defeated by `.titlebar > * { -webkit-app-region: no-drag }` (line 317-319), which applies `no-drag` to the `.titlebar-slot` (the direct child that fills the whole bar width) and `.titlebar-controls`/`.titlebar-menu`. The `.app-header` inside the slot also declares `-webkit-app-region: no-drag` (line 282). Because the slot spans the entire bar (the only free drag surface is the leftover padding, which is zero-width given the slot is `flex: 1 1 auto`), there is effectively no draggable caption region. Combined with `frame: false` (src/main/window.ts:64) there is no native caption either — so the window is immovable by mouse.
+History:
+- qa: opened (ground-truth on installed v1.7.10; region map: titlebar-slot and app-header both no-drag, dragPx=0).
+- qa: retested on installed v1.7.11 (FileVersion 1.7.11, exe 05:42 newer than all src). The `.titlebar` computes `-webkit-app-region: drag`; `.titlebar-slot` and `.app-header` both resolve to `drag` (the DEF-132 `.titlebar > * { no-drag }` rule is gone — only interactive children opt out via scoped `.titlebar-menu-*` / `.titlebar-control*` / `.app-header button,input,select,textarea` rules). Region map over the 1442x44 bar: dragPx=46836, noDragPx=13644, so 72.7% of the caption strip is draggable (was dragPx=0). The frameless window is now movable by dragging the caption strip. Screenshot screenshots/def-132-titlebar-draggable.png. CLOSED.
+
 ## DEF-131: "Per page" crop applies the crop to EVERY page, not just the selected one
 
 - Status: CLOSED

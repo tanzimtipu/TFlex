@@ -260,6 +260,10 @@ interface DocumentViewProps {
       background: "white" | "none";
       id: string;
     }) => void;
+    /** DEF-135/136 — delete a committed text box through the engine's
+     *  registry (engine.deleteTextBox). Wire → DocumentView → PageView
+     *  → EditOverlay's box placement toolbar. */
+    onDeleteTextBox?: (id: string) => void;
   } | null;
 }
 
@@ -1759,7 +1763,19 @@ export function DocumentView({
                   {isMounted && (
                     <PageView
                       doc={doc}
-                      pageNumber={sourcePage}
+                      // DEF-133 — thread BOTH page spaces into
+                      // PageView. `page` is the VISIBLE index every
+                      // overlay uses when it creates content
+                      // (annotations / forms / signatures / stamps /
+                      // text boxes all carry `page` in their
+                      // engine payloads, and the engine interprets
+                      // it against the CURRENT pageOrder). `sourcePage`
+                      // is the index into the pdf.js proxy, which
+                      // stays in SOURCE order after a delete /
+                      // reorder / insert — only PageView's
+                      // `doc.getPage(sourcePage)` render uses it.
+                      page={visiblePage}
+                      sourcePage={sourcePage}
                       widthPt={firstPageSize?.w ?? 612}
                       heightPt={firstPageSize?.h ?? 792}
                       cssScale={effectiveScale}

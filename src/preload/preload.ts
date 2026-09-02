@@ -236,6 +236,22 @@ const engineApi = {
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineEditImage, docId, payload);
   },
+  // Phase 14 / DEF-135 / DEF-136 — text-box registry move/delete. Boxes are
+  // registry-only (drawn once at save time); move updates the rect without
+  // masking the content under the old rect, delete removes the box.
+  moveTextBox(
+    docId: string,
+    id: string,
+    rect: import("../shared/types").AnnRect,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineMoveTextBox, docId, id, rect);
+  },
+  deleteTextBox(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineDeleteTextBox, docId, id);
+  },
   // Phase 11: OCR — recognize text + suspects + progress
   ocrRecognize(
     docId: string,

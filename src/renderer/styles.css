@@ -256,10 +256,14 @@ textarea {
 }
 
 /* Phase 13 — frameless window. The TitleBar is the drag region; the
- * AppHeader inside it is a regular toolbar row (every interactive
- * child gets `no-drag` via the universal child selector). The TitleBar
- * carries its own `drag` rule on its outer container; together they
- * form one continuous caption strip the OS treats as a caption area. */
+ * AppHeader inside it is a regular toolbar row. ONLY interactive
+ * children (tab surfaces, buttons, inputs) opt out with `no-drag`;
+ * the bar itself inherits the titlebar's `drag` so empty brand /
+ * tab-strip / header space moves the window like a normal caption.
+ * DEF-132 — the previous universal child selector
+ * (`.titlebar > * { no-drag }` + `.app-header > * { no-drag }`)
+ * applied no-drag to the full-width `.titlebar-slot` and the whole
+ * `.app-header`, leaving NO draggable pixel in the caption strip. */
 .app-header {
   display: flex;
   /* DEF-085 — fill the host .titlebar-slot's full width so
@@ -279,11 +283,8 @@ textarea {
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar);
   flex-shrink: 0;
-  -webkit-app-region: no-drag;
-}
-
-.app-header > * {
-  -webkit-app-region: no-drag;
+  /* DEF-132 — no `-webkit-app-region` here: the AppHeader sits inside
+   * the draggable titlebar slot and must default to drag. */
 }
 
 /* The TitleBar wraps the existing .app-header so the caption strip
@@ -299,7 +300,14 @@ textarea {
  * AppHeader inside the slot, 44px). We no longer hardcode 32px so a
  * refactor that nudges the AppHeader's height doesn't silently clip
  * the strip. The min-height keeps the title region usable when the
- * AppHeader renders nothing (e.g. before boot completes). */
+ * AppHeader renders nothing (e.g. before boot completes).
+ *
+ * DEF-132 — the drag region is the whole bar minus interactive
+ * children. `.titlebar-slot` and `.app-header` carry NO app-region
+ * rule, so the OS treats the full-width strip as caption space.
+ * Interactive surfaces opt out individually below: window controls,
+ * the menu button + its popover, tab surfaces, tab/new-tab buttons,
+ * theme toggle, Open button, and any native input/select. */
 .titlebar {
   display: flex;
   align-items: stretch;
@@ -314,10 +322,6 @@ textarea {
   z-index: 2;
 }
 
-.titlebar > * {
-  -webkit-app-region: no-drag;
-}
-
 /* The brand/tabs slot — fills the space between the menu button
  * (leading edge) and the window controls (trailing edge). The host
  * slots the existing AppHeader here. */
@@ -326,6 +330,34 @@ textarea {
   align-items: stretch;
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* DEF-132 — interactive children of the caption strip opt out of the
+ * window-drag region. Everything else in the bar (brand, tab-strip
+ * empty space, header-action gaps, the menu button's padding) stays
+ * a caption area the OS can drag. Selectors are scoped to the title
+ * bar / app header so document-canvas elements can never inherit
+ * no-drag from here. */
+.titlebar-menu-button,
+.titlebar-menu-popover {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-controls,
+.titlebar-control {
+  -webkit-app-region: no-drag;
+}
+
+.app-header .tab,
+.app-header .tab-close,
+.app-header .tab-new,
+.app-header .theme-toggle,
+.app-header .btn,
+.app-header button,
+.app-header input,
+.app-header select,
+.app-header textarea {
+  -webkit-app-region: no-drag;
 }
 
 /* The menu button — leading edge. Its popover anchors to its
@@ -4744,6 +4776,46 @@ textarea {
 }
 
 .edit-image-toolbar-btn-danger:hover {
+  color: #ef4444;
+}
+
+/* DEF-135/136 — placement toolbar for a SELECTED COMMITTED text box
+ * (Edit / Delete). Mirrors the image toolbar's floating treatment so
+ * the box actions read as part of the same selection-chrome family. */
+.edit-box-toolbar {
+  position: absolute;
+  display: inline-flex;
+  gap: 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  padding: 2px;
+  z-index: 5;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.edit-box-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 8px;
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm, 12px);
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: var(--radius-1);
+  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+}
+
+.edit-box-toolbar-btn:hover {
+  background: var(--bg-hover, var(--accent-soft));
+  color: var(--fg);
+}
+
+.edit-box-toolbar-btn-danger:hover {
   color: #ef4444;
 }
 

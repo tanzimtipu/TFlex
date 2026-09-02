@@ -267,6 +267,16 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.engineEditImage, (_event, docId: string, payload: EditImagePayload) =>
     engine.editImage(docId, payload),
   );
+  // Phase 14 / DEF-135 / DEF-136 — text-box registry move/delete. Boxes are
+  // registry-only (drawn once at save time), so move updates the rect without
+  // masking the content under the old rect (the root cause of DEF-135); delete
+  // removes the box from the registry (DEF-136).
+  ipcMain.handle(IPC.engineMoveTextBox, (_event, docId: string, id: string, rect: import('../shared/types').AnnRect) =>
+    engine.moveTextBox(docId, id, rect),
+  );
+  ipcMain.handle(IPC.engineDeleteTextBox, (_event, docId: string, id: string) =>
+    engine.deleteTextBox(docId, id),
+  );
 
   // Phase 11: OCR — recognize text (build invisible text layer) + suspects.
   // Progress is forwarded only to the window that issued the request. The

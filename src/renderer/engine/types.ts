@@ -62,7 +62,11 @@ export type EngineOp =
  *  without them (older preload) to safe defaults (empty arrays).
  *
  *  The renderer keeps its own canUndo/canRedo flags in app state because
- *  the engine does not expose them. */
+ *  the engine does not expose them.
+ *
+ *  DEF-135/136 — `textBoxes?: TextBoxModel[]` is declared on the SHARED
+ *  `EngineState` (Phase 14 contract, src/shared/types.ts); the renderer
+ *  inherits it here and does NOT re-declare it. */
 export interface EngineState extends SharedEngineState {
   annotations: Annotation[];
   /** Phase 4 — every form field on the active doc, with current values.
@@ -72,6 +76,17 @@ export interface EngineState extends SharedEngineState {
    *  the user hasn't placed any. */
   signatures?: SignaturePlacement[];
 }
+
+/** DEF-135/136 — move a registered text box through the engine's
+ *  registry. Signature matches the SHARED contract
+ *  (src/shared/ipc.ts `moveTextBox(docId, id, rect)`): the engine
+ *  looks the box up by `id` and re-targets its rect; there is NO
+ *  `page` argument (the box's registry entry already knows its page).
+ *
+ *  Backend note: the op is NOT in the shared IPC contract at the
+ *  time of the renderer change (backend ships it in parallel); the
+ *  renderer's EngineApi declares it optional and degrades with a
+ *  friendly engine-error until the preload exposes it. */
 
 /** Result of a successful split/extract — the engine returns fresh
  *  ArrayBuffer bytes for a new document. The renderer hands them to the
@@ -368,6 +383,31 @@ export interface EngineApi {
   addTextBox(
     docId: string,
     payload: AddTextBoxPayload,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** DEF-135/136 — move / resize a REGISTERED text box through the
+   *  engine's text-box registry. The engine updates the box's rect in
+   *  `EngineState.textBoxes` (and draws it at the FINAL rect at save
+   *  time); the renderer's overlay mirrors the change from the echoed
+   *  state. Signature matches the shared IPC contract exactly —
+   *  `moveTextBox(docId, id, rect)` (no page: the registry entry
+   *  knows the box's page). Optional because the backend ships the
+   *  registry contract in parallel — pre-registry builds degrade with
+   *  a friendly engine-error (the renderer falls back to the
+   *  rasterize-and-editImage path for that period). */
+  moveTextBox?(
+    docId: string,
+    id: string,
+    rect: { x: number; y: number; width: number; height: number },
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** DEF-135/136 — delete a REGISTERED text box from the engine's
+   *  registry. The box's baked content is removed with it (no
+   *  white-mask needed). Optional for the same parallel-contract
+   *  reason as `moveTextBox`. */
+  deleteTextBox?(
+    docId: string,
+    id: string,
   ): Promise<Result<EngineState, EngineError>>;
 
   /** Edit an image's placement (move / resize / replace / crop). The engine

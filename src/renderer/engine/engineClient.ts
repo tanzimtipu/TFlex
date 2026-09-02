@@ -300,6 +300,22 @@ export interface TFlexApiEngine {
     docId: string,
     payload: AddTextBoxPayload,
   ): Promise<Result<SharedEngineState, EngineError>>;
+  /** DEF-135/136 — move / resize a REGISTERED text box via the engine's
+   *  text-box registry. Optional so a backend that predates the registry
+   *  contract keeps degrading with a friendly engine-error; the renderer
+   *  falls back to the rasterize + editImage path for that period. */
+  moveTextBox?(
+    docId: string,
+    id: string,
+    rect: { x: number; y: number; width: number; height: number },
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** DEF-135/136 — delete a REGISTERED text box from the engine's
+   *  registry. Optional for the same parallel-contract reason as
+   *  `moveTextBox`. */
+  deleteTextBox?(
+    docId: string,
+    id: string,
+  ): Promise<Result<SharedEngineState, EngineError>>;
 /** Phase 10 — edit an image (move / resize / replace / crop). The engine
    *  masks the original placement and draws the (renderer-supplied)
    *  transformed bytes at the new rect. Optional so a pre-Phase-10
@@ -528,6 +544,17 @@ function normalizeState(
   const incomingFields: FormField[] | undefined = Array.isArray(maybe.formFields)
     ? maybe.formFields
     : undefined;
+  // DEF-135/136 — text-box registry. Consume the wire value when it is
+  // an array (incl. the empty array, a legitimate "no boxes" signal —
+  // e.g. after the last delete). When the wire omits the key, leave
+  // the renderer state's field undefined so App.tsx's mirror effect
+  // short-circuits on `undefined` (an older backend that has no
+  // registry must not clobber the renderer's local box list with
+  // nothing). The shape is the shared `TextBoxModel` (Phase 14
+  // contract) — no conversion needed at the boundary.
+  const incomingTextBoxes = Array.isArray(maybe.textBoxes)
+    ? maybe.textBoxes
+    : undefined;
   // Strip wire-shape-only keys (`placedSignatures`) from the spread
   // so the returned renderer state never carries the engine's wire
   // field name. Without this strip, `placedSignatures` leaks through
@@ -543,6 +570,7 @@ function normalizeState(
     annotations: resolvedAnnotations,
     formFields: incomingFields,
     signatures: incomingSigs,
+    textBoxes: incomingTextBoxes,
   };
 }
 
@@ -573,6 +601,13 @@ function missingPhase10(): Result<never, EngineError> {
   return err(
     "engine-error",
     "edit-content (text run / text box / image) requires the Phase 10 backend update",
+  );
+}
+
+function missingTextBoxRegistry(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "text-box registry (moveTextBox / deleteTextBox) requires the Phase 13 backend update",
   );
 }
 
@@ -993,6 +1028,31 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.addTextBox === undefined) return missingPhase10();
     const r = await this.inner.addTextBox(docId, payload);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** DEF-135/136 — move / resize a REGISTERED text box through the
+   *  engine's registry. When the backend hasn't shipped the registry
+   *  contract yet, degrade with a friendly engine-error so the host
+   *  can fall back to the rasterize + editImage path. */
+  async moveTextBox(
+    docId: string,
+    id: string,
+    rect: { x: number; y: number; width: number; height: number },
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.moveTextBox === undefined) return missingTextBoxRegistry();
+    const r = await this.inner.moveTextBox(docId, id, rect);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** DEF-135/136 — delete a REGISTERED text box from the engine's
+   *  registry. Same parallel-contract degrade as `moveTextBox`. */
+  async deleteTextBox(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.deleteTextBox === undefined) return missingTextBoxRegistry();
+    const r = await this.inner.deleteTextBox(docId, id);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 

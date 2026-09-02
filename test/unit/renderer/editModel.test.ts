@@ -13,7 +13,10 @@ import {
   defaultTextBoxRect,
   editOverlayActive,
   editReducer,
+  engineTextBoxesToPlacements,
+  hexToEditColor,
   initialEditState,
+  sameTextBoxes,
   type EditState,
   type ImagePlacement,
   type TextBoxPlacement,
@@ -288,5 +291,140 @@ describe("editReducer — B5 text-box registry", () => {
     const next = editReducer(state, { type: "set-tool", tool: "off" });
     expect(next.selectedTextBox).toBeNull();
     expect(next.textBoxes).toHaveLength(1);
+  });
+
+  it("delete-text-box removes the box and clears its selection (DEF-135/136)", () => {
+    const state: EditState = {
+      ...initialEditState,
+      selectedTextBox: "tb-2",
+      textBoxes: [makeTextBox({ id: "tb-1" }), makeTextBox({ id: "tb-2" })],
+    };
+    const next = editReducer(state, { type: "delete-text-box", id: "tb-2" });
+    expect(next.textBoxes).toHaveLength(1);
+    expect(next.textBoxes[0]?.id).toBe("tb-1");
+    // The deleted box was selected -> selection cleared.
+    expect(next.selectedTextBox).toBeNull();
+  });
+
+  it("delete-text-box keeps the selection when a different box is deleted", () => {
+    const state: EditState = {
+      ...initialEditState,
+      selectedTextBox: "tb-1",
+      textBoxes: [makeTextBox({ id: "tb-1" }), makeTextBox({ id: "tb-2" })],
+    };
+    const next = editReducer(state, { type: "delete-text-box", id: "tb-2" });
+    expect(next.textBoxes).toHaveLength(1);
+    expect(next.selectedTextBox).toBe("tb-1");
+  });
+
+  it("replace-text-boxes adopts the engine list verbatim (DEF-135/136)", () => {
+    const state: EditState = {
+      ...initialEditState,
+      selectedTextBox: "eng-1",
+      textBoxes: [makeTextBox(), makeTextBox({ id: "tb-2", page: 2 })],
+    };
+    const next = editReducer(state, {
+      type: "replace-text-boxes",
+      boxes: [
+        makeTextBox({ id: "eng-1", text: "From engine" }),
+        makeTextBox({ id: "eng-2" }),
+      ],
+    });
+    expect(next.textBoxes.map((b) => b.id)).toEqual(["eng-1", "eng-2"]);
+    expect(next.textBoxes[0]?.text).toBe("From engine");
+    // The still-present engine-named selection survives.
+    expect(next.selectedTextBox).toBe("eng-1");
+  });
+
+  it("replace-text-boxes clears a selection whose box vanished", () => {
+    const state: EditState = {
+      ...initialEditState,
+      selectedTextBox: "tb-1",
+      textBoxes: [makeTextBox()],
+    };
+    const next = editReducer(state, {
+      type: "replace-text-boxes",
+      boxes: [makeTextBox({ id: "tb-2" })],
+    });
+    expect(next.selectedTextBox).toBeNull();
+  });
+});
+
+describe("DEF-135/136 — engine text-box registry mirror", () => {
+  it("engineTextBoxesToPlacements keeps the engine id and parses the hex color", () => {
+    const placements = engineTextBoxesToPlacements(
+      [
+        {
+          id: "eng-1",
+          page: 2,
+          rect: { x: 10, y: 20, width: 180, height: 40 },
+          text: "Signed",
+          font: "Times",
+          size: 14,
+          color: "#ff0000",
+          background: "white",
+        },
+      ],
+      "Helvetica",
+    );
+    expect(placements).toHaveLength(1);
+    const p = placements[0];
+    expect(p).toMatchObject({
+      id: "eng-1",
+      page: 2,
+      rect: { x: 10, y: 20, width: 180, height: 40 },
+      text: "Signed",
+      background: "white",
+    });
+    expect(p.style).toEqual({ font: "Times", size: 14, color: { r: 1, g: 0, b: 0 } });
+  });
+
+  it("engineTextBoxesToPlacements fills missing style from the default font", () => {
+    const placements = engineTextBoxesToPlacements(
+      [
+        {
+          id: "eng-2",
+          page: 1,
+          rect: { x: 0, y: 0, width: 100, height: 30 },
+          text: "Bare",
+        },
+      ],
+      "Courier",
+    );
+    expect(placements[0]?.style).toEqual({
+      font: "Courier",
+      size: 12,
+      color: { r: 0, g: 0, b: 0 },
+    });
+    expect(placements[0]?.background).toBe("none");
+  });
+
+  it("hexToEditColor parses #rrggbb and falls back to black on garbage", () => {
+    expect(hexToEditColor("#00ff80")).toEqual({
+      r: 0,
+      g: 1,
+      b: 128 / 255,
+    });
+    expect(hexToEditColor(undefined)).toEqual({ r: 0, g: 0, b: 0 });
+    expect(hexToEditColor("red")).toEqual({ r: 0, g: 0, b: 0 });
+    expect(hexToEditColor("#fff")).toEqual({ r: 0, g: 0, b: 0 });
+  });
+
+  it("sameTextBoxes is true only for fully-equivalent lists", () => {
+    const a = engineTextBoxesToPlacements(
+      [{ id: "e1", page: 1, rect: { x: 1, y: 2, width: 3, height: 4 }, text: "hi", color: "#000000" }],
+      "Helvetica",
+    );
+    const b = engineTextBoxesToPlacements(
+      [{ id: "e1", page: 1, rect: { x: 1, y: 2, width: 3, height: 4 }, text: "hi", color: "#000000" }],
+      "Helvetica",
+    );
+    expect(sameTextBoxes(a, b)).toBe(true);
+    const moved = engineTextBoxesToPlacements(
+      [{ id: "e1", page: 1, rect: { x: 9, y: 2, width: 3, height: 4 }, text: "hi", color: "#000000" }],
+      "Helvetica",
+    );
+    expect(sameTextBoxes(a, moved)).toBe(false);
+    expect(sameTextBoxes(a, [])).toBe(false);
   });
 });

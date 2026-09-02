@@ -64,6 +64,8 @@ const {
       placeSignature: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
       moveSignature: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
       deleteSignature: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
+      moveTextBox: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
+      deleteTextBox: vi.fn().mockResolvedValue({ ok: true, value: engineState }),
       optimize: vi.fn().mockResolvedValue({ ok: true, value: new ArrayBuffer(8) }),
       auditSpace: vi.fn().mockResolvedValue({ ok: true, value: { totalBytes: 0, breakdown: { images: 0, fonts: 0, contentStreams: 0, metadata: 0, other: 0 } } }),
       createFromImages: vi.fn().mockResolvedValue({ ok: true, value: new ArrayBuffer(8) }),
@@ -331,6 +333,14 @@ describe('main/index - start()', () => {
 
   it('registers engine:deleteSignature handler', () => {
     expect(getRegisteredChannels()).toContain(IPC.engineDeleteSignature);
+  });
+
+  it('registers engine:moveTextBox handler (DEF-135/136 registry)', () => {
+    expect(getRegisteredChannels()).toContain(IPC.engineMoveTextBox);
+  });
+
+  it('registers engine:deleteTextBox handler (DEF-136 registry)', () => {
+    expect(getRegisteredChannels()).toContain(IPC.engineDeleteTextBox);
   });
 
   it('registers signatures:list handler', () => {

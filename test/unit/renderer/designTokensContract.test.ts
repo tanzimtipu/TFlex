@@ -110,28 +110,48 @@ describe("Phase 13 — window drag region contract", () => {
     expect(body).toMatch(/-webkit-app-region:\s*drag/);
   });
 
-  it("the .titlebar > * selector opts every direct child out of the drag region", () => {
-    const block = /\.titlebar\s*>\s*\*\s*\{([\s\S]*?)\n\}/m.exec(css);
-    expect(block).not.toBeNull();
-    if (block === null) return;
-    const body = block[1] ?? "";
-    expect(body).toMatch(/-webkit-app-region:\s*no-drag/);
+  it("interactive title-bar children opt out individually; the slot is draggable (DEF-132)", () => {
+    // DEF-132 — the previous `.titlebar > * { no-drag }` applied
+    // no-drag to the FULL-WIDTH `.titlebar-slot` (and, through it,
+    // the whole `.app-header`), leaving NO draggable pixel in the
+    // caption strip. The contract now: the slot defaults to the
+    // titlebar's drag region, and ONLY the interactive children
+    // (window controls, menu button + popover) carry no-drag.
+    const slot = /\.titlebar-slot\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(slot).not.toBeNull();
+    if (slot === null) return;
+    expect(slot[1] ?? "").not.toMatch(/-webkit-app-region:/);
+    // The window-controls cluster opts out.
+    const controls = /\.titlebar-controls\s*,\s*\n?\s*\.titlebar-control\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(controls).not.toBeNull();
+    if (controls === null) return;
+    expect(controls[1] ?? "").toMatch(/-webkit-app-region:\s*no-drag/);
+    // The menu button + its popover opt out.
+    const menu = /\.titlebar-menu-button\s*,\s*\n?\s*\.titlebar-menu-popover\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(menu).not.toBeNull();
+    if (menu === null) return;
+    expect(menu[1] ?? "").toMatch(/-webkit-app-region:\s*no-drag/);
   });
 
-  it("the .app-header element is NO LONGER the drag region (Phase 13)", () => {
-    // Phase 13 — drag region moved from .app-header to .titlebar.
-    // The AppHeader sits INSIDE the TitleBar as a non-drag child so
-    // its controls (theme toggle, open button, etc.) keep working
-    // without every interaction starting a window drag. Pin this so
-    // a refactor doesn't accidentally re-introduce the old
-    // behaviour (drag on the AppHeader would break every click in
-    // the header — theme toggle, tab close, etc.).
+  it("the .app-header is draggable and its interactive children opt out (DEF-132)", () => {
+    // DEF-132 — the AppHeader sits INSIDE the draggable titlebar
+    // slot and must default to the caption drag region, so clicking
+    // the brand or the empty tab-strip space moves the window like a
+    // normal caption. Its interactive children (tab surfaces, close /
+    // new-tab / theme-toggle / Open buttons, inputs, selects) carry
+    // no-drag so every click still lands on the control.
     const block = /\.app-header\s*\{([\s\S]*?)\n\}/m.exec(css);
     expect(block).not.toBeNull();
     if (block === null) return;
     const body = block[1] ?? "";
     expect(body).not.toMatch(/-webkit-app-region:\s*drag/);
-    expect(body).toMatch(/-webkit-app-region:\s*no-drag/);
+    expect(body).not.toMatch(/-webkit-app-region:\s*no-drag/);
+    // The scoped interactive-children rule must exist and carry
+    // no-drag (the tab surfaces lead the selector list).
+    const kids = /\.app-header\s+\.tab\b[^{]*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(kids).not.toBeNull();
+    if (kids === null) return;
+    expect(kids[1] ?? "").toMatch(/-webkit-app-region:\s*no-drag/);
   });
 
   it("uses 150-250ms motion tokens for window control transitions", () => {
@@ -139,7 +159,8 @@ describe("Phase 13 — window drag region contract", () => {
     // controls. The title bar control rule must reference one of
     // --t-quick / --t-base / --t-slow — anything outside this band
     // is a regression.
-    const block = /\.titlebar-control\s*\{([\s\S]*?)\n\}/m.exec(css);
+    const blocks = [...css.matchAll(/\.titlebar-control\s*\{([\s\S]*?)\n\}/gm)];
+    const block = blocks.find((b) => (b[1] ?? "").includes("transition")) ?? null;
     expect(block).not.toBeNull();
     if (block === null) return;
     const body = block[1] ?? "";
@@ -147,7 +168,8 @@ describe("Phase 13 — window drag region contract", () => {
   });
 
   it("uses the same cubic-bezier easing curve as the rest of the UI", () => {
-    const block = /\.titlebar-control\s*\{([\s\S]*?)\n\}/m.exec(css);
+    const blocks = [...css.matchAll(/\.titlebar-control\s*\{([\s\S]*?)\n\}/gm)];
+    const block = blocks.find((b) => (b[1] ?? "").includes("transition")) ?? null;
     expect(block).not.toBeNull();
     if (block === null) return;
     const body = block[1] ?? "";

@@ -105,6 +105,13 @@ export const IPC = {
   engineEditTextRun: "engine:editTextRun",
   engineAddTextBox: "engine:addTextBox",
   engineEditImage: "engine:editImage",
+  // Phase 14 / DEF-135 / DEF-136 — text-box placement registry (move/delete).
+  // addTextBox reuses engineAddTextBox above; these two are the move/delete
+  // counterparts. Boxes are registry-only (drawn once at save time), so
+  // moving a box updates its rect without masking the content under the old
+  // rect (the root cause of DEF-135).
+  engineMoveTextBox: "engine:moveTextBox",
+  engineDeleteTextBox: "engine:deleteTextBox",
   // Phase 11: OCR
   engineOcrRecognize: "engine:ocrRecognize",
   engineOcrSuspects: "engine:ocrSuspects",
@@ -289,10 +296,31 @@ export interface TFlexApiEngine {
     docId: string,
     payload: EditTextRunPayload,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
-  /** Phase 10 — add a new text box with wrapping inside `rect`. */
+  /** Phase 10 — add a new text box with wrapping inside `rect`. As of
+   *  Phase 14 / DEF-135 / DEF-136 this pushes a `TextBoxModel` into the
+   *  engine-side placement registry (NO immediate draw); the box is drawn
+   *  once at its FINAL rect at save time so moving it never masks the
+   *  content under its old rect. `payload.id` is optional (the engine
+   *  generates a uuid if absent); the returned `EngineState.textBoxes`
+   *  carries the assigned id so the renderer can move/delete it. */
   addTextBox?(
     docId: string,
     payload: AddTextBoxPayload,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 14 / DEF-135 / DEF-136 — move a registry text box to `rect`
+   *  (top-left origin, PDF points). Updates the box's rect in the registry;
+   *  the box is redrawn at its new rect on the next save/getDocumentBytes.
+   *  No masking of the old rect — underlying content is never erased. */
+  moveTextBox?(
+    docId: string,
+    id: string,
+    rect: import("./types").AnnRect,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 14 / DEF-135 / DEF-136 — delete a registry text box by id.
+   *  Removes it from the registry so it is no longer drawn at save time. */
+  deleteTextBox?(
+    docId: string,
+    id: string,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
   /** Phase 10 — edit an image (move/resize/replace/crop). The engine
    *  masks `oldRect` and draws `imageBytes` at `newRect`; the renderer

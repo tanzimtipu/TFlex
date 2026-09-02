@@ -235,6 +235,13 @@ export interface EngineState {
    *  serialized document's /PageLabels number tree so a viewer shows the
    *  custom labels instead of raw page numbers. */
   pageLabels?: PageLabelEntry[];
+  /** Phase 14 / DEF-135 / DEF-136 — text boxes held in the engine-side
+   *  placement registry (mirrors `placedSignatures`). Boxes are NOT baked
+   *  into the page at add time; they are drawn once at their FINAL rect at
+   *  save time (serializeDoc), so moving a box never masks the content
+   *  under its old rect. `page` is the 1-based VISIBLE page; `rect` is a
+   *  top-left origin in PDF points. Absent when the doc has no boxes. */
+  textBoxes?: TextBoxModel[];
 }
 
 export interface OpEntry {
@@ -499,17 +506,45 @@ export interface EditTextRunPayload {
   color?: EditColor;
 }
 
-/** Phase 10 — payload for `engine.addTextBox`. Draws `text` wrapped
- *  inside `rect` (top-left origin, PDF points). `background` controls
- *  whether an opaque white fill is drawn behind the text so it is
- *  readable over existing content; default 'none'. */
+/** Phase 10 — payload for `engine.addTextBox`. As of Phase 14 / DEF-135 /
+ *  DEF-136 this pushes a `TextBoxModel` into the engine-side placement
+ *  registry (NO immediate draw); the box is drawn once at its FINAL rect at
+ *  save time (serializeDoc), so moving it never masks the content under its
+ *  old rect. The old baking-into-page behaviour is gone — the payload shape
+ *  is preserved for backward compatibility, but the engine now stores the
+ *  box in the registry and returns it on `EngineState.textBoxes`.
+ *
+ *  `id` is optional: the renderer may pass its own uuid; if absent the
+ *  engine generates one and returns it in the state. `color` is the legacy
+ *  `EditColor` ({r,g,b} in [0,1]); the engine normalises it to a hex string
+ *  (`#rrggbb`) for the stored `TextBoxModel.color`. */
 export interface AddTextBoxPayload {
+  id?: string;
   page: number;
   rect: AnnRect;
   text: string;
   font?: EditFont;
   size?: number;
   color?: EditColor;
+  background?: 'white' | 'none';
+}
+
+/** Phase 14 / DEF-135 / DEF-136 — a placed text box held in the engine-side
+ *  placement registry (mirrors `SignaturePlacement`). Boxes are only
+ *  serialized at save time, drawn once at their FINAL rect, so moving a box
+ *  never masks the content under its old rect (the root cause of DEF-135).
+ *  `id` is a uuid; `page` is the 1-based VISIBLE page; `rect` is a top-left
+ *  origin in PDF points; `color` is a hex string (#rrggbb); `background`
+ *  'white' draws an opaque white fill behind the text at save time so it
+ *  stays readable over existing content. */
+export interface TextBoxModel {
+  id: string;
+  page: number;
+  rect: AnnRect;
+  text: string;
+  font: EditFont;
+  size: number;
+  color?: string;
   background?: 'white' | 'none';
 }
 

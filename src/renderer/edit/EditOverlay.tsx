@@ -104,6 +104,11 @@ export interface EditOverlayProps {
     background: "white" | "none";
     id: string;
   }) => void;
+  /** DEF-135/136 — delete a COMMITTED text box through the engine's
+   *  registry (engine.deleteTextBox). The placement toolbar's Delete
+   *  button calls this; the host removes the box from the engine
+   *  registry and the local mirror adopts the echoed list. */
+  onDeleteTextBox?: (id: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -175,6 +180,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     onCommitTextBox,
     onCommitImageEdit,
     onCommitTextBoxMove,
+    onDeleteTextBox,
   } = props;
 
   const [textTarget, setTextTarget] = useState<TextEditTarget | null>(null);
@@ -233,6 +239,12 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     ? placementsForPage.find((p) => p.id === edit.selectedImage?.id) ?? null
     : null;
   const boxesForPage = edit.textBoxes.filter((b) => b.page === page);
+  // DEF-135/136 — the committed box currently selected on THIS page
+  // (drives the placement toolbar with Edit / Delete).
+  const selectedBox =
+    edit.selectedTextBox !== null
+      ? boxesForPage.find((b) => b.id === edit.selectedTextBox) ?? null
+      : null;
   void dragTick; // referenced to keep React happy
 
   // Click on a text run (text tool) ---------------------------------------
@@ -769,6 +781,40 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         />
       ))}
 
+      {/* DEF-135/136 — placement toolbar for a SELECTED committed
+          box: Delete (engine.deleteTextBox through the host) + Edit
+          (reopens the inline editor with the box's committed text /
+          style / background). Rendered while the box is selected and
+          no editor is open (the click-to-reopen flow shows the editor;
+          once it closes the toolbar remains so the box can be
+          deleted). The bar stops pointerdown so a button press never
+          starts a new drag-to-create on the page behind it. */}
+      {tool === "box" &&
+        selectedBox !== null &&
+        textTarget === null &&
+        (() => {
+          const box = selectedBox;
+          return (
+            <TextBoxToolbar
+              box={box}
+              cssScale={cssScale}
+              pageWidthPt={pageWidthPt}
+              onEdit={(): void => {
+                // Reopen the inline editor for the box's committed
+                // content (same payload the plain click path uses).
+                setTextTarget({
+                  rect: { ...box.rect },
+                  initialText: box.text,
+                  textBoxId: box.id,
+                  style: { ...box.style },
+                  background: box.background,
+                });
+              }}
+              onDelete={(): void => onDeleteTextBox?.(box.id)}
+            />
+          );
+        })()}
+
       {tool === "image" && (
         <>
           {placementsForPage.map((p) => (
@@ -1085,6 +1131,61 @@ interface PlacementToolbarProps {
   onReplace: () => void;
   onCrop: () => void;
   onDelete: () => void;
+}
+
+/** DEF-135/136 — placement toolbar for a SELECTED COMMITTED text box.
+ *  Anchored just under the box (like the image PlacementToolbar) with
+ *  two actions: Edit reopens the inline editor with the box's
+ *  committed content, Delete routes through `onDeleteTextBox` (the
+ *  host's engine.deleteTextBox). The bar stops the pointerdown so a
+ *  button press never starts a drag-to-create on the page behind it. */
+interface TextBoxToolbarProps {
+  box: TextBoxPlacement;
+  cssScale: number;
+  pageWidthPt: number;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
+  const { box, cssScale, pageWidthPt, onEdit, onDelete } = props;
+  // Position the toolbar just under the box, anchored to its left
+  // edge. Clamp inside the page.
+  const topPt = box.rect.y + box.rect.height + 4;
+  const leftPt = box.rect.x;
+  const topCss = topPt * cssScale;
+  const leftCss = Math.max(0, Math.min(leftPt * cssScale, pageWidthPt * cssScale - 200));
+  return (
+    <div
+      className="edit-box-toolbar"
+      data-edit-box-id={box.id}
+      data-edit-box-toolbar
+      style={{ left: leftCss, top: topCss }}
+      onPointerDown={(e): void => e.stopPropagation()}
+    >
+      <button
+        type="button"
+        className="edit-box-toolbar-btn"
+        onClick={onEdit}
+        data-edit-box-action="edit"
+        aria-label="Edit text box"
+        title="Edit text"
+      >
+        <span>Edit</span>
+      </button>
+      <button
+        type="button"
+        className="edit-box-toolbar-btn edit-box-toolbar-btn-danger"
+        onClick={onDelete}
+        data-edit-box-action="delete"
+        aria-label="Delete text box"
+        title="Delete text box"
+      >
+        <Trash2 size={13} aria-hidden />
+        <span>Delete</span>
+      </button>
+    </div>
+  );
 }
 
 function PlacementToolbar(props: PlacementToolbarProps): ReactElement {

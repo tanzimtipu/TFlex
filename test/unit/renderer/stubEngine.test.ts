@@ -965,6 +965,118 @@ describe("StubRendererEngine — addTextBox (Phase 10)", () => {
   });
 });
 
+describe("StubRendererEngine — text-box registry (DEF-135/136)", () => {
+  it("addTextBox registers the box (renderer-provided id echoed verbatim, color normalized to hex)", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.addTextBox(tabId, {
+      id: "box-abc",
+      page: 1,
+      rect: { x: 10, y: 20, width: 180, height: 40 },
+      text: "Registered",
+      font: "Times",
+      size: 14,
+      color: { r: 1, g: 0, b: 0 },
+      background: "white",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.textBoxes).toBeDefined();
+    expect(r.value.textBoxes).toHaveLength(1);
+    const box = r.value.textBoxes?.[0];
+    expect(box).toMatchObject({
+      id: "box-abc",
+      page: 1,
+      rect: { x: 10, y: 20, width: 180, height: 40 },
+      text: "Registered",
+      font: "Times",
+      size: 14,
+      color: "#ff0000",
+      background: "white",
+    });
+  });
+
+  it("addTextBox generates an engine id when the renderer does not supply one", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.addTextBox(tabId, {
+      page: 1,
+      rect: { x: 0, y: 0, width: 100, height: 30 },
+      text: "No id",
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const id = r.value.textBoxes?.[0]?.id;
+    expect(typeof id).toBe("string");
+    expect(id?.length).toBeGreaterThan(0);
+  });
+
+  it("moveTextBox updates the box rect and echoes the fresh registry", async () => {
+    const { engine, tabId } = setup(2);
+    await engine.addTextBox(tabId, { id: "box-1", page: 1, rect: { x: 10, y: 10, width: 100, height: 30 }, text: "M" });
+    const r = await engine.moveTextBox(tabId, "box-1", { x: 200, y: 150, width: 140, height: 34 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.modified).toBe(true);
+    expect(r.value.textBoxes).toHaveLength(1);
+    expect(r.value.textBoxes?.[0]?.rect).toEqual({ x: 200, y: 150, width: 140, height: 34 });
+    expect(r.value.textBoxes?.[0]?.text).toBe("M");
+    // The registry entry's page is untouched (the payload has no page).
+    expect(r.value.textBoxes?.[0]?.page).toBe(1);
+    const last = engine.getLastEdit(tabId);
+    expect(last?.kind).toBe("moveTextBox");
+  });
+
+  it("moveTextBox returns not-found for an unknown box id", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.moveTextBox(tabId, "nope", { x: 0, y: 0, width: 10, height: 10 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("not-found");
+  });
+
+  it("deleteTextBox removes the box; the emptied registry is OMITTED from the echo (shared contract)", async () => {
+    const { engine, tabId } = setup(2);
+    await engine.addTextBox(tabId, { id: "box-1", page: 1, rect: { x: 0, y: 0, width: 100, height: 30 }, text: "D" });
+    const r = await engine.deleteTextBox(tabId, "box-1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // The shared contract omits `textBoxes` when the doc has no boxes
+    // ("Absent when the doc has no boxes") — the renderer's delete
+    // handler clears the local registry explicitly for this case.
+    expect(r.value.modified).toBe(true);
+    expect(r.value.textBoxes).toBeUndefined();
+    const last = engine.getLastEdit(tabId);
+    expect(last?.kind).toBe("deleteTextBox");
+  });
+
+  it("deleting one of two boxes echoes the survivor list", async () => {
+    const { engine, tabId } = setup(2);
+    await engine.addTextBox(tabId, { id: "box-1", page: 1, rect: { x: 0, y: 0, width: 100, height: 30 }, text: "A" });
+    await engine.addTextBox(tabId, { id: "box-2", page: 1, rect: { x: 10, y: 10, width: 100, height: 30 }, text: "B" });
+    const r = await engine.deleteTextBox(tabId, "box-1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.textBoxes).toBeDefined();
+    expect(r.value.textBoxes).toHaveLength(1);
+    expect(r.value.textBoxes?.[0]?.id).toBe("box-2");
+  });
+
+  it("deleteTextBox returns not-found for an unknown box id", async () => {
+    const { engine, tabId } = setup(2);
+    const r = await engine.deleteTextBox(tabId, "nope");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe("not-found");
+  });
+
+  it("undo restores the registry to the pre-add snapshot", async () => {
+    const { engine, tabId } = setup(2);
+    await engine.addTextBox(tabId, { id: "box-1", page: 1, rect: { x: 0, y: 0, width: 100, height: 30 }, text: "U" });
+    const undo = await engine.undo(tabId);
+    expect(undo.ok).toBe(true);
+    if (!undo.ok) return;
+    // The registry is empty again after the single box-add undo.
+    expect(undo.value.textBoxes).toBeUndefined();
+  });
+});
+
 describe("StubRendererEngine — editImage (Phase 10)", () => {
   const imageBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 

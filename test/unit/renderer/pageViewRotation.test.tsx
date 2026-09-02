@@ -107,7 +107,8 @@ function mountPageView(args: MountArgs = {}): {
     root.render(
       <PageView
         doc={doc}
-        pageNumber={1}
+        page={1}
+        sourcePage={1}
         widthPt={612}
         heightPt={792}
         cssScale={1.5}

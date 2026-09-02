@@ -43,10 +43,17 @@ import type {
   SignatureSource,
   SpaceAudit,
   StampId,
+  TextBoxModel,
   TextPage,
 } from "../../shared/types";
 import { applyPatch, type Annotation, type AnnotationPatch } from "../annotations/model";
-import type { EngineApi, EngineOp, EngineState, MergePosition } from "./types";
+import { colorToHex } from "../edit/EditInlineEditor";
+import type {
+  EngineApi,
+  EngineOp,
+  EngineState,
+  MergePosition,
+} from "./types";
 
 // ---------------------------------------------------------------------------
 // Per-tab stub state
@@ -94,6 +101,11 @@ interface StubTab {
    *  and importFdf calls. The stub doesn't process bytes; it just
    *  records what was asked for. */
   phase12Log: Phase12Record[];
+  /** DEF-135/136 — the engine-side text-box registry. The stub mirrors
+   *  the backend contract: addTextBox registers a box with a stable id,
+   *  moveTextBox updates its rect, deleteTextBox removes it, and every
+   *  state echo carries the full list. */
+  textBoxes: TextBoxModel[];
 }
 
 interface Snapshot {
@@ -119,6 +131,9 @@ interface Snapshot {
    *  forward-only log is monotonic-friendly. Same shape as
    *  editLogLength / ocrCallsLength. */
   phase12LogLength: number;
+  /** DEF-135/136 — the text-box registry captured by value so undo /
+   *  redo restores the boxes that were registered at snapshot time. */
+  textBoxes: TextBoxModel[];
 }
 
 function snap(t: StubTab): Snapshot {
@@ -135,6 +150,8 @@ function snap(t: StubTab): Snapshot {
     // so undo/redo preserves them through the snapshot/restore cycle.
     pageLabels: t.pageLabels.slice(),
     phase12LogLength: t.phase12Log.length,
+    // DEF-135/136 — text-box registry by value.
+    textBoxes: t.textBoxes.slice(),
   };
 }
 
@@ -157,6 +174,8 @@ function restore(t: StubTab, s: Snapshot): void {
   // pattern as the edit/OCR logs.
   t.pageLabels = s.pageLabels.slice();
   t.phase12Log = t.phase12Log.slice(0, s.phase12LogLength);
+  // DEF-135/136 — restore the text-box registry.
+  t.textBoxes = s.textBoxes.slice();
 }
 
 function buildState(t: StubTab): EngineState {
@@ -186,6 +205,12 @@ function buildState(t: StubTab): EngineState {
     // renderer's mirror can observe renumberPages outputs without
     // a separate getState round-trip.
     pageLabels: t.pageLabels.length > 0 ? t.pageLabels.slice() : undefined,
+    // DEF-135/136 — carry the text-box registry through so the
+    // renderer's mirror can adopt committed boxes from engine state.
+    // Only emitted when at least one box is registered (an older
+    // mirror that treats `undefined` as "backend has no registry"
+    // must not see `[]` and clobber its local list).
+    textBoxes: t.textBoxes.length > 0 ? t.textBoxes.slice() : undefined,
   };
 }
 
@@ -219,6 +244,7 @@ export class StubRendererEngine implements EngineApi {
         ocrCalls: [],
         pageLabels: [],
         phase12Log: [],
+        textBoxes: [],
       };
       this.tabs.set(docId, t);
     }
@@ -802,7 +828,13 @@ export class StubRendererEngine implements EngineApi {
     return ok(buildState(t));
   }
 
-  /** Phase 10 — add a new text box. Same shape as editTextRun. */
+  /** Phase 10 — add a new text box. Same shape as editTextRun.
+   *  DEF-135/136 — the stub ALSO registers the box in its engine-side
+   *  registry (Phase 14 contract): the renderer MAY pass its own `id`
+   *  (AddTextBoxPayload.id is optional); the stub honours it so the
+   *  renderer mirror and the engine registry agree on the same id.
+   *  The engine normalizes the EditColor to a hex string for the
+   *  stored TextBoxModel. */
   async addTextBox(
     docId: string,
     payload: AddTextBoxPayload,
@@ -817,6 +849,62 @@ export class StubRendererEngine implements EngineApi {
     }
     pushUndo(t);
     recordEdit(t, { kind: "addTextBox", payload });
+    const font = payload.font ?? "Helvetica";
+    const size = payload.size ?? 12;
+    t.textBoxes.push({
+      id: payload.id ?? crypto.randomUUID(),
+      page: payload.page,
+      rect: { ...payload.rect },
+      text: payload.text,
+      font,
+      size,
+      color: payload.color !== undefined ? colorToHex(payload.color) : undefined,
+      background: payload.background,
+    });
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** DEF-135/136 — move / resize a REGISTERED text box through the
+   *  stub's engine-side registry (the real engine's registry contract
+   *  in parallel: `moveTextBox(docId, id, rect)` — no page, the
+   *  registry entry owns the box's page). The stub updates the box's
+   *  rect and echoes the fresh list. */
+  async moveTextBox(
+    docId: string,
+    id: string,
+    rect: { x: number; y: number; width: number; height: number },
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const idx = t.textBoxes.findIndex((b) => b.id === id);
+    if (idx === -1) return err("not-found", `unknown text box: ${id}`);
+    if (rect.width <= 0 || rect.height <= 0) {
+      return err("empty-range", "moveTextBox: rect must be positive");
+    }
+    pushUndo(t);
+    recordEdit(t, {
+      kind: "moveTextBox",
+      payload: { id, rect: { ...rect } },
+    });
+    t.textBoxes[idx] = { ...t.textBoxes[idx], rect: { ...rect } };
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** DEF-135/136 — delete a REGISTERED text box from the stub's
+   *  registry (engine.deleteTextBox equivalent). */
+  async deleteTextBox(
+    docId: string,
+    id: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const idx = t.textBoxes.findIndex((b) => b.id === id);
+    if (idx === -1) return err("not-found", `unknown text box: ${id}`);
+    pushUndo(t);
+    recordEdit(t, { kind: "deleteTextBox", payload: { id } });
+    t.textBoxes.splice(idx, 1);
     t.modified = true;
     return ok(buildState(t));
   }
@@ -1168,10 +1256,13 @@ export class StubRendererEngine implements EngineApi {
 
 /** What the stub records for each Phase 10 op. The image variant
  *  carries the byte length rather than the bytes themselves so the
- *  log stays cheap to inspect in tests. */
+ *  log stays cheap to inspect in tests. DEF-135/136 — the move /
+ *  delete variants record the registry op payloads. */
 type EditRecord =
   | { kind: "editTextRun"; payload: EditTextRunPayload }
   | { kind: "addTextBox"; payload: AddTextBoxPayload }
+  | { kind: "moveTextBox"; payload: { id: string; rect: { x: number; y: number; width: number; height: number } } }
+  | { kind: "deleteTextBox"; payload: { id: string } }
   | {
     kind: "editImage";
     payload: {

@@ -35,6 +35,13 @@ import { DRAW_PEN_COLOR, DRAW_PEN_WIDTH } from "./canvas";
 export const SIGNATURE_GHOST_WIDTH_PT = 64;
 export const SIGNATURE_GHOST_HEIGHT_PT = 22;
 
+/** DEF-134 — pointer travel (in CSS px) below which a press+release
+ *  on a committed placement counts as a CLICK, not a drag. A click
+ *  must not discard a held `pendingMoveRect` for the same placement
+ *  (post-drag clicks used to clear the held move at pointerdown,
+ *  snapping the committed signature back to its previous position). */
+export const SIG_CLICK_TOLERANCE_PX = 4;
+
 export type SignatureDragMode =
   | { kind: "move"; origin: { x: number; y: number }; startRect: SignaturePlacement["rect"] }
   | { kind: "resize"; origin: { x: number; y: number }; startRect: SignaturePlacement["rect"]; handle: "nw" | "ne" | "sw" | "se" };
@@ -210,13 +217,22 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
       e.stopPropagation();
       e.preventDefault();
       (e.target as Element).setPointerCapture(e.pointerId);
-      // DEF-123 — a fresh selection starts with no uncommitted
-      // position change. The drag's start rect is the placement's
-      // CURRENT visual rect (the uncommitted one, if the user is
-      // dragging a second time before confirming), so a follow-up
-      // drag continues from where the preview sits — not from the
-      // last committed rect.
-      setPendingMoveRect(null);
+      // DEF-134 — record the drag start WITHOUT clearing a held
+      // position change that belongs to this SAME placement. The
+      // previous `setPendingMoveRect(null)` here meant a plain click
+      // after a committed drag (pointerdown always fires first)
+      // discarded the held move before pointerup could commit it —
+      // the signature snapped back to its previous position. The
+      // drag's start rect is the placement's CURRENT visual rect
+      // (the uncommitted one, if the user is dragging a second time
+      // before confirming), so a follow-up drag continues from where
+      // the preview sits — not from the last committed rect. A held
+      // change on a DIFFERENT placement is dropped: selecting
+      // elsewhere means the old placement's uncommitted move is
+      // reverted (Cancel semantics without the bar click).
+      setPendingMoveRect((prev) =>
+        prev !== null && prev.placementId === placement.id ? prev : null,
+      );
       setSelectedId(placement.id);
       dragRef.current = {
         kind: handle === undefined ? "move" : "resize",
@@ -260,19 +276,39 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
       const drag = dragRef.current;
       if (drag === null) return;
       (e.target as Element).releasePointerCapture?.(e.pointerId);
-      const dx = (e.clientX - drag.origin.x) / cssScale;
-      const dy = (e.clientY - drag.origin.y) / cssScale;
+      const dxCss = e.clientX - drag.origin.x;
+      const dyCss = e.clientY - drag.origin.y;
       const target = e.currentTarget;
       target.style.transform = "";
       target.style.width = `${drag.startRect.width * cssScale}px`;
       target.style.height = `${drag.startRect.height * cssScale}px`;
+      dragRef.current = null;
+      // DEF-134 — classify the gesture. A press+release whose pointer
+      // never travelled beyond the click tolerance is a CLICK: it
+      // must NOT clear a held `pendingMoveRect` that belongs to this
+      // placement. The post-drag-click flow used to drop the held
+      // move (snapping the signature back to its previous position)
+      // because pointerdown cleared the rect and this handler had
+      // nothing left to preserve. A click leaves the held position
+      // intact — the placement stays where the user dragged it, and
+      // the action bar remains, so Confirm still commits and Cancel
+      // still reverts. A genuine drag (movement beyond the
+      // tolerance) computes the next rect from the visual start and
+      // holds it for the action bar, exactly as DEF-123.
+      if (Math.hypot(dxCss, dyCss) < SIG_CLICK_TOLERANCE_PX) {
+        setPendingMoveRect((prev) =>
+          prev !== null && prev.placementId === placement.id ? prev : null,
+        );
+        return;
+      }
+      const dx = dxCss / cssScale;
+      const dy = dyCss / cssScale;
       let nextRect: SignaturePlacement["rect"];
       if (drag.kind === "move") {
         nextRect = clampPlacementToPage(movePlacement(drag.startRect, { x: dx, y: dy }), pageWidthPt, pageHeightPt);
       } else {
         nextRect = clampPlacementToPage(resizePlacement(drag.startRect, drag.handle, { x: dx, y: dy }), pageWidthPt, pageHeightPt);
       }
-      dragRef.current = null;
       // DEF-123 — the drag result is HELD as an uncommitted
       // position change: the placement renders at `nextRect` and
       // the floating action bar appears above it. The engine only
@@ -544,12 +580,15 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
             onPointerMove={onPointerMovePlacement}
             onPointerUp={(e): void => onPointerUpPlacement(e, p)}
             onSelect={(): void => {
-              // DEF-123 — selecting a committed placement starts a
-              // fresh session: no held position change. (A click
-              // without a drag therefore shows the action bar with
-              // nothing to commit — Confirm just ends the
-              // selection, Cancel deselects, Delete removes.)
-              setPendingMoveRect(null);
+              // DEF-134 — selecting a committed placement keeps a
+              // held position change that belongs to THIS placement
+              // (a click must not revert a completed drag — see
+              // onPointerDownPlacement). A held change on a
+              // different placement is dropped: switching selection
+              // reverts the previous placement's uncommitted move.
+              setPendingMoveRect((prev) =>
+                prev !== null && prev.placementId === p.id ? prev : null,
+              );
               setSelectedId(p.id);
             }}
           />

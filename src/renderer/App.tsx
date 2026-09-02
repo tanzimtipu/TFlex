@@ -108,7 +108,9 @@ import { describeEngineError } from "./engine/types";
 import { stubRendererEngine } from "./engine/stubEngine";
 import {
   editReducer,
+  engineTextBoxesToPlacements,
   initialEditState,
+  sameTextBoxes,
   type EditAction,
   type EditState,
   type EditTextStyle,
@@ -1875,8 +1877,18 @@ export function App(): ReactElement {
     }): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
+      // DEF-135/136 — mint the box id BEFORE the engine call and pass
+      // it inside the payload (AddTextBoxPayload.id is optional but the
+      // renderer may supply one). The engine registers the box under
+      // THIS id, so the local mirror and the registry agree — the
+      // engine-state mirror effect (below) replaces the local entry
+      // with the echoed TextBoxModel carrying the same id, keeping the
+      // selection / drag handle on the right box.
+      const boxId = crypto.randomUUID();
+      const page = currentPageOfTab(tabId, openTabsRef);
       const result = await engineRef.current.addTextBox(open.session.engineDocId, {
-        page: currentPageOfTab(tabId, openTabsRef),
+        id: boxId,
+        page,
         rect: args.rect,
         text: args.text,
         font: args.style.font,
@@ -1890,10 +1902,11 @@ export function App(): ReactElement {
       }
       noteOpApplied(tabId, result.value);
       // B5 — register the committed box in the per-tab edit
-      // registry so the box tool can select / move it. The engine
-      // bakes the box into its PDF copy but exposes no per-box
-      // rect; the renderer mirrors the box locally (same pattern
-      // as the image placements) for the selection + drag surface.
+      // registry so the box tool can select / move it. A registry
+      // backend echoes the box back on `EngineState.textBoxes` (the
+      // App mirror then adopts the engine's TextBoxModel with this
+      // same id); a pre-registry backend leaves the local entry as
+      // the only surface (same pattern as the image placements).
       setOpenTabs((prev) => {
         const t = prev[tabId];
         if (t === undefined) return prev;
@@ -1904,8 +1917,8 @@ export function App(): ReactElement {
             edit: editReducer(t.edit, {
               type: "upsert-text-box",
               placement: {
-                id: crypto.randomUUID(),
-                page: currentPageOfTab(tabId, openTabsRef),
+                id: boxId,
+                page,
                 rect: args.rect,
                 text: args.text,
                 style: args.style,
@@ -1929,17 +1942,22 @@ export function App(): ReactElement {
     [pushToast, noteOpApplied],
   );
 
-  /** DEF-127/127b — commit a COMMITTED text box's drag (move or
-   *  resize). The smallest correct engine call is the EXISTING
-   *  `editImage` contract ("mask `oldRect`, draw `imageBytes` at
-   *  `newRect`"): the renderer rasterises the box at `newRect`
-   *  (white fill when the box was added with one + wrapped text in
-   *  its font/size/color), and the engine masks the old baked text
-   *  and draws the raster where the box now sits. No new shared op
-   *  is required — `editImage` never knows the bytes came from a
-   *  text box — and the undo stack gets a single entry. On failure
-   *  the registry rect is reverted so no orphan surface survives
-   *  (the box visually snaps back to its committed position). */
+  /** DEF-127/127b + DEF-135/136 — commit a COMMITTED text box's drag
+   *  (move or resize).
+   *
+   *  DEF-135/136 — the backend is converting text boxes to an
+   *  ENGINE-SIDE REGISTRY (addTextBox / moveTextBox / deleteTextBox
+   *  + EngineState.textBoxes, shipped in parallel). When the registry
+   *  op is available, moving a box is a REGISTRY UPDATE
+   *  (`engine.moveTextBox`): the engine re-targets the box's rect and
+   *  the renderer mirror adopts the echoed list. The previous
+   *  rasterize + `editImage` mask-and-redraw is demoted to a
+   *  FALLBACK for backends that predate the registry — it was
+   *  destructive: the white mask erased underlying content for
+   *  `background: "none"` boxes (DEF-127's documented Phase-10
+   *  visual-redact behavior). On failure the registry rect is
+   *  reverted so no orphan surface survives (the box visually snaps
+   *  back to its committed position). */
   const handleTextBoxMove = useCallback(
     async (tabId: string, args: {
       oldRect: { x: number; y: number; width: number; height: number };
@@ -1952,7 +1970,7 @@ export function App(): ReactElement {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
       // Revert helper — restore the registry rect to the committed
-      // position (a failed re-bake must not leave a phantom box).
+      // position (a failed commit must not leave a phantom box).
       const revertRect = (): void => {
         setOpenTabs((prev) => {
           const t = prev[tabId];
@@ -1970,6 +1988,41 @@ export function App(): ReactElement {
           };
         });
       };
+      // DEF-135/136 — preferred path: the engine-side registry. The
+      // box's baked content moves with the rect (no mask-and-redraw,
+      // so nothing underneath is erased), and the echoed
+      // `EngineState.textBoxes` drives the renderer mirror.
+      // Signature matches the shared IPC contract
+      // `moveTextBox(docId, id, rect)` — the engine looks the box up
+      // by id; `page` is not part of the payload (the registry entry
+      // owns it).
+      const engine = engineRef.current;
+      if (engine.moveTextBox !== undefined) {
+        const result = await engine.moveTextBox(
+          open.session.engineDocId,
+          args.id,
+          args.newRect,
+        );
+        if (!result.ok) {
+          pushToast("error", describeEngineError(result.error.code, result.error.message));
+          revertRect();
+          return;
+        }
+        noteOpApplied(tabId, result.value);
+        // The engine registry re-targets the box's content; refresh
+        // the pdf.js proxy so the moved text renders without a
+        // save/reopen (same pattern as addTextBox).
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(tabId).catch(() => undefined);
+        }
+        return;
+      }
+      // Fallback (pre-registry backend): rasterise the box at the
+      // new rect and re-bake it through the existing editImage
+      // contract ("mask `oldRect`, draw `imageBytes` at `newRect`").
+      // The engine never knows the bytes came from a text box; the
+      // undo stack gets a single entry.
       let png: Uint8Array;
       try {
         png = await rasterizeTextBoxToPng({
@@ -1985,7 +2038,7 @@ export function App(): ReactElement {
         revertRect();
         return;
       }
-      const result = await engineRef.current.editImage(open.session.engineDocId, {
+      const result = await engine.editImage(open.session.engineDocId, {
         page: currentPageOfTab(tabId, openTabsRef),
         op: "move",
         oldRect: args.oldRect,
@@ -2001,6 +2054,106 @@ export function App(): ReactElement {
       // B17 / B19 — the engine masked the old position and baked
       // the raster at the new one; refresh the pdf.js proxy so the
       // moved text renders without a save/reopen.
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(tabId).catch(() => undefined);
+      }
+    },
+    [pushToast, noteOpApplied],
+  );
+
+  /** DEF-135/136 — delete a REGISTERED text box through the engine's
+   *  registry. Preferred: `engine.deleteTextBox` removes the box and
+   *  its baked content in one registry update; the renderer mirror
+   *  adopts the echoed list (the box disappears from every page).
+   *
+   *  Fallback (pre-registry backend): a WHITE-background box can be
+   *  erased by masking its rect with a white raster via the legacy
+   *  editImage contract. A TRANSPARENT box (`background: "none"`)
+   *  CANNOT be erased without the registry — the white mask would
+   *  cover whatever content sits under the box. Fail loud: toast and
+   *  keep the box (a "Delete did nothing" would be a silent no-op).
+   *  On success the local registry entry is removed along with the
+   *  engine-side box. */
+  const handleTextBoxDelete = useCallback(
+    async (tabId: string, id: string) => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      const box = open.edit.textBoxes.find((b) => b.id === id);
+      if (box === undefined) return;
+      // Local registry removal — used by BOTH the registry path (the
+      // engine omits an emptied textBoxes list, so the mirror alone
+      // would leave the box on screen) and the fallback path.
+      const removeLocal = (): void => {
+        setOpenTabs((prev) => {
+          const t = prev[tabId];
+          if (t === undefined) return prev;
+          return {
+            ...prev,
+            [tabId]: {
+              ...t,
+              edit: editReducer(t.edit, { type: "delete-text-box", id }),
+            },
+          };
+        });
+      };
+      const engine = engineRef.current;
+      if (engine.deleteTextBox !== undefined) {
+        const result = await engine.deleteTextBox(open.session.engineDocId, id);
+        if (!result.ok) {
+          pushToast("error", describeEngineError(result.error.code, result.error.message));
+          return;
+        }
+        noteOpApplied(tabId, result.value);
+        // The engine's state echo OMITS `textBoxes` when the registry
+        // empties (the shared contract: "Absent when the doc has no
+        // boxes" — same as the stub), so the mirror effect's
+        // undefined short-circuit would leave the deleted box on
+        // screen. Clear the local registry entry explicitly; the
+        // mirror still adopts non-empty echoes for move/add.
+        removeLocal();
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(tabId).catch(() => undefined);
+        }
+        return;
+      }
+      // Fallback: pre-registry backend.
+      if (box.background !== "white") {
+        pushToast(
+          "error",
+          "Deleting a transparent text box requires the backend text-box registry update.",
+        );
+        return;
+      }
+      let png: Uint8Array;
+      try {
+        // White raster at the box rect — masks the baked box away.
+        png = await rasterizeTextBoxToPng({
+          text: "",
+          rect: box.rect,
+          style: box.style,
+          background: "white",
+          encoder: defaultImageEncoder(),
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "text box erase failed";
+        pushToast("error", `Delete text box failed: ${message}`);
+        return;
+      }
+      const result = await engine.editImage(open.session.engineDocId, {
+        page: currentPageOfTab(tabId, openTabsRef),
+        op: "replace",
+        oldRect: box.rect,
+        newRect: box.rect,
+        imageBytes: png,
+      });
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      removeLocal();
+      noteOpApplied(tabId, result.value);
       const refreshFn = refreshDocProxyForRef.current;
       if (refreshFn !== null) {
         void refreshFn(tabId).catch(() => undefined);
@@ -2310,6 +2463,50 @@ export function App(): ReactElement {
       return changed ? next : prev;
     });
   }, [engineUi]);
+
+  // DEF-135/136 — sync the per-tab text-box mirror from the engine's
+  // registry on every state echo. The backend converts text boxes to
+  // an engine-side registry (addTextBox / moveTextBox / deleteTextBox
+  // + EngineState.textBoxes, shipped in parallel); every op that
+  // echoes the registry list is the authoritative source of which
+  // boxes exist and where they are. The renderer's `edit.textBoxes`
+  // is a pure mirror of that list — "register committed boxes from
+  // engine state" — so a box added through `addTextBox` gets the
+  // ENGINE's id, a `moveTextBox` echo updates its rect in place, and
+  // a `deleteTextBox` echo removes it. Older backends omit the key:
+  // `fromEngine === undefined` short-circuits (the local list stays,
+  // preserving the pre-registry behavior).
+  //
+  // The content comparator (sameTextBoxes) keeps same-shape echoes
+  // from dispatching; without it, every rotate / undo / reorder
+  // round-trip would rebuild the openTabs edit state and re-render
+  // every document page.
+  useEffect(() => {
+    setOpenTabs((prev) => {
+      let changed = false;
+      const next: Record<string, OpenTab> = {};
+      const defaultFont: EditFont = settings?.editDefaultFont ?? "Helvetica";
+      for (const [tabId, tab] of Object.entries(prev)) {
+        const ui = engineUi[tabId];
+        const fromEngine = ui?.state?.textBoxes;
+        if (fromEngine === undefined) {
+          next[tabId] = tab;
+          continue;
+        }
+        const placements = engineTextBoxesToPlacements(fromEngine, defaultFont);
+        if (sameTextBoxes(tab.edit.textBoxes, placements)) {
+          next[tabId] = tab;
+          continue;
+        }
+        next[tabId] = {
+          ...tab,
+          edit: editReducer(tab.edit, { type: "replace-text-boxes", boxes: placements }),
+        };
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [engineUi, settings?.editDefaultFont]);
 
   // ---- save / save-as ----
 
@@ -4811,6 +5008,7 @@ pushToast(
           background: "white" | "none";
           id: string;
         }) => void;
+        onDeleteTextBox: (id: string) => void;
       }
     >();
     return (tabId: string) => {
@@ -4827,6 +5025,7 @@ pushToast(
           onCommitTextBox: (): void => undefined,
           onCommitImageEdit: (): void => undefined,
           onCommitTextBoxMove: (): void => undefined,
+          onDeleteTextBox: (): void => undefined,
         };
       }
       if (cached !== undefined && cached.state === tab.edit) {
@@ -4882,6 +5081,9 @@ pushToast(
         }): void => {
           void handleTextBoxMove(tabId, args);
         },
+        onDeleteTextBox: (id: string): void => {
+          void handleTextBoxDelete(tabId, id);
+        },
       };
       cache.set(tabId, out);
       return out;
@@ -4895,6 +5097,7 @@ pushToast(
     handleAddTextBox,
     handleEditImage,
     handleTextBoxMove,
+    handleTextBoxDelete,
   ]);
 
   // DEF-065 — push the active-doc snapshot to main on every

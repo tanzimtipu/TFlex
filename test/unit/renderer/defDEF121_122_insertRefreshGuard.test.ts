@@ -59,7 +59,10 @@ describe("DEF-121 — render paths tolerate the stale page reference", () => {
     // The main-canvas mount for the new page slot must guard the
     // getPage it awaits and route the stale-index rejection into a
     // clean skip (the doc-identity swap re-runs this effect).
-    expect(source).toMatch(/page = await doc\.getPage\(pageNumber\)/);
+    // DEF-133 — the render reads the SOURCE index, so the guard
+    // sits on `doc.getPage(sourcePage)`; visible-page overlays use
+    // the separate `page` prop.
+    expect(source).toMatch(/pageProxy = await doc\.getPage\(sourcePage\)/);
     const runIdx = source.indexOf("const run = async (): Promise<void> =>");
     const guardIdx = source.indexOf("isInvalidPageRequest(error)");
     expect(runIdx, "PageView.run exists").toBeGreaterThan(-1);
