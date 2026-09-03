@@ -4883,6 +4883,26 @@ textarea {
   color: var(--fg);
   border-top-left-radius: var(--radius-2);
   border-top-right-radius: var(--radius-2);
+  /* DEF-140 — the toolbar row is the floating window's drag handle.
+   * The handle is the row chrome only (labels / gap / padding); a
+   * press on an actual control never starts a move (guarded in the
+   * pointerdown handler), and the controls keep their own cursors. */
+  cursor: grab;
+  user-select: none;
+}
+
+/* DEF-140 — while a drag is in flight the whole window follows the
+ * cursor; keep the grab->grabbing affordance on the handle so the
+ * user sees the move is happening even when the pointer has left the
+ * toolbar row. */
+.edit-inline-dragging .edit-inline-toolbar {
+  cursor: grabbing;
+}
+
+.edit-inline-toolbar select,
+.edit-inline-toolbar input,
+.edit-inline-toolbar .edit-inline-btn {
+  cursor: pointer;
 }
 
 .edit-inline-field {

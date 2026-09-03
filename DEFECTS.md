@@ -1,3 +1,26 @@
+## DEF-140: The floating Edit-mode TOOLBOX (inline editor window) cannot be dragged/moved — it stays stuck over the text box and page content
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (operator-reported BUG 4, reproduced on installed v1.7.13)
+- Phase: 14 (Add-box inline editor UX)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.13 binary, `C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe`), open the report.pdf SAMPLE card (34 pages).
+2. Click the Edit content toggle (`[data-toolbar-edit-toggle]`), wait for the Edit toolbar, click "Add box" (`[data-edit-tool="box"]`).
+3. Drag a rectangle on page 1 (within the visible viewport) to place a text box; the inline editor (`[data-edit-editor="box"]`) appears. Type text (e.g. "Movable toolbox test") and click Apply (`[aria-label="Apply edit"]`) — a committed text box (`[data-edit-box-id]`) appears.
+4. Click the committed text box ONCE. A floating TOOLBOX / inline editor window (`.edit-inline-editor`, `[data-edit-editor="edit"]`, containing the FONT/SIZE/COLOR toolbar row + the textarea) opens at the box location.
+5. Press and HOLD the mouse on the toolbox's header / toolbar chrome (the FONT-SIZE-COLOR row — not a button, not the textarea) and drag ~220px right / 120px down, then release.
+
+Expected: The floating toolbox (the inline editor window, together with the text inside) follows the cursor and can be repositioned so it does not cover the text box / page content — the operator's stated intent ("the toolbox along with the text inside should be movable").
+
+Actual: The toolbox does not move at all. `.edit-inline-editor` getBoundingClientRect is UNCHANGED across the whole gesture: BEFORE drag `{x:653,y:455,w:200,h:182}`, MID-DRAG (while the mouse button is held and the cursor is 220px/120px away) `{x:653,y:455,w:200,h:182}`, AFTER release `{x:653,y:455,w:200,h:182}` — moved by `dx=0 dy=0`. The editor's only `onPointerDown` calls `e.stopPropagation()` and sets an inside-press blur-guard flag; there is NO pointermove handler that repositions the window, so the toolbox is stuck and keeps covering the page content while the user drags.
+Screenshot: screenshots/bug4-toolbox-middrag.png (toolbox still at its origin while the cursor drags it), screenshots/bug4-toolbox-after-release.png (identical position after release), screenshots/bug4-box-editor-add.png (the add-box editor before commit).
+
+History:
+- qa: opened (operator-exact steps on installed v1.7.13; reproduced and measured. The committed box was placed at {x:652.6,y:455.3,w:130,h:80}; single-click reopened the editor at {x:653,y:455,w:200,h:182}; holding+dragging the toolbar chrome 220px/120px left it exactly at {x:653,y:455}, dx=0 dy=0. No pageerror, no editor auto-close.)
+- qa: closed (retested on freshly installed v1.7.14 = FileVersion 1.7.14, e2e/retests/def_140_verify_1.7.14.spec.cjs — OPERATOR-EXACT flow, not the state arrays). Open report.pdf sample card -> Edit content toggle -> "Add box" -> drag a rectangle on page 1 -> type "Movable toolbox test" -> Apply -> committed box `[data-edit-box-id]` at {x:652.6,y:455.3,w:130,h:80} -> click the committed box ONCE -> the floating toolbox `.edit-inline-editor` opens at {x:653,y:455,w:200,h:182} (mode edit, identical anchor to the def-140 repro). HOLD + DRAG the toolbar chrome (`[data-edit-drag-handle]`, grabbed at the top-left padding point (658,461) — not a control) 220px right / 120px down: MID-DRAG (mouse still held) the toolbox is already at {x:873,y:575} (dx=220 dy=120 — it follows the cursor WHILE the button is held, not only on release), and AFTER RELEASE it stays at {x:873,y:575} (no snap-back, dx=220 dy=120). The toolbox no longer covers the text box / page content — the operator's stated intent ("the toolbox along with the text inside should be movable") is met. Regression checked: no pageerror (no "Invalid page request"/degreeAngle/NaN/React #310/#520) during the add/commit/click/drag flow. Pinned by the `EditInlineEditor` DEF-140 drag handle: `.edit-inline-toolbar` is the drag handle, `onToolbarPointerDown` records the pointer + rect (bailing out on `select/input/button/.edit-inline-toolbar-actions`), a window `pointermove` repositions the window via a `dragOffset` state applied on top of the anchored left/top, clamped to the viewport, and `pointerup`/`pointercancel` end the drag. Screenshots: screenshots/def-140-box-editor-add.png (add-box editor before commit), def-140-toolbox-middrag.png (toolbox at 873,575 while the cursor drags it clear of the "Mov" box), def-140-toolbox-after-release.png (identical to mid-drag — stays at the new position, no snap-back). CLOSED.)
+
 ## DEF-139: Inserting a blank page visually scrambles the document — the live view and thumbnail rail show the last page at position 1/2 instead of the blank, and pages render one slot off until save+reopen
 
 - Status: CLOSED
