@@ -22,7 +22,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent, ReactElement } from "react";
-import { Check, X } from "lucide-react";
 import type { EditFont } from "../../shared/types";
 import type { EditTextStyle } from "./model";
 import { useDragWindow } from "../components/useDragWindow";
@@ -61,6 +60,15 @@ export interface EditInlineEditorProps {
     offset: { x: number; y: number },
   ) => void;
   onCancel: () => void;
+  /** Delete the placed text box being edited. Present ONLY when the
+   *  editor re-opened an already-COMMITTED box from the registry:
+   *  the overlay passes it, and the Delete button renders only while
+   *  this callback exists (fail loud — a Delete button with no
+   *  action is a click that does nothing). Omitted for text-run
+   *  edits and freshly-dragged (uncommitted) boxes — those sessions
+   *  have nothing to delete. The overlay closes the editor and
+   *  routes the delete through engine.deleteTextBox. */
+  onDelete?: () => void;
   /** DEF-149(b) / DEF-150 — fired whenever the floating window's
    *  drag offset changes (CSS px). The overlay (which owns the
    *  commit) uses it so a dragged toolbox commits the CONTENT at
@@ -115,7 +123,7 @@ export function fontFamilyFor(font: EditFont): string {
 }
 
 export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
-  const { rect, cssScale, initialText, initialStyle, mode, onCommit, onCancel, onDragOffsetChange } = props;
+  const { rect, cssScale, initialText, initialStyle, mode, onCommit, onCancel, onDelete, onDragOffsetChange } = props;
   const [text, setText] = useState<string>(initialText);
   const [style, setStyle] = useState<EditTextStyle>(initialStyle);
   const [background, setBackground] = useState<"white" | "none">(
@@ -389,9 +397,9 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
         <div className="edit-inline-toolbar-actions">
           <button
             type="button"
-            className="edit-inline-btn edit-inline-btn-cancel"
+            className="toolbox-action-btn toolbox-action-btn--cancel edit-inline-btn edit-inline-btn-cancel"
             // Bug 9 — keep focus on the textarea until the user
-            // explicitly clicks Apply / Cancel. Without this guard
+            // explicitly clicks a bar button. Without this guard
             // the textarea's `onBlur` would commit / cancel
             // before the click reaches the button.
             onMouseDown={(e): void => e.preventDefault()}
@@ -399,11 +407,25 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
             aria-label="Cancel edit"
             title="Cancel (Esc)"
           >
-            <X size={13} aria-hidden />
+            Cancel
           </button>
+          {onDelete !== undefined && (
+            <button
+              type="button"
+              className="toolbox-action-btn toolbox-action-btn--delete edit-inline-btn edit-inline-btn-delete"
+              // Bug 9 — same focus guard as the other bar buttons.
+              onMouseDown={(e): void => e.preventDefault()}
+              onClick={onDelete}
+              aria-label="Delete text box"
+              title="Delete text box"
+              data-edit-action="delete"
+            >
+              Delete
+            </button>
+          )}
           <button
             type="button"
-            className="edit-inline-btn edit-inline-btn-commit"
+            className="toolbox-action-btn toolbox-action-btn--confirm edit-inline-btn edit-inline-btn-commit"
             // Bug 9 — same focus guard as the Cancel button.
             onMouseDown={(e): void => e.preventDefault()}
             onClick={commit}
@@ -421,8 +443,7 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
                 : "Apply (Ctrl+Enter)"
             }
           >
-            <Check size={13} aria-hidden />
-            {(drag.offset.x !== 0 || drag.offset.y !== 0) && <span>Confirm</span>}
+            {drag.offset.x !== 0 || drag.offset.y !== 0 ? "Confirm" : "Apply"}
           </button>
         </div>
       </div>

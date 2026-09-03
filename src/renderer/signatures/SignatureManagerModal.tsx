@@ -16,7 +16,7 @@
 // state for the draw canvas + type input so a half-finished signature
 // survives a tab switch without leaving the modal.
 
-import { Check, Eraser, FileSignature, Trash2 } from "lucide-react";
+import { FileSignature, Trash2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -333,7 +333,6 @@ function DrawTab({
           onClick={onClear}
           disabled={!hasStrokes || saving}
         >
-          <Eraser size={14} aria-hidden />
           Clear
         </button>
         <button
@@ -344,7 +343,6 @@ function DrawTab({
           }}
           disabled={!hasStrokes || saving}
         >
-          <Check size={14} aria-hidden />
           {saving ? "Saving\u2026" : "Save"}
         </button>
       </div>
@@ -439,7 +437,6 @@ function TypeTab({
           onClick={(): void => setText("")}
           disabled={text.length === 0 || saving}
         >
-          <Eraser size={14} aria-hidden />
           Clear
         </button>
         <button
@@ -450,7 +447,6 @@ function TypeTab({
           }}
           disabled={text.trim().length === 0 || saving}
         >
-          <Check size={14} aria-hidden />
           {saving ? "Saving\u2026" : "Save"}
         </button>
       </div>

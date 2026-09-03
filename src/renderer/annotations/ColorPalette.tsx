@@ -26,7 +26,6 @@ import {
   type ReactElement,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
-import { Plus, X } from 'lucide-react';
 import {
   ANNOTATION_COLORS,
   ANNOTATION_COLOR_HEX,
@@ -428,10 +427,10 @@ const ColorPalette = forwardRef<ColorPaletteHandle, ColorPaletteProps>(
                     type="button"
                     className="color-swatch-remove"
                     onClick={(): void => onRemove(p.id)}
-                    aria-label={`Remove ${p.hex}`}
-                    title="Remove"
+                    aria-label={`Delete ${p.hex}`}
+                    title="Delete color"
                   >
-                    <X size={10} aria-hidden />
+                    Delete
                   </button>
                 </div>
               ))}
@@ -562,7 +561,6 @@ onPointerDown={onSliderPointerDown}
               aria-label="Add to palette"
               data-palette-add
             >
-              <Plus size={12} aria-hidden />
               <span>Add</span>
             </button>
           </div>

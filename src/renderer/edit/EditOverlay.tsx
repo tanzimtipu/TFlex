@@ -26,7 +26,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement } from "react";
-import { Crop, Trash2 } from "lucide-react";
 import type { TextItemGeom } from "../annotations/AnnotationOverlay";
 import { overlayRectToCss } from "../annotations/geometry";
 import {
@@ -748,6 +747,27 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     dispatch({ type: "set-cropping", cropping: !edit.cropping });
   }, [edit.cropping, dispatch]);
 
+  // Delete affordance for the inline editor. The editor shows a
+  // Delete button ONLY when there is actually something to delete:
+  // the session re-opened a COMMITTED text box (textBoxId set) AND
+  // the host provided the delete callback. Freshly-dragged
+  // (uncommitted) boxes and text-run edits get no Delete button,
+  // and an absent callback never leaves a dead button behind (the
+  // fail-loud rule — a click that does nothing is a defect).
+  let editorOnDelete: (() => void) | undefined;
+  if (
+    textTarget !== null &&
+    textTarget.textBoxId !== undefined &&
+    onDeleteTextBox !== undefined
+  ) {
+    const id = textTarget.textBoxId;
+    editorOnDelete = (): void => {
+      setTextTarget(null);
+      setEditorOffset({ x: 0, y: 0 });
+      onDeleteTextBox(id);
+    };
+  }
+
   // Render ----------------------------------------------------------------
 
   if (tool === "off") {
@@ -1092,6 +1112,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             setTextTarget(null);
             setEditorOffset({ x: 0, y: 0 });
           }}
+          onDelete={editorOnDelete}
         />
       )}
     </div>
@@ -1344,24 +1365,23 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
     >
       <button
         type="button"
-        className="edit-box-toolbar-btn"
+        className="toolbox-action-btn edit-box-toolbar-btn"
         onClick={onEdit}
         data-edit-box-action="edit"
         aria-label="Edit text box"
         title="Edit text"
       >
-        <span>Edit</span>
+        Edit
       </button>
       <button
         type="button"
-        className="edit-box-toolbar-btn edit-box-toolbar-btn-danger"
+        className="toolbox-action-btn toolbox-action-btn--delete edit-box-toolbar-btn edit-box-toolbar-btn-danger"
         onClick={onDelete}
         data-edit-box-action="delete"
         aria-label="Delete text box"
         title="Delete text box"
       >
-        <Trash2 size={13} aria-hidden />
-        <span>Delete</span>
+        Delete
       </button>
     </div>
   );
@@ -1384,7 +1404,7 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
     >
       <button
         type="button"
-        className="edit-image-toolbar-btn"
+        className="toolbox-action-btn edit-image-toolbar-btn"
         onClick={onReplace}
         aria-label="Replace image"
         title="Replace image"
@@ -1393,24 +1413,22 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
       </button>
       <button
         type="button"
-        className={cropping ? "edit-image-toolbar-btn edit-image-toolbar-btn-active" : "edit-image-toolbar-btn"}
+        className={cropping ? "toolbox-action-btn edit-image-toolbar-btn edit-image-toolbar-btn-active" : "toolbox-action-btn edit-image-toolbar-btn"}
         onClick={onCrop}
         aria-label="Crop image"
         title="Crop image"
         data-crop-toggle
       >
-        <Crop size={13} aria-hidden />
-        <span>Crop</span>
+        Crop
       </button>
       <button
         type="button"
-        className="edit-image-toolbar-btn edit-image-toolbar-btn-danger"
+        className="toolbox-action-btn toolbox-action-btn--delete edit-image-toolbar-btn edit-image-toolbar-btn-danger"
         onClick={onDelete}
         aria-label="Remove image"
         title="Remove from edit list"
       >
-        <Trash2 size={13} aria-hidden />
-        <span>Remove</span>
+        Remove
       </button>
     </div>
   );

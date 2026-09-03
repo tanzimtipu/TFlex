@@ -2362,6 +2362,70 @@ textarea {
   border-top: none;
 }
 
+/* ---------------------------------------------------------------------------
+ * Shared floating-toolbox action button — text-only labels (Cancel /
+ * Delete / Confirm and the other action words). Every floating toolbox
+ * (edit inline editor, signature action bar, annotation editors,
+ * placement toolbars) uses this SAME button style so the actions look
+ * identical everywhere. Usage:
+ *   toolbox-action-btn                   neutral (cancel / generic)
+ *   toolbox-action-btn--confirm          accent fill
+ *   toolbox-action-btn--delete           danger red text
+ * The per-family classes (.sig-action-btn, .ann-textbox-action-btn,
+ * .edit-inline-btn, .edit-box-toolbar-btn, .edit-image-toolbar-btn)
+ * remain on the buttons purely as stable selectors for tests / e2e —
+ * this block owns the visual style. */
+.toolbox-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 8px;
+  border-radius: var(--radius-1);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  /* B-sig-pointer / DEF-095 — the action bar buttons must stay
+   * clickable even if a future refactor disables the bar's
+   * pointer-events; belt-and-braces alongside the containers. */
+  pointer-events: auto;
+  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+}
+.toolbox-action-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+.toolbox-action-btn--confirm {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  border-color: var(--accent);
+}
+.toolbox-action-btn--confirm:hover {
+  background: var(--accent-hover);
+  color: var(--fg-on-accent);
+  border-color: var(--accent-hover);
+}
+.toolbox-action-btn--cancel {
+  background: transparent;
+  color: var(--fg);
+  border-color: transparent;
+}
+.toolbox-action-btn--cancel:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+.toolbox-action-btn--delete {
+  color: var(--error);
+}
+.toolbox-action-btn--delete:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
 .ann-textbox-actions {
   display: inline-flex;
   align-items: center;
@@ -2406,40 +2470,12 @@ textarea {
   align-self: flex-start;
 }
 
-.ann-textbox-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 8px;
-  border-radius: var(--radius-1);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--fg);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
-}
-.ann-textbox-action-btn:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-.ann-textbox-action-confirm {
-  background: var(--accent);
-  color: var(--fg-on-accent);
-  border-color: var(--accent);
-}
-.ann-textbox-action-confirm:hover {
-  background: var(--accent-hover);
-  color: var(--fg-on-accent);
-  border-color: var(--accent-hover);
-}
+.ann-textbox-action-btn,
+.ann-textbox-action-confirm,
+.ann-textbox-action-cancel,
 .ann-textbox-action-delete {
-  color: var(--error);
-}
-.ann-textbox-action-delete:hover {
-  background: var(--error-soft);
-  color: var(--error);
+  /* Visual style is owned by .toolbox-action-btn (see the shared
+   * block above); these classes remain as stable selectors. */
 }
 
 .ann-note-editor {
@@ -3175,48 +3211,14 @@ textarea {
   position: relative;
 }
 
-.sig-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 8px;
-  border-radius: var(--radius-1);
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--fg);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  cursor: pointer;
-  /* B-sig-pointer — explicit pointer-events so the action-bar
-   * buttons stay clickable even if a future CSS refactor on
-   * .signatures-layer / .sig-pending toggles pointer-events off.
-   * The .sig-action-bar container also sets pointer-events: auto
-   * (above) and the JSX adds an inline pointerEvents: "auto" on
-   * each button — three layers of defense so the Confirm /
-   * Cancel / Delete buttons never silently swallow clicks. */
-  pointer-events: auto;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
-}
-.sig-action-btn:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-.sig-action-btn-confirm {
-  background: var(--accent);
-  color: var(--fg-on-accent);
-  border-color: var(--accent);
-}
-.sig-action-btn-confirm:hover {
-  background: var(--accent-hover);
-  color: var(--fg-on-accent);
-  border-color: var(--accent-hover);
-}
+.sig-action-btn,
+.sig-action-btn-confirm,
+.sig-action-btn-cancel,
 .sig-action-btn-delete {
-  color: var(--error);
-}
-.sig-action-btn-delete:hover {
-  background: var(--error-soft);
-  color: var(--error);
+  /* Visual style is owned by .toolbox-action-btn (see the shared
+   * block above); these classes remain as stable selectors. The
+   * B-sig-pointer pointer-events defense is part of the shared
+   * base, and the JSX keeps the inline pointerEvents: "auto". */
 }
 
 .sig-manager {
@@ -4093,26 +4095,37 @@ textarea {
 }
 .color-swatch-remove {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  width: 14px;
-  height: 14px;
+  top: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  height: 16px;
+  padding: 0 6px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-raised);
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-1);
   cursor: pointer;
-  color: var(--fg-muted);
-  padding: 0;
+  color: var(--error);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   opacity: 0;
-  transition: opacity var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  pointer-events: none;
+  transition: opacity var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
+  z-index: 2;
 }
-.color-swatch-wrap:hover .color-swatch-remove {
+.color-swatch-wrap:hover .color-swatch-remove,
+.color-swatch-remove:focus-visible {
   opacity: 1;
+  pointer-events: auto;
 }
-.color-swatch-remove:hover { color: #ef4444; }
+.color-swatch-remove:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
 
 .color-palette-form {
   display: grid;
@@ -4803,34 +4816,15 @@ textarea {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
-.edit-image-toolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 8px;
-  background: transparent;
-  border: none;
-  color: var(--fg-muted);
-  font-size: var(--fs-sm, 12px);
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: var(--radius-1);
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
-}
-
-.edit-image-toolbar-btn:hover {
-  background: var(--bg-hover, var(--accent-soft));
-  color: var(--fg);
+.edit-image-toolbar-btn,
+.edit-image-toolbar-btn-danger {
+  /* Visual style is owned by .toolbox-action-btn (see the shared
+   * block above); these classes remain as stable selectors. */
 }
 
 .edit-image-toolbar-btn-active {
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-.edit-image-toolbar-btn-danger:hover {
-  color: #ef4444;
 }
 
 /* DEF-135/136 — placement toolbar for a SELECTED COMMITTED text box
@@ -4848,29 +4842,10 @@ textarea {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
-.edit-box-toolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 8px;
-  background: transparent;
-  border: none;
-  color: var(--fg-muted);
-  font-size: var(--fs-sm, 12px);
-  font-weight: 500;
-  cursor: pointer;
-  border-radius: var(--radius-1);
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
-}
-
-.edit-box-toolbar-btn:hover {
-  background: var(--bg-hover, var(--accent-soft));
-  color: var(--fg);
-}
-
-.edit-box-toolbar-btn-danger:hover {
-  color: #ef4444;
+.edit-box-toolbar-btn,
+.edit-box-toolbar-btn-danger {
+  /* Visual style is owned by .toolbox-action-btn (see the shared
+   * block above); these classes remain as stable selectors. */
 }
 
 /* Crop overlay: covers the placement rect, draws a marquee inside. */
@@ -5073,29 +5048,12 @@ textarea {
   margin-left: auto;
 }
 
-.edit-inline-btn {
-  width: 24px;
-  height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border);
-  background: var(--bg-raised);
-  color: var(--fg);
-  border-radius: var(--radius-1);
-  cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
-}
-
-.edit-inline-btn:hover {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-}
-
-.edit-inline-btn-commit:hover {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
+.edit-inline-btn,
+.edit-inline-btn-cancel,
+.edit-inline-btn-commit,
+.edit-inline-btn-delete {
+  /* Visual style is owned by .toolbox-action-btn (see the shared
+   * block above); these classes remain as stable selectors. */
 }
 
 .edit-inline-textarea {

@@ -1415,7 +1415,7 @@ function TextBoxActionBar(props: TextBoxActionBarProps): ReactElement {
     >
       <button
         type="button"
-        className="ann-textbox-action-btn ann-textbox-action-confirm"
+        className="toolbox-action-btn toolbox-action-btn--confirm ann-textbox-action-btn ann-textbox-action-confirm"
         onClick={onCommit}
         data-annotation-action="textbox-confirm"
         aria-label="Confirm text box"
@@ -1425,7 +1425,7 @@ function TextBoxActionBar(props: TextBoxActionBarProps): ReactElement {
       </button>
       <button
         type="button"
-        className="ann-textbox-action-btn ann-textbox-action-cancel"
+        className="toolbox-action-btn toolbox-action-btn--cancel ann-textbox-action-btn ann-textbox-action-cancel"
         onClick={onCancel}
         data-annotation-action="textbox-cancel"
         aria-label="Cancel text box"
@@ -1435,7 +1435,7 @@ function TextBoxActionBar(props: TextBoxActionBarProps): ReactElement {
       </button>
       <button
         type="button"
-        className="ann-textbox-action-btn ann-textbox-action-delete"
+        className="toolbox-action-btn toolbox-action-btn--delete ann-textbox-action-btn ann-textbox-action-delete"
         onClick={onCancel}
         data-annotation-action="textbox-delete"
         aria-label="Discard text box"
@@ -1531,7 +1531,7 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
       <div className="ann-note-editor-actions">
         <button
           type="button"
-          className="ann-textbox-action-btn ann-textbox-action-confirm ann-note-btn"
+          className="toolbox-action-btn toolbox-action-btn--confirm ann-textbox-action-btn ann-textbox-action-confirm ann-note-btn"
           onClick={onCommit}
           data-annotation-action="note-confirm"
           title="Confirm (Ctrl+Enter)"
@@ -1540,7 +1540,7 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
         </button>
         <button
           type="button"
-          className="ann-textbox-action-btn ann-textbox-action-cancel ann-note-btn"
+          className="toolbox-action-btn toolbox-action-btn--cancel ann-textbox-action-btn ann-textbox-action-cancel ann-note-btn"
           onClick={onCancel}
           data-annotation-action="note-cancel"
           title="Cancel (Esc)"
@@ -1549,7 +1549,7 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
         </button>
         <button
           type="button"
-          className="ann-textbox-action-btn ann-textbox-action-delete ann-note-btn"
+          className="toolbox-action-btn toolbox-action-btn--delete ann-textbox-action-btn ann-textbox-action-delete ann-note-btn"
           onClick={onDelete}
           data-annotation-action="note-delete"
           title="Discard without saving"
@@ -1664,7 +1664,7 @@ function CalloutBoxEditor(
       >
         <button
           type="button"
-          className="ann-textbox-action-btn ann-textbox-action-confirm"
+          className="toolbox-action-btn toolbox-action-btn--confirm ann-textbox-action-btn ann-textbox-action-confirm"
           onClick={onCommit}
           data-annotation-action="callout-confirm"
           aria-label="Confirm callout"
@@ -1674,7 +1674,7 @@ function CalloutBoxEditor(
         </button>
         <button
           type="button"
-          className="ann-textbox-action-btn ann-textbox-action-cancel"
+          className="toolbox-action-btn toolbox-action-btn--cancel ann-textbox-action-btn ann-textbox-action-cancel"
           onClick={onCancel}
           data-annotation-action="callout-cancel"
           aria-label="Cancel callout"
@@ -1684,7 +1684,7 @@ function CalloutBoxEditor(
         </button>
         <button
           type="button"
-          className="ann-textbox-action-btn ann-textbox-action-delete"
+          className="toolbox-action-btn toolbox-action-btn--delete ann-textbox-action-btn ann-textbox-action-delete"
           onClick={onCancel}
           data-annotation-action="callout-delete"
           aria-label="Discard callout"
