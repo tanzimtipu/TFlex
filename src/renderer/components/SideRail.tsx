@@ -20,6 +20,13 @@ interface SideRailProps {
    *  deleted). Owned by App. The rail uses this to skip deleted pages
    *  and rotate the rendered thumbnail to match the engine. */
   engineState: EngineState;
+  /** DEF-139 — true once the tab's pdf.js `doc` proxy was rebuilt from
+   *  `engine.getDocumentBytes` bytes. A re-serialized file is written in
+   *  the engine's VISIBLE order, so the thumbnail at visible position
+   *  `page` must render `doc.getPage(page)` — NOT the pageOrder-derived
+   *  source map (pdf-lib ORIGINAL indices), which only addresses the
+   *  original open bytes. Defaults to false (original proxy). */
+  proxyVisibleOrder?: boolean;
   /** Whether undo is currently available for the active tab. The rail
    *  keeps this in its own UI state (the engine's IPC `EngineState` does
    *  not expose it directly). */
@@ -61,6 +68,7 @@ export function SideRail(props: SideRailProps) {
     defaultWidthPt,
     defaultHeightPt,
     engineState,
+    proxyVisibleOrder = false,
     canUndo,
     onOp,
     onDelete,
@@ -153,6 +161,7 @@ export function SideRail(props: SideRailProps) {
             aspectRatio={aspect}
             rotations={engineState.rotations}
             visibleToSource={visibleToSource}
+            proxyVisibleOrder={proxyVisibleOrder}
             pageLabelMap={pageLabelMap}
             canUndo={canUndo}
             onOp={onOp}
@@ -249,6 +258,11 @@ interface ThumbnailRailProps {
    *  PDF.js document. Identity map for the stub; the real engine may
    *  reorder. */
   visibleToSource: Map<number, number>;
+  /** DEF-139 — the pdf.js proxy is in VISIBLE file order after a
+   *  `getDocumentBytes` refresh; when true the thumb bitmap comes from
+   *  `doc.getPage(page)` (the visible slot) instead of the
+   *  pageOrder-derived `visibleToSource` map (pdf-lib indices). */
+  proxyVisibleOrder: boolean;
   /** Phase 12 — logical page labels per visible 1-based page. Null when
    //  no labels have been set (the common case); passed through to
    //  each Thumb so the rail can show the user's custom label instead
@@ -269,6 +283,7 @@ function ThumbnailRail({
   aspectRatio,
   rotations,
   visibleToSource,
+  proxyVisibleOrder,
   pageLabelMap = null,
   canUndo,
   onOp,
@@ -503,7 +518,13 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
         className="thumb-scroller-inner"
       >
         {Array.from({ length: pageCount }, (_, i) => i + 1).map((page) => {
-          const sourcePage = visibleToSource.get(page) ?? page;
+          // DEF-139 — `sourcePage` is the 1-based pdf.js page to render
+          // for this VISIBLE thumb slot. After a `refreshDocProxyFor`
+          // rebuild the proxy's file pages are the engine's VISIBLE
+          // order, so slot `page` IS file page `page`; the
+          // `visibleToSource` map (pdf-lib ORIGINAL indices) only
+          // addresses the original open bytes.
+          const sourcePage = proxyVisibleOrder ? page : (visibleToSource.get(page) ?? page);
           const rot = rotations[page - 1] ?? 0;
           const isSel = selected === page;
           // `key={page}` keeps the React/DOM order stable (1..N), but the

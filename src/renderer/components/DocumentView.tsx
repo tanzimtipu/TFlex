@@ -46,7 +46,7 @@ import {
   resolvePageLabel,
   slotOffsetTop,
   visiblePageRange,
-  visibleToSourcePage,
+  visibleToSourcePageForProxy,
 } from "./pageGeometry";
 import {
   createIdleCleanupCoordinator,
@@ -115,6 +115,14 @@ interface DocumentViewProps {
   /** Live engine state for the active tab. Drives the rail pageCount,
    *  thumbnail rotations, and toolbar modified indicator. */
   engineState: EngineState;
+  /** DEF-139 — true once the tab's pdf.js `doc` proxy was rebuilt from
+   *  `engine.getDocumentBytes` bytes via `refreshDocProxyFor`. A
+   *  re-serialized file is written in the engine's VISIBLE order (the
+   *  `serializeDoc` `pageOrder` sequence), so the renderer must ask the
+   *  proxy for `visiblePage` itself — NOT `pageOrder[visiblePage-1]+1`,
+   *  which is a pdf-lib ORIGINAL page index and only addresses the
+   *  original open bytes. Defaults to false (original proxy). */
+  proxyVisibleOrder?: boolean;
   /** True when the active tab has unsaved engine changes. */
   modified: boolean;
   /** Whether undo is currently possible for the active tab. */
@@ -343,6 +351,7 @@ export function DocumentView({
   registerSearchIndexInvalidator,
   onToast,
   engineState,
+  proxyVisibleOrder = false,
   modified,
   canUndo,
   saveInPlaceEnabled,
@@ -1610,6 +1619,10 @@ export function DocumentView({
         defaultWidthPt={firstPageSize?.w ?? 612}
         defaultHeightPt={firstPageSize?.h ?? 792}
         engineState={engineState}
+        // DEF-139 — the thumb bitmap source must follow the same
+        // slot -> proxy-page rule as the main view (visible order
+        // when the proxy was rebuilt from getDocumentBytes).
+        proxyVisibleOrder={proxyVisibleOrder}
         canUndo={canUndo}
         onOp={onRotate}
         onDelete={onDelete}
@@ -1731,9 +1744,20 @@ export function DocumentView({
               // would appear unchanged. `visibleToSourcePage` is
               // the pure helper that does the translation (tested
               // independently in pageGeometry.test.ts).
-              const sourcePage = visibleToSourcePage(
+              //
+              // DEF-139 — the translation must respect which proxy
+              // family the tab currently holds. `engineState.pageOrder`
+              // entries are pdf-lib ORIGINAL page indices; they address
+              // the ORIGINAL open bytes (identity file order) but NOT a
+              // proxy rebuilt from `getDocumentBytes`, whose file pages
+              // are the engine's VISIBLE order. After such a refresh
+              // (`proxyVisibleOrder === true`) the slot asks the proxy
+              // for `visiblePage` itself; before it (or after a refresh
+              // failure) it keeps the pageOrder translation.
+              const sourcePage = visibleToSourcePageForProxy(
                 visiblePage,
                 engineState.pageOrder,
+                proxyVisibleOrder,
               );
               // DEF-057 — read the engine-applied quarter-turn rotation
               // for this visible page slot and thread it down to the

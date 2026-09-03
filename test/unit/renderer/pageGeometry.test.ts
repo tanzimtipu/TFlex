@@ -9,6 +9,7 @@ import {
   slotOffsetTop,
   visiblePageRange,
   visibleToSourcePage,
+  visibleToSourcePageForProxy,
 } from "../../../src/renderer/components/pageGeometry";
 
 describe("page geometry", () => {
@@ -180,5 +181,64 @@ describe("visibleToSourcePage — DEF-064 (post-delete / reorder mapping)", () =
     // Visible 3 with a 2-element pageOrder returns 3 (identity)
     // rather than undefined.
     expect(visibleToSourcePage(3, [0, 1])).toBe(3);
+  });
+});
+
+describe("visibleToSourcePageForProxy — DEF-139 (post-refresh proxy vs original bytes)", () => {
+  // The engine's pageOrder entries are pdf-lib ORIGINAL page indices.
+  // A proxy built from the ORIGINAL open bytes is in identity file
+  // order, so the pageOrder translation addresses it. A proxy rebuilt
+  // from `engine.getDocumentBytes` (serializeDoc) is written in the
+  // engine's VISIBLE order, so slot N is file page N (identity) and
+  // the pageOrder translation is WRONG. `proxyVisibleOrder` carries
+  // which family the renderer currently holds.
+
+  it("delegates to the pageOrder translation for the original proxy (proxyVisibleOrder=false)", () => {
+    // Insert-blank at position 2 of a 34-page doc (the DEF-139 repro).
+    // pageOrder = [0, 34, 1, 2, ...]: the new blank is pdf-lib page 35.
+    // Against the ORIGINAL 34-page bytes this slot renders the new
+    // blank's pdf-lib page 35 — but that request is out of range on the
+    // still-old proxy and DEF-121 drops it (placeholder). Slots that DO
+    // resolve keep the original-file translation:
+    const order = [0, 34, 1, 2, 3, 4];
+    expect(visibleToSourcePageForProxy(1, order, false)).toBe(1);
+    expect(visibleToSourcePageForProxy(2, order, false)).toBe(35);
+    expect(visibleToSourcePageForProxy(3, order, false)).toBe(2);
+    expect(visibleToSourcePageForProxy(4, order, false)).toBe(3);
+  });
+
+  it("maps every visible slot to itself once the proxy is a getDocumentBytes rebuild (proxyVisibleOrder=true)", () => {
+    // After refreshDocProxyFor the file pages ARE the visible pages
+    // (serializeDoc iterates doc.order). Slot 2 renders file page 2
+    // (the new blank), slot 3 file page 3 (Chapter 1) — regardless of
+    // the pdf-lib indices in pageOrder. This is exactly the DEF-139
+    // "everything renders correctly without save+reopen" requirement.
+    const order = [0, 34, 1, 2, 3, 4];
+    expect(visibleToSourcePageForProxy(1, order, true)).toBe(1);
+    expect(visibleToSourcePageForProxy(2, order, true)).toBe(2);
+    expect(visibleToSourcePageForProxy(3, order, true)).toBe(3);
+    expect(visibleToSourcePageForProxy(4, order, true)).toBe(4);
+  });
+
+  it("is identity for an unreordered doc in BOTH proxy families", () => {
+    // At open pageOrder is identity, so the original-bytes translation
+    // and the refreshed identity agree on every slot.
+    const order = [0, 1, 2, 3, 4];
+    for (let v = 1; v <= 5; v += 1) {
+      expect(visibleToSourcePageForProxy(v, order, false)).toBe(v);
+      expect(visibleToSourcePageForProxy(v, order, true)).toBe(v);
+    }
+  });
+
+  it("maps delete-compacted docs by identity on the refreshed proxy (the DEF-139 delete class)", () => {
+    // Delete visible page 2 from a 5-page doc: pageOrder = [0, 2, 3, 4]
+    // (pdf-lib indices), and serializeDoc writes file pages [P1, P3, P4,
+    // P5]. On the refreshed proxy slot 2 is file page 2 (old page 3),
+    // slot 3 is file page 3 (old page 4) — identity, NOT the pdf-lib
+    // indices 3 / 4 which would land on the wrong pages.
+    const orderAfterDelete = [0, 2, 3, 4];
+    expect(visibleToSourcePageForProxy(2, orderAfterDelete, true)).toBe(2);
+    expect(visibleToSourcePageForProxy(3, orderAfterDelete, true)).toBe(3);
+    expect(visibleToSourcePageForProxy(4, orderAfterDelete, true)).toBe(4);
   });
 });

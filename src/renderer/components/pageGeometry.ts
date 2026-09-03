@@ -163,6 +163,48 @@ export function visibleToSourcePage(
   return sourceIndex + 1;
 }
 
+/**
+ * DEF-139 — resolve the 1-based pdf.js page the renderer must ask its
+ * CURRENT proxy for at a given visible slot.
+ *
+ * The engine's `EngineState.pageOrder` entries are 0-based indices INTO
+ * THE ENGINE'S pdf-lib document (its in-memory page array), NOT indices
+ * into any serialized file: `insertBlankPage` / `insertFromPdf` append
+ * new pages to the END of the pdf-lib doc and splice only `doc.order`,
+ * `delete` flags a page without removing it from pdf-lib, and
+ * `serializeDoc` (which `getDocumentBytes` runs) writes the output file
+ * in `pageOrder` (VISIBLE) sequence. So a pdf.js proxy rebuilt from
+ * `getDocumentBytes` bytes has its file pages in VISIBLE order, and
+ * `pageOrder[k]` is NOT a file-page index anymore — asking that proxy
+ * for `pageOrder[visible-1] + 1` returns the WRONG page whenever the
+ * engine reordered or inserted pages (DEF-139: inserting a blank at
+ * position 2 of a 34-page doc rendered the LAST page at slot 2).
+ *
+ * The renderer knows which of two proxy families it holds, carried as
+ * `proxyVisibleOrder` on the tab's session:
+ *  - `false` — the ORIGINAL open bytes. Its file order is the identity
+ *    (on open the engine seeds `order = [0..N-1]`), so `pageOrder`
+ *    entries still address it correctly. This is also the correct
+ *    fallback during the brief post-op / pre-refresh window (DEF-121).
+ *  - `true` — a RE-SERIALIZED proxy after `refreshDocProxyFor`
+ *    succeeded. Its file pages ARE the visible pages, so slot N is
+ *    file page N (identity) regardless of `pageOrder`.
+ *
+ * Pure; safe to call inside render. Keep `visibleToSourcePage` itself
+ * untouched — it remains the "original proxy" mapping and keeps its
+ * own DEF-064 semantics + tests.
+ */
+export function visibleToSourcePageForProxy(
+  visiblePage: number,
+  pageOrder: readonly number[],
+  proxyVisibleOrder: boolean,
+): number {
+  if (proxyVisibleOrder) {
+    return visiblePage;
+  }
+  return visibleToSourcePage(visiblePage, pageOrder);
+}
+
 /** Resolve the logical page label for a visible 1-based page slot.
  *
  *  Phase 12 — `renumberPages` lets the user override the displayed

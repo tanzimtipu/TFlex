@@ -1,4 +1,41 @@
-## DEF-138: Page rotation is lost on save + reopen — the rotated page silently reverts to its original orientation
+## DEF-139: Inserting a blank page visually scrambles the document — the live view and thumbnail rail show the last page at position 1/2 instead of the blank, and pages render one slot off until save+reopen
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (operator-reported BUG 2, reproduced on installed v1.7.12)
+- Phase: 9 (insert blank page regression on installed v1.7.12)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.12 binary, `C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe`), open the report.pdf SAMPLE card (34 pages; page 1 = "TFlex Technical Report" title, pages 2-17 = 8 chapters each + continuation, pages 18-34 = appendix "Page 1".."Page 17").
+2. Open the Tools palette -> "Insert pages" (`[data-tool-id="insertPages"]`), keep mode "Blank page", set "Insert at page" to `2` (blank becomes page 2, i.e. inserted AFTER page 1), click Insert.
+3. Wait for the ui/proxy to settle (I waited ~3s + scrolled the whole doc).
+4. Look at the LEFT THUMBNAIL RAIL and the main viewer: what content does page 1, page 2, page 3 render?
+
+Expected: Page 1 stays the "TFlex Technical Report" title; page 2 is the new BLANK page; page 3 is Chapter 1 ("Chapter 1: The Art of Orchestration"). The blank appears where requested and the document is otherwise unchanged except shifted by one.
+
+Actual: The visible document is SCRAMBLED. `engineState.pageOrder` reports `[0,34,1,2,3,4,5,...]` (35 slots, unique 35) and the rail's `.thumb-item`/`.page-slot` `data-source-page` attributes declare slot 2 -> source 35 (the new blank) and slot 3 -> source 2 — which LOOKS correct. But the RENDERED CONTENT at each slot is wrong:
+  - Slot 1 renders the title page ("TFlex Technical Report") — correct.
+  - Slot 2 (declared source 35 = the new blank) renders "Page 17" — the LAST page of the document, NOT a blank.
+  - Slot 3 (declared source 2 = Chapter 1) renders an EMPTY/blank page, not Chapter 1.
+  - Slot 4 (declared source 3) renders "Chapter 1: The Art of Orchestration".
+  - Slot 35 (declared source 34) renders "Page 16".
+  So every slot from 2 onward is one content-slot off: the new blank does NOT appear as page 2, and the LAST page ("Page 17") content is instead shown at page 2 (and its real content lands one slot late). This is exactly the operator's report (the last page moved to the front / the visible order is wrong).
+
+CRITICAL CONTRAST — the engine's SAVED OUTPUT and the FILE ON DISK are CORRECT. I did `Save As` after the insert and re-parsed the file with pdf.js: saved page 2 = "" (blank), saved page 3 = "Chapter 1: The Art of Orchestration", saved page 35 = "Page 17" — the correct order. So the mismatch is a LIVE-VISUAL (pdf.js proxy render / source-page mapping) defect, NOT a data-corruption defect. Save + re-open the file in TFlex -> the render is CORRECT (slot 2 = blank, slot 3 = Chapter 1, slot 35 = "Page 17").
+
+Drawing on visible page 2 (part 2 of the operator's report): with `[data-tool="ink"]` a stroke drawn on VISIBLE page 2 lands on page 2 in the engine (`annotations = [{kind:ink,page:2}]`) and a rect on VISIBLE page 3 lands on page 3 — so DRAWING TOOLS DO work and the annotation overlay IS placed on the visible slot the user drew on (annotations render as HTML overlays, so the pdf.js canvas hash is unchanged, but the drawn `.ann-ink`/`.ann-rect` elements DO appear on those visible slots). The "no drawing tools work on page 2/3" symptom is NOT reproduced as stated — the ink/rect DO render on the visible pages the user draws on. What IS broken is that those visible slots are showing the WRONG page CONTENT (page 2 shows "Page 17", page 3 shows blank), so a user drawing on "page 2" after an insert-blank is actually drawing on top of a page that displays the last page's content — the annotation is attached to visible page 2 whose underlying/real page content the engine has not re-ordered in the live render.
+
+Root cause direction (for the dev, renderer-side, not engine): the live pdf.js proxy is NOT rebuilt to match the engine's new pageOrder after insert-blank — `DocumentView`/`SideRail` map visible slot -> source via `pageOrder`, and `PageView` renders `doc.getPage(sourcePage)`, but the pdf.js proxy's actual page list still reflects the pre-insert order at live-render time, so `getPage(35)` (slot 2) returns the OLD last page's proxy page ("Page 17") instead of the new blank, and `getPage(2)` (slot 3) returns blank instead of Chapter 1. On save+reopen the proxy is rebuilt from the corrected bytes and the order is right. (The engine/pageOrder/annotations and the saved file are all correct — this is a live proxy/refresh mismatch.)
+
+Screenshot: screenshots/def-139-rail-thumbs-1-4.png (rail: thumb 1 = title, thumb 2 = "Page 17" last-page content NOT blank, thumb 3 = blank, thumb 4 = Chapter 1), screenshots/def-139-live-page2.png (main-view slot 2 = "Page 17"), screenshots/def-139-live-page3.png (main-view slot 3 = blank), screenshots/def-139-live-page35.png (slot 35 = "Page 16", should be "Page 17"); also captured per-slot textLayer ground truth: slot1="TFlex Technical Report...", slot2="Page 17" (src 35), slot3="" (src 2), slot4="Chapter 1..." (src 3), slot35="Page 16" (src 34). The same-flow Save-As re-parse (external pdf.js) is the CONTROL: page2="", page3="Chapter 1...", page35="Page 17".
+
+NOTE on previous verification: DEF-133 (which covers annotation-page-attribution after insert-blank) was CLOSED at this flow, and the DEF-133 note claimed the page-order was correct (blank becomes page 2). That conclusion was made by trusting the `pageOrder`/`data-source-page` ARRAYS — which this reproduction shows is WRONG: the arrays report the correct order while the LIVE RENDERED content shows the wrong page at every slot from 2 onward. This is exactly the "declare correct from pageOrder arrays alone" failure the operator warned about. The page-order claim is NOT correct when inspected visually.
+
+History:
+- qa: opened (installed v1.7.12; live view after insert-blank shows last-page "Page 17" at slot 2 and blank at slot 3 while pageOrder[1]=34/data-source-page[2]=35 claims the blank is slot 2; saved bytes + reopen render correctly).
+- qa: closed (retested on freshly installed v1.7.13 = FileVersion 1.7.13, exe 10:52 AM, e2e/retests/def_139_verify_1.7.13.spec.cjs — OPERATOR-EXACT VISUAL check, not the state arrays). Open report.pdf sample card -> Tools -> Insert pages -> blank mode -> "Insert at page" = 2 (rank semantics: blank becomes page 2, inserted AFTER page 1) -> Insert. IMMEDIATELY (no save/reopen) the live view and the LEFT THUMBNAIL RAIL are correct: page-slot textLayer ground truth = slot1 "TFlex Technical Report", slot2 "" (BLANK, spanCount 0), slot3 "Chapter 1: The Art of Orchestration", slot35 "Page 17"; rail thumbCount = 35 and the thumbnails visually render thumb1 = title, thumb2 = BLANK (pure white, darkFraction 0), thumb3 = Chapter 1, thumb35 = "Page 17". Arm the Pen ([data-tool="ink"]) and draw on visible page 3 -> `.ann-ink` renders on the slot that shows "Chapter 1: The Art of Orchestration" (inkOnPage3=1, slot3 text still Chapter 1). DELETE PATH (developer note): delete page 2 (the blank) via [data-tool-id="delete"] range mode -> pageCount 35->34 and slot2 IMMEDIATELY renders "Chapter 1: The Art of Orchestration" (the correct next content), slot1 still title, slot3 continuation body. After all of the above page 2 is still BLANK. No save/reopen anywhere; the live render is immediately correct. No unhandled "Invalid page request"/"degreeAngle"/"NaN"/React #310/#520 pageerrors. Screenshots: screenshots/def-139-1713-rail.png, def-139-1713-thumb-1.png / -thumb-2.png / -thumb-3.png / -thumb-35.png, def-139-1713-live-page1.png / -live-page2.png / -live-page3.png / -live-page35.png, def-139-1713-page3-ink.png, def-139-1713-after-delete.png.) CLOSED.
+
+
 
 - Status: CLOSED
 - Severity: HIGH

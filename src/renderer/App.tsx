@@ -192,6 +192,14 @@ interface DocSession {
   /** On-disk path, or null for samples. Save-As is the only option when
    *  this is null. */
   onDiskPath: string | null;
+  /** DEF-139 — whether the current pdf.js `doc` proxy was rebuilt from
+   *  `engine.getDocumentBytes` bytes (whose file pages are serialized in
+   *  the engine's VISIBLE order) rather than being the ORIGINAL open
+   *  bytes (identity file order). Starts false at open; flips to true
+   *  once `refreshDocProxyFor` swaps a re-serialized proxy in. Drives
+   *  the renderer's visible-slot -> proxy-page mapping in DocumentView
+   *  and the thumbnail rail. */
+  proxyVisibleOrder: boolean;
 }
 
 interface OpenTab {
@@ -871,6 +879,11 @@ export function App(): ReactElement {
         fileSize: bytes.byteLength,
         engineDocId,
         onDiskPath: source.onDiskPath,
+        // DEF-139 — a freshly parsed proxy holds the ORIGINAL open
+        // bytes (identity file order): the pageOrder translation stays
+        // active until a `refreshDocProxyFor` rebuild swaps in a
+        // re-serialized (visible-order) proxy.
+        proxyVisibleOrder: false,
       };
       const persisted: PersistedViewer = {
         zoomMode: "fit-width",
@@ -4190,6 +4203,14 @@ pushToast(
               ...existing.session,
               doc: parsed.doc,
               fileSize: bytes.byteLength,
+              // DEF-139 — `getDocumentBytes` runs the engine's
+              // `serializeDoc`, which writes the output file in the
+              // engine's VISIBLE order (`pageOrder` sequence). The
+              // swapped-in proxy is therefore a visible-order proxy:
+              // from here on the renderer maps visible slot N to
+              // `doc.getPage(N)` directly (see
+              // `visibleToSourcePageForProxy` / `proxyVisibleOrder`).
+              proxyVisibleOrder: true,
             },
           },
         };
@@ -5667,6 +5688,10 @@ pushToast(
                     ): void => registerSearchIndexInvalidatorFor(meta.id, fn)}
                     onToast={pushToast}
                     engineState={engine.engineState}
+                    // DEF-139 — visible-order flag for the slot ->
+                    // proxy-page mapping (original bytes vs a
+                    // re-serialized getDocumentBytes proxy).
+                    proxyVisibleOrder={open.session.proxyVisibleOrder}
                     modified={saveModified}
                     canUndo={engine.canUndo}
                     saveInPlaceEnabled={saveInPlaceEnabled}
