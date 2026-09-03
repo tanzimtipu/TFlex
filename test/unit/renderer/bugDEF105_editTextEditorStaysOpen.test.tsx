@@ -101,6 +101,19 @@ function runPointerDown(layer: HTMLElement, x: number, y: number): void {
   });
 }
 
+/** DEF-153 — the editor opens on DOUBLE click (single click selects
+ *  the run + shows the Confirm/Edit/Delete bar). This helper plays
+ *  the real gesture: a pointerdown (selects) then a dblclick (opens
+ *  the editor via the window-level dblclick listener). */
+function openEditorViaDoubleClick(layer: HTMLElement, x: number, y: number): void {
+  runPointerDown(layer, x, y);
+  act((): void => {
+    window.dispatchEvent(
+      new MouseEvent("dblclick", { bubbles: true, clientX: x, clientY: y }),
+    );
+  });
+}
+
 /** Flush one animation frame so the editor's deferred focus lands. */
 async function flushFrame(): Promise<void> {
   await new Promise<void>((resolve) => {
@@ -109,12 +122,17 @@ async function flushFrame(): Promise<void> {
 }
 
 describe("DEF-105 — editor stays open: mount-focus deferred past the opening gesture", () => {
-  it("a window pointerdown opens the editor pre-filled with the run's text", () => {
+  it("a double-click opens the editor pre-filled with the run's text", () => {
     const { host, unmount } = mountTextTool();
     try {
       const layer = host.querySelector("[data-tool='text']") as HTMLElement | null;
       if (layer === null) throw new Error("edit layer not found");
+      // DEF-153 — single click only SELECTS the run (bar + hint); the
+      // editor is the double-click toolbox.
       runPointerDown(layer, 150, 115);
+      expect(host.querySelector("[data-textrun-selection]"), "single click selects the run").not.toBeNull();
+      expect(host.querySelector("[data-edit-editor='edit']"), "single click must NOT open the editor").toBeNull();
+      openEditorViaDoubleClick(layer, 150, 115);
       const editor = host.querySelector("[data-edit-editor='edit']");
       expect(editor).not.toBeNull();
       const textarea = host.querySelector<HTMLTextAreaElement>("[data-edit-textarea]");
@@ -131,6 +149,11 @@ describe("DEF-105 — editor stays open: mount-focus deferred past the opening g
       const layer = host.querySelector("[data-tool='text']") as HTMLElement | null;
       if (layer === null) throw new Error("edit layer not found");
       runPointerDown(layer, 150, 115);
+      await act(async (): Promise<void> => {
+        window.dispatchEvent(
+          new MouseEvent("dblclick", { bubbles: true, clientX: 150, clientY: 115 }),
+        );
+      });
       const textarea = host.querySelector<HTMLTextAreaElement>("[data-edit-textarea]");
       expect(textarea).not.toBeNull();
       if (textarea === null) return;
@@ -159,7 +182,7 @@ describe("DEF-105 — editor stays open: mount-focus deferred past the opening g
     try {
       const layer = host.querySelector("[data-tool='text']") as HTMLElement | null;
       if (layer === null) throw new Error("edit layer not found");
-      runPointerDown(layer, 150, 115);
+      openEditorViaDoubleClick(layer, 150, 115);
       await act(async (): Promise<void> => {
         await flushFrame();
       });

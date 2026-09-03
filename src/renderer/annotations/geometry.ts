@@ -335,7 +335,15 @@ export function annotationBounds(a: Annotation): PageRect {
  *  arrow draws from this entry point to the anchor so the line is
  *  visually anchored to the box edge rather than crossing the box.
  *  When `target` lies inside the rect (anchor dropped on the box),
- *  the closest corner is returned (deterministic). */
+ *  the closest corner is returned (deterministic).
+ *
+ *  DEF-157 — when the anchor lies EXACTLY on the rect's perimeter
+ *  (the pre-fix create path placed the box's top-left corner ON the
+ *  anchor for the natural down-right drag), the raw closest-point
+ *  computation returns the anchor itself and the leader line
+ *  collapses to zero length. The final step slides the entry a few
+ *  points along the perimeter in that case, so the shaft always has
+ *  a visible (non-zero) length. */
 export function calloutEntryPoint(rect: PageRect, target: PagePoint): PagePoint {
   const cx = rect.x + rect.width / 2;
   const cy = rect.y + rect.height / 2;
@@ -370,6 +378,7 @@ export function calloutEntryPoint(rect: PageRect, target: PagePoint): PagePoint 
   // Nudge the entry point along the rect's edge so the line
   // approaches the anchor head-on rather than from the corner.
   // Skip if the target is inside the rect (corner-only mode).
+  let entry: PagePoint;
   if (target.x < left || target.x > right || target.y < top || target.y > bottom) {
     // Choose which edge to slide along: pick the edge that's
     // closer to the target's perpendicular axis. For a target
@@ -391,23 +400,248 @@ export function calloutEntryPoint(rect: PageRect, target: PagePoint): PagePoint 
       // Slide along the TOP edge; clamp the x coordinate into the
       // rect's horizontal extent.
       const clampedX = Math.max(left, Math.min(right, target.x));
-      return { x: clampedX, y: top };
-    }
-    if (minSideDist === distBelow) {
+      entry = { x: clampedX, y: top };
+    } else if (minSideDist === distBelow) {
       const clampedX = Math.max(left, Math.min(right, target.x));
-      return { x: clampedX, y: bottom };
-    }
-    if (minSideDist === distLeftOf) {
+      entry = { x: clampedX, y: bottom };
+    } else if (minSideDist === distLeftOf) {
       const clampedY = Math.max(top, Math.min(bottom, target.y));
-      return { x: left, y: clampedY };
+      entry = { x: left, y: clampedY };
+    } else {
+      // distRightOf
+      const clampedY = Math.max(top, Math.min(bottom, target.y));
+      entry = { x: right, y: clampedY };
     }
-    // distRightOf
-    const clampedY = Math.max(top, Math.min(bottom, target.y));
-    return { x: right, y: clampedY };
+  } else {
+    entry = best;
   }
-  return best;
+  // DEF-157 — an anchor that lies exactly ON the perimeter makes the
+  // raw entry coincide with it. Slide the entry a fixed distance
+  // along the edge (toward the rect's centre) so the line is always
+  // a visible, non-zero stub.
+  const EPS = 0.01;
+  if (Math.abs(entry.x - target.x) <= EPS && Math.abs(entry.y - target.y) <= EPS) {
+    const NUDGE_PT = 6;
+    const onTopEdge = Math.abs(entry.y - top) <= EPS;
+    const onBottomEdge = Math.abs(entry.y - bottom) <= EPS;
+    const onLeftEdge = Math.abs(entry.x - left) <= EPS;
+    const onRightEdge = Math.abs(entry.x - right) <= EPS;
+    const canSlideX = (onTopEdge || onBottomEdge) && rect.width >= NUDGE_PT * 2;
+    const canSlideY = (onLeftEdge || onRightEdge) && rect.height >= NUDGE_PT * 2;
+    if (canSlideX) {
+      const dir = entry.x <= cx ? 1 : -1;
+      entry = { x: Math.max(left, Math.min(right, entry.x + dir * NUDGE_PT)), y: entry.y };
+    } else if (canSlideY) {
+      const dir = entry.y <= cy ? 1 : -1;
+      entry = { x: entry.x, y: Math.max(top, Math.min(bottom, entry.y + dir * NUDGE_PT)) };
+    } else {
+      // Tiny / degenerate box: shift diagonally toward the nearest
+      // interior point so the stub is still visible.
+      const insetX = Math.min(NUDGE_PT, Math.max(0, rect.width) / 2);
+      const insetY = Math.min(NUDGE_PT, Math.max(0, rect.height) / 2);
+      entry = {
+        x: entry.x + (entry.x <= cx ? insetX : -insetX),
+        y: entry.y + (entry.y <= cy ? insetY : -insetY),
+      };
+    }
+  }
+  return entry;
+}
+
+/** DEF-157 — the callout text-box rect for a create drag. The box is
+ *  a default-sized box whose TOP-LEFT is the drag RELEASE point
+ *  (`to`), clamped inside the page. Placing the box at the release
+ *  point (not at the drag-rect corner) keeps the anchor (the drag
+ *  START point) OUTSIDE the box for the natural drag directions, so
+ *  `calloutEntryPoint` never collapses and the leader line is always
+ *  a visible non-zero shaft. */
+export function calloutBoxFor(
+  to: PagePoint,
+  minWidthPt: number,
+  minHeightPt: number,
+  pageWidthPt: number,
+  pageHeightPt: number,
+): PageRect {
+  const box: PageRect = {
+    x: to.x,
+    y: to.y,
+    width: minWidthPt,
+    height: minHeightPt,
+  };
+  if (box.x < 0) box.x = 0;
+  if (box.y < 0) box.y = 0;
+  if (box.x + box.width > pageWidthPt) {
+    box.width = Math.max(0, pageWidthPt - box.x);
+  }
+  if (box.y + box.height > pageHeightPt) {
+    box.height = Math.max(0, pageHeightPt - box.y);
+  }
+  return box;
 }
 
 function round2(v: number): number {
   return Math.round(v * 100) / 100;
+}
+
+// ---------------------------------------------------------------------------
+// Unified selection geometry (DEF-154) — move / resize COMMITTED
+// annotations from the page canvas. All helpers are pure so the unit
+// tests can exercise them without a browser.
+
+/** Shift a committed annotation by a page-point delta. Every geometry
+ *  field moves as one unit (ink point maps, arrow endpoints, note
+ *  anchors, box rects). Wire-form fallbacks (`points`/`rects`) are
+ *  respected exactly like the render path, so a round-tripped
+ *  annotation moves correctly. */
+export function moveAnnotation(a: Annotation, dxPt: number, dyPt: number): Annotation {
+  const shift = (p: PagePoint): PagePoint => ({ x: p.x + dxPt, y: p.y + dyPt });
+  switch (a.kind) {
+    case "ink":
+      return { ...a, points: a.points.map(shift) };
+    case "arrow": {
+      const arrow = a as typeof a & { points?: PagePoint[] | undefined };
+      const from = a.from ?? arrow.points?.[0];
+      const to = a.to ?? arrow.points?.[1];
+      if (from === undefined || to === undefined) return a;
+      return { ...a, from: shift(from), to: shift(to) };
+    }
+    case "note":
+      return { ...a, at: shift(a.at) };
+    case "textbox":
+    case "rect":
+    case "ellipse":
+    case "callout": {
+      const r =
+        a.rect ?? (a as unknown as { rects?: { x: number; y: number; width: number; height: number }[] }).rects?.[0];
+      if (r === undefined) return a;
+      const shifted = { ...r, x: r.x + dxPt, y: r.y + dyPt };
+      if (a.kind === "callout") {
+        // The whole callout moves as one unit: the text box AND the
+        // arrow anchor both shift by the delta (the arrow points at
+        // the same subject, now from the moved box).
+        const anchor = a.at;
+        if (anchor !== undefined) {
+          return { ...a, rect: shifted, at: { x: anchor.x + dxPt, y: anchor.y + dyPt } };
+        }
+      }
+      return { ...a, rect: shifted };
+    }
+    default:
+      return a;
+  }
+}
+
+/** Resize a committed rect-carrying annotation (textbox, rect,
+ *  ellipse, callout) to `newRect`. The callout's ARROW ANCHOR stays
+ *  fixed — resizing the box does not drag the subject it points at.
+ *  DEF-154 — ink and arrow are also resizable: their geometry
+ *  (points / endpoints) is SCALED proportionally from the original
+ *  bounds into `newRect` (a resize on a shape scales its geometry
+ *  points). Notes return the annotation unchanged (the icon is a
+ *  fixed 18pt surface; resizing it has no meaning). */
+export function resizeAnnotation(
+  a: Annotation,
+  newRect: PageRect,
+  pageWidthPt: number,
+  pageHeightPt: number,
+): Annotation {
+  // Ink and arrow carry their shape in points rather than a rect.
+  // Scale every point from the original bounds into `newRect`.
+  if (a.kind === "ink" || a.kind === "arrow") {
+    return scaleAnnotationPoints(a, newRect);
+  }
+  if (a.kind !== "textbox" && a.kind !== "rect" && a.kind !== "ellipse" && a.kind !== "callout") {
+    return a;
+  }
+  const clamped: PageRect = {
+    x: Math.max(0, Math.min(newRect.x, pageWidthPt)),
+    y: Math.max(0, Math.min(newRect.y, pageHeightPt)),
+    width: newRect.width,
+    height: newRect.height,
+  };
+  return { ...a, rect: clamped };
+}
+
+/** Scale an ink stroke or arrow into `newRect`: every point is
+ *  mapped proportionally from the annotation's current bounds into
+ *  the new bounds (so dragging a corner handle stretches the whole
+ *  shape, not just its bounding box). A zero-extent axis scales
+ *  as 1:1 along that axis (a perfectly vertical/horizontal arrow
+ *  keeps its degenerate axis's coordinate). */
+function scaleAnnotationPoints(a: Annotation, newRect: PageRect): Annotation {
+  const old = annotationBounds(a);
+  const sx = old.width <= 0 ? 1 : newRect.width / old.width;
+  const sy = old.height <= 0 ? 1 : newRect.height / old.height;
+  const map = (p: PagePoint): PagePoint => ({
+    x: newRect.x + (p.x - old.x) * sx,
+    y: newRect.y + (p.y - old.y) * sy,
+  });
+  if (a.kind === "ink") {
+    return { ...a, points: a.points.map(map) };
+  }
+  if (a.kind === "arrow") {
+    // `from`/`to` may be absent only for a wire shape that survived
+    // an IPC round-trip without the renderer blob; the backfilled
+    // `points` array is then the source of truth.
+    const arrow = a as typeof a & { points?: PagePoint[] | undefined };
+    const from = a.from ?? arrow.points?.[0];
+    const to = a.to ?? arrow.points?.[1];
+    if (from === undefined || to === undefined) return a;
+    return { ...a, from: map(from), to: map(to) };
+  }
+  return a;
+}
+
+/** Are two annotations' GEOMETRY fields equal (position + shape) — the
+ *  echo-landed check the overlay uses to drop its local move-draft
+ *  once the engine's create-echo carries the moved annotation. Ignores
+ *  text / color / timestamps (a re-created annotation keeps the same
+ *  id + createdAt, and its text may have been edited in the same
+ *  commit). */
+export function sameAnnotationGeometry(a: Annotation, b: Annotation): boolean {
+  if (a.kind !== b.kind || a.page !== b.page) return false;
+  const eqPt = (p: PagePoint, q: PagePoint): boolean => p.x === q.x && p.y === q.y;
+  switch (a.kind) {
+    case "ink": {
+      if (b.kind !== "ink" || a.points.length !== b.points.length) return false;
+      for (let i = 0; i < a.points.length; i += 1) {
+        const p = a.points[i];
+        const q = b.points[i];
+        if (p === undefined || q === undefined || !eqPt(p, q)) return false;
+      }
+      return true;
+    }
+    case "arrow": {
+      if (b.kind !== "arrow") return false;
+      const ab = a as typeof a & { points?: PagePoint[] | undefined };
+      const bb = b as typeof b & { points?: PagePoint[] | undefined };
+      const af = a.from ?? ab.points?.[0];
+      const at = a.to ?? ab.points?.[1];
+      const bf = b.from ?? bb.points?.[0];
+      const bt = b.to ?? bb.points?.[1];
+      if (af === undefined || at === undefined || bf === undefined || bt === undefined) return false;
+      return eqPt(af, bf) && eqPt(at, bt);
+    }
+    case "note": {
+      if (b.kind !== "note") return false;
+      return eqPt(a.at, b.at);
+    }
+    case "textbox":
+    case "rect":
+    case "ellipse":
+    case "callout": {
+      if (a.kind !== b.kind) return false;
+      const ar = a.rect ?? (a as unknown as { rects?: PageRect[] }).rects?.[0];
+      const br = b.rect ?? (b as unknown as { rects?: PageRect[] }).rects?.[0];
+      if (ar === undefined || br === undefined) return false;
+      return (
+        ar.x === br.x &&
+        ar.y === br.y &&
+        ar.width === br.width &&
+        ar.height === br.height
+      );
+    }
+    default:
+      return false;
+  }
 }

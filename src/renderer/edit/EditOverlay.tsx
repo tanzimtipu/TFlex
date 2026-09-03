@@ -50,6 +50,10 @@ import {
 } from "./geometry";
 import { EditInlineEditor, colorToHex, fontFamilyFor } from "./EditInlineEditor";
 import {
+  ContentActionBar,
+  MoveHint,
+} from "../components/selectableContent";
+import {
   fitTextBoxFontSizePx,
   measureTextWidthCss,
 } from "./rasterize";
@@ -104,7 +108,13 @@ export interface EditOverlayProps {
   /** DEF-127/127b — commit a COMMITTED text box's drag (move or
    *  resize). The host rasterises the box at `newRect` and re-bakes
    *  it through the existing `editImage` contract, so the baked
-   *  text moves WITH the box (no decoupled local surface). */
+   *  text moves WITH the box (no decoupled local surface).
+   *  DEF-155 — returns a promise that resolves once the engine
+   *  mask + pdf.js proxy refresh have landed, so the overlay can
+   *  keep its white eraser cover mounted until the OLD rect is
+   *  clean (no stale frame after release). A `void` return (older
+   *  wiring / tests) means "no timing contract" — the overlay then
+   *  clears the eraser immediately. */
   onCommitTextBoxMove: (args: {
     oldRect: { x: number; y: number; width: number; height: number };
     newRect: { x: number; y: number; width: number; height: number };
@@ -112,7 +122,7 @@ export interface EditOverlayProps {
     style: EditTextStyle;
     background: "white" | "none";
     id: string;
-  }) => void;
+  }) => void | Promise<void>;
   /** DEF-135/136 — delete a COMMITTED text box through the engine's
    *  registry (engine.deleteTextBox). The placement toolbar's Delete
    *  button calls this; the host removes the box from the engine
@@ -207,6 +217,56 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   const [boxDrag, setBoxDrag] = useState<BoxDragState | null>(null);
   const [imageDrag, setImageDrag] = useState<ImageDragState | null>(null);
   const [textBoxDrag, setTextBoxDrag] = useState<TextBoxDragState | null>(null);
+  // DEF-152 — a real move drag on a committed box now parks a PENDING
+  // move instead of committing on pointerup: the box's registry rect
+  // follows the drag live, but the ENGINE move only happens when the
+  // box's action bar Confirm is pressed (the bar now carries
+  // Confirm / Edit / Delete). While pending, the white eraser cover
+  // (DEF-155) stays mounted so the OLD baked rect never flashes
+  // before the confirmed engine mask + proxy refresh land.
+  const [pendingTextBoxMove, setPendingTextBoxMove] = useState<{
+    id: string;
+    oldRect: { x: number; y: number; width: number; height: number };
+    newRect: { x: number; y: number; width: number; height: number };
+    text: string;
+    style: EditTextStyle;
+    background: "white" | "none";
+  } | null>(null);
+  // DEF-153 — the text tool's SELECTED (movable) text run. Single
+  // click selects the run + shows the Confirm/Edit/Delete bar;
+  // double click opens the inline editor. The run's rect is the
+  // move target; a drag parks a pending run move committed by the
+  // bar's Confirm (onCommitTextEdit with oldRect).
+  const [runSelection, setRunSelection] = useState<{
+    rect: { x: number; y: number; width: number; height: number };
+    text: string;
+  } | null>(null);
+  const [pendingRunMove, setPendingRunMove] = useState<{
+    oldRect: { x: number; y: number; width: number; height: number };
+    newRect: { x: number; y: number; width: number; height: number };
+    text: string;
+  } | null>(null);
+  // Cursor-attached "Double click to edit" hint position (client px).
+  const [hintPos, setHintPos] = useState<{ x: number; y: number } | null>(null);
+  // True when the last box/run pointerup was a REAL drag — the
+  // follow-up click must not reopen the editor / reselect.
+  const movedRef = useRef(false);
+  /** Ref mirror of `runSelection` so the window-level hover listener
+   *  can track the cursor hint without re-registering on every
+   *  selection change. */
+  const runSelectionRef = useRef<{
+    rect: { x: number; y: number; width: number; height: number };
+    text: string;
+  } | null>(null);
+  runSelectionRef.current = runSelection;
+  /** DEF-153 — in-flight text-run move drag (client origin + the
+   *  run's start rect). Drives the run's selection rect through
+   *  onPointerMove; pointerup parks a pending run move. */
+  const runDragRef = useRef<{
+    originX: number;
+    originY: number;
+    startRect: { x: number; y: number; width: number; height: number };
+  } | null>(null);
   const [cropDrag, setCropDrag] = useState<CropDragState | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   // Force a re-render after async image-byte operations; the
@@ -237,6 +297,10 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     setImageDrag(null);
     setTextBoxDrag(null);
     setCropDrag(null);
+    setRunSelection(null);
+    setPendingRunMove(null);
+    setPendingTextBoxMove(null);
+    setHintPos(null);
   }, [tool, page]);
 
   // DEF-149(b) / DEF-150 — every time the inline editor opens (the
@@ -275,10 +339,56 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       : null;
   void dragTick; // referenced to keep React happy
 
+  /** DEF-152 — revert an unconfirmed box move: the registry rect
+   *  returns to the engine's last committed position (the draft was
+   *  renderer-local the whole time). */
+  const revertPendingBoxMove = (): void => {
+    if (pendingTextBoxMove === null) return;
+    const p = pendingTextBoxMove;
+    dispatch({ type: "set-text-box-rect", id: p.id, rect: { ...p.oldRect } });
+    setPendingTextBoxMove(null);
+    setHintPos(null);
+  };
+
+  /** DEF-152/155 — commit the unconfirmed box move through the
+   *  engine (moveTextBox). The pending state — and with it the white
+   *  eraser cover over the OLD rect — stays mounted until the host's
+   *  engine mask + pdf.js proxy refresh resolve, so the moved box
+   *  never flashes a stale frame at its original position. The
+   *  selection closes together with the pending clear (after the
+   *  refresh for real hosts, synchronously for void callbacks). */
+  const confirmPendingBoxMove = async (): Promise<void> => {
+    if (pendingTextBoxMove === null) return;
+    const p = pendingTextBoxMove;
+    const result = onCommitTextBoxMove({
+      oldRect: { ...p.oldRect },
+      newRect: { ...p.newRect },
+      text: p.text,
+      style: p.style,
+      background: p.background,
+      id: p.id,
+    });
+    if (result !== undefined) {
+      // The host resolved the engine mask + proxy refresh; wait two
+      // more frames so the pdf.js canvas paint also lands before the
+      // eraser unmounts (DEF-155 — no stale frame at the old rect).
+      await result;
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }
+    setPendingTextBoxMove(null);
+    setHintPos(null);
+    dispatch({ type: "select-text-box", textBoxId: null });
+  };
+
   // Click on a text run (text tool) ---------------------------------------
 
-  const onClickTextRun = useCallback(
-    (pt: { x: number; y: number }): void => {
+  /** DEF-153 — SINGLE click on a text run SELECTS it and makes it
+   *  movable (the Confirm / Edit action bar + move drag + hint);
+   *  the inline editor opens on DOUBLE click (or the bar's Edit).
+   *  The engine for both paths is the same hit-test: pick the run
+   *  matching the newest committed text at the click point (DEFF-149(a)). */
+  const runAtPoint = useCallback(
+    (pt: { x: number; y: number }): TextItemGeom | null => {
       const items = getTextItems();
       // Collect every run whose rect contains the click point (a
       // small tolerance keeps a click on the line's vertical center
@@ -292,7 +402,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         if (pt.y > item.y + item.height + 2) continue;
         matches.push(item);
       }
-      if (matches.length === 0) return;
+      if (matches.length === 0) return null;
       // DEF-149(a) — `engine.editTextRun` MASKS the old run but never
       // removes it, so pdf.js's getTextContent() returns BOTH the old
       // run and the new run at the same rect (the OLD one appears
@@ -303,14 +413,14 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       // and only fall back to the first hit for unedited runs.
       const committedText = committedTextRunAt(edit.committedTextRuns, page, pt);
       let chosen = matches[0];
+      if (chosen === undefined) return null;
       if (committedText !== null) {
         const preferred = matches.find((m) => m.text === committedText);
         if (preferred !== undefined) {
           chosen = preferred;
         }
       }
-      if (chosen === undefined) return;
-      setTextTarget({ rect: { ...chosen }, initialText: chosen.text });
+      return { ...chosen };
     },
     [edit.committedTextRuns, page, getTextItems],
   );
@@ -350,6 +460,11 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           y <= it.y + it.height + 2,
       );
       setHoverRect(hit === undefined ? null : { ...hit });
+      // DEF-153 — while a run is selected the cursor-attached hint
+      // follows the pointer.
+      if (runSelectionRef.current !== null) {
+        setHintPos({ x: e.clientX, y: e.clientY });
+      }
     };
     window.addEventListener("pointermove", onMove);
     // B6 — text-run CLICK. The hover hint above works because it
@@ -374,7 +489,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       const target = e.target as Element | null;
       if (target !== null && typeof target.closest === "function") {
         const interactive = target.closest(
-          ".edit-inline-editor, .edit-image-toolbar, .edit-image-placement, .edit-image-crop-overlay, button, input, textarea, select, [role='button'], .ann-editor, .ann-note, .sig-action-bar, .sig-pending",
+          ".edit-inline-editor, .edit-image-toolbar, .edit-image-placement, .edit-image-crop-overlay, .content-action-bar, button, input, textarea, select, [role='button'], .ann-editor, .ann-note, .sig-action-bar, .sig-pending",
         );
         if (interactive !== null) return;
       }
@@ -384,14 +499,47 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       const x = (e.clientX - rect.left) / cssScale;
       const y = (e.clientY - rect.top) / cssScale;
       if (x < 0 || y < 0 || x > pageWidthPt || y > pageHeightPt) return;
-      onClickTextRun({ x, y });
+      const pt = { x, y };
+      // DEF-153 — single click SELECTS the run (movable selection +
+      // Confirm / Edit bar + hint); it no longer opens the editor.
+      const chosen = runAtPoint(pt);
+      if (chosen === null) {
+        setRunSelection(null);
+        setPendingRunMove(null);
+        setHintPos(null);
+        return;
+      }
+      movedRef.current = false;
+      setPendingRunMove(null);
+      setRunSelection({ rect: { ...chosen }, text: chosen.text });
+      setHintPos({ x: e.clientX, y: e.clientY });
+    };
+    // DEF-153 — DOUBLE click on a text run opens the full edit
+    // toolbox (the inline editor) — the model's split from the
+    // single click.
+    const onDblClick = (e: MouseEvent): void => {
+      const root = rootRef.current;
+      if (root === null) return;
+      const rect = root.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / cssScale;
+      const y = (e.clientY - rect.top) / cssScale;
+      if (x < 0 || y < 0 || x > pageWidthPt || y > pageHeightPt) return;
+      const chosen = runAtPoint({ x, y });
+      if (chosen === null) return;
+      movedRef.current = false;
+      setRunSelection(null);
+      setPendingRunMove(null);
+      setHintPos(null);
+      setTextTarget({ rect: { ...chosen }, initialText: chosen.text });
     };
     window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("dblclick", onDblClick);
     return () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerdown", onDown, true);
+      window.removeEventListener("dblclick", onDblClick);
     };
-  }, [tool, cssScale, getTextItems, onClickTextRun, pageWidthPt, pageHeightPt]);
+  }, [tool, cssScale, getTextItems, runAtPoint, pageWidthPt, pageHeightPt]);
 
   // Pointer handlers -----------------------------------------------------
 
@@ -420,7 +568,32 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     }
 
     if (tool === "text") {
-      onClickTextRun(pt);
+      // DEF-153 — single click on a text run SELECTS it (movable +
+      // Confirm/Edit bar + hint); the inline editor opens on double
+      // click (window-level dblclick listener). The layer fallback
+      // also starts the run's move-drag (the browser's native text
+      // drag would otherwise select text instead of moving the run).
+      const chosen = runAtPoint(pt);
+      if (chosen !== null) {
+        movedRef.current = false;
+        setPendingRunMove(null);
+        setRunSelection({ rect: { ...chosen }, text: chosen.text });
+        setHintPos({ x: e.clientX, y: e.clientY });
+        // Capturing during an actual drag is safe: the editor opens
+        // via dblclick AFTER the clicks complete, so the textarea's
+        // own events are never redirected (Bug 9 concern was the
+        // single-click-open flow, which no longer captures).
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        runDragRef.current = {
+          originX: e.clientX,
+          originY: e.clientY,
+          startRect: { ...chosen },
+        };
+      } else {
+        setRunSelection(null);
+        setPendingRunMove(null);
+        setHintPos(null);
+      }
       return;
     }
     if (tool === "box") {
@@ -431,14 +604,30 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       const hit = hitTextBox(boxesForPage, pt);
       if (hit !== null) {
         dispatch({ type: "select-text-box", textBoxId: hit.id });
+        movedRef.current = false;
+        // DEF-152 — pressing another box reverts any unconfirmed
+        // move of a different box (the engine never received it).
+        if (pendingTextBoxMove !== null && pendingTextBoxMove.id !== hit.id) {
+          revertPendingBoxMove();
+        }
         setTextBoxDrag({
           kind: "move",
           id: hit.id,
           origin: { x: e.clientX, y: e.clientY },
           startRect: { ...hit.rect },
         });
+        setHintPos({ x: e.clientX, y: e.clientY });
         return;
       }
+      // Press on the empty page: an unconfirmed move is reverted
+      // before the drag-to-create starts (fail-safe — the engine
+      // never saw it).
+      if (pendingTextBoxMove !== null) {
+        revertPendingBoxMove();
+      }
+      setRunSelection(null);
+      setPendingRunMove(null);
+      setHintPos(null);
       dispatch({ type: "select-text-box", textBoxId: null });
       setBoxDrag({ from: pt, to: pt });
       e.preventDefault();
@@ -471,6 +660,18 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    // DEF-153 — an in-flight text-run move drag follows the cursor
+    // (the run's selection rect moves; the engine op waits for the
+    // bar's Confirm).
+    if (tool === "text" && runDragRef.current !== null) {
+      const d = runDragRef.current;
+      const dx = (e.clientX - d.originX) / cssScale;
+      const dy = (e.clientY - d.originY) / cssScale;
+      const next = moveImageRect(d.startRect, { x: dx, y: dy }, pageWidthPt, pageHeightPt);
+      setRunSelection((prev) => (prev === null ? prev : { ...prev, rect: next }));
+      setHintPos({ x: e.clientX, y: e.clientY });
+      return;
+    }
     if (imageDrag !== null) {
       const dx = (e.clientX - imageDrag.origin.x) / cssScale;
       const dy = (e.clientY - imageDrag.origin.y) / cssScale;
@@ -520,6 +721,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           pageHeightPt,
         );
         dispatch({ type: "set-text-box-rect", id: textBoxDrag.id, rect: next });
+        setHintPos({ x: e.clientX, y: e.clientY });
         return;
       }
       if (textBoxDrag.kind === "resize" && textBoxDrag.handle !== undefined) {
@@ -531,8 +733,15 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           pageHeightPt,
         );
         dispatch({ type: "set-text-box-rect", id: textBoxDrag.id, rect: next });
+        setHintPos({ x: e.clientX, y: e.clientY });
         return;
       }
+    }
+    // DEF-153 — while a box is selected/movable the cursor-attached
+    // hint follows the pointer even when no drag is in flight.
+    if (selectedBox !== null && textTarget === null) {
+      setHintPos({ x: e.clientX, y: e.clientY });
+      return;
     }
     if (boxDrag !== null) {
       setBoxDrag({ from: boxDrag.from, to: pagePoint(e) });
@@ -618,43 +827,70 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       }
     }
     if (textBoxDrag !== null) {
-      // DEF-127/127b — a committed text box drag ends in one of
-      // two ways:
-      //   - the rect actually moved: commit a re-bake of the box
-      //     at the new rect through `onCommitTextBoxMove` (the
-      //     host calls the engine's editImage mask-and-draw, so
-      //     the baked text follows the box — no phantom surface).
-      //   - the gesture was a click (no meaningful movement):
-      //     reopen the inline editor for the box, restoring the
-      //     registry rect to the committed position so pointer
-      //     jitter can't nudge the box without an engine call.
+      // DEF-127/127b + DEF-152 — a committed text box drag ends in
+      // one of two ways:
+      //   - the rect actually moved: park a PENDING move (registry
+      //     rect follows live; the ENGINE move only fires when the
+      //     box's action-bar Confirm is pressed). The white eraser
+      //     cover over the OLD rect stays mounted while pending
+      //     (DEF-155).
+      //   - the gesture was a click (no meaningful movement): keep
+      //     the selection + bar (the edit toolbox opens on double
+      //     click or the bar's Edit — DEF-153).
       (e.target as Element).releasePointerCapture?.(e.pointerId);
       const id = textBoxDrag.id;
       const current = edit.textBoxes.find((b) => b.id === id);
+      const startRect = { ...textBoxDrag.startRect };
+      const kind = textBoxDrag.kind;
       setTextBoxDrag(null);
       if (current === undefined) return;
-      const moved = !rectsClose(current.rect, textBoxDrag.startRect, 2);
+      const moved = !rectsClose(current.rect, startRect, 2);
       if (!moved) {
-        const committed = { ...textBoxDrag.startRect };
+        movedRef.current = false;
+        // Restore the registry rect to the committed position so
+        // pointer jitter can't nudge the box.
+        const committed = { ...startRect };
         dispatch({ type: "set-text-box-rect", id, rect: committed });
-        setTextTarget({
-          rect: committed,
-          initialText: current.text,
-          textBoxId: id,
-          style: { ...current.style },
-          background: current.background,
-        });
         return;
       }
-      const newRect = { ...current.rect };
-      onCommitTextBoxMove({
-        oldRect: { ...textBoxDrag.startRect },
-        newRect,
+      movedRef.current = true;
+      const oldRect =
+        kind === "resize"
+          ? { ...startRect }
+          : pendingTextBoxMove?.id === id
+            ? { ...pendingTextBoxMove.oldRect }
+            : { ...startRect };
+      setPendingTextBoxMove({
+        id,
+        oldRect,
+        newRect: { ...current.rect },
         text: current.text,
         style: current.style,
         background: current.background,
-        id,
       });
+      return;
+    }
+    if (tool === "text" && runDragRef.current !== null) {
+      // DEF-153 — a text-run move drag ends as a PENDING run move
+      // (committed by the run's Confirm bar); a click keeps the
+      // selection.
+      (e.target as Element).releasePointerCapture?.(e.pointerId);
+      const d = runDragRef.current;
+      runDragRef.current = null;
+      const newRect = runSelection !== null ? { ...runSelection.rect } : { ...d.startRect };
+      const moved = !rectsClose(newRect, d.startRect, 2);
+      if (!moved) {
+        movedRef.current = false;
+        setRunSelection((prev) => (prev === null ? prev : { ...prev, rect: { ...d.startRect } }));
+        return;
+      }
+      movedRef.current = true;
+      setPendingRunMove({
+        oldRect: { ...d.startRect },
+        newRect,
+        text: runSelection?.text ?? "",
+      });
+      setHintPos({ x: e.clientX, y: e.clientY });
       return;
     }
     if (boxDrag !== null) {
@@ -764,6 +1000,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     editorOnDelete = (): void => {
       setTextTarget(null);
       setEditorOffset({ x: 0, y: 0 });
+      setPendingTextBoxMove(null);
+      setHintPos(null);
       onDeleteTextBox(id);
     };
   }
@@ -800,6 +1038,18 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         )
       : null;
 
+  // DEF-145/155 — the white eraser cover rect: the OLD baked rect of a
+  // committed box while it is being moved OR its move is pending.
+  const eraserRect = ((): { x: number; y: number; width: number; height: number } | null => {
+    if (tool === "box" && textBoxDrag !== null && textBoxDrag.kind === "move") {
+      return { ...textBoxDrag.startRect };
+    }
+    if (pendingTextBoxMove !== null) {
+      return { ...pendingTextBoxMove.oldRect };
+    }
+    return null;
+  })();
+
   return (
     <div
       ref={rootRef}
@@ -812,11 +1062,50 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       onPointerUp={(e): void => {
         void onPointerUp(e);
       }}
+      onDoubleClick={(e): void => {
+        // DEF-153 — double click on a committed box opens its edit
+        // toolbox (the floating editor), and double click on a text
+        // run opens the inline editor (the window-level dblclick
+        // listener already handles the run; this is the box path).
+        if (tool !== "box") return;
+        if ((e.target as Element).closest(".edit-inline-editor, .content-action-bar") !== null) return;
+        const root = rootRef.current;
+        if (root === null) return;
+        const rootRect = root.getBoundingClientRect();
+        const pt = {
+          x: (e.clientX - rootRect.left) / cssScale,
+          y: (e.clientY - rootRect.top) / cssScale,
+        };
+        const hit = hitTextBox(boxesForPage, pt);
+        if (hit === null) return;
+        if (pendingTextBoxMove !== null && pendingTextBoxMove.id !== hit.id) {
+          revertPendingBoxMove();
+        }
+        setTextTarget({
+          rect: { ...hit.rect },
+          initialText: hit.text,
+          textBoxId: hit.id,
+          style: { ...hit.style },
+          background: hit.background,
+        });
+        setHintPos(null);
+      }}
     >
       {tool === "text" && hoverRect !== null && (
         <div
           className="edit-text-hover"
           style={overlayRectToCss(hoverRect, cssScale)}
+        />
+      )}
+
+      {/* DEF-153 — the SELECTED (movable) text run: an outlined
+          surface at the run's rect + the Confirm/Edit/Delete bar. */}
+      {tool === "text" && runSelection !== null && (
+        <div
+          className="edit-text-hover edit-textrun-selection"
+          data-textrun-selection
+          data-textrun-text={runSelection.text}
+          style={overlayRectToCss(runSelection.rect, cssScale)}
         />
       )}
 
@@ -827,27 +1116,27 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         />
       )}
 
-      {/* DEF-145 — while a COMMITTED box is being moved, the page
-          canvas underneath still paints the pre-move baked text at
-          the ORIGINAL rect (the pdf.js proxy is only refreshed on
-          mouseup re-commit). Cover that stale copy with an opaque
+      {/* DEF-145/155 — while a COMMITTED box is being moved OR its
+          move is pending (unconfirmed), the page canvas underneath
+          still paints the pre-move baked text at the ORIGINAL rect
+          (the pdf.js proxy is only refreshed after the confirmed
+          engine move lands). Cover that stale copy with an opaque
           white rect exactly matching the drag's start rect — the
           same white-mask the engine applies to the old position on
           re-bake — so the box appears to move as a single unit with
-          no residual text at the old spot. The cover is
-          pointer-transparent and only lives for the drag's
-          duration; it disappears on pointerup when the proxy
-          refresh lands. */}
-      {tool === "box" && textBoxDrag !== null && textBoxDrag.kind === "move" && (
+          no residual text at the old spot. The cover stays mounted
+          until the Confirm's engine mask + proxy refresh RESOLVE (no
+          stale frame window at release — DEF-155). */}
+      {eraserRect !== null && (
         <div
           className="edit-box-eraser"
           data-edit-box-eraser
           style={{
             position: "absolute",
-            left: textBoxDrag.startRect.x * cssScale,
-            top: textBoxDrag.startRect.y * cssScale,
-            width: textBoxDrag.startRect.width * cssScale,
-            height: textBoxDrag.startRect.height * cssScale,
+            left: eraserRect.x * cssScale,
+            top: eraserRect.y * cssScale,
+            width: eraserRect.width * cssScale,
+            height: eraserRect.height * cssScale,
             background: "#ffffff",
             pointerEvents: "none",
           }}
@@ -884,14 +1173,13 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         />
       ))}
 
-      {/* DEF-135/136 — placement toolbar for a SELECTED committed
-          box: Delete (engine.deleteTextBox through the host) + Edit
-          (reopens the inline editor with the box's committed text /
-          style / background). Rendered while the box is selected and
-          no editor is open (the click-to-reopen flow shows the editor;
-          once it closes the toolbar remains so the box can be
-          deleted). The bar stops pointerdown so a button press never
-          starts a new drag-to-create on the page behind it. */}
+      {/* DEF-135/136 + DEF-152 — placement toolbar for a SELECTED
+          committed box: Confirm (commits a pending move) + Edit
+          (reopens the inline editor) + Delete (engine.deleteTextBox
+          through the host). Rendered while the box is selected and
+          no editor is open. The bar stops pointerdown so a button
+          press never starts a new drag-to-create on the page behind
+          it. */}
       {tool === "box" &&
         selectedBox !== null &&
         textTarget === null &&
@@ -902,6 +1190,20 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               box={box}
               cssScale={cssScale}
               pageWidthPt={pageWidthPt}
+              onConfirm={(): void => {
+                if (pendingTextBoxMove === null) {
+                  // No pending move — Confirm commits the selection
+                  // (closes the bar; nothing else changed).
+                  dispatch({ type: "select-text-box", textBoxId: null });
+                  setHintPos(null);
+                  return;
+                }
+                if (pendingTextBoxMove.id !== box.id) return;
+                // DEF-152 — Confirm commits the PENDING move through
+                // the engine; the bar + eraser stay mounted until the
+                // engine mask + proxy refresh resolve (DEF-155).
+                void confirmPendingBoxMove();
+              }}
               onEdit={(): void => {
                 // Reopen the inline editor for the box's committed
                 // content (same payload the plain click path uses).
@@ -913,10 +1215,102 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
                   background: box.background,
                 });
               }}
-              onDelete={(): void => onDeleteTextBox?.(box.id)}
+              onDelete={(): void => {
+                setPendingTextBoxMove(null);
+                setHintPos(null);
+                onDeleteTextBox?.(box.id);
+              }}
             />
           );
         })()}
+
+      {/* DEF-153 — the text-run selection bar: Confirm (commits a
+          pending run move through engine.editTextRun with the OLD
+          rect so the run RELOCATES), Edit (opens the inline
+          editor), Delete (masks the run — the contract's only
+          text-removal path). Single click selected the run; this
+          bar + the hint + the move drag are the "movable" half. */}
+      {tool === "text" && runSelection !== null && textTarget === null && (
+        <ContentActionBar
+          className="content-action-bar edit-textrun-bar"
+          dataBar="textrun"
+          left={Math.max(0, Math.min(runSelection.rect.x * cssScale, pageWidthPt * cssScale - 240))}
+          top={(runSelection.rect.y + runSelection.rect.height) * cssScale + 4}
+          onConfirm={(): void => {
+            if (pendingRunMove === null) {
+              setRunSelection(null);
+              setPendingRunMove(null);
+              setHintPos(null);
+              return;
+            }
+            const p = pendingRunMove;
+            const style: EditTextStyle = {
+              font: defaultFont,
+              size: Math.round(p.oldRect.height * 0.8),
+              color: { r: 0, g: 0, b: 0 },
+            };
+            const moved = !rectsClose(p.newRect, p.oldRect, 1);
+            onCommitTextEdit({
+              rect: { ...p.newRect },
+              newText: p.text,
+              style,
+              ...(moved ? { oldRect: { ...p.oldRect } } : {}),
+            });
+            dispatch({
+              type: "push-text-run-commit",
+              run: { page, rect: { ...p.newRect }, text: p.text },
+            });
+            setRunSelection(null);
+            setPendingRunMove(null);
+            setHintPos(null);
+          }}
+          onEdit={(): void => {
+            setTextTarget({
+              rect: { ...runSelection.rect },
+              initialText: runSelection.text,
+            });
+            setRunSelection(null);
+            setPendingRunMove(null);
+            setHintPos(null);
+          }}
+          onDelete={(): void => {
+            const style: EditTextStyle = {
+              font: defaultFont,
+              size: Math.round(runSelection.rect.height * 0.8),
+              color: { r: 0, g: 0, b: 0 },
+            };
+            onCommitTextEdit({
+              rect: { ...runSelection.rect },
+              newText: "",
+              style,
+            });
+            setRunSelection(null);
+            setPendingRunMove(null);
+            setHintPos(null);
+          }}
+          confirmLabel="Confirm"
+          editLabel="Edit"
+          deleteLabel="Delete"
+          confirmTitle="Confirm the move"
+          editTitle="Edit text"
+          deleteTitle="Delete text (mask)"
+          confirmAria="Confirm text run move"
+          editAria="Edit text run"
+          deleteAria="Delete text run"
+          dataActionPrefix="textrun"
+        />
+      )}
+
+      {/* DEF-153 — the cursor-attached "Double click to edit" hint
+          while a box or run is selected/movable. */}
+      {textTarget === null && hintPos !== null && (
+        <MoveHint
+          at={{
+            x: hintPos.x - (rootRef.current?.getBoundingClientRect().left ?? 0),
+            y: hintPos.y - (rootRef.current?.getBoundingClientRect().top ?? 0),
+          }}
+        />
+      )}
 
       {tool === "image" && (
         <>
@@ -1048,12 +1442,19 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
                   background,
                 },
               });
+              // DEF-152 — committing the editor replaces any pending
+              // page move (the editor's own rect shift IS the commit).
+              const pending = pendingTextBoxMove;
+              const baseRect = pending !== null && pending.id === target.textBoxId
+                ? pending.oldRect
+                : target.rect;
               // Only move the engine registry entry when the toolbox
               // drag actually changed the position — a plain re-commit
               // of an unmoved box must NOT hit the engine.
-              if (!rectsClose(commitRect, target.rect, 1)) {
+              const engineMoved = !rectsClose(commitRect, baseRect, 1);
+              if (engineMoved) {
                 onCommitTextBoxMove({
-                  oldRect: { ...target.rect },
+                  oldRect: { ...baseRect },
                   newRect: commitRect,
                   text,
                   style,
@@ -1061,6 +1462,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
                   id: target.textBoxId,
                 });
               }
+              setPendingTextBoxMove(null);
+              setHintPos(null);
               return;
             }
             if (target.initialText.length > 0) {
@@ -1109,6 +1512,13 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             });
           }}
           onCancel={(): void => {
+            // DEF-152 — cancelling the toolbox REVERTS an unconfirmed
+            // page move (the registry rect returns to the engine's
+            // committed position).
+            if (textTarget?.textBoxId !== undefined &&
+                pendingTextBoxMove?.id === textTarget.textBoxId) {
+              revertPendingBoxMove();
+            }
             setTextTarget(null);
             setEditorOffset({ x: 0, y: 0 });
           }}
@@ -1333,22 +1743,29 @@ interface PlacementToolbarProps {
   onDelete: () => void;
 }
 
-/** DEF-135/136 — placement toolbar for a SELECTED COMMITTED text box.
- *  Anchored just under the box (like the image PlacementToolbar) with
- *  two actions: Edit reopens the inline editor with the box's
- *  committed content, Delete routes through `onDeleteTextBox` (the
- *  host's engine.deleteTextBox). The bar stops the pointerdown so a
- *  button press never starts a drag-to-create on the page behind it. */
+/** DEF-135/136 + DEF-152 — placement toolbar for a SELECTED COMMITTED
+ *  text box. Anchored just under the box (like the image
+ *  PlacementToolbar) with three actions: Confirm commits a pending
+ *  move (the box's drag used to commit implicitly on pointerup — now
+ *  it parks a pending move that this button confirms), Edit reopens
+ *  the inline editor with the box's committed content, Delete routes
+ *  through `onDeleteTextBox` (the host's engine.deleteTextBox). The
+ *  bar stops the pointerdown so a button press never starts a
+ *  drag-to-create on the page behind it. The buttons reuse the
+ *  SHARED content-action-bar chrome (DEF-153 consistency); the
+ *  legacy `data-edit-box-action` attributes stay as stable
+ *  selectors. */
 interface TextBoxToolbarProps {
   box: TextBoxPlacement;
   cssScale: number;
   pageWidthPt: number;
+  onConfirm: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }
 
 function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
-  const { box, cssScale, pageWidthPt, onEdit, onDelete } = props;
+  const { box, cssScale, pageWidthPt, onConfirm, onEdit, onDelete } = props;
   // Position the toolbar just under the box, anchored to its left
   // edge. Clamp inside the page.
   const topPt = box.rect.y + box.rect.height + 4;
@@ -1357,12 +1774,22 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
   const leftCss = Math.max(0, Math.min(leftPt * cssScale, pageWidthPt * cssScale - 200));
   return (
     <div
-      className="edit-box-toolbar"
+      className="content-action-bar edit-box-toolbar"
       data-edit-box-id={box.id}
       data-edit-box-toolbar
       style={{ left: leftCss, top: topCss }}
       onPointerDown={(e): void => e.stopPropagation()}
     >
+      <button
+        type="button"
+        className="toolbox-action-btn toolbox-action-btn--confirm edit-box-toolbar-btn"
+        onClick={onConfirm}
+        data-edit-box-action="confirm"
+        aria-label="Confirm move"
+        title="Confirm the moved position"
+      >
+        Confirm
+      </button>
       <button
         type="button"
         className="toolbox-action-btn edit-box-toolbar-btn"

@@ -140,9 +140,11 @@ function serializeFdfAnnot(ann: AnnModel, visiblePage0: number): string {
   }
   if (ann.kind === 'callout') {
     parts.push('/Intent /FreeTextCallout');
+    // /Callout: [startX startY kneeX kneeY endX endY] (3 points) or a 2-point
+    // form. Prefer an explicit `points` leader; otherwise — when the
+    // renderer sent only `at` + `rect` — emit a straight leader from the
+    // text-box center to the `at` anchor so the anchor round-trips (DEF-157).
     if (ann.points !== undefined && ann.points.length >= 2) {
-      // /Callout: [startX startY kneeX kneeY endX endY] (3 points) or a
-      // 2-point form. We emit the start + end (and a knee if present).
       const p0 = ann.points[0];
       const pEnd = ann.points[ann.points.length - 1];
       if (ann.points.length >= 3) {
@@ -151,6 +153,10 @@ function serializeFdfAnnot(ann: AnnModel, visiblePage0: number): string {
       } else {
         parts.push(`/Callout [${pdfNum(p0.x)} ${pdfNum(p0.y)} ${pdfNum(p0.x)} ${pdfNum(p0.y)} ${pdfNum(pEnd.x)} ${pdfNum(pEnd.y)}]`);
       }
+    } else if (ann.at !== undefined) {
+      const cx = rect.x + rect.width / 2;
+      const cy = rect.y + rect.height / 2;
+      parts.push(`/Callout [${pdfNum(cx)} ${pdfNum(cy)} ${pdfNum(cx)} ${pdfNum(cy)} ${pdfNum(ann.at.x)} ${pdfNum(ann.at.y)}]`);
     }
     parts.push(`/DA /Helv 12 Tf ${pdfNum(r)} ${pdfNum(g)} ${pdfNum(b)} rg`);
   }
@@ -484,6 +490,7 @@ function parseFdfAnnot(dictText: string): AnnModel | null {
   }
 
   let points: AnnPoint[] | undefined;
+  let at: AnnPoint | undefined;
   if (kind === 'arrow') {
     const lArr = parseNumberArray(extractValueText(dictText, '/L'));
     if (lArr.length >= 4) {
@@ -505,11 +512,13 @@ function parseFdfAnnot(dictText: string): AnnModel | null {
         { x: calloutArr[2], y: calloutArr[3] },
         { x: calloutArr[4], y: calloutArr[5] },
       ];
+      at = { x: calloutArr[4], y: calloutArr[5] };
     } else if (calloutArr.length >= 4) {
       points = [
         { x: calloutArr[0], y: calloutArr[1] },
         { x: calloutArr[2], y: calloutArr[3] },
       ];
+      at = { x: calloutArr[2], y: calloutArr[3] };
     }
   }
 
@@ -549,6 +558,7 @@ function parseFdfAnnot(dictText: string): AnnModel | null {
     page,
     rects: rects.length > 0 ? rects : [{ x: 0, y: 0, width: 0, height: 0 }],
     points,
+    at,
     color,
     content,
     text: content,

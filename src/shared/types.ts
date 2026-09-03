@@ -316,6 +316,10 @@ export interface AnnModel {
   page: number; // visible 1-based page index
   rects: AnnRect[];
   points?: AnnPoint[];
+  // Callout arrow anchor (the point the leader line points at) / note icon
+  // anchor. The renderer reads `at` for callout; the engine must preserve it
+  // through create -> save -> reparse instead of backfilling it from rects[0].
+  at?: AnnPoint;
   color: AnnColorValue;
   content?: string;
   text?: string;

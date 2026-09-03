@@ -18,8 +18,8 @@
 // With the "select" tool the layer is pointer-transparent, so text
 // selection and links behave exactly as before.
 
-import { GripVertical, MessageSquare } from "lucide-react";
-import { Component, useEffect, useRef, useState } from "react";
+import { GripVertical, MessageSquare, X } from "lucide-react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
   ReactElement,
@@ -27,14 +27,25 @@ import type {
 } from "react";
 import { useDragWindow } from "../components/useDragWindow";
 import {
+  ContentActionBar,
+  ContentGrip,
+  MoveHint,
+  useSelectableDrag,
+} from "../components/selectableContent";
+import { rectsClose, rectShiftedByCssOffset, type ImageResizeHandle } from "../edit/geometry";
+import {
   annotationBounds,
   arrowHead,
+  calloutBoxFor,
   calloutEntryPoint,
   clientToPagePoint,
   dragMeetsMinimum,
   inkPathD,
+  moveAnnotation,
   normalizeDragRect,
   overlayRectToCss,
+  resizeAnnotation,
+  sameAnnotationGeometry,
   textItemQuads,
   textUnderQuads,
   type TextItemGeom,
@@ -44,6 +55,8 @@ import {
 // without having to know the geometry module's surface.
 export type { TextItemGeom };
 import {
+  ANNOTATION_COLORS,
+  ANNOTATION_COLOR_HEX,
   annotationColorToCss,
   type Annotation,
   type AnnotationColorValue,
@@ -175,6 +188,54 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     id: string;
     text: string;
   } | null>(null);
+  // ---- DEF-153 / DEF-154: unified selectable-movable content --------
+  // Committed annotations (shapes, ink, arrow, textbox, callout,
+  // note) are SELECTABLE + MOVABLE from the page, exactly like the
+  // add-box: hover -> grab cursor; single click -> select + movable
+  // (Confirm / Edit / Delete bar + resize handles); double click ->
+  // the full edit toolbox; while selected a cursor-attached
+  // "Double click to edit" hint. The move/resize is renderer-local
+  // during the drag (`annDraft`), and the ENGINE is only touched on
+  // Confirm: delete + re-create with the same id and the moved
+  // geometry (the shared IPC contract has no annotation move op).
+  const [selectedAnnId, setSelectedAnnId] = useState<string | null>(null);
+  /** Draft override while dragging or pending — `ann` may be absent
+   *  from the `annotations` list (mid delete-then-recreate echo), so
+   *  the render merges it back in. */
+  const [annDraft, setAnnDraft] = useState<{ id: string; ann: Annotation } | null>(null);
+  /** A move/resize that happened on the page but was NOT confirmed
+   *  yet. The bar's Confirm commits it (delete + re-create); clicking
+   *  elsewhere / cancelling an open editor reverts it (the draft
+   *  clears and the annotation returns to the engine's position). */
+  const [annPending, setAnnPending] = useState<{
+    id: string;
+    oldAnn: Annotation;
+    nextAnn: Annotation;
+  } | null>(null);
+  /** The edit toolbox for a COMMITTED textbox/callout (opened by
+   *  double-click or the bar's Edit). Uses the shared editor chrome
+   *  and commits text via onEditAnnotation, geometry (a toolbox
+   *  drag) via delete + re-create. */
+  const [editTarget, setEditTarget] = useState<{
+    id: string;
+    kind: "textbox" | "callout";
+    rect: PageRect;
+    text: string;
+  } | null>(null);
+  /** The color edit toolbox for committed shapes / ink / arrow
+   *  (opened by double-click or the bar's Edit — the "existing
+   *  floating editor" for kinds that have no text). */
+  const [colorEditId, setColorEditId] = useState<string | null>(null);
+  /** Shared move/resize gesture tracker (identical drag math to the
+   *  add-box overlay). */
+  const selDrag = useSelectableDrag();
+  /** Cursor-attached "Double click to edit" hint position (client
+   *  px). Null while no hint should be visible. */
+  const [hintPos, setHintPos] = useState<{ x: number; y: number } | null>(null);
+  /** True when the last pointerup on a committed surface was a REAL
+   *  drag — suppresses the follow-up click from re-opening an editor
+   *  / re-selecting. Reset by the next surface pointerdown. */
+  const movedRef = useRef(false);
   const textItemsSnapRef = useRef<TextItemGeom[]>([]);
   // Markup drags keep their quads in a ref during pointermove (cheap) and
   // only push to state once per frame; for simplicity we compute quads in
@@ -191,7 +252,76 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     setNoteEditor(null);
     setCalloutEditor(null);
     setEditingNote(null);
+    setEditTarget(null);
+    setColorEditId(null);
+    setSelectedAnnId(null);
+    setAnnDraft(null);
+    setAnnPending(null);
+    setHintPos(null);
+    selDrag.endDrag();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolKind, cssScale]);
+
+  // ---- unified selection derived state (DEF-153/154) ----
+
+  const effectiveAnnotations = useMemo((): Annotation[] => {
+    if (annDraft === null) return annotations;
+    const list = annotations.map((a) => (annDraft.id === a.id ? annDraft.ann : a));
+    if (!list.some((a) => a.id === annDraft.id)) list.push(annDraft.ann);
+    return list;
+  }, [annotations, annDraft]);
+
+  // When the engine's recreate-echo carries the moved annotation back
+  // (same id + same geometry), the local draft is redundant — drop it
+  // so the engine list becomes the single source of truth again.
+  useEffect(() => {
+    if (annDraft === null) return;
+    const echoed = annotations.find((a) => a.id === annDraft.id);
+    if (echoed !== undefined && sameAnnotationGeometry(echoed, annDraft.ann)) {
+      setAnnDraft(null);
+    }
+  }, [annotations, annDraft]);
+
+  const selectedAnn =
+    selectedAnnId === null
+      ? null
+      : (effectiveAnnotations.find((a) => a.id === selectedAnnId) ?? null);
+
+  const anyEditorOpen =
+    textboxEditor !== null ||
+    noteEditor !== null ||
+    calloutEditor !== null ||
+    editingNote !== null ||
+    editTarget !== null ||
+    colorEditId !== null;
+
+  /** Revert a pending (unconfirmed) move/resize. The annotation was
+   *  never sent to the engine, so clearing the draft returns it to
+   *  the engine's position. `id` narrows the revert to one item. */
+  const revertPendingAnn = useCallback(
+    (id?: string): void => {
+      if (annPending === null) return;
+      if (id !== undefined && annPending.id !== id) return;
+      setAnnDraft(null);
+      setAnnPending(null);
+      setHintPos(null);
+    },
+    [annPending],
+  );
+
+  /** Confirm a pending move/resize: delete the ORIGINAL annotation
+   *  and re-create it with the moved geometry (same id, same
+   *  createdAt — the shared contract's only annotation-move path). */
+  const confirmPendingAnn = useCallback((): void => {
+    if (annPending === null) return;
+    const { oldAnn, nextAnn } = annPending;
+    onDeleteAnnotation?.(oldAnn.id);
+    onCreate({ ...nextAnn });
+    setAnnDraft(null);
+    setAnnPending(null);
+    setSelectedAnnId(null);
+    setHintPos(null);
+  }, [annPending, onDeleteAnnotation, onCreate]);
 
   const pagePoint = (e: React.PointerEvent): PagePoint => {
     const root = rootRef.current;
@@ -199,6 +329,157 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     const rect = root.getBoundingClientRect();
     return clientToPagePoint(e.clientX, e.clientY, rect, cssScale);
   };
+
+  /** Open the full edit toolbox for a committed annotation. textbox /
+   *  callout reopen the shared text editor pre-filled; note reopens
+   *  the note editor; shapes / ink / arrow open the color editor (the
+   *  only properties an annotation owns beyond geometry). */
+  const openEditorFor = useCallback(
+    (ann: Annotation): void => {
+      setSelectedAnnId(ann.id);
+      if (ann.kind === "textbox" || ann.kind === "callout") {
+        const rect =
+          ann.rect ??
+          (ann as unknown as { rects?: { x: number; y: number; width: number; height: number }[] })
+            .rects?.[0];
+        if (rect === undefined) return;
+        setEditTarget({ id: ann.id, kind: ann.kind, rect: { ...rect }, text: ann.text });
+        return;
+      }
+      if (ann.kind === "note") {
+        setEditingNote({ id: ann.id, text: ann.text });
+        return;
+      }
+      // shapes / ink / arrow — the color edit toolbox.
+      setColorEditId(ann.id);
+    },
+    [],
+  );
+
+  /** Start a move (or corner-handle resize) drag on a committed
+   *  annotation from its page surface. Stops propagation so the
+   *  layer's create-drag can't also start. */
+  const beginAnnSurfaceDrag = useCallback(
+    (e: React.PointerEvent, ann: Annotation, handle?: ImageResizeHandle): void => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      setSelectedAnnId(ann.id);
+      setColorEditId(null);
+      movedRef.current = false;
+      const bounds = annotationBounds(effectiveAnnotations.find((a) => a.id === ann.id) ?? ann);
+      selDrag.beginDrag({
+        id: ann.id,
+        kind: handle !== undefined ? "resize" : "move",
+        handle,
+        originClient: { x: e.clientX, y: e.clientY },
+        startRect: { ...bounds },
+        pageWidthPt: widthPt,
+        pageHeightPt: heightPt,
+      });
+      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    },
+    [effectiveAnnotations, selDrag, widthPt],
+  );
+
+  /** Single click on a committed surface: select it and make it
+   *  movable (the bar + handles render). NOT the toolbox — that is
+   *  the double-click's job (DEF-153). A post-drag click (the
+   *  browser fires `click` after a pointerup that moved) is ignored
+   *  via `movedRef`. The NOTE keeps its accepted single-click
+   *  behavior (DEF-096): a click on the icon opens its editor. */
+  const onAnnClickSurface = useCallback(
+    (e: React.MouseEvent, ann: Annotation): void => {
+      e.stopPropagation();
+      if (movedRef.current) {
+        movedRef.current = false;
+        return;
+      }
+      // A bare click with no drag: drop any stale gesture state.
+      selDrag.endDrag();
+      setSelectedAnnId(ann.id);
+      setColorEditId(null);
+      if (ann.kind === "note") {
+        openEditorFor(ann);
+      }
+    },
+    [openEditorFor, selDrag],
+  );
+
+  /** Double click on a committed surface opens the full edit toolbox. */
+  const onAnnDoubleClickSurface = useCallback(
+    (e: React.MouseEvent, ann: Annotation): void => {
+      e.stopPropagation();
+      movedRef.current = false;
+      openEditorFor(ann);
+    },
+    [openEditorFor],
+  );
+
+  /** Commit the committed textbox/callout edit toolbox. Text-only
+   *  changes route through the AnnotationPatch path; a toolbox drag
+   *  (or a pending page move) routes through delete+re-create with
+   *  the moved geometry (guardrail #4 — content moves with the
+   *  toolbox, no duplicate bake). */
+  const commitEditTarget = useCallback(
+    (offset: { x: number; y: number }): void => {
+      const t = editTarget;
+      if (t === null) return;
+      const engineAnn = annotations.find((a) => a.id === t.id);
+      const draftAnn = annDraft?.id === t.id ? annDraft.ann : null;
+      const base = draftAnn ?? engineAnn;
+      setEditTarget(null);
+      if (base === undefined) return;
+      // The edit toolbox only opens for committed textbox / callout
+      // annotations; narrow so the spread below stays type-safe.
+      if (base.kind !== "textbox" && base.kind !== "callout") {
+        setAnnDraft(null);
+        setAnnPending(null);
+        setSelectedAnnId(null);
+        return;
+      }
+      const trimmed = t.text.trim();
+      if (trimmed.length === 0) return;
+      const baseRect = base.rect;
+      if (engineAnn === undefined) {
+        setAnnDraft(null);
+        setAnnPending(null);
+        setSelectedAnnId(null);
+        return;
+      }
+      const engineRect =
+        engineAnn.kind === "textbox" || engineAnn.kind === "callout" ? engineAnn.rect : undefined;
+      if (engineRect === undefined) {
+        setAnnDraft(null);
+        setAnnPending(null);
+        setSelectedAnnId(null);
+        return;
+      }
+      const committedRect = rectShiftedByCssOffset(baseRect, offset, cssScale);
+      const moved = !rectsClose(committedRect, engineRect, 1);
+      if (moved) {
+        onDeleteAnnotation?.(t.id);
+        onCreate({ ...base, rect: committedRect, text: trimmed });
+      } else if (trimmed !== base.text) {
+        onEditAnnotation?.(t.id, { text: trimmed });
+      }
+      setAnnDraft(null);
+      setAnnPending(null);
+      setSelectedAnnId(null);
+      setHintPos(null);
+    },
+    [editTarget, annotations, annDraft, cssScale, onDeleteAnnotation, onCreate, onEditAnnotation],
+  );
+
+  /** Apply a color to a committed shape / ink / arrow through the
+   *  AnnotationPatch path. */
+  const applyAnnColor = useCallback(
+    (id: string, color: AnnotationColorValue): void => {
+      onEditAnnotation?.(id, { color });
+      setColorEditId(null);
+      setSelectedAnnId(null);
+    },
+    [onEditAnnotation],
+  );
 
   const isMarkupTool =
     toolKind === "highlight" || toolKind === "underline" || toolKind === "strikeout";
@@ -231,17 +512,31 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       // pointerdown branches (which would open a blank CREATE editor
       // on top of the existing note). The icon's own onClick opens
       // the EDIT editor instead.
+      // DEF-154 — committed shapes / ink / arrow / textbox / callout
+      // surfaces and the selection chrome (action bar, resize
+      // handles, selection ring, hint) are likewise interactive: a
+      // press on them selects / drags the content, it never starts a
+      // create-drag on the page behind it.
       const interactive = target.closest(
-        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, .ann-note, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
+        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, .ann-note, .ann-shape, .ann-ink-hit, .ann-arrow-hit, .ann-arrow-head-hit, .ann-textbox, .ann-callout, .content-action-bar, .content-resize-handle, .content-selection-bounds, .content-move-hint, .color-palette, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
       );
       if (interactive !== null) {
-        // The click is on a UI control — let the original handler
-        // run. Do NOT preventDefault, do NOT consume the event.
+        // The click is on a UI control / committed surface — let the
+        // original handler run. Do NOT preventDefault, do NOT
+        // consume the event.
         return;
       }
     }
     const pt = pagePoint(e);
     if (pt.x < 0 || pt.y < 0 || pt.x > widthPt || pt.y > heightPt) return;
+    // A press on the empty page (creation branch) reverts any
+    // unconfirmed move: the annotation was only ever moved locally,
+    // so it returns to the engine's position.
+    if (annPending !== null) {
+      revertPendingAnn();
+      setSelectedAnnId(null);
+      setHintPos(null);
+    }
     if (isDragTool) {
       if (isMarkupTool) {
         textItemsSnapRef.current = getTextItems();
@@ -266,11 +561,48 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       setDrag({ from: pt, to: pt });
       e.currentTarget.setPointerCapture(e.pointerId);
       e.preventDefault();
+    } else if (toolKind === "select" && (selectedAnnId !== null || annPending !== null)) {
+      // DESELECT / revert on a blank-page press: the click reached
+      // the layer background (not a committed surface / bar), so any
+      // unconfirmed move is reverted and the selection clears. The
+      // textLayer underneath still gets the click (no preventDefault),
+      // so text selection keeps working.
+      revertPendingAnn();
+      setSelectedAnnId(null);
+      setColorEditId(null);
+      setHintPos(null);
     }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLDivElement>): void => {
+    // DEF-154 — an in-flight move/resize of a committed annotation
+    // (the drag started on the annotation's own surface) drives the
+    // local draft override. The engine is untouched until Confirm.
+    if (selDrag.drag !== null) {
+      const drag = selDrag.drag;
+      const orig = annotations.find((a) => a.id === drag.id);
+      if (orig !== undefined) {
+        if (drag.kind === "resize") {
+          const r = selDrag.rectFor(e.clientX, e.clientY, cssScale);
+          if (r !== null) {
+            setAnnDraft({ id: orig.id, ann: resizeAnnotation(orig, r, widthPt, heightPt) });
+          }
+        } else {
+          const delta = selDrag.deltaFor(e.clientX, e.clientY, cssScale);
+          if (delta !== null) {
+            setAnnDraft({ id: orig.id, ann: moveAnnotation(orig, delta.x, delta.y) });
+          }
+        }
+      }
+      setHintPos({ x: e.clientX, y: e.clientY });
+      return;
+    }
     const pt = pagePoint(e);
+    // While content is selected/movable, the cursor-attached
+    // "Double click to edit" hint follows the pointer (DEF-153).
+    if (selectedAnnId !== null && !anyEditorOpen) {
+      setHintPos({ x: e.clientX, y: e.clientY });
+    }
     if (drag !== null) {
       setDrag({ from: drag.from, to: pt });
     } else if (ink !== null) {
@@ -282,6 +614,39 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
+    // DEF-154 — end a committed-annotation move/resize drag. A real
+    // movement parks a PENDING move (the bar's Confirm commits it);
+    // a click (no movement) just keeps the selection so the
+    // follow-up click / double-click decides what opens.
+    if (selDrag.drag !== null) {
+      const drag = selDrag.drag;
+      const orig = annotations.find((a) => a.id === drag.id);
+      const delta = selDrag.deltaFor(e.clientX, e.clientY, cssScale);
+      const newRect = selDrag.rectFor(e.clientX, e.clientY, cssScale);
+      selDrag.endDrag();
+      (e.target as Element).releasePointerCapture?.(e.pointerId);
+      if (orig === undefined || delta === null) return;
+      const moved =
+        drag.kind === "move"
+          ? Math.abs(delta.x) > 0.75 || Math.abs(delta.y) > 0.75
+          : newRect !== null && !rectsClose(newRect, drag.startRect, 2);
+      if (!moved) {
+        // A click — the follow-up `click` event opens / reselects.
+        movedRef.current = false;
+        return;
+      }
+      movedRef.current = true;
+      const next =
+        drag.kind === "resize"
+          ? newRect !== null
+            ? resizeAnnotation(orig, newRect, widthPt, heightPt)
+            : orig
+          : moveAnnotation(orig, delta.x, delta.y);
+      setAnnDraft({ id: orig.id, ann: next });
+      setAnnPending({ id: orig.id, oldAnn: orig, nextAnn: next });
+      setHintPos({ x: e.clientX, y: e.clientY });
+      return;
+    }
     if (drag !== null) {
       const { from } = drag;
       const to = pagePoint(e);
@@ -322,22 +687,24 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         });
       } else if (toolKind === "callout") {
         // Callout creation: drag from the anchor (the point the
-        // callout points at) to the text-box position. The release
-        // point becomes the box's top-left; the box is sized to the
-        // default text-box geometry. We open the inline text editor
-        // here rather than committing a zero-text callout, mirroring
-        // the textbox flow.
-        const box = normalizeDragRect(from, to);
-        if (box.width < TEXTBOX_MIN_WIDTH_PT) box.width = TEXTBOX_MIN_WIDTH_PT;
-        if (box.height < TEXTBOX_LINE_HEIGHT * TEXTBOX_FONT_PT + TEXTBOX_PAD_PT * 2) {
-          box.height = TEXTBOX_LINE_HEIGHT * TEXTBOX_FONT_PT + TEXTBOX_PAD_PT * 2;
-        }
-        // Clamp inside the page bounds.
-        if (box.x < 0) box.x = 0;
-        if (box.y < 0) box.y = 0;
-        if (box.x + box.width > widthPt) box.width = widthPt - box.x;
-        if (box.y + box.height > heightPt) box.height = heightPt - box.y;
-        setCalloutEditor({ box: box as PageRect, at: from, text: "" });
+        // callout points at) to the text-box position. The RELEASE
+        // point becomes the box's top-left (the box is sized to the
+        // default text-box geometry), so the anchor stays OUTSIDE
+        // the box and the leader line is a visible non-zero shaft.
+        // DEF-157 — the previous code placed the box at the drag-rect
+        // corner, which equals the anchor for the natural down-right
+        // drag; calloutEntryPoint then returned the anchor itself and
+        // the arrow collapsed to a point. The box-at-release-point
+        // geometry fixes the LIVE callout and, because `rect`+`at`
+        // round-trip unchanged, the reloaded callout identically.
+        const box = calloutBoxFor(
+          to,
+          TEXTBOX_MIN_WIDTH_PT,
+          TEXTBOX_LINE_HEIGHT * TEXTBOX_FONT_PT + TEXTBOX_PAD_PT * 2,
+          widthPt,
+          heightPt,
+        );
+        setCalloutEditor({ box, at: from, text: "" });
         return;
       }
     } else if (ink !== null) {
@@ -457,7 +824,15 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     // DEF-096 — a committed-note edit popover is open; the layer
     // must stay pointer-active so the editor's textarea and action
     // bar receive interactions.
-    editingNote !== null;
+    editingNote !== null ||
+    editTarget !== null ||
+    colorEditId !== null ||
+    // DEF-154 — while content is SELECTED (movable) the layer must
+    // be a real hit surface: the blank-page press that deselects /
+    // reverts lands on the layer's pointerdown, and the selection
+    // chrome is hosted inside it.
+    selectedAnnId !== null ||
+    annPending !== null;
 
   // ---- previews ------------------------------------------------------------
 
@@ -489,8 +864,22 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         height={svgH * cssScale}
         aria-hidden
       >
-        {annotations.map((a) => (
-          <SvgAnnotation key={a.id} ann={a} dimmed={false} />
+        {effectiveAnnotations.map((a) => (
+          <SvgAnnotation
+            key={a.id}
+            ann={a}
+            dimmed={false}
+            // DEF-154 — committed shapes / ink / arrows are
+            // page-interactive (hover grabs, click selects, dblclick
+            // opens the color toolbox). The preview paths stay
+            // pointer-transparent.
+            onPointerDown={(e): void => beginAnnSurfaceDrag(e, a)}
+            onClick={(e): void => onAnnClickSurface(e, a)}
+            onDoubleClick={(e): void => onAnnDoubleClickSurface(e, a)}
+            onPointerUp={(e): void => {
+              (e.target as Element).releasePointerCapture?.(e.pointerId);
+            }}
+          />
         ))}
         {markupPreview.map((r, i) => (
           <MarkupPreviewRect key={i} kind={toolKind as "highlight"} rect={r} color={tool.color} />
@@ -517,7 +906,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         )}
       </svg>
 
-      {annotations.map((a) => (
+      {effectiveAnnotations.map((a) => (
         <DomAnnotation
           key={a.id}
           ann={a}
@@ -528,11 +917,51 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           // Delete action bar is up).
           selected={editingNote?.id === a.id}
           onEditNote={(id, text): void => setEditingNote({ id, text })}
+          // DEF-153/154 — the DOM surfaces (textbox, callout box,
+          // note icon) are page-interactive like the SVG kinds.
+          onSurfacePointerDown={(e, ann, handle): void => beginAnnSurfaceDrag(e, ann, handle)}
+          onSurfaceClick={(e, ann): void => onAnnClickSurface(e, ann)}
+          onSurfaceDoubleClick={(e, ann): void => onAnnDoubleClickSurface(e, ann)}
+          onSurfacePointerUp={(e): void => {
+            (e.target as Element).releasePointerCapture?.(e.pointerId);
+          }}
+          onDragSettled={(): void => {
+            movedRef.current = false;
+          }}
+          dragging={selDrag.drag?.id === a.id}
         />
       ))}
 
+      {/* DEF-154 — selection chrome for the selected (movable)
+          annotation: a bounds ring, corner resize handles for
+          rect-carrying kinds, a Confirm / Edit / Delete bar beneath,
+          and the cursor-attached hint. */}
+      {selectedAnn !== null && !anyEditorOpen && (
+        <SelectedContentChrome
+          ann={selectedAnn}
+          cssScale={cssScale}
+          widthPt={widthPt}
+          onSurfacePointerDown={(e, ann, handle): void => beginAnnSurfaceDrag(e, ann, handle)}
+          onConfirm={(): void => {
+            if (annPending !== null) {
+              confirmPendingAnn();
+            } else {
+              setSelectedAnnId(null);
+              setHintPos(null);
+            }
+          }}
+          onEdit={(): void => openEditorFor(selectedAnn)}
+          onDelete={(): void => {
+            revertPendingAnn(selectedAnn.id);
+            setSelectedAnnId(null);
+            onDeleteAnnotation?.(selectedAnn.id);
+            setHintPos(null);
+          }}
+        />
+      )}
+
       {flashId !== null &&
-        annotations
+        effectiveAnnotations
           .filter((a) => a.id === flashId)
           .map((a) => (
             <FlashBox key={`flash-${a.id}`} rect={annotationBounds(a)} cssScale={cssScale} />
@@ -600,10 +1029,15 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
        * onClick opens this editor pre-filled with the note's
        * existing text; Confirm routes through `onEditAnnotation`
        * (the same AnnotationPatch path the AnnotationsPanel uses),
-       * Delete through `onDeleteAnnotation`, Cancel just closes. */}
+       * Delete through `onDeleteAnnotation`, Cancel just closes.
+       * DEF-154 — when a pending move exists for this note (the
+       * icon was dragged before the editor opened), the editor's
+       * Confirm commits the move together with the text
+       * (delete + re-create with the moved anchor); Cancel reverts
+       * the pending move. */}
       {editingNote !== null &&
         ((): ReactElement | null => {
-          const target = annotations.find(
+          const target = effectiveAnnotations.find(
             (a) => a.id === editingNote.id && a.kind === "note",
           );
           if (target === undefined || target.kind !== "note") return null;
@@ -611,6 +1045,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
             target.at ??
             (target as unknown as { rects?: { x: number; y: number }[] }).rects?.[0];
           if (at === undefined) return null;
+          const pending = annPending?.id === target.id ? annPending : null;
           return (
             <NoteEditor
               at={at}
@@ -621,17 +1056,96 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
               onCommit={(): void => {
                 const trimmed = editingNote.text.trim();
                 setEditingNote(null);
+                if (pending !== null && pending.nextAnn.kind === "note") {
+                  // Move + text in one delete/re-create commit.
+                  onDeleteAnnotation?.(target.id);
+                  onCreate({ ...pending.nextAnn, text: trimmed });
+                  setAnnDraft(null);
+                  setAnnPending(null);
+                  setSelectedAnnId(null);
+                  setHintPos(null);
+                  return;
+                }
                 if (trimmed === target.text) return;
                 onEditAnnotation?.(target.id, { text: trimmed });
               }}
-              onCancel={(): void => setEditingNote(null)}
+              onCancel={(): void => {
+                setEditingNote(null);
+                revertPendingAnn(target.id);
+              }}
               onDelete={(): void => {
                 setEditingNote(null);
+                revertPendingAnn(target.id);
+                setSelectedAnnId(null);
                 onDeleteAnnotation?.(target.id);
               }}
             />
           );
         })()}
+
+      {/* DEF-153/154 — the committed textbox/callout edit toolbox
+       * (double-click / bar Edit). Same shared chrome as the create
+       * editors: grip + textarea + Confirm/Cancel/Delete. */}
+      {editTarget !== null && (
+        <CommittedContentEditor
+          id={editTarget.id}
+          kind={editTarget.kind}
+          rect={editTarget.rect}
+          text={editTarget.text}
+          cssScale={cssScale}
+          onChange={(text): void => setEditTarget({ ...editTarget, text })}
+          onCommit={(offset): void => commitEditTarget(offset)}
+          onCancel={(): void => {
+            revertPendingAnn(editTarget.id);
+            setEditTarget(null);
+            setSelectedAnnId(null);
+            setHintPos(null);
+          }}
+          onDelete={(): void => {
+            revertPendingAnn(editTarget.id);
+            setSelectedAnnId(null);
+            onDeleteAnnotation?.(editTarget.id);
+            setEditTarget(null);
+            setHintPos(null);
+          }}
+        />
+      )}
+
+      {/* DEF-153/154 — the shape / ink / arrow color edit toolbox
+       * (double-click / bar Edit — the only properties these kinds
+       * own beyond geometry). */}
+      {colorEditId !== null &&
+        ((): ReactElement | null => {
+          const target = effectiveAnnotations.find((a) => a.id === colorEditId);
+          if (target === undefined) return null;
+          const b = annotationBounds(target);
+          const left = Math.min(b.x * cssScale, Math.max(0, widthPt * cssScale - 220));
+          const top = (b.y + b.height) * cssScale + 6;
+          return (
+            <ShapeColorEditor
+              left={left}
+              top={top}
+              active={target.color}
+              onPick={(c): void => applyAnnColor(target.id, c)}
+              onClose={(): void => {
+                setColorEditId(null);
+                setSelectedAnnId(null);
+              }}
+            />
+          );
+        })()}
+
+      {/* DEF-153(c) — the cursor-attached "Double click to edit" hint
+        while content is selected/movable. Converted from client
+        coords to the layer's own box. */}
+      {!anyEditorOpen && (selectedAnnId !== null || annPending !== null) && hintPos !== null && (
+        <MoveHint
+          at={{
+            x: hintPos.x - (rootRef.current?.getBoundingClientRect().left ?? 0),
+            y: hintPos.y - (rootRef.current?.getBoundingClientRect().top ?? 0),
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -705,16 +1219,64 @@ class AnnotationErrorBoundary extends Component<
 // ---------------------------------------------------------------------------
 // Committed annotations — SVG kinds
 
-function SvgAnnotation({ ann, dimmed }: { ann: Annotation; dimmed: boolean }): ReactElement | null {
+export interface AnnotationSurfaceHandlers {
+  /** pointerdown on the committed surface — starts the move/resize
+   *  drag (DEF-154). */
+  onPointerDown?: (e: React.PointerEvent, ann: Annotation) => void;
+  onClick?: (e: React.MouseEvent, ann: Annotation) => void;
+  onDoubleClick?: (e: React.MouseEvent, ann: Annotation) => void;
+  onPointerUp?: (e: React.PointerEvent) => void;
+}
+
+interface SvgAnnotationProps extends AnnotationSurfaceHandlers {
+  ann: Annotation;
+  dimmed: boolean;
+}
+
+function SvgAnnotation({
+  ann,
+  dimmed,
+  onPointerDown,
+  onClick,
+  onDoubleClick,
+  onPointerUp,
+}: SvgAnnotationProps): ReactElement | null {
   return (
     <AnnotationErrorBoundary annotationId={ann.id}>
-      <SvgAnnotationInner ann={ann} dimmed={dimmed} />
+      <SvgAnnotationInner
+        ann={ann}
+        dimmed={dimmed}
+        onPointerDown={onPointerDown}
+        onClick={onClick}
+        onDoubleClick={onDoubleClick}
+        onPointerUp={onPointerUp}
+      />
     </AnnotationErrorBoundary>
   );
 }
 
-function SvgAnnotationInner({ ann }: { ann: Annotation; dimmed: boolean }): ReactElement | null {
+function SvgAnnotationInner({
+  ann,
+  dimmed: _dimmed,
+  onPointerDown,
+  onClick,
+  onDoubleClick,
+  onPointerUp,
+}: SvgAnnotationProps): ReactElement | null {
+  void _dimmed;
   const hex = annotationColorToCss(ann.color);
+  const surfaceProps = {
+    onPointerDown:
+      onPointerDown === undefined
+        ? undefined
+        : (e: React.PointerEvent): void => onPointerDown(e, ann),
+    onClick: onClick === undefined ? undefined : (e: React.MouseEvent): void => onClick(e, ann),
+    onDoubleClick:
+      onDoubleClick === undefined
+        ? undefined
+        : (e: React.MouseEvent): void => onDoubleClick(e, ann),
+    onPointerUp,
+  };
   switch (ann.kind) {
     case "highlight":
       return (
@@ -755,17 +1317,30 @@ function SvgAnnotationInner({ ann }: { ann: Annotation; dimmed: boolean }): Reac
       );
     case "ink":
       return (
-        <path
-          className="ann ann-ink"
+        <g
+          className="ann ann-ink ann-content"
           data-annotation-id={ann.id}
           data-kind="ink"
-          d={inkPathD(ann.points)}
-          stroke={hex}
-          strokeWidth={ann.width}
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+          {...surfaceProps}
+        >
+          <path
+            className="ann-ink-hit"
+            d={inkPathD(ann.points)}
+            stroke="transparent"
+            strokeWidth={Math.max(ann.width, 10)}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d={inkPathD(ann.points)}
+            stroke={hex}
+            strokeWidth={ann.width}
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
       );
     case "rect":
     case "ellipse": {
@@ -777,7 +1352,8 @@ function SvgAnnotationInner({ ann }: { ann: Annotation; dimmed: boolean }): Reac
       const common = {
         "data-annotation-id": ann.id,
         "data-kind": ann.kind,
-        className: "ann ann-shape",
+        className: "ann ann-shape ann-content",
+        ...surfaceProps,
       } as const;
       return ann.kind === "rect" ? (
         <rect
@@ -823,6 +1399,7 @@ function SvgAnnotationInner({ ann }: { ann: Annotation; dimmed: boolean }): Reac
           to={to}
           color={ann.color}
           id={ann.id}
+          {...surfaceProps}
         />
       );
     }
@@ -847,12 +1424,22 @@ function ArrowShape({
   color,
   id,
   preview,
+  onPointerDown,
+  onClick,
+  onDoubleClick,
+  onPointerUp,
 }: {
   from: PagePoint;
   to: PagePoint;
   color: AnnotationColorValue;
   id?: string;
   preview?: boolean;
+  /** Ann-bound surface handlers (passed through from SvgAnnotation
+   *  for committed arrows; undefined for previews). */
+  onPointerDown?: (e: React.PointerEvent) => void;
+  onClick?: (e: React.MouseEvent) => void;
+  onDoubleClick?: (e: React.MouseEvent) => void;
+  onPointerUp?: (e: React.PointerEvent) => void;
 }): ReactElement {
   const hex = annotationColorToCss(color);
   const [w1, w2] = arrowHead(from, to, ARROW_HEAD_PT);
@@ -861,7 +1448,38 @@ function ArrowShape({
       className={preview === true ? "ann ann-arrow ann-preview" : "ann ann-arrow"}
       data-annotation-id={id}
       data-kind="arrow"
+      onPointerDown={preview === true ? undefined : onPointerDown}
+      onClick={preview === true ? undefined : onClick}
+      onDoubleClick={preview === true ? undefined : onDoubleClick}
+      onPointerUp={preview === true ? undefined : onPointerUp}
     >
+      {/* DEF-154 — a fat invisible hit line (10pt, transparent) gives
+          the thin 2pt arrow a real grab target along its shaft, and a
+          wide transparent head hit polygon (filled + 10pt stroked)
+          covers the arrowhead so hovering near the tip selects the
+          arrow too. The visual line + arrowhead stay
+          pointer-transparent. */}
+      {preview !== true && (
+        <>
+          <line
+            className="ann-arrow-hit"
+            x1={from.x}
+            y1={from.y}
+            x2={to.x}
+            y2={to.y}
+            stroke="transparent"
+            strokeWidth={10}
+          />
+          <polygon
+            className="ann-arrow-head-hit"
+            points={`${to.x},${to.y} ${w1.x},${w1.y} ${w2.x},${w2.y}`}
+            fill="transparent"
+            stroke="transparent"
+            strokeWidth={10}
+            strokeLinejoin="round"
+          />
+        </>
+      )}
       <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={hex} strokeWidth={2} />
       <polygon
         points={`${to.x},${to.y} ${w1.x},${w1.y} ${w2.x},${w2.y}`}
@@ -977,12 +1595,7 @@ function ShapePreview({
 // ---------------------------------------------------------------------------
 // Committed annotations — DOM kinds (textbox, note)
 
-function DomAnnotation({
-  ann,
-  cssScale,
-  onEditNote,
-  selected = false,
-}: {
+interface DomAnnotationProps extends AnnotationSurfaceHandlers {
   ann: Annotation;
   cssScale: number;
   /** DEF-096 — Clicking a committed note icon opens the editor
@@ -994,7 +1607,30 @@ function DomAnnotation({
    *  open; the icon renders an accent ring so the selection is
    *  visible on the page. */
   selected?: boolean;
-}): ReactElement | null {
+  /** Posted AFTER a real page drag of this surface settles (the
+   *  pointerup computed a non-click movement) so the overlay can
+   *  suppress the follow-up click. */
+  onDragSettled?: () => void;
+  /** True while THIS surface is the in-flight drag target (paints
+   *  the grabbing cursor). */
+  dragging?: boolean;
+  /** Handlers taking the annotation themselves (surface-bound). */
+  onSurfacePointerDown?: (e: React.PointerEvent, ann: Annotation, handle?: ImageResizeHandle) => void;
+  onSurfaceClick?: (e: React.MouseEvent, ann: Annotation) => void;
+  onSurfaceDoubleClick?: (e: React.MouseEvent, ann: Annotation) => void;
+  onSurfacePointerUp?: (e: React.PointerEvent) => void;
+}
+
+function DomAnnotation({
+  ann,
+  cssScale,
+  onEditNote,
+  selected = false,
+  onSurfacePointerDown,
+  onSurfaceClick,
+  onSurfaceDoubleClick,
+  onSurfacePointerUp,
+}: DomAnnotationProps): ReactElement | null {
   if (ann.kind === "textbox") {
     const r = ann.rect ?? (ann as unknown as { rects?: { x: number; y: number; width: number; height: number }[] }).rects?.[0];
     if (r === undefined) return null;
@@ -1013,10 +1649,26 @@ function DomAnnotation({
     };
     return (
       <div
-        className="ann ann-textbox"
+        className="ann ann-textbox ann-content"
         data-annotation-id={ann.id}
         data-kind="textbox"
         style={style}
+        onPointerDown={
+          onSurfacePointerDown === undefined
+            ? undefined
+            : (e: React.PointerEvent<HTMLDivElement>): void => onSurfacePointerDown(e, ann)
+        }
+        onClick={
+          onSurfaceClick === undefined
+            ? undefined
+            : (e: React.MouseEvent<HTMLDivElement>): void => onSurfaceClick(e, ann)
+        }
+        onDoubleClick={
+          onSurfaceDoubleClick === undefined
+            ? undefined
+            : (e: React.MouseEvent<HTMLDivElement>): void => onSurfaceDoubleClick(e, ann)
+        }
+        onPointerUp={onSurfacePointerUp}
       >
         {ann.text}
       </div>
@@ -1080,7 +1732,12 @@ function DomAnnotation({
       borderRadius: "var(--radius-1)",
       background: hexWithAlpha(hex, 0.18),
       border: `1px solid ${hexWithAlpha(hex, 0.55)}`,
-      color: "var(--fg-strong)",
+      // DEF-158 — the note label floats OVER the paper-white page
+      // (never inverted in dark mode), so its ink must be the
+      // theme-independent dark-on-page color. The UI-theme
+      // `--fg-strong` flips to near-white in dark mode and made the
+      // text invisible against the page + tint.
+      color: "var(--fg-on-page)",
       fontSize: 11 * cssScale + 2,
       lineHeight: 1.4,
       pointerEvents: "none",
@@ -1099,6 +1756,16 @@ function DomAnnotation({
         title={ann.text.length > 0 ? ann.text : "Note"}
         role="button"
         tabIndex={0}
+        // DEF-154 — the note icon is now also DRAGGABLE: a press on
+        // the icon starts a move drag (the overlay's surface
+        // handler), a plain click opens the editor (DEF-096). The
+        // overlay's click handler suppresses the post-drag click.
+        onPointerDown={
+          onSurfacePointerDown === undefined
+            ? undefined
+            : (e: React.PointerEvent<HTMLDivElement>): void => onSurfacePointerDown(e, ann)
+        }
+        onPointerUp={onSurfacePointerUp}
         // DEF-096 — the actual click behavior behind the
         // "note icon not clickable" report. The icon's
         // pointer-events/z-index were already fixed; what was
@@ -1108,10 +1775,16 @@ function DomAnnotation({
         // the user can re-read the note, correct it (Confirm →
         // `onEditAnnotation`), or drop it (Delete →
         // `onDeleteAnnotation`).
-        onClick={(e): void => {
-          e.stopPropagation();
-          onEditNote?.(ann.id, ann.text);
-        }}
+        onClick={
+          onSurfaceClick === undefined
+            ? undefined
+            : (e: React.MouseEvent<HTMLDivElement>): void => onSurfaceClick(e, ann)
+        }
+        onDoubleClick={
+          onSurfaceDoubleClick === undefined
+            ? undefined
+            : (e: React.MouseEvent<HTMLDivElement>): void => onSurfaceDoubleClick(e, ann)
+        }
         onKeyDown={(e): void => {
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -1206,10 +1879,26 @@ function DomAnnotation({
           })()}
         </svg>
         <div
-          className="ann ann-callout"
+          className="ann ann-callout ann-content"
           data-annotation-id={ann.id}
           data-kind="callout"
           style={style}
+          onPointerDown={
+            onSurfacePointerDown === undefined
+              ? undefined
+              : (e: React.PointerEvent<HTMLDivElement>): void => onSurfacePointerDown(e, ann)
+          }
+          onClick={
+            onSurfaceClick === undefined
+              ? undefined
+              : (e: React.MouseEvent<HTMLDivElement>): void => onSurfaceClick(e, ann)
+          }
+          onDoubleClick={
+            onSurfaceDoubleClick === undefined
+              ? undefined
+              : (e: React.MouseEvent<HTMLDivElement>): void => onSurfaceDoubleClick(e, ann)
+          }
+          onPointerUp={onSurfacePointerUp}
         >
           {ann.text}
         </div>
@@ -1494,6 +2183,11 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
         drag.handleProps.onPointerDown(e);
       }}
     >
+      {/* DEF-153(d) — the note editor now carries the SAME labelled
+          "Drag to move" grip strip as the textbox / callout editors
+          (it was invisible drag chrome before). The strip is NOT a
+          control, so a press here moves the window. */}
+      <ContentGrip handleName="note" />
       <div className="ann-note-editor-row">
         <MessageSquare
           size={NOTE_ICON_PT * cssScale}
@@ -1693,6 +2387,311 @@ function CalloutBoxEditor(
           Delete
         </button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DEF-153/154 — selection chrome for a selected (movable) committed
+// annotation: bounds ring + corner handles + the shared Confirm /
+// Edit / Delete bar + (rendered by the overlay) the move hint.
+
+interface SelectedContentChromeProps {
+  ann: Annotation;
+  cssScale: number;
+  widthPt: number;
+  onSurfacePointerDown: (e: React.PointerEvent, ann: Annotation, handle?: ImageResizeHandle) => void;
+  onConfirm: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}
+
+const RESIZABLE_KINDS: ReadonlySet<Annotation["kind"]> = new Set([
+  "textbox",
+  "rect",
+  "ellipse",
+  "callout",
+  // DEF-154 — ink and arrow are resizable too: a resize scales their
+  // geometry (points / endpoints) into the new bounds
+  // (`resizeAnnotation` handles the affine map). Notes stay fixed —
+  // the icon is a constant-size marker, resizing it has no meaning.
+  "ink",
+  "arrow",
+]);
+
+function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement {
+  const { ann, cssScale, widthPt, onSurfacePointerDown, onConfirm, onEdit, onDelete } = props;
+  const bounds = annotationBounds(ann);
+  const ring = overlayRectToCss(bounds, cssScale);
+  const resizable = RESIZABLE_KINDS.has(ann.kind);
+  const topCss = (bounds.y + bounds.height) * cssScale + 4;
+  const leftCss = Math.max(0, Math.min(bounds.x * cssScale, widthPt * cssScale - 240));
+  return (
+    <>
+      {/* DEF-154 — the frame positions the ring + handles as ONE unit
+          at the annotation's bounds. The handles use the same -5px
+          corner offsets as the edit-box handles, so they MUST be
+          children of a positioned frame at the ring rect (as
+          siblings of the ring, anchored to the page layer, they
+          collapsed onto the page's corners instead of the shape). */}
+      <div
+        className="content-selection-frame"
+        data-content-selection-frame
+        style={{
+          left: ring.left - 2,
+          top: ring.top - 2,
+          width: ring.width + 4,
+          height: ring.height + 4,
+        }}
+        aria-hidden
+      >
+        <div
+          className="content-selection-bounds"
+          data-content-selection-bounds
+          aria-hidden
+        />
+        {resizable &&
+          (["nw", "ne", "sw", "se"] as const).map((h) => (
+            <div
+              key={h}
+              className={`content-resize-handle content-resize-handle-${h}`}
+              data-annotation-resize-handle={h}
+              onPointerDown={(e): void => {
+                e.stopPropagation();
+                onSurfacePointerDown(e, ann, h);
+              }}
+            />
+          ))}
+      </div>
+      <ContentActionBar
+        className="content-action-bar ann-content-action"
+        dataBar={`ann-${ann.kind}`}
+        left={leftCss}
+        top={topCss}
+        onConfirm={onConfirm}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        confirmLabel="Confirm"
+        editLabel="Edit"
+        deleteLabel="Delete"
+        confirmTitle="Confirm the move"
+        editTitle={ann.kind === "textbox" || ann.kind === "callout" || ann.kind === "note" ? "Edit content" : "Edit color"}
+        deleteTitle="Delete annotation"
+        confirmAria="Confirm annotation move"
+        editAria="Edit annotation"
+        deleteAria="Delete annotation"
+        dataActionPrefix={`ann-${ann.kind}`}
+      />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DEF-153/154 — the committed textbox / callout edit toolbox. Same
+// shared chrome as the create editors (grip + textarea + Confirm /
+// Cancel / Delete). Commit routes through the overlay's
+// `commitEditTarget`: text-only -> AnnotationPatch; a toolbox drag ->
+// delete + re-create at the moved rect (guardrail #4).
+
+interface CommittedContentEditorProps {
+  id: string;
+  kind: "textbox" | "callout";
+  rect: PageRect;
+  text: string;
+  cssScale: number;
+  onChange: (text: string) => void;
+  /** Commit with the toolbox's current drag offset (CSS px) so a
+   *  dragged toolbox commits the CONTENT at the moved rect. */
+  onCommit: (offset: { x: number; y: number }) => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}
+
+function CommittedContentEditor(props: CommittedContentEditorProps): ReactElement {
+  const { id, kind, rect, text, cssScale, onChange, onCommit, onCancel, onDelete } = props;
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    ref.current?.focus();
+    ref.current?.setSelectionRange(0, text.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const drag = useDragWindow({ controlsSelector: "button, textarea, input, select, [role='button']" });
+  const widthCss = Math.max(
+    rect.width * cssScale,
+    TEXTBOX_MIN_WIDTH_PT * cssScale,
+    Math.max(text.length, 6) * TEXTBOX_FONT_PT * 0.6 * cssScale + TEXTBOX_PAD_PT * 2 * cssScale,
+  );
+  return (
+    <div
+      ref={drag.windowRef}
+      className={drag.dragging ? "ann-textbox-wrap ann-textbox-wrap-dragging" : "ann-textbox-wrap"}
+      data-annotation-editor-wrap={`edit-${kind}`}
+      data-annotation-editor={`edit-${kind}`}
+      data-edit-annotation-id={id}
+      style={{
+        position: "absolute",
+        left: rect.x * cssScale + drag.offset.x,
+        top: rect.y * cssScale + drag.offset.y,
+        minWidth: TEXTBOX_MIN_WIDTH_PT * cssScale,
+      }}
+      onPointerDown={(e): void => {
+        e.stopPropagation();
+        drag.handleProps.onPointerDown(e);
+      }}
+    >
+      <ContentGrip handleName={kind === "textbox" ? "edit-textbox" : "edit-callout"} />
+      <textarea
+        ref={ref}
+        className="ann-editor ann-textbox-editor"
+        value={text}
+        placeholder={kind === "textbox" ? "Edit text..." : "Edit callout text..."}
+        onChange={(e): void => onChange(e.target.value)}
+        onKeyDown={(e): void => {
+          e.stopPropagation();
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            onCommit(drag.getOffset());
+          }
+        }}
+        onPointerDown={(e): void => e.stopPropagation()}
+        style={{
+          width: widthCss,
+          fontSize: TEXTBOX_FONT_PT * cssScale,
+          lineHeight: TEXTBOX_LINE_HEIGHT,
+          padding: TEXTBOX_PAD_PT * cssScale,
+          position: "static",
+        }}
+      />
+      <div
+        className="ann-textbox-actions"
+        data-annotation-action-bar={`edit-${kind}`}
+        style={{ pointerEvents: "auto", position: "relative", zIndex: 5 }}
+      >
+        <button
+          type="button"
+          className="toolbox-action-btn toolbox-action-btn--confirm ann-textbox-action-btn ann-textbox-action-confirm"
+          onClick={(): void => onCommit(drag.getOffset())}
+          data-annotation-action={`edit-${kind}-confirm`}
+          aria-label={`Confirm ${kind}`}
+          title="Confirm (Ctrl+Enter)"
+        >
+          Confirm
+        </button>
+        <button
+          type="button"
+          className="toolbox-action-btn toolbox-action-btn--cancel ann-textbox-action-btn ann-textbox-action-cancel"
+          onClick={onCancel}
+          data-annotation-action={`edit-${kind}-cancel`}
+          aria-label={`Cancel ${kind}`}
+          title="Cancel (Esc)"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="toolbox-action-btn toolbox-action-btn--delete ann-textbox-action-btn ann-textbox-action-delete"
+          onClick={onDelete}
+          data-annotation-action={`edit-${kind}-delete`}
+          aria-label={`Delete ${kind}`}
+          title="Delete annotation"
+        >
+          Delete
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DEF-153/154 — the shape / ink / arrow color edit toolbox (opened by
+// double-click or the bar's Edit). A compact swatch row over the
+// built-in palette + a custom hex input; commits through the
+// AnnotationPatch path.
+
+interface ShapeColorEditorProps {
+  left: number;
+  top: number;
+  active: AnnotationColorValue;
+  onPick: (color: AnnotationColorValue) => void;
+  onClose: () => void;
+}
+
+function ShapeColorEditor(props: ShapeColorEditorProps): ReactElement {
+  const { left, top, active, onPick, onClose } = props;
+  const activeHex = annotationColorToCss(active);
+  const [draft, setDraft] = useState<string>(activeHex);
+  return (
+    <div
+      className="content-action-bar shape-color-editor"
+      data-annotation-color-editor
+      role="dialog"
+      aria-label="Edit annotation color"
+      style={{ left, top }}
+      onPointerDown={(e): void => e.stopPropagation()}
+    >
+      {ANNOTATION_COLORS.map((c) => (
+        <button
+          key={c}
+          type="button"
+          className={
+            annotationColorToCss(c) === activeHex
+              ? "content-color-swatch content-color-swatch-active"
+              : "content-color-swatch"
+          }
+          style={{ background: ANNOTATION_COLOR_HEX[c] }}
+          onClick={(): void => onPick(c)}
+          aria-label={`Color ${c}`}
+          title={`Color: ${c}`}
+          data-ann-color-edit={c}
+        />
+      ))}
+      <label className="content-color-hex" title="Custom hex">
+        <span className="visually-hidden">Custom color hex</span>
+        <input
+          type="text"
+          value={draft}
+          spellCheck={false}
+          autoComplete="off"
+          onChange={(e): void => setDraft(e.target.value)}
+          onBlur={(): void => {
+            const c = annotationColorToCss(draft);
+            if (c !== "currentColor") {
+              onPick(c);
+            } else {
+              setDraft(activeHex);
+            }
+          }}
+          onKeyDown={(e): void => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              const c = annotationColorToCss(draft);
+              if (c !== "currentColor") {
+                onPick(c);
+              } else {
+                setDraft(activeHex);
+              }
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              onClose();
+            }
+          }}
+          aria-label="Custom color hex"
+          placeholder="#rrggbb"
+          data-ann-color-hex
+        />
+      </label>
+      <button
+        type="button"
+        className="toolbox-action-btn content-color-close"
+        onClick={onClose}
+        aria-label="Close color editor"
+        title="Close (Esc)"
+      >
+        <X size={12} strokeWidth={2} aria-hidden />
+      </button>
     </div>
   );
 }

@@ -1371,6 +1371,92 @@ describe('Phase 12: callout annotation', () => {
     expect(intent.toString()).toBe('/FreeTextCallout');
     expect(callout).toBeDefined();
   });
+
+  // DEF-157: the callout's `at` anchor (the point the arrow points at) was
+  // dropped by normalizeAnnotationPayload — AnnModel had no `at` field, so
+  // the renderer's annotationFromWire backfilled `at` from the box top-left,
+  // giving a zero-length arrow line. The engine must now preserve `at`
+  // through create -> save -> reparse.
+  it('preserves the callout anchor `at` through create -> save -> reparse (DEF-157)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-co3', path);
+
+    // The shape the renderer sends: `rect` (the text box) + `at` (the arrow
+    // tip), no explicit `points` leader. The anchor is well outside the box
+    // and distinct from the box top-left.
+    const box = { x: 200, y: 200, width: 150, height: 50 };
+    const anchor = { x: 50, y: 400 };
+    const r = await engine.createAnnotation('doc-co3', makePayload({
+      kind: 'callout' as any,
+      rect: box,
+      at: anchor,
+      color: 'red',
+      content: 'See this',
+    }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const anns = getAnns(r.value);
+    const created = anns.find((a: any) => a.kind === 'callout') as any;
+    expect(created).toBeDefined();
+    // The anchor is preserved on the created model (not dropped).
+    expect(created.at).toBeDefined();
+    expect(created.at.x).toBeCloseTo(anchor.x);
+    expect(created.at.y).toBeCloseTo(anchor.y);
+
+    // Save and reload — the anchor must survive the round-trip.
+    const savePath = join(dir, 'callout-anchor-rt.pdf');
+    const sr = await engine.saveAs('doc-co3', savePath);
+    expect(sr.ok).toBe(true);
+    if (!sr.ok) return;
+
+    // The serialized PDF still carries /Intent /FreeTextCallout + /Callout.
+    const saved = await readFile(savePath);
+    const re = await PDFDocument.load(saved.buffer.slice(
+      saved.byteOffset, saved.byteOffset + saved.byteLength,
+    ) as ArrayBuffer);
+    const pageLeaf = (re.getPage(0) as any).node;
+    const annotsRef = pageLeaf.get(PDFName.of('Annots'));
+    expect(annotsRef).toBeDefined();
+    let annotsArray: any = annotsRef;
+    if (annotsRef && annotsRef.objectNumber !== undefined) {
+      annotsArray = re.context.lookup(annotsRef);
+    }
+    const annotRef = annotsArray.get(0);
+    const annot = re.context.lookup(annotRef) as any;
+    const dict = annot?.dict ?? annot;
+    const intent = dict.get ? dict.get(PDFName.of('Intent')) : undefined;
+    const callout = dict.get ? dict.get(PDFName.of('Callout')) : undefined;
+    expect(intent).toBeDefined();
+    expect(intent.toString()).toBe('/FreeTextCallout');
+    expect(callout).toBeDefined();
+
+    // Reparse: the reloaded callout's `at` equals the sent anchor, not the box
+    // top-left (the old DEF-157 backfill), and the leader-line endpoints are
+    // distinct (non-zero arrow length).
+    await engine.loadDocument('doc-co3-reloaded', savePath);
+    const state = await engine.getState('doc-co3-reloaded');
+    expect(state.ok).toBe(true);
+    if (!state.ok) return;
+    const reloaded = getAnns(state.value);
+    const co = reloaded.find((a: any) => a.kind === 'callout') as any;
+    expect(co).toBeDefined();
+    expect(co.at).toBeDefined();
+    expect(co.at.x).toBeCloseTo(anchor.x);
+    expect(co.at.y).toBeCloseTo(anchor.y);
+    // The anchor is NOT the box top-left (the regression value).
+    expect(co.at.x).not.toBeCloseTo(box.x);
+    expect(co.at.y).not.toBeCloseTo(box.y);
+    // The synthesized leader line has distinct start/end (non-zero length).
+    expect(co.points).toBeDefined();
+    expect(co.points.length).toBeGreaterThanOrEqual(2);
+    const p0 = co.points[0];
+    const pEnd = co.points[co.points.length - 1];
+    expect(Math.hypot(pEnd.x - p0.x, pEnd.y - p0.y)).toBeGreaterThan(0);
+    // The leader tip matches the anchor.
+    expect(pEnd.x).toBeCloseTo(anchor.x);
+    expect(pEnd.y).toBeCloseTo(anchor.y);
+  });
 });
 
 // ---------------------------------------------------------------------------

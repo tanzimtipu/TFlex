@@ -25,6 +25,7 @@ import type { ChangeEvent, KeyboardEvent, ReactElement } from "react";
 import type { EditFont } from "../../shared/types";
 import type { EditTextStyle } from "./model";
 import { useDragWindow } from "../components/useDragWindow";
+import { ContentGrip } from "../components/selectableContent";
 
 export interface EditInlineEditorProps {
   /** Anchor rect in page points (top-left origin). The editor
@@ -308,6 +309,12 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
         data-edit-drag-handle
         {...drag.handleProps}
       >
+        {/* DEF-153(d) — the inline editor now shows the SAME labelled
+            "Drag to move" grip affordance as every other floating
+            editor (its toolbar was grab-able but unlabelled). The
+            chip is NOT a control, so a press here starts the window
+            drag exactly like any other toolbar chrome. */}
+        <ContentGrip handleName="inline-editor" className="content-grip-inline" />
         <label className="edit-inline-field edit-inline-field-font">
           <span className="edit-inline-label">Font</span>
           <select

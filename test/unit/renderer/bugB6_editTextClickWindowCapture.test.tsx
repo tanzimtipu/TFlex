@@ -109,7 +109,7 @@ function pointerDownOn(el: Element, x: number, y: number): void {
 }
 
 describe("B6 — Edit-mode text-run click opens the inline editor (window capture)", () => {
-  it("a pointerdown over a text run mounts the editor pre-filled with the run's text", () => {
+  it("a pointerdown over a text run SELECTS the run; a double-click mounts the editor pre-filled with the run's text", () => {
     const { layer, unmount } = mountTextTool();
     try {
       // Click at the center of the text run (150, 115). The event
@@ -117,7 +117,18 @@ describe("B6 — Edit-mode text-run click opens the inline editor (window captur
       // exactly the path that was swallowed by a sibling layer
       // before the fix.
       pointerDownOn(layer, 150, 115);
-      // The inline editor mounts in "edit" mode (the run has text).
+      // DEF-153 — the single click SELECTS the run (movable) and
+      // shows the Confirm/Edit/Delete bar; it must NOT open the
+      // editor.
+      expect(document.querySelector("[data-textrun-selection]")).not.toBeNull();
+      expect(document.querySelector("[data-edit-editor='edit']")).toBeNull();
+      expect(document.querySelector("[data-edit-textarea]")).toBeNull();
+      // The double click opens the editor (the model's split).
+      act((): void => {
+        window.dispatchEvent(
+          new MouseEvent("dblclick", { bubbles: true, clientX: 150, clientY: 115 }),
+        );
+      });
       const editor = document.querySelector("[data-edit-editor='edit']");
       expect(editor).not.toBeNull();
       const textarea = document.querySelector("[data-edit-textarea]");
@@ -130,7 +141,7 @@ describe("B6 — Edit-mode text-run click opens the inline editor (window captur
     }
   });
 
-  it("a pointerdown on an interactive control does NOT open the editor (cross-bubbling guard)", () => {
+  it("a pointerdown on an interactive control does NOT open the editor or select (cross-bubbling guard)", () => {
     const { host, unmount } = mountTextTool();
     try {
       // A toolbar-like button inside the page: the capture handler
@@ -142,18 +153,20 @@ describe("B6 — Edit-mode text-run click opens the inline editor (window captur
       host.appendChild(btn);
       pointerDownOn(btn, 150, 115);
       expect(document.querySelector("[data-edit-editor='edit']")).toBeNull();
+      expect(document.querySelector("[data-textrun-selection]")).toBeNull();
     } finally {
       unmount();
     }
   });
 
-  it("a pointerdown outside the page bounds does NOT open the editor", () => {
+  it("a pointerdown outside the page bounds does NOT open the editor or select", () => {
     const { layer, unmount } = mountTextTool();
     try {
       // Point far outside the 612x792pt page (the host is 800px
       // wide but the page is 612pt wide at cssScale 1).
       pointerDownOn(layer, 700, 500);
       expect(document.querySelector("[data-edit-editor='text']")).toBeNull();
+      expect(document.querySelector("[data-textrun-selection]")).toBeNull();
     } finally {
       unmount();
     }

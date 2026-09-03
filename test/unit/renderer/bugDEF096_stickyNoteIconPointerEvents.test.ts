@@ -84,14 +84,13 @@ describe("DEF-096 — sticky-note icon is clickable (pointer-events: auto) and a
   });
 
   it(".ann-note CSS still paints with a cursor change so the user sees the icon is interactive", () => {
-    // UX marker: a clickable surface should show a pointer
-    // cursor so the user knows clicks land on the icon, not on
-    // the page underneath. The annotation overlay's default
-    // cursor is `crosshair` while a tool is armed; once the
-    // note is committed the cursor should be `pointer` on the
-    // icon itself.
+    // UX marker: a clickable surface should show a grabbing/palm
+    // cursor so the user knows clicks land on the icon. DEF-153 —
+    // committed content now uses the palm/grab cursor (the
+    // Acrobat-style model), not the old `pointer` /
+    // `move` / `text`.
     const rule = getAnnNoteRule();
     expect(rule).not.toBe("");
-    expect(rule).toMatch(/cursor:\s*pointer/);
+    expect(rule).toMatch(/cursor:\s*grab/);
   });
 });

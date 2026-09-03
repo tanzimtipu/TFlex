@@ -138,6 +138,17 @@ function releaseOnLayer(host: HTMLElement, x: number, y: number): void {
   });
 }
 
+/** DEF-153 — a committed box's edit toolbox opens on DOUBLE click
+ *  (single click selects it + shows the Confirm/Edit/Delete bar). */
+function dblClickBox(host: HTMLElement, x: number, y: number): void {
+  const box = host.querySelector<HTMLElement>(".edit-box");
+  expect(box).not.toBeNull();
+  if (box === null) return;
+  act((): void => {
+    box.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: x, clientY: y }));
+  });
+}
+
 describe("DEF-127 — committed text box surfaces mirror their baked content", () => {
   it("renders the white fill + the text mirror inside the .edit-box surface", () => {
     const { host, unmount } = mountBoxTool({
@@ -172,7 +183,7 @@ describe("DEF-127 — committed text box surfaces mirror their baked content", (
 });
 
 describe("DEF-127 — selecting a committed box reopens the inline editor", () => {
-  it("a click (no drag) opens the editor pre-filled with the box's text", () => {
+  it("a click (no drag) SELECTS the box (Confirm/Edit/Delete bar); double-click opens the editor pre-filled with the box's text", () => {
     const { host, unmount } = mountBoxTool({
       ...initialEditState,
       tool: "box",
@@ -181,8 +192,12 @@ describe("DEF-127 — selecting a committed box reopens the inline editor", () =
     try {
       pressBox(host, 120, 120);
       releaseOnLayer(host, 120, 120);
-      const editor = host.querySelector("[data-edit-editor='edit']");
-      expect(editor).not.toBeNull();
+      // DEF-153 — the single click selects + makes movable; the edit
+      // toolbox opens on double click.
+      expect(host.querySelector("[data-edit-box-toolbar]"), "single click shows the action bar").not.toBeNull();
+      expect(host.querySelector("[data-edit-editor='edit']"), "single click must NOT open the editor").toBeNull();
+      dblClickBox(host, 120, 120);
+      expect(host.querySelector("[data-edit-editor='edit']")).not.toBeNull();
       const textarea = host.querySelector<HTMLTextAreaElement>("[data-edit-textarea]");
       expect(textarea?.value).toBe("Committed box");
     } finally {
@@ -199,6 +214,7 @@ describe("DEF-127 — selecting a committed box reopens the inline editor", () =
     try {
       pressBox(host, 120, 120);
       releaseOnLayer(host, 120, 120);
+      dblClickBox(host, 120, 120);
       const textarea = host.querySelector<HTMLTextAreaElement>("[data-edit-textarea]");
       expect(textarea).not.toBeNull();
       if (textarea === null) return;
@@ -227,7 +243,7 @@ describe("DEF-127 — selecting a committed box reopens the inline editor", () =
 });
 
 describe("DEF-127/127b — dragging a committed box re-bakes the text with it", () => {
-  it("a move drag commits onCommitTextBoxMove with old/new rects + the box's content", () => {
+  it("a move drag parks a PENDING move; the bar's Confirm commits onCommitTextBoxMove with old/new rects + the box's content (DEF-152/155)", () => {
     const { host, onCommitTextBoxMove, unmount } = mountBoxTool({
       ...initialEditState,
       tool: "box",
@@ -237,6 +253,22 @@ describe("DEF-127/127b — dragging a committed box re-bakes the text with it", 
       pressBox(host, 120, 120);   // start at (120,120) inside 100..280 x 100..140
       moveOnLayer(host, 160, 140); // +40,+20
       releaseOnLayer(host, 160, 140);
+      // DEF-152 — the move is NO LONGER implicit on pointerup: the
+      // engine write waits for the bar's Confirm.
+      expect(onCommitTextBoxMove).not.toHaveBeenCalled();
+      // The Confirm/Edit/Delete bar is up (the box is selected +
+      // movable) and the white eraser covers the OLD rect (DEF-155).
+      const bar = host.querySelector<HTMLElement>("[data-edit-box-toolbar]");
+      expect(bar, "selected/moved box shows the action bar").not.toBeNull();
+      expect(host.querySelector("[data-edit-box-action='confirm']")).not.toBeNull();
+      expect(host.querySelector("[data-edit-box-eraser]"), "eraser covers the old rect while pending").not.toBeNull();
+      // Confirm commits the threaded position.
+      const confirmBtn = host.querySelector<HTMLButtonElement>("[data-edit-box-action='confirm']");
+      expect(confirmBtn).not.toBeNull();
+      if (confirmBtn === null) return;
+      act((): void => {
+        confirmBtn.click();
+      });
       expect(onCommitTextBoxMove).toHaveBeenCalledTimes(1);
       const call = onCommitTextBoxMove.mock.calls[0]?.[0];
       expect(call).toMatchObject({
@@ -254,7 +286,7 @@ describe("DEF-127/127b — dragging a committed box re-bakes the text with it", 
     }
   });
 
-  it("a resize drag (corner handle) commits with the resized rect", () => {
+  it("a resize drag (corner handle) parks a pending move; the bar's Confirm commits with the resized rect", () => {
     const { host, onCommitTextBoxMove, unmount } = mountBoxTool({
       ...initialEditState,
       tool: "box",
@@ -275,6 +307,14 @@ describe("DEF-127/127b — dragging a committed box re-bakes the text with it", 
       });
       moveOnLayer(host, 320, 180);
       releaseOnLayer(host, 320, 180);
+      // Pending — not committed at pointerup.
+      expect(onCommitTextBoxMove).not.toHaveBeenCalled();
+      const confirmBtn = host.querySelector<HTMLButtonElement>("[data-edit-box-action='confirm']");
+      expect(confirmBtn, "Confirm button appears").not.toBeNull();
+      if (confirmBtn === null) return;
+      act((): void => {
+        confirmBtn.click();
+      });
       expect(onCommitTextBoxMove).toHaveBeenCalledTimes(1);
       const call = onCommitTextBoxMove.mock.calls[0]?.[0];
       expect(call.oldRect).toEqual({ x: 100, y: 100, width: 180, height: 40 });

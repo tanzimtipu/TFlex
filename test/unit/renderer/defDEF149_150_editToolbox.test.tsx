@@ -126,6 +126,23 @@ function pointerup(el: HTMLElement, x: number, y: number): void {
   });
 }
 
+// DEF-153 — the text-run editor opens on DOUBLE click (single click
+// selects the run + shows the Confirm/Edit/Delete bar). The
+// window-level dblclick listener computes the run at the point.
+function textDblClick(x: number, y: number): void {
+  act((): void => {
+    window.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: x, clientY: y }));
+  });
+}
+
+// DEF-153 — a committed box's edit toolbox opens on DOUBLE click;
+// single click selects it (Confirm / Edit / Delete bar).
+function boxDblClick(box: HTMLElement, x: number, y: number): void {
+  act((): void => {
+    box.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: x, clientY: y }));
+  });
+}
+
 function windowMove(x: number, y: number): void {
   act((): void => {
     window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: x, clientY: y, pointerId: 1 }));
@@ -213,6 +230,12 @@ describe("DEF-149 — re-clicking an edited text run selects the NEW text", () =
       // new run (same rect, first/last in getTextItems). The fix must
       // match the committed "NEW TITLE 123", never the first (old) hit.
       pointerdown(layer, 120, 115);
+      // DEF-153 — single click SELECTS the run (movable).
+      const sel = host.querySelector<HTMLElement>("[data-textrun-selection]");
+      expect(sel).not.toBeNull();
+      expect(sel?.dataset.textrunText).toBe("NEW TITLE 123");
+      // Double click opens the editor with the same (newest) text.
+      textDblClick(120, 115);
       expect(textarea(host).value).toBe("NEW TITLE 123");
     } finally {
       unmount();
@@ -229,6 +252,9 @@ describe("DEF-149 — re-clicking an edited text run selects the NEW text", () =
       const layer = host.querySelector<HTMLElement>('[data-tool="text"]');
       if (layer === null) throw new Error("layer not found");
       pointerdown(layer, 120, 115);
+      const sel = host.querySelector<HTMLElement>("[data-textrun-selection]");
+      expect(sel?.dataset.textrunText).toBe("TFlex Technical Report");
+      textDblClick(120, 115);
       expect(textarea(host).value).toBe("TFlex Technical Report");
     } finally {
       unmount();
@@ -253,6 +279,7 @@ describe("DEF-149 (b) — the toolbox drag offset moves the committed run", () =
       const layer = host.querySelector<HTMLElement>('[data-tool="text"]');
       if (layer === null) throw new Error("layer not found");
       pointerdown(layer, 120, 115);
+      textDblClick(120, 115);
       const editor = stubEditorRect(host);
       // Drag the toolbox chrome +200/+120 (same window-drag math as
       // bugDEF140: pointerdown on a label span, then window moves).
@@ -295,6 +322,7 @@ describe("DEF-149 (b) — the toolbox drag offset moves the committed run", () =
       const layer = host.querySelector<HTMLElement>('[data-tool="text"]');
       if (layer === null) throw new Error("layer not found");
       pointerdown(layer, 120, 115);
+      textDblClick(120, 115);
       stubEditorRect(host);
       const label = host.querySelector<HTMLElement>(".edit-inline-field-font .edit-inline-label");
       if (label === null) throw new Error("label not found");
@@ -331,6 +359,7 @@ describe("DEF-149 (b) — the toolbox drag offset moves the committed run", () =
       const layer = host.querySelector<HTMLElement>('[data-tool="text"]');
       if (layer === null) throw new Error("layer not found");
       pointerdown(layer, 120, 115);
+      textDblClick(120, 115);
       stubEditorRect(host);
       // No drag -> the normal Apply label is in place (no move).
       expect(host.querySelector('[data-edit-confirm="true"]')).toBeNull();
@@ -359,7 +388,7 @@ describe("DEF-150 — add-box toolbox move + confirm (no duplicate bake)", () =>
     background: "white",
   };
 
-  it("a clicked committed box reopens as a box editor pre-filled with the box text", () => {
+  it("a single-click committed box SELECTS it (Confirm/Edit/Delete bar); double-click reopens the box editor pre-filled with the box text", () => {
     const { host, unmount } = mountOverlay({
       ...initialEditState,
       tool: "box",
@@ -370,6 +399,16 @@ describe("DEF-150 — add-box toolbox move + confirm (no duplicate bake)", () =>
       if (box === null) throw new Error("box not found");
       pointerdown(box, 120, 120);
       pointerup(box, 120, 120);
+      // DEF-153 — the single click SELECTS + makes movable (the bar
+      // with Confirm / Edit / Delete); it must NOT open the editor.
+      expect(host.querySelector('[data-edit-editor="edit"]')).toBeNull();
+      const bar = host.querySelector("[data-edit-box-toolbar]");
+      expect(bar, "selected box shows the action bar").not.toBeNull();
+      expect(host.querySelector("[data-edit-box-action='confirm']"), "DEF-152 — bar carries Confirm").not.toBeNull();
+      expect(host.querySelector("[data-edit-box-action='edit']")).not.toBeNull();
+      expect(host.querySelector("[data-edit-box-action='delete']")).not.toBeNull();
+      // Double click opens the edit toolbox.
+      boxDblClick(box, 120, 120);
       expect(host.querySelector('[data-edit-editor="edit"]')).not.toBeNull();
       expect(textarea(host).value).toBe("MOVE TEST 88");
     } finally {
@@ -388,6 +427,7 @@ describe("DEF-150 — add-box toolbox move + confirm (no duplicate bake)", () =>
       if (box === null) throw new Error("box not found");
       pointerdown(box, 120, 120);
       pointerup(box, 120, 120);
+      boxDblClick(box, 120, 120);
       stubEditorRect(host);
       // No drag yet -> the normal Apply label is in place.
       expect(host.querySelector('[data-edit-confirm="true"]')).toBeNull();
@@ -428,6 +468,7 @@ describe("DEF-150 — add-box toolbox move + confirm (no duplicate bake)", () =>
       if (box === null) throw new Error("box not found");
       pointerdown(box, 120, 120);
       pointerup(box, 120, 120);
+      boxDblClick(box, 120, 120);
       // Keep the text; commit. No move -> NO engine call -> a Save
       // bakes exactly the single registry entry (exactly ONE copy).
       clickCommit(host);
@@ -450,6 +491,7 @@ describe("DEF-150 — add-box toolbox move + confirm (no duplicate bake)", () =>
       if (box === null) throw new Error("box not found");
       pointerdown(box, 120, 120);
       pointerup(box, 120, 120);
+      boxDblClick(box, 120, 120);
       typeText(host, "EDITED 99");
       clickCommit(host);
       // The live registry mirror adopts the new text; the text-run

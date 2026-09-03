@@ -2146,10 +2146,14 @@ export function App(): ReactElement {
         noteOpApplied(tabId, result.value);
         // The engine registry re-targets the box's content; refresh
         // the pdf.js proxy so the moved text renders without a
-        // save/reopen (same pattern as addTextBox).
+        // save/reopen (same pattern as addTextBox). DEF-155 — AWAIT
+        // the refresh so the promise the overlay holds resolves only
+        // after the proxy swap lands; the overlay keeps its white
+        // eraser cover over the OLD rect until then (no stale frame
+        // window at release).
         const refreshFn = refreshDocProxyForRef.current;
         if (refreshFn !== null) {
-          void refreshFn(tabId).catch(() => undefined);
+          await refreshFn(tabId).catch(() => false);
         }
         return;
       }
@@ -2188,10 +2192,12 @@ export function App(): ReactElement {
       noteOpApplied(tabId, result.value);
       // B17 / B19 — the engine masked the old position and baked
       // the raster at the new one; refresh the pdf.js proxy so the
-      // moved text renders without a save/reopen.
+      // moved text renders without a save/reopen. DEF-155 — await
+      // the refresh (same no-stale-frame contract as the registry
+      // path above).
       const refreshFn = refreshDocProxyForRef.current;
       if (refreshFn !== null) {
-        void refreshFn(tabId).catch(() => undefined);
+        await refreshFn(tabId).catch(() => false);
       }
     },
     [pushToast, noteOpApplied],
@@ -5187,7 +5193,7 @@ pushToast(
           style: EditTextStyle;
           background: "white" | "none";
           id: string;
-        }) => void;
+        }) => void | Promise<void>;
         onDeleteTextBox: (id: string) => void;
       }
     >();
@@ -5259,9 +5265,7 @@ pushToast(
           style: EditTextStyle;
           background: "white" | "none";
           id: string;
-        }): void => {
-          void handleTextBoxMove(tabId, args);
-        },
+        }): Promise<void> => handleTextBoxMove(tabId, args),
         onDeleteTextBox: (id: string): void => {
           void handleTextBoxDelete(tabId, id);
         },

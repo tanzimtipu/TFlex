@@ -112,8 +112,17 @@
   --fg-strong: #0f172a;
   --fg: #1e293b;
   --fg-muted: #64748b;
+  --fg-soft: #475569;
   --fg-faint: #94a3b8;
   --fg-on-accent: #ffffff;
+
+  /* Page-content ink (DEF-158/159). The paper-white page is NEVER
+   * inverted (DEF-099 keeps pages white in dark mode), so any text
+   * the app paints OVER the page — committed annotation textbox
+   * text, callout text, sticky-note labels — must stay dark in BOTH
+   * themes. This token is deliberately theme-independent: it always
+   * resolves to the dark ink used on white paper. */
+  --fg-on-page: #0f172a;
 
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
@@ -147,6 +156,7 @@
   --fg-strong: #f1f5f9;
   --fg: #cbd5e1;
   --fg-muted: #94a3b8;
+  --fg-soft: #cbd5e1;
   --fg-faint: #64748b;
   --fg-on-accent: #ffffff;
 
@@ -2194,16 +2204,49 @@ textarea {
 }
 
 .ann-ink {
+  /* DEF-154 — committed shapes/ink must be selectable + movable from
+   * the page: the visual path stays pointer-transparent and its
+   * sibling `.ann-ink-hit` (a wide transparent stroke, same geometry)
+   * is the actual hit target, so the freehand line gets a fat grab
+   * area instead of a 1.5pt thread. */
   pointer-events: none;
 }
 
+.ann-ink-hit {
+  pointer-events: stroke;
+  cursor: grab;
+}
+
 .ann-shape {
-  pointer-events: none;
+  /* DEF-154 — committed shapes are page-interactive (select / move /
+   * resize / delete). The 0.1-alpha fill makes the whole body a fat
+   * hit target. */
+  pointer-events: auto;
+  cursor: grab;
 }
 
 .ann-arrow line,
 .ann-arrow polygon {
   pointer-events: none;
+}
+
+/* DEF-154 — the arrow's fat invisible hit line (same endpoints, 10pt
+ * wide, transparent stroke) is what actually receives the pointer.
+ * The selector MUST out-specificity `.ann-arrow line` above (class +
+ * element beats the plain class), otherwise the hit line inherits
+ * `pointer-events: none` and the whole arrow falls through to the
+ * textLayer — hover / select / move / delete all dead. */
+.ann-arrow line.ann-arrow-hit {
+  pointer-events: stroke;
+  cursor: grab;
+}
+
+/* DEF-154 — the transparent head-hit triangle covers the arrowhead
+ * area (the shaft hit line ends at the tip): pointer-events all so
+ * the fully-transparent fill/stroke is still a target. */
+.ann-arrow polygon.ann-arrow-head-hit {
+  pointer-events: all;
+  cursor: grab;
 }
 
 .ann-textbox {
@@ -2215,8 +2258,14 @@ textarea {
   white-space: pre-wrap;
   word-break: break-word;
   overflow: hidden;
-  color: var(--fg-strong);
-  pointer-events: none;
+  /* DEF-159 — committed textbox text floats OVER the paper-white page
+   * (never inverted in dark mode), so it must use the theme-
+   * independent dark-on-page ink. The UI-theme --fg-strong flips to
+   * near-white in dark mode and rendered invisible. */
+  color: var(--fg-on-page);
+  /* DEF-154 — committed textboxes are page-interactive like shapes. */
+  pointer-events: auto;
+  cursor: grab;
 }
 
 .ann-note {
@@ -2234,7 +2283,9 @@ textarea {
    * restores click-through to the icon even when textLayer spans
    * overlap its bounding box. */
   pointer-events: auto;
-  cursor: pointer;
+  /* DEF-153 — committed content hovers with the palm/grab cursor
+   * (Acrobat-style), never `pointer` / `move` / `text`. */
+  cursor: grab;
   /* DEF-096 — paint above the textLayer. textLayer's spans are
    * positioned `inset: 0` with implicit z-index (the layer itself
    * has no explicit z-index); the note icon at the same DOM
@@ -2331,7 +2382,8 @@ textarea {
  *  non-interactive to grab as a window (`[data-annotation-editor=
  *  "textbox"]` measured == the textarea rect, and every grab point
  *  landed on the typing control); qa measured dx=0. */
-.ann-textbox-grip {
+.ann-textbox-grip,
+.content-grip {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2339,8 +2391,17 @@ textarea {
   padding: 4px 10px;
   width: 100%;
   box-sizing: border-box;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
+  /* DEF-156 — the grip floats OVER the paper-white page (which is
+   * never inverted — DEF-099). Its chip must be OPAQUE in both
+   * themes: `--bg-sunken` is a solid color, so the page can never
+   * bleed through and wash the label out (the old `--bg-raised` base
+   * was fine, but the hover swap to the translucent `--bg-hover`
+   * turned the strip white in dark mode while the label flipped to
+   * near-white — invisible). `--fg-soft` was ALSO undefined before
+   * this fix (the base label only rendered via invalid-var fallback
+   * to inherited color); the token is now defined in both themes. */
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-strong);
   border-bottom: none;
   border-radius: var(--radius-1) var(--radius-1) 0 0;
   color: var(--fg-soft);
@@ -2350,9 +2411,25 @@ textarea {
   text-transform: uppercase;
   user-select: none;
 }
-.ann-textbox-grip:hover {
-  background: var(--bg-hover);
+.ann-textbox-grip:hover,
+.content-grip:hover {
+  /* Opaque brighten (dark: #15181c, light: #ffffff) + strong label —
+   * readable over the white page in both themes, exactly like the
+   * non-hover chip. */
+  background: var(--bg-raised);
   color: var(--fg-strong);
+}
+
+/* Compact inline variant — the Edit-mode inline editor's toolbar
+ * chip (the toolbar is a horizontal row, so the full-width strip
+ * collapses to a small labeled badge). */
+.content-grip-inline {
+  width: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  font-size: 9px;
+  padding: 2px 6px;
+  flex-shrink: 0;
 }
 .ann-textbox-wrap .ann-textbox-editor {
   border-radius: 0 0 var(--radius-1) var(--radius-1);
@@ -2361,6 +2438,144 @@ textarea {
 .ann-textbox-wrap .ann-textbox-editor:focus {
   border-top: none;
 }
+
+/* ---------------------------------------------------------------------------
+ * Shared "selectable movable content" chrome (DEF-153) — ONE look for
+ * every placeable kind (add box, edit text, textbox, callout, note,
+ * rect, ellipse, arrow, ink). Three pieces:
+ *   .content-move-hint      cursor-attached "Double click to edit" chip
+ *   .content-action-bar     the Confirm / Edit / Delete bar under the
+ *                           selected content (buttons reuse the shared
+ *                           .toolbox-action-btn style)
+ *   .content-selection-bounds + .content-resize-handle  the selection
+ *                           ring + corner handles while movable
+ * ------------------------------------------------------------------------- */
+
+/* The "Double click to edit" hint floats over the paper-white page
+ * (never inverted — DEF-099), so it is a fixed opaque dark chip with
+ * a light label in BOTH themes (same look as the grip over a page). */
+.content-move-hint {
+  position: absolute;
+  z-index: 60;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: #15181c;
+  color: #f1f5f9;
+  border-radius: var(--radius-1);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: var(--shadow-popover);
+  user-select: none;
+}
+
+.content-action-bar {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  padding: 4px;
+  z-index: 12;
+  box-shadow: var(--shadow-popover);
+  /* AGENTS.md cross-bubbling guard: the bar is a real hit surface —
+   * its buttons must stay clickable even though it floats over the
+   * page canvas. */
+  pointer-events: auto;
+}
+.content-action-bar button {
+  pointer-events: auto;
+}
+
+/* DEF-153/154 — the shape / ink / arrow color edit toolbox: swatch
+ * row + hex input inside the shared content-action-bar chrome. */
+.shape-color-editor .content-color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  border: 1px solid rgba(15, 23, 42, 0.25);
+  cursor: pointer;
+  padding: 0;
+}
+.shape-color-editor .content-color-swatch-active {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.shape-color-editor .content-color-hex {
+  display: inline-flex;
+  align-items: center;
+}
+.shape-color-editor .content-color-hex input {
+  width: 64px;
+  padding: 2px 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-input);
+  color: var(--fg-strong);
+  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+}
+.shape-color-editor .content-color-close {
+  color: var(--fg-muted);
+}
+.shape-color-editor .content-color-close:hover {
+  color: var(--fg-strong);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Selection ring + resize handles for a selected (movable) item. The
+ * ring is pointer-transparent; the corner handles are real drag
+ * targets (same 4-corner set as the edit-box / signature handles).
+ * DEF-154 — the ring + handles live inside a positioned FRAME at the
+ * annotation's bounds: the handles' -5px corner offsets are relative
+ * to the frame, so they land on the shape's corners. (As siblings of
+ * the ring, anchored to the page layer, they collapsed onto the
+ * page's own corners.) */
+.content-selection-frame {
+  position: absolute;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.content-selection-frame .content-selection-bounds {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-1);
+  pointer-events: none;
+}
+
+.content-resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--bg-raised);
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  pointer-events: auto;
+  z-index: 7;
+}
+.content-resize-handle-nw { left: -5px; top: -5px; cursor: nwse-resize; }
+.content-resize-handle-ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.content-resize-handle-sw { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.content-resize-handle-se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 
 /* ---------------------------------------------------------------------------
  * Shared floating-toolbox action button — text-only labels (Cancel /
@@ -4661,13 +4876,20 @@ textarea {
 
 /* Text-tool hover hint: outline the text run under the cursor so the
  * user can see what's clickable. Matches the annotation overlay's
- * markup-hover treatment. */
+ * markup-hover treatment. DEF-153 — the run under the cursor shows
+ * the palm/grab cursor (hovering editable content), never the
+ * crosshair; the LAYER itself stays crosshair for empty-page
+ * drags. `pointer-events: auto` makes the outline itself the hit
+ * surface over the run, so the browser paints `cursor: grab` there
+ * instead of falling through to the textLayer's default text
+ * cursor. */
 .edit-text-hover {
   position: absolute;
   background: var(--accent-soft);
   border: 1px dashed var(--accent);
   border-radius: var(--radius-1);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
   transition: background var(--t-quick) var(--ease);
 }
 
@@ -4748,7 +4970,9 @@ textarea {
   border: 1px dashed var(--accent);
   border-radius: var(--radius-1);
   background: rgba(37, 99, 235, 0.04);
-  cursor: move;
+  /* DEF-153 — committed content hovers with the palm/grab cursor
+   * (Acrobat-style), not the 4-arrow `move` cursor. */
+  cursor: grab;
   user-select: none;
   pointer-events: auto;
 }
@@ -4757,6 +4981,10 @@ textarea {
   border-color: var(--accent);
   border-style: solid;
   background: rgba(37, 99, 235, 0.06);
+}
+
+.edit-box-dragging {
+  cursor: grabbing;
 }
 
 /* DEF-127 — the white background mirror for `background: 'white'`
@@ -4827,19 +5055,15 @@ textarea {
   color: var(--accent);
 }
 
-/* DEF-135/136 — placement toolbar for a SELECTED COMMITTED text box
- * (Edit / Delete). Mirrors the image toolbar's floating treatment so
- * the box actions read as part of the same selection-chrome family. */
+/* DEF-135/136 + DEF-152 — placement toolbar for a SELECTED COMMITTED
+ * text box (Confirm / Edit / Delete). The container keeps its
+ * absolute positioning + stacking; the VISUAL chrome (chip, radius,
+ * shadow, gap, padding) is owned by the shared `.content-action-bar`
+ * block (DEF-153 — one shared style for every content action bar).
+ * `.edit-box-toolbar` remains as a stable selector for tests. */
 .edit-box-toolbar {
   position: absolute;
-  display: inline-flex;
-  gap: 0;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2);
-  padding: 2px;
   z-index: 5;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .edit-box-toolbar-btn,
@@ -5703,7 +5927,15 @@ textarea {
   font-weight: 500;
   white-space: pre-wrap;
   word-break: break-word;
-  pointer-events: none;
+  /* DEF-159 — callout text floats over the paper-white page (never
+   * inverted in dark mode) and must stay dark in both themes. The
+   * previous rule set no color, so the div inherited the UI theme's
+   * `--fg` — near-white in dark mode, faint against the page. */
+  color: var(--fg-on-page);
+  /* DEF-154 — committed callouts are page-interactive (select /
+   * move / resize / delete). */
+  pointer-events: auto;
+  cursor: grab;
 }
 
 .ann-callout-arrow {

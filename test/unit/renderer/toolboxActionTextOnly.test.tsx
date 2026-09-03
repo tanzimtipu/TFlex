@@ -407,13 +407,19 @@ describe("EditOverlay — committed text box editor Delete routes through onDele
     };
   }
 
-  it("a clicked committed box reopens the editor WITH a Delete button; clicking it deletes the box and closes the editor without committing", () => {
+  it("a DOUBLE-CLICKED committed box reopens the editor WITH a Delete button; clicking it deletes the box and closes the editor without committing", () => {
     const { host, onDeleteTextBox, onCommitTextBox, onCommitTextBoxMove, onCommitTextEdit, unmount } = mountOverlay();
     try {
       const box = host.querySelector<HTMLElement>(`.edit-box[data-edit-box-id="${BOX.id}"]`);
       if (box === null) throw new Error("box not found");
       pointerdown(box, 120, 120);
       pointerup(box, 120, 120);
+      // DEF-153 — the single click only selects (bar); double click
+      // opens the edit toolbox.
+      expect(host.querySelector('[data-edit-editor="edit"]'), "single click must not open the editor").toBeNull();
+      act((): void => {
+        box.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 120, clientY: 120 }));
+      });
       // The committed box reopens as an editor pre-filled with its
       // committed text (the "edit" mode, same as DEF-150's flow)...
       expect(host.querySelector('[data-edit-editor="edit"]')).not.toBeNull();

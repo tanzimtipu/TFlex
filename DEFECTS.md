@@ -1,3 +1,221 @@
+## DEF-159: Dark mode: committed annotation text-box text is invisible (near-white on paper-white page)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.22)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.22 binary, `C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe` — the app's default theme is dark; keep it).
+2. Open the report.pdf SAMPLE card, scroll to page 3.
+3. Arm the annotation "Text box" tool (T icon in the annotation toolbar), click the page, type "DARK BOX TEXT 42", click Confirm.
+4. Look at the committed text box on the page; read its computed colors.
+
+Expected: The committed box's text must be readable over the paper-white page in every theme (DEF-099 keeps pages white in dark mode too).
+
+Actual: The committed `.ann-textbox` text renders `rgb(241, 245, 249)` (`--fg-strong`, near-white) over the white page (`rgb(255, 255, 255)` backdrop) — INVISIBLE. Root cause: `DomAnnotation`'s committed textbox div relies on the `.ann-textbox { color: var(--fg-strong) }` UI-theme token, which flips to near-white in dark mode while the surface it floats on stays paper-white. This is the committed-annotation counterpart of DEF-158 (note text) and DEF-157 (callout text).
+
+Full dark-mode faint/invisible text inventory measured on v1.7.22 (effective color vs opaque backdrop):
+| Surface | Color | Backdrop | Result |
+| --- | --- | --- | --- |
+| Committed sticky-note text (`.ann-note-text`) | rgb(241,245,249) | white page | INVISIBLE (DEF-158) |
+| Committed annotation text box (`.ann-textbox`) | rgb(241,245,249) | white page | INVISIBLE (this entry) |
+| Committed callout text (`.ann-callout`) | rgb(203,213,225) | white page | FAINT (DEF-157) |
+| "Drag to move" grip label on hover (`.ann-textbox-grip:hover`) | rgb(241,245,249) | white page through rgba(255,255,255,0.04) tint | INVISIBLE (DEF-156) |
+| Action-bar buttons (Confirm/Cancel/Delete) | var(--fg) | dark raised chip | visible — OK |
+| Editor textareas | var(--fg-strong) | dark input bg | visible — OK |
+Screenshot: screenshots/def-159-c-dark-inventory.png (page 3 with all three committed kinds in dark mode), screenshots/def-156-c-textbox-editor-dark.png
+
+History:
+- qa: opened (probe e2e/retests/qa_pmm_c_dark_1722.spec.cjs, mechanical faint-text scan of page 3 overlays: 3 elements with luminance > 0.6 over a white backdrop — the committed note, callout and textbox texts.)
+- qa: CLOSED (retested on installed v1.7.23 = FileVersion 1.7.23, e2e/retests/def_152_159_verify_1.7.23.spec.cjs V4). All three committed kinds now render dark, readable text over the paper-white page in dark mode: sticky note `.ann-note-text` rgb(15,23,42), annotation text box `.ann-textbox` rgb(15,23,42), callout `.ann-callout` rgb(15,23,42) — luminance 0.089 each (was 0.83-0.95 near-white). Mechanical faint-text scan of the page-3 overlays: 0 elements with luminance > 0.6 (was 3). Visually confirmed in screenshots/def-159-1723-dark-inventory.png; close-ups def-158-1723-note-text-dark-crop.png and def-157-1723-callout-dark-crop.png. The callout ARROW remains broken (zero length) — that half stays tracked in DEF-157. No pageerrors.
+
+## DEF-158: Dark mode: committed sticky-note text is invisible (near-white on paper-white page)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.22)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.22, default dark theme).
+2. Open the report.pdf SAMPLE card, scroll to page 3.
+3. Arm the annotation "Sticky note" tool, click the page, type "DARK NOTE TEXT 42", click Confirm.
+4. Look at the note's text label next to the icon.
+
+Expected: The committed note text must be readable over the paper-white page in every theme.
+
+Actual: The `.ann-note-text` label renders `rgb(241, 245, 249)` (`--fg-strong`, near-white) with its semi-transparent color-tint backdrop over the white page (`rgb(255, 255, 255)` effective backdrop) — the text is effectively INVISIBLE; only a ghost is discernible. Root cause: the note text style is built in `DomAnnotation` (AnnotationOverlay.tsx, noteTextStyle) with `color: "var(--fg-strong)"` — a UI-theme token that flips to near-white in dark mode, while the page underneath stays paper-white (DEF-099). Screenshot: screenshots/def-158-c-note-text-dark-crop.png (close-up), screenshots/def-158-c-note-committed-dark.png, screenshots/def-159-c-dark-inventory.png (full page).
+
+History:
+- qa: opened (probe e2e/retests/qa_pmm_c_dark_1722.spec.cjs: computed color rgb(241,245,249), backdrop rgb(255,255,255).)
+- qa: CLOSED (retested on installed v1.7.23 = FileVersion 1.7.23, e2e/retests/def_152_159_verify_1.7.23.spec.cjs V4). The committed sticky-note label now renders rgb(15, 23, 42) (dark slate, luminance 0.089) over the white page — readable; visually confirmed in screenshots/def-158-1723-note-text-dark-crop.png ("DARK NOTE TEXT 42" in dark text on the light tint band). Regression: the note interaction matrix on v1.7.23 is healthy — hover cursor grab, drag moves the icon, click opens the note editor (Confirm/Cancel/Delete) with a "Drag to move" grip (round2 W2 + round5 T5). No pageerrors.
+
+## DEF-157: Callout: the arrow does not render (zero-length line at the box corner) and the committed text is faint in dark mode
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.22)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.22), open the report.pdf SAMPLE card, scroll to page 2.
+2. Arm the annotation "Callout" tool. Drag from the anchor point (where the callout should POINT) to the text-box position (~120px away), type "CALLOUT TEXT", click Confirm.
+3. Inspect the committed callout: is there an arrow/leader line from the box to the anchor?
+4. (Dark mode) repeat on page 3 and read the callout text color.
+
+Expected: A committed callout renders its text box PLUS the leader line and arrowhead from the box edge to the anchor the user dragged from.
+
+Actual:
+  (a) NO arrow renders. The committed callout's SVG line has IDENTICAL start and end points (x1==x2, y1==y2; measured line ["601.12","508.64","601.12","508.64"], length = 0) and the arrowhead polygon degenerates to a dot at the box's top-left corner. Root cause: the engine's `normalizeAnnotationPayload` (src/main/services/annotations.ts) DROPS the callout's `at` anchor — the internal AnnModel stores only `rects` (the box rect, from payload.rect) and has no `at` field. When the state round-trips back to the renderer, `annotationFromWire` (engineClient.ts) backfills `at` from `rects[0].x/y` — the BOX CORNER — so `calloutEntryPoint(boxRect, anchor)` returns the box corner itself and the leader line degenerates to zero length. The arrow is broken for every callout created through the UI, not only after save/reopen.
+  (b) In dark mode the committed callout text renders `rgb(203, 213, 225)` (`--fg`, light gray) over the paper-white page — FAINT (readable only with effort). Root cause: `.ann-callout` sets no text color; the div inherits the UI theme's `--fg` while floating over the white page.
+Screenshots: screenshots/def-157-c-callout-dark-crop.png (no arrow + faint text), screenshots/def-157-b-callout-committed.png (light theme, no arrow), screenshots/def-157-c-callout-committed-dark.png
+
+History:
+- qa: opened (probes e2e/retests/qa_pmm_b_matrix_1722.spec.cjs + qa_pmm_c_dark_1722.spec.cjs: lineLen=0 in both light and dark runs; text color rgb(203,213,225) on rgb(255,255,255).)
+- qa: retested on installed v1.7.23 = FileVersion 1.7.23 (e2e/retests/def_152_159_verify_1.7.23.spec.cjs V4 + round3 T2). PARTIAL FIX — REMAINS OPEN for the arrow only. Part (b) FIXED: the committed callout text now renders rgb(15, 23, 42) (luminance 0.089, dark slate) over the white page — readable in dark mode (was rgb(203,213,225)); the mechanical faint-text inventory of the page overlays reports 0 items. Part (a) NOT FIXED: the leader line is STILL zero-length — the committed callout's `svg.ann-callout-arrow` line has IDENTICAL start and end points (attrs ["138.72","508.64","138.72","508.64"], length 0) and the arrowhead polygon degenerates to a single repeated point at the anchor; no arrow/leader renders (visually confirmed in screenshots/def-157-1723-callout-dark-crop.png — text box only, no leader to the anchor). Remaining steps on v1.7.23: dark theme -> open the report.pdf SAMPLE -> page 3 -> arm annotation Callout -> drag from an anchor ~200px away from the box corner -> type text -> Confirm -> read `svg.ann-callout-arrow` line x1/y1/x2/y2 (still identical). Interaction side note: the committed callout is now fully interactive (grab hover, drag-move, click Confirm/Edit/Delete bar + hint, dblclick editor, bar Delete removes it — round3 T2).
+- qa: CLOSED (retested on installed v1.7.24 = app.getVersion 1.7.24, e2e/retests/def_154_157_verify_1.7.24.spec.cjs T1+T4 + diagnostic def_157_reopen_diag.spec.cjs). Part (a) FIXED — the arrow renders with real length, live AND after save/reopen. LIVE: committed callout's `svg.ann-callout-arrow` line (469,858)->(289,748) page-local, length 210.95px (was 0), arrowhead polygon 3 DISTINCT points (proper filled triangle, was 1 repeated point), and the anchor endpoint sits EXACTLY at the dragged anchor (distance 0.0 page-local); visually confirmed in screenshots/def-157-1724-callout-live.png + def-157-1724-callout-live-arrow-zoom.png (blue leader from the box corner to a filled arrowhead pointing at the anchor). SAVE/REOPEN: Save As to a temp file -> close tab -> reopen -> identical line coords (469,858)->(289,748), length 210.95, 3-point polygon; computed styles intact (line stroke rgb(37,99,235) 1.5px visible, polygon fill blue, box border 1.33px solid rgb(37,99,235) + rgba(37,99,235,0.08) tint + text "CALLOUT SAVE 42") — the `at` anchor now survives the engine round-trip. Visually confirmed in screenshots/def-157-1724-reopen-diag-crop.png (box + full leader + arrowhead in one frame) and def-157-1724-callout-reopened.png. Part (b) was fixed on v1.7.23. No pageerrors.
+
+## DEF-156: Dark mode: the "Drag to move" grip label becomes invisible when the cursor hovers over it
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 14 (installed v1.7.22)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.22, default dark theme), open the report.pdf SAMPLE card, scroll to page 3.
+2. Arm the annotation "Text box" tool and click the page so the floating create editor opens ("Type text..." + Confirm/Cancel/Delete bar).
+3. Look at the "DRAG TO MOVE" grip strip above the textarea (visible: dark chip, light-gray label). Move the mouse cursor ONTO the grip strip.
+4. Watch the label while hovering.
+
+Expected: The grip label stays readable while hovered (it is the affordance that tells the user the window is draggable).
+
+Actual: On hover the label becomes INVISIBLE. Measured computed styles: non-hover grip `background: rgb(21, 24, 28)`, label `rgb(203, 213, 225)` (visible); hover grip `background: rgba(255, 255, 255, 0.04)` and label `rgb(241, 245, 249)` — the hover state swaps the opaque dark chip for a nearly transparent tint (the paper-white page shows through, so the strip turns white) while flipping the label to the dark theme's near-white foreground: white-on-white. Root cause: `.ann-textbox-grip:hover { background: var(--bg-hover); color: var(--fg-strong); }` (styles.css) — the hover tokens assume the grip sits on a dark UI surface, but it floats over the paper-white page. Contributing fragility: the non-hover rule `color: var(--fg-soft)` references a token that is NOT DEFINED anywhere in the stylesheet (only --fg/--fg-strong/--fg-muted/--fg-faint/--fg-on-accent exist), so the base label color only renders via CSS invalid-var fallback to inherited color. Affects both the textbox and callout create editors (same grip component). Screenshot: screenshots/def-156-c-grip-hover-dark-crop.png (hover state — label is a barely-visible white smear over the page text), screenshots/def-156-c-textbox-editor-dark.png (full editor, dark).
+
+History:
+- qa: opened (probe e2e/retests/qa_pmm_c_dark_1722.spec.cjs: non-hover vs hover computed styles as above.)
+- qa: CLOSED (retested on installed v1.7.23 = FileVersion 1.7.23, e2e/retests/def_152_159_verify_1.7.23.spec.cjs V3). The hover state no longer swaps the opaque chip for a transparent tint: non-hover grip bg rgb(10,12,15) / label rgb(203,213,225); HOVER grip bg rgb(21,24,28) (still opaque dark) with label rgb(241,245,249) — measured label-vs-backdrop luminance contrast 0.866 (was white-on-white over the page). Visually confirmed in screenshots/def-156-1723-grip-hover-dark-crop.png: "DRAG TO MOVE" clearly readable while the cursor sits on the grip, in dark mode, over a white page.
+
+## DEF-155: Add-box: stale artifact of the moved box lingers at the original rect after drag-release
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 14 (installed v1.7.22)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.22 binary, `C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe`), open the report.pdf SAMPLE card, scroll to page 1.
+2. Edit content toggle (`[data-toolbar-edit-toggle]`) -> "Add box". Drag a ~150x90 box, type "MOVE TEST 88", Apply.
+3. Drag the committed box BODY +200/+120 and release; watch the original rect.
+
+Expected: On release the box and its content are at the new rect only; the original rect is immediately clean (the box moves as one unit, no residual copy).
+
+Actual: CONFIRMED, transient. The DOM mirror and registry follow the drag live (mid-drag DOM rect = start+100/+60, pre-release = start+200/+120), but at the instant of release the page CANVAS at the ORIGINAL rect still paints the old baked "MOVE TEST 88" — canvas pixel sampling of the old-rect interior reads darkFraction 4.5% at t=0, dropping to 0 by t~150ms — and in un-instrumented captures the whole painted frame (box + Edit/Delete bar at the OLD rect) persisted across 80ms/600ms/1600ms screenshots while the DOM already reported the moved rect, before the paint caught up (~2s). Visually: the box appears to sit at the old position after release, then jumps to the new one. Root cause direction: the DEF-145 white eraser cover (`.edit-box-eraser`) unmounts at pointerup (textBoxDrag -> null) BEFORE the async engine mask-and-draw + pdf.js proxy refresh repaints the page, so the pre-move baked text is exposed in that window. Self-heals; no data impact. Screenshots: screenshots/def-155-d-middrag-live.png (drag follows live), screenshots/def-155-d-release-300ms.png / -1800ms.png / -3900ms.png (paint catch-up), screenshots/def-155-a-after-release-600ms.png (un-instrumented capture still showing the old-rect frame).
+
+History:
+- qa: opened (probes e2e/retests/qa_pmm_a_addbox_1722.spec.cjs + qa_pmm_d_artifact_1722.spec.cjs: DOM live-follow confirmed; canvas darkFraction at R0 0.0451 -> 0 within ~150ms; painted-frame lag observed up to 1.6s in un-instrumented captures.)
+- qa: CLOSED (retested on installed v1.7.23 = FileVersion 1.7.23, e2e/retests/def_152_159_verify_1.7.23.spec.cjs V1 + round2 W1 + round3 T1 + round4 T4b). The move flow now has an explicit Confirm step (DEF-152) and NO stale artifact is visible at any instant, in any path: (1) at release the canvas at the old rect still carries the baked text (darkFraction 0.0451) but the `pointer-events:none` `.edit-box-eraser` cover (exactly 150x90 at R0) hides it — full-window screenshots at 80ms/600ms/1600ms after release show the box ONLY at the new rect (def-155-1723-release-*.png); (2) clicking Confirm bakes the move: canvas darkR0 0.0451 at t=500ms -> 0.0 from t=750ms, stable through 4s and through a forced scroll-away/scroll-back re-render (def-155-1723b-postconfirm-*.png, def-155-1723b-after-rerender.png, def-155-1723c-*); (3) the release-then-DESELECT path (never clicking Confirm) is also safe — the eraser keeps covering R0, the Confirm/Edit/Delete bar stays open, and a forced re-render bakes the move cleanly (darkR0=0, box only at the new spot; def-155-1723d-after-deselect.png / -after-rerender.png); (4) DOCUMENT SAFETY: Save As -> re-open shows exactly ONE visible "MOVE TEST 88" at the moved position (canvas darkFraction 0.233 at the run rect, title control 0.207, old rect 0.0) — screenshots/def-155-1723c-reopened-run-crop.png. No pageerrors.
+
+## DEF-154: Rectangle / Ellipse / Arrow / Pen ink: committed shapes cannot be selected, moved, resized or deleted from the page (click-transparent)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.22)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.22), open the report.pdf SAMPLE card, scroll to page 4/5.
+2. Place a Rectangle, an Ellipse, an Arrow and a freehand Pen stroke via the annotation toolbar (each commits immediately on drag-release).
+3. With the Select tool armed: hover each committed shape; single-click it; double-click it; press on it and drag.
+4. Repeat with the shape's own tool armed.
+
+Expected (operator's Acrobat-style model): hovering a committed shape shows a palm/grab cursor; single-click selects it and makes it movable (with an action bar); double-click opens its edit toolbox; it can be resized and deleted from the page.
+
+Actual: NOTHING is interactive. Every committed shape element reports `pointer-events: none` (rect/ellipse `.ann-shape`, ink `.ann-ink`, arrow `.ann-arrow` line+polygon — styles.css), so hover falls through to the textLayer underneath (measured hover cursor = "text" over a text span; "crosshair" while the shape's tool is armed), single-click produces NO selection and NO action bar (0 bars), double-click opens NO toolbox (0 bars), and a press-drag moves NOTHING (geometry before == after; moved=false for rect, ellipse, arrow, ink). There are no resize handles for shapes anywhere. The only delete path is the side AnnotationsPanel row button, which is not the page-canvas interaction the operator specified. The committed annotation text box behaves identically (pe=none, no hover, no select, no move). Root cause: the annotation overlay only implements CREATE for the shape tools; committed SVG shapes are painted `pointer-events: none` with no selection/move/delete affordance on the canvas.
+
+Matrix measured on v1.7.22 (select tool armed):
+| Kind | Hover cursor | Click -> bar | Dblclick -> toolbox | Movable | Resizable |
+| --- | --- | --- | --- | --- | --- |
+| rect | "text" (textLayer fallthrough) | no (0 bars) | no (0 bars) | no | no |
+| ellipse | "text" | no | no | no | no |
+| arrow | "text" | no | no | no | no |
+| ink | "text" | no | no | no | no |
+| annotation textbox | "auto"/"text" | no | no | no | no |
+| callout | "text" | no | no | no | no |
+| sticky note | "pointer" | yes (note editor: Confirm/Cancel/Delete) | same editor | no | no |
+| add box (edit tool) | "move" | select + immediate move-drag; release-without-move opens editor | editor | YES (drag follows live) | corner handles when selected |
+Screenshots: screenshots/def-154-b-shapes-committed.png, screenshots/def-154-b3-shapes.png
+
+History:
+- qa: opened (probes e2e/retests/qa_pmm_b2_note_shapes_1722.spec.cjs + qa_pmm_b3_ellipse_arrow_ink_1722.spec.cjs: pe=none, hover fallthrough, 0 bars, moved=false for all four shape kinds.)
+- qa: retested on installed v1.7.23 = FileVersion 1.7.23 (e2e/retests/def_152_159_verify_1.7.23.spec.cjs V2 + round2 W2 + round3 T2/T3, kind-strict element discovery). PARTIAL FIX — REMAINS OPEN for (1) the arrow kind and (2) resize. Current matrix, Select tool armed:
+  | Kind | Hover cursor | Click -> bar | Dblclick -> toolbox | Movable | Deletable from canvas | Resizable |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | rect | grab | Confirm/Edit/Delete (.ann-content-action) + "Double click to edit" hint | shape-color-editor | YES | YES (bar Delete) | NO |
+  | ellipse | grab | same | shape-color-editor | YES | YES | NO |
+  | ink | grab (path.ann-ink-hit, pe=stroke) | same | shape-color-editor | YES | YES | NO |
+  | callout | grab | Confirm/Edit/Delete + hint | ann-textbox-wrap editor | YES | YES | n/a |
+  | textbox | grab | Confirm/Edit/Delete + hint | ann-textbox-wrap editor | YES | YES (bar Delete) | n/a |
+  | note | grab | note editor (Confirm/Cancel/Delete) | same editor | YES (drag) | YES (editor Delete) | n/a |
+  | arrow | NO — falls through to the textLayer ("auto"/"text") | NO (0 bars, 0 hint) | NO | NO | NO | NO |
+  Remaining steps to reproduce on v1.7.23: (1) ARROW — arm annotation Arrow, drag a line on the page, arm Select, hover/click/double-click/drag the committed line: elementFromPoint returns the textLayer span, cursor auto/text, no bar, no movement (measured at t=0.3/0.5/0.7 along the diagonal; the `g.ann-arrow` wrapper reports pointer-events:auto but its line/polygon children are not hit-testable). (2) RESIZE — select a committed rect/ellipse/ink stroke and scan the DOM for handle-like elements: a document-wide scan for `[class*=handle], [class*=resize], [class*=grip]` finds ONLY the four page-corner `.content-resize-handle` elements (~1000px away); nothing near the selected shape, and dragging where a BR handle would be changes w/h by 0 (the add-box `.edit-box-handle-*` corners are the only content handles that exist). Screenshots: def-154-1723b-rect-selected.png (selected rect: Confirm/Edit/Delete bar + hint, NO handles), def-154-1723c-arrow-selected.png / -arrow-after-delete.png, def-154-1723b-all-committed.png.
+- qa: CLOSED (retested on installed v1.7.24 = app.getVersion 1.7.24, e2e/retests/def_154_157_verify_1.7.24.spec.cjs T2+T3). Both remaining halves FIXED. (1) ARROW — with Select armed, hover at t=0.3/0.5/0.7 along the line reports cursor "grab" with elementFromPoint = `line.ann-arrow-hit` (pe=stroke) resolving inside `[data-kind="arrow"]` — NO textLayer fallthrough at any probe point; single-click opens the Confirm/Edit/Delete action bar; press-drag +70/+45 moves the arrow by exactly (+70,+45); bar Delete removes it (element gone, page visually clean). Screenshots: def-154-1724-arrow-hover.png, -arrow-selected.png (selection rect + handles + Confirm/Edit/Delete bar), -arrow-moved.png, -arrow-after-delete.png. (2) RESIZE — selecting a committed rect/ellipse/ink now renders FOUR 10x10 corner handles (.content-resize-handle-nw/ne/sw/se) at the shape's bbox corners (visually confirmed in def-154-1724-rect-selected-crop.png and -ink-selected-crop.png: dark square handles + Confirm/Edit/Delete bar + "Double click to edit" hint), and dragging the SE handle actually resizes the geometry: rect dw/dh +32/+22, ellipse +32/+22, ink +31/+20 (screenshots def-154-1724-{rect,ellipse,ink}-resized.png). Full v1.7.24 matrix: every committed kind (rect, ellipse, arrow, ink, callout, textbox, note) is grab-hover/selectable/movable/deletable per the v1.7.23 round2/round3 results, and shapes/ink are now also resizable — the operator's Acrobat-style model is complete. No pageerrors.
+
+## DEF-153: Placeable-content interaction model is inconsistent: no palm/grab hover cursor, no double-click-to-edit toolbox, no "Double click to edit" hint, "Drag to move" grip only on 2 of 4 editors
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.22)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.22), open the report.pdf SAMPLE card.
+2. For each placeable kind, commit one instance and probe: hover cursor (elementFromPoint + computed cursor), single-click, double-click.
+3. With a committed add-box selected and being moved (mid-drag and after release), scan every text node in the DOM for a "double click to edit"-style cursor hint.
+4. Open each floating editor and check for a "Drag to move" grip label.
+
+Expected (operator's Acrobat-style model, same for every kind): hover -> palm/grab cursor; single-click -> select + movable with a Confirm/Edit/Delete action bar; double-click -> edit toolbox; while movable, a "Double click to edit" cursor message.
+
+Actual: The model is not implemented for most kinds and is inconsistent where it exists:
+  (a) NO kind shows a palm/grab cursor on hover over the committed content. Add box shows the 4-arrow `move` cursor; sticky note shows `pointer`; all other kinds fall through to the textLayer (`text`/default) or crosshair while a tool is armed. `cursor: grab` exists only on floating-window CHROME (editor toolbars/bars), never on committed content.
+  (b) Double-click opens a toolbox for NO committed kind: add-box dblclick just re-triggers the single-click editor (the editor actually opens on the FIRST click when the release has no movement); committed shapes/callout/textbox are click-transparent (DEF-154); sticky note dblclick = the same note editor its single click already opened.
+  (c) The "Double click to edit" cursor message DOES NOT EXIST anywhere in the app — a full DOM text scan mid-drag (box selected + movable) and after release found zero matches for /double.?click/i, and a source scan of src/renderer finds no such string.
+  (d) The "Drag to move" grip label exists ONLY on the annotation textbox and callout CREATE editors (measured gripLabels=["Drag to move"]). The note editor has NO grip label (drag is invisible chrome), and the add-box/Edit-text inline editor has NO grip label either (its toolbar is grab-able but unlabelled) — three different drag affordances for four floating editors.
+  (e) Edit text tool: hover = crosshair + underline hint (not grab); single click opens the inline editor (Cancel/Apply) — no select+movable state for the text run itself.
+Root cause direction: the operator's unified interaction model was never implemented as a shared behavior; each tool family (edit boxes, annotations, note) grew its own ad-hoc hover/select/drag wiring. Screenshots: screenshots/def-153-a-addbox-dblclick.png, screenshots/def-153-b-movable-selected.png, screenshots/def-153-e-edittext-hover.png, screenshots/def-153-e-edittext-toolbox.png
+
+History:
+- qa: opened (probes e2e/retests/qa_pmm_a/b/b2/b3/e 1.7.22 specs; hover cursors, dblclick bars and hint scans measured live on the installed binary.)
+- qa: CLOSED (retested on installed v1.7.23 = FileVersion 1.7.23, e2e/retests/def_152_159_verify_1.7.23.spec.cjs V2 + round2 W2 + round3 T2 + round4 T4a + round5 T5). All five original complaints are fixed:
+  (a) hover cursor is now `grab` on every interactive committed kind — add-box div.edit-box, edit-text div.edit-text-hover, textbox .ann-textbox, callout .ann-callout, note .ann-note, rect/ellipse .ann-shape, ink path.ann-ink-hit (measured via elementFromPoint + computed cursor; was move/pointer/text fallthrough).
+  (b) double-click opens a toolbox on every interactive kind: add-box -> .edit-inline-editor (Cancel/Delete/Apply), edit-text -> .edit-inline-editor (Cancel/Apply), textbox/callout -> .ann-textbox-wrap editor (Confirm/Cancel/Delete), note -> note editor, rect/ellipse/ink -> .shape-color-editor swatch toolbox.
+  (c) the "Double click to edit" cursor hint now EXISTS and renders with the selection/drag on add-box, edit-text, textbox, callout, rect, ellipse, ink (and mid-drag on note) — full text-node scan hit.
+  (d) ALL FOUR floating editors now carry a "Drag to move" grip label: textbox create editor (ann-textbox-grip-label), callout create editor (same), note editor (content-grip + content-grip-label), add-box inline editor (content-grip-inline) — screenshots/def-153-1723e-note-editor.png, def-153-1723d-textbox-editor.png.
+  (e) edit-text hover is grab (was crosshair) and single-click now selects with a Confirm/Edit/Delete bar (.edit-textrun-bar) + hint.
+  Caveats recorded, tracked under DEF-154 (not part of the original (a)-(e) complaints): the ARROW kind is still fully click-transparent (no grab/selection/toolbox — DEF-154); resize handles on selection exist only on the add-box (shapes/textbox/callout/note/edit-text show none — DEF-154); the note's single-click opens its editor (Confirm/Cancel/Delete) directly rather than a bare select state, but the note is grab-hoverable, drag-movable and dblclick-re-editable. Visual evidence: def-152-1723-actionbar-crop.png (selected add-box with Confirm/Edit/Delete + handles + hint badge), def-153-1723c-callout-selected.png (selected callout with bar + hint).
+
+## DEF-152: Add-box: after drag-moving a box, the box's own action bar offers only Edit + Delete — no Confirm
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.22)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.22 binary, `C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe`), open the report.pdf SAMPLE card, scroll to page 1.
+2. Edit content toggle (`[data-toolbar-edit-toggle]`) -> "Add box". Drag a ~150x90 box on the page, type "MOVE TEST 88", click Apply. A committed `.edit-box` renders.
+3. Press on the box BODY and drag it +200/+120 (the drag follows live), then RELEASE the mouse.
+4. Inspect the action bar that appears under the box.
+
+Expected (operator's Acrobat-style model): the movable/selected box carries a Confirm / Edit / Delete action bar.
+
+Actual: The bar under the moved box carries EXACTLY two buttons — "Edit" (aria "Edit text box", data-edit-box-action=edit) and "Delete" (aria "Delete text box", data-edit-box-action=delete). No Confirm button exists anywhere in the DOM at that moment (confirmAnywhere=false; the floating editor's `data-edit-confirm` affordance only appears after dragging the editor WINDOW). The move is committed silently on release with no explicit confirm step on the box itself. Double-clicking the box opens the floating editor instead, whose buttons are "Cancel / Delete / Apply" (Apply, not Confirm — a third action vocabulary). Root cause: `TextBoxToolbar` (src/renderer/edit/EditOverlay.tsx) renders only onEdit/onDelete; the post-move commit is implicit in the pointerup handler. Screenshots: screenshots/def-152-a-actionbar-crop.png (the Edit/Delete bar under the moved box), screenshots/def-152-a-actionbar-after-release.png
+
+History:
+- qa: opened (probe e2e/retests/qa_pmm_a_addbox_1722.spec.cjs on the installed binary: box moved dx=200 dy=120; bar buttons = [Edit, Delete]; confirmAnywhere=false.)
+- qa: CLOSED (retested on installed v1.7.23 = FileVersion 1.7.23, e2e/retests/def_152_159_verify_1.7.23.spec.cjs V1 + round2 W1/T1). After dragging the committed box body +200/+120 (real mouse; the drag follows live) and releasing, the bar under the moved box now carries EXACTLY three buttons: "Confirm" (aria "Confirm move", data-edit-box-action=confirm), "Edit" (aria "Edit text box") and "Delete" (aria "Delete text box") — hasConfirm=true hasEdit=true hasDelete=true. Visually confirmed in screenshots/def-152-1723-actionbar-crop.png (blue Confirm + Edit + red Delete under the selected box, with 4 corner handles and the "Double click to edit" badge). Regression around the fix: Confirm genuinely commits the move (old rect canvas clears by ~750ms and stays clean; saved+reopened file shows exactly ONE visible "MOVE TEST 88" at the moved spot, old rect clean — screenshots/def-155-1723c-reopened-run-crop.png); Edit opens the floating editor (dblclick -> .edit-inline-editor Cancel/Delete/Apply); the select state (bar + handles + hint) appears on single-click (round2 W2 addbox). No pageerrors.
+
 ## DEF-151: Edit-text: moving the floating toolbox and confirming DUPLICATES the text run (the original stays), and the duplicate is baked into the saved PDF
 
 - Status: CLOSED
@@ -56,7 +274,7 @@ History:
 
 ## DEF-149: Edit-text: re-clicking an edited text run opens the editor with the OLD text, not the new text
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa (ground-truth reproduction on installed v1.7.17 = FileVersion 1.7.17; operator-reported BUG 2)
 - Phase: 10 (edit content) / 14 (installed v1.7.17)
@@ -78,6 +296,7 @@ History:
 - qa: opened (ground-truth reproduction on freshly installed v1.7.17. e2e/gt_edittext_1717.spec.cjs + e2e/gt_bug2_docsafety_1717.spec.cjs. Re-clicking the edited run opens the editor with the OLD text (textareaValue "TFlex Technical Report"). Toolbox move+confirm leaves content at the original rect and re-bakes an old-text run. The saved file keeps the NEW edit — not silently reverted.)
 - qa: retested on installed v1.7.18 (e2e/retests/def_149_verify_1.7.18.spec.cjs + diagnostic). Part (a) PASS — re-clicking the edited run now opens the editor with "NEW TITLE 123" (the re-click OLD-text bug is FIXED). Part (b) FAIL — after moving the toolbox +200/+120 and confirming, a new "NEW TITLE 123" run commits at the moved rect (x=794,y=444) but the ORIGINAL run at (x=594,y=325) is NOT removed: page-1 textLayer now shows "NEW TITLE 123NEW TITLE 123" (2 runs), and the duplicate is BAKED into the saved PDF (reopen still shows 2 occurrences). The move duplicates rather than relocates — filed separately as DEF-151. Kept OPEN because not both verification conditions pass.
 - qa: retested on installed v1.7.19 (e2e/retests/def_149_verify_1.7.19.spec.cjs). Part (a) PASS — re-clicking the edited run opens the editor with "NEW TITLE 123" (not the OLD title). Part (b) FAIL — moving the toolbox +200/+120 + Confirm-move leaves the original "NEW TITLE 123" in place and commits a second copy; page-1 textLayer = "…NEW TITLE 123NEW TITLE 123" (2 occurrences), saved-bytes parse = 2, reopened app tab = 2. The move duplicates rather than relocates (DEF-151 still OPEN).
+- qa: CLOSED. Part (a) — re-clicking an edited text run opens the editor with the NEW text — verified PASS on installed v1.7.18 (e2e/retests/def_149_verify_1.7.18.spec.cjs), and it remained PASS on v1.7.19. Part (b) — the toolbox move+confirm duplicate/relocate behavior — was split out and tracked separately as DEF-151, which is now CLOSED (retested on installed v1.7.21 = FileVersion 1.7.21, e2e/retests/def_151_verify_1.7.21.spec.cjs). Both conditions that kept DEF-149 OPEN are resolved: (a) fixed on v1.7.18, (b) resolved and closed via DEF-151 on v1.7.21.
 
 ## DEF-148: "Per page" crop on page 1 makes EVERY thumbnail in the rail render cropped/shrunk to the crop box (uncropped pages 2-4 look cropped too)
 

@@ -16,6 +16,7 @@ import {
 } from "../../../src/renderer/annotations/model";
 import {
   annotationBounds,
+  calloutBoxFor,
   calloutEntryPoint,
 } from "../../../src/renderer/annotations/geometry";
 
@@ -214,6 +215,66 @@ describe("calloutEntryPoint — geometry helper", () => {
     expect(entry.x).toBeLessThanOrEqual(rect.x + rect.width);
     expect(entry.y).toBeGreaterThanOrEqual(rect.y);
     expect(entry.y).toBeLessThanOrEqual(rect.y + rect.height);
+  });
+
+  it("never returns the anchor itself when the anchor sits ON the rect's corner (DEF-157)", () => {
+    // The pre-fix LIVE callout placed the box's top-left corner at
+    // the anchor (drag-rect corner). The entry must NOT collapse to
+    // the anchor: the leader shaft must stay non-zero.
+    const rect = { x: 100, y: 100, width: 200, height: 100 };
+    const target = { x: 100, y: 100 };
+    const entry = calloutEntryPoint(rect, target);
+    expect(Math.hypot(entry.x - target.x, entry.y - target.y)).toBeGreaterThan(0);
+    // The entry stays on the perimeter (a short stub along an edge).
+    const onEdge =
+      entry.x === rect.x ||
+      entry.x === rect.x + rect.width ||
+      entry.y === rect.y ||
+      entry.y === rect.y + rect.height;
+    expect(onEdge).toBe(true);
+  });
+
+  it("anchors exactly on an edge (non-corner) still draw a non-zero shaft from the closest corner (DEF-157)", () => {
+    const rect = { x: 100, y: 100, width: 200, height: 100 };
+    // Anchor directly on the TOP edge, at its horizontal centre: it
+    // is not a corner, so the raw closest-corner fallback returns a
+    // real corner — the shaft is automatically non-zero.
+    const target = { x: 200, y: 100 };
+    const entry = calloutEntryPoint(rect, target);
+    expect(Math.hypot(entry.x - target.x, entry.y - target.y)).toBeGreaterThan(0);
+    // The entry stays on the rect's perimeter.
+    const onEdge =
+      entry.x === rect.x ||
+      entry.x === rect.x + rect.width ||
+      entry.y === rect.y ||
+      entry.y === rect.y + rect.height;
+    expect(onEdge).toBe(true);
+  });
+});
+
+describe("calloutBoxFor — DEF-157 create-geometry helper", () => {
+  it("places the default-size box with its top-left at the release point", () => {
+    const box = calloutBoxFor({ x: 300, y: 200 }, 90, 40, 612, 792);
+    expect(box).toEqual({ x: 300, y: 200, width: 90, height: 40 });
+  });
+
+  it("clamps into the page so the box never overflows", () => {
+    const box = calloutBoxFor({ x: 600, y: 780 }, 90, 40, 612, 792);
+    expect(box.x + box.width).toBeLessThanOrEqual(612);
+    expect(box.y + box.height).toBeLessThanOrEqual(792);
+  });
+
+  it("keeps the anchor OUT of the box for the natural down-right drag (the DEF-157 regression: the old drag-rect corner box had its top-left AT the anchor)", () => {
+    // Drag from the anchor A=(200,400) down-right to R=(500,500).
+    const box = calloutBoxFor({ x: 500, y: 500 }, 90, 40, 612, 792);
+    const anchor = { x: 200, y: 400 };
+    // The anchor is above-left of the box -> strictly outside.
+    expect(anchor.x).toBeLessThan(box.x);
+    expect(anchor.y).toBeLessThan(box.y);
+    // And the committed render draws a non-zero shaft for that
+    // geometry (entry != anchor).
+    const entry = calloutEntryPoint(box, anchor);
+    expect(Math.hypot(entry.x - anchor.x, entry.y - anchor.y)).toBeGreaterThan(0);
   });
 });
 

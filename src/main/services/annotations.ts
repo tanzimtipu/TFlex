@@ -167,6 +167,7 @@ function normalizeAnnotationPayload(payload: CreateAnnotationPayload): AnnModel 
     page: payload.page,
     rects,
     points,
+    at: payload.at,
     color,
     content,
     text: content,
@@ -194,7 +195,7 @@ function normalizeKind(k: string): AnnKind {
 
 /** Clone the per-original-page annotations array. */
 export function cloneAnnotations(anns: AnnModel[][]): AnnModel[][] {
-  return anns.map((pageAnns) => pageAnns.map((a) => ({ ...a, rects: a.rects.map((r) => ({ ...r })), points: a.points?.map((p) => ({ ...p })), lineEnds: a.lineEnds?.slice() })));
+  return anns.map((pageAnns) => pageAnns.map((a) => ({ ...a, rects: a.rects.map((r) => ({ ...r })), points: a.points?.map((p) => ({ ...p })), at: a.at !== undefined ? { ...a.at } : undefined, lineEnds: a.lineEnds?.slice() })));
 }
 
 /**
@@ -469,7 +470,11 @@ function parseOneAnnotation(
   }
 
   // Phase 12 — Callout (/Callout): [startX startY kneeX kneeY endX endY] or a
-  // 4-number [startX startY endX endY] form. Sets the leader-line points.
+  // 4-number [startX startY endX endY] form. Sets the leader-line points and
+  // the `at` anchor (the last point — the tip the arrow points at) so the
+  // renderer's callout rendering sees a non-box-corner anchor after a
+  // save/reparse round-trip (DEF-157).
+  let at: AnnPoint | undefined;
   if (kind === 'callout') {
     const calloutArr = parsePdfArray(dict.get('Callout'));
     if (calloutArr !== undefined && calloutArr.length >= 6) {
@@ -478,11 +483,13 @@ function parseOneAnnotation(
         { x: calloutArr[2], y: calloutArr[3] },
         { x: calloutArr[4], y: calloutArr[5] },
       ];
+      at = { x: calloutArr[4], y: calloutArr[5] };
     } else if (calloutArr !== undefined && calloutArr.length >= 4) {
       points = [
         { x: calloutArr[0], y: calloutArr[1] },
         { x: calloutArr[2], y: calloutArr[3] },
       ];
+      at = { x: calloutArr[2], y: calloutArr[3] };
     }
   }
 
@@ -537,6 +544,7 @@ function parseOneAnnotation(
     page: visiblePage,
     rects: rects.length > 0 ? rects : [{ x: 0, y: 0, width: 0, height: 0 }],
     points,
+    at,
     color,
     content,
     text: content,
@@ -723,6 +731,12 @@ function serializeAnnotation(
       const [r, g, b] = colorToRgb(ann.color);
       dictEntries.push(['Intent', PDFName.of('FreeTextCallout')]);
       dictEntries.push(['IT', PDFName.of('FreeTextCallout')]);
+      // /Callout encodes the leader line as [startX startY kneeX kneeY endX
+      // endY] where end is the anchor tip. Prefer an explicit `points` leader
+      // (start[/knee]/end); otherwise — when the renderer sent only `at` +
+      // `rect` (the common callout shape, no explicit leader) — emit a straight
+      // leader from the text-box center to the `at` anchor so the anchor
+      // survives save/reparse and the arrow line is non-zero length (DEF-157).
       if (ann.points !== undefined && ann.points.length >= 2) {
         const p0 = ann.points[0];
         const pEnd = ann.points[ann.points.length - 1];
@@ -734,6 +748,11 @@ function serializeAnnotation(
           calloutArr = [p0.x, p0.y, p0.x, p0.y, pEnd.x, pEnd.y];
         }
         dictEntries.push(['Callout', doc.context.obj(calloutArr)]);
+      } else if (ann.at !== undefined) {
+        const box = ann.rects[0] ?? { x: 0, y: 0, width: 0, height: 0 };
+        const cx = box.x + box.width / 2;
+        const cy = box.y + box.height / 2;
+        dictEntries.push(['Callout', doc.context.obj([cx, cy, cx, cy, ann.at.x, ann.at.y])]);
       }
       const w = ann.width ?? 1;
       dictEntries.push(['BS', doc.context.obj({ W: w, S: 'S' })]);
