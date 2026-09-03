@@ -241,6 +241,7 @@ interface DocumentViewProps {
       rect: { x: number; y: number; width: number; height: number };
       newText: string;
       style: import("../edit/model").EditTextStyle;
+      oldRect?: { x: number; y: number; width: number; height: number };
     }) => void;
     onCommitTextBox: (args: {
       rect: { x: number; y: number; width: number; height: number };
@@ -1676,6 +1677,12 @@ export function DocumentView({
         currentPage={currentPage}
         defaultWidthPt={firstPageSize?.w ?? 612}
         defaultHeightPt={firstPageSize?.h ?? 792}
+        // DEF-148 — the per-VISIBLE-page sizes the mounted PageViews
+        // report. The rail sizes each thumb wrap from ITS OWN page's
+        // aspect ratio (never a single page-1-derived ratio), so a
+        // per-page crop of page 1 no longer collapses pages 2..N into
+        // the crop square.
+        pageSizes={pageSizes}
         engineState={engineState}
         // DEF-139 — the thumb bitmap source must follow the same
         // slot -> proxy-page rule as the main view (visible order

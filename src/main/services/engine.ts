@@ -1698,7 +1698,7 @@ export class EngineService {
     try {
       const page = doc.pdfDoc.getPage(pageResult.value);
       const pageHeight = page.getSize().height;
-      const { x, y, width, height } = payload.rect;
+      const { x, y } = payload.rect;
 
       const fontName = payload.font ?? 'Helvetica';
       const font = await doc.pdfDoc.embedFont(standardFontFor(fontName));
@@ -1706,7 +1706,16 @@ export class EngineService {
       const color = payload.color ?? { r: 0, g: 0, b: 0 };
       const safe = sanitizeForStandardFont(payload.newText);
 
-      // DEF-124: the pdf.js text-item bbox (payload.rect) is the
+      // DEF-151 — when the renderer commits a MOVE it passes `oldRect`
+      // (the ORIGINAL run's position) alongside the moved `rect`. The
+      // engine must erase the original run by masking `oldRect` (so the
+      // old glyphs do not survive beside the moved copy) and draw the
+      // new text at `rect` (the moved position). When `oldRect` is
+      // absent (a plain in-place edit), keep the original behaviour:
+      // mask `rect` + draw at `rect`.
+      const maskRect = payload.oldRect ?? payload.rect;
+
+      // DEF-124: the pdf.js text-item bbox (maskRect) is the
       // glyphs' tight ink box. The font's ascender rises above it and
       // the descender (plus anti-aliased pixels) extends below it, so a
       // mask that covers only the bbox leaves a faint gray trace of
@@ -1728,10 +1737,10 @@ export class EngineService {
       const fontFullHeight = font.heightAtSize(size);
       const fontAscent = font.heightAtSize(size, { descender: false } as { descender?: boolean });
       const fontDescent = Math.max(0, fontFullHeight - fontAscent);
-      const maskX = x - PAD;
-      const maskW = width + 2 * PAD;
-      const maskTop = y - PAD - fontAscent;
-      const maskBottom = y + height + PAD + fontDescent;
+      const maskX = maskRect.x - PAD;
+      const maskW = maskRect.width + 2 * PAD;
+      const maskTop = maskRect.y - PAD - fontAscent;
+      const maskBottom = maskRect.y + maskRect.height + PAD + fontDescent;
       const maskH = maskBottom - maskTop;
 
       // Mask the old run region with a white rectangle (PDF coords).
@@ -1743,8 +1752,8 @@ export class EngineService {
         color: rgb(1, 1, 1),
       });
 
-      // Draw the new text at the rect's top-left, baseline dropped by
-      // `size` from the top so glyphs sit inside the rect.
+      // Draw the new text at the (moved) rect's top-left, baseline
+      // dropped by `size` from the top so glyphs sit inside the rect.
       page.drawText(safe, {
         x,
         y: pageHeight - y - size,

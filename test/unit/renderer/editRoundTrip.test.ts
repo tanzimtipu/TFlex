@@ -159,6 +159,32 @@ describe("Phase 10 — wire round-trip through renderer adapter", () => {
     expect(r.value.pageCount).toBe(3);
   });
 
+  it("editTextRun payload with DEF-151 oldRect round-trips verbatim into the engine's IPC", async () => {
+    const fakeReal = buildFakeEngine();
+    (window as unknown as { tflex: { engine: typeof fakeReal } }).tflex = {
+      engine: fakeReal,
+    };
+    _resetEngineForTests();
+    const e = getEngine();
+    const payload: EditTextRunPayload = {
+      page: 1,
+      // The MOVED rect (where the engine draws the new text).
+      rect: { x: 300, y: 220, width: 200, height: 14 },
+      newText: "EDITED",
+      font: "Helvetica",
+      size: 12,
+      color: { r: 0, g: 0, b: 0 },
+      // The ORIGINAL rect (which the engine must white-mask to erase
+      // the pre-drag glyphs so they do not survive beside the copy).
+      oldRect: { x: 100, y: 100, width: 200, height: 14 },
+    };
+    const r = await e.editTextRun!("doc-1", payload);
+    expect(r.ok).toBe(true);
+    // The wire payload arrived at the engine with both rects intact.
+    expect(capturedEditTextRun).toEqual(payload);
+    expect(capturedEditTextRun?.oldRect).toEqual(payload.oldRect);
+  });
+
   it("addTextBox payload round-trips through the adapter into the engine's IPC", async () => {
     const fakeReal = buildFakeEngine();
     (window as unknown as { tflex: { engine: typeof fakeReal } }).tflex = {

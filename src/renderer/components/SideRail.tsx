@@ -1,7 +1,7 @@
 import { Images, List, MessageSquare, Undo2, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveOutlinePage, isInvalidPageRequest, type OutlineNode } from '../pdf/pdfjs';
 import { computeThumbGeometry } from './thumbGeometry';
 import type { EngineState } from '../engine/types';
@@ -16,6 +16,14 @@ interface SideRailProps {
   currentPage: number;
   defaultWidthPt: number;
   defaultHeightPt: number;
+  /** DEF-148 — per-VISIBLE-page sizes in PDF points (un-rotated), as
+   *  reported by the main view's PageView mounts. When present, each
+   *  thumbnail wrap is sized from ITS OWN page's aspect ratio instead
+   *  of a single page-1-derived ratio, so cropping page 1 no longer
+   *  collapses every other thumb into the crop square. Optional — the
+   *  rail falls back to `defaultWidthPt/defaultHeightPt` when absent
+   *  (fresh open / tests). */
+  pageSizes?: Map<number, { w: number; h: number }> | null;
   /** Live engine state for this tab (pageCount after ops, rotations,
    *  deleted). Owned by App. The rail uses this to skip deleted pages
    *  and rotate the rendered thumbnail to match the engine. */
@@ -67,6 +75,7 @@ export function SideRail(props: SideRailProps) {
     currentPage,
     defaultWidthPt,
     defaultHeightPt,
+    pageSizes = null,
     engineState,
     proxyVisibleOrder = false,
     canUndo,
@@ -159,6 +168,7 @@ export function SideRail(props: SideRailProps) {
             pageCount={engineState.pageCount}
             currentPage={currentPage}
             aspectRatio={aspect}
+            pageSizes={pageSizes}
             rotations={engineState.rotations}
             visibleToSource={visibleToSource}
             proxyVisibleOrder={proxyVisibleOrder}
@@ -195,8 +205,8 @@ const THUMB_WIDTH = 126;
 // (6px top + 6px bottom) + 1px border top + 1px border bottom + the
 // `thumb-label` text line (~18px) + the inter-thumb margin-bottom (6px).
 // The thumb-scroller adds 8px of padding via var(--sp-2). This must match
-// the actual DOM layout exactly so the visibleThumbRange() math matches
-// reality.
+// the actual DOM layout exactly so the per-page slot-top math
+// (thumbSlotTops / visibleThumbRangeFromTops) matches reality.
 const THUMB_PADDING_PX = 6;
 const THUMB_BORDER_PX = 1;
 const THUMB_LABEL_PX = 18;
@@ -214,12 +224,29 @@ const INITIAL_THUMBS = 3;
 // scroll. Saves ~1MB idle GPU memory on long.pdf (DEF-016).
 const THUMB_BUFFER = 1;
 
-function thumbSlotHeight(aspectRatio: number): number {
-  // Each thumb's bounding box height = wrap-height (rounded for CSS) +
-  // padding-top + padding-bottom + border-top + border-bottom + label +
-  // margin-bottom. The next thumb's top is exactly one slot below the
-  // previous thumb's top.
-  const wrapHeight = Math.round(THUMB_WIDTH * aspectRatio);
+/** DEF-148 — the CSS wrap height for a single thumb. A page whose
+ *  size is known (`pageSize`, un-rotated pt) gets the height its OWN
+ *  aspect ratio implies — the canvas is rendered by
+ *  `computeThumbGeometry` at exactly `floor(THUMB_WIDTH * h / w)`, so
+ *  the wrap must match that (floor, not round, so a full-page canvas
+ *  is never clipped into a crop-square wrap). Pages with no reported
+ *  size yet fall back to the `defaultAspect` (the largest known page
+ *  or the doc's page-1 default). */
+function thumbWrapHeightFor(pageSize: { w: number; h: number } | null, defaultAspect: number): number {
+  if (pageSize !== null && pageSize.w > 0) {
+    return Math.floor((THUMB_WIDTH * pageSize.h) / pageSize.w);
+  }
+  return Math.round(THUMB_WIDTH * defaultAspect);
+}
+
+/** Each thumb's bounding box height = wrap-height + padding-top +
+ *  padding-bottom + border-top + border-bottom + label + margin-bottom.
+ *  The next thumb's top is exactly one slot below the previous top. */
+function thumbSlotHeightFor(
+  pageSize: { w: number; h: number } | null,
+  defaultAspect: number,
+): number {
+  const wrapHeight = thumbWrapHeightFor(pageSize, defaultAspect);
   return (
     wrapHeight +
     THUMB_PADDING_PX * 2 +
@@ -229,30 +256,81 @@ function thumbSlotHeight(aspectRatio: number): number {
   );
 }
 
-function visibleThumbRange(
+/** Per-page slot tops (DEF-148): `tops[p]` (1-based, `tops[0]`
+ *  unused) is the scroll offset of the p-th thumb INCLUDING the
+ *  scroller's 8px padding; `tops[p + 1] - tops[p]` is that page's
+ *  slot height. Each page contributes its OWN wrap height, so a
+ *  mixed-size document (page 1 cropped square, rest full page) lays
+ *  out correctly instead of collapsing every slot to page 1's size. */
+function thumbSlotTops(
+  pageCount: number,
+  sizeForPage: (p: number) => { w: number; h: number } | null,
+  defaultAspect: number,
+): number[] {
+  const tops: number[] = [0, THUMB_OUTER_PADDING];
+  for (let p = 1; p <= pageCount; p += 1) {
+    // tops[p] is the top of page p; append page p's bottom (= page
+    // p+1's top). Final length = pageCount + 2: [0, pad, top1..topN,
+    // scrollerContentBottom].
+    tops.push(tops[tops.length - 1] + thumbSlotHeightFor(sizeForPage(p), defaultAspect));
+  }
+  return tops;
+}
+
+/** Visible page range given the per-page slot tops. Lives beside the
+ *  old uniform-slot formula but walks the per-page prefix sums so a
+ *  mixed-size doc mounts the exact pages in view (DEF-148). */
+function visibleThumbRangeFromTops(
+  tops: number[],
   scrollTop: number,
   viewportHeight: number,
-  aspectRatio: number,
-  pageCount: number,
   buffer = THUMB_BUFFER,
 ): { start: number; end: number } {
+  // tops = [0, pad, page1Top, page2Top, ..., pageNTop, afterLast]
+  // (length N + 2), so the page count is one less than the length
+  // minus the leading [0, pad] pair.
+  const pageCount = tops.length - 2;
   if (pageCount <= 0) return { start: 1, end: 1 };
-  const slot = thumbSlotHeight(aspectRatio);
-  if (slot <= 0) return { start: 1, end: 1 };
-  const adjusted = scrollTop - THUMB_OUTER_PADDING;
-  const first = adjusted <= 0 ? 0 : Math.floor(adjusted / slot);
-  const visibleCount = Math.max(1, Math.ceil(viewportHeight / slot));
-  const last = first + visibleCount;
-  const start = Math.max(0, first - buffer);
-  const end = Math.min(pageCount - 1, last + buffer);
-  return { start: start + 1, end: end + 1 };
+  const top0 = scrollTop - THUMB_OUTER_PADDING;
+  const bottom0 = scrollTop + viewportHeight - THUMB_OUTER_PADDING;
+  let first = 0;
+  let last = 0;
+  for (let p = 1; p <= pageCount; p += 1) {
+    const top = tops[p];
+    if (top === undefined) break;
+    const bottom = tops[p + 1] ?? top;
+    if (bottom <= top0) continue;
+    if (top > bottom0) break;
+    if (first === 0) first = p;
+    last = p;
+  }
+  if (first === 0) {
+    // Scrolled past the last page (or an empty viewport): pin the
+    // range to the final page so the mount always renders something.
+    first = pageCount;
+    last = pageCount;
+  }
+  return {
+    start: Math.max(1, first - buffer),
+    end: Math.min(pageCount, last + buffer),
+  };
 }
 
 interface ThumbnailRailProps {
   doc: PDFDocumentProxy;
   pageCount: number;
   currentPage: number;
+  /** The fallback page aspect (h/w) for pages without a reported
+   *  per-page size (fresh open / tests). DEF-148: the per-page
+   *  `pageSizes` map, when present, wins for every page that has
+   *  one. */
   aspectRatio: number;
+  /** DEF-148 — per-VISIBLE-page sizes (un-rotated pt). Every thumb
+   *  wrap is sized from ITS OWN page's aspect ratio; the fallback is
+   *  the LARGEST known page (never page 1's post-crop size), so a
+   *  per-page crop of page 1 leaves pages 2..N at full-page
+   *  thumbnails. */
+  pageSizes?: Map<number, { w: number; h: number }> | null;
   rotations: EngineState['rotations'];
   /** Maps 1-based visible index -> 1-based source page in the underlying
    *  PDF.js document. Identity map for the stub; the real engine may
@@ -281,6 +359,7 @@ function ThumbnailRail({
   pageCount,
   currentPage,
   aspectRatio,
+  pageSizes = null,
   rotations,
   visibleToSource,
   proxyVisibleOrder,
@@ -313,14 +392,43 @@ function ThumbnailRail({
   const [dropTarget, setDropTarget] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
 
+  // DEF-148 — per-VISIBLE-page sizes. `sizeForPage(p)` returns the
+  // page's own reported size (`pageSizes`, keyed by visible 1-based
+  // index — the same key the main view's onPageSize uses), else null.
+  // The doc-wide fallback is the LARGEST known page (never page 1's
+  // LIVE size): after a per-page crop of page 1, the map still holds
+  // the full 612x792 of pages 2..N, so uncropped pages keep
+  // full-page thumbnails instead of collapsing to the crop square.
+  const fallbackAspect = useMemo(() => {
+    let best: { w: number; h: number } | null = null;
+    for (const s of pageSizes?.values() ?? []) {
+      if (s === null || s.w <= 0 || s.h <= 0) continue;
+      if (best === null || s.w * s.h > best.w * best.h) best = s;
+    }
+    return best !== null ? best.h / best.w : aspectRatio;
+  }, [pageSizes, aspectRatio]);
+
+  const sizeForPage = useCallback(
+    (p: number): { w: number; h: number } | null => {
+      const s = pageSizes?.get(p);
+      if (s !== undefined && s.w > 0 && s.h > 0) return s;
+      return null;
+    },
+    [pageSizes],
+  );
+
+  const slotTops = useMemo(
+    () => thumbSlotTops(pageCount, sizeForPage, fallbackAspect),
+    [pageCount, sizeForPage, fallbackAspect],
+  );
+
   const computeGeometryMountRef = useRef<() => void>(() => undefined);
   computeGeometryMountRef.current = (): void => {
     const scroller = scrollerRef.current;
-    const range = visibleThumbRange(
+    const range = visibleThumbRangeFromTops(
+      slotTops,
       scroller?.scrollTop ?? 0,
       scroller?.clientHeight ?? 0,
-      aspectRatio,
-      pageCount,
     );
     const rangeStart = range.start;
     const rangeEnd = range.end;
@@ -431,7 +539,7 @@ function ThumbnailRail({
       return next;
     });
     computeGeometryMountRef.current();
-  }, [pageCount, currentPage, aspectRatio]);
+  }, [pageCount, currentPage, slotTops]);
 
   useEffect(() => {
     const scroller = scrollerRef.current;
@@ -447,16 +555,16 @@ function ThumbnailRail({
     // only recentres once.
     if (railJumpTargetRef.current !== currentPage) return;
     railJumpTargetRef.current = null;
-    const slot = thumbSlotHeight(aspectRatio);
-    if (slot <= 0) return;
-    const targetTop = (currentPage - 1) * slot + THUMB_OUTER_PADDING;
+    const slot = slotTops[currentPage + 1] - slotTops[currentPage];
+    if (!Number.isFinite(slot) || slot <= 0) return;
+    const targetTop = slotTops[currentPage] ?? THUMB_OUTER_PADDING;
     const desiredTop = targetTop - scroller.clientHeight / 2 + slot / 2;
     const maxTop = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
     const nextTop = Math.max(0, Math.min(desiredTop, maxTop));
     if (Math.abs(scroller.scrollTop - nextTop) > 1) {
       scroller.scrollTop = nextTop;
     }
-  }, [currentPage, pageCount, aspectRatio]);
+  }, [currentPage, pageCount, slotTops]);
 
   // Drop selection when the selected page goes away (delete, etc.).
   useEffect(() => {
@@ -552,7 +660,12 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
               key={page}
               doc={doc}
               page={sourcePage}
-              aspectRatio={aspectRatio}
+              // DEF-148 — the wrap fallback is the LARGEST known page
+              // aspect (never page 1's live post-crop size), so a page
+              // whose per-page size has not re-reported since the crop
+              // keeps a full-page wrap instead of the crop square.
+              aspectRatio={fallbackAspect}
+              pageSize={sizeForPage(page)}
               shouldRender={visibleThumbs.has(page)}
               isCurrent={page === currentPage}
               isSelected={isSel}
@@ -613,7 +726,13 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
 interface ThumbProps {
   doc: PDFDocumentProxy;
   page: number;
+  /** Fallback page aspect (h/w) used when `pageSize` is null. */
   aspectRatio: number;
+  /** DEF-148 — this thumb's OWN page size (un-rotated pt, keyed to
+   *  the visible slot). When present the wrap is sized from THIS
+   *  page's aspect ratio, so a cropped page gets a crop-sized wrap
+   *  while every uncropped page keeps its full-page wrap. */
+  pageSize?: { w: number; h: number } | null;
   shouldRender: boolean;
   isCurrent: boolean;
   isSelected: boolean;
@@ -647,6 +766,7 @@ function Thumb({
   doc,
   page,
   aspectRatio,
+  pageSize = null,
   shouldRender,
   isCurrent,
   isSelected,
@@ -668,7 +788,12 @@ function Thumb({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [rendered, setRendered] = useState(false);
   const width = THUMB_WIDTH;
-  const height = Math.round(width * aspectRatio);
+  // DEF-148 — the wrap height comes from THIS page's own aspect
+  // ratio when known (floor, matching the rendered canvas's cssHeight
+  // exactly) and only falls back to the uniform page-1-derived ratio
+  // for pages with no reported size. This is what keeps uncropped
+  // pages full-size in the rail after page 1 is cropped.
+  const height = thumbWrapHeightFor(pageSize, aspectRatio);
 
   useEffect(() => {
     if (!shouldRender) {

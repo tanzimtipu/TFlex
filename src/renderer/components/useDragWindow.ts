@@ -37,9 +37,17 @@ export interface DragWindowController {
   /** True while a drag is in flight (caller merges a grabbing
    *  class / affordance). */
   dragging: boolean;
-  /** Current drag offset in CSS px. The caller applies it on top
-   *  of the window's anchored position (left/top or translate). */
+  /** Current drag offset in CSS px — the mid-drag VISUAL value
+   *  (React state; drives the window's rendered left/top and any
+   *  drag affordances). */
   offset: { x: number; y: number };
+  /** DEF-151 — the SYNCHRONOUS truth: the latest offset as written
+   *  by the pointermove handler, independent of React's render
+   *  cycle. COMMIT paths must read this (never the `offset` state,
+   *  never an effect-derived value) so a Confirm click that lands
+   *  one render behind the final pointermove still commits at the
+   *  MOVED position. */
+  getOffset: () => { x: number; y: number };
   /** Attach to the WINDOW element. The window's bounding rect at
    *  drag start anchors the clamp. */
   windowRef: (el: HTMLElement | null) => void;
@@ -57,6 +65,14 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
   const windowElRef = useRef<HTMLElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  // DEF-151 — the synchronous mirror of `offset`. The pointermove
+  // handler writes this ref BEFORE calling `setOffset`, so a commit
+  // that runs before React re-renders (the packaged-app race: the
+  // Confirm click reads `drag.offset` one render behind the last
+  // pointermove and commits dx=0) reads the true moved offset here.
+  // `offset` state stays for the mid-drag visual affordance only;
+  // it is never the commit source of truth.
+  const offsetRef = useRef({ x: 0, y: 0 });
   const dragRef = useRef<{
     startClientX: number;
     startClientY: number;
@@ -89,11 +105,15 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
       const el = windowElRef.current;
       if (el === null) return;
       const rect = el.getBoundingClientRect();
+      // DEF-151 — anchor the drag from the SYNCHRONOUS ref, not the
+      // render-closure `offset`: a second drag in the same session
+      // must continue from the LIVE position even if the visual
+      // state render hasn't committed yet.
       dragRef.current = {
         startClientX: e.clientX,
         startClientY: e.clientY,
-        startOffsetX: offset.x,
-        startOffsetY: offset.y,
+        startOffsetX: offsetRef.current.x,
+        startOffsetY: offsetRef.current.y,
         viewLeft: rect.left,
         viewTop: rect.top,
         width: rect.width,
@@ -107,7 +127,7 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
       // dismissal / backdrop close logic still sees where it started.
       e.preventDefault();
     },
-    [controlsSelector, offset],
+    [controlsSelector],
   );
 
   // While a drag is in flight the window follows the cursor via
@@ -124,10 +144,17 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
       const maxTop = Math.max(0, window.innerHeight - d.height);
       const clampedLeft = clamp(propLeft, 0, maxLeft);
       const clampedTop = clamp(propTop, 0, maxTop);
-      setOffset({
+      const next = {
         x: d.startOffsetX + (clampedLeft - d.viewLeft),
         y: d.startOffsetY + (clampedTop - d.viewTop),
-      });
+      };
+      // DEF-151 — write the ref SYNCHRONOUSLY in the pointermove
+      // handler (before the state update, in the same call stack), so
+      // the commit source of truth never waits on a React render. A
+      // Confirm click that fires before this pointermove's re-render
+      // commits reads `offsetRef.current` = the moved offset here.
+      offsetRef.current = next;
+      setOffset(next);
     };
     const onUp = (): void => {
       dragRef.current = null;
@@ -146,9 +173,15 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
     };
   }, [dragging]);
 
+  // DEF-151 — stable synchronous accessor for the ref mirror. The
+  // callback never changes (reads a ref), so commit handlers can
+  // capture it once and always get the live offset at call time.
+  const getOffset = useCallback((): { x: number; y: number } => offsetRef.current, []);
+
   return {
     dragging,
     offset,
+    getOffset,
     windowRef,
     handleProps: { onPointerDown: onHandlePointerDown },
   };

@@ -3217,6 +3217,219 @@ describe('Phase 10: editTextRun', () => {
   });
 });
 
+// DEF-151 — moving the edit-text toolbox + confirming DUPLICATED the text
+// run: the engine masked only `payload.rect` (the moved position) and drew
+// the new text there, leaving the ORIGINAL run untouched, so both the old
+// run (at its original spot) and the new run (at the moved spot) survived
+// in the saved PDF. The fix adds optional `oldRect` to EditTextRunPayload;
+// when present (a move) the engine masks `oldRect` (erase the original) and
+// draws the new text at `rect` (the moved position). These tests round-trip
+// write -> save -> reparse and assert: (a) the new text appears exactly
+// once, (b) a white-fill rectangle is drawn over `oldRect` (the original
+// run's region), and (c) NO white-fill rectangle is drawn at the moved
+// `rect` (the pre-fix buggy behaviour). Note: the original text operators
+// remain in the content stream by the documented v1 mask-and-redraw
+// limitation (DEF-116 REJECTED); the white mask covers them visually.
+describe('DEF-151: editTextRun move (oldRect) does not duplicate the run', () => {
+  /** Count occurrences of `text` as a bracketed hex Tj operand in the
+   *  decoded page-0 content stream (pdf-lib StandardFonts emit hex
+   *  strings, e.g. `<4D4F564544> Tj` for "MOVED"). */
+  async function countHexOperand(path: string, text: string): Promise<number> {
+    const content = await decodedPage0Content(path);
+    const hex = hexOperand(text);
+    // Count bracketed occurrences so a short hex cannot match inside a
+    // longer hex string operand.
+    const re = new RegExp(`<${hex}>`, 'g');
+    const m = content.match(re);
+    return m ? m.length : 0;
+  }
+
+  /** Extract every white-fill rectangle that pdf-lib's `drawRectangle`
+   *  emitted into the decoded page-0 content stream. pdf-lib does NOT
+   *  emit the `re` operator; it translates with `cm` to the rect's
+   *  bottom-left corner and strokes a closed path:
+   *
+   *    q
+   *    1 1 1 rg
+   *    0 w
+   *    [] 0 d
+   *    1 0 0 1 <x> <y> cm      (translate to bottom-left of rect)
+   *    1 0 0 1 0 0 cm          (identity, repeated)
+   *    1 0 0 1 0 0 cm
+   *    0 0 m
+   *    0 <h> l
+   *    <w> <h> l
+   *    <w> 0 l
+   *    h
+   *    f
+   *    Q
+   *
+   *  We split on `Q` to isolate each `q ... Q` block, keep the ones
+   *  that set a white fill (`1 1 1 rg`), and read (x,y) from the first
+   *  `1 0 0 1 <x> <y> cm`, height from `0 <h> l`, and width from
+   *  `<w> 0 l`. Returns PDF-coordinate rectangles {x, y, w, h}. */
+  async function extractWhiteRects(path: string): Promise<Array<{ x: number; y: number; w: number; h: number }>> {
+    const content = await decodedPage0Content(path);
+    const blocks = content.split(/\nQ\n/);
+    const out: Array<{ x: number; y: number; w: number; h: number }> = [];
+    for (const b of blocks) {
+      if (!b.includes('1 1 1 rg')) continue;
+      const cm = b.match(/1 0 0 1 (-?[\d.]+) (-?[\d.]+) cm/);
+      if (!cm) continue;
+      // Anchor to line starts so a `0` digit inside a width operand
+      // cannot be mis-read as the `0 <h> l` / `<w> 0 l` path corner.
+      const hLine = b.match(/\n0 (-?[\d.]+) l/);
+      const wLine = b.match(/\n(-?[\d.]+) 0 l/);
+      if (!hLine || !wLine) continue;
+      out.push({
+        x: parseFloat(cm[1]),
+        y: parseFloat(cm[2]),
+        w: parseFloat(wLine[1]),
+        h: parseFloat(hLine[1]),
+      });
+    }
+    return out;
+  }
+
+  /** Near-equality for mask coordinates (pdf-lib rounds to a few
+   *  decimals; tolerate small float drift). */
+  function approxRect(
+    a: { x: number; y: number; w: number; h: number },
+    b: { x: number; y: number; w: number; h: number },
+    eps = 0.01,
+  ): boolean {
+    return (
+      Math.abs(a.x - b.x) <= eps &&
+      Math.abs(a.y - b.y) <= eps &&
+      Math.abs(a.w - b.w) <= eps &&
+      Math.abs(a.h - b.h) <= eps
+    );
+  }
+
+  it('move: exactly one new-text occurrence, white mask over oldRect, none at moved rect', async () => {
+    const engine = new EngineService();
+    // Seed the page with an ORIGINAL run; its exact on-page position
+    // does not matter for the assertions (we verify the mask the engine
+    // emits, not pixel coverage). The renderer supplies oldRect = the
+    // run's original rect and rect = the moved rect.
+    const { path } = await createSinglePagePdfWithText('OLDTXT');
+    await engine.loadDocument('doc-move', path);
+
+    const oldRect = { x: 100, y: 100, width: 50, height: 16 };
+    const movedRect = { x: 300, y: 300, width: 50, height: 16 };
+
+    const result = await engine.editTextRun('doc-move', {
+      page: 1,
+      rect: movedRect,
+      oldRect,
+      newText: 'MOVED',
+      font: 'Helvetica',
+      size: 14,
+      color: { r: 0, g: 0, b: 0 },
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.modified).toBe(true);
+
+    const saveResult = await engine.save('doc-move');
+    expect(saveResult.ok).toBe(true);
+    const savedPath = saveResult.ok ? saveResult.value : '';
+
+    // (a) The new text "MOVED" appears EXACTLY ONCE in the saved
+    // content stream (pre-fix the run was duplicated because the
+    // original survived unmasked).
+    const movedCount = await countHexOperand(savedPath, 'MOVED');
+    expect(movedCount).toBe(1);
+
+    // Replicate the engine's mask math from `oldRect` to know the
+    // exact white rectangle the engine should have emitted over the
+    // ORIGINAL run's region.
+    const PAGE_H = 792;
+    const PAD = 2;
+    const doc2 = await PDFDocument.create();
+    doc2.addPage([612, 792]);
+    const font = await doc2.embedFont(StandardFonts.Helvetica);
+    const size = 14;
+    const fontFullHeight = font.heightAtSize(size);
+    const fontAscent = font.heightAtSize(size, { descender: false } as { descender?: boolean });
+    const fontDescent = Math.max(0, fontFullHeight - fontAscent);
+    const expMaskX = oldRect.x - PAD;
+    const expMaskW = oldRect.width + 2 * PAD;
+    const expMaskTop = oldRect.y - PAD - fontAscent;
+    const expMaskBottom = oldRect.y + oldRect.height + PAD + fontDescent;
+    const expMaskH = expMaskBottom - expMaskTop;
+    const expOldMask = {
+      x: expMaskX,
+      y: PAGE_H - expMaskBottom,
+      w: expMaskW,
+      h: expMaskH,
+    };
+
+    // (b) A white-fill rectangle IS drawn over `oldRect` (the original
+    // run's region is masked).
+    const whiteRects = await extractWhiteRects(savedPath);
+    const hasOldMask = whiteRects.some((r) => approxRect(r, expOldMask));
+    expect(hasOldMask).toBe(true);
+
+    // (c) NO white-fill rectangle is drawn at the moved `rect`. Compute
+    // the mask the pre-fix buggy engine would have emitted (mask at
+    // `rect` instead of `oldRect`) and assert it is absent — proving the
+    // engine masked the original, not the (empty) moved position.
+    const bugMaskTop = movedRect.y - PAD - fontAscent;
+    const bugMaskBottom = movedRect.y + movedRect.height + PAD + fontDescent;
+    const bugMaskH = bugMaskBottom - bugMaskTop;
+    const expBugMask = {
+      x: movedRect.x - PAD,
+      y: PAGE_H - bugMaskBottom,
+      w: movedRect.width + 2 * PAD,
+      h: bugMaskH,
+    };
+    const hasBugMask = whiteRects.some((r) => approxRect(r, expBugMask));
+    expect(hasBugMask).toBe(false);
+  });
+
+  it('plain edit (no oldRect): keeps mask-at-rect behaviour (backward compatible)', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('PLAIN');
+    await engine.loadDocument('doc-plain', path);
+
+    const rect = { x: 200, y: 200, width: 60, height: 16 };
+    const result = await engine.editTextRun('doc-plain', {
+      page: 1,
+      rect,
+      newText: 'EDITED',
+      font: 'Helvetica',
+      size: 14,
+    });
+    expect(result.ok).toBe(true);
+
+    const saveResult = await engine.save('doc-plain');
+    expect(saveResult.ok).toBe(true);
+    const savedPath = saveResult.ok ? saveResult.value : '';
+
+    // New text appears exactly once.
+    expect(await countHexOperand(savedPath, 'EDITED')).toBe(1);
+
+    // Mask is at `rect` (the legacy in-place behaviour).
+    const PAGE_H = 792;
+    const PAD = 2;
+    const doc2 = await PDFDocument.create();
+    doc2.addPage([612, 792]);
+    const font = await doc2.embedFont(StandardFonts.Helvetica);
+    const size = 14;
+    const fontFullHeight = font.heightAtSize(size);
+    const fontAscent = font.heightAtSize(size, { descender: false } as { descender?: boolean });
+    const fontDescent = Math.max(0, fontFullHeight - fontAscent);
+    const expMask = {
+      x: rect.x - PAD,
+      y: PAGE_H - (rect.y + rect.height + PAD + fontDescent),
+      w: rect.width + 2 * PAD,
+      h: (rect.y + rect.height + PAD + fontDescent) - (rect.y - PAD - fontAscent),
+    };
+    const whiteRects = await extractWhiteRects(savedPath);
+    expect(whiteRects.some((r) => approxRect(r, expMask))).toBe(true);
+  });
+});
+
 describe('Phase 10: addTextBox', () => {
   it('draws wrapped text inside the rect and survives save round-trip', async () => {
     const engine = new EngineService();

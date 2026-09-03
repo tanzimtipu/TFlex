@@ -86,6 +86,18 @@ export interface EditState {
    *  a marquee inside the selected placement; on pointerup the
    *  crop is committed through `engine.editImage(op: 'crop')`. */
   cropping: boolean;
+  /** DEF-149 — the text-run edits the renderer committed on this
+   *  tab (renderer-local; never reaches the wire). `engine.editTextRun`
+   *  MASKS the old run (never removes it — DEF-116 documented), so
+   *  pdf.js `getTextContent()` returns BOTH the masked old text and
+   *  the new text at the same rect. When the user re-clicks an edited
+   *  run, the hit-test must prefer the NEWEST committed text over the
+   *  first (old) text item, otherwise the editor re-opens pre-filled
+   *  with the stale original. Each commit pushes an entry here;
+   *  `committedTextRunAt` looks the newest entry up by
+   *  (page, click-point). Optional so legacy `EditState` literals
+   *  (tests / older tabs) compile unchanged. */
+  committedTextRuns?: CommittedTextRun[];
 }
 
 /** A renderer-side image placement. Tracks the rect, the page
@@ -123,6 +135,17 @@ export interface TextBoxPlacement {
   text: string;
   style: EditTextStyle;
   background: "white" | "none";
+}
+
+/** DEF-149 — a text-run edit the renderer committed through
+ *  `engine.editTextRun`. The engine masks (never removes) the old
+ *  run, so a re-click on the edited run must match the NEWEST
+ *  committed text at the click point, not the first (old) item. */
+export interface CommittedTextRun {
+  /** 1-based visible page the run lives on. */
+  page: number;
+  rect: { x: number; y: number; width: number; height: number };
+  text: string;
 }
 
 export interface PendingImage {
@@ -163,6 +186,7 @@ export type EditAction =
   | { type: "delete-text-box"; id: string }
   | { type: "replace-text-boxes"; boxes: TextBoxPlacement[] }
   | { type: "set-cropping"; cropping: boolean }
+  | { type: "push-text-run-commit"; run: CommittedTextRun }
   | { type: "reset" };
 
 /** Reducer for the per-tab edit state. Pure — no side effects, no
@@ -258,6 +282,17 @@ export function editReducer(state: EditState, action: EditAction): EditState {
     }
     case "set-cropping":
       return { ...state, cropping: action.cropping };
+    case "push-text-run-commit": {
+      // DEF-149 — record the newest committed text-run edit. The
+      // renderer commits text WITH the engine; on a later re-click
+      // the hit-test prefers this run's text over the masked old
+      // run still present in the content stream. Latest-wins, kept
+      // bounded (a per-tab shallow cap).
+      const previous = state.committedTextRuns ?? [];
+      const list = previous.length >= 64 ? previous.slice(previous.length - 63) : previous.slice();
+      list.push(action.run);
+      return { ...state, committedTextRuns: list };
+    }
     case "reset":
       return initialEditState;
   }
@@ -304,6 +339,34 @@ export function clamp(value: number, lo: number, hi: number): number {
   if (value < lo) return lo;
   if (value > hi) return hi;
   return value;
+}
+
+/** DEF-149 — find the NEWEST committed text run whose rect contains
+ *  `pt` on `page`. pdf.js returns the masked OLD run first and the
+ *  engine-committed NEW run later at the same rect; iterating the
+ *  list backwards returns the last (newest) commit for the click
+ *  point, so the text tool prefers it over the stale original.
+ *  Returns null when no commit covers the point. */
+export function committedTextRunAt(
+  commits: CommittedTextRun[] | undefined,
+  page: number,
+  pt: { x: number; y: number },
+): string | null {
+  const list = commits ?? [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const r = list[i];
+    if (r === undefined) continue;
+    if (r.page !== page) continue;
+    if (
+      pt.x >= r.rect.x &&
+      pt.x <= r.rect.x + r.rect.width &&
+      pt.y >= r.rect.y &&
+      pt.y <= r.rect.y + r.rect.height
+    ) {
+      return r.text;
+    }
+  }
+  return null;
 }
 
 /** Clamp a rect so it stays inside the page and has a positive

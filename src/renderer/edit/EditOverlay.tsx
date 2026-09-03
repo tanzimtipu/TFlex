@@ -32,6 +32,7 @@ import { overlayRectToCss } from "../annotations/geometry";
 import {
   clamp,
   clampRectToPage,
+  committedTextRunAt,
   defaultTextBoxRect,
   type EditAction,
   type EditState,
@@ -43,6 +44,7 @@ import {
 import {
   cropImageRect,
   moveImageRect,
+  rectShiftedByCssOffset,
   rectsClose,
   resizeImageRect,
   type ImageResizeHandle,
@@ -78,6 +80,10 @@ export interface EditOverlayProps {
     rect: { x: number; y: number; width: number; height: number };
     newText: string;
     style: EditTextStyle;
+    /** DEF-151 — the run's ORIGINAL rect (before the toolbox drag).
+     *  Present only when committing a MOVE of an already-edited run;
+     *  omitted for a plain in-place edit. */
+    oldRect?: { x: number; y: number; width: number; height: number };
   }) => void;
   /** Commit a new text box. */
   onCommitTextBox: (args: {
@@ -188,6 +194,17 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   } = props;
 
   const [textTarget, setTextTarget] = useState<TextEditTarget | null>(null);
+  // DEF-149(b) / DEF-150 — the floating inline editor's drag offset
+  // (CSS px), reported up by EditInlineEditor's `onDragOffsetChange`.
+  // This state drives ONLY the mid-drag box-mirror preview
+  // (`dragOffsetCss` — the committed box visibly follows the toolbox,
+  // guardrail #4). The COMMIT path never reads it: the editor passes
+  // its synchronous `useDragWindow.getOffset()` ref value through
+  // `onCommit`'s `commitOffset` argument, so a Confirm click that
+  // lands one render behind the last pointermove still commits at
+  // the moved rect (DEF-151 — the packaged app read a stale zero
+  // from state and committed dx=0; the ref read is render-free).
+  const [editorOffset, setEditorOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [boxDrag, setBoxDrag] = useState<BoxDragState | null>(null);
   const [imageDrag, setImageDrag] = useState<ImageDragState | null>(null);
   const [textBoxDrag, setTextBoxDrag] = useState<TextBoxDragState | null>(null);
@@ -223,6 +240,14 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     setCropDrag(null);
   }, [tool, page]);
 
+  // DEF-149(b) / DEF-150 — every time the inline editor opens (the
+  // `textTarget` identity changes) its drag offset resets to zero;
+  // the drag offset only accumulates while that editor session is
+  // open, so a fresh open never commits a stale position.
+  useEffect(() => {
+    setEditorOffset({ x: 0, y: 0 });
+  }, [textTarget]);
+
   // Helpers ----------------------------------------------------------------
 
   const pagePoint = useCallback(
@@ -256,19 +281,39 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   const onClickTextRun = useCallback(
     (pt: { x: number; y: number }): void => {
       const items = getTextItems();
-      // Find the run whose rect contains the click point. Use a
-      // small tolerance so a click on the line's vertical center
-      // is forgiving.
+      // Collect every run whose rect contains the click point (a
+      // small tolerance keeps a click on the line's vertical center
+      // forgiving). Overlapping runs (masked old + engine-committed
+      // new text sharing a rect) both match here.
+      const matches: TextItemGeom[] = [];
       for (const item of items) {
         if (pt.x < item.x - 2) continue;
         if (pt.x > item.x + item.width + 2) continue;
         if (pt.y < item.y - 2) continue;
         if (pt.y > item.y + item.height + 2) continue;
-        setTextTarget({ rect: { ...item }, initialText: item.text });
-        return;
+        matches.push(item);
       }
+      if (matches.length === 0) return;
+      // DEF-149(a) — `engine.editTextRun` MASKS the old run but never
+      // removes it, so pdf.js's getTextContent() returns BOTH the old
+      // run and the new run at the same rect (the OLD one appears
+      // FIRST in the stream). Blindly taking `matches[0]` re-opens the
+      // editor pre-filled with the stale original. Prefer the run
+      // whose text equals the latest COMMITTED text for this
+      // (page, click-point) — the actual text the engine drew last —
+      // and only fall back to the first hit for unedited runs.
+      const committedText = committedTextRunAt(edit.committedTextRuns, page, pt);
+      let chosen = matches[0];
+      if (committedText !== null) {
+        const preferred = matches.find((m) => m.text === committedText);
+        if (preferred !== undefined) {
+          chosen = preferred;
+        }
+      }
+      if (chosen === undefined) return;
+      setTextTarget({ rect: { ...chosen }, initialText: chosen.text });
     },
-    [getTextItems],
+    [edit.committedTextRuns, page, getTextItems],
   );
 
   // Text-run hover hint + B6 click handling. When the text tool is
@@ -796,6 +841,12 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           box={b}
           cssScale={cssScale}
           selected={edit.selectedTextBox === b.id}
+          // DEF-150(a) — while the COMMITTED box's floating editor is
+          // open and being dragged, the box's mirror follows the
+          // window so the CONTENT visibly moves with the toolbox
+          // mid-drag (guardrail #4). The offset is renderer-local —
+          // the registry rect only changes when the user confirms.
+          dragOffsetCss={textTarget !== null && textTarget.textBoxId === b.id ? editorOffset : null}
           onPointerDownHandle={(e, handle): void => {
             // B5 — corner-handle drag resizes the committed box.
             e.stopPropagation();
@@ -937,41 +988,110 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             }
           }
           mode={textTarget.initialText.length > 0 ? "edit" : "box"}
-          onCommit={(text, style, options): void => {
+          onDragOffsetChange={setEditorOffset}
+          onCommit={(text, style, options, commitOffset): void => {
+            const target = textTarget;
             setTextTarget(null);
-            if (textTarget.initialText.length > 0) {
-              onCommitTextEdit({
-                rect: textTarget.rect,
-                newText: text,
-                style,
+            setEditorOffset({ x: 0, y: 0 });
+            // DEF-149(b) / DEF-150 — the floating editor may have been
+            // dragged while open. The commit rect is the CONTENT's NEW
+            // position: the anchor rect shifted by the window's drag
+            // offset (CSS px → page pt). The offset is the value
+            // PASSED THROUGH at commit time (`commitOffset`) — read
+            // synchronously from the editor's live `drag.offset`, the
+            // same value the "Confirm move" affordance keys off — NOT
+            // the `editorOffset` state (which drives the live box
+            // mirror preview and could lag / reset before the click's
+            // commit runs, so qa's v1.7.19 saw a moved window but the
+            // committed content stuck at the original rect, DEF-151).
+            // The saved box/run lands where the toolbox is, never at
+            // the stale anchor (guardrail #4).
+            const commitRect = rectShiftedByCssOffset(target.rect, commitOffset, cssScale);
+            if (target.textBoxId !== undefined) {
+              // DEF-150(c) — a re-opened COMMITTED box must route
+              // through the box-move/update path (registry mirror +
+              // engine.moveTextBox), NEVER the text-run edit path:
+              // `onCommitTextEdit` re-bakes a second copy of the text
+              // into the page stream (qa verified the duplicate persists
+              // after save/reopen). The box update is a registry rect
+              // change; the engine draws the box once at its FINAL rect,
+              // so no duplicate can bake.
+              const background = target.background ?? "none";
+              dispatch({
+                type: "upsert-text-box",
+                placement: {
+                  id: target.textBoxId,
+                  page,
+                  rect: commitRect,
+                  text,
+                  style,
+                  background,
+                },
               });
-              // DEF-127 — a re-opened COMMITTED box round-trips the
-              // commit back into the registry so the next re-open
-              // shows the committed text (and the white-bg flag
-              // survives the engine's white-mask rebake).
-              if (textTarget.textBoxId !== undefined) {
-                dispatch({
-                  type: "upsert-text-box",
-                  placement: {
-                    id: textTarget.textBoxId,
-                    page,
-                    rect: textTarget.rect,
-                    text,
-                    style,
-                    background: textTarget.background ?? "none",
-                  },
+              // Only move the engine registry entry when the toolbox
+              // drag actually changed the position — a plain re-commit
+              // of an unmoved box must NOT hit the engine.
+              if (!rectsClose(commitRect, target.rect, 1)) {
+                onCommitTextBoxMove({
+                  oldRect: { ...target.rect },
+                  newRect: commitRect,
+                  text,
+                  style,
+                  background,
+                  id: target.textBoxId,
                 });
               }
-            } else {
-              onCommitTextBox({
-                rect: textTarget.rect,
-                text,
-                style,
-                background: options.background,
-              });
+              return;
             }
+            if (target.initialText.length > 0) {
+              // DEF-151 — a committed run that was dragged (toolbox
+              // moved, so the commit rect differs from the anchor) must
+              // erase the ORIGINAL run AND draw at the moved rect,
+              // otherwise the engine masks/draws only at `rect` and the
+              // original glyphs survive alongside the moved copy (the
+              // duplicated "MOVE TEST 88" bake). Pass `oldRect` = the
+              // run's original rect only for a real move; omit it for a
+              // plain in-place edit.
+              const moved = !rectsClose(commitRect, target.rect, 1);
+              onCommitTextEdit({
+                rect: commitRect,
+                newText: text,
+                style,
+                // Rebuild field-by-field: `target.rect` is sometimes a
+                // pdf.js TextItemGeom carrying `text`, which must never
+                // leak into the engine payload (same rule as
+                // rectShiftedByCssOffset).
+                ...(moved
+                  ? {
+                      oldRect: {
+                        x: target.rect.x,
+                        y: target.rect.y,
+                        width: target.rect.width,
+                        height: target.rect.height,
+                      },
+                    }
+                  : {}),
+              });
+              // DEF-149(a) — record which run the engine committed so a
+              // re-click on the edited run prefers the NEW text (the
+              // masked original stays in the content stream).
+              dispatch({
+                type: "push-text-run-commit",
+                run: { page, rect: { ...commitRect }, text },
+              });
+              return;
+            }
+            onCommitTextBox({
+              rect: commitRect,
+              text,
+              style,
+              background: options.background,
+            });
           }}
-          onCancel={(): void => setTextTarget(null)}
+          onCancel={(): void => {
+            setTextTarget(null);
+            setEditorOffset({ x: 0, y: 0 });
+          }}
         />
       )}
     </div>
@@ -1080,6 +1200,12 @@ interface TextBoxViewProps {
   box: TextBoxPlacement;
   cssScale: number;
   selected: boolean;
+  /** DEF-150(a) — CSS-px drag offset of the box's floating editor
+   *  (non-null only while THAT box's editor is open). The mirror is
+   *  drawn at rect + offset so the box visibly moves with the
+   *  toolbox mid-drag; the registry rect is untouched until the
+   *  user confirms. Null = the box is not being drag-previewed. */
+  dragOffsetCss?: { x: number; y: number } | null;
   onPointerDownHandle: (e: ReactPointerEvent<HTMLDivElement>, handle: ImageResizeHandle) => void;
 }
 
@@ -1096,11 +1222,11 @@ interface TextBoxViewProps {
  *  Both inner layers are pointer-transparent — the surface itself
  *  stays the drag + handle target. */
 function TextBoxView(props: TextBoxViewProps): ReactElement {
-  const { box, cssScale, selected, onPointerDownHandle } = props;
+  const { box, cssScale, selected, dragOffsetCss = null, onPointerDownHandle } = props;
   const style: CSSProperties = {
     position: "absolute",
-    left: box.rect.x * cssScale,
-    top: box.rect.y * cssScale,
+    left: box.rect.x * cssScale + (dragOffsetCss?.x ?? 0),
+    top: box.rect.y * cssScale + (dragOffsetCss?.y ?? 0),
     width: box.rect.width * cssScale,
     height: box.rect.height * cssScale,
   };

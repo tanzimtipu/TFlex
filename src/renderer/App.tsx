@@ -1964,6 +1964,10 @@ export function App(): ReactElement {
       rect: { x: number; y: number; width: number; height: number };
       newText: string;
       style: EditTextStyle;
+      /** DEF-151 — when committing a MOVE of an already-edited run,
+       *  the engine must mask the ORIGINAL rect (not `rect`) and draw
+       *  at `rect`; omit for a plain in-place edit. */
+      oldRect?: { x: number; y: number; width: number; height: number };
     }): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
@@ -1974,6 +1978,7 @@ export function App(): ReactElement {
         font: args.style.font,
         size: args.style.size,
         color: args.style.color,
+        ...(args.oldRect !== undefined ? { oldRect: args.oldRect } : {}),
       });
       if (!result.ok) {
         pushToast("error", describeEngineError(result.error.code, result.error.message));
@@ -5159,6 +5164,7 @@ pushToast(
           rect: { x: number; y: number; width: number; height: number };
           newText: string;
           style: EditTextStyle;
+          oldRect?: { x: number; y: number; width: number; height: number };
         }) => void;
         onCommitTextBox: (args: {
           rect: { x: number; y: number; width: number; height: number };
@@ -5224,6 +5230,7 @@ pushToast(
           rect: { x: number; y: number; width: number; height: number };
           newText: string;
           style: EditTextStyle;
+          oldRect?: { x: number; y: number; width: number; height: number };
         }): void => {
           void handleEditTextRun(tabId, args);
         },

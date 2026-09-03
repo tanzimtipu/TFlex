@@ -496,7 +496,16 @@ export interface EditColor {
  *  covering `rect` by masking the region with a white rectangle and
  *  drawing `newText` at the rect's top-left baseline. `rect` is in
  *  PAGE POINTS with a TOP-LEFT origin (same convention as annotations).
- *  `page` is the 1-based VISIBLE page index. */
+ *  `page` is the 1-based VISIBLE page index.
+ *
+ *  DEF-151 — `oldRect` is present when the renderer is committing a MOVE
+ *  of an already-edited run (the user dragged the edit toolbox). In that
+ *  case the engine must white-mask `oldRect` (erase the ORIGINAL run's
+ *  position, so the old glyphs do not survive alongside the moved copy)
+ *  AND draw `newText` at `rect` (the moved position). When `oldRect` is
+ *  absent (a plain in-place edit), the engine keeps the original
+ *  behaviour: mask `rect` + draw `newText` at `rect`. `oldRect` uses the
+ *  same top-left/PDF-points convention as `rect`. */
 export interface EditTextRunPayload {
   page: number;
   rect: AnnRect;
@@ -504,6 +513,10 @@ export interface EditTextRunPayload {
   font?: EditFont;
   size?: number;
   color?: EditColor;
+  /** DEF-151 — the ORIGINAL rect of the run being moved. When present,
+   *  the engine masks `oldRect` (not `rect`) and draws `newText` at
+   *  `rect`. Omit for a plain in-place edit. */
+  oldRect?: AnnRect;
 }
 
 /** Phase 10 — payload for `engine.addTextBox`. As of Phase 14 / DEF-135 /

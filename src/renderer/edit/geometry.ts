@@ -138,6 +138,31 @@ export function cropImageRect(
   };
 }
 
+/** Shift a page-point rect by a floating-window drag offset
+ *  (the editor's `useDragWindow` offset, in CSS px). The floating
+ *  editor window is positioned at `rect.x * cssScale + offset.x`,
+ *  so the content rect that corresponds to the MOVED window is the
+ *  original rect shifted by `offset / cssScale`. The overlay's
+ *  commit paths use this so a dragged toolbox commits the CONTENT
+ *  at its NEW position — never the original anchor rect (AGENTS.md
+ *  guardrail #4 / DEF-149(b) / DEF-150). */
+export function rectShiftedByCssOffset(
+  rect: ImageRect,
+  offset: { x: number; y: number },
+  cssScale: number,
+): ImageRect {
+  const scale = Math.max(1, cssScale);
+  // Rebuild the rect field-by-field: the anchor rect sometimes IS a
+  // pdf.js TextItemGeom (which carries `text`), and that extra field
+  // must never leak into the engine's edit payload.
+  return {
+    x: rect.x + offset.x / scale,
+    y: rect.y + offset.y / scale,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
 /** Convert a page-space rect into the image's local coordinate
  *  system (0..1, top-left origin). Used by the cropper to render
  *  the marquee inside the image's bounding rect. */

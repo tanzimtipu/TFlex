@@ -134,6 +134,7 @@ interface PageViewProps {
       rect: { x: number; y: number; width: number; height: number };
       newText: string;
       style: import('../edit/model').EditTextStyle;
+      oldRect?: { x: number; y: number; width: number; height: number };
     }) => void;
     onCommitTextBox: (args: {
       rect: { x: number; y: number; width: number; height: number };

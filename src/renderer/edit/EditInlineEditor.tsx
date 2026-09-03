@@ -44,8 +44,29 @@ export interface EditInlineEditorProps {
    *  toggle so the user can decide whether the new text is
    *  readable over existing content. */
   mode: "edit" | "box";
-  onCommit: (text: string, style: EditTextStyle, options: { background: "white" | "none" }) => void;
+  /** Commit the editor. `offset` is the floating window's CURRENT
+   *  drag offset (CSS px) at the moment of commit — read from
+   *  `useDragWindow.getOffset()`, the SYNCHRONOUS ref mirror written
+   *  inline in the pointermove handler, so a dragged toolbox commits
+   *  the content at its MOVED position even if the React state
+   *  round-trip that drives the live box-mirror preview hasn't
+   *  settled (DEF-151: the affordance could say "Confirm move"
+   *  while the commit read a stale zero offset — the ref read makes
+   *  the commit timing-independent). `offset` is `{x:0,y:0}` when
+   *  the window was never dragged. */
+  onCommit: (
+    text: string,
+    style: EditTextStyle,
+    options: { background: "white" | "none" },
+    offset: { x: number; y: number },
+  ) => void;
   onCancel: () => void;
+  /** DEF-149(b) / DEF-150 — fired whenever the floating window's
+   *  drag offset changes (CSS px). The overlay (which owns the
+   *  commit) uses it so a dragged toolbox commits the CONTENT at
+   *  its moved position instead of the original anchor rect
+   *  (AGENTS.md guardrail #4). */
+  onDragOffsetChange?: (offset: { x: number; y: number }) => void;
 }
 
 const ALLOWED_FONTS: readonly EditFont[] = ["Helvetica", "Times", "Courier"];
@@ -94,7 +115,7 @@ export function fontFamilyFor(font: EditFont): string {
 }
 
 export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
-  const { rect, cssScale, initialText, initialStyle, mode, onCommit, onCancel } = props;
+  const { rect, cssScale, initialText, initialStyle, mode, onCommit, onCancel, onDragOffsetChange } = props;
   const [text, setText] = useState<string>(initialText);
   const [style, setStyle] = useState<EditTextStyle>(initialStyle);
   const [background, setBackground] = useState<"white" | "none">(
@@ -129,6 +150,16 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
   const drag = useDragWindow({
     controlsSelector: "select, input, button, .edit-inline-toolbar-actions",
   });
+
+  // DEF-149(b) / DEF-150 — report the window's drag offset up to the
+  // overlay as it changes. The overlay adds `offset / cssScale` to the
+  // anchor rect at commit time, so a dragged toolbox commits the
+  // content at its NEW position (guardrail #4 — the window and its
+  // committed content move as one).
+  useEffect(() => {
+    if (onDragOffsetChange === undefined) return;
+    onDragOffsetChange(drag.offset);
+  }, [drag.offset, onDragOffsetChange]);
 
   // Focus on mount so the user can type immediately. The overlay's
   // pointerdown handler ignores clicks inside the editor surface, so
@@ -220,7 +251,17 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
       onCancel();
       return;
     }
-    onCommit(trimmed, style, { background });
+    // DEF-151 — read the window's CURRENT drag offset from the
+    // SYNCHRONOUS ref (`drag.getOffset()`), NEVER the `drag.offset`
+    // state (a React render value that can lag one cycle behind the
+    // click — the packaged-app race where a moved toolbox still
+    // committed dx=0). The ref is written inline in the pointermove
+    // handler, so this read is timing-independent: a Confirm click
+    // that lands before the last move's re-render still commits at
+    // the MOVED position. `drag.offset` state remains ONLY for the
+    // mid-drag visual affordance (window position, "Confirm move"
+    // label) — it never feeds a commit.
+    onCommit(trimmed, style, { background }, drag.getOffset());
   };
 
   // The edit textarea is sized to the rect in CSS px. The font-size
@@ -366,10 +407,22 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
             // Bug 9 — same focus guard as the Cancel button.
             onMouseDown={(e): void => e.preventDefault()}
             onClick={commit}
-            aria-label="Apply edit"
-            title="Apply (Ctrl+Enter)"
+            // DEF-150(b) — after the floating editor window has been
+            // dragged, the Apply control becomes a visible "Confirm"
+            // affordance: it commits the content at the MOVED rect
+            // (the same commit call — the rect shift happens in the
+            // overlay through `onDragOffsetChange`). `data-edit-confirm`
+            // doubles as the stable selector for e2e.
+            data-edit-confirm={drag.offset.x !== 0 || drag.offset.y !== 0 ? "true" : "false"}
+            aria-label={drag.offset.x !== 0 || drag.offset.y !== 0 ? "Confirm move" : "Apply edit"}
+            title={
+              drag.offset.x !== 0 || drag.offset.y !== 0
+                ? "Confirm the moved position (Ctrl+Enter)"
+                : "Apply (Ctrl+Enter)"
+            }
           >
             <Check size={13} aria-hidden />
+            {(drag.offset.x !== 0 || drag.offset.y !== 0) && <span>Confirm</span>}
           </button>
         </div>
       </div>
