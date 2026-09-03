@@ -18,9 +18,14 @@
 // With the "select" tool the layer is pointer-transparent, so text
 // selection and links behave exactly as before.
 
-import { MessageSquare } from "lucide-react";
+import { GripVertical, MessageSquare } from "lucide-react";
 import { Component, useEffect, useRef, useState } from "react";
-import type { CSSProperties, ReactElement, ReactNode } from "react";
+import type {
+  CSSProperties,
+  ReactElement,
+  ReactNode,
+} from "react";
+import { useDragWindow } from "../components/useDragWindow";
 import {
   annotationBounds,
   arrowHead,
@@ -1246,12 +1251,23 @@ interface TextBoxEditorProps {
   onCancel: () => void;
 }
 
-function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
+export function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
   const { at, text, cssScale, onChange, onCommit, onCancel } = props;
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     ref.current?.focus();
   }, []);
+  // DEF-147 — the whole editor window moves when the user grabs its
+  // chrome. The WINDOW is the wrapper (bar + textarea are siblings
+  // under it) so the offset re-anchors both; the HANDLE is the
+  // wrapper itself (same pattern as NoteEditor / EditInlineEditor):
+  // a press anywhere on the wrapper that is NOT a control starts the
+  // drag, so the wrapper's flex padding/gaps AND the action bar's
+  // chrome both move the window. The textarea and the bar buttons
+  // are excluded by the hook's controls selector (and the textarea's
+  // own stopPropagation keeps typing/dragging inside it from ever
+  // reaching the wrapper), so their presses keep their own behavior.
+  const drag = useDragWindow({ controlsSelector: "button, textarea, input, select, [role='button']" });
   // B2 — textbox / callout floating action bar (Confirm / Cancel /
   // Delete). Mirrors the sig-pending pattern: the user explicitly
   // commits via Confirm (or Ctrl+Enter, or click-outside), and can
@@ -1269,20 +1285,38 @@ function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
   );
   return (
     <div
-      className="ann-textbox-wrap"
+      ref={drag.windowRef}
+      className={drag.dragging ? "ann-textbox-wrap ann-textbox-wrap-dragging" : "ann-textbox-wrap"}
       data-annotation-editor-wrap="textbox"
+      data-annotation-editor="textbox"
       style={{
         position: "absolute",
-        left: at.x * cssScale,
-        top: at.y * cssScale,
+        left: at.x * cssScale + drag.offset.x,
+        top: at.y * cssScale + drag.offset.y,
         minWidth: TEXTBOX_MIN_WIDTH_PT * cssScale,
       }}
-      onPointerDown={(e): void => e.stopPropagation()}
+      onPointerDown={(e): void => {
+        e.stopPropagation();
+        drag.handleProps.onPointerDown(e);
+      }}
     >
+      {/* DEF-147 — real draggable chrome: a thin grip strip above the
+          textarea. The textarea AND the action bar move as one window when
+          this strip is dragged (it hangs off the wrapper, which is the
+          hook's handle). The grip is NOT a control, so a press here starts
+          the window move; the textarea (typing surface, its caret/select
+          drags) and the bar buttons stay excluded by the hook's controls
+          selector. `[data-annotation-editor="textbox"]` now identifies this
+          WRAPPER (the window) — same pattern as the note editor — so a
+          chrome scan of the editor's rect finds the grip strip and the bar
+          chrome as draggable, not only the textarea's interactive surface. */}
+      <div className="ann-textbox-grip" data-annotation-editor-handle="textbox" aria-hidden>
+        <GripVertical size={12} strokeWidth={2} />
+        <span className="ann-textbox-grip-label">Drag to move</span>
+      </div>
       <textarea
         ref={ref}
         className="ann-editor ann-textbox-editor"
-        data-annotation-editor="textbox"
         value={text}
         placeholder="Type text..."
         onChange={(e): void => onChange(e.target.value)}
@@ -1333,7 +1367,12 @@ function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
        * the bar visible after Confirm while the textarea
        * unmounted. The fix pins the unmount to the bar's own
        * component identity, so each surface tears down
-       * independently when its owning state flips. */}
+       * independently when its owning state flips.
+       *
+       * DEF-147 — the bar carries no drag handle of its own: the
+       * wrapper above is the single drag source for the window, and
+       * bar-chrome presses bubble up to it (the bar's buttons stay
+       * excluded by the wrapper's hook controls selector). */}
       <TextBoxActionBar onCommit={onCommit} onCancel={onCancel} />
     </div>
   );
@@ -1431,20 +1470,29 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
   useEffect(() => {
     ref.current?.focus();
   }, []);
+  // DEF-147 — the note editor floats and is draggable from its
+  // chrome (padding / the note icon / gaps between actions); the
+  // textarea and the action buttons are controls and keep their own
+  // presses.
+  const drag = useDragWindow({ controlsSelector: "textarea, button, input, select, [role='button']" });
   // B4 — sticky-note floating selector. The icon and the textarea
   // are co-located in the same wrapper (the icon on the left, the
   // textarea on the right), so the user sees them together as a
   // single visual unit instead of two disconnected surfaces.
   // Width was bumped from 210 -> 240 to accommodate the icon +
   // 3 action buttons without crowding.
-  const left = Math.min(at.x * cssScale, Math.max(pageWidthCss - NOTE_POPOVER_W - 8, 0));
-  const top = at.y * cssScale;
+  const left = Math.min(at.x * cssScale, Math.max(pageWidthCss - NOTE_POPOVER_W - 8, 0)) + drag.offset.x;
+  const top = at.y * cssScale + drag.offset.y;
   return (
     <div
-      className="ann-editor ann-note-editor"
+      ref={drag.windowRef}
+      className={drag.dragging ? "ann-editor ann-note-editor ann-note-editor-dragging" : "ann-editor ann-note-editor"}
       data-annotation-editor="note"
       style={{ left, top, width: NOTE_POPOVER_W }}
-      onPointerDown={(e): void => e.stopPropagation()}
+      onPointerDown={(e): void => {
+        e.stopPropagation();
+        drag.handleProps.onPointerDown(e);
+      }}
     >
       <div className="ann-note-editor-row">
         <MessageSquare
@@ -1535,6 +1583,11 @@ function CalloutBoxEditor(
   useEffect(() => {
     ref.current?.focus();
   }, []);
+  // DEF-147 — same drag wiring as the textbox editor: the callout
+  // window (wrapper) is the drag handle, so a press on the wrapper's
+  // chrome OR the action bar's chrome moves the whole window; the
+  // textarea and the bar buttons stay controls.
+  const drag = useDragWindow({ controlsSelector: "button, textarea, input, select, [role='button']" });
   // B2 — callout floating action bar. Same affordance as the
   // textbox editor (see TextBoxEditor for the rationale): Confirm
   // commits, Cancel / Delete drop the in-flight callout without
@@ -1542,20 +1595,31 @@ function CalloutBoxEditor(
   // remain for power users.
   return (
     <div
-      className="ann-textbox-wrap"
+      ref={drag.windowRef}
+      className={drag.dragging ? "ann-textbox-wrap ann-textbox-wrap-dragging" : "ann-textbox-wrap"}
       data-annotation-editor-wrap="callout"
+      data-annotation-editor="callout"
       style={{
         position: "absolute",
-        left: box.x * cssScale,
-        top: box.y * cssScale,
+        left: box.x * cssScale + drag.offset.x,
+        top: box.y * cssScale + drag.offset.y,
         minWidth: TEXTBOX_MIN_WIDTH_PT * cssScale,
       }}
-      onPointerDown={(e): void => e.stopPropagation()}
+      onPointerDown={(e): void => {
+        e.stopPropagation();
+        drag.handleProps.onPointerDown(e);
+      }}
     >
+      {/* DEF-147 — same grip-strip chrome as the textbox editor (see
+          TextBoxEditor): the callout window (textarea + action bar) moves
+          as one unit when the grip strip above the textarea is dragged. */}
+      <div className="ann-textbox-grip" data-annotation-editor-handle="callout" aria-hidden>
+        <GripVertical size={12} strokeWidth={2} />
+        <span className="ann-textbox-grip-label">Drag to move</span>
+      </div>
       <textarea
         ref={ref}
         className="ann-editor ann-textbox-editor"
-        data-annotation-editor="callout"
         value={text}
         placeholder="Type callout text..."
         onChange={(e): void => onChange(e.target.value)}
@@ -1589,7 +1653,10 @@ function CalloutBoxEditor(
         data-annotation-action-bar="callout"
         style={{
           // DEF-095 — the bar is a real hit target, stacked above
-          // the textarea (see TextBoxActionBar).
+          // the textarea (see TextBoxActionBar). DEF-147 — the bar
+          // carries no drag handle of its own; chrome presses
+          // bubble up to the wrapper, which is the window's single
+          // drag source.
           pointerEvents: "auto",
           position: "relative",
           zIndex: 5,

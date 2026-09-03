@@ -20,11 +20,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  _resetScratchCtxForTests,
   cropImageToBytes,
   defaultImageDecoder,
   defaultImageEncoder,
   detectImageFormat,
   facadeFromImage,
+  fitTextBoxFontSizePx,
+  measureTextWidthCss,
   rasterizeTextBoxToPng,
   rectToPixelSize,
   resizeImageToBytes,
@@ -291,6 +294,69 @@ describe("rasterizeTextBoxToPng", () => {
       expect(size).toBeCloseTo(6.67, 1);
     } finally {
       HTMLCanvasElement.prototype.getContext = originalGetContext;
+    }
+  });
+});
+
+describe("DEF-146 — fitTextBoxFontSizePx (committed box mirror auto-fit)", () => {
+  // Approximate width: ~0.55em per character (the scratch-canvas
+  // fallback). Mirrors measureTextWidthCss's estimate.
+  const width = (t: string, s: number): number => t.length * s * 0.55;
+
+  it("shrinks an oversized default font so the full text fits a small box (the repro)", () => {
+    // "ARTIFACT CHECK 88" at 38pt in a ~140-css-px wide, ~90-css-px
+    // tall box (the DEF-146 report: the mirror rendered 71.78px with
+    // overflow:hidden, clipping the text to "AR").
+    const fitted = fitTextBoxFontSizePx({
+      text: "ARTIFACT CHECK 88",
+      userSizePx: 38,
+      boxWidthPx: 134, // 140 - 6 horizontal padding
+      boxHeightPx: 86, // 90 - 4 vertical padding
+      lineHeight: 1.2,
+      measure: width,
+    });
+    expect(fitted).toBeLessThan(38);
+    // The fitted size fits every wrapped line within the box height
+    // (tolerance for floating-point division).
+    expect(fitted * 1.2 * 3).toBeLessThanOrEqual(86 + 1e-6);
+    // And it never grows below the readable floor.
+    expect(fitted).toBeGreaterThanOrEqual(4);
+  });
+
+  it("returns the user size when the text already fits (auto-fit never enlarges)", () => {
+    const fitted = fitTextBoxFontSizePx({
+      text: "Hi",
+      userSizePx: 12,
+      boxWidthPx: 200,
+      boxHeightPx: 40,
+      lineHeight: 1.2,
+      measure: width,
+    });
+    expect(fitted).toBe(12);
+  });
+
+  it("caps at the user size even when the box is huge", () => {
+    const fitted = fitTextBoxFontSizePx({
+      text: "Hello world",
+      userSizePx: 24,
+      boxWidthPx: 900,
+      boxHeightPx: 600,
+      lineHeight: 1.2,
+      measure: width,
+    });
+    expect(fitted).toBe(24);
+  });
+});
+
+describe("measureTextWidthCss (scratch canvas / estimate fallback)", () => {
+  it("uses the scratch 2D context when one is available (fake ctx: len*4)", () => {
+    _resetScratchCtxForTests();
+    try {
+      const w = measureTextWidthCss("abcd", "Helvetica", 10);
+      // The fake context in this file's beforeEach measures len*4.
+      expect(w).toBe(16);
+    } finally {
+      _resetScratchCtxForTests();
     }
   });
 });

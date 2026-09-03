@@ -423,4 +423,66 @@ describe('createMainWindow', () => {
 
     vi.useRealTimers();
   });
+
+  // DEF-142 — the window's 'close' event delegates to deps.onCloseRequested
+  // so the caller (index.ts) can preventDefault when the renderer has unsaved
+  // edits. The callback is optional; an omitted callback preserves the
+  // existing close behavior (the existing tests above emit 'close' with no
+  // event arg and no onCloseRequested, and still pass).
+  describe('DEF-142 — close/quit gate delegation', () => {
+    it('calls deps.onCloseRequested(win, event) on the close event', () => {
+      const onCloseRequested = vi.fn();
+      createMainWindow(defaultSettings, {
+        rendererHtml: '/app/renderer/index.html',
+        onGeometryChanged: vi.fn(),
+        onCloseRequested,
+      });
+
+      const win = lastWindow();
+      const mockEvent = { preventDefault: vi.fn() };
+      (win as any)._emit('close', mockEvent);
+
+      expect(onCloseRequested).toHaveBeenCalledTimes(1);
+      expect(onCloseRequested).toHaveBeenCalledWith(win, mockEvent);
+    });
+
+    it('does not call onCloseRequested when the callback is omitted', () => {
+      // The existing behavior: a caller that does not wire the gate lets
+      // the window close immediately. Omitting onCloseRequested must not
+      // throw (the optional `?.` short-circuits).
+      createMainWindow(defaultSettings, {
+        rendererHtml: '/app/renderer/index.html',
+        onGeometryChanged: vi.fn(),
+      });
+
+      const win = lastWindow();
+      expect(() => {
+        (win as any)._emit('close', { preventDefault: vi.fn() });
+      }).not.toThrow();
+    });
+
+    it('still reports geometry before delegating to onCloseRequested', () => {
+      const onGeometryChanged = vi.fn();
+      const onCloseRequested = vi.fn();
+      createMainWindow(defaultSettings, {
+        rendererHtml: '/app/renderer/index.html',
+        onGeometryChanged,
+        onCloseRequested,
+      });
+
+      const win = lastWindow();
+      (win.isMaximized as ReturnType<typeof vi.fn>).mockReturnValue(false);
+      (win.getNormalBounds as ReturnType<typeof vi.fn>).mockReturnValue({
+        x: 5, y: 15, width: 700, height: 500,
+      });
+      (win as any)._emit('close', { preventDefault: vi.fn() });
+
+      // Geometry is reported first (so a prevented close still persists
+      // the last window position), then the gate callback fires.
+      expect(onGeometryChanged).toHaveBeenCalledWith({
+        x: 5, y: 15, width: 700, height: 500, maximized: false,
+      });
+      expect(onCloseRequested).toHaveBeenCalled();
+    });
+  });
 });

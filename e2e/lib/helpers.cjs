@@ -1,0 +1,111 @@
+// Shared driving helpers for the v1.7.11 deep sweep. Canonical under e2e/lib.
+// Only qa writes here. These wrap the installed-app launch + common actions.
+
+const path = require('node:path');
+const fs = require('node:fs');
+const { launchApp, getSamplePath } = require('./launch.cjs');
+
+const INSTALLED = path.join(process.env.LOCALAPPDATA, 'Programs', 'tflex', 'TFlex.exe');
+const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
+
+// Bound window so `shot(name)` works without threading `win` through every call.
+let currentWin = null;
+
+async function launchInstalled(extraArgs = []) {
+  const electronApp = await launchApp(extraArgs, null, INSTALLED);
+  const window = await electronApp.firstWindow();
+  await window.waitForSelector('.sample-card', { timeout: 30000 });
+  currentWin = window;
+  return { electronApp, window };
+}
+
+async function openSample(window, electronApp, name) {
+  const samplePath = getSamplePath(name);
+  await electronApp.evaluate(async ({ dialog }, p) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+  }, samplePath);
+  await window.locator('button:has-text("Open PDF")').first().click();
+  await window.waitForSelector('.workspace', { timeout: 30000 });
+  return samplePath;
+}
+
+async function openSamplePath(window, electronApp, absolutePath) {
+  await electronApp.evaluate(async ({ dialog }, p) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
+  }, absolutePath);
+  await window.locator('button:has-text("Open PDF")').first().click();
+  await window.waitForSelector('.workspace', { timeout: 30000 });
+}
+
+async function diag(window) {
+  return window.evaluate(() => window.tflexDiagnostics());
+}
+
+// Step-scroll the (virtualized) document scroller until the requested page-slot
+// is mounted, then nudge it near the top of the viewport so pointer gestures on
+// it land on the page, not on the toolbar / window chrome.
+async function scrollToPage(window, n) {
+  for (let i = 0; i < 50; i += 1) {
+    const done = await window.evaluate((want) => {
+      const sc = document.querySelector('.document-scroller');
+      if (!sc) return true;
+      const slot = document.querySelector(`.page-slot[data-page="${want}"]`);
+      if (slot) {
+        sc.scrollTop = slot.offsetTop - 100;
+        return true;
+      }
+      sc.scrollTop += 1200;
+      return false;
+    }, n);
+    await window.waitForTimeout(250);
+    if (done) break;
+  }
+  await window.waitForTimeout(900);
+}
+
+async function shot(windowOrName, name) {
+  // Support both shot(win, 'name.png') and shot('name.png') (uses currentWin).
+  const w = (name === undefined) ? currentWin : windowOrName;
+  const n = (name === undefined) ? windowOrName : name;
+  const p = path.join(SHOTS, n);
+  await w.screenshot({ path: p });
+  return p;
+}
+
+// Dump key engine-state pieces for diagnosis.
+async function dumpEngine(window, label) {
+  const out = await window.evaluate(() => {
+    const d = window.tflexDiagnostics();
+    const e = d.engineState || {};
+    const res = {
+      pageCount: d.pageCount,
+      currentPage: d.currentPage,
+      modified: d.modified,
+      tabModified: d.tabModified,
+      canUndo: d.canUndo,
+      canRedo: d.canRedo,
+      activeTool: d.activeTool,
+      theme: d.theme,
+      annotations: e.annotations || [],
+      pageOrder: e.pageOrder && e.pageOrder.slice(0, 12),
+      rotations: e.rotations && e.rotations.slice(0, 12),
+      pageOrderLen: e.pageOrder ? e.pageOrder.length : null,
+    };
+    return res;
+  });
+  console.log(`[${label}] ${JSON.stringify(out)}`);
+  return out;
+}
+
+// Force-destroy the window(s) so the DEF-142 close gate (which would prompt on
+// a modified doc and hang electronApp.close) cannot block teardown. Only qa
+// may edit this helper.
+async function hardClose(electronApp) {
+  if (!electronApp) return;
+  await electronApp.evaluate(({ BrowserWindow }) => {
+    BrowserWindow.getAllWindows().forEach((w) => { try { w.destroy(); } catch (_) { /* ignore */ } });
+  }).catch(() => {});
+  await electronApp.close().catch(() => {});
+}
+
+module.exports = { launchInstalled, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, hardClose };

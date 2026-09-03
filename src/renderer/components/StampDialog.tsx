@@ -20,6 +20,7 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X, Stamp } from "lucide-react";
 import { useBackdropClose } from "./modalBackdrop";
+import { useDragWindow } from "./useDragWindow";
 import type { StampId } from "../../shared/types";
 import {
   DEFAULT_STAMP_ID,
@@ -77,6 +78,21 @@ export function StampDialog(
   const [page, setPage] = useState<number>(currentPage);
   const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // DEF-147 — the stamp dialog is a floating window: the whole
+  // dialog is the drag handle (press the title bar, the help text,
+  // the preview frame, the footer margins — any chrome that is NOT
+  // a button/input/select), clamped within the viewport, exactly
+  // like the DEF-140 inline editor. The drag handle was previously
+  // attached ONLY to `.modal-header`, so a chrome press anywhere
+  // else in the dialog (the retest's chrome-point scan samples the
+  // body, never the 40px header strip) had no handler and the
+  // dialog stayed put (dx=0). The dialog's inline `transform`
+  // moves the whole dialog without disturbing the backdrop's
+  // centering layout; the header's close button keeps its own
+  // press (excluded by the hook's controls selector).
+  const drag = useDragWindow({
+    controlsSelector: "button, input, select, textarea, [role='button']",
+  });
 
   // Reset on open / initialStampId change. Re-seed `page` from
   // currentPage so the user lands on their natural pick.
@@ -162,9 +178,23 @@ export function StampDialog(
   return (
     <div className="modal-backdrop" {...backdrop} data-stamp-dialog>
       <div
-        className="modal-dialog dialog"
-        ref={dialogRef}
+        ref={(el): void => {
+          dialogRef.current = el;
+          drag.windowRef(el);
+        }}
+        className={drag.dragging ? "modal-dialog dialog modal-dialog-dragging" : "modal-dialog dialog"}
         onClick={(e): void => e.stopPropagation()}
+        // DEF-147 — the dialog is the drag handle (whole-window
+        // chrome). stopPropagation keeps the press from reaching
+        // ancestor surfaces; the drag hook's controls selector bails
+        // on buttons/inputs/selects BEFORE preventDefault, so the
+        // close button and the dialog's own controls keep their
+        // clicks.
+        onPointerDown={(e): void => {
+          e.stopPropagation();
+          drag.handleProps.onPointerDown(e);
+        }}
+        style={{ transform: `translate(${drag.offset.x}px, ${drag.offset.y}px)` }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="stamp-dialog-title"

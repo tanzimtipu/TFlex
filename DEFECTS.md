@@ -1,3 +1,190 @@
+## DEF-147: Floating context windows/editors cannot be dragged — only the Edit-mode toolbox is movable (operator: "every toolbox movable with its content")
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (DEF-140 draggable toolbox parity — installed v1.7.14)
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.14 binary, `C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe`), open the report.pdf SAMPLE card.
+2. For each floating window below, open it, grab a NON-interactive point of its chrome (a point not covered by a button/input/textarea/select/[role=button], found by scanning the rect with `elementFromPoint`), hold the mouse and drag +160px right / +90px down, then release.
+   a. Signature pending action bar: Sign tool -> Draw a signature -> Save -> Saved tab -> pick it -> click the page (`.sig-pending` / `[data-sig-action-bar]` appears).
+   b. Sticky-note editor: annotation toolbar "Note" (`[data-tool="note"]`) -> click the page (`.ann-note-editor`, `[data-annotation-editor="note"]`).
+   c. Textbox editor + action bar: "Text box" (`[data-tool="textbox"]`) -> click the page (`[data-annotation-editor="textbox"]`, `[data-annotation-action-bar="textbox"]`).
+   d. Annotation color palette popover: arm "Pen" (`[data-tool="ink"]`) -> click the swatch (`.ann-color-swatch-main`) -> `.color-palette`.
+   e. Stamp dialog: Tools palette -> Stamp (`[data-tool-id="stamp"]`) -> `[data-stamp-dialog] .modal-dialog`.
+
+Expected: The operator's stated intent — "every toolbox movable with its content" — so each floating window follows the cursor and is repositionable, exactly like the DEF-140 Edit-mode toolbox (which now moves +220/+120).
+
+Actual: NONE of them move. Measured `getBoundingClientRect` is IDENTICAL before/mid/after the drag for all five (moved dx=0 dy=0):
+  - `[data-sig-action-bar]` 669,534 -> 669,534 (dx=0 dy=0)
+  - `[data-annotation-editor="note"]` 668,487 -> 668,487 (dx=0 dy=0)
+  - `[data-annotation-editor="textbox"]` 668,487 -> 668,487 (dx=0 dy=0)
+  - `[data-annotation-action-bar="textbox"]` 668,572 -> 668,572 (dx=0 dy=0)
+  - `.color-palette` 391,126 -> 391,126 (dx=0 dy=0)
+  - `[data-stamp-dialog] .modal-dialog` 491,51 -> 491,51 (dx=0 dy=0)
+Only `EditInlineEditor` (DEF-140, its `.edit-inline-editor`) is draggable; the sticky-note editor, textbox editor, textbox action bar, signature pending action bar, annotation color palette popover and stamp dialog are all stuck. Each has no pointermove window-reposition handler — e.g. SignaturesOverlay only has a pointerdown click/defensive bail-out list (`.sig-action-bar, .sig-action-btn, .sig-pending, ...`, line ~381) with no move/reposition; AnnotationOverlay's `.ann-*` editors/action bars are absolutely-positioned anchored to the page/annotation and have no drag-to-move; ColorPalette `.color-palette` and the stamp modal `.modal-dialog` are static boxes with no drag handle.
+Screenshot: screenshots/gt-item1b-note-editor-open.png (note editor), gt-item1c-textbox-open.png (textbox editor+bar), gt-item1d-color-palette-open.png (palette popover), gt-item1e-stamp-dialog-open.png (stamp dialog), gt-item1a-sig-pending-open.png (sig pending bar) — each verified at its origin before and after dragging (moved dx=0).
+
+History:
+- qa: opened (operator-reported; reproduced on installed v1.7.14 with a chrome-point scan that avoids controls. All five floating windows report dx=dy=0 — the toolbox parity the operator asked for is missing on every window except the Edit-mode inline editor.)
+- qa: retested on freshly installed v1.7.15 = FileVersion 1.7.15, e2e/retests/def_147_verify_1.7.15.spec.cjs (isolated per-window app launch, chrome-point drag +160/+90 avoiding controls). PARTIAL FIX — two windows now move, four still do NOT:
+  - note editor `[data-annotation-editor="note"]`: MOVED dx=160 dy=90 (was stuck) — FIXED.
+  - textbox action bar `[data-annotation-action-bar="textbox"]`: MOVED dx=160 dy=90 — FIXED.
+  - signature pending action bar `[data-sig-action-bar]`: STUCK dx=0 dy=0 (rect 669,534 unchanged).
+  - textbox editor `[data-annotation-editor="textbox"]`: STUCK dx=0 dy=0 (rect 668,487 unchanged) even though its action bar moves.
+  - annotation color palette `.color-palette`: STUCK dx=0 dy=0 (rect 391,126 unchanged, 279x550 popover).
+  - stamp dialog `[data-stamp-dialog] .modal-dialog`: STUCK dx=0 dy=0 (rect 491,51 unchanged, 460x801 modal).
+   The operator's stated intent ("every toolbox movable with its content") is therefore only PARTIALLY met: the note editor and textbox action bar are movable, but the signature pending action bar, the textbox editor, the annotation color palette popover and the stamp dialog still have no pointermove window-reposition handler (dragging their chrome leaves the rect unchanged). Screenshots: def-147-1715-sig-pending-open.png / def-147-1715-note-editor-open.png (moves) / def-147-1715-textbox-open.png / def-147-1715-color-palette-open.png / def-147-1715-stamp-dialog-open.png. REMAINS OPEN — genuine failure.)
+- qa: retested on freshly installed v1.7.16 = FileVersion 1.7.16, e2e/retests/def_147_verify_1.7.16.spec.cjs (isolated per-window app launch, chrome-point drag +160/+90 avoiding controls, rect captured BOTH mid-drag (button held) and after release). MORE FIXED — but TWO windows STILL do NOT move (dx=dy=0 mid-drag AND after), so the operator's intent is STILL only partially met:
+  - sticky-note editor `[data-annotation-editor="note"]`: MOVED mid-drag dx=160 dy=90 (rect 668,487 -> 828,577) and stays — STILL FIXED (regression clean).
+  - textbox action bar `[data-annotation-action-bar="textbox"]`: MOVED mid-drag dx=160 dy=90 (rect 668,572 -> 828,662) and stays — STILL FIXED.
+  - annotation color palette `.color-palette`: NOW MOVES mid-drag dx=160 dy=90 (rect 391,126 -> 551,216) and stays — FIXED since 1.7.15.
+  - stamp dialog `[data-stamp-dialog] .modal-dialog`: NOW MOVES mid-drag dx=160 dy=51 (rect 491,51 -> 651,102; dy clamped by viewport bottom at the 460x801 modal) and stays — FIXED since 1.7.15.
+  - signature pending action bar `[data-sig-action-bar]`: STILL STUCK — mid-drag and after both dx=0 dy=0 (rect 669,534 unchanged). DOM probe confirms a real non-interactive chrome point exists (e.g. 690,537 / 875,537 are `sig-action-bar` background, not buttons) yet dragging it leaves the rect unchanged — no pointermove window-reposition handler. Screenshots: def-147-1716-sig-pending-open.png, def-147-1716-sig-middrag-stuck.png (mid-drag, rect still 669,534).
+  - textbox editor `[data-annotation-editor="textbox"]`: STILL STUCK — mid-drag and after both dx=0 dy=0 (rect 668,487 unchanged) even though its action bar moves. DOM probe identifies the root cause precisely: the `[data-annotation-editor="textbox"]` element IS the `textarea.ann-editor.ann-textbox-editor` itself (170x81, rect == the textarea rect, `elementFromPoint` returns the textarea/interactive across its entire area). It has NO separate drag chrome / wrapper — every grab point lands on the textarea (which selects text/caret instead of repositioning the window), so there is literally no way to grab it as a window. This is a genuine failure of the "textbox editor wrapper movable" requirement, not a harness false-negative. Screenshots: def-147-1716-textbox-open.png, def-147-1716-textbox-middrag-stuck.png (mid-drag, rect still 668,487).
+  Net on v1.7.16: 4 of 6 measured windows/toolbars are movable (note editor, textbox action bar, color palette, stamp dialog — the latter two newly fixed), but the signature pending action bar and the textbox editor wrapper still cannot be dragged. REMAINS OPEN — genuine, still-incomplete failure.)
+- qa: CLOSED (retested on freshly installed v1.7.17 = FileVersion 1.7.17, e2e/retests/def_147_verify_1.7.17.spec.cjs — isolated per-window app launch, chrome/grip-point drag +160/+90 avoiding controls, rect captured BOTH mid-drag (button held) and after release). ALL SIX windows now move — the operator's stated intent ("every toolbox movable with its content") is now FULLY met, and the two remaining stuck windows are FIXED:
+  - signature pending action bar `[data-sig-action-bar]`: MOVED mid-drag dx=160 dy=90 (rect 669,534 -> 829,624) and stays — FIXED. (The bar now has minWidth:260 + 8px/12px padding in the drag-hook chrome runway, so a chrome press at the top padding (685,537) starts the whole-window move; previously every press collapsed onto a button.)
+  - sticky-note editor `[data-annotation-editor="note"]`: MOVED mid-drag dx=160 dy=90 (rect 668,487 -> 828,577) and stays — still fixed (regression clean).
+  - textbox editor `[data-annotation-editor="textbox"]`: MOVED mid-drag dx=160 dy=90 (rect 668,487 -> 828,577) and stays — FIXED. The editor now exposes a real draggable grip strip `[data-annotation-editor-handle="textbox"]` ("DRAG TO MOVE") above the textarea; dragging the GRIP STRIP (grab point 680,489 — NOT the textarea) moves the whole window (grip + textarea + action bar). The action bar, a child of the wrapper, is displaced by the same delta (dx=160 dy=90) as the editor — it rides with the window.
+  - textbox action bar `[data-annotation-action-bar="textbox"]`: MOVED mid-drag dx=160 dy=90 (rect 828,689 -> 988,779) and stays — FIXED; its own chrome press (840,692) bubbles to the wrapper's drag hook and moves the whole editor window as one unit.
+  - annotation color palette `.color-palette`: MOVED mid-drag dx=160 dy=90 (rect 391,126 -> 551,216) and stays — still fixed.
+  - stamp dialog `[data-stamp-dialog] .modal-dialog`: MOVED mid-drag dx=160 dy=51 (rect 491,51 -> 651,102; dy clamped by the viewport bottom at the 460x801 modal) and stays — still fixed.
+  Regression / no-op checked: none of the six drag presses was on a control (all grabbed chrome points were verified non-interactive via elementFromPoint), no pageerror, and mid-drag (button held) all six were already at their displaced rect (parity with the DEF-140 inline editor, no release-only snap). Screenshots: def-147-1717-*.png (open + mid-drag for each of the six). ≤5 tests, 5 passed. CLOSED.)
+
+## DEF-146: Committed Add-box text is visually truncated to a few characters after move+confirm (oversized default box font clipped by overflow)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.14; operator-reported "an artifact appears on screen after moving a textbox and confirming")
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.14), open the report.pdf SAMPLE card.
+2. Click the Edit content toggle (`[data-toolbar-edit-toggle]`), wait for the Edit toolbar, click "Add box" (`[data-edit-tool="box"]`).
+3. Drag a rectangle on page 1 (~140x90 px), type "ARTIFACT CHECK 88", click Apply (`[aria-label="Apply edit"]`). The committed text box (`[data-edit-box-id]`) renders.
+4. Re-arm the box tool, drag the box ~170px right / 110px down, then Ctrl+Enter to confirm the move.
+5. Inspect the box on the page.
+
+Expected: The committed box renders its full text "ARTIFACT CHECK 88" legibly at the new position.
+
+Actual: The box renders only "AR" (the first 2 characters). The committed box's text mirror `.edit-box-text[data-edit-box-text-mirror]` has `font-size: 71.7778px` (the default box font, near the SIZE_MAX=72 cap) inside a small 140x90 box with `overflow: hidden; white-space: pre-wrap`, so the rest of "TIFACT CHECK 88" is clipped out of view. The full string IS still present in the page textLayer (page 1 textLayer = "...ARTIFACT CHECK 88"), so the stored content is intact but the on-screen box is visually truncated. Confirmed identically at commit (before moving) and after move+confirm — the artifact is the box mirror's oversized default font. This is the same class as the DEF-113 content-drop, now reappearing as a live playbox truncation. (Screenshot shows box rendering only "AR".) Note: I did not save+reopen to test whether the clipped rendering also lands in the saved PDF — flagged for the fix dispatch.
+Screenshot: screenshots/gt-item8-after-confirm.png (box shows "AR"), gt-item8-after-commit.png, gt-item8-probe.png.
+
+History:
+- qa: opened (operator-reported "artifact after moving a textbox and confirming"; reproduced on installed v1.7.14. The artifact is the committed box text rendered as "AR" because the mirror font is 71.78px in a 140x90 box with overflow:hidden. `data-edit-box-text-mirror` line in DOM: font-size 71.7778px, overflow hidden. The full committed content is intact in the textLayer.)
+- qa: closed (retested on freshly installed v1.7.15 = FileVersion 1.7.15, e2e/retests/def_146_verify_1.7.15.spec.cjs). Edit -> Add box -> place a ~150x90 box on page 1, type "ARTIFACT CHECK 88", Apply. The committed box holds its FULL text in the mirror (`data-edit-box-text-mirror` = "ARTIFACT CHECK 88") and renders it legibly — the computed mirror font is 23.89px (auto-FITTED to the box, not the oversized ~71.8px default), so the whole string is visible inside the box (confirmed visually: def-146-1715-after-commit.png shows "ARTIFACT" / "CHECK 88" wrapped and fully visible, NOT clipped to "AR"). After re-arming the box tool, dragging the box +170/+110 and Ctrl+Enter confirming the move, the box still renders the full "ARTIFACT CHECK 88" (font 23.89px) — the artifact is gone. Page-1 textLayer contains the full string. No pageerror. The mirror font now auto-fits (wrap at box width, shrink so every line fits the box height) instead of rendering the box.rect.height*0.8 default at overflow:hidden. CLOSED.)
+
+## DEF-145: Dragging a committed Add-box text box leaves a transient stale text copy at its original position until the mouse is released
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.14; operator-reported "dragging a TEXTBOX keeps a copy of the text at its ORIGINAL position until the mouse button is released")
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.14), open the report.pdf SAMPLE card.
+2. Edit toggle -> "Add box" -> drag a rectangle on page 1, type "STALE CHECK BOX", Apply.
+3. Re-arm the box tool, click the committed box and drag it ~180px right / 120px down. Hold the mouse button (do NOT release) and inspect the page.
+
+Expected: The box (and its text) move together with no residual text at the old spot.
+
+Actual: While the mouse button is held, the box surface AND its `.edit-box-text-mirror` move to the new rect (mirror rect 595,426 -> 775,546, dx=180 dy=120), but the page still paints a faint stale copy of "STALE CHECK BOX" at the ORIGINAL position (visible in the mid-drag screenshot just above the moved box) because the pdf.js proxy is not refreshed until mouseup re-commits the box at the new rect. On mouseup the proxy refreshes and the stale copy disappears (after-drag screenshot is clean). So the stale-at-origin text is a transient visual artifact confined to the duration of the drag.
+Screenshot: screenshots/gt-item6-middrag.png (stale "STALE CHECK BOX" at the original spot while the box surface is at the new spot), gt-item6-after-drag.png (clean after release).
+
+History:
+- qa: opened (operator-reported; reproduced on installed v1.7.14. Mid-drag the page textLayer still paints the pre-move box string at the original rect; it clears on mouseup.)
+- qa: closed (retested on freshly installed v1.7.15 = FileVersion 1.7.15, e2e/retests/def_145_verify_1.7.15.spec.cjs). Edit -> Add box -> place a box on page 1, type "STALE CHECK BOX", Ctrl+Enter (committed box at {595,425,140,90}). Re-arm the box tool, grab the committed box center and drag +180/+120 HOLDING the button: MID-DRAG (before release) the box surface is already at {775,545} (dx=180 dy=120) AND its `[data-edit-box-text-mirror]` is at {775,546} (dx=180 dy=120, aligned with the surface) — only ONE live text mirror (no second/stale copy). The ORIGINAL position {595,425} is empty (verified in def-145-1715-middrag.png — box moved, origin clean, no residual "STALE CHECK BOX" at the old spot). After release nothing snaps back. The box AND its text travel together while the button is held; no stale-at-origin text copy. (Note: `[data-edit-box-id]` also matches the "Edit | Delete" action-bar toolbar, so the raw element count can exceed 1 — that is the toolbar, not a duplicate box.) No pageerror. CLOSED.)
+
+## DEF-144: Drawn signatures render as a thick black filled blob when ghosted/placed — stroke thickness is not preserved (and no image-import option exists)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.14; operator-reported "drawn signature ghost/placed result is too big/thick; no way to add a signature from an image file")
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.14), open the report.pdf SAMPLE card.
+2. Sign tool (`button[aria-label="Sign tool"]`) -> Draw tab -> draw a thin stroke on the "Draw your signature" canvas (360x120).
+3. Save -> Saved tab -> pick the saved signature -> hover the page (ghost preview) -> click the page -> Confirm (placed).
+4. Compare the drawn stroke (thin line) to the ghost preview and the placed result.
+
+Expected: The ghost/placement preserves the drawn stroke's appearance proportionally — a thin pen line, scaled, matching the box aspect; the whole signature visible.
+
+Actual: The ghost and the placed signature both render as a THICK BLACK FILLED blob (a heavy barbell/dumbbell shape), not the thin stroke that was drawn. Measured ghost/placed rect = 121x42 (aspect 2.88 — proportionally correct, so NOT "too big" in dimension), but the stroke weight is rendered far too thick, so the signature reads as a solid black mass. The drawn-canvas screenshot shows a thin line; the placed/ghost screenshot shows the same stroke as a filled shape. (The box aspect IS preserved and the whole signature fits, so "box needs to expand" is NOT reproduced; the thickness IS reproduced.)
+   Confirmed separately: the Signature manager exposes only Draw / Type / Saved tabs — no "import from image" / "from file" / upload control (tabs = ["Draw","Type","Saved (0)"]). Image-import is NOT in the Phase 4 requirements ("create by drawing or typing"), so it is out of scope rather than a bug — noted here as confirmed-absent.
+Screenshot: screenshots/gt-item5-drawn-canvas.png (thin stroke drawn), gt-item5-ghost.png (ghost thick blob), gt-item5-placed.png (placed thick blob), gt-item5-pending.png.
+
+History:
+- qa: opened (operator-reported; reproduced on installed v1.7.14. Thin drawn stroke -> ghost/placed thick filled blob. Box aspect preserved (2.88) so not "too big"; thickness is the reproduced defect. Image import confirmed absent, and it is out of scope per Phase 4.)
+- qa: closed (retested on freshly installed v1.7.15 = FileVersion 1.7.15, e2e/retests/def_144_verify_1.7.15.spec.cjs). Draw a thin curved stroke on the 360x120 Draw canvas -> Save -> pick -> hover to ghost -> click to place -> confirm. GHOST svg: viewBox "0 0 64 22", path strokeWidth = 0.427 (was ~13.5 in v1.7.14), fill="none" (a stroked polyline, NOT a filled shape), rect 121x42 (aspect 2.88 — proportionally correct, signature fully visible). PLACED svg: identical strokeWidth 0.427, fill="none", rect 121x42 (aspect 2.88). Both ghost and placed render as a THIN pen stroke, not a thick black filled blob. Confirmed visually (def-144-1715-drawn-canvas.png = thin stroke on the canvas, def-144-1715-ghost.png / def-144-1715-placed.png = thin stroke on the page). The signature manager still exposes only Draw / Type / Saved tabs (no image import — out of scope, noted). No pageerror. `scaledStrokeWidth` (DRAW_PEN_WIDTH * min(sx,sy)) now scales the stroke thickness WITH the points instead of dividing by the scale. CLOSED.)
+
+## DEF-143: Signature Saved tab shows duplicates of the FIRST signature after saving several, and delete is inconsistent (count vs rendered rows)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (installed v1.7.14; operator-reported "add four signatures 1/2/3/4 — what renders? delete first then delete again")
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.14), open the report.pdf SAMPLE card.
+2. Sign tool -> Type tab -> type "1" -> Save; type "2" -> Save; type "3" -> Save; type "4" -> Save.
+3. Switch to the "Saved" tab. Inspect each row.
+4. Click Delete (`.sig-saved-delete`) on the FIRST row; inspect. Click Delete on the (new) first row AGAIN; inspect.
+
+Expected: The Saved tab lists four DISTINCT signatures "1","2","3","4" (each showing its own content), and deleting removes exactly the clicked one each time with a consistent count.
+
+Actual: The Saved tab shows FOUR rows but every row renders the SAME signature "1" (label/thumbnail "1" — a duplicate of the first). On the first delete the list becomes inconsistent: the badge reads "Saved (3)" but SIX rows render ("1","1","1","2","3","4") — stale duplicates of "1" persist alongside the correct "2","3","4". Deleting again leaves the same inconsistent 6-row list. Root cause direction: `TypeTab.onSave` (src/renderer/signatures/SignatureManagerModal.tsx:398-402) calls `getSignatureService().save(source, trimmed)` and takes `const sig = next[0]` — but `SignatureService.save` (src/main/services/signature-service.ts:48-50) `return this.list()` after `push`, which is OLDEST-FIRST, so `next[0]` is always the FIRST-ever signature. Every new Save therefore appends the first signature to the modal's local list, so the Saved tab shows N copies of the first signature. The persisted service list is correct; the modal's local `saved` mirror is wrong, and the count badge can disagree with the rendered row count after a delete.
+Screenshot: screenshots/gt-item4-saved-four.png (4 identical "1" rows), gt-item4-after-delete-first.png (badge "Saved (3)" but 6 rows), gt-item4-after-delete-again.png.
+
+History:
+- qa: opened (operator-reported; reproduced on installed v1.7.14. Saved tab after 4 typed saves = 4 rows all "1"; delete-first -> badge "Saved (3)" but 6 rows. Root cause pinned to `next[0]` in TypeTab.onSave against an oldest-first list.)
+- qa: closed (retested on freshly installed v1.7.15 = FileVersion 1.7.15, e2e/retests/def_143_verify_1.7.15.spec.cjs). Type tab -> save "1","2","3","4" -> Saved tab: badge "Saved (4)" and FOUR DISTINCT rows labels [1,2,3,4] (thumbnails each "1"/"2"/"3"/"4", delete aria-labels "Delete 1".."Delete 4") — NO duplicates. Delete the FIRST row -> EXACTLY 3 rows, labels [2,3,4], badge "Saved (3)". Click delete on the (new) FIRST AGAIN -> EXACTLY 2 rows, labels [3,4], badge "Saved (2)". Count is consistent with rendered rows at every step; the badge no longer disagrees with the row count. No pageerror. The `next[0]` oldest-first mirror bug is fixed (the modal's local `saved` list now appends the actual new signature). Screenshots: def-143-1715-saved-four.png (4 distinct rows), def-143-1715-after-delete-first.png (3 rows 2/3/4), def-143-1715-after-delete-again.png (2 rows 3/4). CLOSED.)
+
+## DEF-142: Closing the app (window X) with an unsaved document does NOT prompt to save — edits are silently discarded
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (installed v1.7.14; operator-reported "close the APP with an unsaved document open — does it prompt to save? currently no prompt")
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.14), open the report.pdf SAMPLE card.
+2. Make an edit so the document is modified (click the toolbar Rotate clockwise `[data-toolbar-rotate-cw]`); confirm `tflexDiagnostics().modified === true`.
+3. Click the window close button (`.titlebar-control-close` / `[data-window-close]` — the app's window X), NOT a tab close.
+
+Expected: Since the tab is modified/unsaved, the app prompts "Save changes?" (Save / Don't save / Cancel) before quitting, mirroring the tab-close prompt (CloseTabPromptDialog).
+
+Actual: The window closes outright with NO prompt. After the X click the target page is destroyed (`windowAlive=false`, `promptInDom="WINDOW-GONE"`, `closedEvent=closeCount=0`) and no save/close prompt element ever mounts. The user's unsaved edit is silently lost. Root cause direction: the unsaved-check lives only in the per-tab `closeTab` path (`src/renderer/App.tsx` closeTab, line ~1105, which gates on `tabMeta.modified`/`engineModified` and shows CloseTabPromptDialog). The window close IPC `window:close` -> `BrowserWindow.fromWebContents(event.sender)?.close()` (`src/main/index.ts:121-123`) and the frameless caption button `tflex.closeWindow()` (`src/renderer/components/TitleBar.tsx:199`, `src/preload/preload.ts:320`) route straight to `win.close()` with no `beforeunload` / `will-prevent-unload` / modified gate, so the whole app quits ignoring unsaved state.
+Screenshot: screenshots/gt-item3-modified-before-close.png (modified=true before X), gt-item3-after-close-click.png (window gone).
+
+History:
+- qa: opened (operator-reported; reproduced on installed v1.7.14. modified=true, X click -> window closes, no 'Save changes' prompt, no will-prevent-unload.)
+- qa: closed (retested on freshly installed v1.7.15 = FileVersion 1.7.15, e2e/retests/def_142_verify_1.7.15.spec.cjs). (a) Open report.pdf sample, Rotate CW (modified=true), click the window X ([data-window-close]): the window STAYS ALIVE and the "Unsaved changes" CloseTabPromptDialog mounts with buttons [Cancel, "Don't save", "Save As…"] (the sample is bytes-loaded, so Save routes to Save-As). Cancel -> prompt dismissed, window stays open. Second X -> prompt reappears; "Don't save" -> confirmClose(true) -> window closes (closedEvent fired). (b) Fresh app: X -> prompt -> Save ("Save As…") with the OS save dialog stubbed to a temp path -> the save runs and the window closes; the saved file re-parses (pdf-lib) as a valid 34-page PDF. The gate (main `onCloseRequested` preventDefault + `window:closeRequested` -> renderer CloseTabPromptDialog -> `confirmClose(true)`) closes the DEF-142 "silent discard" hole: every close path now prompts on unsaved edits and Save/Don't-save/Cancel all work. Screenshots: def-142-1715-modified-before-close.png, def-142-1715-prompt.png (the "Unsaved changes" dialog with Cancel / Don't save / Save As), def-142-1715-after-cancel.png. CLOSED.)
+
+## DEF-141: "Per page" crop on page 1 collapses EVERY page-slot to the crop's box in the live view — the doc renders as stacked/clipped squares
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14 (installed v1.7.14; operator-reported "crop PAGE 1 stacks the pages below to overlap each other; the smaller the crop, the denser the stack")
+
+Steps to reproduce:
+1. Launch TFlex (installed v1.7.14), open the report.pdf SAMPLE card (34 pages, each 612x792).
+2. Tools palette -> Crop pages (`[data-tool-id="cropPages"]`) -> `[data-crop-pages-dialog]` -> switch mode to "Per page" (`[data-crop-mode="perPage"]`) -> page select = 1.
+3. Set a SMALL crop box (150x150 pt via the move + SE handles), click Apply (`[data-crop-confirm]`).
+4. Scroll the continuous view to page 1 and inspect the sizes of pages 1-6.
+
+Expected: Only page 1 is cropped to 150x150; pages 2-34 keep their full 612x792 render box (aspect 0.773).
+
+Actual: EVERY page-slot collapses to the crop box size. After the small crop, `.page-slot[data-page=1..6]` are ALL 283x283 px (square, the crop's aspect) with `--scale-factor` still 1.888 (the full-page scale), so each full page's 612x792 content is rendered at 1.888 (1156x1496) but clipped/stacked into a 283x283 square — only the top-left slice of each page is visible. Page-1 slot text = "A study in PDF orc" (cropped), page-2 slot text = "Chapter 1: The Art of Orchestration..." (full, clipped), page-3 = "key to maintaining...". The smaller the crop, the smaller every slot becomes (150x150 crop -> 283x283 slots; 300x400 crop -> 139x185 slots) — the "density" scales with crop size. So the doc is visually scrambled/stacked. (The SLOT boxes themselves have an 18px gap, so there is no literal box-overlap; the "stack" is the full-page content clipped into the crop-size square. The saved file is CORRECT — pdf-lib re-parse of a Save gives pageCount 34 and only page 1 with a non-full CropBox (150x150); pages 2,3 are full 612x792 — so this is a live proxy/layout defect, not data corruption.)
+Screenshot: screenshots/gt-item2-small-crop-scroll.png, gt-item2-small-crop-stack.png (cropped strip + full page-2 content clipped into the next square), gt-item2-medium-crop-scroll.png, gt-item2-probe-scroll.png.
+
+History:
+- qa: opened (operator-reported; reproduced on installed v1.7.14. Per-page crop on page 1 collapses every page-slot to the crop box (283x283 for a 150x150 crop) with the full-page content clipped into the square; saved file correct (only page 1 CropBox). Live view is scrambled — the DEF-131/DEF-139 class regression.)
+- qa: closed (retested on freshly installed v1.7.15 = FileVersion 1.7.15, e2e/retests/def_141_verify_1.7.15.spec.cjs — OPERATOR-EXACT small-crop flow). Basis: BEFORE crop pages 2/3 slots = 1156x1496 (aspect 0.7727). Crop page 1 to 150x150 pt (centered) via the per-page editor -> Apply ("Cropped 1 page."). AFTER crop: page-1 slot = 283.4x283.4 (aspect 0.9996 = the crop, correctly crocod only on page 1) while page-2 slot = 1156x1496 (aspect 0.7727), page-3 = 1156x1496 (0.7727), page-4 = 1156x1496 (0.7727) — pages 2/3/4 KEEP their FULL 612x792 render box; NO collapse to the crop square. Content-based overlap between consecutive slots = -18px (an 18px gap, NO stacking/overlap). Document-safety re-parse: Save As -> pdf-lib load = pageCount 34, only page 1 carries a non-full CropBox (150x150), pages 2/3 full 612x792 — the saved file is correct. No pageerror. The live view no longer scrambles/stack; the DEF-131/DEF-139 class regression is gone. Screenshots: def-141-1715-small-crop-scroll.png (page-1 cropped, page-2 full "Chapter 1"), def-141-1715-small-crop-stack.png (below the crop, full-size pages, no overlap). CLOSED.)
+
 ## DEF-140: The floating Edit-mode TOOLBOX (inline editor window) cannot be dragged/moved — it stays stuck over the text box and page content
 
 - Status: CLOSED

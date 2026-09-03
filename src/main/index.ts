@@ -122,6 +122,46 @@ export async function start(): Promise<void> {
     BrowserWindow.fromWebContents(event.sender)?.close();
   });
 
+  // DEF-142 — close/quit gate. The window's 'close' event fires for every
+  // close path (caption X via window:close, OS Alt+F4, the Window menu's
+  // Close role, and app.quit() which closes every window). The per-tab
+  // closeTab path already gated on `modified`; the whole-window close
+  // bypassed it and silently discarded unsaved edits. We intercept here:
+  // on every 'close', if the window is not already close-confirmed we
+  // preventDefault and push window:closeRequested so the renderer can
+  // show its existing CloseTabPromptDialog (it knows which tabs are
+  // modified — it is the source of truth for unsaved state). The renderer
+  // calls window:confirmClose(true) once the user has chosen Save (after
+  // it succeeded) / Don't save; Cancel means it does nothing and the
+  // window stays open. A confirmed window is re-closed via win.close();
+  // the gate sees the WeakSet entry and skips the preventDefault so the
+  // window actually shuts (the geometry report in window.ts still runs).
+  const closeConfirmedWindows = new WeakSet<BrowserWindow>();
+  const onWindowCloseRequested = (
+    win: BrowserWindow,
+    event: { preventDefault(): void },
+  ): void => {
+    if (closeConfirmedWindows.has(win)) return;
+    if (win.isDestroyed()) return;
+    // Abort this close — the renderer decides whether to proceed. The
+    // geometry report in window.ts already ran, so the last window
+    // position is persisted even if the user later cancels.
+    event.preventDefault();
+    if (!win.webContents.isDestroyed()) {
+      win.webContents.send(IPC.windowCloseRequested);
+    }
+  };
+  ipcMain.handle(IPC.windowConfirmClose, (event, proceed: boolean) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win === null || win.isDestroyed()) return;
+    if (!proceed) return;
+    // Mark confirmed so the re-entrant win.close() 'close' event skips
+    // the gate, then actually close. The WeakSet entry is collectable
+    // once the window is destroyed (Electron releases its ref).
+    closeConfirmedWindows.add(win);
+    win.close();
+  });
+
   ipcMain.handle(IPC.openFileDialog, (_event, kind?: OpenFileDialogKind) => openPdfDialog(kind));
   ipcMain.handle(IPC.pdfLoad, (_event, path: string) => loadPdfFile(path));
   ipcMain.handle(IPC.fdfLoad, (_event, path: string) => loadFdfFile(path));
@@ -403,6 +443,8 @@ export async function start(): Promise<void> {
       rendererHtml,
       rendererDevUrl,
       onGeometryChanged,
+      // DEF-142 — gate the whole-window close on unsaved edits.
+      onCloseRequested: onWindowCloseRequested,
     });
   };
 createWindow();

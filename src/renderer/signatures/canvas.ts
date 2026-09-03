@@ -104,6 +104,33 @@ export function scaleStrokes(
   );
 }
 
+/** DEF-144 — stroke width (in target-space units) that preserves the
+ *  drawn pen's proportional thickness when the source canvas is scaled
+ *  from `sourceW x sourceH` into a `targetW x targetH` space.
+ *
+ *  The pen width must scale WITH the points: when points are shrunk by
+ *  `sx = targetW/sourceW` the stroke must shrink by the same factor or
+ *  it reads as a disproportionately thick blob. The previous code
+ *  DIVIDED by the scale factor (`DRAW_PEN_WIDTH / min(sx, sy)`), which
+ *  for the 360x120 draw canvas scaled into a 64x22 placement produced
+ *  ~13.5-unit strokes in a 64-unit box — the "thin stroke drawn ->
+ *  thick black filled blob" report. The corrected value multiplies the
+ *  pen width by the smaller of the two axis scales (guards against
+ *  aspect distortion on extreme ratios) and stays strictly
+ *  proportional — no floor, so a small signature's strokes thin with
+ *  the signature. */
+export function scaledStrokeWidth(
+  sourceW: number,
+  sourceH: number,
+  targetW: number,
+  targetH: number,
+): number {
+  if (sourceW <= 0 || sourceH <= 0) return DRAW_PEN_WIDTH;
+  const sx = targetW / sourceW;
+  const sy = targetH / sourceH;
+  return DRAW_PEN_WIDTH * Math.min(sx, sy);
+}
+
 /** Default rasterisation target in pixels (per side). 256×128 is the
  *  rough size of a signature line on screen; the engine embeds the
  *  PNG into the page at the placement rect's pt dimensions, so the
@@ -175,7 +202,11 @@ function drawStrokes(
   const sx = targetW / sourceW;
   const sy = targetH / sourceH;
   ctx.strokeStyle = DRAW_PEN_COLOR;
-  ctx.lineWidth = DRAW_PEN_WIDTH;
+  // DEF-144 — the pen width scales WITH the points (see
+  // `scaledStrokeWidth`); the previous fixed width painted too-thin
+  // strokes into an upscaled target and the SVG mirror (which scaled
+  // the points) disagreed with the PNG on save.
+  ctx.lineWidth = scaledStrokeWidth(sourceW, sourceH, targetW, targetH);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   for (const stroke of points) {

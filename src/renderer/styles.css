@@ -2320,6 +2320,48 @@ textarea {
   z-index: 4;
 }
 
+/* DEF-147 — real draggable chrome strip above the textbox / callout
+ *  textarea. The strip IS the editor window's grab handle: a press
+ *  here (it is NOT a control) bubbles up to the wrapper's drag
+ *  handler and moves the whole window (textarea + action bar) as one
+ *  unit, clamped within the viewport. The grip pairs with the
+ *  textarea's bottom-only radius so the two read as a single bordered
+ *  surface. Before this strip existed the wrapper had NO chrome — the
+ *  textarea itself was the entire editor surface, so there was nothing
+ *  non-interactive to grab as a window (`[data-annotation-editor=
+ *  "textbox"]` measured == the textarea rect, and every grab point
+ *  landed on the typing control); qa measured dx=0. */
+.ann-textbox-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px 10px;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-1) var(--radius-1) 0 0;
+  color: var(--fg-soft);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  user-select: none;
+}
+.ann-textbox-grip:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+.ann-textbox-wrap .ann-textbox-editor {
+  border-radius: 0 0 var(--radius-1) var(--radius-1);
+  border-top: none;
+}
+.ann-textbox-wrap .ann-textbox-editor:focus {
+  border-top: none;
+}
+
 .ann-textbox-actions {
   display: inline-flex;
   align-items: center;
@@ -2327,7 +2369,19 @@ textarea {
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
-  padding: 3px;
+  /* DEF-147 — the bar needs REAL grab-able chrome for its own
+   * drag to be reachable. At `padding: 3px` the three buttons span
+   * essentially the whole bar, so a drag that starts on the bar's
+   * padding / gap between buttons (the "chrome" the wrapper's
+   * drag-hook controlsSelector leaves draggable) had nowhere to
+   * land — qa's chrome-point scan grid (fy=0.1 row) rounded onto a
+   * button, which correctly bailed the hook and neither the bar
+   * nor the editor window moved (dx=0). Widening the padding to
+   * the sig-action-bar proportions guarantees a real chrome runway
+   * on all four sides of the button row so a chrome press starts
+   * the wrapper move (the bar rides inside the wrapper, so the
+   * whole editor moves as one unit). */
+  padding: 8px 12px;
   box-shadow: var(--shadow-popover);
   font-size: var(--fs-xs);
   color: var(--fg);
@@ -4896,6 +4950,74 @@ textarea {
  * user sees the move is happening even when the pointer has left the
  * toolbar row. */
 .edit-inline-dragging .edit-inline-toolbar {
+  cursor: grabbing;
+}
+
+/* DEF-147 — every OTHER floating window gets the same drag
+ * affordance as the DEF-140 inline editor: grab on the chrome
+ * (header / title bar / section labels / bar padding), grabbing
+ * while a drag is in flight, while the controls inside keep their
+ * own cursors. */
+.sig-action-bar {
+  cursor: grab;
+  user-select: none;
+}
+.sig-action-bar-dragging {
+  cursor: grabbing;
+}
+.sig-action-bar .sig-action-btn {
+  cursor: pointer;
+}
+
+.ann-note-editor {
+  cursor: grab;
+  user-select: none;
+}
+.ann-note-editor-dragging {
+  cursor: grabbing;
+}
+.ann-note-editor textarea {
+  cursor: text;
+}
+
+.ann-textbox-actions {
+  cursor: grab;
+  user-select: none;
+}
+.ann-textbox-actions-dragging {
+  cursor: grabbing;
+}
+
+.ann-textbox-wrap {
+  cursor: grab;
+  user-select: none;
+}
+.ann-textbox-wrap-dragging {
+  cursor: grabbing;
+}
+.ann-textbox-wrap .ann-textbox-editor {
+  cursor: text;
+}
+.ann-textbox-wrap .ann-textbox-actions {
+  cursor: grab;
+}
+.ann-textbox-wrap .ann-textbox-action-btn {
+  cursor: pointer;
+}
+
+.color-popover {
+  cursor: grab;
+  user-select: none;
+}
+.color-popover-dragging {
+  cursor: grabbing;
+}
+
+[data-stamp-dialog] .modal-header {
+  cursor: grab;
+  user-select: none;
+}
+[data-stamp-dialog] .modal-dialog-dragging {
   cursor: grabbing;
 }
 

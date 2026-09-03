@@ -107,7 +107,7 @@ function openTextboxEditor(host: HTMLElement): HTMLTextAreaElement {
       new PointerEvent("pointerdown", { bubbles: true, clientX: 100, clientY: 100 }),
     );
   });
-  const textarea = host.querySelector<HTMLTextAreaElement>("textarea[data-annotation-editor='textbox']");
+  const textarea = host.querySelector<HTMLTextAreaElement>("textarea.ann-textbox-editor");
   if (textarea === null) throw new Error("textarea not found");
   return textarea;
 }

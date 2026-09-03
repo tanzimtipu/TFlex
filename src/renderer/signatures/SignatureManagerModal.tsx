@@ -122,8 +122,14 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
           {tab === "draw" && (
             <DrawTab
               onToast={onToast}
-              onSaved={(sig): void => {
-                setSaved([sig, ...saved]);
+              onSaved={(next): void => {
+                // DEF-143 — adopt the service's returned list verbatim.
+                // `save` returns the FULL persisted list (the main
+                // service appends, the stub prepends), so the Saved tab
+                // renders exactly what was saved — never a stale
+                // duplicate of an earlier signature — and the count
+                // badge stays in sync with the rendered rows.
+                setSaved(next);
                 setTab("saved");
               }}
             />
@@ -131,8 +137,8 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
           {tab === "type" && (
             <TypeTab
               onToast={onToast}
-              onSaved={(sig): void => {
-                setSaved([sig, ...saved]);
+              onSaved={(next): void => {
+                setSaved(next);
                 setTab("saved");
               }}
             />
@@ -185,7 +191,9 @@ function DrawTab({
   onSaved,
   onToast,
 }: {
-  onSaved: (sig: SavedSignature) => void;
+  /** DEF-143 — the updated FULL saved-signature list returned by
+   *  `SignatureService.save`. The parent adopts it verbatim. */
+  onSaved: (next: SavedSignature[]) => void;
   onToast?: (kind: "error" | "info", text: string) => void;
 }): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -294,11 +302,8 @@ function DrawTab({
         height: DRAW_CANVAS_H,
       };
       const next = await getSignatureService().save(source);
-      const sig = next[0];
-      if (sig !== undefined) {
-        onSaved(sig);
-        onClear();
-      }
+      onSaved(next);
+      onClear();
     } finally {
       setSaving(false);
     }
@@ -353,7 +358,9 @@ function TypeTab({
   onSaved,
   onToast,
 }: {
-  onSaved: (sig: SavedSignature) => void;
+  /** DEF-143 — the updated FULL saved-signature list returned by
+   *  `SignatureService.save`. The parent adopts it verbatim. */
+  onSaved: (next: SavedSignature[]) => void;
   onToast?: (kind: "error" | "info", text: string) => void;
 }): ReactElement {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -396,11 +403,8 @@ function TypeTab({
         height: TYPED_CANVAS_H,
       };
       const next = await getSignatureService().save(source, trimmed);
-      const sig = next[0];
-      if (sig !== undefined) {
-        onSaved(sig);
-        setText("");
-      }
+      onSaved(next);
+      setText("");
     } finally {
       setSaving(false);
     }

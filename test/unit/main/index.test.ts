@@ -1026,3 +1026,155 @@ describe('main/index - DEF-085 engine:isModified handler', () => {
     expect(_engineInstance.isModified).toHaveBeenCalledWith('doc-1');
   });
 });
+
+// ---------------------------------------------------------------------------
+// DEF-142 — close/quit gate. The whole-window close (caption X, Alt+F4,
+// app.quit) must not silently discard unsaved edits. index.ts intercepts the
+// window 'close' event via the onCloseRequested dep passed to createMainWindow:
+// it preventDefaults and pushes window:closeRequested so the renderer can
+// show its existing CloseTabPromptDialog; the renderer calls window:confirmClose
+// to actually close. A confirmed window is re-closed via win.close() and the
+// gate skips the second 'close' (WeakSet) so the window shuts.
+// ---------------------------------------------------------------------------
+
+describe('main/index - DEF-142 close/quit gate', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    await start();
+  });
+
+  it('passes an onCloseRequested dep to createMainWindow', () => {
+    expect(_createMainWindow).toHaveBeenCalled();
+    const deps = _createMainWindow.mock.calls[0][1] as { onCloseRequested?: unknown };
+    expect(typeof deps.onCloseRequested).toBe('function');
+  });
+
+  it('registers window:confirmClose handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.windowConfirmClose);
+  });
+
+  function getOnCloseRequested(): (win: unknown, event: { preventDefault(): void }) => void {
+    const deps = _createMainWindow.mock.calls[0][1] as { onCloseRequested: (win: unknown, event: { preventDefault(): void }) => void };
+    return deps.onCloseRequested;
+  }
+
+  function getConfirmCloseHandler(): (event: { sender: unknown }, proceed: boolean) => Promise<void> {
+    const call = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.windowConfirmClose)!;
+    return call[1] as (event: { sender: unknown }, proceed: boolean) => Promise<void>;
+  }
+
+  it('onCloseRequested preventDefaults and pushes window:closeRequested to the renderer', () => {
+    const onCloseRequested = getOnCloseRequested();
+    const send = vi.fn();
+    const mockWin = {
+      isDestroyed: () => false,
+      webContents: { isDestroyed: () => false, send },
+    };
+    const mockEvent = { preventDefault: vi.fn() };
+
+    onCloseRequested(mockWin, mockEvent);
+
+    expect(mockEvent.preventDefault).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(IPC.windowCloseRequested);
+  });
+
+  it('onCloseRequested is a no-op for an already-destroyed window (no preventDefault, no push)', () => {
+    const onCloseRequested = getOnCloseRequested();
+    const send = vi.fn();
+    const mockWin = {
+      isDestroyed: () => true,
+      webContents: { isDestroyed: () => false, send },
+    };
+    const mockEvent = { preventDefault: vi.fn() };
+
+    onCloseRequested(mockWin, mockEvent);
+
+    expect(mockEvent.preventDefault).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('confirmClose(true) marks the window confirmed and re-closes it', async () => {
+    const handler = getConfirmCloseHandler();
+    const close = vi.fn();
+    const mockWin = {
+      isDestroyed: () => false,
+      close,
+      webContents: { isDestroyed: () => false, send: vi.fn() },
+    };
+    _fromWebContents.mockReturnValue(mockWin);
+
+    await handler({ sender: {} }, true);
+
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it('confirmClose(false) does NOT close the window (user cancelled the prompt)', async () => {
+    const handler = getConfirmCloseHandler();
+    const close = vi.fn();
+    const mockWin = {
+      isDestroyed: () => false,
+      close,
+      webContents: { isDestroyed: () => false, send: vi.fn() },
+    };
+    _fromWebContents.mockReturnValue(mockWin);
+
+    await handler({ sender: {} }, false);
+
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('confirmClose(true) is a no-op when the window is already destroyed', async () => {
+    const handler = getConfirmCloseHandler();
+    const close = vi.fn();
+    const mockWin = {
+      isDestroyed: () => true,
+      close,
+      webContents: { isDestroyed: () => true, send: vi.fn() },
+    };
+    _fromWebContents.mockReturnValue(mockWin);
+
+    await handler({ sender: {} }, true);
+
+    expect(close).not.toHaveBeenCalled();
+  });
+
+  it('after confirmClose(true), a re-entrant close skips the gate (no second preventDefault, no re-push)', async () => {
+    // The whole flow: first close attempt -> gate prevents + pushes. The
+    // renderer shows the prompt; user picks Save/Don't-save -> renderer
+    // calls confirmClose(true), which marks the window confirmed and calls
+    // win.close(). That re-fires the 'close' event -> onCloseRequested runs
+    // again, but this time the gate MUST skip (the window is confirmed) so
+    // the window actually shuts instead of looping forever on the prompt.
+    const onCloseRequested = getOnCloseRequested();
+    const handler = getConfirmCloseHandler();
+    const send = vi.fn();
+    const close = vi.fn();
+    const mockWin = {
+      isDestroyed: () => false,
+      close,
+      webContents: { isDestroyed: () => false, send },
+    };
+    _fromWebContents.mockReturnValue(mockWin);
+
+    // First close attempt — gate prevents and pushes.
+    const event1 = { preventDefault: vi.fn() };
+    onCloseRequested(mockWin, event1);
+    expect(event1.preventDefault).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(IPC.windowCloseRequested);
+
+    // User confirms — window is marked + win.close() is called.
+    await handler({ sender: {} }, true);
+    expect(close).toHaveBeenCalledTimes(1);
+
+    // The re-entrant 'close' event from win.close() re-enters the gate.
+    // The window is now confirmed, so the gate MUST NOT preventDefault
+    // again and MUST NOT re-push window:closeRequested (else the prompt
+    // would re-show and the window could never close).
+    const event2 = { preventDefault: vi.fn() };
+    send.mockClear();
+    onCloseRequested(mockWin, event2);
+    expect(event2.preventDefault).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+  });
+});

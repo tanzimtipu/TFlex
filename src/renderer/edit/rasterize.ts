@@ -75,6 +75,100 @@ export function rectToPixelSize(rect: ImageRect, dpi: number = 72): { width: num
   };
 }
 
+/** DEF-146 — live-fit a committed text box's mirror font so the box
+ *  shows its FULL text, matching the engine / `rasterizeTextBoxToPng`
+ *  auto-fit (wrap at the box width, then shrink the font so every
+ *  wrapped line fits the box height). The previous mirror rendered the
+ *  user's pt size directly (`size * cssScale` px) with `overflow:
+ *  hidden`, so a large default font in a small box clipped the text to
+ *  the first few characters ("AR" for "ARTIFACT CHECK 88").
+ *
+ *  Pure apart from the injected `measure` callback (the production
+ *  caller measures with a scratch canvas; tests stub it), so the math
+ *  is unit-testable without a DOM.
+ */
+export function fitTextBoxFontSizePx(args: {
+  text: string;
+  /** User-picked font size in CSS px (`style.size * cssScale`). */
+  userSizePx: number;
+  /** Box content box in CSS px (the full box minus the mirror's
+   *  padding). */
+  boxWidthPx: number;
+  boxHeightPx: number;
+  lineHeight: number;
+  measure: (text: string, fontSizePx: number) => number;
+}): number {
+  const { text, userSizePx, boxWidthPx, boxHeightPx, lineHeight, measure } = args;
+  let size = Math.max(1, userSizePx);
+  const maxWidth = Math.max(1, boxWidthPx);
+  const words = text.split(/\s+/).filter((w) => w.length > 0);
+  let lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line.length === 0 ? word : `${line} ${word}`;
+    if (line.length > 0 && measure(candidate, size) > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = candidate;
+    }
+  }
+  if (line.length > 0) lines.push(line);
+  if (lines.length === 0) return Math.max(4, size);
+  const needed = lines.length * size * lineHeight;
+  if (needed > boxHeightPx) {
+    size = Math.max(4, boxHeightPx / (lines.length * lineHeight));
+  }
+  return Math.min(userSizePx, Math.max(4, size));
+}
+
+/** Measure text width in CSS px with a scratch canvas 2D context.
+ *  Falls back to an average-glyph estimate (~0.55em per character) when
+ *  no 2D context exists (jsdom / headless), keeping the mirror's fitted
+ *  size deterministic in tests. The scratch canvas is created lazily
+ *  and reused so a document with many text boxes doesn't allocate a
+ *  canvas per measure. */
+export function measureTextWidthCss(
+  text: string,
+  fontFamily: string,
+  fontSizePx: number,
+): number {
+  const ctx = scratchCtx();
+  if (ctx !== null) {
+    try {
+      ctx.font = `${fontSizePx}px ${fontFamily}`;
+      const w = ctx.measureText(text).width;
+      if (typeof w === "number" && Number.isFinite(w) && w >= 0) {
+        return w;
+      }
+    } catch {
+      // fall through to the estimate below
+    }
+  }
+  return text.length * fontSizePx * 0.55;
+}
+
+/** Lazily create + cache a scratch canvas 2D context for text
+ *  measurement. Null when the environment has no 2D backend (jsdom). */
+let cachedScratchCtx: CanvasRenderingContext2D | null | undefined;
+function scratchCtx(): CanvasRenderingContext2D | null {
+  if (cachedScratchCtx !== undefined) return cachedScratchCtx;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    cachedScratchCtx = canvas.getContext("2d");
+  } catch {
+    cachedScratchCtx = null;
+  }
+  return cachedScratchCtx;
+}
+
+/** Test-only: drop the cached scratch context. */
+export function _resetScratchCtxForTests(): void {
+  cachedScratchCtx = undefined;
+}
+
 /** Decode the source image bytes into something we can draw onto
  *  a canvas. The production renderer uses an `HTMLImageElement`
  *  (loaded via `Image.src = blobURL`); jsdom unit tests pass a

@@ -24,7 +24,7 @@
 //                    mode (drag a sub-rect to commit). Click
 //                    "Replace" to open the file picker again.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement } from "react";
 import { Crop, Trash2 } from "lucide-react";
 import type { TextItemGeom } from "../annotations/AnnotationOverlay";
@@ -48,6 +48,10 @@ import {
   type ImageResizeHandle,
 } from "./geometry";
 import { EditInlineEditor, colorToHex, fontFamilyFor } from "./EditInlineEditor";
+import {
+  fitTextBoxFontSizePx,
+  measureTextWidthCss,
+} from "./rasterize";
 
 export interface EditOverlayProps {
   page: number;
@@ -758,6 +762,34 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         />
       )}
 
+      {/* DEF-145 — while a COMMITTED box is being moved, the page
+          canvas underneath still paints the pre-move baked text at
+          the ORIGINAL rect (the pdf.js proxy is only refreshed on
+          mouseup re-commit). Cover that stale copy with an opaque
+          white rect exactly matching the drag's start rect — the
+          same white-mask the engine applies to the old position on
+          re-bake — so the box appears to move as a single unit with
+          no residual text at the old spot. The cover is
+          pointer-transparent and only lives for the drag's
+          duration; it disappears on pointerup when the proxy
+          refresh lands. */}
+      {tool === "box" && textBoxDrag !== null && textBoxDrag.kind === "move" && (
+        <div
+          className="edit-box-eraser"
+          data-edit-box-eraser
+          style={{
+            position: "absolute",
+            left: textBoxDrag.startRect.x * cssScale,
+            top: textBoxDrag.startRect.y * cssScale,
+            width: textBoxDrag.startRect.width * cssScale,
+            height: textBoxDrag.startRect.height * cssScale,
+            background: "#ffffff",
+            pointerEvents: "none",
+          }}
+          aria-hidden
+        />
+      )}
+
       {tool === "box" && boxesForPage.map((b) => (
         <TextBoxView
           key={b.id}
@@ -1072,6 +1104,26 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
     width: box.rect.width * cssScale,
     height: box.rect.height * cssScale,
   };
+  // DEF-146 — the mirror font auto-fits the box (engine/rasterizer
+  // parity): wrap at the box width, shrink so every line fits the box
+  // height. The previous `box.style.size * cssScale` rendered a large
+  // default font inside a small box with overflow:hidden, clipping the
+  // committed text to the first couple of characters while the full
+  // string stayed intact in the textLayer.
+  const fittedFontSizePx = useMemo(() => {
+    const boxWidthCss = box.rect.width * cssScale;
+    const boxHeightCss = box.rect.height * cssScale;
+    const fontFamily = fontFamilyFor(box.style.font);
+    return fitTextBoxFontSizePx({
+      text: box.text,
+      userSizePx: box.style.size * cssScale,
+      // The mirror's padding is "2px 3px" (2 vertical, 3 horizontal).
+      boxWidthPx: Math.max(1, boxWidthCss - 6),
+      boxHeightPx: Math.max(1, boxHeightCss - 4),
+      lineHeight: 1.2,
+      measure: (t, s): number => measureTextWidthCss(t, fontFamily, s),
+    });
+  }, [box.text, box.style.font, box.style.size, box.rect.width, box.rect.height, cssScale]);
   return (
     <div
       className={
@@ -1081,6 +1133,7 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
       }
       data-edit-box-id={box.id}
       data-edit-box-text={box.text}
+      data-edit-box-font-size={String(Math.round(fittedFontSizePx * 100) / 100)}
       style={style}
     >
       {box.background === "white" && (
@@ -1099,7 +1152,7 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
           padding: "2px 3px",
           color: colorToHex(box.style.color),
           fontFamily: fontFamilyFor(box.style.font),
-          fontSize: `${box.style.size * cssScale}px`,
+          fontSize: `${fittedFontSizePx}px`,
           lineHeight: 1.2,
           overflow: "hidden",
           whiteSpace: "pre-wrap",

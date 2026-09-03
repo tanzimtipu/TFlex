@@ -135,7 +135,7 @@ function placeEditor(host: HTMLElement): void {
 
 function typeIntoTextarea(host: HTMLElement, text: string): void {
   const textarea = host.querySelector<HTMLTextAreaElement>(
-    "textarea[data-annotation-editor='textbox']",
+    "textarea.ann-textbox-editor",
   );
   if (textarea === null) throw new Error("textbox textarea not found");
   act((): void => {
@@ -316,7 +316,7 @@ describe("DEF-092 — Confirm unmounts the textbox floating bar", () => {
     try {
       placeEditor(host);
       const textarea = host.querySelector<HTMLTextAreaElement>(
-        "textarea[data-annotation-editor='textbox']",
+        "textarea.ann-textbox-editor",
       );
       if (textarea === null) throw new Error("textarea not found");
       const setter = Object.getOwnPropertyDescriptor(

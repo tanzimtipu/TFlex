@@ -24,7 +24,8 @@ import {
   movePlacement,
   resizePlacement,
 } from "./model";
-import { DRAW_PEN_COLOR, DRAW_PEN_WIDTH } from "./canvas";
+import { DRAW_PEN_COLOR, scaledStrokeWidth } from "./canvas";
+import { useDragWindow } from "../components/useDragWindow";
 
 // Default size (in page points) for the ghost preview + the new
 // placement when the user clicks with a signature tool armed. The
@@ -673,14 +674,19 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
   );
 }
 
-/** DEF-123 — the shared floating action bar (Confirm / Cancel /
- *  Delete). Used by BOTH the pending (uncommitted) placement and
- *  a selected COMMITTED placement. `base` is the anchor rect in
+/** DEF-123 / DEF-147 — the shared floating action bar (Confirm /
+ *  Cancel / Delete). Used by BOTH the pending (uncommitted) placement
+ *  and a selected COMMITTED placement. `base` is the anchor rect in
  *  the CONTAINING BLOCK's CSS-pixel coordinates (for the pending
  *  wrapper: the rect inside the wrapper; for a committed
  *  selection: the rect inside the layer). The bar renders above
- *  the rect, flipping below it when there's no room above. */
-function SignatureActionBar(props: {
+ *  the rect, flipping below it when there's no room above.
+ *
+ *  DEF-147 — the bar itself is draggable (whole-window chrome): a
+ *  press on the bar's padding / gap between buttons (never on a
+ *  button) moves the bar, clamped within the viewport, exactly like
+ *  the DEF-140 inline editor. */
+export function SignatureActionBar(props: {
   base: { x: number; y: number; width: number; height: number };
   confirmTitle: string;
   cancelTitle: string;
@@ -690,6 +696,7 @@ function SignatureActionBar(props: {
   onDelete: () => void;
 }): ReactElement {
   const { base, confirmTitle, cancelTitle, deleteTitle, onConfirm, onCancel, onDelete } = props;
+  const drag = useDragWindow({ controlsSelector: ".sig-action-btn, button, [role='button']" });
   // Anchor the action bar above the rect. If there isn't enough
   // room above (top of page), flip it below the rect.
   const ACTION_BAR_HEIGHT_PX = 32;
@@ -697,17 +704,29 @@ function SignatureActionBar(props: {
   const barTop = useAbove ? base.y - ACTION_BAR_HEIGHT_PX - 4 : base.y + base.height + 4;
   return (
     <div
-      className="sig-action-bar"
+      ref={drag.windowRef}
+      className={drag.dragging ? "sig-action-bar sig-action-bar-dragging" : "sig-action-bar"}
       data-sig-action-bar
       style={{
         position: "absolute",
-        left: base.x,
-        top: barTop,
-        // Bar width is clamped to the rect width but grows if
-        // the user has a long label.
-        minWidth: 200,
+        left: base.x + drag.offset.x,
+        top: barTop + drag.offset.y,
+        // DEF-147 — the bar needs REAL grab-able chrome for the
+        // whole-window drag handle to be reachable. At `minWidth:
+        // 200` with a 3px CSS padding the three buttons span
+        // essentially the whole bar, so a drag that starts on the
+        // bar's padding / right gap (the "chrome" the hook's
+        // controlsSelector leaves draggable) had nowhere to land —
+        // any press collapsed onto a button, which correctly bailed
+        // the hook and the bar never moved (qa: dx=0). Widening the
+        // min-width and the horizontal padding guarantees a real
+        // chrome runway on both sides of the button row so a chrome
+        // press starts the move.
+        minWidth: 260,
+        padding: "8px 12px",
         pointerEvents: "auto",
       }}
+      {...drag.handleProps}
     >
       <button
         type="button"
@@ -948,7 +967,11 @@ function SignatureRaster({
               d={d}
               fill="none"
               stroke={DRAW_PEN_COLOR}
-              strokeWidth={DRAW_PEN_WIDTH / Math.min(sx, sy)}
+              // DEF-144 — the stroke width must scale WITH the points
+              // (multiply by the scale factor). The previous
+              // divide-by-scale rendered the drawn signature as a
+              // thick black filled blob in the ghost + placed view.
+              strokeWidth={scaledStrokeWidth(source.width, source.height, svgW, svgH)}
               strokeLinecap="round"
               strokeLinejoin="round"
             />

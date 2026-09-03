@@ -21,10 +21,11 @@
 // when it's mounted.
 
 import { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, KeyboardEvent, PointerEvent as ReactPointerEvent, ReactElement } from "react";
+import type { ChangeEvent, KeyboardEvent, ReactElement } from "react";
 import { Check, X } from "lucide-react";
 import type { EditFont } from "../../shared/types";
-import { clamp, type EditTextStyle } from "./model";
+import type { EditTextStyle } from "./model";
+import { useDragWindow } from "../components/useDragWindow";
 
 export interface EditInlineEditorProps {
   /** Anchor rect in page points (top-left origin). The editor
@@ -121,88 +122,13 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
   // start a move. The window is clamped within the viewport so it
   // can't be dragged off-screen. The existing blur guard and
   // click-to-edit / commit paths are untouched.
-  const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [dragging, setDragging] = useState(false);
-  const dragRef = useRef<{
-    startClientX: number;
-    startClientY: number;
-    startOffsetX: number;
-    startOffsetY: number;
-    viewLeft: number;
-    viewTop: number;
-    width: number;
-    height: number;
-  } | null>(null);
-
-  const onToolbarPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    if (e.button !== 0) return; // left button only
-    const target = e.target as Element | null;
-    // A drag starting on a control belongs to that control (the
-    // native select dropdown / number spinner / picker / button); it
-    // must never initiate a window move.
-    if (
-      target !== null &&
-      typeof target.closest === "function" &&
-      target.closest("select, input, button, .edit-inline-toolbar-actions") !== null
-    ) {
-      return;
-    }
-    const el = editorRef.current;
-    if (el === null) return;
-    const rect = el.getBoundingClientRect();
-    dragRef.current = {
-      startClientX: e.clientX,
-      startClientY: e.clientY,
-      startOffsetX: dragOffset.x,
-      startOffsetY: dragOffset.y,
-      viewLeft: rect.left,
-      viewTop: rect.top,
-      width: rect.width,
-      height: rect.height,
-    };
-    setDragging(true);
-    // Prevent the browser's text-selection / native drag-ghost while
-    // dragging the toolbar chrome (labels are non-focusable, so no
-    // focus or click behaviour relies on the default action here).
-    e.preventDefault();
-  };
-
-  // DEF-140 — while a drag is active the editor window follows the
-  // cursor via window-level listeners (so it keeps moving even when
-  // the pointer strays off the toolbar), and is clamped within the
-  // viewport on every move.
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (e: PointerEvent): void => {
-      const d = dragRef.current;
-      if (d === null) return;
-      const propLeft = d.viewLeft + (e.clientX - d.startClientX);
-      const propTop = d.viewTop + (e.clientY - d.startClientY);
-      const maxLeft = Math.max(0, window.innerWidth - d.width);
-      const maxTop = Math.max(0, window.innerHeight - d.height);
-      const clampedLeft = clamp(propLeft, 0, maxLeft);
-      const clampedTop = clamp(propTop, 0, maxTop);
-      setDragOffset({
-        x: d.startOffsetX + (clampedLeft - d.viewLeft),
-        y: d.startOffsetY + (clampedTop - d.viewTop),
-      });
-    };
-    const onUp = (): void => {
-      dragRef.current = null;
-      setDragging(false);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    // A cancelled pointer (OS gesture steal / window deactivation)
-    // must also end the drag so the window never stays stuck in
-    // "dragging" state waiting for a pointerup that won't come.
-    window.addEventListener("pointercancel", onUp);
-    return () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-    };
-  }, [dragging]);
+  //
+  // The mechanics live in the shared `useDragWindow` hook (DEF-140
+  // generalized to every floating window — DEF-147); this component
+  // just names which elements are the window and the handle.
+  const drag = useDragWindow({
+    controlsSelector: "select, input, button, .edit-inline-toolbar-actions",
+  });
 
   // Focus on mount so the user can type immediately. The overlay's
   // pointerdown handler ignores clicks inside the editor surface, so
@@ -307,10 +233,13 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
 
   return (
     <div
-      ref={editorRef}
-      className={`edit-inline-editor${dragging ? " edit-inline-dragging" : ""}`}
+      ref={(el): void => {
+        editorRef.current = el;
+        drag.windowRef(el);
+      }}
+      className={`edit-inline-editor${drag.dragging ? " edit-inline-dragging" : ""}`}
       data-edit-editor={mode}
-      style={{ left: leftCss + dragOffset.x, top: topCss + dragOffset.y, width: widthCss }}
+      style={{ left: leftCss + drag.offset.x, top: topCss + drag.offset.y, width: widthCss }}
       onPointerDown={(e): void => {
         e.stopPropagation();
         // DEF-110 — remember that this press started inside the
@@ -328,7 +257,7 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
       <div
         className="edit-inline-toolbar"
         data-edit-drag-handle
-        onPointerDown={onToolbarPointerDown}
+        {...drag.handleProps}
       >
         <label className="edit-inline-field edit-inline-field-font">
           <span className="edit-inline-label">Font</span>

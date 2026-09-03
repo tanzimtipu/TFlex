@@ -320,6 +320,25 @@ const api = {
   closeWindow(): void {
     void ipcRenderer.invoke(IPC.windowClose);
   },
+  // DEF-142 — main pushes window:closeRequested when the user tries to
+  // close the window (caption X, Alt+F4, Window menu Close, app.quit)
+  // and the main-side gate forwards the decision to the renderer. The
+  // renderer checks its open tabs for unsaved edits and either calls
+  // confirmClose(true) immediately (nothing modified) or shows the
+  // existing CloseTabPromptDialog and calls confirmClose(true) on Save
+  // success / Don't save (or nothing on Cancel).
+  onCloseRequested(cb: () => void): () => void {
+    const listener = (): void => cb();
+    ipcRenderer.on(IPC.windowCloseRequested, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC.windowCloseRequested, listener);
+    };
+  },
+  // DEF-142 — proceed=true marks the window close-confirmed and re-closes
+  // it (the gate skips the second 'close'); proceed=false / no call aborts.
+  confirmClose(proceed: boolean): Promise<void> {
+    return ipcRenderer.invoke(IPC.windowConfirmClose, proceed);
+  },
   openFileDialog(kind?: OpenFileDialogKind): Promise<string | null> {
     return ipcRenderer.invoke(IPC.openFileDialog, kind);
   },

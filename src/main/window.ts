@@ -6,6 +6,14 @@ interface WindowDeps {
   rendererHtml: string;
   rendererDevUrl?: string;
   onGeometryChanged: (geometry: WindowGeometry) => void;
+  /** DEF-142 — invoked synchronously from the window's 'close' event so the
+   *  caller can `event.preventDefault()` when the renderer has unsaved
+   *  edits. The caller (index.ts) decides whether to abort the close and
+   *  push `window:closeRequested` to the renderer; a no-op / omitted
+   *  callback lets the window close immediately (the existing behavior for
+   *  callers that do not wire the gate). The event shape is structural —
+   *  only `preventDefault` is used; the real `Electron.Event` satisfies it. */
+  onCloseRequested?: (win: BrowserWindow, event: { preventDefault(): void }) => void;
 }
 
 const GEOMETRY_DEBOUNCE_MS = 300;
@@ -106,11 +114,19 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
   win.on('maximize', scheduleReport);
   win.on('unmaximize', scheduleReport);
 
-  win.on('close', () => {
+  win.on('close', (event) => {
     if (debounce !== null) {
       clearTimeout(debounce);
     }
     reportGeometry();
+    // DEF-142 — give the caller a chance to preventDefault when the
+    // renderer has unsaved edits (the close/quit gate). The caller
+    // (index.ts) decides whether to abort the close and push
+    // window:closeRequested to the renderer so it can show the existing
+    // CloseTabPromptDialog; a no-op / omitted callback lets the window
+    // close immediately. The geometry report above already ran, so a
+    // prevented close still persists the last window position.
+    deps.onCloseRequested?.(win, event);
   });
 
   if (deps.rendererDevUrl !== undefined) {

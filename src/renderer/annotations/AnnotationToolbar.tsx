@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
+import { useDragWindow } from "../components/useDragWindow";
 import {
   PEN_WIDTHS,
   annotationColorToCss,
@@ -94,6 +95,21 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const swatchRef = useRef<HTMLButtonElement | null>(null);
   const popoverRef = useRef<HTMLDivElement | null>(null);
+  // DEF-147 — the color palette popover is a floating window: it can
+  // be dragged by its chrome (section labels / swatch rows / gaps
+  // between controls), clamped within the viewport, exactly like the
+  // DEF-140 inline editor. The pad, the hue slider, the individual
+  // swatch BUTTONS and the inputs are controls and keep their own
+  // presses. Note: `[role='group']` must NOT be in the selector —
+  // the palette's swatch rows are `role="group"` containers, so
+  // matching it bailed out every press that landed on a row's
+  // chrome (padding / gaps between swatches) and the popover never
+  // moved when grabbed by its row; only the swatch buttons
+  // themselves are excluded via `button`.
+  const paletteDrag = useDragWindow({
+    controlsSelector:
+      "button, input, select, textarea, .color-pad, .color-hue-slider, [role='slider'], [role='button']",
+  });
 
   // Click-outside dismissal: same pattern DocumentView uses for the
   // its menus. The picker owns no global click handler so we keep
@@ -236,10 +252,21 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
             />
             {paletteOpen && (
               <div
-                ref={popoverRef}
-                className="color-popover"
+                ref={(el): void => {
+                  popoverRef.current = el;
+                  paletteDrag.windowRef(el);
+                }}
+                className={
+                  paletteDrag.dragging
+                    ? "color-popover color-popover-dragging"
+                    : "color-popover"
+                }
                 role="presentation"
                 data-color-popover
+                style={{
+                  transform: `translate(${paletteDrag.offset.x}px, ${paletteDrag.offset.y}px)`,
+                }}
+                {...paletteDrag.handleProps}
               >
                 <ColorPalette
                   theme={theme}

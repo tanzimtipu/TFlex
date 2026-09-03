@@ -192,7 +192,7 @@ describe("B2 followup — action bar buttons stay clickable (no preventDefault o
       confirmBtn.getBoundingClientRect = (): DOMRect => rect as DOMRect;
       // Type into the textarea so commitTextbox creates a real annotation.
       const textarea = host.querySelector<HTMLTextAreaElement>(
-        "textarea[data-annotation-editor='textbox']",
+        "textarea.ann-textbox-editor",
       );
       if (textarea === null) throw new Error("textarea not found");
       act((): void => {
@@ -348,7 +348,7 @@ describe("B2 followup — action bar buttons stay clickable (no preventDefault o
         );
       });
       const textarea = host.querySelector<HTMLTextAreaElement>(
-        "textarea[data-annotation-editor='callout']",
+        "textarea.ann-textbox-editor",
       );
       if (textarea === null) throw new Error("callout textarea not found");
       act((): void => {

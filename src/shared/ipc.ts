@@ -31,6 +31,20 @@ export const IPC = {
   windowMinimize: "window:minimize",
   windowMaximize: "window:maximize",
   windowClose: "window:close",
+  // DEF-142 — close/quit gate. The main process intercepts the window's
+  // 'close' event (caption X via window:close, OS Alt+F4, the Window menu's
+  // Close role, and app.quit() which closes every window) and, when the
+  // renderer has unsaved edits, preventDefaults the close and pushes
+  // window:closeRequested so the renderer can show its existing
+  // CloseTabPromptDialog. The renderer then calls window:confirmClose to
+  // actually close (proceed=true, after Save succeeded / Don't save) or
+  // abort (proceed=false / no call, on Cancel). A confirmed window is
+  // re-closed via win.close(); the gate skips the second 'close' so the
+  // window actually shuts. Covers both the whole-window close and the
+  // per-tab closeTab path (which already gated on modified); the window
+  // close bypassed that gate, silently discarding unsaved edits.
+  windowCloseRequested: "window:closeRequested",
+  windowConfirmClose: "window:confirmClose",
   openFileDialog: "dialog:openFile",
   pdfLoad: "pdf:load",
   // Phase 12 — separate FDF load path. FDF files start with %FDF- and would
@@ -395,6 +409,25 @@ export interface TFlexApi {
   minimizeWindow(): void;
   maximizeWindow(): void;
   closeWindow(): void;
+  /** DEF-142 — subscribe to whole-window close requests pushed from the
+   *  main process. Main fires this when the user clicks the window X,
+   *  presses Alt+F4, picks the Window menu's Close role, or triggers
+   *  app.quit() (Exit menu) AND the main-side gate could not prove the
+   *  close was safe — the renderer is the source of truth for unsaved
+   *  edits, so main always forwards the close request here. The renderer
+   *  checks its open tabs for unsaved state: if none are modified it
+   *  immediately calls `confirmClose(true)`; otherwise it shows the
+   *  existing CloseTabPromptDialog (iterating every modified tab) and
+   *  calls `confirmClose(true)` on Save success / Don't save, or does
+   *  nothing on Cancel (the window stays open). Returns an unsubscribe. */
+  onCloseRequested?(cb: () => void): () => void;
+  /** DEF-142 — tell the main process to actually close the window after
+   *  the renderer's unsaved-changes prompt has resolved. `proceed=true`
+   *  marks the window as close-confirmed and re-calls `win.close()`; the
+   *  gate skips the second 'close' (and the geometry report still runs)
+   *  so the window shuts. `proceed=false` (or no call) aborts — the window
+   *  stays open. The renderer awaits this to know the close proceeded. */
+  confirmClose?(proceed: boolean): Promise<void>;
   openFileDialog(kind?: OpenFileDialogKind): Promise<string | null>;
   loadPdf(path: string): Promise<Result<ArrayBuffer, PdfOpenError>>;
   /** Phase 12 — load an FDF (Forms Data Format) comment file from disk.

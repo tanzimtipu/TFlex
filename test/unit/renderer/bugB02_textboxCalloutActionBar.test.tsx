@@ -138,7 +138,7 @@ describe("B2 — textbox / callout floating action bar", () => {
         }),
       );
     });
-    const textarea = host.querySelector("textarea[data-annotation-editor='textbox']") as HTMLTextAreaElement | null;
+    const textarea = host.querySelector("textarea.ann-textbox-editor") as HTMLTextAreaElement | null;
     expect(textarea).not.toBeNull();
     if (textarea === null) return;
     // Type some text into the editor.
@@ -242,7 +242,7 @@ describe("B2 — textbox / callout floating action bar", () => {
         }),
       );
     });
-    const textarea = host.querySelector("textarea[data-annotation-editor='textbox']") as HTMLTextAreaElement | null;
+    const textarea = host.querySelector("textarea.ann-textbox-editor") as HTMLTextAreaElement | null;
     if (textarea === null) return;
     // Blur fires when focus moves to the Confirm button. The
     // overlay used to commit on blur; it now must NOT.
@@ -289,7 +289,7 @@ describe("B2 — textbox / callout floating action bar", () => {
         }),
       );
     });
-    const textarea = host.querySelector("textarea[data-annotation-editor='callout']") as HTMLTextAreaElement | null;
+    const textarea = host.querySelector("textarea.ann-textbox-editor") as HTMLTextAreaElement | null;
     expect(textarea).not.toBeNull();
     if (textarea === null) return;
     act((): void => {
@@ -329,7 +329,7 @@ describe("B2 — textbox / callout floating action bar", () => {
         }),
       );
     });
-    const textarea = host.querySelector("textarea[data-annotation-editor='textbox']") as HTMLTextAreaElement | null;
+    const textarea = host.querySelector("textarea.ann-textbox-editor") as HTMLTextAreaElement | null;
     if (textarea === null) return;
     act((): void => {
       const setter = Object.getOwnPropertyDescriptor(
@@ -364,7 +364,7 @@ describe("B2 — textbox / callout floating action bar", () => {
         }),
       );
     });
-    const textarea = host.querySelector("textarea[data-annotation-editor='textbox']") as HTMLTextAreaElement | null;
+    const textarea = host.querySelector("textarea.ann-textbox-editor") as HTMLTextAreaElement | null;
     if (textarea === null) return;
     act((): void => {
       textarea.dispatchEvent(

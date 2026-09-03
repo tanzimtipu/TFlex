@@ -40,13 +40,12 @@ import {
 } from "../annotations/model";
 import {
   CONTENT_PADDING_PX,
-  PAGE_GAP_PX,
-  pageAtScrollTop,
-  pageSlotHeight,
+  mixedPageAtScrollTop,
+  mixedSlotOffsetTop,
+  mixedVisiblePageRange,
   resolvePageLabel,
-  slotOffsetTop,
-  visiblePageRange,
   visibleToSourcePageForProxy,
+  type MixedPageGeom,
 } from "./pageGeometry";
 import {
   createIdleCleanupCoordinator,
@@ -280,12 +279,6 @@ interface DocumentViewProps {
 // retrigger PageView's measurement effect and cause a setState loop).
 const EMPTY_HITS: SearchHit[] = [];
 
-// Stable no-op for PageView's onPageSize callback. Each PageView currently
-// does not surface per-page size to the parent, but the prop is still wired
-// through with a stable reference to avoid retriggering the render effect
-// on every DocumentView re-render.
-const NOOP_PAGE_SIZE = (): void => undefined;
-
 // How many pages to render in the initial synchronous mount on open, so the
 // very first paint already shows real bitmaps without waiting for
 // IntersectionObserver callbacks. The IO is unreliable in some real-world
@@ -448,6 +441,16 @@ export function DocumentView({
   const [mountedPages, setMountedPages] = useState<Set<number>>(new Set());
   const [viewportBox, setViewportBox] = useState({ w: 0, h: 0 });
   const [currentPage, setCurrentPage] = useState(initial.currentPage);
+  // DEF-141 — per-page sizes (un-rotated pt dims) reported by each
+  // mounted PageView's `onPageSize`. The scroller renders every slot
+  // at ITS OWN page's size so a per-page crop of page 1 no longer
+  // collapses pages 2..N into the crop box. The map survives a doc
+  // proxy refresh (same DocumentView instance — App keys the tab-pane
+  // by tab id), so the OTHER pages keep their pre-refresh sizes the
+  // moment `refreshDocProxyFor` swaps in the re-serialized bytes; each
+  // slot re-reports its size when it re-renders, correcting any page
+  // whose size actually changed (the cropped page itself).
+  const [pageSizes, setPageSizes] = useState<Map<number, { w: number; h: number }>>(new Map());
 
   const [zoom, dispatchZoom] = useReducer(zoomReducer, {
     mode: initial.zoomMode,
@@ -550,6 +553,73 @@ export function DocumentView({
   }, [zoom, viewportBox, fitAnchor]);
   const effectiveScaleRef = useRef(effectiveScale);
   effectiveScaleRef.current = effectiveScale;
+
+  // ---- per-page slot geometry (DEF-141) ----------------------------------
+  //
+  // PageView reports each mounted page's own dimensions through
+  // `onPageSize`; the scroller lays every slot out at that page's own
+  // size (mixed-size document), instead of deriving every slot from
+  // page 1's size. Before this split a per-page crop of page 1 shrank
+  // `firstPageSize` and EVERY slot collapsed to the crop box (DEF-141);
+  // the full pages rendered clipped into crop-sized squares.
+  //
+  // `pageSizes` stores the un-rotated pt dims as reported by PageView.
+  // The MEMO below derives, per visible page:
+  //   - the pt dims passed to PageView as its placeholder sizing, and
+  //   - the CSS slot dimensions (rotation-aware, matching PageView's
+  //     own wrapper-size math) the scroller reserves scroll space with.
+  //
+  // Fallback for pages whose size has not been reported yet: the LARGEST
+  // known size (page 1's live size on first open, then the biggest page
+  // reported so far). Too-big placeholder shows a larger paper rectangle
+  // briefly (corrected the moment the page mounts and reports its own
+  // size) instead of clipping content into a too-small slot — the
+  // DEF-141 failure mode. Page 1 always uses `firstPageSize` (the live
+  // size of the current proxy — authoritative on refresh; a stale
+  // `pageSizes` entry from before a crop must not win).
+  const onPageSize = useCallback((page: number, widthPt: number, heightPt: number): void => {
+    setPageSizes((prev) => {
+      const cur = prev.get(page);
+      if (cur !== undefined && cur.w === widthPt && cur.h === heightPt) {
+        return prev;
+      }
+      const next = new Map(prev);
+      next.set(page, { w: widthPt, h: heightPt });
+      return next;
+    });
+  }, []);
+
+  const fallbackSize = useMemo(() => {
+    let best = firstPageSize ?? { w: 612, h: 792 };
+    for (const s of pageSizes.values()) {
+      if (s.w * s.h > best.w * best.h) {
+        best = s;
+      }
+    }
+    return best;
+  }, [firstPageSize, pageSizes]);
+
+  const pageLayouts = useMemo(() => {
+    const geom: MixedPageGeom[] = [];
+    const pt: Array<{ w: number; h: number }> = [];
+    for (let p = 1; p <= pageCount; p += 1) {
+      const own = pageSizes.get(p);
+      const wPt = p === 1 && firstPageSize !== null ? firstPageSize.w : own?.w ?? fallbackSize.w;
+      const hPt = p === 1 && firstPageSize !== null ? firstPageSize.h : own?.h ?? fallbackSize.h;
+      pt.push({ w: wPt, h: hPt });
+      // The slot math must match PageView's wrapper dims (DEF-057):
+      // at 90/270 the visible width / height swap.
+      const rotForLayout = ((engineState.rotations[p - 1] ?? 0) % 4 + 4) % 4;
+      const isQuarterTurn = rotForLayout === 1 || rotForLayout === 3;
+      geom.push({
+        widthCss: (isQuarterTurn ? hPt : wPt) * effectiveScale,
+        heightCss: (isQuarterTurn ? wPt : hPt) * effectiveScale,
+      });
+    }
+    return { geom, pt };
+  }, [pageSizes, fallbackSize, firstPageSize, engineState.rotations, effectiveScale, pageCount]);
+  const pageGeomRef = useRef(pageLayouts.geom);
+  pageGeomRef.current = pageLayouts.geom;
 
   // ---- first page dims (placeholder sizing for all pages) -------------------
   //
@@ -714,21 +784,20 @@ export function DocumentView({
   // callbacks can simply never fire for page slots, leaving nothing mounted.
   // To guarantee a working mount regardless of IO behavior, we compute the
   // visible page range from scrollTop + slot geometry in JS (using
-  // `visiblePageRange` from pageGeometry.ts — the same math the scrollbar
-  // uses). The mounted set is the geometry range, UNION'd with IO extras
-  // that are still close enough to the viewport to be useful. Far-out IO
-  // extras are pruned so the mounted set stays bounded.
+  // `mixedVisiblePageRange` from pageGeometry.ts, the per-page-size
+  // variant — DEF-141). The mounted set is the geometry range, UNION'd
+  // with IO extras that are still close enough to the viewport to be
+  // useful. Far-out IO extras are pruned so the mounted set stays bounded.
   const computeGeometryMountRef = useRef<() => void>(() => undefined);
   computeGeometryMountRef.current = (): void => {
     const scroller = scrollerRef.current;
     if (firstPageSize === null) {
       return;
     }
-    const range = visiblePageRange(
+    const range = mixedVisiblePageRange(
       scroller?.scrollTop ?? 0,
       scroller?.clientHeight ?? 0,
-      firstPageSize.h,
-      effectiveScaleRef.current,
+      pageGeomRef.current,
       pageCount,
       PAGE_BUFFER_PAGES,
     );
@@ -799,7 +868,7 @@ export function DocumentView({
     const pending = jumpTargetRef.current;
     if (pending !== null && pendingJumpLandingRef.current && firstPageSize !== null) {
       const top =
-        slotOffsetTop(pending, firstPageSize.h, effectiveScaleRef.current) -
+        mixedSlotOffsetTop(pending, pageGeomRef.current) -
         CONTENT_PADDING_PX;
       if (Math.abs(scroller.scrollTop - top) > 1) {
         scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
@@ -818,7 +887,7 @@ export function DocumentView({
       // the transition (guarded by the ref), never on `currentPage`
       // changes driven by the heuristic.
       const top =
-        slotOffsetTop(currentPage, firstPageSize.h, effectiveScaleRef.current) -
+        mixedSlotOffsetTop(currentPage, pageGeomRef.current) -
         CONTENT_PADDING_PX;
       if (Math.abs(scroller.scrollTop - top) > 1) {
         scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
@@ -913,10 +982,9 @@ export function DocumentView({
     if (scroller === null || firstPageSize === null) {
       return;
     }
-    const page = pageAtScrollTop(
+    const page = mixedPageAtScrollTop(
       scroller.scrollTop,
-      firstPageSize.h,
-      effectiveScaleRef.current,
+      pageGeomRef.current,
       pageCount,
     );
     setCurrentPage((prev) => (prev === page ? prev : page));
@@ -936,11 +1004,8 @@ export function DocumentView({
       // (in which case we let the heuristic run, then clear the lock).
       const target = jumpTargetRef.current;
       if (target !== null && firstPageSize !== null) {
-        const targetTop = slotOffsetTop(
-          target,
-          firstPageSize.h,
-          effectiveScaleRef.current,
-        ) - CONTENT_PADDING_PX;
+        const targetTop =
+          mixedSlotOffsetTop(target, pageGeomRef.current) - CONTENT_PADDING_PX;
         const scroller = scrollerRef.current;
         if (scroller !== null && scroller.scrollTop >= targetTop - 1) {
           jumpTargetRef.current = null;
@@ -1057,7 +1122,7 @@ export function DocumentView({
         pendingJumpLandingRef.current = true;
         return;
       }
-      const target = slotOffsetTop(page, firstPageSize.h, effectiveScaleRef.current);
+      const target = mixedSlotOffsetTop(page, pageGeomRef.current);
       // DEF-098 — the click's own scroll runs now; make sure the
       // mount-sync effect does not re-apply it as a queued jump
       // (which would INSTANT-kill this smooth scroll). A subsequent
@@ -1465,7 +1530,7 @@ export function DocumentView({
       if (scroller === null || firstPageSize === null) {
         return;
       }
-      const pageTop = slotOffsetTop(page, firstPageSize.h, effectiveScaleRef.current);
+      const pageTop = mixedSlotOffsetTop(page, pageGeomRef.current);
       const target = pageTop + cssTop - scroller.clientHeight / 2;
       scroller.scrollTo({ top: Math.max(target, 0), behavior: "smooth" });
     },
@@ -1601,13 +1666,6 @@ export function DocumentView({
     },
     [onToast],
   );
-
-  // Slot height in CSS px (pageHeight * cssScale + gap). Zero until the first
-  // page's dimensions are known; before that, every slot has no height and
-  // the scroller's content height equals just the padding, so no overflow
-  // happens while we wait.
-  const slotHeightPx = firstPageSize === null ? 0 : pageSlotHeight(firstPageSize.h, effectiveScale);
-  const pageWidthPx = firstPageSize === null ? 0 : firstPageSize.w * effectiveScale;
 
   return (
     <div className="workspace">
@@ -1772,6 +1830,13 @@ export function DocumentView({
               // thumb CSS class flipped, the main view did not).
               const pageRotation = engineState.rotations[visiblePage - 1] ?? 0;
               const isMounted = mountedPages.has(visiblePage);
+              // DEF-141 — per-page slot geometry. Each slot reserves
+              // space for ITS OWN page (mixed-size document): a crop of
+              // page 1 must not shrink pages 2..N. `pageLayouts.geom`
+              // holds the rotation-aware CSS dims; `pageLayouts.pt` the
+              // un-rotated pt dims PageView uses for its wrapper.
+              const slotGeom = pageLayouts.geom[visiblePage - 1];
+              const pagePt = pageLayouts.pt[visiblePage - 1];
               return (
                 <div
                   key={visiblePage}
@@ -1780,8 +1845,14 @@ export function DocumentView({
                   data-page={visiblePage}
                   data-source-page={sourcePage}
                   style={{
-                    height: slotHeightPx > 0 ? `${slotHeightPx - PAGE_GAP_PX}px` : 0,
-                    width: pageWidthPx > 0 ? `${pageWidthPx}px` : undefined,
+                    height:
+                      slotGeom !== undefined && slotGeom.heightCss > 0
+                        ? `${slotGeom.heightCss}px`
+                        : 0,
+                    width:
+                      slotGeom !== undefined && slotGeom.widthCss > 0
+                        ? `${slotGeom.widthCss}px`
+                        : undefined,
                   }}
                 >
                   {isMounted && (
@@ -1800,15 +1871,15 @@ export function DocumentView({
                       // `doc.getPage(sourcePage)` render uses it.
                       page={visiblePage}
                       sourcePage={sourcePage}
-                      widthPt={firstPageSize?.w ?? 612}
-                      heightPt={firstPageSize?.h ?? 792}
+                      widthPt={pagePt?.w ?? 612}
+                      heightPt={pagePt?.h ?? 792}
                       cssScale={effectiveScale}
                       rotation={pageRotation}
                       shouldRender={true}
                       hits={hitsByPage.get(visiblePage) ?? EMPTY_HITS}
                       activeHit={activeHit?.page === visiblePage ? activeHit : null}
                       registerPage={NOOP_REGISTER}
-                      onPageSize={NOOP_PAGE_SIZE}
+                      onPageSize={onPageSize}
                       onActiveHitTop={onActiveHitTop}
                       annotations={annotationsByPage.get(visiblePage) ?? EMPTY_ANNOTATIONS}
                       annotationTool={annTool}

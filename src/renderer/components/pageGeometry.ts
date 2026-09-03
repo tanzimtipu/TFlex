@@ -80,6 +80,136 @@ export function pageAtScrollTop(
   return Math.max(1, Math.min(pageCount, page));
 }
 
+// ---------------------------------------------------------------------------
+// Mixed-size scroller geometry (DEF-141)
+//
+// The uniform helpers above describe a scroller where every page shares the
+// first page's size. That breaks the moment pages DIFFER in size — the
+// canonical case is a per-page crop of page 1: `firstPageSize` reflects the
+// cropped page, so `slotOffsetTop` / `pageAtScrollTop` / `visiblePageRange`
+// collapse EVERY slot to the crop box and the full pages render clipped
+// inside crop-sized squares. The mixed helpers below take a per-page layout
+// array (each entry the page's own post-rotation CSS size) so slots keep
+// their OWN dimensions and the scrollbar / mount math tracks the true
+// document height.
+//
+// The DOM layout contract is identical to the uniform case: the scroller is
+// a flex column with `gap: PAGE_GAP_PX` between slots; slot N's top sits at
+// `CONTENT_PADDING_PX + Σ_{i<N} (heightCss_i + PAGE_GAP_PX)`. When every
+// page has the same height these helpers reduce to the uniform ones.
+
+export interface MixedPageGeom {
+  /** CSS px width of the page element (post-rotation). */
+  widthCss: number;
+  /** CSS px height of the page element (post-rotation), EXCLUDING
+   *  the inter-slot gap (the flex `gap` supplies it). */
+  heightCss: number;
+}
+
+/** Top offset of slot N inside a mixed-size scroller, in CSS px.
+ *  1-based; slot 1 starts at the container's top padding. */
+export function mixedSlotOffsetTop(
+  pageNumber: number,
+  geom: readonly MixedPageGeom[],
+): number {
+  if (pageNumber <= 1) {
+    return CONTENT_PADDING_PX;
+  }
+  let top = CONTENT_PADDING_PX;
+  const count = Math.min(pageNumber - 1, geom.length);
+  for (let i = 0; i < count; i += 1) {
+    const h = geom[i]?.heightCss ?? 0;
+    top += (h > 0 ? h : 0) + PAGE_GAP_PX;
+  }
+  return top;
+}
+
+/** 1-based page number the viewport is showing at CSS pixel position `top`,
+ *  for a mixed-size scroller. Mirrors `pageAtScrollTop`'s semantics: the
+ *  page whose top is at-or-below the landing point (`top +
+ *  CONTENT_PADDING_PX`), clamped to [1, pageCount]. Reduces to
+ *  `pageAtScrollTop` when every page has the same height. */
+export function mixedPageAtScrollTop(
+  top: number,
+  geom: readonly MixedPageGeom[],
+  pageCount: number,
+): number {
+  if (pageCount <= 0) {
+    return 1;
+  }
+  const adjusted = top + CONTENT_PADDING_PX;
+  let acc = 0;
+  let covered = 0;
+  for (let p = 1; p <= pageCount; p += 1) {
+    const h = geom[p - 1]?.heightCss ?? 0;
+    if (h <= 0) {
+      break;
+    }
+    acc += h + PAGE_GAP_PX;
+    if (acc <= adjusted) {
+      covered = p;
+    } else {
+      break;
+    }
+  }
+  return Math.max(1, Math.min(pageCount, covered + 1));
+}
+
+/** Inclusive 1-based [start, end] range of pages currently visible inside a
+ *  mixed-size scroller, plus a buffer of `bufferPages` on each side.
+ *  Mirrors `visiblePageRange` for the per-page case: the first index is the
+ *  page whose slot contains the viewport's top edge, and the range extends
+ *  until the accumulated slot heights cover the viewport. */
+export function mixedVisiblePageRange(
+  scrollTop: number,
+  viewportHeight: number,
+  geom: readonly MixedPageGeom[],
+  pageCount: number,
+  bufferPages = 1,
+): { start: number; end: number } {
+  if (pageCount <= 0) {
+    return { start: 1, end: 1 };
+  }
+  const topContent = scrollTop - CONTENT_PADDING_PX;
+  let first = 0;
+  if (topContent > 0) {
+    let acc = 0;
+    let covered = 0;
+    for (let i = 0; i < pageCount; i += 1) {
+      const h = geom[i]?.heightCss ?? 0;
+      if (h <= 0) {
+        break;
+      }
+      acc += h + PAGE_GAP_PX;
+      if (acc <= topContent) {
+        covered = i + 1;
+      } else {
+        break;
+      }
+    }
+    // `covered` counts full slots below the viewport top; clamp to the
+    // last page index so a scroll far past the end can't produce an
+    // empty / inverted range.
+    first = Math.min(covered, pageCount - 1);
+  }
+  let last = first;
+  let acc = 0;
+  for (let i = first; i < pageCount; i += 1) {
+    const h = geom[i]?.heightCss ?? 0;
+    if (h <= 0) {
+      break;
+    }
+    last = i;
+    acc += h + PAGE_GAP_PX;
+    if (acc >= viewportHeight) {
+      break;
+    }
+  }
+  const start = Math.max(0, first - bufferPages);
+  const end = Math.min(pageCount - 1, last + bufferPages);
+  return { start: start + 1, end: end + 1 };
+}
+
 /**
  * Total scrollable height of the container in CSS px. Used to keep the
  * scrollbar in sync with the (possibly virtualized) page count.

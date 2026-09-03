@@ -397,6 +397,17 @@ export function App(): ReactElement {
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
   const [pendingCloseSaving, setPendingCloseSaving] = useState<boolean>(false);
   const [pendingCloseError, setPendingCloseError] = useState<string | null>(null);
+  // DEF-142 — whole-window close-request queue. When main pushes
+  // `window:closeRequested` (window X / Alt+F4 / Window menu Close /
+  // Exit -> app.quit), the renderer snapshots every modified tab id
+  // into this queue and walks it through the CloseTabPromptDialog one
+  // tab at a time (reusing `onCloseTabPromptChoose`, whose DEF-128
+  // branch routes path-less tabs through Save-As). Non-null only while
+  // a window-close flow is in progress; a plain per-tab close
+  // (`closeTab`) leaves it null. The queue empties -> `confirmClose(true)`;
+  // a Cancel -> `setWindowCloseQueue(null)` with no confirmClose, so
+  // the window stays open.
+  const [windowCloseQueue, setWindowCloseQueue] = useState<string[] | null>(null);
   /** Per-page sizes (PDF points, top-left origin) for the active
    *  doc. The Crop dialog reads this map to draw per-page
    *  previews. The host seeds it lazily when the dialog opens so
@@ -550,6 +561,13 @@ export function App(): ReactElement {
   // state change.
   const pendingCloseTabIdRef = useRef<string | null>(null);
   pendingCloseTabIdRef.current = pendingCloseTabId;
+  // DEF-142 — mirror ref for the close-request queue. The close
+  // subscription and the prompt handler read the latest queue
+  // synchronously through this ref (the same stable-callback pattern
+  // as `pendingCloseTabIdRef` above), so neither needs to re-create
+  // when the queue changes.
+  const windowCloseQueueRef = useRef<string[] | null>(null);
+  windowCloseQueueRef.current = windowCloseQueue;
 
   /** Persist the latest settings to main immediately. Bumps the
    *  echo-filter seq and snapshots the object that went out so the
@@ -611,6 +629,52 @@ export function App(): ReactElement {
       cancelled = true;
       unsubscribe();
     };
+  }, []);
+
+  // DEF-142 — whole-window close-request subscription. Main
+  // preventDefaults EVERY window close (caption X, Alt+F4, the Window
+  // menu's Close role, and Exit -> app.quit which closes the window)
+  // and pushes `window:closeRequested`; the renderer is the source of
+  // truth for unsaved edits. The handler either confirms immediately
+  // when nothing is modified or walks every modified tab through the
+  // existing CloseTabPromptDialog (the same modified check closeTab
+  // uses; the DEF-128 Save-As routing for path-less tabs is reused
+  // automatically via onCloseTabPromptChoose) and calls
+  // `confirmClose(true)` only after each tab Save-succeeded or was
+  // discarded. Cancel clears the queue and calls nothing — the window
+  // stays open. Unsubscribes on unmount.
+  useEffect(() => {
+    if (typeof window.tflex.onCloseRequested !== "function") return;
+    const unsubscribeCloseRequest = window.tflex.onCloseRequested(() => {
+      // Main re-pushes on every close attempt; while a window-close
+      // flow is already prompting, ignore the duplicate.
+      if (windowCloseQueueRef.current !== null) return;
+      // Same modified check closeTab uses: the tabs reducer's
+      // `meta.modified` OR the engineUi mirror's `state.modified`
+      // (the mirror catches the batched-dispatch window right after
+      // an engine op, when `meta.modified` can still read false).
+      const modifiedIds = tabsRef.current.tabs
+        .filter((t) => t.modified || engineUiRef.current[t.id]?.state.modified === true)
+        .map((t) => t.id);
+      if (modifiedIds.length === 0) {
+        // Nothing to save anywhere — the close may proceed.
+        void window.tflex.confirmClose?.(true);
+        return;
+      }
+      // If a per-tab close prompt is already showing, keep that tab
+      // first so the open dialog continues to own the flow; the rest
+      // of the modified tabs follow.
+      const pending = pendingCloseTabIdRef.current;
+      const queue =
+        pending !== null && modifiedIds.includes(pending)
+          ? [pending, ...modifiedIds.filter((id) => id !== pending)]
+          : modifiedIds;
+      setWindowCloseQueue(queue);
+      setPendingCloseTabId(queue[0] ?? null);
+      setPendingCloseError(null);
+      setPendingCloseSaving(false);
+    });
+    return unsubscribeCloseRequest;
   }, []);
 
   // OTA UX — one shared subscription to `tflex.update.onStatusChanged`
@@ -2576,6 +2640,30 @@ export function App(): ReactElement {
 
   // ---- save / save-as ----
 
+  // DEF-142 — one modified tab resolved its close prompt (Save
+  // succeeded or Don't save). Advance the window-close queue: show
+  // the prompt for the next modified tab, or — when the queue
+  // empties — tell main the window may shut via `confirmClose(true)`.
+  // No-op for a plain per-tab close (the queue is null). Reading the
+  // queue through the ref keeps this stable so
+  // `onCloseTabPromptChoose` (also stable) never re-creates.
+  const advanceWindowCloseQueue = useCallback((): void => {
+    const queue = windowCloseQueueRef.current;
+    if (queue === null) return;
+    const next = queue.slice(1);
+    if (next.length === 0) {
+      // Every modified tab resolved — the window may now close.
+      setWindowCloseQueue(null);
+      void window.tflex.confirmClose?.(true);
+      return;
+    }
+    // More modified tabs to walk through: show the next one.
+    setWindowCloseQueue(next);
+    setPendingCloseTabId(next[0] ?? null);
+    setPendingCloseError(null);
+    setPendingCloseSaving(false);
+  }, []);
+
   // B8 — close-tab prompt handler. The user picked one of
   // Save / Don't save / Cancel from the CloseTabPromptDialog.
   // We orchestrate the save flow here (the dialog stays
@@ -2591,6 +2679,9 @@ export function App(): ReactElement {
       if (choice === "cancel") {
         setPendingCloseTabId(null);
         setPendingCloseError(null);
+        // DEF-142 — abort any in-flight window-close flow. No
+        // confirmClose call: the window stays open.
+        setWindowCloseQueue(null);
         return;
       }
       if (choice === "discard") {
@@ -2599,6 +2690,9 @@ export function App(): ReactElement {
         setPendingCloseTabId(null);
         setPendingCloseError(null);
         performCloseTab(id);
+        // DEF-142 — this tab resolved; advance the window-close
+        // queue (confirmClose(true) fires when the queue empties).
+        advanceWindowCloseQueue();
         return;
       }
       // choice === "save"
@@ -2649,6 +2743,9 @@ export function App(): ReactElement {
           setPendingCloseTabId(null);
           setPendingCloseError(null);
           performCloseTab(id);
+          // DEF-142 — Save-As succeeded; advance the window-close
+          // queue (confirmClose(true) fires when the queue empties).
+          advanceWindowCloseQueue();
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           setPendingCloseError(msg);
@@ -2672,6 +2769,9 @@ export function App(): ReactElement {
         setPendingCloseTabId(null);
         setPendingCloseError(null);
         performCloseTab(id);
+        // DEF-142 — the save resolved; advance the window-close queue
+        // (confirmClose(true) fires when the queue empties).
+        advanceWindowCloseQueue();
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         setPendingCloseError(msg);
