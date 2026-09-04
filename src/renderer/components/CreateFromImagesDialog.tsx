@@ -244,7 +244,7 @@ export function CreateFromImagesDialog(
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">
@@ -277,7 +277,7 @@ export function CreateFromImagesDialog(
                 title="Create a PDF from the OS clipboard (image or text)"
                 data-create-from-clipboard
               >
-                <ClipboardPaste size={14} aria-hidden />
+                <ClipboardPaste size={16} aria-hidden />
                 {clipboardBusy ? "Reading…" : "Create from clipboard"}
               </button>
             )}
@@ -316,7 +316,7 @@ export function CreateFromImagesDialog(
                     title="Remove"
                     data-create-remove={idx}
                   >
-                    <X size={12} aria-hidden />
+                    <X size={16} aria-hidden />
                   </button>
                 </li>
               ))}

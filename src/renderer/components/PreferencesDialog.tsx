@@ -112,7 +112,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
             onClick={onClose}
             aria-label="Close preferences"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </header>
         <div className="sheet-body sheet-body-prefs">

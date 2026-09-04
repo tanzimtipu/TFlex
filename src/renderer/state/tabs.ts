@@ -24,7 +24,19 @@ export interface TabsState {
 }
 
 export type TabsAction =
-  | { type: 'open'; tab: TabMeta }
+  | {
+      type: 'open';
+      tab: TabMeta;
+      /** DEF-170 — a derived / in-memory result tab (extract, split,
+       *  optimize, create) must never be collapsed onto a previously
+       *  opened tab that happens to share the same synthetic filePath.
+       *  The same-path dedupe exists for re-opening a real on-disk
+       *  document; without this opt-out every extract result from the
+       *  same source would share `<extract>report.pdf` and the second
+       *  one would be silently dropped (orphaning its session). Set
+       *  to false only for brand-new derived documents. */
+      dedupePath?: boolean;
+    }
   | { type: 'close'; id: string }
   | { type: 'activate'; id: string }
   | { type: 'set-modified'; id: string; modified: boolean }
@@ -95,7 +107,10 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
       //      slot).
       //   2. filePath matches an existing real tab -> activate that
       //      tab and drop the incoming meta (re-opening an already-open
-      //      document).
+      //      document). Derive-tab opens pass `dedupePath: false` to
+      //      skip this branch (DEF-170): their synthetic filePath would
+      //      otherwise collide with the previous result tab and the new
+      //      tab would be dropped, orphaning its session.
       //   3. otherwise -> append.
       //
       // The pre-DEF-036 implementation did (1) implicitly using
@@ -119,7 +134,7 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
         const tabs = state.tabs.map((t) => (t.id === action.tab.id ? action.tab : t));
         return { tabs, activeId: action.tab.id };
       }
-      if (action.tab.filePath !== '') {
+      if (action.tab.filePath !== '' && action.dedupePath !== false) {
         const existing = state.tabs.find((t) => t.filePath === action.tab.filePath);
         if (existing !== undefined) {
           return { ...state, activeId: existing.id };

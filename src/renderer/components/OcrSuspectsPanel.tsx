@@ -59,7 +59,7 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
     >
       <header className="ocr-suspects-header">
         <span className="ocr-suspects-title">
-          <ScanText size={13} aria-hidden />
+          <ScanText size={16} aria-hidden />
           OCR suspects
         </span>
         <div className="ocr-suspects-summary" aria-live="polite">
@@ -84,7 +84,7 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
           aria-label="Close OCR suspects panel"
           title="Close"
         >
-          <X size={13} aria-hidden />
+          <X size={16} aria-hidden />
         </button>
       </header>
       <div className="ocr-suspects-body">

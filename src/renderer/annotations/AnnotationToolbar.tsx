@@ -188,37 +188,37 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
 
   return (
     <div className="ann-toolbar" data-annotation-toolbar>
-      {toolBtn("select", <MousePointer2 size={15} aria-hidden />, "Select (no annotation tool)")}
+      {toolBtn("select", <MousePointer2 size={16} aria-hidden />, "Select (no annotation tool)")}
 
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Text markup">
-        {toolBtn("highlight", <Highlighter size={15} aria-hidden />, "Highlight")}
-        {toolBtn("underline", <Underline size={15} aria-hidden />, "Underline")}
-        {toolBtn("strikeout", <Strikethrough size={15} aria-hidden />, "Strikethrough")}
+        {toolBtn("highlight", <Highlighter size={16} aria-hidden />, "Highlight")}
+        {toolBtn("underline", <Underline size={16} aria-hidden />, "Underline")}
+        {toolBtn("strikeout", <Strikethrough size={16} aria-hidden />, "Strikethrough")}
       </div>
 
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Pen">
-        {toolBtn("ink", <Pen size={15} aria-hidden />, "Pen")}
+        {toolBtn("ink", <Pen size={16} aria-hidden />, "Pen")}
       </div>
 
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Text box">
-        {toolBtn("textbox", <Type size={15} aria-hidden />, "Text box")}
+        {toolBtn("textbox", <Type size={16} aria-hidden />, "Text box")}
       </div>
 
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Shapes">
-        {toolBtn("rect", <Square size={15} aria-hidden />, "Rectangle")}
-        {toolBtn("ellipse", <Circle size={15} aria-hidden />, "Ellipse")}
-        {toolBtn("arrow", <ArrowUpRight size={15} aria-hidden />, "Arrow")}
+        {toolBtn("rect", <Square size={16} aria-hidden />, "Rectangle")}
+        {toolBtn("ellipse", <Circle size={16} aria-hidden />, "Ellipse")}
+        {toolBtn("arrow", <ArrowUpRight size={16} aria-hidden />, "Arrow")}
         {toolBtn(
           "callout",
-          <MessageCirclePlus size={15} aria-hidden />,
+          <MessageCirclePlus size={16} aria-hidden />,
           "Callout",
         )}
       </div>
@@ -226,7 +226,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Note">
-        {toolBtn("note", <StickyNote size={15} aria-hidden />, "Sticky note")}
+        {toolBtn("note", <StickyNote size={16} aria-hidden />, "Sticky note")}
       </div>
 
       {/* Color picker — single rounded-square swatch under the active

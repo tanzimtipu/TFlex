@@ -219,7 +219,7 @@ export function ReplacePagesDialog(
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">
@@ -240,7 +240,7 @@ export function ReplacePagesDialog(
               disabled={picking}
               data-replace-pick
             >
-              <FilePlus2 size={14} aria-hidden />
+              <FilePlus2 size={16} aria-hidden />
               {picking
                 ? "Picking…"
                 : pickedPath === null

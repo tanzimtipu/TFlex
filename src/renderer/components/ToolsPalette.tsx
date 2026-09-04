@@ -35,6 +35,7 @@ import {
   Scissors,
   Stamp,
   Trash2,
+  X,
 } from 'lucide-react';
 
 export type ToolsPaletteLayout = 'list' | 'grid';
@@ -427,7 +428,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
             title="List layout"
             data-tools-layout="list"
           >
-            <LayoutList size={13} aria-hidden />
+            <LayoutList size={16} aria-hidden />
           </button>
           <button
             type="button"
@@ -438,7 +439,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
             title="Grid layout"
             data-tools-layout="grid"
           >
-            <LayoutGrid size={13} aria-hidden />
+            <LayoutGrid size={16} aria-hidden />
           </button>
         </div>
         <button
@@ -448,7 +449,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           aria-label="Close tools palette"
           title="Close"
         >
-          ×
+          <X size={16} aria-hidden />
         </button>
       </header>
       <div className="tools-palette-body">

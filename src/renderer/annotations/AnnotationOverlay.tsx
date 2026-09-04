@@ -2256,7 +2256,7 @@ export function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
           chrome scan of the editor's rect finds the grip strip and the bar
           chrome as draggable, not only the textarea's interactive surface. */}
       <div className="ann-textbox-grip" data-annotation-editor-handle="textbox" aria-hidden>
-        <GripVertical size={12} strokeWidth={2} />
+        <GripVertical size={16} aria-hidden />
         <span className="ann-textbox-grip-label">Drag to move</span>
       </div>
       <textarea
@@ -2564,7 +2564,7 @@ function CalloutBoxEditor(
           TextBoxEditor): the callout window (textarea + action bar) moves
           as one unit when the grip strip above the textarea is dragged. */}
       <div className="ann-textbox-grip" data-annotation-editor-handle="callout" aria-hidden>
-        <GripVertical size={12} strokeWidth={2} />
+        <GripVertical size={16} aria-hidden />
         <span className="ann-textbox-grip-label">Drag to move</span>
       </div>
       <textarea
@@ -2983,7 +2983,7 @@ function ShapeColorEditor(props: ShapeColorEditorProps): ReactElement {
         aria-label="Close color editor"
         title="Close (Esc)"
       >
-        <X size={12} strokeWidth={2} aria-hidden />
+        <X size={16} aria-hidden />
       </button>
     </div>
   );

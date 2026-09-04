@@ -62,7 +62,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
         </p>
         <div className="welcome-actions">
           <button type="button" className="btn btn-primary" onClick={onOpenFile}>
-            <FolderOpen size={14} aria-hidden /> Open PDF
+            <FolderOpen size={16} aria-hidden /> Open PDF
             <span className="kbd" style={{ marginLeft: 8 }}>Ctrl O</span>
           </button>
           {onCreateFromImages !== undefined && (
@@ -73,7 +73,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
               title="Combine picked images into a new PDF"
               data-welcome-create
             >
-              <FileImage size={14} aria-hidden /> Create from images
+              <FileImage size={16} aria-hidden /> Create from images
             </button>
           )}
           <button
@@ -82,7 +82,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
             onClick={onMergeClick}
             title="Pick a second PDF to combine with the open document"
           >
-            <GitMerge size={14} aria-hidden /> Merge PDFs
+            <GitMerge size={16} aria-hidden /> Merge PDFs
           </button>
         </div>
       </div>
@@ -115,7 +115,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                     title={`Open ${row.entry.path}`}
                   >
                     <span className="doc-icon" aria-hidden>
-                      <FileText size={15} />
+                      <FileText size={16} />
                     </span>
                     <span className="recent-row-text">
                       <div className="doc-name">{row.meta.name}</div>
@@ -131,7 +131,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                     aria-label={`Remove ${row.entry.name} from Recents`}
                     title="Remove from Recents"
                   >
-                    <X size={12} aria-hidden />
+                    <X size={16} aria-hidden />
                   </button>
                 </div>
               ))}
@@ -163,7 +163,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
                   onClick={(): void => onSampleClick(sample)}
                 >
                   <div className="sample-thumb">
-                    <Sparkles size={28} />
+                    <Sparkles size={20} />
                   </div>
                   <div className="sample-name">{sample.name}</div>
                   <div className="sample-sub">Click to open · PDF</div>

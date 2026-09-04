@@ -242,7 +242,7 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
             onClick={onClose}
             aria-label="Close about dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </header>
         <div className="sheet-body">

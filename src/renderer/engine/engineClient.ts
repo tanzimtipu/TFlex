@@ -784,7 +784,13 @@ class RealEngineAdapter implements EngineApi {
     docId: string,
     pages: number[],
   ): Promise<Result<ArrayBuffer, EngineError>> {
-    return this.inner.extract(docId, pages);
+    // Same 1-based -> 0-based translation as split above. The
+    // engine IPC contract uses 0-based indices into the current
+    // order; the renderer-facing dialog passes 1-based page numbers.
+    // Without this translation extract("1") of a 3-page document
+    // returned page 2 and any range touching the last page errored
+    // "out of bounds" (DEF-167).
+    return this.inner.extract(docId, pages.map((p) => p - 1));
   }
 
   save(docId: string): Promise<Result<string, EngineError>> {

@@ -176,7 +176,7 @@ export function DeletePageDialog(
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">
@@ -244,7 +244,7 @@ export function DeletePageDialog(
             disabled={!valid}
             data-delete-confirm
           >
-            <Trash2 size={14} aria-hidden />
+            <Trash2 size={16} aria-hidden />
             Delete
           </button>
         </div>

@@ -1,13 +1,19 @@
 /* TFlex renderer styles
- * Single accent #2563eb, neutral zinc/slate base, two equally designed themes.
+ * Single accent muted orange, neutral zinc/slate base, two equally designed themes.
  * Inter via @fontsource-variable/inter. Density like VS Code / Linear.
- * No gradients, no purple, no giant radii, motion 150-250ms ease-out. */
+ * No gradients, no purple, no giant radii, motion 80-280ms ease-out. */
 
 @import url("@fontsource-variable/inter/index.css");
 
 :root {
   /* Type scale */
   --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Phase 6 — the windowed page-overlay surfaces (inline editor, edit
+   * toolbar, OCR suspects bar) used `var(--font-ui, "Inter", ...)` with
+   * --font-ui never defined; the fallback silently worked but the token
+   * was a lie. Define it once as the app font so every surface reads
+   * the same Inter family and the fallback chain is never exercised. */
+  --font-ui: var(--font-sans);
   --font-mono: ui-monospace, "Cascadia Code", "Consolas", "SF Mono", Menlo, monospace;
 
   --fs-xs: 11px;
@@ -15,6 +21,10 @@
   --fs-md: 13px;
   --fs-lg: 15px;
   --fs-xl: 18px;
+  /* Phase 6 — the single display size above the body scale. Only the
+   * welcome hero uses it (the app's ONE large heading); everything
+   * else stays on the --fs-* body ladder so chrome stays compact. */
+  --fs-2xl: 24px;
 
   --sp-1: 4px;
   --sp-2: 8px;
@@ -23,21 +33,41 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
-  /* Accent */
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-soft: rgba(37, 99, 235, 0.12);
+  /* Accent — muted orange */
+  --accent: #e07a2d;
+  --accent-hover: #ea8a3e;
+  --accent-pressed: #c25f1d;
+  --accent-soft: rgba(224, 122, 45, 0.12);
+  /* Phase 4 — the ONE state system every interactive control shares:
+   * selected/active wash is 0.10, pressed is 0.20, keyboard focus is
+   * the 2px orange ring. The tokens live once here so a control that
+   * needs a state upgrade never invents its own alpha. */
+  --accent-selected: rgba(224, 122, 45, 0.10);
+  --accent-pressed-soft: rgba(224, 122, 45, 0.20);
+  --accent-hover-bg: rgba(224, 122, 45, 0.08);
+  --focus-ring: 0 0 0 2px rgba(224, 122, 45, 0.35);
 
   /* Densities & radii (small by default) */
   --radius-1: 3px;
   --radius-2: 5px;
   --radius-3: 8px;
 
-  /* Motion */
+  /* Motion — Phase-1 tokens: every UI transition routes through
+   * these. --ease-out for appearing surfaces, --ease-in-out for
+   * moving between positions. Legacy --t-* / --ease aliases kept
+   * for compatibility. No bounce, nothing above --motion-slow for
+   * ordinary UI. */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --t-quick: 150ms;
-  --t-base: 200ms;
-  --t-slow: 250ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --motion-fast: 80ms;
+  --motion-normal: 150ms;
+  --motion-medium: 200ms;
+  --motion-slow: 280ms;
+  --t-quick: 80ms;
+  --t-base: 150ms;
+  --t-slow: 200ms;
 
   /* Layout sizing tokens — kept in :root so absolutely positioned
    * siblings of the toolbar (.tools-palette) can offset themselves
@@ -70,14 +100,14 @@
    * accent-soft pair so callers that need a hard color (SVG fills,
    * solid borders) can reach the canonical swatch without recomputing
    * it themselves. */
-  --info: #2563eb;
-  --info-soft: rgba(37, 99, 235, 0.12);
-  --success: #16a34a;
-  --success-soft: rgba(22, 163, 74, 0.12);
-  --warning: #d97706;
-  --warning-soft: rgba(217, 119, 6, 0.14);
-  --error: #dc2626;
-  --error-soft: rgba(220, 38, 38, 0.12);
+  --info: #5b7bb5;
+  --info-soft: rgba(91, 123, 181, 0.12);
+  --success: #76a66a;
+  --success-soft: rgba(118, 166, 106, 0.12);
+  --warning: #d9a441;
+  --warning-soft: rgba(217, 164, 65, 0.14);
+  --error: #d96c63;
+  --error-soft: rgba(217, 108, 99, 0.12);
 
   /* Annotation color swatches — richer palette than the original
    * four. The four legacy entries (`yellow`, `red`, `green`, `blue`)
@@ -127,7 +157,31 @@
   --border: #e2e8f0;
   --border-strong: #cbd5e1;
   --border-subtle: #eef2f6;
+  --divider: #e6eaef;
 
+  /* Phase 4 — menu surfaces. Tokenized per theme so the TitleBar
+   * popover and any dropdown menu share one chrome (the dark values
+   * below match the spec's #171B20 / #292F36 exactly). */
+  --menu-bg: #ffffff;
+  --menu-border: #e2e8f0;
+
+  /* Phase 4 — welcome sample cards. Compact card surface + hover
+   * treatment (the hover border is the same orange tint in both
+   * themes; the surfaces differ). */
+  --sample-card-bg: #ffffff;
+  --sample-card-bg-hover: #f8fafc;
+  --sample-card-border: #e2e8f0;
+  --sample-card-border-hover: rgba(224, 122, 45, 0.35);
+
+  /* Layered surfaces (light) */
+  --bg-secondary: #f4f6f8;
+  --bg-elevated: #fbfcfd;
+  --bg-panel: #f8fafc;
+  --fg-disabled: #b6bcc6;
+
+  --shadow-page: 0 4px 18px rgba(15, 23, 42, 0.14);
+  --shadow-menu: 0 2px 8px rgba(15, 23, 42, 0.10), 0 8px 24px rgba(15, 23, 42, 0.12);
+  --shadow-dialog: 0 4px 16px rgba(15, 23, 42, 0.14), 0 12px 40px rgba(15, 23, 42, 0.18);
   --shadow-popover: 0 2px 6px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.08);
   --shadow-toast: 0 4px 12px rgba(15, 23, 42, 0.14), 0 2px 4px rgba(15, 23, 42, 0.08);
 
@@ -141,29 +195,54 @@
 }
 
 :root[data-theme="dark"] {
-  --bg-base: #0b0d10;
-  --bg-sunken: #0a0c0f;
-  --bg-raised: #15181c;
-  --bg-toolbar: #111418;
-  --bg-rail: #0e1115;
-  --bg-canvas: #1f2329;
+  --bg-base: #0b0d0f;
+  --bg-sunken: #090b0d;
+  --bg-raised: #111419;
+  --bg-toolbar: #101318;
+  --bg-rail: #101419;
+  /* Phase-3 workspace: the document canvas is the app's deepest
+   * surface in dark mode — the near-black #0B0D0F base — so a
+   * paper-white page reads as a physical sheet floating in the
+   * workspace. (The rail/toolbar panels stay the slightly-lighter
+   * #101419 family so chrome still separates from the canvas.) */
+  --bg-canvas: #0b0d0f;
   --bg-hover: rgba(255, 255, 255, 0.04);
   --bg-active: rgba(255, 255, 255, 0.08);
-  --bg-input: #0d1014;
+  --bg-input: #111419;
   --bg-tab: transparent;
-  --bg-tab-active: #15181c;
+  --bg-tab-active: #15191e;
 
-  --fg-strong: #f1f5f9;
-  --fg: #cbd5e1;
-  --fg-muted: #94a3b8;
-  --fg-soft: #cbd5e1;
-  --fg-faint: #64748b;
+  /* Layered surfaces (dark) */
+  --bg-secondary: #15191e;
+  --bg-elevated: #191e24;
+  --bg-panel: #14181d;
+
+  --fg-strong: #e7e9ec;
+  --fg: #a8aeb6;
+  --fg-muted: #737a84;
+  --fg-soft: #98a0aa;
+  --fg-faint: #5b626b;
+  --fg-disabled: #505761;
   --fg-on-accent: #ffffff;
 
-  --border: #232830;
-  --border-strong: #2d343c;
-  --border-subtle: #1a1e23;
+  --border: #242a31;
+  --border-strong: #2e353d;
+  --border-subtle: #1e242b;
+  --divider: #1c2228;
 
+  /* Phase 4 — menu surfaces (dark). The spec's desktop-menu chrome:
+   * near-charcoal bg #171B20, slate border #292F36. */
+  --menu-bg: #171b20;
+  --menu-border: #292f36;
+
+  /* Phase 4 — welcome sample cards (dark). */
+  --sample-card-bg: #15191e;
+  --sample-card-bg-hover: #191d22;
+  --sample-card-border: #242a31;
+
+  --shadow-page: 0 4px 18px rgba(0, 0, 0, 0.28);
+  --shadow-menu: 0 2px 8px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.55);
+  --shadow-dialog: 0 4px 16px rgba(0, 0, 0, 0.55), 0 12px 40px rgba(0, 0, 0, 0.6);
   --shadow-popover: 0 2px 6px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.5);
   --shadow-toast: 0 4px 12px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4);
 
@@ -173,18 +252,18 @@
   --hit: rgba(96, 165, 250, 0.32);
   --hit-active: rgba(96, 165, 250, 0.6);
 
-  /* Semantic tokens — dark variants keep saturation up so the toasts
-   * stay readable against the dark toolbar / canvas. The accent
-   * brightens slightly in dark mode for the same contrast reason
-   * (`--info: #60a5fa` rather than `#2563eb`). */
-  --info: #60a5fa;
-  --info-soft: rgba(96, 165, 250, 0.16);
-  --success: #4ade80;
-  --success-soft: rgba(74, 222, 128, 0.16);
-  --warning: #fbbf24;
-  --warning-soft: rgba(251, 191, 36, 0.16);
-  --error: #f87171;
-  --error-soft: rgba(248, 113, 113, 0.16);
+  /* Semantic tokens — same canonical hexes as light (muted, pastel),
+   * with stronger soft alphas so the tints read against the dark
+   * panels. The accent is NOT brightened per-theme; --info stays a
+   * desaturated informational blue/gray. */
+  --info: #6e8fbf;
+  --info-soft: rgba(110, 143, 191, 0.16);
+  --success: #76a66a;
+  --success-soft: rgba(118, 166, 106, 0.16);
+  --warning: #d9a441;
+  --warning-soft: rgba(217, 164, 65, 0.18);
+  --error: #d96c63;
+  --error-soft: rgba(217, 108, 99, 0.16);
 
   color-scheme: dark;
 }
@@ -233,6 +312,45 @@ textarea {
   color: inherit;
 }
 
+/* Phase 4 — dropdowns / selects / text fields share ONE focus
+ * treatment (spec 3): the input surface stays quiet (--bg-input +
+ * --border), and focus turns the border accent. Native selects
+ * additionally get the orange ring so their keyboard focus is
+ * unmistakable among the page's fields. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+select:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+/* Phase 6 — native radio + checkbox inputs (dialog option rows,
+ * OCR scope) keep a visible focus indicator: the shared orange ring.
+ * The global input rule above kills the native outline, which would
+ * otherwise leave a keyboard-focused choice input with NO indicator;
+ * the ring gives it back without disturbing the quiet text-input
+ * treatment (border-color only). */
+input[type="radio"]:focus-visible,
+input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Phase 15 — native radio + checkbox GLYPHS (dialog option rows,
+ * OCR scope) follow the single accent. `accent-color` was only set
+ * on the OCR range slider (.ocr-dialog .modal-range); every other
+ * native choice input fell back to the browser-default blue
+ * (DEF-168). The `.form-radio` / `.form-checkbox` annotation
+ * controls are custom-drawn and unaffected. */
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
 ::selection {
   background: var(--accent-soft);
   color: var(--fg-strong);
@@ -244,8 +362,9 @@ textarea {
    * its `.titlebar-slot`, so the caption strip is one continuous
    * row at the top of the window. Two rows: TitleBar (caption strip
    * with brand + tabs + actions + window controls; height grows to
-   * fit its tallest child, currently 44px for the AppHeader) +
-   * app-main (1fr, fills the rest of the viewport). The earlier
+   * fit its tallest child, currently 34px for the AppHeader —
+   * Phase 2 core chrome compacted the caption strip) + app-main
+   * (1fr, fills the rest of the viewport). The earlier
    * `auto auto 1fr` layout left row 2 (intended for an out-of-grid
    * AppHeader) empty and row 3 (1fr) with no element — so app-main
    * ended up collapsed to 0px even when it had a Welcome screen
@@ -289,7 +408,12 @@ textarea {
   justify-content: space-between;
   align-items: center;
   padding: 0 var(--sp-4);
-  height: 44px;
+  /* Phase 2 — compact borderless caption: 34px lets the 34px tab
+   * strip fill the row exactly (tabs bottom-align via .tab-area's
+   * align-items: end), while brand + header-actions (28px buttons)
+   * keep 3px breathing room. The old 44px row read as a thick
+   * chrome bar; this reads as a slim VS Code-style caption. */
+  height: 34px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar);
   flex-shrink: 0;
@@ -306,8 +430,8 @@ textarea {
  * OS treats the union as the caption area).
  *
  * Phase 13 — DEF-081. The caption strip is one continuous row in the
- * grid; the TitleBar self-sizes to its tallest child (the
- * AppHeader inside the slot, 44px). We no longer hardcode 32px so a
+ * grid; the TitleBar self-sizes to its tallest child (the AppHeader
+ * inside the slot, 34px). We no longer hardcode 32px so a
  * refactor that nudges the AppHeader's height doesn't silently clip
  * the strip. The min-height keeps the title region usable when the
  * AppHeader renders nothing (e.g. before boot completes).
@@ -391,9 +515,9 @@ textarea {
   color: var(--fg-muted);
   cursor: pointer;
   transition:
-    background var(--t-quick) var(--ease),
-    color var(--t-quick) var(--ease),
-    border-color var(--t-quick) var(--ease);
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
 }
 
 .titlebar-menu-button:hover {
@@ -401,14 +525,23 @@ textarea {
   color: var(--fg-strong);
 }
 
+/* Phase 4 — the open menu button is an "active/selected" control:
+ * the shared orange wash, not a neutral tint. */
 .titlebar-menu-button-active {
-  background: var(--bg-active);
+  background: var(--accent-selected);
   color: var(--fg-strong);
 }
 
+.titlebar-menu-button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 /* Menu popover — vertically flush with the title bar's bottom edge.
- * Animates in via the same ease curve the rest of the UI uses (150-250ms).
- * Width is large enough for a 3-letter shortcut chip on the right. */
+ * Phase 5 flyout motion: a subtle 0.98 -> 1 scale + opacity fade
+ * over --motion-normal (150ms) ease-out — the 120-150ms menu band.
+ * Scale + opacity only; transform-origin pins the grow to the
+ * anchor so the menu appears to swell from its button. */
 .titlebar-menu-popover {
   position: absolute;
   top: 100%;
@@ -417,18 +550,21 @@ textarea {
   min-width: 260px;
   max-height: min(560px, calc(100vh - 40px));
   overflow-y: auto;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-3);
+  /* Phase 4 — professional desktop menu surface: dedicated menu
+   * tokens (dark #171B20 bg / #292F36 border), radius 5px. */
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius-2);
   box-shadow: var(--shadow-popover);
   padding: 6px;
   z-index: 50;
-  animation: titlebar-popover-in var(--t-base) var(--ease);
+  transform-origin: top left;
+  animation: titlebar-popover-in var(--motion-normal) var(--ease-out);
 }
 
 @keyframes titlebar-popover-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 .titlebar-menu-heading {
@@ -452,6 +588,8 @@ textarea {
   justify-content: space-between;
   gap: var(--sp-3);
   width: 100%;
+  /* Phase 4 — menu item height 30px (spec band 30-34px). */
+  min-height: 30px;
   padding: 6px var(--sp-2) 6px var(--sp-2);
   background: transparent;
   border: 1px solid transparent;
@@ -461,15 +599,29 @@ textarea {
   cursor: pointer;
   text-align: left;
   transition:
-    background var(--t-quick) var(--ease),
-    color var(--t-quick) var(--ease);
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
+/* Phase 4 — menu item hover: the shared orange selected wash
+ * (rgba(224,122,45,0.10)); keyboard focus adds the orange ring. */
 .titlebar-menu-row:hover,
 .titlebar-menu-row:focus-visible {
   outline: none;
-  background: var(--accent-soft);
+  background: var(--accent-selected);
   color: var(--fg-strong);
+}
+
+.titlebar-menu-row:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+/* Phase 4 — "selected / checked" reads as an orange icon: the row's
+ * leading icon tints accent on hover/focus. */
+.titlebar-menu-row:hover .titlebar-menu-row-icon,
+.titlebar-menu-row:focus-visible .titlebar-menu-row-icon {
+  color: var(--accent);
 }
 
 .titlebar-menu-row-label {
@@ -509,8 +661,8 @@ textarea {
   color: var(--fg-muted);
   cursor: pointer;
   transition:
-    background var(--t-quick) var(--ease),
-    color var(--t-quick) var(--ease);
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .titlebar-control:hover {
@@ -522,6 +674,8 @@ textarea {
   outline: none;
   background: var(--bg-active);
   color: var(--fg-strong);
+  /* Phase 4 — visible orange focus ring on every window control. */
+  box-shadow: var(--focus-ring);
 }
 
 .titlebar-control-close:hover,
@@ -602,26 +756,57 @@ textarea {
   cursor: pointer;
   white-space: nowrap;
   position: relative;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
-.tab:hover { background: var(--bg-hover); color: var(--fg); }
+/* Phase 4 — tab hover uses the shared hover token (dark
+ * rgba(255,255,255,0.04), the light mirror in light), exactly like
+ * every other interactive surface. No bright tabs: the hover is a
+ * whisper, not a highlight. */
+.tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+/* Phase 4 — keyboard focus on a tab (the close button keeps its own
+ * small ring; the whole tab surface gets one when the tab itself is
+ * the focus target). The ring is drawn INSIDE the tab because the
+ * caption strip clips overflow (.tab-area is overflow: hidden) —
+ * an outside ring would be cut off at the strip edges. */
+.tab:focus-visible {
+  outline: 2px solid rgba(224, 122, 45, 0.35);
+  outline-offset: -2px;
+}
 
 .tab-active {
   color: var(--fg-strong);
   background: var(--bg-tab-active);
-  border-color: var(--border);
+  /* Phase 2 — borderless active tab: the old `border-color:
+   * var(--border)` drew a full outline around the active tab; the
+   * borderless look keeps the 1px transparent frame (reserved space,
+   * no visible outline) and lets the 2px accent indicator below mark
+   * the active tab. */
+  border-color: transparent;
   z-index: 1;
 }
 
+/* Phase 2 — the active tab's 2px orange underline. The old seam
+ * (1px strip painted in the tab background, covering the header's
+ * bottom border) is replaced by a subtle accent indicator inset to
+ * the tab's horizontal padding — the same "active underline" the
+ * VS Code / Linear tab strips use. */
 .tab-active::after {
   content: "";
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 1px;
-  background: var(--bg-tab-active);
+  left: var(--sp-3);
+  right: var(--sp-3);
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px 1px 0 0;
+  background: var(--accent);
 }
 
 .tab-title {
@@ -642,7 +827,7 @@ textarea {
   display: inline-block;
   /* Slight outset so it reads against the active tab background. */
   box-shadow: 0 0 0 1.5px var(--bg-tab-active);
-  transition: opacity var(--t-quick) var(--ease);
+  transition: opacity var(--motion-fast) var(--ease-out);
 }
 
 .tab-modified-dot-hidden {
@@ -683,12 +868,20 @@ textarea {
   color: inherit;
   cursor: pointer;
   opacity: 0.7;
-  transition: background var(--t-quick) var(--ease), opacity var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
 }
 
 .tab-close:hover {
   background: var(--bg-active);
   opacity: 1;
+}
+
+/* Phase 4 — the close chip shows its focus state as the orange ring
+ * (it is the tab strip's keyboard escape hatch). */
+.tab-close:focus-visible {
+  outline: none;
+  opacity: 1;
+  box-shadow: var(--focus-ring);
 }
 
 .header-actions {
@@ -719,7 +912,7 @@ textarea {
 .tab-pane {
   position: absolute;
   inset: 0;
-  animation: tab-fade var(--t-base) var(--ease);
+  animation: tab-fade var(--motion-normal) var(--ease-out);
   display: flex;
 }
 
@@ -750,9 +943,13 @@ textarea {
   margin-bottom: var(--sp-2);
 }
 
+/* Phase 6 — the welcome headline is the ONE heading that may exceed
+ * the body ladder, and it uses the single --fs-2xl token (24px) —
+ * prominent without being a giant banner. Hover states and chrome
+ * stay on the compact --fs-* scale. */
 .welcome-title {
-  font-size: 30px;
-  line-height: 1.15;
+  font-size: var(--fs-2xl);
+  line-height: 1.2;
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--fg-strong);
@@ -785,11 +982,18 @@ textarea {
   font-weight: 500;
   font-size: var(--fs-md);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), transform var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-in-out);
   white-space: nowrap;
 }
 
 .btn:active { transform: translateY(0.5px); }
+
+/* Phase 4 — every dialog/hero button shows the shared orange focus
+ * ring on keyboard focus. */
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 .btn-primary {
   background: var(--accent);
@@ -800,6 +1004,14 @@ textarea {
 .btn-primary:hover {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+}
+
+/* Phase 2 — pressed state for the primary (accent) button. The
+ * header's compact Open button and every modal confirm ride this
+ * lifecycle: accent -> accent-hover -> accent-pressed, white text. */
+.btn-primary:active {
+  background: var(--accent-pressed);
+  border-color: var(--accent-pressed);
 }
 
 /* B8 — destructive primary (e.g. Delete). The accent colour reads
@@ -829,6 +1041,10 @@ textarea {
 }
 
 .btn-secondary:hover { background: var(--bg-hover); }
+
+/* Phase 4 — secondary dialog buttons press with the shared orange
+ * wash (the primary keeps its solid accent-pressed). */
+.btn-secondary:active { background: var(--accent-pressed-soft); }
 
 .btn[disabled] {
   cursor: not-allowed;
@@ -894,11 +1110,16 @@ textarea {
   background: transparent;
   font-size: var(--fs-sm);
   color: var(--fg);
-  transition: background var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 .recent-row:last-child { border-bottom: none; }
-.recent-row:hover { background: var(--bg-hover); }
+
+/* Phase 4 — recent rows stay understated: whisper hover (0.035
+ * alpha per theme, lighter than the standard 0.04), no card chrome. */
+.recent-row:hover { background: rgba(15, 23, 42, 0.035); }
+
+:root[data-theme="dark"] .recent-row:hover { background: rgba(255, 255, 255, 0.035); }
 
 .recent-row-open {
   flex: 1 1 auto;
@@ -906,7 +1127,8 @@ textarea {
   grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: var(--sp-3);
-  padding: 10px var(--sp-3);
+  /* Phase 4 — compact row (10px -> 8px vertical). */
+  padding: 8px var(--sp-3);
   border: none;
   background: transparent;
   font: inherit;
@@ -914,6 +1136,11 @@ textarea {
   cursor: pointer;
   text-align: left;
   min-width: 0;
+}
+
+.recent-row-open:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .recent-row-text {
@@ -937,18 +1164,18 @@ textarea {
   color: var(--fg-faint);
   cursor: pointer;
   opacity: 0;
-  transition: opacity var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
+  transition: opacity var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
 .recent-row:hover .recent-row-remove,
 .recent-row-remove:focus-visible { opacity: 1; }
 
 .recent-row-remove:hover { color: var(--fg); border-color: var(--border); background: var(--bg-hover); }
-.recent-row-remove:focus-visible { outline: none; border-color: var(--accent); }
+.recent-row-remove:focus-visible { outline: none; border-color: var(--accent); box-shadow: var(--focus-ring); }
 
 .samples-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: var(--sp-3);
 }
 
@@ -956,27 +1183,34 @@ textarea {
   display: flex;
   flex-direction: column;
   text-align: left;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
+  /* Phase 4 — compact sample cards: dedicated card tokens (#15191E
+   * dark), smaller thumb, focused hover = orange-tinted border. */
+  background: var(--sample-card-bg);
+  border: 1px solid var(--sample-card-border);
   border-radius: var(--radius-3);
-  padding: var(--sp-3);
+  padding: 10px;
   cursor: pointer;
-  transition: border-color var(--t-quick) var(--ease), background var(--t-quick) var(--ease), transform var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-in-out);
   color: var(--fg);
 }
 
 .sample-card:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-hover);
+  border-color: var(--sample-card-border-hover);
+  background: var(--sample-card-bg-hover);
 }
 
 .sample-card:active { transform: translateY(0.5px); }
 
+.sample-card:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .sample-thumb {
-  height: 110px;
+  height: 84px;
   border-radius: var(--radius-2);
   background: linear-gradient(180deg, var(--placeholder-from), var(--placeholder-to));
-  margin-bottom: var(--sp-3);
+  margin-bottom: var(--sp-2);
   border: 1px solid var(--border-subtle);
   display: grid;
   place-items: center;
@@ -1031,7 +1265,9 @@ textarea {
 .rail-tabs {
   display: flex;
   align-items: stretch;
-  border-bottom: 1px solid var(--border);
+  /* Phase-3 workspace: the tab strip is a section separator inside
+   * the rail — a subtle --divider hairline, not a full --border. */
+  border-bottom: 1px solid var(--divider);
   background: var(--bg-toolbar);
 }
 
@@ -1045,10 +1281,15 @@ textarea {
   color: var(--fg-muted);
   cursor: pointer;
   position: relative;
-  transition: color var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
+  transition: color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
-.rail-tab:hover { color: var(--fg); background: var(--bg-hover); }
+.rail-tab:hover { color: var(--fg-strong); background: var(--bg-hover); }
+
+.rail-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 .rail-tab-active { color: var(--fg-strong); }
 
@@ -1096,14 +1337,37 @@ textarea {
   cursor: pointer;
   margin-bottom: 6px;
   text-align: center;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  /* Phase-3 workspace: the current-page accent bar reads as a
+   * selection, not a hard snap. Background + border-color fade over
+   * --motion-fast ease-out; box-shadow is deliberately OUT of the
+   * transition set (Phase 5 — the thumb's inset accent bar tracks
+   * the document scroll position, a high-frequency repaint source;
+   * animating box-shadow there costs frames for no visible gain, so
+   * the selection bar swaps instantly instead).
+   * (Note: the vertical value set — 6px padding +
+   * 1px border + 18px label + 6px margin — is the rail's geometry
+   * contract; SideRail's thumbSlotHeightFor mirrors it exactly and
+   * must not drift.) */
+  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 
 .thumb:hover { background: var(--bg-hover); }
 
+/* Phase 4 — keyboard focus on a thumbnail uses the orange ring
+ * (outline, not box-shadow, so it never collides with the
+ * current-page inset bar / selection ring). */
+.thumb:focus-visible {
+  outline: 2px solid rgba(224, 122, 45, 0.35);
+  outline-offset: 1px;
+}
+
 .thumb-current {
-  background: var(--accent-soft);
-  border-color: var(--accent);
+  /* Phase-3 workspace: current-page selection is a SUBTLE orange
+   * indicator — a 2px accent bar on the leading edge plus a faint
+   * orange wash (the shared 0.10 selected token). Deliberately NOT a
+   * solid orange block or a full accent border around the thumb. */
+  background: var(--accent-selected);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .thumb-canvas-wrap {
@@ -1174,11 +1438,17 @@ textarea {
 
 .outline-toggle-empty { cursor: default; }
 
+/* Phase 6 — the outline tree chevron is a Lucide ChevronRight glyph
+ * (the old Unicode "▸" text glyph is gone — every icon ships from the
+ * lucide set). The span keeps its class contract for the toggle
+ * transform: expanded rotates the right-pointing chevron 90deg to
+ * point down; collapsed returns to 0deg. */
 .chevron {
-  display: inline-block;
-  font-size: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transform: rotate(90deg);
-  transition: transform var(--t-quick) var(--ease);
+  transition: transform var(--motion-fast) var(--ease-in-out);
 }
 
 .chevron-closed { transform: rotate(0deg); }
@@ -1196,12 +1466,23 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .outline-link:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
+}
+
+.outline-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  color: var(--fg-strong);
+}
+
+.outline-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .toolbar {
@@ -1253,13 +1534,25 @@ textarea {
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-2);
+  /* Phase 6 — default icon sits at --fg-muted (the shared icon
+   * default across the header, title bar, rail and toolbar — spec
+   * "default #9299A2/--fg-muted") so the dense toolbar reads as a
+   * quiet, even field of glyphs that LIGHT UP on hover (spec hover
+   * #E7E9EC/--fg-strong). The old --fg default made every resting
+   * button feel pre-lit; muted-default + hover-strong keeps the
+   * resting toolbar calm and the active/pressed states (below)
+   * unmistakable. */
   color: var(--fg-muted);
   cursor: pointer;
   /* Labels inside a button never wrap to a second line; instead the
    * toolbar grows vertically. The button itself decides its own
    * width via the `tool-btn-with-label` class. */
   white-space: nowrap;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 /* Labelled buttons (icon + text) opt out of the fixed 28px width and
@@ -1268,13 +1561,29 @@ textarea {
  * button and bleeds into the next control. */
 .tool-btn-with-label {
   width: auto;
-  padding: 0 8px;
+  /* Phase 2 — slightly wider hit target for labelled actions
+   * (10px sides); the 4px gap (pinned by the toolbar overflow
+   * contract test) spaces the icon from the label. */
+  padding: 0 10px;
   gap: 4px;
 }
 
+/* Phase 2 + Phase 6 — toolbar button states, tokenized and
+ * motion-driven. Default: transparent, --fg-muted icon (Phase 6
+ * icon ladder). Hover: neutral wash + strong icon. Pressed: the
+ * instant the button goes down, a stronger accent tint. Armed/
+ * active: accent tint + accent icon. Keyboard focus: a subtle
+ * orange ring. The accent appears ONLY here, on the
+ * active/pressed/focused control — never on the resting toolbar. */
 .tool-btn:hover:not([disabled]) {
   background: var(--bg-hover);
   color: var(--fg-strong);
+}
+
+.tool-btn:active:not([disabled]) {
+  /* Phase 4 — pressed state is the shared 0.20 accent wash. */
+  background: var(--accent-pressed-soft);
+  color: var(--accent);
 }
 
 .tool-btn[disabled] {
@@ -1282,18 +1591,59 @@ textarea {
   cursor: not-allowed;
 }
 
+/* Phase 4 — active/selected toolbar buttons (armed tools, fit modes,
+ * open palettes) use the shared 0.10 orange wash. */
 .tool-btn-active {
-  background: var(--accent-soft);
+  background: var(--accent-selected);
   color: var(--accent);
-  border-color: rgba(37, 99, 235, 0.3);
+  border-color: transparent;
+}
+
+.tool-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* Phase 4 — the SAME pressed wash across every neutral-surface
+ * chrome control (the toolbar buttons get theirs in
+ * .tool-btn:active above; solid-accent buttons keep their solid
+ * pressed color). Pressing any of these flashes the shared 0.20
+ * orange wash, so the whole app presses identically. */
+.theme-toggle:active,
+.tab-close:active,
+.tab-new:active,
+.titlebar-menu-button:active:not(.titlebar-menu-button-active),
+.titlebar-menu-row:active,
+.rail-tab:active,
+.rail-action-btn:active:not([disabled]),
+.toolbox-action-btn:active,
+.ann-panel-row-jump:active,
+.ann-panel-row-delete:active,
+.tools-palette-toggle-btn:active,
+.tools-palette-close:active,
+.tools-palette-entry:active:not(:disabled),
+.modal-close:active,
+.sheet-close:active,
+.edit-toolbar-btn:active:not(:disabled),
+.sig-tab:active,
+.sig-saved-pick:active:not(:disabled),
+.toast-close:active,
+.ocr-suspects-entry-btn:active,
+.ocr-suspects-close:active,
+.create-image-remove:active,
+.outline-link:active,
+.outline-toggle:active,
+.recent-row-open:active,
+.sample-card:active {
+  background: var(--accent-pressed-soft);
 }
 
 .toolbar-sep {
   display: inline-block;
   width: 1px;
-  height: 18px;
+  height: 20px;
   background: var(--border);
-  margin: 0 4px;
+  margin: 0 6px;
 }
 
 .page-indicator {
@@ -1314,19 +1664,30 @@ textarea {
 
 .page-input {
   width: 42px;
-  height: 26px;
+  /* Phase 2 — 28px matches the 28px icon buttons so the compact
+   * page-nav cluster reads as one integrated control (input between
+   * the ‹ / › buttons). */
+  height: 28px;
   padding: 0 4px;
   text-align: center;
+  /* Phase 2 — the tokenized dark input surface (--bg-input) plus
+   * the exact dark border the chrome spec names (#242a31 ==
+   * --border in dark); the input stays quiet until focused. */
   border: 1px solid var(--border);
   border-radius: var(--radius-2);
   background: var(--bg-input);
   color: var(--fg-strong);
   font-variant-numeric: tabular-nums;
   outline: none;
-  transition: border-color var(--t-quick) var(--ease);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
-.page-input:focus { border-color: var(--accent); }
+.page-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(224, 122, 45, 0.25);
+}
 
 .page-total { color: var(--fg-muted); }
 
@@ -1352,9 +1713,14 @@ textarea {
   border: 1px solid transparent;
 }
 
+/* Phase 6 — the dark page-label chip keeps the SAME accent system as
+ * light mode (the old dark override repainted the chip in a hardcoded
+ * blue #93c5fd / rgba(96,165,250,.14) — a chrome color that must be
+ * the accent, exactly like light mode). The accent tokens resolve
+ * per-theme and read equally well on the dark toolbar. */
 :root[data-theme="dark"] .page-label-hint {
-  background: rgba(96, 165, 250, 0.14);
-  color: #93c5fd;
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .zoom-percent {
@@ -1386,7 +1752,7 @@ textarea {
   border-radius: var(--radius-2);
   color: var(--fg-strong);
   outline: none;
-  transition: border-color var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
 .search-input:focus { border-color: var(--accent); }
@@ -1443,7 +1809,13 @@ textarea {
    * dark rectangle next to the toolbar. Hard-coding `#ffffff`
    * here matches paper and works in both themes. */
   background: #ffffff;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 4px 16px rgba(0, 0, 0, 0.08);
+  /* Phase-3 workspace: the page floats as a physical sheet — the
+   * single --shadow-page token (0 4px 18px) gives it depth over
+   * the canvas. Deliberately NO 1px ring: the page has no visible
+   * border, and the shadow never clips the bitmap (overflow is
+   * visible, and the slot reserves the page's own footprint so
+   * mixed page sizes keep their exact geometry — DEF-141/148). */
+  box-shadow: var(--shadow-page);
   border-radius: 2px;
   overflow: visible;
   isolation: isolate;
@@ -1481,7 +1853,11 @@ textarea {
 }
 
 :root[data-theme="dark"] .pdf-page {
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 4px 16px rgba(0, 0, 0, 0.45);
+  /* Phase-3 workspace: --shadow-page resolves to the deep
+   * 0 4px 18px rgba(0, 0, 0, 0.28) in dark mode so the sheet lifts
+   * off the near-black canvas. The light ring is gone — the page
+   * surface stays paper-white with no visible border (DEF-099). */
+  box-shadow: var(--shadow-page);
 }
 
 .pdf-page-canvas { display: block; }
@@ -1575,7 +1951,7 @@ textarea {
   box-shadow: var(--shadow-toast);
   font-size: var(--fs-sm);
   color: var(--fg-strong);
-  animation: toast-in var(--t-base) var(--ease);
+  animation: toast-in var(--motion-normal) var(--ease-out);
 }
 
 /* Toast variants — each uses the semantic color token rather than a
@@ -1627,6 +2003,11 @@ textarea {
   color: var(--fg-strong);
 }
 
+.toast-close:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -1655,12 +2036,17 @@ textarea {
   border: 1px solid transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .theme-toggle:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
+}
+
+.theme-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 /* ---- Update indicator (DEF-077) ----
@@ -1692,9 +2078,9 @@ textarea {
   font-size: var(--fs-xs);
   font-weight: 500;
   cursor: default;
-  transition: background var(--t-quick) var(--ease),
-    color var(--t-quick) var(--ease),
-    border-color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
   white-space: nowrap;
   user-select: none;
 }
@@ -1781,24 +2167,60 @@ textarea {
   border-color: var(--error);
 }
 
+/* Phase 4 — the clickable indicator states show the orange ring on
+ * keyboard focus. */
+.update-indicator:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .tooltip-anchor { position: relative; }
 
-.tooltip-anchor [data-tooltip]:hover::after {
+/* Phase 4 — tooltip surface: a compact near-black chip (title line,
+ * optional shortcut line — a literal newline in the data-tooltip
+ * value renders as the second line via pre-line). Entrance is
+ * DELAYED 450ms (Phase-4 delay, kept literal — it is a dwell
+ * delay, not a motion duration) then rises (opacity 0->1,
+ * translateY 2px->0) over --motion-normal (150ms) ease-out; the
+ * exit is immediate (base transition has no delay). The visibility
+ * transition recreates the delay in the visibility space (150ms
+ * exit, 450+150=600ms entrance) so the hidden state flips exactly
+ * when the fade ends.
+ * pointer-events: none keeps the tooltip non-blocking and
+ * non-focusable — e2e never waits on it and a moving cursor can
+ * never be intercepted by it. */
+.tooltip-anchor [data-tooltip]::after {
   content: attr(data-tooltip);
   position: absolute;
   top: calc(100% + 6px);
   left: 50%;
-  transform: translateX(-50%);
-  background: var(--bg-raised);
-  color: var(--fg-strong);
-  border: 1px solid var(--border);
-  padding: 4px 8px;
-  border-radius: var(--radius-1);
+  transform: translateX(-50%) translateY(2px);
+  background: rgba(25, 29, 35, 0.96);
+  color: #e7e9ec;
+  padding: 5px 8px 4px;
+  border-radius: 4px;
   font-size: var(--fs-xs);
-  white-space: nowrap;
+  line-height: 1.35;
+  white-space: pre-line;
   pointer-events: none;
-  z-index: 10;
+  z-index: 40;
   box-shadow: var(--shadow-popover);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity var(--motion-normal) var(--ease-out),
+    transform var(--motion-normal) var(--ease-out),
+    visibility 0s linear var(--motion-normal);
+}
+
+.tooltip-anchor [data-tooltip]:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(0);
+  transition:
+    opacity var(--motion-normal) var(--ease-out) 450ms,
+    transform var(--motion-normal) var(--ease-out) 450ms,
+    visibility 0s linear 600ms;
 }
 
 /* ---- Rail actions (undo + per-page rotate/delete) ---- */
@@ -1811,7 +2233,9 @@ textarea {
 }
 
 .rail-actions-bar {
-  border-top: 1px solid var(--border-subtle);
+  /* Phase-3 workspace: section separator above the per-page action
+   * bar uses the subtle --divider hairline. */
+  border-top: 1px solid var(--divider);
   padding-top: 8px;
   margin-top: 4px;
   justify-content: space-between;
@@ -1845,12 +2269,17 @@ textarea {
   color: var(--fg-muted);
   font-size: var(--fs-xs);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 
 .rail-action-btn:hover:not([disabled]) {
   background: var(--bg-hover);
   color: var(--fg-strong);
+}
+
+.rail-action-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .rail-action-btn[disabled] {
@@ -1890,6 +2319,11 @@ textarea {
 }
 
 .thumb-selected {
+  /* Phase-3 workspace: the multi-select state carries the same faint
+   * 0.10 accent wash as the current-page marker, distinguished by
+   * the accent ring (selection is a soft orange indicator, not a
+   * solid block). */
+  background: var(--accent-selected);
   border-color: var(--accent);
   /* a soft inner ring on top of the soft accent background to distinguish
    * selection from "current page" */
@@ -1919,7 +2353,7 @@ textarea {
 }
 
 .thumb-canvas-wrap {
-  transition: transform var(--t-base) var(--ease);
+  transition: transform var(--motion-normal) var(--ease-in-out);
 }
 
 .thumb-empty {
@@ -1929,37 +2363,59 @@ textarea {
   text-align: center;
 }
 
-/* ---- Toolbar: modified-flavored Save + Merge/Split labels ---- */
+/* ---- Toolbar: save-state (modified-flavored Save) + Merge/Split labels ----
+ *
+ * Phase 4 — the Save button carries a real document state, never a
+ * theme garnish. Semantic tokens own the states:
+ *   .tool-btn-modified     unsaved changes      -> --warning
+ *   .tool-btn-save-clean   saved (clean)        -> --success
+ * The orange accent is deliberately NOT "saved" — warning owns
+ * unsaved, success owns saved. The host toggles the classes from the
+ * same modified / saveInPlaceEnabled props the disable logic uses
+ * (Toolbar.tsx). `Saving...` / `Save failed` map to the same classes
+ * when a future host-side save-state machine drives them. */
 
 .tool-btn-modified {
-  /* The Save button adopts this class whenever the active tab is
-   * dirty, so the user can see the same "modified" affordance the
-   * tab dot already shows. The icon (a Lucide Save stroke) uses
-   * `currentColor`, so tinting the button's color tints the icon. */
-  color: var(--accent);
+  /* Unsaved changes — icon tints the semantic warning token (the
+   * Lucide Save stroke uses currentColor). */
+  color: var(--warning);
 }
 
-/* When the doc is read-only (samples / unsaved on-disk copy),
- * the Save button stays disabled but the modified-state must still
- * light the icon — otherwise the user sees the tab dot AND a grey
- * save button, which reads as "nothing to save" (DEF: save icon
- * not lighting on modified). We override the generic disabled
- * treatment only for the accent color, leaving the click target
- * untouched. */
+/* Read-only docs (samples / unsaved on-disk copies) keep the
+ * warning tint so the icon never reads as "nothing to save", with
+ * the disabled cursor and a slightly reduced emphasis. */
 .tool-btn-modified[disabled] {
-  opacity: 1;
-  color: var(--accent);
+  opacity: 0.85;
+  color: var(--warning);
   cursor: not-allowed;
 }
 
 .tool-btn-modified:hover:not([disabled]) {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* Saved — clean document: success tint at a quiet emphasis (the
+ * button is disabled because there is nothing to save). */
+.tool-btn-save-clean {
+  color: var(--success);
+}
+
+.tool-btn-save-clean[disabled] {
+  opacity: 0.8;
+  color: var(--success);
+  cursor: default;
 }
 
 .tool-btn-label {
-  margin-left: 4px;
+  /* Phase 2 — the icon+label spacing comes from the button's own
+   * `gap: 4px`; the old 4px margin doubled the space to 8px and
+   * made labelled buttons read looser than the icon row. The label
+   * keeps a medium weight so labelled "common" actions sit one
+   * typographic step below the primary icon controls. */
   font-size: var(--fs-sm);
+  font-weight: 500;
+  letter-spacing: -0.005em;
 }
 
 /* ---- Modal dialogs (Merge + Split) ---- */
@@ -1971,7 +2427,10 @@ textarea {
   display: grid;
   place-items: center;
   z-index: 800;
-  animation: modal-in var(--t-base) var(--ease);
+  /* Phase 5 — overlay fade only: opacity 0->1 over --motion-normal
+   * (150ms) ease-out. No zoom on the full-screen surface; the
+   * dialog itself carries the subtle 0.98->1 scale. */
+  animation: modal-in var(--motion-normal) var(--ease-out);
   /* DEF-100 — the backdrop is a REAL hit surface: `pointer-events:
    * auto` (the default). The dialog's "click outside to close"
    * affordance is implemented on the backdrop's OWN onClick, which
@@ -2009,6 +2468,10 @@ textarea {
    * clicks on Confirm / Cancel / Flatten / etc. would pass straight
    * through to whatever's underneath (the toolbar, the canvas). */
   pointer-events: auto;
+  /* Phase 5 — dialog entrance: subtle 0.98 -> 1 scale + opacity
+   * fade over --motion-normal (150ms) ease-out, matching the
+   * sheet dialogs. Scale + opacity only, never layout. */
+  animation: modal-dialog-in var(--motion-normal) var(--ease-out);
 }
 
 /* Phase 12 — wider modal for the Crop / Renumber / Stamp dialogs.
@@ -2045,12 +2508,17 @@ textarea {
   color: var(--fg-muted);
   border-radius: var(--radius-1);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .modal-close:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
+}
+
+.modal-close:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .modal-body {
@@ -2105,7 +2573,7 @@ textarea {
   color: var(--fg-strong);
   font-size: var(--fs-md);
   outline: none;
-  transition: border-color var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
 .modal-input:focus {
@@ -2158,6 +2626,11 @@ textarea {
 @keyframes modal-in {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes modal-dialog-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to   { opacity: 1; transform: scale(1); }
 }
 
 /* ---------------------------------------------------------------------------
@@ -2252,7 +2725,9 @@ textarea {
 .ann-textbox {
   position: absolute;
   border: 1px solid var(--accent);
-  background: rgba(37, 99, 235, 0.08);
+  /* Phase 2 — selection-surface tint repointed from the old blue
+   * wash to the accent's hover-tint token (0.08 alpha). */
+  background: var(--accent-hover-bg);
   border-radius: var(--radius-1);
   padding: 4px 6px;
   white-space: pre-wrap;
@@ -2473,6 +2948,15 @@ textarea {
   user-select: none;
 }
 
+/* Phase 5 — contextual edit surfaces (floating action bars over the
+ * page). On mount (selection change / mode switch) they rise in with
+ * opacity 0->1 + translateY(-2px -> 0) over --motion-normal (150ms)
+ * ease-out instead of snapping in. Transform + opacity only. */
+@keyframes edit-bar-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .content-action-bar {
   position: absolute;
   display: inline-flex;
@@ -2488,6 +2972,7 @@ textarea {
    * its buttons must stay clickable even though it floats over the
    * page canvas. */
   pointer-events: auto;
+  animation: edit-bar-in var(--motion-normal) var(--ease-out);
 }
 .content-action-bar button {
   pointer-events: auto;
@@ -2643,11 +3128,15 @@ textarea {
    * clickable even if a future refactor disables the bar's
    * pointer-events; belt-and-braces alongside the containers. */
   pointer-events: auto;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 .toolbox-action-btn:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
+}
+.toolbox-action-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .toolbox-action-btn--confirm {
   background: var(--accent);
@@ -2831,13 +3320,17 @@ textarea {
   cursor: pointer;
   padding: 0;
   background-clip: padding-box;
-  transition: transform var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: transform var(--motion-fast) var(--ease-in-out), border-color var(--motion-fast) var(--ease-out);
 }
 
 .ann-color-swatch:hover { transform: scale(1.1); }
 .ann-color-swatch-active {
   border-color: var(--fg-strong);
   box-shadow: 0 0 0 1px var(--bg-toolbar);
+}
+.ann-color-swatch:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .ann-pen-swatch {
@@ -2852,10 +3345,15 @@ textarea {
   cursor: pointer;
   color: var(--fg-muted);
   padding: 0;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .ann-pen-swatch:hover { background: var(--bg-hover); color: var(--fg-strong); }
+
+.ann-pen-swatch:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 .ann-pen-swatch-active {
   border-color: var(--accent);
@@ -2946,7 +3444,7 @@ textarea {
   background: var(--bg-raised);
   margin-bottom: var(--sp-2);
   overflow: hidden;
-  transition: border-color var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
 .ann-panel-row:hover { border-color: var(--border-strong); }
@@ -2970,10 +3468,16 @@ textarea {
   cursor: pointer;
   text-align: left;
   border-radius: 0;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .ann-panel-row-jump:hover { background: var(--bg-hover); color: var(--fg-strong); }
+
+.ann-panel-row-jump:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  color: var(--fg-strong);
+}
 
 .ann-panel-row-icon {
   display: inline-flex;
@@ -3017,10 +3521,16 @@ textarea {
   cursor: pointer;
   border-radius: var(--radius-1);
   margin-right: 4px;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .ann-panel-row-delete:hover { background: var(--bg-hover); color: var(--fg-strong); }
+
+.ann-panel-row-delete:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  color: var(--fg-strong);
+}
 
 .ann-panel-row-body {
   display: flex;
@@ -3043,13 +3553,17 @@ textarea {
   background-clip: padding-box;
   padding: 0;
   cursor: pointer;
-  transition: transform var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: transform var(--motion-fast) var(--ease-in-out), border-color var(--motion-fast) var(--ease-out);
 }
 
 .ann-panel-swatch:hover { transform: scale(1.15); }
 .ann-panel-swatch-active {
   border-color: var(--fg-strong);
   box-shadow: 0 0 0 1px var(--bg-raised);
+}
+.ann-panel-swatch:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .ann-panel-text {
@@ -3064,7 +3578,7 @@ textarea {
   resize: vertical;
   min-height: 28px;
   outline: none;
-  transition: border-color var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
 .ann-panel-text:focus { border-color: var(--accent); }
@@ -3083,6 +3597,11 @@ textarea {
 }
 
 .ann-panel-text-display:hover { border-color: var(--border-subtle); background: var(--bg-input); color: var(--fg-strong); }
+
+.ann-panel-text-display:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 .ann-panel-text-readonly {
   border: 1px solid transparent;
@@ -3134,7 +3653,7 @@ textarea {
   font-size: 12px;
   line-height: 1.3;
   outline: none;
-  transition: border-color var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
 :root[data-theme="dark"] .form-editor {
@@ -3180,11 +3699,16 @@ textarea {
    * that the checkbox stays clickable even when the layer's
    * pointer-events rule is edited (DEF-024). */
   pointer-events: auto;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .form-checkbox:hover {
   border-color: var(--accent);
+}
+
+.form-checkbox:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .form-checkbox-checked {
@@ -3216,11 +3740,16 @@ textarea {
   border: 1.5px solid var(--border-strong);
   border-radius: 999px;
   background: var(--bg-raised);
-  transition: border-color var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 
 .form-radio:hover .form-radio-dot {
   border-color: var(--accent);
+}
+
+.form-radio:focus-visible .form-radio-dot {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .form-radio-checked .form-radio-dot {
@@ -3265,7 +3794,15 @@ textarea {
 }
 
 .form-listbox-row:hover { background: var(--bg-hover); }
-.form-listbox-row-on { background: var(--accent-soft); }
+.form-listbox-row:focus-visible {
+  outline: none;
+  background: var(--bg-hover);
+  box-shadow: var(--focus-ring);
+}
+.form-listbox-row-on {
+  /* Phase 4 — selected row = the shared orange wash. */
+  background: var(--accent-selected);
+}
 
 .form-listbox-tick {
   display: inline-flex;
@@ -3359,7 +3896,7 @@ textarea {
   align-items: stretch;
   justify-content: stretch;
   background: transparent;
-  transition: border-color var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
 .sig-placement:hover {
@@ -3368,7 +3905,10 @@ textarea {
 
 .sig-placement-selected {
   border-color: var(--accent);
-  background: rgba(37, 99, 235, 0.05);
+  /* Phase 2 — signature selection wash: blue -> accent orange, same
+   * faint alpha (0.05) so a selected signature reads as "picked",
+   * not "painted over". */
+  background: rgba(224, 122, 45, 0.05);
 }
 
 .sig-raster {
@@ -3492,10 +4032,15 @@ textarea {
   font-size: var(--fs-md);
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 
 .sig-tab:hover { background: var(--bg-hover); color: var(--fg); }
+
+.sig-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
 
 .sig-tab-active {
   color: var(--fg-strong);
@@ -3596,6 +4141,11 @@ textarea {
   opacity: 0.5;
 }
 
+.sig-saved-pick:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .sig-saved-label {
   font-size: var(--fs-sm);
   font-weight: 500;
@@ -3617,12 +4167,17 @@ textarea {
   border-radius: var(--radius-1);
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 
 .sig-saved-delete:hover {
   background: rgba(239, 68, 68, 0.12);
   color: #ef4444;
+}
+
+.sig-saved-delete:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .sig-thumb {
@@ -3669,17 +4224,28 @@ textarea {
   padding: 0;
   background: transparent;
   border: 1px solid transparent;
-  border-bottom: 1px solid var(--border-subtle);
+  /* Phase 2 — borderless strip: the seam line under the "+" button
+   * (and the old active-tab outline it matched) is gone; the row is
+   * one continuous caption surface and only the active tab's accent
+   * underline marks state. */
+  border-bottom: none;
   border-radius: var(--radius-1);
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
   flex-shrink: 0;
 }
 .tab-new:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
   border-color: var(--border-strong);
+}
+
+.tab-new:focus-visible {
+  /* Inset ring — see .tab:focus-visible (the strip clips overflow). */
+  outline: 2px solid rgba(224, 122, 45, 0.35);
+  outline-offset: -2px;
+  color: var(--fg-strong);
 }
 
 /* ----- Tools palette ----- */
@@ -3699,8 +4265,14 @@ textarea {
   right: 0;
   bottom: 0;
   width: 280px;
-  background: var(--bg-raised);
+  /* Phase-3 workspace: the palette reads as a clean contextual
+   * panel — --bg-panel surface (#14181D in dark), a --border
+   * (#242A31) left hairline against the canvas, and only a subtle
+   * left-falling shadow. NO strong black shadow and no tint of the
+   * accent (the list entries stay neutral zinc/slate). */
+  background: var(--bg-panel);
   border-left: 1px solid var(--border);
+  box-shadow: -6px 0 16px rgba(0, 0, 0, 0.12);
   display: flex;
   flex-direction: column;
   /* Lift the palette above the workspace overlays (text / forms /
@@ -3708,7 +4280,12 @@ textarea {
    * (z-index:100+) so the dialogs still cover the palette when
    * both are open. */
   z-index: 30;
-  animation: tools-palette-in var(--t-base) var(--ease);
+  /* Entry motion (Phase 5 — panel band, ~180-220ms): the palette
+   * slides in from its edge (translateX(8px -> 0)) + opacity
+   * 0 -> 1 over the --motion-medium (200ms) token with ease-out.
+   * Transform + opacity only — the palette arrival never repaints
+   * layout. */
+  animation: tools-palette-in var(--motion-medium) var(--ease-out);
 }
 @keyframes tools-palette-in {
   from { transform: translateX(8px); opacity: 0; }
@@ -3721,7 +4298,9 @@ textarea {
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-3);
-  border-bottom: 1px solid var(--border-subtle);
+  /* Phase-3 workspace: header is a panel section separator — the
+   * subtle --divider hairline, not a full --border. */
+  border-bottom: 1px solid var(--divider);
   background: var(--bg-toolbar);
 }
 .tools-palette-title {
@@ -3747,25 +4326,29 @@ textarea {
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 .tools-palette-toggle-btn:hover { background: var(--bg-hover); color: var(--fg-strong); }
 .tools-palette-toggle-active {
-  background: var(--accent-soft);
+  /* Phase 4 — toggle selected state = the shared orange wash. */
+  background: var(--accent-selected);
   color: var(--accent);
 }
+.tools-palette-toggle-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .tools-palette-close {
   width: 24px;
   height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-1);
   border: none;
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
 }
 .tools-palette-close:hover { background: var(--bg-hover); color: var(--fg-strong); }
+.tools-palette-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .tools-palette-body {
   flex: 1 1 auto;
@@ -3801,10 +4384,14 @@ textarea {
   border-radius: var(--radius-2);
   color: var(--fg);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 .tools-palette-entry:hover:not(:disabled) {
   background: var(--bg-hover);
+}
+.tools-palette-entry:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .tools-palette-entry:disabled {
   opacity: 0.45;
@@ -3843,10 +4430,14 @@ textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Phase 6 — the shared icon color ladder: muted default (both list
+   * and grid modes), strong on hover. The old grid-only override
+   * forced `--fg-strong` on every resting tile, breaking the ONE
+   * icon color system. */
   color: var(--fg-muted);
   flex: 0 0 auto;
 }
-.tools-palette-entry-grid .tools-palette-entry-icon {
+.tools-palette-entry:hover:not(:disabled) .tools-palette-entry-icon {
   color: var(--fg-strong);
 }
 .tools-palette-entry-text {
@@ -3901,7 +4492,9 @@ textarea {
   display: grid;
   place-items: center;
   z-index: 100;
-  animation: sheet-fade var(--t-base) var(--ease);
+  /* Phase 5 — overlay fade only (opacity 0->1, --motion-normal
+   * 150ms ease-out); the sheet carries the 0.98->1 scale. */
+  animation: sheet-fade var(--motion-normal) var(--ease-out);
 }
 @keyframes sheet-fade {
   from { opacity: 0; }
@@ -3917,11 +4510,13 @@ textarea {
   max-height: min(640px, calc(100vh - 64px));
   display: flex;
   flex-direction: column;
-  animation: sheet-in var(--t-base) var(--ease);
+  /* Phase 5 — dialog entrance: subtle 0.98 -> 1 scale + opacity
+   * fade over --motion-normal (150ms) ease-out. */
+  animation: sheet-in var(--motion-normal) var(--ease-out);
 }
 @keyframes sheet-in {
-  from { transform: translateY(8px); opacity: 0; }
-  to   { transform: translateY(0); opacity: 1; }
+  from { transform: scale(0.98); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
 }
 
 .sheet-header {
@@ -3948,9 +4543,10 @@ textarea {
   border-radius: var(--radius-1);
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 .sheet-close:hover { background: var(--bg-hover); color: var(--fg-strong); }
+.sheet-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .sheet-body {
   padding: var(--sp-4);
@@ -4035,10 +4631,15 @@ textarea {
   cursor: pointer;
   text-align: right;
   padding: 0;
-  transition: color var(--t-quick) var(--ease);
+  transition: color var(--motion-fast) var(--ease-out);
 }
 .about-row-value-link:hover {
   color: var(--accent);
+}
+
+.about-row-value-link:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .about-warning {
   margin-top: var(--sp-3);
@@ -4105,7 +4706,7 @@ textarea {
   /* Width is set inline via the progress percent. The transition
    * smooths the visible jumps between progress events without
    * lagging behind a fast download. */
-  transition: width var(--t-quick) var(--ease);
+  transition: width var(--motion-fast) var(--ease-out);
 }
 .update-prompt-progress-label {
   margin: var(--sp-1) 0 0;
@@ -4189,7 +4790,7 @@ textarea {
   border-radius: var(--radius-2);
   padding: 6px 10px;
   width: 140px;
-  transition: border-color var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 .prefs-select:focus,
 .prefs-input:focus {
@@ -4218,10 +4819,18 @@ textarea {
   border-radius: var(--radius-2);
   text-align: left;
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 .prefs-path:hover {
   background: var(--bg-hover);
+  border-color: var(--accent);
+}
+/* Phase 6 — the clickable path buttons get the shared orange ring on
+ * keyboard focus (they are buttons; the native outline is a visible
+ * fallback but the app's focus language is the ring). */
+.prefs-path:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
   border-color: var(--accent);
 }
 .prefs-path-label {
@@ -4253,13 +4862,17 @@ textarea {
   cursor: pointer;
   padding: 0;
   background-clip: padding-box;
-  transition: transform var(--t-quick) var(--ease), box-shadow var(--t-quick) var(--ease);
+  transition: transform var(--motion-fast) var(--ease-in-out), box-shadow var(--motion-fast) var(--ease-out);
 }
 .ann-color-swatch-main:hover {
   transform: scale(1.08);
 }
 .ann-color-swatch-main-active {
   box-shadow: 0 0 0 1.5px var(--accent);
+}
+.ann-color-swatch-main:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .color-popover {
@@ -4272,11 +4885,15 @@ textarea {
   border-radius: var(--radius-3);
   box-shadow: var(--shadow-popover);
   width: 280px;
-  animation: popover-in var(--t-base) var(--ease);
+  /* Phase 5 — flyout motion: 0.98 -> 1 scale + opacity over
+   * --motion-normal (150ms) ease-out; the grow pins to the anchor's
+   * top-right so the popover swells from the swatch. */
+  transform-origin: top right;
+  animation: popover-in var(--motion-normal) var(--ease-out);
 }
 @keyframes popover-in {
-  from { transform: translateY(-4px); opacity: 0; }
-  to   { transform: translateY(0); opacity: 1; }
+  from { transform: scale(0.98); opacity: 0; }
+  to   { transform: scale(1); opacity: 1; }
 }
 
 .color-palette {
@@ -4330,7 +4947,7 @@ textarea {
   cursor: pointer;
   padding: 0;
   background-clip: padding-box;
-  transition: transform var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: transform var(--motion-fast) var(--ease-in-out), border-color var(--motion-fast) var(--ease-out);
 }
 .color-swatch:hover {
   transform: scale(1.06);
@@ -4338,6 +4955,10 @@ textarea {
 .color-swatch-active {
   border-color: var(--fg-strong);
   box-shadow: 0 0 0 1px var(--bg-raised);
+}
+.color-swatch:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .color-swatch-wrap-active .color-swatch {
   border-color: var(--accent);
@@ -4364,7 +4985,7 @@ textarea {
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
-  transition: opacity var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
+  transition: opacity var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
   z-index: 2;
 }
 .color-swatch-wrap:hover .color-swatch-remove,
@@ -4375,6 +4996,12 @@ textarea {
 .color-swatch-remove:hover {
   background: var(--error-soft);
   color: var(--error);
+}
+
+.color-swatch-remove:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  box-shadow: var(--focus-ring);
 }
 
 .color-palette-form {
@@ -4421,10 +5048,15 @@ textarea {
   font-size: var(--fs-xs);
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out);
 }
 .color-palette-add:hover {
   background: var(--accent-hover);
+}
+
+.color-palette-add:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 .color-palette-error {
   color: #ef4444;
@@ -4465,11 +5097,11 @@ textarea {
   user-select: none;
   outline: none;
   overflow: hidden;
-  transition: border-color var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out);
 }
 .color-pad:focus-visible {
   border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent-soft);
+  box-shadow: var(--focus-ring);
 }
 .color-pad-shade {
   position: absolute;
@@ -4500,7 +5132,7 @@ textarea {
   transform: translate(-50%, -50%);
   pointer-events: none;
   /* backgroundColor set inline (the picked hex). */
-  transition: background-color var(--t-quick) var(--ease);
+  transition: background-color var(--motion-fast) var(--ease-out);
 }
 
 .color-hue-slider {
@@ -4751,7 +5383,7 @@ textarea {
 .audit-bar-fill {
   height: 100%;
   border-radius: 999px;
-  transition: width var(--t-base) var(--ease);
+  transition: width var(--motion-normal) var(--ease-out);
 }
 
 .audit-bar-hint {
@@ -4761,9 +5393,11 @@ textarea {
   line-height: 1.4;
 }
 
-.tool-btn-optimize { color: var(--fg-strong); }
-
-.tool-btn-audit { color: var(--fg-strong); }
+/* Phase 6 — Optimize / Audit are ordinary labelled toolbar actions
+ * and inherit the shared toolbar icon color ladder (muted default,
+ * strong hover, accent active). The old --fg-strong boost made them
+ * the only two pre-lit buttons in a resting toolbar; removed so the
+ * ONE icon system applies to every labelled action. */
 
 /* ---------------------------------------------------------------------------
  * Phase 8 - Save-As linearize toggle (DEF-040)
@@ -4856,12 +5490,17 @@ textarea {
   color: var(--fg-muted);
   border-radius: var(--radius-1);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
 }
 
 .create-image-remove:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
+}
+
+.create-image-remove:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .export-format {
@@ -4925,7 +5564,7 @@ textarea {
   border-radius: var(--radius-1);
   pointer-events: auto;
   cursor: grab;
-  transition: background var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out);
 }
 
 /* Box-tool drag preview: dashed rect that follows the drag. */
@@ -4947,7 +5586,7 @@ textarea {
   overflow: hidden;
   cursor: move;
   user-select: none;
-  transition: border-color var(--t-quick) var(--ease), background var(--t-quick) var(--ease);
+  transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
 .edit-image-placement:hover {
@@ -4956,7 +5595,7 @@ textarea {
 
 .edit-image-placement-selected {
   border-color: var(--accent);
-  background: rgba(37, 99, 235, 0.04);
+  background: rgba(224, 122, 45, 0.04);
 }
 
 .edit-image-placement-img {
@@ -5004,7 +5643,8 @@ textarea {
   position: absolute;
   border: 1px dashed var(--accent);
   border-radius: var(--radius-1);
-  background: rgba(37, 99, 235, 0.04);
+  /* Phase 2 — committed-box selection wash: blue -> accent orange. */
+  background: rgba(224, 122, 45, 0.04);
   /* DEF-153 — committed content hovers with the palm/grab cursor
    * (Acrobat-style), not the 4-arrow `move` cursor. */
   cursor: grab;
@@ -5015,7 +5655,7 @@ textarea {
 .edit-box-selected {
   border-color: var(--accent);
   border-style: solid;
-  background: rgba(37, 99, 235, 0.06);
+  background: rgba(224, 122, 45, 0.06);
 }
 
 .edit-box-dragging {
@@ -5059,7 +5699,7 @@ textarea {
  * preview so the two tools are visually distinct. */
 .edit-image-create-preview {
   position: absolute;
-  background: rgba(37, 99, 235, 0.06);
+  background: rgba(224, 122, 45, 0.06);
   border: 1px dashed var(--accent);
   border-radius: var(--radius-1);
   pointer-events: none;
@@ -5077,6 +5717,9 @@ textarea {
   padding: 2px;
   z-index: 5;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  /* Phase 5 — contextual bar entrance (opacity + translateY -2px,
+   * --motion-normal ease-out). */
+  animation: edit-bar-in var(--motion-normal) var(--ease-out);
 }
 
 .edit-image-toolbar-btn,
@@ -5099,6 +5742,9 @@ textarea {
 .edit-box-toolbar {
   position: absolute;
   z-index: 5;
+  /* Phase 5 — contextual bar entrance (opacity + translateY -2px,
+   * --motion-normal ease-out). */
+  animation: edit-bar-in var(--motion-normal) var(--ease-out);
 }
 
 .edit-box-toolbar-btn,
@@ -5111,14 +5757,14 @@ textarea {
 .edit-image-crop-overlay {
   position: absolute;
   border: 1px solid var(--accent);
-  background: rgba(37, 99, 235, 0.05);
+  background: rgba(224, 122, 45, 0.05);
   cursor: crosshair;
   z-index: 4;
 }
 
 .edit-image-crop-marquee {
   position: absolute;
-  background: rgba(37, 99, 235, 0.18);
+  background: rgba(224, 122, 45, 0.18);
   border: 1px solid var(--accent);
   border-radius: var(--radius-1);
   pointer-events: none;
@@ -5158,6 +5804,9 @@ textarea {
   min-width: 200px;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
+  /* Phase 5 — contextual editor entrance (opacity + translateY -2px,
+   * --motion-normal ease-out) so opening the editor never snaps. */
+  animation: edit-bar-in var(--motion-normal) var(--ease-out);
 }
 
 .edit-inline-toolbar {
@@ -5281,7 +5930,8 @@ textarea {
   font-size: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  background: var(--bg-raised);
+  /* Phase 4 — dropdown surface matches --bg-input everywhere. */
+  background: var(--bg-input);
   color: var(--fg);
   padding: 0 4px;
 }
@@ -5348,6 +5998,10 @@ textarea {
   background: var(--bg-toolbar, var(--bg-raised));
   border-bottom: 1px solid var(--border);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
+  /* Phase 5 — mode-bar entrance (opacity + translateY -2px,
+   * --motion-normal ease-out) so entering Edit mode never snaps the
+   * strip into place. */
+  animation: edit-bar-in var(--motion-normal) var(--ease-out);
 }
 
 .edit-toolbar-btn {
@@ -5363,7 +6017,7 @@ textarea {
   font-weight: 500;
   border-radius: var(--radius-1);
   cursor: pointer;
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 
 .edit-toolbar-btn:hover:not(:disabled) {
@@ -5373,9 +6027,15 @@ textarea {
 }
 
 .edit-toolbar-btn-active {
-  background: var(--accent-soft);
+  /* Phase 4 — armed edit-mode button = the shared orange wash. */
+  background: var(--accent-selected);
   color: var(--accent);
   border-color: var(--accent);
+}
+
+.edit-toolbar-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .edit-toolbar-btn:disabled {
@@ -5409,7 +6069,8 @@ textarea {
   font-size: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  background: var(--bg-raised);
+  /* Phase 4 — dropdown surface matches --bg-input everywhere. */
+  background: var(--bg-input);
   color: var(--fg);
   padding: 0 4px;
 }
@@ -5474,7 +6135,7 @@ textarea {
   height: 100%;
   background: var(--accent);
   border-radius: 999px;
-  transition: width var(--t-base) var(--ease);
+  transition: width var(--motion-normal) var(--ease-out);
 }
 
 .ocr-scope {
@@ -5520,9 +6181,10 @@ textarea {
   border-bottom: 1px solid var(--border);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
   overflow: hidden;
-  /* Quiet rise-in so the bar's appearance doesn't jolt the flow
-   * (150-250ms ease-out per the motion spec). */
-  animation: ocr-bar-in var(--t-base) var(--ease);
+  /* Quiet rise-in (Phase 5 — panel band, ~180-220ms): the bar's
+   * appearance doesn't jolt the flow over --motion-medium (200ms)
+   * ease-out, transform + opacity only. */
+  animation: ocr-bar-in var(--motion-medium) var(--ease-out);
 }
 @keyframes ocr-bar-in {
   from { transform: translateY(-6px); opacity: 0; }
@@ -5575,13 +6237,18 @@ textarea {
   color: var(--fg-muted);
   cursor: pointer;
   border-radius: var(--radius-1);
-  transition: background var(--t-quick) var(--ease), color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
   margin-left: auto;
 }
 
 .ocr-suspects-close:hover {
   background: var(--bg-hover);
   color: var(--fg-strong);
+}
+
+.ocr-suspects-close:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .ocr-suspects-summary {
@@ -5671,12 +6338,17 @@ textarea {
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
   color: var(--fg);
   white-space: nowrap;
-  transition: background var(--t-quick) var(--ease), border-color var(--t-quick) var(--ease);
+  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
 }
 
 .ocr-suspects-entry-btn:hover {
   background: var(--bg-hover);
   border-color: var(--border);
+}
+
+.ocr-suspects-entry-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .ocr-suspects-word {
@@ -5711,7 +6383,7 @@ textarea {
   height: 100%;
   background: var(--accent);
   border-radius: 999px;
-  transition: width var(--t-base) var(--ease);
+  transition: width var(--motion-normal) var(--ease-out);
 }
 
 .ocr-suspects-confidence-low > span {
@@ -5800,8 +6472,10 @@ textarea {
 
 .crop-editor-mask {
   position: absolute;
-  background: rgba(37, 99, 235, 0.06);
-  border: 1.5px solid #2563eb;
+  /* Phase 2 — crop marquee repointed from the old #2563eb blue to
+   * the accent: soft orange fill + accent border, same alphas. */
+  background: rgba(224, 122, 45, 0.06);
+  border: 1.5px solid var(--accent);
   border-radius: var(--radius-1);
   cursor: move;
   display: flex;
@@ -5811,8 +6485,10 @@ textarea {
 }
 
 :root[data-theme="dark"] .crop-editor-mask {
-  background: rgba(96, 165, 250, 0.10);
-  border-color: #60a5fa;
+  /* Slightly stronger alpha so the orange wash stays legible
+   * against the dark dialog surface. */
+  background: rgba(224, 122, 45, 0.1);
+  border-color: var(--accent);
 }
 
 .crop-editor-label {
@@ -5820,16 +6496,16 @@ textarea {
   top: -22px;
   left: 0;
   font-size: var(--fs-xs);
-  color: #2563eb;
+  color: var(--accent);
   font-weight: 500;
   pointer-events: none;
 }
 
-:root[data-theme="dark"] .crop-editor-label { color: #93c5fd; }
+:root[data-theme="dark"] .crop-editor-label { color: var(--accent); }
 
 .crop-editor-handle {
   position: absolute;
-  background: #2563eb;
+  background: var(--accent);
   border: 1.5px solid #ffffff;
   border-radius: 2px;
   cursor: nwse-resize;
@@ -5839,7 +6515,7 @@ textarea {
 .crop-editor-handle-ne, .crop-editor-handle-sw { cursor: nesw-resize; }
 
 :root[data-theme="dark"] .crop-editor-handle {
-  background: #60a5fa;
+  background: var(--accent);
   border-color: #0f172a;
 }
 
@@ -6012,13 +6688,51 @@ textarea {
 }
 
 .ann-callout-preview-mask {
-  fill: rgba(37, 99, 235, 0.08);
-  stroke: #2563eb;
+  /* Phase 2 — callout placement preview repointed to the accent:
+   * orange fill + accent stroke (was #2563eb). */
+  fill: rgba(224, 122, 45, 0.08);
+  stroke: var(--accent);
   stroke-dasharray: 4 3;
   stroke-width: 1.5;
 }
 
 :root[data-theme="dark"] .ann-callout-preview-mask {
-  fill: rgba(96, 165, 250, 0.12);
-  stroke: #60a5fa;
+  fill: rgba(224, 122, 45, 0.12);
+  stroke: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 5 — reduced motion (prefers-reduced-motion)
+ *
+ * Respects the OS "reduce motion" setting: every transition and
+ * animation collapses to an instant state change (0.01ms — the
+ * canonical no-motion duration that still reaches the end state).
+ * Movement (scale, translate, rotate, shimmer, spin, progress
+ * sweeps) is always disabled. The ONLY survivors are the essential
+ * OPACITY-ONLY fades — backdrops and toasts — so an overlay never
+ * snaps between fully transparent and fully painted frames with no
+ * feedback at all; a pure alpha cross-fade is the least motionful
+ * way to signal that. Indeterminate spinners stop rotating; the
+ * tooltip's 450ms dwell delay is dropped so hover feedback is
+ * instant.
+ * ------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+  }
+
+  /* Essential opacity feedback only — none of these move. */
+  .modal-backdrop,
+  .sheet-backdrop,
+  .toast {
+    animation-duration: var(--motion-fast) !important;
+    transition-duration: var(--motion-fast) !important;
+  }
 }

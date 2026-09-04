@@ -232,7 +232,7 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">

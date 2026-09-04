@@ -146,7 +146,7 @@ export function CommentExportDialog(
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">
@@ -184,7 +184,7 @@ export function CommentExportDialog(
             }}
             data-comment-export-confirm
           >
-            <Download size={14} aria-hidden />
+            <Download size={16} aria-hidden />
             {running ? "Exporting…" : "Export comments"}
           </button>
         </div>

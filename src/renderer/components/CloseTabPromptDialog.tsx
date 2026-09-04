@@ -115,7 +115,7 @@ export function CloseTabPromptDialog(
             onClick={(): void => onChoose("cancel")}
             aria-label="Cancel close"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">

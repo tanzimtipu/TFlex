@@ -1,11 +1,17 @@
 // @vitest-environment node
 // Static CSS guard for Bug 14 — when a document is modified the
-// toolbar Save button must show the accent color even if it is
+// toolbar Save button must show the state color even if it is
 // disabled (samples / never-saved docs are read-only and the
 // disabled attribute forces opacity: 0.4, which made the icon
 // look greyed out next to the lit tab dot). The fix adds a
 // `.tool-btn-modified[disabled]` override that keeps the icon
-// accent-tinted without removing the disabled cursor.
+// state-tinted without removing the disabled cursor.
+//
+// Phase 4 — the Save button now uses the SEMANTIC warning token,
+// not the accent: orange is reserved for interactive accent
+// controls, "unsaved changes" reads as --warning (success owns the
+// clean/saved state, error owns a failed save). These assertions
+// pin the changed colors at the source.
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -49,30 +55,40 @@ function findRuleBody(src: string, selector: string): string | null {
   }
 }
 
-describe("Bug 14 — Save icon stays accent-tinted when modified + disabled", () => {
+describe("Bug 14 — Save icon stays state-tinted when modified + disabled", () => {
   const src = readStyles();
 
-  it(".tool-btn-modified declares the accent color (icon lights up)", () => {
+  it(".tool-btn-modified declares the warning color (unsaved changes, not accent)", () => {
+    // Phase 4 — "unsaved changes" is a state, so it uses the
+    // semantic --warning token. The accent is NOT the save color.
     const body = findRuleBody(src, ".tool-btn-modified");
     expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/color:\s*var\(--accent\)/);
+    expect(body ?? "").toMatch(/color:\s*var\(--warning\)/);
+    expect(body ?? "").not.toMatch(/color:\s*var\(--accent\)/);
   });
 
-  it(".tool-btn-modified[disabled] keeps the accent color and a not-allowed cursor", () => {
+  it(".tool-btn-modified[disabled] keeps the warning color and a not-allowed cursor", () => {
     // Without this rule the disabled attribute would apply the
     // generic opacity:0.4 + color fallback, making the icon look
     // greyed out next to the lit tab dot. The override must keep
-    // the icon accent-tinted and explicitly set the cursor.
+    // the icon state-tinted and explicitly set the cursor.
     const body = findRuleBody(src, ".tool-btn-modified[disabled]");
     expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/color:\s*var\(--accent\)/);
+    expect(body ?? "").toMatch(/color:\s*var\(--warning\)/);
     expect(body ?? "").toMatch(/cursor:\s*not-allowed/);
   });
 
-  it(".tool-btn-modified hover (non-disabled) still uses the accent (no regression)", () => {
+  it(".tool-btn-modified hover (non-disabled) uses the warning tint (no regression)", () => {
     const body = findRuleBody(src, ".tool-btn-modified:hover:not([disabled])");
     expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/background:\s*var\(--accent-soft\)/);
-    expect(body ?? "").toMatch(/color:\s*var\(--accent\)/);
+    expect(body ?? "").toMatch(/background:\s*var\(--warning-soft\)/);
+    expect(body ?? "").toMatch(/color:\s*var\(--warning\)/);
+  });
+
+  it(".tool-btn-save-clean paints the SAVED state with the success token", () => {
+    // Phase 4 — a clean document reads as --success, never orange.
+    const body = findRuleBody(src, ".tool-btn-save-clean[disabled]");
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(/color:\s*var\(--success\)/);
   });
 });

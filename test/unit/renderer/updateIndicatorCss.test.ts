@@ -72,8 +72,9 @@ describe("UpdateIndicator — CSS contract (DEF-077, Look-and-feel spec)", () =>
     expect(body).not.toBeNull();
     // Border radius must come from the design token, not a magic number.
     expect(body).toMatch(/border-radius:\s*var\(--radius-2\)/);
-    // Transition uses the spec's motion budget token (150 ms ease).
-    expect(body).toMatch(/transition:\s*background\s+var\(--t-quick\)\s+var\(--ease\)/);
+    // Transition uses the Phase-1 motion token (80ms) + the
+    // appearing ease token (--ease-out).
+    expect(body).toMatch(/transition:\s*background\s+var\(--motion-fast\)\s+var\(--ease-out\)/);
     // No one-sided accent border on the base (that's reserved for the
     // 'available' / 'downloaded' variants).
     expect(body).not.toMatch(/border:\s*1px solid var\(--accent\)/);

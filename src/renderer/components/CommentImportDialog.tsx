@@ -124,7 +124,7 @@ export function CommentImportDialog(
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">
@@ -155,7 +155,7 @@ export function CommentImportDialog(
             }}
             data-comment-import-confirm
           >
-            <Upload size={14} aria-hidden />
+            <Upload size={16} aria-hidden />
             {running ? "Importing…" : "Import comments"}
           </button>
         </div>

@@ -209,7 +209,7 @@ export function StampDialog(
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">
@@ -291,7 +291,7 @@ export function StampDialog(
             onClick={onConfirmClick}
             data-stamp-confirm
           >
-            <Stamp size={14} aria-hidden />
+            <Stamp size={16} aria-hidden />
             Place on page
           </button>
         </div>

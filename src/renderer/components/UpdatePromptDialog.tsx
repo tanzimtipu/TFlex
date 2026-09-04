@@ -337,7 +337,7 @@ export function UpdatePromptDialog(
             >
               <p className="update-prompt-text update-prompt-downloading-text">
                 <RotateCw
-                  size={14}
+                  size={16}
                   aria-hidden
                   className="update-prompt-spinner"
                 />
@@ -463,7 +463,7 @@ export function UpdatePromptDialog(
               disabled={busy}
               data-update-prompt-update
             >
-              <Download size={14} aria-hidden />
+              <Download size={16} aria-hidden />
               Update
             </button>
           </div>
@@ -487,7 +487,7 @@ export function UpdatePromptDialog(
               disabled={busy}
               data-update-prompt-restart
             >
-              <RefreshCw size={14} aria-hidden />
+              <RefreshCw size={16} aria-hidden />
               Restart
             </button>
           </div>
@@ -580,7 +580,7 @@ export function UpdatePromptDialog(
             onClick={onClose}
             aria-label="Close update prompt"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </header>
         <div className="sheet-body sheet-body-update-prompt">

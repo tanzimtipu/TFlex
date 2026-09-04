@@ -82,4 +82,28 @@ describe("Bug 13 — tools palette anchors below toolbar", () => {
     expect(zi).toBeGreaterThanOrEqual(20);
     expect(zi).toBeLessThan(100);
   });
+
+  it("DEF-169 — palette z-index stays BELOW the modal and sheet backdrops so the backdrop dims it", () => {
+    // When a dialog opens over the open Tools palette, the backdrop
+    // must cover the palette (it must render dimmed under the
+    // overlay). This pins palette < sheet-backdrop < modal-backdrop;
+    // a refactor that floats the palette above the overlays (or
+    // drops a backdrop below the palette) regresses DEF-169.
+    const paletteBody = findRuleBody(src, ".tools-palette");
+    const modalBody = findRuleBody(src, ".modal-backdrop");
+    const sheetBody = findRuleBody(src, ".sheet-backdrop");
+    expect(paletteBody).not.toBeNull();
+    expect(modalBody).not.toBeNull();
+    expect(sheetBody).not.toBeNull();
+    const zi = (body: string): number => {
+      const m = body.match(/z-index:\s*(\d+)/);
+      return m === null ? 0 : Number(m[1]);
+    };
+    const palette = zi(paletteBody ?? "");
+    const sheet = zi(sheetBody ?? "");
+    const modal = zi(modalBody ?? "");
+    expect(palette).toBeLessThan(sheet);
+    expect(sheet).toBeLessThan(modal);
+    expect(palette).toBeLessThan(modal);
+  });
 });

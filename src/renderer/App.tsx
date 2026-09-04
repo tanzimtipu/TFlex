@@ -946,6 +946,13 @@ export function App(): ReactElement {
         path: string;
         displayName: string;
         onDiskPath: string | null;
+        /** DEF-170 — set false when opening a derived / in-memory result
+         *  (extract, split, optimize, create). Each one is a brand-new
+         *  document, so the reducer must not collapse it onto a previous
+         *  result tab that shares the same synthetic path. Real files and
+         *  samples keep the default (re-opening the same path refocuses
+         *  the existing tab). */
+        dedupePath?: boolean;
       },
     ): Promise<{ tabId: string } | null> => {
       const parsed = await openPdfDocument(bytes);
@@ -1071,7 +1078,7 @@ export function App(): ReactElement {
         ...prev,
         [id]: seeded,
       }));
-      dispatchTabs({ type: "open", tab: meta });
+      dispatchTabs({ type: "open", tab: meta, dedupePath: source.dedupePath });
 
       // Phase 4 — kick off the form-field load in the background. The
       // editor overlay renders nothing until loaded is true; we don't
@@ -3226,6 +3233,10 @@ useEffect(() => {
         path: `<${kind}>${originDisplayName}`,
         displayName,
         onDiskPath: null, // never in-place save the result
+        // DEF-170 — every split/extract produces a brand-new document;
+        // do not collapse it onto a previous result tab sharing the
+        // same synthetic path.
+        dedupePath: false,
       });
       if (result !== null) {
         // Mark the new tab as modified so the user knows it hasn't been saved.
@@ -3378,6 +3389,7 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
         path: `<optimize>${open.displayName}`,
         displayName,
         onDiskPath: null,
+        dedupePath: false,
       });
       if (result !== null) {
         // Mark the new tab as modified so the user knows it hasn't been
@@ -3477,6 +3489,7 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
         path: `<create>${firstName}`,
         displayName,
         onDiskPath: null,
+        dedupePath: false,
       });
       if (opened !== null) {
         dispatchTabs({ type: "set-modified", id: opened.tabId, modified: true });
@@ -4888,6 +4901,7 @@ pushToast(
         path: `<create-clipboard>${displayName}`,
         displayName,
         onDiskPath: null,
+        dedupePath: false,
       });
       void choice.quality; // currently unused; engine.createFromClipboard doesn't take a quality
       if (opened !== null) {

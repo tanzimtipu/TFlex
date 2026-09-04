@@ -63,7 +63,7 @@ export function SearchBar(props: SearchBarProps) {
         disabled={resultCount === 0}
         title="Previous hit (Shift+Enter)"
       >
-        <ChevronUp size={15} aria-hidden />
+        <ChevronUp size={16} aria-hidden />
       </button>
       <button
         type="button"
@@ -72,10 +72,10 @@ export function SearchBar(props: SearchBarProps) {
         disabled={resultCount === 0}
         title="Next hit (Enter)"
       >
-        <ChevronDown size={15} aria-hidden />
+        <ChevronDown size={16} aria-hidden />
       </button>
       <button type="button" className="tool-btn" onClick={onClose} title="Close search (Esc)">
-        <X size={15} aria-hidden />
+        <X size={16} aria-hidden />
       </button>
     </div>
   );

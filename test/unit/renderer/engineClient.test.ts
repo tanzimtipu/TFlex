@@ -40,11 +40,15 @@ describe("engineClient.getEngine", () => {
 });
 
 describe("engineClient — real engine adapter translates indexes", () => {
-  let captured: { split: [number, number] | null; apply: unknown[] };
+  let captured: {
+    split: [number, number] | null;
+    extract: number[] | null;
+    apply: unknown[];
+  };
   let realEngine: ReturnType<typeof makeFakeRealEngine>;
 
   beforeEach(() => {
-    captured = { split: null, apply: [] };
+    captured = { split: null, extract: null, apply: [] };
     realEngine = makeFakeRealEngine(captured);
     (window as unknown as { tflex: { engine: typeof realEngine } }).tflex = {
       engine: realEngine,
@@ -68,6 +72,29 @@ describe("engineClient — real engine adapter translates indexes", () => {
     const e = getEngine();
     await e.split("doc-1", [5, 5] as [number, number]);
     expect(captured.split).toEqual([4, 4]);
+  });
+
+  it("translates extract pages from 1-based (renderer) to 0-based (engine)", async () => {
+    const e = getEngine();
+    await e.extract("doc-1", [1, 3]);
+    expect(captured.extract).toEqual([0, 2]);
+  });
+
+  it("extract('1') of a document yields the FIRST page (engine index 0)", async () => {
+    // DEF-167 — extract("1") of a 3-page doc used to land on page 2
+    // (the 1-based dialog number was passed untranslated to the
+    // 0-based engine). Pin that the first dialog page maps to index 0.
+    const e = getEngine();
+    await e.extract("doc-1", [1]);
+    expect(captured.extract).toEqual([0]);
+  });
+
+  it("extract's final page does NOT exceed the 0-based bound", async () => {
+    // DEF-167 — "3" of a 3-page doc used to error out of bounds
+    // because 3 equaled the 0-based upper bound. "3" must map to 2.
+    const e = getEngine();
+    await e.extract("doc-1", [3]);
+    expect(captured.extract).toEqual([2]);
   });
 
   it("translates reorder fromIndex / toIndex from 1-based to 0-based", async () => {
@@ -101,6 +128,7 @@ describe("engineClient — real engine adapter translates indexes", () => {
 
 function makeFakeRealEngine(captured?: {
   split: [number, number] | null;
+  extract: number[] | null;
   apply: unknown[];
 }): {
   available: boolean;
@@ -153,7 +181,10 @@ function makeFakeRealEngine(captured?: {
     docId: string,
     range: [number, number],
   ) => Promise<{ ok: true; value: ArrayBuffer }>;
-  extract: () => Promise<{ ok: true; value: ArrayBuffer }>;
+  extract: (
+    docId: string,
+    pages: number[],
+  ) => Promise<{ ok: true; value: ArrayBuffer }>;
   save: () => Promise<{ ok: true; value: string }>;
   saveAs: () => Promise<{ ok: true; value: string }>;
   getState: () => Promise<{
@@ -205,7 +236,8 @@ function makeFakeRealEngine(captured?: {
       if (captured !== undefined) captured.split = range;
       return { ok: true, value: new ArrayBuffer(0) };
     },
-    async extract() {
+    async extract(_docId, pages) {
+      if (captured !== undefined) captured.extract = pages;
       return { ok: true, value: new ArrayBuffer(0) };
     },
     async save() {

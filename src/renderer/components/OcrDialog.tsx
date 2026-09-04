@@ -418,7 +418,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
             aria-label={running ? 'Cancel OCR' : 'Close dialog'}
             title={running ? 'Cancel OCR' : 'Close'}
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">

@@ -169,7 +169,7 @@ export function TextExportDialog(
             disabled={running}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">

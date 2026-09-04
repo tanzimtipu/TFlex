@@ -119,7 +119,7 @@ export function ContentGrip(props: {
   const cls = className === undefined ? "content-grip" : `content-grip ${className}`;
   return (
     <div className={cls} data-drag-grip={handleName} aria-hidden>
-      <GripVertical size={12} strokeWidth={2} />
+      <GripVertical size={16} aria-hidden />
       <span className="content-grip-label" data-drag-grip-label={label}>
         {label}
       </span>
@@ -145,7 +145,7 @@ export function MoveHint(props: {
   };
   return (
     <div className="content-move-hint" data-move-hint role="status" style={style}>
-      <MousePointer2 size={12} strokeWidth={2} aria-hidden />
+      <MousePointer2 size={16} aria-hidden />
       <span>Double click to edit</span>
     </div>
   );

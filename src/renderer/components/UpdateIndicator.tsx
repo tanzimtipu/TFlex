@@ -196,7 +196,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           aria-label="Checking for updates"
           title="Checking for updates"
         >
-          <RefreshCw size={13} aria-hidden />
+          <RefreshCw size={16} aria-hidden />
         </span>
       );
     case "available":
@@ -211,7 +211,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           title={view.ariaLabel}
           onClick={onDownload}
         >
-          <Download size={13} aria-hidden />
+          <Download size={16} aria-hidden />
           <span>Update v{view.version}</span>
         </button>
       );
@@ -225,7 +225,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           aria-label={view.ariaLabel}
           title={view.ariaLabel}
         >
-          <RotateCw size={13} aria-hidden className="update-indicator-spin" />
+          <RotateCw size={16} aria-hidden className="update-indicator-spin" />
           <span>{view.progress}%</span>
         </span>
       );
@@ -241,7 +241,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           title={view.ariaLabel}
           onClick={onInstall}
         >
-          <Check size={13} aria-hidden />
+          <Check size={16} aria-hidden />
           <span>Restart to update</span>
         </button>
       );
@@ -256,7 +256,7 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
           title={view.ariaLabel}
           onClick={onDownload}
         >
-          <X size={13} aria-hidden />
+          <X size={16} aria-hidden />
           <span>Retry</span>
         </button>
       );

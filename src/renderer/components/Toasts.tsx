@@ -48,7 +48,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
   const Icon = toastIcon(toast.kind);
   return (
     <div className={`toast toast-${toast.kind}`}>
-      <Icon size={14} aria-hidden className="toast-icon" />
+      <Icon size={16} aria-hidden className="toast-icon" />
       <span className="toast-text">{toast.text}</span>
       <button
         type="button"
@@ -56,7 +56,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
         onClick={() => onDismiss(toast.id)}
         aria-label="Dismiss"
       >
-        <X size={13} aria-hidden />
+        <X size={16} aria-hidden />
       </button>
     </div>
   );

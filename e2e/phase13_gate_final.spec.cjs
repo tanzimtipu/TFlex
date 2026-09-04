@@ -82,8 +82,10 @@ test.describe('Phase 13 Final Gate', () => {
     
     await window.waitForSelector('.workspace', { state: 'visible', timeout: 20000 });
     
-    await window.click('[data-toolbar-edit-toggle]', { force: true });
-    await window.waitForSelector('[data-edit-toolbar]', { state: 'visible' });
+    // Redesign: annotation tools are DISABLED while Edit mode is open
+    // (mutual exclusion, title "Edit mode is open — close Edit to use
+    // annotation tools"). With Edit closed the Highlight button is
+    // enabled directly, so no edit-toggle detour anymore.
     await window.click('button[aria-label="Highlight"]', { force: true });
     
     // Open palette
@@ -109,18 +111,20 @@ test.describe('Phase 13 Final Gate', () => {
   });
 
   test('SC5: Both Themes', async () => {
-    const body = window.locator('body');
+    // Redesign: the theme attribute lives on documentElement
+    // (:root[data-theme]), not on <body>.
+    const themeOf = () => window.evaluate(() => document.documentElement.getAttribute('data-theme'));
     const toggle = window.locator('.theme-toggle');
     
     // Current theme
-    const theme1 = await body.getAttribute('data-theme') || 'light';
+    const theme1 = (await themeOf()) || 'light';
     await takeScreenshot(`gate-p13-theme-${theme1}.png`);
     
     // Toggle
     await toggle.click({ force: true });
     await window.waitForTimeout(1000);
     
-    const theme2 = await body.getAttribute('data-theme');
+    const theme2 = await themeOf();
     expect(theme2).not.toBe(theme1);
     await takeScreenshot(`gate-p13-theme-${theme2}.png`);
   });

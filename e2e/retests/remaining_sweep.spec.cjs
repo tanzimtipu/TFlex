@@ -35,7 +35,10 @@ test.describe('Remaining Sweep Verification', () => {
     await window.click('[data-tools-toggle]', { force: true });
     await window.click('[data-tool-id="stamp"]', { force: true });
     await window.waitForSelector('.modal-dialog:has-text("Stamp")');
-    await window.click('.modal-body button:first-child');
+    // Redesign: the stamp dialog's modal-body starts with a p.modal-help
+    // paragraph — the confirm button carries data-stamp-confirm
+    // ("Place on page") and is no longer the body's first child.
+    await window.click('[data-stamp-confirm]');
     await window.mouse.click(450, 450);
     const hasStamp = await window.locator('.stamp-annotation, [data-annotation-type="stamp"]').first().isVisible();
     await record(8, hasStamp, "Stamp annotation visible");
@@ -43,7 +46,9 @@ test.describe('Remaining Sweep Verification', () => {
     // 9) Edit text opens editor
     await window.click('[data-toolbar-edit-toggle]', { force: true });
     await window.waitForSelector('.edit-toolbar');
-    await window.click('button[aria-label="Text"]', { force: true });
+    // Redesign: the edit toolbar's buttons carry data-edit-tool; the text
+    // button is "Edit text" (old aria-label="Text" is gone).
+    await window.click('[data-edit-tool="text"]', { force: true });
     await window.mouse.click(400, 300);
     const hasEditor = await window.locator('.text-editor, textarea, [contenteditable="true"]').count() > 0;
     await record(9, hasEditor, "Text editor found");

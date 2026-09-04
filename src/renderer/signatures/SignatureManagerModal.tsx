@@ -499,7 +499,7 @@ function SavedTab({
             aria-label={`Delete ${signatureLabel(sig)}`}
             title="Delete"
           >
-            <Trash2 size={14} aria-hidden />
+            <Trash2 size={16} aria-hidden />
           </button>
         </li>
       ))}

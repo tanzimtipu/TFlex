@@ -118,7 +118,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                     }}
                     aria-label={`Close ${tab.title}`}
                   >
-                    <X size={12} aria-hidden />
+                    <X size={16} aria-hidden />
                   </button>
                 </div>
               </li>
@@ -148,7 +148,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                 title="New empty tab"
                 data-new-tab
               >
-                <Plus size={14} aria-hidden />
+                <Plus size={16} aria-hidden />
               </button>
             </li>
           )}
@@ -167,7 +167,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           aria-label="Toggle theme"
         >
-          {theme === "dark" ? <Sun size={14} aria-hidden /> : <Moon size={14} aria-hidden />}
+          {theme === "dark" ? <Sun size={16} aria-hidden /> : <Moon size={16} aria-hidden />}
         </button>
         <button
           type="button"
@@ -175,7 +175,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           onClick={onOpen}
           style={{ height: 28, padding: "0 10px", fontSize: 12 }}
         >
-          <FolderOpen size={13} aria-hidden />
+          <FolderOpen size={16} aria-hidden />
           Open
         </button>
       </div>

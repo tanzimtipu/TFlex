@@ -145,7 +145,7 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">
@@ -207,7 +207,7 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
             disabled={loading}
             data-audit-refresh
           >
-            <RefreshCw size={13} aria-hidden />
+            <RefreshCw size={16} aria-hidden />
             <span style={{ marginLeft: 6 }}>{loading ? 'Refreshing…' : 'Refresh'}</span>
           </button>
           <button type="button" className="btn btn-primary" onClick={onClose}>

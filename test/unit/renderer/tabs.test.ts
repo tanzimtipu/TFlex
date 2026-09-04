@@ -395,3 +395,87 @@ describe("tabs reducer — empty tab", () => {
     expect(s.activeId).toBe("tab-1");
   });
 });
+
+// ---------------------------------------------------------------------------
+// DEF-170 — sequential extracts must each open a brand-new tab
+
+describe("DEF-170 sequential extract results", () => {
+  /** Simulate the exact openFromBytes shape for an extract result:
+   *  resolveOpenId mints the tab id from the CURRENT tab state, the
+   *  caller registers the doc session under that id, and the meta is
+   *  dispatched with `dedupePath: false`. Returns the new state plus
+   *  the id the session was registered under. */
+  const runExtract = (
+    state: ReturnType<typeof tabsReducer>,
+    mint: () => string,
+    pageLabel: string,
+  ): { state: ReturnType<typeof tabsReducer>; sessionId: string } => {
+    const { id } = resolveOpenId(state, {
+      kind: "file",
+      filePath: "<extract>report.pdf",
+    }, mint);
+    const next = tabsReducer(state, {
+      type: "open",
+      tab: {
+        id,
+        title: `report.pdf — pages ${pageLabel}`,
+        filePath: "<extract>report.pdf",
+        kind: "file",
+        modified: false,
+      },
+      dedupePath: false,
+    });
+    return { state: next, sessionId: id };
+  };
+
+  it("two sequential extracts open two distinct tabs, each owning its own session id", () => {
+    // Start from a real source document.
+    let state = tabsReducer(initialTabsState, { type: "open", tab: make(1, "report.pdf") });
+    expect(state.tabs).toHaveLength(1);
+
+    let nextId = 1;
+    const mint = (): string => `extract-tab-${nextId++}`;
+
+    const first = runExtract(state, mint, "10-20");
+    expect(first.sessionId).toBe("extract-tab-1");
+    state = first.state;
+    // First extract appends a fresh tab and activates it.
+    expect(state.tabs.map((t) => t.id)).toEqual(["tab-1", "extract-tab-1"]);
+    expect(state.activeId).toBe("extract-tab-1");
+
+    // Second extract while the first result tab is still open (and active).
+    const second = runExtract(state, mint, "30-40");
+    expect(second.sessionId).toBe("extract-tab-2");
+    state = second.state;
+    // Pre-fix the reducer collapsed the second open onto the first via
+    // the shared `<extract>report.pdf` path — tab count stayed at 2 and
+    // the old result tab was refocused. With dedupePath:false the second
+    // extract mints and appends its OWN tab; both keep their own session
+    // ids (nothing orphaned).
+    expect(state.tabs.map((t) => t.id)).toEqual([
+      "tab-1",
+      "extract-tab-1",
+      "extract-tab-2",
+    ]);
+    expect(state.tabs).toHaveLength(3);
+    expect(state.activeId).toBe("extract-tab-2");
+    expect(state.tabs[1]?.filePath).toBe("<extract>report.pdf");
+    expect(state.tabs[2]?.filePath).toBe("<extract>report.pdf");
+    // Each result tab carries its own id, so openTabs[sessionId] lookups
+    // point at distinct document sessions.
+    expect(new Set(state.tabs.map((t) => t.id)).size).toBe(3);
+  });
+
+  it("the same-path dedupe still applies to real files (dedupePath unset)", () => {
+    // Regression guard: re-opening a real on-disk path must keep
+    // collapsing onto the existing tab — the DEF-170 opt-out must not
+    // weaken the regular re-open behavior.
+    let state = tabsReducer(initialTabsState, { type: "open", tab: make(1, "report.pdf") });
+    state = tabsReducer(state, {
+      type: "open",
+      tab: { id: "fresh-1", title: "report.pdf", filePath: "report.pdf", kind: "file", modified: false },
+    });
+    expect(state.tabs).toHaveLength(1);
+    expect(state.activeId).toBe("tab-1");
+  });
+});

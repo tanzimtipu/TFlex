@@ -1,4 +1,4 @@
-import { Images, List, MessageSquare, Undo2, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { ChevronRight, Images, List, MessageSquare, Undo2, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -616,7 +616,7 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
             title={canUndo ? 'Undo last change' : 'Nothing to undo'}
             aria-label="Undo last change"
           >
-            <Undo2 size={13} aria-hidden />
+            <Undo2 size={16} aria-hidden />
             <span>Undo last change</span>
           </button>
         </div>
@@ -1000,7 +1000,7 @@ function ThumbActions(props: ThumbActionsProps): ReactElement {
           title="Rotate counter-clockwise"
           aria-label="Rotate counter-clockwise"
         >
-          <RotateCcw size={13} aria-hidden />
+          <RotateCcw size={16} aria-hidden />
         </button>
         <button
           type="button"
@@ -1010,7 +1010,7 @@ function ThumbActions(props: ThumbActionsProps): ReactElement {
           title="Rotate clockwise"
           aria-label="Rotate clockwise"
         >
-          <RotateCw size={13} aria-hidden />
+          <RotateCw size={16} aria-hidden />
         </button>
         <button
           type="button"
@@ -1020,7 +1020,7 @@ function ThumbActions(props: ThumbActionsProps): ReactElement {
           title="Delete this page"
           aria-label="Delete this page"
         >
-          <Trash2 size={13} aria-hidden />
+          <Trash2 size={16} aria-hidden />
         </button>
         <button
           type="button"
@@ -1086,7 +1086,7 @@ function OutlinePanel({ doc, outline, onJump, onError }: OutlinePanelProps) {
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
                 >
                   <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
-                    {'▸'}
+                    <ChevronRight size={16} aria-hidden />
                   </span>
                 </button>
               ) : (

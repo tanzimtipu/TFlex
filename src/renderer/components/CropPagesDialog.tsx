@@ -224,7 +224,7 @@ export function CropPagesDialog(
             onClick={onClose}
             aria-label="Close dialog"
           >
-            <X size={14} aria-hidden />
+            <X size={16} aria-hidden />
           </button>
         </div>
         <div className="modal-body">
@@ -349,7 +349,7 @@ export function CropPagesDialog(
             onClick={onConfirmClick}
             data-crop-confirm
           >
-            <Crop size={14} aria-hidden />
+            <Crop size={16} aria-hidden />
             Apply crop
           </button>
         </div>
@@ -625,7 +625,7 @@ function CropEditor(props: CropEditorProps): ReactElement {
               width: "100%",
               height: "100%",
               opacity: previewReady ? 1 : 0,
-              transition: "opacity 120ms ease-out",
+              transition: "opacity var(--motion-normal) var(--ease-out)",
               pointerEvents: "none",
             }}
           />

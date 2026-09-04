@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
+const { hardClose } = require('./lib/helpers.cjs');
 const fs = require('fs');
 const path = require('path');
 
@@ -13,7 +14,11 @@ test.describe('No-op Sweep and Feature Verification', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) await electronApp.close();
+    // The suite leaves tabs modified (sign/rotate/delete), so the DEF-142
+    // close gate holds the window open for the unsaved-changes prompt and a
+    // plain electronApp.close() hangs. Destroy the windows instead - the
+    // close gate itself has dedicated verification (def_142_verify specs).
+    await hardClose(electronApp);
   });
 
   test('Remediation Checklist and Phase 6/7 Features', async () => {
@@ -37,12 +42,23 @@ test.describe('No-op Sweep and Feature Verification', () => {
     console.log('1. "+" button visible when tab exists: PASS');
 
     // 2. Sign inside PDF
+    // Redesign: the Sign modal is Draw/Type/Saved tabs; "Use this
+    // signature" is gone — Type -> Save lands on the Saved tab and
+    // clicking the saved row arms placement. Page container is .pdf-page.
+    // B2: a page click with a signature armed spawns a PENDING placement
+    // with a floating Confirm/Cancel/Delete bar; only Confirm commits to
+    // the engine (accidental-click protection).
     await window.click('[aria-label="Sign tool"]');
-    await window.click('button:has-text("Type")');
-    await window.fill('input[type="text"]', 'QA Sign');
-    await window.click('button:has-text("Use this signature")');
-    // Click on page to place
-    await window.click('.page-view', { position: { x: 100, y: 100 } });
+    await window.click('.sig-tab:has-text("Type")');
+    await window.fill('input[aria-label="Type your signature"]', 'QA Sign');
+    await window.click('.sig-tab-actions button:has-text("Save")');
+    await window.waitForSelector('.sig-saved-pick');
+    await window.click('.sig-saved-pick');
+    // Click on page to place -> pending bar appears; Confirm commits
+    await window.click('.pdf-page', { position: { x: 100, y: 100 } });
+    await window.waitForSelector('[data-sig-action="confirm"]');
+    await window.click('[data-sig-action="confirm"]');
+    await window.waitForFunction(() => window.tflexDiagnostics().signatures.length > 0);
     const diagSign = await window.evaluate(() => window.tflexDiagnostics());
     expect(diagSign.signatures.length).toBeGreaterThan(0);
     console.log('2. Sign inside PDF: PASS');
@@ -57,15 +73,19 @@ test.describe('No-op Sweep and Feature Verification', () => {
 
     // 7. Delete page click
     const initialPageCount = (await window.evaluate(() => window.tflexDiagnostics())).pageCount;
-    await window.click('[aria-label="Delete page"]');
+    // Redesign: Delete pages opens a dialog (current page / custom range);
+    // the default mode deletes the current page on confirm.
+    await window.click('[aria-label="Delete pages"]');
+    await window.waitForSelector('[data-delete-pages-dialog]');
+    await window.click('[data-delete-confirm]');
     await window.waitForTimeout(500);
     const afterPageCount = (await window.evaluate(() => window.tflexDiagnostics())).pageCount;
     expect(afterPageCount).toBe(initialPageCount - 1);
     console.log('7. Delete page click: PASS');
 
     // 8. Highlight color default
-    await window.click('[data-toolbar-edit-toggle]');
-    await window.waitForSelector('[data-edit-toolbar]');
+    // Redesign: annotation tools are disabled while Edit mode is open
+    // (mutual exclusion), so Highlight is armed directly with Edit closed.
     await window.click('button[aria-label="Highlight"]');
     // Check swatch color or default state
     // The requirement says "must be the accent blue (#2563eb)"
@@ -74,15 +94,18 @@ test.describe('No-op Sweep and Feature Verification', () => {
     console.log('8. Highlight color default check (visual/diag needed)');
 
     // 3. Word export
-    await window.click('[aria-label="Export tool"]');
-    await window.click('button:has-text("Word (.docx)")');
+    // Redesign: exports live in the Tools palette (data-tool-id).
+    await window.click('[data-tools-toggle]');
+    await window.click('[data-tool-id="exportDocx"]');
     // Just verify the dialog opens for now. Real export requires backend.
-    await window.waitForSelector('.dialog, .sheet');
+    await window.waitForSelector('.modal-dialog, .dialog, .sheet');
     await window.keyboard.press('Escape');
     console.log('3. Word export dialog opens: PASS');
 
     // 5. Left-pane page selection
-    await window.click('.thumbnail-page[data-page-index="10"]');
+    // Redesign: thumbnails are .thumb (e2e alias .thumb-item), 1-based
+    // visible order; nth(10) = page 11.
+    await window.locator('.thumb-item').nth(10).click();
     await window.waitForTimeout(1000);
     const diagPage = await window.evaluate(() => window.tflexDiagnostics());
     // Should NOT be page 2 (index 1)
@@ -90,9 +113,12 @@ test.describe('No-op Sweep and Feature Verification', () => {
     console.log('5. Left-pane selection stays: PASS');
 
     // DEF-073: Shared optimizePreset collision
+    await window.keyboard.press('Escape'); // close the tools palette
     await window.click('[aria-label="Reduce file size"]');
     await window.waitForSelector('.dialog, .sheet');
-    await window.locator('select').first().selectOption('max');
+    // Redesign: the preset <select> became a radiogroup
+    // (input[data-optimize-preset]); onChange persists even on Escape.
+    await window.check('input[data-optimize-preset="max"]');
     await window.keyboard.press('Escape');
     await window.waitForSelector('.dialog, .sheet', { state: 'hidden' });
     
@@ -107,6 +133,20 @@ test.describe('No-op Sweep and Feature Verification', () => {
     console.log('DEF-073: Shared optimizePreset collision FIXED');
 
     // DEF-075: Signature metadata round-trip
+    // Steps 6/7 rotated and deleted page 1 - the page the step-2 signature
+    // was placed on - so the placements list is legitimately empty here.
+    // Place a fresh signature for the round-trip (Type -> Save -> pick row
+    // -> page click -> pending bar Confirm).
+    await window.click('[aria-label="Sign tool"]');
+    await window.click('.sig-tab:has-text("Type")');
+    await window.fill('input[aria-label="Type your signature"]', 'QA Roundtrip');
+    await window.click('.sig-tab-actions button:has-text("Save")');
+    await window.waitForSelector('.sig-saved-pick');
+    await window.click('.sig-saved-pick');
+    await window.click('.pdf-page', { position: { x: 150, y: 150 } });
+    await window.waitForSelector('[data-sig-action="confirm"]');
+    await window.click('[data-sig-action="confirm"]');
+    await window.waitForFunction(() => window.tflexDiagnostics().signatures.length > 0);
     const diagSigs = await window.evaluate(() => window.tflexDiagnostics());
     const sigId = diagSigs.signatures[0].id;
     

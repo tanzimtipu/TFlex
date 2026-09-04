@@ -50,7 +50,7 @@ interface RowProps {
 }
 
 function rowIcon(a: Annotation): ReactElement {
-  const size = 14;
+  const size = 16;
   switch (a.kind) {
     case "highlight":
       return <Highlighter size={size} aria-hidden />;
@@ -107,7 +107,7 @@ function AnnotationRow(props: RowProps): ReactElement {
             <span className="ann-panel-row-kind">{kindLabel(a.kind)}</span>
             <span className="ann-panel-row-page">Page {a.page}</span>
           </span>
-          <ChevronRight size={12} aria-hidden />
+          <ChevronRight size={16} aria-hidden />
         </button>
         <button
           type="button"
@@ -116,7 +116,7 @@ function AnnotationRow(props: RowProps): ReactElement {
           aria-label={`Delete ${kindLabel(a.kind)} on page ${a.page}`}
           title="Delete annotation"
         >
-          <Trash2 size={12} aria-hidden />
+          <Trash2 size={16} aria-hidden />
         </button>
       </div>
 

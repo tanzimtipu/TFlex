@@ -46,13 +46,13 @@ test.describe('Full Sweep Retest', () => {
     await waitSafe(() => window.tflexDiagnostics().engineState !== null);
     const initialCount = await window.evaluate(() => window.tflexDiagnostics().engineState.annotations.length);
     
-    // UI flow
-    await window.click('[data-toolbar-edit-toggle]');
-    await window.waitForSelector('[data-edit-toolbar]');
+    // UI flow. Redesign: annotation tools are DISABLED while Edit mode is
+    // open (mutual exclusion), so Highlight is armed directly with Edit
+    // closed. The page container is .pdf-page (old .page-view is gone).
     await window.click('button[aria-label="Highlight"]');
     
     // Click on the page content to create annotation
-    await window.click('.page-view', { position: { x: 100, y: 100 } });
+    await window.click('.pdf-page', { position: { x: 100, y: 100 } });
     
     await waitSafe(() => {
         const diag = window.tflexDiagnostics();
@@ -76,14 +76,18 @@ test.describe('Full Sweep Retest', () => {
 
     const dId = await getEngineDocId();
     
-    // Fill via engine
-    await window.evaluate(async (id) => {
-      const res = await window.tflex.engine.getFormFields(id);
-      const fields = res.value || res;
-      if (fields && fields.length > 0) {
-        await window.tflex.engine.fillFormField(id, { id: fields[0].id, value: 'QA Value' });
-      }
-    }, dId);
+    // Fill via the REAL UI path (the rendered form widget). Redesign note:
+    // a DIRECT window.tflex.engine.fillFormField call no longer converges
+    // the diagnostics mirror (it seeds at document load and shadows the
+    // peekLastState cache), so the modified flag would never surface —
+    // the UI path routes through noteOpApplied and does.
+    const fieldId = await window.evaluate(() => {
+      const f = document.querySelector('[data-form-field]');
+      return f ? f.getAttribute('data-form-field') : null;
+    });
+    if (!fieldId) throw new Error('No [data-form-field] widget rendered for form.pdf');
+    await window.fill(`[data-form-field="${fieldId}"]`, 'QA Value');
+    await window.waitForTimeout(1500); // 500ms fill debounce + getState sync
 
     // Wait for modified flag
     await waitSafe(() => window.tflexDiagnostics().modified === true);
@@ -113,10 +117,12 @@ test.describe('Full Sweep Retest', () => {
     await window.waitForSelector('.workspace');
 
     // Open Optimize and set to 'max'
+    // Redesign: the preset <select> became a radiogroup
+    // (input[data-optimize-preset]); onChange persists even on Escape.
     await window.click('button[aria-label="Reduce file size"]');
     await window.waitForSelector('.sheet, .dialog, [role="dialog"]');
-    const select = window.locator('select').first();
-    await select.selectOption('max');
+    const presetRadio = window.locator('input[data-optimize-preset="max"]');
+    await presetRadio.check();
     
     await waitSafe(() => window.tflexDiagnostics().optimizePreset === 'max');
     
@@ -143,6 +149,11 @@ test.describe('Full Sweep Retest', () => {
   });
 
   test('DEF-074: About dialog surfaces version info', async () => {
+    // Redesign: the renderer bundle is chunk-split and boots a little
+    // slower; a menu:action fired before the renderer subscribes is
+    // dropped silently. Wait for the app shell first (the suite's other
+    // tests wait for .workspace — this one runs from the welcome screen).
+    await window.waitForSelector('.app', { timeout: 15000 });
     // Help -> About TFlex
     await electronApp.evaluate(({ Menu }) => {
         const menu = Menu.getApplicationMenu();
@@ -170,19 +181,22 @@ test.describe('Full Sweep Retest', () => {
     }, tempPath);
     await window.click('button:has-text("Open PDF")');
     await window.waitForSelector('.workspace');
+    await window.waitForTimeout(800);
 
-    const dId = await getEngineDocId();
-
-    await window.evaluate(async ({ id }) => {
-      const pngBytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 1, 0, 0, 0, 1, 8, 2, 0, 0, 0, 0x90, 0x77, 0x53, 0xDE, 0, 0, 0, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x08, 0xD7, 0x63, 0xF8, 0xFF, 0xFF, 0x3F, 0, 0x05, 0xFE, 0x02, 0xFE, 0xDC, 0x44, 0x74, 0x8E, 0, 0, 0, 0, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]);
-      await window.tflex.engine.placeSignature(id, {
-        id: `sig-${Date.now()}`,
-        signatureId: 'default',
-        page: 1,
-        rect: { x: 100, y: 100, width: 100, height: 50 },
-        pngBytes: pngBytes.buffer
-      });
-    }, dId);
+    // Place the signature through the REAL UI flow. Redesign: the Sign
+    // modal is Draw/Type/Saved tabs (no "Use this signature" button) —
+    // Type -> Save lands on the Saved tab and clicking the saved row arms
+    // placement; the next page click places it. The UI path routes the
+    // placement through noteOpApplied so the diagnostics mirror (and the
+    // Save button) see modified=true; a direct engine placeSignature call
+    // does not converge the mirror post-redesign.
+    await window.click('button[aria-label="Sign tool"]');
+    await window.click('.sig-tab:has-text("Type")');
+    await window.fill('input[aria-label="Type your signature"]', 'QA Sign');
+    await window.click('.sig-tab-actions button:has-text("Save")');
+    await window.waitForSelector('.sig-saved-pick');
+    await window.click('.sig-saved-pick');
+    await window.click('.pdf-page', { position: { x: 100, y: 100 } });
 
     await waitSafe(() => window.tflexDiagnostics().modified === true);
     

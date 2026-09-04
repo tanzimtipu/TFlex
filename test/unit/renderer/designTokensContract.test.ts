@@ -154,26 +154,27 @@ describe("Phase 13 — window drag region contract", () => {
     expect(kids[1] ?? "").toMatch(/-webkit-app-region:\s*no-drag/);
   });
 
-  it("uses 150-250ms motion tokens for window control transitions", () => {
-    // Phase 13 spec: smooth 150-250ms ease-out animations on
-    // controls. The title bar control rule must reference one of
-    // --t-quick / --t-base / --t-slow — anything outside this band
-    // is a regression.
+  it("uses the Phase-1 motion tokens for window control transitions", () => {
+    // Phase 5 spec: every UI transition routes through the motion
+    // tokens (--motion-fast / --motion-normal / --motion-medium /
+    // --motion-slow) — nothing outside the 80-280ms band. The title
+    // bar control rule must reference one of the --motion-* tokens;
+    // the legacy --t-* aliases no longer appear in rule bodies.
     const blocks = [...css.matchAll(/\.titlebar-control\s*\{([\s\S]*?)\n\}/gm)];
     const block = blocks.find((b) => (b[1] ?? "").includes("transition")) ?? null;
     expect(block).not.toBeNull();
     if (block === null) return;
     const body = block[1] ?? "";
-    expect(body).toMatch(/var\(--t-(quick|base|slow)\)/);
+    expect(body).toMatch(/var\(--motion-(fast|normal|medium|slow)\)/);
   });
 
-  it("uses the same cubic-bezier easing curve as the rest of the UI", () => {
+  it("uses the Phase-1 easing token (--ease-out) for appearing", () => {
     const blocks = [...css.matchAll(/\.titlebar-control\s*\{([\s\S]*?)\n\}/gm)];
     const block = blocks.find((b) => (b[1] ?? "").includes("transition")) ?? null;
     expect(block).not.toBeNull();
     if (block === null) return;
     const body = block[1] ?? "";
-    expect(body).toMatch(/var\(--ease\)/);
+    expect(body).toMatch(/var\(--ease-out\)/);
   });
 });
 

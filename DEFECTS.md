@@ -1,3 +1,96 @@
+## DEF-170: A SECOND Extract in the same session orphans its result document - success toast, but no tab opens and the app refocuses the OLD extraction tab (still showing the old doc)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 15 (found during the DEF-167 close retest on the dev build; the extract translation itself (DEF-167) is correct - this is the tab/result handling around it)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp, no executablePath).
+2. Open a multi-page PDF whose pages are visually distinguishable (repro used test-fixtures/marker-3pages.pdf: three pages rendering MARKER-PAGE-1 / 2 / 3).
+3. Tools palette -> "Split pages" (Extract is the default mode), enter "3", click Extract. This works: a new tab "marker-3pages.pdf - page 3" opens, active, showing MARKER-PAGE-3 (DEF-167 fixed).
+4. Switch back to the SOURCE tab ("marker-3pages.pdf", no "- page N" suffix; note tabs activate on mousedown - a synthetic .click() does not switch).
+5. Tools palette -> "Split pages" again, enter "1", click Extract.
+
+Expected: a THIRD tab "marker-3pages.pdf - page 1" opens, active, showing MARKER-PAGE-1, matching the "Extracted 1 page to a new document." toast.
+
+Actual: the toast IS fresh and correct (proven: no toast present at +600ms after confirm, "Extracted 1 page to a new document." at +3.1s - so the engine extraction really ran), but NO third tab ever appears (tab count stays 2, .tab-pane count stays 2). The app instead refocuses the PREVIOUS extraction tab "marker-3pages.pdf - page 3", whose content is still the OLD document (MARKER-PAGE-3). The newly extracted page-1 document is orphaned - unreachable from any UI surface - while the user is looking at the WRONG document with the requested page number in the toast. From the user's seat this masquerades as the old DEF-167 wrong-page bug (asked for page 1, see page 3). Recovery: closing the stale extraction tab ("Don't save" on its close prompt - the orphan is not saved anywhere) makes the next Extract work again (verified: extract "2" then opens tab "- page 2" with MARKER-PAGE-2). Repro + characterization script: e2e/retests/def167_probe_extract3.spec.cjs (sequences A fresh extract OK / B orphan / C recovery after close; its sequence-B expectation is red by design until this is fixed).
+
+Screenshot: screenshots/def-170-repro-second-extract-orphan.png (success toast bottom-right while the focused tab is the OLD "- page 3" doc showing MARKER-PAGE-3; only two tabs), screenshots/def-167-probe-extract3-fresh.png (sequence A: fresh extract of page 3 lands correctly), screenshots/def-167-probe-extract-after-close.png (sequence C recovery)
+
+History:
+- qa: opened (found while retesting DEF-167: every SECOND extract in a session drops its result tab, independent of which page was extracted - main-spec flow extract("1") then extract("3") and probe flow extract("3") then extract("1") both orphan the second result)
+- qa: CLOSED (retested on the DEV build after rebuilding dist from current source via npm.cmd run build; launchApp with no executablePath; new spec e2e/retests/def170_verify_devbuild.spec.cjs). Root cause of the fix: openEngineBytesAsTab (App.tsx) now passes dedupePath:false so the tabs reducer's same-path dedupe branch (tabs.ts, `action.dedupePath !== false`) does not collapse the second extract result onto the first (both share the synthetic `<extract>marker-3pages.pdf` path); bundle check: dist renderer carries both `dedupePath:!1` at the call site and the `t.dedupePath!==!1` guard. (1) SECOND EXTRACT OPENS ITS TAB: extract("3") -> tab "marker-3pages.pdf — page 3" active MARKER-PAGE-3; back to source; extract("1") -> a THIRD tab "marker-3pages.pdf — page 1" (own fresh UUID) opens and is ACTIVE showing MARKER-PAGE-1 with its own fresh "Extracted 1 page to a new document." toast - no orphan, no refocus of the old result tab (screenshots/def-170-retest-second-extract-tab.png). (2) EACH TAB OWNS ITS DOC: activating "— page 3" shows MARKER-PAGE-3, activating "— page 1" shows MARKER-PAGE-1, distinct data-tab-ids (screenshots/def-170-retest-page3-tab-own-doc.png, def-170-retest-page1-tab-own-doc.png); a third extract("2") lands a fourth tab "— page 2" active MARKER-PAGE-2 (def-170-retest-third-extract.png). (3) REGRESSION: e2e/retests/def167_probe_extract3.spec.cjs now passes all three sequences (A fresh extract, B the formerly-orphaning second extract, C recovery after close; its sequence-B expectation was red-by-design for this bug and sequence C's tab-count expectation was written against the DEFECTED world where B opened no tab - updated 2->3 with a comment when the fix landed, C's actual contract "fresh extract after closing the old result tab still lands its own active tab" unchanged and green). e2e/retests/def_167_168_169_verify_devbuild.spec.cjs 3/3 green (DEF-167 extract off-by-one still fixed), test/unit/renderer/tabs.test.ts 25/25 green incl. the two DEF-170 reducer unit tests.
+
+## DEF-167: Extract pages delivers the WRONG page (off by one) and rejects any range touching the last page - 1-based dialog numbers reach the 0-based engine untranslated
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 15 (found during the dev-build visual-overhaul e2e run; the offending code predates the redesign - engineClient.ts last modified 3/09, before the 2:44 PM source landing)
+
+Steps to reproduce:
+1. Launch TFlex (dev build; the code path exists in any build carrying engineClient.ts without the extract translation).
+2. Open a PDF whose pages are visually distinguishable (repro used test-fixtures/marker-3pages.pdf: three pages rendering the text MARKER-PAGE-1 / 2 / 3).
+3. Open the Tools palette, click "Split pages" (the Extract/Split dialog; Extract is the default mode).
+4. Enter page "1", click Extract.
+
+Expected: the new document contains page 1 (its own tab title even says "marker-3pages.pdf - page 1").
+
+Actual: the new document contains PAGE 2 - the page shows "MARKER-PAGE-2" while the tab is titled "- page 1" and the success toast reads "Extracted 1 page to a new document." (screenshots/def-167-extract-1-lands-page-2.png). The wrong page arrives silently: no warning, and the title/toast assert the requested page. Additionally, any range that includes the LAST page fails outright: entering "3" (of 3) yields the error toast "Engine error: extract page 3 out of bounds for 3 pages" (observed on report.pdf as "extract page 34 out of bounds for 34 pages" during the full_retest run), because the 1-based number equals the 0-based bound.
+
+Root cause: the SplitDialog's parsePageRange returns 1-based page numbers (validated 1..totalPages), and App.tsx onConfirmSplit passes them straight to engine.extract. The engineClient wrapper translates 1-based -> 0-based for split (src/renderer/engine/engineClient.ts:772-781, "The renderer-facing API is 1-based, so translate here") but NOT for extract (src/renderer/engine/engineClient.ts:783-788, raw pass-through). The main-process EngineService.extract indexes doc.order[p] with 0-based semantics and validates p >= surviving (src/main/services/engine.ts:625-630). Evidence: direct engine.extract calls with [3] and [1,2,3] on the 3-page fixture both return "extract page 3 out of bounds for 3 pages" while [0]/[1]/[2] succeed; the UI path with "1" produces page 2.
+
+Fix direction: translate in engineClient.extract the same way split does (pages.map(p => p - 1)), or make the engine contract explicitly 1-based with matching validation; add a regression e2e on marker-3pages.pdf asserting extract("1") renders MARKER-PAGE-1 and extract("3") succeeds.
+
+Screenshot: screenshots/def-167-extract-1-lands-page-2.png
+
+History:
+- qa: opened (proven on the dev build via e2e/probe_place_dev.spec.cjs probes 8-12 + the full_retest DEF-012 run's out-of-bounds toast; wrong-page result reproduced twice with the marker fixture)
+- qa: CLOSED (retested on the DEV build, launchApp with no executablePath, after rebuilding dist from the current source - the old 2:48 PM dist predated the fix and was stale; e2e/retests/def_167_168_169_verify_devbuild.spec.cjs + e2e/retests/def167_probe_extract3.spec.cjs). (1) OFF-BY-ONE GONE: extract "1" of marker-3pages.pdf now opens tab "marker-3pages.pdf - page 1" (exact title) whose textLayer renders MARKER-PAGE-1 (was MARKER-PAGE-2) - screenshots/def-167-retest-extract-1.png. Bundle check: dist renderer carries the translation (minified `extract(e,t){return this.inner.extract(e,t.map(e=>e-1))}`). (2) LAST-PAGE ERROR GONE: extract "3" of 3 no longer errors - no "out of bounds" toast anywhere; on a FRESH session the extracted tab "marker-3pages.pdf - page 3" opens ACTIVE showing MARKER-PAGE-3 with the success toast (probe sequence A, screenshots/def-167-probe-extract3-fresh.png), and in the repeat-extract flow the "out of bounds" error is equally gone (toast reads success; the tab-opening gap of that repeat flow is a separate finding filed as DEF-170). Regression: extract("1") still lands page 1 after the sequence, and the DEF-167-suggested regression e2e exists (def_167_168_169_verify_devbuild.spec.cjs part 1 + probe spec).
+
+## DEF-168: Radio buttons / checkboxes render browser-default BLUE instead of the orange accent
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 15 (dev-build visual sweep, both themes)
+
+Steps to reproduce:
+1. Launch the dev build (dist at 2:48 PM with the orange redesign), open any PDF.
+2. Tools palette -> Insert pages; look at the "What to insert" and "Page size" radio groups.
+
+Expected: every interactive control uses the single orange accent (#E07A2D) - the spec's "single accent, no blue" rule; the blue is exactly the leftover default the visual overhaul was meant to remove.
+
+Actual: the selected radio knob is browser-default BLUE (#2563eb-family) in both themes - visible on "Blank page" and "US Letter" in screenshots/visual-dev-dialog-light.png and screenshots/visual-dev-dialog-dark.png. Root cause: styles.css sets `accent-color: var(--accent)` only for the OCR dialog's range slider (.ocr-dialog .modal-range, line 6086); no global `input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); }` exists, so every other native radio/checkbox falls back to the browser default.
+
+Screenshot: screenshots/visual-dev-dialog-light.png
+
+History:
+- qa: opened (visual sweep finding; cosmetic, both themes equally affected)
+- qa: CLOSED (retested on the DEV build after the dist rebuild, e2e/retests/def_167_168_169_verify_devbuild.spec.cjs DEF-168 test). The fix is the global rule `input[type="radio"], input[type="checkbox"] { accent-color: var(--accent); }` (styles.css:349-352, replacing the OCR-slider-only rule). All 6 native radios of the Insert pages dialog (2x "What to insert" / insert-mode, 4x "Page size" / blank-preset, checked and unchecked) report computed accent-color rgb(224, 122, 45) = #e07a2d = the --accent token, in BOTH themes (dark read with the dialog open; light read after Escape -> .theme-toggle -> reopen; the modal backdrop correctly blocks the header while open, so the theme must be switched between dialog sessions). --accent resolves #e07a2d in both themes; no blue (b > r) anywhere. Screenshots: screenshots/def-168-retest-insert-dialog-dark.png, screenshots/def-168-retest-insert-dialog-light.png (selected knobs visibly orange). Note for the record: the .form-radio / .form-checkbox page-overlay controls are custom-drawn from --accent tokens (styles.css:3714-3767) and were never affected.
+
+## DEF-169: Modal backdrop does not dim the open Tools palette - the palette floats above the overlay at full brightness
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 15 (dev-build visual sweep)
+
+Steps to reproduce:
+1. Launch the dev build, open any PDF.
+2. Open the Tools palette, click "Insert pages" so the modal dialog opens.
+
+Expected: the modal backdrop dims the whole app behind the dialog, so the dialog is the unambiguous focus layer.
+
+Actual: the workspace, rail and page dim correctly, but the open Tools palette stays at full brightness ABOVE the backdrop (right side of the screen) - the palette's z-index sits over the modal overlay. Both themes show it: screenshots/visual-dev-dialog-dark.png and screenshots/visual-dev-dialog-light.png. Purely cosmetic layering inconsistency; no interaction fault observed.
+
+Screenshot: screenshots/visual-dev-dialog-dark.png
+
+History:
+- qa: opened (visual sweep finding; cosmetic)
+- qa: CLOSED (retested on the DEV build after the dist rebuild, e2e/retests/def_167_168_169_verify_devbuild.spec.cjs DEF-169 test). The frontend's read is confirmed: the palette was never above the backdrop. Measured with the palette open and the Insert pages modal up: palette z-index 30, .modal-backdrop z-index 800, backdrop rgba(0, 0, 0, 0.45) fixed inset:0; document.elementFromPoint at the palette's center returns the .modal-backdrop itself (the backdrop is the top element covering the palette - nothing of the palette pokes through). Pixel proof over the palette's own bounding rect (281x813 at x=1162): mean luminance 198 baseline (palette open, no modal) -> 27.4 under the modal (ratio 0.10, i.e. the 45% black backdrop plus the dark panel render dims the palette to a tenth). Visual: screenshots/def-169-retest-under-modal.png shows the right-side palette clearly dimmed behind the dialog (vs the un-dimmed baseline screenshots/def-169-retest-baseline.png). The original DEF-169 screenshots were evidently taken/staged before the backdrop painted over the palette region (or mis-cropped); the source z-order (palette 30 < backdrop 800) was already correct.
+
 ## DEF-166: Reopening a saved file renders annotation text DOUBLED (baked canvas AP + DOM overlay, offset fonts)
 
 - Status: CLOSED

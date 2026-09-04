@@ -240,7 +240,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
             title="Application menu"
             data-menu-button
           >
-            <Menu size={15} aria-hidden />
+            <Menu size={16} aria-hidden />
           </button>
           {menuOpen && (
             <div
@@ -285,7 +285,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                   >
                     <span className="titlebar-menu-row-label">
                       {Icon !== undefined && (
-                        <Icon size={14} aria-hidden className="titlebar-menu-row-icon" />
+                        <Icon size={16} aria-hidden className="titlebar-menu-row-icon" />
                       )}
                       <span>{entry.label}</span>
                     </span>
@@ -313,7 +313,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title="Minimize"
           data-window-minimize
         >
-          <Minimize2 size={12} aria-hidden />
+          <Minimize2 size={16} aria-hidden />
         </button>
         <button
           type="button"
@@ -323,7 +323,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title={maximizeLabel}
           data-window-maximize
         >
-          <MaximizeIcon size={12} aria-hidden />
+          <MaximizeIcon size={16} aria-hidden />
         </button>
         <button
           type="button"
@@ -333,7 +333,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title="Close"
           data-window-close
         >
-          <X size={14} aria-hidden />
+          <X size={16} aria-hidden />
         </button>
       </div>
     </div>
