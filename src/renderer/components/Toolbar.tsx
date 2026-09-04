@@ -138,7 +138,7 @@ export function Toolbar(props: ToolbarProps) {
           aria-pressed={searchOpen}
           title="Find in document (Ctrl+F)"
         >
-          <Search size={15} aria-hidden />
+          <Search size={16} aria-hidden />
         </button>
         <span className="toolbar-sep" aria-hidden />
         <button
@@ -148,7 +148,7 @@ export function Toolbar(props: ToolbarProps) {
           onClick={() => onJump(String(page - 1))}
           title="Previous page"
         >
-          <ChevronLeft size={15} aria-hidden />
+          <ChevronLeft size={16} aria-hidden />
         </button>
         <div className="page-indicator">
           <input
@@ -182,22 +182,30 @@ export function Toolbar(props: ToolbarProps) {
           onClick={() => onJump(String(page + 1))}
           title="Next page"
         >
-          <ChevronRight size={15} aria-hidden />
+          <ChevronRight size={16} aria-hidden />
         </button>
         <span className="toolbar-sep" aria-hidden />
         <button
           type="button"
-          className={modified ? 'tool-btn tool-btn-modified' : 'tool-btn'}
+          className={
+            !modified
+              ? 'tool-btn tool-btn-save-clean'
+              : saveInPlaceEnabled
+                ? 'tool-btn tool-btn-modified'
+                : 'tool-btn tool-btn-modified tool-btn-save-readonly'
+          }
           onClick={onSave}
           disabled={!modified || !saveInPlaceEnabled}
           title={
-            saveInPlaceEnabled
-              ? 'Save (Ctrl+S)'
-              : 'This document is read-only; use Save As instead'
+            !modified
+              ? 'Saved — no changes to save'
+              : saveInPlaceEnabled
+                ? 'Unsaved changes — Save now (Ctrl+S)'
+                : 'Read-only document — use Save As to save a copy'
           }
           aria-label="Save"
         >
-          <Save size={15} aria-hidden />
+          <Save size={16} aria-hidden />
         </button>
         <button
           type="button"
@@ -207,19 +215,22 @@ export function Toolbar(props: ToolbarProps) {
           title={modified ? 'Save a copy' : 'Nothing to save'}
           aria-label="Save As"
         >
-          <span style={{ fontSize: 11, fontWeight: 600, padding: '0 1px' }}>Save&hellip;</span>
+          {/* Phase 2 — use the shared .tool-btn-label class so every
+              labelled action (Save…, Merge, Split, Sign, …) shares
+              one typography (12px/500) instead of an inline style. */}
+          <span className="tool-btn-label">Save&hellip;</span>
         </button>
       </div>
 
       <div className="toolbar-group">
         <button type="button" className="tool-btn" onClick={onZoomOut} title="Zoom out">
-          <Minus size={15} aria-hidden />
+          <Minus size={16} aria-hidden />
         </button>
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
         <button type="button" className="tool-btn" onClick={onZoomIn} title="Zoom in">
-          <Plus size={15} aria-hidden />
+          <Plus size={16} aria-hidden />
         </button>
         <span className="toolbar-sep" aria-hidden />
         <button
@@ -229,7 +240,7 @@ export function Toolbar(props: ToolbarProps) {
           aria-pressed={zoomMode === 'fit-width'}
           title="Fit width"
         >
-          <MoveHorizontal size={15} aria-hidden />
+          <MoveHorizontal size={16} aria-hidden />
         </button>
         <button
           type="button"
@@ -238,7 +249,7 @@ export function Toolbar(props: ToolbarProps) {
           aria-pressed={zoomMode === 'fit-page'}
           title="Fit page"
         >
-          <Expand size={15} aria-hidden />
+          <Expand size={16} aria-hidden />
         </button>
         <span className="toolbar-sep" aria-hidden />
         {onRotateClockwise !== undefined && (
@@ -254,7 +265,7 @@ export function Toolbar(props: ToolbarProps) {
             aria-label="Rotate clockwise"
             data-toolbar-rotate-cw
           >
-            <RotateCw size={15} aria-hidden />
+            <RotateCw size={16} aria-hidden />
           </button>
         )}
         <button
@@ -264,7 +275,7 @@ export function Toolbar(props: ToolbarProps) {
           title="Merge with another PDF"
           aria-label="Merge with another PDF"
         >
-          <GitMerge size={15} aria-hidden />
+          <GitMerge size={16} aria-hidden />
           <span className="tool-btn-label">Merge</span>
         </button>
         <button
@@ -274,7 +285,7 @@ export function Toolbar(props: ToolbarProps) {
           title="Extract or split pages"
           aria-label="Extract or split pages"
         >
-          <Scissors size={15} aria-hidden />
+          <Scissors size={16} aria-hidden />
           <span className="tool-btn-label">Split</span>
         </button>
         <span className="toolbar-sep" aria-hidden />
@@ -286,7 +297,7 @@ export function Toolbar(props: ToolbarProps) {
           aria-pressed={signToolActive}
           aria-label="Sign tool"
         >
-          <FileSignature size={15} aria-hidden />
+          <FileSignature size={16} aria-hidden />
           <span className="tool-btn-label">Sign</span>
         </button>
         {hasFormFields && (
@@ -297,7 +308,7 @@ export function Toolbar(props: ToolbarProps) {
             title="Flatten form fields: bake filled values into the page content"
             aria-label="Flatten form fields"
           >
-            <Layers size={15} aria-hidden />
+            <Layers size={16} aria-hidden />
             <span className="tool-btn-label">Flatten</span>
           </button>
         )}
@@ -310,7 +321,7 @@ export function Toolbar(props: ToolbarProps) {
           aria-label="Reduce file size"
           data-toolbar-optimize
         >
-          <Minimize2 size={15} aria-hidden />
+          <Minimize2 size={16} aria-hidden />
           <span className="tool-btn-label">Optimize</span>
         </button>
         <button
@@ -321,7 +332,7 @@ export function Toolbar(props: ToolbarProps) {
           aria-label="Audit space usage"
           data-toolbar-audit
         >
-          <PieChart size={15} aria-hidden />
+          <PieChart size={16} aria-hidden />
           <span className="tool-btn-label">Audit</span>
         </button>
         <span className="toolbar-sep" aria-hidden />
@@ -334,22 +345,30 @@ export function Toolbar(props: ToolbarProps) {
           aria-label="Tools palette"
           data-tools-toggle
         >
-          <PanelRightOpen size={15} aria-hidden />
+          <PanelRightOpen size={16} aria-hidden />
           <span className="tool-btn-label">Tools</span>
         </button>
         {onEditModeToggle !== undefined && (
-          <button
-            type="button"
-            className={editModeOpen ? 'tool-btn tool-btn-with-label tool-btn-active' : 'tool-btn tool-btn-with-label'}
-            onClick={onEditModeToggle}
-            aria-pressed={editModeOpen}
-            title="Edit content: replace text, add text boxes, edit images"
-            aria-label="Edit content"
-            data-toolbar-edit-toggle
-          >
-            <Pencil size={15} aria-hidden />
-            <span className="tool-btn-label">Edit</span>
-          </button>
+          <>
+            {/* Phase 2 — group separator: Edit is a primary content
+                tool and gets its own cluster, visually pulled apart
+                from the advanced Tools gateway. Rendered inside the
+                conditional so a test harness that omits the edit
+                toggle never paints a dangling separator. */}
+            <span className="toolbar-sep" aria-hidden />
+            <button
+              type="button"
+              className={editModeOpen ? 'tool-btn tool-btn-with-label tool-btn-active' : 'tool-btn tool-btn-with-label'}
+              onClick={onEditModeToggle}
+              aria-pressed={editModeOpen}
+              title="Edit content: replace text, add text boxes, edit images"
+              aria-label="Edit content"
+              data-toolbar-edit-toggle
+            >
+              <Pencil size={16} aria-hidden />
+              <span className="tool-btn-label">Edit</span>
+            </button>
+          </>
         )}
         {onDeletePage !== undefined && (
           <button
@@ -361,7 +380,7 @@ export function Toolbar(props: ToolbarProps) {
             aria-label="Delete pages"
             data-toolbar-delete-pages
           >
-            <Trash2 size={15} aria-hidden />
+            <Trash2 size={16} aria-hidden />
             <span className="tool-btn-label">Delete</span>
           </button>
         )}
