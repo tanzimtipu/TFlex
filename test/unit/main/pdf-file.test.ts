@@ -131,7 +131,7 @@ describe('loadFdfFile', () => {
         color: 'red', content: 'Hello FDF',
       },
     ]];
-    const bytes = exportFdf(anns, [0]);
+    const bytes = exportFdf(anns, [0], [792]);
     const path = await fixture('real.fdf', Buffer.from(bytes));
 
     const result = await loadFdfFile(path);

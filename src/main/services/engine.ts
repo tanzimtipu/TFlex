@@ -603,7 +603,7 @@ export class EngineService {
 
       // Serialize split doc with annotations
       // Note: split doc doesn't get signature placements (those stay with source)
-      serializeAnnotations(splitDoc, splitAnns, Array.from({ length: splitAnns.length }, (_, i) => i));
+      await serializeAnnotations(splitDoc, splitAnns, Array.from({ length: splitAnns.length }, (_, i) => i));
       const bytes = await splitDoc.save();
       return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
     } catch (e) {
@@ -646,7 +646,7 @@ export class EngineService {
       }
 
       // Serialize annotations on the extract doc
-      serializeAnnotations(extractDoc, extractAnns, Array.from({ length: extractAnns.length }, (_, i) => i));
+      await serializeAnnotations(extractDoc, extractAnns, Array.from({ length: extractAnns.length }, (_, i) => i));
       const bytes = await extractDoc.save();
       return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
     } catch (e) {
@@ -2524,7 +2524,13 @@ export class EngineService {
       return err('engine-error', `unknown document: ${docId}`);
     }
     try {
-      const bytes = exportFdfBytes(doc.annotations, doc.order);
+      // DEF-164: exportFdf flips annotation y to PDF bottom-left space, so it
+      // needs each original page's height (indexed by origIdx).
+      const pageHeights = Array.from(
+        { length: doc.pdfDoc.getPageCount() },
+        (_, idx) => doc.pdfDoc.getPage(idx).getSize().height,
+      );
+      const bytes = exportFdfBytes(doc.annotations, doc.order, pageHeights);
       return ok(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
     } catch (e) {
       return err('engine-error', `exportFdf failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -2547,9 +2553,15 @@ export class EngineService {
       return err('engine-error', `unknown document: ${docId}`);
     }
     const view = fdfBytes instanceof Uint8Array ? fdfBytes : new Uint8Array(fdfBytes);
+    // DEF-164: parseFdf flips annotation y from PDF bottom-left back to the
+    // renderer's top-left space, so it needs each VISIBLE page's height
+    // (indexed by 0-based visible page).
+    const pageHeights = doc.order.map(
+      (origIdx) => doc.pdfDoc.getPage(origIdx).getSize().height,
+    );
     let imported: AnnModel[];
     try {
-      imported = parseFdf(view);
+      imported = parseFdf(view, pageHeights);
     } catch (e) {
       return err('engine-error', `importFdf: could not parse FDF: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -3196,7 +3208,7 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
   }
 
   // Serialize annotations onto the output doc
-  serializeAnnotations(out, doc.annotations, doc.order);
+  await serializeAnnotations(out, doc.annotations, doc.order);
 
   // Migrate form fields from source to output document.
   // Page copying does not preserve the AcroForm structure, so we recreate
@@ -3382,7 +3394,7 @@ async function serializeDocOptimized(
   }
 
   // Serialize annotations onto the output doc
-  serializeAnnotations(out, doc.annotations, doc.order);
+  await serializeAnnotations(out, doc.annotations, doc.order);
 
   // Migrate form fields
   try {

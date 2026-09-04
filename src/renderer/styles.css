@@ -2493,9 +2493,41 @@ textarea {
   pointer-events: auto;
 }
 
+/* DEF-161 (feature) — the color row inside the committed textbox /
+ * callout toolbox: a labelled, wrapping swatch strip between the
+ * textarea and the action bar. It reuses the action bar's raised
+ * chrome (same surface as the shape color editor's content-action-bar)
+ * so the swatches read as part of the editor panel. Pointer-events
+ * auto so the swatches are real click targets inside the window. */
+.committed-color-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-popover);
+  pointer-events: auto;
+}
+.committed-color-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  user-select: none;
+}
+
 /* DEF-153/154 — the shape / ink / arrow color edit toolbox: swatch
- * row + hex input inside the shared content-action-bar chrome. */
-.shape-color-editor .content-color-swatch {
+ * row + hex input inside the shared content-action-bar chrome.
+ * DEF-161 (feature) — the committed textbox / callout edit toolbox
+ * carries the SAME swatch row (`.committed-color-row`) so text kinds
+ * get color options with an identical look: the selectors below are
+ * shared between the two containers. */
+.shape-color-editor .content-color-swatch,
+.committed-color-row .content-color-swatch {
   width: 18px;
   height: 18px;
   border-radius: 3px;
@@ -2503,15 +2535,18 @@ textarea {
   cursor: pointer;
   padding: 0;
 }
-.shape-color-editor .content-color-swatch-active {
+.shape-color-editor .content-color-swatch-active,
+.committed-color-row .content-color-swatch-active {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
-.shape-color-editor .content-color-hex {
+.shape-color-editor .content-color-hex,
+.committed-color-row .content-color-hex {
   display: inline-flex;
   align-items: center;
 }
-.shape-color-editor .content-color-hex input {
+.shape-color-editor .content-color-hex input,
+.committed-color-row .content-color-hex input {
   width: 64px;
   padding: 2px 4px;
   border: 1px solid var(--border);
@@ -5941,6 +5976,39 @@ textarea {
 .ann-callout-arrow {
   z-index: 1;
   pointer-events: none;
+}
+
+/* DEF-163 — the committed callout box clips its text (a DEF-163
+ * residual: wrapped lines longer than the fixed-height box painted
+ * over the page below it). The inline auto-fit shrinks the font so
+ * every line fits the content box; this guard catches the residual
+ * rounding/metric drift. Scoped to .ann-content so the shared
+ * `.ann-callout` class never clips the in-progress preview <g> (the
+ * arrow reaches outside the box's bounds). */
+.ann-callout.ann-content {
+  overflow: hidden;
+}
+
+/* DEF-161 — the callout arrow's visual line + head stay
+ * pointer-transparent; its transparent hit shapes (a 10pt stroke
+ * along the shaft + a wide head polygon) are the real grab target.
+ * The container `.ann-callout-arrow` is pointer-events: none so the
+ * svg's empty box never blocks the page — the overrides below are
+ * what make the arrow itself draggable (independently of the box). */
+.ann-callout-arrow line,
+.ann-callout-arrow polygon {
+  pointer-events: none;
+}
+/* The prefixed selector MUST out-specificity `.ann-callout-arrow
+ * line` (class + element beats the plain class + element pair with
+ * one extra class), exactly like the standalone-arrow fix (DEF-154). */
+.ann-callout-arrow line.ann-callout-arrow-hit {
+  pointer-events: stroke;
+  cursor: grab;
+}
+.ann-callout-arrow polygon.ann-callout-arrow-head-hit {
+  pointer-events: all;
+  cursor: grab;
 }
 
 .ann-callout-preview-mask {

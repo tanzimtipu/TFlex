@@ -1625,3 +1625,266 @@ describe('B3: custom hex color round-trip', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// DEF-160/161/162: a moved annotation re-created via onCreate carries a stale
+// `rects` array (left over from the IPC round-trip backfill) at the OLD
+// position alongside the fresh `rect`/`at`. normalizeAnnotationPayload must
+// treat the primary geometry key as authoritative and regenerate rects[0]
+// from it, so the move survives create -> save -> reparse (no silent revert,
+// no torn callout arrow, no lost note).
+// ---------------------------------------------------------------------------
+
+describe('DEF-160/161/162: moved annotation survives re-create with stale rects', () => {
+  // The shape confirmPendingAnn sends: a spread of the renderer annotation,
+  // carrying BOTH the moved primary key AND the stale rects[0] from the
+  // prior IPC backfill. rectNew != rects[0].
+  function movedPayload(overrides: Partial<CreateAnnotationPayload>): CreateAnnotationPayload {
+    const staleRects = [{ x: 122.4, y: 118.8, width: 200, height: 50 }];
+    return makePayload({
+      rects: staleRects,
+      ...overrides,
+    });
+  }
+
+  it('text-box: fresh `rect` wins over stale `rects[0]` (DEF-160)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-tb', path);
+
+    const staleRect = { x: 122.4, y: 118.8, width: 200, height: 50 };
+    const movedRect = { x: 629.2, y: 414.4, width: 200, height: 50 };
+    const r = await engine.createAnnotation('doc-tb', movedPayload({
+      kind: 'text-box',
+      rect: movedRect,
+      rects: [staleRect], // stale backfill at OLD position
+      color: 'yellow',
+      content: 'moved box',
+    }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const created = getAnns(r.value).find((a: any) => a.kind === 'text-box') as any;
+    expect(created).toBeDefined();
+    // Engine state reflects the NEW rect, not the stale rects[0].
+    expect(created.rects[0].x).toBeCloseTo(movedRect.x);
+    expect(created.rects[0].y).toBeCloseTo(movedRect.y);
+    expect(created.rects[0].width).toBeCloseTo(movedRect.width);
+    expect(created.rects[0].height).toBeCloseTo(movedRect.height);
+    // And it is NOT the stale position.
+    expect(created.rects[0].x).not.toBeCloseTo(staleRect.x);
+
+    // Save + reparse: the NEW position survives.
+    const savePath = join(dir, 'def160-textbox.pdf');
+    const sr = await engine.saveAs('doc-tb', savePath);
+    expect(sr.ok).toBe(true);
+    await engine.loadDocument('doc-tb-reloaded', savePath);
+    const state = await engine.getState('doc-tb-reloaded');
+    expect(state.ok).toBe(true);
+    if (!state.ok) return;
+    const reloaded = getAnns(state.value).find((a: any) => a.kind === 'text-box') as any;
+    expect(reloaded).toBeDefined();
+    expect(reloaded.rects[0].x).toBeCloseTo(movedRect.x);
+    expect(reloaded.rects[0].y).toBeCloseTo(movedRect.y);
+  });
+
+  it('rect: fresh `rect` wins over stale `rects[0]` (DEF-160)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-rect', path);
+
+    const staleRect = { x: 50, y: 400, width: 150, height: 100 };
+    const movedRect = { x: 300, y: 200, width: 150, height: 100 };
+    const r = await engine.createAnnotation('doc-rect', movedPayload({
+      kind: 'rect',
+      rect: movedRect,
+      rects: [staleRect],
+      color: 'red',
+      width: 2,
+    }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const created = getAnns(r.value).find((a: any) => a.kind === 'rect') as any;
+    expect(created).toBeDefined();
+    expect(created.rects[0].x).toBeCloseTo(movedRect.x);
+    expect(created.rects[0].y).toBeCloseTo(movedRect.y);
+    expect(created.rects[0].x).not.toBeCloseTo(staleRect.x);
+
+    const savePath = join(dir, 'def160-rect.pdf');
+    await engine.saveAs('doc-rect', savePath);
+    await engine.loadDocument('doc-rect-reloaded', savePath);
+    const state = await engine.getState('doc-rect-reloaded');
+    expect(state.ok).toBe(true);
+    if (!state.ok) return;
+    const reloaded = getAnns(state.value).find((a: any) => a.kind === 'rect') as any;
+    expect(reloaded).toBeDefined();
+    expect(reloaded.rects[0].x).toBeCloseTo(movedRect.x);
+    expect(reloaded.rects[0].y).toBeCloseTo(movedRect.y);
+  });
+
+  it('ellipse: fresh `rect` wins over stale `rects[0]` (DEF-160)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-ell', path);
+
+    const staleRect = { x: 60, y: 600, width: 120, height: 80 };
+    const movedRect = { x: 400, y: 300, width: 120, height: 80 };
+    const r = await engine.createAnnotation('doc-ell', movedPayload({
+      kind: 'ellipse',
+      rect: movedRect,
+      rects: [staleRect],
+      color: 'blue',
+      width: 2,
+    }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const created = getAnns(r.value).find((a: any) => a.kind === 'ellipse') as any;
+    expect(created).toBeDefined();
+    expect(created.rects[0].x).toBeCloseTo(movedRect.x);
+    expect(created.rects[0].y).toBeCloseTo(movedRect.y);
+    expect(created.rects[0].x).not.toBeCloseTo(staleRect.x);
+
+    const savePath = join(dir, 'def160-ellipse.pdf');
+    await engine.saveAs('doc-ell', savePath);
+    await engine.loadDocument('doc-ell-reloaded', savePath);
+    const state = await engine.getState('doc-ell-reloaded');
+    expect(state.ok).toBe(true);
+    if (!state.ok) return;
+    const reloaded = getAnns(state.value).find((a: any) => a.kind === 'ellipse') as any;
+    expect(reloaded).toBeDefined();
+    expect(reloaded.rects[0].x).toBeCloseTo(movedRect.x);
+    expect(reloaded.rects[0].y).toBeCloseTo(movedRect.y);
+  });
+
+  it('callout: moved `rect` + moved `at` stay consistent (no torn arrow) (DEF-161)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-co', path);
+
+    // Original geometry (what the stale backfill holds).
+    const staleBox = { x: 200, y: 200, width: 150, height: 50 };
+    const staleAnchor = { x: 50, y: 400 };
+    // Moved geometry: both box and anchor shift by the same delta.
+    const movedBox = { x: 400, y: 300, width: 150, height: 50 };
+    const movedAnchor = { x: 250, y: 500 };
+
+    const r = await engine.createAnnotation('doc-co', movedPayload({
+      kind: 'callout' as any,
+      rect: movedBox,
+      at: movedAnchor,
+      // Stale backfill at the OLD position — the regression source.
+      rects: [staleBox],
+      color: 'red',
+      content: 'See this (moved)',
+    }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const created = getAnns(r.value).find((a: any) => a.kind === 'callout') as any;
+    expect(created).toBeDefined();
+    // Box uses the NEW rect, not the stale rects[0].
+    expect(created.rects[0].x).toBeCloseTo(movedBox.x);
+    expect(created.rects[0].y).toBeCloseTo(movedBox.y);
+    expect(created.rects[0].x).not.toBeCloseTo(staleBox.x);
+    // Anchor uses the NEW `at`, not the stale box corner.
+    expect(created.at).toBeDefined();
+    expect(created.at.x).toBeCloseTo(movedAnchor.x);
+    expect(created.at.y).toBeCloseTo(movedAnchor.y);
+    expect(created.at.x).not.toBeCloseTo(staleAnchor.x);
+    // The leader line is synthesized during serialization (from box center +
+    // `at`), so it is not present on the freshly-created model — it appears
+    // after save/reparse. The box+anchor consistency is what matters here.
+
+    // Save + reparse: box AND anchor survive at the moved positions.
+    const savePath = join(dir, 'def161-callout.pdf');
+    const sr = await engine.saveAs('doc-co', savePath);
+    expect(sr.ok).toBe(true);
+    await engine.loadDocument('doc-co-reloaded', savePath);
+    const state = await engine.getState('doc-co-reloaded');
+    expect(state.ok).toBe(true);
+    if (!state.ok) return;
+    const reloaded = getAnns(state.value).find((a: any) => a.kind === 'callout') as any;
+    expect(reloaded).toBeDefined();
+    expect(reloaded.rects[0].x).toBeCloseTo(movedBox.x);
+    expect(reloaded.rects[0].y).toBeCloseTo(movedBox.y);
+    expect(reloaded.at).toBeDefined();
+    expect(reloaded.at.x).toBeCloseTo(movedAnchor.x);
+    expect(reloaded.at.y).toBeCloseTo(movedAnchor.y);
+    // No torn arrow after reparse: leader line non-zero, tip == movedAnchor.
+    expect(reloaded.points).toBeDefined();
+    expect(reloaded.points.length).toBeGreaterThanOrEqual(2);
+    const rp0 = reloaded.points[0];
+    const rpEnd = reloaded.points[reloaded.points.length - 1];
+    expect(Math.hypot(rpEnd.x - rp0.x, rpEnd.y - rp0.y)).toBeGreaterThan(0);
+    expect(rpEnd.x).toBeCloseTo(movedAnchor.x);
+    expect(rpEnd.y).toBeCloseTo(movedAnchor.y);
+  });
+
+  it('note: moved `at` wins over stale `rects[0]` (not lost on save) (DEF-162)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-note', path);
+
+    // Original icon position (stale backfill).
+    const staleAt = { x: 100, y: 700 };
+    const staleRect = { x: 100, y: 700, width: 24, height: 24 };
+    // Moved icon anchor.
+    const movedAt = { x: 500, y: 300 };
+
+    const r = await engine.createAnnotation('doc-note', movedPayload({
+      kind: 'note',
+      at: movedAt,
+      // Stale backfill at the OLD position.
+      rects: [staleRect],
+      color: 'yellow',
+      content: 'Moved note',
+    }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const created = getAnns(r.value).find((a: any) => a.kind === 'note') as any;
+    expect(created).toBeDefined();
+    // The icon rect is regenerated from the moved `at`, not the stale rects[0].
+    expect(created.rects[0].x).toBeCloseTo(movedAt.x);
+    expect(created.rects[0].y).toBeCloseTo(movedAt.y);
+    expect(created.rects[0].x).not.toBeCloseTo(staleAt.x);
+    // `at` itself is preserved on the model.
+    expect(created.at).toBeDefined();
+    expect(created.at.x).toBeCloseTo(movedAt.x);
+    expect(created.at.y).toBeCloseTo(movedAt.y);
+
+    // Save + reparse: the moved position survives (move is NOT lost).
+    const savePath = join(dir, 'def162-note.pdf');
+    const sr = await engine.saveAs('doc-note', savePath);
+    expect(sr.ok).toBe(true);
+    await engine.loadDocument('doc-note-reloaded', savePath);
+    const state = await engine.getState('doc-note-reloaded');
+    expect(state.ok).toBe(true);
+    if (!state.ok) return;
+    const reloaded = getAnns(state.value).find((a: any) => a.kind === 'note') as any;
+    expect(reloaded).toBeDefined();
+    expect(reloaded.rects[0].x).toBeCloseTo(movedAt.x);
+    expect(reloaded.rects[0].y).toBeCloseTo(movedAt.y);
+    expect(reloaded.rects[0].x).not.toBeCloseTo(staleAt.x);
+  });
+
+  it('multi-rect highlight (no `rect`) still uses `rects` verbatim (no regression)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-hl', path);
+
+    const multiRects = [
+      { x: 50, y: 700, width: 100, height: 14 },
+      { x: 200, y: 700, width: 80, height: 14 },
+    ];
+    const r = await engine.createAnnotation('doc-hl', makePayload({
+      kind: 'highlight',
+      rects: multiRects,
+      color: 'yellow',
+    }));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const created = getAnns(r.value).find((a: any) => a.kind === 'highlight') as any;
+    expect(created).toBeDefined();
+    expect(created.rects.length).toBe(2);
+    expect(created.rects[0].x).toBeCloseTo(multiRects[0].x);
+    expect(created.rects[1].x).toBeCloseTo(multiRects[1].x);
+  });
+});

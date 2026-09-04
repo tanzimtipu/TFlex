@@ -207,6 +207,59 @@ describe("DEF-154 — committed shapes / ink / arrows are page-interactive (poin
     expect(body).toMatch(/cursor:\s*grab/);
   });
 
+  it(".ann-callout-arrow keeps its svg BOX click-transparent but the hit shaft is a stroke target (DEF-161)", () => {
+    // The svg container is pointer-events: none so its empty area
+    // never blocks the page; the PREFIXED hit-line rule (class +
+    // element + class) must out-specificity the bare
+    // `.ann-callout-arrow line` rule and restore a fat 10pt grab
+    // stroke along the callout's arrow, exactly like the standalone
+    // arrow fix (DEF-154).
+    const container = ruleBodyFor(src, ".ann-callout-arrow");
+    const bare = ruleBodyFor(src, ".ann-callout-arrow line");
+    const prefixed = ruleBodyFor(src, ".ann-callout-arrow line.ann-callout-arrow-hit");
+    expect(container).toMatch(/pointer-events:\s*none/);
+    expect(bare).toMatch(/pointer-events:\s*none/);
+    expect(prefixed).not.toBeNull();
+    if (prefixed === null) return;
+    expect(prefixed).toMatch(/pointer-events:\s*stroke/);
+    expect(prefixed).toMatch(/cursor:\s*grab/);
+  });
+
+  it(".ann-callout-arrow-head-hit gives the callout arrowhead a pointer target of its own (DEF-161)", () => {
+    const body = ruleBodyFor(src, ".ann-callout-arrow polygon.ann-callout-arrow-head-hit");
+    expect(body).not.toBeNull();
+    if (body === null) return;
+    expect(body).toMatch(/pointer-events:\s*all/);
+    expect(body).toMatch(/cursor:\s*grab/);
+  });
+
+  it(".committed-color-row shares the shape color editor's swatch + hex-input styling (textbox/callout color options)", () => {
+    // The two containers share one rule (comma-joined selector,
+    // tolerant of any line ending); the toolbar row gets the same
+    // 18px swatches + 64px hex input the shape editor uses.
+    expect(src).toMatch(
+      /\.shape-color-editor \.content-color-swatch,\s*\.committed-color-row \.content-color-swatch/,
+    );
+    expect(src).toMatch(
+      /\.shape-color-editor \.content-color-hex input,\s*\.committed-color-row \.content-color-hex input/,
+    );
+    const swatch = ruleBodyFor(src, ".committed-color-row .content-color-swatch");
+    expect(swatch).not.toBeNull();
+    if (swatch === null) return;
+    expect(swatch).toMatch(/width:\s*18px/);
+    expect(swatch).toMatch(/cursor:\s*pointer/);
+    const hex = ruleBodyFor(src, ".committed-color-row .content-color-hex input");
+    expect(hex).not.toBeNull();
+    if (hex === null) return;
+    expect(hex).toMatch(/width:\s*64px/);
+    expect(hex).toMatch(/font-family:\s*var\(--font-mono\)/);
+    const row = ruleBodyFor(src, ".committed-color-row");
+    expect(row).not.toBeNull();
+    if (row === null) return;
+    expect(row).toMatch(/pointer-events:\s*auto/);
+    expect(row).toMatch(/flex-wrap:\s*wrap/);
+  });
+
   it(".content-selection-frame wraps the ring so corner handles land on the shape (DEF-154)", () => {
     const frame = ruleBodyFor(src, ".content-selection-frame");
     expect(frame).not.toBeNull();

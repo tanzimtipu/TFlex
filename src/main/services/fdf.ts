@@ -81,12 +81,14 @@ function pdfNum(n: number): string {
  * Serialize the engine's per-original-page annotations into an FDF byte
  * buffer. Annotations are emitted in VISIBLE order with a 0-based /Page so
  * `parseFdf` can place them back onto the right visible page. /Rect uses the
- * bottom-left PDF convention matching the annotation serializer (the engine
- * stores annotation rects in that convention — see annotations.ts).
+ * bottom-left PDF convention (DEF-164): the model stores top-left rects, so
+ * `pageHeights[origIdx]` is used to flip y to PDF bottom-left user space for
+ * /Rect, /QuadPoints, /Callout, /L and /InkList.
  */
 export function exportFdf(
   annotations: AnnModel[][],
   order: number[],
+  pageHeights: number[],
 ): Uint8Array {
   const lines: string[] = [];
   lines.push('%FDF-1.2');
@@ -100,8 +102,9 @@ export function exportFdf(
     const origIdx = order[vi];
     const pageAnns = annotations[origIdx];
     if (pageAnns === undefined || pageAnns.length === 0) continue;
+    const pageHeight = pageHeights[origIdx] ?? 0;
     for (const ann of pageAnns) {
-      lines.push(serializeFdfAnnot(ann, vi));
+      lines.push(serializeFdfAnnot(ann, vi, pageHeight));
     }
   }
 
@@ -121,14 +124,17 @@ export function exportFdf(
   return new TextEncoder().encode(text);
 }
 
-function serializeFdfAnnot(ann: AnnModel, visiblePage0: number): string {
+function serializeFdfAnnot(ann: AnnModel, visiblePage0: number, pageHeight: number): string {
   const rect = ann.rects[0] ?? { x: 0, y: 0, width: 0, height: 0 };
   const [r, g, b] = colorToRgb(ann.color);
+  // DEF-164: flip top-left rect to PDF bottom-left /Rect.
+  const lly = pageHeight > 0 ? pageHeight - rect.y - rect.height : rect.y;
+  const ury = pageHeight > 0 ? pageHeight - rect.y : rect.y + rect.height;
   const parts: string[] = [];
   parts.push('<<');
   parts.push('/Type /Annot');
   parts.push(`/Subtype /${kindToSubtype(ann.kind)}`);
-  parts.push(`/Rect [${pdfNum(rect.x)} ${pdfNum(rect.y)} ${pdfNum(rect.x + rect.width)} ${pdfNum(rect.y + rect.height)}]`);
+  parts.push(`/Rect [${pdfNum(rect.x)} ${pdfNum(lly)} ${pdfNum(rect.x + rect.width)} ${pdfNum(ury)}]`);
   parts.push(`/C [${pdfNum(r)} ${pdfNum(g)} ${pdfNum(b)}]`);
   // Carry the source color (named preset OR free-form hex) verbatim so a
   // custom hex round-trips exactly through FDF import (mirrors the PDF
@@ -144,36 +150,42 @@ function serializeFdfAnnot(ann: AnnModel, visiblePage0: number): string {
     // form. Prefer an explicit `points` leader; otherwise — when the
     // renderer sent only `at` + `rect` — emit a straight leader from the
     // text-box center to the `at` anchor so the anchor round-trips (DEF-157).
+    // y is flipped to PDF bottom-left space (DEF-164).
+    const flipY = (yTop: number) => (pageHeight > 0 ? pageHeight - yTop : yTop);
     if (ann.points !== undefined && ann.points.length >= 2) {
       const p0 = ann.points[0];
       const pEnd = ann.points[ann.points.length - 1];
       if (ann.points.length >= 3) {
         const knee = ann.points[1];
-        parts.push(`/Callout [${pdfNum(p0.x)} ${pdfNum(p0.y)} ${pdfNum(knee.x)} ${pdfNum(knee.y)} ${pdfNum(pEnd.x)} ${pdfNum(pEnd.y)}]`);
+        parts.push(`/Callout [${pdfNum(p0.x)} ${pdfNum(flipY(p0.y))} ${pdfNum(knee.x)} ${pdfNum(flipY(knee.y))} ${pdfNum(pEnd.x)} ${pdfNum(flipY(pEnd.y))}]`);
       } else {
-        parts.push(`/Callout [${pdfNum(p0.x)} ${pdfNum(p0.y)} ${pdfNum(p0.x)} ${pdfNum(p0.y)} ${pdfNum(pEnd.x)} ${pdfNum(pEnd.y)}]`);
+        parts.push(`/Callout [${pdfNum(p0.x)} ${pdfNum(flipY(p0.y))} ${pdfNum(p0.x)} ${pdfNum(flipY(p0.y))} ${pdfNum(pEnd.x)} ${pdfNum(flipY(pEnd.y))}]`);
       }
     } else if (ann.at !== undefined) {
       const cx = rect.x + rect.width / 2;
-      const cy = rect.y + rect.height / 2;
-      parts.push(`/Callout [${pdfNum(cx)} ${pdfNum(cy)} ${pdfNum(cx)} ${pdfNum(cy)} ${pdfNum(ann.at.x)} ${pdfNum(ann.at.y)}]`);
+      const cy = flipY(rect.y + rect.height / 2);
+      parts.push(`/Callout [${pdfNum(cx)} ${pdfNum(cy)} ${pdfNum(cx)} ${pdfNum(cy)} ${pdfNum(ann.at.x)} ${pdfNum(flipY(ann.at.y))}]`);
     }
     parts.push(`/DA /Helv 12 Tf ${pdfNum(r)} ${pdfNum(g)} ${pdfNum(b)} rg`);
   }
   if ((ann.kind === 'highlight' || ann.kind === 'underline' || ann.kind === 'squiggly' || ann.kind === 'strikeout') && ann.rects.length > 0) {
+    // QuadPoints [ul ur ll lr] in PDF bottom-left space (DEF-164).
     const quads: string[] = [];
     for (const rct of ann.rects) {
+      const yUpper = pageHeight > 0 ? pageHeight - rct.y : rct.y + rct.height;
+      const yLower = pageHeight > 0 ? pageHeight - rct.y - rct.height : rct.y;
       quads.push(
-        `${pdfNum(rct.x)} ${pdfNum(rct.y + rct.height)}`,
-        `${pdfNum(rct.x + rct.width)} ${pdfNum(rct.y + rct.height)}`,
-        `${pdfNum(rct.x)} ${pdfNum(rct.y)}`,
-        `${pdfNum(rct.x + rct.width)} ${pdfNum(rct.y)}`,
+        `${pdfNum(rct.x)} ${pdfNum(yUpper)}`,
+        `${pdfNum(rct.x + rct.width)} ${pdfNum(yUpper)}`,
+        `${pdfNum(rct.x)} ${pdfNum(yLower)}`,
+        `${pdfNum(rct.x + rct.width)} ${pdfNum(yLower)}`,
       );
     }
     parts.push(`/QuadPoints [${quads.join(' ')}]`);
   }
   if (ann.kind === 'arrow' && ann.points !== undefined && ann.points.length >= 2) {
-    parts.push(`/L [${pdfNum(ann.points[0].x)} ${pdfNum(ann.points[0].y)} ${pdfNum(ann.points[1].x)} ${pdfNum(ann.points[1].y)}]`);
+    const flipY = (yTop: number) => (pageHeight > 0 ? pageHeight - yTop : yTop);
+    parts.push(`/L [${pdfNum(ann.points[0].x)} ${pdfNum(flipY(ann.points[0].y))} ${pdfNum(ann.points[1].x)} ${pdfNum(flipY(ann.points[1].y))}]`);
     if (ann.lineEnds !== undefined && ann.lineEnds.length >= 2) {
       parts.push(`/LE [/${ann.lineEnds[0]} /${ann.lineEnds[1]}]`);
     } else {
@@ -181,7 +193,8 @@ function serializeFdfAnnot(ann: AnnModel, visiblePage0: number): string {
     }
   }
   if (ann.kind === 'ink' && ann.points !== undefined && ann.points.length > 0) {
-    const flat = ann.points.map((p) => `${pdfNum(p.x)} ${pdfNum(p.y)}`).join(' ');
+    const flipY = (yTop: number) => (pageHeight > 0 ? pageHeight - yTop : yTop);
+    const flat = ann.points.map((p) => `${pdfNum(p.x)} ${pdfNum(flipY(p.y))}`).join(' ');
     parts.push(`/InkList [${flat}]`);
   }
   if (ann.width !== undefined && (ann.kind === 'ink' || ann.kind === 'arrow' || ann.kind === 'rect' || ann.kind === 'ellipse' || ann.kind === 'callout')) {
@@ -206,11 +219,21 @@ function serializeFdfAnnot(ann: AnnModel, visiblePage0: number): string {
  * /Annots item), with `page` set to the 1-based VISIBLE page from the /Page
  * field (defaulting to 1 when /Page is absent). Each entry gets a fresh id.
  *
+ * `pageHeights` is indexed by 0-based VISIBLE page; it is used to flip the
+ * parsed /Rect, /QuadPoints, /Callout, /L and /InkList geometry from PDF
+ * bottom-left user space back into the renderer's top-left space (DEF-164).
+ * A missing entry (or undefined pageHeights) leaves that annotation's
+ * geometry un-flipped so a caller that does not know the page heights can
+ * still parse the non-geometric fields.
+ *
  * Best-effort: extracts /Subtype, /Rect, /Contents, /C, /Page, /Subj, /Callout,
  * /Intent, /QuadPoints, /L, /InkList, /LE, /BS./W, /CA, /BM. Unknown subtypes
  * are skipped (the engine does not model them).
  */
-export function parseFdf(fdfBytes: Uint8Array): AnnModel[] {
+export function parseFdf(
+  fdfBytes: Uint8Array,
+  pageHeights?: number[],
+): AnnModel[] {
   const text = new TextDecoder('latin1').decode(fdfBytes);
   if (!text.includes('%FDF')) {
     throw new Error('not an FDF file (missing %FDF header)');
@@ -220,7 +243,7 @@ export function parseFdf(fdfBytes: Uint8Array): AnnModel[] {
   const dictTexts = splitTopLevelDicts(annotsArray);
   const out: AnnModel[] = [];
   for (const dictText of dictTexts) {
-    const model = parseFdfAnnot(dictText);
+    const model = parseFdfAnnot(dictText, pageHeights);
     if (model !== null) out.push(model);
   }
   return out;
@@ -427,7 +450,7 @@ function parseName(valueText: string | null): string | null {
   return valueText.slice(1);
 }
 
-function parseFdfAnnot(dictText: string): AnnModel | null {
+function parseFdfAnnot(dictText: string, pageHeights?: number[]): AnnModel | null {
   const subtype = parseName(extractValueText(dictText, '/Subtype'));
   if (subtype === null) return null;
   let kind: AnnKind | undefined = SUBTYPE_TO_KIND[subtype];
@@ -552,13 +575,35 @@ function parseFdfAnnot(dictText: string): AnnModel | null {
   const bmName = parseName(extractValueText(dictText, '/BM'));
   if (bmName !== null) blendMode = bmName;
 
+  // DEF-164: flip the parsed geometry from PDF bottom-left user space back to
+  // the renderer's top-left space using the destination page's height. FDF does
+  // not carry page dimensions, so the caller supplies them (indexed by 0-based
+  // visible page); when absent the geometry is returned as-is.
+  const pageHeight = pageHeights !== undefined ? pageHeights[page - 1] : undefined;
+  const canFlip = pageHeight !== undefined && pageHeight > 0;
+  const flipRect = (rc: AnnRect): AnnRect =>
+    canFlip
+      ? { x: rc.x, y: pageHeight! - rc.y - rc.height, width: rc.width, height: rc.height }
+      : rc;
+  const flipY = (yPdf: number): number =>
+    canFlip ? pageHeight! - yPdf : yPdf;
+  const flippedRects = rects.map(flipRect);
+  const flippedPoints =
+    points !== undefined
+      ? points.map((p) => ({ x: p.x, y: flipY(p.y) }))
+      : undefined;
+  const flippedAt =
+    at !== undefined
+      ? { x: at.x, y: flipY(at.y) }
+      : undefined;
+
   return {
     id: randomUUID(),
     kind,
     page,
-    rects: rects.length > 0 ? rects : [{ x: 0, y: 0, width: 0, height: 0 }],
-    points,
-    at,
+    rects: flippedRects.length > 0 ? flippedRects : [{ x: 0, y: 0, width: 0, height: 0 }],
+    points: flippedPoints,
+    at: flippedAt,
     color,
     content,
     text: content,

@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 import {
   moveAnnotation,
+  moveCalloutAnchor,
   resizeAnnotation,
   sameAnnotationGeometry,
 } from "../../../src/renderer/annotations/geometry";
@@ -75,10 +76,32 @@ describe("moveAnnotation — every kind shifts as one unit", () => {
     expect(moved.at).toEqual({ x: 50, y: 320 });
   });
 
-  it("shifts the callout box but keeps the anchor fixed (the move shifts both — the ANCHOR follows the box)", () => {
+  it("shifts the callout box but keeps the anchor FIXED (DEF-161: the box and arrow move independently)", () => {
     const moved = moveAnnotation(CALLOUT, 10, 0) as typeof CALLOUT;
     expect(moved.rect).toEqual({ x: 310, y: 200, width: 120, height: 50 });
-    expect(moved.at).toEqual({ x: 110, y: 100 });
+    expect(moved.at).toEqual({ x: 100, y: 100 });
+  });
+});
+
+describe("moveCalloutAnchor — DEF-161 anchor-only drag", () => {
+  it("shifts ONLY the callout's arrow anchor; the box rect stays put", () => {
+    const moved = moveCalloutAnchor(CALLOUT, 15, -20) as typeof CALLOUT;
+    expect(moved.at).toEqual({ x: 115, y: 80 });
+    expect(moved.rect).toEqual({ x: 300, y: 200, width: 120, height: 50 });
+  });
+
+  it("is a no-op for non-callout annotations", () => {
+    expect(moveCalloutAnchor(RECT, 5, 5)).toBe(RECT);
+    expect(moveCalloutAnchor(ARROW, 5, 5)).toBe(ARROW);
+  });
+
+  it("keeps the annotation's identity fields intact (same id/page/color/text)", () => {
+    const moved = moveCalloutAnchor(CALLOUT, 1, 2) as typeof CALLOUT;
+    expect(moved.id).toBe("c1");
+    expect(moved.page).toBe(1);
+    expect(moved.kind).toBe("callout");
+    expect(moved.color).toBe("blue");
+    expect(moved.text).toBe("call");
   });
 });
 
@@ -163,5 +186,26 @@ describe("sameAnnotationGeometry — the echo-landed check", () => {
       moved,
       wire as unknown as Annotation,
     )).toBe(true);
+  });
+
+  it("is true for a callout when the box AND the anchor both match", () => {
+    const moved = moveAnnotation(CALLOUT, 10, 0);
+    expect(sameAnnotationGeometry(moved, moveAnnotation(CALLOUT, 10, 0))).toBe(true);
+  });
+
+  it("is FALSE for a callout whose box matches but whose anchor differs (DEF-161 anchor-only move)", () => {
+    // The box drag leaves `at` fixed; an anchor drag changes only
+    // `at`. Two annotations with the same rect but different anchors
+    // are NOT the same geometry.
+    const movedBox = moveAnnotation(CALLOUT, 10, 0) as typeof CALLOUT;
+    const movedAnchor = { ...movedBox, at: { x: 110, y: 105 } } as typeof CALLOUT;
+    expect(movedBox.rect).toEqual(movedAnchor.rect);
+    expect(movedBox.at).not.toEqual(movedAnchor.at);
+    expect(sameAnnotationGeometry(movedBox, movedAnchor)).toBe(false);
+  });
+
+  it("is true when an anchor-only move echoes back the same `at` (the draft-drop check)", () => {
+    const moved = moveCalloutAnchor(CALLOUT, 8, 12);
+    expect(sameAnnotationGeometry(moved, moveCalloutAnchor(CALLOUT, 8, 12))).toBe(true);
   });
 });

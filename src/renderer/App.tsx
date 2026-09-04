@@ -325,6 +325,13 @@ export function seededEngineUiState(
   return initialUiState(pageCount);
 }
 
+/** DEF-166 — empty live-overlay annotation id set. Used by
+ *  `liveAnnTextIdsFor` when a tab has never created/edited an
+ *  annotation (a reopened saved file: every parsed annotation is
+ *  painted by the page canvas, so the overlay text for all of them
+ *  is suppressed). */
+const EMPTY_ANN_TEXT_IDS: ReadonlySet<string> = new Set();
+
 export function App(): ReactElement {
   const [bootDone, setBootDone] = useState(false);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
@@ -514,6 +521,35 @@ export function App(): ReactElement {
   // the signature in place without further page-change logic).
 
   const engineRef = useRef<EngineApi>(getEngine());
+
+  // DEF-166 — per-tab set of annotation ids whose overlay text must be
+  // drawn LIVE by the DOM overlay (created / edited since the tab's
+  // current pdf.js bytes were loaded). Starts empty on every tab open:
+  // each annotation parsed from the loaded file's /Annots is already
+  // painted into the page canvas by pdf.js (it generates the FreeText
+  // appearance from /Contents + /DA), so the overlay text for those ids
+  // is suppressed — otherwise a reopened saved file renders the text
+  // doubled (baked canvas glyphs + DOM overlay text, offset). A create /
+  // edit adds its id (the canvas doesn't have that content yet); a
+  // `refreshDocProxyFor` rebuild clears the set because the fresh bytes
+  // contain every current annotation. A ref (not state) so the overlay
+  // reads the current value during the re-render the annotation echo
+  // already triggers, with no extra render churn.
+  const liveAnnTextIdsRef = useRef<Map<string, Set<string>>>(new Map());
+  /** Mark an annotation id as live-overlay (create / edit). */
+  const markAnnTextLive = useCallback((tabId: string, id: string): void => {
+    const m = liveAnnTextIdsRef.current;
+    let s = m.get(tabId);
+    if (s === undefined) {
+      s = new Set<string>();
+      m.set(tabId, s);
+    }
+    s.add(id);
+  }, []);
+  /** The tab's current live-overlay id set (empty when unset). */
+  const liveAnnTextIdsFor = useCallback((tabId: string): ReadonlySet<string> => {
+    return liveAnnTextIdsRef.current.get(tabId) ?? EMPTY_ANN_TEXT_IDS;
+  }, []);
 
   const diagnosticsRef = useRef(diagnostics);
   diagnosticsRef.current = diagnostics;
@@ -1235,6 +1271,9 @@ export function App(): ReactElement {
     if (open !== undefined) {
       stubRendererEngine.dispose(open.session.engineDocId);
     }
+    // DEF-166 — drop the tab's live-overlay annotation id set with it
+    // so a freshly-opened tab never inherits stale live-text marks.
+    liveAnnTextIdsRef.current.delete(id);
     dispatchTabs({ type: "close", id });
     // B7 — tool / arm state cleanup. The user armed the Sign tool
     // and the "armed" pill stays on the toolbar after the active
@@ -1557,6 +1596,10 @@ export function App(): ReactElement {
     async (tabId: string, ann: Annotation): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
+      // DEF-166 — a just-created annotation is not in the loaded
+      // pdf.js bytes, so the overlay must keep drawing its text
+      // (nothing baked on the canvas yet).
+      markAnnTextLive(tabId, ann.id);
       const result = await engineRef.current.createAnnotation(open.session.engineDocId, ann);
       if (!result.ok) {
         pushToast("error", describeEngineError(result.error.code, result.error.message));
@@ -1564,13 +1607,17 @@ export function App(): ReactElement {
       }
       noteOpApplied(tabId, result.value);
     },
-    [pushToast, noteOpApplied],
+    [pushToast, noteOpApplied, markAnnTextLive],
   );
 
   const onEditAnnotation = useCallback(
     async (tabId: string, id: string, patch: AnnotationPatch): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
+      // DEF-166 — the text just changed on the renderer; the canvas
+      // still paints the PRE-edit baked appearance (if any), so the
+      // overlay must show the new text.
+      markAnnTextLive(tabId, id);
       const result = await engineRef.current.editAnnotation(
         open.session.engineDocId,
         id,
@@ -1582,7 +1629,7 @@ export function App(): ReactElement {
       }
       noteOpApplied(tabId, result.value);
     },
-    [pushToast, noteOpApplied],
+    [pushToast, noteOpApplied, markAnnTextLive],
   );
 
   const onDeleteAnnotation = useCallback(
@@ -4332,6 +4379,13 @@ pushToast(
       // hooks (PageView's own `pdfPage.cleanup()` on unmount) can
       // run before pdf.js tears the document down.
       void oldDoc.destroy().catch(() => undefined);
+      // DEF-166 — the swapped-in bytes come from the engine's
+      // `getDocumentBytes`, which serializes EVERY current annotation
+      // into the output /Annots. From this point the page canvas
+      // paints every annotation's baked appearance, so no id keeps a
+      // live overlay text: drop the tab's live set (the next create /
+      // edit re-seeds it). A fresh open tab has no entry at all.
+      liveAnnTextIdsRef.current.delete(tabId);
       return true;
     },
     [pushToast, toastForPdfError],
@@ -4993,6 +5047,7 @@ pushToast(
       string,
       {
         annotations: Annotation[];
+        liveAnnTextIds: ReadonlySet<string>;
         createAnnotation: (a: Annotation) => void;
         editAnnotation: (id: string, patch: AnnotationPatch) => void;
         deleteAnnotation: (id: string) => void;
@@ -5002,11 +5057,17 @@ pushToast(
       const cached = cache.get(tabId);
       const ui = engineUi[tabId];
       const annotations: Annotation[] = ui?.state.annotations ?? [];
-      if (cached !== undefined && cached.annotations === annotations) {
+      const liveAnnTextIds = liveAnnTextIdsFor(tabId);
+      if (
+        cached !== undefined &&
+        cached.annotations === annotations &&
+        cached.liveAnnTextIds === liveAnnTextIds
+      ) {
         return cached;
       }
       const out = {
         annotations,
+        liveAnnTextIds,
         createAnnotation: (a: Annotation): void => {
           void onCreateAnnotation(tabId, a);
         },
@@ -5020,7 +5081,7 @@ pushToast(
       cache.set(tabId, out);
       return out;
     };
-  }, [engineUi, onCreateAnnotation, onEditAnnotation, onDeleteAnnotation]);
+  }, [engineUi, onCreateAnnotation, onEditAnnotation, onDeleteAnnotation, liveAnnTextIdsFor]);
 
   // Per-tab forms + signatures handlers.
   const formsAndSignaturesHandlers = useMemo(() => {
@@ -5828,6 +5889,7 @@ pushToast(
                     onDeletePage={onDeletePageClick}
                     canDeletePage={engine.engineState.pageCount > 1}
                     annotations={ann.annotations}
+                    liveAnnTextIds={ann.liveAnnTextIds}
                     onCreateAnnotation={ann.createAnnotation}
                     onEditAnnotation={ann.editAnnotation}
                     onDeleteAnnotation={ann.deleteAnnotation}

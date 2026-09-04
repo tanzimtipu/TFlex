@@ -43,7 +43,7 @@ describe('Phase 12: FDF export/import (pure helpers)', () => {
         color: 'red', content: 'Hello',
       },
     ]];
-    const bytes = exportFdf(anns, [0]);
+    const bytes = exportFdf(anns, [0], [792]);
     const text = new TextDecoder('latin1').decode(bytes);
     expect(text.startsWith('%FDF-1.2')).toBe(true);
     expect(text).toContain('/Annots');
@@ -59,8 +59,8 @@ describe('Phase 12: FDF export/import (pure helpers)', () => {
         color: 'red', content: 'Round-trip',
       },
     ]];
-    const bytes = exportFdf(anns, [0]);
-    const parsed = parseFdf(bytes);
+    const bytes = exportFdf(anns, [0], [792]);
+    const parsed = parseFdf(bytes, [792]);
     expect(parsed.length).toBe(1);
     expect(parsed[0].kind).toBe('text-box');
     expect(parsed[0].page).toBe(1);
@@ -68,6 +68,10 @@ describe('Phase 12: FDF export/import (pure helpers)', () => {
     expect(parsed[0].color).toBe('red');
     expect(parsed[0].rects[0].x).toBe(10);
     expect(parsed[0].rects[0].width).toBe(100);
+    // DEF-164: y is flipped to PDF bottom-left on export and back to
+    // top-left on import, so it round-trips to the original 20.
+    expect(parsed[0].rects[0].y).toBeCloseTo(20);
+    expect(parsed[0].rects[0].height).toBeCloseTo(30);
   });
 
   it('parseFdf maps a callout (FreeText + /Intent /FreeTextCallout)', () => {
@@ -83,8 +87,8 @@ describe('Phase 12: FDF export/import (pure helpers)', () => {
         color: 'red', content: 'callout text',
       },
     ]];
-    const bytes = exportFdf(anns, [0]);
-    const parsed = parseFdf(bytes);
+    const bytes = exportFdf(anns, [0], [792]);
+    const parsed = parseFdf(bytes, [792]);
     expect(parsed.length).toBe(1);
     expect(parsed[0].kind).toBe('callout');
     expect(parsed[0].points).toBeDefined();
@@ -92,8 +96,8 @@ describe('Phase 12: FDF export/import (pure helpers)', () => {
   });
 
   it('parseFdf returns [] for an empty /Annots', () => {
-    const bytes = exportFdf([], [0, 1]);
-    expect(parseFdf(bytes).length).toBe(0);
+    const bytes = exportFdf([], [0, 1], [792, 792]);
+    expect(parseFdf(bytes, [792, 792]).length).toBe(0);
   });
 
   it('parseFdf maps /Page to the visible page', () => {
@@ -104,8 +108,8 @@ describe('Phase 12: FDF export/import (pure helpers)', () => {
         color: 'blue', content: 'p2',
       },
     ]];
-    const bytes = exportFdf(anns, [0, 1]);
-    const parsed = parseFdf(bytes);
+    const bytes = exportFdf(anns, [0, 1], [792, 792]);
+    const parsed = parseFdf(bytes, [792, 792]);
     expect(parsed.length).toBe(1);
     expect(parsed[0].page).toBe(2);
   });
@@ -120,8 +124,8 @@ describe('Phase 12: FDF export/import (pure helpers)', () => {
         color: '#00ff00', content: 'hex color',
       },
     ]];
-    const bytes = exportFdf(anns, [0]);
-    const parsed = parseFdf(bytes);
+    const bytes = exportFdf(anns, [0], [792]);
+    const parsed = parseFdf(bytes, [792]);
     expect(parsed.length).toBe(1);
     expect(parsed[0].color).toBe('#00ff00');
     expect(parsed[0].color).not.toBe('green');

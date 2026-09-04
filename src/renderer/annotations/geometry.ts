@@ -490,9 +490,12 @@ function round2(v: number): number {
 
 /** Shift a committed annotation by a page-point delta. Every geometry
  *  field moves as one unit (ink point maps, arrow endpoints, note
- *  anchors, box rects). Wire-form fallbacks (`points`/`rects`) are
- *  respected exactly like the render path, so a round-tripped
- *  annotation moves correctly. */
+ *  anchors, box rects). The callout is the one exception (DEF-161):
+ *  a box drag shifts ONLY `rect` — the arrow anchor stays fixed so
+ *  the box and the arrow can be repositioned independently (use
+ *  `moveCalloutAnchor` for the anchor-only drag). Wire-form
+ *  fallbacks (`points`/`rects`) are respected exactly like the render
+ *  path, so a round-tripped annotation moves correctly. */
 export function moveAnnotation(a: Annotation, dxPt: number, dyPt: number): Annotation {
   const shift = (p: PagePoint): PagePoint => ({ x: p.x + dxPt, y: p.y + dyPt });
   switch (a.kind) {
@@ -515,20 +518,27 @@ export function moveAnnotation(a: Annotation, dxPt: number, dyPt: number): Annot
         a.rect ?? (a as unknown as { rects?: { x: number; y: number; width: number; height: number }[] }).rects?.[0];
       if (r === undefined) return a;
       const shifted = { ...r, x: r.x + dxPt, y: r.y + dyPt };
-      if (a.kind === "callout") {
-        // The whole callout moves as one unit: the text box AND the
-        // arrow anchor both shift by the delta (the arrow points at
-        // the same subject, now from the moved box).
-        const anchor = a.at;
-        if (anchor !== undefined) {
-          return { ...a, rect: shifted, at: { x: anchor.x + dxPt, y: anchor.y + dyPt } };
-        }
-      }
+      // DEF-161 — the callout's box and arrow move INDEPENDENTLY: a
+      // BOX drag shifts only `rect`, the arrow anchor `at` stays
+      // fixed (the arrow keeps pointing at its subject). The
+      // opposite — moving only the anchor — is `moveCalloutAnchor`.
       return { ...a, rect: shifted };
     }
     default:
       return a;
   }
+}
+
+/** DEF-161 — move ONLY the callout's arrow anchor (`at`) by a
+ *  page-point delta. The text-box `rect` stays fixed, so the box
+ *  text stays put while the leader line re-aims at a new subject.
+ *  Returns the annotation unchanged for non-callouts or when the
+ *  anchor is missing (wire-shape fallback). */
+export function moveCalloutAnchor(a: Annotation, dxPt: number, dyPt: number): Annotation {
+  if (a.kind !== "callout") return a;
+  const anchor = a.at;
+  if (anchor === undefined) return a;
+  return { ...a, at: { x: anchor.x + dxPt, y: anchor.y + dyPt } };
 }
 
 /** Resize a committed rect-carrying annotation (textbox, rect,
@@ -634,12 +644,24 @@ export function sameAnnotationGeometry(a: Annotation, b: Annotation): boolean {
       const ar = a.rect ?? (a as unknown as { rects?: PageRect[] }).rects?.[0];
       const br = b.rect ?? (b as unknown as { rects?: PageRect[] }).rects?.[0];
       if (ar === undefined || br === undefined) return false;
-      return (
+      const rectEqual =
         ar.x === br.x &&
         ar.y === br.y &&
         ar.width === br.width &&
-        ar.height === br.height
-      );
+        ar.height === br.height;
+      if (!rectEqual) return false;
+      // DEF-161 — the callout's arrow anchor is part of its geometry
+      // (the box and arrow move independently), so an anchor-only
+      // move must NOT be treated as "already echoed" while the engine
+      // still carries the old `at`.
+      if (a.kind === "callout") {
+        const bCallout = b as typeof a & { at?: PagePoint };
+        const aAt = a.at;
+        const bAt = bCallout.at;
+        if (aAt === undefined || bAt === undefined) return false;
+        return eqPt(aAt, bAt);
+      }
+      return true;
     }
     default:
       return false;

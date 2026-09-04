@@ -33,6 +33,7 @@ import {
   useSelectableDrag,
 } from "../components/selectableContent";
 import { rectsClose, rectShiftedByCssOffset, type ImageResizeHandle } from "../edit/geometry";
+import { fitTextBoxFontSizePx, measureTextWidthCss } from "../edit/rasterize";
 import {
   annotationBounds,
   arrowHead,
@@ -42,6 +43,7 @@ import {
   dragMeetsMinimum,
   inkPathD,
   moveAnnotation,
+  moveCalloutAnchor,
   normalizeDragRect,
   overlayRectToCss,
   resizeAnnotation,
@@ -74,6 +76,12 @@ const TEXTBOX_LINE_HEIGHT = 1.35;
 const TEXTBOX_PAD_PT = 5;
 const TEXTBOX_MIN_WIDTH_PT = 90;
 const TEXTBOX_MAX_WIDTH_PT = 320;
+const TEXTBOX_BORDER_PX = 1;
+const CALLOUT_BORDER_PX = 1.5;
+// The committed annotation text renders with the app's UI font (the
+// `--font-sans` stack). Only the committed-text auto-fit measure uses
+// this family; the div itself keeps inheriting the page font.
+const ANNOTATION_TEXT_FONT_FAMILY = '"Inter", system-ui, sans-serif';
 const NOTE_ICON_PT = 16;
 const ARROW_HEAD_PT = 9;
 const MIN_INK_POINTS = 2;
@@ -104,6 +112,19 @@ export interface AnnotationOverlayProps {
    *  handler was a silent no-op. */
   onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
   onDeleteAnnotation?: (id: string) => void;
+  /** DEF-166 — annotation ids whose text this overlay must draw LIVE.
+   *  When provided, an annotation whose id is NOT in the set came from
+   *  the document currently loaded into the page canvas (parsed from
+   *  the saved file's /Annots): pdf.js renders its baked FreeText
+   *  appearance (generating the glyphs from /Contents + /DA) into the
+   *  page bitmap, so drawing the overlay text again doubles it with a
+   *  slightly offset ghost copy. For such annotations only the
+   *  textbox + callout TEXT node is suppressed (the box border + tint
+   *  stay so the committed annotation keeps its box identity); the
+   *  note label is never canvas-painted and always renders. When the
+   *  prop is absent (unit tests, older consumers) every annotation
+   *  draws its text exactly as before. */
+  liveAnnTextIds?: ReadonlySet<string>;
 }
 
 interface DragState {
@@ -149,6 +170,45 @@ export function textBoxRectFor(
   return { x: at.x, y: at.y, width, height };
 }
 
+/** DEF-163 — auto-fit a COMMITTED text-box / callout's text to its
+ *  fixed box, matching the add-box auto-fit (the engine's DEF-113 fit
+ *  and the DEF-146 committed-box mirror fit): wrap at the box's
+ *  CONTENT width, then shrink the font so every wrapped line fits the
+ *  content height. The committed div keeps the creation rect (the
+ *  engine geometry), so without the fit long wrapped text overflows a
+ *  short fixed-height box and paints over the page content beneath it
+ *  (the DEF-163 callout spill). The box's border + padding
+ *  (`sideInsetPx`) is subtracted so the fit measures only the space
+ *  the text actually flows in. Pure apart from the injected `measure`
+ *  callback, so it unit-tests without a DOM. Returns the fitted font
+ *  size in CSS px — never larger than `userSizePx`, never below the
+ *  4px readable floor. */
+export function fitAnnotationTextSizePx(args: {
+  text: string;
+  /** Default font for the annotation in CSS px
+   *  (TEXTBOX_FONT_PT * cssScale). */
+  userSizePx: number;
+  /** The box's CSS-px width (border-box, as rendered). */
+  boxWidthPx: number;
+  /** The box's CSS-px height (border-box, as rendered). */
+  boxHeightPx: number;
+  lineHeight: number;
+  /** One side's CSS-px inset (padding + border); doubled for both
+   *  sides when computing the content box. */
+  sideInsetPx: number;
+  measure: (text: string, fontSizePx: number) => number;
+}): number {
+  const inset = Math.max(0, args.sideInsetPx) * 2;
+  return fitTextBoxFontSizePx({
+    text: args.text,
+    userSizePx: args.userSizePx,
+    boxWidthPx: Math.max(1, args.boxWidthPx - inset),
+    boxHeightPx: Math.max(1, args.boxHeightPx - inset),
+    lineHeight: args.lineHeight,
+    measure: args.measure,
+  });
+}
+
 export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   const {
     page,
@@ -164,6 +224,16 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     onEditAnnotation,
     onDeleteAnnotation,
   } = props;
+
+  // DEF-166 — the host tracks which annotation ids must keep their
+  // live overlay text (created / edited since the current page-canvas
+  // bytes were loaded). When the prop is absent we draw every
+  // annotation's text (the historic behavior); when present, an id
+  // missing from the set is a parsed-from-file annotation whose baked
+  // FreeText appearance is already painted by pdf.js and the overlay
+  // text is suppressed. Null semantics keep the 40+ unit tests that
+  // mount the overlay without the prop green.
+  const liveAnnTextIds = props.liveAnnTextIds ?? null;
 
   const rootRef = useRef<HTMLDivElement | null>(null);
   // In-progress interaction state. `drag` covers markup and shape tools;
@@ -221,6 +291,10 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     kind: "textbox" | "callout";
     rect: PageRect;
     text: string;
+    /** DEF-161 (feature) — the toolbox's color choice. Seeded from the
+     *  annotation's color on open; the embedded swatch row updates it;
+     *  Confirm commits it together with the text/geometry. */
+    color: AnnotationColorValue;
   } | null>(null);
   /** The color edit toolbox for committed shapes / ink / arrow
    *  (opened by double-click or the bar's Edit — the "existing
@@ -343,7 +417,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           (ann as unknown as { rects?: { x: number; y: number; width: number; height: number }[] })
             .rects?.[0];
         if (rect === undefined) return;
-        setEditTarget({ id: ann.id, kind: ann.kind, rect: { ...rect }, text: ann.text });
+        setEditTarget({ id: ann.id, kind: ann.kind, rect: { ...rect }, text: ann.text, color: ann.color });
         return;
       }
       if (ann.kind === "note") {
@@ -371,6 +445,34 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         id: ann.id,
         kind: handle !== undefined ? "resize" : "move",
         handle,
+        originClient: { x: e.clientX, y: e.clientY },
+        startRect: { ...bounds },
+        pageWidthPt: widthPt,
+        pageHeightPt: heightPt,
+      });
+      (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    },
+    [effectiveAnnotations, selDrag, widthPt],
+  );
+
+  /** DEF-161 — start an ARROW-ONLY drag on a committed callout (a
+   *  press on the arrow's hit shaft / head polygon). The box rect
+   *  stays fixed while the anchor (`at`) follows the pointer; the
+   *  move parks a pending commit exactly like the box drag. The
+   *  gesture tracks through the same `selDrag` controller with the
+   *  dedicated "anchor" kind. */
+  const beginAnnAnchorDrag = useCallback(
+    (e: React.PointerEvent, ann: Annotation): void => {
+      if (e.button !== 0) return;
+      if (ann.kind !== "callout") return;
+      e.stopPropagation();
+      setSelectedAnnId(ann.id);
+      setColorEditId(null);
+      movedRef.current = false;
+      const bounds = annotationBounds(effectiveAnnotations.find((a) => a.id === ann.id) ?? ann);
+      selDrag.beginDrag({
+        id: ann.id,
+        kind: "anchor",
         originClient: { x: e.clientX, y: e.clientY },
         startRect: { ...bounds },
         pageWidthPt: widthPt,
@@ -457,10 +559,18 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       const committedRect = rectShiftedByCssOffset(baseRect, offset, cssScale);
       const moved = !rectsClose(committedRect, engineRect, 1);
       if (moved) {
+        // The toolbox carries the color choice: a moved commit
+        // re-creates with rect + text + the toolbox's color.
         onDeleteAnnotation?.(t.id);
-        onCreate({ ...base, rect: committedRect, text: trimmed });
-      } else if (trimmed !== base.text) {
-        onEditAnnotation?.(t.id, { text: trimmed });
+        onCreate({ ...base, rect: committedRect, text: trimmed, color: t.color });
+      } else {
+        // Patch only fields that actually changed — the engine rejects
+        // a no-op patch. The color comes from the toolbox (t.color),
+        // so a color picked in this session is committed by Confirm.
+        const patch: AnnotationPatch = {};
+        if (trimmed !== base.text) patch.text = trimmed;
+        if (t.color !== base.color) patch.color = t.color;
+        if (Object.keys(patch).length > 0) onEditAnnotation?.(t.id, patch);
       }
       setAnnDraft(null);
       setAnnPending(null);
@@ -518,7 +628,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       // press on them selects / drags the content, it never starts a
       // create-drag on the page behind it.
       const interactive = target.closest(
-        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, .ann-note, .ann-shape, .ann-ink-hit, .ann-arrow-hit, .ann-arrow-head-hit, .ann-textbox, .ann-callout, .content-action-bar, .content-resize-handle, .content-selection-bounds, .content-move-hint, .color-palette, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
+        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, .ann-note, .ann-shape, .ann-ink-hit, .ann-arrow-hit, .ann-arrow-head-hit, .ann-callout-arrow-hit, .ann-callout-arrow-head-hit, .ann-textbox, .ann-callout, .content-action-bar, .content-resize-handle, .content-selection-bounds, .content-move-hint, .color-palette, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
       );
       if (interactive !== null) {
         // The click is on a UI control / committed surface — let the
@@ -587,6 +697,13 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           if (r !== null) {
             setAnnDraft({ id: orig.id, ann: resizeAnnotation(orig, r, widthPt, heightPt) });
           }
+        } else if (drag.kind === "anchor") {
+          // DEF-161 — a callout arrow drag moves ONLY the anchor
+          // (`at`); the box rect never leaves the engine's position.
+          const delta = selDrag.deltaFor(e.clientX, e.clientY, cssScale);
+          if (delta !== null) {
+            setAnnDraft({ id: orig.id, ann: moveCalloutAnchor(orig, delta.x, delta.y) });
+          }
         } else {
           const delta = selDrag.deltaFor(e.clientX, e.clientY, cssScale);
           if (delta !== null) {
@@ -627,9 +744,11 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       (e.target as Element).releasePointerCapture?.(e.pointerId);
       if (orig === undefined || delta === null) return;
       const moved =
-        drag.kind === "move"
+        drag.kind === "anchor"
           ? Math.abs(delta.x) > 0.75 || Math.abs(delta.y) > 0.75
-          : newRect !== null && !rectsClose(newRect, drag.startRect, 2);
+          : drag.kind === "move"
+            ? Math.abs(delta.x) > 0.75 || Math.abs(delta.y) > 0.75
+            : newRect !== null && !rectsClose(newRect, drag.startRect, 2);
       if (!moved) {
         // A click — the follow-up `click` event opens / reselects.
         movedRef.current = false;
@@ -641,7 +760,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           ? newRect !== null
             ? resizeAnnotation(orig, newRect, widthPt, heightPt)
             : orig
-          : moveAnnotation(orig, delta.x, delta.y);
+          : drag.kind === "anchor"
+            ? moveCalloutAnchor(orig, delta.x, delta.y)
+            : moveAnnotation(orig, delta.x, delta.y);
       setAnnDraft({ id: orig.id, ann: next });
       setAnnPending({ id: orig.id, oldAnn: orig, nextAnn: next });
       setHintPos({ x: e.clientX, y: e.clientY });
@@ -911,6 +1032,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           key={a.id}
           ann={a}
           cssScale={cssScale}
+          liveAnnTextIds={liveAnnTextIds}
           // B4/B5 — the committed note whose editor is open reads
           // as "selected" (Sign-like selection chrome: accent ring
           // on the icon while its floating Confirm / Cancel /
@@ -922,6 +1044,15 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           onSurfacePointerDown={(e, ann, handle): void => beginAnnSurfaceDrag(e, ann, handle)}
           onSurfaceClick={(e, ann): void => onAnnClickSurface(e, ann)}
           onSurfaceDoubleClick={(e, ann): void => onAnnDoubleClickSurface(e, ann)}
+          // DEF-161 — the callout ARROW is its own movable surface:
+          // a press on the arrow hit shaft/head starts an anchor-only
+          // drag; click selects, double-click opens the text toolbox.
+          onAnchorPointerDown={(e, ann): void => beginAnnAnchorDrag(e, ann)}
+          onAnchorClick={(e, ann): void => onAnnClickSurface(e, ann)}
+          onAnchorDoubleClick={(e, ann): void => onAnnDoubleClickSurface(e, ann)}
+          onAnchorPointerUp={(e): void => {
+            (e.target as Element).releasePointerCapture?.(e.pointerId);
+          }}
           onSurfacePointerUp={(e): void => {
             (e.target as Element).releasePointerCapture?.(e.pointerId);
           }}
@@ -1092,8 +1223,10 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           kind={editTarget.kind}
           rect={editTarget.rect}
           text={editTarget.text}
+          color={editTarget.color}
           cssScale={cssScale}
           onChange={(text): void => setEditTarget({ ...editTarget, text })}
+          onPickColor={(color): void => setEditTarget({ ...editTarget, color })}
           onCommit={(offset): void => commitEditTarget(offset)}
           onCancel={(): void => {
             revertPendingAnn(editTarget.id);
@@ -1598,6 +1731,13 @@ function ShapePreview({
 interface DomAnnotationProps extends AnnotationSurfaceHandlers {
   ann: Annotation;
   cssScale: number;
+  /** DEF-166 — null or Set<id>. Null: draw every annotation's text
+   *  (historic behavior). Set<id>: draw text only for ids IN the set;
+   *  a textbox/callout id missing from the set is a parsed-from-file
+   *  annotation whose baked FreeText appearance pdf.js already paints
+   *  into the page canvas — the overlay text node stays empty so the
+   *  canvas render is the single visible copy. */
+  liveAnnTextIds?: ReadonlySet<string> | null;
   /** DEF-096 — Clicking a committed note icon opens the editor
    *  pre-filled with the note's text. The overlay owns the editor
    *  state; the icon just reports the click + current text. */
@@ -1619,29 +1759,66 @@ interface DomAnnotationProps extends AnnotationSurfaceHandlers {
   onSurfaceClick?: (e: React.MouseEvent, ann: Annotation) => void;
   onSurfaceDoubleClick?: (e: React.MouseEvent, ann: Annotation) => void;
   onSurfacePointerUp?: (e: React.PointerEvent) => void;
+  /** DEF-161 — the callout ARROW's own hit surfaces (transparent
+   *  shaft + head polygon) get their own handlers: a pointerdown
+   *  starts an anchor-only drag; click/double-click mirror the box's
+   *  select / open-editor behavior. */
+  onAnchorPointerDown?: (e: React.PointerEvent, ann: Annotation) => void;
+  onAnchorClick?: (e: React.MouseEvent, ann: Annotation) => void;
+  onAnchorDoubleClick?: (e: React.MouseEvent, ann: Annotation) => void;
+  onAnchorPointerUp?: (e: React.PointerEvent) => void;
 }
 
 function DomAnnotation({
   ann,
   cssScale,
+  liveAnnTextIds = null,
   onEditNote,
   selected = false,
   onSurfacePointerDown,
   onSurfaceClick,
   onSurfaceDoubleClick,
   onSurfacePointerUp,
+  onAnchorPointerDown,
+  onAnchorClick,
+  onAnchorDoubleClick,
+  onAnchorPointerUp,
 }: DomAnnotationProps): ReactElement | null {
   if (ann.kind === "textbox") {
     const r = ann.rect ?? (ann as unknown as { rects?: { x: number; y: number; width: number; height: number }[] }).rects?.[0];
     if (r === undefined) return null;
     const box = overlayRectToCss(r, cssScale);
     const hex = annotationColorToCss(ann.color);
+    // DEF-166 — the overlay text node renders only for LIVE
+    // annotations (created/edited in this session). A parsed-from-file
+    // textbox has its baked FreeText appearance painted by pdf.js on
+    // the page canvas, so the text is suppressed here to avoid the
+    // doubled ghost copy on reopen. The box chrome stays.
+    const showOverlayText = liveAnnTextIds === null || liveAnnTextIds.has(ann.id);
+    // DEF-163 — the committed text auto-fits its fixed box (the
+    // add-box auto-fit): wrap at the content width, then shrink the
+    // font so every line fits the content height. The div keeps the
+    // creation rect (the engine geometry); without the fit a long
+    // wrapped line got clipped by `.ann-textbox`'s overflow guard,
+    // and a callout's text spilled below the box. Matches the
+    // engine's save-time fit and the DEF-146 box-mirror fit.
+    const fontSize = showOverlayText
+      ? fitAnnotationTextSizePx({
+          text: ann.text,
+          userSizePx: TEXTBOX_FONT_PT * cssScale,
+          boxWidthPx: box.width,
+          boxHeightPx: box.height,
+          lineHeight: TEXTBOX_LINE_HEIGHT,
+          sideInsetPx: TEXTBOX_PAD_PT * cssScale + TEXTBOX_BORDER_PX,
+          measure: (t, s): number => measureTextWidthCss(t, ANNOTATION_TEXT_FONT_FAMILY, s),
+        })
+      : TEXTBOX_FONT_PT * cssScale;
     const style: CSSProperties = {
       left: box.left,
       top: box.top,
       width: box.width,
       height: box.height,
-      fontSize: TEXTBOX_FONT_PT * cssScale,
+      fontSize,
       lineHeight: TEXTBOX_LINE_HEIGHT,
       padding: TEXTBOX_PAD_PT * cssScale,
       borderColor: hex,
@@ -1670,7 +1847,7 @@ function DomAnnotation({
         }
         onPointerUp={onSurfacePointerUp}
       >
-        {ann.text}
+        {showOverlayText && ann.text}
       </div>
     );
   }
@@ -1824,16 +2001,42 @@ function DomAnnotation({
     if (anchor === undefined) return null;
     const box = overlayRectToCss(r, cssScale);
     const hex = annotationColorToCss(ann.color);
+    // DEF-166 — same live-text rule as the textbox: a callout parsed
+    // from the saved file has its baked FreeText appearance (glyphs
+    // from /Contents + /DA) painted by pdf.js into the page canvas,
+    // so the overlay text node is suppressed on reopen; the box
+    // chrome and the arrow (never canvas-painted) stay.
+    const showOverlayText = liveAnnTextIds === null || liveAnnTextIds.has(ann.id);
+    // DEF-163 — the committed callout text auto-fits its fixed box
+    // (the add-box auto-fit): wrap at the content width, then shrink
+    // the font so every line fits the content height. The box keeps
+    // its creation rect (the engine geometry), so without the fit
+    // long wrapped text overflowed the box (overflow was visible) and
+    // painted over the page content below it. `overflow: "hidden"`
+    // is the final guard so a measurement drift can never paint
+    // outside the box.
+    const fontSize = showOverlayText
+      ? fitAnnotationTextSizePx({
+          text: ann.text,
+          userSizePx: TEXTBOX_FONT_PT * cssScale,
+          boxWidthPx: box.width,
+          boxHeightPx: box.height,
+          lineHeight: TEXTBOX_LINE_HEIGHT,
+          sideInsetPx: TEXTBOX_PAD_PT * cssScale + CALLOUT_BORDER_PX,
+          measure: (t, s): number => measureTextWidthCss(t, ANNOTATION_TEXT_FONT_FAMILY, s),
+        })
+      : TEXTBOX_FONT_PT * cssScale;
     const style: CSSProperties = {
       left: box.left,
       top: box.top,
       width: box.width,
       height: box.height,
-      fontSize: TEXTBOX_FONT_PT * cssScale,
+      fontSize,
       lineHeight: TEXTBOX_LINE_HEIGHT,
       padding: TEXTBOX_PAD_PT * cssScale,
       borderColor: hex,
       background: hexWithAlpha(hex, 0.08),
+      overflow: "hidden",
     };
     const anchorCss = {
       x: anchor.x * cssScale,
@@ -1844,6 +2047,8 @@ function DomAnnotation({
     // then draw a stroked line + small arrowhead.
     const entry = calloutEntryPoint(r, anchor);
     const arrowScale = cssScale;
+    const [w1, w2] = arrowHead(entry, anchor, ARROW_HEAD_PT);
+    const headPoints = `${anchorCss.x},${anchorCss.y} ${w1.x * arrowScale},${w1.y * arrowScale} ${w2.x * arrowScale},${w2.y * arrowScale}`;
     return (
       <>
         <svg
@@ -1860,6 +2065,65 @@ function DomAnnotation({
             overflow: "visible",
           }}
         >
+          {/* DEF-161 — the callout arrow gets the SAME fat invisible
+              hit surfaces as the standalone arrow (DEF-154): a 10pt
+              transparent stroke along the shaft + a wide transparent
+              head polygon. The svg container stays pointer-events
+              none (its empty box never blocks the page); the hit
+              shapes override to stroke/all and carry the arrow's own
+              surface handlers — pressing the arrow here drags ONLY
+              the anchor, never the box. Draw order mirrors the
+              standalone arrow: hit shaft, hit head, visual shaft,
+              visual head. */}
+          <line
+            className="ann-callout-arrow-hit"
+            x1={entry.x * arrowScale}
+            y1={entry.y * arrowScale}
+            x2={anchorCss.x}
+            y2={anchorCss.y}
+            stroke="transparent"
+            strokeWidth={10}
+            onPointerDown={
+              onAnchorPointerDown === undefined
+                ? undefined
+                : (e: React.PointerEvent<SVGLineElement>): void => onAnchorPointerDown(e, ann)
+            }
+            onClick={
+              onAnchorClick === undefined
+                ? undefined
+                : (e: React.MouseEvent<SVGLineElement>): void => onAnchorClick(e, ann)
+            }
+            onDoubleClick={
+              onAnchorDoubleClick === undefined
+                ? undefined
+                : (e: React.MouseEvent<SVGLineElement>): void => onAnchorDoubleClick(e, ann)
+            }
+            onPointerUp={onAnchorPointerUp}
+          />
+          <polygon
+            className="ann-callout-arrow-head-hit"
+            points={headPoints}
+            fill="transparent"
+            stroke="transparent"
+            strokeWidth={10}
+            strokeLinejoin="round"
+            onPointerDown={
+              onAnchorPointerDown === undefined
+                ? undefined
+                : (e: React.PointerEvent<SVGPolygonElement>): void => onAnchorPointerDown(e, ann)
+            }
+            onClick={
+              onAnchorClick === undefined
+                ? undefined
+                : (e: React.MouseEvent<SVGPolygonElement>): void => onAnchorClick(e, ann)
+            }
+            onDoubleClick={
+              onAnchorDoubleClick === undefined
+                ? undefined
+                : (e: React.MouseEvent<SVGPolygonElement>): void => onAnchorDoubleClick(e, ann)
+            }
+            onPointerUp={onAnchorPointerUp}
+          />
           <line
             x1={entry.x * arrowScale}
             y1={entry.y * arrowScale}
@@ -1868,15 +2132,7 @@ function DomAnnotation({
             stroke={hex}
             strokeWidth={1.5}
           />
-          {(() => {
-            const [w1, w2] = arrowHead(entry, anchor, ARROW_HEAD_PT);
-            return (
-              <polygon
-                points={`${anchorCss.x},${anchorCss.y} ${w1.x * arrowScale},${w1.y * arrowScale} ${w2.x * arrowScale},${w2.y * arrowScale}`}
-                fill={hex}
-              />
-            );
-          })()}
+          <polygon points={headPoints} fill={hex} />
         </svg>
         <div
           className="ann ann-callout ann-content"
@@ -1900,7 +2156,7 @@ function DomAnnotation({
           }
           onPointerUp={onSurfacePointerUp}
         >
-          {ann.text}
+          {showOverlayText && ann.text}
         </div>
       </>
     );
@@ -2498,8 +2754,14 @@ interface CommittedContentEditorProps {
   kind: "textbox" | "callout";
   rect: PageRect;
   text: string;
+  /** The toolbox's current color choice (seeded from the annotation,
+   *  updated by the embedded swatch row, committed by Confirm). */
+  color: AnnotationColorValue;
   cssScale: number;
   onChange: (text: string) => void;
+  /** DEF-161 (feature) — a swatch pick in the toolbox updates the
+   *  pending color; Confirm commits it together with text/geometry. */
+  onPickColor: (color: AnnotationColorValue) => void;
   /** Commit with the toolbox's current drag offset (CSS px) so a
    *  dragged toolbox commits the CONTENT at the moved rect. */
   onCommit: (offset: { x: number; y: number }) => void;
@@ -2508,7 +2770,7 @@ interface CommittedContentEditorProps {
 }
 
 function CommittedContentEditor(props: CommittedContentEditorProps): ReactElement {
-  const { id, kind, rect, text, cssScale, onChange, onCommit, onCancel, onDelete } = props;
+  const { id, kind, rect, text, color, cssScale, onChange, onPickColor, onCommit, onCancel, onDelete } = props;
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -2565,6 +2827,16 @@ function CommittedContentEditor(props: CommittedContentEditorProps): ReactElemen
           position: "static",
         }}
       />
+      {/* DEF-161 (feature) — the committed textbox / callout toolbox
+          carries the SAME color swatch row + hex input as the shape
+          color editor, so text kinds get color options too. Picks
+          update the pending toolbox color; Confirm commits it. */}
+      <div className="committed-color-row" data-annotation-color-section>
+        <span className="committed-color-label" aria-hidden>
+          Color
+        </span>
+        <AnnotationColorPicker active={color} onPick={onPickColor} onEscape={onCancel} />
+      </div>
       <div
         className="ann-textbox-actions"
         data-annotation-action-bar={`edit-${kind}`}
@@ -2611,27 +2883,24 @@ function CommittedContentEditor(props: CommittedContentEditorProps): ReactElemen
 // built-in palette + a custom hex input; commits through the
 // AnnotationPatch path.
 
-interface ShapeColorEditorProps {
-  left: number;
-  top: number;
+interface AnnotationColorPickerProps {
   active: AnnotationColorValue;
   onPick: (color: AnnotationColorValue) => void;
-  onClose: () => void;
+  /** Escape inside the hex input (the toolbox/scoped container's
+   *  cancel verb). For the shape editor this closes the editor; for
+   *  the text-toolbox it cancels the whole toolbox. */
+  onEscape: () => void;
 }
 
-function ShapeColorEditor(props: ShapeColorEditorProps): ReactElement {
-  const { left, top, active, onPick, onClose } = props;
+/** The shared swatch row + custom-hex input behind BOTH the shape
+ *  color editor (DEF-153/154) and the committed textbox / callout
+ *  toolbox (DEF-161 feature) — one look, one behavior. */
+function AnnotationColorPicker(props: AnnotationColorPickerProps): ReactElement {
+  const { active, onPick, onEscape } = props;
   const activeHex = annotationColorToCss(active);
   const [draft, setDraft] = useState<string>(activeHex);
   return (
-    <div
-      className="content-action-bar shape-color-editor"
-      data-annotation-color-editor
-      role="dialog"
-      aria-label="Edit annotation color"
-      style={{ left, top }}
-      onPointerDown={(e): void => e.stopPropagation()}
-    >
+    <>
       {ANNOTATION_COLORS.map((c) => (
         <button
           key={c}
@@ -2675,7 +2944,7 @@ function ShapeColorEditor(props: ShapeColorEditorProps): ReactElement {
               }
             } else if (e.key === "Escape") {
               e.preventDefault();
-              onClose();
+              onEscape();
             }
           }}
           aria-label="Custom color hex"
@@ -2683,6 +2952,30 @@ function ShapeColorEditor(props: ShapeColorEditorProps): ReactElement {
           data-ann-color-hex
         />
       </label>
+    </>
+  );
+}
+
+interface ShapeColorEditorProps {
+  left: number;
+  top: number;
+  active: AnnotationColorValue;
+  onPick: (color: AnnotationColorValue) => void;
+  onClose: () => void;
+}
+
+function ShapeColorEditor(props: ShapeColorEditorProps): ReactElement {
+  const { left, top, active, onPick, onClose } = props;
+  return (
+    <div
+      className="content-action-bar shape-color-editor"
+      data-annotation-color-editor
+      role="dialog"
+      aria-label="Edit annotation color"
+      style={{ left, top }}
+      onPointerDown={(e): void => e.stopPropagation()}
+    >
+      <AnnotationColorPicker active={active} onPick={onPick} onEscape={onClose} />
       <button
         type="button"
         className="toolbox-action-btn content-color-close"

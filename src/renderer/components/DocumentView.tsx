@@ -162,6 +162,13 @@ interface DocumentViewProps {
    *  view threads it through to each PageView's overlay and the rail's
    *  annotations panel. */
   annotations?: Annotation[];
+  /** DEF-166 — annotation ids whose overlay text must be drawn LIVE
+   *  (created / edited since the current page-canvas bytes were
+   *  loaded). Threaded to every PageView's AnnotationOverlay so a
+   *  parsed-from-file textbox/callout (whose baked FreeText
+   *  appearance pdf.js already paints into the page canvas) does not
+   *  draw a duplicated overlay text on reopen. */
+  liveAnnTextIds?: ReadonlySet<string>;
   onCreateAnnotation?: (annotation: Annotation) => void;
   onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
   onDeleteAnnotation?: (id: string) => void;
@@ -366,6 +373,13 @@ export function DocumentView({
   onCreateAnnotation,
   onEditAnnotation,
   onDeleteAnnotation,
+  /** DEF-166 — annotation ids whose overlay text must be drawn LIVE
+   *  (created / edited since the current page-canvas bytes were
+   *  loaded). Threaded to every PageView's AnnotationOverlay so a
+   *  parsed-from-file textbox/callout (whose baked FreeText
+   *  appearance pdf.js already paints into the page canvas) does not
+   *  draw a duplicated overlay text on reopen. */
+  liveAnnTextIds,
   formFields = [],
   onFormValueChange,
   onFormListboxToggle,
@@ -1891,6 +1905,7 @@ export function DocumentView({
                       annotations={annotationsByPage.get(visiblePage) ?? EMPTY_ANNOTATIONS}
                       annotationTool={annTool}
                       flashId={flashId}
+                      liveAnnTextIds={liveAnnTextIds}
                       onCreateAnnotation={(a): void => onCreateAnnotation?.(a)}
                       onFinishedOneShot={onAnnFinishedOneShot}
                       // DEF-096 — committed note icons open their

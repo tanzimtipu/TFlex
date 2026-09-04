@@ -46,7 +46,10 @@ import {
 
 export interface SelectableDragState {
   id: string;
-  kind: "move" | "resize";
+  /** "move" shifts the whole annotation, "resize" scales via a corner
+   *  handle, "anchor" (DEF-161) drags the callout's arrow anchor only
+   *  — the caller applies the gesture with the delta/rect helpers. */
+  kind: "move" | "resize" | "anchor";
   /** Corner handle for resize drags. */
   handle?: ImageResizeHandle;
   originClient: { x: number; y: number };

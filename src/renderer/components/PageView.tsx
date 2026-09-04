@@ -55,6 +55,14 @@ interface PageViewProps {
   rotation?: number;
   /** Annotations for this page (filtered from the engine state). */
   annotations: Annotation[];
+  /** DEF-166 — annotation ids whose overlay text must be drawn LIVE
+   *  (created / edited since the current page-canvas bytes were
+   *  loaded). Threaded to the AnnotationOverlay so a parsed-from-file
+   *  textbox/callout (whose baked FreeText appearance pdf.js already
+   *  paints into the page canvas) does not draw a duplicated overlay
+   *  text on reopen. Absent -> the overlay draws every annotation's
+   *  text exactly as before. */
+  liveAnnTextIds?: ReadonlySet<string>;
   /** Active annotation tool + color/width settings. */
   annotationTool: AnnotationToolState;
   /** When the panel asks to flash an annotation, the overlay receives its id. */
@@ -246,6 +254,7 @@ export function PageView(props: PageViewProps) {
     annotations,
     annotationTool,
     flashId,
+    liveAnnTextIds,
     onCreateAnnotation,
     onFinishedOneShot,
     onEditAnnotation,
@@ -639,6 +648,7 @@ export function PageView(props: PageViewProps) {
         annotations={annotations}
         tool={annotationTool}
         flashId={flashId}
+        liveAnnTextIds={liveAnnTextIds}
         getTextItems={getTextItems}
         onCreate={onCreateAnnotation}
         onFinishedOneShot={onFinishedOneShot}

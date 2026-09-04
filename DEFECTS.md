@@ -1,3 +1,158 @@
+## DEF-166: Reopening a saved file renders annotation text DOUBLED (baked canvas AP + DOM overlay, offset fonts)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 15 (installed v1.7.26; found during the DEF-164 close verification)
+
+Steps to reproduce:
+1. Launch the installed TFlex (FileVersion 1.7.26), open the report.pdf sample, go to page 4, commit a callout ("VERIFY CALLOUT 1726"), Save As, close the tab, reopen the saved file, go to page 4.
+
+Expected: the reopened callout text reads as one crisp line.
+
+Actual: the annotation text renders TWICE slightly offset: TFlex draws its DOM overlay text (Inter ~13px) and pdf.js also renders the baked FreeText appearance into the page canvas (12pt Helvetica from /DA; the file has no /AP stream, so the viewer generates the appearance) on top of each other - "VERIFY CALLOUT 1726" plus a lighter ghost copy (screenshot def-164-1726-reopened-callout-crop.png). Pre-existing dual render: in v1.7.25 the same canvas AP painted ~129px away from the box as the DEF-164 stray; after the DEF-164 coordinate fix the two renders now coincide, which makes the doubling visible as a blur/ghost instead of a stray line. Same doubling visible on the committed textbox after reopen (def-164-1726-reopened.png). Positions are correct (this is purely a render-fidelity artifact); fix direction: suppress one of the two renders when the saved annotation's own appearance is already displayed.
+
+Screenshot: screenshots/def-164-1726-reopened-callout-crop.png
+
+History:
+- qa: opened (visual observation during the DEF-164 close verification on v1.7.26; LOW, cosmetic, reopen-of-saved-file only - the committed state renders single and clean)
+- qa: FIX-READY retest FAILED on installed v1.7.27 (app.getVersion 1.7.27, e2e/retests/def_165_166_verify_1.7.27.spec.cjs + e2e/retests/def_166_canvas_extract_1727.spec.cjs). One real improvement: the reopened tab's DOM overlay no longer carries the text (the overlay divs are now empty, html:"" - the v1.7.26 DOM source is gone; def-166-1727-diag evidence). But the doubling is NOT fixed - it moved into the page CANVAS: TFlex's single pdf-page canvas now carries the annotation text TWICE. Extracted canvas crops (no DOM involved): def-166-1727-tflex-canvas-textbox.png shows "VERIFY TB 1727" as two offset interleaved copies, def-166-1727-tflex-canvas-callout.png shows "VERIFY CALLOUT 1727" doubled ("YERYEY CALL OUT 11737"). Third-party proof the FILE is fine: plain pdf.js in real Chromium renders the same saved file's textbox and callout text exactly ONCE (def-166-chromium-textbox-crop.png, def-166-chromium-callout-crop.png; saved /FreeText still has no /AP - DA="/Helv 12 Tf" - so viewers generate one appearance). So both copies are painted by TFlex's own reopen path into the one canvas (its own text draw plus pdf.js's /DA-generated appearance, offset by the font-metric difference). Round-trip position 0.0px; committed state renders single and clean (unchanged). Saved artifact: test-fixtures/annot-text-roundtrip-1727.pdf. Status stays OPEN - in-app reopen still shows doubled/offset text.
+- qa: CLOSED (retested on installed v1.7.28 = app.getVersion 1.7.28, e2e/retests/def_165_166_verify_1.7.28.spec.cjs, real mouse). Callout "VERIFY CALLOUT 1728" + textbox "VERIFY TB 1728" committed on page 4 of report.pdf, Save As, close tab, reopen, page 4. (1) SINGLE RENDER SOURCE: the reopened tab's DOM overlay carries NO text (probe: runs=[], paintedWithMarker=false for both kinds) while the page canvas paints the annotation text exactly once - the text now lives in an explicit /AP /N stream baked INTO the saved file (raw pdf-lib dump, e2e/retests/def_166_1728_dict_diag.cjs: callout /AP /N = "q BT /Helv 4 Tf ... rg 1 0 0 1 438.394 453.985 Tm <564552494659> Tj ... ET Q", textbox /Helv 5.259 - the v1.7.26/27 /DA-only file that made every viewer GENERATE its own appearance is gone). (2) THIRD-PARTY WITNESS, same file same scale: plain pdfjs-dist renders the reopened file's callout and textbox regions IDENTICAL to TFlex's own canvas - control crops def-166-1728-pdfjs-control-{callout,textbox}.png vs TFlex canvas crops def-166-1728-tflex-canvas-{callout,textbox}.png are visually the same single-rendered text; self-shift-overlap doubling detector (1..6px shift set, def_166_canvas_witness_1728.cjs at the true page scale 1.8889 px/pt): TFlex canvas maxSelfOverlap 0.675 (callout) / 0.717 (textbox) vs pdf.js single-render control 0.666 / 0.683 - within +0.01/+0.03 of single-render, nowhere near the v1.7.27 interleaved-copy signature. The v1.7.27 doubling is gone. (3) ROUND-TRIP: positions 0.0px both kinds; raw /Rect math still bottom-left EXACT (callout [431.89, 438.28, 521.89, 464.48] + /Callout anchor end (336.60, 522.72) = 792-269.28, dy=0; textbox [110.16, 575.72, 207.52, 601.92]; dlly=dury=0, oldBugSignature=false) - DEF-164 regression green. (4) Third-party scale-2 crops of the SAVED file (def-166-1728-diag-saved-FreeText-{0,1}-scale2.png) show each text once, correctly positioned. Saved artifact preserved: test-fixtures/annot-text-roundtrip-1728.pdf. No pageerrors.
+
+## DEF-165: Saved shapes bake the 10%-alpha overlay fill as a SOLID /IC interior color - third-party viewers render an opaque blue block hiding the page content behind the shape
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 15 (installed v1.7.26; found during the DEF-164 verification's visual review)
+
+Steps to reproduce:
+1. Launch the installed TFlex (FileVersion 1.7.26), open the report.pdf sample, go to page 4.
+2. Arm the Rectangle tool, drag a ~120x70 screen px rect over body text: the committed overlay shows a blue 1.5px border with a 10% tint (computed style fill = rgba(37, 99, 235, 0.1)); the page text under the rect stays readable.
+3. Save As to a temp file, close the tab, reopen the saved file (or open it in Acrobat / Chrome / any pdf.js viewer), go to page 4.
+
+Expected: the saved shape looks like what the user placed - stroked border with a ~10% alpha interior.
+
+Actual: the bake drops the overlay's alpha and writes /IC [0.145, 0.388, 0.922] = #2563eb SOLID on the /Square dict (no /AP stream), so pdf.js and Acrobat paint the interior OPAQUE blue: TFlex's own reopened tab shows a solid blue block covering the body text (screenshots/def-164-rect-committed-crop.png vs def-164-rect-reopened-crop.png), and every third-party viewer does the same. Verified for Circle too (e2e/retests/def_164_circle_ic_diag.spec.cjs: DOM fill rgba(37,99,235,0.1) -> baked /Circle /IC = solid #2563eb). Textbox/callout backgrounds have the inverse gap (10% tint in-app, transparent in third parties) - same lost-alpha root cause, cosmetic there. Fix direction: omit /IC when the shape fill alpha < 1 (or emit an /AP stream that reproduces the alpha via an ExtGState /ca).
+
+Screenshot: screenshots/def-164-rect-reopened-crop.png
+
+History:
+- qa: opened (found during the DEF-164 close verification on v1.7.26 - the DEF-164 coordinate flip itself verified correct; the shape fill alpha is a separate save-path gap, likely pre-existing)
+- qa: FIX-READY retest FAILED on installed v1.7.27 (app.getVersion 1.7.27, e2e/retests/def_165_166_verify_1.7.27.spec.cjs + e2e/retests/def_165_166_thirdparty.cjs third-party witness). The bake took the right direction - the saved /Square and /Circle now carry an /AP /N appearance stream and /IC is omitted (/IC=null on both) - but the 10% alpha is written as an INLINE content-stream token "0.1 ca 1 CA" inside the /N stream, which is not a valid PDF operator: fill/stroke alpha may only be set through an ExtGState resource invoked with the gs operator. The /AP /Resources /ExtGState dict is absent (gsEntries=[]), so pdf.js ignores the inline token and paints the fill at FULL alpha. Third-party witness on the saved file (pdfjs-dist 4.10.38 render, Node): rect interior opaqueBlueFrac=1.00 textKeptFrac=0.00 meanAbsDiff=127.25; ellipse opaqueBlueFrac=1.00 textKeptFrac=0.00 - the interior is a solid opaque blue block hiding the page text (def-165-thirdparty-saved-rect-interior.png = solid blue vs def-165-thirdparty-baseline-rect-interior.png = pristine page text "orchest/key to r" visible). pdf.js operator-list witness: both annotation-blue fill ops run under ca=1 (v1.7.26's exact bug signature). TFlex's own reopened tab shows the same solid block (in-app canvas interior 100% near-blue). DEF-164 regression still green on this save path: /Rect bottom-left EXACT for both shapes (rect [48.96,343.10,112.49,380.16] = 792-411.84-37.06/792-411.84; ellipse [208.08,348.40,266.32,380.16]). Saved artifact preserved: test-fixtures/annot-shape-alpha-roundtrip-1727.pdf. Fix direction: declare /ca 0.1 in an ExtGState dict under the /AP /N /Resources (e.g. /G1 << /Type /ExtGState /ca 0.1 /CA 1 >>) and invoke "/G1 gs" before the fill in the /N content stream - keep /IC omitted. Status stays OPEN.
+- qa: CLOSED (retested on installed v1.7.28 = app.getVersion 1.7.28, e2e/retests/def_165_166_verify_1.7.28.spec.cjs, real mouse). Rect + ellipse committed over body text on page 4 of report.pdf (committed DOM fill rgba(37,99,235,0.1) both), Save As, then verified at every level. (1) DICT: the saved /Square and /Circle /AP /N streams now declare the alpha PROPERLY - /Resources /ExtGState << /G1 << /ca 0.1 /CA 1 >> >> invoked as "/G1 gs" inside the /N content stream before the fill ("q ... rg ... RG /G1 gs 1.5 w ... re B Q"), /IC=null, and the v1.7.27 invalid inline "0.1 ca" token is GONE (inlineCaToken=false both shapes). (2) pdf.js OPERATOR LIST with paint-time ca attribution (validated on the 1727 fixture = paints ca=1, caught; 1728 = paints ca=0.1): both shapes' blue fillStroke ops PAINT under ExtGState ca=0.1. (3) THIRD-PARTY PIXELS (pdfjs-dist render, Node, def_165_166_thirdparty_1728.cjs): rect interior opaqueBlueFrac=0 (was 1.00), textKeptFrac=1.00 (was 0.00), meanAbsDiff=12.3 (was 127); ellipse opaqueBlueFrac=0, textKeptFrac=1.00, meanAbsDiff=11.89 - the interior is translucent, the page text behind both shapes stays visible in a third-party view (def-165-1728-thirdparty-saved-rect-interior.png vs baseline; both bbox near-blue ink deltas 433/613 = the 1.5pt border painted). (4) IN-APP reopen: interior near-blue 1.0%/2.5% (was 100%), round-trip positions 0.0px both kinds. (5) DEF-164 regression: raw /Rect bottom-left EXACT (rect [48.96,343.10,112.49,380.16], ellipse [208.08,348.40,266.32,380.16]; dlly=dury=0, oldBugSignature=false). Saved artifact preserved: test-fixtures/annot-shape-alpha-roundtrip-1728.pdf. Note for the record: the v1.7.27 spec's opl scanner attributed the ca value BEFORE the gs call to the rg token (the blue rg legally precedes "/G1 gs" inside the same q..Q block, but painting happens at B after gs) - a scanner artifact, fixed this round with paint-time attribution; the 1.7.27 pixel evidence (opaqueBlueFrac=1.00) independently confirmed the real bug then. No pageerrors.
+
+## DEF-164: Saved annotations bake /Rect (and /Callout) in TOP-DOWN coordinates - every kind lands ~69pt lower (and the callout anchor mirrored) in any third-party viewer
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 15 (installed v1.7.25; caught by the DEF-160/161/162 verification's save+reopen checks)
+
+Steps to reproduce:
+1. Launch the installed TFlex (FileVersion 1.7.25), open the report.pdf sample, go to page 4.
+2. Commit a callout ("VERIFY CALLOUT 1725"), move its box +120/+70 and its arrow anchor +100/+60, Confirm, Save As to a temp file.
+3. Parse the saved file: pdfjs `page.getAnnotations()` on page 4 + pdf-lib raw dict dump (e2e/retests/def_161_bake_diag.cjs, def_161_bake_raw.cjs), then render it in any spec-conforming consumer.
+4. Re-open the saved file in TFlex and scan the page canvas for annotation-blue pixels (e2e/retests/def_161_canvas_diag.spec.cjs).
+
+Expected: /Rect and /Callout carry PDF user-space coordinates (origin bottom-left, y up): for the moved callout box (engine top-down y 348.73pt) /Rect y should be 417.07..443.27.
+
+Actual: TFlex writes the engine's renderer (top-down) y values verbatim into PDF space: FreeTextCallout /Rect [495.42, 348.73, 585.42, 374.93] (69pt too low) and /Callout anchor [.., 389.54, 285.20] (should be ~506.8 bottom-up - mirrored). The SAME flip on every kind: note /Text /Rect [201.81, 147.98, ...] (should be 620.02..644.02 - ~472pt too low), textbox /FreeText /Rect [201.81, 171.74, ...], Square /Rect [110.84, 264.11, ...], Circle /Rect [282.20, 264.11, ...]. TFlex itself reopens these correctly ONLY because `annotationFromWire` repeats the same flip, so the double error cancels in-app - but the page canvas render proves the file is wrong: the generated FreeText appearance (blue "VERIFY CALLOUT 1725") paints at page-local y 785-835 (exactly the baked /Rect: 792-374.93=417.07pt * 1.889 = 788px) while the app's overlay box sits at 658.7 - a stray blue text line 129px below the box, visible in every reopened saved file (screenshots/def-161-1725-reopened-stray-text.png, def-161-1725-canvas-scan.png). In Acrobat/Chrome/pdf.js every annotation of the saved file renders ~69pt (note: ~472pt) lower than the user placed it, and the callout leader points to a vertically mirrored anchor. Content is NOT lost (all /Contents intact) - the geometry in the file is wrong for every non-TFlex consumer. Fix direction: convert to user space on bake (y_pdf = pageHeight - y_topdown - h for /Rect; pageHeight - y for points) and mirror the conversion on read (keeping the in-app round-trip stable). Fixture: test-fixtures/callout-rect-yflip-bake.pdf.
+
+History:
+- qa: opened (verification of DEF-160/161/162 on v1.7.25: save+reopen in-app passed, but the raw saved file carries the flipped /Rect on all five annotation kinds; in-app misplacement visible as the stray canvas-rendered blue text in the reopened tab; pre-existing save-path bug, not introduced by this fix round)
+- qa: CLOSED (retested on installed v1.7.26 = app.getVersion 1.7.26, e2e/retests/def_163_164_verify_1.7.26.spec.cjs, real mouse). Note + textbox + callout + rect committed on page 4 of report.pdf, Save As, raw /Annots parsed with pdf-lib on the SAVED file - ALL FOUR kinds carry exact bottom-left values (dlly=0, dury=0, oldBugSignature=false): note /Text /Rect [110.16, 688.80, 134.16, 712.80] (= 792-79.20-24 / 792-79.20 for engine top-down y=79.20 h=24); textbox /FreeText [110.16, 575.72, 207.52, 601.92] (= 792-190.08-26.20 / 792-190.08); callout /FreeText /Rect [431.89, 438.28, 521.89, 464.48] (= 792-327.52-26.20 / 792-327.52) AND /Callout anchor end (336.60, 522.72) = 792-269.28 (v1.7.25 mirrored this as 269.28); Square /Rect [48.96, 343.10, 112.49, 380.16] (= 792-411.84-37.06 / 792-411.84). Third-party witness: pdf.js page.getAnnotations() on the same file returns the same bottom-up rects (e2e/retests/def_161_bake_diag.cjs). TFlex round-trip: all four kinds reopened at page-local distance 0.0px from the pre-save positions (note 208.1,149.6 / textbox 208.1,359 / callout 815.8,618.6 / rect 92.5,777.9), reopened engine re-parses to the same top-down values. Canvas baseline diff (pre-save page-content bands vs reopened canvas bands): zero stray bands - the baked appearances land exactly under their overlays (callout band 607-654 grew 494->772px AT the overlay, rect band 764-862 at the overlay; the v1.7.25 stray ~129px below the box is gone). Screenshots: def-164-1726-committed.png, def-164-1726-reopened.png, def-164-1726-reopened-callout-crop.png, def-164-1726-canvas-scan.png. Saved artifact preserved as test-fixtures/annot-rect-bottomleft-roundtrip-1726.pdf. Residual observations filed separately: DEF-165 (shape /IC solid fill vs the 10% overlay tint), DEF-166 (doubled AP+overlay text on reopen). No pageerrors.
+
+## DEF-163: Committed callout: text longer than the created box overflows and paints over the page content (fixed-height box, no auto-grow)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 15 (installed v1.7.25)
+
+Steps to reproduce:
+1. Launch the installed TFlex (FileVersion 1.7.25), open the report.pdf sample, scroll to page 4.
+2. Arm the Callout tool, drag anchor -> box (~180x110 screen px), type "VERIFY CALLOUT 1725", click Confirm.
+3. Look at the committed callout.
+
+Expected: the committed callout box grows with its text (or the text stays contained within the box).
+
+Actual: the box keeps its creation size (170x49.5 px) and the text wraps to 3 lines at the box's font size: only "VERIFY" renders inside the box; "CALLOUT" and "1725" render BELOW the box, overlapping the page's body text. Present at COMMIT time (before any move) and identical after save+reopen. Short texts fit fine ("SWATCH CO" on 2 lines - V5). Root cause direction: the committed callout div takes its height from the creation rect with overflow visible - no auto-grow to fit the text. Likely pre-existing (the DEF-160 repro on v1.7.24 already described "moved callout text ghosting outside the box"); surfaced during the v1.7.25 verification's visual review. Screenshots: def-160-1725-v4-callout-committed.png (3-line spill at commit), def-160-1725-v4-after-confirm-crop.png.
+
+History:
+- qa: opened (observed during the DEF-161 move+confirm verification; separate from the tear/revert DEF-161 fixed - the geometry and text content persist correctly)
+- qa: CLOSED (retested on installed v1.7.26 = app.getVersion 1.7.26, e2e/retests/def_163_164_verify_1.7.26.spec.cjs, real mouse). The fix is SHRINK-TO-FIT. Long text (288 chars incl. head marker LONGTEXT1726 and tail "tail 42.") in a callout created at 170x49.5px (90x26.2pt): the committed box keeps its created size and the font auto-shrinks (measured fontSize 4px at 189% zoom, ~7 wrapped tiny lines), ALL text inside the box: overBottom=0px, overRight=0px, clipped=0px, full 288/288 chars present - nothing paints over the page content, and nothing is clipped away. TEXTBOX: the committed box auto-grows WIDTH (172 -> 604.4px) and fits the whole text on one tiny line inside it (same 0/0/0 containment, full text). Both hold after Save As + close tab + reopen (0/0/0, text intact - the baked box carries the fitted geometry). SHORT controls regressed nothing: "SHORT 1726" callout and "SHORT TB 1726" textbox fit at normal font with 0/0/0. Screenshots: def-163-1726-long-committed.png, def-163-1726-long-callout-crop.png, def-163-1726-long-textbox-crop.png, def-163-1726-long-reopened.png, def-163-1726-reopen-callout-crop.png, def-163-1726-control-callout.png, def-163-1726-control-textbox.png. Observation for the orchestrator (not a defect against the stated expected outcome "text stays contained within the box"): the chosen resolution shrinks the font to ~4px screen (~2pt) instead of growing the box - contained but very small; grow-the-box would be the more readable behavior if the operator prefers it. No pageerrors.
+
+## DEF-160: Move + Confirm on a committed textbox / rect / ellipse silently REVERTS the move (content snaps back to the old position)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 15 (installed v1.7.24, unified interaction model)
+
+Steps to reproduce:
+1. Launch the installed TFlex (C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe, FileVersion 1.7.24).
+2. Open the report.pdf sample, scroll to page 4.
+3. Arm the annotation Text-box tool, click the page, type "MOVE ME TB-42", click Confirm. The committed textbox renders at, say, screen (479, 314).
+4. Arm the Select tool, press the textbox, drag it ~150px right / ~100px down (the box follows the cursor LIVE — verified), release. The selection bar shows Confirm / Edit / Delete.
+5. Click Confirm.
+
+Expected: The textbox commits at the NEW position (the delete + re-create with moved geometry the overlay performs on Confirm).
+
+Actual: The textbox SNAPS BACK to its original position the moment Confirm is clicked. The DOM renders the box at the original rect, the engine state is byte-identical to the pre-move state (rects[0] = the ORIGINAL geometry), no toast, no error. The user's move is silently lost. Measured (e2e/retests/qa_unified_1724_repro.spec.cjs T2/T5): before (479.2, 314.4) -> pending after drag (629.2, 414.4) -> after Confirm (479.2, 314.4); engine rects[0] unchanged (122.4, 118.8). Same revert reproduces for rect and ellipse (T5 matrix: confirmRender.atNewPosition=false, element back at the pre-move rect); save + reopen of a moved textbox keeps the OLD position too (T6). The edit-mode add-box and the edit-text run are NOT affected (T7: both persist the move). Root cause (code): the drag path `moveAnnotation` (src/renderer/annotations/geometry.ts) shifts only the renderer-native geometry key (`rect`, or `at` for note) on a SPREAD copy of the annotation — the stale wire-shape `rects[0]` array (added by the IPC round-trip's `annotationFromWire` backfill) stays on the object at its OLD position. `confirmPendingAnn` re-creates via `onCreate({...nextAnn})`; the backend's `normalizeAnnotationPayload` (src/main/services/annotations.ts) prefers `payload.rects` over `payload.rect` when both are present, so the annotation is re-created at the OLD rects[0] position. The fix must clear/rewrite the stale `rects` key when re-creating from a moved annotation (or make the backend prefer `rect` when both are present).
+
+Screenshot: screenshots/def-160-t2-textbox-moved-pending.png (box at the new position pre-confirm), screenshots/def-160-t2-textbox-after-confirm.png (box snapped back to the original spot)
+
+History:
+- qa: opened (reproduced on installed v1.7.24, e2e/retests/qa_unified_1724_repro.spec.cjs T2 + T5 matrix: textbox/rect/ellipse revert on Confirm; note/arrow/ink keep the move in-session; add-box and text-run unaffected)
+- qa: CLOSED (retested on installed v1.7.25 = app.getVersion 1.7.25, e2e/retests/def_160_162_verify_1.7.25.spec.cjs V1 + V2, real mouse). TEXTBOX: commit "VERIFY TB 1725" at screen (479.2, 314.4) -> select + press-drag +150/+100 -> pending DOM rect (629.2, 414.4) EXACT (live mid-drag too) -> Confirm -> STAYS (629.2, 414.4), no snap-back (1.7.24 reverted to 479.2, 314.4); engine rects[0] moved 122.4,118.8 -> 201.8,171.7 (the stale rects shadow that caused the revert is gone); Save As + close tab + reopen -> page-local (381.2, 324.4) IDENTICAL pre/post reopen. RECT + ELLIPSE: press-drag +140/+80 -> pending and post-Confirm both at the new position (before 317.4,508.9 -> after 457.4,588.9; ellipse 641.0,508.9 -> 781.0,588.9), engine rects moved for both; save+reopen keeps both at the moved rects (reopened rects == afterConfirm rects exactly, rect AND ellipse). Screenshots: def-160-1725-v1-textbox-{committed,moved-pending,after-confirm,reopened}.png + crops, def-160-1725-v2-{committed,rect-*,ellipse-*,reopened}.png. Regression: the sibling kinds of the same fix round all retested green - note (V3), callout separate moves + no-tear (V4), dblclick color swatches (V5), standalone-arrow shaft grab control (V4b). No pageerrors.
+
+## DEF-161: Callout: after Move + Confirm the BOX snaps back but the ARROW keeps the moved anchor (callout tears apart; the saved PDF bakes the torn geometry)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 15 (installed v1.7.24, unified interaction model)
+
+Steps to reproduce:
+1. Launch the installed TFlex (FileVersion 1.7.24), open the report.pdf sample, go to page 4.
+2. Arm the Callout tool, drag from the anchor (page area) to the box position, type text, Confirm.
+3. Arm Select, press the callout BOX, drag it ~140px right / ~90px down (box + arrow move together LIVE — correct), release.
+4. Click Confirm on the selection bar.
+
+Expected: The whole callout (box + leader arrow) commits at the moved position as one unit.
+
+Actual: The box snaps BACK to its original rect while the arrow KEEPS the moved anchor — the leader line now points from the old box into empty page text ("torn apart"). Engine state confirms the split: the recreated callout carries rects[0] at the OLD box position but `at` at the NEW anchor. The saved PDF bakes the same torn geometry (/Rect from the stale rects[0], /Callout end from the moved at), so save + reopen keeps the torn state. Root cause: same stale-`rects` shadow as DEF-160 in the delete + re-create commit, compounded by `moveAnnotation` shifting `at` (anchor) but leaving `rects[0]` stale — the backend stores rects[0] (/Rect) and at (/Callout end) independently, so the two halves diverge. Additionally the callout's arrow svg is pointer-events:none with no hit line, so the arrow CANNOT be grabbed/moved separately from the box (pressing the shaft hits the textLayer span beneath) — the operator's requested "box and arrow movable separately" is not implemented; today they only move together during the drag, then tear apart on Confirm.
+
+Screenshot: screenshots/def-160-t3-callout-after-confirm.png (box back at the original spot, arrow leader pointing at empty text, moved callout text ghosting outside the box)
+
+History:
+- qa: opened (reproduced on installed v1.7.24, e2e/retests/qa_unified_1724_repro.spec.cjs T3 + T5 callout rows; engine dump after confirm shows rects at old box + at at new anchor)
+- qa: CLOSED (retested on installed v1.7.25 = app.getVersion 1.7.25, e2e/retests/def_160_162_verify_1.7.25.spec.cjs V4 + V5 + control V4b, real mouse). (1) ARROW MOVABLE SEPARATELY: hit-test at t=0.15/0.3/0.5/0.65/0.8 along the shaft lands on line.ann-callout-arrow-hit (pe=stroke, 10px) and at t=0.97 on polygon.ann-callout-arrow-head-hit - ALL inside the callout svg (was: textLayer fallthrough, cannot grab); a real shaft press-drag +100/+60 moves the ANCHOR alone (page-local 635.8,478.7 -> 735.8,538.7, exact drag delta; the box stays put) and the selection bar (Confirm annotation move / Edit / Delete) appears; Confirm keeps the moved anchor with the box unmoved. (2) BOX MOVABLE SEPARATELY: press-drag +120/+70 moves the box alone (1063.8,678.7 -> 1183.8,748.7, exact; anchor unmoved at 735.8,538.7). (3) CONFIRM PERSISTS WITHOUT TEARING: after both moves the leader is 233.2px from the moved box edge (entry distance to box 0px) to the moved anchor; engine rects[0] 431.9,311.7 -> 495.4,348.7 AND at 336.6,253.4 -> 389.5,285.2 - both fields carry the moved geometry (the stale-rects tear is gone). (4) SAVE+REOPEN: box page-local (935.8,658.7) and anchor (735.8,538.7) identical pre/post reopen, leader 233.2 intact. Screenshots: def-160-1725-v4-{callout-committed,anchor-moved-alone,anchor-move-confirmed,box-moved-alone,after-confirm,reopened}.png + crops. (5) OPERATOR FEATURE - dblclick toolboxes: committed TEXTBOX and CALLOUT double-click both open the editor (textarea + Confirm/Cancel/Delete) WITH the 9-color swatch row (yellow..gray) + custom hex input; picking teal moves the active swatch ring; Escape closes. Screenshots def-160-1725-v5-dblclk-{textbox,callout}*.png (V5). Side observation (not a defect): the hex field shows the pre-pick value until blur - the draft syncs on blur only. Control: the STANDALONE arrow's shaft grab still works (V4b: elementFromPoint = line.ann-arrow-hit, DOM + engine move). No pageerrors.
+
+## DEF-162: Sticky note: the move survives Confirm in-session but is silently LOST on save (reopened note sits at the old anchor)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 15 (installed v1.7.24, unified interaction model)
+
+Steps to reproduce:
+1. Launch the installed TFlex (FileVersion 1.7.24), open the report.pdf sample, go to page 4.
+2. Arm the Sticky-note tool, click the page, type "NOTE MOVE PERSIST 88", Confirm.
+3. Arm Select, press-drag the note icon ~150px right / ~100px down, click Confirm on the selection bar. The icon correctly renders at the new position in-session (unlike DEF-160 kinds).
+4. Save As, close the tab, reopen the saved file, go to page 4.
+
+Expected: The note persists at the moved anchor.
+
+Actual: The reopened note sits at the PRE-MOVE anchor (before x=479 -> after-move x=629 -> reopened x=479). Root cause: `moveAnnotation` shifts the note's `at` anchor but the wire-shape `rects[0]` (the icon's 24x24 footprint, backfilled by `annotationFromWire`) stays at the OLD anchor; the backend bakes the note's /Rect from `ann.rects[0]` (stale), and on reopen `annotationFromWire` backfills `at` from `rects[0]` — the move never reaches the saved PDF. Same stale-`rects` root cause as DEF-160, surfacing on the save path instead of the confirm path (the note's in-session render reads `at`, so Confirm looks correct).
+
+Screenshot: screenshots/def-160-t8-note-reopened.png
+
+History:
+- qa: opened (reproduced on installed v1.7.24, e2e/retests/qa_unified_1724_repro.spec.cjs T8: beforeX=479, afterMoveX=629, reopenedX=479)
+- qa: CLOSED (retested on installed v1.7.25 = app.getVersion 1.7.25, e2e/retests/def_160_162_verify_1.7.25.spec.cjs V3, real mouse). Note "NOTE VERIFY 1725" committed at (479.2, 269.5) -> select + press-drag +150/+100 -> pending at the new position -> Confirm -> stays; Save As + close tab + reopen -> page-local (381.2, 279.5) IDENTICAL pre/post reopen (1.7.24 reopened at the PRE-MOVE anchor). Engine: after Confirm BOTH at AND rects[0] sit at the moved anchor (201.8, 148.0) - the stale rects[0] that used to win the bake is rewritten; the reopened engine shows the same values. Screenshots: def-160-1725-v3-note-{committed,moved-pending,after-confirm,reopened}.png + crops. No pageerrors.
+
 ## DEF-159: Dark mode: committed annotation text-box text is invisible (near-white on paper-white page)
 
 - Status: CLOSED
