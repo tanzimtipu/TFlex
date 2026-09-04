@@ -4,15 +4,13 @@ const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const os = require('node:os');
 const path = require('node:path');
 
-const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
-
 function tmpOut(name) { return path.join(os.tmpdir(), name); }
 
 let electronApp = null;
 let window = null;
 
 async function launch() {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   window = await electronApp.firstWindow();
   await window.waitForLoadState('domcontentloaded');
   await window.waitForTimeout(2000);

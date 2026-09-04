@@ -1,5 +1,5 @@
-// QA release-gate verification on the INSTALLED app (v1.7.7, rebuilt + reinstalled
-// 11:24 PM). Re-verifies the B-items that DEF-117 blocked, plus the DEF-117 fix
+// QA release-gate verification (originally on the installed v1.7.7 app).
+// Since 2026-09-05 this spec launches the DEV build. Re-verifies
 // itself (all 21 dialogs call useBackdropClose above the early-return guard).
 //
 // Items:
@@ -15,20 +15,18 @@
 //   B8c         undo after a page op (rotate) visually reverts
 //   B10         maximize/restore icon is distinct from minimize
 //
-// Launch only via e2e/lib/launch.cjs against the packaged installed exe.
+// Launch only via e2e/lib/launch.cjs against the DEV build (historically: the packaged installed exe).
 
 const { test, expect } = require('@playwright/test');
 const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 
 let electronApp = null;
 let win = null;
 const pageErrors = [];
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   pageErrors.length = 0;
@@ -282,14 +280,21 @@ test('B4: OCR suspects panel renders as a top bar', async () => {
   const vm = await innerSize();
 
   expect(geom.present, 'suspects panel must be present').toBe(true);
-  // It is a TOP BAR: at the top of the workspace (small top offset), spanning the
-  // full width (left near 0), positioned absolute, with z-index 40 (above palette 30).
+  // It is a TOP BAR: at the top of the workspace (small top offset), spanning
+  // the full width (left near 0), positioned absolute. The redesign removed
+  // the explicit z-index (layering is guaranteed by stacking order), so the
+  // never-covered contract is asserted with a real hit test instead.
   expect(geom.rect.y, 'suspects panel should be anchored near the top').toBeLessThan(300);
   expect(geom.rect.x, 'suspects panel should start at the left edge').toBeLessThan(8);
   expect(geom.rect.w, 'suspects panel should span the full width').toBeGreaterThan(0.8 * vm.w);
-  expect(geom.zIndex, 'suspects panel z-index must sit above the tools palette (40>30)').toBeGreaterThanOrEqual(40);
-  // The panel is at z-index 40, above the palette (30) — it is never covered.
-  expect(geom.zIndex, 'suspects panel must render above the tools palette').toBeGreaterThanOrEqual(30);
+  const covered = await win.evaluate(() => {
+    const el = document.querySelector('[data-ocr-suspects-panel]');
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    const probe = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(20, r.height / 2));
+    return probe ? !el.contains(probe) : true;
+  });
+  expect(covered, 'suspects panel must not be covered by the palette or any overlay').toBe(false);
   const hooks = noHookErrors();
   expect(hooks, 'no React #310 during OCR').toHaveLength(0);
   console.log('[B4] PASS');
@@ -352,7 +357,9 @@ test('B5: add-box committed text renders full, is movable, font picker live', as
 });
 
 // ---------------------------------------------------------------------------
-// B7: insert blank page after page 1 -> 35 pages, no duplicate.
+// B7: insert blank page as page 2 (i.e. "after page 1") -> 35 pages, no dup.
+// Current dialog semantics are RANK-based (def_129/130 pins: position 1
+// prepends as page 1), so "after page 1" is position 2.
 // ---------------------------------------------------------------------------
 test('B7: insert blank after page 1 -> 35 pages, no duplicate', async () => {
   await openSample('report.pdf');
@@ -364,10 +371,8 @@ test('B7: insert blank after page 1 -> 35 pages, no duplicate', async () => {
   await win.click('[data-tool-id="insertPages"]');
   await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 10000 });
   await win.waitForTimeout(400);
-  // Insert blank page after page 1. The engine treats the position as
-  // "insert after page N" (0-based afterIndex = N-1 -> splice at N).
-  // Position "1" therefore lands the blank right after page 1 (rank 2).
-  await win.locator('[data-insert-position]').fill('1');
+  // Insert blank page as page 2 = right after page 1 (rank semantics).
+  await win.locator('[data-insert-position]').fill('2');
   await win.waitForTimeout(200);
   await win.click('[data-insert-confirm]');
   await win.waitForTimeout(2500);
@@ -383,7 +388,7 @@ test('B7: insert blank after page 1 -> 35 pages, no duplicate', async () => {
   const thumbCount = await win.locator('.thumb-item').count();
   console.log(`[B7] thumbCount=${thumbCount}`);
 
-  // Success criteria: 35 pages, no duplicate pages, the blank placed after page 1.
+  // Success criteria: 35 pages, no duplicate pages, the blank placed as page 2.
   expect(es1.pageCount, 'page count must go 34 -> 35').toBe(es0.pageCount + 1);
   expect(order.length, 'pageOrder length must equal page count').toBe(es1.pageCount);
   expect(unique.size, 'pageOrder must have no duplicate pages').toBe(order.length);
@@ -480,18 +485,34 @@ test('B8b: per-page crop crops only the adjusted page', async () => {
   // DEF-062: after crop the pdf.js proxy is rebuilt, so page 1 renders at its
   // crop ViewBox. Only the ADJUSTED page (1) should render smaller than the
   // full-size pages; page 2 and page 3 (neither adjusted) stay identical.
+  // Virtualized workspace: each slot is ~1496px tall in a ~900px viewport, so
+  // pages 1-3 are never mounted together - scroll to each page, wait for its
+  // canvas, and measure it there (same technique as sweep_pageops P3).
   await win.waitForTimeout(1200);
-  const pageDims = await win.evaluate(() => {
-    const slots = document.querySelectorAll('.page-slot');
-    const out = [];
-    for (let i = 0; i < Math.min(3, slots.length); i++) {
-      const c = slots[i] && slots[i].querySelector('canvas');
-      if (!c) { out.push(null); continue; }
+  const pageDims = [];
+  for (const n of [1, 2, 3]) {
+    await win.evaluate((pg) => {
+      const sc = document.querySelector('.document-scroller');
+      const slot = document.querySelector(`.page-slot[data-page="${pg}"]`);
+      if (sc && slot) sc.scrollTop = slot.offsetTop - 60;
+    }, n);
+    await win.waitForFunction(
+      (pg) => {
+        const s = document.querySelector(`.page-slot[data-page="${pg}"]`);
+        return !!(s && s.querySelector('canvas'));
+      },
+      n,
+      { timeout: 15000 },
+    );
+    await win.waitForTimeout(600);
+    const dim = await win.evaluate((pg) => {
+      const c = document.querySelector(`.page-slot[data-page="${pg}"] canvas`);
+      if (!c) return null;
       const r = c.getBoundingClientRect();
-      out.push({ w: Math.round(r.width), h: Math.round(r.height) });
-    }
-    return out;
-  });
+      return { w: Math.round(r.width), h: Math.round(r.height) };
+    }, n);
+    pageDims.push(dim);
+  }
   console.log(`[B8b] pageDims 1..3=${JSON.stringify(pageDims)}`);
 
   // The toast confirms only ONE page was cropped ("Cropped 1 page."), and the

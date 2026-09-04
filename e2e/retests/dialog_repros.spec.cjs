@@ -2,13 +2,11 @@ const { test, expect } = require('@playwright/test');
 const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
-const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
-
 let electronApp = null;
 let window = null;
 
 async function launch() {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   window = await electronApp.firstWindow();
   await window.waitForLoadState('domcontentloaded');
   await window.waitForTimeout(2000);
@@ -38,23 +36,14 @@ test('BUG-11: palette Delete page only toasts, no current/custom/range dialog', 
 
   const toastAfterPalette = await window.evaluate(() => document.querySelector('.toast, .toast-info, [class*="toast"]')?.textContent || null);
   console.log('BUG11 toast after palette delete:', toastAfterPalette);
+  // FIXED 2026-09-05: the palette Delete entry now opens the current/custom/range
+  // dialog (the original bug was "only toasts, no dialog"). Pin the fixed behavior.
   const dialogAfterPalette = await window.locator('[data-delete-pages-dialog]').count();
   console.log('BUG11 dialog visible after palette delete:', dialogAfterPalette);
+  expect(dialogAfterPalette, 'palette Delete must open the delete-pages dialog (fixed)').toBe(1);
   await snap('bug11-palette-delete-toast');
-
-  // Now select a thumbnail in the left rail
-  const railThumb = window.locator('.thumb-item').first();
-  if (await railThumb.count()) {
-    await railThumb.click();
-    await window.waitForTimeout(600);
-    const dialogAfterThumb = await window.locator('[data-delete-pages-dialog]').count();
-    console.log('BUG11 dialog after selecting thumbnail:', dialogAfterThumb);
-    const toastAfter = await window.evaluate(() => document.querySelector('.toast, .toast-info, [class*="toast"]')?.textContent || null);
-    console.log('BUG11 toast after selecting thumbnail:', toastAfter);
-    await snap('bug11-after-thumb-select');
-  } else {
-    console.log('BUG11 no rail thumb found');
-  }
+  await window.keyboard.press('Escape');
+  await window.waitForSelector('[data-delete-pages-dialog]', { state: 'hidden', timeout: 5000 }).catch(() => {});
 });
 
 test('BUG-19: Add blank page adds more than one page / label / no render', async () => {

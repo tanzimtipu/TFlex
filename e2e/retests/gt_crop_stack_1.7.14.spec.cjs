@@ -4,14 +4,12 @@
 // check whether pages 2,3,4 OVERLAP / stack on top of each other. Compare a
 // very small crop (150x150) against a medium crop (300x400).
 //
-// Launch only via e2e/lib/launch.cjs against the packaged installed exe.
+// Launch only via e2e/lib/launch.cjs against the DEV build (historically: the packaged installed exe).
 
 const { test, expect } = require('@playwright/test');
 const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
 test.setTimeout(300000);
@@ -20,7 +18,7 @@ let electronApp = null;
 let win = null;
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   await win.waitForTimeout(700);

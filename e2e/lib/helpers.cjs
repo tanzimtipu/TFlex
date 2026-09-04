@@ -1,5 +1,7 @@
 // Shared driving helpers for the v1.7.11 deep sweep. Canonical under e2e/lib.
-// Only qa writes here. These wrap the installed-app launch + common actions.
+// Only qa writes here. launchDev() (dev build) is the DEFAULT for every
+// standard/regression/sweep spec; launchInstalled() is ONLY for specs under
+// e2e/installed/, when the orchestrator explicitly asks for installed-app runs.
 
 const path = require('node:path');
 const fs = require('node:fs');
@@ -11,6 +13,18 @@ const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 // Bound window so `shot(name)` works without threading `win` through every call.
 let currentWin = null;
 
+// DEV build launch - the standard for the whole e2e suite. Never pass an
+// executablePath from a spec; the installed app is launched only from
+// e2e/installed/* specs via launchInstalled().
+async function launchDev(extraArgs = []) {
+  const electronApp = await launchApp(extraArgs, null, null);
+  const window = await electronApp.firstWindow();
+  await window.waitForSelector('.sample-card', { timeout: 30000 });
+  currentWin = window;
+  return { electronApp, window };
+}
+
+// INSTALLED-app launch. e2e/installed/* ONLY - never from a standard spec.
 async function launchInstalled(extraArgs = []) {
   const electronApp = await launchApp(extraArgs, null, INSTALLED);
   const window = await electronApp.firstWindow();
@@ -108,4 +122,4 @@ async function hardClose(electronApp) {
   await electronApp.close().catch(() => {});
 }
 
-module.exports = { launchInstalled, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, hardClose };
+module.exports = { launchDev, launchInstalled, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, hardClose };

@@ -1,5 +1,5 @@
-// QA ground-truth reproduction of 6 reported defects on the installed
-// v1.7.10 binary (C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe).
+﻿// QA ground-truth reproduction of 6 reported defects; originally on the installed v1.7.10 binary.
+// Since 2026-09-05 this spec launches the DEV build.
 //
 // Each test drives the REAL installed app through Playwright's Electron
 // launcher (e2e/lib/launch.cjs), captures DOM/state evidence + a screenshot,
@@ -15,8 +15,6 @@ const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 const SAMPLES = path.resolve(__dirname, '..', '..', 'assets', 'samples');
 
@@ -27,7 +25,7 @@ let win = null;
 let pageErrors = [];
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   pageErrors = [];
@@ -111,86 +109,15 @@ function href(target) {
 }
 
 // ---------------------------------------------------------------------------
-// BUG 1 — Frameless window cannot be dragged by the title bar.
+// BUG 1 â€” Frameless window cannot be dragged by the title bar.
 // ---------------------------------------------------------------------------
-test('BUG1: title bar drag region is effectively non-draggable (frameless window)', async () => {
-  // Map the -webkit-app-region across the title bar surface.
-  const evidence = await win.evaluate(() => {
-    const bar = document.querySelector('.titlebar');
-    if (!bar) return { error: 'no .titlebar' };
-    const b = bar.getBoundingClientRect();
-    const isDrag = (el) => getComputedStyle(el).webkitAppRegion;
-    // Walk every descendant element under the title bar, record its
-    // -webkit-app-region + the area it covers.
-    const regions = [];
-    const stack = [bar];
-    while (stack.length) {
-      const el = stack.shift();
-      const r = el.getBoundingClientRect();
-      regions.push({
-        sel: el.className && typeof el.className === 'string'
-          ? ('.' + el.className.trim().split(/\s+/).join('.')).slice(0, 60)
-          : el.tagName,
-        region: isDrag(el) || 'inherit',
-        w: Math.round(r.width),
-        h: Math.round(r.height),
-      });
-      for (const c of el.children) stack.push(c);
-    }
-    // Sample a grid over the bar, counting draggable pixels.
-    let dragPx = 0;
-    let noDragPx = 0;
-    const step = 6;
-    for (let y = b.top + 2; y < b.bottom - 2; y += step) {
-      for (let x = b.left + 2; x < b.right - 2; x += step) {
-        const el = document.elementFromPoint(x, y);
-        if (el === null) continue;
-        const region = getComputedStyle(el).webkitAppRegion;
-        // A drag region is transitive: if an element or its ancestor is
-        // drag while no-ancestor is no-drag, pointer here starts a drag.
-        let drag = false;
-        let cur = el;
-        while (cur && cur !== document.documentElement) {
-          const reg = getComputedStyle(cur).webkitAppRegion;
-          if (reg === 'no-drag') { drag = false; break; }
-          if (reg === 'drag') { drag = true; break; }
-          cur = cur.parentElement;
-        }
-        if (drag) dragPx += step * step;
-        else noDragPx += step * step;
-      }
-    }
-    return {
-      barRect: { x: b.x, y: b.y, width: b.width, height: b.height },
-      barRegion: isDrag(bar),
-      regions,
-      dragPx,
-      noDragPx,
-    };
-  });
-  console.log('[BUG1] barRect=', JSON.stringify(evidence.barRect));
-  console.log('[BUG1] .titlebar -webkit-app-region =', evidence.barRegion);
-  console.log('[BUG1] draggablePx=', evidence.dragPx, 'noDragPx=', evidence.noDragPx);
-  console.log('[BUG1] region map:', JSON.stringify(evidence.regions.filter((r) => r.region === 'no-drag')));
-  await shot('def-132-titlebar-region.png');
+// RETIRED 2026-09-05 (standard-suite cleanup): BUG1 asserted the 1.7.10-era
+// bug 'title bar drag region is effectively non-draggable' (its expectations
+// encoded the bug being PRESENT). The frameless drag region is fixed and now
+// pinned by e2e/sweep_settings_frameless.spec.cjs FW1 and
+// e2e/retests/gt_verify_1711.spec.cjs DEF-132, both passing.
 
-  // REPRODUCTION: the window cannot be moved by dragging the title bar.
-  // The full-width slot + header are `no-drag`, so the effective draggable
-  // surface is ZERO pixels. This assert passes exactly when the BUG exists
-  // (a reproduction harness — pass == defect observed).
-  const slot = evidence.regions.find((r) => r.sel.includes('titlebar-slot'));
-  const header = evidence.regions.find((r) => r.sel.includes('app-header'));
-  expect(slot, 'titlebar-slot must exist').toBeTruthy();
-  expect(slot.region, 'the titlebar slot must be no-drag (the reported defect)').toBe('no-drag');
-  expect(header.region, 'the app-header must be no-drag (the reported defect)').toBe('no-drag');
-  expect(evidence.dragPx, 'no pixel of the title bar may be a drag region (the reported defect)').toBe(0);
-  console.log('[BUG1] REPRODUCED: dragPx=0, slot/header no-drag -> window cannot be dragged by the title bar.');
-});
-
-// ---------------------------------------------------------------------------
-// BUG 2 — Insert blank page at position 2: page order + pen tool on pages 2/3.
-// ---------------------------------------------------------------------------
-test('BUG2: insert blank at pos 2 — page order is correct, but pen lands on the WRONG page', async () => {
+test('BUG2: insert blank at pos 2 â€” page order is correct, but pen lands on the WRONG page', async () => {
   await openSample('report.pdf');
   let d = await diag();
   const beforeOrder = d.engineState.pageOrder.slice();
@@ -251,9 +178,9 @@ test('BUG2: insert blank at pos 2 — page order is correct, but pen lands on th
 });
 
 // ---------------------------------------------------------------------------
-// BUG 3 — "Per page" crop applies to EVERY page in the saved output.
+// BUG 3 â€” "Per page" crop applies to EVERY page in the saved output.
 // ---------------------------------------------------------------------------
-test('BUG3: per-page crop page 2 — which pages end up cropped (rendered + saved)', async () => {
+test('BUG3: per-page crop page 2 â€” which pages end up cropped (rendered + saved)', async () => {
   await openSample('report.pdf');
 
   // Measure all mounted pages before the crop.
@@ -327,7 +254,7 @@ test('BUG3: per-page crop page 2 — which pages end up cropped (rendered + save
 });
 
 // ---------------------------------------------------------------------------
-// BUG 3dup — Moving a signature multiple times: a click reverts the new pos.
+// BUG 3dup â€” Moving a signature multiple times: a click reverts the new pos.
 // ---------------------------------------------------------------------------
 test('BUG3dup: drag a committed signature, then click it -> position reverts', async () => {
   await openSample('report.pdf');
@@ -384,7 +311,7 @@ test('BUG3dup: drag a committed signature, then click it -> position reverts', a
 });
 
 // ---------------------------------------------------------------------------
-// BUG 4 — "Add box" (edit mode text box) cannot be dragged to move it.
+// BUG 4 â€” "Add box" (edit mode text box) cannot be dragged to move it.
 // ---------------------------------------------------------------------------
 test('BUG4: Add box committed text box cannot be dragged with the mouse', async () => {
   await openSample('report.pdf');
@@ -460,7 +387,7 @@ test('BUG4: Add box committed text box cannot be dragged with the mouse', async 
 });
 
 // ---------------------------------------------------------------------------
-// BUG 5 — Moving a placed text box causes page artifacts; no Delete on select.
+// BUG 5 â€” Moving a placed text box causes page artifacts; no Delete on select.
 // ---------------------------------------------------------------------------
 test('BUG5: move placed text box -> artifacts; select placed box -> no Delete option', async () => {
   await openSample('report.pdf');
@@ -508,7 +435,7 @@ test('BUG5: move placed text box -> artifacts; select placed box -> no Delete op
 
   const box = win.locator('.edit-box').first();
   if (await box.count() > 0) {
-    // (a) Straight-drag the box body to move it — no click first, so the
+    // (a) Straight-drag the box body to move it â€” no click first, so the
     //     editor stays closed and the move commits cleanly.
     const bb = await box.boundingBox();
     await win.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);

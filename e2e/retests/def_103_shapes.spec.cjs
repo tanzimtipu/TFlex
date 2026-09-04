@@ -2,13 +2,11 @@ const { test, expect } = require('@playwright/test');
 const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 
-const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
-
 let electronApp = null;
 let window = null;
 
 async function launch() {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   window = await electronApp.firstWindow();
   await window.waitForLoadState('domcontentloaded');
   await window.waitForTimeout(2000);

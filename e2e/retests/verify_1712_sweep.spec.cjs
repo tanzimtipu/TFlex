@@ -1,5 +1,5 @@
-// QA release-gate verification of the v1.7.12 sweep fixes on the freshly
-// installed binary (C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe,
+// QA release-gate verification of the v1.7.12 sweep fixes; originally on the freshly installed binary.
+// Since 2026-09-05 this spec launches the DEV build.
 // FileVersion 1.7.12).
 //
 // This gates three items:
@@ -25,8 +25,6 @@ const os = require('node:os');
 
 const { PDFDocument, PDFName } = require(path.join(
   __dirname, '..', '..', 'node_modules', 'pdf-lib'));
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 const SAMPLES = path.resolve(__dirname, '..', '..', 'assets', 'samples');
 
@@ -37,7 +35,7 @@ let win = null;
 let pageErrors = [];
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   pageErrors = [];

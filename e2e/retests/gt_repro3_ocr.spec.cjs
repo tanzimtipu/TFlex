@@ -1,17 +1,15 @@
-// Ground-truth reproduction on the INSTALLED app. Bug 4 (OCR panel behind tools) + Bug 8b.
+// Ground-truth reproduction (Bug 4 OCR panel behind tools + Bug 8b) on the DEV build (originally written against the installed app).
 const { test, expect } = require('@playwright/test');
 const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SCREENSHOT_DIR = path.resolve(__dirname, '..', '..', 'screenshots');
 
 let electronApp;
 let win;
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
 });

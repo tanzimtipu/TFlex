@@ -1,5 +1,5 @@
-// QA reproduction of three operator-reported bugs on the INSTALLED v1.7.12
-// binary (C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe).
+// QA reproduction of three operator-reported bugs; originally on the INSTALLED v1.7.12
+// binary. Since 2026-09-05 this spec launches the DEV build.
 //
 //   BUG 2  Insert blank page "after page 1" (blank becomes page 2). Then
 //          VISUALLY inspect the left thumbnail rail (first 5 thumbs) and
@@ -19,8 +19,6 @@ const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 const SAMPLES = path.resolve(__dirname, '..', '..', 'assets', 'samples');
 
@@ -31,7 +29,7 @@ let win = null;
 let pageErrors = [];
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   pageErrors = [];

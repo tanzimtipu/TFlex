@@ -3,8 +3,6 @@ const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
 
-const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
-
 test.describe('DEF-098 Verification: Thumbnail Jump', () => {
   let electronApp;
   let window;
@@ -21,8 +19,8 @@ test.describe('DEF-098 Verification: Thumbnail Jump', () => {
   };
 
   test.beforeEach(async () => {
-    console.log('Launching app from:', EXE_PATH);
-    electronApp = await launchApp([], 'default', EXE_PATH);
+    console.log('Launching DEV build');
+    electronApp = await launchApp([], 'default');
     window = await electronApp.firstWindow();
     await window.waitForLoadState('domcontentloaded');
   });

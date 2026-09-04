@@ -1,5 +1,16 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-09-03: qa re-pinned to z-ai/glm-5.3-flash
+
+- From: `openrouter/deepseek/deepseek-v4-flash-vision-exp`
+- To: `openrouter/z-ai/glm-5.3-flash`
+- Reason: operator directive. glm-5.3-flash is native-multimodal (vision-capable) and
+  cheaper, so qa's screenshot-inspection duty is preserved while lowering cost.
+- Fallback per AGENTS.md: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview (the
+  vision-capable fallback).
+- Note: glm-5.3-flash is also git-agent's pin — intentional; both are cost-first
+  roles and the model is multimodal.
+
 ## 2026-08-28: qa re-pinned to deepseek-v4-flash-vision-exp
 
 - From: `openrouter/google/gemini-3-flash-preview`
@@ -809,3 +820,92 @@ This eliminates the class of defect where git-agent pushed a tag without a GitHu
 Release (DEF-086) or where the local release/ held stale-version artifacts. Every
 push dispatch to git-agent must include backend-dev's dist refresh as a blocking
 prerequisite — if release/ wasn't rebuilt, the tag push is blocked.
+
+## 2026-09-03: RECURRING ROOT-CAUSE GUARDRAILS (load into every bug-fix and feature dispatch)
+
+These are the classes that have consumed the most rework. Any sub-agent fixing a bug
+or adding a feature MUST check each before declaring done. The orchestrator pastes
+these into the dispatch spec.
+
+1. STALE PROXY / STALE STATE: after ANY engine mutation (crop, insert, delete, rotate,
+   reorder, edit-text, add-box, OCR, flatten, merge, split, replace, stamp, signature),
+   the renderer's pdf.js proxy and every mirror (engineUi, diagnostics, thumbnails,
+   textLayer) must be refreshed — via getDocumentBytes + refreshDocProxyFor — before
+   the change is "visible". A defect that is "engine correct but renderer stale" is the
+   single most common class (DEF-108/113/137/138/139/141, DEF-145/146). Rule: every
+   op handler ends with a proxy refresh + mirror hydrate; the fix is not done until the
+   LIVE view (not arrays, not saved bytes) shows the new state.
+
+2. VISIBLE-vs-SOURCE PAGE MAPPING: engine pageOrder holds pdf-lib ORIGINAL indices;
+   serializeDoc/getDocumentBytes write file pages in VISIBLE order. The renderer must
+   track which order the current proxy is in (proxyVisibleOrder) and map visible-slot
+   <-> source-page correctly for the MAIN view AND the thumbnail rail AND overlays
+   (annotation/form/signature page). DEF-133, DEF-139. Rule: never assume
+   visibleIndex === sourceIndex after a page-op; write a test that reorders then draws.
+
+3. MIXED PAGE SIZES: after a per-page crop, every page slot + thumbnail must render at
+   ITS OWN page size — never a single page-1-derived size (DEF-141 and the crop-thumb
+   bug). Rule: slot/thumbnail geometry is per-page (prefix-sum over per-page heights);
+   never derive all slots from firstPageSize.
+
+4. TOOLBOX/CONTENT BINDING: a floating editor (EditInlineEditor, textbox/callout/note
+   editor, sig pending bar, color palette, stamp dialog) is a WINDOW, not an overlay.
+   Dragging the window must move the window AND its committed content together; Confirm
+   must commit the CONTENT's NEW position, not its original. Moving the toolbox must
+   not leave text/content stuck (DEF-140/147 + edit-text/add-box move bugs). Rule: the
+   drag offset is applied to the content's placement rect, and Confirm writes the moved
+   rect; no decoupled local "ghost" surface may survive.
+
+5. HOOKS ABOVE EARLY RETURNS: never call a hook (useState/useEffect/useRef/useMemo/
+   useCallback/useBackdropClose) after `if (!open) return null` or any early return —
+   React Rules of Hooks #310. DEF-117 crashed the whole app. Rule: a source-scan test
+   asserts no hook appears after an early return in every dialog/overlay component.
+
+6. BACKDROP/OUTSIDE-CLICK: a modal backdrop must close only on a GENUINE outside click
+   (mousedown AND mouseup both on backdrop, target===currentTarget). A text-selection
+   drag that starts in an input and releases over the backdrop must NOT close the
+   dialog. Use one shared useBackdropClose/useDragWindow hook everywhere (DEF-110/121,
+   B17). Rule: no dialog uses a bare onClick={onClose} on the backdrop.
+
+7. BEHAVIOR-FIRST TESTS: a test must assert BEHAVIOR (click -> state change -> pixel/
+   rect/DOM change), never the mere presence of a class/string/handler. Marker-only
+   tests let broken fixes ship (DEF-106's test pinned the broken detached call). Rule:
+   "report the actual current line before the fix" + "assert mid-drag/after-change
+   values", and qa must verify on the INSTALLED app with visual inspection, not arrays.
+
+8. SAVE/RELOAD REHYDRATION: loadDocument/loadDocumentBytes must re-read /Rotate,
+   /Annots, /TFlexSig, /TFlexBox (text boxes), form fields into engine state, AND the
+   renderer must call getState(docId) after open to hydrate all mirrors. A "save then
+   reopen loses X" bug is always a rehydration gap (DEF-137/138). Rule: every feature
+   that writes bytes needs a round-trip test (write -> reparse -> getState -> live view).
+
+9. FLOATING WINDOWS + THUMBNAILS use per-page/per-window geometry; the EDIT toolbox
+   drag handle must be a real chrome/grip region with `cursor:grab` and controls
+   excluded (DEF-147's three rounds). Rule: give every floating window a visible,
+   reachable drag handle before claiming it's movable.
+
+## 2026-09-05: QA MUST NOT launch the installed app (recurring mistake)
+
+The operator has repeatedly flagged QA testing against the stale INSTALLED exe instead of
+the current dev build. Root cause: several sweep/regression specs hardcode
+`executablePath` -> the installed `Programs\tflex\TFlex.exe`, so they launch whatever old
+version is on disk (which then may pop the OTA update prompt and break the run).
+
+RULE (loaded into every qa dispatch): QA launches the DEV build (`launchApp()` with NO
+`executablePath`) for ALL standard/regression/sweep runs. The installed app is tested ONLY
+when the orchestrator explicitly writes "test the installed app" in the dispatch. The
+canonical launcher default (no executablePath -> dev build) is the only allowed path for
+standard tests; installed-app specs must be explicitly gated and excluded from the
+standard suite. Any spec found launching the installed exe without explicit instruction
+is a defect to be corrected before the run.
+
+## 2026-09-05: QA VERSION-GATE HARD RULE (operator directive)
+
+Before deploying qa, the orchestrator MUST provide the expected version number in the
+dispatch (read from package.json / the built app). qa MUST, as its FIRST step before any
+test work, launch the target (dev build by default, installed app only if explicitly
+ordered) and verify `app.getVersion()` equals the provided version. ONLY if it matches may
+qa start the task. If it does NOT match (or the app reports a different/older version, or
+the version cannot be read), qa STOPS and reports the mismatch back to the orchestrator —
+it must not proceed, and must not run tests against a mismatched build. This pairs with the
+"QA must not launch the installed app" rule: both are mandatory preconditions.

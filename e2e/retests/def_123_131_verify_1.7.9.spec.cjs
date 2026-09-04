@@ -1,6 +1,6 @@
-// QA release-gate verification on the INSTALLED v1.7.9 app
-// (AppData\Local\Programs\tflex\TFlex.exe, FileVersion 1.7.9, exe 02:56 newer
-// than all src). Re-verifies the nine defects the developers report fixed:
+// QA release-gate verification (DEF-123..131); originally on the INSTALLED v1.7.9 app.
+// Since 2026-09-05 this spec launches the DEV build.
+// Re-verifies
 //
 //   DEF-123  placed signature click -> Confirm/Cancel/Delete action bar;
 //            drag holds a rect then Confirm commits it
@@ -20,7 +20,7 @@
 // page 2) and DEF-121 (no unhandled "Invalid page request" after a mid-doc
 // insert) are asserted inside the insert tests because they share the code path.
 //
-// Launch only via e2e/lib/launch.cjs against the packaged installed exe. Never
+// Launch only via e2e/lib/launch.cjs against the DEV build (historically: the packaged installed exe). Never
 // a .cmd/.ps1 shim; never a hand-concatenated file:// URL.
 
 const { test, expect } = require('@playwright/test');
@@ -30,8 +30,6 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { PDFDocument } = require('pdf-lib');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
 let electronApp = null;
@@ -39,7 +37,7 @@ let win = null;
 let pageErrors = [];
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   pageErrors = [];
@@ -247,10 +245,11 @@ test('DEF-124: edit-text no longer leaves a faint trace of the old run', async (
   console.log(`[DEF-124] editing run at (${target.x},${target.y}) w=${target.w} h=${target.h} text="${oldText}"`);
 
   // The title run is in the viewport, so no scroll needed. Hover (edit-text
-  // hint), then click to open the editor.
+  // hint), then DOUBLE click to open the editor (DEF-153 model: single click
+  // selects the run, double click opens the inline editor).
   await win.mouse.move(target.x + target.w / 2, target.y + target.h / 2);
   await win.waitForTimeout(400);
-  await win.mouse.click(target.x + target.w / 2, target.y + target.h / 2);
+  await win.mouse.dblclick(target.x + target.w / 2, target.y + target.h / 2, { delay: 60 });
   await win.waitForSelector('[data-edit-editor="text"], [data-edit-editor="edit"]', { timeout: 8000 }).catch(() => {});
   const editor = await win.locator('[data-edit-editor="text"], [data-edit-editor="edit"]').count();
   console.log(`[DEF-124] editor open=${editor}`);
@@ -465,9 +464,10 @@ test('DEF-127: committed text box mirrors content, drags as a unit, click reopen
   expect(mirrorAfter, 'the moved box must still mirror its text').toMatch(/DEF127 MOVABLE BOX/);
   await shot('def-127-after-drag.png');
 
-  // A click (no drag) on the committed box reopens the inline editor pre-filled.
+  // A DOUBLE click (no drag) on the committed box reopens the inline editor
+  // pre-filled (DEF-153 model: single click selects, double click opens).
   const now = await win.locator('.edit-box').first().boundingBox();
-  await win.mouse.click(now.x + now.width / 2, now.y + now.height / 2);
+  await win.mouse.dblclick(now.x + now.width / 2, now.y + now.height / 2, { delay: 60 });
   await win.waitForTimeout(700);
   const editorCount = await win.locator("[data-edit-editor='edit']").count();
   const textareaVal = await win.locator('[data-edit-textarea]').inputValue().catch(() => null);

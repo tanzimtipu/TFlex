@@ -20,13 +20,11 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { unzipSync, strFromU8 } = require('fflate');
 
-const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
-
 let electronApp = null;
 let window = null;
 
 async function launch() {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   window = await electronApp.firstWindow();
   await window.waitForLoadState('domcontentloaded');
   await window.waitForTimeout(2000);
@@ -62,8 +60,9 @@ async function findTitleRun() {
   return s || null;
 }
 
-// Enter edit mode, pick the text tool, hover+click the title run, and confirm
-// the inline editor opened. Returns nothing (throws if the editor did not open).
+// Enter edit mode, pick the text tool, hover+double-click the title run, and
+// confirm the inline editor opened (DEF-153 model: single click SELECTS the
+// run, double click opens the inline editor). Throws if the editor did not open.
 async function openTextEditor() {
   await window.click('[data-toolbar-edit-toggle]');
   await window.waitForSelector('[data-edit-toolbar]');
@@ -73,7 +72,7 @@ async function openTextEditor() {
   if (!s) throw new Error('openTextEditor: no title text span found');
   await window.mouse.move(s.x + s.w / 2, s.y + s.h / 2);
   await window.waitForTimeout(400);
-  await window.mouse.click(s.x + s.w / 2, s.y + s.h / 2);
+  await window.mouse.dblclick(s.x + s.w / 2, s.y + s.h / 2, { delay: 60 });
   await window.waitForTimeout(600);
   const count = await window.locator('[data-edit-editor="edit"]').count();
   if (count === 0) throw new Error('openTextEditor: inline editor did not open');

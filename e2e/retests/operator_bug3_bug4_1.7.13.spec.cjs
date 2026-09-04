@@ -11,7 +11,7 @@
 // operator's intent: "the toolbox along with the text inside should be
 // movable" so it does not cover the content.
 //
-// Launch only via e2e/lib/launch.cjs against the packaged installed exe. Never
+// Launch only via e2e/lib/launch.cjs against the DEV build (historically: the packaged installed exe). Never
 // a .cmd/.ps1 shim; never a hand-concatenated file:// URL.
 
 const { test, expect } = require('@playwright/test');
@@ -21,8 +21,6 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { PDFDocument } = require('pdf-lib');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
 test.setTimeout(300000);
@@ -32,7 +30,7 @@ let win = null;
 let pageErrors = [];
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   pageErrors = [];
@@ -411,13 +409,14 @@ test('BUG4: the floating toolbox (inline editor) is draggable after a single cli
   console.log('[BUG4] committed box count=', committed);
   expect(committed, 'a committed text box must exist after Apply').toBeGreaterThanOrEqual(1);
 
-  // Click the committed box ONCE -> the floating toolbox (inline editor) opens.
+  // DOUBLE-click the committed box -> the floating toolbox (inline editor)
+  // opens (DEF-153 model: single click selects, double click opens).
   const boxEl = win.locator('[data-edit-box-id]').first();
   const boxRect = await boxEl.boundingBox();
   console.log('[BUG4] committed box rect=', JSON.stringify(boxRect));
   const bx = boxRect.x + boxRect.width / 2;
   const by = boxRect.y + boxRect.height / 2;
-  await win.mouse.click(bx, by);
+  await win.mouse.dblclick(bx, by, { delay: 60 });
   await win.waitForTimeout(800);
 
   const editorAfterClick = await win.evaluate(() => {
@@ -426,8 +425,8 @@ test('BUG4: the floating toolbox (inline editor) is draggable after a single cli
     const r = e.getBoundingClientRect();
     return { open: true, x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
   });
-  console.log('[BUG4] toolbox after single click=', JSON.stringify(editorAfterClick));
-  expect(editorAfterClick.open, 'clicking the committed box once must open the floating toolbox').toBe(true);
+  console.log('[BUG4] toolbox after double click=', JSON.stringify(editorAfterClick));
+  expect(editorAfterClick.open, 'double-clicking the committed box must open the floating toolbox').toBe(true);
 
   // Record the toolbox rect BEFORE the drag.
   const before = await win.evaluate(() => {

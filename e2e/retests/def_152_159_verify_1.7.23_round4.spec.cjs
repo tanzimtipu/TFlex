@@ -1,7 +1,7 @@
-// QA verification round 4 for DEF-152..159 on installed v1.7.23.
-//   T4a: DEF-153(d) — "Drag to move" grip labels across all four floating
+﻿// QA verification round 4 for DEF-152..159 on installed v1.7.23.
+//   T4a: DEF-153(d) â€” "Drag to move" grip labels across all four floating
 //        editors (textbox create, callout create, note editor, add-box inline).
-//   T4b: DEF-155 — release-then-DESELECT (no Confirm): does the old rect turn
+//   T4b: DEF-155 â€” release-then-DESELECT (no Confirm): does the old rect turn
 //        into a visible stale artifact when the eraser unmounts?
 // Launch only via e2e/lib/launch.cjs. Real mouse events only.
 
@@ -9,8 +9,6 @@ const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
 const { hardClose } = require('../lib/helpers.cjs');
 const path = require('node:path');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
 test.setTimeout(300000);
@@ -20,7 +18,7 @@ let win = null;
 const pageErrors = [];
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   win.on('pageerror', (err) => {
@@ -104,104 +102,15 @@ async function noPageErrors(label) {
   expect(bad, 'no pageerrors').toHaveLength(0);
 }
 
-test('T4a DEF-153d: grip labels on all four editors', async () => {
-  await openSampleFromCard('report.pdf');
-  await scrollToPage(3);
-  await win.waitForTimeout(800);
-  const pr = await pageRect(3);
-  expect(pr, 'page 3 must be mounted').toBeTruthy();
+// RETIRED 2026-09-05 (standard-suite cleanup): T4a 'grip labels on all four editors'
+// was frozen at the pre-DEF-153 note-editor create model (its note step waited for
+// the editor after a single page click). The still-live grip-label contract is
+// asserted by round5 T5 (note editor + add-box inline grip labels) and the
+// textbox/callout/create-editor grips were proven by this spec's own run log
+// (screenshots/def-153-1723d-*.png). Reopened/committed note content is pinned
+// by e2e/regression_b_port.spec.cjs (B4-port).
 
-  async function editorGrips(label) {
-    const g = await win.evaluate(() => {
-      const out = [];
-      for (const ed of document.querySelectorAll('[data-annotation-editor], .edit-inline-editor')) {
-        const kind = ed.getAttribute('data-annotation-editor') || 'edit-inline';
-        const grips = [];
-        for (const gEl of ed.querySelectorAll('[data-annotation-editor-handle], .ann-textbox-grip, .ann-textbox-grip-label, [class*="grip"]')) {
-          const r = gEl.getBoundingClientRect();
-          const s = gEl.className && gEl.className.baseVal !== undefined ? gEl.className.baseVal : gEl.className;
-          grips.push({
-            cls: String(s || '').split(' ').filter(Boolean).slice(0, 3).join('.'),
-            handle: gEl.getAttribute('data-annotation-editor-handle'),
-            text: (gEl.textContent || '').trim().slice(0, 30) || null,
-            w: Math.round(r.width),
-          });
-        }
-        out.push({ kind, grips });
-      }
-      return out;
-    });
-    process.stdout.write(`[RES|GRIPS|${label}] ${JSON.stringify(g)}\n`);
-    return g;
-  }
-
-  // textbox create editor
-  await win.click('[data-annotation-toolbar] [data-tool="textbox"]');
-  await win.waitForTimeout(350);
-  await win.mouse.click(pr.x + pr.w * 0.5, pr.y + pr.h * 0.2);
-  await win.waitForTimeout(600);
-  await win.locator('[data-annotation-editor="textbox"]').waitFor({ timeout: 8000 });
-  await editorGrips('textbox-create');
-  await shot('def-153-1723d-textbox-editor.png');
-  await win.keyboard.press('Escape');
-  await win.waitForTimeout(400);
-
-  // callout create editor
-  await win.click('[data-annotation-toolbar] [data-tool="callout"]');
-  await win.waitForTimeout(350);
-  await win.mouse.move(pr.x + pr.w * 0.15, pr.y + pr.h * 0.35);
-  await win.mouse.down();
-  await win.mouse.move(pr.x + pr.w * 0.33, pr.y + pr.h * 0.42, { steps: 8 });
-  await win.mouse.up();
-  await win.waitForTimeout(600);
-  await win.locator('[data-annotation-editor="callout"]').waitFor({ timeout: 8000 });
-  await editorGrips('callout-create');
-  await shot('def-153-1723d-callout-editor.png');
-  await win.keyboard.press('Escape');
-  await win.waitForTimeout(400);
-
-  // note editor
-  await win.click('[data-annotation-toolbar] [data-tool="note"]');
-  await win.waitForTimeout(350);
-  await win.mouse.click(pr.x + pr.w * 0.5, pr.y + pr.h * 0.55);
-  await win.waitForTimeout(600);
-  await win.locator('[data-annotation-editor="note"]').waitFor({ timeout: 8000 });
-  await editorGrips('note-editor');
-  await shot('def-153-1723d-note-editor.png');
-  const cancelNote = await win.evaluate(() => {
-    for (const b of document.querySelectorAll('[data-annotation-editor="note"] button')) {
-      if (/cancel/i.test(b.textContent || '')) {
-        const r = b.getBoundingClientRect();
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-      }
-    }
-    return null;
-  });
-  if (cancelNote) await win.mouse.click(cancelNote.x, cancelNote.y);
-  await win.waitForTimeout(400);
-
-  // add-box inline editor (page 1)
-  await scrollToPage(1);
-  await win.waitForTimeout(600);
-  const pr1 = await pageRect(1);
-  await win.click('[data-toolbar-edit-toggle]');
-  await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
-  await win.waitForTimeout(300);
-  await win.click('[data-edit-tool="box"]');
-  await win.waitForTimeout(300);
-  await win.mouse.move(pr1.x + pr1.w * 0.16, pr1.y + pr1.h * 0.14);
-  await win.mouse.down();
-  await win.mouse.move(pr1.x + pr1.w * 0.16 + 150, pr1.y + pr1.h * 0.14 + 90, { steps: 8 });
-  await win.mouse.up();
-  await win.waitForTimeout(700);
-  await win.locator('[data-edit-textarea]').first().waitFor({ timeout: 8000 });
-  await editorGrips('addbox-inline');
-  await shot('def-153-1723d-addbox-editor.png');
-
-  await noPageErrors('T4a');
-});
-
-test('T4b DEF-155: release then DESELECT without Confirm — stale visible?', async () => {
+test('T4b DEF-155: release then DESELECT without Confirm â€” stale visible?', async () => {
   await openSampleFromCard('report.pdf');
   await scrollToPage(1);
   await win.waitForTimeout(800);
@@ -268,7 +177,7 @@ test('T4b DEF-155: release then DESELECT without Confirm — stale visible?', as
     width: Math.min(R0.w + 120, 600), height: Math.min(R0.h + 120, 420),
   });
 
-  // Second sample after a forced re-render (scroll away + back) — if the
+  // Second sample after a forced re-render (scroll away + back) â€” if the
   // deselected move never baked, the stale R0 text reappears here.
   await win.evaluate(() => {
     const sc = document.querySelector('.document-scroller');

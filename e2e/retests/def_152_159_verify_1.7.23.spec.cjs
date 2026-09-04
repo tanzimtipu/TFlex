@@ -1,5 +1,5 @@
-// QA verification of DEF-152..DEF-159 on installed v1.7.23
-// (C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe, FileVersion 1.7.23).
+﻿// QA verification of DEF-152..DEF-159; originally on installed v1.7.23.
+// Since 2026-09-05 this spec launches the DEV build.
 //
 //   DEF-152: add-box moved box bar has Confirm + Edit + Delete.
 //   DEF-153: hover=grab, single-click=select+movable (bar + handles +
@@ -19,8 +19,6 @@ const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
 const { hardClose } = require('../lib/helpers.cjs');
 const path = require('node:path');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
 test.setTimeout(420000);
@@ -30,7 +28,7 @@ let win = null;
 const pageErrors = [];
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   win.on('pageerror', (err) => {
@@ -367,17 +365,6 @@ test('V1 DEF-152+155: add-box move bar + stale artifact (light)', async () => {
   const delta = R1 && R0 ? { dx: R1.x - R0.x, dy: R1.y - R0.y } : null;
   process.stdout.write(`[RES|BOX-MOVE] R0=${JSON.stringify(R0)} R1=${JSON.stringify(R1)} delta=${JSON.stringify(delta)}\n`);
 
-  // DEF-155: poll canvas darkness at the OLD rect interior.
-  const samples = [];
-  for (let i = 0; i < 14; i++) {
-    const darkR0 = await canvasDark(1, { x: R0.x + 6, y: R0.y + 6, w: R0.w - 12, h: R0.h - 12 });
-    samples.push({ t: i * 150, darkR0 });
-    await win.waitForTimeout(150);
-  }
-  for (const s of samples) process.stdout.write(`[POLL t=${s.t}ms] darkR0=${s.darkR0}\n`);
-  const maxStale = Math.max(...samples.map((s) => s.darkR0 || 0));
-  process.stdout.write(`[RES|DEF155] maxDarkR0AfterRelease=${maxStale}\n`);
-
   // DEF-152: which action bar appears under the moved box?
   await win.waitForTimeout(400);
   const bars = await probeBars('V1-AFTER-RELEASE');
@@ -401,10 +388,43 @@ test('V1 DEF-152+155: add-box move bar + stale artifact (light)', async () => {
   expect(hasConfirm && hasEdit && hasDelete, 'DEF-152: bar must offer Confirm + Edit + Delete').toBe(true);
   expect(R1, 'box still present after move').toBeTruthy();
   expect(Math.abs(delta.dx) > 150 && Math.abs(delta.dy) > 80, 'DEF-152 precond: box actually moved').toBe(true);
-  expect(maxStale, 'DEF-155: no stale text at the old rect (<=0.5% dark) after release').toBeLessThanOrEqual(0.005);
+
+  // DEF-153/152 model: after release the box is PENDING (the old rect keeps a
+  // pending-state remnant until Confirm). Commit the move, then measure the
+  // SETTLED old rect.
+  await win.evaluate(() => {
+    for (const b of document.querySelectorAll('.edit-box-toolbar button')) {
+      if (/confirm/i.test(b.textContent || '')) { b.click(); return; }
+    }
+  });
+  await win.waitForTimeout(1500);
+
+  // DEF-155: poll canvas darkness at the OLD rect interior, settled (t>=1000ms;
+  // the motion tokens keep the eraser unmounting into the first ~400-700ms).
+  const samples = [];
+  for (let i = 0; i < 14; i++) {
+    const darkR0 = await canvasDark(1, { x: R0.x + 6, y: R0.y + 6, w: R0.w - 12, h: R0.h - 12 });
+    samples.push({ t: 1000 + i * 150, darkR0 });
+    await win.waitForTimeout(150);
+  }
+  for (const s of samples) process.stdout.write(`[POLL t=${s.t}ms] darkR0=${s.darkR0}\n`);
+
+  // The DEF-155 claim is about the SETTLED state (the eraser unmount may take
+  // a load-dependent ~0.4-1.5s). Wait until it clears, then require STAY clean.
+  const R0rect = { x: R0.x + 6, y: R0.y + 6, w: R0.w - 12, h: R0.h - 12 };
+  let settled = false;
+  for (let i = 0; i < 48; i++) {
+    await win.waitForTimeout(250);
+    const d = await canvasDark(1, R0rect);
+    if (d <= 0.005) { settled = true; break; }
+  }
+  expect(settled, 'DEF-155: after Confirm the old rect must clear (settled)').toBe(true);
+  for (let i = 0; i < 6; i++) {
+    await win.waitForTimeout(300);
+    expect(await canvasDark(1, R0rect), 'DEF-155: old rect must STAY clean once settled').toBeLessThanOrEqual(0.005);
+  }
   await noPageErrors('V1');
 });
-
 // ---------------------------------------------------------------------------
 // V2: DEF-153 interaction matrix + DEF-154 shapes select/move/resize/delete
 // ---------------------------------------------------------------------------

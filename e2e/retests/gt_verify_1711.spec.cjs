@@ -1,5 +1,5 @@
-// QA release-gate verification of DEF-132..136 on the freshly installed
-// v1.7.11 binary (C:\Users\tanzi\AppData\Local\Programs\tflex\TFlex.exe,
+// QA release-gate verification of DEF-132..136; originally on the freshly installed v1.7.11 binary.
+// Since 2026-09-05 this spec launches the DEV build.
 // FileVersion 1.7.11, built 05:42 — newer than ALL src).
 //
 // This is the FIXED-build counterpart to e2e/retests/gt_repro_1710.spec.cjs
@@ -22,8 +22,6 @@ const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-
-const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 const SAMPLES = path.resolve(__dirname, '..', '..', 'assets', 'samples');
 
@@ -34,7 +32,7 @@ let win = null;
 let pageErrors = [];
 
 test.beforeEach(async () => {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   win = await electronApp.firstWindow();
   await win.waitForSelector('.welcome, .workspace', { timeout: 30000 });
   pageErrors = [];
@@ -467,12 +465,26 @@ test('DEF-135: moving a text box that covered the title does not erase it', asyn
   console.log('[DEF-135] committed box count =', boxCount);
 
   // Drag the box body 120px right / 120px down — away from the title.
+  // DEF-153/152 model: the drag leaves the box PENDING with a Confirm bar;
+  // clicking Confirm commits the move to the engine (commit-on-release is gone).
   const box = win.locator('.edit-box').first();
   const bb = await box.boundingBox();
   await win.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2);
   await win.mouse.down();
   await win.mouse.move(bb.x + bb.width / 2 + 120, bb.y + bb.height / 2 + 120, { steps: 12 });
   await win.mouse.up();
+  await win.waitForTimeout(600);
+  const confirmBtn = await win.evaluate(() => {
+    for (const b of document.querySelectorAll('.edit-box-toolbar button')) {
+      if (/confirm/i.test(b.textContent || '')) {
+        const r = b.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }
+    }
+    return null;
+  });
+  expect(confirmBtn, 'the moved box must offer Confirm (pending bar)').toBeTruthy();
+  await win.mouse.click(confirmBtn.x, confirmBtn.y);
   await win.waitForTimeout(1800);
   await shot('def-135-after-move.png');
 

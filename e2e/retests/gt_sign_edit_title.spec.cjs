@@ -1,20 +1,18 @@
-// QA ground-truth reproduction — installed v1.7.5 app.
+﻿// QA ground-truth reproduction (originally the installed v1.7.5 app; DEV build since 2026-09-05).
 // Group 1: Bug 1 (embedded sign selection), Bug 2 (edit text a/b/c),
 // Bug 5 (Add Box render), Bug 6 (context-window outside click),
 // Bug 10 (min/max title-bar icons identical).
-// Drives the REAL installed app via e2e/lib/launch.cjs EXE_PATH.
+// Drives the app via the canonical e2e/lib/launch.cjs launcher (DEV build).
 
 const { test, expect } = require('@playwright/test');
 const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 
-const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
-
 let electronApp = null;
 let window = null;
 
 async function launch() {
-  electronApp = await launchApp([], null, EXE_PATH);
+  electronApp = await launchApp([]);
   window = await electronApp.firstWindow();
   await window.waitForLoadState('domcontentloaded');
   await window.waitForTimeout(2000);
@@ -55,7 +53,7 @@ test.beforeEach(async () => { await launch(); });
 test.afterEach(async () => { await close(); });
 
 // ---------------------------------------------------------------------------
-// Bug 1 — click an already-placed (embedded) sign -> selector should appear
+// Bug 1 â€” click an already-placed (embedded) sign -> selector should appear
 // ---------------------------------------------------------------------------
 test('GT-01: embedded signature selection shows move/resize/delete handles', async () => {
   test.setTimeout(120000);
@@ -97,7 +95,7 @@ test('GT-01: embedded signature selection shows move/resize/delete handles', asy
 });
 
 // ---------------------------------------------------------------------------
-// Bug 2a — edit text: confirm does not render the updated text
+// Bug 2a â€” edit text: confirm does not render the updated text
 // ---------------------------------------------------------------------------
 test('GT-02a: edit text confirm renders updated text', async () => {
   test.setTimeout(120000);
@@ -123,7 +121,7 @@ test('GT-02a: edit text confirm renders updated text', async () => {
   // Hover then click the title text run (DEF-105 stay-open technique)
   await window.mouse.move(s.x + s.w / 2, s.y + s.h / 2);
   await window.waitForTimeout(400);
-  await window.mouse.click(s.x + s.w / 2, s.y + s.h / 2);
+  await window.mouse.dblclick(s.x + s.w / 2, s.y + s.h / 2, { delay: 60 }); // DEF-153 model: double click opens the editor
   await window.waitForTimeout(600);
 
   const editorCount = await window.locator('[data-edit-editor="edit"]').count();
@@ -159,7 +157,7 @@ test('GT-02a: edit text confirm renders updated text', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 2b — edit text: the size/arrow control doesn't change the value
+// Bug 2b â€” edit text: the size/arrow control doesn't change the value
 // ---------------------------------------------------------------------------
 test('GT-02b: edit inline editor size/arrow control works', async () => {
   test.setTimeout(120000);
@@ -183,7 +181,7 @@ test('GT-02b: edit inline editor size/arrow control works', async () => {
   const s = spans.find(x => x.y >= 300 && x.w > 150) || spans[0];
   await window.mouse.move(s.x + s.w / 2, s.y + s.h / 2);
   await window.waitForTimeout(400);
-  await window.mouse.click(s.x + s.w / 2, s.y + s.h / 2);
+  await window.mouse.dblclick(s.x + s.w / 2, s.y + s.h / 2, { delay: 60 }); // DEF-153 model: double click opens the editor
   await window.waitForTimeout(600);
   if (await window.locator('[data-edit-editor="edit"]').count() === 0) throw new Error('editor did not open');
 
@@ -211,7 +209,7 @@ test('GT-02b: edit inline editor size/arrow control works', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 2c / Bug 6 — clicking the context-window bar registers as an outside
+// Bug 2c / Bug 6 â€” clicking the context-window bar registers as an outside
 // click and closes it; moving focus outside the window closes it.
 // ---------------------------------------------------------------------------
 test('GT-06: edit inline editor stays open when clicked/moved on its bar', async () => {
@@ -236,7 +234,7 @@ test('GT-06: edit inline editor stays open when clicked/moved on its bar', async
   const s = spans.find(x => x.y >= 300 && x.w > 150) || spans[0];
   await window.mouse.move(s.x + s.w / 2, s.y + s.h / 2);
   await window.waitForTimeout(400);
-  await window.mouse.click(s.x + s.w / 2, s.y + s.h / 2);
+  await window.mouse.dblclick(s.x + s.w / 2, s.y + s.h / 2, { delay: 60 }); // DEF-153 model: double click opens the editor
   await window.waitForTimeout(600);
   if (await window.locator('[data-edit-editor="edit"]').count() === 0) throw new Error('editor did not open');
 
@@ -245,7 +243,7 @@ test('GT-06: edit inline editor stays open when clicked/moved on its bar', async
   console.log('GT-06 editor box:', JSON.stringify(editorBox), 'toolbar box:', JSON.stringify(barBox));
   await snap('gt-bug6-editor-open');
 
-  // SCENARIO A — bug 6: highlight text inside the editor's textarea, then
+  // SCENARIO A â€” bug 6: highlight text inside the editor's textarea, then
   // release the mouse OUTSIDE the editor window (drag ends on the page).
   // A correct text-drag-outside guard (like InsertPages B17) must NOT close
   // the editor; the bug reports that it DOES (outside click registered).
@@ -261,12 +259,12 @@ test('GT-06: edit inline editor stays open when clicked/moved on its bar', async
   console.log('GT-06 A) editor present after highlight-drag OUTSIDE=', afterDragOutside);
   await snap('gt-bug6-after-drag-outside');
 
-  // Scenario B — bug 2c: a click landed on the toolbar bar closes the editor.
+  // Scenario B â€” bug 2c: a click landed on the toolbar bar closes the editor.
   if (afterDragOutside === 0) {
     // editor already closed by A; reopen to test B in isolation
     await window.mouse.move(s.x + s.w / 2, s.y + s.h / 2);
     await window.waitForTimeout(400);
-    await window.mouse.click(s.x + s.w / 2, s.y + s.h / 2);
+    await window.mouse.dblclick(s.x + s.w / 2, s.y + s.h / 2, { delay: 60 }); // DEF-153 model: double click opens the editor
     await window.waitForTimeout(600);
   }
   const beforeBarClick = await window.locator('[data-edit-editor="edit"]').count();
@@ -290,7 +288,7 @@ test('GT-06: edit inline editor stays open when clicked/moved on its bar', async
 });
 
 // ---------------------------------------------------------------------------
-// Bug 5 — Add Box (edit mode): text box doesn't render after confirming
+// Bug 5 â€” Add Box (edit mode): text box doesn't render after confirming
 // ---------------------------------------------------------------------------
 test('GT-05: Add Box text renders after confirming', async () => {
   test.setTimeout(120000);
@@ -337,7 +335,7 @@ test('GT-05: Add Box text renders after confirming', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// Bug 10 — Minimize and Maximize title-bar buttons are identical
+// Bug 10 â€” Minimize and Maximize title-bar buttons are identical
 // ---------------------------------------------------------------------------
 test('GT-10: minimize vs maximize title-bar button icons differ', async () => {
   test.setTimeout(120000);
