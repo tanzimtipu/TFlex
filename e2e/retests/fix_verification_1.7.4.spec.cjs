@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -29,7 +30,7 @@ test.describe('Defect Fix Verification (Installed App) - v1.7.4', () => {
   });
 
   test.afterEach(async () => {
-    await electronApp.close();
+    await hardClose(electronApp);
   });
 
   test('DEF-095: Textbox floating bar unmounts after Confirm', async () => {

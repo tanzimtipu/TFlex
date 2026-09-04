@@ -1,4 +1,5 @@
 const { test } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp } = require('./lib/launch.cjs');
 const path = require('node:path');
 
@@ -17,7 +18,7 @@ test.describe('GT Bug 2 clean — edit text run residue', () => {
     await firstWindow.waitForTimeout(1500);
   });
 
-  test.afterAll(async () => { if (electronApp) await electronApp.close(); });
+  test.afterAll(async () => { if (electronApp) await hardClose(electronApp); });
 
   test('edit the subtitle run, capture mask vs old-run geometry, screenshot', async () => {
     // Enter edit mode, text tool

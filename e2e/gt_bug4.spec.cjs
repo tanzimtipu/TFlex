@@ -1,4 +1,5 @@
 const { test } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp } = require('./lib/launch.cjs');
 const path = require('node:path');
 
@@ -17,7 +18,7 @@ test.describe('GT Bug 4 — OCR suspects top bar layout', () => {
     await firstWindow.waitForTimeout(1500);
   });
 
-  test.afterAll(async () => { if (electronApp) await electronApp.close(); });
+  test.afterAll(async () => { if (electronApp) await hardClose(electronApp); });
 
   test('run OCR and inspect suspects panel layout', async () => {
     test.setTimeout(240000);

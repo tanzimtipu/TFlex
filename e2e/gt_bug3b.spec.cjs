@@ -1,4 +1,5 @@
 const { test } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp } = require('./lib/launch.cjs');
 const path = require('node:path');
 
@@ -17,7 +18,7 @@ test.describe('GT Bug 3 + 6 — Sign while edit active + leaving edit mode clear
     await firstWindow.waitForTimeout(1500);
   });
 
-  test.afterAll(async () => { if (electronApp) await electronApp.close(); });
+  test.afterAll(async () => { if (electronApp) await hardClose(electronApp); });
 
   test('BUG3: edit mode + ACTIVE text tool, click Sign, try to place', async () => {
     await firstWindow.click('[data-toolbar-edit-toggle]');

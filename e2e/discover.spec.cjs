@@ -1,4 +1,5 @@
 const { test } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp } = require('./lib/launch.cjs');
 
 const installedPath = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
@@ -59,5 +60,5 @@ test('Discover selectors', async () => {
         console.log('Palette Buttons:', JSON.stringify(paletteButtons, null, 2));
     }
 
-    await electronApp.close();
+    await hardClose(electronApp);
 });

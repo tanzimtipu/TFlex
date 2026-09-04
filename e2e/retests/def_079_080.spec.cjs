@@ -1,4 +1,5 @@
 const { _electron: electron } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -74,7 +75,7 @@ test.describe('DEF-079 / DEF-080: OTA Update Fixes', () => {
     const finalStatus = await window.evaluate(() => window.tflex.update.getStatus());
     expect(['up-to-date', 'available', 'error']).toContain(finalStatus.kind);
     
-    await electronApp.close();
+    await hardClose(electronApp);
   });
 
   test('Update available flow (1.5.2 -> 1.5.3)', async () => {
@@ -120,6 +121,6 @@ test.describe('DEF-079 / DEF-080: OTA Update Fixes', () => {
 
     console.log('Confirmed: Update 1.5.3 downloaded.');
 
-    await electronApp.close();
+    await hardClose(electronApp);
   });
 });

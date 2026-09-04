@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 
 test('Performance Re-time', async () => {
@@ -30,5 +31,5 @@ test('Performance Re-time', async () => {
   });
   console.log(`PERF: Idle memory (main): ${memory.toFixed(2)}MB`);
 
-  await electronApp.close();
+  await hardClose(electronApp);
 });

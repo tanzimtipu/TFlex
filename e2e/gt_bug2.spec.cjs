@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp } = require('./lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -25,7 +26,7 @@ test.describe('GT Edit-content bugs (2,3,5,5.5,6)', () => {
   });
 
   test.afterAll(async () => {
-    if (electronApp) await electronApp.close();
+    if (electronApp) await hardClose(electronApp);
   });
 
   test('BUG3: Enter edit mode, click Sign tool -> does edit mode exit?', async () => {

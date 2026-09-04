@@ -2,6 +2,7 @@
 // Group 3: Bug 8 (crop-box adjustment flashes a larger-crop artifact),
 // Bug 9 (OTA update prompt update-click UX).
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 
 const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
@@ -15,7 +16,7 @@ async function launch() {
   await window.waitForLoadState('domcontentloaded');
   await window.waitForTimeout(2000);
 }
-async function close() { if (electronApp) await electronApp.close().catch(() => {}); electronApp = null; }
+async function close() { if (electronApp) await hardClose(electronApp); electronApp = null; }
 async function openSample(name) {
   await window.click(`.sample-card:has-text("${name}")`);
   await window.waitForSelector('.workspace', { timeout: 15000 });

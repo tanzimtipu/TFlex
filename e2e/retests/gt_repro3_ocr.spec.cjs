@@ -1,5 +1,6 @@
 // Ground-truth reproduction on the INSTALLED app. Bug 4 (OCR panel behind tools) + Bug 8b.
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
 
@@ -16,7 +17,7 @@ test.beforeEach(async () => {
 });
 
 test.afterEach(async () => {
-  if (electronApp) await electronApp.close();
+  if (electronApp) await hardClose(electronApp);
 });
 
 async function openPdf(name) {

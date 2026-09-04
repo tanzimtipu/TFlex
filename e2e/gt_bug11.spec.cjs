@@ -1,4 +1,5 @@
 const { test } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp } = require('./lib/launch.cjs');
 const path = require('node:path');
 
@@ -17,7 +18,7 @@ test.describe('GT Bug 11 — crop "per page" crops every page', () => {
     await firstWindow.waitForTimeout(1500);
   });
 
-  test.afterAll(async () => { if (electronApp) await electronApp.close(); });
+  test.afterAll(async () => { if (electronApp) await hardClose(electronApp); });
 
   test('per-page crop should affect ONLY the selected page', async () => {
     await firstWindow.click('[data-tools-toggle]');

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -21,7 +22,7 @@ test.describe('TFlex 20-Bug Comprehensive Verification (Final Refinement)', () =
     const screenshotPath = `screenshots/v3_${safeTitle}.png`;
     await window.screenshot({ path: screenshotPath });
     console.log(`[SCREENSHOT] Saved to ${screenshotPath}`);
-    if (electronApp) await electronApp.close();
+    if (electronApp) await hardClose(electronApp);
   });
 
   async function openSample(sampleName = 'report.pdf') {
@@ -146,6 +147,10 @@ test.describe('TFlex 20-Bug Comprehensive Verification (Final Refinement)', () =
     await window.click('[data-toolbar-rotate-cw], [aria-label="Rotate clockwise"]');
     await window.click('.tab-close');
     await window.waitForSelector('[data-close-prompt], .modal-dialog:has-text("Save")');
+    // Answer the prompt (Cancel keeps the tab) so the app is not left
+    // sitting on the DEF-142 close gate before teardown.
+    await window.click('[data-close-prompt-action="cancel"]');
+    await window.waitForSelector('[data-close-prompt]', { state: 'hidden', timeout: 5000 });
   });
 
   test('B9: DOCX export dialog visibility', async () => {

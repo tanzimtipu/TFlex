@@ -1,6 +1,8 @@
 const { test } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp } = require('./lib/launch.cjs');
 const path = require('node:path');
+const os = require('node:os');
 
 const INSTALLED = path.join(process.env.LOCALAPPDATA, 'Programs', 'TFlex', 'TFlex.exe');
 
@@ -15,9 +17,15 @@ test.describe('GT Bug 7 — close unsaved sample tab', () => {
     await firstWindow.locator('.sample-card', { has: firstWindow.locator('.sample-name', { hasText: 'report.pdf' }) }).click();
     await firstWindow.waitForSelector('.workspace', { timeout: 30000 });
     await firstWindow.waitForTimeout(1500);
+    // The prompt's Save flow opens a native save dialog; stub it so the
+    // app cannot block on an unanswered OS modal mid-test.
+    const savePath = path.join(os.tmpdir(), `tflex-gtbug7-save-${Date.now()}.pdf`);
+    await electronApp.evaluate(async ({ dialog }, p) => {
+      dialog.showSaveDialog = async () => ({ canceled: false, filePath: savePath });
+    }, savePath);
   });
 
-  test.afterAll(async () => { if (electronApp) await electronApp.close(); });
+  test.afterAll(async () => { if (electronApp) await hardClose(electronApp); });
 
   test('modify a sample tab then close it -> prompt Save behavior', async () => {
     // Make the doc modified: rotate a page

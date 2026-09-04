@@ -18,6 +18,7 @@
 // Launch only via e2e/lib/launch.cjs against the packaged installed exe.
 
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 const EXE_PATH = 'C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe';
@@ -39,7 +40,7 @@ test.beforeEach(async () => {
 });
 
 test.afterEach(async () => {
-  if (electronApp) await electronApp.close().catch(() => {});
+  if (electronApp) await hardClose(electronApp);
   electronApp = null;
   win = null;
 });

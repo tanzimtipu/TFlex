@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('path');
 
@@ -13,7 +14,7 @@ test.describe('DEF-085 Retest: Header Alignment', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) await electronApp.close();
+    if (electronApp) await hardClose(electronApp);
   });
 
   test('Header actions are right-aligned', async () => {

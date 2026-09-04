@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
@@ -23,7 +24,7 @@ test.describe('Defect Fix Verification (Installed App) - v1.7.4 - Final Probe', 
   });
 
   test.afterEach(async () => {
-    await electronApp.close();
+    await hardClose(electronApp);
   });
 
   test('B11: OCR suspects disabled on empty tab', async () => {

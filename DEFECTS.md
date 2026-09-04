@@ -1,3 +1,26 @@
+## DEF-171: Signature manager ignores Escape - the dialog and its full-screen backdrop stay up, blocking every control behind them until the Close button is used
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 16 (found during the motion-system verification run of the standard e2e suite; reproduced on both the motion build and the pre-motion HEAD c6cd827, so it predates the motion chunks)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp, no executablePath).
+2. Open a PDF (repro used assets/samples/report.pdf).
+3. Click the "Sign" toolbar button (button[aria-label="Sign tool"]). The Signature manager opens (Draw/Type/Saved tabs) over a dimmed modal backdrop.
+4. Press Escape and wait ~800ms.
+5. Observe the screen, then try any control behind the dialog (e.g. the theme toggle in the title bar).
+
+Expected: Escape dismisses the Signature manager (every other modal in the app closes on Escape - Insert pages, Merge, crop, etc.), and the workspace behind it becomes interactive again.
+
+Actual: after Escape the dialog is still fully visible and interactive (computed check: .sig-manager present=true, .modal-backdrop present=true), and the full-screen backdrop intercepts all pointer events - Playwright retry-looped 56x for 30s on the theme toggle with "<div class=modal-backdrop> intercepts pointer events" (e2e/sweep_visual.spec.cjs failure). The ONLY way out is the dialog's own Close button: clicking it removes both the dialog and the backdrop (sigVisible=false, backdrop=false). Verified twice on the motion build (e2e/retests/def_171_173_diag.spec.cjs [D1]: after Escape {"sigVisible":true,"backdrop":true}; after Close {"sigVisible":false,"backdrop":false}) and the same sweep_visual failure exists on pre-motion HEAD.
+
+Screenshot: screenshots/def-171-sign-escape.png (Signature dialog still open over the dimmed workspace after Escape was pressed)
+
+History:
+- qa: opened
+
 ## DEF-170: A SECOND Extract in the same session orphans its result document - success toast, but no tab opens and the app refocuses the OLD extraction tab (still showing the old doc)
 
 - Status: CLOSED

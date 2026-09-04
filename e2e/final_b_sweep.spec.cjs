@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -17,7 +18,7 @@ test.describe('B1-B18 Final Verification (Refined)', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) await electronApp.close();
+    if (electronApp) await hardClose(electronApp);
   });
 
   async function openSample(sampleName = 'report.pdf') {

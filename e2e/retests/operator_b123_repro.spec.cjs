@@ -15,6 +15,7 @@
 // Launch ONLY through e2e/lib/launch.cjs against the packaged exe.
 
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -43,7 +44,7 @@ test.beforeEach(async () => {
 });
 
 test.afterEach(async () => {
-  if (electronApp) await electronApp.close().catch(() => {});
+  if (electronApp) await hardClose(electronApp);
   electronApp = null;
   win = null;
   pageErrors = [];

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 
 // IPC constants from src/shared/ipc.ts
@@ -18,7 +19,7 @@ test.describe('DEF-077: OTA UX Retest', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) await electronApp.close();
+    if (electronApp) await hardClose(electronApp);
   });
 
   test('Toolbar indicator and About dialog respond to update availability', async () => {

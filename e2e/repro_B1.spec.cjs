@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -55,6 +56,6 @@ test('B1 targeted verification', async () => {
     await window.waitForTimeout(500);
     await window.screenshot({ path: 'screenshots/repro_B1_ghost_check.png' });
 
-    await electronApp.close();
+    await hardClose(electronApp);
     expect(isPressed).toBe('false');
 });

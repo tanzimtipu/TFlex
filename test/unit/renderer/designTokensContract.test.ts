@@ -322,3 +322,253 @@ describe("Phase 13 — DEF-083 light theme renders light (html + body background
     expect(b).toBeGreaterThanOrEqual(0xf0);
   });
 });
+
+describe("Global motion system — theme-independent timing + easing tokens", () => {
+  const css = readStyles();
+  const root = lightThemeBlock(css); // :root block (theme-independent defaults)
+  const dark = darkThemeBlock(css);
+
+  it("declares the canonical --tf-motion-* timing tokens in :root", () => {
+    for (const token of [
+      "--tf-motion-instant",
+      "--tf-motion-fast",
+      "--tf-motion-normal",
+      "--tf-motion-emphasized",
+      "--tf-motion-panel",
+      "--tf-motion-large",
+    ]) {
+      expect(root).toMatch(new RegExp(`${token}\\s*:`));
+    }
+  });
+
+  it("declares the canonical --tf-ease-* easing tokens in :root", () => {
+    for (const token of ["--tf-ease-standard", "--tf-ease-emphasized", "--tf-ease-fast"]) {
+      expect(root).toMatch(new RegExp(`${token}\\s*:`));
+    }
+  });
+
+  it("keeps the motion tokens theme-independent (never inside a [data-theme] block)", () => {
+    // Motion is a GLOBAL concern — themes only provide colours/surfaces.
+    expect(dark).not.toMatch(/--tf-motion-/);
+    expect(dark).not.toMatch(/--tf-ease-/);
+  });
+
+  it("keeps the Phase-1 --motion-* names as aliases that point at the --tf-* tokens", () => {
+    expect(root).toMatch(/--motion-fast:\s*var\(--tf-motion-fast\)/);
+    expect(root).toMatch(/--motion-normal:\s*var\(--tf-motion-normal\)/);
+    expect(root).toMatch(/--motion-medium:\s*var\(--tf-motion-emphasized\)/);
+    expect(root).toMatch(/--motion-slow:\s*var\(--tf-motion-panel\)/);
+  });
+
+  it("keeps --ease / --ease-out as aliases of the standard ease", () => {
+    expect(root).toMatch(/--ease:\s*var\(--tf-ease-standard\)/);
+    expect(root).toMatch(/--ease-out:\s*var\(--tf-ease-standard\)/);
+  });
+
+  it("stays under the ~350ms ordinary-UI ceiling (fastest token is 70ms instant, largest is 320ms)", () => {
+    // Every canonical timing token must carry an explicit ms value.
+    for (const t of ["instant", "fast", "normal", "emphasized", "panel", "large"]) {
+      expect(root).toMatch(new RegExp(`--tf-motion-${t}:\\s*\\d+ms`));
+    }
+    // No linear or bounce easing anywhere in the global system.
+    expect(root).not.toMatch(/--tf-ease-[^:]+:\s*linear/);
+  });
+});
+
+describe("Global motion system — shared entrance/exit primitives", () => {
+  const css = readStyles();
+
+  it("defines the full primitive set (panel/menu/dialog/popover/tooltip, enter + exit)", () => {
+    for (const name of [
+      "panel-enter",
+      "panel-exit",
+      "panel-enter-left",
+      "panel-exit-left",
+      "menu-enter",
+      "menu-enter-up",
+      "dialog-enter",
+      "dialog-exit",
+      "popover-enter",
+      "tooltip-enter",
+    ]) {
+      expect(css).toMatch(new RegExp(`@keyframes\\s+${name}\\s*\\{`));
+    }
+  });
+
+  it("primitives move — no entrance is opacity-only (visible movement required)", () => {
+    const body = (name: string): string => {
+      const m = new RegExp(`@keyframes\\s+${name}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(css);
+      expect(m).not.toBeNull();
+      return m?.[1] ?? "";
+    };
+    expect(body("panel-enter")).toMatch(/translateX\(/);
+    expect(body("panel-exit")).toMatch(/translateX\(/);
+    expect(body("panel-enter-left")).toMatch(/translateX\(/);
+    expect(body("menu-enter")).toMatch(/scale\(/);
+    expect(body("dialog-enter")).toMatch(/translateY\(/);
+    expect(body("dialog-exit")).toMatch(/scale\(/);
+    expect(body("popover-enter")).toMatch(/scale\(/);
+    expect(body("tooltip-enter")).toMatch(/translateY\(/);
+  });
+
+  it("the old too-weak Phase-5 keyframes are gone (no opacity-only / sub-band entrances)", () => {
+    for (const gone of [
+      "titlebar-popover-in",
+      "tools-palette-in",
+      "modal-dialog-in",
+      "sheet-in",
+      "popover-in",
+    ]) {
+      expect(css).not.toMatch(new RegExp(`@keyframes\\s+${gone}\\s*\\{`));
+    }
+  });
+});
+
+describe("Global motion system — components consume the shared primitives", () => {
+  const css = readStyles();
+
+  /** Pull every block whose selector ends with the given class and return
+   *  the one that declares an `animation` (some classes have a styling
+   *  block AND an earlier no-drag/no-motion block, e.g.
+   *  .titlebar-menu-popover). */
+  const animatedRule = (cls: string): string => {
+    const blocks = [...css.matchAll(new RegExp(`\\.${cls}\\s*\\{([\\s\\S]*?)\\n\\}`, "g"))];
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const b of blocks) {
+      const body = b[1] ?? "";
+      if (/animation:/.test(body)) return body;
+    }
+    return "";
+  };
+
+  it(".tools-palette slides in via panel-enter @ --tf-motion-panel", () => {
+    expect(animatedRule("tools-palette")).toMatch(/animation:\s*panel-enter\s+var\(--tf-motion-panel\)\s+var\(--tf-ease-standard\)/);
+  });
+
+  it(".side-rail slides in from the left via panel-enter-left @ --tf-motion-panel", () => {
+    expect(animatedRule("side-rail")).toMatch(/animation:\s*panel-enter-left\s+var\(--tf-motion-panel\)\s+var\(--tf-ease-standard\)/);
+  });
+
+  it(".titlebar-menu-popover grows via menu-enter @ --tf-motion-normal", () => {
+    expect(animatedRule("titlebar-menu-popover")).toMatch(/animation:\s*menu-enter\s+var\(--tf-motion-normal\)\s+var\(--tf-ease-standard\)/);
+  });
+
+  it(".modal-dialog and .sheet rise+settle via dialog-enter @ --tf-motion-emphasized", () => {
+    const token = /animation:\s*dialog-enter\s+var\(--tf-motion-emphasized\)\s+var\(--tf-ease-emphasized\)/;
+    expect(animatedRule("modal-dialog")).toMatch(token);
+    expect(animatedRule("sheet")).toMatch(token);
+  });
+
+  it(".color-popover swells via popover-enter @ --tf-motion-normal", () => {
+    expect(animatedRule("color-popover")).toMatch(/animation:\s*popover-enter\s+var\(--tf-motion-normal\)\s+var\(--tf-ease-standard\)/);
+  });
+
+  it("the tooltip enters via the tooltip-enter primitive with a 250-400ms dwell delay", () => {
+    const hover = /\.tooltip-anchor\s*\[data-tooltip\]:hover::after\s*\{([\s\S]*?)\n\}/.exec(css);
+    expect(hover).not.toBeNull();
+    if (hover === null) return;
+    const body = hover[1] ?? "";
+    expect(body).toMatch(/animation:\s*tooltip-enter\s+var\(--tf-motion-fast\)\s+var\(--tf-ease-fast\)/);
+    expect(body).toMatch(/\d{3}ms\s+forwards/);
+  });
+});
+
+describe("Global motion system — reduced motion + no-PDF-animation guards", () => {
+  const css = readStyles();
+
+  /** The @media (prefers-reduced-motion: reduce) block body. */
+  const reducedBody = (): string => {
+    const m = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(m).not.toBeNull();
+    return m?.[1] ?? "";
+  };
+
+  it("declares a @media (prefers-reduced-motion: reduce) block", () => {
+    expect(reducedBody()).not.toBe("");
+  });
+
+  it("collapses ALL motion in reduced-motion mode (0.01ms, single iteration, no delay)", () => {
+    // The catch-all `*` (plus ::before/::after) must collapse every
+    // transition + animation to an instant state change. This covers
+    // every newly-added decorative/interaction motion: panel/menu/
+    // dialog/popover/tooltip keyframes, button lift/press transforms,
+    // tab/thumbnail/tool/indicator transitions, success-pop, error
+    // shake, focus-ring fade — and (via the single iteration count)
+    // the ambient shimmer + all continuous movement.
+    const body = reducedBody();
+    expect(body).toMatch(/animation-duration:\s*0\.01ms\s*!important/);
+    expect(body).toMatch(/animation-iteration-count:\s*1\s*!important/);
+    expect(body).toMatch(/transition-duration:\s*0\.01ms\s*!important/);
+    expect(body).toMatch(/transition-delay:\s*0ms\s*!important/);
+    // The catch-all selector must actually be present.
+    expect(body).toMatch(/\*,\s*\*::before,\s*\*::after\s*\{/);
+  });
+
+  it("keeps ONLY essential opacity-level feedback in reduced motion (backdrop + toast)", () => {
+    // Per the spec the only survivors are the pure-alpha fades —
+    // modal/sheet backdrops and toasts — so an overlay never snaps
+    // between fully-transparent and fully-painted frames. Everything
+    // else in the block is the catch-all collapse.
+    const body = reducedBody();
+    expect(body).toMatch(/\.modal-backdrop/);
+    expect(body).toMatch(/\.sheet-backdrop/);
+    expect(body).toMatch(/\.toast\s*\{/);
+  });
+
+  it("stops the ambient shimmer + continuous movement (infinite loop collapses)", () => {
+    // Shimmer-sweep and the various spinners are `infinite` in normal
+    // mode; a single iteration count in reduced motion kills the loop
+    // so no ambient sweep / spin keeps moving.
+    const body = reducedBody();
+    expect(body).toContain("animation-iteration-count: 1 !important");
+    expect(css).toMatch(/@keyframes\s+shimmer-sweep\s*\{/);
+  });
+
+  it("has ZERO transition/animation on the PDF page, slot, text layer, and scroller", () => {
+    // The document is the stable anchor — no reflection, shimmer,
+    // blur, opacity or decorative movement may attach to the actual
+    // content, its reserved slot, the search/selection text layer,
+    // or the scrollers. Any transition/animation on these rule bodies
+    // is a regression to catch at the source.
+    for (const cls of ["pdf-page", "page-slot", "textLayer", "document-scroller"]) {
+      const blocks = [...css.matchAll(new RegExp(`\\.${cls}\\s*\\{([\\s\\S]*?)\\n\\}`, "g"))];
+      expect(blocks.length).toBeGreaterThan(0);
+      for (const b of blocks) {
+        const body = b[1] ?? "";
+        expect(body).not.toMatch(/transition\s*:/);
+        expect(body).not.toMatch(/animation\s*:/);
+        expect(body).not.toMatch(/scroll-behavior:\s*smooth/);
+      }
+    }
+  });
+
+  it("limits shimmer-sweep to the loading placeholders (never the rendered page)", () => {
+    // The ONLY shimmer is on the un-rendered loading placeholder, and
+    // it is clipped to that placeholder's own box. It must never be
+    // declared on the rendered page, its slot, or any canvas.
+    const uses = [...css.matchAll(/([^{}]*)\{[^}]*animation:\s*shimmer-sweep/g)];
+    expect(uses.length).toBeGreaterThanOrEqual(2);
+    const selectors = uses.map((m) => m[1] ?? "").join("\n");
+    expect(selectors).toMatch(/\.thumb-placeholder::after/);
+    expect(selectors).toMatch(/\.page-placeholder::after/);
+    expect(selectors).not.toMatch(/\.pdf-page\b/);
+    expect(selectors).not.toMatch(/\.page-slot\b/);
+    // Every placeholder that sweeps clips the sweep to its own box.
+    for (const cls of ["thumb-placeholder", "page-placeholder"]) {
+      const b = new RegExp(`\\.${cls}\\s*\\{([\\s\\S]*?)\\n\\}`).exec(css)?.[1] ?? "";
+      expect(b).toMatch(/overflow:\s*hidden/);
+    }
+  });
+
+  it("keeps the motion tokens AND aliases out of every [data-theme] block", () => {
+    // Theme-independence: motion lives in :root only. The themes
+    // provide colours/surfaces and must never re-declare a motion
+    // token (--tf-*), a timing alias (--motion-*), or an easing
+    // alias (--ease-*).
+    const dark = darkThemeBlock(css);
+    expect(dark).not.toMatch(/--tf-motion-/);
+    expect(dark).not.toMatch(/--tf-ease-/);
+    expect(dark).not.toMatch(/--motion-/);
+    expect(dark).not.toMatch(/--ease-/);
+  });
+});

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('path');
 
@@ -13,7 +14,7 @@ test.describe('Remaining Sweep Verification', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) await electronApp.close();
+    if (electronApp) await hardClose(electronApp);
   });
 
   test('Items 2, 4, 5, 6, 7, 8, 9, 10, 11, 16', async () => {
@@ -77,6 +78,12 @@ test.describe('Remaining Sweep Verification', () => {
     const hasSavePrompt = await window.locator('.modal-dialog:has-text("Save")').isVisible();
     await record(4, hasSavePrompt, "Save prompt visible");
     await window.keyboard.press('Escape');
+    // The gate must not stay up: dismiss it if Escape did not (DEF-142),
+    // so the app never sits on the close prompt before teardown.
+    if (await window.locator('[data-close-prompt]').isVisible().catch(() => false)) {
+      await window.click('[data-close-prompt-action="cancel"]');
+    }
+    await window.waitForSelector('[data-close-prompt]', { state: 'hidden', timeout: 5000 }).catch(() => {});
 
     console.table(results);
   });

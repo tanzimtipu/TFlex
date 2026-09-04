@@ -1,4 +1,5 @@
 const { test } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp } = require('./lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -22,7 +23,7 @@ test.describe('GT Insert-pages bugs (8, 9, 10)', () => {
     await firstWindow.waitForTimeout(1500);
   });
 
-  test.afterAll(async () => { if (electronApp) await electronApp.close(); });
+  test.afterAll(async () => { if (electronApp) await hardClose(electronApp); });
 
   async function openInsertDialog() {
     const palette = await firstWindow.$('[data-tools-palette]');

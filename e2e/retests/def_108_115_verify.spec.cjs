@@ -13,6 +13,7 @@
 // DEF-115 crop box adjustment no flash/remount artifact
 
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const os = require('node:os');
 const path = require('node:path');
@@ -30,7 +31,7 @@ async function launch() {
   await window.waitForLoadState('domcontentloaded');
   await window.waitForTimeout(2000);
 }
-async function close() { if (electronApp) await electronApp.close().catch(() => {}); electronApp = null; }
+async function close() { if (electronApp) await hardClose(electronApp); electronApp = null; }
 async function openSample(name) {
   await window.click(`.sample-card:has-text("${name}")`);
   await window.waitForSelector('.workspace', { timeout: 15000 });

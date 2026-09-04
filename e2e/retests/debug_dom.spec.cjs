@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
@@ -25,5 +26,5 @@ test('Check DOM for DEF-095', async () => {
   });
   console.log('Textbox HTML:', html);
 
-  await electronApp.close();
+  await hardClose(electronApp);
 });

@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('path');
 
@@ -12,7 +13,7 @@ test.describe('Defect Re-verification: DEF-092, DEF-093, DEF-094', () => {
   });
 
   test.afterAll(async () => {
-    if (app) await app.close();
+    if (app) await hardClose(app);
   });
 
   test('DEF-093: activeTool diagnostic returns null instead of undefined', async () => {

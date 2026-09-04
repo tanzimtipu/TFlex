@@ -74,6 +74,22 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
   // and releases over the backdrop must not dismiss).
   const backdrop = useBackdropClose(onClose);
 
+  // DEF-171 — Escape closes, same window-keydown wiring as the other
+  // dialogs. Registered on `window` (bubble phase) so it fires even
+  // when focus is inside the draw canvas or the type input (neither
+  // has a keydown handler that stops propagation).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return (): void => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   const onPick = (id: string): void => {

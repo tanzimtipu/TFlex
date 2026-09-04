@@ -1,6 +1,7 @@
 // Ground-truth reproduction on the INSTALLED app. Bugs 1, 2a, 2b, 5.
 // Relaunches a fresh app instance per test so each starts on the welcome screen.
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
 
@@ -17,7 +18,7 @@ test.beforeEach(async () => {
 });
 
 test.afterEach(async () => {
-  if (electronApp) await electronApp.close();
+  if (electronApp) await hardClose(electronApp);
 });
 
 async function openReport() {

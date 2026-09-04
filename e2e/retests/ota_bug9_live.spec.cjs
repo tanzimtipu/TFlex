@@ -22,6 +22,7 @@
 // `window.tflex.update.onStatusChanged` (checking -> available ->
 // downloading(N) -> downloaded) with monotonic timestamps.
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 
 const EXE_PATH = "C:\\Users\\tanzi\\AppData\\Local\\Programs\\tflex\\TFlex.exe";
@@ -40,7 +41,7 @@ async function launch() {
 test.afterEach(async () => {
   // Always tear the app down so an in-flight download (and its process)
   // is killed even if an assertion fails mid-run.
-  if (electronApp) await electronApp.close().catch(() => {});
+  if (electronApp) await hardClose(electronApp);
   electronApp = null;
   window = null;
 });

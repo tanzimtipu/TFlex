@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('./lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -17,7 +18,7 @@ test.describe('Comprehensive Bug Verification (B1-B18)', () => {
   });
 
   test.afterEach(async () => {
-    if (electronApp) await electronApp.close();
+    if (electronApp) await hardClose(electronApp);
   });
 
   async function openSample(sampleName = 'report.pdf') {
@@ -125,6 +126,10 @@ test.describe('Comprehensive Bug Verification (B1-B18)', () => {
     await window.click('[aria-label="Rotate clockwise"]');
     await window.click('.tab-close');
     await window.waitForSelector('[data-close-prompt]');
+    // Answer the prompt (Cancel keeps the tab) so the app is not left
+    // sitting on the DEF-142 close gate before teardown.
+    await window.click('[data-close-prompt-action="cancel"]');
+    await window.waitForSelector('[data-close-prompt]', { state: 'hidden', timeout: 5000 });
     console.log('B8 Outcome: PASS');
   });
 

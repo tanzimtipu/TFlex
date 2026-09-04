@@ -1,7 +1,9 @@
 /* TFlex renderer styles
  * Single accent muted orange, neutral zinc/slate base, two equally designed themes.
  * Inter via @fontsource-variable/inter. Density like VS Code / Linear.
- * No gradients, no purple, no giant radii, motion 80-280ms ease-out. */
+ * No gradients, no purple, no giant radii. Motion is the global
+ * --tf-* system (theme-independent): clearly visible, fast, fluid,
+ * never bouncy — nothing ordinary above ~350ms. */
 
 @import url("@fontsource-variable/inter/index.css");
 
@@ -52,22 +54,43 @@
   --radius-2: 5px;
   --radius-3: 8px;
 
-  /* Motion — Phase-1 tokens: every UI transition routes through
-   * these. --ease-out for appearing surfaces, --ease-in-out for
-   * moving between positions. Legacy --t-* / --ease aliases kept
-   * for compatibility. No bounce, nothing above --motion-slow for
-   * ordinary UI. */
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* GLOBAL MOTION SYSTEM — the single theme-independent timing +
+   * easing source for the whole app. Deliberately OUTSIDE any
+   * [data-theme=...] block: themes only provide colours/surfaces,
+   * motion is identical in both. Motion is clearly visible, fast
+   * and fluid (macOS-quality), never bouncy or slow — no linear,
+   * no bounce, nothing ordinary above ~350ms. Components consume
+   * the --tf-* canonical tokens (and the shared named primitives
+   * defined near the top of this file); the Phase-1 names survive
+   * as aliases so existing rule bodies keep working. */
+  --tf-motion-instant: 70ms;
+  --tf-motion-fast: 120ms;
+  --tf-motion-normal: 180ms;
+  --tf-motion-emphasized: 240ms;
+  --tf-motion-panel: 280ms;
+  --tf-motion-large: 320ms;
+
+  --tf-ease-standard: cubic-bezier(0.16, 1, 0.3, 1);
+  --tf-ease-emphasized: cubic-bezier(0.22, 1, 0.36, 1);
+  --tf-ease-fast: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Aliases — the Phase-1 names point at the canonical tokens so
+   * everything that already reads --motion-* / --ease-* picks up
+   * the new, clearly-visible timings automatically. --ease-out is
+   * the standard appearing ease; --ease-in-out remains the one
+   * reserved position-easing (moving BETWEEN positions). Legacy
+   * --t-* aliases kept for compatibility. */
+  --motion-fast: var(--tf-motion-fast);
+  --motion-normal: var(--tf-motion-normal);
+  --motion-medium: var(--tf-motion-emphasized);
+  --motion-slow: var(--tf-motion-panel);
+  --ease: var(--tf-ease-standard);
+  --ease-out: var(--tf-ease-standard);
+  --ease-standard: var(--tf-ease-standard);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
-  --motion-fast: 80ms;
-  --motion-normal: 150ms;
-  --motion-medium: 200ms;
-  --motion-slow: 280ms;
-  --t-quick: 80ms;
-  --t-base: 150ms;
-  --t-slow: 200ms;
+  --t-quick: var(--tf-motion-fast);
+  --t-base: var(--tf-motion-normal);
+  --t-slow: var(--tf-motion-emphasized);
 
   /* Layout sizing tokens — kept in :root so absolutely positioned
    * siblings of the toolbar (.tools-palette) can offset themselves
@@ -266,6 +289,122 @@
   --error-soft: rgba(217, 108, 99, 0.16);
 
   color-scheme: dark;
+}
+
+/* ---------------------------------------------------------------------------
+ * GLOBAL MOTION PRIMITIVES — named keyframes consumed by every component.
+ *
+ * These live at the top of the file, OUTSIDE any theme block, so both
+ * themes share one motion language. A component's entrance/exit is
+ * required to use these (with the canonical --tf-* timing + easing
+ * tokens) rather than inventing its own per-component keyframe or an
+ * opacity-only fade. Movement is REAL (translate / scale), never
+ * opacity alone — a shift the user can clearly see, delivered fast
+ * and fluid. Exit animations are lightweight (~200ms or the normal
+ * band); they pair with the component's unmount.
+ *
+ * Timing bands (per the spec): panels 280ms, menus 140-190ms,
+ * dialogs enter 180-240ms / exit 140-180ms, popovers 140-180ms,
+ * tooltips 120-160ms with a 250-400ms hover dwell.
+ * ------------------------------------------------------------------------- */
+
+/* Panels (Tools palette on the right, thumbnail rail on the left).
+ * Right-side overlay: enter from +24px, exit toward +18px. Left-side
+ * rail: enter from -18px, exit toward -12px. The full travel is what
+ * makes the panel read as a real slide, never a ghost fade. */
+@keyframes panel-enter {
+  from { opacity: 0; transform: translateX(24px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes panel-exit {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(18px); }
+}
+@keyframes panel-enter-left {
+  from { opacity: 0; transform: translateX(-18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes panel-exit-left {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-12px); }
+}
+
+/* Menus / flyouts / context menus — grow from the trigger (scale
+ * 0.96 -> 1 + translateY(-4px -> 0) + opacity). Upward-opening
+ * menus reverse the Y travel. The transform-origin that pins the
+ * grow to the trigger is set on the consuming rule, not here. */
+@keyframes menu-enter {
+  from { opacity: 0; transform: scale(0.96) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+@keyframes menu-enter-up {
+  from { opacity: 0; transform: scale(0.96) translateY(4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Dialogs (modal + sheet): a short rise + settle in. No zoom,
+ * bounce or overshoot — the curve is a fast ease-out, not a spring.
+ * The exit lowers + eases down to 0.985 scale so closing reads as
+ * the surface letting go of the screen. */
+@keyframes dialog-enter {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes dialog-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(5px) scale(0.985); }
+}
+
+/* Small anchored popovers (annotation color palette etc.): swell
+ * 0.97 -> 1 with a 3px rise from the anchor. */
+@keyframes popover-enter {
+  from { opacity: 0; transform: scale(0.97) translateY(-3px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Tooltips: a tiny rise + grow with a 250-400ms hover dwell delay
+ * set by the consuming rule. translateX(-50%) is baked in for the
+ * tooltip chip's left:50% centering so the keyframe can own the
+ * whole transform without fighting the layout. */
+@keyframes tooltip-enter {
+  from { opacity: 0; visibility: hidden; transform: translateX(-50%) translateY(3px) scale(0.98); }
+  1%   { visibility: visible; }
+  to   { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0) scale(1); }
+}
+
+/* STATE MOTION PRIMITIVES (chunk 2) — interactive/state feedback.
+ * Selection indicators fade + slide in (tabs, rail tabs), thumbnails
+ * swell 0.985 -> 1 on selection, success pops with a tiny overshoot,
+ * errors shake once, loading shimmer sweeps with a single transform
+ * (no constant background-position repaint). All theme-independent,
+ * all consuming the canonical --tf-* timing + easing tokens. */
+@keyframes indicator-in {
+  from { opacity: 0; transform: translateY(2px) scaleX(0.6); }
+  to   { opacity: 1; transform: translateY(0) scaleX(1); }
+}
+@keyframes thumb-select {
+  from { transform: scale(0.985); }
+  to   { transform: scale(1); }
+}
+@keyframes success-pop {
+  0%   { transform: scale(0.95); }
+  60%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+@keyframes toast-success-in {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.95); }
+  60%  { opacity: 1; transform: translateY(0) scale(1.04); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes shake-x {
+  0%   { transform: translateX(-3px); }
+  40%  { transform: translateX(3px); }
+  70%  { transform: translateX(-2px); }
+  100% { transform: translateX(0); }
+}
+@keyframes shimmer-sweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
 }
 
 * { box-sizing: border-box; }
@@ -517,7 +656,9 @@ input[type="checkbox"] {
   transition:
     background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out);
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .titlebar-menu-button:hover {
@@ -538,10 +679,11 @@ input[type="checkbox"] {
 }
 
 /* Menu popover — vertically flush with the title bar's bottom edge.
- * Phase 5 flyout motion: a subtle 0.98 -> 1 scale + opacity fade
- * over --motion-normal (150ms) ease-out — the 120-150ms menu band.
- * Scale + opacity only; transform-origin pins the grow to the
- * anchor so the menu appears to swell from its button. */
+ * Global motion (menu-enter primitive @ --tf-motion-normal, 180ms in
+ * the 140-190ms menu band): a clear 0.96 -> 1 scale + 4px rise +
+ * fade, growing from the trigger. transform-origin stays pinned to
+ * the anchor (top left) so the menu appears to swell from its
+ * button rather than floating in place. */
 .titlebar-menu-popover {
   position: absolute;
   top: 100%;
@@ -559,12 +701,7 @@ input[type="checkbox"] {
   padding: 6px;
   z-index: 50;
   transform-origin: top left;
-  animation: titlebar-popover-in var(--motion-normal) var(--ease-out);
-}
-
-@keyframes titlebar-popover-in {
-  from { opacity: 0; transform: scale(0.98); }
-  to   { opacity: 1; transform: scale(1); }
+  animation: menu-enter var(--tf-motion-normal) var(--tf-ease-standard);
 }
 
 .titlebar-menu-heading {
@@ -601,7 +738,8 @@ input[type="checkbox"] {
   transition:
     background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out);
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 /* Phase 4 — menu item hover: the shared orange selected wash
@@ -756,10 +894,13 @@ input[type="checkbox"] {
   cursor: pointer;
   white-space: nowrap;
   position: relative;
+  /* Chunk 2 — tab switching animates the active surface + text
+   * brightness over the 150-200ms band (--tf-motion-normal, 180ms)
+   * instead of snapping; the strip layout itself never moves. */
   transition:
-    background var(--motion-fast) var(--ease-out),
-    color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out);
+    background var(--motion-normal) var(--ease-out),
+    color var(--motion-normal) var(--ease-out),
+    box-shadow var(--motion-normal) var(--ease-out);
 }
 
 /* Phase 4 — tab hover uses the shared hover token (dark
@@ -807,6 +948,9 @@ input[type="checkbox"] {
   height: 2px;
   border-radius: 1px 1px 0 0;
   background: var(--accent);
+  /* Chunk 2 — the active underline fades + slides into place
+   * (indicator-in @ --tf-motion-normal) instead of teleporting. */
+  animation: indicator-in var(--tf-motion-normal) var(--tf-ease-standard);
 }
 
 .tab-title {
@@ -868,7 +1012,11 @@ input[type="checkbox"] {
   color: inherit;
   cursor: pointer;
   opacity: 0.7;
-  transition: background var(--motion-fast) var(--ease-out), opacity var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    opacity var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .tab-close:hover {
@@ -982,11 +1130,19 @@ input[type="checkbox"] {
   font-weight: 500;
   font-size: var(--fs-md);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-in-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
   white-space: nowrap;
 }
 
-.btn:active { transform: translateY(0.5px); }
+/* Chunk 2 — press settles slightly (translateY 1px + scale 0.982);
+ * the base transition releases it smoothly back to 1. The faster
+ * 70ms press-in transition lives in the shared press rule at the
+ * end of this file (interactive press/settle group). */
+.btn:active { transform: translateY(1px) scale(0.982); }
 
 /* Phase 4 — every dialog/hero button shows the shared orange focus
  * ring on keyboard focus. */
@@ -1136,6 +1292,13 @@ input[type="checkbox"] {
   cursor: pointer;
   text-align: left;
   min-width: 0;
+  /* Chunk 2 — the open action lifts on hover and settles on press
+   * like every other row-level control. */
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .recent-row-open:focus-visible {
@@ -1190,7 +1353,11 @@ input[type="checkbox"] {
   border-radius: var(--radius-3);
   padding: 10px;
   cursor: pointer;
-  transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out), transform var(--motion-fast) var(--ease-in-out);
+  transition:
+    border-color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
   color: var(--fg);
 }
 
@@ -1199,7 +1366,7 @@ input[type="checkbox"] {
   background: var(--sample-card-bg-hover);
 }
 
-.sample-card:active { transform: translateY(0.5px); }
+.sample-card:active { transform: translateY(1px) scale(0.982); }
 
 .sample-card:focus-visible {
   outline: none;
@@ -1260,6 +1427,11 @@ input[type="checkbox"] {
   border-right: 1px solid var(--border);
   background: var(--bg-rail);
   min-height: 0;
+  /* Global motion (panel-enter-left primitive @ --tf-motion-panel):
+   * the thumbnail rail slides in from the left edge on mount (each
+   * DocumentView mounts the rail when its tab opens). Full -18px
+   * travel + fade, never opacity alone. */
+  animation: panel-enter-left var(--tf-motion-panel) var(--tf-ease-standard);
 }
 
 .rail-tabs {
@@ -1281,7 +1453,11 @@ input[type="checkbox"] {
   color: var(--fg-muted);
   cursor: pointer;
   position: relative;
-  transition: color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .rail-tab:hover { color: var(--fg-strong); background: var(--bg-hover); }
@@ -1302,6 +1478,9 @@ input[type="checkbox"] {
   height: 2px;
   background: var(--accent);
   border-radius: 2px 2px 0 0;
+  /* Chunk 2 — the rail indicator travels in (fade + slide + swell)
+   * over --tf-motion-normal instead of teleporting. */
+  animation: indicator-in var(--tf-motion-normal) var(--tf-ease-standard);
 }
 
 .rail-content {
@@ -1348,7 +1527,10 @@ input[type="checkbox"] {
    * 1px border + 18px label + 6px margin — is the rail's geometry
    * contract; SideRail's thumbSlotHeightFor mirrors it exactly and
    * must not drift.) */
-  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
 }
 
 .thumb:hover { background: var(--bg-hover); }
@@ -1368,6 +1550,11 @@ input[type="checkbox"] {
    * solid orange block or a full accent border around the thumb. */
   background: var(--accent-selected);
   box-shadow: inset 2px 0 0 var(--accent);
+  /* Chunk 2 — selecting a thumb swells it 0.985 -> 1 over
+   * --tf-motion-normal (180ms, in the 120-180ms thumb band). The
+   * inset indicator bar itself stays instant (documented Phase 5
+   * contract — it tracks scroll and must never repaint per frame). */
+  animation: thumb-select var(--tf-motion-normal) var(--tf-ease-standard);
 }
 
 .thumb-canvas-wrap {
@@ -1386,14 +1573,22 @@ input[type="checkbox"] {
 .thumb-placeholder {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, var(--placeholder-from) 0%, var(--placeholder-to) 50%, var(--placeholder-from) 100%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
+  /* Chunk 2 — loading feedback is a single GPU-composited
+   * transform sweep (see ::after + shimmer-sweep below) instead of
+   * a constant background-position repaint. The base surface stays
+   * the quiet placeholder fill; the highlight sweeps over it. */
+  background: var(--placeholder-from);
+  overflow: hidden;
 }
 
-@keyframes shimmer {
-  from { background-position: 200% 0; }
-  to { background-position: -200% 0; }
+.thumb-placeholder::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 30%, var(--placeholder-to) 50%, transparent 70%);
+  opacity: 0.55;
+  animation: shimmer-sweep 1.4s var(--tf-ease-standard) infinite;
 }
 
 .thumb-label {
@@ -1401,6 +1596,9 @@ input[type="checkbox"] {
   font-size: var(--fs-xs);
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
+  /* Chunk 2 — the current-page label brightens with the selection
+   * wash (color is a cheap paint, no repaint hazard). */
+  transition: color var(--motion-fast) var(--ease-out);
 }
 
 .thumb-current .thumb-label { color: var(--fg-strong); font-weight: 500; }
@@ -1552,7 +1750,8 @@ input[type="checkbox"] {
     background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
     border-color var(--motion-fast) var(--ease-out),
-    box-shadow var(--motion-fast) var(--ease-out);
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 /* Labelled buttons (icon + text) opt out of the fixed 28px width and
@@ -1592,11 +1791,21 @@ input[type="checkbox"] {
 }
 
 /* Phase 4 — active/selected toolbar buttons (armed tools, fit modes,
- * open palettes) use the shared 0.10 orange wash. */
+ * open palettes) use the shared 0.10 orange wash. Chunk 2 — the
+ * selection change animates over the 140-180ms band
+ * (--tf-motion-normal, 180ms) instead of snapping: the transition
+ * list comes from the NEW state, so arming a tool fades the
+ * background/icon/indicator in while releasing stays on the base
+ * 120ms ease. */
 .tool-btn-active {
   background: var(--accent-selected);
   color: var(--accent);
   border-color: transparent;
+  transition:
+    background var(--tf-motion-normal) var(--tf-ease-standard),
+    color var(--tf-motion-normal) var(--tf-ease-standard),
+    border-color var(--tf-motion-normal) var(--tf-ease-standard),
+    box-shadow var(--tf-motion-normal) var(--tf-ease-standard);
 }
 
 .tool-btn:focus-visible {
@@ -1921,10 +2130,22 @@ input[type="checkbox"] {
 .page-placeholder {
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, var(--placeholder-from) 0%, var(--placeholder-to) 50%, var(--placeholder-from) 100%);
-  background-size: 200% 100%;
-  animation: shimmer 1.4s linear infinite;
+  /* Chunk 2 — same controlled transform sweep as the thumb
+   * placeholder (shimmer-sweep), clipped to the slot so the sweep
+   * never paints outside the page geometry. */
+  background: var(--placeholder-from);
+  overflow: hidden;
   border-radius: 2px;
+}
+
+.page-placeholder::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 30%, var(--placeholder-to) 50%, transparent 70%);
+  opacity: 0.55;
+  animation: shimmer-sweep 1.4s var(--tf-ease-standard) infinite;
 }
 
 .toast-stack {
@@ -1974,6 +2195,11 @@ input[type="checkbox"] {
 .toast-success {
   border-left-color: var(--success);
   color: var(--fg-strong);
+  /* Chunk 2 — a success confirmation pops with a tiny overshoot
+   * (scale 0.95 -> 1.04 -> 1, driven by the --success token) while
+   * keeping the standard toast rise, over --tf-motion-emphasized. */
+  animation:
+    toast-success-in var(--tf-motion-emphasized) var(--tf-ease-emphasized);
 }
 .toast-success .toast-icon { color: var(--success); }
 
@@ -1996,6 +2222,11 @@ input[type="checkbox"] {
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .toast-close:hover {
@@ -2036,7 +2267,11 @@ input[type="checkbox"] {
   border: 1px solid transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .theme-toggle:hover {
@@ -2080,7 +2315,9 @@ input[type="checkbox"] {
   cursor: default;
   transition: background var(--motion-fast) var(--ease-out),
     color var(--motion-fast) var(--ease-out),
-    border-color var(--motion-fast) var(--ease-out);
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
   white-space: nowrap;
   user-select: none;
 }
@@ -2177,15 +2414,15 @@ input[type="checkbox"] {
 .tooltip-anchor { position: relative; }
 
 /* Phase 4 — tooltip surface: a compact near-black chip (title line,
- * optional shortcut line — a literal newline in the data-tooltip
- * value renders as the second line via pre-line). Entrance is
- * DELAYED 450ms (Phase-4 delay, kept literal — it is a dwell
- * delay, not a motion duration) then rises (opacity 0->1,
- * translateY 2px->0) over --motion-normal (150ms) ease-out; the
- * exit is immediate (base transition has no delay). The visibility
- * transition recreates the delay in the visibility space (150ms
- * exit, 450+150=600ms entrance) so the hidden state flips exactly
- * when the fade ends.
+ * optional shortcut hint line — a literal newline in the data-tooltip
+ * value renders as the second line via pre-line). Global motion: the
+ * tooltip-enter primitive (opacity 0->1 + translateY 3px->0 + scale
+ * 0.98->1 @ --tf-motion-fast 120ms, within the 120-160ms tooltip
+ * band) with a 300ms hover dwell in the 250-400ms band. The hover
+ * rule applies the shared keyframe with `forwards` fill + a 300ms
+ * animation-delay, so the dwell lives in the animation delay while
+ * the base transition handles the immediate exit (glides back down
+ * over --tf-motion-fast; visibility flips only when the fade ends).
  * pointer-events: none keeps the tooltip non-blocking and
  * non-focusable — e2e never waits on it and a moving cursor can
  * never be intercepted by it. */
@@ -2194,7 +2431,7 @@ input[type="checkbox"] {
   position: absolute;
   top: calc(100% + 6px);
   left: 50%;
-  transform: translateX(-50%) translateY(2px);
+  transform: translateX(-50%) translateY(3px) scale(0.98);
   background: rgba(25, 29, 35, 0.96);
   color: #e7e9ec;
   padding: 5px 8px 4px;
@@ -2207,20 +2444,15 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-popover);
   opacity: 0;
   visibility: hidden;
+  /* Exit only — hover uses the tooltip-enter animation instead. */
   transition:
-    opacity var(--motion-normal) var(--ease-out),
-    transform var(--motion-normal) var(--ease-out),
-    visibility 0s linear var(--motion-normal);
+    opacity var(--tf-motion-fast) var(--tf-ease-fast),
+    transform var(--tf-motion-fast) var(--tf-ease-fast),
+    visibility 0s linear var(--tf-motion-fast);
 }
 
 .tooltip-anchor [data-tooltip]:hover::after {
-  opacity: 1;
-  visibility: visible;
-  transform: translateX(-50%) translateY(0);
-  transition:
-    opacity var(--motion-normal) var(--ease-out) 450ms,
-    transform var(--motion-normal) var(--ease-out) 450ms,
-    visibility 0s linear 600ms;
+  animation: tooltip-enter var(--tf-motion-fast) var(--tf-ease-fast) 300ms forwards;
 }
 
 /* ---- Rail actions (undo + per-page rotate/delete) ---- */
@@ -2269,7 +2501,12 @@ input[type="checkbox"] {
   color: var(--fg-muted);
   font-size: var(--fs-xs);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .rail-action-btn:hover:not([disabled]) {
@@ -2396,9 +2633,13 @@ input[type="checkbox"] {
 }
 
 /* Saved — clean document: success tint at a quiet emphasis (the
- * button is disabled because there is nothing to save). */
+ * button is disabled because there is nothing to save). Chunk 2 —
+ * entering the saved state pops with the shared success keyframe
+ * (scale 0.95 -> 1.04 -> 1, driven by the --success token) so the
+ * save confirmation is clearly visible. */
 .tool-btn-save-clean {
   color: var(--success);
+  animation: success-pop var(--tf-motion-emphasized) var(--tf-ease-emphasized);
 }
 
 .tool-btn-save-clean[disabled] {
@@ -2427,10 +2668,11 @@ input[type="checkbox"] {
   display: grid;
   place-items: center;
   z-index: 800;
-  /* Phase 5 — overlay fade only: opacity 0->1 over --motion-normal
-   * (150ms) ease-out. No zoom on the full-screen surface; the
-   * dialog itself carries the subtle 0.98->1 scale. */
-  animation: modal-in var(--motion-normal) var(--ease-out);
+  /* Global motion — the backdrop is a full-screen dim, so it fades
+   * opacity only over --tf-motion-normal (180ms): a moving black
+   * sheet would read as camera wobble. The dialog itself carries the
+   * visible dialog-enter rise + settle. */
+  animation: modal-in var(--tf-motion-normal) var(--tf-ease-standard);
   /* DEF-100 — the backdrop is a REAL hit surface: `pointer-events:
    * auto` (the default). The dialog's "click outside to close"
    * affordance is implemented on the backdrop's OWN onClick, which
@@ -2468,10 +2710,11 @@ input[type="checkbox"] {
    * clicks on Confirm / Cancel / Flatten / etc. would pass straight
    * through to whatever's underneath (the toolbar, the canvas). */
   pointer-events: auto;
-  /* Phase 5 — dialog entrance: subtle 0.98 -> 1 scale + opacity
-   * fade over --motion-normal (150ms) ease-out, matching the
-   * sheet dialogs. Scale + opacity only, never layout. */
-  animation: modal-dialog-in var(--motion-normal) var(--ease-out);
+  /* Global motion (dialog-enter primitive @ --tf-motion-emphasized,
+   * 240ms in the 180-240ms dialog band): a clear rise + settle
+   * (translateY 10px -> 0, scale 0.97 -> 1) + fade. No zoom, no
+   * bounce, no overshoot. */
+  animation: dialog-enter var(--tf-motion-emphasized) var(--tf-ease-emphasized);
 }
 
 /* Phase 12 — wider modal for the Crop / Renumber / Stamp dialogs.
@@ -2508,7 +2751,11 @@ input[type="checkbox"] {
   color: var(--fg-muted);
   border-radius: var(--radius-1);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .modal-close:hover {
@@ -2626,11 +2873,6 @@ input[type="checkbox"] {
 @keyframes modal-in {
   from { opacity: 0; }
   to { opacity: 1; }
-}
-
-@keyframes modal-dialog-in {
-  from { opacity: 0; transform: scale(0.98); }
-  to   { opacity: 1; transform: scale(1); }
 }
 
 /* ---------------------------------------------------------------------------
@@ -3128,7 +3370,12 @@ input[type="checkbox"] {
    * clickable even if a future refactor disables the bar's
    * pointer-events; belt-and-braces alongside the containers. */
   pointer-events: auto;
-  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 .toolbox-action-btn:hover {
   background: var(--bg-hover);
@@ -3468,7 +3715,11 @@ input[type="checkbox"] {
   cursor: pointer;
   text-align: left;
   border-radius: 0;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .ann-panel-row-jump:hover { background: var(--bg-hover); color: var(--fg-strong); }
@@ -3521,7 +3772,11 @@ input[type="checkbox"] {
   cursor: pointer;
   border-radius: var(--radius-1);
   margin-right: 4px;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .ann-panel-row-delete:hover { background: var(--bg-hover); color: var(--fg-strong); }
@@ -3699,7 +3954,11 @@ input[type="checkbox"] {
    * that the checkbox stays clickable even when the layer's
    * pointer-events rule is edited (DEF-024). */
   pointer-events: auto;
-  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 
 .form-checkbox:hover {
@@ -4032,7 +4291,12 @@ input[type="checkbox"] {
   font-size: var(--fs-md);
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .sig-tab:hover { background: var(--bg-hover); color: var(--fg); }
@@ -4134,6 +4398,11 @@ input[type="checkbox"] {
   cursor: pointer;
   color: var(--fg-strong);
   text-align: left;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .sig-saved-pick:disabled {
@@ -4167,7 +4436,12 @@ input[type="checkbox"] {
   border-radius: var(--radius-1);
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .sig-saved-delete:hover {
@@ -4232,7 +4506,12 @@ input[type="checkbox"] {
   border-radius: var(--radius-1);
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
   flex-shrink: 0;
 }
 .tab-new:hover {
@@ -4280,16 +4559,12 @@ input[type="checkbox"] {
    * (z-index:100+) so the dialogs still cover the palette when
    * both are open. */
   z-index: 30;
-  /* Entry motion (Phase 5 — panel band, ~180-220ms): the palette
-   * slides in from its edge (translateX(8px -> 0)) + opacity
-   * 0 -> 1 over the --motion-medium (200ms) token with ease-out.
+  /* Global motion (panel-enter primitive @ --tf-motion-panel, 280ms):
+   * a full 24px slide-in from the right edge + opacity, so the panel
+   * arrival is a clear visible glide, not the old 8px ghost fade.
    * Transform + opacity only — the palette arrival never repaints
    * layout. */
-  animation: tools-palette-in var(--motion-medium) var(--ease-out);
-}
-@keyframes tools-palette-in {
-  from { transform: translateX(8px); opacity: 0; }
-  to   { transform: translateX(0); opacity: 1; }
+  animation: panel-enter var(--tf-motion-panel) var(--tf-ease-standard);
 }
 .tools-palette-grid { width: 168px; }
 
@@ -4326,7 +4601,11 @@ input[type="checkbox"] {
   border: none;
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 .tools-palette-toggle-btn:hover { background: var(--bg-hover); color: var(--fg-strong); }
 .tools-palette-toggle-active {
@@ -4346,6 +4625,11 @@ input[type="checkbox"] {
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 .tools-palette-close:hover { background: var(--bg-hover); color: var(--fg-strong); }
 .tools-palette-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
@@ -4384,7 +4668,11 @@ input[type="checkbox"] {
   border-radius: var(--radius-2);
   color: var(--fg);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 .tools-palette-entry:hover:not(:disabled) {
   background: var(--bg-hover);
@@ -4492,9 +4780,10 @@ input[type="checkbox"] {
   display: grid;
   place-items: center;
   z-index: 100;
-  /* Phase 5 — overlay fade only (opacity 0->1, --motion-normal
-   * 150ms ease-out); the sheet carries the 0.98->1 scale. */
-  animation: sheet-fade var(--motion-normal) var(--ease-out);
+  /* Global motion — the sheet backdrop is a full-screen dim, so it
+   * fades opacity only over --tf-motion-normal (180ms); the sheet
+   * itself carries the visible dialog-enter rise + settle. */
+  animation: sheet-fade var(--tf-motion-normal) var(--tf-ease-standard);
 }
 @keyframes sheet-fade {
   from { opacity: 0; }
@@ -4510,13 +4799,10 @@ input[type="checkbox"] {
   max-height: min(640px, calc(100vh - 64px));
   display: flex;
   flex-direction: column;
-  /* Phase 5 — dialog entrance: subtle 0.98 -> 1 scale + opacity
-   * fade over --motion-normal (150ms) ease-out. */
-  animation: sheet-in var(--motion-normal) var(--ease-out);
-}
-@keyframes sheet-in {
-  from { transform: scale(0.98); opacity: 0; }
-  to   { transform: scale(1); opacity: 1; }
+  /* Global motion (dialog-enter primitive @ --tf-motion-emphasized,
+   * 240ms): a clear rise + settle (translateY 10px -> 0, scale
+   * 0.97 -> 1) + fade, matching every modal dialog. */
+  animation: dialog-enter var(--tf-motion-emphasized) var(--tf-ease-emphasized);
 }
 
 .sheet-header {
@@ -4543,7 +4829,11 @@ input[type="checkbox"] {
   border-radius: var(--radius-1);
   color: var(--fg-muted);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 .sheet-close:hover { background: var(--bg-hover); color: var(--fg-strong); }
 .sheet-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
@@ -4631,7 +4921,9 @@ input[type="checkbox"] {
   cursor: pointer;
   text-align: right;
   padding: 0;
-  transition: color var(--motion-fast) var(--ease-out);
+  transition:
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
 }
 .about-row-value-link:hover {
   color: var(--accent);
@@ -4819,7 +5111,11 @@ input[type="checkbox"] {
   border-radius: var(--radius-2);
   text-align: left;
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 .prefs-path:hover {
   background: var(--bg-hover);
@@ -4885,15 +5181,12 @@ input[type="checkbox"] {
   border-radius: var(--radius-3);
   box-shadow: var(--shadow-popover);
   width: 280px;
-  /* Phase 5 — flyout motion: 0.98 -> 1 scale + opacity over
-   * --motion-normal (150ms) ease-out; the grow pins to the anchor's
-   * top-right so the popover swells from the swatch. */
+  /* Global motion (popover-enter primitive @ --tf-motion-normal,
+   * 180ms in the 140-180ms popover band): a clear swell + rise
+   * (scale 0.97 -> 1, translateY -3px -> 0) + fade. The grow pins
+   * to the anchor's top-right so the popover swells from the swatch. */
   transform-origin: top right;
-  animation: popover-in var(--motion-normal) var(--ease-out);
-}
-@keyframes popover-in {
-  from { transform: scale(0.98); opacity: 0; }
-  to   { transform: scale(1); opacity: 1; }
+  animation: popover-enter var(--tf-motion-normal) var(--tf-ease-standard);
 }
 
 .color-palette {
@@ -5048,7 +5341,10 @@ input[type="checkbox"] {
   font-size: var(--fs-xs);
   font-weight: 500;
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 .color-palette-add:hover {
   background: var(--accent-hover);
@@ -5062,6 +5358,9 @@ input[type="checkbox"] {
   color: #ef4444;
   font-size: var(--fs-xs);
   padding: 2px 0;
+  /* Chunk 2 — invalid-entry feedback shudders once with the shared
+   * restrained shake (translateX -3/3/-2/0 @ --tf-motion-emphasized). */
+  animation: shake-x var(--tf-motion-emphasized) var(--tf-ease-emphasized);
 }
 
 /* ---------------------------------------------------------------------------
@@ -5296,6 +5595,11 @@ input[type="checkbox"] {
 
 .optimize-error {
   color: #b91c1c;
+  /* Chunk 2 — a failing action shudders once (restrained
+   * translateX -3/3/-2/0 @ --tf-motion-emphasized) so the error is
+   * felt, never overstated. Runs once per error mount (these status
+   * lines mount conditionally on failure). */
+  animation: shake-x var(--tf-motion-emphasized) var(--tf-ease-emphasized);
 }
 
 :root[data-theme="dark"] .optimize-error { color: #f87171; }
@@ -5490,7 +5794,11 @@ input[type="checkbox"] {
   color: var(--fg-muted);
   border-radius: var(--radius-1);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .create-image-remove:hover {
@@ -6017,7 +6325,12 @@ input[type="checkbox"] {
   font-weight: 500;
   border-radius: var(--radius-1);
   cursor: pointer;
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .edit-toolbar-btn:hover:not(:disabled) {
@@ -6027,10 +6340,16 @@ input[type="checkbox"] {
 }
 
 .edit-toolbar-btn-active {
-  /* Phase 4 — armed edit-mode button = the shared orange wash. */
+  /* Phase 4 — armed edit-mode button = the shared orange wash.
+   * Chunk 2 — selection animates over --tf-motion-normal (180ms,
+   * the 140-180ms tool-selection band) instead of snapping. */
   background: var(--accent-selected);
   color: var(--accent);
   border-color: var(--accent);
+  transition:
+    background var(--tf-motion-normal) var(--tf-ease-standard),
+    color var(--tf-motion-normal) var(--tf-ease-standard),
+    border-color var(--tf-motion-normal) var(--tf-ease-standard);
 }
 
 .edit-toolbar-btn:focus-visible {
@@ -6237,7 +6556,11 @@ input[type="checkbox"] {
   color: var(--fg-muted);
   cursor: pointer;
   border-radius: var(--radius-1);
-  transition: background var(--motion-fast) var(--ease-out), color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
   margin-left: auto;
 }
 
@@ -6338,7 +6661,11 @@ input[type="checkbox"] {
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
   color: var(--fg);
   white-space: nowrap;
-  transition: background var(--motion-fast) var(--ease-out), border-color var(--motion-fast) var(--ease-out);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
 }
 
 .ocr-suspects-entry-btn:hover {
@@ -6699,6 +7026,97 @@ input[type="checkbox"] {
 :root[data-theme="dark"] .ann-callout-preview-mask {
   fill: rgba(224, 122, 45, 0.12);
   stroke: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Chunk 2 — interactive press / settle group.
+ *
+ * ONE shared press language for every button-family control in the
+ * app: hover lifts 1px (--tf-motion-fast, the 100-150ms band),
+ * press settles translateY(1px) + scale(0.982) over --tf-motion-
+ * instant (70ms, the 70-100ms press band), and releasing returns to
+ * the base transition (--tf-motion-fast) so the settle eases back to
+ * 1 with no bounce and no large scaling. The pressed-wash system
+ * (Phase 4) owns the background; this group owns the motion.
+ *
+ * Guard rails honored:
+ *   - transform-only + opacity (no layout, no scroll/zoom).
+ *   - Pointer-events / drag-region / hit contracts untouched: a
+ *     centered transform keeps the hit target under the cursor.
+ *   - Disabled buttons never lift (hover dead-ends via :not([disabled])).
+ * ------------------------------------------------------------------------- */
+
+/* Hover lift — translateY(-1px) @ --tf-motion-fast (120ms). */
+.btn:hover:not([disabled]),
+.tool-btn:hover:not([disabled]),
+.rail-action-btn:hover:not([disabled]),
+.toolbox-action-btn:hover,
+.titlebar-menu-row:hover,
+.recent-row-open:hover,
+.tools-palette-entry:hover:not(:disabled),
+.sample-card:hover,
+.modal-close:hover,
+.sheet-close:hover,
+.theme-toggle:hover,
+.tab-close:hover,
+.tab-new:hover,
+.titlebar-menu-button:hover,
+.rail-tab:hover,
+.ann-panel-row-jump:hover,
+.ann-panel-row-delete:hover,
+.edit-toolbar-btn:hover:not(:disabled),
+.sig-tab:hover,
+.sig-saved-pick:hover:not(:disabled),
+.sig-saved-delete:hover,
+.toast-close:hover,
+.ocr-suspects-close:hover,
+.ocr-suspects-entry-btn:hover,
+.create-image-remove:hover,
+.tools-palette-toggle-btn:hover,
+.tools-palette-close:hover,
+.update-indicator-available:hover,
+.update-indicator-downloaded:hover {
+  transform: translateY(-1px);
+}
+
+/* Press settle — translateY(1px) + scale(0.982) @ --tf-motion-instant
+ * (70ms). The transition list comes from the pressed state, so the
+ * press-in is fast; on release the base rules ease everything back
+ * to rest over --tf-motion-fast. */
+.btn:active,
+.tool-btn:active:not([disabled]),
+.rail-action-btn:active:not([disabled]),
+.toolbox-action-btn:active,
+.titlebar-menu-row:active,
+.recent-row-open:active,
+.tools-palette-entry:active:not(:disabled),
+.sample-card:active,
+.modal-close:active,
+.sheet-close:active,
+.theme-toggle:active,
+.tab-close:active,
+.tab-new:active,
+.titlebar-menu-button:active:not(.titlebar-menu-button-active),
+.rail-tab:active,
+.ann-panel-row-jump:active,
+.ann-panel-row-delete:active,
+.edit-toolbar-btn:active:not(:disabled),
+.sig-tab:active,
+.sig-saved-pick:active:not(:disabled),
+.sig-saved-delete:active,
+.toast-close:active,
+.ocr-suspects-close:active,
+.ocr-suspects-entry-btn:active,
+.create-image-remove:active,
+.tools-palette-toggle-btn:active,
+.tools-palette-close:active {
+  transform: translateY(1px) scale(0.982);
+  transition:
+    background var(--tf-motion-instant) var(--tf-ease-fast),
+    border-color var(--tf-motion-instant) var(--tf-ease-fast),
+    color var(--tf-motion-instant) var(--tf-ease-fast),
+    box-shadow var(--tf-motion-instant) var(--tf-ease-fast),
+    transform var(--tf-motion-instant) var(--tf-ease-fast);
 }
 
 /* ---------------------------------------------------------------------------

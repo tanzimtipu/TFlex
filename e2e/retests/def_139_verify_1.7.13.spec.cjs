@@ -34,6 +34,7 @@
 // .cmd/.ps1 shim; never a hand-concatenated file:// URL.
 
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 
@@ -60,7 +61,7 @@ test.beforeEach(async () => {
 });
 
 test.afterEach(async () => {
-  if (electronApp) await electronApp.close().catch(() => {});
+  if (electronApp) await hardClose(electronApp);
   electronApp = null;
   win = null;
   pageErrors = [];

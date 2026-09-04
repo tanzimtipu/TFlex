@@ -7,6 +7,7 @@
 // Launch only via e2e/lib/launch.cjs against the packaged installed exe.
 
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 
@@ -93,7 +94,7 @@ test('Item 3: closing the app (window X) with an unsaved document does NOT promp
     console.log('[ITEM3] RESULT: window CLOSED with no save prompt.');
   }
 
-  await electronApp.close().catch(() => {});
+  await hardClose(electronApp);
   electronApp = null;
   win = null;
 });

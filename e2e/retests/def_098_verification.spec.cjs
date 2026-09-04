@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { hardClose } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
 
@@ -27,7 +28,7 @@ test.describe('DEF-098 Verification: Thumbnail Jump', () => {
   });
 
   test.afterEach(async () => {
-    await electronApp.close();
+    await hardClose(electronApp);
   });
 
   test('click thumbnail page 10 → document jumps to page 10 and stays there', async () => {
