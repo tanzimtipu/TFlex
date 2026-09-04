@@ -1,6 +1,6 @@
 ## DEF-171: Signature manager ignores Escape - the dialog and its full-screen backdrop stay up, blocking every control behind them until the Close button is used
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 16 (found during the motion-system verification run of the standard e2e suite; reproduced on both the motion build and the pre-motion HEAD c6cd827, so it predates the motion chunks)
@@ -14,12 +14,35 @@ Steps to reproduce:
 
 Expected: Escape dismisses the Signature manager (every other modal in the app closes on Escape - Insert pages, Merge, crop, etc.), and the workspace behind it becomes interactive again.
 
-Actual: after Escape the dialog is still fully visible and interactive (computed check: .sig-manager present=true, .modal-backdrop present=true), and the full-screen backdrop intercepts all pointer events - Playwright retry-looped 56x for 30s on the theme toggle with "<div class=modal-backdrop> intercepts pointer events" (e2e/sweep_visual.spec.cjs failure). The ONLY way out is the dialog's own Close button: clicking it removes both the dialog and the backdrop (sigVisible=false, backdrop=false). Verified twice on the motion build (e2e/retests/def_171_173_diag.spec.cjs [D1]: after Escape {"sigVisible":true,"backdrop":true}; after Close {"sigVisible":false,"backdrop":false}) and the same sweep_visual failure exists on pre-motion HEAD.
+Actual: after Escape the dialog is still fully visible and interactive (computed check: .sig-manager present=true, .modal-backdrop present=true), and the full-screen backdrop intercepts all pointer events - Playwright retry-looped 56x for 30s on the theme toggle with "<div class=modal-backdrop> intercepts pointer events" (failure observed during the motion-phase verification run of the standard suite; the committed motion-phase artifact is e2e/motion_verify.spec.cjs - e2e/sweep_visual.spec.cjs itself is untracked). The ONLY way out is the dialog's own Close button: clicking it removes both the dialog and the backdrop (sigVisible=false, backdrop=false). Verified twice on the motion build (e2e/retests/def_171_173_diag.spec.cjs [D1], untracked qa artifact: after Escape {"sigVisible":true,"backdrop":true}; after Close {"sigVisible":false,"backdrop":false}) and the same sweep_visual failure exists on pre-motion HEAD.
 
 Screenshot: screenshots/def-171-sign-escape.png (Signature dialog still open over the dimmed workspace after Escape was pressed)
 
 History:
 - qa: opened
+- qa: CLOSED (retested on the DEV build v1.9.0, commit e3673fd "motion system, DEF-171 escape fix", dist rebuilt 5/09 12:52AM after the fix source; launchApp with no executablePath; new spec e2e/retests/def_171_escape_retest_190.spec.cjs). (1) PRIMARY REPRO FIXED: open report.pdf -> Sign tool -> Escape on the Draw tab -> after 800ms {"sigVisible":false,"backdrop":false} (was sigVisible=true, backdrop=true) - screenshots/def-171-retest-open-before-escape.png (dialog over dimmed backdrop) and screenshots/def-171-retest-escape-closed.png (clean interactive workspace after Escape). (2) THE ORIGINAL HARM GONE: after Escape the theme toggle click lands - theme flips dark->light with zero Playwright retries (previously 56x "intercepts pointer events"), then toggled back. (3) ALL TABS: Escape with focus INSIDE the Type input (name typed first) closes dialog+backdrop; Escape on the Saved tab closes dialog+backdrop - matching the committed unit test test/unit/renderer/defDEF171_signatureManagerEscape.test.tsx (4/4 green via vitest run: draw canvas / type input / saved tab / window-level dispatch). (4) CLOSE-BUTTON REGRESSION: the dialog's own Close button (the pre-fix only exit) still closes both. (5) NO CROSS-TALK: the Insert pages dialog still Escape-closes normally right after using the signature manager; window-level keydown fires only while the sig manager is open (removed on unmount). Fix inspected in source: SignatureManagerModal.tsx adds a window keydown listener while open (preventDefault + onClose), mirroring the other dialogs' Escape wiring.
+- qa: REGRESSION NOTE (not this fix): e2e/sweep_annotations_sign.spec.cjs ran 1/5 against the INSTALLED app - root-caused as the OTA update prompt (installed v1.8.0 detects the newly shipped v1.9.0 and opens the modal UpdatePromptDialog whose full-screen .sheet-backdrop intercepts pointer events; the sweeps never dismiss it). Not a DEF-171 regression: the installed 1.8.0 predates the fix, and S2 (signature place/move/save/reopen lifecycle on the installed app) passed. Filed as DEF-172; evidence e2e/retests/diag_installed_sheet_190.spec.cjs + screenshots/diag-installed-sheet-backdrop.png.
+
+## DEF-172: Standard e2e sweeps targeting the INSTALLED app fail whenever a newer version is published - the OTA update prompt's full-screen backdrop intercepts every pointer event and the sweeps never dismiss it
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 16 (hit while regression-testing the DEF-171 fix; the trigger is the v1.9.0 release itself - the installed v1.8.0 pops the update prompt mid-run)
+
+Steps to reproduce:
+1. Have the installed app at v1.8.0 (%LOCALAPPDATA%\Programs\tflex\TFlex.exe) while a newer release v1.9.0 exists in the OTA channel.
+2. Run npm.cmd run test:e2e -- e2e/sweep_annotations_sign.spec.cjs (or any sweep that launches the installed app via helpers.cjs launchInstalled).
+3. Within ~3s of launch the app shows "Update available - Update to v1.9.0 is available..." (UpdatePromptDialog, .sheet-backdrop full-screen, aria-modal).
+
+Expected: the sweep specs handle this legitimate app state (dismiss the prompt, e.g. press Escape or click Cancel) and run to green; a published update should not break the standard suite.
+
+Actual: 4 of 5 tests fail with Playwright retry-looping 30s on the first click of the test body: "<div tabindex=-1 role=presentation class=sheet-backdrop> intercepts pointer events" (A1 rect arm, A2 pen arm, A3 rail tab, S1 sig action bar). S2 still passed. Root cause confirmed by a read-only probe: e2e/retests/diag_installed_sheet_190.spec.cjs reports the sheet {"sheetClass":"sheet sheet-update-prompt","text":"Update availableUpdate to v1.9.0 is available..."} within 3s of launch - screenshots/diag-installed-sheet-backdrop.png. The prompt itself is by-design modal (UpdatePromptDialog.tsx: aria-modal=true, .sheet-backdrop position:fixed inset:0 z-index:100, closes on Escape/backdrop-click), so the product behavior is correct - this is a qa-suite gap: helpers.cjs/sweep specs must dismiss the update prompt after launch (and the suite will keep breaking on every future release until they do). Minor observation folded in: the sheet copy "you can keep working while it does" clashes with the modal backdrop (the download does run in the background, but the UI blocks until dismissed) - cosmetic. Transient mitigation: install v1.9.0 (no newer release = no prompt), or qa adds a dismissUpdatePrompt step to the sweeps.
+
+Screenshot: screenshots/diag-installed-sheet-backdrop.png
+
+History:
+- qa: opened (found during the DEF-171 close regression run; 4 failures on sweep_annotations_sign against installed v1.8.0 root-caused to the update prompt, not to the v1.9.0 code changes)
 
 ## DEF-170: A SECOND Extract in the same session orphans its result document - success toast, but no tab opens and the app refocuses the OLD extraction tab (still showing the old doc)
 
