@@ -30,6 +30,7 @@
 import { useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
 import { GripVertical, MousePointer2 } from "lucide-react";
+import { TfBar } from "./motion/TfMotion";
 import {
   moveImageRect,
   resizeImageRect,
@@ -221,7 +222,7 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
   } = props;
   const prefix = dataActionPrefix;
   return (
-    <div
+    <TfBar
       className={className}
       data-content-action-bar={dataBar}
       style={{ left, top }}
@@ -271,6 +272,6 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
         </button>
       )}
       {children}
-    </div>
+    </TfBar>
   );
 }

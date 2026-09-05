@@ -51,8 +51,10 @@ describe('SettingsService.load', () => {
     const svc = new SettingsService(file);
     expect(normalizeSettings({ theme: 'light' }).theme).toBe('light');
     expect(normalizeSettings({ theme: 'dark' }).theme).toBe('dark');
+    expect(normalizeSettings({ theme: 'frosted' }).theme).toBe('frosted');
     expect(normalizeSettings({ theme: 'purple' }).theme).toBe(DEFAULT_SETTINGS.theme);
     expect(normalizeSettings({}).theme).toBe(DEFAULT_SETTINGS.theme);
+    expect(DEFAULT_SETTINGS.theme).toBe('frosted');
     void svc;
   });
 

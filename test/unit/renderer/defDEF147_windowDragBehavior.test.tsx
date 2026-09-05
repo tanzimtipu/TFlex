@@ -59,6 +59,15 @@ function pointerMove(x: number, y: number): void {
   });
 }
 
+/** Phase C — motion popovers/dialogs settle their enter spring (and
+ *  drag-follow) on the next frame under skipAnimations; settle before
+ *  asserting the element's composed transform string. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 describe("DEF-147 - signature pending action bar is movable by its chrome", () => {
   function mountBar(): { host: HTMLElement; bar: HTMLElement | null } {
     const host = mount(
@@ -271,31 +280,42 @@ describe("DEF-147 - annotation color palette popover is movable by its chrome (r
     return { host, popover: host.querySelector<HTMLElement>(".color-popover") };
   }
 
-  it("a section-label (header) chrome drag moves the popover mid-drag", () => {
+  it("a section-label (header) chrome drag moves the popover mid-drag", async () => {
     const { host, popover } = mountOpenPopover();
     expect(popover).not.toBeNull();
     if (popover === null) return;
-    expect(popover.style.transform).toBe("translate(0px, 0px)");
+    // Phase C — the popover enters through the popover-enter spring
+    // (scale 0.97 + translateY -3px travel), then rests at identity.
+    expect(popover.style.transform).toContain("0.97");
+    await settleMotion();
+    const atRest = /(?:translateX\(0px\) translateY\(0px\)|none)/.test(popover.style.transform);
+    expect(atRest, "popover rests at the anchor after its enter spring").toBe(true);
     const label = host.querySelector<HTMLElement>(".color-palette-label");
     expect(label).not.toBeNull();
     if (label === null) return;
     pointer(label, "pointerdown", { button: 0, clientX: 100, clientY: 100 });
     pointerMove(260, 190);
-    expect(popover.style.transform).toBe("translate(160px, 90px)");
+    await settleMotion();
+    // The drag offset folds into motion x/y: the composed form carries
+    // the full +160/+90 delta (DEF-147 mid-drag follow, unchanged).
+    expect(popover.style.transform).toMatch(/translateX\(160px\) translateY\(90px\)/);
     pointer(label, "pointerup", {});
-    expect(popover.style.transform).toBe("translate(160px, 90px)");
+    await settleMotion();
+    expect(popover.style.transform).toMatch(/translateX\(160px\) translateY\(90px\)/);
   });
 
-  it("a press on a swatch button never starts a move", () => {
+  it("a press on a swatch button never starts a move", async () => {
     const { host, popover } = mountOpenPopover();
     expect(popover).not.toBeNull();
     if (popover === null) return;
+    await settleMotion();
     const swatchBtn = host.querySelector<HTMLElement>(".color-palette-grid .color-swatch");
     expect(swatchBtn).not.toBeNull();
     if (swatchBtn === null) return;
     pointer(swatchBtn, "pointerdown", { button: 0, clientX: 100, clientY: 100 });
     pointerMove(260, 190);
-    expect(popover.style.transform).toBe("translate(0px, 0px)");
+    await settleMotion();
+    expect(popover.style.transform).not.toMatch(/160px|90px/);
   });
 });
 
@@ -315,23 +335,30 @@ describe("DEF-147 - stamp dialog is movable by its chrome (regression)", () => {
     return { host, dialog: host.querySelector<HTMLElement>(".modal-dialog") };
   }
 
-  it("a body-chrome press + held drag moves the dialog mid-drag", () => {
+  it("a body-chrome press + held drag moves the dialog mid-drag", async () => {
     const { host, dialog } = mountOpen();
     expect(dialog).not.toBeNull();
     if (dialog === null) return;
-    expect(dialog.style.transform).toBe("translate(0px, 0px)");
+    // Phase C — the dialog enters through the dialog-enter spring
+    // (translateY 10px + scale 0.97 travel), then rests at identity.
+    expect(dialog.style.transform).toContain("0.97");
+    await settleMotion();
+    const atRest = /(?:translateX\(0px\) translateY\(0px\)|none)/.test(dialog.style.transform);
+    expect(atRest, "dialog rests at identity after its enter spring").toBe(true);
     const help = host.querySelector<HTMLElement>(".modal-help");
     expect(help).not.toBeNull();
     if (help === null) return;
     pointer(help, "pointerdown", { button: 0, clientX: 100, clientY: 100 });
     expect(dialog.classList.contains("modal-dialog-dragging")).toBe(true);
     pointerMove(260, 190);
-    expect(dialog.style.transform).toBe("translate(160px, 90px)");
+    await settleMotion();
+    expect(dialog.style.transform).toMatch(/translateX\(160px\) translateY\(90px\)/);
     pointer(help, "pointerup", {});
-    expect(dialog.style.transform).toBe("translate(160px, 90px)");
+    await settleMotion();
+    expect(dialog.style.transform).toMatch(/translateX\(160px\) translateY\(90px\)/);
   });
 
-  it("a press on the close button never starts a move and the click fires", () => {
+  it("a press on the close button never starts a move and the click fires", async () => {
     let closed = false;
     const host = mount(
       createElement(StampDialog, {
@@ -351,10 +378,12 @@ describe("DEF-147 - stamp dialog is movable by its chrome (regression)", () => {
     expect(dialog).not.toBeNull();
     expect(closeBtn).not.toBeNull();
     if (dialog === null || closeBtn === null) return;
+    await settleMotion();
     pointer(closeBtn, "pointerdown", { button: 0, clientX: 100, clientY: 100 });
     expect(dialog.classList.contains("modal-dialog-dragging")).toBe(false);
     pointerMove(260, 190);
-    expect(dialog.style.transform).toBe("translate(0px, 0px)");
+    await settleMotion();
+    expect(dialog.style.transform).not.toMatch(/160px|90px/);
     closeBtn.click();
     expect(closed).toBe(true);
   });

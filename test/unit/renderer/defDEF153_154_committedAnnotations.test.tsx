@@ -310,7 +310,7 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
     }
   });
 
-  it("a click on an empty page spot deselects / reverts a pending move", () => {
+  it("a click on an empty page spot deselects / reverts a pending move", async () => {
     const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
     try {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
@@ -321,6 +321,11 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
       // Press the LAYER background (not a surface) in select mode:
       // reverts the pending move and clears the selection.
       pressSurface(layer, 20, 500);
+      // Phase C — the selection bar exits through AnimatePresence;
+      // settle its exit frame before asserting no stale DOM.
+      await act(async (): Promise<void> => {
+        await new Promise((r) => setTimeout(r, 30));
+      });
       expect(host.querySelector("[data-content-action-bar]"), "selection cleared").toBeNull();
       expect(onDeleteAnnotation).not.toHaveBeenCalled();
       expect(onCreate).not.toHaveBeenCalled();

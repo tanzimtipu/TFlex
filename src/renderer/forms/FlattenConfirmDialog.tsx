@@ -7,6 +7,8 @@
 
 import { useEffect, type ReactElement } from "react";
 import { useBackdropClose } from "../components/modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "../components/motion/TfMotion";
 
 interface FlattenConfirmDialogProps {
   open: boolean;
@@ -41,14 +43,16 @@ export function FlattenConfirmDialog(props: FlattenConfirmDialogProps): ReactEle
   // backdrop), so the Confirm / Cancel buttons fire unchanged.
   const backdrop = useBackdropClose(onCancel);
 
-  if (!open) return null;
+  
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-    >
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+        >
+      <TfDialog
         className="modal-dialog"
         role="dialog"
         aria-modal="true"
@@ -79,7 +83,9 @@ export function FlattenConfirmDialog(props: FlattenConfirmDialogProps): ReactEle
             Flatten
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

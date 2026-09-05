@@ -20,6 +20,8 @@ import {
   defaultInsertPosition,
 } from "../engine/types";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 
 export type InsertMode = "blank" | "fromPdf";
 
@@ -175,7 +177,7 @@ export function InsertPagesDialog(
   // blocked entirely while the OS file picker is open.
   const backdrop = useBackdropClose(onClose, picking);
 
-  if (!open) return null;
+  
 
   // DEF-122 — the field value is the rank the new content lands at
   // ("becomes page v"), but users reason about placement in terms of
@@ -248,13 +250,15 @@ export function InsertPagesDialog(
   };
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-      data-picking={picking ? "true" : "false"}
-      data-insert-pages-dialog
-    >
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+          data-picking={picking ? "true" : "false"}
+          data-insert-pages-dialog
+        >
+      <TfDialog
         className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -389,8 +393,10 @@ export function InsertPagesDialog(
             Insert
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }
 

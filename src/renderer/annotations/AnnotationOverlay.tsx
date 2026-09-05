@@ -26,6 +26,8 @@ import type {
   ReactNode,
 } from "react";
 import { useDragWindow } from "../components/useDragWindow";
+import { AnimatePresence } from "motion/react";
+import { TfBar } from "../components/motion/TfMotion";
 import {
   ContentActionBar,
   ContentGrip,
@@ -1067,29 +1069,31 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           annotation: a bounds ring, corner resize handles for
           rect-carrying kinds, a Confirm / Edit / Delete bar beneath,
           and the cursor-attached hint. */}
-      {selectedAnn !== null && !anyEditorOpen && (
-        <SelectedContentChrome
-          ann={selectedAnn}
-          cssScale={cssScale}
-          widthPt={widthPt}
-          onSurfacePointerDown={(e, ann, handle): void => beginAnnSurfaceDrag(e, ann, handle)}
-          onConfirm={(): void => {
-            if (annPending !== null) {
-              confirmPendingAnn();
-            } else {
+      <AnimatePresence>
+        {selectedAnn !== null && !anyEditorOpen && (
+          <SelectedContentChrome
+            ann={selectedAnn}
+            cssScale={cssScale}
+            widthPt={widthPt}
+            onSurfacePointerDown={(e, ann, handle): void => beginAnnSurfaceDrag(e, ann, handle)}
+            onConfirm={(): void => {
+              if (annPending !== null) {
+                confirmPendingAnn();
+              } else {
+                setSelectedAnnId(null);
+                setHintPos(null);
+              }
+            }}
+            onEdit={(): void => openEditorFor(selectedAnn)}
+            onDelete={(): void => {
+              revertPendingAnn(selectedAnn.id);
               setSelectedAnnId(null);
+              onDeleteAnnotation?.(selectedAnn.id);
               setHintPos(null);
-            }
-          }}
-          onEdit={(): void => openEditorFor(selectedAnn)}
-          onDelete={(): void => {
-            revertPendingAnn(selectedAnn.id);
-            setSelectedAnnId(null);
-            onDeleteAnnotation?.(selectedAnn.id);
-            setHintPos(null);
-          }}
-        />
-      )}
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {flashId !== null &&
         effectiveAnnotations
@@ -1247,26 +1251,28 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       {/* DEF-153/154 — the shape / ink / arrow color edit toolbox
        * (double-click / bar Edit — the only properties these kinds
        * own beyond geometry). */}
-      {colorEditId !== null &&
-        ((): ReactElement | null => {
-          const target = effectiveAnnotations.find((a) => a.id === colorEditId);
-          if (target === undefined) return null;
-          const b = annotationBounds(target);
-          const left = Math.min(b.x * cssScale, Math.max(0, widthPt * cssScale - 220));
-          const top = (b.y + b.height) * cssScale + 6;
-          return (
-            <ShapeColorEditor
-              left={left}
-              top={top}
-              active={target.color}
-              onPick={(c): void => applyAnnColor(target.id, c)}
-              onClose={(): void => {
-                setColorEditId(null);
-                setSelectedAnnId(null);
-              }}
-            />
-          );
-        })()}
+      <AnimatePresence>
+        {colorEditId !== null &&
+          ((): ReactElement | null => {
+            const target = effectiveAnnotations.find((a) => a.id === colorEditId);
+            if (target === undefined) return null;
+            const b = annotationBounds(target);
+            const left = Math.min(b.x * cssScale, Math.max(0, widthPt * cssScale - 220));
+            const top = (b.y + b.height) * cssScale + 6;
+            return (
+              <ShapeColorEditor
+                left={left}
+                top={top}
+                active={target.color}
+                onPick={(c): void => applyAnnColor(target.id, c)}
+                onClose={(): void => {
+                  setColorEditId(null);
+                  setSelectedAnnId(null);
+                }}
+              />
+            );
+          })()}
+      </AnimatePresence>
 
       {/* DEF-153(c) — the cursor-attached "Double click to edit" hint
         while content is selected/movable. Converted from client
@@ -2967,7 +2973,7 @@ interface ShapeColorEditorProps {
 function ShapeColorEditor(props: ShapeColorEditorProps): ReactElement {
   const { left, top, active, onPick, onClose } = props;
   return (
-    <div
+    <TfBar
       className="content-action-bar shape-color-editor"
       data-annotation-color-editor
       role="dialog"
@@ -2985,6 +2991,6 @@ function ShapeColorEditor(props: ShapeColorEditorProps): ReactElement {
       >
         <X size={16} aria-hidden />
       </button>
-    </div>
+    </TfBar>
   );
 }

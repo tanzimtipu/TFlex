@@ -56,7 +56,7 @@ describe("DEF-125 — arming the Sign tool exits Edit mode", () => {
   });
 
   it("the Tools palette's Sign button exits Edit mode before opening the modal", () => {
-    const match = appSource.match(/onSign=\{\(\): void => \{[\s\S]*?\n            \}\}/);
+    const match = appSource.match(/onSign=\{\(\): void => \{[\s\S]*?\n              \}\}/);
     expect(match).not.toBeNull();
     if (match === null) return;
     const body = match[0];
@@ -69,7 +69,7 @@ describe("DEF-125 — arming the Sign tool exits Edit mode", () => {
   it("the palette Site exit is inside the un-armed branch (a toggle-off does not need it)", () => {
     // The toggle-off branch (already armed) must NOT call
     // setEditMode — Sign is already active there.
-    const match = appSource.match(/onSign=\{\(\): void => \{[\s\S]*?\n            \}\}/);
+    const match = appSource.match(/onSign=\{\(\): void => \{[\s\S]*?\n              \}\}/);
     expect(match).not.toBeNull();
     if (match === null) return;
     const body = match[0];

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
 import type { MergePosition } from "../engine/types";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 
 export interface MergeConfirm {
   otherPath: string;
@@ -121,7 +123,7 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
   // open (the dialog must stay put until the picker returns).
   const backdrop = useBackdropClose(onClose, picking);
 
-  if (!open) return null;
+  
 
   const onPick = async (): Promise<void> => {
     setPicking(true);
@@ -154,12 +156,14 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
   const canConfirm = chosen !== null && afterPageValid;
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-      data-picking={picking ? "true" : "false"}
-    >
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+          data-picking={picking ? "true" : "false"}
+        >
+      <TfDialog
         className="modal-dialog dialog merge-dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -304,7 +308,9 @@ export function MergeDialog(props: MergeDialogProps): ReactElement | null {
             Merge
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

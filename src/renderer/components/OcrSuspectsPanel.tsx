@@ -25,6 +25,7 @@ import type { ReactElement } from 'react';
 import { ScanText, X } from 'lucide-react';
 import type { OcrSuspect } from '../../shared/types';
 import { SUSPECT_CONFIDENCE_THRESHOLD } from '../../shared/types';
+import { TfBarTop } from './motion/TfMotion';
 
 export interface OcrSuspectsPanelProps {
   /** Low-confidence words from the most recent OCR run on the
@@ -51,7 +52,7 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
   const grouped = groupByPage(suspects);
   const totalPages = grouped.length;
   return (
-    <aside
+    <TfBarTop
       className="ocr-suspects-panel"
       role="complementary"
       aria-label="OCR suspects"
@@ -150,7 +151,7 @@ export function OcrSuspectsPanel(props: OcrSuspectsPanelProps): ReactElement {
           </section>
         ))}
       </div>
-    </aside>
+    </TfBarTop>
   );
 }
 

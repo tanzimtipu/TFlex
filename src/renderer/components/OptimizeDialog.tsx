@@ -25,6 +25,8 @@ import type { OptimizePreset, SpaceAudit } from '../../shared/types';
 import { DEFAULT_OPTIMIZE_PRESET, OPTIMIZE_PRESETS } from '../state/preferences';
 import { formatBytes } from '../utils/formatBytes';
 import { useBackdropClose } from './modalBackdrop';
+import { AnimatePresence } from 'motion/react';
+import { TfBackdrop, TfDialog } from './motion/TfMotion';
 
 interface OptimizeDialogProps {
   open: boolean;
@@ -190,7 +192,7 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
   // dismiss).
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
+  
 
   const onConfirmClick = async (): Promise<void> => {
     setRunning(true);
@@ -213,8 +215,10 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
   };
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop className="modal-backdrop" {...backdrop}>
+      <TfDialog
         className="modal-dialog dialog optimize-dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -357,8 +361,10 @@ export function OptimizeDialog(props: OptimizeDialogProps): ReactElement | null 
             {running ? 'Reducing…' : 'Reduce and open as new tab'}
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }
 

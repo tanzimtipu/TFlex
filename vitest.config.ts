@@ -4,6 +4,7 @@ export default defineConfig({
   test: {
     include: ['test/unit/**/*.test.ts', 'test/unit/**/*.test.tsx'],
     environment: 'node',
+    setupFiles: ['test/setup/skipMotionAnimations.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary'],

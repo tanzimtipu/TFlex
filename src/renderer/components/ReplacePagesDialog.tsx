@@ -18,6 +18,8 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { FilePlus2, X } from "lucide-react";
 import { defaultPageRange, parsePageRange } from "../engine/types";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 
 export interface ReplacePagesConfirm {
   /** Other PDF bytes. */
@@ -164,7 +166,7 @@ export function ReplacePagesDialog(
   // entirely while the OS file picker is open.
   const backdrop = useBackdropClose(onClose, picking);
 
-  if (!open) return null;
+  
 
   const onPickFile = async (): Promise<void> => {
     setPicking(true);
@@ -195,13 +197,15 @@ export function ReplacePagesDialog(
   };
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-      data-picking={picking ? "true" : "false"}
-      data-replace-pages-dialog
-    >
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+          data-picking={picking ? "true" : "false"}
+          data-replace-pages-dialog
+        >
+      <TfDialog
         className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -301,7 +305,9 @@ export function ReplacePagesDialog(
             Replace
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

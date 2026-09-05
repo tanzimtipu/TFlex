@@ -14,6 +14,8 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 
 export interface RenumberPagesConfirm {
   /** One label per page, in 1-based visible order. An empty string
@@ -76,7 +78,7 @@ export function RenumberPagesDialog(
   // backdrop (a drag from a page-label input must not dismiss).
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
+  
 
   const onConfirmClick = (): void => {
     // Build the payload: one entry per non-empty label. Empty labels
@@ -107,12 +109,14 @@ export function RenumberPagesDialog(
   };
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-      data-renumber-pages-dialog
-    >
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+          data-renumber-pages-dialog
+        >
+      <TfDialog
         className="modal-dialog modal-dialog-wide dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -179,7 +183,9 @@ export function RenumberPagesDialog(
             Apply labels
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

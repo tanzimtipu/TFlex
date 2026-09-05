@@ -63,8 +63,16 @@ export interface AnnotationColors {
   dark?: AnnotationColorPreset[] | string[];
 }
 
+/** Phase-15 frosted-acrylic migration — the application theme. Widened
+ *  from `'light' | 'dark'` to add the third `'frosted'` theme (frosted-acrylic
+ *  variant). Used by `AppSettings.theme` and validated preserve-if-valid
+ *  against these three values in settings.ts; the default is `'frosted'`
+ *  (operator-set). Re-exported here so both the renderer and the backend
+ *  import the same union. */
+export type AppTheme = 'light' | 'dark' | 'frosted';
+
 export interface AppSettings {
-  theme: 'light' | 'dark';
+  theme: AppTheme;
   geometry: WindowGeometry;
   recentFiles: RecentFile[];
   /** Phase 6 — default theme the user picks on first boot. When the

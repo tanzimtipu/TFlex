@@ -1,3 +1,26 @@
+## DEF-173: Committed highlight annotation renders as an OPAQUE orange block - the highlighted text is unreadable in-session
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 16 (found during the pre-release v1.9.1 frosted-acrylic + physics-motion visual verification sweep, Phases A-D)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp, no executablePath; frosted default theme).
+2. Open the report.pdf sample (34 pages).
+3. Arm Highlight in the annotation toolbar and drag across the title text "TFlex Technical Report" on page 1; release the mouse.
+4. Press Escape to disarm the highlight tool.
+5. Observe page 1.
+
+Expected: the committed highlight renders as a translucent highlighter wash over the quads - the highlighted text stays readable underneath, with only the color marking it (the saved native /Highlight annotation behaves exactly this way when re-rendered by PDF.js).
+
+Actual: the committed highlight renders as a FULLY OPAQUE orange block (#e07a2d) that completely hides the highlighted text - "TFlex Technical Report" is invisible under it, only descender tips peek out below the block edge, defeating the entire purpose of a highlight. The block persists after the tool is disarmed. Diagnostics record of the annotation: {"kind":"highlight","page":1,"color":"#e07a2d","content":"TFlex Technical Report"}. Mechanism: the committed highlight is drawn in the in-session SVG overlay as <rect class="ann-highlight" fill="#e07a2d"> (AnnotationOverlay.tsx ~line 1424) with no fill-opacity/alpha - styles.css contains only a pointer-events rule for .ann-highlight (line 3214) and no .ann-preview rule exists, so the drag preview rect (MarkupPreviewRect) is equally opaque. SCOPE NOTE: the SAVE path is NOT affected - the backend bakes a native PDF /Highlight annotation with QuadPoints (src/main/services/annotations.ts:1172-1191), which renders translucently in PDF viewers, so save/reopen is correct; the opacity bug is in-session overlay rendering only (which is also what makes it inconsistent with the app's own post-save re-render).
+
+Screenshot: screenshots/probe-hl-disarmed.png (tool disarmed, opaque block hiding the title), screenshots/frost-o-annotated.png (same repro during the frost-verify sweep)
+
+History:
+- qa: opened
+
 ## DEF-171: Signature manager ignores Escape - the dialog and its full-screen backdrop stay up, blocking every control behind them until the Close button is used
 
 - Status: CLOSED

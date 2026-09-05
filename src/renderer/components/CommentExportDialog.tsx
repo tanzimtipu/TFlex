@@ -15,6 +15,8 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X, Download } from "lucide-react";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 
 export interface CommentExportConfirm {
   path: string;
@@ -88,7 +90,7 @@ export function CommentExportDialog(
   // backdrop.
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
+  
 
   const onConfirmClick = async (): Promise<void> => {
     setRunning(true);
@@ -120,12 +122,14 @@ export function CommentExportDialog(
   };
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-      data-comment-export-dialog
-    >
-      <div
+<AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+          data-comment-export-dialog
+        >
+<TfDialog
         className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -188,7 +192,9 @@ export function CommentExportDialog(
             {running ? "Exporting…" : "Export comments"}
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

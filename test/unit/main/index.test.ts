@@ -147,7 +147,7 @@ vi.mock('../../../src/main/window', () => ({
 
 vi.mock('../../../src/main/services/settings', () => ({
   SettingsService: vi.fn().mockImplementation(function() { return _settingsInstance; }),
-  DEFAULT_SETTINGS: { theme: 'dark', geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false }, recentFiles: [] },
+  DEFAULT_SETTINGS: { theme: 'frosted', geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false }, recentFiles: [] },
 }));
 
 vi.mock('../../../src/main/services/samples', () => ({

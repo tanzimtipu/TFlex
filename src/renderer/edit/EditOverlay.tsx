@@ -25,6 +25,7 @@
 //                    "Replace" to open the file picker again.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement } from "react";
 import type { TextItemGeom } from "../annotations/AnnotationOverlay";
 import { overlayRectToCss } from "../annotations/geometry";
@@ -49,6 +50,7 @@ import {
   type ImageResizeHandle,
 } from "./geometry";
 import { EditInlineEditor, colorToHex, fontFamilyFor } from "./EditInlineEditor";
+import { TfBar } from "../components/motion/TfMotion";
 import {
   ContentActionBar,
   MoveHint,
@@ -1180,12 +1182,13 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           no editor is open. The bar stops pointerdown so a button
           press never starts a new drag-to-create on the page behind
           it. */}
-      {tool === "box" &&
-        selectedBox !== null &&
-        textTarget === null &&
-        (() => {
-          const box = selectedBox;
-          return (
+      <AnimatePresence>
+        {tool === "box" &&
+          selectedBox !== null &&
+          textTarget === null &&
+          (() => {
+            const box = selectedBox;
+            return (
             <TextBoxToolbar
               box={box}
               cssScale={cssScale}
@@ -1222,7 +1225,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               }}
             />
           );
-        })()}
+          })()}
+        </AnimatePresence>
 
       {/* DEF-153 — the text-run selection bar: Confirm (commits a
           pending run move through engine.editTextRun with the OLD
@@ -1230,6 +1234,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           editor), Delete (masks the run — the contract's only
           text-removal path). Single click selected the run; this
           bar + the hint + the move drag are the "movable" half. */}
+      <AnimatePresence>
       {tool === "text" && runSelection !== null && textTarget === null && (
         <ContentActionBar
           className="content-action-bar edit-textrun-bar"
@@ -1300,6 +1305,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           dataActionPrefix="textrun"
         />
       )}
+      </AnimatePresence>
 
       {/* DEF-153 — the cursor-attached "Double click to edit" hint
           while a box or run is selected/movable. */}
@@ -1345,6 +1351,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               style={overlayRectToCss(createPreviewRect, cssScale)}
             />
           )}
+          <AnimatePresence>
           {selectedPlacement !== null && (
             <PlacementToolbar
               placement={selectedPlacement}
@@ -1358,6 +1365,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               onDelete={onClickDelete}
             />
           )}
+        </AnimatePresence>
           {edit.cropping && selectedPlacement !== null && (
             <CropOverlay
               imageRect={selectedPlacement.rect}
@@ -1773,7 +1781,7 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
   const topCss = topPt * cssScale;
   const leftCss = Math.max(0, Math.min(leftPt * cssScale, pageWidthPt * cssScale - 200));
   return (
-    <div
+    <TfBar
       className="content-action-bar edit-box-toolbar"
       data-edit-box-id={box.id}
       data-edit-box-toolbar
@@ -1810,7 +1818,7 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
       >
         Delete
       </button>
-    </div>
+    </TfBar>
   );
 }
 
@@ -1823,7 +1831,7 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
   const topCss = topPt * cssScale;
   const leftCss = Math.max(0, Math.min(leftPt * cssScale, pageWidthPt * cssScale - 220));
   return (
-    <div
+    <TfBar
       className="edit-image-toolbar"
       data-placement-id={placement.id}
       style={{ left: leftCss, top: topCss }}
@@ -1857,7 +1865,7 @@ function PlacementToolbar(props: PlacementToolbarProps): ReactElement {
       >
         Remove
       </button>
-    </div>
+    </TfBar>
   );
 }
 

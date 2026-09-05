@@ -532,7 +532,7 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
           onActivate={(): void => undefined}
           onClose={(): void => undefined}
           theme={"dark"}
-          onToggleTheme={(): void => undefined}
+          onThemeChange={(): void => undefined}
           onOpen={(): void => undefined}
           onNewEmptyTab={(): void => undefined}
           updateIndicator={<UpdateIndicator />}
@@ -594,7 +594,7 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
           onActivate={(): void => undefined}
           onClose={(): void => undefined}
           theme={"dark"}
-          onToggleTheme={(): void => undefined}
+          onThemeChange={(): void => undefined}
           onOpen={(): void => undefined}
           onNewEmptyTab={(): void => undefined}
         />,

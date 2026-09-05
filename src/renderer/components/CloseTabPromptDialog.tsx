@@ -30,6 +30,8 @@
 import { useEffect, useRef, type ReactElement } from "react";
 import { X } from "lucide-react";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 
 export type CloseTabPromptChoice = "save" | "discard" | "cancel";
 
@@ -88,16 +90,18 @@ export function CloseTabPromptDialog(
   // the backdrop must not fire it.
   const backdrop = useBackdropClose(() => onChoose("cancel"));
 
-  if (!open) return null;
+  
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-      data-close-tab-prompt
-      data-close-prompt
-    >
-      <div
+<AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+          data-close-tab-prompt
+          data-close-prompt
+        >
+      <TfDialog
         ref={dialogRef}
         className="modal-dialog dialog close-tab-prompt-dialog"
         role="alertdialog"
@@ -159,7 +163,9 @@ export function CloseTabPromptDialog(
             {saving ? "Saving…" : saveAsMode ? "Save As…" : "Save"}
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

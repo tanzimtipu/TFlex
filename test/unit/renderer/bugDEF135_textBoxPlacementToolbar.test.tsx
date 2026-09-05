@@ -150,7 +150,7 @@ describe("DEF-135/136 — committed text box placement toolbar", () => {
     }
   });
 
-  it("Edit reopens the inline editor pre-filled with the box's committed content", () => {
+  it("Edit reopens the inline editor pre-filled with the box's committed content", async () => {
     const { host, unmount } = mountBoxTool(selectedBoxTool());
     try {
       const edit = host.querySelector<HTMLButtonElement>("[data-edit-box-action='edit']");
@@ -164,6 +164,11 @@ describe("DEF-135/136 — committed text box placement toolbar", () => {
       const textarea = host.querySelector<HTMLTextAreaElement>("[data-edit-textarea]");
       expect(textarea?.value).toBe("Committed box");
       // The toolbar hides while the editor is open (no overlap).
+      // Phase C — the toolbar exits through AnimatePresence; settle
+      // its exit frame before asserting no stale DOM.
+      await act(async (): Promise<void> => {
+        await new Promise((r) => setTimeout(r, 30));
+      });
       expect(host.querySelector("[data-edit-box-toolbar]")).toBeNull();
     } finally {
       unmount();

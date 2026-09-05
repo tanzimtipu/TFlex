@@ -4,6 +4,7 @@ import { err, ok } from '../../shared/result';
 import type {
   AnnotationColorPreset,
   AppSettings,
+  AppTheme,
   LoadSettingsResult,
   RecentFile,
   WindowGeometry,
@@ -44,10 +45,16 @@ export const STAMP_IDS = ['APPROVED', 'DRAFT', 'CONFIDENTIAL', 'FINAL'] as const
 export const DEFAULT_STAMP_ID: (typeof STAMP_IDS)[number] = 'APPROVED';
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'dark',
+  theme: 'frosted',
   geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false },
   recentFiles: [],
 };
+
+/** Phase-15 frosted-acrylic migration — the set of accepted `AppTheme`
+ *  values. `theme` is validated preserve-if-valid against this list in
+ *  `normalizeSettings`; any other value is rejected (falls back to
+ *  `DEFAULT_SETTINGS.theme`, which is `'frosted'` — operator-set default). */
+const THEMES: readonly AppTheme[] = ['light', 'dark', 'frosted'];
 
 function normalizeGeometry(raw: unknown): WindowGeometry {
   const d = DEFAULT_SETTINGS.geometry;
@@ -108,8 +115,8 @@ export function normalizeSettings(raw: unknown): AppSettings {
     ? rawObj.recentsCap
     : RECENT_FILES_CAP;
   const settings: AppSettings = {
-    theme: typeof rawObj.theme === 'string' && (rawObj.theme === 'light' || rawObj.theme === 'dark')
-      ? rawObj.theme
+    theme: typeof rawObj.theme === 'string' && (THEMES as readonly string[]).includes(rawObj.theme)
+      ? (rawObj.theme as AppTheme)
       : DEFAULT_SETTINGS.theme,
     geometry: normalizeGeometry(rawObj.geometry),
     recentFiles: normalizeRecentFiles(rawObj.recentFiles, recentsCap),

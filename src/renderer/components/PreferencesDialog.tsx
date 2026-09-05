@@ -21,9 +21,11 @@
 
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 import type { AppInfo } from '../../shared/types';
 import type { ThemeDefault } from '../state/preferences';
+import { TfBackdrop, TfSheet } from './motion/TfMotion';
 
 interface PreferencesDialogProps {
   open: boolean;
@@ -71,8 +73,6 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     };
   }, [open]);
 
-  if (!open) return null;
-
   const commitCap = (): void => {
     const n = Number.parseInt(capDraft, 10);
     if (Number.isFinite(n)) {
@@ -90,20 +90,22 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
   };
 
   return (
-    <div
-      className="sheet-backdrop"
-      role="presentation"
-      onClick={(e): void => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="sheet sheet-prefs"
-        role="dialog"
-        aria-labelledby="prefs-title"
-        aria-modal="true"
-        data-prefs-dialog
-      >
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="sheet-backdrop"
+          role="presentation"
+          onClick={(e): void => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+        >
+          <TfSheet
+            className="sheet sheet-prefs"
+            role="dialog"
+            aria-labelledby="prefs-title"
+            aria-modal="true"
+            data-prefs-dialog
+          >
         <header className="sheet-header">
           <h2 id="prefs-title" className="sheet-title">Preferences</h2>
           <button
@@ -193,8 +195,10 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
               </button>
             </div>
           </section>
-        </div>
-      </div>
-    </div>
+</div>
+        </TfSheet>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

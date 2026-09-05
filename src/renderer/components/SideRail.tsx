@@ -8,6 +8,7 @@ import type { EngineState } from '../engine/types';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
 import { buildPageLabelMap } from './pageGeometry';
+import { TfPanelLeft } from './motion/TfMotion';
 
 interface SideRailProps {
   doc: PDFDocumentProxy;
@@ -131,7 +132,7 @@ export function SideRail(props: SideRailProps) {
   };
 
   return (
-    <aside className="side-rail">
+    <TfPanelLeft className="side-rail">
       <div className="rail-tabs">
         <button
           type="button"
@@ -191,7 +192,7 @@ export function SideRail(props: SideRailProps) {
           <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} />
         )}
       </div>
-    </aside>
+    </TfPanelLeft>
   );
 }
 

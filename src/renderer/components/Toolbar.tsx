@@ -274,6 +274,7 @@ export function Toolbar(props: ToolbarProps) {
           onClick={onMerge}
           title="Merge with another PDF"
           aria-label="Merge with another PDF"
+          data-icon="merge"
         >
           <GitMerge size={16} aria-hidden />
           <span className="tool-btn-label">Merge</span>
@@ -284,6 +285,7 @@ export function Toolbar(props: ToolbarProps) {
           onClick={onSplit}
           title="Extract or split pages"
           aria-label="Extract or split pages"
+          data-icon="split"
         >
           <Scissors size={16} aria-hidden />
           <span className="tool-btn-label">Split</span>
@@ -296,6 +298,7 @@ export function Toolbar(props: ToolbarProps) {
           title={signToolActive ? 'Sign tool active — click a page to place the selected signature. Click again to disarm.' : 'Sign: draw, type, or place a saved signature.'}
           aria-pressed={signToolActive}
           aria-label="Sign tool"
+          data-icon="sign"
         >
           <FileSignature size={16} aria-hidden />
           <span className="tool-btn-label">Sign</span>
@@ -307,6 +310,7 @@ export function Toolbar(props: ToolbarProps) {
             onClick={onFlattenClick}
             title="Flatten form fields: bake filled values into the page content"
             aria-label="Flatten form fields"
+            data-icon="flatten"
           >
             <Layers size={16} aria-hidden />
             <span className="tool-btn-label">Flatten</span>
@@ -320,6 +324,7 @@ export function Toolbar(props: ToolbarProps) {
           title="Reduce file size: re-serialise the document with a compression preset"
           aria-label="Reduce file size"
           data-toolbar-optimize
+          data-icon="optimize"
         >
           <Minimize2 size={16} aria-hidden />
           <span className="tool-btn-label">Optimize</span>
@@ -331,6 +336,7 @@ export function Toolbar(props: ToolbarProps) {
           title="Audit space usage: see a per-element breakdown of the file size"
           aria-label="Audit space usage"
           data-toolbar-audit
+          data-icon="audit"
         >
           <PieChart size={16} aria-hidden />
           <span className="tool-btn-label">Audit</span>
@@ -364,6 +370,7 @@ export function Toolbar(props: ToolbarProps) {
               title="Edit content: replace text, add text boxes, edit images"
               aria-label="Edit content"
               data-toolbar-edit-toggle
+              data-icon="edit"
             >
               <Pencil size={16} aria-hidden />
               <span className="tool-btn-label">Edit</span>
@@ -379,6 +386,7 @@ export function Toolbar(props: ToolbarProps) {
             title={canDeletePage ? 'Delete current page or a custom range' : 'Documents must keep at least one page'}
             aria-label="Delete pages"
             data-toolbar-delete-pages
+            data-icon="delete"
           >
             <Trash2 size={16} aria-hidden />
             <span className="tool-btn-label">Delete</span>

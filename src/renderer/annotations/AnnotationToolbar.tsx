@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import type { ReactElement } from "react";
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import { useDragWindow } from "../components/useDragWindow";
 import {
   PEN_WIDTHS,
@@ -37,6 +38,7 @@ import ColorPalette, {
   paletteEqual,
 } from "./ColorPalette";
 import type { AnnotationColors } from "../state/colorPalette";
+import { TfPopover } from "../components/motion/TfMotion";
 export interface AnnotationToolbarProps {
   state: AnnotationToolState;
   onAction: (action: AnnotationToolAction) => void;
@@ -250,39 +252,47 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
               title={`Color: ${activeCssColor}`}
               data-color-current={activeCssColor}
             />
-            {paletteOpen && (
-              <div
-                ref={(el): void => {
-                  popoverRef.current = el;
-                  paletteDrag.windowRef(el);
-                }}
-                className={
-                  paletteDrag.dragging
-                    ? "color-popover color-popover-dragging"
-                    : "color-popover"
-                }
-                role="presentation"
-                data-color-popover
-                style={{
-                  transform: `translate(${paletteDrag.offset.x}px, ${paletteDrag.offset.y}px)`,
-                }}
-                {...paletteDrag.handleProps}
-              >
-                <ColorPalette
-                  theme={theme}
-                  activeColor={isBuiltInActive ? (state.color as AnnotationColor) : 'yellow'}
-                  activeCustomHex={isBuiltInActive ? null : state.color}
-                  presets={palette ?? { light: [], dark: [] }}
-                  onChange={(next): void => {
-                    if (!paletteEqual(palette ?? { light: [], dark: [] }, next)) {
-                      onPaletteChange?.(next);
-                    }
+            <AnimatePresence>
+              {paletteOpen && (
+                <TfPopover
+                  ref={(el): void => {
+                    popoverRef.current = el;
+                    paletteDrag.windowRef(el);
                   }}
-                  onApplyBuiltIn={setColor}
-                  onApplyCustom={setColor}
-                />
-              </div>
-            )}
+                  className={
+                    paletteDrag.dragging
+                      ? "color-popover color-popover-dragging"
+                      : "color-popover"
+                  }
+                  role="presentation"
+                  data-color-popover
+                  // Phase C — the drag offset folds into motion x/y so
+                  // the popover's own enter spring composes with the
+                  // drag transform instead of fighting an inline
+                  // `transform:` (the CSS popover-enter travel is
+                  // preserved when the offset is 0,0). The exit pins
+                  // the drag position too, so a dragged popover fades
+                  // out where it was dragged instead of snapping back.
+                  animate={{ x: paletteDrag.offset.x, y: paletteDrag.offset.y }}
+                  exit={{ x: paletteDrag.offset.x, y: paletteDrag.offset.y - 3 }}
+                  {...paletteDrag.handleProps}
+                >
+                  <ColorPalette
+                    theme={theme}
+                    activeColor={isBuiltInActive ? (state.color as AnnotationColor) : 'yellow'}
+                    activeCustomHex={isBuiltInActive ? null : state.color}
+                    presets={palette ?? { light: [], dark: [] }}
+                    onChange={(next): void => {
+                      if (!paletteEqual(palette ?? { light: [], dark: [] }, next)) {
+                        onPaletteChange?.(next);
+                      }
+                    }}
+                    onApplyBuiltIn={setColor}
+                    onApplyCustom={setColor}
+                  />
+                </TfPopover>
+              )}
+            </AnimatePresence>
           </div>
         </>
       )}

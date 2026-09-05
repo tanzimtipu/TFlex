@@ -37,6 +37,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { TfPanel } from './motion/TfMotion';
 
 export type ToolsPaletteLayout = 'list' | 'grid';
 
@@ -109,6 +110,34 @@ interface ToolEntry {
   shortcut: string;
   action: () => void;
 }
+
+/** Phase B — the palette's section headers. Entries are grouped into
+ *  four quiet uppercase sections (ORGANIZE PAGES / DOCUMENT /
+ *  RECOGNITION / EXPORT) so the dense tool list scans like a
+ *  professional toolbox. Group and entry order is the canonical
+ *  palette order; entry ids must match `data-tool-id`. */
+const TOOL_GROUPS: ReadonlyArray<{ id: string; label: string; entryIds: readonly string[] }> = [
+  {
+    id: 'organize',
+    label: 'Organize Pages',
+    entryIds: ['merge', 'split', 'extract', 'rotate', 'delete', 'insertPages', 'replacePages', 'renumberPages', 'cropPages'],
+  },
+  {
+    id: 'document',
+    label: 'Document',
+    entryIds: ['sign', 'forms', 'stamp', 'optimize', 'audit', 'createFromImages'],
+  },
+  {
+    id: 'recognition',
+    label: 'Recognition',
+    entryIds: ['recognizeText', 'batchOcr', 'ocrSuspects'],
+  },
+  {
+    id: 'export',
+    label: 'Export',
+    entryIds: ['exportPages', 'exportText', 'exportDocx', 'exportComments', 'importComments'],
+  },
+];
 
 export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
   const {
@@ -408,8 +437,12 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       : []),
   ];
 
+  // Phase B — look up entries by id so the grouped render can lay
+  // each tool under its section header without reordering the data.
+  const entryById = new Map(entries.map((e) => [e.id, e]));
+
   return (
-    <aside
+    <TfPanel
       className={layout === 'grid' ? 'tools-palette tools-palette-grid' : 'tools-palette tools-palette-list'}
       data-tools-palette
       data-layout={layout}
@@ -453,34 +486,63 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
         </button>
       </header>
       <div className="tools-palette-body">
-        {entries.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className={
-              layout === 'grid'
-                ? 'tools-palette-entry tools-palette-entry-grid'
-                : 'tools-palette-entry tools-palette-entry-list'
-            }
-            disabled={!isEntryEnabled(entry.id)}
-            onClick={entry.action}
-            aria-label={entry.label}
-            title={entry.description}
-            data-tool-id={entry.id}
-          >
-            <span className="tools-palette-entry-icon">{entry.icon}</span>
-            <span className="tools-palette-entry-text">
-              <span className="tools-palette-entry-label">{entry.label}</span>
-              {layout === 'list' && (
-                <span className="tools-palette-entry-desc">{entry.description}</span>
-              )}
-            </span>
-            {layout === 'list' && entry.shortcut !== '' && (
-              <span className="tools-palette-entry-shortcut">{entry.shortcut}</span>
-            )}
-          </button>
-        ))}
+        {TOOL_GROUPS.map((group) => {
+          const groupEntries = group.entryIds
+            .map((id) => entryById.get(id))
+            .filter((e): e is ToolEntry => e !== undefined);
+          if (groupEntries.length === 0) return null;
+          return (
+            <section
+              key={group.id}
+              className="tools-palette-group"
+              data-tools-group={group.id}
+            >
+              <div
+                className="tools-palette-group-label"
+                role="heading"
+                aria-level={2}
+              >
+                {group.label}
+              </div>
+              <div
+                className={
+                  layout === 'grid'
+                    ? 'tools-palette-group-grid'
+                    : 'tools-palette-group-list'
+                }
+              >
+                {groupEntries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className={
+                      layout === 'grid'
+                        ? 'tools-palette-entry tools-palette-entry-grid'
+                        : 'tools-palette-entry tools-palette-entry-list'
+                    }
+                    disabled={!isEntryEnabled(entry.id)}
+                    onClick={entry.action}
+                    aria-label={entry.label}
+                    title={entry.description}
+                    data-tool-id={entry.id}
+                  >
+                    <span className="tools-palette-entry-icon">{entry.icon}</span>
+                    <span className="tools-palette-entry-text">
+                      <span className="tools-palette-entry-label">{entry.label}</span>
+                      {layout === 'list' && (
+                        <span className="tools-palette-entry-desc">{entry.description}</span>
+                      )}
+                    </span>
+                    {layout === 'list' && entry.shortcut !== '' && (
+                      <span className="tools-palette-entry-shortcut">{entry.shortcut}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
+          );
+        })}
       </div>
-    </aside>
+    </TfPanel>
   );
 }

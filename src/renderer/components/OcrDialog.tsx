@@ -40,6 +40,8 @@ import {
 } from "../state/preferences";
 import { rasterizePagesForOcr, type OcrRasterizeFormField } from "../pdf/ocrRasterize";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 import type {
   OcrLanguage,
   OcrPageImage,
@@ -294,7 +296,7 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
   // backdrop; blocked entirely while OCR is running.
   const backdrop = useBackdropClose(onClose, running);
 
-  if (!open) return null;
+  
 
   const onConfirmClick = async (): Promise<void> => {
     if (!valid) return;
@@ -398,8 +400,10 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
   const progressPercent = Math.round(progressFraction * 100);
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop className="modal-backdrop" {...backdrop}>
+      <TfDialog
         className="modal-dialog dialog ocr-dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -570,7 +574,9 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
             {running ? 'Running…' : 'Recognize text'}
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

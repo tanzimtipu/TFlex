@@ -26,6 +26,8 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { X } from 'lucide-react';
 import { useBackdropClose } from './modalBackdrop';
+import { AnimatePresence } from 'motion/react';
+import { TfBackdrop, TfDialog } from './motion/TfMotion';
 
 interface SaveAsDialogProps {
   open: boolean;
@@ -87,7 +89,7 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
   // backdrop (a drag from the linearize checkbox must not dismiss).
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
+  
 
   const onToggleLinearize = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const next = e.target.checked;
@@ -112,8 +114,10 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
   };
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop className="modal-backdrop" {...backdrop}>
+      <TfDialog
         className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -178,7 +182,9 @@ export function SaveAsDialog(props: SaveAsDialogProps): ReactElement | null {
             Choose location…
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { ReactElement } from "react";
+import { AnimatePresence } from "motion/react";
 import type {
   AppSettings,
+  AppTheme,
   DocxImageEntry,
   EditFont,
   ExportPageEntry,
@@ -808,6 +810,20 @@ export function App(): ReactElement {
       applyTheme(next.theme);
       trackAndSave(next);
       return next;
+    });
+  }, [trackAndSave]);
+
+  // Phase-15 — the frosted-acrylic theme picker. Sets an EXPLICIT
+  // theme (light / dark / frosted) instead of toggling, and persists
+  // through the same trackAndSave path so the choice survives a
+  // restart. Shared shape with onToggleTheme, minus the toggle math.
+  const onThemeChange = useCallback((next: AppTheme): void => {
+    setSettings((prev) => {
+      if (prev === null) return prev;
+      const updated: AppSettings = { ...prev, theme: next };
+      applyTheme(next);
+      trackAndSave(updated);
+      return updated;
     });
   }, [trackAndSave]);
 
@@ -5465,7 +5481,7 @@ pushToast(
       currentPage,
       zoom,
       mode,
-      theme: settingsRef.current?.theme ?? "dark",
+      theme: settingsRef.current?.theme ?? "frosted",
       openTabs: Object.keys(tabs2).length,
       activeTabId: activeId,
       activeDocBytes: tab?.session.fileSize ?? 0,
@@ -5803,7 +5819,7 @@ pushToast(
           onActivate={activateTab}
           onClose={closeTab}
           theme={settings.theme}
-          onToggleTheme={onToggleTheme}
+          onThemeChange={onThemeChange}
           onOpen={onOpenClick}
           onNewEmptyTab={onNewEmptyTab}
           // OTA UX — the toolbar update indicator reads its state
@@ -5979,100 +5995,102 @@ pushToast(
             })
           )}
         </div>
-        {toolsPaletteOpen && (
-          <ToolsPalette
-            layout={settings.toolsPaletteLayout ?? 'list'}
-            onLayoutChange={(next): void => {
-              setSettings((prev) => {
-                if (prev === null) return prev;
-                const updated = preferencesReducer(prev, {
-                  type: 'set-tools-palette-layout',
-                  value: next,
+        <AnimatePresence>
+          {toolsPaletteOpen && (
+            <ToolsPalette
+              layout={settings.toolsPaletteLayout ?? 'list'}
+              onLayoutChange={(next): void => {
+                setSettings((prev) => {
+                  if (prev === null) return prev;
+                  const updated = preferencesReducer(prev, {
+                    type: 'set-tools-palette-layout',
+                    value: next,
+                  });
+                  trackAndSave(updated);
+                  return updated;
                 });
-                trackAndSave(updated);
-                return updated;
-              });
-            }}
-            onMerge={onMergeClick}
-            onSplit={onSplitClick}
-            onExtract={(): void => setSplitOpen(true)}
-            onRotate={(): void => {
-              // DEF: palette rotate was a no-op stub (the
-              // comment claimed "rotate happens per-page in the
-              // rail" but the palette entry is reachable without
-              // a rail thumbnail selection — e.g. after closing
-              // the rail tab to the annotations panel). Wire it
-              // through the same path the toolbar's Rotate
-              // clockwise button uses (which reads the active
-              // tab's persisted currentPage and dispatches the
-              // engine rotate op).
-              const id = activeTabIdRefLocal.current;
-              if (id === null) return;
-              onRotateClockwise(id);
-            }}
-            onDelete={(): void => {
-              // B11 — the palette's Delete entry opens the SAME
-              // DeletePageDialog the toolbar's Delete button uses
-              // (current page / custom range, with the "must keep
-              // at least one page" validation inside the dialog).
-              // The previous wiring was a toast no-op ("Select a
-              // thumbnail in the left rail…") that told the user
-              // to go elsewhere — a silent dead end for an entry
-              // that looks exactly like the toolbar control. The
-              // dialog gates on the active tab and resolves the
-              // current page itself.
-              onDeletePageClick();
-            }}
-            onSign={(): void => {
-              if (armedSignatureId !== null) {
-                setArmedSignatureId(null);
-              } else {
-                // DEF-125 — arming Sign from the palette exits Edit
-                // mode too (same cross-disarm as the toolbar path):
-                // the edit layer would otherwise swallow the
-                // placement click.
-                if (editModeOpenRef.current) {
-                  setEditMode(false);
+              }}
+              onMerge={onMergeClick}
+              onSplit={onSplitClick}
+              onExtract={(): void => setSplitOpen(true)}
+              onRotate={(): void => {
+                // DEF: palette rotate was a no-op stub (the
+                // comment claimed "rotate happens per-page in the
+                // rail" but the palette entry is reachable without
+                // a rail thumbnail selection — e.g. after closing
+                // the rail tab to the annotations panel). Wire it
+                // through the same path the toolbar's Rotate
+                // clockwise button uses (which reads the active
+                // tab's persisted currentPage and dispatches the
+                // engine rotate op).
+                const id = activeTabIdRefLocal.current;
+                if (id === null) return;
+                onRotateClockwise(id);
+              }}
+              onDelete={(): void => {
+                // B11 — the palette's Delete entry opens the SAME
+                // DeletePageDialog the toolbar's Delete button uses
+                // (current page / custom range, with the "must keep
+                // at least one page" validation inside the dialog).
+                // The previous wiring was a toast no-op ("Select a
+                // thumbnail in the left rail…") that told the user
+                // to go elsewhere — a silent dead end for an entry
+                // that looks exactly like the toolbar control. The
+                // dialog gates on the active tab and resolves the
+                // current page itself.
+                onDeletePageClick();
+              }}
+              onSign={(): void => {
+                if (armedSignatureId !== null) {
+                  setArmedSignatureId(null);
+                } else {
+                  // DEF-125 — arming Sign from the palette exits Edit
+                  // mode too (same cross-disarm as the toolbar path):
+                  // the edit layer would otherwise swallow the
+                  // placement click.
+                  if (editModeOpenRef.current) {
+                    setEditMode(false);
+                  }
+                  setSigModalOpen(true);
                 }
-                setSigModalOpen(true);
-              }
-            }}
-            onForms={(): void => setFlattenOpen(true)}
-            onOptimize={onOptimizeClick}
-            onAudit={onAuditClick}
-            onCreateFromImages={onCreateClick}
-            onExportPages={onExportClick}
-            onExportText={onTextExportClick}
-            onExportDocx={onDocxExportClick}
-            onInsertPages={onInsertPagesClick}
-            onRecognizeText={onOcrClick}
-            onBatchOcr={(): void => {
-              void onBatchOcr();
-            }}
-            onOcrSuspects={(): void => onOpenOcrSuspects()}
-            onReplacePages={onReplacePagesClick}
-            onRenumberPages={onRenumberPagesClick}
-            onCropPages={onCropPagesClick}
-            onStamp={onStampClick}
-            onExportComments={onCommentExportClick}
-            onImportComments={onCommentImportClick}
-            hasOcrSuspects={Object.values(ocrRunByTab).some(Boolean)}
-            onClose={(): void => setToolsPaletteOpen(false)}
-            // B11 / DEF-102 — `documentRequired` must be false on an
-            // empty tab. The previous shape was
-            // `activeTab !== null`; on an empty tab `openTabs[id]`
-            // has NO entry (empty tabs only exist in the tab bar),
-            // so `activeTab` is `undefined` — and
-            // `undefined !== null` is TRUE, which told the palette
-            // "a document is active" and enabled Recognize Text /
-            // OCR on a doc-less tab. Gating on the active tab not
-            // being empty makes every document-required entry
-            // (Recognize text, OCR suspects, batch OCR, ...)
-            // disabled on the welcome screen and on empty tabs.
-            documentRequired={tabs.activeId !== null && !activeIsEmpty}
-            hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
-          />
-        )}
+              }}
+              onForms={(): void => setFlattenOpen(true)}
+              onOptimize={onOptimizeClick}
+              onAudit={onAuditClick}
+              onCreateFromImages={onCreateClick}
+              onExportPages={onExportClick}
+              onExportText={onTextExportClick}
+              onExportDocx={onDocxExportClick}
+              onInsertPages={onInsertPagesClick}
+              onRecognizeText={onOcrClick}
+              onBatchOcr={(): void => {
+                void onBatchOcr();
+              }}
+              onOcrSuspects={(): void => onOpenOcrSuspects()}
+              onReplacePages={onReplacePagesClick}
+              onRenumberPages={onRenumberPagesClick}
+              onCropPages={onCropPagesClick}
+              onStamp={onStampClick}
+              onExportComments={onCommentExportClick}
+              onImportComments={onCommentImportClick}
+              hasOcrSuspects={Object.values(ocrRunByTab).some(Boolean)}
+              onClose={(): void => setToolsPaletteOpen(false)}
+              // B11 / DEF-102 — `documentRequired` must be false on an
+              // empty tab. The previous shape was
+              // `activeTab !== null`; on an empty tab `openTabs[id]`
+              // has NO entry (empty tabs only exist in the tab bar),
+              // so `activeTab` is `undefined` — and
+              // `undefined !== null` is TRUE, which told the palette
+              // "a document is active" and enabled Recognize Text /
+              // OCR on a doc-less tab. Gating on the active tab not
+              // being empty makes every document-required entry
+              // (Recognize text, OCR suspects, batch OCR, ...)
+              // disabled on the welcome screen and on empty tabs.
+              documentRequired={tabs.activeId !== null && !activeIsEmpty}
+              hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
+            />
+          )}
+        </AnimatePresence>
         {/* B14 — the suspects panel must only render against a
             REAL document. The previous guard checked
             `activeTabIdRefLocal.current !== null`, which is true
@@ -6083,6 +6101,7 @@ pushToast(
             empty tabs, so the panel can never render without a
             document. The flag is also reset on new-tab / tab-
             switch / close (B10 / B14). */}
+        <AnimatePresence mode="popLayout">
         {ocrSuspectsOpen && activeTab !== null && (
           <OcrSuspectsPanel
             suspects={
@@ -6093,6 +6112,7 @@ pushToast(
             onClose={onCloseOcrSuspects}
           />
         )}
+      </AnimatePresence>
       </div>
       <MergeDialog
         open={mergeOpen}

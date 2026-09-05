@@ -266,6 +266,10 @@ describe("DEF-155 — the white eraser covers the OLD rect until the confirm's e
           requestAnimationFrame(() => requestAnimationFrame(() => r())),
         );
       });
+      // Phase C — the box toolbar's exit animation unmounts on the
+      // next frame after the selection's last state commit; give the
+      // motion exit its frame before asserting no stale DOM.
+      await settleFrames();
       expect(host.querySelector("[data-edit-box-eraser]"), "eraser unmounts after the refresh lands").toBeNull();
       // The selection closed with the pending move.
       expect(host.querySelector("[data-edit-box-toolbar]")).toBeNull();

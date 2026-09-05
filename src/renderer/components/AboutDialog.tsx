@@ -18,8 +18,10 @@
 
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
+import { AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 import type { AppInfo, UpdateState } from '../../shared/types';
+import { TfBackdrop, TfSheet } from './motion/TfMotion';
 
 interface AboutDialogProps {
   open: boolean;
@@ -188,8 +190,6 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
     };
   }, [open]);
 
-  if (!open) return null;
-
   const handleOpenPath = (path: string): void => {
     const tflex = (window as unknown as { tflex?: { app?: { openPath?: (p: string) => Promise<void> } } }).tflex;
     if (tflex?.app?.openPath === undefined) return;
@@ -220,105 +220,109 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
   };
 
   return (
-    <div
-      className="sheet-backdrop"
-      role="presentation"
-      onClick={(e): void => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div
-        className="sheet sheet-about"
-        role="dialog"
-        aria-labelledby="about-title"
-        aria-modal="true"
-        data-about-dialog
-      >
-        <header className="sheet-header">
-          <h2 id="about-title" className="sheet-title">About TFlex</h2>
-          <button
-            type="button"
-            className="sheet-close"
-            onClick={onClose}
-            aria-label="Close about dialog"
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="sheet-backdrop"
+          role="presentation"
+          onClick={(e): void => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+        >
+          <TfSheet
+            className="sheet sheet-about"
+            role="dialog"
+            aria-labelledby="about-title"
+            aria-modal="true"
+            data-about-dialog
           >
-            <X size={16} aria-hidden />
-          </button>
-        </header>
-        <div className="sheet-body">
-          <div className="about-mark" aria-hidden>TF</div>
-          <h3 className="about-name">TFlex</h3>
-          <p className="about-tagline">A modern PDF studio for Windows.</p>
-          <div className="about-meta">
-            <div className="about-row">
-              <span className="about-row-label">Version</span>
-              <span className="about-row-value" data-about-version>{info.version}</span>
-            </div>
-            <div className="about-row">
-              <span className="about-row-label">Electron</span>
-              <span className="about-row-value">{info.electronVersion}</span>
-            </div>
-            <div className="about-row">
-              <span className="about-row-label">Node</span>
-              <span className="about-row-value">{info.nodeVersion}</span>
-            </div>
-            {renderUpdateRow()}
-          </div>
-          {onCheckForUpdate !== undefined && (
-            <div className="about-actions">
+            <header className="sheet-header">
+              <h2 id="about-title" className="sheet-title">About TFlex</h2>
               <button
                 type="button"
-                className="btn btn-secondary"
-                onClick={onCheckForUpdate}
-                data-about-check-update
+                className="sheet-close"
+                onClick={onClose}
+                aria-label="Close about dialog"
               >
-                Check for Updates
+                <X size={16} aria-hidden />
               </button>
+            </header>
+            <div className="sheet-body">
+              <div className="about-mark" aria-hidden>TF</div>
+              <h3 className="about-name">TFlex</h3>
+              <p className="about-tagline">A modern PDF studio for Windows.</p>
+              <div className="about-meta">
+                <div className="about-row">
+                  <span className="about-row-label">Version</span>
+                  <span className="about-row-value" data-about-version>{info.version}</span>
+                </div>
+                <div className="about-row">
+                  <span className="about-row-label">Electron</span>
+                  <span className="about-row-value">{info.electronVersion}</span>
+                </div>
+                <div className="about-row">
+                  <span className="about-row-label">Node</span>
+                  <span className="about-row-value">{info.nodeVersion}</span>
+                </div>
+                {renderUpdateRow()}
+              </div>
+              {onCheckForUpdate !== undefined && (
+                <div className="about-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={onCheckForUpdate}
+                    data-about-check-update
+                  >
+                    Check for Updates
+                  </button>
+                </div>
+              )}
+              {unavailable && (
+                <div className="about-warning">
+                  The app info channel isn't wired yet. The About dialog will populate
+                  automatically once the backend finishes the IPC handler.
+                </div>
+              )}
+              <div className="about-paths">
+                <div className="about-row about-row-path">
+                  <span className="about-row-label">User data</span>
+                  <button
+                    type="button"
+                    className="about-row-value about-row-value-link"
+                    onClick={(): void => handleOpenPath(info.storagePaths.userData)}
+                    title={info.storagePaths.userData}
+                  >
+                    {info.storagePaths.userData}
+                  </button>
+                </div>
+                <div className="about-row about-row-path">
+                  <span className="about-row-label">Settings</span>
+                  <button
+                    type="button"
+                    className="about-row-value about-row-value-link"
+                    onClick={(): void => handleOpenPath(info.storagePaths.settings)}
+                    title={info.storagePaths.settings}
+                  >
+                    {info.storagePaths.settings}
+                  </button>
+                </div>
+                <div className="about-row about-row-path">
+                  <span className="about-row-label">Signatures</span>
+                  <button
+                    type="button"
+                    className="about-row-value about-row-value-link"
+                    onClick={(): void => handleOpenPath(info.storagePaths.signatures)}
+                    title={info.storagePaths.signatures}
+                  >
+                    {info.storagePaths.signatures}
+                  </button>
+                </div>
+              </div>
             </div>
-          )}
-          {unavailable && (
-            <div className="about-warning">
-              The app info channel isn't wired yet. The About dialog will populate
-              automatically once the backend finishes the IPC handler.
-            </div>
-          )}
-          <div className="about-paths">
-            <div className="about-row about-row-path">
-              <span className="about-row-label">User data</span>
-              <button
-                type="button"
-                className="about-row-value about-row-value-link"
-                onClick={(): void => handleOpenPath(info.storagePaths.userData)}
-                title={info.storagePaths.userData}
-              >
-                {info.storagePaths.userData}
-              </button>
-            </div>
-            <div className="about-row about-row-path">
-              <span className="about-row-label">Settings</span>
-              <button
-                type="button"
-                className="about-row-value about-row-value-link"
-                onClick={(): void => handleOpenPath(info.storagePaths.settings)}
-                title={info.storagePaths.settings}
-              >
-                {info.storagePaths.settings}
-              </button>
-            </div>
-            <div className="about-row about-row-path">
-              <span className="about-row-label">Signatures</span>
-              <button
-                type="button"
-                className="about-row-value about-row-value-link"
-                onClick={(): void => handleOpenPath(info.storagePaths.signatures)}
-                title={info.storagePaths.signatures}
-              >
-                {info.storagePaths.signatures}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+          </TfSheet>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

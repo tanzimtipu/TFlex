@@ -25,6 +25,8 @@ import {
   type ReactElement,
 } from "react";
 import { useBackdropClose } from "../components/modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "../components/motion/TfMotion";
 import type { SavedSignature, SignatureSource } from "../../shared/types";
 import {
   DRAW_CANVAS_H,
@@ -90,7 +92,7 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
     return (): void => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  
 
   const onPick = (id: string): void => {
     onApply(id);
@@ -103,8 +105,10 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
   };
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop className="modal-backdrop" {...backdrop}>
+      <TfDialog
         className="modal-dialog sig-manager"
         role="dialog"
         aria-modal="true"
@@ -175,8 +179,10 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
             Close
           </button>
         </div>
-      </div>
-    </div>
+        </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }
 

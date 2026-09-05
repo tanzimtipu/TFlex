@@ -1,5 +1,7 @@
 import { AlertCircle, AlertTriangle, CheckCircle, Info, X } from 'lucide-react';
 import { useEffect } from 'react';
+import { AnimatePresence } from 'motion/react';
+import { TfToast } from './motion/TfMotion';
 
 /** Toast kind. Phase 13 adds `success` + `warning` so the renderer can
  *  surface non-error non-info results distinctly. The accent still
@@ -32,9 +34,11 @@ export function Toasts({
 }) {
   return (
     <div className="toast-stack" role="status" aria-live="polite">
-      {items.map((toast) => (
-        <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
-      ))}
+      <AnimatePresence mode="popLayout" initial={false}>
+        {items.map((toast) => (
+          <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
+        ))}
+      </AnimatePresence>
     </div>
   );
 }
@@ -47,7 +51,11 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
 
   const Icon = toastIcon(toast.kind);
   return (
-    <div className={`toast toast-${toast.kind}`}>
+    <TfToast
+      toastKind={toast.kind}
+      layout
+      className={`toast toast-${toast.kind}`}
+    >
       <Icon size={16} aria-hidden className="toast-icon" />
       <span className="toast-text">{toast.text}</span>
       <button
@@ -58,6 +66,6 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
       >
         <X size={16} aria-hidden />
       </button>
-    </div>
+    </TfToast>
   );
 }

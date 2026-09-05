@@ -15,9 +15,11 @@
 // only opens for the explicit "Delete" toolbar action).
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
+import { AnimatePresence } from "motion/react";
 import { Trash2, X } from "lucide-react";
 import { parsePageRange } from "../engine/types";
 import { useBackdropClose } from "./modalBackdrop";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 
 export type DeletePageMode = "current" | "range";
 
@@ -139,8 +141,6 @@ export function DeletePageDialog(
   // backdrop (a drag from the range input must not dismiss).
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
-
   const onConfirmClick = (): void => {
     if (!valid) return;
     if (mode === "current") {
@@ -153,19 +153,21 @@ export function DeletePageDialog(
   };
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-      data-delete-pages-dialog
-    >
-      <div
-        className="modal-dialog dialog"
-        ref={dialogRef}
-        onClick={(e): void => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="delete-pages-dialog-title"
-      >
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+          data-delete-pages-dialog
+        >
+          <TfDialog
+            className="modal-dialog dialog"
+            ref={dialogRef}
+            onClick={(e): void => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-pages-dialog-title"
+          >
         <div className="modal-header">
           <h2 id="delete-pages-dialog-title" className="modal-title">
             Delete pages
@@ -246,9 +248,11 @@ export function DeletePageDialog(
           >
             <Trash2 size={16} aria-hidden />
             Delete
-          </button>
-        </div>
-      </div>
-    </div>
+</button>
+            </div>
+          </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

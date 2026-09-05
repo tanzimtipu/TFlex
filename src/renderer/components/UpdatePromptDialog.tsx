@@ -45,8 +45,10 @@
 
 import type { ReactElement } from "react";
 import { useEffect, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import { Download, RefreshCw, RotateCw, X } from "lucide-react";
 import type { UpdateState } from "../../shared/types";
+import { TfBackdrop, TfSheet } from "./motion/TfMotion";
 
 /** What the dialog can render. Mirrors the live backend state
  *  mapped to a presentational kind so the dialog can never show
@@ -199,12 +201,14 @@ export function UpdatePromptDialog(
   // progress state, then to a restart prompt.
   const [pendingVersion, setPendingVersion] = useState<string | null>(null);
 
-  if (!open) {
-    // Reset the post-click snapshot whenever the dialog closes so
-    // a future open starts clean.
-    if (pendingVersion !== null) setPendingVersion(null);
-    return null;
-  }
+  // The post-click snapshot resets whenever the dialog closes so a
+  // future open starts clean. Kept in an effect (instead of a
+  // setState-during-render next to an early return) so the dialog
+  // can participate in exit animations without a render-phase
+  // state write.
+  useEffect(() => {
+    if (!open && pendingVersion !== null) setPendingVersion(null);
+  }, [open, pendingVersion]);
 
   // Bug 9 — the effective kind takes the post-click `pendingVersion`
   // into account so the dialog flips to the "downloading" progress
@@ -553,25 +557,27 @@ export function UpdatePromptDialog(
   };
 
   return (
-    <div
-      className="sheet-backdrop"
-      role="presentation"
-      onClick={(e): void => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-      onKeyDown={(e): void => {
-        if (e.key === "Escape") onClose();
-      }}
-      tabIndex={-1}
-    >
-      <div
-        className="sheet sheet-update-prompt"
-        role="dialog"
-        aria-labelledby="update-prompt-title"
-        aria-modal="true"
-        data-update-prompt
-        data-update-prompt-kind={kind}
-      >
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="sheet-backdrop"
+          role="presentation"
+          onClick={(e): void => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+          onKeyDown={(e): void => {
+            if (e.key === "Escape") onClose();
+          }}
+          tabIndex={-1}
+        >
+          <TfSheet
+            className="sheet sheet-update-prompt"
+            role="dialog"
+            aria-labelledby="update-prompt-title"
+            aria-modal="true"
+            data-update-prompt
+            data-update-prompt-kind={kind}
+          >
         <header className="sheet-header">
           {renderHeader()}
           <button
@@ -587,7 +593,9 @@ export function UpdatePromptDialog(
           {renderBody()}
           {renderActions()}
         </div>
-      </div>
-    </div>
+        </TfSheet>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

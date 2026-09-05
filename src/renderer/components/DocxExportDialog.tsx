@@ -20,6 +20,8 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 import { defaultPageRange, parsePageRange } from "../engine/types";
 import {
   clampExportImageDpi,
@@ -135,7 +137,7 @@ export function DocxExportDialog(
   // dialog). Blocked entirely while an export is running.
   const backdrop = useBackdropClose(onClose, running);
 
-  if (!open) return null;
+  
 
   const onConfirmClick = async (): Promise<void> => {
     if (!valid || parsed === null) return;
@@ -238,12 +240,14 @@ export function DocxExportDialog(
   };
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-      data-docx-export-dialog
-    >
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+          data-docx-export-dialog
+        >
+      <TfDialog
         className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -368,7 +372,9 @@ export function DocxExportDialog(
             {running ? "Exporting…" : "Export"}
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

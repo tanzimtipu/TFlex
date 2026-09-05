@@ -1,4 +1,5 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
+import { AnimatePresence } from "motion/react";
 import {
   useCallback,
   useEffect,
@@ -52,6 +53,7 @@ import {
   type IdleCleanupCoordinator,
 } from "../utils/idleCleanup";
 import type {
+  AppTheme,
   FormField,
   SavedSignature,
   SignaturePlacement,
@@ -225,9 +227,9 @@ interface DocumentViewProps {
    *  each bucket is an array of `{ id, hex }` preset objects. */
   annotationPalette?: { light?: Array<{ id: string; hex: string }>; dark?: Array<{ id: string; hex: string }> } | null;
   onAnnotationPaletteChange?: (next: { light?: Array<{ id: string; hex: string }>; dark?: Array<{ id: string; hex: string }> }) => void;
-  /** Active theme ('light' | 'dark'). Drives which per-theme
-   *  preset bucket the picker shows. */
-  themeName?: 'light' | 'dark';
+  /** Active theme ('light' | 'dark' | 'frosted'). Drives which
+   *  per-theme preset bucket the picker shows. */
+  themeName?: AppTheme;
   // -- Phase 10: Edit-content overlay --
   /** Edit mode is open. When true, the per-page EditOverlay
    *  becomes pointer-active and the EditToolbar renders above
@@ -397,7 +399,7 @@ export function DocumentView({
   onToolsPaletteToggle,
   annotationPalette,
   onAnnotationPaletteChange,
-  themeName = 'dark',
+  themeName = 'frosted',
   editModeOpen = false,
   edit = null,
   onEditModeToggle,
@@ -1776,22 +1778,27 @@ export function DocumentView({
               ? undefined
               : (next): void => onAnnotationPaletteChange(next)
           }
-          theme={themeName}
+          /* Phase-15 — frosted is a dark acrylic variant, so the
+             annotation palette treats it as the 'dark' preset bucket
+             (the shared AnnotationColors contract has no frosted key). */
+          theme={themeName === 'light' ? 'light' : 'dark'}
         />
-        {editModeOpen && edit !== null && (
-          <EditToolbar
-            tool={edit.state.tool}
-            onSelect={(t): void => edit.onAction({ type: "set-tool", tool: t })}
-            defaultFont={edit.defaultFont}
-            onDefaultFontChange={
-              edit.onDefaultFontChange === undefined
-                ? (): void => undefined
-                : (f): void => edit.onDefaultFontChange?.(f)
-            }
-            enabled
-            hint={editToolbarHint}
-          />
-        )}
+        <AnimatePresence>
+          {editModeOpen && edit !== null && (
+            <EditToolbar
+              tool={edit.state.tool}
+              onSelect={(t): void => edit.onAction({ type: "set-tool", tool: t })}
+              defaultFont={edit.defaultFont}
+              onDefaultFontChange={
+                edit.onDefaultFontChange === undefined
+                  ? (): void => undefined
+                  : (f): void => edit.onDefaultFontChange?.(f)
+              }
+              enabled
+              hint={editToolbarHint}
+            />
+          )}
+        </AnimatePresence>
         {searchOpen && (
           <SearchBar
             query={query}

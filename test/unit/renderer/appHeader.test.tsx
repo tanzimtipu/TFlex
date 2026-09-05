@@ -56,8 +56,8 @@ function renderHeader(args: RenderArgs = {}): HTMLElement {
   const onActivate = args.onActivate ?? ((): void => undefined);
   const onClose = args.onClose ?? ((): void => undefined);
   const onNewEmptyTab = args.onNewEmptyTab ?? ((): void => undefined);
-  const theme: Theme = "dark";
-  const onToggleTheme = (): void => undefined;
+  const theme: Theme = "frosted";
+  const onThemeChange = (): void => undefined;
   const onOpen = (): void => undefined;
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -70,7 +70,7 @@ function renderHeader(args: RenderArgs = {}): HTMLElement {
         onActivate={onActivate}
         onClose={onClose}
         theme={theme}
-        onToggleTheme={onToggleTheme}
+        onThemeChange={onThemeChange}
         onOpen={onOpen}
         onNewEmptyTab={onNewEmptyTab}
       />,
@@ -329,5 +329,201 @@ describe("AppHeader — click on padding / gap activates the tab (DEF-041)", () 
     if (plus === null) return;
     mouseDown(plus);
     expect(onActivate).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase-15 — embedded borderless theme picker (frosted-acrylic migration).
+// The toggle button became a labelled pill + attached option list. These
+// tests pin the DOM contract (stable `.theme-toggle` class preserved for
+// e2e, `data-theme-toggle` added) and the keyboard behaviour (Enter/Space
+// open, arrows move, Enter/Space select, Esc closes with focus returned).
+// The listbox options are real buttons so pointer clicks land normally.
+// ---------------------------------------------------------------------------
+interface ThemeRenderer {
+  container: HTMLElement;
+  unmount: () => void;
+}
+
+function renderHeaderFull(
+  args: { theme?: Theme; onThemeChange?: (next: Theme) => void } = {},
+): ThemeRenderer {
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  act((): void => {
+    root.render(
+      <AppHeader
+        activeId={null}
+        tabs={[]}
+        onActivate={(): void => undefined}
+        onClose={(): void => undefined}
+        theme={args.theme ?? "frosted"}
+        onThemeChange={args.onThemeChange ?? ((): void => undefined)}
+        onOpen={(): void => undefined}
+        onNewEmptyTab={(): void => undefined}
+      />,
+    );
+  });
+  return {
+    container,
+    unmount: (): void => {
+      act((): void => {
+        root.unmount();
+      });
+      container.remove();
+    },
+  };
+}
+
+function keyDown(el: Element, key: string): void {
+  act((): void => {
+    el.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+  });
+}
+
+describe("AppHeader — Phase-15 embedded theme picker", () => {
+  it("keeps the stable .theme-toggle class and adds data-theme-toggle", () => {
+    const { container, unmount } = renderHeaderFull();
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    expect(trigger?.classList.contains("theme-toggle")).toBe(true);
+    expect(trigger?.textContent).toContain("Frosted Glass");
+    unmount();
+  });
+
+  it("lists Frosted Glass / Dark / Light in that order, marking the current selection", () => {
+    const { container, unmount } = renderHeaderFull({ theme: "dark" });
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+    act((): void => {
+      trigger.click();
+    });
+    const options = Array.from(container.querySelectorAll("[data-theme-option]"));
+    expect(options.map((o) => o.getAttribute("data-theme-option"))).toEqual([
+      "frosted",
+      "dark",
+      "light",
+    ]);
+    const selected = container.querySelector(".theme-toggle-option-selected");
+    expect(selected?.getAttribute("data-theme-option")).toBe("dark");
+    // aria-checked marks only the current option.
+    const checked = Array.from(
+      container.querySelectorAll('[data-theme-option][aria-checked="true"]'),
+    );
+    expect(checked.length).toBe(1);
+    expect(checked[0]?.getAttribute("data-theme-option")).toBe("dark");
+    unmount();
+  });
+
+  it("calls onThemeChange with the chosen theme and closes the list", () => {
+    const onChange = vi.fn();
+    const { container, unmount } = renderHeaderFull({
+      theme: "dark",
+      onThemeChange: onChange,
+    });
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+    act((): void => {
+      trigger.click();
+    });
+    const light = container.querySelector<HTMLElement>('[data-theme-option="light"]');
+    expect(light).not.toBeNull();
+    if (light === null) return;
+    act((): void => {
+      light.click();
+    });
+    expect(onChange).toHaveBeenCalledWith("light");
+    expect(container.querySelector(".theme-toggle-popover")).toBeNull();
+    unmount();
+  });
+
+  it("closes when the current theme is re-chosen, without a redundant change call", () => {
+    const onChange = vi.fn();
+    const { container, unmount } = renderHeaderFull({
+      theme: "frosted",
+      onThemeChange: onChange,
+    });
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+    act((): void => {
+      trigger.click();
+    });
+    const current = container.querySelector<HTMLElement>('[data-theme-option="frosted"]');
+    expect(current).not.toBeNull();
+    if (current === null) return;
+    act((): void => {
+      current.click();
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(container.querySelector(".theme-toggle-popover")).toBeNull();
+    unmount();
+  });
+
+  it("navigates with the keyboard: Enter opens, arrows move, Enter selects", () => {
+    const onChange = vi.fn();
+    const { container, unmount } = renderHeaderFull({
+      theme: "frosted",
+      onThemeChange: onChange,
+    });
+    const trigger = container.querySelector<HTMLButtonElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+
+    // Enter opens the list and lands focus on the current option.
+    keyDown(trigger, "Enter");
+    const popover = container.querySelector(".theme-toggle-popover");
+    expect(popover).not.toBeNull();
+    expect(document.activeElement?.getAttribute("data-theme-option")).toBe("frosted");
+
+    // ArrowDown moves focus to the next option (Dark).
+    if (popover === null) return;
+    keyDown(popover, "ArrowDown");
+    expect(document.activeElement?.getAttribute("data-theme-option")).toBe("dark");
+
+    // Enter on the focused option selects it.
+    const dark = container.querySelector<HTMLElement>('[data-theme-option="dark"]');
+    expect(dark).not.toBeNull();
+    if (dark === null) return;
+    keyDown(dark, "Enter");
+    expect(onChange).toHaveBeenCalledWith("dark");
+    expect(container.querySelector(".theme-toggle-popover")).toBeNull();
+    unmount();
+  });
+
+  it("closes on Escape and returns focus to the trigger", () => {
+    const { container, unmount } = renderHeaderFull({ theme: "light" });
+    const trigger = container.querySelector<HTMLButtonElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+    act((): void => {
+      trigger.click();
+    });
+    expect(container.querySelector(".theme-toggle-popover")).not.toBeNull();
+    keyDown(trigger, "Escape");
+    expect(container.querySelector(".theme-toggle-popover")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    unmount();
+  });
+
+  it("closes on an outside pointerdown without swallowing the click", () => {
+    const { container, unmount } = renderHeaderFull();
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+    act((): void => {
+      trigger.click();
+    });
+    expect(container.querySelector(".theme-toggle-popover")).not.toBeNull();
+    act((): void => {
+      document.body.dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true }),
+      );
+    });
+    expect(container.querySelector(".theme-toggle-popover")).toBeNull();
+    unmount();
   });
 });

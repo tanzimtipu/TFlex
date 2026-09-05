@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// DEF-117 — Rules-of-Hooks violation in the 21 controlled dialogs.
+// DEF-117 — Rules-of-Hooks violation in the controlled dialogs.
 //
 // Every controlled dialog gates its render on `open`:
 //
@@ -15,11 +15,18 @@
 // app to a black window (qa reproduced on Sign, Export-to-Word and
 // a direct sign-button event).
 //
-// This is a source-contract test. It scans the dialog sources and
-// asserts that, inside each dialog component's OWN function body,
-// no hook call (useBackdropClose / useState / useEffect / useRef /
-// useMemo / useCallback) appears after the `if (!open) return null;`
-// guard.
+// Phase C (motion migration) removed the `if (!open) return null;`
+// guards entirely: each dialog now keeps an always-mounted
+// `<AnimatePresence>` and moves the open gate into the JSX as
+// `{open && ...}`, which is what produces the exit animation. The
+// migration therefore STRENGTHENS the DEF-117 invariant — a
+// component with no early return at all cannot put a hook after one —
+// and this source-contract test pins the new shape:
+//
+//   - grep: no dialog may still use `if (!open) return null;`
+//   - scan: within each dialog component's OWN function body, no
+//     hook call (useBackdropClose / useState / useEffect / useRef /
+//     useMemo / useCallback) appears after ANY `return` statement.
 //
 // The scan is:
 //   - function-scoped — a hook call in a sibling sub-component
@@ -61,11 +68,22 @@ const DIALOGS: ReadonlyArray<{ label: string; file: string }> = [
   { label: "CommentExportDialog", file: "components/CommentExportDialog.tsx" },
   { label: "AuditSpaceDialog", file: "components/AuditSpaceDialog.tsx" },
   { label: "CloseTabPromptDialog", file: "components/CloseTabPromptDialog.tsx" },
+  // Phase C — the three sheet dialogs migrated with the modals gain the
+  // same unconditional-hooks contract (their guards were removed too).
+  { label: "AboutDialog", file: "components/AboutDialog.tsx" },
+  { label: "PreferencesDialog", file: "components/PreferencesDialog.tsx" },
+  { label: "UpdatePromptDialog", file: "components/UpdatePromptDialog.tsx" },
 ];
 
 const HOOK_NAMES = ["useBackdropClose", "useState", "useEffect", "useRef", "useMemo", "useCallback"];
 const HOOK_SOURCE = /\b(?:useBackdropClose|useState|useEffect|useRef|useMemo|useCallback)\b(?:\s*<[^<>]*>)?\s*\(/g;
+/** Legacy Phase-1 guard — must no longer exist (Phase C moved the
+ *  gate into AnimatePresence, which is what enables the exit). */
 const OPEN_GUARD_SOURCE = /if\s*\(\s*!open\s*\)\s*return\s+null/;
+/** Any `return` at component-body depth. A hook after the FIRST one
+ *  would change the hook count between renders. */
+const RETURN_SOURCE = /\breturn\b/;
+const ANIMATE_PRESENCE_SOURCE = /<AnimatePresence>/;
 const FN_DECL_SOURCE = /^(?:export\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/;
 
 /** Blank comments and string / template-literal contents, keeping
@@ -271,11 +289,13 @@ function findBodyBounds(
   return null;
 }
 
-/** Scan one dialog source. Returns the number of component-level
- *  `if (!open) return null;` guards found and the hook calls that
- *  land after one. */
+/** Scan one dialog source. Returns the legacy guard count (must be
+ *  zero after Phase C), the hook calls that land after a body-level
+ *  `return`, and whether the dialog mounts its exit gate through
+ *  `<AnimatePresence>`. */
 function analyzeDialog(source: string): {
   guardCount: number;
+  usesAnimatePresence: boolean;
   lateHooks: Array<{ line: number; hook: string; fn: string }>;
 } {
   const lines = stripCommentsAndStrings(source).split("\n");
@@ -287,37 +307,51 @@ function analyzeDialog(source: string): {
     if (bodyDepth < 0) continue;
     const guards: number[] = [];
     const hooksHere: Array<{ line: number; hook: string }> = [];
+    let firstReturn = -1;
     for (let l = fn.startLine + 1; l < fn.endLine; l += 1) {
       if ((depths[l]?.depthBefore ?? -1) !== bodyDepth) continue;
       const text = lines[l] ?? "";
       if (OPEN_GUARD_SOURCE.test(text)) guards.push(l);
-      HOOK_SOURCE.lastIndex = 0;
-      const m = HOOK_SOURCE.exec(text);
-      if (m !== null) {
+      if (firstReturn < 0 && RETURN_SOURCE.test(text)) firstReturn = l;
+      const hookMatch = HOOK_SOURCE.exec(text);
+      if (hookMatch !== null) {
         const hook =
-          HOOK_NAMES.find((name) => m[0].startsWith(name)) ?? "hook";
+          HOOK_NAMES.find((name) => hookMatch[0].startsWith(name)) ?? "hook";
         hooksHere.push({ line: l, hook });
       }
     }
-    if (guards.length === 0) continue;
     guardCount += guards.length;
-    const firstGuard = Math.min(...guards);
-    for (const h of hooksHere) {
-      if (h.line > firstGuard) {
-        lateHooks.push({ line: h.line, hook: h.hook, fn: fn.name });
+    if (firstReturn >= 0) {
+      for (const h of hooksHere) {
+        if (h.line > firstReturn) {
+          lateHooks.push({ line: h.line, hook: h.hook, fn: fn.name });
+        }
       }
     }
   }
-  return { guardCount, lateHooks };
+  const usesAnimatePresence = ANIMATE_PRESENCE_SOURCE.test(
+    stripCommentsAndStrings(source),
+  );
+  return { guardCount, usesAnimatePresence, lateHooks };
 }
 
-describe("DEF-117 — hooks are called above the `if (!open) return null;` guard in every dialog", () => {
+describe("DEF-117 — every controlled dialog calls its hooks unconditionally", () => {
   for (const { label, file } of DIALOGS) {
-    it(`${label} calls every component-body hook before the guard`, () => {
+    it(`${label} has no hook call after a return and no legacy \`if (!open) return null;\` guard`, () => {
       const source = fs.readFileSync(path.join(RENDERER_DIR, file), "utf8");
-      const { guardCount, lateHooks } = analyzeDialog(source);
-      expect(guardCount, `${label}: the component has one \`if (!open) return null;\` guard`).toBe(1);
-      expect(lateHooks, `${label}: no hook call may appear after the guard`).toEqual([]);
+      const { guardCount, usesAnimatePresence, lateHooks } = analyzeDialog(source);
+      // Phase C: the early-return guard is REMOVED — the open gate now
+      // lives in `{open && ...}` inside AnimatePresence. The guard's
+      // absence is what makes an exit animation possible.
+      expect(
+        guardCount,
+        `${label}: the Phase-1 \`if (!open) return null;\` guard must be gone (Phase C gate), otherwise the exit animation cannot run`,
+      ).toBe(0);
+      expect(
+        usesAnimatePresence,
+        `${label}: the dialog gates through <AnimatePresence> so close animates out`,
+      ).toBe(true);
+      expect(lateHooks, `${label}: no hook call may appear after a return`).toEqual([]);
     });
   }
 
@@ -337,9 +371,10 @@ export function Dialog({ open, onClose }: { open: boolean; onClose: () => void }
     expect(lateHooks[0]?.hook).toBe("useState");
   });
 
-  it("the scanner accepts hooks above the guard and ignores nested-body guards (regression self-check)", () => {
+  it("the scanner accepts hooks above the return and ignores nested-body returns (regression self-check)", () => {
     const good = `
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
 export function Dialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [x, setX] = useState(0);
@@ -347,12 +382,16 @@ export function Dialog({ open, onClose }: { open: boolean; onClose: () => void }
     if (!open) return;
     ref.current?.focus();
   }, [open]);
-  if (!open) return null;
-  return <div ref={ref} onClick={onClose}>{x}</div>;
+  return (
+    <AnimatePresence>
+      {open && <div ref={ref} onClick={onClose}>{x}</div>}
+    </AnimatePresence>
+  );
 }
 `;
-    const { guardCount, lateHooks } = analyzeDialog(good);
-    expect(guardCount).toBe(1);
+    const { guardCount, usesAnimatePresence, lateHooks } = analyzeDialog(good);
+    expect(guardCount).toBe(0);
+    expect(usesAnimatePresence).toBe(true);
     expect(lateHooks).toEqual([]);
   });
 
@@ -360,8 +399,7 @@ export function Dialog({ open, onClose }: { open: boolean; onClose: () => void }
     const withSub = `
 export function Dialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const backdrop = useBackdropClose(onClose);
-  if (!open) return null;
-  return <Child />;
+  return <AnimatePresence>{open && <Child />}</AnimatePresence>;
 }
 function Child() {
   const [y, setY] = useState(0);
@@ -369,7 +407,7 @@ function Child() {
 }
 `;
     const { guardCount, lateHooks } = analyzeDialog(withSub);
-    expect(guardCount).toBe(1);
+    expect(guardCount).toBe(0);
     expect(lateHooks).toEqual([]);
   });
 });

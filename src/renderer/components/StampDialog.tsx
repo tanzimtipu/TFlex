@@ -20,6 +20,8 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { X, Stamp } from "lucide-react";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 import { useDragWindow } from "./useDragWindow";
 import type { StampId } from "../../shared/types";
 import {
@@ -138,7 +140,7 @@ export function StampDialog(
   // backdrop (a drag from the stamp picker must not dismiss).
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
+  
 
   const onConfirmClick = (): void => {
     setError(null);
@@ -176,8 +178,10 @@ export function StampDialog(
   };
 
   return (
-    <div className="modal-backdrop" {...backdrop} data-stamp-dialog>
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop className="modal-backdrop" {...backdrop} data-stamp-dialog>
+      <TfDialog
         ref={(el): void => {
           dialogRef.current = el;
           drag.windowRef(el);
@@ -194,7 +198,12 @@ export function StampDialog(
           e.stopPropagation();
           drag.handleProps.onPointerDown(e);
         }}
-        style={{ transform: `translate(${drag.offset.x}px, ${drag.offset.y}px)` }}
+        // Phase C — the drag offset folds into motion x/y so the
+        // enter spring and the drag never fight (an inline
+        // `transform:` would be overridden by motion's own
+        // composed transform). The exit pins the drag position too.
+        animate={{ x: drag.offset.x, y: drag.offset.y }}
+        exit={{ x: drag.offset.x, y: drag.offset.y + 5 }}
         role="dialog"
         aria-modal="true"
         aria-labelledby="stamp-dialog-title"
@@ -295,8 +304,10 @@ export function StampDialog(
             Place on page
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }
 

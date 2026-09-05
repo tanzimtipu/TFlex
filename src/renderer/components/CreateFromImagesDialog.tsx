@@ -33,6 +33,8 @@
 import { useEffect, useRef, useState, type ReactElement } from "react";
 import { ClipboardPaste, X } from "lucide-react";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 import {
   DEFAULT_CREATE_IMAGE_QUALITY,
   clampCreateImageQuality,
@@ -208,7 +210,7 @@ export function CreateFromImagesDialog(
   // not dismiss).
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
+  
 
   // Surface every quality change as the fraction (0..1) so the
   // host's preferences reducer + persist pipeline can write the
@@ -221,12 +223,14 @@ export function CreateFromImagesDialog(
   };
 
   return (
-    <div
-      className="modal-backdrop"
-      {...backdrop}
-      data-create-from-images-dialog
-    >
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop
+          className="modal-backdrop"
+          {...backdrop}
+          data-create-from-images-dialog
+        >
+      <TfDialog
         className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -378,7 +382,9 @@ export function CreateFromImagesDialog(
             Create PDF
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

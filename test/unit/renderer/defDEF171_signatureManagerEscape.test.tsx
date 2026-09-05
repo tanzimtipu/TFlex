@@ -75,6 +75,14 @@ function pressEscapeOnWindow(): void {
   });
 }
 
+/** Phase C — closing surfaces exit through AnimatePresence (one frame
+ *  with skipAnimations under test). Settle before absence asserts. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 function clickSigTab(name: string): void {
   const tabs = host.querySelectorAll<HTMLElement>(".sig-tab");
   for (const t of tabs) {
@@ -95,7 +103,7 @@ afterEach(() => {
 });
 
 describe("DEF-171 — Escape closes the Signature Manager from every tab", () => {
-  it("Escape from the draw tab (keydown starts in the canvas) closes dialog + backdrop", () => {
+  it("Escape from the draw tab (keydown starts in the canvas) closes dialog + backdrop", async () => {
     mountModal();
     const canvas = host.querySelector<HTMLElement>("canvas.sig-canvas");
     expect(canvas).not.toBeNull();
@@ -104,11 +112,12 @@ describe("DEF-171 — Escape closes the Signature Manager from every tab", () =>
     pressEscapeFrom(canvas as HTMLElement);
 
     expect(closedCount).toBe(1);
+    await settleMotion();
     expect(host.querySelector(".modal-backdrop")).toBeNull();
     expect(host.querySelector(".modal-dialog.sig-manager")).toBeNull();
   });
 
-  it("Escape with focus in the Type input closes dialog + backdrop", () => {
+  it("Escape with focus in the Type input closes dialog + backdrop", async () => {
     mountModal();
     clickSigTab("Type");
     const input = host.querySelector<HTMLElement>("[aria-label='Type your signature']");
@@ -121,11 +130,12 @@ describe("DEF-171 — Escape closes the Signature Manager from every tab", () =>
     pressEscapeFrom(input as HTMLElement);
 
     expect(closedCount).toBe(1);
+    await settleMotion();
     expect(host.querySelector(".modal-backdrop")).toBeNull();
     expect(host.querySelector(".modal-dialog.sig-manager")).toBeNull();
   });
 
-  it("Escape from the Saved tab (focus on a row button) closes dialog + backdrop", () => {
+  it("Escape from the Saved tab (focus on a row button) closes dialog + backdrop", async () => {
     savedList = [
       {
         id: "sig-1",
@@ -141,16 +151,18 @@ describe("DEF-171 — Escape closes the Signature Manager from every tab", () =>
     pressEscapeFrom(rowBtn as HTMLElement);
 
     expect(closedCount).toBe(1);
+    await settleMotion();
     expect(host.querySelector(".modal-backdrop")).toBeNull();
   });
 
-  it("closes again after reopening — the window listener is re-registered, not stale", () => {
+  it("closes again after reopening — the window listener is re-registered, not stale", async () => {
     mountModal();
     clickSigTab("Type");
     const input = host.querySelector<HTMLElement>("[aria-label='Type your signature']");
     expect(input).not.toBeNull();
     pressEscapeFrom(input as HTMLElement);
     expect(closedCount).toBe(1);
+    await settleMotion();
     expect(host.querySelector(".modal-backdrop")).toBeNull();
 
     // Reopen: the effect must bind a FRESH listener (no stale closure).
@@ -159,6 +171,7 @@ describe("DEF-171 — Escape closes the Signature Manager from every tab", () =>
     expect(host.querySelector(".modal-backdrop")).not.toBeNull();
     pressEscapeOnWindow();
     expect(closedCount).toBe(2);
+    await settleMotion();
     expect(host.querySelector(".modal-backdrop")).toBeNull();
   });
 });

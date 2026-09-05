@@ -426,11 +426,20 @@ describe("Global motion system — shared entrance/exit primitives", () => {
 
 describe("Global motion system — components consume the shared primitives", () => {
   const css = readStyles();
+  // Phase C: surfaced migrated to physics springs consume them via
+  // src/renderer/components/motion/tfPresets.ts — the CSS keyframe
+  // animation lines are REMOVED from those rules, so this contract
+  // pins BOTH sides: the migrated rules no longer declare a CSS
+  // animation (the library owns the motion), and tfPresets keeps the
+  // calibrated spring bands + the exact keyframe travel.
+  const presetsFile = resolve(process.cwd(), "src/renderer/components/motion/tfPresets.ts");
+  const presets = readFileSync(presetsFile, "utf8");
 
   /** Pull every block whose selector ends with the given class and return
    *  the one that declares an `animation` (some classes have a styling
    *  block AND an earlier no-drag/no-motion block, e.g.
-   *  .titlebar-menu-popover). */
+   *  .titlebar-menu-popover). Phase C surfaces return "" — their
+   *  animations were removed. */
   const animatedRule = (cls: string): string => {
     const blocks = [...css.matchAll(new RegExp(`\\.${cls}\\s*\\{([\\s\\S]*?)\\n\\}`, "g"))];
     expect(blocks.length).toBeGreaterThan(0);
@@ -441,29 +450,46 @@ describe("Global motion system — components consume the shared primitives", ()
     return "";
   };
 
-  it(".tools-palette slides in via panel-enter @ --tf-motion-panel", () => {
-    expect(animatedRule("tools-palette")).toMatch(/animation:\s*panel-enter\s+var\(--tf-motion-panel\)\s+var\(--tf-ease-standard\)/);
+  it("the spring bands are calibrated to the --tf-motion bands", () => {
+    // panel 280ms band -> stiffness 420 / damping 34
+    expect(presets).toMatch(/stiffness:\s*420,\s*damping:\s*34/);
+    // dialog 240ms band
+    expect(presets).toMatch(/stiffness:\s*560,\s*damping:\s*38/);
+    // menu / popover / bar / toast 180ms band
+    expect(presets).toMatch(/stiffness:\s*1000,\s*damping:\s*50/);
   });
 
-  it(".side-rail slides in from the left via panel-enter-left @ --tf-motion-panel", () => {
-    expect(animatedRule("side-rail")).toMatch(/animation:\s*panel-enter-left\s+var\(--tf-motion-panel\)\s+var\(--tf-ease-standard\)/);
+  it(".tools-palette / .side-rail travel comes from tfPresets, not a CSS keyframe", () => {
+    expect(animatedRule("tools-palette")).not.toMatch(/animation:/);
+    expect(animatedRule("side-rail")).not.toMatch(/animation:/);
+    // panel-enter: x 24 -> 0 -> 18 (right panel)
+    expect(presets).toMatch(/initial:\s*\{ opacity: 0, x: 24 \}/);
+    expect(presets).toMatch(/exit:\s*\{ opacity: 0, x: 18/);
+    // panel-enter-left: x -18 -> 0 -> -12 (left rail)
+    expect(presets).toMatch(/initial:\s*\{ opacity: 0, x: -18 \}/);
+    expect(presets).toMatch(/exit:\s*\{ opacity: 0, x: -12/);
   });
 
-  it(".titlebar-menu-popover grows via menu-enter @ --tf-motion-normal", () => {
-    expect(animatedRule("titlebar-menu-popover")).toMatch(/animation:\s*menu-enter\s+var\(--tf-motion-normal\)\s+var\(--tf-ease-standard\)/);
+  it(".titlebar-menu-popover / .color-popover travel comes from tfPresets", () => {
+    expect(animatedRule("titlebar-menu-popover")).not.toMatch(/animation:/);
+    expect(animatedRule("color-popover")).not.toMatch(/animation:/);
+    // menu-enter: scale 0.96 + y -4
+    expect(presets).toMatch(/initial:\s*\{ opacity: 0, scale: 0\.96, y: -4 \}/);
+    // popover-enter: scale 0.97 + y -3
+    expect(presets).toMatch(/initial:\s*\{ opacity: 0, scale: 0\.97, y: -3 \}/);
   });
 
-  it(".modal-dialog and .sheet rise+settle via dialog-enter @ --tf-motion-emphasized", () => {
-    const token = /animation:\s*dialog-enter\s+var\(--tf-motion-emphasized\)\s+var\(--tf-ease-emphasized\)/;
-    expect(animatedRule("modal-dialog")).toMatch(token);
-    expect(animatedRule("sheet")).toMatch(token);
+  it(".modal-dialog and .sheet rise+settle via tfPresets @ 240ms band", () => {
+    expect(animatedRule("modal-dialog")).not.toMatch(/animation:/);
+    expect(animatedRule("sheet")).not.toMatch(/animation:/);
+    expect(animatedRule("modal-backdrop")).not.toMatch(/animation:/);
+    expect(animatedRule("sheet-backdrop")).not.toMatch(/animation:/);
+    // dialog-enter: y 10 + scale 0.97 -> 1; dialog-exit: y 5 + scale 0.985
+    expect(presets).toMatch(/initial:\s*\{ opacity: 0, y: 10, scale: 0\.97 \}/);
+    expect(presets).toMatch(/exit:\s*\{ opacity: 0, y: 5, scale: 0\.985/);
   });
 
-  it(".color-popover swells via popover-enter @ --tf-motion-normal", () => {
-    expect(animatedRule("color-popover")).toMatch(/animation:\s*popover-enter\s+var\(--tf-motion-normal\)\s+var\(--tf-ease-standard\)/);
-  });
-
-  it("the tooltip enters via the tooltip-enter primitive with a 250-400ms dwell delay", () => {
+  it("the tooltip stays on the hover CSS primitive with a 250-400ms dwell delay", () => {
     const hover = /\.tooltip-anchor\s*\[data-tooltip\]:hover::after\s*\{([\s\S]*?)\n\}/.exec(css);
     expect(hover).not.toBeNull();
     if (hover === null) return;
@@ -570,5 +596,340 @@ describe("Global motion system — reduced motion + no-PDF-animation guards", ()
     expect(dark).not.toMatch(/--tf-ease-/);
     expect(dark).not.toMatch(/--motion-/);
     expect(dark).not.toMatch(/--ease-/);
+  });
+});
+
+describe("Phase D — PDF-safety audit (acrylic/reflection stays chrome-only)", () => {
+  const css = readStyles();
+
+  /** The classes that render the actual PDF document + its chrome
+   *  neighbours. DEF-099: the page sheet is paper-white in every
+   *  theme; nothing may blur, reflect, or animate it. */
+  const PDF_SELECTORS = [
+    "pdf-page",
+    "page-slot",
+    "textLayer",
+    "pdf-page-canvas",
+    "document-scroller",
+    "thumb-canvas",
+    "thumb-scroller",
+  ];
+
+  /** The exact 14 frosted chrome surfaces (Phase-A blur list). This
+   *  is the COMPLETE frosted acrylic surface set — nothing else may
+   *  carry the frosted blur. */
+  const CHROME_FROSTED = [
+    "titlebar",
+    "app-header",
+    "toolbar",
+    "ann-toolbar",
+    "search-bar",
+    "side-rail",
+    "rail-tabs",
+    "tools-palette",
+    "titlebar-menu-popover",
+    "theme-toggle-popover",
+    "modal-dialog",
+    "sheet",
+    "color-popover",
+    "toast",
+  ];
+
+  /** Comments mention the PDF classes (and even `{`) in prose, which
+   *  would pollute selector scanning — strip them before matching. */
+  const cssClean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  /** Every rule body whose selector includes `.cls` (negative
+   *  lookahead so `.pdf-page` never matches `.pdf-page-canvas`). */
+  const ruleBodies = (cls: string): string[] =>
+    [...cssClean.matchAll(new RegExp(`\\.${cls}(?![\\w-])[^{]*\\{([\\s\\S]*?)\\n\\}`, "g"))].map(
+      (m) => m[1] ?? "",
+    );
+
+  it("carries ZERO backdrop-filter / filter / animation / transition on every PDF selector", () => {
+    // The document is the stable anchor: no acrylic, no blur, no
+    // reflection band, no opacity/shimmer movement, no smooth scroll
+    // on the pages, the slots, the text layer, the canvases, or the
+    // scrollers — in ANY theme.
+    for (const cls of PDF_SELECTORS) {
+      const bodies = ruleBodies(cls);
+      expect(bodies.length).toBeGreaterThan(0);
+      for (const body of bodies) {
+        expect(body).not.toMatch(/backdrop-filter\s*:/);
+        expect(body).not.toMatch(/-webkit-backdrop-filter\s*:/);
+        expect(body).not.toMatch(/filter\s*:/);
+        expect(body).not.toMatch(/animation\s*:/);
+        expect(body).not.toMatch(/transition\s*:/);
+        expect(body).not.toMatch(/scroll-behavior:\s*smooth/);
+      }
+    }
+  });
+
+  it("keeps the PDF page paper-white in every theme (no theme repaints .pdf-page)", () => {
+    // DEF-099: the base rule pins #ffffff; no [data-theme] block may
+    // re-declare a background on the page sheet.
+    const base = /\.pdf-page(?![-\w])\s*\{([\s\S]*?)\n\}/m.exec(cssClean);
+    expect(base).not.toBeNull();
+    if (base === null) return;
+    expect(base[1] ?? "").toMatch(/background:\s*#ffffff/);
+    for (const theme of ["dark", "light", "frosted"]) {
+      const themed = new RegExp(
+        `:root\\[data-theme="${theme}"\\]\\s+\\.pdf-page(?![\\w-])[^{]*\\{([\\s\\S]*?)\\n\\}`,
+        "g",
+      );
+      for (const m of cssClean.matchAll(themed)) {
+        expect(m[1] ?? "").not.toMatch(/background\s*:/);
+      }
+    }
+  });
+
+  it("frosted acrylic blur applies to the 14 chrome surfaces and nothing else", () => {
+    // Collect every frosted-scoped selector that carries a
+    // backdrop-filter (the 18px chrome list + the 20px popover
+    // sub-list). The union must be EXACTLY the 14 chrome surfaces —
+    // never a PDF selector.
+    const frostedBlur: Set<string> = new Set();
+    const scoped = cssClean.matchAll(
+      /:root\[data-theme="frosted"\]([^{]*)\{([\s\S]*?)\n\}/g,
+    );
+    for (const m of scoped) {
+      const body = m[2] ?? "";
+      const selectors = m[1] ?? "";
+      if (!/backdrop-filter\s*:/.test(body)) continue;
+      for (const s of selectors.split(",")) {
+        const cls = /\.([a-zA-Z0-9_-]+)/.exec(s.trim())?.[1];
+        if (cls !== undefined) frostedBlur.add(cls);
+      }
+    }
+    expect(frostedBlur.size).toBe(CHROME_FROSTED.length);
+    for (const cls of CHROME_FROSTED) {
+      expect(frostedBlur).toContain(cls);
+    }
+    for (const cls of PDF_SELECTORS) {
+      expect(frostedBlur).not.toContain(cls);
+    }
+  });
+
+  it("the moving reflection is transform-only, 7-9s, and never touches the PDF", () => {
+    // The ::after band rules (chrome surfaces only) sweep translateX
+    // -120% -> 420% over 7s (toolbar/search) or 9s (rail/panel) with
+    // the light baked into the gradient — no filter, no width/height,
+    // no layout animation. The keyframe only ever animates transform.
+    const keyframes = /@keyframes\s+acrylic-sheen\s*\{([\s\S]*?)\n\}/.exec(cssClean);
+    expect(keyframes).not.toBeNull();
+    if (keyframes === null) return;
+    const kf = keyframes[1] ?? "";
+    expect(kf).toMatch(/translateX\(/);
+    expect(kf).not.toMatch(/opacity\s*:/);
+    expect(kf).not.toMatch(/filter\s*:/);
+    expect(kf).not.toMatch(/width\s*:/);
+    expect(kf).not.toMatch(/height\s*:/);
+
+    // The four band surfaces (chrome-only), swept at the slow rate.
+    // Anchored on the frosted-scoped prefix so the reduced-motion
+    // block's `.toolbar::after` disable rule is never captured.
+    const band = /:root\[data-theme="frosted"\]\s+\.toolbar::after,[\s\S]*?\.tools-palette::after\s*\{([\s\S]*?)\n\}/.exec(cssClean);
+    expect(band).not.toBeNull();
+    if (band === null) return;
+    const body = band[1] ?? "";
+    expect(body).toMatch(/animation:\s*acrylic-sheen\s+[79]s\s/);
+    expect(body).toMatch(/pointer-events:\s*none/);
+    expect(body).not.toMatch(/filter\s*:/);
+    // The slower 9s band for the rail + panel.
+    expect(cssClean).toMatch(/animation-duration:\s*9s/);
+  });
+});
+
+describe("Phase D — reduced motion (motion wrappers + frosted reflection)", () => {
+  const tfmotionFile = resolve(process.cwd(), "src/renderer/components/motion/TfMotion.tsx");
+  const tfmotion = readFileSync(tfmotionFile, "utf8");
+  const presetsFile = resolve(process.cwd(), "src/renderer/components/motion/tfPresets.ts");
+  const presets = readFileSync(presetsFile, "utf8");
+  const css = readStyles();
+
+  const reducedBody = (): string => {
+    const m = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/.exec(css);
+    expect(m).not.toBeNull();
+    return m?.[1] ?? "";
+  };
+
+  it("every TfMotion surface wrapper honours useReducedMotion()", () => {
+    // Each exported surface (TfPanel/TfPanelLeft/TfBackdrop/TfDialog/
+    // TfSheet/TfMenu/TfPopover/TfToast/TfBar/TfBarTop) must branch on
+    // the OS setting BEFORE applying any spring travel.
+    const wrappers = [...tfmotion.matchAll(/export function (Tf\w+)/g)].map((m) => m[1] ?? "");
+    expect(wrappers.length).toBeGreaterThanOrEqual(10);
+    const bodies = [...tfmotion.matchAll(/export function (Tf\w+)\([\s\S]*?\): ReactElement \{([\s\S]*?)\n\}/g)];
+    expect(bodies.length).toBe(wrappers.length);
+    for (const m of bodies) {
+      expect(m[2] ?? "").toMatch(/useReducedMotion\(\)\s*===\s*true/);
+    }
+  });
+
+  it("the reduced branch is opacity-only AND instant — no transform ever animates", () => {
+    const reducedBlock = /if\s*\(reduced\)\s*\{([\s\S]*?)\n\s*\}/.exec(tfmotion);
+    expect(reducedBlock).not.toBeNull();
+    if (reducedBlock === null) return;
+    const body = reducedBlock[1] ?? "";
+    expect(body).toMatch(/initial:\s*\{ opacity: 0 \}/);
+    expect(body).toMatch(/animate:\s*\{ opacity: 1 \}/);
+    expect(body).toMatch(/exit:\s*\{ opacity: 0 \}/);
+    expect(body).toMatch(/duration:\s*0/);
+    expect(body).not.toMatch(/\b(x|y|scale)\s*:/);
+  });
+
+  it("every spring target animates compositor-only properties (never layout)", () => {
+    const noComments = presets.replace(/\/\/.*$/gm, "");
+    // Springs carry transform (x/y/scale) + opacity only; the single
+    // exception is the instant pointer-events: none guard on exits
+    // (non-animatable, set on the first frame).
+    expect(noComments).not.toMatch(/\b(width|height|top|left|right|bottom|margin|padding)\s*:/);
+    // No tween durations anywhere — all presets are spring + damping.
+    expect(noComments).not.toMatch(/duration\s*:/);
+    expect(noComments).toMatch(/type:\s*"spring"/);
+  });
+
+  it("the reduced-motion media block disables the frosted reflection outright", () => {
+    const body = reducedBody();
+    for (const cls of ["toolbar", "search-bar", "side-rail", "tools-palette"]) {
+      expect(body).toMatch(new RegExp(`\\.${cls}::after`));
+    }
+    expect(body).toMatch(/animation:\s*none\s*!important/);
+    expect(body).toMatch(/opacity:\s*0\s*!important/);
+  });
+
+  it("collapses every remaining CSS-driven animation via the media catch-all", () => {
+    // These keyframes are still CSS-driven (shimmer reflection, spins,
+    // tooltip, indicator-in, thumb-select, ann-flash, shake-x, tab
+    // fade, success pop). Reduced motion must collapse ALL of them —
+    // the catch-all `*, *::before, *::after` 0.01ms single-shot rule
+    // does exactly that, so each must still exist and be covered.
+    const body = reducedBody();
+    expect(body).toMatch(/\*,\s*\*::before,\s*\*::after\s*\{/);
+    expect(body).toMatch(/animation-duration:\s*0\.01ms\s*!important/);
+    for (const name of [
+      "shimmer-sweep",
+      "tooltip-enter",
+      "indicator-in",
+      "thumb-select",
+      "ann-flash",
+      "shake-x",
+      "tab-fade",
+      "update-indicator-spin",
+      "acrylic-sheen",
+    ]) {
+      expect(css).toMatch(new RegExp(`@keyframes\\s+${name}\\s*\\{`));
+    }
+  });
+});
+
+describe("Phase D — three-theme coherence + embedded theme picker license", () => {
+  const css = readStyles();
+
+  const frostedBlock = (): string => {
+    const m = /:root\[data-theme="frosted"\]\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(m).not.toBeNull();
+    return m?.[1] ?? "";
+  };
+
+  it("all three themes exist: light (:root), flat dark, and default frosted", () => {
+    expect(css).toMatch(/:root\s*\{/);
+    expect(css).toMatch(/:root\[data-theme="dark"\]\s*\{/);
+    expect(frostedBlock()).not.toBe("");
+  });
+
+  it("frosted is the dark acrylic variant (dark base + translucent acrylic sheets)", () => {
+    const frosted = frostedBlock();
+    expect(frosted).toMatch(/color-scheme:\s*dark/);
+    expect(frosted).toMatch(/--tf-bg:\s*#0b0d0f/);
+    for (const token of [
+      "--tf-surface-frame",
+      "--tf-surface-toolbar",
+      "--tf-surface-rail",
+      "--tf-surface-panel",
+      "--tf-surface-menu",
+      "--tf-surface-dialog",
+    ]) {
+      expect(frosted).toMatch(new RegExp(`${token}\\s*:\\s*rgba\\(`));
+    }
+  });
+
+  it("dark stays the flat layered theme — solid sheets, no acrylic blur inside the block", () => {
+    const dark = darkThemeBlock(css);
+    expect(dark).toMatch(/--bg-secondary:/);
+    expect(dark).toMatch(/--bg-elevated:/);
+    expect(dark).toMatch(/--bg-panel:/);
+    expect(dark).not.toMatch(/--tf-surface-/);
+    expect(dark).not.toMatch(/backdrop-filter\s*:/);
+    expect(dark).not.toMatch(/animation\s*:/);
+  });
+
+  it("the theme toggle dropdown is embedded and surface-matched (never detached)", () => {
+    // The popover anchors flush under the trigger (top: calc(100% +
+    // 4px) inside a position:relative wrapper) and paints the SAME
+    // menu surface as the titlebar popover — it reads as part of the
+    // chrome, not a floating panel.
+    const wrap = /\.theme-toggle-wrap\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(wrap).not.toBeNull();
+    if (wrap !== null) expect(wrap[1] ?? "").toMatch(/position:\s*relative/);
+    const popover = /\.theme-toggle-popover\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(popover).not.toBeNull();
+    if (popover === null) return;
+    const body = popover[1] ?? "";
+    expect(body).toMatch(/position:\s*absolute/);
+    expect(body).toMatch(/top:\s*calc\(100%\s*\+\s*4px\)/);
+    expect(body).toMatch(/background:\s*var\(--menu-bg\)/);
+  });
+
+  it("frosted chrome inherits the dark-wash overrides (dark acrylic variant parity)", () => {
+    // Any `:root[data-theme="dark"]` override that tunes chrome for a
+    // dark surface must ALSO cover frosted — the frosted theme is a
+    // dark variant. The form editor floats over the white page with
+    // near-white --fg-strong text; without the dark chip it would be
+    // white-on-white (unreadable).
+    const frostedForm = /:root\[data-theme="frosted"\]\s+\.form-editor\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(frostedForm).not.toBeNull();
+    if (frostedForm === null) return;
+    const body = frostedForm[1] ?? "";
+    expect(body).toMatch(/background:\s*rgba\(15,\s*23,\s*42,\s*0\.85\)/);
+    // Same for the OCR suspects bar — a light rule would paint a
+    // light strip across the dark acrylic chrome.
+    const frostedBar = /:root\[data-theme="frosted"\]\s+\.ocr-suspects-panel\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(frostedBar).not.toBeNull();
+    if (frostedBar !== null) {
+      expect(frostedBar[1] ?? "").toMatch(/background:\s*rgba\(14,\s*17,\s*21,\s*0\.82\)/);
+    }
+  });
+
+  it("colorful tool icons ship their semantic palette — no monochrome leftovers, no rainbow text", () => {
+    const root = lightThemeBlock(css);
+    for (const token of [
+      "--icon-blue",
+      "--icon-cyan",
+      "--icon-green",
+      "--icon-orange",
+      "--icon-yellow",
+      "--icon-purple",
+      "--icon-red",
+      "--icon-pink",
+    ]) {
+      expect(root).toMatch(new RegExp(`${token}\\s*:`));
+    }
+    // Every icon selector routes through var(--icon-*) — the palette
+    // is the single color source for tool icons.
+    const iconRules = css.match(/\.(?:tool-btn|ann-tool-btn|edit-toolbar-btn)[^}]*\{[^}]*color:\s*var\(--icon-[a-z]+\)[^}]*\}/g) ?? [];
+    expect(iconRules.length).toBeGreaterThanOrEqual(11);
+    // Text/indicators must never dip into the icon palette (no
+    // rainbow text): `color: var(--icon-...)` may appear ONLY in
+    // rules whose selector carries an icon-bearing attribute/data
+    // grip. Every use must be attributed to an icon surface.
+    const iconUses = [...css.matchAll(/color:\s*var\(--icon-[a-z]+\)/g)];
+    const iconRuleSelectors = [...css.matchAll(/([^{}]*)\{[^}]*color:\s*var\(--icon-[a-z]+\)/g)];
+    expect(iconRuleSelectors.length).toBe(iconUses.length);
+    for (const m of iconRuleSelectors) {
+      expect(m[1] ?? "").toMatch(
+        /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab)=|tools-palette-entry-icon|icon-detail|::after/,
+      );
+    }
   });
 });

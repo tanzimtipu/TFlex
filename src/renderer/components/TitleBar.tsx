@@ -57,7 +57,9 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
+import { AnimatePresence } from "motion/react";
 import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
+import { TfMenu } from "./motion/TfMotion";
 
 /** The shape of a menu entry. Two kinds: a top-level group heading
  *  (rendered as a non-interactive row) or an action row. The
@@ -242,14 +244,15 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           >
             <Menu size={16} aria-hidden />
           </button>
-          {menuOpen && (
-            <div
-              ref={menuPopoverRef}
-              className="titlebar-menu-popover"
-              role="menu"
-              aria-label="Application menu"
-              data-menu-popover
-            >
+          <AnimatePresence>
+            {menuOpen && (
+              <TfMenu
+                ref={menuPopoverRef}
+                className="titlebar-menu-popover"
+                role="menu"
+                aria-label="Application menu"
+                data-menu-popover
+              >
               {flattened.map((item) => {
                 if (item.kind === "heading") {
                   return (
@@ -295,8 +298,9 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                   </button>
                 );
               })}
-            </div>
-          )}
+              </TfMenu>
+            )}
+          </AnimatePresence>
         </div>
       )}
 

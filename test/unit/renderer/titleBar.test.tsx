@@ -25,8 +25,19 @@ function setTflex(stub: TflexStub): void {
   (window as unknown as { tflex: TflexStub }).tflex = stub;
 }
 
-function clearTflex(): void {
+export function clearTflex(): void {
   (window as unknown as { tflex?: unknown }).tflex = undefined;
+}
+
+/** Phase C — motion exit surfaces (menus, dialogs, toasts) keep their
+ *  DOM node for a frame after `open` flips false (AnimatePresence
+ *  exit). Unit tests run with `MotionGlobalConfig.skipAnimations`
+ *  (test/setup), so the exit completes on the next rAF tick; this
+ *  settles that tick deterministically before an absence assertion. */
+export async function settleMotion(): Promise<void> {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
 }
 
 function noopContext(): MenuActionContext {
@@ -345,7 +356,7 @@ describe("TitleBar — menu popover", () => {
     clearTflex();
   });
 
-  it("clicking a popover row dispatches through menuContext + closes the popover", () => {
+  it("clicking a popover row dispatches through menuContext + closes the popover", async () => {
     setTflex({
       minimizeWindow: vi.fn(),
       maximizeWindow: vi.fn(),
@@ -377,6 +388,8 @@ describe("TitleBar — menu popover", () => {
     }
     expect(aboutSpy).toHaveBeenCalledTimes(1);
     // Popover closes after dispatch (single-click is the affordance).
+    // Phase C — the animated popover lingers one exit frame.
+    await settleMotion();
     expect(container.querySelector("[data-menu-popover]")).toBeNull();
     cleanup();
     clearTflex();
@@ -416,7 +429,7 @@ describe("TitleBar — menu popover", () => {
 });
 
 describe("TitleBar — Escape closes the popover", () => {
-  it("Escape keypress while popover is open sets it closed", () => {
+  it("Escape keypress while popover is open sets it closed", async () => {
     setTflex({
       minimizeWindow: vi.fn(),
       maximizeWindow: vi.fn(),
@@ -439,6 +452,8 @@ describe("TitleBar — Escape closes the popover", () => {
     act((): void => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     });
+    // Phase C — the animated popover lingers one exit frame.
+    await settleMotion();
     expect(container.querySelector("[data-menu-popover]")).toBeNull();
     cleanup();
     clearTflex();

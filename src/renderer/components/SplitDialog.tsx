@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
 import { defaultPageRange, parsePageRange } from "../engine/types";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 
 export type SplitMode = "extract" | "split";
 
@@ -54,11 +56,13 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
   // backdrop (a drag from the range input must not dismiss).
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
+  
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop className="modal-backdrop" {...backdrop}>
+      <TfDialog
         className="modal-dialog dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -142,7 +146,9 @@ export function SplitDialog(props: SplitDialogProps): ReactElement | null {
             {mode === "extract" ? "Extract" : "Split"}
           </button>
         </div>
-      </div>
-    </div>
+      </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }

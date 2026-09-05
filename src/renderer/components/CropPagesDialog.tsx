@@ -19,6 +19,8 @@ import { X, Crop } from "lucide-react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { CropEntry } from "../../shared/types";
 import { useBackdropClose } from "./modalBackdrop";
+import { AnimatePresence } from "motion/react";
+import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 
 export type CropMode = "allPages" | "perPage";
 
@@ -171,7 +173,7 @@ export function CropPagesDialog(
   // the dialog).
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
+  
 
   const onConfirmClick = (): void => {
     const entries: CropEntry[] = [];
@@ -205,8 +207,10 @@ export function CropPagesDialog(
   };
 
   return (
-    <div className="modal-backdrop" {...backdrop} data-crop-pages-dialog>
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop className="modal-backdrop" {...backdrop} data-crop-pages-dialog>
+      <TfDialog
         className="modal-dialog modal-dialog-wide dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -353,8 +357,10 @@ export function CropPagesDialog(
             Apply crop
           </button>
         </div>
-      </div>
-    </div>
+</TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }
 

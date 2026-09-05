@@ -15,6 +15,7 @@ import type { ReactElement } from "react";
 import type { EditFont } from "../../shared/types";
 import { EDIT_DEFAULT_FONTS, DEFAULT_EDIT_DEFAULT_FONT } from "../state/preferences";
 import type { EditTextStyle, EditTool } from "./model";
+import { TfBar } from "../components/motion/TfMotion";
 
 export interface EditToolbarProps {
   tool: EditTool;
@@ -37,7 +38,7 @@ export interface EditToolbarProps {
 export function EditToolbar(props: EditToolbarProps): ReactElement {
   const { tool, onSelect, defaultFont, onDefaultFontChange, enabled, hint } = props;
   return (
-    <div className="edit-toolbar" data-edit-toolbar role="toolbar" aria-label="Edit tools">
+    <TfBar className="edit-toolbar" data-edit-toolbar role="toolbar" aria-label="Edit tools">
       <button
         type="button"
         className={tool === "off" ? "edit-toolbar-btn edit-toolbar-btn-active" : "edit-toolbar-btn"}
@@ -110,7 +111,7 @@ export function EditToolbar(props: EditToolbarProps): ReactElement {
       <div className="edit-toolbar-hint" data-edit-hint>
         {hint}
       </div>
-    </div>
+    </TfBar>
   );
 }
 

@@ -6,9 +6,14 @@ import { applyTheme, nextTheme } from "../../../src/renderer/state/theme";
 import { ok, err } from "../../../src/shared/result";
 
 describe("theme", () => {
-  it("nextTheme toggles", () => {
+it("nextTheme cycles all three themes so frosted stays reachable", () => {
+    // Phase D — the toggle must return to the DEFAULT theme (frosted):
+    // frosted -> dark -> light -> frosted. The old two-state cycle
+    // (dark <-> light) trapped frosted users: they could never get
+    // back to the default from the keyboard command.
+    expect(nextTheme("frosted")).toBe("dark");
     expect(nextTheme("dark")).toBe("light");
-    expect(nextTheme("light")).toBe("dark");
+    expect(nextTheme("light")).toBe("frosted");
   });
 
   it("applyTheme sets data-theme on the document", () => {
@@ -16,6 +21,8 @@ describe("theme", () => {
     expect(document.documentElement.dataset.theme).toBe("dark");
     applyTheme("light");
     expect(document.documentElement.dataset.theme).toBe("light");
+    applyTheme("frosted");
+    expect(document.documentElement.dataset.theme).toBe("frosted");
   });
 });
 
@@ -32,16 +39,16 @@ describe("settings bootstrap", () => {
     expect(r.settings.theme).toBe("light");
   });
 
-  it("falls back to dark defaults on io error", () => {
+it("falls back to frosted defaults on io error", () => {
     const r = resolveInitialSettings(err("io", "missing"));
     expect(r.recovered).toBe(true);
     expect(r.settings).toEqual(DEFAULT_SETTINGS);
-    expect(r.settings.theme).toBe("dark");
+    expect(r.settings.theme).toBe("frosted");
     expect(r.settings.geometry).toEqual(DEFAULT_SETTINGS.geometry);
     expect(r.settings.recentFiles).toEqual([]);
   });
 
-  it("falls back to dark defaults on corrupt-settings", () => {
+  it("falls back to frosted defaults on corrupt-settings", () => {
     const r = resolveInitialSettings(err("corrupt-settings", "not parseable"));
     expect(r.recovered).toBe(true);
     expect(r.settings).toEqual(DEFAULT_SETTINGS);

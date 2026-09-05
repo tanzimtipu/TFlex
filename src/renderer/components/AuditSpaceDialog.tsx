@@ -17,6 +17,8 @@ import { RefreshCw, X } from 'lucide-react';
 import type { SpaceAudit } from '../../shared/types';
 import { formatBytes } from '../utils/formatBytes';
 import { useBackdropClose } from './modalBackdrop';
+import { AnimatePresence } from 'motion/react';
+import { TfBackdrop, TfDialog } from './motion/TfMotion';
 
 interface AuditSpaceDialogProps {
   open: boolean;
@@ -110,7 +112,7 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
   // backdrop (a drag from the retry button / body must not dismiss).
   const backdrop = useBackdropClose(onClose);
 
-  if (!open) return null;
+  
 
   const total = audit?.totalBytes ?? 0;
   const rows = audit === null
@@ -126,8 +128,10 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
       }));
 
   return (
-    <div className="modal-backdrop" {...backdrop}>
-      <div
+    <AnimatePresence>
+      {open && (
+        <TfBackdrop className="modal-backdrop" {...backdrop}>
+      <TfDialog
         className="modal-dialog dialog audit-dialog"
         ref={dialogRef}
         onClick={(e): void => e.stopPropagation()}
@@ -214,7 +218,9 @@ export function AuditSpaceDialog(props: AuditSpaceDialogProps): ReactElement | n
             Close
           </button>
         </div>
-      </div>
-    </div>
+        </TfDialog>
+        </TfBackdrop>
+      )}
+    </AnimatePresence>
   );
 }
