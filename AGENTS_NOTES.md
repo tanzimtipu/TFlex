@@ -909,3 +909,13 @@ qa start the task. If it does NOT match (or the app reports a different/older ve
 the version cannot be read), qa STOPS and reports the mismatch back to the orchestrator —
 it must not proceed, and must not run tests against a mismatched build. This pairs with the
 "QA must not launch the installed app" rule: both are mandatory preconditions.
+
+## 2026-09-05: package-lock.json MUST track package.json (operator standing rule)
+
+The operator requires the lockfile always updated to the latest on every version bump.
+After ANY package.json version change, run `npm.cmd install --package-lock-only --no-audit
+--no-fund` to regenerate `package-lock.json` so its root `version` and
+`packages[""].version` match package.json. Do not leave a stale lockfile (it had drifted to
+1.7.2 while package.json was 1.9.1). This is now a blocking step of the release pipeline:
+backend-dev regenerates the lockfile as part of every version-bump dispatch; git-agent
+verifies lockfile.version == package.json.version before tagging.
