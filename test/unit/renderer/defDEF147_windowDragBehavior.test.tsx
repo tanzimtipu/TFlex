@@ -32,10 +32,24 @@ import { TextBoxEditor } from "../../../src/renderer/annotations/AnnotationOverl
 import { AnnotationToolbar } from "../../../src/renderer/annotations/AnnotationToolbar";
 import { StampDialog } from "../../../src/renderer/components/StampDialog";
 
+// DEF-175 — the color popover PORTALS to document.body, so a previous
+// test's still-open popover would pollute body-level queries
+// (`document.body.querySelector(".color-popover")` grabs the oldest
+// open popover). Unmount every previous surface first so every mount
+// starts with an empty body and the portaled query is unambiguous.
+const liveRoots: ReturnType<typeof createRoot>[] = [];
 function mount(node: ReactElement): HTMLElement {
+  while (liveRoots.length > 0) {
+    const prev = liveRoots.pop();
+    if (prev === undefined) continue;
+    act((): void => {
+      prev.unmount();
+    });
+  }
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
+  liveRoots.push(root);
   act((): void => {
     root.render(node);
   });
@@ -277,11 +291,14 @@ describe("DEF-147 - annotation color palette popover is movable by its chrome (r
     act((): void => {
       swatch.click();
     });
-    return { host, popover: host.querySelector<HTMLElement>(".color-popover") };
+    // DEF-175 — the popover PORTALS to document.body (it must escape
+    // the .ann-toolbar stacking context), so it is no longer a child
+    // of the mounted host.
+    return { host, popover: document.body.querySelector<HTMLElement>(".color-popover") };
   }
 
   it("a section-label (header) chrome drag moves the popover mid-drag", async () => {
-    const { host, popover } = mountOpenPopover();
+    const { popover } = mountOpenPopover();
     expect(popover).not.toBeNull();
     if (popover === null) return;
     // Phase C — the popover enters through the popover-enter spring
@@ -290,7 +307,7 @@ describe("DEF-147 - annotation color palette popover is movable by its chrome (r
     await settleMotion();
     const atRest = /(?:translateX\(0px\) translateY\(0px\)|none)/.test(popover.style.transform);
     expect(atRest, "popover rests at the anchor after its enter spring").toBe(true);
-    const label = host.querySelector<HTMLElement>(".color-palette-label");
+    const label = popover.querySelector<HTMLElement>(".color-palette-label");
     expect(label).not.toBeNull();
     if (label === null) return;
     pointer(label, "pointerdown", { button: 0, clientX: 100, clientY: 100 });
@@ -305,11 +322,11 @@ describe("DEF-147 - annotation color palette popover is movable by its chrome (r
   });
 
   it("a press on a swatch button never starts a move", async () => {
-    const { host, popover } = mountOpenPopover();
+    const { popover } = mountOpenPopover();
     expect(popover).not.toBeNull();
     if (popover === null) return;
     await settleMotion();
-    const swatchBtn = host.querySelector<HTMLElement>(".color-palette-grid .color-swatch");
+    const swatchBtn = popover.querySelector<HTMLElement>(".color-palette-grid .color-swatch");
     expect(swatchBtn).not.toBeNull();
     if (swatchBtn === null) return;
     pointer(swatchBtn, "pointerdown", { button: 0, clientX: 100, clientY: 100 });

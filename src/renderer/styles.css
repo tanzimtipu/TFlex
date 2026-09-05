@@ -340,11 +340,12 @@
 /* ===========================================================================
  * Phase-15 — FROSTED theme (the third theme, the default).
  *
- * A dark acrylic variant: deep near-black base, translucent
- * surface-1/2/3 chips (rgba 0.88–0.92) for the chrome, a soft white
- * hairline/highlight, and a light text ladder. The chrome reads as
- * "premium frosted dark acrylic" — DISTINCT from the flat layered
- * dark theme (which stays untouched above).
+ * A medium-light frosted acrylic material: a cool blue-gray slate
+ * base lifted well above the flat dark theme's near-black, per-surface
+ * translucent sheets (rgba 0.78–0.92) for the chrome, brighter
+ * light-catching hairlines, and a light text ladder. The chrome reads
+ * as "premium frosted glass" — clearly lighter than the flat layered
+ * dark theme (which stays untouched above) and never near-black.
  *
  * Two contracts are sacred here:
  *   1. The PDF document is NEVER acrylic. `.pdf-page` / `.page-slot` /
@@ -362,48 +363,57 @@
  * per-rule restyle (that sweep is Phase B).
  * ------------------------------------------------------------------------- */
 :root[data-theme="frosted"] {
-  /* Dark acrylic palette (spec hexes) */
-  --tf-bg: #0b0d0f;
-  --tf-surface-1: #111419;
-  --tf-surface-2: #15191e;
-  --tf-surface-3: #191e24;
+  /* Medium-light frosted slate palette. The material is a cool
+   * blue-gray acrylic lit from above, NOT a near-black surface: the
+   * base (#18212c) is the darkest layer but is clearly lighter than
+   * the flat dark theme's #0b0d0f, and each chrome family picks a
+   * slightly lighter sheet while staying comfortably darker than the
+   * paper-white page. */
+  --tf-bg: #18212c;
+  --tf-surface-1: #2c3948;
+  --tf-surface-2: #344354;
+  --tf-surface-3: #3a4a5b;
   /* Phase B — per-surface acrylic sheets (the spec's exact values).
    * One subtle value per chrome family so the workspace reads as ONE
    * continuous frosted material with four hierarchy levels (frame ->
    * toolbar/sidebars -> floating -> menus/dialogs), never as
-   * independent cards. All chrome is 0.88-0.94 translucent + blur;
-   * the document stays a pristine solid sheet. */
-  --tf-surface-frame: rgba(15, 18, 22, 0.94);   /* window frame / titlebar */
-  --tf-surface-toolbar: rgba(18, 22, 27, 0.94); /* command + annotation toolbars, search */
-  --tf-surface-rail: rgba(16, 20, 25, 0.94);    /* left thumbnail sidebar */
-  --tf-surface-panel: rgba(20, 24, 30, 0.94);   /* right tools panel */
-  --tf-surface-menu: rgba(23, 28, 34, 0.94);    /* menus / popovers */
-  --tf-surface-dialog: rgba(22, 27, 33, 0.96);  /* dialogs / sheets */
-  --tf-surface-float: rgba(22, 27, 33, 0.90);   /* floating chip controls */
-  --tf-surface-tab-active: rgba(26, 30, 36, 0.94); /* active tab (lighter than frame) */
+   * independent cards. The chrome is 0.78-0.92 translucent + blur —
+   * slightly MORE see-through than the original 0.94 so the material
+   * genuinely reads as acrylic; the document stays a pristine solid
+   * sheet. */
+  --tf-surface-frame: rgba(36, 46, 58, 0.82);    /* window frame / titlebar */
+  --tf-surface-toolbar: rgba(41, 52, 65, 0.80);  /* command + annotation toolbars, search */
+  --tf-surface-rail: rgba(39, 49, 62, 0.82);     /* left thumbnail sidebar */
+  --tf-surface-panel: rgba(46, 58, 72, 0.80);    /* right tools panel */
+  --tf-surface-menu: rgba(52, 64, 79, 0.86);     /* menus / popovers */
+  --tf-surface-dialog: rgba(55, 68, 84, 0.92);   /* dialogs / sheets */
+  --tf-surface-float: rgba(58, 71, 87, 0.86);    /* floating chip controls */
+  --tf-surface-tab-active: rgba(58, 71, 88, 0.90); /* active tab (lighter than frame) */
   /* Phase-A legacy aliases — the old names keep resolving into the
    * new per-surface hierarchy so nothing regresses. */
   --tf-surface-1-acrylic: var(--tf-surface-toolbar);
   --tf-surface-2-acrylic: var(--tf-surface-rail);
   --tf-surface-3-acrylic: var(--tf-surface-dialog);
-  --tf-border: rgba(255, 255, 255, 0.075);
-  --tf-highlight: rgba(255, 255, 255, 0.055);
-  --tf-divider: rgba(255, 255, 255, 0.055);
-  --tf-text-primary: #e9ebef;
-  --tf-text-secondary: #a9b0b9;
-  --tf-text-tertiary: #737b86;
-  --tf-text-disabled: #515861;
+  /* Hairlines read as light catching the frosted edge: a brighter
+   * white top edge (0.10-0.14 alpha), never a white outline. */
+  --tf-border: rgba(255, 255, 255, 0.12);
+  --tf-highlight: rgba(255, 255, 255, 0.10);
+  --tf-divider: rgba(255, 255, 255, 0.08);
+  --tf-text-primary: #f2f5f8;
+  --tf-text-secondary: #b8c2cc;
+  --tf-text-tertiary: #8a96a4;
+  --tf-text-disabled: #66707c;
 
-  /* Base + workspace. The document canvas stays a SOLID dark — the
-   * workspace is never translucent (only chrome gets the blur). */
+  /* Base + workspace. The document canvas stays a SOLID medium slate —
+   * the workspace is never translucent (only chrome gets the blur). */
   --bg-base: var(--tf-bg);
-  --bg-sunken: #0b0d0f;
+  --bg-sunken: #141c26;
   --bg-raised: var(--tf-surface-dialog);
   --bg-toolbar: var(--tf-surface-toolbar);
   --bg-rail: var(--tf-surface-rail);
   --bg-canvas: var(--tf-bg);
   --bg-hover: var(--tf-highlight);
-  --bg-active: rgba(255, 255, 255, 0.09);
+  --bg-active: rgba(255, 255, 255, 0.12);
   --bg-input: var(--tf-surface-toolbar);
   --bg-tab: transparent;
   --bg-tab-active: var(--tf-surface-tab-active);
@@ -413,19 +423,21 @@
   --bg-elevated: var(--tf-surface-dialog);
   --bg-panel: var(--tf-surface-panel);
 
-  /* Text ladder — spec values */
+  /* Text ladder — spec values. Secondary/tertiary stay bright enough
+   * to read on the lifted slate sheets; only the disabled tier drops
+   * below the readable floor. */
   --fg-strong: var(--tf-text-primary);
   --fg: var(--tf-text-secondary);
   --fg-muted: var(--tf-text-tertiary);
-  --fg-soft: #98a0aa;
+  --fg-soft: #a5b0bc;
   --fg-faint: var(--tf-text-disabled);
   --fg-disabled: var(--tf-text-disabled);
   --fg-on-accent: #ffffff;
 
   /* Hairlines */
   --border: var(--tf-border);
-  --border-strong: rgba(255, 255, 255, 0.11);
-  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-subtle: rgba(255, 255, 255, 0.07);
   --divider: var(--tf-divider);
 
   /* Menus + floating surfaces — acrylic so they read as one
@@ -438,14 +450,16 @@
   --sample-card-border: var(--tf-border);
   --sample-card-border-hover: rgba(224, 122, 45, 0.35);
 
-  --shadow-page: 0 4px 18px rgba(0, 0, 0, 0.28);
-  --shadow-menu: 0 2px 8px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.55);
-  --shadow-dialog: 0 4px 16px rgba(0, 0, 0, 0.55), 0 12px 40px rgba(0, 0, 0, 0.6);
-  --shadow-popover: 0 2px 6px rgba(0, 0, 0, 0.5), 0 8px 24px rgba(0, 0, 0, 0.5);
-  --shadow-toast: 0 4px 12px rgba(0, 0, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.4);
+  --shadow-page: 0 4px 18px rgba(0, 0, 0, 0.32);
+  --shadow-menu: 0 2px 8px rgba(0, 0, 0, 0.28), 0 10px 28px rgba(0, 0, 0, 0.3);
+  --shadow-dialog: 0 4px 16px rgba(0, 0, 0, 0.3), 0 14px 44px rgba(0, 0, 0, 0.34);
+  --shadow-popover: 0 2px 6px rgba(0, 0, 0, 0.26), 0 10px 26px rgba(0, 0, 0, 0.28);
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.22);
 
-  --placeholder-from: #1d2126;
-  --placeholder-to: #262b32;
+  /* Loading placeholders sit against the lighter rail/workspace, so
+   * the well reads as a hair lighter than its container. */
+  --placeholder-from: #283240;
+  --placeholder-to: #36424f;
 
   --hit: rgba(96, 165, 250, 0.32);
   --hit-active: rgba(96, 165, 250, 0.6);
@@ -461,6 +475,19 @@
   --warning-soft: rgba(217, 164, 65, 0.18);
   --error: #d96c63;
   --error-soft: rgba(217, 108, 99, 0.16);
+
+  /* Phase C — frosted-muted tool icons. Light and flat-dark keep the
+   * full-saturation :root palette; on the lighter frosted glass the
+   * same hues would glare, so each icon is pulled partway toward the
+   * slate material. Still unmistakably colorful, never monochrome. */
+  --icon-blue: #5f9ed3;
+  --icon-cyan: #56b1c1;
+  --icon-green: #74b085;
+  --icon-orange: #d58040;
+  --icon-yellow: #cba356;
+  --icon-purple: #9a85cf;
+  --icon-red: #cb7671;
+  --icon-pink: #c782a9;
 
   color-scheme: dark;
 }
@@ -4222,9 +4249,18 @@ rect.ann-highlight.ann-preview {
   transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
 }
 
-:root[data-theme="dark"] .form-editor,
-:root[data-theme="frosted"] .form-editor {
+:root[data-theme="dark"] .form-editor {
   background: rgba(15, 23, 42, 0.85);
+  border-color: var(--accent);
+  color: var(--fg-strong);
+}
+
+/* The frosted chip floats directly over the paper-white page, so it
+ * stays a comparatively opaque slate chip (near-white text must read
+ * against it) — but it is lifted from the near-black dark-wash into
+ * the frosted slate material. */
+:root[data-theme="frosted"] .form-editor {
+  background: rgba(34, 45, 60, 0.88);
   border-color: var(--accent);
   color: var(--fg-strong);
 }
@@ -5496,9 +5532,18 @@ rect.ann-highlight.ann-preview {
 }
 
 .color-popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  /* DEF-175 (release blocker) — the palette PORTALS to document.body
+   * (see AnnotationToolbar) and is placed in viewport coordinates
+   * there: right-aligned under the swatch, 6px below, clamped to the
+   * viewport. `position: fixed` in the ROOT stacking context escapes
+   * the frosted .ann-toolbar's backdrop-filter stacking context (the
+   * old `position: absolute; top: calc(100% + 6px); right: 0` was
+   * trapped inside that context and painted/hit-tested UNDER the
+   * .document-scroller — the palette was invisible and click-through
+   * in the frosted theme). The toolbar's inline left/top win; this
+   * rule supplies the surface, the width, and the root-context
+   * z-index (below modal sheets at 100+, above the workspace). */
+  position: fixed;
   z-index: 50;
   background: var(--bg-raised);
   border: 1px solid var(--border);
@@ -6817,9 +6862,15 @@ rect.ann-highlight.ann-preview {
   to   { transform: translateY(0); opacity: 1; }
 }
 
-:root[data-theme="dark"] .ocr-suspects-panel,
-:root[data-theme="frosted"] .ocr-suspects-panel {
+:root[data-theme="dark"] .ocr-suspects-panel {
   background: rgba(14, 17, 21, 0.82);
+}
+
+/* The suspects bar floats over the top of the workspace (page top
+ * edge), so it keeps a comparatively dark-ish slate chip for the
+ * near-white text — but lifted from near-black into frosted slate. */
+:root[data-theme="frosted"] .ocr-suspects-panel {
+  background: rgba(31, 41, 53, 0.84);
 }
 
 /* DEF-126 — Tools palette downshift. The palette is an
@@ -7628,63 +7679,89 @@ rect.ann-highlight.ann-preview {
  * occurrence of a selector followed by `{`, so these frosted-scoped
  * overrides must never appear before the base component rules).
  *
- * The chrome is ONE continuous acrylic material, not a set of cards:
- * each surface picks its own slightly-different sheet from the
- * --tf-surface-* hierarchy and adds an extremely subtle inner top
- * highlight (0.055 alpha) so the material reads as lit from above.
- * The PDF is never part of this — only the 14 chrome selectors in the
- * Phase-A blur list carry the blur, and the reflection below sweeps
- * across chrome surfaces only.
+ * The chrome is ONE continuous medium-light acrylic material, not a
+ * set of cards: each surface picks its own slightly-different sheet
+ * from the --tf-surface-* hierarchy, carries a brighter inner top
+ * highlight so the edge reads as "light catching frosted acrylic",
+ * and drops a faint darker lower inner edge so the sheet reads as a
+ * physical pane. The PDF is never part of this — only the 14 chrome
+ * selectors in the Phase-A blur list carry the blur, and the
+ * reflection below sweeps across chrome surfaces only.
  * ------------------------------------------------------------------------- */
 
-/* Frame / titlebar — the thinnest frosted sheet with a hairline top
- * highlight. The active tab surface is a touch lighter than the
- * frame so it reads as "picked up"; the inactive tabs stay quiet. */
+/* Frame / titlebar — the deepest frosted sheet with a bright hairline
+ * top highlight and a faint darker lower inner edge (lit from above,
+ * no white outline). The active tab surface is a touch lighter than
+ * the frame so it reads as "picked up"; the inactive tabs stay quiet. */
 :root[data-theme="frosted"] .titlebar,
 :root[data-theme="frosted"] .app-header {
   background: var(--tf-surface-frame);
 }
 
 :root[data-theme="frosted"] .titlebar {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(8, 14, 22, 0.35);
 }
 
 /* Primary command toolbar + secondary/annotation toolbar + search:
- * the same acrylic layer, sitting just above the frame. Hover stays
- * the shared 0.055 white highlight; active tools get the spec's
- * 0.13 orange wash (the flat themes keep their 0.10). */
+ * the same acrylic layer, sitting just above the frame. The two lower
+ * rows get a faint white wash overlay so the toolbar stack reads as
+ * layered material — slightly brighter per row — never as borders.
+ * Active tools get the spec's 0.13 orange wash PLUS a soft warm
+ * ambient glow (the accent control lights up the glass around it). */
 :root[data-theme="frosted"] .toolbar,
 :root[data-theme="frosted"] .ann-toolbar,
 :root[data-theme="frosted"] .search-bar {
-  box-shadow: inset 0 1px 0 var(--tf-highlight);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    inset 0 -1px 0 rgba(8, 14, 22, 0.22);
+}
+
+:root[data-theme="frosted"] .ann-toolbar {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 55%);
+}
+
+:root[data-theme="frosted"] .search-bar {
+  background-image: linear-gradient(rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0) 55%);
 }
 
 :root[data-theme="frosted"] .tool-btn-active {
   background: var(--tf-accent-selected);
+  box-shadow: inset 0 0 0 1px rgba(224, 122, 45, 0.3), 0 2px 10px rgba(224, 122, 45, 0.16);
 }
 
 /* Left thumbnail sidebar — a distinct acrylic sheet (slightly darker
  * than the toolbars so the page list sits behind the command row). */
 :root[data-theme="frosted"] .side-rail {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    inset 0 -1px 0 rgba(8, 14, 22, 0.25);
 }
 
-/* Right Tools panel — the sheet floats over the workspace: a soft
- * ambient shadow falls off its left edge and the border reads as a
- * material change, not a line. */
+/* Right Tools panel — the clearest frosted example: clearly lighter
+ * translucent slate, soft ambient shadow off the left edge, rounded
+ * sheet corners (it docks flush right), a crisp light-catching edge
+ * where it meets the white page, and a faint inner top highlight. */
 :root[data-theme="frosted"] .tools-palette {
-  box-shadow: -10px 0 24px rgba(0, 0, 0, 0.18);
+  background: var(--tf-surface-panel);
+  border-left-color: rgba(255, 255, 255, 0.14);
+  border-radius: var(--tf-radius-md) 0 0 var(--tf-radius-md);
+  box-shadow:
+    -12px 0 32px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
 }
 
 /* Menus / popovers — the floating layer: slightly lighter sheet,
- * 20px blur, hairline border at 0.08 alpha and a deep soft shadow. */
+ * 20px blur, hairline border at 0.12 alpha, soft shadow and a faint
+ * top highlight so the panel reads as lit glass. */
 :root[data-theme="frosted"] .titlebar-menu-popover,
 :root[data-theme="frosted"] .theme-toggle-popover,
 :root[data-theme="frosted"] .color-popover {
   background: var(--tf-surface-menu);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: var(--tf-radius-md);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.09);
 }
 
 :root[data-theme="frosted"] .titlebar-menu-popover,
@@ -7694,24 +7771,92 @@ rect.ann-highlight.ann-preview {
   backdrop-filter: blur(20px) saturate(115%);
 }
 
-/* Dialogs / sheets — the most opaque sheet (0.96) with the dialog
- * radius token (10px). The overlay dim stays rgba(0,0,0,0.45). */
+/* Dialogs / sheets — the most opaque sheet (0.92) with the dialog
+ * radius token (10px), a faint lit top edge and the retuned ambient
+ * shadow. The overlay dim stays rgba(0,0,0,0.45). */
 :root[data-theme="frosted"] .modal-dialog,
 :root[data-theme="frosted"] .sheet {
   background: var(--tf-surface-dialog);
   border-radius: var(--tf-radius-lg);
+  box-shadow: var(--shadow-popover), inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-/* Floating zoom indicator — a slightly more translucent chip so it
- * reads as floating above the toolbar it sits in. */
+/* Floating zoom chip — a thick frosted acrylic pill: high opacity,
+ * crisp light edge, shadow beneath, smooth hover/press on the global
+ * motion tokens. (The 18px backdrop blur comes from its toolbar
+ * host — the chip itself is not a blur surface.) */
 :root[data-theme="frosted"] .zoom-percent {
   height: 26px;
   padding: 0 8px;
   line-height: 26px;
   background: var(--tf-surface-float);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--tf-radius-sm);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+:root[data-theme="frosted"] .zoom-percent:hover {
+  background: rgba(64, 78, 96, 0.9);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    0 6px 18px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+:root[data-theme="frosted"] .zoom-percent:active {
+  background: rgba(70, 85, 104, 0.92);
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+/* Workspace tonal variation + top-left illumination — a very subtle
+ * cool slate radial gradient (lighter center, darker edges, faint
+ * cool-blue tint) painted on the workspace backdrop ONLY. The paper
+ * sheets and their content stay untouched; the PDF keeps its solid
+ * white page and the gradient never sits on a page/slot/canvas rule.
+ * The explicit background-color keeps the workspace a SOLID slate
+ * sheet (the gradient layers on top of it, alpha stays 1).
+ * `background-attachment: fixed` anchors the light to the workspace
+ * so the soft illumination stays put while the pages scroll over it. */
+:root[data-theme="frosted"] .workspace-main,
+:root[data-theme="frosted"] .document-scroller {
+  background-color: var(--tf-bg);
+  background-image: radial-gradient(
+    ellipse 120% 90% at 35% 12%,
+    #25313f 0%,
+    #1d2733 46%,
+    #131b24 100%
+  );
+  background-attachment: fixed;
+}
+
+/* Selected thumbnail (left rail) — the frosted state glows softly:
+ * a slightly brighter acrylic wash, a subtle orange border, a soft
+ * warm ambient glow, and a smooth animated transition via the global
+ * --motion-* tokens. The glow is an outer light, not a neon ring. */
+:root[data-theme="frosted"] .thumb {
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+:root[data-theme="frosted"] .thumb-current,
+:root[data-theme="frosted"] .thumb-selected {
+  background: rgba(224, 122, 45, 0.16);
+  border-color: rgba(224, 122, 45, 0.55);
+  box-shadow:
+    inset 0 0 0 1px rgba(224, 122, 45, 0.35),
+    0 0 14px rgba(224, 122, 45, 0.2),
+    0 2px 10px rgba(0, 0, 0, 0.16);
 }
 
 /* The windowed page-overlay editors keep their OPAQUE sheets so the
@@ -7725,10 +7870,11 @@ rect.ann-highlight.ann-preview {
  * An extremely subtle soft light band sweeps horizontally across the
  * acrylic chrome: a large blurred gradient (built into the gradient
  * itself — no filter animation, transform + opacity only) that
- * translateX sweeps -120% -> +420% over 7-9s. Opacity peaks at
- * ~0.05, so it reads as material light, never as a moving line. The
- * PDF is structurally excluded: the ::after lives on chrome surfaces
- * only and each surface clips the band to its own box.
+ * translateX sweeps -120% -> +420% over 7-9s. Tuned for the lighter
+ * material, the band peaks at ~0.03-0.05 alpha — a soft diffuse
+ * light, never a moving line. The PDF is structurally excluded: the
+ * ::after lives on chrome surfaces only and each surface clips the
+ * band to its own box.
  *
  * `pointer-events: none` keeps the band out of every hit test — the
  * DEF-087/088/090 cross-bubbling guards are untouched.
@@ -7765,9 +7911,9 @@ rect.ann-highlight.ann-preview {
   background: linear-gradient(
     105deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.02) 40%,
-    rgba(255, 255, 255, 0.05) 50%,
-    rgba(255, 255, 255, 0.02) 60%,
+    rgba(255, 255, 255, 0.016) 40%,
+    rgba(255, 255, 255, 0.04) 50%,
+    rgba(255, 255, 255, 0.016) 60%,
     transparent 100%
   );
   transform: translateX(-120%);
@@ -7782,9 +7928,9 @@ rect.ann-highlight.ann-preview {
   background: linear-gradient(
     105deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.014) 40%,
-    rgba(255, 255, 255, 0.032) 50%,
-    rgba(255, 255, 255, 0.014) 60%,
+    rgba(255, 255, 255, 0.012) 40%,
+    rgba(255, 255, 255, 0.03) 50%,
+    rgba(255, 255, 255, 0.012) 60%,
     transparent 100%
   );
 }

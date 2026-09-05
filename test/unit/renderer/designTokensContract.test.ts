@@ -740,6 +740,37 @@ describe("Phase D — PDF-safety audit (acrylic/reflection stays chrome-only)", 
   });
 });
 
+describe("Phase D — DEF-175 color popover is a root-context surface (not a toolbar-anchored absolute popover)", () => {
+  // DEF-175 (release blocker): the frosted theme's backdrop-filter on
+  // .ann-toolbar made the toolbar a stacking context + containing
+  // block, so the old `position: absolute; top: calc(100% + 6px);
+  // right: 0` popover ranked INSIDE that context and painted /
+  // hit-tested UNDER the .document-scroller (invisible + click-through
+  // in the default theme). The fix portals the popover to
+  // document.body and places it in viewport coords; this contract pins
+  // the CSS side so a revert to an anchor-absorbed absolute popover is
+  // caught at the source.
+  const css = readStyles();
+
+  it("the .color-popover base rule is a root-context fixed surface with a root z-index", () => {
+    // The base rule (first `.color-popover {` in the file) is the
+    // styling block — the frosted re-style block lives later.
+    // Comments are stripped (the DEF-175 prose mentions the old
+    // placement) before matching.
+    const clean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    const block = /\.color-popover\s*\{([\s\S]*?)\n\}/.exec(clean);
+    expect(block).not.toBeNull();
+    if (block === null) return;
+    const body = block[1] ?? "";
+    expect(body).toMatch(/position:\s*fixed/);
+    expect(body).toMatch(/z-index:\s*50/);
+    // The pre-fix anchor-absorbed placement must never come back.
+    expect(body).not.toMatch(/position:\s*absolute/);
+    expect(body).not.toMatch(/top:\s*calc\(100%/);
+    expect(body).not.toMatch(/right:\s*0/);
+  });
+});
+
 describe("Phase D — reduced motion (motion wrappers + frosted reflection)", () => {
   const tfmotionFile = resolve(process.cwd(), "src/renderer/components/motion/TfMotion.tsx");
   const tfmotion = readFileSync(tfmotionFile, "utf8");
@@ -838,10 +869,22 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     expect(frostedBlock()).not.toBe("");
   });
 
-  it("frosted is the dark acrylic variant (dark base + translucent acrylic sheets)", () => {
+  it("frosted is the medium-light acrylic variant (lifted slate base + translucent sheets)", () => {
     const frosted = frostedBlock();
     expect(frosted).toMatch(/color-scheme:\s*dark/);
-    expect(frosted).toMatch(/--tf-bg:\s*#0b0d0f/);
+    // The base was lifted out of the near-black range: it must NOT
+    // resolve to the flat-dark theme's #0b0d0f, and every channel
+    // must clear the dark base's 0x0b/0x0d/0x0f by a wide margin
+    // (the darkest frosted layer still reads as slate, never black).
+    expect(frosted).not.toMatch(/--tf-bg:\s*#0b0d0f/i);
+    const bgMatch = /--tf-bg:\s*(#[0-9a-fA-F]{6})/.exec(frosted);
+    expect(bgMatch).not.toBeNull();
+    if (bgMatch !== null) {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt((bgMatch[1] ?? "").slice(i, i + 2), 16));
+      expect(r).toBeGreaterThanOrEqual(0x14);
+      expect(g).toBeGreaterThanOrEqual(0x14);
+      expect(b).toBeGreaterThanOrEqual(0x14);
+    }
     for (const token of [
       "--tf-surface-frame",
       "--tf-surface-toolbar",
@@ -851,6 +894,99 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
       "--tf-surface-dialog",
     ]) {
       expect(frosted).toMatch(new RegExp(`${token}\\s*:\\s*rgba\\(`));
+    }
+  });
+
+  it("frosted base is materially lighter than the flat dark base (#0b0d0f)", () => {
+    const frosted = frostedBlock();
+    const dark = darkThemeBlock(css);
+    expect(dark).toMatch(/--bg-base:\s*#0b0d0f/);
+    const f = /--tf-bg:\s*(#[0-9a-fA-F]{6})/.exec(frosted)?.[1];
+    expect(f).toBeTruthy();
+    if (!f) return;
+    const lum = (hex: string): number => {
+      const pairs = (hex.replace(/^#/, "").match(/.{2}/g) ?? []).map((p) => parseInt(p, 16));
+      const [r, g, b] = [pairs[0] ?? 0, pairs[1] ?? 0, pairs[2] ?? 0];
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    // The lifted frosted base must be at least twice as bright as the
+    // dark theme's near-black base — a real material change, not a
+    // rounding tweak.
+    expect(lum(f)).toBeGreaterThan(lum("0b0d0f") * 2);
+  });
+
+  it("the light (:root) and flat-dark blocks are untouched by the frosted correction", () => {
+    const light = lightThemeBlock(css);
+    const dark = darkThemeBlock(css);
+    expect(light).toMatch(/--bg-base:\s*#ffffff/);
+    expect(dark).toMatch(/--bg-base:\s*#0b0d0f/);
+  });
+
+  it("frosted mutes the tool-icon palette in-block only (desaturated but still colorful)", () => {
+    // The full-saturation icon palette stays in :root (light + flat
+    // dark keep it untouched); frosted overrides every --icon-* token
+    // with a slightly muted variant inside its own block. The muted
+    // hues must still be colorful — a wide channel spread, never
+    // gray or white.
+    const frosted = frostedBlock();
+    const root = lightThemeBlock(css);
+    for (const name of ["blue", "cyan", "green", "orange", "yellow", "purple", "red", "pink"]) {
+      const rootHex = new RegExp(`--icon-${name}:\\s*(#[0-9a-fA-F]{6})`).exec(root)?.[1];
+      const frostedHex = new RegExp(`--icon-${name}:\\s*(#[0-9a-fA-F]{6})`).exec(frosted)?.[1];
+      expect(rootHex, `:root must declare --icon-${name}`).toBeTruthy();
+      expect(frostedHex, `frosted must override --icon-${name}`).toBeTruthy();
+      if (!rootHex || !frostedHex) continue;
+      // The override must actually mute the hue (a real change, not a
+      // no-op alias).
+      expect(frostedHex.toLowerCase()).not.toBe(rootHex.toLowerCase());
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(frostedHex.slice(i, i + 2), 16));
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeGreaterThanOrEqual(24);
+    }
+  });
+
+  it("the workspace tonal variation + warm accent glow stay frosted-scoped (never on the PDF)", () => {
+    // Strip comments before scanning (prose mentions the workspace
+    // and PDF classes freely).
+    const cssClean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+    // 1) Every background radial-gradient in the file must be declared
+    //    under a [data-theme="frosted"] prefix — the soft lighting is
+    //    a frosted material property, never a base/dark/light paint —
+    //    and it may paint the workspace backdrop only, never a PDF
+    //    content surface.
+    const gradients = [
+      ...cssClean.matchAll(/([^{}]*)\{[^}]*background-image:[^}]*radial-gradient/g),
+    ];
+    expect(gradients.length).toBeGreaterThan(0);
+    for (const m of gradients) {
+      const sel = m[1] ?? "";
+      expect(sel, "every workspace radial gradient must be frosted-scoped").toMatch(
+        /data-theme="frosted"/,
+      );
+      expect(sel).not.toMatch(/\.(pdf-page|page-slot|textLayer|pdf-page-canvas|thumb-canvas)\b/);
+    }
+    // 2) The warm ambient accent glows (orange box-shadows on the
+    //    active tool + selected thumbnail) are frosted-scoped rules.
+    const activeGlow =
+      /:root\[data-theme="frosted"\]\s+\.tool-btn-active\s*\{([\s\S]*?)\n\}/.exec(cssClean);
+    expect(activeGlow).not.toBeNull();
+    if (activeGlow !== null) {
+      expect(activeGlow[1] ?? "").toMatch(/\d+px\s+rgba\(224,\s*122,\s*45/);
+    }
+    const thumbGlow =
+      /:root\[data-theme="frosted"\]\s+\.thumb-current,[\s\S]*?\.thumb-selected\s*\{([\s\S]*?)\n\}/.exec(
+        cssClean,
+      );
+    expect(thumbGlow).not.toBeNull();
+    if (thumbGlow !== null) {
+      expect(thumbGlow[1] ?? "").toMatch(/\d+px\s+rgba\(224,\s*122,\s*45/);
+    }
+    // 3) No PDF content surface may ever carry a background-image.
+    for (const cls of ["pdf-page", "page-slot", "textLayer", "pdf-page-canvas", "thumb-canvas"]) {
+      for (const m of cssClean.matchAll(
+        new RegExp(`\\.${cls}(?![\\w-])[^{]*\\{([\\s\\S]*?)\\n\\}`, "g"),
+      )) {
+        expect(m[1] ?? "").not.toMatch(/background-image\s*:/);
+      }
     }
   });
 
@@ -881,23 +1017,23 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     expect(body).toMatch(/background:\s*var\(--menu-bg\)/);
   });
 
-  it("frosted chrome inherits the dark-wash overrides (dark acrylic variant parity)", () => {
-    // Any `:root[data-theme="dark"]` override that tunes chrome for a
-    // dark surface must ALSO cover frosted — the frosted theme is a
-    // dark variant. The form editor floats over the white page with
-    // near-white --fg-strong text; without the dark chip it would be
-    // white-on-white (unreadable).
+  it("frosted page-overlay chips keep a dark-ish slate (dark-wash parity, lifted from near-black)", () => {
+    // The form editor and the OCR suspects bar float OVER the white
+    // page and carry near-white --fg-strong text. They must stay
+    // comparatively dark chips in every dark-ink theme — but the
+    // frosted variant is lifted from the near-black dark-wash into
+    // the frosted slate material, never near-black black.
     const frostedForm = /:root\[data-theme="frosted"\]\s+\.form-editor\s*\{([\s\S]*?)\n\}/m.exec(css);
     expect(frostedForm).not.toBeNull();
     if (frostedForm === null) return;
     const body = frostedForm[1] ?? "";
-    expect(body).toMatch(/background:\s*rgba\(15,\s*23,\s*42,\s*0\.85\)/);
+    expect(body).toMatch(/background:\s*rgba\(34,\s*45,\s*60,\s*0\.88\)/);
     // Same for the OCR suspects bar — a light rule would paint a
-    // light strip across the dark acrylic chrome.
+    // light strip across the acrylic chrome.
     const frostedBar = /:root\[data-theme="frosted"\]\s+\.ocr-suspects-panel\s*\{([\s\S]*?)\n\}/m.exec(css);
     expect(frostedBar).not.toBeNull();
     if (frostedBar !== null) {
-      expect(frostedBar[1] ?? "").toMatch(/background:\s*rgba\(14,\s*17,\s*21,\s*0\.82\)/);
+      expect(frostedBar[1] ?? "").toMatch(/background:\s*rgba\(31,\s*41,\s*53,\s*0\.84\)/);
     }
   });
 

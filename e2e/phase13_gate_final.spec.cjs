@@ -112,21 +112,45 @@ test.describe('Phase 13 Final Gate', () => {
   });
 
   test('SC5: Both Themes', async () => {
-    // Redesign: the theme attribute lives on documentElement
-    // (:root[data-theme]), not on <body>.
+    // 1.10.0+ contract: the theme control is an embedded dropdown. One click
+    // on the trigger opens the option popover; selecting an option applies
+    // that theme (data-theme on documentElement, :root[data-theme]) AND
+    // persists it to settings.json via the settings IPC. (The pre-1.10.0
+    // single-click blind toggle cycle no longer exists - see AppHeader.tsx.)
     const themeOf = () => window.evaluate(() => document.documentElement.getAttribute('data-theme'));
-    const toggle = window.locator('.theme-toggle');
-    
+    const themeOrder = ['frosted', 'dark', 'light'];
+
     // Current theme
-    const theme1 = (await themeOf()) || 'light';
+    const theme1 = (await themeOf()) || 'frosted';
     await takeScreenshot(`gate-p13-theme-${theme1}.png`);
-    
-    // Toggle
-    await toggle.click({ force: true });
-    await window.waitForTimeout(1000);
-    
+
+    // Open the dropdown and pick the next theme in the list (wraps around).
+    const want = themeOrder[(themeOrder.indexOf(theme1) + 1) % themeOrder.length] || 'dark';
+    await window.click('[data-theme-toggle]');
+    await window.waitForSelector('.theme-toggle-popover', { timeout: 5000 });
+    await window.click(`[data-theme-option="${want}"]`);
+    await window.waitForFunction(
+      (w) => document.documentElement.getAttribute('data-theme') === w,
+      want,
+    );
+
     const theme2 = await themeOf();
+    expect(theme2).toBe(want);
     expect(theme2).not.toBe(theme1);
     await takeScreenshot(`gate-p13-theme-${theme2}.png`);
+
+    // The selection must be persisted immediately (trackAndSave -> settings
+    // IPC), not only at quit: poll the settings file for the new value.
+    const udd = await electronApp.evaluate(({ app }) => app.getPath('userData'));
+    const settingsPath = path.join(udd, 'settings.json');
+    let persisted = null;
+    for (let i = 0; i < 20 && persisted !== want; i += 1) {
+      await window.waitForTimeout(250);
+      try {
+        persisted = JSON.parse(fs.readFileSync(settingsPath, 'utf8')).theme;
+      } catch { /* settings.json not written yet */ }
+    }
+    console.log(`PERF: SC5 theme ${theme1} -> ${theme2}, persisted=${persisted}`);
+    expect(persisted, 'the selected theme must be persisted to settings.json').toBe(want);
   });
 });

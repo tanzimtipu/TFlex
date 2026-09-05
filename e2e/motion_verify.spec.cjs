@@ -1,14 +1,19 @@
 // MOTION VERIFICATION (dev build) - proves the global motion system is wired
 // and CLEARLY VISIBLE in the live DOM, per the orchestrator's checklist:
 //   1. Timing/easing tokens exist in :root (NOT inside a theme block).
-//   2. Tools palette entrance = translateX(24px -> 0) + opacity @ ~280ms.
-//   3. Dialogs = translateY(10px) scale(0.97) -> (0, 1) @ ~240ms.
-//   4. Menus/popovers = scale 0.96/0.97 + translateY(-4/-3px) @ 140-190ms.
+//   2. Tools palette entrance = spring travel x 24 -> 0 @ ~280ms
+//      (TfPanel wrapper; 1.10.0 replaced the panel-enter CSS keyframe).
+//   3. Dialogs = spring rise y 10 / scale 0.97 -> rest @ ~240ms (TfDialog).
+//   4. Menus/popovers = spring scale 0.96/0.97 + y -4/-3 @ ~180ms (TfMenu/TfPopover).
 //   5. Buttons = hover translateY(-1px), press scale(0.98) @ 70-150ms.
 //   6. PDF page/.page-slot/.textLayer have ZERO animation (PDF stable).
 //   7. prefers-reduced-motion collapses motion (opacity-only survivors).
 // Mid-animation computed styles are sampled in-page (rAF) so the verdict is
 // based on the LIVE animated values, not just the static stylesheet.
+// Since the 1.10.0 physics migration the enter/exit motion of panels,
+// dialogs, menus and popovers is JS-spring-driven (motion/react through the
+// TfMotion wrappers, src/renderer/components/motion/) - the surfaces must
+// show NO CSS keyframe and REAL mid-flight transform/opacity travel.
 // Canonical launcher, dev build (no executablePath).
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
@@ -224,15 +229,28 @@ test('M2: palette / dialog / menu / popover entrance + buttons + PDF stability',
   const palSamples = await readSamples();
   console.log('[M2] palette samples:', JSON.stringify(palSamples.map(fmtSample)));
   expect(palSamples.length, 'palette must be sampled during its entrance').toBeGreaterThan(2);
+  // 1.10.0 physics migration: the palette animates through the TfPanel
+  // spring wrapper (JS-driven transform/opacity via motion/react,
+  // tfPreset panel: x 24 -> 0, stiffness 420 / damping 34 ~280ms), NOT a
+  // CSS keyframe. Proof of the spring contract:
+  //   a) the surface is the TfPanel wrapper (renders an <aside>),
+  //   b) NO CSS keyframe appears on it at any sampled frame,
+  //   c) real transform/opacity travel is caught mid-flight,
+  //   d) it settles at full opacity / identity transform.
+  const tag = await win.evaluate(() => document.querySelector('[data-tools-palette]').tagName);
+  expect(tag, 'palette must be the TfPanel wrapper (motion.aside)').toBe('ASIDE');
   const first = palSamples[0];
-  expect(first.an, 'palette animation-name').toBe('panel-enter');
-  expect(parseFloat(first.ad), 'palette animation duration ~280ms').toBeGreaterThanOrEqual(0.27);
-  expect(parseFloat(first.ad)).toBeLessThanOrEqual(0.29);
+  expect(first.an, 'palette entrance must not run any CSS keyframe').toBe('none');
+  expect(first.op !== '1' || first.tr !== 'none',
+    'first sampled frame must be mid-flight (spring already driving values)').toBe(true);
+  for (const s of palSamples) {
+    expect(s.an, `no CSS keyframe may appear on the palette at any frame (got ${s.an} @t=${s.t}ms)`).toBe('none');
+  }
   const mid = palSamples.find((s) => {
     const m = parseMatrix(s.tr);
     return m && m.tx > 0.5 && m.tx < 24;
   });
-  expect(mid, 'palette must be caught mid-slide (0 < tx < 24) - real travel, not a fade').toBeTruthy();
+  expect(mid, 'palette must be caught mid-slide (0 < tx < 24) - real spring travel, not a fade').toBeTruthy();
   const last = palSamples[palSamples.length - 1];
   const lastM = parseMatrix(last.tr);
   expect(last.op, 'palette settles fully opaque').toBe('1');
@@ -248,15 +266,20 @@ test('M2: palette / dialog / menu / popover entrance + buttons + PDF stability',
   const dlgSamples = await readSamples();
   console.log('[M3] dialog samples:', JSON.stringify(dlgSamples.map(fmtSample)));
   expect(dlgSamples.length).toBeGreaterThan(2);
+  // Spring contract (TfDialog, tfPreset dialog: y 10 / scale 0.97 -> 1,
+  // stiffness 560 / damping 38 ~240ms) - no CSS keyframe, real travel.
   const dFirst = dlgSamples[0];
-  expect(dFirst.an, 'dialog animation-name').toBe('dialog-enter');
-  expect(parseFloat(dFirst.ad), 'dialog animation duration ~240ms').toBeGreaterThanOrEqual(0.22);
-  expect(parseFloat(dFirst.ad)).toBeLessThanOrEqual(0.26);
+  expect(dFirst.an, 'dialog entrance must not run any CSS keyframe').toBe('none');
+  expect(dFirst.op !== '1' || dFirst.tr !== 'none',
+    'dialog first sampled frame must be mid-flight (spring already driving values)').toBe(true);
+  for (const s of dlgSamples) {
+    expect(s.an, `no CSS keyframe may appear on the dialog at any frame (got ${s.an} @t=${s.t}ms)`).toBe('none');
+  }
   const dMid = dlgSamples.find((s) => {
     const m = parseMatrix(s.tr);
     return m && (m.ty > 0.5 || m.a < 0.99);
   });
-  expect(dMid, 'dialog must be caught mid rise+settle (translateY>0 or scale<1)').toBeTruthy();
+  expect(dMid, 'dialog must be caught mid rise+settle (translateY>0 or scale<1) - real spring travel').toBeTruthy();
 
   // ---- 4a. Titlebar menu popover entrance ----
   await win.keyboard.press('Escape');
@@ -270,16 +293,18 @@ test('M2: palette / dialog / menu / popover entrance + buttons + PDF stability',
   const menuSamples = await readSamples();
   console.log('[M4] menu samples:', JSON.stringify(menuSamples.map(fmtSample)));
   expect(menuSamples.length).toBeGreaterThan(1);
+  // Spring contract (TfMenu, tfPreset menu: scale 0.96 / y -4 -> 0,
+  // stiffness 1000 / damping 50 ~180ms) - no CSS keyframe, real travel.
   const mFirst = menuSamples[0];
-  expect(mFirst.an, 'menu animation-name').toBe('menu-enter');
-  const mDur = parseFloat(mFirst.ad);
-  expect(mDur, 'menu duration within 140-190ms band').toBeGreaterThanOrEqual(0.14);
-  expect(mDur).toBeLessThanOrEqual(0.19);
+  expect(mFirst.an, 'menu entrance must not run any CSS keyframe').toBe('none');
+  for (const s of menuSamples) {
+    expect(s.an, `no CSS keyframe may appear on the menu at any frame (got ${s.an} @t=${s.t}ms)`).toBe('none');
+  }
   const mMid = menuSamples.find((s) => {
     const m = parseMatrix(s.tr);
     return m && (m.a < 0.995 || Math.abs(m.ty) > 0.2);
   });
-  expect(mMid, 'menu must be caught mid grow (scale<1 or translateY<0)').toBeTruthy();
+  expect(mMid, 'menu must be caught mid grow (scale<1 or translateY<0) - real spring travel').toBeTruthy();
   await win.screenshot({ path: path.join(SHOTS, 'motion-menu-open.png') });
   await win.keyboard.press('Escape');
   await win.waitForTimeout(400);
@@ -295,16 +320,18 @@ test('M2: palette / dialog / menu / popover entrance + buttons + PDF stability',
   const popSamples = await readSamples();
   console.log('[M4] popover samples:', JSON.stringify(popSamples.map(fmtSample)));
   expect(popSamples.length).toBeGreaterThan(1);
+  // Spring contract (TfPopover, tfPreset popover: scale 0.97 / y -3 -> 0,
+  // stiffness 1000 / damping 50 ~180ms) - no CSS keyframe, real travel.
   const pFirst = popSamples[0];
-  expect(pFirst.an, 'popover animation-name').toBe('popover-enter');
-  const pDur = parseFloat(pFirst.ad);
-  expect(pDur, 'popover duration within 140-190ms band').toBeGreaterThanOrEqual(0.14);
-  expect(pDur).toBeLessThanOrEqual(0.19);
+  expect(pFirst.an, 'popover entrance must not run any CSS keyframe').toBe('none');
+  for (const s of popSamples) {
+    expect(s.an, `no CSS keyframe may appear on the popover at any frame (got ${s.an} @t=${s.t}ms)`).toBe('none');
+  }
   const pMid = popSamples.find((s) => {
     const m = parseMatrix(s.tr);
     return m && (m.a < 0.995 || Math.abs(m.ty) > 0.2);
   });
-  expect(pMid, 'popover must be caught mid swell (scale<1 or translateY<0)').toBeTruthy();
+  expect(pMid, 'popover must be caught mid swell (scale<1 or translateY<0) - real spring travel').toBeTruthy();
   await win.keyboard.press('Escape');
   await win.waitForTimeout(300);
 

@@ -2,7 +2,8 @@
 // Covers the orchestrator's 9-item verification list:
 //   1. Frosted default on fresh launch
 //   2. Three themes + embedded dropdown + keyboard access
-//   3. Acrylic quality (chrome translucent ~0.88-0.94 + blur, NOT seethrough)
+//   3. Acrylic quality (chrome translucent ~0.78-0.92 + blur, NOT seethrough;
+//      1.10.1 rebalance contract: toolbar 0.80, rail 0.82, dialog 0.92)
 //   4. PDF pristine (white page, no blur/tint/reflection, in ALL themes)
 //   5. Colorful icon palette (semantic 8-hue, not monochrome)
 //   6. Tools panel group headers (ORGANIZE PAGES / DOCUMENT / RECOGNITION / EXPORT)
@@ -120,7 +121,7 @@ async function pagePurity() {
   });
 }
 
-test.describe.serial('frosted-acrylic + motion verification (dev build v1.9.1 pre-release)', () => {
+test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.1 frosted rebalance)', () => {
   test.afterEach(async () => {
     await hardClose(electronApp);
     electronApp = null;
@@ -289,8 +290,11 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.9.1 pr
     for (const facts of chrome) {
       expect(facts, `${facts.selector} must exist`).not.toBeNull();
       const alpha = parseRgba(facts.bg).a;
-      expect(alpha, `${facts.selector} acrylic sheet must be mostly opaque (>=0.88)`).toBeGreaterThanOrEqual(0.88);
-      expect(alpha, `${facts.selector} must stay translucent (<=0.94)`).toBeLessThanOrEqual(0.94);
+      // 1.10.1 frosted rebalance contract: chrome sheets sit at 0.80-0.82
+      // (toolbar 0.80, rail 0.82, frame 0.82) — slightly more translucent
+      // than the old 0.88-0.94 so the material genuinely reads as acrylic.
+      expect(alpha, `${facts.selector} acrylic sheet must be mostly opaque (>=0.78)`).toBeGreaterThanOrEqual(0.78);
+      expect(alpha, `${facts.selector} must stay translucent (<=0.92)`).toBeLessThanOrEqual(0.92);
       expect(facts.backdropFilter, `${facts.selector} must carry the frosted blur`).toContain('blur');
     }
     const fgStrong = await win.evaluate(() => getComputedStyle(document.body).getPropertyValue('--fg-strong').trim());
@@ -390,6 +394,17 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.9.1 pr
     await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 8000 });
     await win.waitForTimeout(600);
     await snap('frost-j-dialog-frosted.png');
+    // 1.10.1 rebalance contract: the dialog is the MOST opaque acrylic
+    // sheet, pinned at alpha 0.92 (rgba(55, 68, 84, 0.92)).
+    const dialogSheet = await win.evaluate(() => {
+      const dlg = document.querySelector('.modal-dialog');
+      if (!dlg) return null;
+      return getComputedStyle(dlg).backgroundColor;
+    });
+    const dlgAlpha = parseRgba(dialogSheet);
+    expect(dlgAlpha, 'insert dialog must exist for the acrylic alpha check').not.toBeNull();
+    expect(dlgAlpha.a, 'dialog acrylic sheet must pin the 0.92 contract (>=0.90)').toBeGreaterThanOrEqual(0.9);
+    expect(dlgAlpha.a, 'dialog acrylic sheet must pin the 0.92 contract (<=0.94)').toBeLessThanOrEqual(0.94);
     await win.keyboard.press('Escape');
     await win.waitForTimeout(130);
     const dlgExit = await win.evaluate(() => {

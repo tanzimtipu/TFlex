@@ -19,7 +19,8 @@ import {
   MessageCirclePlus,
 } from "lucide-react";
 import type { ReactElement } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence } from "motion/react";
 import { useDragWindow } from "../components/useDragWindow";
 import {
@@ -134,6 +135,43 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
       window.removeEventListener('pointerdown', onPointer);
       window.removeEventListener('keydown', onKey);
     };
+  }, [paletteOpen]);
+
+  // DEF-175 (release blocker) — the color popover must paint and
+  // hit-test ABOVE the page in every theme. The frosted theme applies
+  // backdrop-filter to .ann-toolbar, which makes the toolbar a
+  // stacking context AND the containing block for its absolutely
+  // positioned descendants: the popover's z-index: 50 used to rank
+  // only inside that context, so the whole toolbar subtree (popover
+  // included) stacked under the later-sibling .document-scroller —
+  // invisible AND click-through (clicks fired the armed ink tool into
+  // the document). The popover therefore PORTALS to document.body and
+  // is placed here in viewport coordinates: right-aligned under the
+  // swatch, 6px below it, clamped within the viewport like every
+  // other DEF-147 floating window, and re-placed on window resize
+  // while it is open. The `position: fixed` + root-context z-index 50
+  // escape any frosted ancestor's stacking context, so the popover
+  // floats above the scroller in all three themes while keeping its
+  // own 20px acrylic blur surface (it stays in the 14-surface frosted
+  // set — no chrome contract change).
+  useLayoutEffect(() => {
+    if (!paletteOpen) return;
+    const place = (): void => {
+      const el = popoverRef.current;
+      const swatch = swatchRef.current;
+      if (el === null || swatch === null) return;
+      const anchor = swatch.getBoundingClientRect();
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      const maxLeft = Math.max(0, window.innerWidth - w);
+      const maxTop = Math.max(0, window.innerHeight - h);
+      el.style.position = "fixed";
+      el.style.left = `${Math.min(Math.max(anchor.right - w, 0), maxLeft)}px`;
+      el.style.top = `${Math.min(Math.max(anchor.bottom + 6, 0), maxTop)}px`;
+    };
+    place();
+    window.addEventListener("resize", place);
+    return (): void => window.removeEventListener("resize", place);
   }, [paletteOpen]);
 
   const isMarkup = MARKUP_TOOLS.includes(state.tool as AnnotationTool);
@@ -252,47 +290,59 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
               title={`Color: ${activeCssColor}`}
               data-color-current={activeCssColor}
             />
-            <AnimatePresence>
-              {paletteOpen && (
-                <TfPopover
-                  ref={(el): void => {
-                    popoverRef.current = el;
-                    paletteDrag.windowRef(el);
-                  }}
-                  className={
-                    paletteDrag.dragging
-                      ? "color-popover color-popover-dragging"
-                      : "color-popover"
-                  }
-                  role="presentation"
-                  data-color-popover
-                  // Phase C — the drag offset folds into motion x/y so
-                  // the popover's own enter spring composes with the
-                  // drag transform instead of fighting an inline
-                  // `transform:` (the CSS popover-enter travel is
-                  // preserved when the offset is 0,0). The exit pins
-                  // the drag position too, so a dragged popover fades
-                  // out where it was dragged instead of snapping back.
-                  animate={{ x: paletteDrag.offset.x, y: paletteDrag.offset.y }}
-                  exit={{ x: paletteDrag.offset.x, y: paletteDrag.offset.y - 3 }}
-                  {...paletteDrag.handleProps}
-                >
-                  <ColorPalette
-                    theme={theme}
-                    activeColor={isBuiltInActive ? (state.color as AnnotationColor) : 'yellow'}
-                    activeCustomHex={isBuiltInActive ? null : state.color}
-                    presets={palette ?? { light: [], dark: [] }}
-                    onChange={(next): void => {
-                      if (!paletteEqual(palette ?? { light: [], dark: [] }, next)) {
-                        onPaletteChange?.(next);
-                      }
+            {/* DEF-175 (release blocker) — the popover must escape the
+                frosted .ann-toolbar stacking context (see the
+                placement effect above), so the WHOLE AnimatePresence
+                is portaled to document.body — AnimatePresence needs a
+                real motion element child (a portal is opaque to it),
+                so the portal wraps the presence boundary, not the
+                other way round. Exit animations still play and the
+                popover paints/hit-tests above the page in every
+                theme. */}
+            {createPortal(
+              <AnimatePresence>
+                {paletteOpen && (
+                  <TfPopover
+                    ref={(el): void => {
+                      popoverRef.current = el;
+                      paletteDrag.windowRef(el);
                     }}
-                    onApplyBuiltIn={setColor}
-                    onApplyCustom={setColor}
-                  />
-                </TfPopover>
-              )}
-            </AnimatePresence>
+                    className={
+                      paletteDrag.dragging
+                        ? "color-popover color-popover-dragging"
+                        : "color-popover"
+                    }
+                    role="presentation"
+                    data-color-popover
+                    // Phase C — the drag offset folds into motion x/y so
+                    // the popover's own enter spring composes with the
+                    // drag transform instead of fighting an inline
+                    // `transform:` (the CSS popover-enter travel is
+                    // preserved when the offset is 0,0). The exit pins
+                    // the drag position too, so a dragged popover fades
+                    // out where it was dragged instead of snapping back.
+                    animate={{ x: paletteDrag.offset.x, y: paletteDrag.offset.y }}
+                    exit={{ x: paletteDrag.offset.x, y: paletteDrag.offset.y - 3 }}
+                    {...paletteDrag.handleProps}
+                  >
+                    <ColorPalette
+                      theme={theme}
+                      activeColor={isBuiltInActive ? (state.color as AnnotationColor) : 'yellow'}
+                      activeCustomHex={isBuiltInActive ? null : state.color}
+                      presets={palette ?? { light: [], dark: [] }}
+                      onChange={(next): void => {
+                        if (!paletteEqual(palette ?? { light: [], dark: [] }, next)) {
+                          onPaletteChange?.(next);
+                        }
+                      }}
+                      onApplyBuiltIn={setColor}
+                      onApplyCustom={setColor}
+                    />
+                  </TfPopover>
+                )}
+              </AnimatePresence>,
+              document.body,
+            )}
           </div>
         </>
       )}

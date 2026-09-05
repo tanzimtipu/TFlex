@@ -59,16 +59,33 @@ test('DEF-171 retest: Escape closes the Signature manager + backdrop, workspace 
     expect(afterEsc.sigVisible, 'dialog must close on Escape').toBe(false);
     expect(afterEsc.backdrop, 'backdrop must be removed on Escape').toBe(false);
 
-    // ---- 2. The defect harm: workspace must be interactive again (theme toggle) ----
-    const themeBefore = await win.evaluate(() => document.documentElement.dataset.theme || 'light');
-    await win.locator('.theme-toggle').click();
-    await win.waitForTimeout(500);
-    const themeAfter = await win.evaluate(() => document.documentElement.dataset.theme || 'light');
-    console.log('[DEF-171] theme before/after toggle:', themeBefore, '->', themeAfter);
-    expect(themeAfter, 'theme toggle click must land after Escape (no backdrop interception)')
+    // ---- 2. The defect harm: workspace must be interactive again (theme dropdown) ----
+    // 1.10.0+: the theme control is an embedded dropdown - a trigger click
+    // opens the option popover and selecting an option applies that theme.
+    // The harm check therefore needs the FULL dropdown path: the click must
+    // land (popover opens - no leftover .modal-backdrop intercepting), the
+    // option click must land, and data-theme must actually flip.
+    const readTheme = () => win.evaluate(() => document.documentElement.dataset.theme || 'frosted');
+    const setThemeViaDropdown = async (want) => {
+      await win.locator('.theme-toggle').click();
+      await win.waitForSelector('.theme-toggle-popover', { timeout: 5000 });
+      await win.click(`[data-theme-option="${want}"]`);
+      await win.waitForFunction(
+        (w) => document.documentElement.dataset.theme === w,
+        want,
+      );
+    };
+    const themeBefore = await readTheme();
+    const otherTheme = themeBefore === 'dark' ? 'light' : 'dark';
+    await setThemeViaDropdown(otherTheme);
+    const themeAfter = await readTheme();
+    console.log('[DEF-171] theme before/after dropdown select:', themeBefore, '->', themeAfter);
+    expect(themeAfter, 'theme dropdown clicks must land after Escape (no backdrop interception)')
       .not.toBe(themeBefore);
-    // restore the original theme for a neutral state
-    await win.locator('.theme-toggle').click();
+    // restore the original theme for a neutral state (also re-proves the
+    // workspace is still interactive; selecting the same value re-opens the
+    // menu and closes it without a flip)
+    await setThemeViaDropdown(themeBefore);
     await win.waitForTimeout(400);
 
     // ---- 3. Escape with focus inside the Type input ----
