@@ -86,6 +86,47 @@ async function shot(windowOrName, name) {
   return p;
 }
 
+// Sample the page-1 canvas's pixels inside a PAGE-RELATIVE css rect
+// { x, y, w, h } (css px measured from the .pdf-page[data-page="1"]
+// element's top-left). Returns the dominant rgb colors with counts and the
+// dark-glyph pixel count. Used by the DEF-173/174 reopen specs to prove the
+// canvas-rendered annotation color (pale translucent wash vs full-opacity
+// block) without trusting screenshots alone.
+async function sampleCanvasPageRect(window, relRect, pageNo = 1) {
+  return window.evaluate(({ rel, want }) => {
+    const pane = document.querySelector('.tab-pane[aria-hidden="false"]');
+    const page = pane && pane.querySelector(`.pdf-page[data-page="${want}"]`);
+    const canvas = page && page.querySelector('canvas');
+    if (!page || !canvas) return null;
+    const pb = page.getBoundingClientRect();
+    const cb = canvas.getBoundingClientRect();
+    const sx = canvas.width / cb.width;
+    const sy = canvas.height / cb.height;
+    const x0 = Math.max(0, Math.round((rel.x + (pb.left - cb.left)) * sx));
+    const y0 = Math.max(0, Math.round((rel.y + (pb.top - cb.top)) * sy));
+    const w = Math.max(1, Math.min(canvas.width - x0, Math.round(rel.w * sx)));
+    const h = Math.max(1, Math.min(canvas.height - y0, Math.round(rel.h * sy)));
+    const ctx = canvas.getContext('2d');
+    const img = ctx.getImageData(x0, y0, w, h);
+    const counts = {};
+    let darkGlyphs = 0;
+    for (let i = 0; i < img.data.length; i += 4) {
+      const r = img.data[i], g = img.data[i + 1], b = img.data[i + 2];
+      const key = `${r},${g},${b}`;
+      counts[key] = (counts[key] || 0) + 1;
+      if (r < 100 && g < 100 && b < 100) darkGlyphs += 1;
+    }
+    const topColors = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([rgb, n]) => {
+        const [r, g, b] = rgb.split(',').map(Number);
+        return { rgb: [r, g, b], n };
+      });
+    return { bboxCanvasPx: [x0, y0, w, h], topColors, darkGlyphs };
+  }, { rel: relRect, want: pageNo });
+}
+
 // Dump key engine-state pieces for diagnosis.
 async function dumpEngine(window, label) {
   const out = await window.evaluate(() => {
@@ -122,4 +163,4 @@ async function hardClose(electronApp) {
   await electronApp.close().catch(() => {});
 }
 
-module.exports = { launchDev, launchInstalled, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, hardClose };
+module.exports = { launchDev, launchInstalled, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose };

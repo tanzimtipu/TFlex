@@ -992,6 +992,13 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
             key={a.id}
             ann={a}
             dimmed={false}
+            // DEF-174 — same live-overlay rule as the DOM path gets
+            // below: parsed-from-file highlights (id missing from the
+            // set) suppress their SVG rect because pdf.js paints the
+            // native /Highlight into the page canvas; live highlights
+            // keep the overlay rect. `null` (no split known) draws
+            // everything — matches DomAnnotation's fallback.
+            liveAnnTextIds={liveAnnTextIds}
             // DEF-154 — committed shapes / ink / arrows are
             // page-interactive (hover grabs, click selects, dblclick
             // opens the color toolbox). The preview paths stay
@@ -1370,11 +1377,23 @@ export interface AnnotationSurfaceHandlers {
 interface SvgAnnotationProps extends AnnotationSurfaceHandlers {
   ann: Annotation;
   dimmed: boolean;
+  /** DEF-174 — null or Set<id>, the same live-overlay rule the DOM
+   *  path uses for textbox/callout text (DEF-166). Null (no live/id
+   *  split known): every highlight draws its overlay rect (historic
+   *  behavior). Set<id>: draw the rect only for ids IN the set — a
+   *  highlight parsed from the saved file (id missing) has its baked
+   *  /Highlight appearance painted by pdf.js into the page canvas,
+   *  so drawing the overlay rect again stacks a second translucent
+   *  wash on top (~0.58 total). Only the "highlight" case reads the
+   *  prop; underline/strikeout are solid strokes (no translucent
+   *  canvas partner) and never suppress. */
+  liveAnnTextIds?: ReadonlySet<string> | null;
 }
 
 function SvgAnnotation({
   ann,
   dimmed,
+  liveAnnTextIds = null,
   onPointerDown,
   onClick,
   onDoubleClick,
@@ -1385,6 +1404,7 @@ function SvgAnnotation({
       <SvgAnnotationInner
         ann={ann}
         dimmed={dimmed}
+        liveAnnTextIds={liveAnnTextIds}
         onPointerDown={onPointerDown}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
@@ -1397,6 +1417,7 @@ function SvgAnnotation({
 function SvgAnnotationInner({
   ann,
   dimmed: _dimmed,
+  liveAnnTextIds = null,
   onPointerDown,
   onClick,
   onDoubleClick,
@@ -1417,7 +1438,24 @@ function SvgAnnotationInner({
     onPointerUp,
   };
   switch (ann.kind) {
-    case "highlight":
+    case "highlight": {
+      // DEF-174 — the SAME live-overlay rule as the DEF-166 textbox /
+      // callout text suppression, applied to the highlight rect: a
+      // highlight PARSED from the saved file (id missing from
+      // `liveAnnTextIds`) has its native /Highlight appearance (the
+      // backend bakes only QuadPoints — no /OP, no /AP) synthesized
+      // by pdf.js into the page canvas at full opacity; drawing the
+      // <rect class="ann-highlight"> again on top stacks a second
+      // 0.35 wash over it (~0.58 total — the reported heavy block).
+      // Only LIVE highlights (ids in the set) keep the overlay rect;
+      // `null` (no live/id split known) keeps the historic
+      // always-draw. The highlight <g> carries NO pointer/selection
+      // handlers (highlights are selected via the AnnotationsPanel,
+      // never page clicks), so suppressing the rect loses no
+      // interaction — the panel's flash / scroll-to reads the engine
+      // list geometry, not this SVG node.
+      const showOverlayRect = liveAnnTextIds === null || liveAnnTextIds.has(ann.id);
+      if (!showOverlayRect) return null;
       return (
         <g className="ann ann-markup" data-annotation-id={ann.id} data-kind={ann.kind}>
           {ann.rects.map((r, i) => (
@@ -1433,6 +1471,7 @@ function SvgAnnotationInner({
           ))}
         </g>
       );
+    }
     case "underline":
     case "strikeout":
       return (

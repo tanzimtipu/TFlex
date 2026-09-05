@@ -744,6 +744,19 @@ function makeLineEndsArray(
  *  before the fill path, so every viewer honours the 10% alpha. */
 const SHAPE_FILL_ALPHA = 0.1;
 
+/** Fill opacity for a Highlight annotation's baked native appearance.
+ *  Matches the renderer overlay's committed fill-opacity 0.35 (DEF-173 set
+ *  the .ann-highlight overlay to 0.35). pdf.js reads /CA as both the
+ *  annotation opacity and the fillAlpha for its synthesized Multiply-blend
+ *  appearance (pdf.worker.mjs HighlightAnnotation: `fillAlpha =
+ *  dict.get("CA")`); without /CA it defaults to 1 and paints a FULL-opacity
+ *  Multiply block over the page text (DEF-174). /CA 0.35 makes the Multiply
+ *  fill 35% — on a white page Multiply at 0.35 == normal-blend 0.35, so the
+ *  reopened highlight matches the in-session 0.35 wash. Only the Highlight
+ *  kind gets this; underline/strikeout/squiggly are intentional solid
+ *  strokes and stay opaque. */
+const HIGHLIGHT_OPACITY = 0.35;
+
 /** Build a content stream for an ink annotation's appearance. The stream is a
  *  Form XObject drawn in the page's bottom-left user space, so the stroke
  *  points and the /BBox must be flipped from the model's top-left space. */
@@ -1188,6 +1201,21 @@ dictEntries.push(['Contents', PDFString.of(ann.content)]);
         );
       }
       dictEntries.push(['QuadPoints', doc.context.obj(allQuads)]);
+
+      // DEF-174: bake a translucent native appearance on the Highlight dict so
+      // a reopened highlight renders ~0.35 (matching the in-session fill-opacity
+      // 0.35 the overlay uses per DEF-173). pdf.js reads /CA as the annotation
+      // opacity AND as the fillAlpha for its synthesized Multiply-blend
+      // appearance (pdf.worker.mjs HighlightAnnotation); without /CA it
+      // defaults to 1 and paints a FULL-opacity opaque block hiding the text.
+      // Underline/strikeout/squiggly are intentional solid strokes and do NOT
+      // get this — only the highlight. This /CA push overrides the generic
+      // /CA from `ann.opacity` above (Object.fromEntries keeps the last value
+      // for duplicate keys), so a reparsed highlight whose /CA was a different
+      // value re-bakes as 0.35 to match the overlay render.
+      if (ann.kind === 'highlight') {
+        dictEntries.push(['CA', PDFNumber.of(HIGHLIGHT_OPACITY)]);
+      }
       break;
     }
     case 'rect': {

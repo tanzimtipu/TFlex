@@ -1888,3 +1888,213 @@ describe('DEF-160/161/162: moved annotation survives re-create with stale rects'
     expect(created.rects[1].x).toBeCloseTo(multiRects[1].x);
   });
 });
+
+// ---------------------------------------------------------------------------
+// DEF-174: a saved highlight bakes a translucent native appearance (/CA 0.35)
+// so a reopened highlight renders ~0.35 translucent — matching the in-session
+// fill-opacity 0.35 the overlay uses per DEF-173. Without /CA, pdf.js
+// synthesizes a FULL-opacity Multiply-blend appearance (fillAlpha defaults to
+// 1; pdf.worker.mjs HighlightAnnotation: `fillAlpha = dict.get("CA")`) — an
+// opaque orange block hiding the text. Underline/strikeout/squiggly are
+// intentional solid strokes and must NOT receive the /CA translucency. The
+// existing /QuadPoints, /Rect, /C, /TFlexColor geometry is unchanged.
+//
+// Approach chosen: /CA (the standard PDF annotation opacity field pdf.js
+// reads) over an /AP appearance stream — simpler, spec-compliant, and the
+// pdf.js source confirms it honours /CA for Highlight.
+// ---------------------------------------------------------------------------
+
+describe('DEF-174: highlight bakes /CA 0.35, other markup stays solid', () => {
+  /** Re-parse the saved file and return the first annotation dict on page 0. */
+  async function reparseFirstAnnot(filePath: string): Promise<any> {
+    const buf = await readFile(filePath);
+    const doc = await PDFDocument.load(buf.buffer.slice(
+      buf.byteOffset, buf.byteOffset + buf.byteLength,
+    ) as ArrayBuffer);
+    const page = doc.getPage(0);
+    const pageLeaf = (page as any).node;
+    const annotsRef = pageLeaf.get(PDFName.of('Annots'));
+    expect(annotsRef).toBeDefined();
+    let annotsArray: any = annotsRef;
+    if (annotsRef && annotsRef.objectNumber !== undefined) {
+      annotsArray = doc.context.lookup(annotsRef);
+    }
+    expect(annotsArray).toBeDefined();
+    expect(annotsArray.size()).toBeGreaterThanOrEqual(1);
+    const annotRef = annotsArray.get(0);
+    const annot = doc.context.lookup(annotRef) as any;
+    return annot?.dict ?? annot;
+  }
+
+  it('highlight bakes /CA 0.35 (translucent, not opaque)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-hl-op', path);
+
+    // NOTE: no `opacity` in the payload — the renderer applies 0.35 via
+    // overlay CSS (DEF-173), not via the payload. The bake must add /CA 0.35
+    // regardless.
+    const r = await engine.createAnnotation('doc-hl-op', makePayload({
+      kind: 'highlight',
+      rects: [{ x: 100, y: 500, width: 200, height: 20 }],
+      color: 'yellow',
+    }));
+    expect(r.ok).toBe(true);
+
+    const savePath = join(dir, 'def174-highlight.pdf');
+    const sr = await engine.saveAs('doc-hl-op', savePath);
+    expect(sr.ok).toBe(true);
+
+    const dict = await reparseFirstAnnot(savePath);
+    const ca = dict.get ? dict.get(PDFName.of('CA')) : undefined;
+    expect(ca).toBeDefined();
+    // The acceptance value: ~0.35 translucent (matches in-session fill-opacity).
+    expect((ca as any).asNumber()).toBeCloseTo(0.35, 5);
+  });
+
+  it('highlight /CA overrides a stale parsed opacity (re-bakes as 0.35)', async () => {
+    // A highlight reparsed from an old file may carry a /CA (e.g. 0.6) which
+    // parse stores as `ann.opacity`. On re-save the bake must re-assert 0.35
+    // so the file matches the overlay's 0.35 — not the stale parsed value.
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-hl-stale', path);
+
+    const r = await engine.createAnnotation('doc-hl-stale', makePayload({
+      kind: 'highlight',
+      rects: [{ x: 100, y: 500, width: 200, height: 20 }],
+      color: 'yellow',
+      opacity: 0.6, // stale / parsed value
+    }));
+    expect(r.ok).toBe(true);
+
+    const savePath = join(dir, 'def174-highlight-stale.pdf');
+    const sr = await engine.saveAs('doc-hl-stale', savePath);
+    expect(sr.ok).toBe(true);
+
+    const dict = await reparseFirstAnnot(savePath);
+    const ca = dict.get ? dict.get(PDFName.of('CA')) : undefined;
+    expect(ca).toBeDefined();
+    expect((ca as any).asNumber()).toBeCloseTo(0.35, 5);
+    expect((ca as any).asNumber()).not.toBeCloseTo(0.6, 5);
+  });
+
+  it('underline does NOT bake /CA (solid stroke)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-ul-solid', path);
+
+    const r = await engine.createAnnotation('doc-ul-solid', makePayload({
+      kind: 'underline',
+      rects: [{ x: 100, y: 500, width: 200, height: 5 }],
+      color: 'green',
+    }));
+    expect(r.ok).toBe(true);
+
+    const savePath = join(dir, 'def174-underline.pdf');
+    const sr = await engine.saveAs('doc-ul-solid', savePath);
+    expect(sr.ok).toBe(true);
+
+    const dict = await reparseFirstAnnot(savePath);
+    const ca = dict.get ? dict.get(PDFName.of('CA')) : undefined;
+    expect(ca).toBeUndefined();
+  });
+
+  it('strikeout does NOT bake /CA (solid stroke)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-so-solid', path);
+
+    const r = await engine.createAnnotation('doc-so-solid', makePayload({
+      kind: 'strikeout',
+      rects: [{ x: 100, y: 500, width: 200, height: 15 }],
+      color: 'red',
+    }));
+    expect(r.ok).toBe(true);
+
+    const savePath = join(dir, 'def174-strikeout.pdf');
+    const sr = await engine.saveAs('doc-so-solid', savePath);
+    expect(sr.ok).toBe(true);
+
+    const dict = await reparseFirstAnnot(savePath);
+    const ca = dict.get ? dict.get(PDFName.of('CA')) : undefined;
+    expect(ca).toBeUndefined();
+  });
+
+  it('squiggly does NOT bake /CA (solid stroke)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-sq-solid', path);
+
+    const r = await engine.createAnnotation('doc-sq-solid', makePayload({
+      kind: 'squiggly',
+      rects: [{ x: 100, y: 500, width: 200, height: 5 }],
+      color: 'magenta',
+    }));
+    expect(r.ok).toBe(true);
+
+    const savePath = join(dir, 'def174-squiggly.pdf');
+    const sr = await engine.saveAs('doc-sq-solid', savePath);
+    expect(sr.ok).toBe(true);
+
+    const dict = await reparseFirstAnnot(savePath);
+    const ca = dict.get ? dict.get(PDFName.of('CA')) : undefined;
+    expect(ca).toBeUndefined();
+  });
+
+  it('highlight keeps /QuadPoints, /Rect, /C, /TFlexColor geometry', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-hl-geo', path);
+
+    const r = await engine.createAnnotation('doc-hl-geo', makePayload({
+      kind: 'highlight',
+      rects: [{ x: 100, y: 500, width: 200, height: 20 }],
+      color: 'yellow',
+      content: 'hi geo',
+    }));
+    expect(r.ok).toBe(true);
+
+    const savePath = join(dir, 'def174-highlight-geo.pdf');
+    const sr = await engine.saveAs('doc-hl-geo', savePath);
+    expect(sr.ok).toBe(true);
+
+    const dict = await reparseFirstAnnot(savePath);
+    // Geometry/identity fields unchanged by the DEF-174 fix.
+    expect(dict.get(PDFName.of('QuadPoints'))).toBeDefined();
+    expect(dict.get(PDFName.of('Rect'))).toBeDefined();
+    expect(dict.get(PDFName.of('C'))).toBeDefined();
+    expect(dict.get(PDFName.of('TFlexColor'))).toBeDefined();
+    // And the new translucency is present.
+    expect(dict.get(PDFName.of('CA'))).toBeDefined();
+  });
+
+  it('multi-rect highlight bakes a single /CA 0.35 across all quads', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-hl-multi', path);
+
+    const r = await engine.createAnnotation('doc-hl-multi', makePayload({
+      kind: 'highlight',
+      rects: [
+        { x: 50, y: 700, width: 100, height: 14 },
+        { x: 200, y: 700, width: 80, height: 14 },
+      ],
+      color: 'orange',
+    }));
+    expect(r.ok).toBe(true);
+
+    const savePath = join(dir, 'def174-highlight-multi.pdf');
+    const sr = await engine.saveAs('doc-hl-multi', savePath);
+    expect(sr.ok).toBe(true);
+
+    const dict = await reparseFirstAnnot(savePath);
+    // QuadPoints carry all quads; exactly one /CA 0.35 applies to the whole.
+    const quads = dict.get(PDFName.of('QuadPoints'));
+    expect(quads).toBeDefined();
+    expect((quads as any).size()).toBeGreaterThanOrEqual(16); // 2 quads * 8
+    const ca = dict.get(PDFName.of('CA'));
+    expect(ca).toBeDefined();
+    expect((ca as any).asNumber()).toBeCloseTo(0.35, 5);
+  });
+});

@@ -43,6 +43,13 @@ anything private — use synthetic or public documents.
 
 ## final pass adversary harnesses
 
+- `squiggly-native.pdf` — one Letter page, black Helvetica text plus a red
+  native `/Squiggly` markup annotation (/QuadPoints over the text, baked with
+  pdf-lib's low-level context API). Squiggly has no toolbar button (parse/save
+  native kind only), so the parse render path is exercised via this fixture.
+  Used by `e2e/retests/def_174_markup_regression.spec.cjs` (DEF-174 markup
+  regression: squiggly renders canvas-only, no overlay case).
+
 - `adversarial_final.mjs` — comprehensive full-feature exercise (hostile loads, annotations, forms, signatures, merge+hostile, rapid ops, split/extract edges, stale docId ops, invalid fills, bytes loads).
 - `adversarial_final2.mjs` — deep investigation: 0-page doc signature, flatten undo field destruction, repeated self-merge, split form, multiple load cycles, docId replacement.
 - `adversarial_final3.mjs` — round-trip tests: save overwrites source, merge form fields, form fill save/reload, annotation save/reload, signature save/reload.
