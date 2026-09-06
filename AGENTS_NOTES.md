@@ -1,5 +1,29 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-09-07: Hard rule — no automatic full test suite runs
+
+- From: All developers run `npm run test:unit` (full suite) after every task by default.
+- To: **Full test suite runs only when explicitly instructed by the human.**
+- Reason: operator directive to reduce time/cost overhead. Developers should still run:
+  - `npm run typecheck` (fast, catches obvious errors)
+  - Targeted unit tests for files they changed (e.g., `npm run test:unit -- --grep "pattern"`)
+  - Build verification (`npm run build` or `npm run build:renderer`)
+- Full suite (`npm run test:unit` without filters) is reserved for:
+  - Pre-release gates
+  - When the human explicitly requests it
+  - When a task explicitly requires full regression
+- This rule applies to frontend-dev, backend-dev, and qa agents.
+
+## 2026-09-04: orchestrator model changed to moonshotai/kimi-k2.5
+
+- From: `openrouter/deepseek/deepseek-v4-pro-0813`
+- To: `openrouter/moonshotai/kimi-k2.5` (verified live in the OpenRouter catalog).
+- Reserved-model rule follows: `moonshotai/kimi-k2.5` is now the orchestrator-reserved
+  model in AGENTS.md (hard-stop + fallback clauses), all five sub-agent model-integrity
+  rules, the probe gate's silent-fallback check, README (status-line + lineup), and the
+  model-selector skill.
+- Fallback rule unchanged: orchestrator has no fallback — stop and ask the human.
+
 ## 2026-09-03: qa re-pinned to z-ai/glm-5.3-flash
 
 - From: `openrouter/deepseek/deepseek-v4-flash-vision-exp`

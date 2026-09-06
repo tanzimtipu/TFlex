@@ -18,7 +18,7 @@
 // With the "select" tool the layer is pointer-transparent, so text
 // selection and links behave exactly as before.
 
-import { GripVertical, MessageSquare, X } from "lucide-react";
+import { GripVertical, MessageSquare } from "lucide-react";
 import { Component, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
@@ -114,6 +114,13 @@ export interface AnnotationOverlayProps {
    *  handler was a silent no-op. */
   onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
   onDeleteAnnotation?: (id: string) => void;
+  /** Bug 1 — disarm the annotation CREATION tool when an edit
+   *  toolbox opens (double-click / the bar's Edit). With an armed
+   *  creation tool (e.g. sticky note) and an edit toolbox open at
+   *  the same time, the next page click would both create NEW
+   *  content and edit EXISTING content. The host (DocumentView)
+   *  wires this to its annotation-tool reducer's "select" action. */
+  onDisarmTool?: () => void;
   /** DEF-166 — annotation ids whose text this overlay must draw LIVE.
    *  When provided, an annotation whose id is NOT in the set came from
    *  the document currently loaded into the page canvas (parsed from
@@ -225,6 +232,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     onFinishedOneShot,
     onEditAnnotation,
     onDeleteAnnotation,
+    onDisarmTool,
   } = props;
 
   // DEF-166 — the host tracks which annotation ids must keep their
@@ -358,6 +366,22 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     }
   }, [annotations, annDraft]);
 
+  /** Bug 3 — the "content moves into the toolbox" model: while a
+   *  committed annotation's edit toolbox is open (note editor /
+   *  textbox-callout toolbox), the ORIGINAL page rendering of that
+   *  annotation is suppressed — the toolbox IS the content, showing
+   *  its text (and, when dragged, its position). The annotation
+   *  reappears on the page only when the toolbox commits (at the new
+   *  position / text) or cancels. The `selectedAnn` / pending logic
+   *  keeps reading the full `effectiveAnnotations` list, so
+   *  interaction state is unaffected — only the page rendering of
+   *  the edited item is hidden. */
+  const editedId = editingNote !== null ? editingNote.id : editTarget !== null ? editTarget.id : null;
+  const renderAnnotations = useMemo((): Annotation[] => {
+    if (editedId === null) return effectiveAnnotations;
+    return effectiveAnnotations.filter((a) => a.id !== editedId);
+  }, [effectiveAnnotations, editedId]);
+
   const selectedAnn =
     selectedAnnId === null
       ? null
@@ -385,19 +409,49 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     [annPending],
   );
 
+  /** Bug 2 — commit a delete+re-create MOVE while keeping the draft
+   *  override visible until the recreate-echo lands. The shared
+   *  contract has no annotation-move op, so every move is
+   *  delete(original) + create(moved). Clearing the draft
+   *  synchronously would revert the overlay to the engine list,
+   *  which still holds the OLD annotation at its ORIGINAL position
+   *  until BOTH round-trips echo back — the "content snaps back
+   *  before landing at the new spot" artifact. This pins the draft
+   *  to the COMMITTED geometry (it may currently hold an
+   *  intermediate parked rect from a page drag) and leaves it up
+   *  until the echo effect (same id + geometry in the list) drops
+   *  it. A safety timer force-clears the draft if the engine ops
+   *  fail — gated on the geometry so a fresh drag of the same
+   *  annotation within the grace window is never reverted. */
+  const issueMoveCommit = useCallback(
+    (oldAnn: Annotation, nextAnn: Annotation): void => {
+      onDeleteAnnotation?.(oldAnn.id);
+      onCreate({ ...nextAnn });
+      setAnnDraft({ id: oldAnn.id, ann: nextAnn });
+      window.setTimeout(() => {
+        setAnnDraft((prev) => {
+          if (prev?.id !== oldAnn.id) return prev;
+          if (!sameAnnotationGeometry(prev.ann, nextAnn)) return prev;
+          return null;
+        });
+      }, 500);
+    },
+    [onDeleteAnnotation, onCreate],
+  );
+
   /** Confirm a pending move/resize: delete the ORIGINAL annotation
    *  and re-create it with the moved geometry (same id, same
-   *  createdAt — the shared contract's only annotation-move path). */
+   *  createdAt). Bug 2 — the draft is NOT cleared here (see
+   *  `issueMoveCommit`); the pending flag goes away so a blank-page
+   *  press can no longer revert the already-issued commit. */
   const confirmPendingAnn = useCallback((): void => {
     if (annPending === null) return;
     const { oldAnn, nextAnn } = annPending;
-    onDeleteAnnotation?.(oldAnn.id);
-    onCreate({ ...nextAnn });
-    setAnnDraft(null);
+    issueMoveCommit(oldAnn, nextAnn);
     setAnnPending(null);
     setSelectedAnnId(null);
     setHintPos(null);
-  }, [annPending, onDeleteAnnotation, onCreate]);
+  }, [annPending, issueMoveCommit]);
 
   const pagePoint = (e: React.PointerEvent): PagePoint => {
     const root = rootRef.current;
@@ -409,9 +463,17 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   /** Open the full edit toolbox for a committed annotation. textbox /
    *  callout reopen the shared text editor pre-filled; note reopens
    *  the note editor; shapes / ink / arrow open the color editor (the
-   *  only properties an annotation owns beyond geometry). */
+   *  only properties an annotation owns beyond geometry).
+   *
+   *  Bug 1 — opening a toolbox disarms the annotation CREATION tool
+   *  (special-cased per the original "sticky note stays armed"
+   *  report; applies to every tool via the host's dispatcher). An
+   *  armed creation tool + an open toolbox means the next page click
+   *  both creates and edits — the disarm makes "edit existing" and
+   *  "create new" mutually exclusive the way the toolbar implies. */
   const openEditorFor = useCallback(
     (ann: Annotation): void => {
+      onDisarmTool?.();
       setSelectedAnnId(ann.id);
       if (ann.kind === "textbox" || ann.kind === "callout") {
         const rect =
@@ -429,7 +491,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       // shapes / ink / arrow — the color edit toolbox.
       setColorEditId(ann.id);
     },
-    [],
+    [onDisarmTool],
   );
 
   /** Start a move (or corner-handle resize) drag on a committed
@@ -487,10 +549,13 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
 
   /** Single click on a committed surface: select it and make it
    *  movable (the bar + handles render). NOT the toolbox — that is
-   *  the double-click's job (DEF-153). A post-drag click (the
-   *  browser fires `click` after a pointerup that moved) is ignored
-   *  via `movedRef`. The NOTE keeps its accepted single-click
-   *  behavior (DEF-096): a click on the icon opens its editor. */
+   *  the double-click's job (DEF-153 / Bug 3). A post-drag click
+   *  (the browser fires `click` after a pointerup that moved) is
+   *  ignored via `movedRef`. Bug 3 — the NOTE used to open its
+   *  editor on a single click; that made "select" and "edit" one
+   *  gesture and left no way to just pick the note up. Every kind
+   *  (note included) now selects on single click and opens its
+   *  toolbox on double-click / the bar's Edit. */
   const onAnnClickSurface = useCallback(
     (e: React.MouseEvent, ann: Annotation): void => {
       e.stopPropagation();
@@ -502,11 +567,8 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       selDrag.endDrag();
       setSelectedAnnId(ann.id);
       setColorEditId(null);
-      if (ann.kind === "note") {
-        openEditorFor(ann);
-      }
     },
-    [openEditorFor, selDrag],
+    [selDrag],
   );
 
   /** Double click on a committed surface opens the full edit toolbox. */
@@ -562,9 +624,10 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       const moved = !rectsClose(committedRect, engineRect, 1);
       if (moved) {
         // The toolbox carries the color choice: a moved commit
-        // re-creates with rect + text + the toolbox's color.
-        onDeleteAnnotation?.(t.id);
-        onCreate({ ...base, rect: committedRect, text: trimmed, color: t.color });
+        // re-creates with rect + text + the toolbox's color. Bug 2 —
+        // the draft stays up until the recreate echo lands (no
+        // snap-back to the old rect).
+        issueMoveCommit(base, { ...base, rect: committedRect, text: trimmed, color: t.color });
       } else {
         // Patch only fields that actually changed — the engine rejects
         // a no-op patch. The color comes from the toolbox (t.color),
@@ -574,12 +637,16 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         if (t.color !== base.color) patch.color = t.color;
         if (Object.keys(patch).length > 0) onEditAnnotation?.(t.id, patch);
       }
-      setAnnDraft(null);
+      // Bug 2 — the draft is NOT cleared here when the commit moved
+      // the content (issueMoveCommit keeps it until the recreate
+      // echo lands); for a text/color-only commit there is no draft
+      // to keep, so the clear is a no-op.
+      if (!moved) setAnnDraft(null);
       setAnnPending(null);
       setSelectedAnnId(null);
       setHintPos(null);
     },
-    [editTarget, annotations, annDraft, cssScale, onDeleteAnnotation, onCreate, onEditAnnotation],
+    [editTarget, annotations, annDraft, cssScale, issueMoveCommit, onEditAnnotation],
   );
 
   /** Apply a color to a committed shape / ink / arrow through the
@@ -858,10 +925,15 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   // invocations (e.g. a synthetic click racing a Ctrl+Enter
   // keydown) — once the state is null, the early `return` is a
   // no-op.
-  const commitTextbox = (): void => {
+  const commitTextbox = (offset: { x: number; y: number }): void => {
     if (textboxEditor === null) return;
     const text = textboxEditor.text.trim();
-    const at = textboxEditor.at;
+    // Bug 3 — a dragged toolbox commits the content at the DRAGGED
+    // position: the anchor shifts by the drag offset (CSS px -> pt).
+    const at = {
+      x: textboxEditor.at.x + offset.x / cssScale,
+      y: textboxEditor.at.y + offset.y / cssScale,
+    };
     // Drop the editor first so the floating bar unmounts before any
     // further state work (tool switch via `onFinishedOneShot`,
     // engine op via `onCreate`). The conditional `{textboxEditor !==
@@ -887,10 +959,15 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     onFinishedOneShot?.();
   };
 
-  const commitNote = (): void => {
+  const commitNote = (offset: { x: number; y: number }): void => {
     if (noteEditor === null) return;
-    const at = noteEditor.at;
     const text = noteEditor.text.trim();
+    // Bug 3 — same dragged-toolbox rule as the textbox: the note
+    // lands where the editor window is when confirmed.
+    const at = {
+      x: noteEditor.at.x + offset.x / cssScale,
+      y: noteEditor.at.y + offset.y / cssScale,
+    };
     setNoteEditor(null);
     // Empty notes are never useful — bail before sending the engine a
     // no-op (and before calling onFinishedOneShot) so the tool deactivates
@@ -915,12 +992,20 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
    *  fixed at drag-release time; the user typed into the inline editor
    *  while the box was open. Empty-text callouts bail out like the
    *  textbox/note flows so a stray drag doesn't litter the doc with
-   *  empty boxes. */
-  const commitCallout = (): void => {
+   *  empty boxes. Bug 3 — a dragged callout editor commits box AND
+   *  anchor at the dragged position (offset applied to both). */
+  const commitCallout = (offset: { x: number; y: number }): void => {
     if (calloutEditor === null) return;
     const text = calloutEditor.text.trim();
-    const box = calloutEditor.box;
-    const at = calloutEditor.at;
+    const dx = offset.x / cssScale;
+    const dy = offset.y / cssScale;
+    const box = {
+      x: calloutEditor.box.x + dx,
+      y: calloutEditor.box.y + dy,
+      width: calloutEditor.box.width,
+      height: calloutEditor.box.height,
+    };
+    const at = { x: calloutEditor.at.x + dx, y: calloutEditor.at.y + dy };
     setCalloutEditor(null);
     if (text.length === 0) {
       onFinishedOneShot?.();
@@ -944,18 +1029,32 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     textboxEditor !== null ||
     noteEditor !== null ||
     calloutEditor !== null ||
-    // DEF-096 — a committed-note edit popover is open; the layer
-    // must stay pointer-active so the editor's textarea and action
-    // bar receive interactions.
-    editingNote !== null ||
-    editTarget !== null ||
-    colorEditId !== null ||
-    // DEF-154 — while content is SELECTED (movable) the layer must
-    // be a real hit surface: the blank-page press that deselects /
-    // reverts lands on the layer's pointerdown, and the selection
-    // chrome is hosted inside it.
-    selectedAnnId !== null ||
-    annPending !== null;
+// DEF-096 — a committed-note edit popover is open; the layer
+          // must stay pointer-active so the editor's textarea and action
+          // bar receive interactions.
+          editingNote !== null ||
+          editTarget !== null ||
+          colorEditId !== null ||
+          // DEF-154 — while content is SELECTED (movable) the layer must
+          // be a real hit surface: the blank-page press that deselects /
+          // reverts lands on the layer's pointerdown, and the selection
+          // chrome is hosted inside it.
+          selectedAnnId !== null ||
+          annPending !== null;
+
+  /** Bug 1 — keyboard-activation path for a committed note icon
+   *  (Enter / Space). The icon's onEditNote callback is wired here
+   *  so the keyboard and pointer gestures share ONE entry point
+   *  (`openEditorFor`), which also disarms any armed creation tool
+   *  and selects the note. */
+  const openNoteEditorFor = useCallback(
+    (id: string): void => {
+      const ann = effectiveAnnotations.find((a) => a.id === id);
+      if (ann === undefined) return;
+      openEditorFor(ann);
+    },
+    [effectiveAnnotations, openEditorFor],
+  );
 
   // ---- previews ------------------------------------------------------------
 
@@ -987,7 +1086,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         height={svgH * cssScale}
         aria-hidden
       >
-        {effectiveAnnotations.map((a) => (
+        {renderAnnotations.map((a) => (
           <SvgAnnotation
             key={a.id}
             ann={a}
@@ -1036,18 +1135,21 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         )}
       </svg>
 
-      {effectiveAnnotations.map((a) => (
+      {renderAnnotations.map((a) => (
         <DomAnnotation
           key={a.id}
           ann={a}
           cssScale={cssScale}
           liveAnnTextIds={liveAnnTextIds}
-          // B4/B5 — the committed note whose editor is open reads
-          // as "selected" (Sign-like selection chrome: accent ring
-          // on the icon while its floating Confirm / Cancel /
-          // Delete action bar is up).
-          selected={editingNote?.id === a.id}
-          onEditNote={(id, text): void => setEditingNote({ id, text })}
+          // B4/B5 — the committed note reads as "selected" while it is
+          // SELECTED via a single click (accent ring around the icon,
+          // Sign-like selection chrome) — the same visual vocabulary
+          // the signature placements use. Bug 3 — the note icon is
+          // hidden while its edit toolbox is open (the toolbox IS the
+          // content), so the ring tracks the bar-selection state, not
+          // the editor state.
+          selected={selectedAnnId === a.id}
+          onEditNote={(id): void => openNoteEditorFor(id)}
           // DEF-153/154 — the DOM surfaces (textbox, callout box,
           // note icon) are page-interactive like the SVG kinds.
           onSurfacePointerDown={(e, ann, handle): void => beginAnnSurfaceDrag(e, ann, handle)}
@@ -1123,7 +1225,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           // always appends onto the previous text rather than over-
           // writing the initial empty string.
           onChange={(text): void => setTextboxEditor((prev) => (prev === null ? null : { ...prev, text }))}
-          onCommit={commitTextbox}
+          onCommit={(offset): void => commitTextbox(offset)}
           onCancel={(): void => {
             setTextboxEditor(null);
             onFinishedOneShot?.();
@@ -1137,7 +1239,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           cssScale={cssScale}
           pageWidthCss={widthPt * cssScale}
           onChange={(text): void => setNoteEditor({ ...noteEditor, text })}
-          onCommit={commitNote}
+          onCommit={(offset): void => commitNote(offset)}
           onCancel={(): void => {
             setNoteEditor(null);
             onFinishedOneShot?.();
@@ -1160,7 +1262,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           text={calloutEditor.text}
           cssScale={cssScale}
           onChange={(text): void => setCalloutEditor({ ...calloutEditor, text })}
-          onCommit={commitCallout}
+          onCommit={(offset): void => commitCallout(offset)}
           onCancel={(): void => {
             setCalloutEditor(null);
             onFinishedOneShot?.();
@@ -1195,14 +1297,29 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
               cssScale={cssScale}
               pageWidthCss={widthPt * cssScale}
               onChange={(text): void => setEditingNote({ ...editingNote, text })}
-              onCommit={(): void => {
+              onCommit={(offset): void => {
                 const trimmed = editingNote.text.trim();
                 setEditingNote(null);
-                if (pending !== null && pending.nextAnn.kind === "note") {
+                // Bug 3 — the toolbox drag moves the note WITH the
+                // editor: the committed anchor is the editor's current
+                // position (the pending page-drag position when one
+                // exists, else the engine position) shifted by the
+                // toolbox's drag offset (CSS px -> pt).
+                const base =
+                  pending !== null && pending.nextAnn.kind === "note"
+                    ? pending.nextAnn
+                    : target;
+                const committedAt = {
+                  x: at.x + offset.x / cssScale,
+                  y: at.y + offset.y / cssScale,
+                };
+                const toolboxMoved =
+                  Math.abs(offset.x) > 1 || Math.abs(offset.y) > 1;
+                if (toolboxMoved || pending !== null) {
                   // Move + text in one delete/re-create commit.
-                  onDeleteAnnotation?.(target.id);
-                  onCreate({ ...pending.nextAnn, text: trimmed });
-                  setAnnDraft(null);
+                  // Bug 2 — the draft stays up until the recreate
+                  // echo lands (no snap-back to the old anchor).
+                  issueMoveCommit(target, { ...base, at: committedAt, text: trimmed });
                   setAnnPending(null);
                   setSelectedAnnId(null);
                   setHintPos(null);
@@ -1275,6 +1392,12 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
                 onClose={(): void => {
                   setColorEditId(null);
                   setSelectedAnnId(null);
+                }}
+                onDelete={(): void => {
+                  revertPendingAnn(target.id);
+                  setSelectedAnnId(null);
+                  setColorEditId(null);
+                  onDeleteAnnotation?.(target.id);
                 }}
               />
             );
@@ -2237,7 +2360,10 @@ interface TextBoxEditorProps {
   text: string;
   cssScale: number;
   onChange: (text: string) => void;
-  onCommit: () => void;
+  /** Bug 3 — commit with the current toolbox drag offset (CSS px)
+   *  so a dragged editor window commits the content at the dragged
+   *  position. */
+  onCommit: (offset: { x: number; y: number }) => void;
   onCancel: () => void;
 }
 
@@ -2283,7 +2409,14 @@ export function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
         position: "absolute",
         left: at.x * cssScale + drag.offset.x,
         top: at.y * cssScale + drag.offset.y,
-        minWidth: TEXTBOX_MIN_WIDTH_PT * cssScale,
+        // Grip == body: the wrapper carries the SAME width as the
+        // textarea body (the text-length estimate). The grip strip
+        // above and the textarea below both fill it (width: 100%),
+        // so the drag bar never reads wider or narrower than the
+        // editor body. The action-bar chip is a child and can only
+        // widen the window, never leave the body narrower than the
+        // grip.
+        minWidth: widthCss,
       }}
       onPointerDown={(e): void => {
         e.stopPropagation();
@@ -2323,12 +2456,21 @@ export function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
             onCancel();
           } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
-            onCommit();
+            onCommit(drag.getOffset());
           }
         }}
         onPointerDown={(e): void => e.stopPropagation()}
         style={{
-          width: widthCss,
+          // Grip == body (unified sticky-note pattern): the textarea
+          // is the editor body and must span the same width as the
+          // "Drag to move" grip strip above it. 100% of the wrapper
+          // matches the grip's 100%; the wrapper's min-width (set in
+          // the wrapper style) keeps the floor. Before this, the
+          // textarea was pinned to the JS width estimate while the
+          // grip filled the whole wrapper — a wide action-bar chip
+          // below made the wrapper (and the grip) wider than the
+          // textarea body.
+          width: "100%",
           fontSize: TEXTBOX_FONT_PT * cssScale,
           lineHeight: TEXTBOX_LINE_HEIGHT,
           padding: TEXTBOX_PAD_PT * cssScale,
@@ -2363,7 +2505,10 @@ export function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
        * wrapper above is the single drag source for the window, and
        * bar-chrome presses bubble up to it (the bar's buttons stay
        * excluded by the wrapper's hook controls selector). */}
-      <TextBoxActionBar onCommit={onCommit} onCancel={onCancel} />
+      <TextBoxActionBar
+        onCommit={(): void => onCommit(drag.getOffset())}
+        onCancel={onCancel}
+      />
     </div>
   );
 }
@@ -2443,7 +2588,10 @@ interface NoteEditorProps {
   cssScale: number;
   pageWidthCss: number;
   onChange: (text: string) => void;
-  onCommit: () => void;
+  /** Bug 3 — commit with the current toolbox drag offset (CSS px)
+   *  so a dragged editor window commits the content at the dragged
+   *  position. */
+  onCommit: (offset: { x: number; y: number }) => void;
   onCancel: () => void;
   /** B4 — discard the in-progress note (drops the editor without
    *  creating an annotation). Mirrors the textbox / callout
@@ -2510,7 +2658,7 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
               onCancel();
             } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
               e.preventDefault();
-              onCommit();
+              onCommit(drag.getOffset());
             }
           }}
           onPointerDown={(e): void => e.stopPropagation()}
@@ -2527,7 +2675,7 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
         <button
           type="button"
           className="toolbox-action-btn toolbox-action-btn--confirm ann-textbox-action-btn ann-textbox-action-confirm ann-note-btn"
-          onClick={onCommit}
+          onClick={(): void => onCommit(drag.getOffset())}
           data-annotation-action="note-confirm"
           title="Confirm (Ctrl+Enter)"
         >
@@ -2566,7 +2714,10 @@ interface CalloutBoxEditorProps {
   text: string;
   cssScale: number;
   onChange: (text: string) => void;
-  onCommit: () => void;
+  /** Bug 3 — commit with the current toolbox drag offset (CSS px)
+   *  so a dragged editor window commits the callout at the dragged
+   *  position. */
+  onCommit: (offset: { x: number; y: number }) => void;
   onCancel: () => void;
 }
 
@@ -2598,7 +2749,16 @@ function CalloutBoxEditor(
         position: "absolute",
         left: box.x * cssScale + drag.offset.x,
         top: box.y * cssScale + drag.offset.y,
-        minWidth: TEXTBOX_MIN_WIDTH_PT * cssScale,
+        // Grip == body: the wrapper is at least as wide as the drawn
+        // callout text-box (or the shared minimum). The grip strip
+        // and the textarea both fill it (width: 100%), so the drag
+        // bar always matches the editor body width — never wider,
+        // never narrower (the action-bar chip below can only widen
+        // the window, and the body stretches to match).
+        minWidth: Math.max(
+          box.width * cssScale,
+          TEXTBOX_MIN_WIDTH_PT * cssScale,
+        ),
       }}
       onPointerDown={(e): void => {
         e.stopPropagation();
@@ -2625,15 +2785,19 @@ function CalloutBoxEditor(
             onCancel();
           } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
             e.preventDefault();
-            onCommit();
+            onCommit(drag.getOffset());
           }
         }}
         onPointerDown={(e): void => e.stopPropagation()}
         style={{
-          width: Math.max(
-            box.width * cssScale,
-            TEXTBOX_MIN_WIDTH_PT * cssScale,
-          ),
+          // Grip == body (unified sticky-note pattern): fills the
+          // wrapper exactly like the "Drag to move" grip strip above
+          // it; the wrapper's min-width keeps the drawn text-box
+          // floor. Before this the textarea was pinned to the drawn
+          // box width while the grip filled the whole wrapper, so a
+          // small box below a wide action-bar chip read as a drag bar
+          // bigger than its body.
+          width: "100%",
           fontSize: TEXTBOX_FONT_PT * cssScale,
           lineHeight: TEXTBOX_LINE_HEIGHT,
           padding: TEXTBOX_PAD_PT * cssScale,
@@ -2660,7 +2824,7 @@ function CalloutBoxEditor(
         <button
           type="button"
           className="toolbox-action-btn toolbox-action-btn--confirm ann-textbox-action-btn ann-textbox-action-confirm"
-          onClick={onCommit}
+          onClick={(): void => onCommit(drag.getOffset())}
           data-annotation-action="callout-confirm"
           aria-label="Confirm callout"
           title="Confirm (Ctrl+Enter)"
@@ -2839,7 +3003,12 @@ function CommittedContentEditor(props: CommittedContentEditorProps): ReactElemen
         position: "absolute",
         left: rect.x * cssScale + drag.offset.x,
         top: rect.y * cssScale + drag.offset.y,
-        minWidth: TEXTBOX_MIN_WIDTH_PT * cssScale,
+        // Grip == body: the wrapper carries the text-length estimate
+        // width (same floor the textarea kept before). The grip strip
+        // above and the textarea below both fill it (width: 100%), so
+        // the drag bar never reads wider or narrower than the editor
+        // body; the color row stretches to the same window width.
+        minWidth: widthCss,
       }}
       onPointerDown={(e): void => {
         e.stopPropagation();
@@ -2865,7 +3034,11 @@ function CommittedContentEditor(props: CommittedContentEditorProps): ReactElemen
         }}
         onPointerDown={(e): void => e.stopPropagation()}
         style={{
-          width: widthCss,
+          // Grip == body (unified sticky-note pattern): fills the
+          // wrapper exactly like the "Drag to move" grip strip above
+          // it; the wrapper's min-width keeps the annotation-rect /
+          // text floor. The color row stretches to the same width.
+          width: "100%",
           fontSize: TEXTBOX_FONT_PT * cssScale,
           lineHeight: TEXTBOX_LINE_HEIGHT,
           padding: TEXTBOX_PAD_PT * cssScale,
@@ -3007,29 +3180,81 @@ interface ShapeColorEditorProps {
   active: AnnotationColorValue;
   onPick: (color: AnnotationColorValue) => void;
   onClose: () => void;
+  /** The shared Delete verb every floating toolbox carries (the same
+   *  Confirm / Cancel / Delete action bar as the note / textbox /
+   *  callout editors): removes the annotation while its color editor
+   *  is open. */
+  onDelete: () => void;
 }
 
 function ShapeColorEditor(props: ShapeColorEditorProps): ReactElement {
-  const { left, top, active, onPick, onClose } = props;
+  const { left, top, active, onPick, onClose, onDelete } = props;
+  // Canonical floating-toolbox chrome (DEF-153 unification): the
+  // whole window moves from its "Drag to move" grip strip / chrome;
+  // the swatches, the hex input and the action buttons stay controls
+  // (the same drag wiring every other floating editor uses).
+  const drag = useDragWindow({
+    controlsSelector: "button, input, select, textarea, [role='button']",
+  });
   return (
     <TfBar
-      className="content-action-bar shape-color-editor"
+      ref={(el): void => {
+        drag.windowRef(el);
+      }}
+      className={
+        drag.dragging
+          ? "shape-color-editor shape-color-editor-dragging"
+          : "shape-color-editor"
+      }
       data-annotation-color-editor
       role="dialog"
       aria-label="Edit annotation color"
-      style={{ left, top }}
-      onPointerDown={(e): void => e.stopPropagation()}
+      style={{ left: left + drag.offset.x, top: top + drag.offset.y }}
+      onPointerDown={(e): void => {
+        e.stopPropagation();
+        drag.handleProps.onPointerDown(e);
+      }}
     >
-      <AnnotationColorPicker active={active} onPick={onPick} onEscape={onClose} />
-      <button
-        type="button"
-        className="toolbox-action-btn content-color-close"
-        onClick={onClose}
-        aria-label="Close color editor"
-        title="Close (Esc)"
+      <ContentGrip handleName="shape-color-editor" />
+      <div className="shape-color-editor-body">
+        <AnnotationColorPicker active={active} onPick={onPick} onEscape={onClose} />
+      </div>
+      <div
+        className="ann-textbox-actions"
+        data-annotation-action-bar="color"
+        style={{ pointerEvents: "auto", position: "relative", zIndex: 5 }}
       >
-        <X size={16} aria-hidden />
-      </button>
+        <button
+          type="button"
+          className="toolbox-action-btn toolbox-action-btn--confirm ann-textbox-action-btn ann-textbox-action-confirm"
+          onClick={onClose}
+          data-annotation-action="color-confirm"
+          aria-label="Confirm color"
+          title="Done (Esc)"
+        >
+          Confirm
+        </button>
+        <button
+          type="button"
+          className="toolbox-action-btn toolbox-action-btn--cancel ann-textbox-action-btn ann-textbox-action-cancel"
+          onClick={onClose}
+          data-annotation-action="color-cancel"
+          aria-label="Cancel"
+          title="Cancel (Esc)"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="toolbox-action-btn toolbox-action-btn--delete ann-textbox-action-btn ann-textbox-action-delete"
+          onClick={onDelete}
+          data-annotation-action="color-delete"
+          aria-label="Delete annotation"
+          title="Delete annotation"
+        >
+          Delete
+        </button>
+      </div>
     </TfBar>
   );
 }

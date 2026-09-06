@@ -55,8 +55,15 @@
    * frosted COLORS (--tf-bg / --tf-surface-* / --tf-text-* /
    * --tf-border/highlight/divider) live inside the [data-theme="frosted"]
    * block so they only exist when the frosted theme is active. */
-  --tf-acrylic-opacity-main: 0.92;
-  --tf-acrylic-blur: 18px;
+  /* Phase C — glass-material retune. The sheets must read as REAL
+   * frosted glass: translucent (0.60-0.85 band, never near-opaque),
+   * with the blur heavy enough that page content diffuses behind the
+   * chrome instead of staying crisp. --tf-acrylic-opacity-main is a
+   * legacy alias kept for any rule that read the old token; the live
+   * ladder lives on the per-surface --tf-surface-* tokens in the
+   * frosted block. */
+  --tf-acrylic-opacity-main: 0.78;
+  --tf-acrylic-blur: 22px;
   --tf-radius-sm: 5px;
   --tf-radius-md: 8px;
   --tf-radius-lg: 10px;
@@ -334,18 +341,35 @@
   --error: #d96c63;
   --error-soft: rgba(217, 108, 99, 0.16);
 
+  /* Phase C — dark tool icons. The :root palette is tuned for the
+   * light surfaces; on the near-black dark panels the same mid-tone
+   * hues drop below the comfortable floor, so each icon gets a
+   * slightly BRIGHTER variant here. Three themes, three distinct
+   * palettes: light/root = saturated mid-tones, dark = brighter,
+   * frosted = deeper light-tuned hues. */
+  --icon-blue: #63a8e8;
+  --icon-cyan: #55c2d2;
+  --icon-green: #7fbd8f;
+  --icon-orange: #e98a42;
+  --icon-yellow: #e0b054;
+  --icon-purple: #ab93e0;
+  --icon-red: #e07a74;
+  --icon-pink: #d88bb0;
+
   color-scheme: dark;
 }
 
 /* ===========================================================================
  * Phase-15 — FROSTED theme (the third theme, the default).
  *
- * A medium-light frosted acrylic material: a cool blue-gray slate
- * base lifted well above the flat dark theme's near-black, per-surface
- * translucent sheets (rgba 0.78–0.92) for the chrome, brighter
- * light-catching hairlines, and a light text ladder. The chrome reads
- * as "premium frosted glass" — clearly lighter than the flat layered
- * dark theme (which stays untouched above) and never near-black.
+ * A LIGHT frosted acrylic material: a very light cool blue-gray
+ * (near-white) base with per-surface translucent white sheets
+ * (rgba 0.84–0.97) for the chrome, a dark text ladder for excellent
+ * readability, and soft cool shadows. The chrome reads as a premium
+ * light frosted-glass pane (macOS / Windows-11 light acrylic) —
+ * deliberately NOT the flat dark theme and NOT the old dark-slate
+ * frosted attempt (#18212c base) which the design correction
+ * replaced with this light direction.
  *
  * Two contracts are sacred here:
  *   1. The PDF document is NEVER acrylic. `.pdf-page` / `.page-slot` /
@@ -363,58 +387,58 @@
  * per-rule restyle (that sweep is Phase B).
  * ------------------------------------------------------------------------- */
 :root[data-theme="frosted"] {
-  /* Medium-light frosted slate palette. The material is a cool
-   * blue-gray acrylic lit from above, NOT a near-black surface: the
-   * base (#18212c) is the darkest layer but is clearly lighter than
-   * the flat dark theme's #0b0d0f, and each chrome family picks a
-   * slightly lighter sheet while staying comfortably darker than the
-   * paper-white page. */
-  --tf-bg: #18212c;
-  --tf-surface-1: #2c3948;
-  --tf-surface-2: #344354;
-  --tf-surface-3: #3a4a5b;
-  /* Phase B — per-surface acrylic sheets (the spec's exact values).
-   * One subtle value per chrome family so the workspace reads as ONE
-   * continuous frosted material with four hierarchy levels (frame ->
-   * toolbar/sidebars -> floating -> menus/dialogs), never as
-   * independent cards. The chrome is 0.78-0.92 translucent + blur —
-   * slightly MORE see-through than the original 0.94 so the material
-   * genuinely reads as acrylic; the document stays a pristine solid
-   * sheet. */
-  --tf-surface-frame: rgba(36, 46, 58, 0.82);    /* window frame / titlebar */
-  --tf-surface-toolbar: rgba(41, 52, 65, 0.80);  /* command + annotation toolbars, search */
-  --tf-surface-rail: rgba(39, 49, 62, 0.82);     /* left thumbnail sidebar */
-  --tf-surface-panel: rgba(46, 58, 72, 0.80);    /* right tools panel */
-  --tf-surface-menu: rgba(52, 64, 79, 0.86);     /* menus / popovers */
-  --tf-surface-dialog: rgba(55, 68, 84, 0.92);   /* dialogs / sheets */
-  --tf-surface-float: rgba(58, 71, 87, 0.86);    /* floating chip controls */
-  --tf-surface-tab-active: rgba(58, 71, 88, 0.90); /* active tab (lighter than frame) */
+  /* Light frosted palette. The material is a cool white acrylic lit
+   * from above: the base (#eef1f6) is a very light cool gray — almost
+   * white — and each chrome family picks a slightly lighter, more
+   * opaque white sheet so the hierarchy reads through surface
+   * brightness and opacity, never through darkness. */
+  --tf-bg: #eef1f6;
+  --tf-surface-1: #f7f8fa;
+  --tf-surface-2: #f3f5f8;
+  --tf-surface-3: #ffffff;
+  /* Phase C — glass-material opacity ladder. One alpha per chrome
+   * family so the workspace reads as ONE continuous frosted pane with
+   * four hierarchy levels (frame -> toolbar/sidebars -> floating ->
+   * menus/dialogs), never as near-opaque plastic cards. The sheets
+   * sit in the 0.60-0.85 translucent band: low enough that the
+   * workspace tonal glow and the scrolling page content visibly
+   * diffuse through the blur behind each sheet, high enough that the
+   * dark text ladder keeps its contrast. Diffuses, never hides. */
+  --tf-surface-frame: rgba(247, 248, 250, 0.62);    /* window frame / titlebar */
+  --tf-surface-toolbar: rgba(248, 249, 251, 0.68);  /* command + annotation toolbars, search */
+  --tf-surface-rail: rgba(243, 245, 249, 0.70);     /* left thumbnail sidebar (cooler) */
+  --tf-surface-panel: rgba(250, 251, 253, 0.78);    /* right tools panel — floating sheet */
+  --tf-surface-menu: rgba(252, 252, 253, 0.80);     /* menus / popovers */
+  --tf-surface-dialog: rgba(255, 255, 255, 0.85);   /* dialogs / sheets */
+  --tf-surface-float: rgba(255, 255, 255, 0.82);    /* floating chip controls */
+  --tf-surface-tab-active: rgba(255, 255, 255, 0.76); /* active tab (a touch clearer than frame) */
   /* Phase-A legacy aliases — the old names keep resolving into the
    * new per-surface hierarchy so nothing regresses. */
   --tf-surface-1-acrylic: var(--tf-surface-toolbar);
   --tf-surface-2-acrylic: var(--tf-surface-rail);
   --tf-surface-3-acrylic: var(--tf-surface-dialog);
-  /* Hairlines read as light catching the frosted edge: a brighter
-   * white top edge (0.10-0.14 alpha), never a white outline. */
-  --tf-border: rgba(255, 255, 255, 0.12);
-  --tf-highlight: rgba(255, 255, 255, 0.10);
-  --tf-divider: rgba(255, 255, 255, 0.08);
-  --tf-text-primary: #f2f5f8;
-  --tf-text-secondary: #b8c2cc;
-  --tf-text-tertiary: #8a96a4;
-  --tf-text-disabled: #66707c;
+  /* Hairlines read as a cool light-gray edge catching the frosted
+   * pane — never a white outline and never black. */
+  --tf-border: #d8dee8;
+  --tf-highlight: rgba(255, 255, 255, 0.6);
+  --tf-divider: #e6ebf1;
+  /* Dark text ladder — high readability on the near-white sheets. */
+  --tf-text-primary: #232a36;
+  --tf-text-secondary: #3a4657;
+  --tf-text-tertiary: #64748b;
+  --tf-text-disabled: #94a3b8;
 
-  /* Base + workspace. The document canvas stays a SOLID medium slate —
-   * the workspace is never translucent (only chrome gets the blur). */
+  /* Base + workspace. The document canvas stays a SOLID very light
+   * cool gray — never translucent (only chrome gets the blur). */
   --bg-base: var(--tf-bg);
-  --bg-sunken: #141c26;
+  --bg-sunken: #e9edf3;
   --bg-raised: var(--tf-surface-dialog);
   --bg-toolbar: var(--tf-surface-toolbar);
   --bg-rail: var(--tf-surface-rail);
   --bg-canvas: var(--tf-bg);
-  --bg-hover: var(--tf-highlight);
-  --bg-active: rgba(255, 255, 255, 0.12);
-  --bg-input: var(--tf-surface-toolbar);
+  --bg-hover: rgba(15, 23, 42, 0.05);
+  --bg-active: rgba(15, 23, 42, 0.09);
+  --bg-input: rgba(255, 255, 255, 0.92);
   --bg-tab: transparent;
   --bg-tab-active: var(--tf-surface-tab-active);
 
@@ -423,73 +447,74 @@
   --bg-elevated: var(--tf-surface-dialog);
   --bg-panel: var(--tf-surface-panel);
 
-  /* Text ladder — spec values. Secondary/tertiary stay bright enough
-   * to read on the lifted slate sheets; only the disabled tier drops
-   * below the readable floor. */
+  /* Text ladder — dark values that read crisply on the light sheets;
+   * only the disabled tier drops to the muted floor. */
   --fg-strong: var(--tf-text-primary);
   --fg: var(--tf-text-secondary);
   --fg-muted: var(--tf-text-tertiary);
-  --fg-soft: #a5b0bc;
+  --fg-soft: #475569;
   --fg-faint: var(--tf-text-disabled);
-  --fg-disabled: var(--tf-text-disabled);
+  --fg-disabled: #b6bcc6;
   --fg-on-accent: #ffffff;
 
   /* Hairlines */
   --border: var(--tf-border);
-  --border-strong: rgba(255, 255, 255, 0.16);
-  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-strong: #cbd5e1;
+  --border-subtle: #ebeff4;
   --divider: var(--tf-divider);
 
   /* Menus + floating surfaces — acrylic so they read as one
-   * continuous frosted glass layer over the workspace. */
+   * continuous light frosted glass layer over the workspace. */
   --menu-bg: var(--tf-surface-menu);
-  --menu-border: var(--tf-border);
+  --menu-border: #d5dce6;
 
   --sample-card-bg: var(--tf-surface-2);
   --sample-card-bg-hover: var(--tf-surface-3);
   --sample-card-border: var(--tf-border);
   --sample-card-border-hover: rgba(224, 122, 45, 0.35);
 
-  --shadow-page: 0 4px 18px rgba(0, 0, 0, 0.32);
-  --shadow-menu: 0 2px 8px rgba(0, 0, 0, 0.28), 0 10px 28px rgba(0, 0, 0, 0.3);
-  --shadow-dialog: 0 4px 16px rgba(0, 0, 0, 0.3), 0 14px 44px rgba(0, 0, 0, 0.34);
-  --shadow-popover: 0 2px 6px rgba(0, 0, 0, 0.26), 0 10px 26px rgba(0, 0, 0, 0.28);
-  --shadow-toast: 0 4px 12px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.22);
+  /* Soft cool shadows — elevation without harsh black. */
+  --shadow-page: 0 2px 10px rgba(15, 23, 42, 0.08), 0 10px 28px rgba(15, 23, 42, 0.08);
+  --shadow-menu: 0 2px 8px rgba(15, 23, 42, 0.08), 0 10px 26px rgba(15, 23, 42, 0.10);
+  --shadow-dialog: 0 4px 14px rgba(15, 23, 42, 0.10), 0 14px 42px rgba(15, 23, 42, 0.14);
+  --shadow-popover: 0 2px 6px rgba(15, 23, 42, 0.06), 0 10px 24px rgba(15, 23, 42, 0.10);
+  --shadow-toast: 0 4px 12px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.05);
 
   /* Loading placeholders sit against the lighter rail/workspace, so
    * the well reads as a hair lighter than its container. */
-  --placeholder-from: #283240;
-  --placeholder-to: #36424f;
+  --placeholder-from: #edf1f6;
+  --placeholder-to: #e1e7ef;
 
-  --hit: rgba(96, 165, 250, 0.32);
-  --hit-active: rgba(96, 165, 250, 0.6);
+  --hit: rgba(37, 99, 235, 0.28);
+  --hit-active: rgba(37, 99, 235, 0.55);
 
-  /* Semantic state tokens — same values as the flat dark theme so
-   * toasts / pills / validation read identically against the
+  /* Semantic state tokens — same values as the light (:root) theme so
+   * toasts / pills / validation read identically against the light
    * acrylic chrome. The accent is NOT brightened per theme. */
-  --info: #6e8fbf;
-  --info-soft: rgba(110, 143, 191, 0.16);
+  --info: #5b7bb5;
+  --info-soft: rgba(91, 123, 181, 0.12);
   --success: #76a66a;
-  --success-soft: rgba(118, 166, 106, 0.16);
+  --success-soft: rgba(118, 166, 106, 0.12);
   --warning: #d9a441;
-  --warning-soft: rgba(217, 164, 65, 0.18);
+  --warning-soft: rgba(217, 164, 65, 0.14);
   --error: #d96c63;
-  --error-soft: rgba(217, 108, 99, 0.16);
+  --error-soft: rgba(217, 108, 99, 0.12);
 
-  /* Phase C — frosted-muted tool icons. Light and flat-dark keep the
-   * full-saturation :root palette; on the lighter frosted glass the
-   * same hues would glare, so each icon is pulled partway toward the
-   * slate material. Still unmistakably colorful, never monochrome. */
-  --icon-blue: #5f9ed3;
-  --icon-cyan: #56b1c1;
-  --icon-green: #74b085;
-  --icon-orange: #d58040;
-  --icon-yellow: #cba356;
-  --icon-purple: #9a85cf;
-  --icon-red: #cb7671;
-  --icon-pink: #c782a9;
+  /* Phase C — light-frosted tool icons. Light and flat-dark keep the
+   * full-saturation :root palette; on the near-white frosted sheets
+   * the SAME hues would wash out, so each icon is pulled slightly
+   * deeper (still vivid, still unmistakably colorful, never
+   * monochrome) so the hue holds its contrast on white glass. */
+  --icon-blue: #4d8fd8;
+  --icon-cyan: #3cb7c9;
+  --icon-green: #65a87b;
+  --icon-orange: #d9762f;
+  --icon-yellow: #d3a03f;
+  --icon-purple: #9674cf;
+  --icon-red: #d0615d;
+  --icon-pink: #c9769f;
 
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 /* Phase-15 — frosted chrome treatment: blur(18px) saturate(115%) on
@@ -512,8 +537,8 @@
 :root[data-theme="frosted"] .sheet,
 :root[data-theme="frosted"] .color-popover,
 :root[data-theme="frosted"] .toast {
-  -webkit-backdrop-filter: blur(var(--tf-acrylic-blur)) saturate(115%);
-  backdrop-filter: blur(var(--tf-acrylic-blur)) saturate(115%);
+  -webkit-backdrop-filter: blur(var(--tf-acrylic-blur)) saturate(130%);
+  backdrop-filter: blur(var(--tf-acrylic-blur)) saturate(130%);
 }
 
 /* ---------------------------------------------------------------------------
@@ -1514,8 +1539,8 @@ input[type="checkbox"] {
  * alpha per theme, lighter than the standard 0.04), no card chrome. */
 .recent-row:hover { background: rgba(15, 23, 42, 0.035); }
 
-:root[data-theme="dark"] .recent-row:hover,
-:root[data-theme="frosted"] .recent-row:hover { background: rgba(255, 255, 255, 0.035); }
+:root[data-theme="dark"] .recent-row:hover { background: rgba(255, 255, 255, 0.035); }
+:root[data-theme="frosted"] .recent-row:hover { background: rgba(15, 23, 42, 0.035); }
 
 .recent-row-open {
   flex: 1 1 auto;
@@ -3354,11 +3379,14 @@ rect.ann-highlight.ann-preview {
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.18));
 }
 
-/* B4/B5 — Sign-like selection state for a committed note. While
- * the note's floating editor (Confirm / Cancel / Delete action
- * bar) is open, the icon carries an accent ring so the selected
- * note is visible on the page — the same visual vocabulary the
- * signature placements use for their selected state. */
+/* B4/B5 — Sign-like selection state for a committed note. While the
+ * note is SELECTED (single click → Confirm/Edit/Delete bar, the same
+ * model every annotation kind uses), the icon carries an accent ring
+ * so the selected note is visible on the page — the same visual
+ * vocabulary the signature placements use for their selected state.
+ * Bug 3 — the icon is hidden while the note's edit toolbox is open
+ * (the toolbox holds the content), so the ring belongs to the
+ * bar-selection state, not the editor state. */
 .ann-note-selected {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -3490,6 +3518,15 @@ rect.ann-highlight.ann-preview {
 .ann-textbox-wrap .ann-textbox-editor {
   border-radius: 0 0 var(--radius-1) var(--radius-1);
   border-top: none;
+  /* Grip == body — the unified sticky-note window pattern. The
+   * textarea IS the editor body; it must span the same width as the
+   * "Drag to move" grip strip above it. Both are width: 100% of the
+   * wrapper (which the JSX also pins on the textarea inline), so the
+   * drag bar can never read wider or narrower than the editor body —
+   * regardless of the textarea's own intrinsic (cols-based) width or
+   * a wide action-bar chip below widening the window. Mirrors the
+   * note editor's `width: 100%` textarea. */
+  width: 100%;
 }
 .ann-textbox-wrap .ann-textbox-editor:focus {
   border-top: none;
@@ -3585,12 +3622,43 @@ rect.ann-highlight.ann-preview {
   user-select: none;
 }
 
-/* DEF-153/154 — the shape / ink / arrow color edit toolbox: swatch
- * row + hex input inside the shared content-action-bar chrome.
- * DEF-161 (feature) — the committed textbox / callout edit toolbox
- * carries the SAME swatch row (`.committed-color-row`) so text kinds
- * get color options with an identical look: the selectors below are
- * shared between the two containers. */
+/* DEF-153/154 — the shape / ink / arrow color EDIT TOOLBOX. Now a
+ * full floating window matching the canonical editor pattern
+ * (grip strip on top + content row + Confirm / Cancel / Delete bar
+ * at the bottom): the sticky-note editor chrome every floating
+ * toolbox shares. The window is draggable from its grip / chrome via
+ * the shared useDragWindow hook. */
+.shape-color-editor {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  width: max-content;
+  z-index: 12;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-popover);
+  /* AGENTS.md cross-bubbling guard: the toolbox is a real hit
+   * surface — its swatches / inputs / buttons must stay clickable
+   * even though it floats over the page canvas. */
+  pointer-events: auto;
+}
+
+.shape-color-editor .content-grip {
+  border-radius: var(--radius-1);
+}
+
+.shape-color-editor-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 0;
+  pointer-events: auto;
+}
+
 .shape-color-editor .content-color-swatch,
 .committed-color-row .content-color-swatch {
   width: 18px;
@@ -3620,12 +3688,6 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
   font-size: var(--fs-xs);
   font-family: var(--font-mono);
-}
-.shape-color-editor .content-color-close {
-  color: var(--fg-muted);
-}
-.shape-color-editor .content-color-close:hover {
-  color: var(--fg-strong);
 }
 
 .visually-hidden {
@@ -4255,12 +4317,12 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
 }
 
-/* The frosted chip floats directly over the paper-white page, so it
- * stays a comparatively opaque slate chip (near-white text must read
- * against it) — but it is lifted from the near-black dark-wash into
- * the frosted slate material. */
+/* The frosted chip floats directly over the paper-white page. The
+ * light material keeps a LIGHT chip with dark text (identical to the
+ * light theme's white wash) — the accent border carries the state; a
+ * dark chip would fight the light frosted chrome. */
 :root[data-theme="frosted"] .form-editor {
-  background: rgba(34, 45, 60, 0.88);
+  background: rgba(255, 255, 255, 0.94);
   border-color: var(--accent);
   color: var(--fg-strong);
 }
@@ -4484,14 +4546,64 @@ rect.ann-highlight.ann-preview {
   pointer-events: none;
 }
 
-/* B10 / DEF-101 — placed-stamp DOM surface (`.stamp-annotation`).
- * Positioning is inline (the placement rect scaled by cssScale);
- * this rule ensures the surface never intercepts pointers and
- * paints above the pdf.js textLayer (which is z-index: auto) so a
- * placed stamp is never occluded by text spans. */
+/* B10 / DEF-101 / Bug 6 — placed-stamp DOM surface
+ * (`.stamp-annotation`). Positioning is inline (the placement rect
+ * scaled by cssScale); this rule paints the surface above the pdf.js
+ * textLayer (which is z-index: auto) so a placed stamp is never
+ * occluded by text spans. Since Bug 6 the surface is INTERACTIVE
+ * (select / move / resize / delete like every annotation): it
+ * receives pointers when the annotation layer above it is inactive
+ * (plain select view) and yields to the annotation layer whenever a
+ * creation tool is armed / an editor is open (the layer's z-index 2
+ * sits above this z-index 1 and the layer is pointer-active then).
+ * The `--accent` hover wash + grab cursor advertise the grab
+ * surface; the selection chrome reuses the shared content-action-bar
+ * machinery. */
 .stamp-annotation {
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
   user-select: none;
+  touch-action: none;
+}
+
+.stamp-annotation:hover {
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+.stamp-annotation-dragging {
+  cursor: grabbing;
+  opacity: 0.75;
+}
+
+/* Bug 6 — the stamp-type picker (the Edit toolbox for a placed
+ * stamp). A compact floating window listing the four built-in stamp
+ * ids; picking one applies instantly (retype) and closes. Uses the
+ * same frosted surface vocabulary as the annotation toolboxes. */
+.stamp-type-editor-wrap {
+  padding: 8px;
+  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+}
+
+.stamp-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.stamp-type-btn {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.stamp-type-btn-active,
+.stamp-type-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .sig-placement {
@@ -5955,8 +6067,7 @@ rect.ann-highlight.ann-preview {
   font-weight: 600;
 }
 
-:root[data-theme="dark"] .optimize-fft-negative,
-:root[data-theme="frosted"] .optimize-fft-negative { color: #fbbf24; }
+:root[data-theme="dark"] .optimize-fft-negative { color: #fbbf24; }
 
 .optimize-error {
   color: #b91c1c;
@@ -5967,8 +6078,7 @@ rect.ann-highlight.ann-preview {
   animation: shake-x var(--tf-motion-emphasized) var(--tf-ease-emphasized);
 }
 
-:root[data-theme="dark"] .optimize-error,
-:root[data-theme="frosted"] .optimize-error { color: #f87171; }
+:root[data-theme="dark"] .optimize-error { color: #f87171; }
 
 .audit-dialog { width: min(520px, calc(100vw - 32px)); }
 
@@ -6866,11 +6976,13 @@ rect.ann-highlight.ann-preview {
   background: rgba(14, 17, 21, 0.82);
 }
 
-/* The suspects bar floats over the top of the workspace (page top
- * edge), so it keeps a comparatively dark-ish slate chip for the
- * near-white text — but lifted from near-black into frosted slate. */
+/* The suspects bar sits at the top of the workspace over the light
+ * tonal background, so it is a light frosted glass strip with the
+ * dark text ladder — the same material family as the toolbar.
+ * (DEF-126: the bar is a flow element; the light sheet reads as a
+ * floating strip over the page content.) */
 :root[data-theme="frosted"] .ocr-suspects-panel {
-  background: rgba(31, 41, 53, 0.84);
+  background: rgba(248, 249, 251, 0.9);
 }
 
 /* DEF-126 — Tools palette downshift. The palette is an
@@ -7076,8 +7188,7 @@ rect.ann-highlight.ann-preview {
   background: #b91c1c;
 }
 
-:root[data-theme="dark"] .ocr-suspects-confidence-low > span,
-:root[data-theme="frosted"] .ocr-suspects-confidence-low > span {
+:root[data-theme="dark"] .ocr-suspects-confidence-low > span {
   background: #f87171;
 }
 
@@ -7171,8 +7282,7 @@ rect.ann-highlight.ann-preview {
   box-sizing: border-box;
 }
 
-:root[data-theme="dark"] .crop-editor-mask,
-:root[data-theme="frosted"] .crop-editor-mask {
+:root[data-theme="dark"] .crop-editor-mask {
   /* Slightly stronger alpha so the orange wash stays legible
    * against the dark dialog surface. */
   background: rgba(224, 122, 45, 0.1);
@@ -7202,8 +7312,7 @@ rect.ann-highlight.ann-preview {
 
 .crop-editor-handle-ne, .crop-editor-handle-sw { cursor: nesw-resize; }
 
-:root[data-theme="dark"] .crop-editor-handle,
-:root[data-theme="frosted"] .crop-editor-handle {
+:root[data-theme="dark"] .crop-editor-handle {
   background: var(--accent);
   border-color: #0f172a;
 }
@@ -7610,6 +7719,8 @@ rect.ann-highlight.ann-preview {
 .tools-palette-entry[data-tool-id="sign"]:hover .tools-palette-entry-icon { color: var(--icon-orange); }
 .tools-palette-entry[data-tool-id="forms"] .tools-palette-entry-icon,
 .tools-palette-entry[data-tool-id="forms"]:hover .tools-palette-entry-icon { color: var(--icon-red); }
+.tools-palette-entry[data-tool-id="flatten"] .tools-palette-entry-icon,
+.tools-palette-entry[data-tool-id="flatten"]:hover .tools-palette-entry-icon { color: var(--icon-purple); }
 .tools-palette-entry[data-tool-id="optimize"] .tools-palette-entry-icon,
 .tools-palette-entry[data-tool-id="optimize"]:hover .tools-palette-entry-icon { color: var(--icon-green); }
 .tools-palette-entry[data-tool-id="audit"] .tools-palette-entry-icon,
@@ -7700,30 +7811,23 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .titlebar {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -1px 0 rgba(8, 14, 22, 0.35);
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(138, 152, 170, 0.35);
 }
 
 /* Primary command toolbar + secondary/annotation toolbar + search:
  * the same acrylic layer, sitting just above the frame. The two lower
- * rows get a faint white wash overlay so the toolbar stack reads as
- * layered material — slightly brighter per row — never as borders.
- * Active tools get the spec's 0.13 orange wash PLUS a soft warm
- * ambient glow (the accent control lights up the glass around it). */
+ * rows are subtly lighter sheets (their own --tf-surface-toolbar
+ * base already separates them); the inset edges put a bright light
+ * catch on top and a soft cool lower edge on each row. Active tools
+ * get the spec's 0.13 orange wash PLUS a soft warm ambient glow (the
+ * accent control lights up the glass around it). */
 :root[data-theme="frosted"] .toolbar,
 :root[data-theme="frosted"] .ann-toolbar,
 :root[data-theme="frosted"] .search-bar {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.10),
-    inset 0 -1px 0 rgba(8, 14, 22, 0.22);
-}
-
-:root[data-theme="frosted"] .ann-toolbar {
-  background-image: linear-gradient(rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0) 55%);
-}
-
-:root[data-theme="frosted"] .search-bar {
-  background-image: linear-gradient(rgba(255, 255, 255, 0.02) 0%, rgba(255, 255, 255, 0) 55%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(138, 152, 170, 0.25);
 }
 
 :root[data-theme="frosted"] .tool-btn-active {
@@ -7731,70 +7835,76 @@ rect.ann-highlight.ann-preview {
   box-shadow: inset 0 0 0 1px rgba(224, 122, 45, 0.3), 0 2px 10px rgba(224, 122, 45, 0.16);
 }
 
-/* Left thumbnail sidebar — a distinct acrylic sheet (slightly darker
+/* Left thumbnail sidebar — a distinct acrylic sheet (slightly cooler
  * than the toolbars so the page list sits behind the command row). */
 :root[data-theme="frosted"] .side-rail {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    inset 0 -1px 0 rgba(8, 14, 22, 0.25);
+    inset 1px 0 0 rgba(255, 255, 255, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -1px 0 rgba(138, 152, 170, 0.25);
 }
 
-/* Right Tools panel — the clearest frosted example: clearly lighter
- * translucent slate, soft ambient shadow off the left edge, rounded
- * sheet corners (it docks flush right), a crisp light-catching edge
- * where it meets the white page, and a faint inner top highlight. */
+/* Right Tools panel — the clearest frosted example in the light
+ * material: a near-white translucent sheet floating above the tonal
+ * workspace, soft cool ambient shadow off the left edge, rounded
+ * sheet corners (it docks flush right), a crisp cool hairline where
+ * it meets the white page, and a faint inner top highlight. */
 :root[data-theme="frosted"] .tools-palette {
   background: var(--tf-surface-panel);
-  border-left-color: rgba(255, 255, 255, 0.14);
+  border-left-color: #d8dee8;
   border-radius: var(--tf-radius-md) 0 0 var(--tf-radius-md);
   box-shadow:
-    -12px 0 32px rgba(0, 0, 0, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    -10px 0 24px rgba(15, 23, 42, 0.12),
+    inset 0 0 1px rgba(255, 255, 255, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -8px 14px rgba(138, 152, 170, 0.12);
 }
 
-/* Menus / popovers — the floating layer: slightly lighter sheet,
- * 20px blur, hairline border at 0.12 alpha, soft shadow and a faint
- * top highlight so the panel reads as lit glass. */
+/* Menus / popovers — the floating layer: nearly opaque white sheet,
+ * cool hairline border, soft slate shadow and a faint top highlight
+ * so the panel reads as a raised lit pane. */
 :root[data-theme="frosted"] .titlebar-menu-popover,
 :root[data-theme="frosted"] .theme-toggle-popover,
 :root[data-theme="frosted"] .color-popover {
   background: var(--tf-surface-menu);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid #d5dce6;
   border-radius: var(--tf-radius-md);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 :root[data-theme="frosted"] .titlebar-menu-popover,
 :root[data-theme="frosted"] .theme-toggle-popover,
 :root[data-theme="frosted"] .color-popover {
-  -webkit-backdrop-filter: blur(20px) saturate(115%);
-  backdrop-filter: blur(20px) saturate(115%);
+  -webkit-backdrop-filter: blur(24px) saturate(130%);
+  backdrop-filter: blur(24px) saturate(130%);
 }
 
-/* Dialogs / sheets — the most opaque sheet (0.92) with the dialog
- * radius token (10px), a faint lit top edge and the retuned ambient
- * shadow. The overlay dim stays rgba(0,0,0,0.45). */
+/* Dialogs / sheets — the most opaque sheet (0.97) with the dialog
+ * radius token (10px), a faint lit top edge and the retuned soft
+ * ambient shadow. The overlay dim stays rgba(15,23,42,0.4). */
 :root[data-theme="frosted"] .modal-dialog,
 :root[data-theme="frosted"] .sheet {
   background: var(--tf-surface-dialog);
   border-radius: var(--tf-radius-lg);
-  box-shadow: var(--shadow-popover), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  box-shadow:
+    var(--shadow-popover),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(138, 152, 170, 0.2);
 }
 
-/* Floating zoom chip — a thick frosted acrylic pill: high opacity,
- * crisp light edge, shadow beneath, smooth hover/press on the global
- * motion tokens. (The 18px backdrop blur comes from its toolbar
- * host — the chip itself is not a blur surface.) */
+/* Floating zoom chip — a thick light frosted acrylic pill: high
+ * opacity, crisp cool edge, shadow beneath, smooth hover/press on the
+ * global motion tokens. It feels physically elevated but NOT 3D. */
 :root[data-theme="frosted"] .zoom-percent {
   height: 26px;
   padding: 0 8px;
   line-height: 26px;
   background: var(--tf-surface-float);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid #d5dce6;
   border-radius: var(--tf-radius-sm);
   box-shadow:
-    0 4px 14px rgba(0, 0, 0, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    0 4px 14px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transition:
     background var(--motion-fast) var(--ease-out),
     border-color var(--motion-fast) var(--ease-out),
@@ -7802,37 +7912,46 @@ rect.ann-highlight.ann-preview {
 }
 
 :root[data-theme="frosted"] .zoom-percent:hover {
-  background: rgba(64, 78, 96, 0.9);
-  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.96);
+  border-color: #ccd4e0;
   box-shadow:
-    0 6px 18px rgba(0, 0, 0, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    0 6px 18px rgba(15, 23, 42, 0.13),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 :root[data-theme="frosted"] .zoom-percent:active {
-  background: rgba(70, 85, 104, 0.92);
+  background: #eef1f6;
   box-shadow:
-    0 2px 8px rgba(0, 0, 0, 0.3),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    0 2px 8px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 /* Workspace tonal variation + top-left illumination — a very subtle
- * cool slate radial gradient (lighter center, darker edges, faint
- * cool-blue tint) painted on the workspace backdrop ONLY. The paper
- * sheets and their content stay untouched; the PDF keeps its solid
- * white page and the gradient never sits on a page/slot/canvas rule.
- * The explicit background-color keeps the workspace a SOLID slate
- * sheet (the gradient layers on top of it, alpha stays 1).
+ * cool white radial gradient (lighter center, slightly cooler edges)
+ * painted on the workspace backdrop ONLY. The paper sheets and their
+ * content stay untouched; the PDF keeps its solid white page and the
+ * gradient never sits on a page/slot/canvas rule. The explicit
+ * background-color keeps the workspace a SOLID light sheet (the
+ * gradient layers on top of it, alpha stays 1).
  * `background-attachment: fixed` anchors the light to the workspace
- * so the soft illumination stays put while the pages scroll over it. */
+ * so the soft illumination stays put while the pages scroll over it.
+ *
+ * Phase C — `.app` joins the list so the light VARYS behind
+ * the in-flow chrome rows (titlebar, toolbars, rail) as well: the
+ * frosted sheets above them blur a real tonal surface instead of a
+ * flat hex, which is what makes the blur visible as glass. The `.app`
+ * grid is the full window; its children repaint their own surfaces,
+ * and the light source at 35% 12% keeps the top-left of every chrome
+ * row subtly brighter — lit-from-above glass. */
+:root[data-theme="frosted"] .app,
 :root[data-theme="frosted"] .workspace-main,
 :root[data-theme="frosted"] .document-scroller {
   background-color: var(--tf-bg);
   background-image: radial-gradient(
     ellipse 120% 90% at 35% 12%,
-    #25313f 0%,
-    #1d2733 46%,
-    #131b24 100%
+    #fafbfd 0%,
+    #f2f4f8 42%,
+    #e2e7ef 100%
   );
   background-attachment: fixed;
 }
@@ -7851,12 +7970,12 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .thumb-current,
 :root[data-theme="frosted"] .thumb-selected {
-  background: rgba(224, 122, 45, 0.16);
+  background: rgba(224, 122, 45, 0.14);
   border-color: rgba(224, 122, 45, 0.55);
   box-shadow:
     inset 0 0 0 1px rgba(224, 122, 45, 0.35),
-    0 0 14px rgba(224, 122, 45, 0.2),
-    0 2px 10px rgba(0, 0, 0, 0.16);
+    0 0 12px rgba(224, 122, 45, 0.18),
+    0 2px 8px rgba(15, 23, 42, 0.1);
 }
 
 /* The windowed page-overlay editors keep their OPAQUE sheets so the
@@ -7908,12 +8027,15 @@ rect.ann-highlight.ann-preview {
   width: 26%;
   z-index: 2;
   pointer-events: none;
+  /* On the light frosted material the reflection reads as a faint
+   * cool slate band passing across the white glass — a soft diffuse
+   * shadow of light, never a moving line. */
   background: linear-gradient(
     105deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.016) 40%,
-    rgba(255, 255, 255, 0.04) 50%,
-    rgba(255, 255, 255, 0.016) 60%,
+    rgba(148, 163, 184, 0.022) 40%,
+    rgba(148, 163, 184, 0.05) 50%,
+    rgba(148, 163, 184, 0.022) 60%,
     transparent 100%
   );
   transform: translateX(-120%);
@@ -7928,9 +8050,9 @@ rect.ann-highlight.ann-preview {
   background: linear-gradient(
     105deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.012) 40%,
-    rgba(255, 255, 255, 0.03) 50%,
-    rgba(255, 255, 255, 0.012) 60%,
+    rgba(148, 163, 184, 0.016) 40%,
+    rgba(148, 163, 184, 0.036) 50%,
+    rgba(148, 163, 184, 0.016) 60%,
     transparent 100%
   );
 }

@@ -105,6 +105,10 @@ import { OcrSuspectsPanel } from "./components/OcrSuspectsPanel";
 import { rasterizePagesForOcr } from "./pdf/ocrRasterize";
 import type { EngineApi, EngineOp, EngineState } from "./engine/types";
 import type { PlacedStamp } from "./annotations/StampAnnotations";
+import {
+  WHITE_1X1_PNG_BYTES,
+  rasterizeStamp,
+} from "./annotations/stampOps";
 import type { Annotation, AnnotationPatch } from "./annotations/model";
 import { describeEngineError } from "./engine/types";
 import { stubRendererEngine } from "./engine/stubEngine";
@@ -517,6 +521,13 @@ export function App(): ReactElement {
   const [placedStampsByTab, setPlacedStampsByTab] = useState<
     Record<string, PlacedStamp[]>
   >({});
+  // Bug 6 — synchronous mirror ref for the placed-stamp handlers
+  // (onMoveStamp / onDeleteStamp / onRetypeStamp). The handlers are
+  // stable useCallbacks; they read the freshest mirror through this
+  // ref instead of taking the state as a dependency (the same
+  // forward-declared-ref pattern as `armedStampRef` above).
+  const placedStampsByTabRef = useRef(placedStampsByTab);
+  placedStampsByTabRef.current = placedStampsByTab;
   // Page the user last clicked while the Sign tool was armed. We use
   // this to scroll-to-page in the placement flow so the click target is
   // visible (DocumentView's overlay catches the pointerdown and places
@@ -1534,6 +1545,44 @@ export function App(): ReactElement {
     [applyEngineOp],
   );
 
+  /** B10 / Bug 5 — drop the tab's placed-stamp mirror. The mirror
+   *  (`placedStampsByTab`) is renderer-side only: the engine bakes
+   *  stamps into the page bitmap and never reports them back, so an
+   *  undo / redo that reverts the bake leaves the mirror stale.
+   *  Clearing it makes the proxy-refreshed page canvas (which
+   *  re-renders the engine's actual bytes) the single source of
+   *  truth again. Cheap no-op when the tab has no mirror entries. */
+  const dropPlacedStamps = useCallback((tabId: string): void => {
+    setPlacedStampsByTab((prev) => {
+      const list = prev[tabId];
+      if (list === undefined || list.length === 0) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[tabId];
+      return next;
+    });
+  }, []);
+
+  /** Bug 6 — update a placed stamp's mirror rect after a confirmed
+   *  move / resize (the engine has re-baked the stamp at the new
+   *  rect; the mirror must follow so the DOM surface matches). */
+  const updatePlacedStampRect = useCallback(
+    (tabId: string, id: string, rect: { x: number; y: number; width: number; height: number }): void => {
+      setPlacedStampsByTab((prev) => {
+        const list = prev[tabId];
+        if (list === undefined || !list.some((s) => s.id === id)) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [tabId]: list.map((s) => (s.id === id ? { ...s, rect } : s)),
+        };
+      });
+    },
+    [],
+  );
+
   const onUndo = useCallback(
     (tabId: string): void => {
       const open = openTabsRef.current[tabId];
@@ -1560,6 +1609,14 @@ export function App(): ReactElement {
           canUndo: flags.canUndo,
           canRedo: flags.canRedo,
         });
+        // Bug 5 — undo must apply to stamps too. The engine reverts
+        // the baked stamp pixels on undo (addStamp pushes an undo
+        // snapshot), so the renderer's placed-stamp mirror — which is
+        // NOT engine-backed — goes stale. Clear the tab's mirror so
+        // the `.stamp-annotation` DOM surfaces can't outlive the
+        // reverted bake; the proxy refresh below re-renders the pages
+        // and the baked pixels become the single source of truth.
+        dropPlacedStamps(tabId);
         // B8c — undo can revert page-mutating ops (crop, delete,
         // reorder, rotate, OCR, …). The renderer's pdf.js `doc`
         // proxy still paints the PRE-undo bytes, so the visible
@@ -1573,7 +1630,7 @@ export function App(): ReactElement {
         }
       });
     },
-    [pushToast, setEngineUiFor],
+    [pushToast, setEngineUiFor, dropPlacedStamps],
   );
 
   const onRedo = useCallback(
@@ -1598,6 +1655,11 @@ export function App(): ReactElement {
           canUndo: flags.canUndo,
           canRedo: flags.canRedo,
         });
+        // Bug 5 — redo re-applies the stamp bake; the mirror was
+        // cleared on the matching undo, so it stays cleared here (the
+        // proxy refresh below renders the re-applied pixels). Same
+        // reasoning as the undo branch: the mirror is not engine-backed.
+        dropPlacedStamps(tabId);
         // B8c — redo re-applies page-mutating ops; the pdf.js proxy
         // must follow the engine bytes so the visible page reverts
         // (same refresh path as undo).
@@ -1607,7 +1669,7 @@ export function App(): ReactElement {
         }
       });
     },
-    [pushToast, setEngineUiFor],
+    [pushToast, setEngineUiFor, dropPlacedStamps],
   );
 
   // ---- annotation ops (Phase 3) ----
@@ -2010,9 +2072,20 @@ export function App(): ReactElement {
 
   /** Toggle Edit mode. Closing the mode clears the active tool on
    *  every tab; the placements list is preserved so the user can
-   *  re-open and pick up where they left off. */
+   *  re-open and pick up where they left off. Opening the mode
+   *  cross-disarms the Sign / Stamp arms (Bug 1): the edit overlay
+   *  is a second pointer-active layer, so an armed signature ghost
+   *  or stamp ghost must not survive the transition — the next page
+   *  click would otherwise both edit and place. The annotation
+   *  creation tool is disarmed by DocumentView's own cross-disarm
+   *  effect (it watches `editModeOpen` rising). */
   const setEditMode = useCallback((open: boolean): void => {
     setEditModeOpen(open);
+    if (open) {
+      // Cross-disarm — mirror of the Sign ↔ Stamp guards above.
+      setArmedSignatureId(null);
+      setArmedStamp(null);
+    }
     if (!open) {
       // Reset the tool on every open tab so a stray "text" tool
       // doesn't leak into the next session.
@@ -2024,6 +2097,26 @@ export function App(): ReactElement {
         return next;
       });
     }
+  }, []);
+
+  /** Bug 4 — disarm the per-tab Edit-content tools. Escape (and any
+   *  other global disarm path) sets every tab's active edit tool to
+   *  "off" so the EditOverlay stops consuming page clicks, without
+   *  closing Edit mode entirely (the user can pick a tool again). */
+  const disarmEditTools = useCallback((): void => {
+    setOpenTabs((prev) => {
+      let changed = false;
+      const next: typeof prev = {};
+      for (const [id, tab] of Object.entries(prev)) {
+        if (tab.edit.tool !== "off") {
+          next[id] = { ...tab, edit: editReducer(tab.edit, { type: "set-tool", tool: "off" }) };
+          changed = true;
+        } else {
+          next[id] = tab;
+        }
+      }
+      return changed ? next : prev;
+    });
   }, []);
 
   /** Commit a text-run edit. Calls `engine.editTextRun`; the
@@ -3611,28 +3704,27 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
     setDocxExportOpen(false);
   }, []);
 
-/** DOCX assembly — runs after the renderer has rasterised every
-   *  page to PNG. The renderer owns the rasterization step; the
-   *  engine just assembles the .docx ZIP.
+/** DOCX assembly — text-first (editable) export. The renderer
+   *  rasterises every page to PNG so the fallback always has
+   *  pixels, then hands the entries to the engine. The engine's
+   *  `createDocxFromDoc(docId, entries)` channel (DEF-060) pulls
+   *  REAL per-page text from the loaded document and emits editable
+   *  `w:p`/`w:r`/`w:t` runs in the .docx — text the user can select
+   *  and re-edit in Word / Google Docs / LibreOffice. Pages with no
+   *  extractable text (scans, image-only pages) fall back to an
+   *  inline page image from the matching entry.
    *
-   *  Bug 6 (DEF-060): The renderer always calls
-   *  `engine.createDocxFromDoc(docId, entries)` for the loaded-doc
-   *  flow — the engine reuses its own `exportText` machinery to pull
-   *  per-page text from the pdfDoc and emits real `w:p` / `w:r` /
-   *  `w:t` paragraphs in the .docx (editable text in Word / Google
-   *  Docs / LibreOffice). Text-free pages fall back to an inline
-   *  image (`wp:inline`) drawn from the matching `DocxImageEntry`
-   *  by page number — the renderer rasterises every page ahead of
-   *  time so the fallback always has pixels.
-   *
-   *  Pre-DEF-060 backends don't expose `createDocxFromDoc`; we
-   *  detect that case and fall back to `createDocxFromImages`,
-   *  which produces a one-image-per-page .docx with no editable
-   *  text. The fallback is a graceful degradation, not a hard error
-   *  — the user gets a usable file either way (the rasterised
-   *  pages are still in the .docx). The dialog surfaces the
-   *  fallback's product identically to the text-first path (the
-   *  rendered raster is the source of truth in both cases).
+   *  Why text-first now? The previous Bug-7 preference for
+   *  `engine.createDocxFromImages(entries)` produced a one-image-per-
+   *  page .docx — visually identical, but the text was painted-in
+   *  raster: not selectable, not editable. The product decision
+   *  reverses that preference: editable text IS the point of a Word
+   *  export. Some layout fidelity is lost (fonts, weights, colors,
+   *  exact positioning become the page's plain text), but text
+   *  remains fully editable. `createDocxFromImages` stays as the
+   *  graceful fallback for backends that predate the DEF-060 channel
+   *  or where the text pass errors, so the user still gets a usable
+   *  file either way.
    *
    *  The dialog's `runAssemble` prop signature is `(entries) => Promise<Uint8Array | { error: string }>`
    *  — same shape as before — so the existing DocxExportDialog
@@ -3653,34 +3745,56 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
         return { error: describeEngineError("engine-error", "active document closed before DOCX assembly") };
       }
       const docId = open.session.engineDocId;
-      // Preferred path — text-first DOCX with image fallback.
-      // DEF-106 (B12) — MUST be a MEMBER call, never a detached
-      // extraction (`const f = engineRef.current.createDocxFromDoc;
-      // await f(...)`): the engine client's createDocxFromDoc reads
-      // `this.inner`, and a detached reference loses the `this`
-      // binding (undefined in strict mode), so every export threw
-      // "Cannot read properties of undefined (reading 'inner')".
-      // The feature-detection stays (pre-DEF-060 backends degrade
-      // to the image-only fallback), but the invocation is on the
-      // client instance.
+      // Preferred path — TEXT-FIRST assembly. The engine extracts the
+      // loaded document's own per-page text (reusing its exportText
+      // machinery) and emits editable w:p/w:r/w:t paragraphs; pages
+      // without extractable text fall back to the rasterised entry.
+      // The entries array is still required — the engine needs the
+      // pixels for the image-fallback pages.
       const engine = engineRef.current;
       if (typeof engine.createDocxFromDoc === "function") {
+        // DEF-106 (B12) — MUST be a MEMBER call, never a detached
+        // extraction (`const f = engineRef.current.createDocxFromDoc;
+        // await f(...)`): the engine client's createDocxFromDoc reads
+        // `this.inner`, and a detached reference loses the `this`
+        // binding (undefined in strict mode), so every export threw
+        // "Cannot read properties of undefined (reading 'inner')".
+        // The invocation stays on the client instance.
         const result = await engine.createDocxFromDoc(docId, entries);
-        if (!result.ok) {
+        if (result.ok) {
+          return result.value;
+        }
+        // Text pass failed AND the backend has the raster-only
+        // channel — fall through to it (graceful degradation).
+        if (typeof engine.createDocxFromImages === "function") {
+          const fallback = await engine.createDocxFromImages(entries);
+          if (fallback.ok) {
+            return fallback.value;
+          }
           return {
-            error: describeEngineError(result.error.code, result.error.message),
+            error: describeEngineError(fallback.error.code, fallback.error.message),
           };
         }
-        return result.value;
+        return {
+          error: describeEngineError(result.error.code, result.error.message),
+        };
       }
-      // Fallback path — image-only DOCX for pre-DEF-060 backends.
-      const fallback = await engineRef.current.createDocxFromImages(entries);
-      if (!fallback.ok) {
+      // Backend predates the DEF-060 text channel — raster-only.
+      if (typeof engine.createDocxFromImages === "function") {
+        const fallback = await engine.createDocxFromImages(entries);
+        if (fallback.ok) {
+          return fallback.value;
+        }
         return {
           error: describeEngineError(fallback.error.code, fallback.error.message),
         };
       }
-      return fallback.value;
+      return {
+        error: describeEngineError(
+          "engine-error",
+          "DOCX assembly requires the Phase 9 backend update.",
+        ),
+      };
     },
     [],
   );
@@ -4193,6 +4307,145 @@ pushToast(
       );
     },
     [activePageSizes, noteOpApplied, pushToast],
+  );
+
+  /** Bug 6 — MOVE / RESIZE a placed stamp. The engine bakes stamps
+   *  into the page bitmap with no registry, so the only lever is the
+   *  Phase 10 `editImage` contract: mask the OLD rect with white and
+   *  draw the stamp's PNG at the NEW rect (the documented
+   *  visual-redact-and-redraw behavior — same as editTextRun / the
+   *  pre-registry text-box move). On success the mirror entry's rect
+   *  is updated and the proxy refreshed so the canvas shows the
+   *  re-baked position. */
+  const onMoveStamp = useCallback(
+    async (tabId: string, id: string, rect: { x: number; y: number; width: number; height: number }): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      const stamps = placedStampsByTabRef.current[tabId] ?? [];
+      const stamp = stamps.find((s) => s.id === id);
+      if (stamp === undefined) {
+        pushToast("error", `Could not move stamp: unknown placement ${id}.`);
+        return;
+      }
+      const result = await engineRef.current.editImage(
+        open.session.engineDocId,
+        {
+          page: stamp.page,
+          op: "move",
+          oldRect: stamp.rect,
+          newRect: rect,
+          imageBytes: stamp.pngBytes,
+        },
+      );
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      noteOpApplied(tabId, result.value);
+      updatePlacedStampRect(tabId, id, rect);
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(tabId).catch(() => undefined);
+      }
+    },
+    [pushToast, noteOpApplied],
+  );
+
+  /** Bug 6 — DELETE a placed stamp. Masks the stamp's rect with a
+   *  solid-white raster via the same `editImage` lever (the stamp
+   *  pixels are covered — the documented Phase-10 visual-redact
+   *  behavior; content beneath the stamp is covered too, the known
+   *  tradeoff of the bake-only stamp surface) and drops the mirror
+   *  entry so the DOM surface disappears immediately. */
+  const onDeleteStamp = useCallback(
+    async (tabId: string, id: string): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      const stamps = placedStampsByTabRef.current[tabId] ?? [];
+      const stamp = stamps.find((s) => s.id === id);
+      if (stamp === undefined) {
+        pushToast("error", `Could not delete stamp: unknown placement ${id}.`);
+        return;
+      }
+      const result = await engineRef.current.editImage(
+        open.session.engineDocId,
+        {
+          page: stamp.page,
+          op: "move",
+          oldRect: stamp.rect,
+          newRect: stamp.rect,
+          imageBytes: WHITE_1X1_PNG_BYTES,
+        },
+      );
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      noteOpApplied(tabId, result.value);
+      setPlacedStampsByTab((prev) => {
+        const list = prev[tabId] ?? [];
+        if (!list.some((s) => s.id === id)) return prev;
+        const next = { ...prev, [tabId]: list.filter((s) => s.id !== id) };
+        return next;
+      });
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(tabId).catch(() => undefined);
+      }
+    },
+    [pushToast, noteOpApplied],
+  );
+
+  /** Bug 6 — RETYPE a placed stamp (the "Edit" verb: change
+   *  APPROVED -> DRAFT / CONFIDENTIAL / FINAL). Re-rasterises the
+   *  new stamp id, masks the old rect and draws the fresh PNG at the
+   *  same rect via editImage, then updates the mirror's stamp id +
+   *  raster so the DOM surface matches. */
+  const onRetypeStamp = useCallback(
+    async (tabId: string, id: string, stampId: StampId): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      const stamps = placedStampsByTabRef.current[tabId] ?? [];
+      const stamp = stamps.find((s) => s.id === id);
+      if (stamp === undefined) {
+        pushToast("error", `Could not edit stamp: unknown placement ${id}.`);
+        return;
+      }
+      if (stamp.stampId === stampId) return;
+      const png = rasterizeStamp(stampId);
+      const result = await engineRef.current.editImage(
+        open.session.engineDocId,
+        {
+          page: stamp.page,
+          op: "move",
+          oldRect: stamp.rect,
+          newRect: stamp.rect,
+          imageBytes: png.pngBytes,
+        },
+      );
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      noteOpApplied(tabId, result.value);
+      setPlacedStampsByTab((prev) => {
+        const list = prev[tabId] ?? [];
+        if (!list.some((s) => s.id === id)) return prev;
+        return {
+          ...prev,
+          [tabId]: list.map((s) =>
+            s.id === id
+              ? { ...s, stampId, pngBytes: png.pngBytes, pngWidth: png.width, pngHeight: png.height }
+              : s,
+          ),
+        };
+      });
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(tabId).catch(() => undefined);
+      }
+    },
+    [pushToast, noteOpApplied],
   );
 
   const armedStampRef = useRef(armedStamp);
@@ -5554,6 +5807,23 @@ pushToast(
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Bug 4 — Escape disarms any armed tool. The per-document
+      // annotation tool is disarmed by DocumentView's own keydown
+      // handler (its reducer lives there); App-owned arms (Sign,
+      // Stamp, the Edit-content tools) are cleared here. The
+      // signatures / stamp overlays also handle Escape while they
+      // are mounted, but this global branch is the safety net that
+      // fires regardless of overlay mount state.
+      if (e.key === "Escape" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (armedSignatureIdRef.current !== null) {
+          setArmedSignatureId(null);
+        }
+        if (armedStampRef.current !== null) {
+          setArmedStamp(null);
+        }
+        disarmEditTools();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") {
         e.preventDefault();
         void onOpenClick();
@@ -5610,7 +5880,7 @@ pushToast(
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onOpenClick, closeTab, onSave, onUndo, onRedo, onOcrClick, tabs.activeId]);
+  }, [onOpenClick, closeTab, onSave, onUndo, onRedo, onOcrClick, tabs.activeId, disarmEditTools]);
 
   useEffect(() => {
     let cancelled = false;
@@ -5941,6 +6211,18 @@ pushToast(
                     // B10 / DEF-101 — placed-stamp DOM surfaces for
                     // this tab (mirror of successful addStamp ops).
                     stampAnnotations={placedStampsByTab[meta.id] ?? []}
+                    // Bug 6 — placed stamps are editable / movable /
+                    // deletable like every annotation: Confirm/Delete/
+                    // Edit route through the host's re-bake handlers.
+                    onMoveStamp={(id, rect): void => {
+                      void onMoveStamp(meta.id, id, rect);
+                    }}
+                    onDeleteStamp={(id): void => {
+                      void onDeleteStamp(meta.id, id);
+                    }}
+                    onRetypeStamp={(id, stampId): void => {
+                      void onRetypeStamp(meta.id, id, stampId);
+                    }}
                     toolsPaletteOpen={toolsPaletteOpen}
                     onToolsPaletteToggle={(): void => setToolsPaletteOpen((v) => !v)}
                     annotationPalette={
@@ -6055,6 +6337,7 @@ pushToast(
                 }
               }}
               onForms={(): void => setFlattenOpen(true)}
+              onFlatten={(): void => setFlattenOpen(true)}
               onOptimize={onOptimizeClick}
               onAudit={onAuditClick}
               onCreateFromImages={onCreateClick}
