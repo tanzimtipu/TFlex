@@ -50,7 +50,7 @@ Actual:
 
 Screenshot: screenshots/adv-save-race.png
 
-Disposition: ACCEPTED -> DEF-009
+Disposition: ACCEPTED -> DEF-009 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -84,7 +84,7 @@ Actual:
 
 Screenshot: screenshots/adv-undo-button.png
 
-Disposition: ACCEPTED -> DEF-010
+Disposition: ACCEPTED -> DEF-010 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -121,7 +121,7 @@ Actual:
 
 Screenshot: screenshots/adv-saveas-readonly.png
 
-Disposition: ACCEPTED -> DEF-011
+Disposition: ACCEPTED -> DEF-011 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -157,7 +157,7 @@ Actual:
 
 Screenshot: screenshots/adv-split-all.png
 
-Disposition: ACCEPTED -> DEF-012
+Disposition: ACCEPTED -> DEF-012 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -192,7 +192,7 @@ Actual:
   files that pass the sniff and PDF.js parse but trip pdf-lib's page tree — or
   direct IPC misuse. Filed for robustness so the engine contract stays typed.
 
-Disposition: ACCEPTED -> DEF-013
+Disposition: ACCEPTED -> DEF-013 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -277,7 +277,7 @@ Source code:
 
 Screenshot: N/A (observed via console error output)
 
-Disposition: ACCEPTED -> DEF-004
+Disposition: ACCEPTED -> DEF-004 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -309,7 +309,7 @@ Source code:
 
 Screenshot: N/A (observed via 22 console error lines)
 
-Disposition: ACCEPTED -> DEF-005
+Disposition: ACCEPTED -> DEF-005 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -364,7 +364,7 @@ Source code:
 
 Screenshot: screenshots/adv-concurrent.png
 
-Disposition: ACCEPTED -> DEF-006
+Disposition: ACCEPTED -> DEF-006 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -392,7 +392,7 @@ Source code:
 
 Screenshot: screenshots/adv-resize-load.png
 
-Disposition: ACCEPTED -> DEF-007
+Disposition: ACCEPTED -> DEF-007 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -451,7 +451,7 @@ Source code:
 
 Screenshot: screenshots/adv-recent-missing.png
 
-Disposition: ACCEPTED -> DEF-008
+Disposition: ACCEPTED -> DEF-008 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -472,6 +472,12 @@ Disposition: ACCEPTED -> DEF-008
 Note on tests that passed without findings:
 
 ## Dispositions (orchestrator)
+
+Note: DEF-001 through DEF-071 were fixed and CLOSED, then pruned from the
+active DEFECTS.md ledger during the v1.2.0 Phase 9 consolidation (commit
+40675e3). The `ACCEPTED -> DEF-NNN` references for the phase-1, phase-2 and
+final-pass findings below point to those historical entries, which no longer
+appear in DEFECTS.md.
 
 - ADV-001 ACCEPTED -> DEF-004
 - ADV-002 ACCEPTED -> DEF-005
@@ -525,7 +531,7 @@ Root cause: `engine.placeSignature` (line 748-776) does not validate that `paylo
 
 Screenshot: N/A (engine API, reproducible via console)
 
-Disposition: ACCEPTED -> DEF-027
+Disposition: ACCEPTED -> DEF-027 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -551,7 +557,7 @@ Root cause: `flattenForm` (forms.ts line 338-341) calls `pdfDoc.getForm().flatte
 
 Screenshot: N/A (reproducible via engine API)
 
-Disposition: ACCEPTED -> DEF-028
+Disposition: ACCEPTED -> DEF-028 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -575,7 +581,7 @@ Root cause: `engine.merge` (_mergeImpl, lines 271-375) creates a brand-new `PDFD
 
 Screenshot: N/A (reproducible via engine API)
 
-Disposition: ACCEPTED -> DEF-029
+Disposition: ACCEPTED -> DEF-029 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -602,7 +608,7 @@ Root cause: `serializeDoc` (lines 1089-1123) embeds placed signatures into the o
 
 Screenshot: N/A (reproducible via engine API)
 
-Disposition: ACCEPTED -> DEF-030
+Disposition: ACCEPTED -> DEF-030 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -626,7 +632,7 @@ Note: This is somewhat moot because merge destroys forms entirely (ADV-015), but
 
 Screenshot: N/A
 
-Disposition: ACCEPTED -> DEF-031
+Disposition: ACCEPTED -> DEF-031 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
@@ -662,7 +668,7 @@ Root cause: `_loadDocumentImpl` and `_loadDocumentBytesImpl` do not check `count
 
 Screenshot: N/A
 
-Disposition: ACCEPTED -> DEF-032
+Disposition: ACCEPTED -> DEF-032 (fixed + closed; pruned from DEFECTS.md at v1.2.0)
 
 ---
 
