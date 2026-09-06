@@ -50,7 +50,7 @@ Actual:
 
 Screenshot: screenshots/adv-save-race.png
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-009
 
 ---
 
@@ -84,7 +84,7 @@ Actual:
 
 Screenshot: screenshots/adv-undo-button.png
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-010
 
 ---
 
@@ -121,7 +121,7 @@ Actual:
 
 Screenshot: screenshots/adv-saveas-readonly.png
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-011
 
 ---
 
@@ -157,7 +157,7 @@ Actual:
 
 Screenshot: screenshots/adv-split-all.png
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-012
 
 ---
 
@@ -192,7 +192,7 @@ Actual:
   files that pass the sniff and PDF.js parse but trip pdf-lib's page tree — or
   direct IPC misuse. Filed for robustness so the engine contract stays typed.
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-013
 
 ---
 
@@ -277,7 +277,7 @@ Source code:
 
 Screenshot: N/A (observed via console error output)
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-004
 
 ---
 
@@ -309,7 +309,7 @@ Source code:
 
 Screenshot: N/A (observed via 22 console error lines)
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-005
 
 ---
 
@@ -336,7 +336,7 @@ Screenshot: screenshots/adv-search-edge.png
 
 Note: The Phase 1 success criteria say "Searching for a known word in the sample report highlights all hits" without specifying whole-word vs substring. If substring matching is intentional, this finding is invalid. If whole-word matching is expected, this is a bug. Filed for triage.
 
-Disposition: PENDING
+Disposition: REJECTED - substring matching per spec; whole-word not required
 
 ---
 
@@ -364,7 +364,7 @@ Source code:
 
 Screenshot: screenshots/adv-concurrent.png
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-006
 
 ---
 
@@ -392,7 +392,7 @@ Source code:
 
 Screenshot: screenshots/adv-resize-load.png
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-007
 
 ---
 
@@ -422,7 +422,7 @@ Source code:
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: REJECTED - harness-only launch path; no production impact
 
 ---
 
@@ -451,7 +451,7 @@ Source code:
 
 Screenshot: screenshots/adv-recent-missing.png
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-008
 
 ---
 
@@ -525,7 +525,7 @@ Root cause: `engine.placeSignature` (line 748-776) does not validate that `paylo
 
 Screenshot: N/A (engine API, reproducible via console)
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-027
 
 ---
 
@@ -551,7 +551,7 @@ Root cause: `flattenForm` (forms.ts line 338-341) calls `pdfDoc.getForm().flatte
 
 Screenshot: N/A (reproducible via engine API)
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-028
 
 ---
 
@@ -575,7 +575,7 @@ Root cause: `engine.merge` (_mergeImpl, lines 271-375) creates a brand-new `PDFD
 
 Screenshot: N/A (reproducible via engine API)
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-029
 
 ---
 
@@ -602,7 +602,7 @@ Root cause: `serializeDoc` (lines 1089-1123) embeds placed signatures into the o
 
 Screenshot: N/A (reproducible via engine API)
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-030
 
 ---
 
@@ -626,7 +626,7 @@ Note: This is somewhat moot because merge destroys forms entirely (ADV-015), but
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-031
 
 ---
 
@@ -662,7 +662,7 @@ Root cause: `_loadDocumentImpl` and `_loadDocumentBytesImpl` do not check `count
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-032
 
 ---
 
@@ -765,7 +765,7 @@ another persisted change risks silent clobber.
 
 Screenshot: N/A (code analysis)
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-072
 
 ---
 
@@ -806,7 +806,7 @@ hides the override from the user.
 
 Screenshot: N/A (code analysis)
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-073
 
 ---
 
@@ -846,7 +846,7 @@ no explicit handling for the unsupported kind.)
 Screenshot: N/A (code analysis; verified by inspecting the About dialog
 render path).
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-074
 
 ---
 
@@ -892,7 +892,7 @@ persists. But the engine's `placedSignatures` array is empty, so:
 
 Screenshot: test-fixtures/tools/silence-attack.cjs results (Probe 4)
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-075
 
 ---
 
@@ -928,7 +928,7 @@ correct), but the size comparison in the dialog is inaccurate.
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: REJECTED - optimize compares against baseline at dialog-open; acceptable for dialog behavior rationale.
 
 ---
 
