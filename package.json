@@ -1,6 +1,6 @@
 {
     "name": "tflex",
-    "version": "1.10.5",
+    "version": "1.10.6",
     "description": "TFlex - desktop PDF studio for Windows",
     "repository": "tanzimtipu/TFlex",
     "type": "module",
@@ -15,7 +15,9 @@
         "dist": "npm run build && electron-builder --publish never",
         "test:unit": "vitest run",
         "test:coverage": "vitest run --coverage",
-        "test:e2e": "playwright test"
+        "test:e2e": "playwright test",
+        "verify": "node scripts/check-conventions.mjs && npm run typecheck",
+        "verify:full": "npm run verify && npm run test:unit"
     },
     "dependencies": {
         "@fontsource-variable/inter": "^5.2.5",
@@ -30,7 +32,7 @@
     },
     "devDependencies": {
         "@napi-rs/canvas": "^1.0.8",
-        "@playwright/test": "^1.62.1",
+        "@playwright/test": "^1.63.0",
         "@types/node": "^24.13.3",
         "@types/react": "^19.2.18",
         "@types/react-dom": "^19.2.5",
@@ -42,6 +44,7 @@
         "esbuild": "^0.28.2",
         "jsdom": "^30.0.1",
         "pdfkit": "^0.20.1",
+        "playwright": "^1.63.0",
         "pngjs": "^7.0.0",
         "typescript": "^7.0.2",
         "vite": "^8.2.2",
