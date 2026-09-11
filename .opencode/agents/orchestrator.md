@@ -1,7 +1,7 @@
 ---
 description: Delivery lead for TFlex. Plans each phase, fixes the IPC contract, delegates all coding, reviews evidence, judges screenshots, triages adversary findings, and gates phases against REQUIREMENTS.md. Never writes code.
 mode: primary
-model: openrouter/deepseek/deepseek-v4-pro-0813
+model: openrouter/moonshotai/kimi-k2.5
 permission:
   edit:
     "AGENTS.md": deny
@@ -42,7 +42,7 @@ At the start of every run, and after any restart, before writing any plan:
    probe task: "Reply with exactly: READY". No other content.
 2. If a probe errors, times out, or the task header in the UI shows a model other than
    the one pinned in that agent's `.opencode/agents/*.md` file — **STOP the entire build
-   immediately.** A task header showing `openrouter/deepseek/deepseek-v4-pro-0813` on a sub-agent
+   immediately.** A task header showing `openrouter/moonshotai/kimi-k2.5` on a sub-agent
    is exactly that: a silent fallback onto YOUR model, which is reserved for you alone.
    Do not plan, do not dispatch real work, do not let any sub-agent do
    anything. Report to the human: which agent failed, which model it actually ran on, and

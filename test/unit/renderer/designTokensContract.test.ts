@@ -958,7 +958,7 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     }
   });
 
-  it("the workspace tonal variation + warm accent glow stay frosted-scoped (never on the PDF)", () => {
+  it("the workspace tonal variation + accent glow stay frosted-scoped (never on the PDF)", () => {
     // Strip comments before scanning (prose mentions the workspace
     // and PDF classes freely).
     const cssClean = css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -978,13 +978,13 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
       );
       expect(sel).not.toMatch(/\.(pdf-page|page-slot|textLayer|pdf-page-canvas|thumb-canvas)\b/);
     }
-    // 2) The warm ambient accent glows (orange box-shadows on the
+    // 2) The ambient accent glows (accent box-shadows on the
     //    active tool + selected thumbnail) are frosted-scoped rules.
     const activeGlow =
       /:root\[data-theme="frosted"\]\s+\.tool-btn-active\s*\{([\s\S]*?)\n\}/.exec(cssClean);
     expect(activeGlow).not.toBeNull();
     if (activeGlow !== null) {
-      expect(activeGlow[1] ?? "").toMatch(/\d+px\s+rgba\(224,\s*122,\s*45/);
+      expect(activeGlow[1] ?? "").toMatch(/\d+px\s+rgba\(37,\s*99,\s*235/);
     }
     const thumbGlow =
       /:root\[data-theme="frosted"\]\s+\.thumb-current,[\s\S]*?\.thumb-selected\s*\{([\s\S]*?)\n\}/.exec(
@@ -992,7 +992,7 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
       );
     expect(thumbGlow).not.toBeNull();
     if (thumbGlow !== null) {
-      expect(thumbGlow[1] ?? "").toMatch(/\d+px\s+rgba\(224,\s*122,\s*45/);
+      expect(thumbGlow[1] ?? "").toMatch(/\d+px\s+rgba\(37,\s*99,\s*235/);
     }
     // 3) No PDF content surface may ever carry a background-image.
     for (const cls of ["pdf-page", "page-slot", "textLayer", "pdf-page-canvas", "thumb-canvas"]) {

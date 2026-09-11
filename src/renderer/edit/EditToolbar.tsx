@@ -4,6 +4,11 @@
 // user clicks one of the four tool buttons to switch the active
 // tool. The selected tool drives the per-page EditOverlay.
 //
+// Phase 13 — the toolbar is icon-only: each button carries its
+// action in `aria-label` + `title` (the shared a11y contract for
+// icon-only chrome) and the one-line status hint beside the tools
+// tells the user what the armed tool will do on the next click.
+//
 // Why a separate component (vs. reusing the AnnotationToolbar):
 // the annotation palette is centred on "create one annotation then
 // return to select"; the edit palette is "drive a continuous
@@ -43,49 +48,49 @@ export function EditToolbar(props: EditToolbarProps): ReactElement {
         type="button"
         className={tool === "off" ? "edit-toolbar-btn edit-toolbar-btn-active" : "edit-toolbar-btn"}
         aria-pressed={tool === "off"}
+        aria-label="Edit mode off (plain viewer)"
         disabled={!enabled}
         onClick={(): void => onSelect("off")}
-        title="Edit mode off"
+        title="Edit mode off: plain viewer"
         data-edit-tool="off"
       >
         <MousePointer2 size={16} aria-hidden />
-        <span>Off</span>
       </button>
       <button
         type="button"
         className={tool === "text" ? "edit-toolbar-btn edit-toolbar-btn-active" : "edit-toolbar-btn"}
         aria-pressed={tool === "text"}
+        aria-label="Edit text"
         disabled={!enabled}
         onClick={(): void => onSelect("text")}
         title="Edit text: click a run to replace it"
         data-edit-tool="text"
       >
         <Type size={16} aria-hidden />
-        <span>Edit text</span>
       </button>
       <button
         type="button"
         className={tool === "box" ? "edit-toolbar-btn edit-toolbar-btn-active" : "edit-toolbar-btn"}
         aria-pressed={tool === "box"}
+        aria-label="Add a text box"
         disabled={!enabled}
         onClick={(): void => onSelect("box")}
         title="Add a text box: drag on the page to place it"
         data-edit-tool="box"
       >
         <Plus size={16} aria-hidden />
-        <span>Add box</span>
       </button>
       <button
         type="button"
         className={tool === "image" ? "edit-toolbar-btn edit-toolbar-btn-active" : "edit-toolbar-btn"}
         aria-pressed={tool === "image"}
+        aria-label="Edit images"
         disabled={!enabled}
         onClick={(): void => onSelect("image")}
         title="Edit images: click an image to select, drag a rect to place a new one"
         data-edit-tool="image"
       >
         <Image size={16} aria-hidden />
-        <span>Image</span>
       </button>
       <div className="edit-toolbar-divider" aria-hidden />
       <label className="edit-toolbar-font">

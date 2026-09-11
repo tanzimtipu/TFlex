@@ -40,7 +40,7 @@ Steps:
    The orchestrator will first run its **model verification gate**: a trivial probe task
    to each sub-agent to confirm it loads on its pinned model. Watch this: each probe's
    task header must show that agent's own model (glm-5.2, minimax-m3:free,
-   gemini-3-flash-preview, deepseek-v4-flash — NOT deepseek-v4-pro-0813). If any probe fails or shows
+   gemini-3-flash-preview, deepseek-v4-flash — NOT kimi-k2.5). If any probe fails or shows
    the wrong model, the build halts by design; fix the model/account issue and restart.
    Do not override this gate — a silent fallback means paying orchestrator prices for
    worker tokens.
@@ -58,7 +58,7 @@ While it runs:
 
 | Agent | Model (OpenRouter) | Role |
 | --- | --- | --- |
-| orchestrator | deepseek/deepseek-v4-pro-0813 | Plans, delegates, judges |
+| orchestrator | moonshotai/kimi-k2.5 | Plans, delegates, judges |
 | backend-dev | z-ai/glm-5.2 | PDF engine, main process |
 | frontend-dev | minimax/minimax-m3:free | React UI, PDF.js rendering |
 | qa | google/gemini-3-flash-preview | e2e tests, screenshot inspection |

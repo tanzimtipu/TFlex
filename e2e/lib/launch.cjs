@@ -33,8 +33,11 @@ async function launchApp(extraArgs = [], userDataDir = null, executablePath = nu
     if (!fs.existsSync(tempUserData)) fs.mkdirSync(tempUserData, { recursive: true });
   }
 
-  const args = isDev 
-    ? [projectRoot]
+  // Chromium switches (e.g. --force-prefers-reduced-motion) must come
+  // BEFORE the app path on the electron command line or Blink never sees
+  // them; app-path argv (none today) keeps working either way.
+  const args = isDev
+    ? [...extraArgs, projectRoot]
     : [];
   
   if (tempUserData) {

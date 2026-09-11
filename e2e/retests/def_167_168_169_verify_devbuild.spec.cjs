@@ -10,13 +10,19 @@ const { hardClose } = require('../lib/helpers.cjs');
 
 const FIXTURE = path.resolve(__dirname, '..', '..', 'test-fixtures', 'marker-3pages.pdf');
 
-function meanLuminance(file, rect) {
+// DPR-aware mean luminance: window screenshots are device-scaled
+// (this machine runs 150% -> PNG 1.5x the CSS viewport), so the CSS
+// rect must be scaled by png.width / cssViewportWidth before sampling.
+// (The DPR-1 assumption made the DEF-169 check mis-sample on hi-dpi
+// runs — qa fix 2026-09-06; assertion thresholds unchanged.)
+function meanLuminance(file, rect, cssViewportWidth) {
   const png = PNG.sync.read(fs.readFileSync(file));
+  const k = cssViewportWidth ? png.width / cssViewportWidth : 1;
   let sum = 0, n = 0;
-  const x0 = Math.max(0, Math.floor(rect.x));
-  const y0 = Math.max(0, Math.floor(rect.y));
-  const x1 = Math.min(png.width, Math.floor(rect.x + rect.width));
-  const y1 = Math.min(png.height, Math.floor(rect.y + rect.height));
+  const x0 = Math.max(0, Math.floor(rect.x * k));
+  const y0 = Math.max(0, Math.floor(rect.y * k));
+  const x1 = Math.min(png.width, Math.floor((rect.x + rect.width) * k));
+  const y1 = Math.min(png.height, Math.floor((rect.y + rect.height) * k));
   for (let y = y0; y < y1; y++) {
     for (let x = x0; x < x1; x++) {
       const i = (png.width * y + x) << 2;
@@ -251,8 +257,9 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
 
     // Pixel proof: the palette region must be DIMMED vs its own baseline.
     const shotDir = path.resolve(process.cwd(), 'screenshots');
-    const baseLum = meanLuminance(path.join(shotDir, 'def-169-retest-baseline.png'), state.paletteRect);
-    const underLum = meanLuminance(path.join(shotDir, 'def-169-retest-under-modal.png'), state.paletteRect);
+    const cssW = await window.evaluate(() => window.innerWidth);
+    const baseLum = meanLuminance(path.join(shotDir, 'def-169-retest-baseline.png'), state.paletteRect, cssW);
+    const underLum = meanLuminance(path.join(shotDir, 'def-169-retest-under-modal.png'), state.paletteRect, cssW);
     console.log('[def169] palette mean luminance: baseline=', round1(baseLum), ' under-modal=', round1(underLum),
       ' ratio=', round1(underLum / baseLum));
     expect(underLum, 'palette must be dimmed under the backdrop').toBeLessThan(baseLum * 0.85);

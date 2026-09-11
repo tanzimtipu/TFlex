@@ -121,7 +121,7 @@ async function pagePurity() {
   });
 }
 
-test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.1 frosted rebalance)', () => {
+test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 Phase-C glass retune)', () => {
   test.afterEach(async () => {
     await hardClose(electronApp);
     electronApp = null;
@@ -259,7 +259,13 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.1 f
     expect(purityFrosted.page.filter, 'no filter on the pdf page').toBe('none');
     const wsBg = parseRgba(purityFrosted.workspace.bg);
     expect(wsBg.a, 'workspace must be solid (not translucent) behind the page').toBe(1);
-    expect(wsBg.r < 40 && wsBg.g < 40 && wsBg.b < 45, 'workspace must stay dark in frosted').toBe(true);
+    // 1.10.2 light-frosted correction contract (qa 2026-09-06): the
+    // workspace is the very light cool gray #eef1f6 family — the old
+    // dark-slate frosted direction was replaced by the redesign.
+    expect(
+      wsBg.r > 200 && wsBg.g > 200 && wsBg.b > 200,
+      'workspace must be LIGHT in the corrected frosted theme (#eef1f6 family)',
+    ).toBe(true);
     expect(purityFrosted.page.boxShadow, 'page should carry a subtle shadow').not.toBe('none');
     await snap('frost-d-workspace-frosted.png');
 
@@ -290,12 +296,14 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.1 f
     for (const facts of chrome) {
       expect(facts, `${facts.selector} must exist`).not.toBeNull();
       const alpha = parseRgba(facts.bg).a;
-      // 1.10.1 frosted rebalance contract: chrome sheets sit at 0.80-0.82
-      // (toolbar 0.80, rail 0.82, frame 0.82) — slightly more translucent
-      // than the old 0.88-0.94 so the material genuinely reads as acrylic.
-      expect(alpha, `${facts.selector} acrylic sheet must be mostly opaque (>=0.78)`).toBeGreaterThanOrEqual(0.78);
-      expect(alpha, `${facts.selector} must stay translucent (<=0.92)`).toBeLessThanOrEqual(0.92);
+      // 1.10.2 Phase-C glass-material retune contract (qa visual dispatch
+      // 2026-09-07): the sheets sit in the 0.62-0.85 translucent band so
+      // the chrome reads as REAL frosted glass — frame 0.62, toolbar
+      // 0.68, rail 0.70 — never near-opaque plastic.
+      expect(alpha, `${facts.selector} acrylic sheet must be translucent (>=0.60)`).toBeGreaterThanOrEqual(0.6);
+      expect(alpha, `${facts.selector} must stay in the glass band (<=0.86)`).toBeLessThanOrEqual(0.86);
       expect(facts.backdropFilter, `${facts.selector} must carry the frosted blur`).toContain('blur');
+      expect(facts.backdropFilter, `${facts.selector} must carry the 22px glass blur`).toContain('22px');
     }
     const fgStrong = await win.evaluate(() => getComputedStyle(document.body).getPropertyValue('--fg-strong').trim());
     console.log(`[item3] --fg-strong in frosted = ${fgStrong}`);
@@ -343,7 +351,12 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.1 f
       expect(g.transform, 'group headers must render uppercase').toBe('uppercase');
       const c = parseRgba(g.color);
       const lum = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255;
-      expect(lum, 'group headers must be quiet (muted gray, not bright white)').toBeLessThan(0.55);
+      // Light-frosted correction contract (qa 2026-09-06): on the
+      // near-white sheets "quiet" means a light gray (--fg-faint
+      // #94a3b8, lum ~0.63) — muted against the sheet, nowhere near
+      // bright white (1.0) nor the strong text tier (#232a36, ~0.16).
+      expect(lum, 'group headers must be quiet on the light sheet (light gray, not white)').toBeGreaterThan(0.45);
+      expect(lum, 'group headers must not be bright white').toBeLessThan(0.8);
     }
 
     // ------------------------------------------------------------------
@@ -394,8 +407,10 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.1 f
     await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 8000 });
     await win.waitForTimeout(600);
     await snap('frost-j-dialog-frosted.png');
-    // 1.10.1 rebalance contract: the dialog is the MOST opaque acrylic
-    // sheet, pinned at alpha 0.92 (rgba(55, 68, 84, 0.92)).
+    // 1.10.2 Phase-C glass-material retune contract: the dialog is the
+    // MOST opaque sheet of the ladder but stays translucent — pinned at
+    // alpha 0.85 (rgba(255,255,255,0.85)); the v1.10.1 dark-slate 0.92
+    // and the intermediate 0.97 value were replaced by the retune.
     const dialogSheet = await win.evaluate(() => {
       const dlg = document.querySelector('.modal-dialog');
       if (!dlg) return null;
@@ -403,8 +418,8 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.1 f
     });
     const dlgAlpha = parseRgba(dialogSheet);
     expect(dlgAlpha, 'insert dialog must exist for the acrylic alpha check').not.toBeNull();
-    expect(dlgAlpha.a, 'dialog acrylic sheet must pin the 0.92 contract (>=0.90)').toBeGreaterThanOrEqual(0.9);
-    expect(dlgAlpha.a, 'dialog acrylic sheet must pin the 0.92 contract (<=0.94)').toBeLessThanOrEqual(0.94);
+    expect(dlgAlpha.a, 'dialog acrylic sheet must pin the 0.85 light contract (>=0.83)').toBeGreaterThanOrEqual(0.83);
+    expect(dlgAlpha.a, 'dialog acrylic sheet must pin the 0.85 light contract (<=0.87)').toBeLessThanOrEqual(0.87);
     await win.keyboard.press('Escape');
     await win.waitForTimeout(130);
     const dlgExit = await win.evaluate(() => {

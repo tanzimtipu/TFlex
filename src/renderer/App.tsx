@@ -1531,6 +1531,16 @@ export function App(): ReactElement {
     void applyEngineOp(tabId, { kind: "rotate", page: currentPage, dir: "cw" });
   }, [applyEngineOp]);
 
+  // Phase 13 — the counter-clockwise counterpart of the toolbar's
+  // Rotate button. Same page-resolution rule (the toolbar's visible
+  // page), engine op dir flipped to "ccw".
+  const onRotateCounterClockwise = useCallback((tabId: string): void => {
+    const open = openTabsRef.current[tabId];
+    if (open === undefined) return;
+    const currentPage = open.persisted.currentPage > 0 ? open.persisted.currentPage : 1;
+    void applyEngineOp(tabId, { kind: "rotate", page: currentPage, dir: "ccw" });
+  }, [applyEngineOp]);
+
   const onDelete = useCallback(
     (tabId: string, pages: number[]): void => {
       void applyEngineOp(tabId, { kind: "delete", pages });
@@ -2240,10 +2250,14 @@ export function App(): ReactElement {
       // pre-edit bytes, so the committed box is invisible in the
       // live view until a save/reopen. Rebuild the proxy via the
       // Phase 11 refresh hook — same pattern as OCR / crop / merge /
-      // flatten (and the DEF-108 fix right above).
+      // flatten (and the DEF-108 fix right above). AWAIT the refresh
+      // (same contract as handleEditTextRun / handleTextBoxMove): the
+      // returned promise resolves only after the engine bytes AND the
+      // proxy swap have landed, so the engine commit and the UI update
+      // stay synchronized end-to-end.
       const refreshFn = refreshDocProxyForRef.current;
       if (refreshFn !== null) {
-        void refreshFn(tabId).catch(() => undefined);
+        await refreshFn(tabId).catch(() => undefined);
       }
     },
     [pushToast, noteOpApplied],
@@ -6099,6 +6113,10 @@ pushToast(
           onThemeChange={onThemeChange}
           onOpen={onOpenClick}
           onNewEmptyTab={onNewEmptyTab}
+          // Phase 13 — the Settings (gear) affordance in the title bar
+          // opens the same Preferences sheet the Edit menu and Ctrl+,
+          // open. Same single source of truth (`prefsOpen`).
+          onOpenPreferences={(): void => setPrefsOpen(true)}
           // OTA UX — the toolbar update indicator reads its state
           // from the App's shared `onStatusChanged` subscription via
           // `externalState` so the same push that opens the prompt
@@ -6189,6 +6207,14 @@ pushToast(
                     // user sees on screen; rotating that page is
                     // what the button does.
                     onRotateClockwise={(): void => onRotateClockwise(meta.id)}
+                    // Phase 13 — counter-clockwise rotate from the
+                    // toolbar's second rotate button.
+                    onRotateCounterClockwise={(): void => onRotateCounterClockwise(meta.id)}
+                    // Phase 13 — pan mode cascade. When the toolbar's
+                    // Hand button arms while a stamp ghost is pending,
+                    // the pending stamp drops (the pan drag owns the
+                    // pointer).
+                    onDisarmStamp={(): void => setArmedStamp(null)}
                     // B8 — toolbar Delete pages button. Disabled
                     // when only one page remains so the user can't
                     // drop below the "must keep at least one"

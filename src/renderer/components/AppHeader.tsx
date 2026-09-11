@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Moon,
   Plus,
+  Settings,
   Sparkles,
   Sun,
   X,
@@ -38,6 +39,12 @@ interface AppHeaderProps {
    *  the user can fill by opening a PDF. The host owns the empty-tab
    *  state (see App.tsx -> tabs.openEmpty). */
   onNewEmptyTab: () => void;
+  /** Phase 13 — the Settings (gear) affordance. Opens the Preferences
+   *  sheet (the same surface the Edit menu's "Preferences..." row and
+   *  the Ctrl+, accelerator open). The gear gives the borderless
+   *  title bar its always-visible settings entry point; the popover
+   *  menu keeps the discoverable text path. */
+  onOpenPreferences: () => void;
   /** DEF-077 — optional slot for the OTA update indicator. Renders
    *  inside `.header-actions`, just before the theme toggle. The host
    *  passes a fully-constructed `<UpdateIndicator />` (or null) so
@@ -67,7 +74,7 @@ function themeLabel(value: Theme): string {
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, onThemeChange, onOpen, onNewEmptyTab, updateIndicator = null } = props;
+  const { activeId, tabs, onActivate, onClose, theme, onThemeChange, onOpen, onNewEmptyTab, onOpenPreferences, updateIndicator = null } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
@@ -317,10 +324,25 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
       </div>
       <div className="header-actions">
         {/* DEF-077 — OTA update indicator slot. Rendered before the
-            theme dropdown so the visual order (left-to-right) is
-            [update | theme | open] — matching the spec's "next to
-            the Tools/theme controls" placement. */}
+            settings gear and theme dropdown so the visual order
+            (left-to-right) is [update | gear | theme | open] — the
+            settings affordance sits with the other app-level controls
+            at the trailing edge of the title bar. */}
         {updateIndicator}
+        {/* Phase 13 — Settings gear. Icon-only chrome control (the
+            shared header a11y contract: aria-label + title tooltip);
+            opens the Preferences sheet. */}
+        <button
+          type="button"
+          className="header-gear"
+          onClick={onOpenPreferences}
+          aria-haspopup="dialog"
+          aria-label="Open preferences"
+          title="Preferences (Ctrl+,)"
+          data-open-preferences
+        >
+          <Settings size={16} aria-hidden />
+        </button>
         {/* Phase-15 — embedded borderless theme picker. Keeps the
             stable `.theme-toggle` class (+ a fresh `data-theme-toggle`
             attribute) so e2e selectors keep resolving; the control is

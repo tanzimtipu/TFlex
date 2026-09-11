@@ -73,6 +73,7 @@ function renderHeader(args: RenderArgs = {}): HTMLElement {
         onThemeChange={onThemeChange}
         onOpen={onOpen}
         onNewEmptyTab={onNewEmptyTab}
+        onOpenPreferences={(): void => undefined}
       />,
     );
   });
@@ -362,6 +363,7 @@ function renderHeaderFull(
         onThemeChange={args.onThemeChange ?? ((): void => undefined)}
         onOpen={(): void => undefined}
         onNewEmptyTab={(): void => undefined}
+        onOpenPreferences={(): void => undefined}
       />,
     );
   });

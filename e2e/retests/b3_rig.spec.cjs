@@ -43,6 +43,10 @@ test('B3 rigorous: does a custom-color rect annotation survive save/reopen?', as
   await window.waitForTimeout(300);
   await window.keyboard.press('Escape');
   await window.waitForTimeout(300);
+  // Since the Escape-disarm fix (qa 2026-09-06), Escape closes the
+  // palette AND disarms the armed tool — re-arm rect before drawing.
+  await window.locator('.ann-toolbar button[data-tool="rect"]').click();
+  await window.waitForTimeout(200);
 
   // drag rect
   await window.mouse.move(pbox.x + 300, pbox.y + 500);

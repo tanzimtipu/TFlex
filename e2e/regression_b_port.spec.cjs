@@ -122,7 +122,9 @@ test('B4-port: Sticky note content round-trips through the committed icon', asyn
   await window.waitForTimeout(800);
   const noteIcon = window.locator('.ann-note').first();
   await expect(noteIcon, 'the committed note surface must exist').toBeVisible();
-  await noteIcon.click();
+  // Bug 3 (qa 2026-09-06): single click SELECTS; double click opens the
+  // editor toolbox (the old single-click-open behavior is gone by design).
+  await noteIcon.dblclick();
   await expect(editor).toBeVisible({ timeout: 8000 });
   const content = await editor.locator('textarea').inputValue();
   expect(content, 'the reopened editor must show the committed content').toBe('PORT B4 CONTENT');

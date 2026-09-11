@@ -1,0 +1,6 @@
+- Signature metadata survives save/reload: keywords="TFLEXSIG:[{\"id\":\"sig-1\",\"signatureId\":\"saved-sig-1\",\"page\":1,\"x\":100,\"y\":600,\"width\":100,\"height\":50,\"pngBase64\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAADL/3egAAAACklEQVR4nGP4DwABAQEApACLpQAAAABJRU5ESlvm2w==\"}]"
+- Signature metadata survives when other Keywords exist: keywords="TFLEXSIG:[{\"id\":\"sig-1\",\"signatureId\":\"saved-sig-1\",\"page\":1,\"x\":100,\"y\":600,\"width\":100,\"height\":50,\"pngBase64\":\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAADL/3egAAAACklEQVR4nGP4DwABAQEApACLpQAAAABJRU5ESlvm2w==\"}] internal-doc-id:42"
+- Optimize produces smaller output: before=2647, after=2647
+- exportText can extract "Hello World" from raw PDF: 
+- exportText can extract "Second Page" from raw PDF: 
+- Loaded 0-page PDF document: pages=1

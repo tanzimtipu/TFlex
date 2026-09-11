@@ -48,16 +48,16 @@ function note(overrides: Partial<Annotation> = {}): Annotation {
 describe("annotationToolReducer", () => {
   it("initial state has tool=select and a default color and pen width", () => {
     expect(initialAnnotationToolState.tool).toBe("select");
-    // Phase 2 — REQUIREMENTS.md sets the single product accent to
-    // the muted orange `#e07a2d` (var(--accent)). The annotation
+    // Phase 13 — REQUIREMENTS.md sets the single product accent to
+    // the professional blue `#2563eb` (var(--accent)). The annotation
     // tool's default color is that same canonical hex so the swatch
     // + the highlight the user paints both read as "the product
     // accent" the moment the tool is armed. The earlier defaults
-    // ("yellow" -> #eab308, then `#2563eb` blue) clashed with the
-    // calm zinc/slate UI.
-    expect(initialAnnotationToolState.color).toBe("#e07a2d");
+    // ("yellow" -> #eab308, then the Phase-2 muted-orange `#e07a2d`)
+    // tracked the previous accent identities.
+    expect(initialAnnotationToolState.color).toBe("#2563eb");
     expect(annotationColorToCss(initialAnnotationToolState.color)).toBe(
-      "#e07a2d",
+      "#2563eb",
     );
     expect(initialAnnotationToolState.penWidth).toBeGreaterThan(0);
   });

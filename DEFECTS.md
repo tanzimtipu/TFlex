@@ -1,4 +1,113 @@
-﻿## DEF-175: Annotation color palette popover is INVISIBLE and click-through in the frosted theme - the frosted backdrop-filter on .ann-toolbar traps the popover's z-index under the page; clicking where the palette should be fires the armed ink tool into the document instead
+## DEF-178: Edit mode tools do not respond to interaction - clicks on the page with "Edit text", "Add box", or "Image" tools armed do nothing
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 16 (Ground Truth verification)
+
+Steps to reproduce:
+1. Launch TFlex (dev build).
+2. Open any PDF with text content (e.g., report.pdf).
+3. Click the "Edit" button in the top toolbar to enter Edit mode.
+4. Select "Edit text" from the edit toolbar.
+5. Click on any existing text on the page.
+6. Select "Add box" from the edit toolbar.
+7. Click anywhere on the page.
+8. Select "Image" from the edit toolbar.
+9. Click anywhere on the page.
+
+Expected: 
+- "Edit text": Clicking text should make it editable (show an editor or text field).
+- "Add box": Clicking should add a new text box/rectangle.
+- "Image": Clicking should open a file picker or add a placeholder.
+
+Actual: 
+- No tools respond. Clicking on the page after arming any of these tools results in no visual change or action. The tools are effectively dead.
+
+Screenshot: screenshots/edit-mode-ground-truth-2.png
+
+History:
+- qa: opened (verified on v1.10.4 dev build)
+- frontend-dev: FIX-READY — Root cause: CSS grid auto-placement put edit-toolbar in 1fr row, stretching it to ~778px and covering the document area, swallowing all pointer events. Fix: explicit 5-row grid template with pinned grid-row assignments for each chrome bar (toolbar, ann-toolbar, edit-toolbar, search-bar, scroller). File changed: src/renderer/styles.css only. Unit tests: 230 files / 2815 tests pass.
+- qa: CLOSED — Retested via e2e/retests/qa_def_178_179_verify.spec.cjs. Verified tools respond to clicks and grid pinning prevents toolbar from swallowing page events.
+
+## DEF-179: Edit toolbar appears in the middle of the viewport (vertical alignment issue) - violates "docked on top" requirement
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 16 (Ground Truth verification)
+
+Steps to reproduce:
+1. Launch TFlex (dev build).
+2. Open a PDF.
+3. Click the "Edit" button.
+4. Observe the vertical position of the edit toolbar (containing Off, Edit text, Add box, Image, FONT).
+
+Expected: The edit toolbar should be docked at the top, immediately below the main toolbar/tab bar.
+
+Actual: The toolbar appears floating significantly lower than the main toolbar (Top: ~147px in a 903px window), appearing closer to the middle of the workspace area than a docked top position.
+
+Screenshot: screenshots/edit-mode-ground-truth-1.png
+
+History:
+- qa: opened (verified on v1.10.4 dev build)
+- frontend-dev: FIX-READY — Same root cause as DEF-178: CSS grid auto-placement. Fix: explicit 5-row grid template with `.edit-toolbar { grid-row: 3 }` pinned. File changed: src/renderer/styles.css only.
+- qa: CLOSED — Retested via e2e/retests/qa_def_178_179_verify.spec.cjs. Verified edit toolbar is pinned to grid-row 3 and docks correctly below the main/annotation toolbars.
+
+## DEF-177: Export-to-Word now produces an image-only .docx (zero editable text) — the Bug-7 raster-first change silently reverses the DEF-060/Phase-6 "must contain editable text" HIGH remediation and breaks the committed e2e contract
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 16 post-gate bug batch (found while verifying the dispatch's "Bug 7: Export to Word should preserve formatting and look identical to PDF")
+
+Steps to reproduce:
+1. Launch TFlex (dev build v1.10.2 via e2e/lib/launch.cjs launchApp, no executablePath).
+2. Open the report.pdf sample (34 pages).
+3. Tools palette -> "Export to Word (.docx)" -> Confirm (default full range).
+4. Unzip the produced .docx and inspect word/document.xml + word/media/.
+
+Expected: per REQUIREMENTS.md Phase-6 no-op remediation item 3 ("Word export saves as an image (.docx containing a page rendered as picture); it must contain editable text. HIGH — backend chose wrong export path"), the .docx must contain real w:p/w:r/w:t editable paragraphs (the DEF-060 text-first channel), while ALSO looking as close to the PDF as that channel allows. Committed e2e contract: e2e/sweep_edit_forms_export.spec.cjs X1 asserts textRuns > 0.
+
+Actual: the export embeds 34 full-page PNG rasters (word/media/image1..34.png, one per page, 33 page breaks, valid OOXML zip, 7.0 MB for the 34-page report) and ZERO <w:t> text runs. Visually the pages are pixel-faithful to the PDF (exported page 1 vs the PDF page 1: identical layout/fonts/positions — screenshots/qa-1102-b7-exported-page1.png), so the dispatch's "looks identical to PDF" wording is satisfied — but the text is a picture: not editable, not searchable, not reflowable in Word. The App.tsx change this round explicitly reversed the DEF-060 preference (renderer now prefers engine.createDocxFromImages over createDocxFromDoc; comment: "editable text is not worth losing the layout"). Consequence: the committed X1 e2e test fails (textRuns 0 > 0 expected) — the suite is red on this step in every run.
+
+This is a REQUIREMENTS CONFLICT, not a malfunction: the two contracts ("looks identical" via raster vs "contains editable text") are mutually exclusive and the orchestrator must pick one (or a hybrid: text-first with the raster as fallback was the old behavior — layout imperfect but text editable; raster-first is the new behavior — layout perfect but text frozen). No code change should land until the orchestrator rules; the failing X1 keeper stays red until then.
+
+Screenshot: screenshots/qa-1102-b7-exported-page1.png (the exported raster page — layout-identical to the PDF), screenshots/qa-1102-b7-docx-export.png
+
+History:
+- qa: opened (evidence: e2e/retests/qa_bugfix_verify_1.10.2.spec.cjs B7 — OOXML inspection: textRuns=0, drawings=34, pageBreaks=33, media=34 PNGs; e2e/sweep_edit_forms_export.spec.cjs X1 failing on the same assertion)
+- qa: CLOSED (retested on the DEV build v1.10.2 working tree after npm.cmd run build; launchApp with no executablePath). The renderer reverted to the DEF-060 text-first channel (App.tsx runAssemble now prefers engine.createDocxFromDoc(docId, entries) with createDocxFromImages only as the text-pass-failure/pre-DEF-060 fallback). (1) NEW KEEPER e2e/retests/qa_frost_glass_visual_1103.spec.cjs WORD test (green): export of report.pdf pages 1-2 via the dialog -> valid OOXML zip; word/document.xml carries 3 w:p paragraphs / 2 w:t text runs / 0 drawings / 0 media files, and the runs contain the DOCUMENT'S OWN WORDS ("TFlex Technical Report", "A study in PDF orchestration and performance.", the Chapter-1 body text) — real editable text, not empty shells. Artifact preserved: screenshots/qa-glass-docx-export.docx + extracted screenshots/qa-glass-docx-document.xml. (2) THE COMMITTED CONTRACT IS GREEN AGAIN: e2e/sweep_edit_forms_export.spec.cjs 3/3 (X1 "docx text runs=34 embedded images=0" on the full 34-page export — was textRuns=0/34 images when opened). (3) Regression: the docx dialog range field still works (1-2 honored: 3 paragraphs for 2 pages), the download completes via will-download with no errors, zero renderer errors in the run. Known trade-off (accepted per the orchestrator's text-first ruling): layout fidelity is that of plain text paragraphs, not pixel-identical pages.
+
+## DEF-176: Placed-stamp corner-resize handles render but the drag is a silent no-op — pointer capture lands on the handle while the move/up handlers live on the sibling stamp surface, so the stamp can never be resized and the surface stays stuck in the dragging class
+
+- Status: OPEN
+- Severity: HIGH
+- Found by: qa
+- Phase: 16 post-gate bug batch (found verifying dispatch Bug 6 "Stamp should be selectable, movable, resizable, deletable, and editable")
+
+Steps to reproduce:
+1. Launch TFlex (dev build v1.10.2 via e2e/lib/launch.cjs launchApp, no executablePath).
+2. Open the report.pdf sample.
+3. Tools palette -> Stamp -> "Place on page" -> click page 1 (APPROVED stamp lands).
+4. Click the stamp to select it (Confirm/Edit/Delete bar + corner handles appear).
+5. Drag the SE corner resize handle ([data-stamp-resize-handle="se"]) by e.g. +40/+30 px and release.
+6. Observe the stamp and the Confirm button, then click Confirm.
+
+Expected: the drag shows a live draft rect growing with the pointer; on release a pending resize is parked ("Confirm the move" title on the Confirm button); Confirm re-bakes the stamp at the larger rect (engine editImage mask+redraw) and the DOM surface grows by the drag delta.
+
+Actual: the drag does NOTHING visually (the stamp never grows a draft), the release parks NO pending move (Confirm's title stays "Clear selection"), Confirm therefore only clears the selection, and the stamp keeps its original size — resize is unreachable from the UI. Worse, the surface stays stuck in the `stamp-annotation-dragging` class after the failed drag (the stuck state clears only on the next click). Mechanism (pinned in source): the handles live in the `.content-selection-frame` SIBLING subtree, and the handle's onPointerDown -> beginSurfaceDrag calls `e.currentTarget.setPointerCapture(...)` on the HANDLE; every subsequent pointermove/pointerup is retargeted to the handle and bubbles only through the frame's ancestors — never through the `.stamp-annotation` div where `onSurfaceMove`/`onSurfaceUp` (the only readers of the gesture) are attached. The annotation overlay does not have this bug because its onPointerMove/onPointerUp live on the shared `.annotation-layer` ROOT (an ancestor of its handles), so captured events still reach them.
+
+The other four Bug-6 verbs verified WORKING on the same build (single click select + bar; move + Confirm re-bakes old area white/new area colored; Edit -> DRAFT retype swaps the stamp; Delete masks the pixels and drops the surface) — only resize is dead.
+
+Screenshot: screenshots/qa-diag-resize-pending.png (after the handle drag: width unchanged, Confirm title still "Clear selection", dragging class stuck), screenshots/qa-1102-b6-selected.png (selection chrome + handles rendered)
+
+History:
+- qa: opened (evidence: e2e/retests/qa_bugfix_verify_1.10.2.spec.cjs B6 — "width must grow by the se-handle drag dx: expected > 25, received 0"; controlled repro e2e/retests/qa_diag_resize_pending.spec.cjs; regression spec kept red-by-design until fixed)
+
+
+## DEF-175: Annotation color palette popover is INVISIBLE and click-through in the frosted theme - the frosted backdrop-filter on .ann-toolbar traps the popover's z-index under the page; clicking where the palette should be fires the armed ink tool into the document instead
 
 - Status: CLOSED
 - Severity: HIGH

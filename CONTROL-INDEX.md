@@ -107,3 +107,37 @@ collapsed `app-main` reveals the same native background.
   error-indicator semantic tokens (DEF-082). The e2e proof lives in
   `e2e/phase13_gate_final.spec.cjs` SC5 + the visual screenshots
   referenced above.
+
+## Phase 13 polish round — icon-only toolbar, gear, pan mode, blue accent
+
+Second Phase-13 dispatch (borderless window + professional color polish).
+The window/IPC work above (frame: false, window:* channels) was already
+in place; this round converts the chrome to icon-only, adds the missing
+title-bar affordances, and repoints the single accent to `#2563eb`.
+
+| Control | Selector | Promised action | Unit test | E2e |
+|---|---|---|---|---|
+| Settings gear | `.header-gear` (`data-open-preferences`) | Opens the Preferences sheet (same `prefsOpen` state the Edit-menu row and Ctrl+, use) | `test/unit/renderer/phase13Controls.test.tsx` (renders, a11y name, click fires `onOpenPreferences`) | (qa: click gear -> Preferences dialog visible) |
+| Caption glyphs (min/max/restore/close) | `[data-window-minimize]` / `[data-window-maximize]` | Standard Windows glyphs: Minus / Square / Copy(restore) / X — IPC actions unchanged from the rows above | `test/unit/renderer/titleBar.test.tsx` ("standard caption glyphs" test) | (qa: maximize/restore flips glyph) |
+| Toolbar icon-only conversion | `.toolbar .tool-btn` | Every action renders as a 28px icon-only button; `aria-label` + `title` carry the promise (Save a copy, Merge, Split, Sign, Flatten, Optimize, Audit, Edit, Delete) | `test/unit/renderer/phase13Controls.test.tsx` (no `.tool-btn-label` spans; every button named) + `test/unit/renderer/toolbarCssOverflow.test.ts` (label rules pruned) | (qa: no-op sweep by `data-*` attributes) |
+| Rotate counter-clockwise | `[data-toolbar-rotate-ccw]` | `engine.applyOp({kind:'rotate', page, dir:'ccw'})` on the toolbar's current page | `test/unit/renderer/phase13Controls.test.tsx` (fires callback) | (qa: page rotates counter-clockwise) |
+| Hand (pan) mode | `[data-hand-toggle]` (`data-hand-active`) | Arms grab-and-drag panning on `.document-scroller` (`data-hand`, grab cursor); annotation tools go inert; Escape or re-click exits; Edit/Sign/Stamp disarm on rise | `test/unit/renderer/phase13HandPan.test.tsx` + `test/unit/renderer/handPan.test.ts` (bail-out + scroll math) | (qa: drag pans, page press works, link click still fires) |
+| More (ellipsis) | `[data-tools-toggle]` | Opens/closes the Tools palette (the overflow surface); stable attribute from DEF-094 kept | `test/unit/renderer/bugDEF094_toolsToggleAttribute.test.tsx` ("More tools") | (qa: palette opens) |
+| Edit toolbar icon-only | `.edit-toolbar [data-edit-tool]` | Off / Edit text / Add box / Image as icon-only buttons | `test/unit/renderer/phase13Controls.test.tsx` | (qa: edit tools switch) |
+| Accent re-point | `--accent` (`#2563eb`), `--tf-accent*`, all soft washes | Single blue accent across all three themes; Open button, active tools, selection rings, focus rings, glows all follow; default annotation ink follows the accent | `test/unit/renderer/designTokensContract.test.ts` (frosted glow pins 37/99/235), `test/unit/renderer/annotationModel.test.ts` (default color #2563eb) | (qa: theme sweep screenshots `phase13-0*.png`) |
+| Thumbnail selection ring | `.thumb-current` | Full 1.5px accent ring (the one-sided 2px leading-edge bar was removed per the design rules) | (visual; no test pinned the inset bar) | (qa: thumbnails) |
+
+### QA gate notes for this round
+
+- Screenshots: `screenshots/phase13-01-welcome-frosted.png` …
+  `phase13-06-workspace-light.png` (frosted welcome + workspace, armed
+  pan mode, Preferences via gear, dark workspace, light workspace).
+  Computed evidence logged by the harness: `--accent` resolves to
+  `#2563eb`; `.titlebar` `webkit-app-region: drag`; armed scroller
+  reports `data-hand="true"` + `cursor: grab`.
+- `e2e/flicker-verification.spec.cjs` targets the Edit toolbar button
+  via `button:has-text("Edit")` — with the labels removed that selector
+  needs updating to `[data-toolbar-edit-toggle]` (qa-owned file).
+- Performance: the round adds one toolbar button, one header button,
+  and two pointer listeners; no render-path changes, so the Phase-13
+  budget is unaffected.

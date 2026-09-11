@@ -273,24 +273,23 @@ export interface AnnotationToolState {
 export const PEN_WIDTHS: readonly number[] = [1.5, 3, 5];
 
 /** Default accent color for the highlight / markup tools, in the
- *  renderer CSS `#rrggbb` form. Per REQUIREMENTS.md the product
- *  ships with a single muted orange accent (`--accent` = #e07a2d).
- *  The markup / ink default used to be the built-in `"yellow"` name
- *  (which resolves to `#eab308`), then the old `#2563eb` blue; the
- *  visual identity of the app is centred on the orange accent and
- *  the highlight swatch should reflect that — an orange highlight
- *  reads as "this is the default selection colour" the moment the
- *  user arms the tool, while a yellow swatch looks like a leftover
- *  from a different product. The custom-hex default flows through
- *  `annotationColorToCss` exactly like a built-in name would, so
- *  the overlay, the swatch, and the panel preview all agree.
+ *  renderer CSS `#rrggbb` form. Per REQUIREMENTS.md (Phase 13) the
+ *  product ships with a single professional blue accent
+ *  (`--accent` = #2563eb). The markup / ink default used to be the
+ *  built-in `"yellow"` name (which resolves to `#eab308`), then the
+ *  Phase-2 muted-orange `#e07a2d`; the visual identity of the app is
+ *  centred on the blue accent and the highlight swatch should reflect
+ *  that — a blue highlight reads as "this is the default selection
+ *  colour" the moment the user arms the tool. The custom-hex default
+ *  flows through `annotationColorToCss` exactly like a built-in name
+ *  would, so the overlay, the swatch, and the panel preview all agree.
  *
  *  NOTE: this stays a literal hex, not `var(--accent)`: the value
  *  is committed as the annotation's ink color into the PDF, and the
  *  engine only accepts named presets or `#rrggbb` hexes (anything
- *  else degrades to yellow). #e07a2d IS the accent token's canonical
+ *  else degrades to yellow). #2563eb IS the accent token's canonical
  *  swatch, so the renderer and the committed document stay in sync. */
-export const DEFAULT_ANNOTATION_COLOR = "#e07a2d";
+export const DEFAULT_ANNOTATION_COLOR = "#2563eb";
 
 export const initialAnnotationToolState: AnnotationToolState = {
   tool: "select",

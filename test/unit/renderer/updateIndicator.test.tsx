@@ -535,6 +535,7 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
           onThemeChange={(): void => undefined}
           onOpen={(): void => undefined}
           onNewEmptyTab={(): void => undefined}
+          onOpenPreferences={(): void => undefined}
           updateIndicator={<UpdateIndicator />}
         />,
       );
@@ -597,6 +598,7 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
           onThemeChange={(): void => undefined}
           onOpen={(): void => undefined}
           onNewEmptyTab={(): void => undefined}
+          onOpenPreferences={(): void => undefined}
         />,
       );
     });

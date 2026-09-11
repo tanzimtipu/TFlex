@@ -9,13 +9,13 @@
 //
 // The fix:
 //   - .toolbar is a flex-wrap row with `min-height: 44px` so it
-//     grows vertically when a labelled button overflows.
+//     grows vertically when buttons overflow.
 //   - .toolbar-group is also flex-wrap with min-width: 0 so it can
 //     shrink as needed.
-//   - .tool-btn-with-label overrides the fixed 28px width to
-//     auto, lets the label set the button's intrinsic width, and
-//     adds horizontal padding so the label isn't flush against the
-//     icon.
+//   - Phase 13: the toolbar is fully icon-only — every button is the
+//     fixed 28px square (`.tool-btn-with-label` and `.tool-btn-label`
+//     were pruned with the text labels), so the labelled-width opt-out
+//     contract below became "no such rule exists".
 //   - .toolbar-group:last-child is margin-left: auto so the right
 //     cluster still pins to the trailing edge when both groups fit
 //     on one row.
@@ -114,16 +114,15 @@ describe("styles.css — toolbar overflow regression (P9 fix #1)", () => {
     expect(declarationValue(body, "white-space")).toBe("nowrap");
   });
 
-  it(".tool-btn-with-label opts out of the 28px width (label decides)", () => {
-    const body = findRuleBody(
-      stripCssComments(readStyles()),
-      ".tool-btn-with-label",
-    );
-    expect(body).not.toBeNull();
-    if (body === null) return;
-    expect(declarationValue(body, "width")).toBe("auto");
-    expect(declarationValue(body, "padding")).not.toBeNull();
-    expect(declarationValue(body, "gap")).toBe("4px");
+  it("Phase 13 — no label-width opt-out survives (the toolbar is icon-only)", () => {
+    // The toolbar's labels are gone; the width-opt-out rule they
+    // needed must not linger half-dead in the stylesheet. A re-added
+    // label affordance must deliberately restore BOTH this rule and
+    // the TSX spans.
+    expect(
+      findRuleBody(stripCssComments(readStyles()), ".tool-btn-with-label"),
+    ).toBeNull();
+    expect(findRuleBody(stripCssComments(readStyles()), ".tool-btn-label")).toBeNull();
   });
 
   it(".page-indicator shrinks under pressure (prevents toolbar overflow)", () => {

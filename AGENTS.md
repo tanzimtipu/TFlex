@@ -148,7 +148,7 @@ No entry may remain PENDING when the final phase completes.
 ## Model integrity — hard stop rule
 
 Every agent runs only on the model pinned in its `.opencode/agents/*.md` definition.
-The orchestrator's model, `openrouter/deepseek/deepseek-v4-pro-0813`, is reserved for the
+The orchestrator's model, `openrouter/moonshotai/kimi-k2.5`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
 other wrong model. If a sub-agent cannot load its pinned model (provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
@@ -170,9 +170,8 @@ the human operator may swap that agent's `model:` field to the documented fallba
   is valid; then minimax/minimax-m3:free, then minimax/minimax-m3 paid. Note: the
   alias carries a leading tilde — the plain `deepseek/deepseek-v4-flash-latest` is NOT
   a valid OpenRouter ID)
-- qa: deepseek/deepseek-v4-flash-vision-exp -> google/gemini-3-flash-preview (note: the
-  vision-exp model is served by a single provider, DeepSeek; if your account's data policy
-  blocks it, stay on gemini-3-flash-preview, or the flash-vision-exp provider rejection)
+- qa: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview (native multimodal model used
+  for screenshot inspection; gemini-3-flash-preview is the vision-capable fallback)
 - adversary: deepseek/deepseek-v4-flash -> google/gemini-3-flash-preview
 - git-agent: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview
 - orchestrator: no fallback — stop and ask the human.
@@ -180,7 +179,7 @@ the human operator may swap that agent's `model:` field to the documented fallba
 Note: frontend-dev and adversary intentionally share the `deepseek/deepseek-v4-flash`
 pin — both are text-only workloads.
 
-Fallback to the orchestrator's model (`openrouter/deepseek/deepseek-v4-pro-0813`) is never
+Fallback to the orchestrator's model (`openrouter/moonshotai/kimi-k2.5`) is never
 permitted for any sub-agent. The table above is the only valid fallback source.
 
 2026-08-30 (third swap): frontend-dev re-pinned from minimax/minimax-m3 back to
@@ -256,3 +255,19 @@ When writing a unit test for an overlay interaction, include a click that lands
 on the action bar's confirm button and assert it fires (not swallowed), and
 include a click on a disarm-eligible element asserting the tool disarms while
 the click still completes.
+
+## Release pipeline (OTA)
+
+A release is NOT complete when the tag is pushed. electron-updater only offers
+an update once a GitHub Release exists for the tag with these assets attached:
+`latest.yml`, `TFlex-Setup-<version>.exe` and its `.blockmap` (the portable
+build is attached for users but is not auto-updateable).
+
+- git-agent creates the GitHub Release with assets (`gh release create` /
+  `gh release upload`) after verifying artifact names in `release/` match the
+  tag; verification is the release URL listing all required assets.
+- The repo is private: publishing needs `GH_TOKEN` (build-time,
+  electron-builder) and the installed app needs `TFLEX_GH_TOKEN` (runtime
+  updater). Tokens live in `.env` (gitignored, never committed); only the
+  operator supplies the real token value.
+- A pushed tag without a GitHub Release plus assets is an incomplete release.

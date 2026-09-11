@@ -304,6 +304,12 @@ export function PageView(props: PageViewProps) {
   const [renderedScale, setRenderedScale] = useState<number | null>(null);
   const [measured, setMeasured] = useState<Measured[]>([]);
   const textItemsRef = useRef<TextItemGeom[]>([]);
+  // True while the visible canvas holds a frame THIS component actually
+  // painted. A freshly created canvas starts at the spec default
+  // 300x150 with no pixels, so `canvas.width > 0` is NOT a "has a
+  // previous frame" signal — only a completed blit counts. Drives the
+  // double-buffer (keep/stretch the previous frame vs. B15 white fill).
+  const paintedFrameRef = useRef(false);
 
   const ready = renderedScale !== null;
 
@@ -335,6 +341,7 @@ export function PageView(props: PageViewProps) {
         canvas.width = 0;
         canvas.height = 0;
       }
+      paintedFrameRef.current = false;
       // Drop the text-layer DOM, the text-items snapshot, and the pdf.js
       // TextLayer instance so none of them hang around for unmounted
       // slots. The next render rebuilds all three from scratch. The
@@ -443,42 +450,110 @@ export function PageView(props: PageViewProps) {
       // upsampled. The "retina" sharpening this loses would only matter if
       // we were rendering at a low CSS scale and relying on DPR upsampling,
       // which we are not (cssScale = fit-width is already >1.5x).
-      canvas.width = Math.floor(viewport.width);
-      canvas.height = Math.floor(viewport.height);
-      canvas.style.width = `${Math.floor(viewport.width)}px`;
-      canvas.style.height = `${Math.floor(viewport.height)}px`;
-      // Request a non-alpha 2D context. The default '2d' context allocates
-      // 4 bytes per pixel (RGBA); { alpha: false } allocates 3 bytes per
-      // pixel (RGB), saving another 25% on canvas memory with zero visible
-      // difference for PDF rendering (the page is opaque).
-      const ctx = canvas.getContext("2d", { alpha: false });
-      if (ctx === null) {
+      //
+      // Flicker fix — the commit refresh must never blank the page. Engine
+      // edits commit through a full pdf.js proxy rebuild
+      // (`refreshDocProxyFor` swaps `session.doc`), which re-runs this
+      // effect on EVERY mounted page. The old code cleared the canvas at
+      // the top of the run and pdf.js painted into it asynchronously, so
+      // after every edit Confirm the page flashed white/black for the
+      // render duration (the reported "Add box -> Confirm" regression).
+      // The visible canvas now KEEPS its last painted frame:
+      //   - same-size re-render (doc swap at the same scale/rotation):
+      //     the canvas is left untouched — the previous frame stays on
+      //     screen while the new one renders off-screen;
+      //   - size change (zoom, rotation quarter-turn): resize the canvas
+      //     and STRETCH the previous frame into it, so the page is never
+      //     blank between zoom steps either;
+      //   - fresh mount (no previous frame): the B15 white fill below.
+      // The new frame renders into a SCRATCH canvas and is blitted onto
+      // the visible canvas in one drawImage only when it is fully painted
+      // (see the swap after the render), so the refresh is atomic and
+      // invisible.
+      const renderW = Math.floor(viewport.width);
+      const renderH = Math.floor(viewport.height);
+      const prevW = canvas.width;
+      const prevH = canvas.height;
+      const hasPreviousFrame = paintedFrameRef.current;
+      if (!hasPreviousFrame || prevW !== renderW || prevH !== renderH) {
+        let previousFrame: HTMLCanvasElement | null = null;
+        if (hasPreviousFrame && prevW > 0 && prevH > 0) {
+          // Snapshot the current frame before the resize wipes it, so it
+          // can be stretched into the resized canvas below.
+          previousFrame = document.createElement("canvas");
+          previousFrame.width = prevW;
+          previousFrame.height = prevH;
+          previousFrame.getContext("2d")?.drawImage(canvas, 0, 0);
+        }
+        canvas.width = renderW;
+        canvas.height = renderH;
+        canvas.style.width = `${renderW}px`;
+        canvas.style.height = `${renderH}px`;
+        // Request a non-alpha 2D context. The default '2d' context
+        // allocates 4 bytes per pixel (RGBA); { alpha: false } allocates
+        // 3 bytes per pixel (RGB), saving another 25% on canvas memory
+        // with zero visible difference for PDF rendering (the page is
+        // opaque).
+        const ctx = canvas.getContext("2d", { alpha: false });
+        if (ctx === null) {
+          endRender();
+          return;
+        }
+        if (previousFrame !== null) {
+          // Stretch the previous frame to the new size — the page stays
+          // visible (blurry for a frame) instead of blanking while the
+          // sharp new frame renders.
+          ctx.drawImage(
+            previousFrame,
+            0, 0, prevW, prevH,
+            0, 0, renderW, renderH,
+          );
+        } else {
+          // B15 — fill the canvas with opaque paper-white BEFORE the
+          // pdf.js render starts. The canvas is created with
+          // `{ alpha: false }` (above) so an UNFILLED canvas starts
+          // opaque-black; if the underlying PDF page is blank (no
+          // operators, or only an invisible text layer — common after
+          // the engine's `insertBlankPage` or a flat /OCR layer)
+          // pdf.js paints nothing onto the canvas and the page would
+          // render as a black rectangle. Painting a white background
+          // first gives every blank / empty page the same
+          // paper-colour identity regardless of theme; the user's
+          // document content still paints on top in the usual way
+          // (pdf.js's operator list writes opaque pixels over the
+          // fill). This is the renderer-side fix for the "blank page
+          // shows as black in dark mode" report.
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, renderW, renderH);
+        }
+      }
+      // Render the new frame into a SCRATCH canvas (never the visible
+      // one), then blit it over the still-painted previous frame once
+      // pdf.js has finished. This is what makes the commit refresh
+      // atomic: the visible canvas never shows a half-painted or blank
+      // frame. The same B15 white fill applies to the scratch so blank
+      // pages blit as white paper (and the visible canvas keeps its
+      // previous white fill while the blank page renders). The scratch
+      // lives only for this run and is released after the blit — a
+      // transient ~page-sized bitmap, same peak as the old direct paint.
+      const scratch = document.createElement("canvas");
+      scratch.width = renderW;
+      scratch.height = renderH;
+      const scratchCtx = scratch.getContext("2d", { alpha: false });
+      if (scratchCtx === null) {
         endRender();
         return;
       }
-      // B15 — fill the canvas with opaque paper-white BEFORE the
-      // pdf.js render starts. The canvas is created with
-      // `{ alpha: false }` (above) so an UNFILLED canvas starts
-      // opaque-black; if the underlying PDF page is blank (no
-      // operators, or only an invisible text layer — common after
-      // the engine's `insertBlankPage` or a flat /OCR layer)
-      // pdf.js paints nothing onto the canvas and the page would
-      // render as a black rectangle. Painting a white background
-      // first gives every blank / empty page the same
-      // paper-colour identity regardless of theme; the user's
-      // document content still paints on top in the usual way
-      // (pdf.js's operator list writes opaque pixels over the
-      // fill). This is the renderer-side fix for the "blank page
-      // shows as black in dark mode" report.
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      // Track the active render task so a stale cssScale (or other dep change)
-      // can cancel it BEFORE a new render begins on the same canvas. pdf.js
-      // refuses two concurrent renders against the same canvas, which used
-      // to surface as a hard "Cannot use the same canvas during multiple
-      // render() operations" error during fast zoom in / out.
+      scratchCtx.fillStyle = "#ffffff";
+      scratchCtx.fillRect(0, 0, renderW, renderH);
+      // Track the active render task so a stale cssScale (or other dep
+      // change) can cancel it BEFORE a new render begins. pdf.js refuses
+      // two concurrent renders against the same canvas, which used to
+      // surface as a hard "Cannot use the same canvas during multiple
+      // render() operations" error during fast zoom in / out (the
+      // scratch canvas is per-run, so the runs never share a canvas).
       const task = pageProxy.render({
-        canvasContext: ctx,
+        canvasContext: scratchCtx,
         viewport: pageProxy.getViewport({ scale: cssScale, rotation: rotDeg }),
       });
       renderTask = task;
@@ -526,6 +601,19 @@ export function PageView(props: PageViewProps) {
         return;
       }
       textLayerRef.current = textLayer;
+      // The new frame is fully painted; swap it onto the visible canvas
+      // in one drawImage so the refresh lands atomically. The previous
+      // frame stayed on screen until this instant (rendered above), so
+      // the engine commit / zoom refresh is never visible as a blank or
+      // half-painted page.
+      if (canvas.width === renderW && canvas.height === renderH) {
+        const visibleCtx = canvas.getContext("2d", { alpha: false });
+        if (visibleCtx !== null) {
+          visibleCtx.drawImage(scratch, 0, 0);
+          // The visible canvas now holds a real painted frame.
+          paintedFrameRef.current = true;
+        }
+      }
       setRenderedScale(cssScale);
       endRender();
     };
@@ -545,19 +633,18 @@ export function PageView(props: PageViewProps) {
       } catch {
         // ignore
       }
-      // Explicitly release the canvas backing ImageBitmap. When PageView
-      // unmounts (the common path: the geometry mount drops the page from
-      // the mounted set on scroll), the canvas DOM node is removed by
-      // React, but the browser only releases the ImageBitmap once the
-      // canvas element is garbage-collected. Setting width/height to 0
-      // forces an immediate release — important for idle memory on a
-      // 500+ page document where dozens of canvas elements can be in
-      // flight between unmount and the next GC cycle.
-      const canvas = canvasRef.current;
-      if (canvas !== null && (canvas.width !== 0 || canvas.height !== 0)) {
-        canvas.width = 0;
-        canvas.height = 0;
-      }
+      // NOTE: the canvas backing store is deliberately NOT released
+      // here. This cleanup runs on EVERY dep change (scale / rotation /
+      // doc swap), and zeroing the bitmap at the top of a refresh was
+      // what blanked the page to white/black for the render duration
+      // after every engine commit — the "flash on Add box -> Confirm"
+      // regression. The visible frame is kept (and refreshed by the
+      // double-buffer in `run`); the backing store is released by the
+      // shouldRender=false branch above when the slot stops rendering,
+      // and on real unmount the detached canvas is garbage-collected
+      // (React nulls this component's refs before effect cleanups run,
+      // so an unmount-time wipe could never reach the element anyway —
+      // the shouldRender=false path is the memory contract, DEF-016).
       // Drop the text-layer DOM and the text-items snapshot so they
       // don't dangle until GC catches up. The next render rebuilds them.
       const textHost = textHostRef.current;

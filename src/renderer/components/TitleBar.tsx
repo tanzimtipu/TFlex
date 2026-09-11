@@ -43,9 +43,9 @@
 
 import {
   Copy,
-  Maximize2,
   Menu,
-  Minimize2,
+  Minus,
+  Square,
   type LucideIcon,
   X,
 } from "lucide-react";
@@ -217,13 +217,18 @@ export function TitleBar(props: TitleBarProps): ReactElement {
 
   const flattened = menuGroups !== undefined ? flattenMenuGroups(menuGroups) : [];
 
-  // B10 — the restore glyph must be DISTINCT from the minimize
-  // glyph. The previous `maximized ? Minimize2 : Maximize2` reused
-  // the minimize button's icon when maximized, so the two window
-  // controls were visually identical. `Copy` (two overlapping
-  // squares) is the conventional "restore down" glyph; the maximize
-  // button still shows `Maximize2` before the window is maximized.
-  const MaximizeIcon = maximized ? Copy : Maximize2;
+  // B10 + Phase 13 — the caption glyphs follow the Windows/VS Code
+  // convention every desktop user already knows:
+  //   minimize  -> a horizontal line (Minus)
+  //   maximize  -> a single square (Square)
+  //   restore   -> two overlapping squares (Copy)
+  //   close     -> an X (X)
+  // The previous diagonal-arrow pair (Minimize2/Maximize2) read as
+  // "collapse/expand" rather than caption controls, and the restore
+  // state reused the minimize glyph when maximized. `Copy` stays the
+  // distinct restore glyph (two overlapping squares) so minimize and
+  // restore can never look identical.
+  const MaximizeIcon = maximized ? Copy : Square;
   const maximizeLabel = maximized ? "Restore window" : "Maximize window";
 
   return (
@@ -317,7 +322,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           title="Minimize"
           data-window-minimize
         >
-          <Minimize2 size={16} aria-hidden />
+          <Minus size={16} aria-hidden />
         </button>
         <button
           type="button"

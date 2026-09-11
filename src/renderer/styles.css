@@ -1,5 +1,6 @@
 /* TFlex renderer styles
- * Single accent muted orange, neutral zinc/slate base, two equally designed themes.
+ * Single accent professional blue (#2563eb, Phase 13), neutral zinc/slate base,
+ * two equally designed themes.
  * Inter via @fontsource-variable/inter. Density like VS Code / Linear.
  * No gradients, no purple, no giant radii. Motion is the global
  * --tf-* system (theme-independent): clearly visible, fast, fluid,
@@ -35,19 +36,22 @@
   --sp-5: 24px;
   --sp-6: 32px;
 
-  /* Accent — muted orange */
-  --accent: #e07a2d;
-  --accent-hover: #ea8a3e;
-  --accent-pressed: #c25f1d;
-  --accent-soft: rgba(224, 122, 45, 0.12);
+  /* Accent — professional blue (Phase 13). The one accent is Tailwind's
+   * blue-600 #2563eb: hover lightens to blue-500, press deepens to
+   * blue-700. Every soft wash below derives from the same 37/99/235
+   * triple so the whole state ladder stays one hue. */
+  --accent: #2563eb;
+  --accent-hover: #3b82f6;
+  --accent-pressed: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, 0.12);
   /* Phase 4 — the ONE state system every interactive control shares:
    * selected/active wash is 0.10, pressed is 0.20, keyboard focus is
-   * the 2px orange ring. The tokens live once here so a control that
+   * the 2px accent ring. The tokens live once here so a control that
    * needs a state upgrade never invents its own alpha. */
-  --accent-selected: rgba(224, 122, 45, 0.10);
-  --accent-pressed-soft: rgba(224, 122, 45, 0.20);
-  --accent-hover-bg: rgba(224, 122, 45, 0.08);
-  --focus-ring: 0 0 0 2px rgba(224, 122, 45, 0.35);
+  --accent-selected: rgba(37, 99, 235, 0.10);
+  --accent-pressed-soft: rgba(37, 99, 235, 0.20);
+  --accent-hover-bg: rgba(37, 99, 235, 0.08);
+  --focus-ring: 0 0 0 2px rgba(37, 99, 235, 0.35);
 
   /* Phase-15 frosted-acrylic — THEME-INDEPENDENT structural tokens.
    * They live in :root (next to the --tf-motion-* system, same
@@ -67,17 +71,17 @@
   --tf-radius-sm: 5px;
   --tf-radius-md: 8px;
   --tf-radius-lg: 10px;
-  /* The single orange accent stays the same in all three themes —
+  /* The single blue accent stays the same in all three themes —
    * these are the canonical frosted names per the Phase-15 spec. */
-  --tf-accent: #e07a2d;
-  --tf-accent-hover: #ea8a3e;
-  --tf-accent-pressed: #c25f1d;
-  --tf-accent-soft: rgba(224, 122, 45, 0.10);
+  --tf-accent: #2563eb;
+  --tf-accent-hover: #3b82f6;
+  --tf-accent-pressed: #1d4ed8;
+  --tf-accent-soft: rgba(37, 99, 235, 0.10);
   /* Phase B — the frosted toolbar's armed-tool wash is the spec's
    * 0.13 alpha (thumbnails and palette rows keep the 0.10
    * --accent-selected). */
-  --tf-accent-selected: rgba(224, 122, 45, 0.13);
-  --tf-accent-focus: rgba(224, 122, 45, 0.35);
+  --tf-accent-selected: rgba(37, 99, 235, 0.13);
+  --tf-accent-focus: rgba(37, 99, 235, 0.35);
 
   /* Densities & radii (small by default) */
   --radius-1: 3px;
@@ -186,7 +190,7 @@
    * set, with an occasional subtle secondary detail (a small corner
    * dot on the two-tone tools). The palette is theme-independent —
    * identical hues on light, dark and frosted — and never applies to
-   * text, indicators or the single orange accent. */
+   * text, indicators or the single blue accent. */
   --icon-blue: #4d9de0;
   --icon-cyan: #42b7c8;
   --icon-green: #69b578;
@@ -242,12 +246,12 @@
   --menu-border: #e2e8f0;
 
   /* Phase 4 — welcome sample cards. Compact card surface + hover
-   * treatment (the hover border is the same orange tint in both
+   * treatment (the hover border is the same accent tint in both
    * themes; the surfaces differ). */
   --sample-card-bg: #ffffff;
   --sample-card-bg-hover: #f8fafc;
   --sample-card-border: #e2e8f0;
-  --sample-card-border-hover: rgba(224, 122, 45, 0.35);
+  --sample-card-border-hover: rgba(37, 99, 235, 0.35);
 
   /* Layered surfaces (light) */
   --bg-secondary: #f4f6f8;
@@ -471,7 +475,7 @@
   --sample-card-bg: var(--tf-surface-2);
   --sample-card-bg-hover: var(--tf-surface-3);
   --sample-card-border: var(--tf-border);
-  --sample-card-border-hover: rgba(224, 122, 45, 0.35);
+  --sample-card-border-hover: rgba(37, 99, 235, 0.35);
 
   /* Soft cool shadows — elevation without harsh black. */
   --shadow-page: 0 2px 10px rgba(15, 23, 42, 0.08), 0 10px 28px rgba(15, 23, 42, 0.08);
@@ -1006,8 +1010,8 @@ input[type="checkbox"] {
     transform var(--motion-fast) var(--ease-in-out);
 }
 
-/* Phase 4 — menu item hover: the shared orange selected wash
- * (rgba(224,122,45,0.10)); keyboard focus adds the orange ring. */
+/* Phase 4 — menu item hover: the shared accent selected wash
+ * (rgba(37,99,235,0.10)); keyboard focus adds the accent ring. */
 .titlebar-menu-row:hover,
 .titlebar-menu-row:focus-visible {
   outline: none;
@@ -1182,7 +1186,7 @@ input[type="checkbox"] {
  * caption strip clips overflow (.tab-area is overflow: hidden) —
  * an outside ring would be cut off at the strip edges. */
 .tab:focus-visible {
-  outline: 2px solid rgba(224, 122, 45, 0.35);
+  outline: 2px solid rgba(37, 99, 235, 0.35);
   outline-offset: -2px;
 }
 
@@ -1312,6 +1316,47 @@ input[type="checkbox"] {
    * intent lives in one place (the parent's space-between) and
    * survives future flex-basis tweaks on .tab-area. */
   flex: 0 0 auto;
+}
+
+/* Phase 13 — the title bar's Settings (gear) control. Icon-only
+ * chrome control matching the title-bar icon ladder: 28px square,
+ * --fg-muted glyph at rest, hover wash + --fg-strong glyph, accent
+ * ring on keyboard focus. It sits inside .header-actions (already
+ * no-drag via the AppHeader rules) so clicks never start a window
+ * drag. */
+.header-gear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
+}
+
+.header-gear:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.header-gear:active {
+  background: var(--accent-pressed-soft);
+  color: var(--accent);
+}
+
+.header-gear:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
 }
 
 .tab-stage {
@@ -1680,7 +1725,19 @@ input[type="checkbox"] {
 
 .workspace-main {
   display: grid;
-  grid-template-rows: auto auto 1fr;
+  /* Five explicit rows: the two unconditional chrome rows (command
+   * toolbar, annotation toolbar), the two CONDITIONAL chrome rows
+   * (edit toolbar, search bar) and the scroller's 1fr row. The
+   * conditional rows are pinned to fixed rows (below) so whichever
+   * of them is mounted never steals the 1fr row via grid
+   * auto-placement — when that happened, the row-3 item (e.g. the
+   * edit toolbar) STRETCHED to the full remaining height, covered
+   * the document with a giant hit surface (DEF-178: armed edit
+   * tools dead — every page click landed on the toolbar) and its
+   * full-height offsetHeight inflated the --tf-chrome-y measure so
+   * .document-content was shoved a viewport down (DEF-179). Empty
+   * rows collapse to 0px; the scroller always owns the 1fr row. */
+  grid-template-rows: auto auto auto auto 1fr;
   background: var(--bg-canvas);
   min-width: 0;
   min-height: 0;
@@ -1795,24 +1852,25 @@ input[type="checkbox"] {
 
 .thumb:hover { background: var(--bg-hover); }
 
-/* Phase 4 — keyboard focus on a thumbnail uses the orange ring
+/* Phase 4 — keyboard focus on a thumbnail uses the accent ring
  * (outline, not box-shadow, so it never collides with the
- * current-page inset bar / selection ring). */
+ * current-page selection ring). */
 .thumb:focus-visible {
-  outline: 2px solid rgba(224, 122, 45, 0.35);
+  outline: 2px solid rgba(37, 99, 235, 0.35);
   outline-offset: 1px;
 }
 
 .thumb-current {
-  /* Phase-3 workspace: current-page selection is a SUBTLE orange
-   * indicator — a 2px accent bar on the leading edge plus a faint
-   * orange wash (the shared 0.10 selected token). Deliberately NOT a
-   * solid orange block or a full accent border around the thumb. */
+  /* Phase 13 look-and-feel — current-page selection is a full accent
+   * ring (1.5px, all four sides) over the shared 0.10 selected wash.
+   * The previous leading-edge-only 2px inset bar was a one-sided
+   * accent border (banned by the design rules); a symmetric ring
+   * reads as "this thumb is selected" without a directional edge. */
   background: var(--accent-selected);
-  box-shadow: inset 2px 0 0 var(--accent);
+  box-shadow: 0 0 0 1.5px var(--accent);
   /* Chunk 2 — selecting a thumb swells it 0.985 -> 1 over
    * --tf-motion-normal (180ms, in the 120-180ms thumb band). The
-   * inset indicator bar itself stays instant (documented Phase 5
+   * ring itself stays instant (documented Phase 5
    * contract — it tracks scroll and must never repaint per frame). */
   animation: thumb-select var(--tf-motion-normal) var(--tf-ease-standard);
 }
@@ -2002,9 +2060,10 @@ input[type="checkbox"] {
    * unmistakable. */
   color: var(--fg-muted);
   cursor: pointer;
-  /* Labels inside a button never wrap to a second line; instead the
-   * toolbar grows vertically. The button itself decides its own
-   * width via the `tool-btn-with-label` class. */
+  /* Phase 13 — the toolbar is fully icon-only: every action is a
+   * 28px square glyph with its promise in `title` + `aria-label`.
+   * (The old icon+label buttons carried `tool-btn-with-label`; the
+   * class is pruned with the labels.) */
   white-space: nowrap;
   transition:
     background var(--motion-fast) var(--ease-out),
@@ -2012,19 +2071,6 @@ input[type="checkbox"] {
     border-color var(--motion-fast) var(--ease-out),
     box-shadow var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-in-out);
-}
-
-/* Labelled buttons (icon + text) opt out of the fixed 28px width and
- * add horizontal padding so the text isn't flush against the icon.
- * Without this the label "Save..." inside a 28px box overflows the
- * button and bleeds into the next control. */
-.tool-btn-with-label {
-  width: auto;
-  /* Phase 2 — slightly wider hit target for labelled actions
-   * (10px sides); the 4px gap (pinned by the toolbar overflow
-   * contract test) spaces the icon from the label. */
-  padding: 0 10px;
-  gap: 4px;
 }
 
 /* Phase 2 + Phase 6 — toolbar button states, tokenized and
@@ -2155,7 +2201,7 @@ input[type="checkbox"] {
 
 .page-input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(224, 122, 45, 0.25);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
 }
 
 .page-total { color: var(--fg-muted); }
@@ -2210,6 +2256,10 @@ input[type="checkbox"] {
   background: var(--bg-toolbar);
   height: 40px;
   flex-shrink: 0;
+  /* DEF-178/179 — pinned grid row: the search bar is a CONDITIONAL
+   * chrome row of .workspace-main; an explicit row keeps it out of
+   * the 1fr scroller row (see the .workspace-main comment). */
+  grid-row: 4;
 }
 
 .search-input {
@@ -2243,6 +2293,10 @@ input[type="checkbox"] {
   scrollbar-width: thin;
   min-height: 0;
   height: 100%;
+  /* DEF-178/179 — pinned grid row: the scroller ALWAYS owns the
+   * .workspace-main 1fr row (row 5), no matter which conditional
+   * chrome rows above it are mounted. */
+  grid-row: 5;
 }
 
 .document-scroller::-webkit-scrollbar { width: 10px; }
@@ -2250,6 +2304,30 @@ input[type="checkbox"] {
   background: var(--border-strong);
   border-radius: 8px;
   border: 2px solid var(--bg-canvas);
+}
+
+/* Phase 13 — Hand (pan) mode. While armed, the scroller advertises
+ * grab-and-drag: a grab cursor over the whole viewport (the pages'
+ * text layer would otherwise advertise a text caret), no text
+ * selection during drags, and a grabbing cursor while the pointer
+ * is captured. The DocumentView pointer handlers do the actual
+ * scrolling; this is purely the affordance layer. */
+.document-scroller.document-scroller-hand {
+  cursor: grab;
+}
+
+.document-scroller.document-scroller-hand * {
+  cursor: grab;
+}
+
+.document-scroller.document-scroller-hand,
+.document-scroller.document-scroller-hand * {
+  user-select: none;
+}
+
+.document-scroller[data-hand-dragging="true"],
+.document-scroller[data-hand-dragging="true"] * {
+  cursor: grabbing !important;
 }
 
 .document-content {
@@ -3004,17 +3082,6 @@ input[type="checkbox"] {
   opacity: 0.8;
   color: var(--success);
   cursor: default;
-}
-
-.tool-btn-label {
-  /* Phase 2 — the icon+label spacing comes from the button's own
-   * `gap: 4px`; the old 4px margin doubled the space to 8px and
-   * made labelled buttons read looser than the icon row. The label
-   * keeps a medium weight so labelled "common" actions sit one
-   * typographic step below the primary icon controls. */
-  font-size: var(--fs-sm);
-  font-weight: 500;
-  letter-spacing: -0.005em;
 }
 
 /* ---- Modal dialogs (Merge + Split) ---- */
@@ -4627,7 +4694,7 @@ rect.ann-highlight.ann-preview {
   /* Phase 2 — signature selection wash: blue -> accent orange, same
    * faint alpha (0.05) so a selected signature reads as "picked",
    * not "painted over". */
-  background: rgba(224, 122, 45, 0.05);
+  background: rgba(37, 99, 235, 0.05);
 }
 
 .sig-raster {
@@ -4982,7 +5049,7 @@ rect.ann-highlight.ann-preview {
 
 .tab-new:focus-visible {
   /* Inset ring — see .tab:focus-visible (the strip clips overflow). */
-  outline: 2px solid rgba(224, 122, 45, 0.35);
+  outline: 2px solid rgba(37, 99, 235, 0.35);
   outline-offset: -2px;
   color: var(--fg-strong);
 }
@@ -4996,8 +5063,8 @@ rect.ann-highlight.ann-preview {
    * Previously `top: 0` made the palette overlay the toolbar's
    * right-side controls, hiding Tools/Edit/Optimize/etc. (DEF:
    * palette overlaps toolbar options). The toolbar in
-   * .workspace-main uses `grid-template-rows: auto auto 1fr` with
-   * min-height 44px and can wrap to multiple rows; the
+   * .workspace-main uses `grid-template-rows: auto auto auto auto 1fr`
+   * with min-height 44px and can wrap to multiple rows; the
    * calc(--toolbar-h + var(--sp-1)) below matches the current
    * single-row toolbar height plus a hairline gap. */
   top: var(--toolbar-h, 44px);
@@ -6379,7 +6446,7 @@ rect.ann-highlight.ann-preview {
 
 .edit-image-placement-selected {
   border-color: var(--accent);
-  background: rgba(224, 122, 45, 0.04);
+  background: rgba(37, 99, 235, 0.04);
 }
 
 .edit-image-placement-img {
@@ -6428,7 +6495,7 @@ rect.ann-highlight.ann-preview {
   border: 1px dashed var(--accent);
   border-radius: var(--radius-1);
   /* Phase 2 — committed-box selection wash: blue -> accent orange. */
-  background: rgba(224, 122, 45, 0.04);
+  background: rgba(37, 99, 235, 0.04);
   /* DEF-153 — committed content hovers with the palm/grab cursor
    * (Acrobat-style), not the 4-arrow `move` cursor. */
   cursor: grab;
@@ -6439,7 +6506,7 @@ rect.ann-highlight.ann-preview {
 .edit-box-selected {
   border-color: var(--accent);
   border-style: solid;
-  background: rgba(224, 122, 45, 0.06);
+  background: rgba(37, 99, 235, 0.06);
 }
 
 .edit-box-dragging {
@@ -6483,7 +6550,7 @@ rect.ann-highlight.ann-preview {
  * preview so the two tools are visually distinct. */
 .edit-image-create-preview {
   position: absolute;
-  background: rgba(224, 122, 45, 0.06);
+  background: rgba(37, 99, 235, 0.06);
   border: 1px dashed var(--accent);
   border-radius: var(--radius-1);
   pointer-events: none;
@@ -6535,14 +6602,14 @@ rect.ann-highlight.ann-preview {
 .edit-image-crop-overlay {
   position: absolute;
   border: 1px solid var(--accent);
-  background: rgba(224, 122, 45, 0.05);
+  background: rgba(37, 99, 235, 0.05);
   cursor: crosshair;
   z-index: 4;
 }
 
 .edit-image-crop-marquee {
   position: absolute;
-  background: rgba(224, 122, 45, 0.18);
+  background: rgba(37, 99, 235, 0.18);
   border: 1px solid var(--accent);
   border-radius: var(--radius-1);
   pointer-events: none;
@@ -6776,6 +6843,10 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-toolbar, var(--bg-raised));
   border-bottom: 1px solid var(--border);
   font-family: var(--font-ui, "Inter", system-ui, sans-serif);
+  /* DEF-178/179 — pinned grid row: the edit toolbar is a CONDITIONAL
+   * chrome row of .workspace-main; an explicit row keeps it out of
+   * the 1fr scroller row (see the .workspace-main comment). */
+  grid-row: 3;
 }
 
 .edit-toolbar-btn {
@@ -7270,9 +7341,9 @@ rect.ann-highlight.ann-preview {
 
 .crop-editor-mask {
   position: absolute;
-  /* Phase 2 — crop marquee repointed from the old #2563eb blue to
-   * the accent: soft orange fill + accent border, same alphas. */
-  background: rgba(224, 122, 45, 0.06);
+  /* Phase 13 — crop marquee rides the accent again (soft accent fill +
+   * accent border, same alphas). */
+  background: rgba(37, 99, 235, 0.06);
   border: 1.5px solid var(--accent);
   border-radius: var(--radius-1);
   cursor: move;
@@ -7283,9 +7354,9 @@ rect.ann-highlight.ann-preview {
 }
 
 :root[data-theme="dark"] .crop-editor-mask {
-  /* Slightly stronger alpha so the orange wash stays legible
+  /* Slightly stronger alpha so the accent wash stays legible
    * against the dark dialog surface. */
-  background: rgba(224, 122, 45, 0.1);
+  background: rgba(37, 99, 235, 0.1);
   border-color: var(--accent);
 }
 
@@ -7486,16 +7557,16 @@ rect.ann-highlight.ann-preview {
 }
 
 .ann-callout-preview-mask {
-  /* Phase 2 — callout placement preview repointed to the accent:
-   * orange fill + accent stroke (was #2563eb). */
-  fill: rgba(224, 122, 45, 0.08);
+  /* Phase 13 — callout placement preview rides the accent:
+   * accent fill + accent stroke. */
+  fill: rgba(37, 99, 235, 0.08);
   stroke: var(--accent);
   stroke-dasharray: 4 3;
   stroke-width: 1.5;
 }
 
 :root[data-theme="dark"] .ann-callout-preview-mask {
-  fill: rgba(224, 122, 45, 0.12);
+  fill: rgba(37, 99, 235, 0.12);
   stroke: var(--accent);
 }
 
@@ -7832,7 +7903,7 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .tool-btn-active {
   background: var(--tf-accent-selected);
-  box-shadow: inset 0 0 0 1px rgba(224, 122, 45, 0.3), 0 2px 10px rgba(224, 122, 45, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.3), 0 2px 10px rgba(37, 99, 235, 0.16);
 }
 
 /* Left thumbnail sidebar — a distinct acrylic sheet (slightly cooler
@@ -7970,11 +8041,11 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .thumb-current,
 :root[data-theme="frosted"] .thumb-selected {
-  background: rgba(224, 122, 45, 0.14);
-  border-color: rgba(224, 122, 45, 0.55);
+  background: rgba(37, 99, 235, 0.14);
+  border-color: rgba(37, 99, 235, 0.55);
   box-shadow:
-    inset 0 0 0 1px rgba(224, 122, 45, 0.35),
-    0 0 12px rgba(224, 122, 45, 0.18),
+    inset 0 0 0 1px rgba(37, 99, 235, 0.35),
+    0 0 12px rgba(37, 99, 235, 0.18),
     0 2px 8px rgba(15, 23, 42, 0.1);
 }
 

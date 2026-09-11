@@ -1,5 +1,40 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-09-11: Orchestration ported to the DeepSeek Harness; frontend-dev gains a vision route
+
+- Context: TFlex's orchestration now also runs on the DeepSeek Harness (see `.dsh/README.md`).
+  The preset is `tflex-orchestrator`; the OpenCode setup in `.opencode/` is unchanged and still
+  works. This entry records the model-affecting decisions from that port.
+
+- **frontend-dev (DSH only) re-pinned** from the text-only `~deepseek/deepseek-v4-flash-latest`
+  to `z-ai/glm-5.3-flash`, which is vision-capable.
+  - Reason: frontend-dev previously wrote UI blind, and every visual iteration cost a full round
+    trip (dev writes, qa screenshots, orchestrator judges, dev fixes). With a vision route it
+    inspects its own screenshots before reporting.
+  - This **deliberately supersedes** the earlier "frontend-dev is text-only; visual judgment
+    belongs to qa" rationale. qa still owns FINAL visual judgement and remains the only agent
+    that can close a visual defect; frontend-dev self-check exists to avoid avoidable round
+    trips, not to replace qa.
+  - The **OpenCode pin is unchanged** (`openrouter/~deepseek/deepseek-v4-flash-latest`). The two
+    harnesses therefore diverge on this one pin, on purpose.
+
+- **Five models were resolving as text-only in DSH.** The `openrouter-custom` provider declares
+  no `input` modalities per model, so DSH fell back to its text-only default and refused every
+  image, reporting "current model doesn't support image". `input: ['text', 'image']` was declared
+  on `moonshotai/kimi-k2.5`, `z-ai/glm-5.3-flash`, `minimax/minimax-m3`,
+  `google/gemini-3-flash-preview` and `deepseek/deepseek-v4-flash-vision-exp`, each verified
+  against OpenRouter's own `architecture.input_modalities` and then against the live runtime.
+  This is why qa on `z-ai/glm-5.3-flash` could not actually inspect screenshots despite the
+  2026-09-03 entry recording that model as native-multimodal: the capability was correct, the
+  declaration was missing.
+
+- **`minimax/minimax-m3:free` does not exist on this DSH deployment.** The paid
+  `minimax/minimax-m3` is available. The DSH allow-list uses the paid route.
+
+- DSH dispatch routes: backend-dev `z-ai/glm-5.2`; frontend-dev, qa and git-agent
+  `z-ai/glm-5.3-flash`; adversary `deepseek/deepseek-v4-flash`. The orchestrator keeps
+  `moonshotai/kimi-k2.5` and is excluded from the allow-list, so no sub-agent can be pinned to it.
+
 ## 2026-09-07: Hard rule — no automatic full test suite runs
 
 - From: All developers run `npm run test:unit` (full suite) after every task by default.
@@ -943,3 +978,31 @@ After ANY package.json version change, run `npm.cmd install --package-lock-only 
 1.7.2 while package.json was 1.9.1). This is now a blocking step of the release pipeline:
 backend-dev regenerates the lockfile as part of every version-bump dispatch; git-agent
 verifies lockfile.version == package.json.version before tagging.
+
+## 2026-09-07: GH_TOKEN reactivated — OTA release pipeline fixed
+
+**Mistake:** OTA updates were not working despite releases being "done". Root cause: the
+GitHub Release was never created — only the git tag was pushed. electron-updater requires
+the release assets (`latest.yml`, `.exe`, `.blockmap`) to be attached to a GitHub Release,
+not just a git tag. For private repos, the runtime token (`TFLEX_GH_TOKEN`) is also required.
+
+**Fix applied:**
+1. `.env` file updated with actual GitHub fine-grained PAT (`github_pat_...`) for both
+   `GH_TOKEN` (build-time) and `TFLEX_GH_TOKEN` (runtime updater).
+2. `.opencode/agents/git-agent.md` updated with complete **Release procedure** section:
+   - Verify artifacts in `release/` match the tag version
+   - Create GitHub Release with `gh release create` + `gh release upload`
+   - Required assets: `latest.yml`, `TFlex-Setup-<version>.exe`, `.blockmap`
+   - Verify release URL is accessible and lists all assets
+   - Explicit rule: "A release is NOT complete until the GitHub Release exists with assets.
+     A pushed tag alone is insufficient for OTA."
+3. `AGENTS.md` updated with **Release pipeline (OTA)** section documenting the
+   electron-updater requirements and the private-repo token setup.
+
+**Lessons learned (orchestrator must load into every release dispatch):**
+- Tag push != Release. Always verify the GitHub Release exists with assets.
+- Private repos need token setup for both build-time (`GH_TOKEN`) and runtime (`TFLEX_GH_TOKEN`).
+- The operator must provide the token; the orchestrator must ensure it's in `.env` before
+  any release that claims to support OTA.
+
+**Token scope:** Fine-grained PAT with Contents: Read and write for `tanzimtipu/TFlex`.

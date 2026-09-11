@@ -362,6 +362,10 @@ test('DEF-134: committed sig drag + click keeps move; Confirm commits', async ()
   await win.fill('input[aria-label="Type your signature"]', 'QA');
   await win.click('.sig-manager button:text-is("Save")');
   await win.click('.sig-saved-pick');
+  // The manager's closing (exit-animated) backdrop intercepts page
+  // pointers for ~250ms after the pick — wait for it to detach before
+  // the placement click (race found 2026-09-06, qa).
+  await win.waitForSelector('.sig-manager', { state: 'detached', timeout: 10000 });
   const layer = win.locator('[data-annotation-layer="1"]');
   const lb = await layer.first().boundingBox();
   await win.mouse.click(lb.x + 200, lb.y + 200);

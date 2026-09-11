@@ -200,35 +200,35 @@ describe("TitleBar — window controls wire to tflex.* IPC", () => {
     clearTflex();
   });
 
-  it("uses a DISTINCT restore glyph — never the minimize icon (B10)", () => {
-    // B10 — the restore button used `Minimize2` when maximized, so
-    // minimize and restore were visually identical. The restore
-    // glyph must be the overlapping-squares `Copy` icon, and the
-    // maximize (pre-maximize) glyph must stay `Maximize2`.
+  it("uses the standard caption glyphs — distinct restore, never the minimize icon (B10 + Phase 13)", () => {
+    // B10 + Phase 13 — the caption glyphs follow the Windows/VS Code
+    // convention: minimize = `Minus` (horizontal line), maximize =
+    // `Square`, restore = the overlapping-squares `Copy` icon. The
+    // restore glyph must never equal the minimize glyph.
     setTflex({
       minimizeWindow: vi.fn(),
       maximizeWindow: vi.fn(),
       closeWindow: vi.fn(),
       menu: { onAction: vi.fn() },
     });
-    // Maximized: restore icon is Copy (NOT Minimize2).
+    // Maximized: restore icon is Copy; minimize is Minus.
     {
       const { container, cleanup } = renderTitleBar({ maximized: true });
       const maxBtn = container.querySelector<HTMLElement>("[data-window-maximize]");
       const minBtn = container.querySelector<HTMLElement>("[data-window-minimize]");
       expect(maxBtn?.querySelector("svg.lucide-copy")).not.toBeNull();
+      expect(maxBtn?.querySelector("svg.lucide-square")).toBeNull();
       expect(maxBtn?.querySelector("svg.lucide-minimize-2")).toBeNull();
-      expect(maxBtn?.querySelector("svg.lucide-maximize-2")).toBeNull();
-      // The minimize button still shows its own Minimize2 glyph, so
+      // The minimize button still shows its own Minus glyph, so
       // the two controls are visually unambiguous.
-      expect(minBtn?.querySelector("svg.lucide-minimize-2")).not.toBeNull();
+      expect(minBtn?.querySelector("svg.lucide-minus")).not.toBeNull();
       cleanup();
     }
-    // Restored: the maximize button shows Maximize2.
+    // Restored: the maximize button shows Square.
     {
       const { container, cleanup } = renderTitleBar({ maximized: false });
       const maxBtn = container.querySelector<HTMLElement>("[data-window-maximize]");
-      expect(maxBtn?.querySelector("svg.lucide-maximize-2")).not.toBeNull();
+      expect(maxBtn?.querySelector("svg.lucide-square")).not.toBeNull();
       expect(maxBtn?.querySelector("svg.lucide-copy")).toBeNull();
       cleanup();
     }

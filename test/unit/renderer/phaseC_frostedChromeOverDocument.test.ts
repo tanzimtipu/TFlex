@@ -107,4 +107,29 @@ describe("Phase C — frosted chrome over the document (full-bleed scroller)", (
     const toolbarBase = firstRule("\\.toolbar");
     expect(toolbarBase).not.toMatch(/z-index\s*:/);
   });
+
+  it("DEF-178/179 — conditional chrome rows and the scroller own pinned grid rows of .workspace-main", () => {
+    // Regression guard for the edit-mode dead-clicks / mid-viewport
+    // chrome regressions. .workspace-main is a 5-row grid; the two
+    // CONDITIONAL chrome rows (edit toolbar, search bar) and the
+    // scroller must be pinned to fixed rows so grid auto-placement
+    // can never drop one of them into the 1fr row. Before the fix,
+    // the edit toolbar auto-placed into row 3 (1fr), STRETCHED to
+    // the full remaining height, covered the full-bleed scroller
+    // with a giant hit surface (armed edit tools did nothing — every
+    // page click hit the toolbar) and inflated the --tf-chrome-y
+    // measure by the whole viewport (the document got shoved a
+    // viewport down — DEF-178 / DEF-179).
+    const main = firstRule("\\.workspace-main");
+    expect(main, ".workspace-main must declare five explicit rows").toMatch(
+      /grid-template-rows:\s*auto\s+auto\s+auto\s+auto\s+1fr/,
+    );
+    // Each conditional chrome row is pinned ABOVE the scroller's row.
+    const edit = firstRule("\\.edit-toolbar");
+    expect(edit, ".edit-toolbar must be pinned to grid row 3").toMatch(/grid-row:\s*3/);
+    const search = firstRule("\\.search-bar");
+    expect(search, ".search-bar must be pinned to grid row 4").toMatch(/grid-row:\s*4/);
+    const scroller = firstRule("\\.document-scroller");
+    expect(scroller, ".document-scroller must own the 1fr row (5)").toMatch(/grid-row:\s*5/);
+  });
 });

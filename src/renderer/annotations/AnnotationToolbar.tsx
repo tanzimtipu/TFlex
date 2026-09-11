@@ -60,6 +60,16 @@ export interface AnnotationToolbarProps {
    *  enabled — it's a neutral viewer mode and harmless even when
    *  Edit is open. */
   editModeOpen?: boolean;
+  /** Phase 13 — Hand (pan) mode. When true the document scroller is
+   *  grab-and-drag panning; arming an annotation tool would fight the
+   *  drag gesture for the same pointer input (two parallel
+   *  pointer-active layers). While hand mode is on, EVERY tool button
+   *  is rendered with `aria-disabled` + a "disabled" treatment so the
+   *  toolbar reads as inert, and clicking a tool is a no-op. The
+   *  host (DocumentView) disarms the annotation tool on the rising
+   *  edge of hand mode, exactly like the Edit-mode gate above. The
+   *  user exits pan mode via the toolbar's Hand button or Escape. */
+  handModeOpen?: boolean;
   /** Phase 6 — custom annotation color palette, keyed by theme. The
    *  picker surfaces the saved colors alongside the built-ins; new
    *  presets added through the picker flow back through `onPaletteChange`
@@ -74,7 +84,7 @@ export interface AnnotationToolbarProps {
 const MARKUP_TOOLS: AnnotationTool[] = ["highlight", "underline", "strikeout"];
 
 export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
-  const { state, onAction, disabled = false, editModeOpen = false, palette, onPaletteChange, theme = 'dark' } = props;
+  const { state, onAction, disabled = false, editModeOpen = false, handModeOpen = false, palette, onPaletteChange, theme = 'dark' } = props;
   const dispatch = (a: AnnotationToolAction): void => onAction(a);
   // B1 — when Edit mode is open, every annotation tool except "select"
   // is inert (selecting a tool would clash with the per-page
@@ -83,7 +93,13 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
   // a neutral viewer mode and harmless to leave active while editing.
   const editBlocksTool = (tool: AnnotationTool): boolean =>
     editModeOpen && tool !== "select";
+  // Phase 13 — hand (pan) mode blocks EVERY tool including select:
+  // the drag gesture owns the pointer for the whole scroller, so no
+  // annotation affordance can be armed alongside it. Exiting happens
+  // through the toolbar's Hand button or Escape.
+  const handBlocksTool = (): boolean => handModeOpen;
   const armTool = (tool: AnnotationTool): void => {
+    if (handBlocksTool()) return;
     if (editBlocksTool(tool)) return;
     dispatch({ type: "set-tool", tool: toggleTool(state, tool) });
   };
@@ -207,7 +223,8 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
   ): ReactElement => {
     const active = state.tool === tool;
     const isBlocked = editBlocksTool(tool);
-    const isDisabled = disabled || isBlocked;
+    const isHandBlocked = handBlocksTool();
+    const isDisabled = disabled || isBlocked || isHandBlocked;
     return (
       <button
         key={tool}
@@ -218,7 +235,13 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
         aria-pressed={active}
         aria-disabled={isDisabled}
         aria-label={label}
-        title={isBlocked ? "Edit mode is open — close Edit to use annotation tools" : label}
+        title={
+          isHandBlocked
+            ? "Pan mode is on — click the toolbar's Pan button (or press Escape) to use annotation tools"
+            : isBlocked
+              ? "Edit mode is open — close Edit to use annotation tools"
+              : label
+        }
         data-tool={tool}
       >
         {icon}

@@ -269,6 +269,10 @@ test('BUG3dup: drag a committed signature, then click it -> position reverts', a
   // Wait for arming, click the page to place.
   const layer = win.locator('[data-annotation-layer="1"]');
   const lb = await layer.first().boundingBox();
+  // The manager's closing (exit-animated) backdrop intercepts page
+  // pointers for ~250ms after the pick — wait for it to detach before
+  // the placement click (race found 2026-09-06, qa).
+  await win.waitForSelector('.sig-manager', { state: 'detached', timeout: 10000 });
   await win.mouse.click(lb.x + 200, lb.y + 200);
   await win.waitForSelector('[data-sig-action-bar]', { timeout: 8000 });
   await win.click('[data-sig-action="confirm"]');

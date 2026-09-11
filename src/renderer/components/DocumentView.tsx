@@ -7,6 +7,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   accumulateWheel,
@@ -23,6 +24,11 @@ import {
   type PageTextIndex,
   type SearchHit,
 } from "../search/searchIndex";
+import {
+  isPanBlockingTarget,
+  panScrollPosition,
+  type PanDragStart,
+} from "../state/handPan";
 import type { OutlineNode } from "../pdf/pdfjs";
 import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
@@ -154,6 +160,10 @@ interface DocumentViewProps {
    *  toolbar button only renders when this is wired, so missing
    *  wiring (e.g. tests) doesn't surface a no-op button. */
   onRotateClockwise?: () => void;
+  /** Phase 13 — Rotate the current page counter-clockwise. Same
+   *  contract as `onRotateClockwise` with the engine op dir flipped
+   *  to "ccw"; the toolbar button only renders when wired. */
+  onRotateCounterClockwise?: () => void;
   /** B8 — Delete pages (current / custom range). The toolbar
    *  button only renders when this is wired, mirroring the
    *  `onRotateClockwise` opt-in. Disabled when there's only one
@@ -225,6 +235,11 @@ interface DocumentViewProps {
    *  Cancel button calls it through this callback so the overlay
    *  doesn't need a direct reference to App-level state. */
   onCancelSignatureArm?: () => void;
+  /** Phase 13 — disarm the armed stamp ghost. Pan mode and the stamp
+   *  ghost both own page-pointer input; when Hand is armed while a
+   *  stamp is pending, the host drops the pending stamp so the pan
+   *  drag is the only gesture that handles the press. */
+  onDisarmStamp?: () => void;
   /** Phase 6 — Tools palette. App owns the open/closed state; this view
    *  just threads it into the toolbar so the toggle button can render
    *  the active treatment when the palette is up. */
@@ -379,6 +394,7 @@ export function DocumentView({
   onOptimize,
   onAuditSpace,
   onRotateClockwise,
+  onRotateCounterClockwise,
   onDeletePage,
   canDeletePage = true,
   annotations = [],
@@ -408,6 +424,7 @@ export function DocumentView({
   onMoveSignature,
   onDeleteSignature,
   onCancelSignatureArm,
+  onDisarmStamp,
   toolsPaletteOpen = false,
   onToolsPaletteToggle,
   annotationPalette,
@@ -510,6 +527,17 @@ export function DocumentView({
   const [searchIndexProgress, setSearchIndexProgress] = useState<SearchIndexProgress | null>(null);
   const searchTokenRef = useRef(0);
   const indexesRef = useRef(new Map<number, PageTextIndex>());
+
+  // Phase 13 — Hand (pan) mode. Transient viewer state (never persisted):
+  // when armed, the scroller handles pointer drags as grab-and-drag
+  // scrolling, annotation tools are inert (see AnnotationToolbar's
+  // `handModeOpen` gate), and every other pointer-active overlay is
+  // disarmed on the rising edge below.
+  const [handActive, setHandActive] = useState(false);
+  const panDragRef = useRef<PanDragStart | null>(null);
+  const toggleHand = useCallback((): void => {
+    setHandActive((v) => !v);
+  }, []);
   // DEF-050 — invalidation bump. The host (App) calls the imperative
   // search-index invalidator after OCR completes; this tick state is
   // bumped so the search effect re-runs even though `query`, `doc`,
@@ -1710,22 +1738,112 @@ export function DocumentView({
     const prev = prevExternalToolActiveRef.current;
     if (anyExternalToolActive && !prev) {
       dispatchAnnTool({ type: "set-tool", tool: "select" });
+      // Phase 13 — hand (pan) mode is a viewer mode and loses to every
+      // external tool surface: opening Edit / Sign / Stamp while pan is
+      // armed drops pan first, so the two never share the pointer.
+      setHandActive(false);
     }
     prevExternalToolActiveRef.current = anyExternalToolActive;
   }, [anyExternalToolActive]);
+
+  // ---- Phase 13: hand (pan) mode disarm cascade --------------------------
+  // Hand mode owns the scroller pointer, so on its rising edge every
+  // other pointer-active surface is dismissed: armed annotation tools
+  // go to select, Edit mode closes, the pending signature placement
+  // and the armed stamp ghost drop. The ref keeps this on the rising
+  // edge only (arming hand twice is a no-op).
+  const prevHandActiveRef = useRef(handActive);
+  useEffect(() => {
+    const prev = prevHandActiveRef.current;
+    if (handActive && !prev) {
+      dispatchAnnTool({ type: "set-tool", tool: "select" });
+      if (editModeOpen) onEditModeToggle?.();
+      if (armedSignatureId !== null) onCancelSignatureArm?.();
+      if (armedStamp !== null) onDisarmStamp?.();
+    }
+    prevHandActiveRef.current = handActive;
+  }, [
+    handActive,
+    editModeOpen,
+    armedSignatureId,
+    armedStamp,
+    onEditModeToggle,
+    onCancelSignatureArm,
+    onDisarmStamp,
+  ]);
+
+  // ---- Phase 13: grab-and-drag panning ------------------------------------
+  // While hand mode is armed the scroller owns pointer presses: press
+  // anywhere that is NOT interactive chrome (links, buttons, inputs —
+  // isPanBlockingTarget bails first so their native click still lands),
+  // capture the pointer, and invert the drag delta into scrollLeft /
+  // scrollTop. preventDefault on the press keeps the text layer from
+  // starting a selection mid-drag; it happens only AFTER the bail-out,
+  // per the cross-bubbling contract (AGENTS.md).
+  const onScrollerPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!handActive || e.button !== 0) return;
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    if (isPanBlockingTarget(e.target)) return;
+    e.preventDefault();
+    try {
+      scroller.setPointerCapture(e.pointerId);
+    } catch {
+      // jsdom (and some odd drivers) have no pointer capture; panning
+      // still works through the plain move/up handlers on the scroller.
+    }
+    panDragRef.current = {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      scrollLeft: scroller.scrollLeft,
+      scrollTop: scroller.scrollTop,
+    };
+    scroller.dataset.handDragging = "true";
+  }, [handActive]);
+
+  const onScrollerPointerMove = useCallback((e: ReactPointerEvent<HTMLDivElement>): void => {
+    const start = panDragRef.current;
+    const scroller = scrollerRef.current;
+    if (start === null || scroller === null) return;
+    const next = panScrollPosition(start, e.clientX - start.clientX, e.clientY - start.clientY);
+    scroller.scrollLeft = next.left;
+    scroller.scrollTop = next.top;
+  }, []);
+
+  const onScrollerPointerUp = useCallback((e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (panDragRef.current === null) return;
+    panDragRef.current = null;
+    const scroller = scrollerRef.current;
+    if (scroller !== null) {
+      delete scroller.dataset.handDragging;
+      try {
+        scroller.releasePointerCapture(e.pointerId);
+      } catch {
+        // The capture may already be gone (pointer left the window,
+        // test harness without a real pointer). Nothing to restore.
+      }
+    }
+  }, []);
 
   // ---- keyboard: Ctrl+F opens search, Escape closes / disarms -------------
   // Bug 4 — Escape disarms ANY armed annotation tool first, then closes
   // search. Previously Escape only closed the search bar, so an armed
   // sticky-note / ink / shape tool stayed hot after the user pressed
   // Escape (the next page click created unexpected content).
+  // Phase 13 — Escape also exits hand (pan) mode, ahead of the
+  // annotation tool check: hand mode is the outermost viewer mode and
+  // its toolbar gate makes the annotation buttons inert, so Escape
+  // must leave pan first.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setSearchOpen(true);
       } else if (e.key === "Escape") {
-        if (annTool.tool !== "select") {
+        if (handActive) {
+          e.preventDefault();
+          setHandActive(false);
+        } else if (annTool.tool !== "select") {
           e.preventDefault();
           dispatchAnnTool({ type: "set-tool", tool: "select" });
         } else if (searchOpen) {
@@ -1735,7 +1853,7 @@ export function DocumentView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen, annTool.tool]);
+  }, [searchOpen, annTool.tool, handActive]);
 
   // ---- persistence + diagnostics ------------------------------------------------------------
   useEffect(() => {
@@ -1867,6 +1985,9 @@ export function DocumentView({
           onOptimize={(): void => onOptimize?.()}
           onAuditSpace={(): void => onAuditSpace?.()}
           onRotateClockwise={onRotateClockwise}
+          onRotateCounterClockwise={onRotateCounterClockwise}
+          handActive={handActive}
+          onHandToggle={toggleHand}
           onDeletePage={onDeletePage}
           canDeletePage={canDeletePage}
         />
@@ -1874,6 +1995,7 @@ export function DocumentView({
           state={annTool}
           onAction={onAnnToolAction}
           editModeOpen={editModeOpen}
+          handModeOpen={handActive}
           palette={
             annotationPalette === undefined || annotationPalette === null
               ? undefined
@@ -1920,7 +2042,16 @@ export function DocumentView({
             onClose={(): void => setSearchOpen(false)}
           />
         )}
-        <div ref={scrollerRef} className="document-scroller" onScroll={onScroll}>
+        <div
+          ref={scrollerRef}
+          className={handActive ? "document-scroller document-scroller-hand" : "document-scroller"}
+          data-hand={handActive ? "true" : "false"}
+          onScroll={onScroll}
+          onPointerDown={onScrollerPointerDown}
+          onPointerMove={onScrollerPointerMove}
+          onPointerUp={onScrollerPointerUp}
+          onPointerCancel={onScrollerPointerUp}
+        >
           <div className="document-content">
             {Array.from({ length: pageCount }, (_, i) => i + 1).map((visiblePage) => {
               // DEF-064 — after a delete / reorder the visual scroller

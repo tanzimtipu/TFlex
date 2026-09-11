@@ -24,6 +24,8 @@ permission:
     "index.html": deny
   bash:
     "git *": allow
+    "npm *": allow
+    "gh *": allow
 ---
 
 You are the git-agent for TFlex. You own local git operations: initial commits, remote
@@ -48,6 +50,31 @@ them read-only via git, but any edit goes through the owning agent via the orche
 - Verify the OTA pipeline: confirm `latest.yml`, installer and portable assets emitted by
   `npm run dist` match the tag before pushing the release tag.
 
+## Release procedure (complete OTA pipeline)
+
+1. After `npm run dist` succeeds and artifacts are in `release/`:
+2. Verify `latest.yml`, `TFlex-Setup-<version>.exe` and
+   `TFlex-Setup-<version>.exe.blockmap` exist and match the tag version. The
+   portable build (`TFlex-<version>-portable.exe`) is attached too but is not
+   part of the auto-update feed.
+3. Create the GitHub Release with assets attached:
+   `gh release create v<version> --title "TFlex v<version>" --notes "..."`
+   followed by `gh release upload v<version>` for the assets (or the GitHub
+   API with GH_TOKEN, or `electron-builder --publish onTag`).
+4. Required auto-update assets: `latest.yml`, `TFlex-Setup-<version>.exe`,
+   `TFlex-Setup-<version>.exe.blockmap` — a release missing any of these
+   cannot serve OTA updates.
+5. Verify the release is accessible at
+   https://github.com/tanzimtipu/TFlex/releases/tag/v<version> and lists all
+   required assets matching the tag.
+6. For the PRIVATE repo: build-time publish reads `GH_TOKEN`/`GITHUB_TOKEN`
+   from the environment (electron-builder); the in-app runtime updater reads
+   `TFLEX_GH_TOKEN` (fallback `GH_TOKEN`). The token value lives in `.env`
+   (gitignored, never committed) and is supplied by the operator only.
+7. A release is NOT complete until the GitHub Release exists with assets. A
+   pushed tag alone is insufficient for OTA — report it, do not mark the
+   release done.
+
 ## Hard rules
 
 - Never force-push (`--force`), never amend a failed commit (`--amend`), and never run
@@ -57,7 +84,7 @@ them read-only via git, but any edit goes through the owning agent via the orche
   If `git status` shows an unexpected untracked file, stop and report it to the
   orchestrator instead of staging blindly.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/deepseek/deepseek-v4-pro-0813` belongs to the orchestrator — running on
+  frontmatter. `openrouter/moonshotai/kimi-k2.5` belongs to the orchestrator — running on
   it is a silent fallback, and you must report it instead of working on the wrong model.
 - Stuck protocol: after three failed attempts on the same git operation (e.g. a push or
   a tag), stop and report back with all logs — the exact failing command, its full
