@@ -6108,7 +6108,7 @@ pushToast(
 
   if (!bootDone || settings === null) {
     return (
-      <div className="app">
+      <div className={isMaximized ? "app app-maximized" : "app"}>
         <TitleBar maximized={false} />
         <div className="app-main" />
         <Toasts items={[]} onDismiss={dismissToast} />
@@ -6117,7 +6117,7 @@ pushToast(
   }
 
   return (
-    <div className="app">
+    <div className={isMaximized ? "app app-maximized" : "app"}>
       {/* Phase 14 — the frosted theme's ambient backdrop. Paints the
        * wallpaper-style gradient the glass panels diffuse; invisible
        * in light/dark (the opaque .app background covers it). The

@@ -111,14 +111,110 @@ describe("Phase 14 — liquid glass tokens and ambient backdrop", () => {
     expect(scroller ?? "").toMatch(/background:\s*transparent/);
   });
 
-  it("glass panels round at 16px on their inner corners (frosted only)", () => {
+  it("glass panels round on ALL four corners (frosted only)", () => {
     const stripped = stripCssComments(css);
     expect(stripped).toMatch(
-      /:root\[data-theme="frosted"\]\s+\.tools-palette\s*\{[^}]*border-radius:\s*var\(--tf-radius-panel\)\s+0\s+0\s+var\(--tf-radius-panel\)/,
+      /:root\[data-theme="frosted"\]\s+\.tools-palette\s*\{[^}]*border-radius:\s*var\(--tf-radius-panel\)\s*;/,
     );
     expect(stripped).toMatch(
-      /:root\[data-theme="frosted"\]\s+\.side-rail\s*\{[^}]*border-radius:\s*0\s+var\(--tf-radius-panel\)\s+var\(--tf-radius-panel\)\s+0/,
+      /:root\[data-theme="frosted"\]\s+\.side-rail\s*\{[^}]*border-radius:\s*var\(--tf-radius-panel\)\s*;/,
     );
+  });
+});
+
+describe("Phase 14 — floating glass shell (DEF-184/186/187)", () => {
+  const css = readStyles();
+
+  it("the workspace carries the wallpaper gutters (16px sides, 12px bottom, 12px column gap)", () => {
+    const body = findRuleBody(css, ':root[data-theme="frosted"] .workspace');
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(/padding:\s*0\s+16px\s+12px\s+16px/);
+    expect(body ?? "").toMatch(/column-gap:\s*12px/);
+  });
+
+  it("the command toolbar is one full-width glass band across both window edges", () => {
+    const body = findRuleBody(css, ':root[data-theme="frosted"] .toolbar');
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(
+      /margin-left:\s*calc\(-1\s*\*\s*\(220px\s*\+\s*12px\s*\+\s*16px\)\)/,
+    );
+    expect(body ?? "").toMatch(/margin-right:\s*-16px/);
+  });
+
+  it("the pages rail starts below the toolbar band with a wallpaper gap", () => {
+    const body = findRuleBody(css, ':root[data-theme="frosted"] .side-rail');
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(
+      /margin-top:\s*calc\(var\(--toolbar-h,\s*56px\)\s*\+\s*12px\)/,
+    );
+    // Floating card: hairline on all sides, never a docked right edge.
+    expect(body ?? "").toMatch(/border:\s*1px solid var\(--tf-border\)/);
+  });
+
+  it("the tools panel is inset from the window edges (16px right, 12px bottom)", () => {
+    const body = findRuleBody(css, ':root[data-theme="frosted"] .tools-palette');
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(
+      /top:\s*calc\(var\(--toolbar-h,\s*56px\)\s*\+\s*12px\)/,
+    );
+    expect(body ?? "").toMatch(/right:\s*16px/);
+    expect(body ?? "").toMatch(/bottom:\s*12px/);
+    expect(body ?? "").toMatch(/border:\s*1px solid var\(--tf-border\)/);
+  });
+
+  it("the document canvas ends beside the tools card so the wallpaper is its backdrop", () => {
+    const stripped = stripCssComments(css);
+    const list = stripped.match(
+      /:root\[data-theme="frosted"\]\s+\.app-main:has\(>\s*\.tools-palette\)\s+\.document-scroller\s*\{([^}]*)\}/,
+    );
+    expect(list, "list-layout scroller inset rule missing").not.toBeNull();
+    expect(list?.[1] ?? "").toMatch(/right:\s*356px/);
+    const grid = stripped.match(
+      /:root\[data-theme="frosted"\]\s+\.app-main:has\(>\s*\.tools-palette-grid\)\s+\.document-scroller\s*\{([^}]*)\}/,
+    );
+    expect(grid, "grid-layout scroller inset rule missing").not.toBeNull();
+    expect(grid?.[1] ?? "").toMatch(/right:\s*392px/);
+  });
+
+  it("the window shell rounds at the panel radius and squares when maximized", () => {
+    const body = findRuleBody(css, ':root[data-theme="frosted"] .app');
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(/border-radius:\s*var\(--tf-radius-panel\)/);
+    expect(body ?? "").toMatch(/overflow:\s*hidden/);
+    const maximized = findRuleBody(css, ':root[data-theme="frosted"] .app-maximized');
+    expect(maximized).not.toBeNull();
+    expect(maximized ?? "").toMatch(/border-radius:\s*0/);
+  });
+
+  it("the glass films are BLUE-tinted, not neutral white (DEF-182)", () => {
+    const m = /:root\[data-theme="frosted"\]\s*\{([\s\S]*?)\n\}/m.exec(css);
+    expect(m).not.toBeNull();
+    const frosted = m?.[1] ?? "";
+    // The reference mock's glass reads blue over every backdrop — the
+    // films are translucent rgb(126,178,250) sheets (measured titlebar
+    // rgb(125.6,178.4,249.8)), never neutral gray/white.
+    for (const token of [
+      "--tf-surface-frame",
+      "--tf-surface-toolbar",
+      "--tf-surface-rail",
+      "--tf-surface-panel",
+    ]) {
+      expect(frosted).toMatch(new RegExp(`${token}\\s*:\\s*rgba\\(126,\\s*178,\\s*250,`));
+    }
+    // The B-R spread that makes the tint read blue survives in the
+    // paint itself: B channel leads R by ~124 in the film color.
+    const frame = /--tf-surface-frame:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/.exec(frosted);
+    expect(frame).not.toBeNull();
+    if (frame !== null) {
+      const r = Number(frame[1]);
+      const g = Number(frame[2]);
+      const b = Number(frame[3]);
+      expect(Number(frame[4])).toBeGreaterThan(0);
+      expect(Number(frame[4])).toBeLessThan(0.8);
+      expect(g).toBeGreaterThan(r);
+      expect(g).toBeLessThan(b);
+      expect(b - r).toBeGreaterThanOrEqual(100);
+    }
   });
 });
 
@@ -163,9 +259,9 @@ describe("DEF-181 — the desktop wallpaper composites through the frosted glass
 
   it("the welcome launch surface is a translucent wash, never a solid sheet", () => {
     const welcome = findRuleBody(css, ':root[data-theme="frosted"] .welcome');
-    expect(welcome ?? "").toMatch(/background:\s*rgba\(233,\s*237,\s*243,\s*0\.42\)/);
+    expect(welcome ?? "").toMatch(/background:\s*rgba\(222,\s*234,\s*252,\s*0\.42\)/);
     const hero = findRuleBody(css, ':root[data-theme="frosted"] .welcome-hero');
-    expect(hero ?? "").toMatch(/background:\s*rgba\(238,\s*241,\s*246,\s*0\.62\)/);
+    expect(hero ?? "").toMatch(/background:\s*rgba\(214,\s*230,\s*252,\s*0\.62\)/);
     // Deliberately no backdrop-filter here: the wallpaper blur is the OS
     // acrylic material's job and the 14-surface chrome blur contract
     // (design tokens) stays exact.

@@ -391,51 +391,66 @@
  * per-rule restyle (that sweep is Phase B).
  * ------------------------------------------------------------------------- */
 :root[data-theme="frosted"] {
-  /* Light frosted palette. The material is a cool white acrylic lit
-   * from above: the base (#eef1f6) is a very light cool gray — almost
-   * white — and each chrome family picks a slightly lighter, more
-   * opaque white sheet so the hierarchy reads through surface
-   * brightness and opacity, never through darkness. */
-  --tf-bg: #eef1f6;
-  --tf-surface-1: #f7f8fa;
-  --tf-surface-2: #f3f5f8;
-  --tf-surface-3: #ffffff;
+  /* Light frosted palette, BLUE-TINTED (DEF-182). The reference mock's
+   * glass reads blue over every backdrop — the material is a cool
+   * azure acrylic lit from above, not a neutral white sheet. The base
+   * (#dfe9fb) and the per-family sheets carry the same hue family as
+   * the mock's measured titlebar rgb(126,178,250): the glass films are
+   * translucent rgb(126,178,250) sheets, so the desktop wallpaper
+   * behind the window keeps the composite firmly in the blue family
+   * regardless of the backdrop behind the window. */
+  --tf-bg: #dfe9fb;
+  --tf-surface-1: #e7eefb;
+  --tf-surface-2: #e2eafb;
+  --tf-surface-3: #f4f8ff;
   /* Phase C — glass-material opacity ladder. One alpha per chrome
    * family so the workspace reads as ONE continuous frosted pane with
    * four hierarchy levels (frame -> toolbar/sidebars -> floating ->
-   * menus/dialogs), never as near-opaque plastic cards. The sheets
-   * sit in the 0.60-0.85 translucent band: low enough that the
-   * workspace tonal glow and the scrolling page content visibly
-   * diffuse through the blur behind each sheet, high enough that the
-   * dark text ladder keeps its contrast. Diffuses, never hides. */
-  --tf-surface-frame: rgba(247, 248, 250, 0.62);    /* window frame / titlebar */
-  --tf-surface-toolbar: rgba(248, 249, 251, 0.68);  /* command + annotation toolbars, search */
-  --tf-surface-rail: rgba(243, 245, 249, 0.70);     /* left thumbnail sidebar (cooler) */
-  --tf-surface-panel: rgba(250, 251, 253, 0.78);    /* right tools panel — floating sheet */
-  --tf-surface-menu: rgba(252, 252, 253, 0.80);     /* menus / popovers */
-  --tf-surface-dialog: rgba(255, 255, 255, 0.85);   /* dialogs / sheets */
-  --tf-surface-float: rgba(255, 255, 255, 0.82);    /* floating chip controls */
-  --tf-surface-tab-active: rgba(255, 255, 255, 0.76); /* active tab (a touch clearer than frame) */
+   * menus/dialogs), never as near-opaque plastic cards. The sheets sit
+   * in the 0.55-0.93 translucent band: low enough that the REAL
+   * desktop wallpaper visibly diffuses through the blur behind each
+   * sheet (DEF-183 — the two-backdrop see-through contract), high
+   * enough that the dark text ladder keeps its contrast. Diffuses,
+   * never hides. */
+  --tf-surface-frame: rgba(126, 178, 250, 0.65);    /* window frame / titlebar */
+  --tf-surface-toolbar: rgba(126, 178, 250, 0.56);  /* command + annotation toolbars, search */
+  --tf-surface-rail: rgba(126, 178, 250, 0.54);     /* left thumbnail sidebar (cooler) */
+  --tf-surface-panel: rgba(126, 178, 250, 0.62);    /* right tools panel — floating sheet */
+  --tf-surface-menu: rgba(190, 214, 252, 0.86);     /* menus / popovers */
+  --tf-surface-dialog: rgba(222, 235, 253, 0.93);   /* dialogs / sheets */
+  --tf-surface-float: rgba(190, 214, 252, 0.84);    /* floating chip controls */
+  --tf-surface-tab-active: rgba(190, 214, 252, 0.76); /* active tab (a touch clearer than frame) */
   /* Phase-A legacy aliases — the old names keep resolving into the
    * new per-surface hierarchy so nothing regresses. */
   --tf-surface-1-acrylic: var(--tf-surface-toolbar);
   --tf-surface-2-acrylic: var(--tf-surface-rail);
   --tf-surface-3-acrylic: var(--tf-surface-dialog);
-  /* Hairlines read as a cool light-gray edge catching the frosted
+  /* Hairlines read as a cool light-blue edge catching the frosted
    * pane — never a white outline and never black. */
-  --tf-border: #d8dee8;
-  --tf-highlight: rgba(255, 255, 255, 0.6);
-  --tf-divider: #e6ebf1;
-  /* Dark text ladder — high readability on the near-white sheets. */
-  --tf-text-primary: #232a36;
-  --tf-text-secondary: #3a4657;
-  --tf-text-tertiary: #64748b;
-  --tf-text-disabled: #94a3b8;
+  --tf-border: #c3d3f0;
+  --tf-highlight: rgba(255, 255, 255, 0.55);
+  --tf-divider: #dbe5f6;
+  /* DEF-188 — dark ink ladder, re-anchored to the reference mock. qa
+   * measured the old muted tiers drowning on the mid-blue glass (desc
+   * luma spread 11-16, "Undo last change" 28, group labels BELOW the
+   * glass: -28). The whole ladder moves to the mock's dark-navy ink
+   * family; against qa's measured glass composites (palette
+   * rgb(97,135,213) over aurora / rgb(98,131,182) over near-black) the
+   * strong tier clears WCAG 4.5:1, body ink clears it on the aurora
+   * grab, and the muted/faint tiers land rendered qa-spreads of 55-70
+   * (the mock's description spread is 57). The faint tier sits just one
+   * step below the muted tier on purpose: qa's glass is far darker than
+   * the mock's, and the mock's own group labels read nearly as dark as
+   * its descriptions — the hierarchy there is carried by size/weight. */
+  --tf-text-primary: #0e1830;
+  --tf-text-secondary: #14203a;
+  --tf-text-tertiary: #1f2a4a;
+  --tf-text-disabled: #24325a;
 
   /* Base + workspace. The document canvas stays a SOLID very light
-   * cool gray — never translucent (only chrome gets the blur). */
+   * cool blue — never translucent (only chrome gets the blur). */
   --bg-base: var(--tf-bg);
-  --bg-sunken: #e9edf3;
+  --bg-sunken: #d9e4f8;
   --bg-raised: var(--tf-surface-dialog);
   --bg-toolbar: var(--tf-surface-toolbar);
   --bg-rail: var(--tf-surface-rail);
@@ -451,43 +466,45 @@
   --bg-elevated: var(--tf-surface-dialog);
   --bg-panel: var(--tf-surface-panel);
 
-  /* Text ladder — dark values that read crisply on the light sheets;
-   * only the disabled tier drops to the muted floor. */
+  /* Text ladder — DEF-188: the mapped tiers resolve into the darkened
+   * --tf-text-* ink ladder above; --fg-soft joins it (the old #475569
+   * sat at glass-luma spread ~53, inside the drowning band qa measured). */
   --fg-strong: var(--tf-text-primary);
   --fg: var(--tf-text-secondary);
   --fg-muted: var(--tf-text-tertiary);
-  --fg-soft: #475569;
+  --fg-soft: #192640;
   --fg-faint: var(--tf-text-disabled);
   --fg-disabled: #b6bcc6;
   --fg-on-accent: #ffffff;
 
   /* Hairlines */
   --border: var(--tf-border);
-  --border-strong: #cbd5e1;
-  --border-subtle: #ebeff4;
+  --border-strong: #b3c6e8;
+  --border-subtle: #dfe8f7;
   --divider: var(--tf-divider);
 
   /* Menus + floating surfaces — acrylic so they read as one
    * continuous light frosted glass layer over the workspace. */
   --menu-bg: var(--tf-surface-menu);
-  --menu-border: #d5dce6;
+  --menu-border: #b9cbe9;
 
   --sample-card-bg: var(--tf-surface-2);
   --sample-card-bg-hover: var(--tf-surface-3);
   --sample-card-border: var(--tf-border);
   --sample-card-border-hover: rgba(37, 99, 235, 0.35);
 
-  /* Soft cool shadows — elevation without harsh black. */
-  --shadow-page: 0 2px 10px rgba(15, 23, 42, 0.08), 0 10px 28px rgba(15, 23, 42, 0.08);
-  --shadow-menu: 0 2px 8px rgba(15, 23, 42, 0.08), 0 10px 26px rgba(15, 23, 42, 0.10);
-  --shadow-dialog: 0 4px 14px rgba(15, 23, 42, 0.10), 0 14px 42px rgba(15, 23, 42, 0.14);
-  --shadow-popover: 0 2px 6px rgba(15, 23, 42, 0.06), 0 10px 24px rgba(15, 23, 42, 0.10);
-  --shadow-toast: 0 4px 12px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.05);
+  /* Soft cool shadows — elevation without harsh black, tinted toward
+   * the blue glass family (never warm gray). */
+  --shadow-page: 0 2px 10px rgba(30, 58, 138, 0.10), 0 10px 28px rgba(30, 58, 138, 0.10);
+  --shadow-menu: 0 2px 8px rgba(30, 58, 138, 0.10), 0 10px 26px rgba(30, 58, 138, 0.12);
+  --shadow-dialog: 0 4px 14px rgba(30, 58, 138, 0.12), 0 14px 42px rgba(30, 58, 138, 0.16);
+  --shadow-popover: 0 2px 6px rgba(30, 58, 138, 0.08), 0 10px 24px rgba(30, 58, 138, 0.12);
+  --shadow-toast: 0 4px 12px rgba(30, 58, 138, 0.12), 0 2px 4px rgba(30, 58, 138, 0.06);
 
   /* Loading placeholders sit against the lighter rail/workspace, so
    * the well reads as a hair lighter than its container. */
-  --placeholder-from: #edf1f6;
-  --placeholder-to: #e1e7ef;
+  --placeholder-from: #dbe6f8;
+  --placeholder-to: #cddcf5;
 
   --hit: rgba(37, 99, 235, 0.28);
   --hit-active: rgba(37, 99, 235, 0.55);
@@ -526,9 +543,13 @@
  * floating controls ONLY. The document workspace (`.document-scroller`,
  * `.workspace-main`, `.pdf-page`, `.page-slot`, `.textLayer`, canvases)
  * is deliberately absent from this list — the sheet stays crisp and
- * the DEF-099 white-page contract is untouched. */
+ * the DEF-099 white-page contract is untouched.
+ * DEF-183 — `.app-header` is deliberately ABSENT: it is the strip
+ * INSIDE `.titlebar`'s slot, so a second blur+film here stacked a
+ * ~0.88-effective double glass over the caption strip and blocked the
+ * wallpaper. The `.titlebar` is the ONE frosted surface of the caption
+ * strip; the header goes fully transparent below (Phase-B block). */
 :root[data-theme="frosted"] .titlebar,
-:root[data-theme="frosted"] .app-header,
 :root[data-theme="frosted"] .toolbar,
 :root[data-theme="frosted"] .ann-toolbar,
 :root[data-theme="frosted"] .search-bar,
@@ -867,7 +888,19 @@ input[type="checkbox"] {
   flex-shrink: 0;
   -webkit-app-region: drag;
   position: relative;
-  z-index: 2;
+  /* DEF-189 — the caption strip competes with the Tools palette
+   * (z-index 30, an absolute sibling inside .app-main) in the same
+   * root stacking context. The strip sat at z-index 2, so every
+   * popover that lives INSIDE it (theme dropdown at z-index 60, the
+   * menu popover at 50) was capped by the strip's own context and
+   * painted UNDER the palette card — with the Phase-14 palette
+   * widened to 344px the "Light" option landed beneath the panel.
+   * 40 lifts the whole strip above the palette (30) while staying
+   * below the fixed-position surfaces it must never cover: the
+   * color popover (50), sheet (100) / modal (800) backdrops and
+   * toasts (1000). The palette's own box never reaches the strip
+   * (it anchors below --toolbar-h), so nothing else changes lanes. */
+  z-index: 40;
 }
 
 /* The brand/tabs slot — fills the space between the menu button
@@ -1752,10 +1785,30 @@ input[type="checkbox"] {
 
 .side-rail {
   display: grid;
-  grid-template-rows: 38px 1fr;
+  /* DEF-185 — the rail now carries a title header ("Pages") above the
+   * icon tab strip: auto row for the header, 38px tab strip, 1fr
+   * content. */
+  grid-template-rows: auto 38px 1fr;
   border-right: 1px solid var(--border);
   background: var(--bg-rail);
   min-height: 0;
+}
+
+/* DEF-185 — the rail's title header. The mock shows a bold "Pages"
+ * label at the panel top identifying the panel (the label follows the
+ * active rail view: Pages / Annotations / Bookmarks). */
+.rail-header {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 12px 0;
+}
+
+.rail-title {
+  font-size: var(--fs-lg);
+  font-weight: 700;
+  color: var(--fg-strong);
+  letter-spacing: -0.01em;
 }
 
 .rail-tabs {
@@ -2375,6 +2428,26 @@ input[type="checkbox"] {
   isolation: isolate;
 }
 
+/* DEF-190 — while a placed stamp on THIS page shows its selection
+ * chrome (the Confirm/Edit/Delete bar or the stamp-type editor),
+ * lift the whole page above its sibling pages. `.pdf-page` is an
+ * isolated stacking context (`isolation: isolate`), so an editor
+ * anchored under a stamp near the page's bottom edge used to paint
+ * — and hit-test — UNDER the next page wherever it straddled the
+ * page boundary: page 2 (a later sibling context) painted its
+ * bitmap and pointer-active textLayer over the editor, and the
+ * Cancel button was unclickable (the DEF-088 family). A z-index on
+ * the page itself (position: relative) competes directly with the
+ * sibling pages in the shared parent context, so the editor rides
+ * above them while the attribute is set. Scoped to selection-only
+ * so normal page painting (page shadows in the gap) is unchanged
+ * the other 100% of the time. The value stays far below the fixed
+ * surfaces (sheet 100 / modal 800 / toasts 1000) so dialogs still
+ * cover everything. */
+.pdf-page[data-stamp-editor-open="true"] {
+  z-index: 70;
+}
+
 /* Page-slot: an always-mounted, fixed-height placeholder that reserves scroll
  * space for every page of the document. Real <PageView> instances are mounted
  * inside the slot only when the IntersectionObserver reports it as
@@ -2963,8 +3036,19 @@ input[type="checkbox"] {
 }
 
 .rail-action-btn[disabled] {
-  opacity: 0.45;
+  /* DEF-188 — the old whole-button 0.45 fade sank the disabled
+   * "Undo last change" label into the rail glass (qa measured spread
+   * 28). A faded label over glass can never clear the readability bar
+   * (the fade multiplies toward the glass), so the disabled state now
+   * reads through the FAINT ink tier (a real, legible step below the
+   * enabled muted ink) while the decorative icon still fades to signal
+   * "off" — plus no hover response and the not-allowed cursor. */
+  color: var(--fg-faint);
   cursor: not-allowed;
+}
+
+.rail-action-btn[disabled] svg {
+  opacity: 0.6;
 }
 
 .rail-action-danger:hover:not([disabled]) {
@@ -7914,16 +7998,31 @@ rect.ann-highlight.ann-preview {
 /* Frame / titlebar — the deepest frosted sheet with a bright hairline
  * top highlight and a faint darker lower inner edge (lit from above,
  * no white outline). The active tab surface is a touch lighter than
- * the frame so it reads as "picked up"; the inactive tabs stay quiet. */
-:root[data-theme="frosted"] .titlebar,
-:root[data-theme="frosted"] .app-header {
+ * the frame so it reads as "picked up"; the inactive tabs stay quiet.
+ * DEF-183 — the `.titlebar` is the caption strip's ONLY glass paint:
+ * the `.app-header` nested inside its slot used to paint the same
+ * rgba(126,178,250,0.65) film + blur on top of it, stacking a ~0.88
+ * effective film that blocked the wallpaper (see-through delta 5.0).
+ * Exactly one element paints + blurs the caption strip now. */
+:root[data-theme="frosted"] .titlebar {
   background: var(--tf-surface-frame);
+}
+
+/* DEF-183 — the header is a strip INSIDE the titlebar's slot: it must
+ * not paint its own film (the base rule's --bg-toolbar resolves to
+ * rgba(126,178,250,0.56) here) and its hairline must yield to the
+ * titlebar's own bottom border, so the wallpaper composites through
+ * ONE glass layer across the whole caption strip. Light/dark keep the
+ * base paint (their titlebar films are opaque; nothing shows through). */
+:root[data-theme="frosted"] .app-header {
+  background: transparent;
+  border-bottom-color: transparent;
 }
 
 :root[data-theme="frosted"] .titlebar {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -1px 0 rgba(138, 152, 170, 0.35);
+    inset 0 -1px 0 rgba(96, 130, 190, 0.35);
 }
 
 /* Primary command toolbar + secondary/annotation toolbar + search:
@@ -7938,7 +8037,7 @@ rect.ann-highlight.ann-preview {
 :root[data-theme="frosted"] .search-bar {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    inset 0 -1px 0 rgba(138, 152, 170, 0.25);
+    inset 0 -1px 0 rgba(96, 130, 190, 0.25);
 }
 
 :root[data-theme="frosted"] .tool-btn-active {
@@ -7946,29 +8045,42 @@ rect.ann-highlight.ann-preview {
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.3), 0 2px 10px rgba(37, 99, 235, 0.16);
 }
 
-/* Left thumbnail sidebar — a distinct acrylic sheet (slightly cooler
- * than the toolbars so the page list sits behind the command row). */
+/* Left thumbnail sidebar — a FLOATING frosted card (DEF-184): inset
+ * 16px from the window's left edge by the glass gutters, starting
+ * 12px below the toolbar band (the mock's ~15px gap), ALL four
+ * corners rounded, hairline on all sides (no docked right edge), a
+ * soft blue ambient drop shadow, a bright top light catch and a
+ * faint darker lower inner edge (lit from above). */
 :root[data-theme="frosted"] .side-rail {
+  margin-top: calc(var(--toolbar-h, 56px) + 12px);
+  border: 1px solid var(--tf-border);
+  border-radius: var(--tf-radius-panel);
   box-shadow:
-    inset 1px 0 0 rgba(255, 255, 255, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    inset 0 -1px 0 rgba(138, 152, 170, 0.25);
+    0 12px 32px rgba(30, 58, 138, 0.16),
+    0 2px 8px rgba(30, 58, 138, 0.10),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(96, 130, 190, 0.28);
 }
 
-/* Right Tools panel — the clearest frosted example in the light
- * material: a near-white translucent sheet floating above the tonal
- * workspace, soft cool ambient shadow off the left edge, rounded
- * sheet corners (it docks flush right), a crisp cool hairline where
- * it meets the white page, and a faint inner top highlight. */
+/* Right Tools panel — a FLOATING frosted card (DEF-186): inset 16px
+ * from the window's right edge, 12px above the bottom edge, 12px
+ * below the toolbar band (anchored to .app-main, whose box spans the
+ * window, so these are window-edge insets), ALL four corners rounded,
+ * a crisp cool-blue hairline all around, a soft blue ambient shadow
+ * beneath, and a faint inner top highlight. The docked left-edge
+ * hairline and the left-falling dock shadow are gone. */
 :root[data-theme="frosted"] .tools-palette {
+  top: calc(var(--toolbar-h, 56px) + 12px);
+  right: 16px;
+  bottom: 12px;
   background: var(--tf-surface-panel);
-  border-left-color: #d8dee8;
-  border-radius: var(--tf-radius-md) 0 0 var(--tf-radius-md);
+  border: 1px solid var(--tf-border);
+  border-radius: var(--tf-radius-panel);
   box-shadow:
-    -10px 0 24px rgba(15, 23, 42, 0.12),
+    0 12px 32px rgba(30, 58, 138, 0.16),
+    0 2px 8px rgba(30, 58, 138, 0.10),
     inset 0 0 1px rgba(255, 255, 255, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -8px 14px rgba(138, 152, 170, 0.12);
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
 /* Menus / popovers — the floating layer: nearly opaque white sheet,
@@ -7978,9 +8090,9 @@ rect.ann-highlight.ann-preview {
 :root[data-theme="frosted"] .theme-toggle-popover,
 :root[data-theme="frosted"] .color-popover {
   background: var(--tf-surface-menu);
-  border: 1px solid #d5dce6;
+  border: 1px solid #b9cbe9;
   border-radius: var(--tf-radius-md);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow: 0 10px 28px rgba(30, 58, 138, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 :root[data-theme="frosted"] .titlebar-menu-popover,
@@ -8011,10 +8123,10 @@ rect.ann-highlight.ann-preview {
   padding: 0 8px;
   line-height: 26px;
   background: var(--tf-surface-float);
-  border: 1px solid #d5dce6;
+  border: 1px solid #b9cbe9;
   border-radius: var(--tf-radius-sm);
   box-shadow:
-    0 4px 14px rgba(15, 23, 42, 0.1),
+    0 4px 14px rgba(30, 58, 138, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transition:
     background var(--motion-fast) var(--ease-out),
@@ -8024,47 +8136,108 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .zoom-percent:hover {
   background: rgba(255, 255, 255, 0.96);
-  border-color: #ccd4e0;
+  border-color: #a9bfe4;
   box-shadow:
-    0 6px 18px rgba(15, 23, 42, 0.13),
+    0 6px 18px rgba(30, 58, 138, 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 :root[data-theme="frosted"] .zoom-percent:active {
-  background: #eef1f6;
+  background: #dfe9fb;
   box-shadow:
-    0 2px 8px rgba(15, 23, 42, 0.1),
+    0 2px 8px rgba(30, 58, 138, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-/* Workspace tonal variation + top-left illumination — a very subtle
- * cool white radial gradient (lighter center, slightly cooler edges)
- * painted on the workspace backdrop ONLY. The paper sheets and their
- * content stay untouched; the PDF keeps its solid white page and the
- * gradient never sits on a page/slot/canvas rule. The explicit
- * background-color keeps the workspace a SOLID light sheet (the
- * gradient layers on top of it, alpha stays 1).
- * `background-attachment: fixed` anchors the light to the workspace
- * so the soft illumination stays put while the pages scroll over it.
+/* Workspace tonal variation — SUPERSEDED (Phase 14 / DEF-181): the
+ * workspace, the app frame and the scroller now step aside entirely
+ * (transparent, rules in the Phase-14 block at the end of this file)
+ * so the REAL desktop wallpaper composites through the glass. The old
+ * solid tonal base + radial-gradient illumination here was fully
+ * overridden by those later transparency rules and is removed.
+ * The paper sheets and their content stay untouched (DEF-099). */
+
+/* ---------------------------------------------------------------------------
+ * Phase 14 — FLOATING GLASS SHELL (DEF-184 / DEF-185 / DEF-186 / DEF-187).
  *
- * Phase C — `.app` joins the list so the light VARYS behind
- * the in-flow chrome rows (titlebar, toolbars, rail) as well: the
- * frosted sheets above them blur a real tonal surface instead of a
- * flat hex, which is what makes the blur visible as glass. The `.app`
- * grid is the full window; its children repaint their own surfaces,
- * and the light source at 35% 12% keeps the top-left of every chrome
- * row subtly brighter — lit-from-above glass. */
-:root[data-theme="frosted"] .app,
-:root[data-theme="frosted"] .workspace-main,
-:root[data-theme="frosted"] .document-scroller {
-  background-color: var(--tf-bg);
-  background-image: radial-gradient(
-    ellipse 120% 90% at 35% 12%,
-    #fafbfd 0%,
-    #f2f4f8 42%,
-    #e2e7ef 100%
-  );
-  background-attachment: fixed;
+ * The reference mock's window is a floating glass sheet over the
+ * desktop: the window shell itself has rounded corners, and the chrome
+ * is a set of floating inset cards with the wallpaper visible in the
+ * gutters around and between them:
+ *
+ *   - the command toolbar is one full-width glass band attached to the
+ *     caption strip (it reaches both window edges);
+ *   - the Pages rail is a floating card inset 16px from the window's
+ *     left edge, starting 12px below the toolbar band, all four
+ *     corners rounded;
+ *   - the Tools panel is a floating card inset 16px from the window's
+ *     right edge with the same 12px top gap and rounding;
+ *   - the document canvas ends BESIDE the Tools panel (it no longer
+ *     extends under it), so the panel's backdrop-filter diffuses the
+ *     wallpaper, not the white page (DEF-183);
+ *   - the shell (.app) rounds at 16px so the chrome meets the
+ *     backdrop in the mock's rounded silhouette (DEF-187).
+ *
+ * All of this is frosted-scoped; light/dark keep the docked layout.
+ * ------------------------------------------------------------------------- */
+
+:root[data-theme="frosted"] .workspace {
+  /* Outer gutters (wallpaper shows through): 16px left/right, 12px
+   * bottom; no top padding — the toolbar band attaches to the title
+   * bar like the mock's continuous glass band. The 12px column gap
+   * separates the rail card from the canvas column. */
+  padding: 0 16px 12px 16px;
+  column-gap: 12px;
+}
+
+:root[data-theme="frosted"] .toolbar {
+  /* The command band spans the full window width: it reaches over the
+   * rail column (220px) + the column gap (12px) + the left gutter
+   * (16px) and over the right gutter (16px), so the glass band is one
+   * continuous surface from window edge to window edge (the mock's
+   * top band). Content positions are unchanged — only the sheet's box
+   * grows; heights are untouched so the --tf-chrome-y measure keeps
+   * working. */
+  margin-left: calc(-1 * (220px + 12px + 16px));
+  margin-right: -16px;
+}
+
+/* (The rail card's floating geometry — margin-top below the band,
+ * all-corner hairline + radius — and the Tools card's window-edge
+ * insets live on their first frosted rules above, where the CSS
+ * contract tests read them.) */
+
+/* DEF-183/186 — the document canvas ends BESIDE the floating Tools
+ * card (the mock: "the canvas clips at the panel edge"). Without the
+ * inset the white page extends under the card and the card's
+ * backdrop-filter samples the page instead of the wallpaper, making
+ * the panel backdrop-independent. The inset frees the card's column
+ * so the wallpaper (ambient -> OS acrylic) is what the glass diffuses.
+ * `:has()` matches the palette from its .app-main parent while it is
+ * mounted — including the AnimatePresence exit, so the canvas only
+ * reflows after the card is gone. */
+:root[data-theme="frosted"] .app-main:has(> .tools-palette) .document-scroller {
+  right: 356px; /* 344px list panel + 12px gap */
+}
+
+:root[data-theme="frosted"] .app-main:has(> .tools-palette-grid) .document-scroller {
+  right: 392px; /* 380px grid panel + 12px gap */
+}
+
+/* DEF-187 — the window shell rounds at the panel radius so the chrome
+ * meets the desktop in the mock's rounded silhouette. The window is
+ * transparent in the main process, so the corners composite the
+ * wallpaper. `overflow: hidden` clips the chrome (title bar band, the
+ * full-width toolbar, the ambient layer's 1.06 parallax scale) to the
+ * rounded bounds. Maximized windows keep square corners — a rounded
+ * shell pressed against the screen edges would show wallpaper notches. */
+:root[data-theme="frosted"] .app {
+  border-radius: var(--tf-radius-panel);
+  overflow: hidden;
+}
+
+:root[data-theme="frosted"] .app-maximized {
+  border-radius: 0;
 }
 
 /* Selected thumbnail (left rail) — the frosted state glows softly:
@@ -8381,30 +8554,24 @@ rect.ann-highlight.ann-preview {
 /* DEF-181 — the welcome screen is the launch surface, and its solid
  * --bg-sunken / --bg-base sheets covered the whole window under the
  * frosted title bar (same defeat as the ambient base). In frosted both
- * become translucent washes over the wallpaper the OS composites
- * through. Deliberately NO backdrop-filter here: the acrylic blur of
+ * become translucent BLUE-tinted washes over the wallpaper the OS
+ * composites through (DEF-182 — the glass reads blue everywhere).
+ * Deliberately NO backdrop-filter here: the acrylic blur of
  * the wallpaper is the OS material's job (backgroundMaterial), and the
  * 14-surface chrome blur contract stays exact. Light/dark keep the
  * solid sheets. */
 :root[data-theme="frosted"] .welcome {
-  background: rgba(233, 237, 243, 0.42);
+  background: rgba(222, 234, 252, 0.42);
 }
 
 :root[data-theme="frosted"] .welcome-hero {
-  background: rgba(238, 241, 246, 0.62);
+  background: rgba(214, 230, 252, 0.62);
 }
 
-/* Frosted panel radii — the glass sheets round into the workspace at
- * the spec's 16px on their inner corners (docking edges stay flush).
- * The existing frosted rules above set 8-10px; these later overrides
- * win the cascade. */
-:root[data-theme="frosted"] .tools-palette {
-  border-radius: var(--tf-radius-panel) 0 0 var(--tf-radius-panel);
-}
-
-:root[data-theme="frosted"] .side-rail {
-  border-radius: 0 var(--tf-radius-panel) var(--tf-radius-panel) 0;
-}
+/* Frosted panel radii — SUPERSEDED by the Phase-14 floating-shell
+ * block: both glass cards now round on ALL four corners (floating
+ * cards), with the radii declared in the floating-shell rules. The
+ * old inner-corner-only radii (docking edges flush) are gone. */
 
 /* Frosted grid cards — the same acrylic as the panel, one step up:
  * a translucent white chip with a hairline and a soft drop so the

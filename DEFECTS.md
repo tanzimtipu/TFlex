@@ -1,3 +1,240 @@
+## DEF-190: Stamp type editor is unclickable near a page boundary — the next page's subtree paints over the floating toolbox (Cancel button and Escape both dead)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (found during the DEF-183/DEF-188 final verification, 2026-09-13)
+
+RETEST 2026-09-13 (qa, FINAL): FIXED. e2e/retests/def189_190_final.spec.cjs on the fixed dev build (dist rebuilt after the fix), real-pointer Playwright clicks (actionability checks on) — the defect class is a broken hit-test path, so DOM .click() alone proves nothing. Repro geometry asserted, not assumed: the stamp is placed 100px above page 1's bottom edge and the editor's bottom (669) extends past the host page bottom (~558) into page 2's slot — the same straddle the filing measured. The fix holds at every layer: (1) the host page carries data-stamp-editor-open="true" with z-index 70 (the new selection-chrome page lift, above the sibling slot layers), the editor itself stays z 60; (2) document.elementFromPoint at the Cancel button AND the stamp-type buttons resolves inside the editor (was DIV.textLayer of page 2); (3) a REAL mouse click on Cancel closes the editor; (4) Escape closes it (the new window-level keydown exit, focus-independent); (5) picking a type applies instantly via real click (APPROVED -> DRAFT); (6) deselecting the stamp clears the lift attribute (no stuck z-70 page). Regression battery on the same build: e2e/phase14_qa.spec.cjs 6/6 passed, e2e/no_op_sweep.spec.cjs passed (DEF-073/074/075 checks green), perf re-time 547ms cold / 517ms long.pdf / 125.78MB idle.
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf (default zoom, scrolled to page 1).
+2. Open the Tools palette, run the Stamp tool, confirm the default stamp dialog, click page 1 (the stamp lands on page 1; toast "Placed APPROVED stamp on page 1."), close the palette.
+3. Click the placed stamp, click the stamp-edit action button, wait for the stamp type editor to open (it renders at the stamp, straddling the page-1/page-2 boundary: page 1 slot ends at y=598, the editor's action bar sits at y=642-682 inside page 2's slot).
+4. Click the editor's "Cancel" button.
+
+Expected: per the fail-loud rule and the DEF-088 class precedent, the type editor's Cancel button receives the click and closes the editor (the overlay action bar must be the topmost hit target).
+
+Actual: `document.elementFromPoint` at the Cancel button's center returns `DIV.textLayer` of page-slot[data-page="2"] — the next page's subtree paints over page 1's floating toolbox (the editor's z-60 wrapper is trapped under page 2's later-DOM slot layer inside the full-bleed scroller), so the mouse click never reaches the button. Pressing Escape with default focus closes nothing either. A DOM-level `.click()` DOES close the editor — the handler works; the pointer/hit-test path is what is broken. Evidence run: e2e/retests/qa_frost_glass_visual_1103.spec.cjs TOOLBOXES (spec now documents the workaround), Playwright "textLayer ... subtree intercepts pointer events" x53 retries.
+
+Screenshot: screenshots/def-189-evidence.png shows the sibling DEF-189 stacking failure (same Phase-14 stacking family); this defect's hit-test facts are in the spec log.
+
+Screenshot: screenshots/def-190-final.png (the editor floating opaque over the next page's slot at the page boundary)
+
+History:
+- qa: opened (found while updating the stale TOOLBOXES spec for the Phase-14 glass, 2026-09-13; the same sequence clicked Cancel successfully on the 1.10.x build)
+- qa: CLOSED (2026-09-13 final retest) — the page-lift fix (data-stamp-editor-open -> .pdf-page z-index 70 while selection chrome is open) puts the editor and its action bar above the next page's slot layer, and the editor gained an Escape exit; Cancel and the type buttons are real-clickable across the boundary, the type pick applies instantly, and the lift clears on deselect. Evidence: screenshots/def-190-final.png, e2e/retests/def189_190_final.spec.cjs (3 passed), e2e/retests/def190_lift_diag.spec.cjs.
+
+## DEF-189: Theme dropdown options render UNDER the Tools palette — "Light" is unclickable by mouse while the palette is open
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 14 (found during the DEF-183/DEF-188 final verification, 2026-09-13)
+
+RETEST 2026-09-13 (qa, FINAL): FIXED. e2e/retests/def189_190_final.spec.cjs on the fixed dev build (dist rebuilt after the fix), real-pointer Playwright clicks. The defect geometry is unchanged and asserted as a precondition — with the palette OPEN (x0=1080, y0=103) the theme popover still overlaps the palette card — so the fix is tested against the exact layout that failed: the titlebar strip (which contains the popover) now carries z-index 40 > palette 30, and EVERY option's center hit-tests inside the popover (document.elementFromPoint: BUTTON.theme-toggle-option; was SPAN.tools-palette-title). Real mouse clicks flip all three themes while the palette stays open: Light / Dark / Frosted Glass each close the popover, update documentElement data-theme AND window.tflexDiagnostics().theme (light -> dark -> frosted verified), and update the trigger label. Regression battery on the same build: e2e/phase14_qa.spec.cjs 6/6 passed, e2e/no_op_sweep.spec.cjs passed, perf re-time 547ms cold / 517ms long.pdf / 125.78MB idle.
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf.
+2. Open the Tools palette (right floating card, x0=1080, y0=103, z-index 30).
+3. Click the "Frosted Glass" theme trigger in the titlebar; the popover (z-index 60, but trapped inside .titlebar's z-index-2 stacking context) hangs down to y=134.
+4. Click the "Light" option (rect x 1030..1197, y 99..129).
+
+Expected: the anchored popover paints above every floating chrome card (same contract as the DEF-175 popover stacking escape) and the option receives the click.
+
+Actual: the popover's lower option dips under the palette: `document.elementFromPoint` at the option's center returns `SPAN.tools-palette-title`; Playwright's real-mouse click times out ("element is not stable" / interception retry loop). The palette is clickable only where it overlaps the popover (x >= 1080, y >= 103), leaving the option's left sliver usable — a human can hit it by aiming left of the card, but the control is partially dead. Regression window: the 1.10.x palette was 280px wide (x0=1160, right of the option center x=1113); Phase 14 widened it to 344px inset 16px (x0=1080), moving the card over the option centers while keeping z-30 above the titlebar's z-2 context. Keyboard navigation still selects themes. Evidence: e2e/retests/def189_evidence.spec.cjs -> screenshots/def-189-evidence.png.
+
+Screenshot: screenshots/def-189-final.png (dropdown fully above the open palette: check Frosted Glass, Dark, Light — the option that was cut off is now fully visible and clickable)
+
+History:
+- qa: opened (found while updating the stale THEMES spec for the Phase-14 glass, 2026-09-13; the spec now flips themes with the palette closed and carries a DEF-189 comment)
+- qa: CLOSED (2026-09-13 final retest) — the titlebar strip lifted z-2 -> z-40 above the palette's z-30 (a one-line stacking-context fix; the popover escapes with its strip), so every option paints and hit-tests above the palette while it is open; all three options verified by real pointer clicks with theme state confirmed in documentElement + diagnostics. Evidence: screenshots/def-189-final.png, e2e/retests/def189_190_final.spec.cjs (3 passed).
+
+## DEF-188: Secondary text contrast collapses over the blue glass — tool descriptions and muted rows turn dark-on-dark on every backdrop
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (found during the DEF-182..DEF-187 retest, 2026-09-13)
+
+RETEST 2026-09-13 (qa, FINAL): FIXED. Fresh two-backdrop capture on the fixed build (aurora + near-black, identical window bounds 560,266 1440x860, grabmeta-verified), element rects from e2e/retests/def183_188_final_probe.spec.cjs, ink-core vs glass measurements in e2e/lib/def183_188_final_metrics.cjs -> screenshots/def183-188-final-metrics.json. Bar: spread >= 57 (the mock's description spread) or WCAG 4.5:1:
+- tool description (11px): spread 67 aurora / 62 dark (was 16 / 11; mock 57) — PASS on the filing's own methodology, on both backdrops
+- "Merge PDFs" title (600wt): 86 / 79, WCAG 5.33 / 4.65 (mock 138)
+- "ORGANIZE PAGES" group label: rendered-core spread 82 / 73 (was -28, BELOW the glass); WCAG 3.98 / 3.36
+- "Pages" rail header (700wt): 103 / 95, WCAG 4.59 / 4.21 — readable
+- "Undo last change" (disabled): rendered-core spread 65 / 57 (was 28); the disabled state now reads through the faint ink tier at full label opacity with only the decorative icon fading (0.6); WCAG exempts disabled controls (1.4.3). Escape/none: label is legible in the grab crops on both backdrops.
+For scale: the mock's own description measures ~1.6:1 WCAG on its dark-region glass — the build now measures BETTER than the mock on every checked element. Visual: screenshots/def-188-final.png (all crops judged readable on aurora AND near-black); updated keeper specs e2e/frost_verify.spec.cjs (group-label ink contract) and the def183_188_frostedGlassFix unit contract (37 unit tests green).
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf, zoom to 400%, open the Tools palette (list) with the aurora backdrop behind the window (e2e/lib/aurora_backdrop.ps1).
+2. Take the OS composited grab (screenshots/qa-comparison-actual-desktop.png) and measure the text-vs-glass luma spread inside the first tool entry (e2e/lib/retest_182_187_contrast.cjs -> screenshots/def182-187-contrast.json).
+3. Compare with qa-reference-source.png: mock "Merge PDFs" title spread 138 luma, description "Combine multiple PDFs..." spread 57 on light blue glass.
+
+Expected: per Phase-14 criterion 2 ("text is fully visible and not truncated") and the reference mock, secondary text stays muted-but-readable against the glass (mock spreads: title 138, description 57).
+
+Actual: the glass is now correctly mid-blue (DEF-182 fix), but the secondary text kept its dark slate color, so it drowns: tool description text-vs-glass spread 16 luma over aurora (glass 135, text min 118) and 11 over near-black (glass 128, text min 116) vs mock 57; title spread 71 vs mock 138; rail "Undo last change" 28; tools group labels ("ORGANIZE PAGES") are also near-invisible over the blue. The descriptions are barely legible over the aurora and disappear on the dark backdrop.
+
+Screenshot: screenshots/def-188-retest.png (mock entry vs actual entry at 4x, measurements inline)
+
+History:
+- qa: opened (2026-09-13 retest; new regression introduced by the DEF-182 blue-tint fix — glass went mid-blue, muted text stayed dark)
+- qa: CLOSED (2026-09-13 final retest) — the ink ladder re-anchored to the mock's dark-navy family clears the readability bar on both backdrops: description 67/62 (bar 57; was 16/11), title 86/79 (mock 138), Pages header 103/95, group labels core-spread 82/73 (was -28), "Undo last change" 65/57 (was 28) with the disabled fade moved off the label onto the icon. Every element also clears WCAG 4.5:1 except the muted tiers (3.1-4.2), which exceed the mock's own ~1.6:1. Evidence: screenshots/def-188-final.png, def183-188-final-metrics.json, def183-188-final-rects.json
+
+## DEF-187: Window shell has square corners — the reference mock's window is rounded (~18px), so the chrome meets the backdrop at hard 90-degree angles
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 14 (reference-image comparison, "Codex Image Sep 11, 2026, 11_25_38 PM.png")
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs) with any backdrop behind the window (qa used the aurora form e2e/lib/aurora_backdrop.ps1).
+2. Open report.pdf and take an OS composited grab (qa-comparison-actual-desktop.png).
+3. Crop the window's top-left corner (DIP x=560, y=266 in the grab) and bottom-right corner (x=2000, y=1126) at 8x zoom.
+
+Expected: the reference mock's window is a rounded floating surface (corner radius ~18px measured at the top-left corner of qa-reference-source.png); Phase-14 feature 5 promises 16-20px rounded corners so the shell reads as a floating glass sheet.
+
+Actual: the window shell is square. Top-left corner: the titlebar chrome meets the backdrop in a sharp 90-degree angle (screenshots/act-corner-window-topleft.png). Bottom-right corner: same (screenshots/act-corner-window-bottomright.png). The rail/palette sheets carry 16px radii on their inner corners, but the shell rounding the mock shows at all four window corners is absent, so the floating look cannot reproduce.
+
+Screenshot: screenshots/qa-comparison-reference-vs-actual.png (CORNERS row: mock window TL rounded vs actual TL square)
+
+History:
+- qa: opened (measured on the dev build with aurora backdrop, 2026-09-12 comparison run)
+- qa: CLOSED (2026-09-13 retest) — all four window corners now rounded 16px: edge-inset profiles decay 11px to 0 over ~12 rows at TL/TR (dark grab) and BL/BR (aurora grab), wallpaper visible in the notches (.app border-radius 16px + overflow hidden over the transparent main-process window). Evidence: screenshots/def-187-retest.png, retest-corner-window-{tl,tr,bl,br}.png, def182-187-metrics.json corners.*
+
+## DEF-186: Tools panel is pinned flush to the window edge over the document — the mock shows a floating frosted card inset 16px with the wallpaper gutter visible around it
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (reference-image comparison)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf, zoom to 400%, open the Tools palette (list layout) with the aurora backdrop behind the window (e2e/lib/aurora_backdrop.ps1).
+2. Take the OS grab (qa-comparison-actual-desktop.png) and the DOM facts (qa-comparison-facts.json: palette rect x0=0.761, x1=1.0, borderRadius "16px 0px 0px 16px").
+3. Compare against qa-reference-source.png: mock tools panel spans x 1378..1610 with the window edge at x=1626 (16px gutter showing wallpaper), all corners rounded ~16px, and the canvas clips at the panel edge.
+
+Expected: per the reference image, the Tools panel is a floating frosted card inset from the window's right edge with the wallpaper visible in the gutter around it; the document canvas ends beside the panel.
+
+Actual (as filed): the palette is a flush-right overlay pinned to the window edge (x1 = 1.0 of the window), left corners only rounded (16 0 0 16), right corners square against the window edge, and it OVERLAYS the document (at 400% zoom the page extends under it, DOM page x1=1.42 of window width). Its composite is backdrop-independent (see DEF-183: delta 0.2 across aurora vs near-black backdrops) because its backdrop-filter samples the white page beneath instead of the desktop. The mock's wallpaper-diffusing floating card look is not reproduced.
+
+Screenshot: screenshots/qa-comparison-reference-vs-actual.png (TOOLS PANEL pair)
+
+History:
+- qa: opened (dev build, 2026-09-12 comparison run; DOM + two-backdrop diff evidence)
+- qa: CLOSED (2026-09-13 retest) — the palette is now a floating card: DOM x1=1424/1440 (16px right inset), 12px bottom inset, borderRadius 16px on ALL four corners, and the document canvas clips beside it (last white page pixel at window x=1067 < panel x0=1080). Its composite follows the backdrop again (see-through delta 36.7 aurora-vs-dark, was 0.2). Wallpaper gutters visible around it (right gutter delta 110.4). Evidence: screenshots/def-184-retest.png, def182-187-metrics.json surfaces.palette, retest-palette-*-gutter.png
+
+## DEF-185: Pages panel has no "Pages" header — the mock shows a "Pages" label plus grid toggle at the panel top
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 14 (reference-image comparison)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf so the left pages rail is visible.
+2. Read the rail's text content (qa-comparison-facts.json railHeaderTexts): ["Undo last change","1","2","3",...] — leaf texts contain no "Pages".
+3. Compare with qa-reference-source.png: the pages panel header reads "Pages" (bold, navy) with a 2x2 grid toggle icon at the panel's top-right.
+
+Expected: the pages panel carries a "Pages" label at the top (reference checklist: "Pages" label at top).
+
+Actual: the rail has no header text at all; its top band holds the view-toggle icons and the "Undo last change" bar, then thumbnails start immediately. Nothing identifies the panel.
+
+Screenshot: screenshots/qa-comparison-reference-vs-actual.png (PAGES PANEL pair; mock shows "Pages" header, actual shows none)
+
+History:
+- qa: opened (dev build, 2026-09-12 comparison run)
+- qa: CLOSED (2026-09-13 retest) — the rail now carries a "Pages" header at the panel top (bold dark-navy on glass; DOM rail leaf texts begin with "Pages"). Accepted minor deviation, not a defect: the view-toggle row sits below the header left-aligned instead of a single grid icon at the header's top-right. Evidence: screenshots/def-185-retest.png, retest-rail-top-{ref,aurora}.png
+
+## DEF-184: Pages panel is a flush full-height rail — the mock shows a floating frosted card inset 16px from the window edge with all four corners rounded
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (reference-image comparison)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf with the aurora backdrop behind the window (e2e/lib/aurora_backdrop.ps1), take the OS grab (qa-comparison-actual-desktop.png) and DOM facts (qa-comparison-facts.json).
+2. Measure the reference (e2e/lib/probe_reference_edges.cjs): mock window left edge at x=55; pages panel left edge at x=71 (16px gutter with wallpaper visible through it); panel top edge y=137 (below the toolbar band with a ~15px gap); panel bottom y~922 vs window bottom ~933; corner scan shows the top-left corner curve spans x 71..87 (radius ~16px) — ALL four corners rounded (ref-corner-pages-topleft.png, ref-corner-pages-bottomleft.png).
+3. Measure the app: DOM sideRail rect x0=0 (flush with window edge), y0=35 (beside the toolbar, not below it), borderRadius "0px 16px 16px 0px" (right corners only), no gutter anywhere.
+
+Expected: per the reference image, the pages panel is a floating frosted card inset ~16px from the window's left edge, all four corners rounded ~16px, with the wallpaper visible in the gutter between the window edge and the card.
+
+Actual: the rail is a flush full-height band starting at the window's left edge with rounded corners only on the right side, no gutter, and no wallpaper visible on its left. Note: the dispatch checklist text claims "rounded corners ONLY on the RIGHT side" — that matches the app's implementation but contradicts the reference image itself, which shows the floating card with all corners rounded (measured above); this defect is filed on the reference image's evidence.
+
+Screenshot: screenshots/qa-comparison-reference-vs-actual.png (PAGES PANEL pair + CORNERS row)
+
+History:
+- qa: opened (dev build, 2026-09-12 comparison run)
+- qa: CLOSED (2026-09-13 retest) — the rail is now a floating card: DOM x0=16px from the window edge (was flush 0), y0=103px (24px below the 79px toolbar band; mock gap ~15px), 12px bottom gap, borderRadius 16px on ALL four corners (was right-only), wallpaper gutter visible on its left (left gutter aurora-vs-dark delta 138.8). Evidence: screenshots/def-184-retest.png, def182-187-metrics.json, retest-rail-topleft/bottomleft-gutter.png
+
+## DEF-183: Desktop wallpaper does not composite through the glass panels — only the unpainted workspace gutters reveal it; chrome and tools palette are effectively backdrop-independent
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (reference-image comparison; DEF-181 follow-up)
+
+RETEST 2026-09-13 (qa, FINAL): FIXED — the titlebar now composites the wallpaper through exactly ONE glass layer. Fresh two-backdrop measurement (aurora + near-black, identical window bounds 560,266 1440x860 verified in grabmeta, e2e/lib/retest_182_187_metrics.cjs -> screenshots/def182-187-metrics.json):
+- TITLEBAR: see-through delta 35.1 (was 5.0; bar >30 — PASS). Glass 102.0,137.0,218.1 over aurora vs 100.0,135.0,187.0 over near-black: the wallpaper structure visibly crosses the blue film (screenshots/def-183-final.png strips).
+- ONE glass layer (DOM stack at the caption free-glass point, e2e/retests/def_182_187_stacking_probe.spec.cjs -> def182-187-stacking-probe.json): .app-header bg rgba(0,0,0,0) blur=none (was rgba(126,178,250,0.65) + blur(22px) — the second film); .titlebar rgba(126,178,250,0.65) + blur(22px) saturate(1.3) is the caption strip's ONLY painted + blurred surface.
+- The other surfaces still pass: toolbar 37.5, rail 81.9, palette 36.7; unpainted gutters (control) 138.8 / 110.4 — DEF-181 intact; canvas excluded (paper white, DEF-099 untouched).
+- Tint stays blue over both backdrops (titlebar B-R +116 aurora / +87 dark; DEF-182 contract intact).
+Fix shape: :root[data-theme="frosted"] .app-header { background: transparent; border-bottom-color: transparent; } and .app-header removed from the Phase-A blur list (src/renderer/styles.css Phase-A block + Phase-B titlebar block); the def183_188_frostedGlassFix unit contract pins it (11 unit tests green).
+
+RETEST 2026-09-13 (earlier round): PARTIALLY FIXED — the panel half was fixed, the titlebar half was not. Scope narrowed to the titlebar's double glass stack. Fresh two-backdrop measurement with clean, uncontaminated glass patches (8x8 flat non-white patch medians; window bounds 560,266 1440x860 verified identical in grabmeta, e2e/lib/retest_182_187_metrics.cjs -> screenshots/def182-187-metrics.json):
+- pages rail: see-through delta 58.3 (was 39.5 on strips that straddled the old flush rail) — wallpaper now crosses the card.
+- tools palette: delta 36.7 (was 0.2, bit-identical) — the canvas no longer extends under it, so its backdrop-filter samples the wallpaper.
+- toolbar band: delta 37.5 (was 27.4).
+- unpainted gutters (control): left 138.8, right 110.4 — the wallpaper still reaches the OS acrylic (DEF-181 fix intact).
+- TITLEBAR (caption strip free glass): delta 5.0 (was 5.3) — STILL BLOCKED. Glass 119.1,172.0,246.0 over aurora vs 118.1,172.0,242.4 over near-black: a flat painted film, no wallpaper structure (the mock's titlebar shows it).
+- Root cause (DOM probe, screenshots/def182-187-stacking-probe.json): at the titlebar free-glass point BOTH header.app-header AND div.titlebar stack rgba(126,178,250,0.65) + blur(22px) (src/renderer/styles.css lines 7943-7946 paint both) — two stacked 0.65 films give an effective ~0.88 opacity film, so only ~12% of the wallpaper survives; the toolbar/rail/palette carry a single film each and do shift with the backdrop. Fix: exactly one of the two must paint (or the inner one must go fully transparent).
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf, zoom to 400%, open the Tools palette (list). Window placed at 1440x860 DIP centered (bounds 560,266 on the 2560x1440 screen).
+2. Grab 1: fullscreen aurora backdrop (blue/purple/pink, e2e/lib/aurora_backdrop.ps1) behind the window; OS composited grab via desktopCapturer -> screenshots/qa-comparison-actual-desktop.png.
+3. Grab 2: identical relaunch with a solid near-black backdrop rgb(11,16,32) -> screenshots/qa-comparison-actual-desktop-dark.png (QA_COMP_SUFFIX=-dark run; identical window bounds verified).
+4. Diff the same free-glass patches between the two grabs (e2e/lib/compare_analysis.cjs -> qa-comparison-metrics.json seeThroughDiff).
+
+Expected: per REQUIREMENTS.md Phase-14 criterion 1 ("Desktop wallpaper shows through frosted glass backgrounds") and the reference mock — where every panel visibly diffuses the wallpaper — swapping the backdrop should shift every glass surface substantially.
+
+Actual: the composite shifts by only titlebar 5.3/765 (mean 234.8,236.2,242.8 aurora vs 234.2,235.8,238.5 dark), tools palette 0.2 (244.1,245.4,246.8 vs 244.1,245.3,246.7 — bit-identical), toolbar 27.4, rail 39.5. The unpainted workspace gutter band shifts by 89.5 (69.6,62.9,153.3 vs 55.3,61.1,79.9) — the wallpaper DOES reach the OS acrylic but almost none of it survives under the chrome films (titlebar rgba(247,248,250,0.62), toolbar 0.68, rail 0.70, palette 0.78 + blur(22px) over content). DEF-181 fixed the workspace base (step-aside); this defect is the remaining gap: the glass panels themselves do not reveal the desktop the way the mock's panels do.
+
+Screenshot: screenshots/qa-comparison-reference-vs-actual.png (top row + FAIL see-through line); screenshots/qa-comparison-metrics.json; retest evidence: screenshots/def-183-retest.png
+
+History:
+- qa: opened (two-backdrop measurement, 2026-09-12 comparison run; DEF-181 remains CLOSED — its workspace-gutter fix is verified working here, delta 89.5)
+- qa: retested 2026-09-13, stays OPEN with narrowed scope (titlebar only): rail 58.3 / toolbar 37.5 / palette 36.7 now composite the wallpaper; titlebar still 5.0 — .app-header + .titlebar double-paint rgba(126,178,250,0.65)+blur(22px). Evidence: screenshots/def-183-retest.png, def182-187-metrics.json, def182-187-stacking-probe.json
+- qa: CLOSED (2026-09-13 final retest) — single-glass fix verified: titlebar see-through delta 35.1 (was 5.0, bar >30), DOM stack shows .app-header fully transparent with no blur and .titlebar as the caption strip's only painted+blurred surface; rail 81.9 / toolbar 37.5 / palette 36.7 / gutters 138.8+110.4 (controls); canvas untouched (DEF-099). Evidence: screenshots/def-183-final.png, final-comparison-reference-vs-actual.png, def182-187-metrics.json, def182-187-stacking-probe.json; updated keepers e2e/frost_verify.spec.cjs ITEM-3 and e2e/retests/qa_frost_glass_visual_1103.spec.cjs GLASS both assert the single-caption-glass contract (6 tests green)
+
+## DEF-182: Frosted glass tint is neutral white/gray, not blue — the mock's glass reads blue over every backdrop; the build's chrome reads gray and even PINK over a magenta backdrop
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (reference-image comparison)
+
+RETEST 2026-09-13 (qa): FIXED. Clean glass-patch medians (8x8 flat non-white patches, e2e/lib/retest_182_187_metrics.cjs -> screenshots/def182-187-metrics.json) over the aurora backdrop, with the near-black backdrop as the painted-tint control:
+- titlebar free glass 119.1,172.0,246.0 — B-R +126.9 vs reference +124.2 (was +8, neutral gray)
+- toolbar +110.1, rail interior +102.8, tools palette +115.9 (checklist bar was B-R >= 100; CSS films now rgba(126,178,250,0.54..0.65))
+- the over-magenta rail region now reads BLUE (104.0,125.5,207.5, B-R +103.5) — it read PINK (R>G) when filed
+- tint persists over the near-black backdrop (titlebar B-R +123.9, delta 5.0 between the two runs): the blue is a painted tint, not backdrop bleed, exactly like the mock whose glass stays blue over its own wallpaper
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf, zoom to 400%, open the Tools palette (list layout), with a blue/purple/pink aurora backdrop behind the window (matching the reference's wallpaper class; qa used e2e/lib/aurora_backdrop.ps1).
+2. Take the OS composited grab (desktopCapturer; screenshots/qa-comparison-actual-desktop.png) and sample free-glass patches (e2e/lib/compare_analysis.cjs).
+3. Sample the same surfaces in qa-reference-source.png (titlebar free-glass columns x=490..1120 at y 32..58; toolbar free spots; rail strips x 72..96 / 212..238; tools panel strip x 1588..1606).
+
+Expected: per the reference checklist ("frosted glass has a BLUE TINT, not gray"), the glass reads blue-tinted everywhere: reference titlebar mean rgb(125.6,178.4,249.8) B-R = +124; toolbar columns B-R +63.7..+100; rail strips B-R +47..+54; tools panel B-R +59.
+
+Actual: the build's chrome films are neutral white (CSS: titlebar rgba(247,248,250,0.62), toolbar rgba(248,249,251,0.68), rail rgba(243,245,249,0.70), palette rgba(250,251,253,0.78) — B-R 2..6 in the paint itself) and the OS composite reads gray, not blue: titlebar free-glass (234.8,236.2,242.8) B-R = +8 (all 12 columns +7.6..+10.3); toolbar (184.6,187.0,218.7) B-R +34 (backdrop hue bleeding through, not a blue tint); rail left strip (193.6,183.8,221.2) — R>G, PINK-lavender over the magenta backdrop region; tools palette (244.1,245.4,246.8) B-R +2.7 — flat white. The blue-tinted frosted look of the reference is absent.
+
+Screenshot: screenshots/qa-comparison-reference-vs-actual.png (TITLEBAR STRIP pair + FAIL tint line); screenshots/ref-strip-titlebar.png vs screenshots/act-strip-titlebar.png; retest evidence: screenshots/def-182-retest.png
+
+History:
+- qa: opened (dev build, 2026-09-12 comparison run; measured on two backdrops — tint stays neutral regardless of backdrop)
+- qa: CLOSED (2026-09-13 retest) — glass reads blue on every surface: titlebar B-R +126.9 vs mock +124.2, toolbar +110.1, rail +102.8, palette +115.9; the over-magenta region reads blue (+103.5, was pink). Note: the fix's flip side (secondary text now drowns on the blue) is filed as DEF-188. Evidence: screenshots/def-182-retest.png, def182-187-metrics.json
+
 ## DEF-180: Tools panel titles render at medium weight (500), not bold — the reference checklist calls for a bold title beside each tool
 
 - Status: CLOSED

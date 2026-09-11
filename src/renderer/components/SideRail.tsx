@@ -131,8 +131,17 @@ export function SideRail(props: SideRailProps) {
     onJumpToAnnotation?.(page, id);
   };
 
+  // DEF-185 — the mock's pages panel carries a "Pages" label at the
+  // panel top; the label follows the active rail view so the header
+  // never lies about what the panel is showing.
+  const railTitle: string =
+    tab === 'thumbs' ? 'Pages' : tab === 'annotations' ? 'Annotations' : 'Bookmarks';
+
   return (
     <TfPanelLeft className="side-rail">
+      <div className="rail-header">
+        <span className="rail-title">{railTitle}</span>
+      </div>
       <div className="rail-tabs">
         <button
           type="button"

@@ -41,3 +41,13 @@
 
 *Method: e2e/perf_retime + e2e/phase14_qa.spec.cjs P14-E rAF frame probe via the standard Playwright Electron harness, dev build built from the current tree (npm run build; includes the Phase-14 transparent window `transparent: true` + `backgroundMaterial: 'acrylic'` and the glass theme). Budgets unchanged vs the 23:13 pre-transparent-window re-time (583/555/125.10MB) — window transparency costs nothing measurable. Recorded by qa at the Phase-14 gate.*
 
+## Phase 14 close re-time (dev build with the DEF-189/DEF-190 fixes)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Cold start to interactive | < 3000ms | 547ms | PASS |
+| Open long.pdf (520 pages) | < 3000ms | 517ms | PASS |
+| Idle memory (main process) | < 400MB | 125.78MB | PASS |
+
+*Method: e2e/perf_retime via the standard Playwright Electron harness on the uncommitted Phase-14 fix build (titlebar z-40 stacking fix + stamp selection-chrome page lift; dist rebuilt from the current tree). Unchanged vs the Phase-14 gate row above (572/536/128.63MB) — the fixes cost nothing measurable. Recorded by qa at the DEF-189/DEF-190 final verification (2026-09-13).*
+

@@ -68,6 +68,13 @@ interface StampAnnotationsProps {
   /** Bug 6 — retype the stamp (Edit verb: change the stamp id, the
    *  only content a stamp owns beyond geometry). */
   onRetype?: (stamp: PlacedStamp, stampId: StampId) => void;
+  /** DEF-190 — reports whether this page currently shows stamp
+   *  selection chrome (action bar or stamp-type editor). The host
+   *  page mirrors it into `data-stamp-editor-open`; the stylesheet
+   *  lifts that page above its sibling pages so chrome anchored
+   *  under a bottom-edge stamp paints — and hit-tests — above the
+   *  NEXT page instead of being covered by it. */
+  onSelectionChange?: (selected: boolean) => void;
 }
 
 const RESIZE_HANDLES: readonly ImageResizeHandle[] = ["nw", "ne", "sw", "se"];
@@ -149,6 +156,7 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
     onMove,
     onDelete,
     onRetype,
+    onSelectionChange,
   } = props;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** Draft rect override while dragging. */
@@ -188,6 +196,16 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
 
   const selectedStamp =
     selectedId === null ? null : items.find((s) => s.id === selectedId) ?? null;
+
+  // DEF-190 — publish the selection-chrome state to the host page.
+  // The effect (not a render-time call) keeps the host's setState out
+  // of the render path; the cleanup reports "closed" so a page that
+  // unmounts (virtualized off-screen) never leaves the attribute set.
+  const selectionActive = selectedStamp !== null;
+  useEffect(() => {
+    onSelectionChange?.(selectionActive);
+    return (): void => onSelectionChange?.(false);
+  }, [selectionActive, onSelectionChange]);
 
   const rectFor = (s: PlacedStamp): StampRect =>
     draft !== null && draft.id === s.id ? draft.rect : s.rect;
@@ -344,6 +362,14 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
     [selectedStamp, onRetype],
   );
 
+  /** DEF-190 — stable close for the stamp-type editor. Referenced by
+   *  the editor's Escape effect (a fresh closure every render would
+   *  re-subscribe the window listener on every parent render) and by
+   *  the Cancel button. */
+  const closeEditor = useCallback((): void => {
+    setEditId(null);
+  }, []);
+
   if (items.length === 0) return null;
 
   const selectedBounds = selectedStamp !== null ? { ...rectFor(selectedStamp) } : null;
@@ -451,7 +477,7 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
               top={barPos.top}
               active={selectedStamp.stampId}
               onPick={retypeSelected}
-              onClose={(): void => setEditId(null)}
+              onClose={closeEditor}
             />
           ) : (
             <ContentActionBar
@@ -483,7 +509,17 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
 /** The stamp-type picker (the Edit toolbox for a placed stamp).
  *  Lists the four built-in stamp ids; picking one applies instantly
  *  (retype) and closes — the same instant-apply pattern the
- *  annotation color picker uses. */
+ *  annotation color picker uses.
+ *
+ *  DEF-190 — the editor previously had NO keyboard exit: Escape did
+ *  nothing, and because the editor straddles into the next page when
+ *  the stamp sits near the page's bottom edge, the Cancel button
+ *  could even be unclickable. Escape now closes the editor through a
+ *  window-level keydown listener (focus-independent, the same pattern
+ *  the TitleBar menu popover uses). The listener only closes — it
+ *  never preventDefaults or stops propagation, so any other Escape
+ *  handler in the app still sees the event (cross-bubbling guard,
+ *  DEF-087/088/090). */
 function StampTypeEditor(props: {
   left: number;
   top: number;
@@ -492,6 +528,17 @@ function StampTypeEditor(props: {
   onClose: () => void;
 }): ReactElement {
   const { left, top, active, onPick, onClose } = props;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return (): void => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
   return (
     <div
       className="ann-textbox-wrap stamp-type-editor-wrap"

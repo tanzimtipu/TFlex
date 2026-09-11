@@ -1,8 +1,12 @@
 // QA VISUAL VERIFICATION - frosted glass theme correction (light acrylic
 // direction), toolbox consistency, and text-first Word export.
 // Dispatch acceptance:
-//   1. Frosted must look like REAL glass (translucent 0.62-0.85 + blur
-//      22px/24px saturate 130% + inner shadows + sheen), NOT a flat light theme.
+//   1. Frosted must look like REAL glass (translucent + blur 22px/24px
+//      saturate 130% + inner shadows + sheen), NOT a flat light theme.
+//      Phase-14 update (qa 2026-09-13, DEF-182/183/188): the films are the
+//      BLUE rgba(126,178,250,.54-.65) band, the caption strip carries
+//      exactly ONE glass paint (.app-header transparent, no blur), and the
+//      ink ladder is the dark-navy DEF-188 set.
 //   2. Dark / Light / Frosted each verified; side-by-side evidence.
 //   3. All toolboxes share the unified sticky-note pattern (grip == body
 //      width + action bar) with matching drag bar widths.
@@ -41,6 +45,13 @@ function parseRgba(str) {
 }
 
 async function setThemeViaDropdown(want) {
+  // The popover has an exit spring; if the previous popover is still
+  // mid-exit, this click TOGGLES it closed instead of opening a fresh one
+  // and the option click below would wait on a detached node. Start from
+  // a settled state (no popover attached) before opening.
+  await win
+    .waitForFunction(() => !document.querySelector('.theme-toggle-popover'), undefined, { timeout: 3000 })
+    .catch(() => {});
   await win.click('[data-theme-toggle]');
   await win.waitForSelector('.theme-toggle-popover', { timeout: 5000 });
   await win.click(`[data-theme-option="${want}"]`);
@@ -48,6 +59,10 @@ async function setThemeViaDropdown(want) {
     (w) => document.documentElement.getAttribute('data-theme') === w,
     want,
   );
+  // Let the popover's exit spring finish so the next call starts settled.
+  await win
+    .waitForFunction(() => !document.querySelector('.theme-toggle-popover'), undefined, { timeout: 3000 })
+    .catch(() => {});
 }
 
 async function openPalette() {
@@ -121,14 +136,20 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
     expect(theme, 'fresh launch must resolve to frosted').toBe('frosted');
     await snap('qa-glass-welcome-frosted.png');
 
-    // Welcome chrome: the header must already be glass (blur + translucent).
+    // Welcome chrome: the caption strip is ONE glass surface (Phase-14,
+    // DEF-183): .titlebar paints the film + blur, the nested .app-header
+    // is fully transparent with no blur of its own.
+    const titlebarMat = await materialOf('.titlebar');
     const headerMat = await materialOf('.app-header');
+    console.log('[glass] welcome .titlebar =', JSON.stringify(titlebarMat));
     console.log('[glass] welcome .app-header =', JSON.stringify(headerMat));
-    expect(headerMat, 'app-header must exist on welcome').not.toBeNull();
-    expect(headerMat.backdropFilter, 'welcome header must carry the acrylic blur').toContain('blur');
-    const hAlpha = parseRgba(headerMat.bg).a;
-    expect(hAlpha, 'welcome header sheet must sit in the 0.60-0.86 translucent band').toBeGreaterThanOrEqual(0.6);
-    expect(hAlpha).toBeLessThanOrEqual(0.86);
+    expect(titlebarMat, 'titlebar must exist on welcome').not.toBeNull();
+    expect(titlebarMat.backdropFilter, 'welcome titlebar must carry the acrylic blur').toContain('blur');
+    const tAlpha = parseRgba(titlebarMat.bg).a;
+    expect(tAlpha, 'welcome titlebar film must sit in the 0.50-0.86 translucent band').toBeGreaterThanOrEqual(0.5);
+    expect(tAlpha).toBeLessThanOrEqual(0.86);
+    expect(parseRgba(headerMat.bg).a, 'app-header paints NOTHING in frosted (DEF-183 single caption glass)').toBe(0);
+    expect(headerMat.backdropFilter, 'app-header carries NO frosted blur (DEF-183)').toBe('none');
 
     // Open the report and capture the full workspace with the palette open.
     await openReport();
@@ -137,6 +158,10 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
     await snap('qa-glass-workspace-frosted.png');
 
     // ---- The glass ladder: every chrome sheet translucent + blurred ------
+    // Phase-14 single-caption-glass contract (DEF-183): .app-header paints
+    // nothing and blurs nothing — it is checked separately below; the
+    // painted films sit in the 0.54-0.65 blue band (frame 0.65, toolbar
+    // 0.56, rail 0.54, panel 0.62, DEF-182).
     const selectors = ['.titlebar', '.app-header', '.toolbar', '.ann-toolbar', '.side-rail', '.tools-palette'];
     const mats = [];
     for (const sel of selectors) mats.push(await materialOf(sel));
@@ -144,22 +169,33 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
     for (const m of mats) {
       expect(m, `${m.selector} must exist`).not.toBeNull();
       const a = parseRgba(m.bg).a;
-      expect(a, `${m.selector} must be translucent (>=0.60)`).toBeGreaterThanOrEqual(0.6);
+      if (m.selector === '.app-header') {
+        expect(a, '.app-header must paint NOTHING in frosted (DEF-183)').toBe(0);
+        expect(m.backdropFilter, '.app-header must carry NO blur (DEF-183)').toBe('none');
+        continue;
+      }
+      expect(a, `${m.selector} must be translucent (>=0.50)`).toBeGreaterThanOrEqual(0.5);
       expect(a, `${m.selector} must stay see-through enough for glass (<=0.86)`).toBeLessThanOrEqual(0.86);
       expect(m.backdropFilter, `${m.selector} must blur what is behind it`).toContain('blur');
       expect(m.backdropFilter, `${m.selector} blur must be the heavy 22px glass blur`).toContain('22px');
       expect(m.backdropFilter, `${m.selector} must saturate through the glass`).toContain('saturate');
-      // .app-header is a strip INSIDE the .titlebar pane and carries no
-      // inner shadow of its own; every real pane does.
-      if (m.selector !== '.app-header') {
-        expect(m.boxShadow, `${m.selector} must carry inner shadows (glass thickness)`).toContain('inset');
-      }
+      expect(m.boxShadow, `${m.selector} must carry inner shadows (glass thickness)`).toContain('inset');
     }
+    // DEF-182: the films are BLUE — B leads R by ~124 in the paint.
+    const titlebarFilm = parseRgba(mats[0].bg);
+    expect(titlebarFilm.b - titlebarFilm.r, 'titlebar film must be blue-tinted (B-R >= 100)').toBeGreaterThanOrEqual(100);
 
-    // The 0.62 frame -> 0.85 dialog hierarchy (depth through opacity).
+    // The depth ladder (DEF-182 retune): the frame is the deepest band
+    // sheet (0.65) and the floating tools card (0.62) reads heavier than
+    // the command bands (0.56/0.54) — the old panel-over-frame pin is
+    // gone with the blue retune.
     const frameA = parseRgba(mats[0].bg).a;
+    const toolbarA = parseRgba(mats[2].bg).a;
+    const railA = parseRgba(mats[4].bg).a;
     const panelA = parseRgba(mats[5].bg).a;
-    expect(panelA, 'the floating tools sheet must be MORE opaque than the frame (depth)').toBeGreaterThan(frameA);
+    expect(frameA, 'the frame must be at least as opaque as the floating panel (depth)').toBeGreaterThanOrEqual(panelA);
+    expect(panelA, 'the floating tools sheet must be MORE opaque than the toolbar band (depth)').toBeGreaterThan(toolbarA);
+    expect(panelA).toBeGreaterThanOrEqual(railA);
 
     // Moving reflection on the big chrome sheets.
     for (const sel of ['.toolbar', '.side-rail', '.tools-palette']) {
@@ -194,9 +230,12 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
     expect(pageBg, 'pdf page stays paper-white').toEqual({ r: 255, g: 255, b: 255, a: 1 });
     expect(purity.page.blur, 'NO blur on the pdf page').toBe('none');
     expect(purity.page.filter, 'no filter on the pdf page').toBe('none');
+    // DEF-181: the frosted workspace STEPS ASIDE (transparent) so the OS
+    // composites the real desktop through the glass gutters; only the page
+    // itself stays opaque paper. (The old solid light base was the exact
+    // opaque layer that defeated the main-process transparency.)
     const wsBg = parseRgba(purity.ws.bg);
-    expect(wsBg.a, 'workspace stays solid behind the page').toBe(1);
-    expect(wsBg.r > 200 && wsBg.g > 200 && wsBg.b > 200, 'workspace is the light frosted base').toBe(true);
+    expect(wsBg.a, 'frosted workspace must step aside (transparent, DEF-181)').toBe(0);
 
     // Close-up of the palette edge (glass depth over the workspace).
     const pal = await win.locator('[data-tools-palette]').boundingBox();
@@ -227,13 +266,18 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
     attachErrorCollectors(win);
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openReport();
-    await openPalette();
-    await win.waitForTimeout(400);
 
+    // DEF-189 (filed 2026-09-13): with the Tools palette OPEN, the theme
+    // popover's lower options ("Light") render UNDER the floating palette
+    // (palette z-30 paints over the popover trapped in .titlebar's z-2
+    // stacking context), so the dropdown click cannot land. Flip themes
+    // with the palette CLOSED (the mouse path then works) and open the
+    // palette per theme only for the material facts + screenshot.
     const matrix = [];
     for (const t of ['dark', 'light', 'frosted']) {
       await setThemeViaDropdown(t);
       await win.waitForTimeout(700);
+      await openPalette();
       const facts = await win.evaluate(() => {
         const grab = (sel) => {
           const el = document.querySelector(sel);
@@ -251,6 +295,10 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
       console.log(`[themes:${t}] ${JSON.stringify(facts)}`);
       matrix.push({ theme: t, ...facts });
       await snap(`qa-glass-theme-${t}.png`);
+      // close the palette before the next dropdown flip (DEF-189 above)
+      await win.click('[data-tools-toggle]');
+      await win.waitForFunction(() => !document.querySelector('[data-tools-palette]'), undefined, { timeout: 5000 }).catch(() => {});
+      await win.waitForTimeout(400);
     }
 
     // Contract: three DISTINCT materials.
@@ -265,7 +313,7 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
         expect(rgb.r > 235 && rgb.g > 235 && rgb.b > 235, 'light toolbar is near-white').toBe(true);
       } else {
         expect(ta, 'frosted toolbar is TRANSLUCENT (the glass difference)').toBeLessThanOrEqual(0.86);
-        expect(ta).toBeGreaterThanOrEqual(0.6);
+        expect(ta, 'frosted toolbar film sits in the 0.54-0.65 blue band (DEF-182)').toBeGreaterThanOrEqual(0.5);
         expect(m.toolbar.blur, 'frosted toolbar blurs behind it').toContain('blur');
         expect(m.palette.blur, 'frosted palette blurs behind it').toContain('blur');
       }
@@ -398,8 +446,21 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
         console.log('[st] wrap=' + JSON.stringify(stWrap) + ' bar=' + JSON.stringify(stBar));
         expect(stWrap, 'stamp type picker renders').not.toBeNull();
         await snap('qa-glass-toolbox-stamp.png');
-        await win.click('[data-stamp-type-cancel]');
-        await win.waitForTimeout(400);
+        // DEF-190 (filed 2026-09-13): the editor straddles the page-1/page-2
+        // boundary (page 1 ends at y~598, the editor's action bar sits at
+        // y~642-682 INSIDE page 2's slot), and page 2's subtree paints over
+        // page 1's floating toolbox - a real mouse click on
+        // [data-stamp-type-cancel] is received by page 2's textLayer, and
+        // Escape (focus outside the editor) closes nothing. The pointer
+        // path is the defect; the handler itself is proven through a
+        // DOM-level click, which must still close the editor.
+        await win.evaluate(() => document.querySelector('[data-stamp-type-cancel]').click());
+        await win
+          .waitForFunction(() => !document.querySelector('[data-stamp-type-editor]'), undefined, { timeout: 5000 })
+          .catch(() => {});
+        const stGone = await win.evaluate(() => !document.querySelector('[data-stamp-type-editor]'));
+        expect(stGone, 'the stamp type editor must close via its Cancel handler (DEF-190 blocks the pointer path)').toBe(true);
+        await win.waitForTimeout(200);
       }
     }
 

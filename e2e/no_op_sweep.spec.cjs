@@ -122,7 +122,10 @@ test.describe('No-op Sweep and Feature Verification', () => {
     await window.keyboard.press('Escape');
     await window.waitForSelector('.dialog, .sheet', { state: 'hidden' });
     
-    await window.click('[aria-label="Save As"]');
+    // Phase 13 renamed the toolbar Save As control to "Save a copy"
+    // (icon-only redesign) - the dialog and its linearize checkbox are
+    // unchanged, so the sweep tracks the stable data-toolbar-save-as hook.
+    await window.click('[data-toolbar-save-as]');
     await window.waitForSelector('.dialog, .sheet');
     const linearize = window.locator('input[type="checkbox"]').first();
     await linearize.setChecked(true);

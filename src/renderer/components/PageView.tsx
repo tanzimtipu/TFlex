@@ -303,6 +303,16 @@ export function PageView(props: PageViewProps) {
   const textLayerRef = useRef<TextLayer | null>(null);
   const [renderedScale, setRenderedScale] = useState<number | null>(null);
   const [measured, setMeasured] = useState<Measured[]>([]);
+  // DEF-190 — true while a placed stamp on THIS page shows selection
+  // chrome (action bar or stamp-type editor). Mirrored into
+  // `data-stamp-editor-open` on the .pdf-page wrapper; the stylesheet
+  // lifts the page above its sibling pages so editor chrome anchored
+  // under a bottom-edge stamp paints — and hit-tests — above the NEXT
+  // page instead of being covered by it.
+  const [stampChromeOpen, setStampChromeOpen] = useState(false);
+  const onStampChromeChange = useCallback((open: boolean): void => {
+    setStampChromeOpen(open);
+  }, []);
   const textItemsRef = useRef<TextItemGeom[]>([]);
   // True while the visible canvas holds a frame THIS component actually
   // painted. A freshly created canvas starts at the spec default
@@ -725,6 +735,7 @@ export function PageView(props: PageViewProps) {
       }}
       className={rotClass === undefined ? "pdf-page" : `pdf-page ${rotClass}`}
       data-page={page}
+      data-stamp-editor-open={stampChromeOpen ? "true" : "false"}
       style={{ width: `${wrapperW}px`, height: `${wrapperH}px` }}
     >
       <canvas ref={canvasRef} className="pdf-page-canvas" />
@@ -773,6 +784,7 @@ export function PageView(props: PageViewProps) {
         onMove={onMoveStamp === undefined ? undefined : (stamp, rect): void => onMoveStamp(stamp.id, rect)}
         onDelete={onDeleteStamp === undefined ? undefined : (stamp): void => onDeleteStamp(stamp.id)}
         onRetype={onRetypeStamp === undefined ? undefined : (stamp, id): void => onRetypeStamp(stamp.id, id)}
+        onSelectionChange={onStampChromeChange}
       />
       <FormsOverlay
         page={page}
