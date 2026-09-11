@@ -543,6 +543,13 @@
 :root[data-theme="frosted"] .toast {
   -webkit-backdrop-filter: blur(var(--tf-acrylic-blur)) saturate(130%);
   backdrop-filter: blur(var(--tf-acrylic-blur)) saturate(130%);
+  /* Phase 14 — focus/defocus blur intensity change. The
+   * --tf-acrylic-blur var drops when <html> carries
+   * data-window-focus="blurred"; this tween relaxes the glass
+   * fluidly (180ms, the normal motion band) instead of snapping. */
+  transition:
+    backdrop-filter var(--tf-motion-normal) var(--ease-standard),
+    -webkit-backdrop-filter var(--tf-motion-normal) var(--ease-standard);
 }
 
 /* ---------------------------------------------------------------------------
@@ -5070,7 +5077,12 @@ rect.ann-highlight.ann-preview {
   top: var(--toolbar-h, 44px);
   right: 0;
   bottom: 0;
-  width: 280px;
+  /* Phase 14 — dynamic panel sizing. The panel widens from 280px to
+   * 344px (within the spec's 320-380px band) so every tool description
+   * fits in one or two clean lines — no ellipsis truncation. The grid
+   * layout (360px below) carries the same rich icon+title+description
+   * triplet as two-column cards. */
+  width: 344px;
   /* Phase-3 workspace: the palette reads as a clean contextual
    * panel — --bg-panel surface (#14181D in dark), a --border
    * (#242A31) left hairline against the canvas, and only a subtle
@@ -5087,7 +5099,11 @@ rect.ann-highlight.ann-preview {
    * both are open. */
   z-index: 30;
 }
-.tools-palette-grid { width: 168px; }
+/* Phase 14 — grid layout is never icon-only: it renders the same
+ * icon+title+description triplet as two-column cards, so the panel
+ * widens to the top of the spec's 320-380px band. The old 168px
+ * icon-tile width is gone. */
+.tools-palette-grid { width: 380px; }
 
 .tools-palette-header {
   display: flex;
@@ -5236,7 +5252,13 @@ rect.ann-highlight.ann-preview {
 }
 .tools-palette-entry-list {
   flex-direction: row;
-  height: 56px;
+  /* Phase 14 — auto height with a 56px floor: two-line descriptions
+   * (the widened panel keeps most on one line) grow the row instead
+   * of clipping. The full-width list affordance stays. */
+  height: auto;
+  min-height: 56px;
+  padding-top: var(--sp-2);
+  padding-bottom: var(--sp-2);
   /* Phase B — list entries live in `.tools-palette-group-list` (a
    * flex column), so each entry fills its row via width: 100%. */
   width: 100%;
@@ -5289,7 +5311,10 @@ rect.ann-highlight.ann-preview {
 }
 .tools-palette-entry-label {
   font-size: var(--fs-sm);
-  font-weight: 500;
+  /* DEF-180 — tool titles are bold (600), matching the Phase-14
+   * checklist promise. The grid override below only retunes the
+   * font-size, so this weight applies to BOTH layouts. */
+  font-weight: 600;
   color: var(--fg-strong);
   white-space: nowrap;
   overflow: hidden;
@@ -5306,9 +5331,12 @@ rect.ann-highlight.ann-preview {
 .tools-palette-entry-desc {
   font-size: var(--fs-xs);
   color: var(--fg-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Phase 14 — descriptions are NEVER truncated: the text wraps at
+   * word boundaries (the 344px panel fits the longest description in
+   * two lines). The old nowrap+ellipsis hid the tail of every
+   * description behind a "..." — exactly what the phase spec bans. */
+  white-space: normal;
+  overflow-wrap: break-word;
   max-width: 100%;
 }
 .tools-palette-entry-shortcut {
@@ -7707,6 +7735,18 @@ rect.ann-highlight.ann-preview {
     animation: none !important;
     opacity: 0 !important;
   }
+
+  /* Phase 14 — the spring hover lift on tool entries is real
+   * movement, so it is disabled outright (the hover wash + glow stay
+   * — they are pure color feedback). The ambient parallax never runs
+   * at all under reduced motion (the controller never attaches its
+   * pointer listener), so no ambient rule is needed here. */
+  .tools-palette-entry,
+  .tools-palette-entry:hover:not(:disabled),
+  .tools-palette-entry:active:not(:disabled),
+  .tools-palette-entry:focus-visible {
+    transform: none !important;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -8174,7 +8214,10 @@ rect.ann-highlight.ann-preview {
 :root[data-theme="frosted"] .document-scroller {
   /* Full-bleed behind the chrome rows. `height: auto` lets the
    * top/bottom inset pair stretch the box instead of the base
-   * `height: 100%` fighting the inset. */
+   * `height: 100%` fighting the inset. Phase 14 — the scroller also
+   * steps aside (transparent) so the ambient wallpaper layer shows
+   * behind the pages and diffuses through the chrome glass above;
+   * the pages themselves stay paper-white (DEF-099 untouched). */
   position: absolute;
   top: 0;
   right: 0;
@@ -8182,6 +8225,7 @@ rect.ann-highlight.ann-preview {
   left: 0;
   height: auto;
   z-index: 0;
+  background: transparent;
 }
 
 :root[data-theme="frosted"] .toolbar,
@@ -8204,4 +8248,263 @@ rect.ann-highlight.ann-preview {
    * lands. The bottom 28px + centering are untouched, so page
    * positions stay pixel-identical to the in-flow layout. */
   padding: calc(var(--tf-chrome-y, 96px) + 28px) 0 28px;
+}
+
+/* ===========================================================================
+ * Phase 14 — LIQUID GLASS (frosted glass effects, spring motion, ambient
+ * backdrop, dynamic tools panel).
+ *
+ * Four cooperating pieces:
+ *
+ *   1. AMBIENT BACKDROP — `.tf-ambient`, a dedicated layer behind the
+ *      whole app that paints the frosted theme's wallpaper-style
+ *      aurora gradient. In light/dark the layer sits behind the opaque
+ *      `.app` background and stays invisible — those themes keep their
+ *      solid professional chrome and gain only the motion.
+ *      DEF-181 — the window itself is transparent in the main process
+ *      (`transparent: true` + `backgroundMaterial: 'acrylic'`, see
+ *      src/main/window.ts), so the REAL desktop wallpaper is the
+ *      backdrop the frosted chrome's `backdrop-filter` diffuses. The
+ *      renderer must paint NO opaque base under the panels: html, body
+ *      and the ambient layer all step aside in frosted (rules below),
+ *      and the aurora survives only as low-alpha gradient hints that
+ *      tint the wallpaper without blocking it. The PDF stays paper
+ *      white (DEF-099) and light/dark keep their opaque base.
+ *
+ *   2. PARALLAX — the controller (src/renderer/state/ambient.ts) writes
+ *      --tf-parallax-x / -y (unitless px, +-6) from a damped spring
+ *      following the pointer; the layer translate3d's by that amount
+ *      (compositor-only) and scales 1.06 so no edge can ever show.
+ *
+ *   3. FOCUS BLUR — <html data-window-focus="blurred"> drops
+ *      --tf-acrylic-blur from 22px to 12px; the Phase-A blur rule's
+ *      transition tweens every glass sheet fluidly.
+ *
+ *   4. SPRING TOOL MOTION — tool entries lift 1.02x with an accent glow
+ *      on hover using the iOS-style overshoot curve, in BOTH palette
+ *      layouts; the grid layout renders the full icon+title+description
+ *      triplet as two-column cards (never icon-only).
+ * ------------------------------------------------------------------------- */
+
+:root {
+  /* iOS liquid-glass spring curve — the one overshooting ease for
+   * small hover/press lifts. Panels keep their calibrated motion
+   * springs (tfPresets); this is the CSS-side companion. */
+  --tf-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* Phase 14 panel radius — the glass panels round at 16px (the spec's
+   * 16-20px band) on their inner corners; controls stay on the tight
+   * --tf-radius-* ladder. */
+  --tf-radius-panel: 16px;
+}
+
+/* Window defocused: the glass relaxes — less blur, calmer read. The
+ * attribute is set by the ambient controller on <html>; standard DOM
+ * focus/blur events, no Electron API. The 180ms tween lives on the
+ * Phase-A blur rule (see "focus/defocus blur intensity change"). */
+:root[data-window-focus="blurred"] {
+  --tf-acrylic-blur: 12px;
+}
+
+/* The ambient layer positions against .app. position: relative does
+ * not disturb the grid layout; every fixed/portal surface anchors to
+ * the viewport and every absolute panel anchors to its own positioned
+ * parent, so nothing re-anchors. */
+.app {
+  position: relative;
+}
+
+/* The ambient backdrop. Theme-independent box (fixed layer, zero hit
+ * surface), theme-painted contents: base color everywhere (invisible
+ * behind the opaque .app in light/dark), aurora gradients in frosted. */
+.tf-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg-base);
+  /* Parallax drift, driven by the ambient controller. The 1.06 scale
+   * pads the layer so the +-6px drift can never expose an edge. */
+  transform: translate3d(
+    calc(var(--tf-parallax-x, 0) * 1px),
+    calc(var(--tf-parallax-y, 0) * 1px),
+    0
+  ) scale(1.06);
+  will-change: transform;
+}
+
+/* Frosted: the app frame and workspace step aside and let the ambient
+ * show (the scroller's transparency lives in the Phase-C full-bleed
+ * rule above). The pages stay paper-white (DEF-099 untouched: only
+ * these chrome/backdrop selectors go translucent, never .pdf-page /
+ * .page-slot / .textLayer / canvases). */
+:root[data-theme="frosted"] .app,
+:root[data-theme="frosted"] .workspace-main {
+  background: transparent;
+}
+
+/* The aurora — the frosted theme's tint over the REAL desktop
+ * wallpaper. DEF-181: the old opaque var(--tf-bg) base covered the
+ * whole window UNDER every glass sheet and defeated the main-process
+ * transparency, so the glass diffused this in-app layer instead of the
+ * wallpaper behind the window. The base is transparent now — html,
+ * body and this layer all step aside — and the aurora survives as pure
+ * low-alpha gradient hints tinting the wallpaper the glass reads
+ * against. Blue leads (the single accent family), violet and pink stay
+ * hints: every stop sits at or under 0.14 alpha, never a purple theme
+ * or a gradient hero. */
+:root[data-theme="frosted"] .tf-ambient {
+  background-color: transparent;
+  background-image:
+    radial-gradient(44% 40% at 16% 6%, rgba(37, 99, 235, 0.14), transparent 70%),
+    radial-gradient(38% 34% at 88% 10%, rgba(139, 92, 246, 0.10), transparent 72%),
+    radial-gradient(46% 44% at 82% 90%, rgba(236, 72, 153, 0.09), transparent 74%),
+    radial-gradient(52% 48% at 24% 94%, rgba(14, 165, 233, 0.11), transparent 72%);
+}
+
+/* DEF-181 — html/body painted the opaque --bg-base across the whole
+ * window UNDER every glass sheet, which is what actually defeated the
+ * main-process transparency (`transparent: true` +
+ * `backgroundMaterial: 'acrylic'`): the wallpaper never entered the
+ * compositor, so the panels diffused the app's own base. In frosted
+ * both step aside so the desktop shows through the title bar, the
+ * side rail and the tools panel; light/dark keep the opaque base
+ * (their unthemed-flash guard above) untouched. */
+:root[data-theme="frosted"] {
+  background: transparent;
+}
+
+:root[data-theme="frosted"] body {
+  background: transparent;
+}
+
+/* DEF-181 — the welcome screen is the launch surface, and its solid
+ * --bg-sunken / --bg-base sheets covered the whole window under the
+ * frosted title bar (same defeat as the ambient base). In frosted both
+ * become translucent washes over the wallpaper the OS composites
+ * through. Deliberately NO backdrop-filter here: the acrylic blur of
+ * the wallpaper is the OS material's job (backgroundMaterial), and the
+ * 14-surface chrome blur contract stays exact. Light/dark keep the
+ * solid sheets. */
+:root[data-theme="frosted"] .welcome {
+  background: rgba(233, 237, 243, 0.42);
+}
+
+:root[data-theme="frosted"] .welcome-hero {
+  background: rgba(238, 241, 246, 0.62);
+}
+
+/* Frosted panel radii — the glass sheets round into the workspace at
+ * the spec's 16px on their inner corners (docking edges stay flush).
+ * The existing frosted rules above set 8-10px; these later overrides
+ * win the cascade. */
+:root[data-theme="frosted"] .tools-palette {
+  border-radius: var(--tf-radius-panel) 0 0 var(--tf-radius-panel);
+}
+
+:root[data-theme="frosted"] .side-rail {
+  border-radius: 0 var(--tf-radius-panel) var(--tf-radius-panel) 0;
+}
+
+/* Frosted grid cards — the same acrylic as the panel, one step up:
+ * a translucent white chip with a hairline and a soft drop so the
+ * two-column rhythm reads without congestion. */
+:root[data-theme="frosted"] .tools-palette-entry-grid {
+  background: rgba(255, 255, 255, 0.42);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 14 — TOOLS PANEL: dynamic sizing + spring tool motion.
+ *
+ * Theme-independent (motion and layout are shared per the repo's
+ * doctrine; only colors are themed). The grid layout here becomes the
+ * two-column CARD form of the list row: icon, title, description —
+ * the palette is never icon-only in either layout.
+ * ------------------------------------------------------------------------- */
+
+/* Dynamic width bounds: the panel holds 344px (list) / 380px (grid,
+ * set once on the base .tools-palette-grid rule) but never grows past
+ * the window. */
+.tools-palette {
+  min-width: 320px;
+  max-width: calc(100vw - 24px);
+}
+
+/* Grid cards: two-column rhythm. The base group grid keeps its 64px
+ * tile contract (bug015 reads that first rule); the card form needs
+ * real width, so the Phase-14 override re-derives the columns — at the
+ * 380px panel that lands exactly two ~170px cards per row, enough for
+ * full titles and multi-line descriptions without mid-word breaks. */
+.tools-palette-group-grid {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-auto-rows: auto;
+}
+
+/* Grid cards: vertical stack (icon chip, wrapping title, wrapping
+ * description) so the longest titles and descriptions fit the
+ * two-column rhythm without truncation. The base rule's min-height
+ * floor (B21 contract) still applies. */
+.tools-palette-entry-grid {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  text-align: left;
+  gap: var(--sp-2);
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-hover);
+}
+
+.tools-palette-entry-grid .tools-palette-entry-text {
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+
+.tools-palette-entry-grid .tools-palette-entry-label {
+  /* Full titles in the cards: wrap instead of ellipsis (the shared
+   * label rule keeps its ellipsis for the list rows; the B21 contract
+   * reads that first rule, not this override). */
+  font-size: var(--fs-sm);
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.tools-palette-entry-grid .tools-palette-entry-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--bg-hover);
+}
+
+/* Spring tool motion — BOTH layouts. The lift is small (1.02), the
+ * glow is the single accent at low alpha, and the curve is the
+ * iOS-style overshoot spring at 220ms (inside the spec's 200-400ms
+ * band). Transform + box-shadow only: no layout properties animate. */
+.tools-palette-entry {
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow 220ms var(--tf-ease-spring),
+    transform 220ms var(--tf-ease-spring);
+}
+
+.tools-palette-entry:hover:not(:disabled) {
+  transform: scale(1.02);
+  box-shadow:
+    0 3px 12px rgba(37, 99, 235, 0.14),
+    inset 0 0 0 1px rgba(37, 99, 235, 0.16);
+}
+
+.tools-palette-entry:active:not(:disabled) {
+  transform: scale(0.99);
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-out);
 }

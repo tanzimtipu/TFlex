@@ -508,3 +508,34 @@ string from a bundled allowlist, preserve-if-valid).
    re-timed (cold start, long-doc open) and unchanged or improved.
 
 **Settings impact:** none (theme already stored; this phase refines it).
+
+## Phase 14 — Liquid Glass theme with frosted glass effects
+
+**Features**
+
+1. **Frosted glass theme**: Replace solid backgrounds with translucent frosted glass that reveals the desktop wallpaper behind the app window. Use CSS `backdrop-filter: blur()` with appropriate opacity and background colors.
+
+2. **Tool descriptions restored**: Tools panel shows icon + title + description text for each tool (e.g., "Merge PDFs" / "Combine multiple PDFs..."). Never icon-only in this view.
+
+3. **Dynamic panel sizing**: Tools panel width adjusts dynamically to accommodate full tool descriptions without truncation or congestion. Panel can be wider than current fixed width.
+
+4. **iOS liquid glass animations**: Implement spring-based, fluid animations for:
+   - Panel open/close transitions (spring physics, not linear)
+   - Tool item hover states (subtle scale/glow)
+   - Background parallax/subtle movement
+   - Window focus/defocus blur intensity changes
+   - Smooth 200-400ms transitions with ease-out-spring curves
+
+5. **Visual polish**: Gradient background hints, subtle inner shadows, rounded corners on panels (16-20px), consistent frosted glass across title bar, side panels, and tool panels.
+
+**Success criteria**
+
+1. Desktop wallpaper shows through frosted glass backgrounds; blur intensity is pleasant and readable.
+2. Tools panel displays icon + title + description for every tool; text is fully visible and not truncated.
+3. Panel width accommodates content without congestion; user can see full descriptions.
+4. Animations feel fluid and springy (iOS-style), not mechanical; all transitions complete smoothly.
+5. Light/dark/frosted themes all implement glass effects appropriately.
+6. Performance: no frame drops during animations; 60fps maintained.
+7. Unit tests for animation state; e2e verifies glass theme renders and animations complete.
+
+**Settings impact:** none (theme already stored; this phase enhances the frosted glass variant).

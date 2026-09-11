@@ -258,14 +258,14 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
     expect(purityFrosted.page.backdropFilter, 'NO acrylic blur on the pdf page').toBe('none');
     expect(purityFrosted.page.filter, 'no filter on the pdf page').toBe('none');
     const wsBg = parseRgba(purityFrosted.workspace.bg);
-    expect(wsBg.a, 'workspace must be solid (not translucent) behind the page').toBe(1);
-    // 1.10.2 light-frosted correction contract (qa 2026-09-06): the
-    // workspace is the very light cool gray #eef1f6 family — the old
-    // dark-slate frosted direction was replaced by the redesign.
-    expect(
-      wsBg.r > 200 && wsBg.g > 200 && wsBg.b > 200,
-      'workspace must be LIGHT in the corrected frosted theme (#eef1f6 family)',
-    ).toBe(true);
+    // DEF-181 (Phase 14, 2026-09-12): REQUIREMENTS.md criterion 1 — the
+    // frosted glass reveals the desktop wallpaper behind the window. The
+    // frosted workspace now STEPS ASIDE (transparent) so the OS composites
+    // the backdrop through the gutters; the old "solid workspace" rule was
+    // exactly the opaque base that defeated the main-process transparency
+    // (DEF-181). The PDF page itself stays opaque paper (asserted above);
+    // dark/light keep their solid base (guarded in the item-4 loop below).
+    expect(wsBg.a, 'frosted workspace must step aside (transparent) so the desktop shows through (DEF-181)').toBe(0);
     expect(purityFrosted.page.boxShadow, 'page should carry a subtle shadow').not.toBe('none');
     await snap('frost-d-workspace-frosted.png');
 
@@ -511,6 +511,10 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
       expect(bg, `pdf page must be paper-white in ${t}`).toEqual({ r: 255, g: 255, b: 255, a: 1 });
       expect(purity.page.backdropFilter, `no blur on the page in ${t}`).toBe('none');
       expect(purity.page.filter, `no filter on the page in ${t}`).toBe('none');
+      // DEF-181 companion guard: the workspace step-aside is FROSTED-ONLY.
+      // Dark/light must keep their opaque base behind the page.
+      const wsThemeBg = parseRgba(purity.workspace.bg);
+      expect(wsThemeBg.a, `workspace must stay solid (opaque base) in ${t}`).toBe(1);
       const letter = t === 'dark' ? 'e' : 'f';
       await snap(`frost-${letter}-workspace-${t}.png`);
 

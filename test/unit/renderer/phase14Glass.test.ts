@@ -1,0 +1,286 @@
+// @vitest-environment node
+//
+// Phase 14 — Liquid Glass static CSS contract. Pins the glass theme's
+// structural guarantees the way the existing bug/design-token guards
+// do: ambient backdrop, focus/defocus blur var, panel radii and widths,
+// wrapping tool descriptions (never truncated), the spring hover curve,
+// and the reduced-motion collapse of the hover lift.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const STYLES_PATH = resolve(__dirname, "../../../src/renderer/styles.css");
+
+function readStyles(): string {
+  return readFileSync(STYLES_PATH, "utf8");
+}
+
+function stripCssComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+function extractRuleBody(src: string, selectorIndex: number): string {
+  const braceOpen = src.indexOf("{", selectorIndex);
+  if (braceOpen === -1) return "";
+  let depth = 0;
+  for (let i = braceOpen; i < src.length; i += 1) {
+    const ch = src[i];
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return src.slice(braceOpen + 1, i);
+    }
+  }
+  return "";
+}
+
+/** Every rule body whose stripped selector text contains `selector`
+ *  directly before its `{` (works for single- and multi-selector
+ *  rules; later overrides appear after earlier ones). */
+function findRuleBodies(src: string, selector: string): string[] {
+  const stripped = stripCssComments(src);
+  const bodies: string[] = [];
+  let from = 0;
+  for (;;) {
+    const idx = stripped.indexOf(selector, from);
+    if (idx === -1) return bodies;
+    let cursor = idx + selector.length;
+    while (cursor < stripped.length && /\s/.test(stripped[cursor] ?? "")) cursor += 1;
+    if (stripped[cursor] === "{") bodies.push(extractRuleBody(stripped, idx));
+    from = idx + selector.length;
+  }
+}
+
+function findRuleBody(src: string, selector: string): string | null {
+  const bodies = findRuleBodies(src, selector);
+  return bodies.length > 0 ? bodies[0] : null;
+}
+
+describe("Phase 14 — liquid glass tokens and ambient backdrop", () => {
+  const css = readStyles();
+
+  it("defines the iOS spring curve and the 16px panel radius token", () => {
+    expect(css).toMatch(/--tf-ease-spring:\s*cubic-bezier\(0\.34,\s*1\.56,\s*0\.64,\s*1\)/);
+    expect(css).toMatch(/--tf-radius-panel:\s*16px/);
+  });
+
+  it("defocusing the window relaxes the frosted blur (22px -> 12px)", () => {
+    const body = findRuleBody(css, ':root[data-window-focus="blurred"]');
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(/--tf-acrylic-blur:\s*12px/);
+  });
+
+  it("the chrome blur rule tweens backdrop-filter (fluid focus change)", () => {
+    const stripped = stripCssComments(css);
+    const rule = /-webkit-backdrop-filter:\s*blur\(var\(--tf-acrylic-blur\)\)[\s\S]{0,300}?transition:[\s\S]{0,300}?backdrop-filter\s+var\(--tf-motion-normal\)/.exec(
+      stripped,
+    );
+    expect(rule, "the Phase-A blur rule must tween backdrop-filter").not.toBeNull();
+  });
+
+  it("the ambient layer exists, never intercepts pointers, and reads the parallax vars", () => {
+    const body = findRuleBody(css, ".tf-ambient");
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(/pointer-events:\s*none/);
+    expect(body ?? "").toMatch(/var\(--tf-parallax-x/);
+    expect(body ?? "").toMatch(/var\(--tf-parallax-y/);
+    expect(body ?? "").toMatch(/scale\(1\.06\)/);
+  });
+
+  it("the frosted ambient paints the wallpaper aurora the glass diffuses", () => {
+    const body = findRuleBody(css, ':root[data-theme="frosted"] .tf-ambient');
+    expect(body).not.toBeNull();
+    const aurora = body ?? "";
+    expect(aurora.match(/radial-gradient\(/g)?.length).toBe(4);
+    // Blue leads (the single accent family); violet/pink stay hints.
+    expect(aurora).toMatch(/rgba\(37,\s*99,\s*235,\s*0\.14\)/);
+    expect(aurora).toMatch(/rgba\(139,\s*92,\s*246,\s*0\.10\)/);
+    expect(aurora).toMatch(/rgba\(236,\s*72,\s*153,\s*0\.09\)/);
+  });
+
+  it("the frosted workspace steps aside so the ambient shows through the glass", () => {
+    const stripped = stripCssComments(css);
+    const rule = /:root\[data-theme="frosted"\]\s+\.app,\s*:root\[data-theme="frosted"\]\s+\.workspace-main\s*\{([^}]*)\}/.exec(
+      stripped,
+    );
+    expect(rule, "frosted .app/.workspace-main transparency rule missing").not.toBeNull();
+    expect(rule?.[1] ?? "").toMatch(/background:\s*transparent/);
+    // The scroller's transparency rides the Phase-C full-bleed rule.
+    const scroller = findRuleBodies(css, ':root[data-theme="frosted"] .document-scroller').at(-1);
+    expect(scroller ?? "").toMatch(/position:\s*absolute/);
+    expect(scroller ?? "").toMatch(/background:\s*transparent/);
+  });
+
+  it("glass panels round at 16px on their inner corners (frosted only)", () => {
+    const stripped = stripCssComments(css);
+    expect(stripped).toMatch(
+      /:root\[data-theme="frosted"\]\s+\.tools-palette\s*\{[^}]*border-radius:\s*var\(--tf-radius-panel\)\s+0\s+0\s+var\(--tf-radius-panel\)/,
+    );
+    expect(stripped).toMatch(
+      /:root\[data-theme="frosted"\]\s+\.side-rail\s*\{[^}]*border-radius:\s*0\s+var\(--tf-radius-panel\)\s+var\(--tf-radius-panel\)\s+0/,
+    );
+  });
+});
+
+describe("DEF-181 — the desktop wallpaper composites through the frosted glass", () => {
+  // The main process opens the window with `transparent: true` +
+  // `backgroundMaterial: 'acrylic'` (src/main/window.ts). The renderer
+  // then defeated it by painting an opaque base UNDER every glass
+  // sheet: html, body (--bg-base) and the ambient layer (--tf-bg)
+  // each covered the whole window at alpha 1, so the frosted panels
+  // diffused the app's own base instead of the wallpaper behind the
+  // window. These contracts keep every window-level base transparent
+  // in frosted — light/dark keep theirs.
+  const css = readStyles();
+
+  it("the frosted ambient no longer paints an opaque base under the glass", () => {
+    const body = findRuleBody(css, ':root[data-theme="frosted"] .tf-ambient');
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(/background-color:\s*transparent/);
+    expect(body ?? "").not.toMatch(/--tf-bg/);
+    // The aurora survives as low-alpha gradient hints only (the glass
+    // tints the wallpaper; it does not repaint it).
+    const aurora = body ?? "";
+    expect(aurora.match(/radial-gradient\(/g)?.length).toBe(4);
+  });
+
+  it("html steps aside in frosted (light/dark keep the --bg-base paint)", () => {
+    const rule = findRuleBodies(css, ':root[data-theme="frosted"]').find((b) =>
+      /background:\s*transparent/.test(b),
+    );
+    expect(rule, "frosted html must be transparent so the wallpaper composites through")
+      .toBeDefined();
+    // The theme-independent window paint is untouched: bare `html` still
+    // carries the --bg-base guard for light/dark.
+    expect(findRuleBody(css, "html")).toMatch(/background:\s*var\(--bg-base\)/);
+  });
+
+  it("body steps aside in frosted", () => {
+    const body = findRuleBody(css, ':root[data-theme="frosted"] body');
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(/background:\s*transparent/);
+  });
+
+  it("the welcome launch surface is a translucent wash, never a solid sheet", () => {
+    const welcome = findRuleBody(css, ':root[data-theme="frosted"] .welcome');
+    expect(welcome ?? "").toMatch(/background:\s*rgba\(233,\s*237,\s*243,\s*0\.42\)/);
+    const hero = findRuleBody(css, ':root[data-theme="frosted"] .welcome-hero');
+    expect(hero ?? "").toMatch(/background:\s*rgba\(238,\s*241,\s*246,\s*0\.62\)/);
+    // Deliberately no backdrop-filter here: the wallpaper blur is the OS
+    // acrylic material's job and the 14-surface chrome blur contract
+    // (design tokens) stays exact.
+    expect(welcome ?? "").not.toMatch(/backdrop-filter/);
+    expect(hero ?? "").not.toMatch(/backdrop-filter/);
+  });
+});
+
+describe("Phase 14 — tools panel sizing and descriptions", () => {
+  const css = readStyles();
+
+  it("the panel widens into the spec band: 344px list, 380px grid, bounded", () => {
+    const base = findRuleBody(css, ".tools-palette");
+    expect(base ?? "").toMatch(/width:\s*344px/);
+    expect(base ?? "").not.toMatch(/width:\s*280px/);
+    const grid = findRuleBody(css, ".tools-palette-grid");
+    expect(grid ?? "").toMatch(/width:\s*380px/);
+    const bounds = findRuleBodies(css, ".tools-palette").find((b) => /min-width/.test(b));
+    expect(bounds).toBeDefined();
+    expect(bounds ?? "").toMatch(/min-width:\s*320px/);
+    expect(bounds ?? "").toMatch(/max-width:\s*calc\(100vw\s*-\s*24px\)/);
+  });
+
+  it("descriptions wrap fully — the old ellipsis truncation is gone", () => {
+    const desc = findRuleBody(css, ".tools-palette-entry-desc");
+    expect(desc).not.toBeNull();
+    expect(desc ?? "").toMatch(/white-space:\s*normal/);
+    expect(desc ?? "").not.toMatch(/text-overflow:\s*ellipsis/);
+    // Grid card titles wrap too; the Phase-14 override carries it (the
+    // shared label rule keeps its ellipsis for list rows — the B21
+    // contract reads that first rule, not this override).
+    const gridLabel = findRuleBodies(css, ".tools-palette-entry-grid .tools-palette-entry-label")
+      .find((b) => /white-space:\s*normal/.test(b));
+    expect(gridLabel).toBeDefined();
+    expect(gridLabel ?? "").toMatch(/font-size:\s*var\(--fs-sm\)/);
+  });
+
+  it("tool titles are bold (600/700) in BOTH layouts — DEF-180", () => {
+    // The shared label rule is the only weight source: the grid
+    // override retunes the font-size but must never reset the weight
+    // back down. Accept the spec's 600 or 700, reject the old 500.
+    const label = findRuleBody(css, ".tools-palette-entry-label");
+    expect(label).not.toBeNull();
+    expect(label ?? "").toMatch(/font-weight:\s*(600|700)\s*;/);
+    expect(label ?? "").not.toMatch(/font-weight:\s*500\s*;/);
+    for (const body of findRuleBodies(css, ".tools-palette-entry-grid .tools-palette-entry-label")) {
+      if (/font-weight/.test(body)) {
+        expect(body).toMatch(/font-weight:\s*(600|700)\s*;/);
+      }
+    }
+    // Descriptions stay normal weight — no bold inheritance on the
+    // desc span itself.
+    const desc = findRuleBody(css, ".tools-palette-entry-desc");
+    expect(desc).not.toBeNull();
+    expect(desc ?? "").not.toMatch(/font-weight:\s*(5|6|7|8|9)00\s*;/);
+  });
+
+  it("the grid card layout stacks icon chip, title and description", () => {
+    const card = findRuleBodies(css, ".tools-palette-entry-grid")
+      .find((b) => /border-radius:\s*12px/.test(b));
+    expect(card).toBeDefined();
+    expect(card ?? "").toMatch(/flex-direction:\s*column/);
+    const chip = findRuleBody(css, ".tools-palette-entry-grid .tools-palette-entry-icon");
+    expect(chip ?? "").toMatch(/width:\s*30px/);
+    expect(chip ?? "").toMatch(/border-radius:\s*9px/);
+    // Two-column card rhythm: the 64px tile grid is overridden so a
+    // 380px panel lands two ~170px cards (no one-word-per-line wraps).
+    const columns = findRuleBodies(css, ".tools-palette-group-grid")
+      .find((b) => /minmax\(150px/.test(b));
+    expect(columns).toBeDefined();
+    expect(columns ?? "").toMatch(
+      /grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(150px,\s*1fr\)\)/,
+    );
+  });
+
+  it("list entries keep the full-width affordance with an auto height", () => {
+    const body = findRuleBody(css, ".tools-palette-entry-list");
+    expect(body ?? "").toMatch(/width:\s*100%/);
+    expect(body ?? "").toMatch(/min-height:\s*56px/);
+    // Fixed height must be gone (a bare height would clip two-line
+    // descriptions). The lookbehind keeps `min-height` from matching.
+    expect(body ?? "").not.toMatch(/(?<!min-)\bheight:\s*56px/);
+    expect(body ?? "").toMatch(/height:\s*auto/);
+  });
+});
+
+describe("Phase 14 — spring tool motion", () => {
+  const css = readStyles();
+
+  it("tool entries lift 1.02x with an accent glow on the spring curve", () => {
+    const hover = findRuleBodies(css, ".tools-palette-entry:hover:not(:disabled)")
+      .find((b) => /transform:\s*scale\(1\.02\)/.test(b));
+    expect(hover).toBeDefined();
+    expect(hover ?? "").toMatch(/rgba\(37,\s*99,\s*235,\s*0\.14\)/);
+    // The transition rides the iOS overshoot curve, 220ms (inside the
+    // spec's 200-400ms band), transform + box-shadow only.
+    const transition = findRuleBodies(css, ".tools-palette-entry")
+      .find((b) => /transform 220ms var\(--tf-ease-spring\)/.test(b));
+    expect(transition).toBeDefined();
+    expect(transition ?? "").toMatch(/box-shadow 220ms var\(--tf-ease-spring\)/);
+  });
+
+  it("pressing compresses the card instead of lifting it", () => {
+    const active = findRuleBodies(css, ".tools-palette-entry:active:not(:disabled)")
+      .find((b) => /transform:\s*scale\(0\.99\)/.test(b));
+    expect(active).toBeDefined();
+  });
+
+  it("reduced motion removes the hover lift outright (wash and glow stay)", () => {
+    const block = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/.exec(
+      stripCssComments(css),
+    );
+    expect(block).not.toBeNull();
+    const body = block?.[1] ?? "";
+    expect(body).toMatch(/\.tools-palette-entry/);
+    expect(body).toMatch(/transform:\s*none\s*!important/);
+  });
+});

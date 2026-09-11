@@ -1,3 +1,48 @@
+## DEF-180: Tools panel titles render at medium weight (500), not bold — the reference checklist calls for a bold title beside each tool
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 14 (Liquid Glass theme, verification against the reference checklist)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs, dist built from the current tree).
+2. Open report.pdf from the welcome samples.
+3. Click the "..." More button ([data-tools-toggle]) to open the Tools palette (list layout).
+4. Inspect the computed font-weight of any tool title (`.tools-palette-entry-label`, e.g. "Merge PDFs").
+
+Expected: per the reference checklist, each tool shows "icon + **bold** title + description" — the title should render bold (weight >= 600, semibold/bold).
+
+Actual: `.tools-palette-entry-label` is `font-weight: 500` (medium) in both the list rows and the grid cards (src/renderer/styles.css line 5314; the Phase-14 grid override only changes font-size, not weight). All 24 rendered entries measured below 600 by e2e/phase14_qa.spec.cjs P14-C (evidence: e2e_phase14_qa_run3.log, "title not bold on <tool>" x24). The titles read only slightly heavier than the 400-weight muted descriptions, not bold.
+
+Screenshot: screenshots/phase14-qa-03-palette-list-frosted.png
+
+History:
+- qa: opened (measured on the dev build after npm.cmd run build; all 24 entries fail the >=600 bar)
+- qa: CLOSED (retested on the DEV build after REBUILDING dist — the checked-in dist predated the fix source (dist 2:22:35 vs styles.css 2:24:57), so a first look at the stale bundle still measured 500; the rebuilt bundle dist/renderer/assets/index-f0cCtbyd.css carries font-weight:600 on .tools-palette-entry-label). New keeper spec e2e/retests/def_180_181_retest.spec.cjs test D180 (green in 3 independent runs): all 24 tool entries measured computed font-weight "600" in BOTH the list rows and the grid cards (distinctLabelWeights ["600"] per layout, count 24 = the defect's full set), and descriptions unchanged at "400" in both layouts. Visual: screenshots/def-180-retest.png (list) and screenshots/def-180-retest-grid.png — titles read clearly bold against the normal-weight descriptions. Regressions: phase14_qa.spec.cjs 6/6 green with P14-C now ASSERTING the >=600 contract (updated from log-only; single-test re-run green), frost_verify.spec.cjs 2/2 green.
+
+## DEF-181: Desktop wallpaper never composites through the frosted glass — the ambient layer's opaque base covers the whole window, so the glass diffuses an in-app aurora instead of the wallpaper behind the window
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14 (Liquid Glass theme, verification against the reference checklist)
+
+Steps to reproduce:
+1. Launch TFlex (dev build; the main process already opts in — src/main/window.ts sets `transparent: true` + `backgroundMaterial: 'acrylic'`).
+2. Put a window with contrasting content (e.g. a dark browser window) behind TFlex so any true see-through would be obvious.
+3. Open report.pdf and observe the frosted chrome, then compare what the OS actually displays inside the window bounds against what the renderer itself painted.
+
+Expected: per REQUIREMENTS.md Phase-14 feature 1 and success criterion 1, the frosted glass "reveals the desktop wallpaper behind the app window" — the wallpaper should composite through the translucent chrome (the reference checklist's "desktop wallpaper visible through glass").
+
+Actual: the wallpaper never appears. In the frosted theme `.tf-ambient` (absolute, inset 0) paints `rgb(238, 241, 246)` at alpha 1 over the entire window, so every glass sheet (0.62–0.85 alpha + blur(22px)) diffuses the app's OWN aurora backdrop, not the desktop. Measured proof (e2e/phase14_qa.spec.cjs P14-B): a desktopCapturer screen grab vs the renderer's own screenshot over a 12x8 grid inside the window differ by mean 2.39/255 (max 20.3) — the OS shows essentially exactly the renderer's output; nothing composites through. The see-through LOOK the checklist asks for ("gradient/aurora background through translucent panels; not solid colors") is satisfied by the in-app aurora, but the literal requirement named twice in REQUIREMENTS.md is not implemented: the main-process transparency is wired and then defeated by the renderer's opaque base.
+
+Screenshot: screenshots/phase14-qa-07-desktop-behind-window.png (OS view: nothing behind the window shows through), screenshots/phase14-qa-08-page-render-frosted.png (what the renderer thinks it painted — identical read)
+
+History:
+- qa: opened (evidence: e2e_phase14_qa_run3.log P14-B facts — ambient backgroundColor rgb(238,241,246) alpha 1; desktopCompositeDiff mean 2.39/max 20.33; windowBounds 1440x900 over contrasting desktop content)
+- qa: CLOSED (retested on the DEV build with the freshly rebuilt dist; launchApp with no executablePath; new keeper spec e2e/retests/def_180_181_retest.spec.cjs test D181, green in 3 independent runs). The fix verified at three levels: (1) COMPUTED — the opaque base is gone: html/body/.app/.tf-ambient all rgba(0,0,0,0) alpha 0 in frosted (the defect's ambient rgb(238,241,246) alpha 1 is gone), while the glass contract holds — titlebar rgba(247,248,250,0.62), side-rail rgba(243,245,249,0.7), tools palette rgba(250,251,253,0.78), all blur(22px) saturate(1.3), and the PDF canvas stays solid (opacity 1, page backdrop none — DEF-099 untouched). (2) MEASURED — desktopCapturer screen grab vs the renderer's own screenshot over the window region: overall mean 11.27/max 62 (old self-composited baseline mean 2.39/max 20.3), split per region: title-bar strip mean 24.09/max 61.3 (n=96), side rail 19/56.3, tools palette 7.78/53 — the OS now composites a backdrop the renderer did not paint, concentrated in the frosted chrome. Renderer-surface alpha audit: titlebar 79.9% / rail 75% / palette 19.5% of sampled pixels alpha<250 (the renderer paints no base under the chrome), canvas 0% (solid paper). (3) VISUAL — screenshots/def-181-retest.png (OS grab: the dark backdrop behind the window — a browser window over the desktop at capture time, avg RGB ~34-51 outside the window — reads through the frosted title bar/toolbar/rail/palette and the workspace gutters; the acrylic material is active via backgroundMaterial:'acrylic', verified in dist/main/index.js) vs screenshots/def-181-retest-renderer.png (the renderer's own surface: gutters transparent). The OS composites whatever sits behind the window — wallpaper included; on this desktop another dark window occupied the space behind TFlex, which is the stronger proof that any backdrop (wallpaper included) now shows through. DESIGN NOTE: the fix extends the step-aside to the frosted workspace (.workspace-main transparent), so the desktop also shows through the gutters around the page; this flipped the committed frost_verify keeper's pre-Phase-14 "workspace must be solid" assertion, which qa updated to assert the NEW frosted contract (frosted workspace transparent) plus a new companion guard that dark/light keep their solid base (measured rgb(11,13,15) / rgb(241,245,249), alpha 1); frost_verify 2/2 green after the update, phase14_qa 6/6 green (P14-B's committed composite measurement now reads mean 11.13/max 62).
+
 ## DEF-178: Edit mode tools do not respond to interaction - clicks on the page with "Edit text", "Add box", or "Image" tools armed do nothing
 
 - Status: CLOSED

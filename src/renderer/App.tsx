@@ -41,6 +41,7 @@ import {
 } from "./components/updatePromptMachine";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
 import { applyTheme, nextTheme } from "./state/theme";
+import { createAmbientController } from "./state/ambient";
 import { resolveInitialSettings } from "./state/settings";
 import {
   DEFAULT_OPTIMIZE_PRESET,
@@ -679,6 +680,28 @@ export function App(): ReactElement {
       unsubscribe();
     };
   }, []);
+
+  // Phase 14 — Liquid Glass ambient surface. One controller owns the
+  // two app-wide ambient behaviors the frosted theme needs: the
+  // window-focus attribute on <html> (drives the focus/defocus blur
+  // intensity change) and the background-parallax spring that feeds
+  // --tf-parallax-x/--tf-parallax-y on the .tf-ambient layer. Both run
+  // OUTSIDE React state on purpose — pointer and focus events fire far
+  // too often to re-render the App; the controller writes attributes
+  // and CSS vars directly. Mounted only after boot so the layer ref
+  // points at the real (post-boot) DOM node.
+  const ambientLayerRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!bootDone) return;
+    const controller = createAmbientController({
+      root: document.documentElement,
+      layer: ambientLayerRef.current,
+      win: window,
+    });
+    return (): void => {
+      controller.destroy();
+    };
+  }, [bootDone]);
 
   // DEF-142 — whole-window close-request subscription. Main
   // preventDefaults EVERY window close (caption X, Alt+F4, the Window
@@ -6095,6 +6118,11 @@ pushToast(
 
   return (
     <div className="app">
+      {/* Phase 14 — the frosted theme's ambient backdrop. Paints the
+       * wallpaper-style gradient the glass panels diffuse; invisible
+       * in light/dark (the opaque .app background covers it). The
+       * parallax controller writes --tf-parallax-* here. */}
+      <div className="tf-ambient" ref={ambientLayerRef} aria-hidden />
       <TitleBar
         menuGroups={menuGroups}
         menuContext={menuContext}

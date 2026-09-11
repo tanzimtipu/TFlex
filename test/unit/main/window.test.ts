@@ -343,6 +343,59 @@ describe('createMainWindow', () => {
     expect(opts.resizable).toBe(true);
   });
 
+  // Phase 14 — transparent window so the desktop wallpaper shows through the
+  // renderer's frosted-glass panels. The CSS backdrop-filter only blurs what
+  // is behind the element in the compositor, so without an opaque OS backdrop
+  // the wallpaper composites through. hasShadow keeps the frameless drop
+  // shadow; backgroundMaterial:'acrylic' requests the Windows 11 native acrylic
+  // backdrop (no-op on non-Windows-11). frame:false stays frameless — these
+  // options do not re-introduce native caption buttons.
+  it('enables window transparency for desktop wallpaper show-through', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const win = lastWindow();
+    const opts = win._opts as Record<string, unknown>;
+    expect(opts.transparent).toBe(true);
+  });
+
+  it('sets the Windows 11 acrylic background material', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const win = lastWindow();
+    const opts = win._opts as Record<string, unknown>;
+    expect(opts.backgroundMaterial).toBe('acrylic');
+  });
+
+  it('keeps the frameless window drop shadow (hasShadow:true)', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const win = lastWindow();
+    const opts = win._opts as Record<string, unknown>;
+    expect(opts.hasShadow).toBe(true);
+  });
+
+  it('stays frameless alongside transparency (no native caption duplication)', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const win = lastWindow();
+    const opts = win._opts as Record<string, unknown>;
+    expect(opts.frame).toBe(false);
+    expect(opts.transparent).toBe(true);
+    expect(opts.titleBarOverlay ?? false).toBe(false);
+  });
+
   it('does not enable titleBarOverlay (no native caption-button duplication)', () => {
     createMainWindow(defaultSettings, {
       rendererHtml: '/app/renderer/index.html',

@@ -30,3 +30,14 @@
 
 *Method: e2e/perf_retime + sweep_perf via the standard Playwright Electron harness (launchApp dev build, dist 1.9.0), recorded by qa during the v1.9.0 full-suite run (372 tests, Sep 2026). Second 520-page open measured 541ms in the same run.*
 
+## Phase 14 gate re-measure (dev build, Liquid Glass + transparent window)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Cold start to interactive | < 3000ms | 572ms | PASS |
+| Open long.pdf (520 pages) | < 3000ms | 536ms | PASS |
+| Idle memory (main process) | < 400MB | 128.63MB | PASS |
+| Animation frame rate (Phase 14 SC6: hover springs + palette motion + parallax) | 60fps, no frame drops | avg 60.0fps; p95 frame gap 16.7ms; max gap 16.8ms; 0 frames > 100ms | PASS |
+
+*Method: e2e/perf_retime + e2e/phase14_qa.spec.cjs P14-E rAF frame probe via the standard Playwright Electron harness, dev build built from the current tree (npm run build; includes the Phase-14 transparent window `transparent: true` + `backgroundMaterial: 'acrylic'` and the glass theme). Budgets unchanged vs the 23:13 pre-transparent-window re-time (583/555/125.10MB) — window transparency costs nothing measurable. Recorded by qa at the Phase-14 gate.*
+

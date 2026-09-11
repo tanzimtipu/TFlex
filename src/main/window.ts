@@ -62,6 +62,20 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
   // Aero Snap (drag the `-webkit-app-region: drag` region to a screen edge
   // to maximize/snap) keeps working because the OS treats that region as a
   // caption area.
+  // Phase 14 — transparent window so the desktop wallpaper shows through the
+  // renderer's frosted-glass panels (`backdrop-filter: blur()` in CSS only blurs
+  // what is *behind* the element *in the compositor*; with an opaque window that
+  // is the app's own aurora background, not the wallpaper). `transparent: true`
+  // removes the OS-supplied opaque backdrop so the wallpaper composites through.
+  // `backgroundMaterial: 'acrylic'` requests the Windows 11 native acrylic
+  // backdrop as a fallback/extension of the effect (no-op on non-Windows-11);
+  // `hasShadow: true` keeps the frameless window's drop shadow so it still reads
+  // as a floating surface against the wallpaper. Frameless (`frame: false`)
+  // remains compatible — transparency does not re-introduce the native title bar
+  // or caption buttons, so the renderer's custom controls stay the only set.
+  // `show: false` + `ready-to-show` (below) is retained because a transparent
+  // window flashing its uninitialized background is more visible than an opaque
+  // one; the show gate already hides that.
   const win = new BrowserWindow({
     width: geometry.width,
     height: geometry.height,
@@ -73,6 +87,9 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     resizable: true,
     show: false,
     autoHideMenuBar: false,
+    transparent: true,
+    backgroundMaterial: 'acrylic',
+    hasShadow: true,
     webPreferences: {
       preload: resolvePreloadPath(),
       contextIsolation: true,

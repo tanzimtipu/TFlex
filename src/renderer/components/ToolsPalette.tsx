@@ -4,8 +4,10 @@
 // split, extract, rotate, delete, sign, forms. The user opens it via
 // the Tools button on the toolbar (or Ctrl+Shift+P from the menu).
 //
-// Layout toggle: list (icon + label, dense, the default) and grid
-// (icon-only tiles, faster to scan). The selection persists in
+// Layout toggle: list (one rich row per tool, the default) and grid
+// (two-column cards). Phase 14 — BOTH layouts render the full
+// icon + title + description triplet: the grid is never icon-only,
+// it is a compact card form of the same row. The selection persists in
 // AppSettings.toolsPaletteLayout, so the choice survives restart.
 //
 // Per the spec, every entry is a thin entry point that funnels into
@@ -548,9 +550,11 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                     <span className="tools-palette-entry-icon">{entry.icon}</span>
                     <span className="tools-palette-entry-text">
                       <span className="tools-palette-entry-label">{entry.label}</span>
-                      {layout === 'list' && (
-                        <span className="tools-palette-entry-desc">{entry.description}</span>
-                      )}
+                      {/* Phase 14 — the description renders in BOTH layouts:
+                       * the tools panel is never icon-only. The grid layout
+                       * shows the same triplet as compact two-column cards;
+                       * only the shortcut chip stays list-only. */}
+                      <span className="tools-palette-entry-desc">{entry.description}</span>
                     </span>
                     {layout === 'list' && entry.shortcut !== '' && (
                       <span className="tools-palette-entry-shortcut">{entry.shortcut}</span>
