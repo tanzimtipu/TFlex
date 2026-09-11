@@ -1,19 +1,24 @@
 // @vitest-environment jsdom
 //
-// B9 + DEF-106 — DOCX assembly must call
-// engine.createDocxFromDoc(docId, entries) directly, not via the
-// older detached createDocxFromImages path, AND the invocation must
-// be a MEMBER call on the engine client.
+// B9 + DEF-106 + Bug 7 + Phase-16 — DOCX assembly wiring.
 //
 // History: the original DOCX flow used `createDocxFromImages(entries)`
-// exclusively — a one-image-per-page .docx with no editable
-// text. The DEF-060 fix introduced `createDocxFromDoc(docId,
-// entries)` which reuses the engine's `exportText` machinery to
-// pull real per-page text from the pdfDoc and emits editable
-// `w:p` / `w:r` / `w:t` runs for text-bearing pages; text-free
-// pages fall back to an inline image. The renderer host must
-// route through `createDocxFromDoc(docId, entries)` for the
-// loaded-doc flow so the result has editable text.
+// exclusively — a one-image-per-page .docx with no editable text.
+// The DEF-060 fix introduced `createDocxFromDoc(docId, entries)`
+// which reuses the engine's `exportText` machinery to pull real
+// per-page text and emit editable `w:p` / `w:r` / `w:t` runs — the
+// text is selectable and re-editable in Word. Bug 7 reversed that
+// preference ("look identical"), so the renderer host preferred
+// `createDocxFromImages(entries)` (every page becomes one full-page
+// lossless raster — visually identical but the text is painted-in,
+// not editable) and demoted `createDocxFromDoc` to the fallback.
+// Phase 16 reverses AGAIN: the product decision for Export to Word
+// is EDITABLE TEXT FIRST — a .docx whose text you can select and
+// edit is the point of Word export, and some layout fidelity loss
+// is accepted. The host now prefers `createDocxFromDoc(docId,
+// entries)`, and `createDocxFromImages` is the graceful fallback
+// for backends that predate the DEF-060 channel or where the text
+// pass errors.
 //
 // The bug (B12 / DEF-106) surfaced when a refactor extracted the
 // method into a local then called the local: `const docxFn =
@@ -21,17 +26,19 @@
 // The engine client's `createDocxFromDoc` reads `this.inner`, and a
 // detached call loses the `this` binding (undefined in strict
 // mode), so every export threw "Cannot read properties of undefined
-// (reading 'inner')". The invocation must be
-// `engineRef.current.createDocxFromDoc(docId, entries)`.
+// (reading 'inner')". All engine-client invocations remain MEMBER
+// calls on the client instance.
 //
 // We pin the App-level wiring:
 //   1. The host's `runAssembleDocx` resolves the active tab's
 //      `engineDocId` (not the entry count).
 //   2. `engineRef.current.createDocxFromDoc` is called FIRST as a
-//      MEMBER call with the docId.
-//   3. No detached `docxFn(...)` extraction remains.
-//   4. `createDocxFromImages` is only the FALLBACK path (when
-//      `createDocxFromDoc` is undefined or returns engine-error).
+//      MEMBER call with the docId + entries (Phase 16 — the
+//      editable-text path).
+//   3. No detached `docxFn(...)` extraction remains anywhere.
+//   4. `createDocxFromImages` is the FALLBACK path (called as a
+//      MEMBER with the entries when the text channel is missing or
+//      fails).
 //   5. The dialog's `runAssemble` prop routes through
 //      `runAssembleDocx` (not a direct engine call).
 //
@@ -89,7 +96,7 @@ const engineClientSource = fs.readFileSync(engineClientPath, "utf8");
 const stubEngineSource = fs.readFileSync(stubEnginePath, "utf8");
 const engineTypesSource = fs.readFileSync(engineTypesPath, "utf8");
 
-describe("B9 / DEF-106 — DOCX assembly is wired through createDocxFromDoc, not detached", () => {
+describe("B9 / DEF-106 / Bug 7 — DOCX assembly wiring", () => {
   it("runAssembleDocx calls engineRef.current.createDocxFromDoc(docId, entries) FIRST as a MEMBER call", () => {
     const match = appSource.match(
       /const runAssembleDocx = useCallback\([\s\S]*?\},\s*\[\]\);/,
@@ -97,14 +104,10 @@ describe("B9 / DEF-106 — DOCX assembly is wired through createDocxFromDoc, not
     expect(match).not.toBeNull();
     if (match === null) return;
     const body = match[0];
-    // The body must invoke createDocxFromDoc AS A MEMBER of the
-    // engine client (so `this.inner` resolves) with the docId
-    // argument, and createDocxFromImages only as a fallback (when
-    // createDocxFromDoc is undefined). The current host extracts
-    // `const engine = engineRef.current` — a local ALIAS of the
-    // client instance, which still binds `this` to the client; the
-    // forbidden form is a DETACHED method reference (`const docxFn =
-    // engineRef.current.createDocxFromDoc; docxFn(...)`).
+    // Phase 16 — the editable-text path (real w:p/w:r/w:t runs from
+    // the loaded document's own text) must be the PRIMARY path and
+    // must be invoked AS A MEMBER of the engine client (so
+    // `this.inner` resolves).
     expect(body).toMatch(/const engine = engineRef\.current\s*;/);
     expect(body).toMatch(/engine\.createDocxFromDoc\(docId, entries\)/);
     // DEF-106 — the detached-extraction pattern must be GONE. The
@@ -114,14 +117,14 @@ describe("B9 / DEF-106 — DOCX assembly is wired through createDocxFromDoc, not
     // export (B12). A member call keeps the binding.
     expect(body).not.toMatch(/const docxFn\s*=/);
     expect(body).not.toMatch(/docxFn\(/);
-    expect(body).toMatch(/engineRef\.current\.createDocxFromImages\(entries\)/);
-    // The text-first path must precede the fallback path in the
-    // function body so a future refactor that swaps the order
-    // (fallback first, primary on failure) fails this test.
+    // The fallback path still routes through createDocxFromImages AS A
+    // MEMBER call with the entries (graceful degradation).
+    expect(body).toMatch(/engine\.createDocxFromImages\(entries\)/);
+    // The doc-text path must precede the image path in the function
+    // body so a future refactor that swaps the order (images-first
+    // primary, text on failure) — the Bug 7 regression — fails.
     const primaryIdx = body.indexOf("engine.createDocxFromDoc(docId, entries)");
-    const fallbackIdx = body.indexOf(
-      "engineRef.current.createDocxFromImages(entries)",
-    );
+    const fallbackIdx = body.indexOf("engine.createDocxFromImages(entries)");
     expect(primaryIdx).toBeGreaterThan(-1);
     expect(fallbackIdx).toBeGreaterThan(-1);
     expect(primaryIdx).toBeLessThan(fallbackIdx);
@@ -139,7 +142,7 @@ describe("B9 / DEF-106 — DOCX assembly is wired through createDocxFromDoc, not
     expect(body).toMatch(/activeTabIdRefLocal\.current/);
     expect(body).toMatch(/openTabsRef\.current\[activeId\]/);
     expect(body).toMatch(/open\.session\.engineDocId/);
-    // The docId is what's passed to docxFn.
+    // The docId is what's passed to the fallback docx call.
     expect(body).toMatch(/const docId = open\.session\.engineDocId/);
   });
 
@@ -147,7 +150,7 @@ describe("B9 / DEF-106 — DOCX assembly is wired through createDocxFromDoc, not
     // The dialog component is `<DocxExportDialog runAssemble={runAssembleDocx} ... />`.
     // The host must NOT pass `engine.createDocxFromImages.bind(null)` or
     // any detached reference — only the host's runAssembleDocx
-    // (which routes to createDocxFromDoc first).
+    // (which routes to createDocxFromImages first).
     const match = appSource.match(/<DocxExportDialog[\s\S]*?\/>/);
     expect(match).not.toBeNull();
     if (match === null) return;
@@ -166,10 +169,11 @@ describe("B9 / DEF-106 — DOCX assembly is wired through createDocxFromDoc, not
   });
 
   it("the stub engine exposes createDocxFromDoc so the renderer can talk to a no-op backend", () => {
-    // The renderer always reads `engine.createDocxFromDoc` first;
-    // a missing method on the stub forces the fallback path even
-    // when the real engine has the method — a regression we want
-    // to catch.
+    // The renderer detects `createDocxFromImages` first; a missing
+    // method on the stub forces the fallback path even when the real
+    // engine has the method — a regression we want to catch. The
+    // stub's createDocxFromDoc surface is pinned here for the same
+    // reason.
     expect(stubEngineSource).toMatch(/createDocxFromDoc/);
   });
 
@@ -183,7 +187,7 @@ describe("B9 / DEF-106 — DOCX assembly is wired through createDocxFromDoc, not
     // Defensive: the adapter has the missingPhase9Extended
     // fallback so a pre-DEF-060 backend degrades with engine-
     // error (NOT a hard throw), letting the host's runAssembleDocx
-    // fall through to createDocxFromImages gracefully.
+    // fall through to createDocxFromDoc gracefully.
     expect(engineClientSource).toMatch(/missingPhase9Extended/);
   });
 });

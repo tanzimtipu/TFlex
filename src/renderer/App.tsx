@@ -2159,7 +2159,16 @@ export function App(): ReactElement {
       // DEF-062).
       const refreshFn = refreshDocProxyForRef.current;
       if (refreshFn !== null) {
-        void refreshFn(tabId).catch(() => undefined);
+        // Phase-C smooth commit — AWAIT the refresh (same DEF-155
+        // "no stale frame" contract as handleTextBoxMove): the
+        // returned promise is what the EditOverlay holds its white
+        // eraser cover open for, so it must resolve only after the
+        // engine mask AND the pdf.js proxy swap have both landed.
+        // The previous `void refreshFn(...)` resolved the promise
+        // before the re-serialized bytes reached the renderer — the
+        // cover released while the canvas still painted the old run
+        // and the original flashed back mid re-bake.
+        await refreshFn(tabId).catch(() => undefined);
       }
     },
     [pushToast, noteOpApplied],
@@ -5515,7 +5524,7 @@ pushToast(
           newText: string;
           style: EditTextStyle;
           oldRect?: { x: number; y: number; width: number; height: number };
-        }) => void;
+        }) => void | Promise<void>;
         onCommitTextBox: (args: {
           rect: { x: number; y: number; width: number; height: number };
           text: string;
@@ -5581,9 +5590,7 @@ pushToast(
           newText: string;
           style: EditTextStyle;
           oldRect?: { x: number; y: number; width: number; height: number };
-        }): void => {
-          void handleEditTextRun(tabId, args);
-        },
+        }): void | Promise<void> => handleEditTextRun(tabId, args),
         onCommitTextBox: (args: {
           rect: { x: number; y: number; width: number; height: number };
           text: string;

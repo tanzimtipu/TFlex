@@ -1,10 +1,10 @@
 // Phase 9 — Export to Word (.docx) dialog.
 //
 // The renderer rasterizes every page of the active document to PNG
-// at the user's chosen DPI, hands the buffers to
-// `engine.createDocxFromImages(entries)`, and the engine assembles
-// them into a single .docx ZIP. The renderer triggers the per-file
-// download via the standard anchor-download trick.
+// at the user's chosen DPI, hands the buffers to `runAssemble`
+// (the App host), and the engine assembles a single .docx ZIP.
+// The renderer triggers the per-file download via the standard
+// anchor-download trick.
 //
 // Why renderer-side rasterization? The main process has no canvas /
 // DOM surface. Page rasterization is already a renderer-side
@@ -12,10 +12,14 @@
 // for the same reason). We re-use `rasterizePageToBlob` so the
 // JPEG-quality + DPI math is shared.
 //
-// Each page becomes one full-width image on its own DOCX page. The
-// engine sets page dimensions to the page's PDF-point size so the
-// result preserves the original layout (portrait / landscape) for
-// viewing in Word / Google Docs / LibreOffice.
+// TEXT-FIRST export: the host prefers the engine's
+// `createDocxFromDoc(docId, entries)` channel, which emits real
+// editable text (w:p/w:r/w:t paragraphs) for every page that has
+// extractable text. Pages without text (scans, image-only pages)
+// are embedded as full-page images from the rasterised entries.
+// The per-page raster is therefore BOTH the image fallback for
+// text-free pages and the safety net if the text channel is
+// unavailable.
 
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { X } from "lucide-react";
@@ -63,9 +67,10 @@ interface DocxExportDialogProps {
       }[]
     | { error: string }
   >;
-  /** Calls `engine.createDocxFromImages(entries)` to assemble the
-   *  DOCX. The dialog never inspects the bytes; it just hands them
-   *  to the renderer-side download. */
+  /** Calls the host's `runAssembleDocx(entries)` to assemble the
+   *  DOCX (text-first via the DEF-060 channel, with a per-page
+   *  image fallback for text-free pages). The dialog never inspects
+   *  the bytes; it just hands them to the renderer-side download. */
   runAssemble: (
     entries: DocxImageEntry[],
   ) => Promise<Uint8Array | { error: string }>;
@@ -272,9 +277,11 @@ export function DocxExportDialog(
         <div className="modal-body">
           <p className="modal-help">
             Convert <strong>{sourceName}</strong> ({totalPages} pages) into
-            a single .docx. Each page becomes an image on its own Word
-            page, sized to the source layout. The result opens in
-            Word / Google Docs / LibreOffice.
+            a single .docx. Text is exported as real, editable text you can
+            select and re-edit in Word; pages without readable text (such as
+            scans) are embedded as images. The result opens in Word / Google
+            Docs / LibreOffice. The layout may simplify — the text is the
+            point.
           </p>
 
           <label className="modal-field">
@@ -319,9 +326,9 @@ export function DocxExportDialog(
               aria-label="Resolution in DPI"
             />
             <span className="modal-hint">
-              Higher DPI = sharper text in the .docx but a much larger
-              file. 150 is a balanced default; pick 300 for print-grade
-              output.
+              Resolution only affects pages embedded as images
+              (scans); text pages stay crisp at any DPI. 150 is a
+              balanced default.
             </span>
           </label>
 

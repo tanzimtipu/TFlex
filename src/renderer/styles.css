@@ -8061,3 +8061,76 @@ rect.ann-highlight.ann-preview {
   0% { transform: translateX(-120%); }
   55%, 100% { transform: translateX(420%); }
 }
+
+/* ---------------------------------------------------------------------------
+ * Phase C — FROSTED CHROME OVER THE DOCUMENT (full-bleed scroller).
+ *
+ * The frosted sheets only READ as real glass when the page can pass
+ * BEHIND them. The base layout keeps the chrome rows in-flow ABOVE
+ * the .document-scroller, so backdrop-filter has nothing but flat
+ * colour to diffuse across the whole sheet — the "looks like a solid
+ * light theme" defect this block fixes.
+ *
+ * In the frosted theme the scroller is full-bleed inside
+ * .workspace-main (inset 0, painted under the chrome at z-index 0)
+ * and the chrome rows (.toolbar / .ann-toolbar / .search-bar /
+ * .edit-toolbar) float above it at z-index 1 with their translucent
+ * sheets + the Phase-A backdrop-filter. As the user scrolls, page
+ * content moves UP under the rows and visibly diffuses through the
+ * glass; at rest the content is padded down by the MEASURED chrome
+ * stack (--tf-chrome-y, published by DocumentView) so the first page
+ * sits exactly where it did in the in-flow layout. Horizontal page
+ * positions are untouched (the scroller keeps its column-2 origin),
+ * and the side rail (column 1) + title bar keep their own sheets
+ * over the workspace tonal gradient.
+ *
+ * The 14-surface blur list is NOT extended here — only positioning
+ * (the blur already rides the Phase-A selectors). No PDF selector
+ * (page / slot / textLayer / canvas / scroller) gains any
+ * backdrop-filter, filter, animation or transition; the scroller
+ * only changes its box (absolute inset 0), which is why the
+ * scroll-position math (all slot offsets are scroller-relative and
+ * the content origin is unchanged) keeps working unchanged.
+ * ------------------------------------------------------------------------- */
+
+:root[data-theme="frosted"] .workspace-main {
+  /* Positioning context for the full-bleed scroller + the floating
+   * chrome rows (and, coincidentally, the same context the
+   * .tools-palette already anchored to — its box coincides). */
+  position: relative;
+}
+
+:root[data-theme="frosted"] .document-scroller {
+  /* Full-bleed behind the chrome rows. `height: auto` lets the
+   * top/bottom inset pair stretch the box instead of the base
+   * `height: 100%` fighting the inset. */
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: auto;
+  z-index: 0;
+}
+
+:root[data-theme="frosted"] .toolbar,
+:root[data-theme="frosted"] .ann-toolbar,
+:root[data-theme="frosted"] .search-bar,
+:root[data-theme="frosted"] .edit-toolbar {
+  /* The chrome rows float above the scroller: their translucent
+   * sheets + backdrop-filter diffuse the page that scrolls under
+   * them, and they keep receiving every pointer event. */
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-theme="frosted"] .document-content {
+  /* Keep the first page clear of the floating chrome at rest. The
+   * chrome stack height is measured live by DocumentView (toolbar
+   * wrap, search bar, edit toolbar all change it) and published as
+   * --tf-chrome-y; the fallback 96px matches the single-row toolbar
+   * (~56px) + annotation toolbar (40px) until the first measure
+   * lands. The bottom 28px + centering are untouched, so page
+   * positions stay pixel-identical to the in-flow layout. */
+  padding: calc(var(--tf-chrome-y, 96px) + 28px) 0 28px;
+}

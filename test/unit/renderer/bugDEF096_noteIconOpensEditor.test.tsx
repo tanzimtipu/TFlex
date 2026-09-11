@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 //
-// DEF-096 — a committed sticky-note icon must be clickable AND the
-// click must actually DO something: open the note editor pre-filled
-// with the note's existing text (view/edit), with Confirm routing
-// an edit patch, Delete removing the note, and Cancel closing.
+// DEF-096 + Bug 3 — a committed sticky-note icon must be interactable
+// AND double-clickable: double-click opens the note editor pre-filled
+// with the note's existing text (view/edit), with Confirm routing an
+// edit patch, Delete removing the note, and Cancel closing. A single
+// click only SELECTS the note (the Confirm / Edit / Delete bar) —
+// Bug 3 moved the "enter edit toolbox" gesture from single click to
+// double click so every annotation kind shares the same model.
 //
 // Root cause traced: prior fixes only touched CSS (pointer-events:
 // auto, z-index) and asserted the styles were PRESENT — but the
@@ -15,13 +18,13 @@
 // now includes `.ann-note` so the icon's own handler wins.
 //
 // Coverage (behavior):
-//   1. pointerdown + click on the committed note icon opens ONE
-//      editor, pre-filled with the note's own text (never a blank
-//      create editor).
-//   2. Confirm applies the edited text via onEditAnnotation(id,
+//   1. Single click selects the note (bar shows, NO editor opens).
+//   2. double-click opens ONE editor, pre-filled with the note's own
+//      text (never a blank create editor).
+//   3. Confirm applies the edited text via onEditAnnotation(id,
 //      { text }).
-//   3. Delete removes the note via onDeleteAnnotation(id).
-//   4. Cancel closes without calling either.
+//   4. Delete removes the note via onDeleteAnnotation(id).
+//   5. Cancel closes without calling either.
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -112,16 +115,24 @@ function mountOverlay(args: {
   };
 }
 
-describe("DEF-096 — committed note icon click opens the editor with the existing text", () => {
-  it("pointerdown + click on the note icon opens ONE editor pre-filled with the note's text", () => {
-    const { host, onCreate, cleanup } = mountOverlay({
+/** Fire the full double-click sequence the browser produces:
+ *  two clicks followed by the dblclick event. */
+function dblClick(el: Element): void {
+  act((): void => {
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+  });
+}
+
+describe("DEF-096 / Bug 3 — committed note icon interaction", () => {
+  it("a single click SELECTS the note (bar shows, no editor opens)", () => {
+    const { host, onCreate, onEditAnnotation, cleanup } = mountOverlay({
       annotations: [COMMITTED_NOTE],
     });
     try {
       const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
       if (icon === null) throw new Error("note icon not found");
-      // Real click sequence: pointerdown (the layer's catch-all must
-      // bail out — no blank create editor) then click.
       act((): void => {
         icon.dispatchEvent(
           new PointerEvent("pointerdown", { bubbles: true, clientX: 105, clientY: 125 }),
@@ -130,6 +141,34 @@ describe("DEF-096 — committed note icon click opens the editor with the existi
       act((): void => {
         icon.click();
       });
+      // Bug 3 — single click must NOT open the edit toolbox.
+      expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
+      // It selects instead: the Confirm / Edit / Delete bar renders.
+      expect(
+        host.querySelector("[data-content-action-bar='ann-note']"),
+      ).not.toBeNull();
+      expect(onCreate).not.toHaveBeenCalled();
+      expect(onEditAnnotation).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("double-click opens ONE editor pre-filled with the note's text", () => {
+    const { host, onCreate, cleanup } = mountOverlay({
+      annotations: [COMMITTED_NOTE],
+    });
+    try {
+      const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
+      if (icon === null) throw new Error("note icon not found");
+      // Real pointer sequence: pointerdown (the layer's catch-all must
+      // bail out — no blank create editor) then the double-click burst.
+      act((): void => {
+        icon.dispatchEvent(
+          new PointerEvent("pointerdown", { bubbles: true, clientX: 105, clientY: 125 }),
+        );
+      });
+      dblClick(icon);
       // Exactly ONE note editor, and it carries the committed text.
       const editors = host.querySelectorAll("[data-annotation-editor='note']");
       expect(editors.length).toBe(1);
@@ -150,9 +189,7 @@ describe("DEF-096 — committed note icon click opens the editor with the existi
     try {
       const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
       if (icon === null) throw new Error("note icon not found");
-      act((): void => {
-        icon.click();
-      });
+      dblClick(icon);
       const textarea = host.querySelector<HTMLTextAreaElement>(
         "[data-annotation-editor='note'] textarea",
       );
@@ -188,9 +225,7 @@ describe("DEF-096 — committed note icon click opens the editor with the existi
     try {
       const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
       if (icon === null) throw new Error("note icon not found");
-      act((): void => {
-        icon.click();
-      });
+      dblClick(icon);
       const delBtn = host.querySelector<HTMLButtonElement>(
         "[data-annotation-action='note-delete']",
       );
@@ -213,9 +248,7 @@ describe("DEF-096 — committed note icon click opens the editor with the existi
     try {
       const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
       if (icon === null) throw new Error("note icon not found");
-      act((): void => {
-        icon.click();
-      });
+      dblClick(icon);
       const cancelBtn = host.querySelector<HTMLButtonElement>(
         "[data-annotation-action='note-cancel']",
       );

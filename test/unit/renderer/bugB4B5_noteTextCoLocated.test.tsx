@@ -2,8 +2,8 @@
 //
 // B4/B5 — committed sticky-note text must render at the icon's
 // position (no double offset) and the note must show a Sign-like
-// selection state while its floating action bar (Confirm / Cancel
-// / Delete) is open.
+// selection state while SELECTED (Bug 3 unified model: single click
+// selects, double click opens the toolbox).
 //
 // The defect: the on-page note text (`.ann-note-text`) was
 // positioned with PAGE coordinates inside the already-translated
@@ -13,10 +13,11 @@
 // (`left: NOTE_ICON_PT * cssScale + 4; top: 0`), keeping icon and
 // text co-located at every zoom.
 //
-// Clicking a committed note opens its floating editor (the
-// Sign-like selector with Confirm / Cancel / Delete); the icon
-// carries `data-note-selected="true"` + the `.ann-note-selected`
-// class for the duration.
+// Single click marks the note selected (the Confirm / Edit / Delete
+// bar appears and the icon carries `data-note-selected="true"` +
+// the `.ann-note-selected` ring). Double click opens the floating
+// editor (Confirm / Cancel / Delete); while the editor is open the
+// page icon is hidden — the toolbox holds the content (Bug 3).
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -121,27 +122,41 @@ describe("B4/B5 — note text co-located with the icon + Sign-like selection", (
     }
   });
 
-  it("clicking a committed note marks it selected (data-note-selected + class) while its editor is open", () => {
+  it("single click marks the note SELECTED (accent ring); double-click opens the editor and the icon yields to the toolbox", () => {
     const { host, cleanup } = mountOverlay();
     try {
       const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
       if (icon === null) throw new Error("note icon not found");
       expect(icon.getAttribute("data-note-selected")).toBe("false");
+      // Single click: SELECT (no editor). The bar appears and the
+      // icon carries the Sign-like accent ring (Bug 3 model).
       act((): void => {
         icon.click();
       });
-      // The floating editor (Sign-like action bar) is open.
+      expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
+      expect(host.querySelector("[data-content-action-bar='ann-note']")).not.toBeNull();
+      expect(
+        host.querySelector<HTMLElement>("[data-annotation-id='note-1']")
+          ?.getAttribute("data-note-selected"),
+      ).toBe("true");
+      // Double-click: the edit toolbox opens and the ORIGINAL page
+      // icon is removed from the page — the toolbox IS the content
+      // (Bug 3 "content moves into the toolbox").
+      act((): void => {
+        icon.dispatchEvent(
+          new MouseEvent("dblclick", { bubbles: true, clientX: 105, clientY: 125 }),
+        );
+      });
       expect(host.querySelector("[data-annotation-editor='note']")).not.toBeNull();
       expect(host.querySelector("[data-annotation-action='note-confirm']")).not.toBeNull();
       expect(host.querySelector("[data-annotation-action='note-cancel']")).not.toBeNull();
       expect(host.querySelector("[data-annotation-action='note-delete']")).not.toBeNull();
-      // The icon reads as selected.
-      const selectedIcon = host.querySelector<HTMLElement>(
-        "[data-annotation-id='note-1']",
-      );
-      expect(selectedIcon?.getAttribute("data-note-selected")).toBe("true");
-      expect(selectedIcon?.classList.contains("ann-note-selected")).toBe(true);
-      // Closing the editor clears the selection.
+      expect(
+        host.querySelector("[data-annotation-id='note-1']"),
+        "the page note icon is hidden while its toolbox is open",
+      ).toBeNull();
+      // Closing the editor restores the icon — still selected (the
+      // bar remains; Cancel only closed the toolbox).
       const cancel = host.querySelector<HTMLButtonElement>(
         "[data-annotation-action='note-cancel']",
       );
@@ -150,7 +165,8 @@ describe("B4/B5 — note text co-located with the icon + Sign-like selection", (
         cancel.click();
       });
       const after = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
-      expect(after?.getAttribute("data-note-selected")).toBe("false");
+      expect(after, "the icon returns after Cancel").not.toBeNull();
+      expect(after?.getAttribute("data-note-selected")).toBe("true");
     } finally {
       cleanup();
     }

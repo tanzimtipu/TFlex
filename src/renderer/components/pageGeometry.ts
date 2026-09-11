@@ -106,16 +106,28 @@ export interface MixedPageGeom {
   heightCss: number;
 }
 
+/** Phase C — the frosted theme's `.document-content` top padding is
+ *  `--tf-chrome-y + CONTENT_PADDING_PX` (the first page must sit BELOW
+ *  the floating chrome rows while scrolling UNDER them). The mixed
+ *  helpers below take the content's REAL top padding so the scroll
+ *  math stays in lockstep with the DOM in BOTH layouts: pass
+ *  `topPad = CONTENT_PADDING_PX` in the in-flow themes (the default,
+ *  identical to the pre-Phase-C behavior) and
+ *  `topPad = CONTENT_PADDING_PX + chromePx` in the frosted theme. All
+ *  per-slot DELTAS (`PAGE_GAP_PX`, slot heights) are untouched — the
+ *  chrome offset shifts every slot equally. */
+
 /** Top offset of slot N inside a mixed-size scroller, in CSS px.
  *  1-based; slot 1 starts at the container's top padding. */
 export function mixedSlotOffsetTop(
   pageNumber: number,
   geom: readonly MixedPageGeom[],
+  topPad: number = CONTENT_PADDING_PX,
 ): number {
   if (pageNumber <= 1) {
-    return CONTENT_PADDING_PX;
+    return topPad;
   }
-  let top = CONTENT_PADDING_PX;
+  let top = topPad;
   const count = Math.min(pageNumber - 1, geom.length);
   for (let i = 0; i < count; i += 1) {
     const h = geom[i]?.heightCss ?? 0;
@@ -126,18 +138,22 @@ export function mixedSlotOffsetTop(
 
 /** 1-based page number the viewport is showing at CSS pixel position `top`,
  *  for a mixed-size scroller. Mirrors `pageAtScrollTop`'s semantics: the
- *  page whose top is at-or-below the landing point (`top +
- *  CONTENT_PADDING_PX`), clamped to [1, pageCount]. Reduces to
- *  `pageAtScrollTop` when every page has the same height. */
+ *  page whose top is at-or-below the landing point (`top + topPad`),
+ *  clamped to [1, pageCount]. Reduces to `pageAtScrollTop` when every
+ *  page has the same height. Passing the REAL content top padding keeps
+ *  the DEF-098 landing contract exact in the frosted theme: a page
+ *  jump that lands the page top `CONTENT_PADDING_PX` below the viewport
+ *  top edge reports that page as current. */
 export function mixedPageAtScrollTop(
   top: number,
   geom: readonly MixedPageGeom[],
   pageCount: number,
+  topPad: number = CONTENT_PADDING_PX,
 ): number {
   if (pageCount <= 0) {
     return 1;
   }
-  const adjusted = top + CONTENT_PADDING_PX;
+  const adjusted = top + topPad;
   let acc = 0;
   let covered = 0;
   for (let p = 1; p <= pageCount; p += 1) {
@@ -166,11 +182,12 @@ export function mixedVisiblePageRange(
   geom: readonly MixedPageGeom[],
   pageCount: number,
   bufferPages = 1,
+  topPad: number = CONTENT_PADDING_PX,
 ): { start: number; end: number } {
   if (pageCount <= 0) {
     return { start: 1, end: 1 };
   }
-  const topContent = scrollTop - CONTENT_PADDING_PX;
+  const topContent = scrollTop - topPad;
   let first = 0;
   if (topContent > 0) {
     let acc = 0;

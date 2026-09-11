@@ -195,6 +195,16 @@ interface DocumentViewProps {
    *  (recorded by the host on `addStamp` success). Rendered as
    *  `.stamp-annotation` DOM surfaces per page. */
   stampAnnotations?: import("../annotations/StampAnnotations").PlacedStamp[];
+  /** Bug 6 — placed stamps are editable/movable/deletable like
+   *  every annotation: the bar's Confirm / Delete / Edit route
+   *  through these to the host, which re-bakes the page via the
+   *  engine's editImage lever. */
+  onMoveStamp?: (
+    id: string,
+    rect: { x: number; y: number; width: number; height: number },
+  ) => void;
+  onDeleteStamp?: (id: string) => void;
+  onRetypeStamp?: (id: string, stampId: import("../../shared/types").StampId) => void;
   onPlaceStamp?: (args: {
     stampId: import("../../shared/types").StampId;
     pngBytes: Uint8Array;
@@ -391,6 +401,9 @@ export function DocumentView({
   armedStamp = null,
   onPlaceStamp,
   stampAnnotations = [],
+  onMoveStamp,
+  onDeleteStamp,
+  onRetypeStamp,
   onPlaceSignature,
   onMoveSignature,
   onDeleteSignature,
@@ -405,6 +418,11 @@ export function DocumentView({
   onEditModeToggle,
 }: DocumentViewProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // Phase-C frosted layering — the full-bleed scroller needs the
+  // measured chrome stack height so .document-content pads down by
+  // exactly the toolbar rows that float above it (see the
+  // measurement effect below).
+  const mainRef = useRef<HTMLDivElement | null>(null);
   const slotRefsRef = useRef(new Map<number, HTMLDivElement>());
   const observerRef = useRef<IntersectionObserver | null>(null);
   const wheelRemainderRef = useRef(0);
@@ -545,6 +563,61 @@ export function DocumentView({
     register(invalidate);
     hasRegisteredInvalidatorRef.current = true;
   }, []);
+
+  // ---- Phase C — frosted chrome-over-document measurement ----------------
+  //
+  // The frosted theme floats the workspace chrome rows (toolbar /
+  // annotation toolbar / search bar / edit toolbar) OVER a full-bleed
+  // .document-scroller, so the page visibly scrolls under the
+  // translucent frosted sheets. The scroller's content must still
+  // start BELOW that chrome stack at rest (or the first page would be
+  // tucked behind it) — and the stack height is not static: the
+  // command toolbar wraps when the window is narrow, the search bar
+  // adds a row while open, the edit toolbar adds a row in edit mode.
+  // This effect measures the rows' real heights and publishes the sum
+  // as `--tf-chrome-y` on .workspace-main; the frosted
+  // .document-content rule reads it for its top padding. Measurement
+  // is theme-agnostic (cheap; the variable is only read by the
+  // frosted rule).
+  //
+  // The same height drives the SCROLL MATH via `chromeYRef`: the
+  // frosted .document-content's top padding is `chromeY + 28`, so
+  // every slot sits `chromeY` px lower in the content than the
+  // in-flow layout the mixed geometry helpers assume. The helpers
+  // take the REAL content top padding (`CONTENT_PADDING_PX + chromeY`)
+  // so jump landings, the current-page heuristic and the virtualized
+  // mount all track the true slot positions — without it the scroller
+  // would read every scroll position ~one chrome height early (page
+  // indicator flips ahead, jump targets land low, and the mount
+  // unmounts a page whose tail is still on screen behind/under the
+  // glass). Zero in the light/dark themes (their chrome stays
+  // in-flow, content padding stays 28px).
+  const chromeYRef = useRef(0);
+  useEffect(() => {
+    const recompute = (): void => {
+      const main = mainRef.current;
+      if (main === null) return;
+      let chromePx = 0;
+      for (const el of Array.from(
+        main.querySelectorAll<HTMLElement>(
+          ".toolbar, .ann-toolbar, .search-bar, .edit-toolbar",
+        ),
+      )) {
+        chromePx += el.offsetHeight;
+      }
+      chromeYRef.current = themeName === "frosted" ? chromePx : 0;
+      if (chromePx > 0) {
+        main.style.setProperty("--tf-chrome-y", `${chromePx}px`);
+      }
+    };
+    recompute();
+    // The toolbar wraps (grows) when the window narrows; re-measure
+    // on resize so the content padding tracks the real stack.
+    window.addEventListener("resize", recompute);
+    return (): void => {
+      window.removeEventListener("resize", recompute);
+    };
+  }, [editModeOpen, searchOpen, themeName]);
 
   // ---- effective scale ----------------------------------------------------
   //
@@ -817,6 +890,11 @@ export function DocumentView({
       pageGeomRef.current,
       pageCount,
       PAGE_BUFFER_PAGES,
+      // Phase C — the frosted content's top padding is the measured
+      // chrome stack + 28, so the mount's "fully above the viewport"
+      // math must subtract the REAL padding (chromeYRef.current is 0
+      // outside the frosted theme → the in-flow value).
+      CONTENT_PADDING_PX + chromeYRef.current,
     );
     const rangeStart = range.start;
     const rangeEnd = range.end;
@@ -885,7 +963,7 @@ export function DocumentView({
     const pending = jumpTargetRef.current;
     if (pending !== null && pendingJumpLandingRef.current && firstPageSize !== null) {
       const top =
-        mixedSlotOffsetTop(pending, pageGeomRef.current) -
+        mixedSlotOffsetTop(pending, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current) -
         CONTENT_PADDING_PX;
       if (Math.abs(scroller.scrollTop - top) > 1) {
         scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
@@ -904,7 +982,7 @@ export function DocumentView({
       // the transition (guarded by the ref), never on `currentPage`
       // changes driven by the heuristic.
       const top =
-        mixedSlotOffsetTop(currentPage, pageGeomRef.current) -
+        mixedSlotOffsetTop(currentPage, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current) -
         CONTENT_PADDING_PX;
       if (Math.abs(scroller.scrollTop - top) > 1) {
         scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
@@ -1003,6 +1081,7 @@ export function DocumentView({
       scroller.scrollTop,
       pageGeomRef.current,
       pageCount,
+      CONTENT_PADDING_PX + chromeYRef.current,
     );
     setCurrentPage((prev) => (prev === page ? prev : page));
   }, [firstPageSize, pageCount]);
@@ -1022,7 +1101,8 @@ export function DocumentView({
       const target = jumpTargetRef.current;
       if (target !== null && firstPageSize !== null) {
         const targetTop =
-          mixedSlotOffsetTop(target, pageGeomRef.current) - CONTENT_PADDING_PX;
+          mixedSlotOffsetTop(target, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current) -
+          CONTENT_PADDING_PX;
         const scroller = scrollerRef.current;
         if (scroller !== null && scroller.scrollTop >= targetTop - 1) {
           jumpTargetRef.current = null;
@@ -1139,7 +1219,7 @@ export function DocumentView({
         pendingJumpLandingRef.current = true;
         return;
       }
-      const target = mixedSlotOffsetTop(page, pageGeomRef.current);
+      const target = mixedSlotOffsetTop(page, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current);
       // DEF-098 — the click's own scroll runs now; make sure the
       // mount-sync effect does not re-apply it as a queued jump
       // (which would INSTANT-kill this smooth scroll). A subsequent
@@ -1547,7 +1627,7 @@ export function DocumentView({
       if (scroller === null || firstPageSize === null) {
         return;
       }
-      const pageTop = mixedSlotOffsetTop(page, pageGeomRef.current);
+      const pageTop = mixedSlotOffsetTop(page, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current);
       const target = pageTop + cssTop - scroller.clientHeight / 2;
       scroller.scrollTo({ top: Math.max(target, 0), behavior: "smooth" });
     },
@@ -1614,19 +1694,48 @@ export function DocumentView({
     dispatchAnnTool({ type: "set-tool", tool: "select" });
   }, []);
 
-  // ---- keyboard: Ctrl+F opens search, Escape closes --------------------------------------
+  // ---- Bug 1 / cross-disarm: an external tool surface must disarm the ----
+  // annotation creation tool. When Edit-content mode opens, the Sign tool
+  // is armed, or the Stamp tool is armed, the page has (or is about to
+  // have) a second pointer-active layer; leaving an annotation tool armed
+  // meant the next page click could both create an annotation AND place a
+  // signature / stamp / edit-box. The annotation tool state lives in this
+  // component, so the transition into "some external tool is active" is
+  // watched here and resets the tool to plain select. The ref keeps the
+  // effect firing only on the rising edge, never on every re-render.
+  const anyExternalToolActive =
+    editModeOpen || armedSignatureId !== null || armedStamp !== null;
+  const prevExternalToolActiveRef = useRef(anyExternalToolActive);
+  useEffect(() => {
+    const prev = prevExternalToolActiveRef.current;
+    if (anyExternalToolActive && !prev) {
+      dispatchAnnTool({ type: "set-tool", tool: "select" });
+    }
+    prevExternalToolActiveRef.current = anyExternalToolActive;
+  }, [anyExternalToolActive]);
+
+  // ---- keyboard: Ctrl+F opens search, Escape closes / disarms -------------
+  // Bug 4 — Escape disarms ANY armed annotation tool first, then closes
+  // search. Previously Escape only closed the search bar, so an armed
+  // sticky-note / ink / shape tool stayed hot after the user pressed
+  // Escape (the next page click created unexpected content).
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setSearchOpen(true);
-      } else if (e.key === "Escape" && searchOpen) {
-        setSearchOpen(false);
+      } else if (e.key === "Escape") {
+        if (annTool.tool !== "select") {
+          e.preventDefault();
+          dispatchAnnTool({ type: "set-tool", tool: "select" });
+        } else if (searchOpen) {
+          setSearchOpen(false);
+        }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen]);
+  }, [searchOpen, annTool.tool]);
 
   // ---- persistence + diagnostics ------------------------------------------------------------
   useEffect(() => {
@@ -1716,7 +1825,7 @@ export function DocumentView({
         onDeleteAnnotation={onDeleteAnnotation}
         onJumpToAnnotation={onAnnJump}
       />
-      <div className="workspace-main">
+      <div ref={mainRef} className="workspace-main">
         <Toolbar
           page={currentPage}
           pageCount={pageCount}
@@ -1920,6 +2029,13 @@ export function DocumentView({
                       // (same AnnotationPatch path as the panel).
                       onEditAnnotation={onEditAnnotation}
                       onDeleteAnnotation={onDeleteAnnotation}
+                      // Bug 1 — opening an edit toolbox disarms the
+                      // annotation creation tool (select). Without
+                      // this, an armed sticky-note / ink / shape
+                      // tool stays hot while the toolbox is open,
+                      // and the next page click both creates AND
+                      // edits.
+                      onDisarmAnnTool={onAnnFinishedOneShot}
                       onRenderStart={onPageRenderStart}
                       onRenderEnd={onPageRenderEnd}
                       formFields={formFieldsByPage.get(visiblePage) ?? EMPTY_FIELDS}
@@ -1948,6 +2064,12 @@ export function DocumentView({
                       stampAnnotations={stampAnnotations.filter(
                         (s) => s.page === visiblePage,
                       )}
+                      // Bug 6 — stamp select/move/delete/retype
+                      // handlers (the same page-level callbacks the
+                      // user-facing stamp surfaces use).
+                      onMoveStamp={onMoveStamp}
+                      onDeleteStamp={onDeleteStamp}
+                      onRetypeStamp={onRetypeStamp}
                       editModeOpen={editModeOpen}
                       edit={editProp}
                     />

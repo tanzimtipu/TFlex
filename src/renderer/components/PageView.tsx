@@ -78,11 +78,25 @@ interface PageViewProps {
    *  through the engine. */
   onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
   onDeleteAnnotation?: (id: string) => void;
+  /** Bug 1 — disarm the annotation CREATION tool when an edit
+   *  toolbox opens. Threaded to the AnnotationOverlay; the host
+   *  (DocumentView) resets its annotation-tool reducer to "select". */
+  onDisarmAnnTool?: () => void;
   /** B10 / DEF-101 — successfully placed stamps for this page
    *  (rect + raster as recorded by the host on `addStamp` success).
    *  Rendered as `.stamp-annotation` DOM surfaces so a placed stamp
    *  is visible/verifiable in addition to the baked page bitmap. */
   stampAnnotations?: PlacedStamp[];
+  /** Bug 6 — stamp editing handlers. The placed stamps are
+   *  selectable / movable / deletable like every annotation: the
+   *  surface interacts locally (draft rect during the drag) and the
+   *  bar's Confirm / Delete / Edit route here for the engine work. */
+  onMoveStamp?: (
+    id: string,
+    rect: { x: number; y: number; width: number; height: number },
+  ) => void;
+  onDeleteStamp?: (id: string) => void;
+  onRetypeStamp?: (id: string, stampId: import('../../shared/types').StampId) => void;
   /** Called when this PageView starts a render task (getPage → render →
    *  getTextContent → TextLayer). The host uses this as part of the
    *  document-wide "anything in flight?" probe that gates pdf.js's
@@ -259,7 +273,11 @@ export function PageView(props: PageViewProps) {
     onFinishedOneShot,
     onEditAnnotation,
     onDeleteAnnotation,
+    onDisarmAnnTool,
     stampAnnotations = [],
+    onMoveStamp,
+    onDeleteStamp,
+    onRetypeStamp,
     onRenderStart,
     onRenderEnd,
     formFields,
@@ -654,11 +672,21 @@ export function PageView(props: PageViewProps) {
         onFinishedOneShot={onFinishedOneShot}
         onEditAnnotation={onEditAnnotation}
         onDeleteAnnotation={onDeleteAnnotation}
+        onDisarmTool={onDisarmAnnTool}
       />
-      {/* B10 / DEF-101 — placed-stamp DOM surfaces. Painted above
-       * the textLayer, pointer-transparent; the engine bakes the
-       * pixels, this mirrors them as a verifiable node. */}
-      <StampAnnotations cssScale={cssScale} items={stampAnnotations} />
+      {/* B10 / DEF-101 + Bug 6 — placed-stamp DOM surfaces. Painted above
+       * the textLayer; selectable / movable / deletable like every
+       * annotation (the confirm bar routes through the host's stamp
+       * handlers, which re-bake via the engine's editImage lever). */}
+      <StampAnnotations
+        cssScale={cssScale}
+        items={stampAnnotations}
+        pageWidthPt={widthPt}
+        pageHeightPt={heightPt}
+        onMove={onMoveStamp === undefined ? undefined : (stamp, rect): void => onMoveStamp(stamp.id, rect)}
+        onDelete={onDeleteStamp === undefined ? undefined : (stamp): void => onDeleteStamp(stamp.id)}
+        onRetype={onRetypeStamp === undefined ? undefined : (stamp, id): void => onRetypeStamp(stamp.id, id)}
+      />
       <FormsOverlay
         page={page}
         cssScale={cssScale}

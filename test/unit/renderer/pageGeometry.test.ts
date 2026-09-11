@@ -4,12 +4,16 @@ import {
   CONTENT_PADDING_PX,
   PAGE_GAP_PX,
   documentScrollHeight,
+  mixedPageAtScrollTop,
+  mixedSlotOffsetTop,
+  mixedVisiblePageRange,
   pageAtScrollTop,
   pageSlotHeight,
   slotOffsetTop,
   visiblePageRange,
   visibleToSourcePage,
   visibleToSourcePageForProxy,
+  type MixedPageGeom,
 } from "../../../src/renderer/components/pageGeometry";
 
 describe("page geometry", () => {
@@ -181,6 +185,85 @@ describe("visibleToSourcePage — DEF-064 (post-delete / reorder mapping)", () =
     // Visible 3 with a 2-element pageOrder returns 3 (identity)
     // rather than undefined.
     expect(visibleToSourcePage(3, [0, 1])).toBe(3);
+  });
+});
+
+describe("mixed scroller geometry — DEF-141 + Phase-C frosted chrome offset", () => {
+  // The frosted theme floats the chrome rows over a full-bleed
+  // scroller; .document-content's top padding becomes
+  // `--tf-chrome-y + CONTENT_PADDING_PX`, so every slot sits
+  // `chromeY` px lower in the content than the in-flow layout the
+  // helpers assumed. The mixed helpers take the REAL content top
+  // padding (`topPad`); passing the default keeps the exact pre-
+  // Phase-C behavior, passing `CONTENT_PADDING_PX + chromeY` keeps
+  // the scroll math in lockstep with the frosted DOM (jump landing,
+  // current-page heuristic, virtualized mount).
+  const chromeY = 96;
+  const frostedTopPad = CONTENT_PADDING_PX + chromeY;
+  // Three 792px-tall pages (post-rotation CSS height), 18px gap.
+  const geom: MixedPageGeom[] = [
+    { widthCss: 612, heightCss: 792 },
+    { widthCss: 612, heightCss: 792 },
+    { widthCss: 612, heightCss: 792 },
+  ];
+  const acc1 = 792 + PAGE_GAP_PX; // 810 — page-2 slot top minus padding
+  const acc2 = acc1 + 792 + PAGE_GAP_PX; // 1620 — page-3 slot top minus padding
+
+  it("mixedSlotOffsetTop defaults to the in-flow content padding and advances by slot heights + gap", () => {
+    expect(mixedSlotOffsetTop(1, geom)).toBe(CONTENT_PADDING_PX);
+    expect(mixedSlotOffsetTop(2, geom)).toBe(CONTENT_PADDING_PX + acc1);
+    expect(mixedSlotOffsetTop(3, geom)).toBe(CONTENT_PADDING_PX + acc2);
+  });
+
+  it("mixedSlotOffsetTop starts at the REAL top padding when a frosted topPad is passed (chrome-shifted slots)", () => {
+    expect(mixedSlotOffsetTop(1, geom, frostedTopPad)).toBe(frostedTopPad);
+    expect(mixedSlotOffsetTop(2, geom, frostedTopPad)).toBe(frostedTopPad + acc1);
+    expect(mixedSlotOffsetTop(3, geom, frostedTopPad)).toBe(frostedTopPad + acc2);
+    // The per-slot deltas are untouched — the chrome shift is a flat
+    // offset on every slot.
+    expect(mixedSlotOffsetTop(3, geom, frostedTopPad) - mixedSlotOffsetTop(2, geom, frostedTopPad)).toBe(
+      mixedSlotOffsetTop(3, geom) - mixedSlotOffsetTop(2, geom),
+    );
+  });
+
+  it("mixedPageAtScrollTop (default) keeps the DEF-098 landing contract: the landed page reads as itself", () => {
+    // In-flow landing for page 2: scrollTop = slotTop(2) - 28 = acc1.
+    expect(mixedPageAtScrollTop(acc1, geom, 3)).toBe(2);
+    expect(mixedPageAtScrollTop(acc2, geom, 3)).toBe(3);
+    expect(mixedPageAtScrollTop(0, geom, 3)).toBe(1);
+  });
+
+  it("mixedPageAtScrollTop with the frosted topPad reports the landed page at the chrome-shifted landing (no 1-page offset)", () => {
+    // Frosted landing for page N: the page top sits CONTENT_PADDING_PX
+    // below the viewport top edge, i.e. scrollTop = acc + chromeY.
+    expect(mixedPageAtScrollTop(acc1 + chromeY, geom, 3, frostedTopPad)).toBe(2);
+    expect(mixedPageAtScrollTop(acc2 + chromeY, geom, 3, frostedTopPad)).toBe(3);
+    expect(mixedPageAtScrollTop(0, geom, 3, frostedTopPad)).toBe(1);
+  });
+
+  it("mixedVisiblePageRange (frosted topPad) keeps a page mounted while its tail is still on screen (no blank gap under the glass)", () => {
+    // Page 1's slot spans [frostedTopPad, frostedTopPad + 792] =
+    // [124, 916] in content coordinates; its gap-inclusive block ends
+    // at frostedTopPad + acc1 = 934 (acc1 = 810). At scrollTop 838 —
+    // where the OLD hardcoded 28px padding math marked page 1
+    // scrolled past (838-28 = 810 ≥ acc1) — page 1's bottom is still
+    // 916-838 = 78px inside the viewport. With the REAL padding the
+    // range must still START at page 1.
+    const rangeStillMounted = mixedVisiblePageRange(838, 900, geom, 3, 0, frostedTopPad);
+    expect(rangeStillMounted.start, "page 1 must stay mounted while its tail is visible").toBe(1);
+    // Only once the viewport top passes the slot's gap-inclusive REAL
+    // bottom (topPad + acc1 = 934) may page 1 leave the mounted set.
+    const rangeAfterClear = mixedVisiblePageRange(935, 900, geom, 3, 0, frostedTopPad);
+    expect(rangeAfterClear.start, "page 1 unmounts only after its block clears the viewport").toBe(2);
+  });
+
+  it("mixedVisiblePageRange with the default padding keeps the in-flow behavior", () => {
+    // In-flow: page 1's slot spans [28, 820]; at scrollTop 810
+    // (28 below page 2's top) page 1 is still on screen.
+    expect(mixedVisiblePageRange(810, 900, geom, 3, 0).start).toBe(1);
+    // The previous behavior must be byte-identical: drop page 1 once
+    // 28 + acc1 = 838 clears the viewport top.
+    expect(mixedVisiblePageRange(839, 900, geom, 3, 0).start).toBe(2);
   });
 });
 

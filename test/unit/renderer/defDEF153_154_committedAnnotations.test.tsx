@@ -23,8 +23,9 @@
 //      on the bar never starts a page drag, the click completes).
 //   5. Double click on a committed textbox opens its text edit
 //      toolbox; Confirm routes a text patch through onEditAnnotation.
-//   6. The note icon still opens its editor on single click
-//      (DEF-096 preserved); dragging the icon moves the note and the
+//   6. The note icon follows the SAME model as every other kind now
+//      (Bug 3): single click SELECTS it (bar + handles), double click
+//      opens its editor; dragging the icon moves the note and the
 //      bar's Confirm commits delete + re-create.
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
@@ -484,14 +485,23 @@ describe("DEF-153/154 — committed textbox: select/move + double-click text too
   });
 });
 
-describe("DEF-153/154 — committed note stays click-to-edit (DEF-096) and becomes draggable", () => {
-  it("single click on the icon still opens the note editor (DEF-096 preserved)", () => {
+describe("DEF-153/154 / Bug 3 — committed note shares the unified selection model", () => {
+  it("single click SELECTS the note (bar + handles, NO editor); double click opens the note editor", () => {
     const { host, cleanup } = mountOverlay({ annotations: [NOTE_ANN] });
     try {
       const icon = host.querySelector<Element>("[data-annotation-id='note-1']");
       if (icon === null) throw new Error("note icon not found");
       pressSurface(icon, 65, 305);
       clickEl(icon);
+      // Bug 3 — single click must not enter the edit toolbox.
+      expect(host.querySelectorAll("[data-annotation-editor='note']").length).toBe(0);
+      // It selects instead: the Confirm / Edit / Delete bar renders.
+      expect(
+        host.querySelector("[data-content-action-bar='ann-note']"),
+        "note shows the action bar on single click",
+      ).not.toBeNull();
+      // The full edit toolbox opens on double click, pre-filled.
+      doubleClickEl(icon, 65, 305);
       const editors = host.querySelectorAll("[data-annotation-editor='note']");
       expect(editors.length).toBe(1);
       const ta = editors[0]?.querySelector("textarea");

@@ -80,7 +80,13 @@ export interface EditOverlayProps {
    *  `AppSettings.editDefaultFont`. */
   defaultFont: EditTextStyle["font"];
   /** Commit a text-run edit. Called with the run's rect (page
-   *  points, top-left origin) and the new text + style. */
+   *  points, top-left origin) and the new text + style. A HOST that
+   *  resolves the returned promise does so only after the engine
+   *  mask + pdf.js proxy refresh have landed — the overlay keeps its
+   *  white eraser cover over the original rect until then so the
+   *  moved run never flashes a stale frame (Phase-C smooth commit).
+   *  A `void` return (older hosts / tests) means "no timing
+   *  contract" — the cover releases immediately. */
   onCommitTextEdit: (args: {
     rect: { x: number; y: number; width: number; height: number };
     newText: string;
@@ -89,7 +95,7 @@ export interface EditOverlayProps {
      *  Present only when committing a MOVE of an already-edited run;
      *  omitted for a plain in-place edit. */
     oldRect?: { x: number; y: number; width: number; height: number };
-  }) => void;
+  }) => void | Promise<void>;
   /** Commit a new text box. */
   onCommitTextBox: (args: {
     rect: { x: number; y: number; width: number; height: number };
@@ -185,6 +191,27 @@ interface CropDragState {
   to: { x: number; y: number };
 }
 
+/** Phase-C — paint barrier for the smooth-commit paths. After an
+ *  engine edit resolves, wait two more animation frames so the
+ *  pdf.js canvas repaint has actually painted before the white eraser
+ *  cover unmounts (same DEF-155 "no stale frame window" contract as
+ *  the box-move confirm). A watchdog timer guarantees the cover can
+ *  never LEAK on a host whose requestAnimationFrame never fires
+ *  (jsdom, headless screenshots) — a stuck cover would hide content
+ *  forever, which is worse than a one-frame flash. */
+function waitForPaintBarrier(): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+    window.setTimeout(finish, 200);
+  });
+}
+
 export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   const {
     page,
@@ -233,6 +260,19 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     text: string;
     style: EditTextStyle;
     background: "white" | "none";
+  } | null>(null);
+  // Phase-C — an in-flight TEXT-RUN commit: the engine is masking the
+  // ORIGINAL rect and the proxy refresh has not landed yet, so the
+  // white eraser cover must stay over the run's original rect until
+  // `onCommitTextEdit`'s returned promise resolves (smooth commit —
+  // the original never flashes back after the toolbox closes). The
+  // box analogue is `pendingTextBoxMove`; this drives the same cover
+  // for the run path and also keeps the cover mounted while the
+  // toolbox is OPEN over a run (the "content stays on the page"
+  // complaint — the run is lifted into the toolbox, not left behind).
+  const [pendingRunEdit, setPendingRunEdit] = useState<{
+    rect: { x: number; y: number; width: number; height: number };
+    text: string;
   } | null>(null);
   // DEF-153 — the text tool's SELECTED (movable) text run. Single
   // click selects the run + shows the Confirm/Edit/Delete bar;
@@ -302,6 +342,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     setRunSelection(null);
     setPendingRunMove(null);
     setPendingTextBoxMove(null);
+    setPendingRunEdit(null);
     setHintPos(null);
   }, [tool, page]);
 
@@ -1003,6 +1044,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       setTextTarget(null);
       setEditorOffset({ x: 0, y: 0 });
       setPendingTextBoxMove(null);
+      setPendingRunEdit(null);
       setHintPos(null);
       onDeleteTextBox(id);
     };
@@ -1042,12 +1084,38 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
 
   // DEF-145/155 — the white eraser cover rect: the OLD baked rect of a
   // committed box while it is being moved OR its move is pending.
+  // Phase-C — the cover also runs while the floating toolbox has
+  // LIFTED committed content off the page into itself (a re-opened
+  // box, a text run under edit) and while an engine commit is still
+  // masking the original (pendingTextBoxMove / pendingRunEdit). The
+  // original baked copy NEVER sits beside the toolbox as a stationary
+  // duplicate — it is hidden until the commit lands or the edit
+  // cancels.
   const eraserRect = ((): { x: number; y: number; width: number; height: number } | null => {
     if (tool === "box" && textBoxDrag !== null && textBoxDrag.kind === "move") {
       return { ...textBoxDrag.startRect };
     }
     if (pendingTextBoxMove !== null) {
       return { ...pendingTextBoxMove.oldRect };
+    }
+    if (pendingRunEdit !== null) {
+      return { ...pendingRunEdit.rect };
+    }
+    if (textTarget !== null && textTarget.textBoxId !== undefined) {
+      return {
+        x: textTarget.rect.x,
+        y: textTarget.rect.y,
+        width: textTarget.rect.width,
+        height: textTarget.rect.height,
+      };
+    }
+    if (textTarget !== null && textTarget.initialText.length > 0) {
+      return {
+        x: textTarget.rect.x,
+        y: textTarget.rect.y,
+        width: textTarget.rect.width,
+        height: textTarget.rect.height,
+      };
     }
     return null;
   })();
@@ -1255,12 +1323,30 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               color: { r: 0, g: 0, b: 0 },
             };
             const moved = !rectsClose(p.newRect, p.oldRect, 1);
-            onCommitTextEdit({
+            // Phase-C smooth commit — keep the white cover over the
+            // run's ORIGINAL rect until the engine mask + proxy
+            // refresh resolve (same timing contract as the editor
+            // commit above). The selection closes immediately; the
+            // cover releases when the host's promise lands.
+            setPendingRunEdit({ rect: { ...p.oldRect }, text: p.text });
+            const res = onCommitTextEdit({
               rect: { ...p.newRect },
               newText: p.text,
               style,
               ...(moved ? { oldRect: { ...p.oldRect } } : {}),
             });
+            if (res !== undefined) {
+              void res
+                .then(() => waitForPaintBarrier())
+                .then(() => {
+                  setPendingRunEdit(null);
+                })
+                .catch(() => {
+                  setPendingRunEdit(null);
+                });
+            } else {
+              window.setTimeout(() => setPendingRunEdit(null), 0);
+            }
             dispatch({
               type: "push-text-run-commit",
               run: { page, rect: { ...p.newRect }, text: p.text },
@@ -1461,7 +1547,27 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               // of an unmoved box must NOT hit the engine.
               const engineMoved = !rectsClose(commitRect, baseRect, 1);
               if (engineMoved) {
-                onCommitTextBoxMove({
+                // Phase-C smooth commit — PARK the move through the
+                // same pending state the box-body drag uses: the white
+                // eraser stays over the ORIGINAL rect until the engine
+                // mask + pdf.js proxy refresh resolve (DEF-155 "no
+                // stale frame window"). The registry mirror already
+                // shows the box at the commit rect, so the box NEVER
+                // pops back to its old spot while the page re-bakes.
+                // Deselect right away — the mirror keeps painting the
+                // moved content, and the placement toolbar would
+                // otherwise linger over the wait.
+                setPendingTextBoxMove({
+                  id: target.textBoxId,
+                  oldRect: { ...baseRect },
+                  newRect: { ...commitRect },
+                  text,
+                  style,
+                  background,
+                });
+                setHintPos(null);
+                dispatch({ type: "select-text-box", textBoxId: null });
+                const result = onCommitTextBoxMove({
                   oldRect: { ...baseRect },
                   newRect: commitRect,
                   text,
@@ -1469,9 +1575,29 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
                   background,
                   id: target.textBoxId,
                 });
+                void (result !== undefined
+                  ? result.then(() => waitForPaintBarrier())
+                  : waitForPaintBarrier())
+                  .then(() => {
+                    setPendingTextBoxMove(null);
+                  })
+                  .catch(() => {
+                    // The engine op failed (host threw); release the
+                    // cover so the page copy is never left hidden.
+                    setPendingTextBoxMove(null);
+                  });
+              } else {
+                // No rect change — nothing to mask; drop any stale
+                // eraser state for this box (an earlier unconfirmed
+                // drag that the editor is now replacing).
+                if (
+                  pendingTextBoxMove !== null &&
+                  pendingTextBoxMove.id === target.textBoxId
+                ) {
+                  setPendingTextBoxMove(null);
+                }
+                setHintPos(null);
               }
-              setPendingTextBoxMove(null);
-              setHintPos(null);
               return;
             }
             if (target.initialText.length > 0) {
@@ -1484,7 +1610,15 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               // run's original rect only for a real move; omit it for a
               // plain in-place edit.
               const moved = !rectsClose(commitRect, target.rect, 1);
-              onCommitTextEdit({
+              // Phase-C smooth commit — the white cover must stay over
+              // the run's ORIGINAL rect while the engine mask + proxy
+              // refresh resolve (the toolbox just closed, so nothing
+              // else hides the stale original). A host that returns a
+              // promise releases the cover when the refresh lands; a
+              // `void` host releases on the next tick (no timing
+              // contract — same as before this change).
+              setPendingRunEdit({ rect: { ...target.rect }, text });
+              const runResult = onCommitTextEdit({
                 rect: commitRect,
                 newText: text,
                 style,
@@ -1503,6 +1637,18 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
                     }
                   : {}),
               });
+              if (runResult !== undefined) {
+                void runResult
+                  .then(() => waitForPaintBarrier())
+                  .then(() => {
+                    setPendingRunEdit(null);
+                  })
+                  .catch(() => {
+                    setPendingRunEdit(null);
+                  });
+              } else {
+                window.setTimeout(() => setPendingRunEdit(null), 0);
+              }
               // DEF-149(a) — record which run the engine committed so a
               // re-click on the edited run prefers the NEW text (the
               // masked original stays in the content stream).
@@ -1529,6 +1675,10 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             }
             setTextTarget(null);
             setEditorOffset({ x: 0, y: 0 });
+            // Phase-C — the edit was abandoned: no engine op is coming,
+            // so release the run-cover immediately (the original comes
+            // back into view, as today).
+            setPendingRunEdit(null);
           }}
           onDelete={editorOnDelete}
         />

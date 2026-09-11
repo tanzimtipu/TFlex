@@ -58,8 +58,13 @@ describe("B8c — undo/redo refresh the pdf.js proxy", () => {
   it("both callbacks keep the ref-reading pattern (no direct useCallback dep)", () => {
     // The DEP list must not include a `refreshDocProxyFor` closure
     // dependency — the whole point of the ref is to avoid a TDZ /
-    // identity churn dependency (DEF-062).
-    expect(undoBlock()).toMatch(/\[pushToast, setEngineUiFor\]/);
-    expect(redoBlock()).toMatch(/\[pushToast, setEngineUiFor\]/);
+    // identity churn dependency (DEF-062). The Bug 5 stamp-mirror
+    // clear adds the stable `dropPlacedStamps` callback (a
+    // useCallback([]) defined before onUndo) — that does NOT carry
+    // the proxy refresh, so the ref pattern is preserved.
+    expect(undoBlock()).not.toMatch(/\[[^\]]*refreshDocProxyFor/);
+    expect(redoBlock()).not.toMatch(/\[[^\]]*refreshDocProxyFor/);
+    expect(undoBlock()).toMatch(/dropPlacedStamps\(tabId\)/);
+    expect(redoBlock()).toMatch(/dropPlacedStamps\(tabId\)/);
   });
 });

@@ -869,21 +869,21 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     expect(frostedBlock()).not.toBe("");
   });
 
-  it("frosted is the medium-light acrylic variant (lifted slate base + translucent sheets)", () => {
+  it("frosted is the LIGHT acrylic variant (near-white base + translucent white sheets)", () => {
     const frosted = frostedBlock();
-    expect(frosted).toMatch(/color-scheme:\s*dark/);
-    // The base was lifted out of the near-black range: it must NOT
-    // resolve to the flat-dark theme's #0b0d0f, and every channel
-    // must clear the dark base's 0x0b/0x0d/0x0f by a wide margin
-    // (the darkest frosted layer still reads as slate, never black).
+    expect(frosted).toMatch(/color-scheme:\s*light/);
+    // The base is a very light cool gray — almost white. It must NOT
+    // resolve to the flat-dark theme's #0b0d0f nor to the old
+    // dark-slate frosted trend: every channel must clear 0xD0 so the
+    // theme reads as light frosted glass, never dark mode.
     expect(frosted).not.toMatch(/--tf-bg:\s*#0b0d0f/i);
     const bgMatch = /--tf-bg:\s*(#[0-9a-fA-F]{6})/.exec(frosted);
     expect(bgMatch).not.toBeNull();
     if (bgMatch !== null) {
       const [r, g, b] = [1, 3, 5].map((i) => parseInt((bgMatch[1] ?? "").slice(i, i + 2), 16));
-      expect(r).toBeGreaterThanOrEqual(0x14);
-      expect(g).toBeGreaterThanOrEqual(0x14);
-      expect(b).toBeGreaterThanOrEqual(0x14);
+      expect(r).toBeGreaterThanOrEqual(0xd0);
+      expect(g).toBeGreaterThanOrEqual(0xd0);
+      expect(b).toBeGreaterThanOrEqual(0xd0);
     }
     for (const token of [
       "--tf-surface-frame",
@@ -895,6 +895,20 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     ]) {
       expect(frosted).toMatch(new RegExp(`${token}\\s*:\\s*rgba\\(`));
     }
+  });
+
+  it("frosted text ladder is DARK (high readability on the light glass)", () => {
+    const frosted = frostedBlock();
+    const primary = /--tf-text-primary:\s*(#[0-9a-fA-F]{6})/.exec(frosted)?.[1];
+    const secondary = /--tf-text-secondary:\s*(#[0-9a-fA-F]{6})/.exec(frosted)?.[1];
+    expect(primary).toBeTruthy();
+    expect(secondary).toBeTruthy();
+    const isDark = (hex: string): boolean => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+      return r <= 0x5a && g <= 0x5a && b <= 0x5a;
+    };
+    if (primary !== undefined) expect(isDark(primary)).toBe(true);
+    if (secondary !== undefined) expect(isDark(secondary)).toBe(true);
   });
 
   it("frosted base is materially lighter than the flat dark base (#0b0d0f)", () => {
@@ -1017,23 +1031,24 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     expect(body).toMatch(/background:\s*var\(--menu-bg\)/);
   });
 
-  it("frosted page-overlay chips keep a dark-ish slate (dark-wash parity, lifted from near-black)", () => {
-    // The form editor and the OCR suspects bar float OVER the white
-    // page and carry near-white --fg-strong text. They must stay
-    // comparatively dark chips in every dark-ink theme — but the
-    // frosted variant is lifted from the near-black dark-wash into
-    // the frosted slate material, never near-black black.
+  it("frosted page-overlay chips stay LIGHT glass (dark text ladder reads on them)", () => {
+    // The form editor and the OCR suspects bar float over the white
+    // page / light workspace and carry dark --fg/--fg-strong text.
+    // They must stay LIGHT chips in the light frosted material — a
+    // dark chip would fight the light chrome and bury the dark text
+    // ladder (the old dark-slate frosted contract demanded dark
+    // chips; the corrected light direction inverts them).
     const frostedForm = /:root\[data-theme="frosted"\]\s+\.form-editor\s*\{([\s\S]*?)\n\}/m.exec(css);
     expect(frostedForm).not.toBeNull();
     if (frostedForm === null) return;
     const body = frostedForm[1] ?? "";
-    expect(body).toMatch(/background:\s*rgba\(34,\s*45,\s*60,\s*0\.88\)/);
-    // Same for the OCR suspects bar — a light rule would paint a
-    // light strip across the acrylic chrome.
+    expect(body).toMatch(/background:\s*rgba\(255,\s*255,\s*255,\s*0\.94\)/);
+    // Same for the OCR suspects bar — a dark rule would paint a dark
+    // strip across the light acrylic chrome.
     const frostedBar = /:root\[data-theme="frosted"\]\s+\.ocr-suspects-panel\s*\{([\s\S]*?)\n\}/m.exec(css);
     expect(frostedBar).not.toBeNull();
     if (frostedBar !== null) {
-      expect(frostedBar[1] ?? "").toMatch(/background:\s*rgba\(31,\s*41,\s*53,\s*0\.84\)/);
+      expect(frostedBar[1] ?? "").toMatch(/background:\s*rgba\(248,\s*249,\s*251,\s*0\.9\)/);
     }
   });
 

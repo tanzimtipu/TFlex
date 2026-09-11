@@ -20,6 +20,7 @@ import {
   Crop,
   FileImage,
   FilePlus2,
+  FileStack,
   FileText,
   GitMerge,
   Layers,
@@ -89,6 +90,10 @@ interface ToolsPaletteProps {
    *  CONFIDENTIAL / FINAL stamps). Renders to canvas, drops on
    *  page click. */
   onStamp?: () => void;
+  /** Flatten — bake filled form values into the page content.
+   *  Enabled only when the active document has form fields (mirrors
+   *  the toolbar's Flatten button). */
+  onFlatten?: () => void;
   /** Phase 12 — Export comments to a local FDF file. */
   onExportComments?: () => void;
   /** Phase 12 — Import comments from a local FDF file. */
@@ -111,11 +116,13 @@ interface ToolEntry {
   action: () => void;
 }
 
-/** Phase B — the palette's section headers. Entries are grouped into
- *  four quiet uppercase sections (ORGANIZE PAGES / DOCUMENT /
+/** The palette's section headers. Entries are grouped into four
+ *  quiet uppercase sections (ORGANIZE PAGES / DOCUMENT /
  *  RECOGNITION / EXPORT) so the dense tool list scans like a
  *  professional toolbox. Group and entry order is the canonical
- *  palette order; entry ids must match `data-tool-id`. */
+ *  palette order (the screenshot's ORGANIZE PAGES -> DOCUMENT ->
+ *  RECOGNITION ladder first, toolbelt extras after); entry ids must
+ *  match `data-tool-id`. */
 const TOOL_GROUPS: ReadonlyArray<{ id: string; label: string; entryIds: readonly string[] }> = [
   {
     id: 'organize',
@@ -125,7 +132,7 @@ const TOOL_GROUPS: ReadonlyArray<{ id: string; label: string; entryIds: readonly
   {
     id: 'document',
     label: 'Document',
-    entryIds: ['sign', 'forms', 'stamp', 'optimize', 'audit', 'createFromImages'],
+    entryIds: ['sign', 'forms', 'flatten', 'optimize', 'audit', 'stamp', 'createFromImages'],
   },
   {
     id: 'recognition',
@@ -165,6 +172,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     onRenumberPages,
     onCropPages,
     onStamp,
+    onFlatten,
     onExportComments,
     onImportComments,
     hasOcrSuspects,
@@ -201,6 +209,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       return onBatchOcr !== undefined;
     }
     if (id === 'forms') return hasFormFields;
+    if (id === 'flatten') return hasFormFields && onFlatten !== undefined;
     if (id === 'exportPages') return onExportPages !== undefined;
     if (id === 'exportText') return onExportText !== undefined;
     if (id === 'exportDocx') return onExportDocx !== undefined;
@@ -242,7 +251,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     },
     {
       id: 'rotate',
-      label: 'Rotate page',
+      label: 'Rotate pages',
       description: 'Rotate the selected page clockwise or counter-clockwise.',
       icon: <RotateCw size={16} aria-hidden />,
       shortcut: '',
@@ -250,7 +259,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     },
     {
       id: 'delete',
-      label: 'Delete page',
+      label: 'Delete pages',
       description: 'Remove the selected page from the document.',
       icon: <Trash2 size={16} aria-hidden />,
       shortcut: '',
@@ -272,6 +281,16 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       shortcut: '',
       action: onForms,
     },
+    ...(onFlatten !== undefined
+      ? [{
+          id: 'flatten' as const,
+          label: 'Flatten',
+          description: 'Bake filled form values into the page content.',
+          icon: <FileStack size={16} aria-hidden />,
+          shortcut: '',
+          action: onFlatten,
+        }]
+      : []),
     {
       id: 'optimize',
       label: 'Reduce file size',
