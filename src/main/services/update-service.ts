@@ -37,6 +37,9 @@ function readRepo(): string | undefined {
 
 /**
  * Parses the package.json `repository` field to extract owner and repo name.
+ * Only the `owner` is consumed at runtime — the source repo NAME is the
+ * private code repo and is NOT the update feed. Release artifacts are
+ * published to the separate public repo named below.
  */
 function parseRepo(repository: string): { owner: string; repo: string } | null {
   const parts = repository.split('/');
@@ -46,6 +49,18 @@ function parseRepo(repository: string): { owner: string; repo: string } | null {
   return { owner: parts[0], repo: parts[1] };
 }
 
+/**
+ * Name of the PUBLIC GitHub repository that holds only release artifacts
+ * (latest.yml, the NSIS installer and its blockmap). The source repo
+ * (package.json `repository`) stays private; only release binaries live
+ * here, so end users need NO token to check for or download updates.
+ *
+ * MUST match the `publish.repo` in electron-builder.yml — that is where
+ * electron-builder uploads the assets this feed reads. The owner is taken
+ * from package.json so the two stay on the same GitHub account.
+ */
+const RELEASES_REPO = 'tflex-releases';
+
 export type StatusCallback = (state: UpdateState) => void;
 
 export class UpdateService {
@@ -53,10 +68,10 @@ export class UpdateService {
   private _state: UpdateState;
   private _initialised = false;
   /** True once `init()` has configured the autoUpdater with a real feed
-   *  (not portable, repo resolved, token present). Gates the manual
-   *  `checkForUpdates()` path so it is a clean no-op when there is no
-   *  feed to query instead of calling autoUpdater with an unconfigured
-   *  client. */
+   *  (not portable, repo resolved). Gates the manual `checkForUpdates()`
+   *  path so it is a clean no-op when there is no feed to query instead of
+   *  calling autoUpdater with an unconfigured client. A token is NOT
+   *  required — the public releases repo needs no auth. */
   private _feedConfigured = false;
 
   constructor() {
@@ -98,33 +113,24 @@ export class UpdateService {
       return;
     }
 
-    const token = process.env.TFLEX_GH_TOKEN ?? process.env.GH_TOKEN ?? '';
-    if (!token) {
-      this._setState({
-        kind: 'error',
-        message: 'Update token not set (TFLEX_GH_TOKEN).',
-      });
-      return;
-    }
-
-    // Configure the auto-updater for a PRIVATE GitHub repository.
+    // The auto-updater reads from a PUBLIC GitHub repository that holds only
+    // release artifacts (latest.yml + installer + blockmap). The source repo
+    // (package.json `repository`) stays PRIVATE; release binaries are
+    // published to the separate public repo `tflex-releases` by
+    // electron-builder (see the `publish` block in electron-builder.yml).
     //
-    // `private: true` tells electron-updater's GitHubProvider to send
-    // `Authorization: token <TOKEN>` on BOTH the release-info API call AND
-    // the asset download request. Without it the provider would download
-    // without auth and get a 404 from GitHub — private release assets are
-    // invisible without the header. This is the private-bin vs public
-    // provider distinction: a public repo would omit `private` (or set it
-    // false) and need no token for downloads.
+    // Because the feed repo is public, NO token is required to check for or
+    // download updates — this is what makes OTA work for every user, not
+    // just the developer's machine. A token is still OPTIONAL: when
+    // TFLEX_GH_TOKEN / GH_TOKEN is present in the environment it is attached
+    // to the feed so the GitHub API calls are authenticated (higher rate
+    // limit). Users never set it; the developer may, for convenience.
     //
-    // Token env vars (read at RUNTIME from the process environment, never
-    // committed to source):
-    //   TFLEX_GH_TOKEN  — primary (TFlex-specific; avoids clashing with
-    //                    other tooling that reads GH_TOKEN)
-    //   GH_TOKEN        — fallback (matches electron-builder / gh CLI)
-    // The operator injects one of these into the environment before
-    // launching the app. Without a token the service sets 'error' state
-    // above and no update is offered.
+    // `private: false` tells electron-updater's GitHubProvider to make
+    // unauthenticated requests by default (and to send `Authorization` only
+    // when a token is supplied below). Release assets on a public repo are
+    // downloadable without auth — the 404-on-private-asset problem that the
+    // old `private: true` + mandatory-token path worked around is gone.
     //
     // Feed assets consumed from the GitHub release (uploaded by the
     // `electron-builder --publish` release pipeline — see
@@ -134,12 +140,20 @@ export class UpdateService {
     //   TFlex-Setup-<version>.exe.blockmap    — differential update blockmap
     // The portable build (TFlex-<version>-portable.exe) is NOT listed in
     // latest.yml and is gated by isPortableBuild() above.
+    //
+    // Token env vars (read at RUNTIME from the process environment, never
+    // committed to source):
+    //   TFLEX_GH_TOKEN  — primary (TFlex-specific; avoids clashing with
+    //                    other tooling that reads GH_TOKEN)
+    //   GH_TOKEN        — fallback (matches electron-builder / gh CLI)
+    const token = process.env.TFLEX_GH_TOKEN ?? process.env.GH_TOKEN ?? '';
+
     autoUpdater.setFeedURL({
       provider: 'github',
       owner: repoInfo.owner,
-      repo: repoInfo.repo,
-      private: true,
-      token,
+      repo: RELEASES_REPO,
+      private: false,
+      ...(token ? { token } : {}),
     });
     this._feedConfigured = true;
 
@@ -214,9 +228,8 @@ export class UpdateService {
    *  same "check, then let the user download" semantics.
    *
    *  Returns the resulting `UpdateState` after the check resolves.
-   *  Portable builds and misconfigured feeds (no token / no repo)
-   *  return their current state without re-checking — there is no
-   *  feed to query. An in-progress download or a ready-to-install
+   *  Portable builds and misconfigured feeds (no repo) return their
+   *  current state without re-checking — there is no feed to query. An in-progress download or a ready-to-install
    *  update is not interrupted (the user should finish or install
    *  those, not re-check). */
   async checkForUpdates(): Promise<UpdateState> {

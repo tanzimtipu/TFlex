@@ -1,7 +1,10 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS } from "../../../src/renderer/state/defaults";
-import { resolveInitialSettings } from "../../../src/renderer/state/settings";
+import {
+  resolveInitialSettings,
+  settingsRecoveryNotice,
+} from "../../../src/renderer/state/settings";
 import { applyTheme, nextTheme } from "../../../src/renderer/state/theme";
 import { ok, err } from "../../../src/shared/result";
 
@@ -57,5 +60,48 @@ it("falls back to frosted defaults on io error", () => {
   it("defaults to dark geometry 1440x900", () => {
     expect(DEFAULT_SETTINGS.geometry.width).toBe(1440);
     expect(DEFAULT_SETTINGS.geometry.height).toBe(900);
+  });
+});
+
+describe("DEF-207 — recovered boots surface user feedback (ADV-028)", () => {
+  // The renderer-side half of the "settings silently normalized"
+  // finding: when the backend cannot read/parse settings.json the
+  // renderer boots on defaults (recovered=true), and the App boot
+  // wiring must surface that to the user instead of letting the
+  // substitution pass unnoticed. These tests pin the flag contract
+  // the wiring depends on and the user-facing notice strings the
+  // wiring emits.
+  it("a valid load never flags recovery (no feedback for normal boots)", () => {
+    const r = resolveInitialSettings(
+      ok({
+        theme: "frosted",
+        geometry: { x: 0, y: 0, width: 800, height: 600, maximized: false },
+        recentFiles: [],
+      }),
+    );
+    expect(r.recovered).toBe(false);
+  });
+
+  it("corrupt and io loads flag recovery (the trigger for the notice)", () => {
+    expect(resolveInitialSettings(err("corrupt-settings", "bad json")).recovered).toBe(true);
+    expect(resolveInitialSettings(err("io", "unreadable")).recovered).toBe(true);
+  });
+
+  it("the recovery notice carries user-facing toast text and a console log line", () => {
+    const notice = settingsRecoveryNotice();
+    expect(notice.toast.length).toBeGreaterThan(0);
+    expect(notice.log.length).toBeGreaterThan(0);
+    // The toast must tell the user what actually happened (defaults
+    // were restored), not just "an error occurred".
+    expect(notice.toast).toContain("default settings");
+    expect(notice.toast).toContain("restored");
+    // The console line names the culprit file for support diagnosis.
+    expect(notice.log).toContain("settings.json");
+  });
+
+  it("recovered defaults are a clone — mutating them cannot corrupt the module default", () => {
+    const r = resolveInitialSettings(err("corrupt-settings", "bad json"));
+    r.settings.geometry.maximized = true;
+    expect(DEFAULT_SETTINGS.geometry.maximized).toBe(false);
   });
 });

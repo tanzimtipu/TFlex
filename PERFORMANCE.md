@@ -107,3 +107,16 @@
 
 *Method: e2e/retests/def_195_196_197_retest.spec.cjs via the standard Playwright Electron harness on the uncommitted Phase-15 fix build (dist 20:47 from the current tree: View Transitions crossfade in hooks/useAnimations.ts, scoped 6-property fallback in styles/animations.css, press token wired in styles.css chunk 2, tfPresets -> motionTokens wiring). Same measurement shapes as the filing run e2e/anim_audit.spec.cjs so the numbers are directly comparable. Frame-time graph rendered from the raw rAF timestamps by e2e/lib/framegraph.cjs (pngjs). Recorded by qa at the DEF-195/196/197 retest (2026-09-13).*
 
+## Bug-sweep re-time (dev build 1.13.0, pre-feature comprehensive sweep, 2026-09-12)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Cold start to interactive | < 3000ms | 563ms (second launch in the same run: 602ms) | PASS |
+| Open long.pdf (520 pages) to first canvas | < 3000ms | 1096ms (second measure 1091ms) | PASS |
+| Idle memory (main process RSS), long.pdf open, 10s idle | < 400MB | 125.70MB (second run 129.19MB); renderer JS heap 18.41MB | PASS |
+| Scroll fps over long.pdf (1400px/90ms steps, 3s window) | 60fps, no stalls | avg 60.0fps; p95 26.2ms; worst 30.3ms | PASS |
+| Tab open/close leak probe (10x) | stable | main RSS delta +0.5MB after 3s settle | PASS |
+| Theme crossfade frame rate (View Transitions path) | 60fps | 61.3-61.5fps; worst frame 17.3-17.6ms | PASS (DEF-195 fix holds) |
+
+*Method: e2e/bug_sweep_full.spec.cjs SWEEP-8/SWEEP-9 via the standard Playwright Electron harness on the dev build rebuilt from the current tree (npm.cmd run build; includes the uncommitted update-service.ts changes). Cold start = launchDev() -> .sample-card selector. Open = Open PDF -> .workspace -> first .pdf-page canvas. Memory via process.memoryUsage().rss in the main process (Playwright electronApp.evaluate), 8s idle after open; whole-app figure not re-measured (the DEF-016 note stands). Recorded by qa during the 2026-09-12 comprehensive bug sweep.*
+

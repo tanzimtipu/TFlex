@@ -213,6 +213,33 @@ export type Annotation =
   | NoteAnnotation
   | CalloutAnnotation;
 
+// ---------------------------------------------------------------------------
+// Per-page annotation limits (DEF-209)
+
+/** Maximum annotations the renderer will mirror for a SINGLE page. A
+ *  document that exceeds this on any page (adversarial finding ADV-030:
+ *  a synthetic 5000-annotation PDF rendered zero pages) is rejected at
+ *  open time instead of freezing the UI — the annotation overlay and
+ *  the annotations panel both render the full per-page list. */
+export const MAX_ANNOTATIONS_PER_PAGE = 1000;
+
+/** Return the 1-based page number of the FIRST page whose annotation
+ *  count exceeds `MAX_ANNOTATIONS_PER_PAGE`, or null when every page is
+ *  within the limit. Accepts anything with the model's `page` field so
+ *  callers can hand it the raw wire list before conversion. */
+export function firstPageOverAnnotationLimit(
+  annotations: ReadonlyArray<{ page: number }>,
+): number | null {
+  const counts = new Map<number, number>();
+  for (const a of annotations) {
+    counts.set(a.page, (counts.get(a.page) ?? 0) + 1);
+  }
+  for (const [page, count] of counts) {
+    if (count > MAX_ANNOTATIONS_PER_PAGE) return page;
+  }
+  return null;
+}
+
 /** Fields the user can change after creation (via the annotations panel or
  *  the inline note editor). `color` accepts both built-in names and free-form
  *  hex strings so the picker can apply custom colors. */

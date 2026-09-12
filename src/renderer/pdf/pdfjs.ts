@@ -122,6 +122,14 @@ export function buildDocumentInit(
  * Parse raw bytes with pdf.js. The IPC sniff pre-filters, but pdf.js is the
  * real parser: encrypted/invalid/malformed bytes fail here and must surface
  * the same user-facing error vocabulary.
+ *
+ * DEF-208 — a PDF whose page tree is broken can still resolve from
+ * `getDocument` with ZERO pages (the sniff path in main only checks the
+ * `%PDF-` header, so the bytes reach this function). A zero-page document
+ * is not openable: every viewer path (thumbnails, page slots, the engine
+ * pageOrder) derives from `numPages`, so we reject it here with the
+ * shared 'corrupt' code instead of letting an empty shell of a tab
+ * through.
  */
 export async function openPdfDocument(
   data: ArrayBuffer,
@@ -134,6 +142,10 @@ export async function openPdfDocument(
     const copy = new Uint8Array(data.byteLength);
     copy.set(new Uint8Array(data));
     const doc = await getDocument(buildDocumentInit(copy.buffer)).promise;
+    if (doc.numPages === 0) {
+      void doc.destroy().catch(() => undefined);
+      return { error: 'corrupt' };
+    }
     return { doc };
   } catch (error) {
     return { error: mapPdfjsError(error) };

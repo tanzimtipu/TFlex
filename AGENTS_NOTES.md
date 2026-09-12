@@ -1,5 +1,54 @@
 # AGENTS_NOTES.md — model swaps and operational log
 
+## 2026-09-13: backend-dev and frontend-dev moved to a local model (NInfer / RTX 4090)
+
+- **backend-dev and frontend-dev (DeepSeek Harness only) re-pinned** from `z-ai/glm-5.2` and
+  `z-ai/glm-5.3-flash` to the local route `local-ninfer` / `qwen3.8-27b`, served by the NInfer
+  engine at `http://127.0.0.1:8080/v1`.
+- Reason: zero marginal token cost, no rate limits, and - the strongest argument - no
+  account-level data-policy rejection, a failure that has already stopped this build twice
+  (2026-08-27 qa, 2026-08-30 frontend-dev).
+- Pre-flight checks, all passed before the swap: `/v1/models` lists `qwen3.8-27b`;
+  `/v1/chat/completions` returned `finish_reason: tool_calls` with a correctly named function and
+  well-formed JSON arguments; a tool result fed back produced a correct final answer; reasoning
+  arrives in a separate `reasoning_content` field; ~148 tok/s decode with MTP speculation.
+- Serving profile: `--vision --kv-dtype rk4v4-e8 --spec mtp --draft-tokens 4 --lm-head-draft
+  --max-context 65536`. Weights are 16.95 GiB; loaded, the server holds roughly 23 GiB of the
+  24.5 GiB card.
+- **qa was NOT moved, deliberately.** qa drives the real Electron app under Playwright, and that
+  suite needs the GPU the model occupies - with the model loaded the app is left about 1 GiB of
+  VRAM. qa stays on `z-ai/glm-5.3-flash`. This deviates from the instruction to move all three
+  roles, and the deviation is based on measured VRAM, not preference.
+- Lifecycle: `scripts/ninfer-model.ps1 status|start|stop|restart`. It requires
+  `-ExecutionPolicy Bypass`, because the machine's execution policy is Undefined at every scope.
+  The orchestrator is instructed to start the model before dispatching a local role, stop it once
+  that work is done, and keep it stopped around e2e runs.
+- Cloud fallbacks: `z-ai/glm-5.2` (backend-dev) and `z-ai/glm-5.3-flash` (frontend-dev) remain in
+  the allow-list. Repinning is a one-line preset edit, and only the human makes it.
+## 2026-09-11 (later): feature-scout role added (DeepSeek Harness)
+
+- New sixth sub-agent role: **feature-scout**. It finds capabilities that peer PDF products have
+  and TFlex does not, and returns them as proposals. The orchestrator dispatches it with
+  `dispatch_feature_scout` (read-only), shows the batch to the human, and records it in
+  `docs/FEATURE-BACKLOG.md`.
+- **Pin: `z-ai/glm-5.3-flash`, fallback `deepseek/deepseek-v4-flash`.** A batch costs roughly
+  $0.003 either way — `deepseek/deepseek-v4-flash` is about 13% cheaper per run, which is
+  roughly $0.0004, so the choice was made on capability and fleet consistency rather than price.
+  Both models were already in the allow-list, so this adds no new model to track. Recorded here
+  per the model-fallback rule; this was a new primary selection, not an emergency fallback.
+- **It is the only role with no write access.** Its tool filter denies `write`, `edit` and
+  `pwsh`. It reads untrusted web pages, so the injection-to-write path is closed by composition
+  rather than by instruction. The orchestrator owns every write it accounts for.
+- Two new files: `docs/FEATURE-SOURCES.md` (hand-maintained page list; `web_search` is not
+  configured on this deployment, so it is the only discovery surface) and
+  `docs/FEATURE-BACKLOG.md` (FEA-NNN ledger, orchestrator-written, mirroring the
+  adversary/disposition pattern).
+- AGENTS.md updated: the team list, the model-fallback table, and a new
+  `docs/FEATURE-BACKLOG.md` ledger section.
+- Source coverage is Adobe Acrobat Pro and iLovePDF plus PDF24, Sejda, PDF-XChange, Foxit,
+  Smallpdf and Stirling PDF. Stirling PDF matters most for an offline app: it is self-hostable,
+  so its feature set is the honest like-for-like comparison.
+
 ## 2026-09-11: Orchestration ported to the DeepSeek Harness; frontend-dev gains a vision route
 
 - Context: TFlex's orchestration now also runs on the DeepSeek Harness (see `.dsh/README.md`).

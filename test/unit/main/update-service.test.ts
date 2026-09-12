@@ -154,25 +154,41 @@ describe('UpdateService — portable build', () => {
 });
 
 // ---------------------------------------------------------------------------
-// UpdateService — missing token
+// UpdateService — no token (public feed, OTA works for all users)
 // ---------------------------------------------------------------------------
 
-describe('UpdateService — missing token', () => {
+describe('UpdateService — no token (public feed)', () => {
   beforeEach(() => {
     clearEnv();
     _mockReadFileSync.mockReturnValue(JSON.stringify({ repository: 'tanzimtipu/TFlex' }));
+    _autoUpdaterRemoveAll();
+    _autoUpdaterOn.mockClear();
+    _checkForUpdates.mockClear();
+    _checkForUpdates.mockResolvedValue(undefined);
+    _setFeedURL.mockClear();
   });
 
-  it('sets error state when TFLEX_GH_TOKEN is not set', () => {
+  it('configures a public feed without a token and does not error', () => {
     const svc = new UpdateService();
     svc.init();
-    const status = svc.getStatus();
-    expect(status.kind).toBe('error');
+    expect(_setFeedURL).toHaveBeenCalledWith({
+      provider: 'github',
+      owner: 'tanzimtipu',
+      repo: 'tflex-releases',
+      private: false,
+    });
+    expect(svc.getStatus().kind).not.toBe('error');
+  });
+
+  it('starts checking for updates without a token', () => {
+    const svc = new UpdateService();
+    svc.init();
+    expect(_checkForUpdates).toHaveBeenCalled();
   });
 });
 
 // ---------------------------------------------------------------------------
-// UpdateService — GH_TOKEN fallback (private provider token selection)
+// UpdateService — GH_TOKEN fallback (optional token attached to public feed)
 // ---------------------------------------------------------------------------
 
 describe('UpdateService — GH_TOKEN fallback', () => {
@@ -190,20 +206,20 @@ describe('UpdateService — GH_TOKEN fallback', () => {
     clearEnv();
   });
 
-  it('uses GH_TOKEN when TFLEX_GH_TOKEN is not set', () => {
+  it('attaches GH_TOKEN to the public feed when TFLEX_GH_TOKEN is not set', () => {
     process.env.GH_TOKEN = 'gh-fallback-token';
     const svc = new UpdateService();
     svc.init();
     expect(_setFeedURL).toHaveBeenCalledWith({
       provider: 'github',
       owner: 'tanzimtipu',
-      repo: 'TFlex',
-      private: true,
+      repo: 'tflex-releases',
+      private: false,
       token: 'gh-fallback-token',
     });
   });
 
-  it('prefers TFLEX_GH_TOKEN over GH_TOKEN', () => {
+  it('prefers TFLEX_GH_TOKEN over GH_TOKEN for the feed token', () => {
     process.env.TFLEX_GH_TOKEN = 'primary-token';
     process.env.GH_TOKEN = 'fallback-token';
     const svc = new UpdateService();
@@ -211,8 +227,8 @@ describe('UpdateService — GH_TOKEN fallback', () => {
     expect(_setFeedURL).toHaveBeenCalledWith({
       provider: 'github',
       owner: 'tanzimtipu',
-      repo: 'TFlex',
-      private: true,
+      repo: 'tflex-releases',
+      private: false,
       token: 'primary-token',
     });
   });
@@ -258,8 +274,8 @@ describe('UpdateService — initialised', () => {
     expect(_setFeedURL).toHaveBeenCalledWith({
       provider: 'github',
       owner: 'tanzimtipu',
-      repo: 'TFlex',
-      private: true,
+      repo: 'tflex-releases',
+      private: false,
       token: 'test-token',
     });
   });
@@ -690,15 +706,15 @@ describe('UpdateService — checkForUpdates (manual re-check)', () => {
     expect(result.kind).toBe('unsupported');
   });
 
-  it('is a no-op when the token is missing (no feed configured)', async () => {
+  it('checks for updates without a token (public feed configured)', async () => {
     delete process.env.TFLEX_GH_TOKEN;
     delete process.env.GH_TOKEN;
     const svc = new UpdateService();
     svc.init();
     _checkForUpdates.mockClear();
     const result = await svc.checkForUpdates();
-    expect(_checkForUpdates).not.toHaveBeenCalled();
-    expect(result.kind).toBe('error');
+    expect(_checkForUpdates).toHaveBeenCalled();
+    expect(result.kind).not.toBe('error');
   });
 
   it('does not interrupt an in-progress download', async () => {

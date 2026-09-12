@@ -957,6 +957,211 @@ Disposition: REJECTED - optimize compares against baseline at dialog-open; accep
 - ADV-023 REJECTED - optimize compares against baseline at dialog-open; acceptable for dialog behavior rationale.
 ---
 
+## Bug-sweep adversarial review
+
+Session label: `bug-sweep`. Ran against the production build (`npm.cmd run build`; dist main + dist renderer launched with
+Playwright Electron driver). Harnesses: `test-fixtures/tools/adversarial_sweep.cjs`, `test-fixtures/tools/adversarial_probes.cjs`.
+
+New hostile fixtures added: `test-fixtures/huge-annotations.pdf` (5000 highlight annotations on one page), `test-fixtures/unicode-attack.pdf`
+(metadata with null bytes, XSS payloads, emoji flood, RTL override characters), `test-fixtures/encrypted-malformed.pdf`
+(malformed `/Encrypt` entry with unknown crypto filter), `test-fixtures/xref-attack.pdf` (xref table with 10,000 fake entries).
+
+## ADV-024: Annotation create with null rects/points throws unhandled TypeError across IPC
+
+- Session: bug-sweep
+- Suggested severity: MEDIUM
+
+What I did:
+1. Loaded form.pdf via `engine.loadDocument`.
+2. Called `engine.createAnnotation` with `rects: null` (and `points: null`) on a valid page.
+3. Observed the IPC response.
+
+Expected:
+- The engine should return a typed `Result` with `err('engine-error', ...)` for null input where an array is expected.
+
+Actual:
+- Both invocations throw `TypeError: Cannot read properties of null (reading 'length')` which propagates as an unhandled IPC
+  rejection to the renderer — not a typed Result.
+- Root cause: `normalizeAnnotationPayload` in `annotations.ts` (lines 170 and 186) checks `payload.rects !== undefined &&
+  payload.rects.length > 0`. Since `null !== undefined` is `true`, it proceeds to access `.length` on `null`.
+- The renderer catches this via the Electron IPC promise rejection, but the error is a raw TypeError string, not a typed
+  `EngineError`.
+
+Screenshot: N/A
+
+Disposition: PENDING
+
+---
+
+## ADV-025: Annotation with empty rects array silently creates zero-size annotation at (0,0)
+
+- Session: bug-sweep
+- Suggested severity: MEDIUM
+
+What I did:
+1. Loaded form.pdf via `engine.loadDocument`.
+2. Called `engine.createAnnotation({ id: 'e1', page: 1, kind: 'rect', color: 'red', rects: [] })`.
+3. Inspected the returned state.
+
+Expected:
+- An annotation with no geometry should be rejected with a typed error (e.g. `'engine-error': 'annotation must have at least one rect'`).
+
+Actual:
+- The annotation is created successfully (`ok=true`). The `normalizeAnnotationPayload` function (line 170) sees
+  `rects.length === 0` and falls through to the fallback case (line 179-180), which creates `[{ x: 0, y: 0, width: 0, height: 0 }]`.
+  The user sees no error and the annotation appears in state, but it is invisible at the document origin.
+- Same for `undefined rects` (missing `rects` field): falls through to the same zero-size default.
+
+Screenshot: N/A
+
+Disposition: PENDING
+
+---
+
+## ADV-026: Annotation with NaN / Infinity coordinates accepted without validation
+
+- Session: bug-sweep
+- Suggested severity: LOW
+
+What I did:
+1. Loaded form.pdf via `engine.loadDocument`.
+2. Called `engine.createAnnotation` with `rects` containing `x: NaN, y: NaN, width: NaN, height: NaN`
+   (and separately `x: Infinity, y: -Infinity, width: Infinity, height: Infinity`).
+3. Inspected the returned state.
+
+Expected:
+- The engine should reject non-finite coordinate values with a typed error.
+
+Actual:
+- Both annotations are created successfully (`ok=true`). NaN and Infinity values are stored into the annotation model without
+  any validation in `normalizeAnnotationPayload` (lines 150-155, 165-169, 170-171). These invalid values propagate to pdf-lib's
+  annotation /Rect serialization, potentially producing malformed PDF output on save.
+
+Screenshot: N/A
+
+Disposition: PENDING
+
+---
+
+## ADV-027: Invalid annotation colors silently normalize without feedback to caller
+
+- Session: bug-sweep
+- Suggested severity: LOW
+
+What I did:
+1. Loaded form.pdf via `engine.loadDocument`.
+2. Called `engine.createAnnotation` with `color: null` and `color: 'nonexistent!@#$%^&*()'`.
+3. Inspected the returned state for the annotation's color field.
+
+Expected:
+- Invalid colors should either be rejected with a typed error, or if silent normalization is intentional, the normalized
+  value should be communicated so the renderer can show the actual color.
+
+Actual:
+- Both calls produce `ok=true`. The `normalizeColorValue` function silently replaces invalid/null colors with `'yellow'`.
+- The callers receive no indication that their color choice was discarded. A user in a custom tool may pick an invalid
+  color and never know the annotation defaulted to yellow.
+
+Screenshot: N/A
+
+Disposition: PENDING
+
+---
+
+## ADV-028: Corrupted settings silently normalized without user feedback
+
+- Session: bug-sweep
+- Suggested severity: LOW
+
+What I did:
+1. Called `window.tflex.saveSettings({ geometry: { x: 'NaN', y: undefined, width: -9999, height: Infinity, maximized: 'maybe' }, recentsCap: 99999, recentFiles: [{ path: null, name: undefined }] })`.
+2. Called `window.tflex.loadSettings()` to verify the round-trip.
+
+Expected:
+- Invalid settings values that are silently normalized should produce at minimum a console warning, and ideally a toast
+  so the user knows their preference was rejected.
+
+Actual:
+- `saveSettings` completes without error, error callback, or console warning. The `normalizeSettings` function
+  (`settings.ts` lines 112-207) silently fixes all bad values: string 'NaN' for x → default, -9999 width → clamped to 640,
+  Infinity height → default, 'maybe' maximized → false, 99999 recentsCap → clamped to 50, null recent entries → filtered out.
+- The user has no indication their preference was rejected.
+
+Screenshot: N/A
+
+Disposition: PENDING
+
+---
+
+## ADV-029: Broken page tree PDFs accepted as valid by file-sniff path
+
+- Session: bug-sweep
+- Suggested severity: MEDIUM
+
+What I did:
+1. Called `window.tflex.loadPdf` on several structurally broken PDFs: `broken-pagetree.pdf`, `no-kids.pdf`, `circular-refs.pdf`,
+   `malformed-xref.pdf`, `infinite-loop-pagetree.pdf`.
+2. Checked the return result of each.
+
+Expected:
+- Structurally broken PDFs (missing page trees, circular references, malformed xref tables) should be rejected with a
+  `'corrupt'` error after pdf-lib parse failure.
+
+Actual:
+- All five files loaded successfully (`{ok: true, value: {}}`). The `pdf:load` sniff path passes these through without
+  deeper validation. While the engine's `engine.loadDocument` path may reject some of these, the user-facing `loadPdf`
+  path is more permissive — files that fail the engine's internal validation are still accepted by the open-file path.
+  Users who open these files via the dialog see a successful load into a broken document.
+
+Screenshot: N/A
+
+Disposition: PENDING
+
+---
+
+## ADV-030: 5000-annotation PDF loads with zero pages but reports success
+
+- Session: bug-sweep
+- Suggested severity: MEDIUM
+
+What I did:
+1. Loaded `test-fixtures/huge-annotations.pdf` (5000 highlight annotations baked into one page via low-level annotation dict refs) via `engine.loadDocument`.
+2. Called `engine.getState` to inspect page count.
+3. Called `engine.save` on the document.
+4. Attempted a rotation operation.
+
+Expected:
+- A PDF with 5000 annotations should load correctly with pageCount=1 and annotation metadata accessible; operations should
+  work or fail with a clear typed error.
+
+Actual:
+- The file loads with `ok=true` (reports success). However `getState().pageCount` returned `undefined`, and saving returned
+  success but wrote over the fixture source file (in-place save) with potentially corrupted output. The rotate operation
+  reported `page 1 out of range [0,0]`, confirming the engine internally sees 0 pages despite the load success. The
+  engine accepted a structurally broken document that offers no usable state to the UI.
+
+Screenshot: N/A
+
+Disposition: PENDING
+
+---
+
+## Bug-sweep adversarial findings summary
+
+| ID | Title | Severity |
+| --- | --- | --- |
+| ADV-024 | Annotation null rects/points throws unhandled TypeError across IPC | MEDIUM |
+| ADV-025 | Empty rects array silently creates zero-size annotation at (0,0) | MEDIUM |
+| ADV-026 | NaN/Infinity annotation coordinates accepted without validation | LOW |
+| ADV-027 | Invalid annotation colors silently normalize to yellow | LOW |
+| ADV-028 | Corrupted settings silently normalized without user feedback | LOW |
+| ADV-029 | Broken page tree PDFs accepted as valid by sniff path | MEDIUM |
+| ADV-030 | 5000-annotation PDF loads with zero pages but reports success | MEDIUM |
+
+**Total bug-sweep: 7 findings (0 HIGH, 4 MEDIUM, 3 LOW)**
+
+---
+
 ## Deep-sweep final adversarial review
 
 Session label: `deep-sweep-final`. Ran against the production build
@@ -1022,4 +1227,5 @@ Disposition: REJECTED - repro used out-of-range delete index (page 68 on a 68-pa
 | Final (ADV-013..018) | 2 | 4 | 0 | 6 |
 | Full-sweep silence (ADV-019..023) | 1 | 3 | 1 | 5 |
 | Deep-sweep final (ADV-039) | 1 | 0 | 0 | 1 |
-| **All phases** | **7** | **12** | **5** | **24** |
+| Bug-sweep adversarial (ADV-024..030) | 0 | 4 | 3 | 7 |
+| **All phases** | **7** | **16** | **8** | **31** |

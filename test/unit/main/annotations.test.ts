@@ -1585,7 +1585,7 @@ describe('B3: custom hex color round-trip', () => {
     }
   });
 
-  it('an invalid color still falls back to yellow (no regression)', async () => {
+  it('an invalid color is rejected, not silently normalized to yellow (ADV-027/DEF-206)', async () => {
     const engine = new EngineService();
     const { path } = await createNPagePdf(1);
     await engine.loadDocument('doc-1', path);
@@ -1594,10 +1594,12 @@ describe('B3: custom hex color round-trip', () => {
       kind: 'text-box',
       color: 'not-a-real-color',
     }));
-    expect(r.ok).toBe(true);
-    if (r.ok) {
-      const ann = getAnns(r.value).find((a: any) => a.kind === 'text-box');
-      expect(ann?.color).toBe('yellow');
+    // ADV-027/DEF-206: invalid colors must surface as an engine-error result,
+    // not silently default to yellow.
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/Invalid annotation color/i);
     }
   });
 
@@ -2096,5 +2098,251 @@ describe('DEF-174: highlight bakes /CA 0.35, other markup stays solid', () => {
     const ca = dict.get(PDFName.of('CA'));
     expect(ca).toBeDefined();
     expect((ca as any).asNumber()).toBeCloseTo(0.35, 5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADV-024/025/026/027 — annotation input validation (DEF-203..206)
+// ---------------------------------------------------------------------------
+
+describe('createAnnotation input validation (ADV-024..027)', () => {
+  it('ADV-024/DEF-203: null rects does not throw a TypeError, returns engine-error', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v24', path);
+
+    // `rects: null as any` previously passed `!== undefined` and crashed on
+    // `.length`. It must now surface as a typed engine-error result.
+    const r = await engine.createAnnotation('doc-v24', makePayload({
+      kind: 'highlight',
+      rects: null as any,
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+    }
+  });
+
+  it('ADV-024/DEF-203: non-array rects (e.g. an object) is rejected', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v24b', path);
+
+    const r = await engine.createAnnotation('doc-v24b', makePayload({
+      kind: 'highlight',
+      rects: { x: 1, y: 2, width: 3, height: 4 } as any,
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('engine-error');
+  });
+
+  it('ADV-025/DEF-204: empty rects array with no other geometry is rejected (no zero-size at 0,0)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v25', path);
+
+    const r = await engine.createAnnotation('doc-v25', makePayload({
+      kind: 'highlight',
+      rects: [],
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/at least one rect/i);
+    }
+  });
+
+  it('ADV-025/DEF-204: missing all geometry is rejected (no zero-size fallback)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v25b', path);
+
+    const r = await engine.createAnnotation('doc-v25b', makePayload({
+      kind: 'highlight',
+      rects: undefined,
+      rect: undefined,
+      at: undefined,
+      from: undefined,
+      to: undefined,
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/at least one rect/i);
+    }
+  });
+
+  it('ADV-026/DEF-205: NaN rect coordinate is rejected', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v26a', path);
+
+    const r = await engine.createAnnotation('doc-v26a', makePayload({
+      kind: 'rect',
+      rects: [{ x: Number.NaN, y: 100, width: 50, height: 50 }],
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/finite non-negative/i);
+    }
+  });
+
+  it('ADV-026/DEF-205: Infinity rect dimension is rejected', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v26b', path);
+
+    const r = await engine.createAnnotation('doc-v26b', makePayload({
+      kind: 'rect',
+      rects: [{ x: 0, y: 0, width: Number.POSITIVE_INFINITY, height: 50 }],
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/finite non-negative/i);
+    }
+  });
+
+  it('ADV-026/DEF-205: negative rect coordinate is rejected', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v26c', path);
+
+    const r = await engine.createAnnotation('doc-v26c', makePayload({
+      kind: 'rect',
+      rects: [{ x: -10, y: 100, width: 50, height: 50 }],
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/finite non-negative/i);
+    }
+  });
+
+  it('ADV-026/DEF-205: zero-size rect (width 0) is rejected', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v26d', path);
+
+    const r = await engine.createAnnotation('doc-v26d', makePayload({
+      kind: 'rect',
+      rects: [{ x: 100, y: 100, width: 0, height: 50 }],
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/positive width and height/i);
+    }
+  });
+
+  it('ADV-026/DEF-205: NaN point in arrow endpoints is rejected', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v26e', path);
+
+    const r = await engine.createAnnotation('doc-v26e', makePayload({
+      kind: 'arrow',
+      from: { x: Number.NaN, y: 100 },
+      to: { x: 200, y: 200 },
+      color: 'red',
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/finite non-negative/i);
+    }
+  });
+
+  it('ADV-027/DEF-206: undefined color is rejected, not defaulted to yellow', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v27a', path);
+
+    const r = await engine.createAnnotation('doc-v27a', makePayload({
+      kind: 'text-box',
+      color: undefined as any,
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/Invalid annotation color/i);
+    }
+  });
+
+  it('ADV-027/DEF-206: empty-string color is rejected', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v27b', path);
+
+    const r = await engine.createAnnotation('doc-v27b', makePayload({
+      kind: 'text-box',
+      color: '',
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/Invalid annotation color/i);
+    }
+  });
+
+  it('ADV-027/DEF-206: a malformed hex is rejected (not silently snapped)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-v27c', path);
+
+    const r = await engine.createAnnotation('doc-v27c', makePayload({
+      kind: 'text-box',
+      color: '#gggggg',
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/Invalid annotation color/i);
+    }
+  });
+
+  // Regression guards: valid inputs still create successfully.
+  it('valid named color + valid rects still creates (no regression)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-vok', path);
+
+    const r = await engine.createAnnotation('doc-vok', makePayload({
+      kind: 'rect',
+      rects: [{ x: 50, y: 400, width: 150, height: 100 }],
+      color: 'red',
+    }));
+    expect(r.ok).toBe(true);
+  });
+
+  it('valid custom hex color still creates (no regression)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-vok2', path);
+
+    const r = await engine.createAnnotation('doc-vok2', makePayload({
+      kind: 'text-box',
+      color: '#1a2b3c',
+    }));
+    expect(r.ok).toBe(true);
+  });
+
+  it('note kind with only `at` still creates a 24x24 rect (no regression)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-vok3', path);
+
+    const r = await engine.createAnnotation('doc-vok3', makePayload({
+      kind: 'note',
+      at: { x: 100, y: 100 },
+      color: 'yellow',
+    }));
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const ann = getAnns(r.value).find((a: any) => a.kind === 'note') as any;
+      expect(ann.rects[0].width).toBe(24);
+      expect(ann.rects[0].height).toBe(24);
+    }
   });
 });

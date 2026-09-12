@@ -59,6 +59,26 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     setCapDraft(String(recentsCap));
   }, [recentsCap]);
 
+  // DEF-201 — close the sheet on Escape. Every other dialog in the app
+  // (DeletePageDialog, MergeDialog, OptimizeDialog, ...) installs a
+  // window-level keydown listener while open; the preferences sheet was
+  // the odd one out, so Escape only closed it via the X button or a
+  // backdrop click. The listener is installed only while `open` so it
+  // is gone as soon as the sheet closes.
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return (): void => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open, onClose]);
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;

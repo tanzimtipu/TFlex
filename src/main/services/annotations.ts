@@ -115,16 +115,61 @@ export function colorToRgb(color: string): [number, number, number] {
 }
 
 /** Normalize an incoming color string from the wire. A named preset or a hex
- *  is preserved verbatim; anything else (missing/empty/unknown) falls back to
- *  'yellow' so the annotation is still created with a usable color. */
+ *  is preserved verbatim; anything else (missing/empty/unknown) is rejected
+ *  instead of silently defaulting to yellow (ADV-027/DEF-206: silent
+ *  normalization hid bad input from callers). Throws a descriptive Error so
+ *  the create path can surface it as an engine-error result. */
 export function normalizeColorValue(color: string | undefined): string {
-  if (color !== undefined && isValidColorValue(color)) return color;
-  return 'yellow';
+  if (typeof color === 'string' && isValidColorValue(color)) return color;
+  throw new Error(`Invalid annotation color: ${color}`);
 }
 
 // ---------------------------------------------------------------------------
 // Renderer Annotation -> internal AnnModel conversion
 // ---------------------------------------------------------------------------
+
+/** True when `n` is a finite, non-negative number (ADV-026/DEF-205: NaN and
+ *  Infinity must not reach the PDF object stream, where they would serialize
+ *  as invalid tokens and corrupt the annotation dict). */
+function isFiniteNonNegative(n: unknown): n is number {
+  return typeof n === 'number' && !Number.isNaN(n) && Number.isFinite(n) && n >= 0;
+}
+
+/** Validate a single rect object `{ x, y, width, height }` coming off the wire.
+ *  All four fields must be finite non-negative numbers and the rect must have
+ *  strictly positive width and height — a zero-size rect produces an invisible
+ *  annotation at (0,0) (ADV-025/DEF-204) and is rejected rather than silently
+ *  created. Returns a clean AnnRect copy. */
+function validateRect(rect: unknown): AnnRect {
+  if (typeof rect !== 'object' || rect === null) {
+    throw new Error('Rect must be { x, y, width, height }');
+  }
+  const r = rect as Record<string, unknown>;
+  const { x, y, width, height } = r;
+  if (!isFiniteNonNegative(x) || !isFiniteNonNegative(y) ||
+      !isFiniteNonNegative(width) || !isFiniteNonNegative(height)) {
+    throw new Error('Rect coordinates must be finite non-negative numbers');
+  }
+  if (width <= 0 || height <= 0) {
+    throw new Error('Rect must have positive width and height');
+  }
+  return { x, y, width, height };
+}
+
+/** Validate a single point `{ x, y }` coming off the wire (arrow endpoints,
+ *  ink strokes, note/callout anchors). Both fields must be finite
+ *  non-negative numbers. Returns a clean AnnPoint copy. */
+function validatePoint(p: unknown): AnnPoint {
+  if (typeof p !== 'object' || p === null) {
+    throw new Error('Point must be { x, y }');
+  }
+  const pt = p as Record<string, unknown>;
+  const { x, y } = pt;
+  if (!isFiniteNonNegative(x) || !isFiniteNonNegative(y)) {
+    throw new Error('Point coordinates must be finite non-negative numbers');
+  }
+  return { x, y };
+}
 
 /**
  * Normalize the renderer's Annotation shape (which uses different key names
@@ -147,16 +192,13 @@ function normalizeAnnotationPayload(payload: CreateAnnotationPayload): AnnModel 
     // text-box/rect/ellipse/callout: `rect` is the box/shape geometry.
     // Overwrite rects[0] from it; preserve any extra rects beyond [0]
     // (multi-rect text markup should not be affected since it sends no `rect`).
-    const primary: AnnRect = {
-      x: payload.rect.x,
-      y: payload.rect.y,
-      width: payload.rect.width,
-      height: payload.rect.height,
-    };
-    if (payload.rects !== undefined && payload.rects.length > 1) {
+    const primary = validateRect(payload.rect);
+    // ADV-024/DEF-203: `!= null && Array.isArray` — a `null` rects value must
+    // not pass the guard and crash on `.length` access.
+    if (payload.rects != null && Array.isArray(payload.rects) && payload.rects.length > 1) {
       rects = [
         primary,
-        ...payload.rects.slice(1).map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height })),
+        ...payload.rects.slice(1).map((r) => validateRect(r)),
       ];
     } else {
       rects = [primary];
@@ -166,25 +208,35 @@ function normalizeAnnotationPayload(payload: CreateAnnotationPayload): AnnModel 
     // rather than backfilling from a stale `rects[0]` (which lost the move).
     // (callout reaches the `rect` branch above before this; its `at` anchor
     // is preserved separately via `at: payload.at` on the returned model.)
-    rects = [{ x: payload.at.x, y: payload.at.y, width: 24, height: 24 }];
-  } else if (payload.rects !== undefined && payload.rects.length > 0) {
-    rects = payload.rects.map((r) => ({ x: r.x, y: r.y, width: r.width, height: r.height }));
+    const at = validatePoint(payload.at);
+    rects = [{ x: at.x, y: at.y, width: 24, height: 24 }];
+  } else if (payload.rects != null && Array.isArray(payload.rects) && payload.rects.length > 0) {
+    // ADV-024: null/non-array rects no longer fall through to the zero-size
+    // branch silently; they are rejected. ADV-026: every entry is validated.
+    rects = payload.rects.map((r) => validateRect(r));
   } else if (payload.from !== undefined && payload.to !== undefined) {
-    // Arrow: compute bbox from endpoints
-    const minX = Math.min(payload.from.x, payload.to.x);
-    const minY = Math.min(payload.from.y, payload.to.y);
-    const maxX = Math.max(payload.from.x, payload.to.x);
-    const maxY = Math.max(payload.from.y, payload.to.y);
+    // Arrow: compute bbox from endpoints (validated points). The bbox may be
+    // zero-area when from==to; that is acceptable for a Line annotation whose
+    // real geometry lives in /L, so the computed bbox is NOT run through
+    // validateRect's positive-size check.
+    const from = validatePoint(payload.from);
+    const to = validatePoint(payload.to);
+    const minX = Math.min(from.x, to.x);
+    const minY = Math.min(from.y, to.y);
+    const maxX = Math.max(from.x, to.x);
+    const maxY = Math.max(from.y, to.y);
     rects = [{ x: minX, y: minY, width: maxX - minX, height: maxY - minY }];
   } else {
-    rects = [{ x: 0, y: 0, width: 0, height: 0 }];
+    // ADV-025/DEF-204: no geometry source at all. Previously this created a
+    // zero-size annotation at (0,0); now it fails loud so bad input surfaces.
+    throw new Error('Annotation requires at least one rect');
   }
 
   let points: AnnPoint[] | undefined;
   if (payload.from !== undefined && payload.to !== undefined) {
-    points = [{ x: payload.from.x, y: payload.from.y }, { x: payload.to.x, y: payload.to.y }];
-  } else if (payload.points !== undefined && payload.points.length > 0) {
-    points = payload.points.map((p) => ({ x: p.x, y: p.y }));
+    points = [validatePoint(payload.from), validatePoint(payload.to)];
+  } else if (payload.points !== undefined && Array.isArray(payload.points) && payload.points.length > 0) {
+    points = payload.points.map((p) => validatePoint(p));
   }
 
   const content = payload.content ?? payload.text;
@@ -277,7 +329,17 @@ export function createAnnotation(
   }
   const origIdx = order[visiblePage - 1];
 
-  const model = normalizeAnnotationPayload(payload);
+  // ADV-024/025/026/027: normalizeAnnotationPayload now throws on invalid
+  // geometry/color instead of silently producing a degenerate annotation.
+  // Surface the message as an engine-error result so the IPC layer returns a
+  // typed failure rather than crashing the engine queue.
+  let model: AnnModel;
+  try {
+    model = normalizeAnnotationPayload(payload);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return err('engine-error', msg);
+  }
 
   if (annotations[origIdx] === undefined) {
     annotations[origIdx] = [];

@@ -43,7 +43,7 @@ import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./st
 import { nextTheme } from "./state/theme";
 import { useThemeTransition } from "./hooks/useAnimations";
 import { createAmbientController } from "./state/ambient";
-import { resolveInitialSettings } from "./state/settings";
+import { resolveInitialSettings, settingsRecoveryNotice } from "./state/settings";
 import {
   DEFAULT_OPTIMIZE_PRESET,
   DEFAULT_RECENTS_CAP,
@@ -112,6 +112,10 @@ import {
   rasterizeStamp,
 } from "./annotations/stampOps";
 import type { Annotation, AnnotationPatch } from "./annotations/model";
+import {
+  MAX_ANNOTATIONS_PER_PAGE,
+  firstPageOverAnnotationLimit,
+} from "./annotations/model";
 import { describeEngineError } from "./engine/types";
 import { stubRendererEngine } from "./engine/stubEngine";
 import {
@@ -642,6 +646,23 @@ export function App(): ReactElement {
   const settingsWriteSeqRef = useRef(0);
   const settingsPersistedRef = useRef<AppSettings | null>(null);
 
+  // DEF-202 — the window's live maximize state, mirrored from main.
+  // The geometry inside `settings` is NOT a reliable caption source:
+  // the echo filter (DEF-037) discards `settings.changed` payloads
+  // that differ from our latest local write, and a geometry report
+  // almost always differs (bounds move on every window drag while the
+  // renderer's snapshot keeps its last-write bounds). Main owns the
+  // window state — it reports geometry on every `maximize` /
+  // `unmaximize` / move / resize via the debounced report in
+  // window.ts, and each report lands here as a `settings.changed`
+  // echo. We therefore read `maximized` off EVERY echo, before the
+  // filter decides whether the rest of the payload applies, so the
+  // caption refreshes even when a local settings write (theme toggle,
+  // palette change, ...) has just advanced the write seq — previously
+  // that sequence left the caption showing "Maximize" on an
+  // already-maximized window.
+  const [windowMaximized, setWindowMaximized] = useState(false);
+
   // Cross-theme animation system — every theme application (boot, echo,
   // toggle, explicit picker choice) routes through the crossfade
   // controller. The FIRST apply (boot) lands without the transitioning
@@ -665,10 +686,36 @@ export function App(): ReactElement {
       setBootstrap(b);
       setSettings(b.settings);
       setTheme(b.settings.theme);
+      // DEF-202 — seed the caption from the boot settings' geometry.
+      setWindowMaximized(b.settings.geometry.maximized);
       setBootDone(true);
+      // DEF-207 — corrupted settings must not recover silently. When
+      // the backend could not parse settings.json (or it is not an
+      // object), resolveInitialSettings substituted the defaults; tell
+      // the user instead of letting the substitution pass unnoticed
+      // (the ADV-028 finding). Missing-file first boots are NOT
+      // recovered (load returns ok with defaults), so this toast only
+      // fires on real corruption / io failure.
+      if (b.recovered) {
+        const notice = settingsRecoveryNotice();
+        console.warn(notice.log);
+        // dispatchError (not pushToast): this effect is declared before
+        // pushToast's useCallback, so the deps array could not reference
+        // it; the reducer dispatch is stable and dependency-free.
+        dispatchError({
+          type: 'push',
+          toast: { kind: 'error', text: notice.toast },
+        });
+      }
     };
     runBoot();
     const unsubscribe = window.tflex.settings.changed((s) => {
+      // DEF-202 — window state rides EVERY echo (see the state slot
+      // comment above). Main re-reports geometry on maximize /
+      // unmaximize / move / resize; taking `maximized` from every echo
+      // keeps the caption in sync even when the echo filter drops the
+      // rest of the payload as a stale local-write reflection.
+      setWindowMaximized(s.geometry.maximized);
       // DEF-037 — echo filter. If we've made a local write since
       // this echo's underlying persist, AND the echo's content
       // doesn't match our latest snapshot, the echo is stale —
@@ -1121,6 +1168,26 @@ export function App(): ReactElement {
         stateResult.ok ? stateResult.value : null,
         parsed.doc.numPages,
       );
+      // DEF-209 — refuse documents whose per-page annotation count
+      // exceeds the renderer's mirror limit (ADV-030: a synthetic
+      // 5000-annotation PDF rendered zero pages — the annotation
+      // overlay and the annotations panel both render the full
+      // per-page list, so the open either froze or died mid-way with
+      // no feedback). A clear error beats a broken open. The check
+      // runs on the seeded state because that is the first moment the
+      // renderer sees what the engine parsed; the engine keeps its
+      // registered doc (there is no unload in the IPC contract) but
+      // no tab ever references it, matching the existing engine-load
+      // failure path.
+      const overLimitPage = firstPageOverAnnotationLimit(seeded.state.annotations);
+      if (overLimitPage !== null) {
+        void parsed.doc.destroy().catch(() => undefined);
+        pushToast(
+          "error",
+          `Too many annotations on page ${overLimitPage} (${MAX_ANNOTATIONS_PER_PAGE} max). The document was not opened.`,
+        );
+        return null;
+      }
       setOpenTabs((prev) => ({
         ...prev,
         [id]: {
@@ -6044,18 +6111,18 @@ pushToast(
     [tabs.tabs],
   );
 
-  // Phase 13 — maximize / restore icon for the custom title bar.
-  // The geometry echo from main (loadSettings / settings.changed)
-  // carries `geometry.maximized`; we read it directly off the
-  // settings snapshot and pass it through to TitleBar. The host
-  // also has the IPC handler `tflex.maximizeWindow()` toggle the
-  // window; the geometry echo lands in `settings.changed` within
-  // ~300ms (the existing GEOMETRY_DEBOUNCE_MS window) and updates
-  // this state. Reading from settings keeps it in sync with the
-  // rest of the App; no separate state slot needed. `settings` is
-  // narrowed to non-null below the `bootDone && settings !== null`
-  // guard, so the read is type-safe.
-  const isMaximized = settings !== null ? settings.geometry.maximized : false;
+  // Phase 13 / DEF-202 — maximize / restore icon for the custom title
+  // bar. This reads the dedicated `windowMaximized` mirror, NOT
+  // `settings.geometry.maximized`: the echo filter (DEF-037) discards
+  // `settings.changed` payloads that disagree with our latest local
+  // write, and a geometry report disagrees as soon as the window has
+  // moved/resized/maximized since that write — so reading the geometry
+  // off `settings` left the caption stale ("Maximize" on an
+  // already-maximized window). `windowMaximized` is updated from every
+  // echo (see the subscription near the top of the component) and
+  // seeded at boot, which keeps it in sync with the real window state
+  // main reports on maximize / unmaximize.
+  const isMaximized = windowMaximized;
 
   // Phase 13 — menu popover entries. The TitleBar renders a popover
   // listing every menu action with its accelerator; clicking an entry

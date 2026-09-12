@@ -196,6 +196,42 @@ function toHex(entry: AnnotationColorPreset | string): string {
   return typeof entry === 'string' ? entry : entry.hex;
 }
 
+/** True when the only difference between two AppSettings is the
+ *  geometry block. DEF-202 — main owns the geometry: the window
+ *  bounds + `maximized` flag are reported by the OS window and
+ *  re-persisted on every maximize / unmaximize / move / resize (the
+ *  debounced report in `src/main/window.ts`). The renderer NEVER
+ *  writes geometry, so a geometry-only delta between an echo and our
+ *  latest write snapshot can only be main's live window state, never
+ *  a stale reflection of a local write. Such echoes are applied so
+ *  `settings.geometry` stays fresh (the maximize caption itself reads
+ *  the dedicated mirror that updates from EVERY echo — see App.tsx
+ *  DEF-202 — because an echo that ALSO carries a stale non-geometry
+ *  field from a race must still refresh the caption while the filter
+ *  rejects the rest). */
+export function differsOnlyInGeometry(a: AppSettings, b: AppSettings): boolean {
+  // Every field EXCEPT geometry must match.
+  if (a.theme !== b.theme) return false;
+  if (a.themeDefault !== b.themeDefault) return false;
+  if (a.recentsCap !== b.recentsCap) return false;
+  if (a.toolsPaletteLayout !== b.toolsPaletteLayout) return false;
+  if (a.optimizePreset !== b.optimizePreset) return false;
+  if (a.exportImageFormat !== b.exportImageFormat) return false;
+  if (a.exportImageDpi !== b.exportImageDpi) return false;
+  if (a.createImageQuality !== b.createImageQuality) return false;
+  if (a.editDefaultFont !== b.editDefaultFont) return false;
+  if (a.ocrLanguage !== b.ocrLanguage) return false;
+  if (a.ocrDownsample !== b.ocrDownsample) return false;
+  if (a.defaultStampId !== b.defaultStampId) return false;
+  if (a.saveAsLinearize !== b.saveAsLinearize) return false;
+  if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
+  if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
+  // All other fields agree; geometry must ACTUALLY differ for this
+  // branch to apply (sameSettings would have caught identical
+  // geometry — we're here because sameSettings returned false).
+  return !sameGeometry(a.geometry, b.geometry);
+}
+
 /** Decide whether to apply an incoming `settings.changed` echo.
  *  `writeSeq` is the renderer's local write counter (0 before any
  *  local write). `persisted` is the most-recent settings object the
@@ -222,6 +258,11 @@ export function shouldApplyEcho(
   // reflection of a backend `addRecentFile` write — apply, so the
   // local mirror picks up the new entry.
   if (differsOnlyInRecentFiles(echo, persisted)) return true;
+  // DEF-202 — echoes that change ONLY the geometry are main's live
+  // window state (maximize / unmaximize / move / resize report);
+  // the renderer never writes geometry, so these can never clobber
+  // fresher local state — apply.
+  if (differsOnlyInGeometry(echo, persisted)) return true;
   // Content mismatch AND we've written at least once. The echo
   // is older than our most-recent local write — discard so the
   // fresher local state survives.

@@ -1,3 +1,215 @@
+## DEF-209: A PDF with >1000 annotations on one page opens into a broken shell — the open must be refused with a clear limit error
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-030)
+- Phase: bug sweep 2026-09-12
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp).
+2. Open test-fixtures/huge-annotations.pdf (5000 baked highlight annotations on one page; pdf-lib parses it as 1 page) via the Open flow.
+3. Watch the open result and the fixture file.
+
+Expected: a clear refusal — the per-page annotation count exceeds the renderer's mirror limit (1000), so the document must not open; the user sees a limit error; the fixture is not written to.
+
+Actual (fixed behavior, verified 2026-09-13): the open is refused with the toast "Too many annotations on page 1 (1000 max). The document was not opened.", no .workspace mounts (no hollow tab), the fixture file is byte-identical after the attempt (size unchanged — the ADV-030 in-place-save corruption path cannot reoccur from an open), and zero renderer pageerrors. The app stays usable (a good PDF still opens afterwards — verified in the same spec family). Evidence run: e2e/retests/def_201_209_retest.spec.cjs test 6; unit contract test/unit/renderer/bugDEF209_annotationPageLimit.test.ts (9 tests) green in the full unit run. MAX_ANNOTATIONS_PER_PAGE = 1000 in src/renderer/annotations/model.ts; the check runs on the seeded engine state in App.tsx.
+
+Screenshot: screenshots/def-209-retest.png (limit toast, welcome screen, no workspace)
+
+History:
+- qa: opened (accepted from ADV-030)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build, dist rebuilt from the current tree; new fixture evidence above)
+
+## DEF-208: Zero-page / broken page-tree PDFs open as hollow tabs — they must be rejected with the corrupt-file error
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-029)
+- Phase: bug sweep 2026-09-12
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp).
+2. Open test-fixtures/zero-page.pdf — a crafted valid-%PDF-header document with an EMPTY page tree (/Count 0, /Kids []; verified with pdfjs-dist: getDocument resolves it with numPages=0, so it passes the main-process %PDF- sniff and reaches the renderer parser, exactly the ADV-029 gap).
+3. Watch the open result. Repeat with test-fixtures/zero.pdf (0 bytes).
+
+Expected: "The file could not be read as a PDF (...). It may be corrupt or truncated." and no tab.
+
+Actual (fixed behavior, verified 2026-09-13): zero-page.pdf is rejected by openPdfDocument (src/renderer/pdf/pdfjs.ts: a resolved proxy with numPages===0 is destroyed and mapped to the shared 'corrupt' code) with the exact toast above; no .workspace mounts. The 0-byte file also errors (no tab). A good PDF still opens afterwards in the same session, and there are zero renderer pageerrors. The other ADV-029 fixtures (no-kids/circular-refs/infinite-loop-pagetree/malformed-xref) resolve to numPages=1 under pdf.js 4.10 (it recovers their trees) and broken-pagetree.pdf throws at parse — the zero-page fixture is the one that isolates the DEF-208 guard. Evidence run: e2e/retests/def_201_209_retest.spec.cjs test 5; unit contract test/unit/renderer/bugDEF208_zeroPagePdf.test.ts (4 tests) green in the full unit run.
+
+Screenshot: screenshots/def-208-retest.png (corrupt toast, welcome screen, no workspace)
+
+History:
+- qa: opened (accepted from ADV-029)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build; new fixture test-fixtures/zero-page.pdf added by qa for the numPages=0 path)
+
+## DEF-207: Corrupted settings.json recovers silently — the user is never told their preferences were discarded
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-028)
+- Phase: bug sweep 2026-09-12
+
+Steps to reproduce:
+1. Create a user-data dir whose settings.json is not valid JSON (e.g. '{"theme": "dark",,,, broken').
+2. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp with that user-data dir).
+3. Watch boot.
+
+Expected: the app boots on defaults AND tells the user the settings file could not be read.
+
+Actual (fixed behavior, verified 2026-09-13): the boot surfaces the error toast "Settings file could not be read — default settings were restored." (plus the console warning '[settings] settings.json could not be read; default settings were restored.') and the theme is the frosted default. Negative control in the same spec: a VALID settings.json ({"theme":"dark"}) boots with NO recovery toast and the dark theme is preserved — the toast fires only on real corruption/io failure, not on first boot (missing file) or valid content. Scope note, as designed and documented in src/renderer/state/settings.ts: this covers whole-file recovery; per-field normalization (one invalid value fixed inside normalizeSettings) remains silent because the wire contract carries no corrected-fields signal. Evidence run: e2e/retests/def_201_209_retest.spec.cjs test 4; unit contract test/unit/renderer/settings.test.ts "DEF-207 — recovered boots surface user feedback" green in the full unit run.
+
+Screenshot: screenshots/def-207-retest.png (recovery toast bottom-right, frosted defaults restored)
+
+History:
+- qa: opened (accepted from ADV-028)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build; corrupt + valid-file negative control both verified)
+
+## DEF-206: Invalid annotation colors silently normalize to yellow — the caller's color choice is discarded without feedback
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-027)
+- Phase: bug sweep 2026-09-12
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp).
+2. Load form.pdf through the engine IPC (window.tflex.engine.loadDocument).
+3. Call window.tflex.engine.createAnnotation with color 'nonexistent!@#$%^&*()' and again with color null (otherwise-valid rect geometry).
+4. Inspect the IPC results.
+
+Expected: invalid colors must be rejected with a typed error, not silently defaulted to yellow.
+
+Actual (fixed behavior, verified 2026-09-13): both calls return {ok:false, error:{code:'engine-error', message:'Invalid annotation color: nonexistent!@#$%^&*()'}} and 'Invalid annotation color: null' respectively (normalizeColorValue in src/main/services/annotations.ts throws; createAnnotation catches and maps to the typed engine-error). Control: the same call with a valid hex (#ff0000) still succeeds (ok=true), and engine getState afterwards contains exactly the 1 valid annotation — nothing leaked from the rejected calls. Evidence run: e2e/retests/def_201_209_retest.spec.cjs test 3 (full results JSON logged); unit contract test/unit/main/annotations.test.ts ADV-024..027 describe block green in the full unit run.
+
+Screenshot: screenshots/def-203-retest.png (app healthy after the invalid-call battery; API-level evidence is the results log)
+
+History:
+- qa: opened (accepted from ADV-027)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build)
+
+## DEF-205: NaN / Infinity annotation coordinates are accepted without validation and can reach the PDF object stream
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-026)
+- Phase: bug sweep 2026-09-12
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp).
+2. Load form.pdf through the engine IPC (window.tflex.engine.loadDocument).
+3. Call window.tflex.engine.createAnnotation with rects [{x:NaN,y:NaN,width:NaN,height:NaN}], then [{x:Infinity,y:-Infinity,width:Infinity,height:Infinity}], then a zero-size rect [{x:10,y:10,width:0,height:0}].
+4. Inspect the IPC results.
+
+Expected: non-finite and degenerate coordinates must be rejected with a validation error before reaching pdf-lib serialization.
+
+Actual (fixed behavior, verified 2026-09-13): NaN and Infinity rects return {ok:false, code:'engine-error', message:'Rect coordinates must be finite non-negative numbers'}; the zero-size rect returns 'Rect must have positive width and height' (a zero-size rect is the invisible-annotation-at-(0,0) class from ADV-025). isFiniteNonNegative + validateRect in src/main/services/annotations.ts gate every rect and point. Control: the valid annotation still creates (ok=true) and only it exists in engine state. Evidence run: e2e/retests/def_201_209_retest.spec.cjs test 3; unit contract test/unit/main/annotations.test.ts (NaN/Infinity/negative/zero-size cases) green in the full unit run.
+
+Screenshot: screenshots/def-203-retest.png
+
+History:
+- qa: opened (accepted from ADV-026)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build)
+
+## DEF-204: Empty rects array silently creates an invisible zero-size annotation at (0,0)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-025)
+- Phase: bug sweep 2026-09-12
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp).
+2. Load form.pdf through the engine IPC (window.tflex.engine.loadDocument).
+3. Call window.tflex.engine.createAnnotation with rects: [] and again with no geometry field at all (kind 'note', no at/rect/rects).
+4. Inspect the IPC results and the engine state.
+
+Expected: geometry-less annotations must be rejected with a typed error; nothing may be created.
+
+Actual (fixed behavior, verified 2026-09-13): both calls return {ok:false, error:{code:'engine-error', message:'Annotation requires at least one rect'}} — the old zero-size [{x:0,y:0,width:0,height:0}] fallback is gone (normalizeAnnotationPayload's final else throws; src/main/services/annotations.ts). Engine state afterwards contains exactly the 1 control annotation from the valid call (stateAnnCount=1). Evidence run: e2e/retests/def_201_209_retest.spec.cjs test 3; unit contract test/unit/main/annotations.test.ts (empty rects / missing geometry) green in the full unit run.
+
+Screenshot: screenshots/def-203-retest.png
+
+History:
+- qa: opened (accepted from ADV-025)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build)
+
+## DEF-203: createAnnotation with null rects/points throws an unhandled TypeError across IPC instead of returning a typed error
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-024)
+- Phase: bug sweep 2026-09-12
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp) with the renderer pageerror stream observed.
+2. Load form.pdf through the engine IPC (window.tflex.engine.loadDocument).
+3. Call window.tflex.engine.createAnnotation with rects: null (highlight kind, valid page) and with from: null, to: null (arrow kind).
+4. Inspect the IPC results and the renderer console.
+
+Expected: a typed Result failure (engine-error), no thrown TypeError, no unhandled IPC rejection.
+
+Actual (fixed behavior, verified 2026-09-13): null rects returns {ok:false, error:{code:'engine-error', message:'Annotation requires at least one rect'}} (the `!= null` + Array.isArray guard replaces the old `!== undefined && .length` crash); null arrow endpoints return 'Point must be { x, y }'. Both are typed Results — threw=false, code='engine-error', and no pageerror containing 'Cannot read properties of null' or any TypeError reached the renderer console. Control: a valid createAnnotation still succeeds (ok=true) and only that one annotation is in engine state. Evidence run: e2e/retests/def_201_209_retest.spec.cjs test 3 (all nine invalid+control results logged); unit contract test/unit/main/annotations.test.ts ADV-024 cases (null rects, non-array rects) green in the full unit run.
+
+Screenshot: screenshots/def-203-retest.png
+
+History:
+- qa: opened (accepted from ADV-024)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build)
+
+## DEF-202: Maximize caption does not flip to "Restore window" when a renderer settings write preceded the maximize — the window maximizes (and persists maximized=true) but the title bar keeps the stale caption
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: bug sweep 2026-09-12 (regression of a Phase-13 contract locked by e2e/retests/def180_maximize_glyph.spec.cjs; unrelated to DEF-180's font-weight subject despite the spec filename)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp, no executablePath; dist built from the current tree, v1.13.0).
+2. Perform any renderer settings write — e.g. open the theme dropdown (.theme-toggle) and pick Dark, wait ~500ms for the write + echo to settle.
+3. Click the maximize window control ([data-window-maximize]).
+4. Poll the button's aria-label/title for up to 6s.
+
+Expected: the window maximizes, settings.json persists geometry.maximized=true, and the caption/glyph flips to "Restore window" (the boot-path behavior verified working: with NO prior settings write, maximize flips the caption immediately — the writeSeq=0 echo applied path).
+
+Actual: the window DOES maximize (isMaximized=true) and settings.json DOES carry maximized=true, but the caption stays "Maximize window" — the renderer-side caption echo does not fire when a settings write preceded the maximize. Deterministic: failed in the full standard suite run AND in the isolated re-run (npx playwright test e2e/retests/def180_maximize_glyph.spec.cjs): `[A no-write] isMaximized=true label=Restore window` (path A green), `[B after-write] isMaximized=true caption=Maximize window settings.json geometry.maximized=true` (path B red, "caption must flip to Restore window after a prior settings write too"). Restore-then-poll in path A also works ("Maximize window" restored). Only the after-write maximize caption is stale.
+
+Suspected mechanism (for the developer): the settings echo round-trip (App.tsx settings.changed handler) re-applies window state from the echo and clobbers/stales the renderer's maximized flag on the path where a settings write just landed; the live 'maximize' window event may be overwritten by the echo's stale geometry. The glyph check in path A (restore glyph distinct from minimize) passed, so the defect is specific to the post-write echo path.
+
+Fix direction: ensure the renderer's maximized state is driven by the window-state IPC events (maximize/unmaximize), not by settings-echo geometry, or dedupe the echo when the state already matches (same class as DEF-199's echo dedupe).
+
+Screenshot: none (caption is text evidence; the keeper's poll output above is the record).
+
+History:
+- qa: opened (found during the 2026-09-12 comprehensive bug sweep; keeper e2e/retests/def180_maximize_glyph.spec.cjs failing on dev build 1.13.0 from the current tree; reproduced twice, deterministic)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build, dist rebuilt 00:24 from the current tree). Both proofs green: (1) the keeper e2e/retests/def180_maximize_glyph.spec.cjs now passes BOTH paths — [A no-write] isMaximized=true label=Restore window (restore glyph distinct, restore-back label=Maximize window) and [B after-write] isMaximized=true caption=Restore window settings.json geometry.maximized=true — the caption flips after a prior settings write too; (2) new spec e2e/retests/def_201_209_retest.spec.cjs test 2 (theme flip dark -> maximize): caption polled to "Restore window", BrowserWindow.isMaximized()=true, settings.json geometry.maximized=true, restore click flips back to "Maximize window". Visual: screenshots/def-202-retest.png (maximized, dark theme, restore glyph in the title bar). Unit contract bugDEF202_maximizeCaptionEcho.test.ts 12/12 green in the full unit run.
+
+## DEF-201: Preferences sheet ignores Escape — the modal backdrop stays up and blocks every control until the X button is used
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: bug sweep 2026-09-12 (found during the pre-feature comprehensive sweep)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs launchApp, no executablePath; frosted default theme).
+2. Open any PDF sample (report.pdf) or stay on the Welcome screen.
+3. Click the settings gear (`.header-gear` / `[data-open-preferences]`) in the title bar.
+4. Press Escape.
+
+Expected: the Preferences sheet closes on Escape, exactly like every other modal in the app (Insert pages, Stamp, Optimize, Audit, Merge, Extract, Split, Signature manager, Save-As all dismiss on Escape — DEF-171 already established Escape as the contract for floating surfaces after the DEF-171 signature-manager fix).
+
+Actual: nothing happens. PreferencesDialog.tsx (204 lines) registers no keydown handler — the sheet closes ONLY via the X button (`aria-label="Close preferences"`) or a click on the backdrop itself. The full-screen `.sheet-backdrop` (position:fixed inset:0, z-index:100, aria-modal) stays up and intercepts every pointer event, so the Tools button, command bar and page are all unclickable until the user finds the X. Verified live during the sweep: `[SW2][DEF-201] prefs closes on Escape=false`, then the X button closes it (`prefs closes via X button=true`); the sweep's first run died on exactly this (the .sheet-backdrop intercepted the following [data-tools-toggle] click for 30s).
+
+Note: AboutDialog and UpdatePromptDialog were not probed for Escape in this sweep and may share the gap; PreferencesDialog is the confirmed instance.
+
+Fix direction: add a keydown Escape -> onClose effect to PreferencesDialog (same pattern the other sheets use).
+
+Screenshot: screenshots/bug-sweep-2026-09-12/13-preferences-dialog.png (sheet open and modal over the workspace)
+
+History:
+- qa: opened (found during the 2026-09-12 comprehensive bug sweep; evidence run e2e/bug_sweep_full.spec.cjs SWEEP-2)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build, e2e/retests/def_201_209_retest.spec.cjs test 1, passed). report.pdf workspace -> [data-open-preferences] -> sheet open (screenshots/def-201-prefs-open.png) -> Escape: [data-prefs-dialog] removed within the 3s assert window ("prefs closed on Escape=true"), and the backdrop no longer blocks the UI — the immediate next click on the command bar's Tools toggle opened the palette ("workspace interactive after Escape=true", screenshots/def-201-retest.png). Zero renderer pageerrors beyond the separately-tracked DEF-199 console noise. X-button close path unchanged (PreferencesDialog unit contract green in the full unit run).
+
 ## DEF-200: A pressed .btn stays at the hover lift — .btn:hover:not([disabled]) (0,3,0) outranks the .btn:active press rule (0,2,0) while the pointer is down, so the press transform never applies to the .btn family
 
 - Status: OPEN
@@ -20,6 +232,7 @@ Screenshot: none needed (computed-value evidence in the spec log; the pressed di
 
 History:
 - qa: opened (found during the DEF-196 retest regression sweep, 2026-09-13)
+- qa: re-verified OPEN (bug sweep 2026-09-12, dev build 1.13.0 from the current tree): e2e/bug_sweep_full.spec.cjs SWEEP-8 re-measured the flatten-dialog Cancel press — computed transform matrix(1, 0, 0, 1, 0, -1) (scale 1.0, hover lift, no press compression) while the pointer is held; the tool-btn control on the same build measures 0.97 + ty 1, so the .btn masking gap persists. Cascade confirmed in the built CSS: .btn:hover:not([disabled]) (0,3,0) at a later source position than both .btn:active rules (0,2,0).
 
 ## DEF-199: Every theme application echo starts a second View Transition that skips the first — unhandled "Transition was skipped" rejection in the renderer console at boot and on every theme flip
 
@@ -43,6 +256,7 @@ Screenshot: none (console-level; the visible crossfade is unaffected).
 
 History:
 - qa: opened (found during the DEF-195 retest, 2026-09-13; reproduced in every launch of e2e/retests/def_195_196_197_retest.spec.cjs)
+- qa: re-verified OPEN (bug sweep 2026-09-12, dev build 1.13.0 from the current tree): e2e/bug_sweep_full.spec.cjs SWEEP-10 counted document.startViewTransition calls per user theme flip = 2 (echo defect still live) with 1 "Transition was skipped" pageerror in the same flip; SWEEP-8 measured the visible crossfade healthy at 61fps so the visual impact remains zero — console noise only.
 
 ## DEF-195: Theme crossfade drops to ~30fps during the 400ms flip (idle baseline 59-60fps in the same session) — "60fps maintained" fails
 
@@ -151,6 +365,7 @@ Evidence run: e2e/anim_audit.spec.cjs A5 (popover samples: full 0.95 -> 1 scale 
 
 History:
 - qa: opened (Phase-15 animation-system audit, 2026-09-13)
+- qa: re-verified OPEN (bug sweep 2026-09-12, dev build 1.13.0 from the current tree): e2e/bug_sweep_full.spec.cjs SWEEP-10 emulated prefers-reduced-motion: reduce MID-SESSION and sampled the theme popover — CSS tokens collapse correctly (--motion-duration-standard 0s, crossfade 0s) but the popover still travels scale 0.05 (~0.95 -> 1) over ~240ms, i.e. the JS spring keeps running until restart, exactly as filed.
 
 ## DEF-191: Phase-14.2 Fix 3 does not hold in the frosted theme — the Open button's ghost capsule still paints (translucent film + hairline + shadow extend ~17px past the blue button)
 
@@ -624,7 +839,7 @@ History:
 
 ## DEF-176: Placed-stamp corner-resize handles render but the drag is a silent no-op — pointer capture lands on the handle while the move/up handlers live on the sibling stamp surface, so the stamp can never be resized and the surface stays stuck in the dragging class
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: HIGH
 - Found by: qa
 - Phase: 16 post-gate bug batch (found verifying dispatch Bug 6 "Stamp should be selectable, movable, resizable, deletable, and editable")
@@ -647,6 +862,7 @@ Screenshot: screenshots/qa-diag-resize-pending.png (after the handle drag: width
 
 History:
 - qa: opened (evidence: e2e/retests/qa_bugfix_verify_1.10.2.spec.cjs B6 — "width must grow by the se-handle drag dx: expected > 25, received 0"; controlled repro e2e/retests/qa_diag_resize_pending.spec.cjs; regression spec kept red-by-design until fixed)
+- qa: CLOSED (retested on the dev build rebuilt from the current tree during the 2026-09-12 comprehensive bug sweep). (1) EXACT ORIGINAL REPRO re-run (e2e/bug_sweep_full.spec.cjs SWEEP-10): report.pdf -> Stamp -> Place on page -> click page 1 -> select -> drag [data-stamp-resize-handle="se"] +40/+30 -> release: width 362.0 -> 434.03 (+72px), Confirm's title flips to "Confirm the move" (pending resize parked), Confirm bakes the larger stamp (434.0 after confirm; canvas re-bake verified by the B6 keeper). Screenshot screenshots/bug-sweep-2026-09-12/35-stamp-resize-drag.png. (2) The B6 keeper (e2e/retests/qa_bugfix_verify_1.10.2.spec.cjs — select/move/resize/retype/delete, incl. "stamp bbox after resize width 434") PASSED in the same standard-suite run. The pointer-capture retargeting described in the filing is gone: handle drags now park a pending resize and Confirm re-bakes.
 
 
 ## DEF-175: Annotation color palette popover is INVISIBLE and click-through in the frosted theme - the frosted backdrop-filter on .ann-toolbar traps the popover's z-index under the page; clicking where the palette should be fires the armed ink tool into the document instead
@@ -768,6 +984,7 @@ Screenshot: screenshots/diag-installed-sheet-backdrop.png
 
 History:
 - qa: opened (found during the DEF-171 close regression run; 4 failures on sweep_annotations_sign against installed v1.8.0 root-caused to the update prompt, not to the v1.9.0 code changes)
+- qa: re-verified OPEN (bug sweep 2026-09-12): the qa-suite gap is unchanged — e2e/lib/helpers.cjs still has no update-prompt dismissal step, and the version gap that triggers the prompt still exists (installed app ProductVersion 1.12.1 vs the v1.13.0 repo/OTA channel), so any sweep run against the installed exe would hit the same full-screen sheet backdrop mid-run. Not re-triggered live in this sweep (standard suite runs the dev build); the mitigation options from the filing (dismissUpdatePrompt step in the sweeps, or matching the installed version) are still unimplemented.
 
 ## DEF-170: A SECOND Extract in the same session orphans its result document - success toast, but no tab opens and the app refocuses the OLD extraction tab (still showing the old doc)
 

@@ -47,10 +47,17 @@ portable:
 #                                       electron-updater at runtime
 # The portable build (TFlex-<version>-portable.exe) is built but NOT listed
 # in latest.yml — it is not auto-updateable (see isPortableBuild() in
-# update-service.ts). electron-builder reads the publish token from the
-# `GH_TOKEN` / `GITHUB_TOKEN` env var at BUILD time; the in-app RUNTIME
-# token is `TFLEX_GH_TOKEN` (fallback `GH_TOKEN`) — see update-service.ts.
+# update-service.ts).
+#
+# Release artifacts are published to a SEPARATE PUBLIC repo (`tflex-releases`)
+# so end users can check for and download updates WITHOUT a token — the source
+# repo (this one) stays private. electron-builder reads the publish token from
+# the `GH_TOKEN` / `GITHUB_TOKEN` env var at BUILD time (still required to
+# upload assets via the API). The in-app RUNTIME token `TFLEX_GH_TOKEN`
+# (fallback `GH_TOKEN`) is now OPTIONAL — it only authenticates the
+# update-check API calls for higher rate limits; users never set it. See
+# update-service.ts. The `repo` below MUST match RELEASES_REPO there.
 publish:
   provider: github
   owner: tanzimtipu
-  repo: TFlex
+  repo: tflex-releases
