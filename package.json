@@ -1,6 +1,6 @@
 {
     "name": "tflex",
-    "version": "1.13.0",
+    "version": "1.13.1",
     "description": "TFlex - desktop PDF studio for Windows",
     "repository": "tanzimtipu/TFlex",
     "type": "module",
