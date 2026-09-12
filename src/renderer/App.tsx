@@ -6139,7 +6139,6 @@ pushToast(
           onClose={closeTab}
           theme={settings.theme}
           onThemeChange={onThemeChange}
-          onOpen={onOpenClick}
           onNewEmptyTab={onNewEmptyTab}
           // Phase 13 — the Settings (gear) affordance in the title bar
           // opens the same Preferences sheet the Edit menu and Ctrl+,
@@ -6218,6 +6217,9 @@ pushToast(
                     // re-serialized getDocumentBytes proxy).
                     proxyVisibleOrder={open.session.proxyVisibleOrder}
                     modified={saveModified}
+                    // Phase 14.1 — the command bar's accent Open button
+                    // (moved out of the title bar per the reference).
+                    onOpenFile={onOpenClick}
                     canUndo={engine.canUndo}
                     saveInPlaceEnabled={saveInPlaceEnabled}
                     onRotate={engine.op}

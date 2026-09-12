@@ -2,9 +2,11 @@
 // Covers the orchestrator's 9-item verification list:
 //   1. Frosted default on fresh launch
 //   2. Three themes + embedded dropdown + keyboard access
-//   3. Acrylic quality (Phase-14 blue-glass contract after DEF-182/183:
-//      films are rgba(126,178,250,.54-.65) + blur(22px); the caption strip
-//      carries exactly ONE glass paint - .app-header transparent, no blur)
+//   3. Acrylic quality (Phase-14.1 NEUTRAL glass contract: the films are
+//      neutral white rgba(255,255,255,.68-.75) + blur(20px) saturate(1.2);
+//      the caption strip carries exactly ONE glass paint - .app-header
+//      transparent, no blur; blue is ACCENT ONLY: Open button, selected
+//      states, focus)
 //   4. PDF pristine (white page, no blur/tint/reflection, in ALL themes)
 //   5. Colorful icon palette (semantic 8-hue, not monochrome)
 //   6. Tools panel group headers (ORGANIZE PAGES / DOCUMENT / RECOGNITION / EXPORT)
@@ -286,12 +288,13 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
 
     // ------------------------------------------------------------------
     // ITEM 3 - acrylic quality on chrome (doc view: toolbar + rail live)
-    // Phase-14 contract (DEF-182/DEF-183 fixes): the films are BLUE
-    // rgba(126,178,250,...) sheets in the 0.54-0.65 translucent band
-    // (frame 0.65, toolbar 0.56, rail 0.54), and the caption strip has
-    // exactly ONE glass paint: .titlebar carries film + blur, the nested
-    // .app-header goes fully transparent with NO blur (the old double
-    // film stacked ~0.88 effective and blocked the wallpaper).
+    // Phase-14.1 contract (neutral glass correction): the films are
+    // NEUTRAL WHITE rgba(255,255,255,...) sheets in the 0.68-0.75 band
+    // (frame 0.75, toolbar 0.68, rail 0.68, panel 0.68) with the 20px
+    // glass blur, and the caption strip has exactly ONE glass paint:
+    // .titlebar carries film + blur, the nested .app-header goes fully
+    // transparent with NO blur. Blue is accent-only (Open button,
+    // selected states, active tools, focus).
     // ------------------------------------------------------------------
     const chromeSelectors = ['.titlebar', '.app-header', '.toolbar', '.side-rail'];
     const chrome = [];
@@ -313,17 +316,18 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
       expect(alpha, `${facts.selector} acrylic sheet must be translucent (>=0.50)`).toBeGreaterThanOrEqual(0.5);
       expect(alpha, `${facts.selector} must stay in the glass band (<=0.86)`).toBeLessThanOrEqual(0.86);
       expect(facts.backdropFilter, `${facts.selector} must carry the frosted blur`).toContain('blur');
-      expect(facts.backdropFilter, `${facts.selector} must carry the 22px glass blur`).toContain('22px');
+      expect(facts.backdropFilter, `${facts.selector} must carry the 20px neutral glass blur`).toContain('20px');
+      // Phase 14.1 NEUTRAL film: pure white paint (R == G == B == 255).
+      const film = parseRgba(facts.bg);
+      expect(film.r, `${facts.selector} film must be neutral (R 255)`).toBe(255);
+      expect(film.g, `${facts.selector} film must be neutral (G 255)`).toBe(255);
+      expect(film.b, `${facts.selector} film must be neutral (B 255)`).toBe(255);
     }
-    // The films are BLUE (DEF-182): B channel leads R by ~124 in the paint.
-    const titlebarRgb = parseRgba(chrome[0].bg);
-    expect(titlebarRgb.b - titlebarRgb.r, 'titlebar film must be blue-tinted (B-R >= 100, DEF-182)').toBeGreaterThanOrEqual(100);
-    expect(titlebarRgb.g, 'titlebar film must sit between R and B in the blue family').toBeGreaterThan(titlebarRgb.r);
-    expect(titlebarRgb.g).toBeLessThan(titlebarRgb.b);
     const fgStrong = await win.evaluate(() => getComputedStyle(document.body).getPropertyValue('--fg-strong').trim());
     console.log(`[item3] --fg-strong in frosted = ${fgStrong}`);
-    // DEF-188: the ink ladder re-anchored to the mock's dark-navy family.
-    // getComputedStyle resolves the var() chain to a hex here (#0e1830)
+    // DEF-188: the ink ladder is the dark slate-navy set on the NEUTRAL
+    // glass. getComputedStyle resolves the var() chain to a hex here
+    // (#0f172a)
     const fgHex = /^#([0-9a-fA-F]{6})$/.exec(fgStrong.trim());
     expect(fgHex, `--fg-strong must resolve to a dark hex ink (got ${fgStrong})`).not.toBeNull();
     const fgRgb = {
@@ -332,7 +336,7 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
       b: parseInt(fgHex[1].slice(4, 6), 16),
     };
     const fgLum = (0.299 * fgRgb.r + 0.587 * fgRgb.g + 0.114 * fgRgb.b) / 255;
-    expect(fgLum, '--fg-strong must be the dark primary ink on the blue glass (DEF-188)').toBeLessThan(0.2);
+    expect(fgLum, '--fg-strong must be the dark primary ink on the neutral glass (DEF-188)').toBeLessThan(0.2);
 
     // ------------------------------------------------------------------
     // ITEM 7a - moving reflection present (normal motion)
@@ -377,12 +381,12 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
       expect(g.transform, 'group headers must render uppercase').toBe('uppercase');
       const c = parseRgba(g.color);
       const lum = (0.299 * c.r + 0.587 * c.g + 0.114 * c.b) / 255;
-      // DEF-188 contract: the glass is mid-BLUE now, so "quiet" means the
-      // faint tier of the DARK-navy ink ladder (--fg-faint -> #24325a, lum
-      // ~0.20) — muted next to the strong ink, but clearly DARKER than the
-      // glass it sits on. The old light-gray floor (lum > 0.45) is what
-      // drowned the labels below the glass (measured spread -28).
-      expect(lum, 'group headers must be dark ink on the blue glass (DEF-188)').toBeLessThan(0.35);
+      // DEF-188 contract: the glass is NEUTRAL light now, so "quiet" means
+      // the faint tier of the dark slate ink ladder — muted next to the
+      // strong ink, but clearly DARKER than the glass it sits on. The old
+      // light-gray floor (lum > 0.45) is what drowned the labels below the
+      // glass (measured spread -28).
+      expect(lum, 'group headers must be dark ink on the neutral glass (DEF-188)').toBeLessThan(0.35);
       expect(lum, 'group headers must stay lighter than the strong ink step').toBeGreaterThan(0.1);
     }
 
@@ -434,10 +438,9 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
     await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 8000 });
     await win.waitForTimeout(600);
     await snap('frost-j-dialog-frosted.png');
-    // Phase-14 blue-glass contract: the dialog is the MOST opaque sheet of
-    // the ladder but stays translucent — pinned at alpha 0.93
-    // (rgba(222,235,253,0.93)); the 1.10.2 white 0.85 pin was replaced by
-    // the blue-tinted retune (DEF-182).
+    // Phase-14.1 neutral-glass contract: the dialog is the MOST opaque
+    // sheet of the ladder but stays translucent — pinned at alpha 0.93
+    // (rgba(255,255,255,0.93), neutral white).
     const dialogSheet = await win.evaluate(() => {
       const dlg = document.querySelector('.modal-dialog');
       if (!dlg) return null;

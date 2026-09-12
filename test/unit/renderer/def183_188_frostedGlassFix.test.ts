@@ -119,11 +119,32 @@ function qaSpread(ink: string, glass: [number, number, number]): number {
 }
 
 // ---------------------------------------------------------------------------
-// qa's measured glass composites (screenshots/def182-187-metrics.json,
-// surfaces.palette — the tools panel film the flagged text sits on).
+// qa's glass composites, RECOMPUTED for the Phase 14.1 NEUTRAL material.
+//
+// The Phase-14 constants were qa's measured medians of the BLUE films
+// (rgba(126,178,250,0.62) over the aurora / near-black backdrops). The
+// corrected material paints translucent WHITE sheets instead, so the
+// composites are derived from the token math exactly as qa's
+// glassRegion classifier would measure them over a flat backdrop:
+//
+//   composite = alpha * film + (1 - alpha) * backdrop
+//
+// with the aurora form's mid-gradient rgb(35,35,130) (e2e/lib/
+// aurora_backdrop.ps1: #182278 -> #2E248C vertical, qa's grab sampled
+// the panel mid-height) and the near-black form rgb(11,16,32):
+//
+//   sidebar/panel film rgba(255,255,255,0.68) over aurora:
+//     0.68*255 + 0.32*35 = 184.6 (R=G), 0.68*255 + 0.32*130 = 215.0 (B)
+//     -> (184.6, 184.6, 215.0)
+//   sidebar/panel film over near-black:
+//     (176.9, 178.5, 183.6) — the dark backdrop's residual channel spread.
+//
+// blur() is a no-op over a flat backdrop and saturate(1.2) only boosts
+// already-saturated colors, so the flat-region math IS the rendered
+// median the classifier reads.
 // ---------------------------------------------------------------------------
-const GLASS_AURORA: [number, number, number] = [97.1, 135.4, 213]; // over the aurora backdrop
-const GLASS_DARK: [number, number, number] = [97.8, 130.8, 181.6]; // over near-black rgb(11,16,32)
+const GLASS_AURORA: [number, number, number] = [184.6, 184.6, 215.0]; // 0.68 white film over the aurora gradient
+const GLASS_DARK: [number, number, number] = [176.9, 178.5, 183.6]; // 0.68 white film over near-black
 
 describe("DEF-183 — the caption strip has exactly one frosted glass layer", () => {
   const css = readStyles();
@@ -155,14 +176,17 @@ describe("DEF-183 — the caption strip has exactly one frosted glass layer", ()
     const clean = stripCssComments(css);
     let blurFound = false;
     for (const m of clean.matchAll(/:root\[data-theme="frosted"\]([^{]*)\{([\s\S]*?)\n\}/g)) {
-      if (!/backdrop-filter\s*:\s*blur\(var\(--tf-acrylic-blur\)\)/.test(m[2] ?? "")) continue;
+      // Phase 14.1 — the blur composition moved into the --glass-blur
+      // token (blur(var(--tf-acrylic-blur)) saturate(1.2)); the defocus
+      // tween rides the same var.
+      if (!/backdrop-filter\s*:\s*var\(--glass-blur\)/.test(m[2] ?? "")) continue;
       if ((m[1] ?? "").includes(".titlebar")) blurFound = true;
     }
     expect(blurFound, ".titlebar must carry the Phase-A frosted blur").toBe(true);
   });
 });
 
-describe("DEF-188 — the frosted ink ladder reads against the blue glass", () => {
+describe("DEF-188 — the frosted ink ladder reads against the (neutral) glass", () => {
   const css = readStyles();
 
   const tokens = (): Record<string, string> => ({

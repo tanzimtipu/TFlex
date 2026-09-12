@@ -60,6 +60,7 @@ import {
 import { AnimatePresence } from "motion/react";
 import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
 import { TfMenu } from "./motion/TfMotion";
+import { GlassChromeBar } from "./GlassChrome";
 
 /** The shape of a menu entry. Two kinds: a top-level group heading
  *  (rendered as a non-interactive row) or an action row. The
@@ -232,7 +233,12 @@ export function TitleBar(props: TitleBarProps): ReactElement {
   const maximizeLabel = maximized ? "Restore window" : "Maximize window";
 
   return (
-    <div className="titlebar" data-titlebar>
+    // Phase 14.1 — the caption strip is a GlassChromeBar at the
+    // standardized title-bar height (--chrome-titlebar-h, 44px). The
+    // `.titlebar` class stays on the element (it IS the window-drag
+    // region + the frosted caption glass) and GlassChromeBar adds the
+    // shared glass-chrome height/centering contract.
+    <GlassChromeBar variant="titleBar" className="titlebar" data-titlebar>
       {/* Menu button — leading edge, hidden when no groups are wired. */}
       {menuGroups !== undefined && menuGroups.length > 0 && (
         <div className="titlebar-menu">
@@ -345,6 +351,6 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           <X size={16} aria-hidden />
         </button>
       </div>
-    </div>
+    </GlassChromeBar>
   );
 }

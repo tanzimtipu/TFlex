@@ -58,7 +58,6 @@ function renderHeader(args: RenderArgs = {}): HTMLElement {
   const onNewEmptyTab = args.onNewEmptyTab ?? ((): void => undefined);
   const theme: Theme = "frosted";
   const onThemeChange = (): void => undefined;
-  const onOpen = (): void => undefined;
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -71,7 +70,6 @@ function renderHeader(args: RenderArgs = {}): HTMLElement {
         onClose={onClose}
         theme={theme}
         onThemeChange={onThemeChange}
-        onOpen={onOpen}
         onNewEmptyTab={onNewEmptyTab}
         onOpenPreferences={(): void => undefined}
       />,
@@ -361,7 +359,6 @@ function renderHeaderFull(
         onClose={(): void => undefined}
         theme={args.theme ?? "frosted"}
         onThemeChange={args.onThemeChange ?? ((): void => undefined)}
-        onOpen={(): void => undefined}
         onNewEmptyTab={(): void => undefined}
         onOpenPreferences={(): void => undefined}
       />,

@@ -1,12 +1,14 @@
-// QA VISUAL VERIFICATION - frosted glass theme correction (light acrylic
-// direction), toolbox consistency, and text-first Word export.
+// QA VISUAL VERIFICATION - frosted glass theme correction (Phase-14.1
+// NEUTRAL glass), toolbox consistency, and text-first Word export.
 // Dispatch acceptance:
-//   1. Frosted must look like REAL glass (translucent + blur 22px/24px
-//      saturate 130% + inner shadows + sheen), NOT a flat light theme.
-//      Phase-14 update (qa 2026-09-13, DEF-182/183/188): the films are the
-//      BLUE rgba(126,178,250,.54-.65) band, the caption strip carries
-//      exactly ONE glass paint (.app-header transparent, no blur), and the
-//      ink ladder is the dark-navy DEF-188 set.
+//   1. Frosted must look like REAL glass (translucent + blur 20px
+//      saturate 1.2 + inner shadows + sheen), NOT a flat light theme.
+//      Phase-14.1 update (qa 2026-09-13, neutral-glass correction): the
+//      films are the NEUTRAL WHITE rgba(255,255,255,.68-.75) band, the
+//      caption strip carries exactly ONE glass paint (.app-header
+//      transparent, no blur), and the ink ladder is the dark slate
+//      DEF-188 set. Blue is ACCENT ONLY (Open button, selected states,
+//      active tools, focus).
 //   2. Dark / Light / Frosted each verified; side-by-side evidence.
 //   3. All toolboxes share the unified sticky-note pattern (grip == body
 //      width + action bar) with matching drag bar widths.
@@ -158,10 +160,10 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
     await snap('qa-glass-workspace-frosted.png');
 
     // ---- The glass ladder: every chrome sheet translucent + blurred ------
-    // Phase-14 single-caption-glass contract (DEF-183): .app-header paints
+    // Phase-14.1 single-caption-glass contract (DEF-183): .app-header paints
     // nothing and blurs nothing — it is checked separately below; the
-    // painted films sit in the 0.54-0.65 blue band (frame 0.65, toolbar
-    // 0.56, rail 0.54, panel 0.62, DEF-182).
+    // painted films sit in the 0.68-0.75 NEUTRAL WHITE band (frame 0.75,
+    // toolbar 0.68, rail 0.68, panel 0.68) with the 20px glass blur.
     const selectors = ['.titlebar', '.app-header', '.toolbar', '.ann-toolbar', '.side-rail', '.tools-palette'];
     const mats = [];
     for (const sel of selectors) mats.push(await materialOf(sel));
@@ -177,25 +179,39 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
       expect(a, `${m.selector} must be translucent (>=0.50)`).toBeGreaterThanOrEqual(0.5);
       expect(a, `${m.selector} must stay see-through enough for glass (<=0.86)`).toBeLessThanOrEqual(0.86);
       expect(m.backdropFilter, `${m.selector} must blur what is behind it`).toContain('blur');
-      expect(m.backdropFilter, `${m.selector} blur must be the heavy 22px glass blur`).toContain('22px');
+      expect(m.backdropFilter, `${m.selector} blur must be the 20px neutral glass blur`).toContain('20px');
       expect(m.backdropFilter, `${m.selector} must saturate through the glass`).toContain('saturate');
       expect(m.boxShadow, `${m.selector} must carry inner shadows (glass thickness)`).toContain('inset');
+      // Phase-14.1 NEUTRAL film: pure white paint (R == G == B == 255).
+      const film = parseRgba(m.bg);
+      expect(film.r, `${m.selector} film must be neutral (R 255)`).toBe(255);
+      expect(film.g, `${m.selector} film must be neutral (G 255)`).toBe(255);
+      expect(film.b, `${m.selector} film must be neutral (B 255)`).toBe(255);
     }
-    // DEF-182: the films are BLUE — B leads R by ~124 in the paint.
-    const titlebarFilm = parseRgba(mats[0].bg);
-    expect(titlebarFilm.b - titlebarFilm.r, 'titlebar film must be blue-tinted (B-R >= 100)').toBeGreaterThanOrEqual(100);
 
-    // The depth ladder (DEF-182 retune): the frame is the deepest band
-    // sheet (0.65) and the floating tools card (0.62) reads heavier than
-    // the command bands (0.56/0.54) — the old panel-over-frame pin is
-    // gone with the blue retune.
+    // ACCENT-ONLY blue: the command bar's Open button is the ONE solid
+    // accent control in the chrome (the reference's leading blue button);
+    // the films themselves stay neutral.
+    const openBtnBg = await win.evaluate(() => {
+      const btn = document.querySelector('.commandbar-open');
+      return btn ? getComputedStyle(btn).backgroundColor : null;
+    });
+    console.log('[glass] command-bar Open =', openBtnBg);
+    expect(openBtnBg, 'the command bar must render the accent Open button').not.toBeNull();
+    const openRgb = parseRgba(openBtnBg);
+    expect(openRgb.b, 'Open button must be the blue accent (B >> R)').toBeGreaterThan(openRgb.r + 100);
+    expect(openRgb.a, 'Open button is a SOLID accent (alpha 1)').toBe(1);
+
+    // The depth ladder (Phase-14.1): the frame is the deepest chrome sheet
+    // (0.75) and BOTH floating sidebars share ONE material (0.68) — the
+    // GlassSidebar contract; the command band sits at 0.68 too.
     const frameA = parseRgba(mats[0].bg).a;
-    const toolbarA = parseRgba(mats[2].bg).a;
     const railA = parseRgba(mats[4].bg).a;
     const panelA = parseRgba(mats[5].bg).a;
     expect(frameA, 'the frame must be at least as opaque as the floating panel (depth)').toBeGreaterThanOrEqual(panelA);
-    expect(panelA, 'the floating tools sheet must be MORE opaque than the toolbar band (depth)').toBeGreaterThan(toolbarA);
-    expect(panelA).toBeGreaterThanOrEqual(railA);
+    expect(panelA, 'the Tools panel must share the Pages rail material EXACTLY (one GlassSidebar)').toBe(railA);
+    expect(panelA, 'the shared sidebar sheet must sit in the 0.66-0.70 band').toBeGreaterThanOrEqual(0.66);
+    expect(panelA).toBeLessThanOrEqual(0.7);
 
     // Moving reflection on the big chrome sheets.
     for (const sel of ['.toolbar', '.side-rail', '.tools-palette']) {
@@ -313,9 +329,12 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
         expect(rgb.r > 235 && rgb.g > 235 && rgb.b > 235, 'light toolbar is near-white').toBe(true);
       } else {
         expect(ta, 'frosted toolbar is TRANSLUCENT (the glass difference)').toBeLessThanOrEqual(0.86);
-        expect(ta, 'frosted toolbar film sits in the 0.54-0.65 blue band (DEF-182)').toBeGreaterThanOrEqual(0.5);
+        expect(ta, 'frosted toolbar film sits in the 0.5-0.86 neutral band (Phase 14.1)').toBeGreaterThanOrEqual(0.5);
         expect(m.toolbar.blur, 'frosted toolbar blurs behind it').toContain('blur');
         expect(m.palette.blur, 'frosted palette blurs behind it').toContain('blur');
+        expect(rgb.r, 'frosted toolbar film is NEUTRAL white (R 255)').toBe(255);
+        expect(rgb.g, 'frosted toolbar film is NEUTRAL white (G 255)').toBe(255);
+        expect(rgb.b, 'frosted toolbar film is NEUTRAL white (B 255)').toBe(255);
       }
     }
     const frost = matrix[2];

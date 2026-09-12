@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 // React 19 needs this flag set before importing react-dom/client so
 // that `act` recognises the test env and stops spamming stderr.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -13,7 +13,7 @@ import {
 import type { UpdateState } from "../../../src/shared/types";
 
 /**
- * DEF-077 — UpdateIndicator regression tests.
+ * DEF-077 â€” UpdateIndicator regression tests.
  *
  * The toolbar must surface OTA update availability to the user
  * without forcing them to open the About dialog. These tests pin:
@@ -76,15 +76,15 @@ function renderIndicator(props: {
 //
 // Exhaustive over UpdateState: each kind maps to a precise IndicatorView.
 // A new kind added to the union without a mapping here will fail TS
-// exhaustiveness — same shape as `describeUpdateState` in AboutDialog.
+// exhaustiveness â€” same shape as `describeUpdateState` in AboutDialog.
 // ---------------------------------------------------------------------------
-describe("indicatorView — pure UpdateState -> IndicatorView mapping (DEF-077)", () => {
+describe("indicatorView â€” pure UpdateState -> IndicatorView mapping (DEF-077)", () => {
   it("hides for null / undefined (haven't asked yet)", () => {
     expect(indicatorView(null).kind).toBe("hidden");
     expect(indicatorView(undefined).kind).toBe("hidden");
   });
 
-  it("hides for 'unsupported' (portable build — About dialog owns that story)", () => {
+  it("hides for 'unsupported' (portable build â€” About dialog owns that story)", () => {
     const view: IndicatorView = indicatorView({
       kind: "unsupported",
       reason: "Portable build does not support auto-update",
@@ -161,7 +161,7 @@ describe("indicatorView — pure UpdateState -> IndicatorView mapping (DEF-077)"
 // ---------------------------------------------------------------------------
 // Mounting / IPC subscription.
 // ---------------------------------------------------------------------------
-describe("UpdateIndicator — mount + subscription (DEF-077)", () => {
+describe("UpdateIndicator â€” mount + subscription (DEF-077)", () => {
   beforeEach(() => {
     clearTflex();
   });
@@ -368,7 +368,7 @@ describe("UpdateIndicator — mount + subscription (DEF-077)", () => {
 // ---------------------------------------------------------------------------
 // Click routing.
 // ---------------------------------------------------------------------------
-describe("UpdateIndicator — click routing (DEF-077)", () => {
+describe("UpdateIndicator â€” click routing (DEF-077)", () => {
   beforeEach(() => {
     clearTflex();
   });
@@ -482,7 +482,7 @@ describe("UpdateIndicator — click routing (DEF-077)", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    // The progress chip is a <span>, not a <button> — a click must
+    // The progress chip is a <span>, not a <button> â€” a click must
     // not queue a second download.
     const interactive = container.querySelector(
       'button[data-update-indicator-kind="downloading"]',
@@ -493,12 +493,12 @@ describe("UpdateIndicator — click routing (DEF-077)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// AppHeader integration — the indicator must mount inside .header-actions
+// AppHeader integration â€” the indicator must mount inside .header-actions
 // and appear before the theme toggle (spec: "next to the Tools/theme
 // controls"). This is the integration test that proves AppHeader wires
 // the slot through correctly.
 // ---------------------------------------------------------------------------
-describe("AppHeader — update indicator slot (DEF-077)", () => {
+describe("AppHeader â€” update indicator slot (DEF-077)", () => {
   beforeEach(() => {
     clearTflex();
   });
@@ -533,7 +533,6 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
           onClose={(): void => undefined}
           theme={"dark"}
           onThemeChange={(): void => undefined}
-          onOpen={(): void => undefined}
           onNewEmptyTab={(): void => undefined}
           onOpenPreferences={(): void => undefined}
           updateIndicator={<UpdateIndicator />}
@@ -546,13 +545,13 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
     expect(actions).not.toBeNull();
     const indicator = actions?.querySelector("[data-update-indicator]");
     expect(indicator).not.toBeNull();
-    // The theme toggle is the next sibling — spec said "next to the
+    // The theme toggle is the next sibling â€” spec said "next to the
     // Tools/theme controls", so the indicator and the theme toggle
     // must be adjacent inside .header-actions.
     const themeToggle = actions?.querySelector(".theme-toggle");
     expect(themeToggle).not.toBeNull();
     // Order: indicator appears before theme toggle. Use
-    // querySelectorAll("*") to walk every descendant — React
+    // querySelectorAll("*") to walk every descendant â€” React
     // can insert comment nodes between adjacent elements in
     // the rendered tree (visible via .children but not via
     // .querySelectorAll("*")), and the slot's button can be
@@ -596,7 +595,6 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
           onClose={(): void => undefined}
           theme={"dark"}
           onThemeChange={(): void => undefined}
-          onOpen={(): void => undefined}
           onNewEmptyTab={(): void => undefined}
           onOpenPreferences={(): void => undefined}
         />,
@@ -611,7 +609,7 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// OTA UX — `externalState` prop. The App.tsx wiring owns the
+// OTA UX â€” `externalState` prop. The App.tsx wiring owns the
 // single shared onStatusChanged subscription (so the prompt
 // dialog and the toolbar chip see the same push). The indicator
 // reads its state from the prop and skips its own subscription
@@ -627,7 +625,7 @@ describe("AppHeader — update indicator slot (DEF-077)", () => {
 //   4. `onStatusChanged` is NOT subscribed when `externalState`
 //      is set (no double-listener).
 // ---------------------------------------------------------------------------
-describe("UpdateIndicator — externalState prop (OTA UX shared subscription)", () => {
+describe("UpdateIndicator â€” externalState prop (OTA UX shared subscription)", () => {
   beforeEach(() => {
     clearTflex();
   });

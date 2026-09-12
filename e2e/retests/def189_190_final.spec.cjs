@@ -331,7 +331,10 @@ test('Phase 14 FINAL checklist facts on the fixed build (glass, insets, corners,
     const app = document.querySelector('.app');
     const rail = document.querySelector('.side-rail');
     const pal = document.querySelector('[data-tools-palette]');
-    const railTitle = (rail && rail.querySelector('.rail-title') || {}).textContent;
+    // Phase 14.1: the Pages header is the shared GlassSidebar header —
+    // the title span is .glass-sidebar-title (the legacy .rail-title
+    // span is gone with the docked rail).
+    const railTitle = (rail && rail.querySelector('.glass-sidebar-title') || {}).textContent;
     const descs = Array.from(document.querySelectorAll('.tools-palette-entry')).map((e) => ({
       id: e.getAttribute('data-tool-id'),
       label: ((e.querySelector('.tools-palette-entry-label') || {}).textContent || '').trim(),
@@ -353,17 +356,24 @@ test('Phase 14 FINAL checklist facts on the fixed build (glass, insets, corners,
   console.log('[P14 final facts]', JSON.stringify(facts, null, 1));
 
   expect(facts.theme).toBe('frosted');
-  // Glass surfaces carry the DEF-182 blue tint: blue-dominant translucent films.
+  // Phase-14.1 NEUTRAL glass contract: the films are pure-white
+  // translucent sheets (blue is accent-only now — Open button, selected
+  // states, focus), carrying the 20px glass blur.
   for (const name of ['titlebar', 'rail', 'palette']) {
     const s = facts[name];
     expect(s, `${name} present`).not.toBeNull();
     expect(s.rgba, `${name} background must be translucent`).not.toBeNull();
     expect(s.rgba.a, `${name} film alpha`).toBeLessThan(0.9);
-    expect(s.rgba.b, `${name} film blue channel >= red (blue tint)`).toBeGreaterThanOrEqual(s.rgba.r);
-    expect(s.blur, `${name} frosted blur`).toContain('blur(22px)');
+    expect(s.rgba.r, `${name} film must be neutral white (R 255)`).toBe(255);
+    expect(s.rgba.g, `${name} film must be neutral white (G 255)`).toBe(255);
+    expect(s.rgba.b, `${name} film must be neutral white (B 255)`).toBe(255);
+    expect(s.blur, `${name} frosted blur`).toContain('blur(20px)');
   }
-  // Rounded corners: window shell 16px, panels 16px (checklist item).
-  expect(facts.appRadius).toContain('16px');
+  // Rounded corners (Phase 14.1 radii hierarchy): window shell in the
+  // 18-22px band, panels at the 16px panel radius.
+  const appR = parseFloat(facts.appRadius);
+  expect(appR, 'window shell radius must sit in the 14.1 window band (18-22px)').toBeGreaterThanOrEqual(18);
+  expect(appR).toBeLessThanOrEqual(22);
   expect(facts.palette.radius).toContain('16px');
   // Floating inset panels with gutters (16px right / 12px bottom).
   expect(facts.palettePanelInsetRight).toBeGreaterThanOrEqual(12);

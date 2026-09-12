@@ -52,7 +52,6 @@ function mountHeader(overrides: Partial<Parameters<typeof AppHeader>[0]> = {}): 
       onClose={NOOP}
       theme="frosted"
       onThemeChange={NOOP}
-      onOpen={NOOP}
       onNewEmptyTab={NOOP}
       onOpenPreferences={overrides.onOpenPreferences ?? NOOP}
       {...overrides}

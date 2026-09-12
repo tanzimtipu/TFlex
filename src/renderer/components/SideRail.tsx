@@ -9,6 +9,7 @@ import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
 import { buildPageLabelMap } from './pageGeometry';
 import { TfPanelLeft } from './motion/TfMotion';
+import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 
 interface SideRailProps {
   doc: PDFDocumentProxy;
@@ -139,39 +140,46 @@ export function SideRail(props: SideRailProps) {
 
   return (
     <TfPanelLeft className="side-rail">
-      <div className="rail-header">
-        <span className="rail-title">{railTitle}</span>
-      </div>
-      <div className="rail-tabs">
-        <button
-          type="button"
-          className={tab === 'thumbs' ? 'rail-tab rail-tab-active' : 'rail-tab'}
-          onClick={() => setTab('thumbs')}
-          title="Page thumbnails"
-        >
-          <Images size={16} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className={tab === 'annotations' ? 'rail-tab rail-tab-active' : 'rail-tab'}
-          onClick={() => setTab('annotations')}
-          title="Annotations"
-          data-rail-tab="annotations"
-        >
-          <MessageSquare size={16} aria-hidden />
-        </button>
-        {outline !== null && (
-          <button
-            type="button"
-            className={tab === 'outline' ? 'rail-tab rail-tab-active' : 'rail-tab'}
-            onClick={() => setTab('outline')}
-            title="Bookmarks"
-          >
-            <List size={16} aria-hidden />
-          </button>
-        )}
-      </div>
-      <div className="rail-content">
+      {/* Phase 14.1 — the shared GlassSidebar header: title left, view
+       * toggle right, ONE 44px row for both floating panels. The legacy
+       * .rail-header / .rail-tabs classes stay on the elements so the
+       * existing CSS/e2e contracts keep resolving. */}
+      <GlassSidebarHeader
+        title={railTitle}
+        className="rail-header"
+        actions={
+          <div className="rail-tabs">
+            <button
+              type="button"
+              className={tab === 'thumbs' ? 'rail-tab rail-tab-active' : 'rail-tab'}
+              onClick={() => setTab('thumbs')}
+              title="Page thumbnails"
+            >
+              <Images size={16} aria-hidden />
+            </button>
+            <button
+              type="button"
+              className={tab === 'annotations' ? 'rail-tab rail-tab-active' : 'rail-tab'}
+              onClick={() => setTab('annotations')}
+              title="Annotations"
+              data-rail-tab="annotations"
+            >
+              <MessageSquare size={16} aria-hidden />
+            </button>
+            {outline !== null && (
+              <button
+                type="button"
+                className={tab === 'outline' ? 'rail-tab rail-tab-active' : 'rail-tab'}
+                onClick={() => setTab('outline')}
+                title="Bookmarks"
+              >
+                <List size={16} aria-hidden />
+              </button>
+            )}
+          </div>
+        }
+      />
+      <GlassSidebarBody className="rail-content">
         {tab === 'thumbs' ? (
           <ThumbnailRail
             doc={doc}
@@ -200,7 +208,7 @@ export function SideRail(props: SideRailProps) {
         ) : (
           <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} />
         )}
-      </div>
+      </GlassSidebarBody>
     </TfPanelLeft>
   );
 }

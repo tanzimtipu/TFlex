@@ -11,7 +11,6 @@ import {
 import {
   Check,
   ChevronDown,
-  FolderOpen,
   Moon,
   Plus,
   Settings,
@@ -34,7 +33,10 @@ interface AppHeaderProps {
    *  chosen theme ('frosted' | 'dark' | 'light') instead of a blind
    *  toggle, so the dropdown can persist any of the three values. */
   onThemeChange: (next: Theme) => void;
-  onOpen: () => void;
+  /** Phase 14.1 — REMOVED: the Open button moved to the command bar
+   *  (CommandBar's accent File group) per the Liquid Glass reference:
+   *  the caption strip is logo | tabs | app controls | window controls,
+   *  and document commands live in the command bar below it. */
   /** Phase 6 — "+ tab" affordance. Spawns a brand-new empty tab that
    *  the user can fill by opening a PDF. The host owns the empty-tab
    *  state (see App.tsx -> tabs.openEmpty). */
@@ -74,7 +76,7 @@ function themeLabel(value: Theme): string {
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, onThemeChange, onOpen, onNewEmptyTab, onOpenPreferences, updateIndicator = null } = props;
+  const { activeId, tabs, onActivate, onClose, theme, onThemeChange, onNewEmptyTab, onOpenPreferences, updateIndicator = null } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
@@ -398,15 +400,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             </div>
           )}
         </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={onOpen}
-          style={{ height: 28, padding: "0 10px", fontSize: 12 }}
-        >
-          <FolderOpen size={16} aria-hidden />
-          Open
-        </button>
+        {/* Phase 14.1 — the Open button MOVED to the command bar
+         *  (CommandBar's accent File group). The header-actions cluster
+         *  is [update indicator | gear | theme] — the caption strip's
+         *  app-level controls only. */}
       </div>
     </header>
   );

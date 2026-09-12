@@ -41,6 +41,7 @@ import {
   X,
 } from 'lucide-react';
 import { TfPanel } from './motion/TfMotion';
+import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 
 export type ToolsPaletteLayout = 'list' | 'grid';
 
@@ -470,43 +471,53 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       role="complementary"
       aria-label="Tools"
     >
-      <header className="tools-palette-header">
-        <span className="tools-palette-title">Tools</span>
-        <div className="tools-palette-toggle" role="group" aria-label="Layout">
-          <button
-            type="button"
-            className={layout === 'list' ? 'tools-palette-toggle-btn tools-palette-toggle-active' : 'tools-palette-toggle-btn'}
-            onClick={(): void => onLayoutChange('list')}
-            aria-pressed={layout === 'list'}
-            aria-label="List layout"
-            title="List layout"
-            data-tools-layout="list"
-          >
-            <LayoutList size={16} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={layout === 'grid' ? 'tools-palette-toggle-btn tools-palette-toggle-active' : 'tools-palette-toggle-btn'}
-            onClick={(): void => onLayoutChange('grid')}
-            aria-pressed={layout === 'grid'}
-            aria-label="Grid layout"
-            title="Grid layout"
-            data-tools-layout="grid"
-          >
-            <LayoutGrid size={16} aria-hidden />
-          </button>
-        </div>
-        <button
-          type="button"
-          className="tools-palette-close"
-          onClick={onClose}
-          aria-label="Close tools palette"
-          title="Close"
-        >
-          <X size={16} aria-hidden />
-        </button>
-      </header>
-      <div className="tools-palette-body">
+      {/* Phase 14.1 — the shared GlassSidebar header: title left, layout
+       * toggle + close right. The SAME 44px header component the Pages
+       * rail uses, so both floating panels are one material system. The
+       * legacy .tools-palette-header class stays for the CSS/e2e
+       * contracts. */}
+      <GlassSidebarHeader
+        title="Tools"
+        className="tools-palette-header"
+        actions={
+          <>
+            <div className="tools-palette-toggle" role="group" aria-label="Layout">
+              <button
+                type="button"
+                className={layout === 'list' ? 'tools-palette-toggle-btn tools-palette-toggle-active' : 'tools-palette-toggle-btn'}
+                onClick={(): void => onLayoutChange('list')}
+                aria-pressed={layout === 'list'}
+                aria-label="List layout"
+                title="List layout"
+                data-tools-layout="list"
+              >
+                <LayoutList size={16} aria-hidden />
+              </button>
+              <button
+                type="button"
+                className={layout === 'grid' ? 'tools-palette-toggle-btn tools-palette-toggle-active' : 'tools-palette-toggle-btn'}
+                onClick={(): void => onLayoutChange('grid')}
+                aria-pressed={layout === 'grid'}
+                aria-label="Grid layout"
+                title="Grid layout"
+                data-tools-layout="grid"
+              >
+                <LayoutGrid size={16} aria-hidden />
+              </button>
+            </div>
+            <button
+              type="button"
+              className="tools-palette-close"
+              onClick={onClose}
+              aria-label="Close tools palette"
+              title="Close"
+            >
+              <X size={16} aria-hidden />
+            </button>
+          </>
+        }
+      />
+      <GlassSidebarBody className="tools-palette-body">
         {TOOL_GROUPS.map((group) => {
           const groupEntries = group.entryIds
             .map((id) => entryById.get(id))
@@ -565,7 +576,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
             </section>
           );
         })}
-      </div>
+      </GlassSidebarBody>
     </TfPanel>
   );
 }

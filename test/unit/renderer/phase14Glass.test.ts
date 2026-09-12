@@ -1,10 +1,16 @@
 // @vitest-environment node
 //
-// Phase 14 — Liquid Glass static CSS contract. Pins the glass theme's
-// structural guarantees the way the existing bug/design-token guards
-// do: ambient backdrop, focus/defocus blur var, panel radii and widths,
-// wrapping tool descriptions (never truncated), the spring hover curve,
-// and the reduced-motion collapse of the hover lift.
+// Phase 14 + Phase 14.1 — Liquid Glass static CSS contract. Pins the
+// glass theme's structural guarantees the way the existing bug/design-
+// token guards do: ambient backdrop, focus/defocus blur var, panel
+// radii and widths, wrapping tool descriptions (never truncated), the
+// spring hover curve, and the reduced-motion collapse of the hover
+// lift.
+//
+// Phase 14.1 (the CORRECTION) re-pins the material itself: the glass
+// films are NEUTRAL white/gray translucent sheets (never the Phase-14
+// blue films), the chrome heights are tokenized (title 44 / command
+// 52), and both sidebars float with 16px margins.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -64,7 +70,7 @@ describe("Phase 14 — liquid glass tokens and ambient backdrop", () => {
     expect(css).toMatch(/--tf-radius-panel:\s*16px/);
   });
 
-  it("defocusing the window relaxes the frosted blur (22px -> 12px)", () => {
+  it("defocusing the window relaxes the frosted blur (20px -> 12px)", () => {
     const body = findRuleBody(css, ':root[data-window-focus="blurred"]');
     expect(body).not.toBeNull();
     expect(body ?? "").toMatch(/--tf-acrylic-blur:\s*12px/);
@@ -72,7 +78,7 @@ describe("Phase 14 — liquid glass tokens and ambient backdrop", () => {
 
   it("the chrome blur rule tweens backdrop-filter (fluid focus change)", () => {
     const stripped = stripCssComments(css);
-    const rule = /-webkit-backdrop-filter:\s*blur\(var\(--tf-acrylic-blur\)\)[\s\S]{0,300}?transition:[\s\S]{0,300}?backdrop-filter\s+var\(--tf-motion-normal\)/.exec(
+    const rule = /-webkit-backdrop-filter:\s*var\(--glass-blur\)[\s\S]{0,300}?transition:[\s\S]{0,300}?backdrop-filter\s+var\(--tf-motion-normal\)/.exec(
       stripped,
     );
     expect(rule, "the Phase-A blur rule must tween backdrop-filter").not.toBeNull();
@@ -92,10 +98,13 @@ describe("Phase 14 — liquid glass tokens and ambient backdrop", () => {
     expect(body).not.toBeNull();
     const aurora = body ?? "";
     expect(aurora.match(/radial-gradient\(/g)?.length).toBe(4);
-    // Blue leads (the single accent family); violet/pink stay hints.
-    expect(aurora).toMatch(/rgba\(37,\s*99,\s*235,\s*0\.14\)/);
-    expect(aurora).toMatch(/rgba\(139,\s*92,\s*246,\s*0\.10\)/);
-    expect(aurora).toMatch(/rgba\(236,\s*72,\s*153,\s*0\.09\)/);
+    // Phase 14.1 — the hints are NEUTRAL (zinc/slate/sky): the glass
+    // must read neutral over every backdrop, so the in-app backdrop
+    // tint may not push it blue/violet/pink.
+    expect(aurora).toMatch(/rgba\(148,\s*163,\s*184,\s*0\.1\)/);
+    expect(aurora).toMatch(/rgba\(203,\s*213,\s*225,\s*0\.09\)/);
+    expect(aurora).toMatch(/rgba\(100,\s*116,\s*139,\s*0\.08\)/);
+    expect(aurora).toMatch(/rgba\(125,\s*211,\s*252,\s*0\.06\)/);
   });
 
   it("the frosted workspace steps aside so the ambient shows through the glass", () => {
@@ -122,13 +131,15 @@ describe("Phase 14 — liquid glass tokens and ambient backdrop", () => {
   });
 });
 
-describe("Phase 14 — floating glass shell (DEF-184/186/187)", () => {
+describe("Phase 14 — floating glass shell (DEF-184/186/187, Phase 14.1 margins)", () => {
   const css = readStyles();
 
-  it("the workspace carries the wallpaper gutters (16px sides, 12px bottom, 12px column gap)", () => {
+  it("the workspace carries the wallpaper gutters (16px sides + bottom, 12px column gap)", () => {
     const body = findRuleBody(css, ':root[data-theme="frosted"] .workspace');
     expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/padding:\s*0\s+16px\s+12px\s+16px/);
+    expect(body ?? "").toMatch(
+      /padding:\s*0\s+var\(--panel-margin,\s*16px\)\s+var\(--panel-margin,\s*16px\)\s+var\(--panel-margin,\s*16px\)/,
+    );
     expect(body ?? "").toMatch(/column-gap:\s*12px/);
   });
 
@@ -141,25 +152,28 @@ describe("Phase 14 — floating glass shell (DEF-184/186/187)", () => {
     expect(body ?? "").toMatch(/margin-right:\s*-16px/);
   });
 
-  it("the pages rail starts below the toolbar band with a wallpaper gap", () => {
+  it("the pages rail starts below the command band with a 16px glass gap", () => {
     const body = findRuleBody(css, ':root[data-theme="frosted"] .side-rail');
     expect(body).not.toBeNull();
+    // --tf-band-h is the MEASURED band height DocumentView publishes, so
+    // a wrapped band on a narrow window pushes the card down; the
+    // fallback is the static command-bar token.
     expect(body ?? "").toMatch(
-      /margin-top:\s*calc\(var\(--toolbar-h,\s*56px\)\s*\+\s*12px\)/,
+      /margin-top:\s*calc\(var\(--tf-band-h,\s*var\(--chrome-commandbar-h,\s*52px\)\)\s*\+\s*var\(--panel-margin,\s*16px\)\)/,
     );
-    // Floating card: hairline on all sides, never a docked right edge.
-    expect(body ?? "").toMatch(/border:\s*1px solid var\(--tf-border\)/);
+    // Floating card: glass hairline on all sides, never a docked right edge.
+    expect(body ?? "").toMatch(/border:\s*1px solid var\(--glass-sidebar-border\)/);
   });
 
-  it("the tools panel is inset from the window edges (16px right, 12px bottom)", () => {
+  it("the tools panel is inset from the window edges (16px right/top-gap/bottom)", () => {
     const body = findRuleBody(css, ':root[data-theme="frosted"] .tools-palette');
     expect(body).not.toBeNull();
     expect(body ?? "").toMatch(
-      /top:\s*calc\(var\(--toolbar-h,\s*56px\)\s*\+\s*12px\)/,
+      /top:\s*calc\(var\(--tf-band-h,\s*var\(--chrome-commandbar-h,\s*52px\)\)\s*\+\s*var\(--panel-margin,\s*16px\)\)/,
     );
-    expect(body ?? "").toMatch(/right:\s*16px/);
-    expect(body ?? "").toMatch(/bottom:\s*12px/);
-    expect(body ?? "").toMatch(/border:\s*1px solid var\(--tf-border\)/);
+    expect(body ?? "").toMatch(/right:\s*var\(--panel-margin,\s*16px\)/);
+    expect(body ?? "").toMatch(/bottom:\s*var\(--panel-margin,\s*16px\)/);
+    expect(body ?? "").toMatch(/border:\s*1px solid var\(--glass-sidebar-border\)/);
   });
 
   it("the document canvas ends beside the tools card so the wallpaper is its backdrop", () => {
@@ -176,45 +190,64 @@ describe("Phase 14 — floating glass shell (DEF-184/186/187)", () => {
     expect(grid?.[1] ?? "").toMatch(/right:\s*392px/);
   });
 
-  it("the window shell rounds at the panel radius and squares when maximized", () => {
+  it("the window shell rounds at the window radius and squares when maximized", () => {
     const body = findRuleBody(css, ':root[data-theme="frosted"] .app');
     expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/border-radius:\s*var\(--tf-radius-panel\)/);
+    expect(body ?? "").toMatch(/border-radius:\s*var\(--radius-window,\s*20px\)/);
     expect(body ?? "").toMatch(/overflow:\s*hidden/);
     const maximized = findRuleBody(css, ':root[data-theme="frosted"] .app-maximized');
     expect(maximized).not.toBeNull();
     expect(maximized ?? "").toMatch(/border-radius:\s*0/);
   });
 
-  it("the glass films are BLUE-tinted, not neutral white (DEF-182)", () => {
+  it("the glass films are NEUTRAL, never blue (Phase 14.1 correction)", () => {
     const m = /:root\[data-theme="frosted"\]\s*\{([\s\S]*?)\n\}/m.exec(css);
     expect(m).not.toBeNull();
     const frosted = m?.[1] ?? "";
-    // The reference mock's glass reads blue over every backdrop — the
-    // films are translucent rgb(126,178,250) sheets (measured titlebar
-    // rgb(125.6,178.4,249.8)), never neutral gray/white.
+    // The corrected material resolves into the :root --glass-* tokens:
+    // translucent WHITE sheets (r=g=b=255) in the 0.55-0.80 band, so the
+    // wallpaper behind the window supplies the tint (DEF-182's mock read
+    // blue because of the blue WALLPAPER, not a blue paint).
     for (const token of [
       "--tf-surface-frame",
-      "--tf-surface-toolbar",
       "--tf-surface-rail",
       "--tf-surface-panel",
     ]) {
-      expect(frosted).toMatch(new RegExp(`${token}\\s*:\\s*rgba\\(126,\\s*178,\\s*250,`));
+      expect(frosted).toMatch(new RegExp(`${token}\\s*:\\s*var\\(--glass-`));
     }
-    // The B-R spread that makes the tint read blue survives in the
-    // paint itself: B channel leads R by ~124 in the film color.
-    const frame = /--tf-surface-frame:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/.exec(frosted);
-    expect(frame).not.toBeNull();
-    if (frame !== null) {
-      const r = Number(frame[1]);
-      const g = Number(frame[2]);
-      const b = Number(frame[3]);
-      expect(Number(frame[4])).toBeGreaterThan(0);
-      expect(Number(frame[4])).toBeLessThan(0.8);
-      expect(g).toBeGreaterThan(r);
-      expect(g).toBeLessThan(b);
-      expect(b - r).toBeGreaterThanOrEqual(100);
+    // The toolbar film is an explicit white sheet.
+    const toolbar = /--tf-surface-toolbar:\s*rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/.exec(frosted);
+    expect(toolbar).not.toBeNull();
+    if (toolbar !== null) {
+      const [r, g, b] = [Number(toolbar[1]), Number(toolbar[2]), Number(toolbar[3])];
+      const alpha = Number(toolbar[4]);
+      expect(r).toBe(255);
+      expect(g).toBe(255);
+      expect(b).toBe(255);
+      expect(alpha).toBeGreaterThan(0);
+      expect(alpha).toBeLessThan(0.8);
     }
+    // The glass material tokens themselves are neutral white films
+    // (equal RGB channels — no hue tint) in the translucent band.
+    for (const token of ["--glass-bg", "--glass-chrome-bg", "--glass-sidebar-bg"]) {
+      const film = new RegExp(`${token}:\\s*rgba\\((\\d+),\\s*(\\d+),\\s*(\\d+),\\s*([\\d.]+)\\)`).exec(frosted);
+      expect(film, `${token} must be an explicit rgba film in the frosted block`).not.toBeNull();
+      if (film !== null) {
+        const [r, g, b] = [Number(film[1]), Number(film[2]), Number(film[3])];
+        expect(r).toBe(255);
+        expect(g).toBe(255);
+        expect(b).toBe(255);
+        expect(Number(film[4])).toBeGreaterThan(0.5);
+        expect(Number(film[4])).toBeLessThan(0.9);
+      }
+    }
+    // The B-R spread that made the Phase-14 films read BLUE is gone:
+    // rgba(126,178,250) (B-R +124) appears in no rule body (comments
+    // documenting the old defect are allowed to mention it).
+    expect(stripCssComments(css)).not.toMatch(/rgba\(126,\s*178,\s*250/);
+    // The blue accent survives ONLY as the accent (selected/active/
+    // focus/primary): the accent tokens stay blue.
+    expect(css).toMatch(/--accent:\s*#2563eb/);
   });
 });
 
@@ -259,9 +292,9 @@ describe("DEF-181 — the desktop wallpaper composites through the frosted glass
 
   it("the welcome launch surface is a translucent wash, never a solid sheet", () => {
     const welcome = findRuleBody(css, ':root[data-theme="frosted"] .welcome');
-    expect(welcome ?? "").toMatch(/background:\s*rgba\(222,\s*234,\s*252,\s*0\.42\)/);
+    expect(welcome ?? "").toMatch(/background:\s*rgba\(255,\s*255,\s*255,\s*0\.42\)/);
     const hero = findRuleBody(css, ':root[data-theme="frosted"] .welcome-hero');
-    expect(hero ?? "").toMatch(/background:\s*rgba\(214,\s*230,\s*252,\s*0\.62\)/);
+    expect(hero ?? "").toMatch(/background:\s*rgba\(255,\s*255,\s*255,\s*0\.62\)/);
     // Deliberately no backdrop-filter here: the wallpaper blur is the OS
     // acrylic material's job and the 14-surface chrome blur contract
     // (design tokens) stays exact.
@@ -378,5 +411,109 @@ describe("Phase 14 — spring tool motion", () => {
     const body = block?.[1] ?? "";
     expect(body).toMatch(/\.tools-palette-entry/);
     expect(body).toMatch(/transform:\s*none\s*!important/);
+  });
+});
+
+describe("Phase 14.1 — standardized chrome heights + glass material components", () => {
+  const css = readStyles();
+
+  it("the THREE top-bar heights are tokenized (44 / 52 / 40)", () => {
+    expect(css).toMatch(/--chrome-titlebar-h:\s*44px/);
+    expect(css).toMatch(/--chrome-commandbar-h:\s*52px/);
+    expect(css).toMatch(/--chrome-contextbar-h:\s*40px/);
+    // The legacy --toolbar-h alias resolves into the command-bar token.
+    expect(css).toMatch(/--toolbar-h:\s*var\(--chrome-commandbar-h\)/);
+  });
+
+  it("the caption strip renders at the standardized 44px height", () => {
+    const header = findRuleBody(css, ".app-header");
+    expect(header ?? "").toMatch(/height:\s*var\(--chrome-titlebar-h\)/);
+  });
+
+  it("the command bar renders at the standardized 52px height", () => {
+    const toolbar = findRuleBody(css, ".toolbar");
+    expect(toolbar ?? "").toMatch(/min-height:\s*var\(--chrome-commandbar-h\)/);
+    // 16px horizontal padding + the 8px grid spacing tokens.
+    expect(toolbar ?? "").toMatch(/padding:\s*var\(--space-small\)\s+var\(--space-standard\)/);
+  });
+
+  it("the GlassControlGroup capsule exists at the control-group radius", () => {
+    const group = findRuleBody(css, ".glass-control-group");
+    expect(group).not.toBeNull();
+    expect(group ?? "").toMatch(/height:\s*var\(--control-height\)/);
+    expect(group ?? "").toMatch(/border-radius:\s*var\(--radius-group\)/);
+    expect(group ?? "").toMatch(/background:\s*var\(--glass-group-bg\)/);
+    expect(group ?? "").toMatch(/border:\s*1px solid var\(--glass-group-border\)/);
+    // Edge characteristics: the luminous top highlight + soft shadow.
+    expect(group ?? "").toMatch(/inset 0 1px 0 var\(--glass-highlight\)/);
+    expect(group ?? "").toMatch(/0 1px 2px rgba\(0,\s*0,\s*0,\s*0\.08\)/);
+  });
+
+  it("the frosted capsule floats on the band's own glass (lightest film)", () => {
+    const frosted = findRuleBodies(css, ':root[data-theme="frosted"] .glass-control-group')
+      .find((b) => /background:\s*var\(--glass-group-bg\)/.test(b));
+    expect(frosted).toBeDefined();
+    expect(frosted ?? "").toMatch(/border-color:\s*var\(--glass-group-border\)/);
+  });
+
+  it("the GlassSidebar header is one shared 44px row for both panels", () => {
+    const header = findRuleBody(css, ".glass-sidebar-header");
+    expect(header).not.toBeNull();
+    expect(header ?? "").toMatch(/height:\s*var\(--glass-sidebar-header-h\)/);
+    expect(header ?? "").toMatch(/justify-content:\s*space-between/);
+    const title = findRuleBody(css, ".glass-sidebar-title");
+    expect(title ?? "").toMatch(/font-weight:\s*600/);
+  });
+
+  it("both sidebars consume the SAME glass sidebar material (left = right)", () => {
+    const rail = findRuleBody(css, ':root[data-theme="frosted"] .side-rail');
+    const panel = findRuleBody(css, ':root[data-theme="frosted"] .tools-palette');
+    expect(rail ?? "").toMatch(/border:\s*1px solid var\(--glass-sidebar-border\)/);
+    expect(panel ?? "").toMatch(/border:\s*1px solid var\(--glass-sidebar-border\)/);
+    expect(rail ?? "").toMatch(/var\(--glass-shadow\)/);
+    expect(panel ?? "").toMatch(/var\(--glass-shadow\)/);
+    // One material: both panels paint --glass-sidebar-bg (the panel
+    // resolves it directly; the rail through --bg-rail -> --tf-surface-rail).
+    expect(panel ?? "").toMatch(/background:\s*var\(--glass-sidebar-bg\)/);
+    expect(css).toMatch(/--tf-surface-rail:\s*var\(--glass-sidebar-bg\)/);
+    expect(css).toMatch(/--tf-surface-panel:\s*var\(--glass-sidebar-bg\)/);
+  });
+
+  it("the command bar's Open button is the accent primary at control height", () => {
+    const open = findRuleBody(css, ".commandbar-open");
+    expect(open).not.toBeNull();
+    expect(open ?? "").toMatch(/height:\s*var\(--control-height\)/);
+    expect(open ?? "").toMatch(/border-radius:\s*var\(--radius-control\)/);
+  });
+
+  it("the selected thumbnail is a thin accent outline + halo, not a blue rectangle", () => {
+    const selected = findRuleBodies(css, ':root[data-theme="frosted"] .thumb-selected')
+      .find((b) => /box-shadow:/.test(b));
+    expect(selected).toBeDefined();
+    expect(selected ?? "").toMatch(/0 0 0 2px var\(--glass-selected-border\)/);
+    expect(selected ?? "").toMatch(/0 0 0 4px rgba\(37,\s*99,\s*235,\s*0\.15\)/);
+    expect(selected ?? "").not.toMatch(/background:\s*rgba\(37,\s*99,\s*235,\s*0\.14\)/);
+  });
+
+  it("the design-token ladder (spacing / radii / control sizes) is declared", () => {
+    for (const token of [
+      "--space-micro",
+      "--space-small",
+      "--space-control",
+      "--space-standard",
+      "--space-section",
+      "--space-major",
+      "--radius-window",
+      "--radius-panel",
+      "--radius-group",
+      "--radius-control",
+      "--radius-pill",
+      "--control-height",
+      "--control-height-large",
+      "--hit-target",
+      "--panel-margin",
+    ]) {
+      expect(css).toMatch(new RegExp(`${token}\\s*:`));
+    }
   });
 });

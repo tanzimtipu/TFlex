@@ -141,3 +141,64 @@ title-bar affordances, and repoints the single accent to `#2563eb`.
 - Performance: the round adds one toolbar button, one header button,
   and two pointer listeners; no render-path changes, so the Phase-13
   budget is unaffected.
+## Phase 14.1 — Liquid Glass CORRECTION (glass material system)
+
+Corrects the Phase-14 blue transparency into the coherent neutral
+Liquid Glass material: standardized chrome heights, grouped command
+bar, one shared glass-sidebar material for both floating panels, and
+the Phase 14.1 token ladder (spacing / radii / control sizes / material
+hierarchy) in `src/renderer/styles.css`.
+
+| Control | Selector | Promised action | Unit test | E2e |
+|---|---|---|---|---|
+| Open (command bar, accent) | `.commandbar-open` (`data-toolbar-open`) | Opens the OS file dialog via the host `onOpenClick`; MOVED from the title bar to the command bar's File group per the reference | `test/unit/renderer/commandBar.test.tsx` (renders, a11y name, fires `onOpenFile`, primary treatment) | (qa: click Open -> dialog -> document opens) |
+| File group | `.glass-control-group[aria-label='File']` | Capsule holding the accent Open button (blue = primary action only) | `test/unit/renderer/commandBar.test.tsx` (group order + a11y) | (qa: capsule present) |
+| Navigation group | `.glass-control-group[aria-label='Navigation']` | `[<] [1/34 input] [>]` in one capsule; Enter on the input commits `onJump` | `test/unit/renderer/commandBar.test.tsx` (structure + Enter commit) | (qa: jump + prev/next) |
+| Save group | `.glass-control-group[aria-label='Save']` | Save + Save a copy (states unchanged from Phase 13) | `test/unit/renderer/commandBar.test.tsx` | (qa: save states) |
+| Zoom group | `.glass-control-group[aria-label='Zoom']` | `[-] [372% chip] [+]` + fit-width / fit-page | `test/unit/renderer/commandBar.test.tsx` | (qa: zoom in/out/fit) |
+| Tools group | `.glass-control-group[aria-label='Tools']` | Search / rotate ccw+cw / hand / edit / delete / optimize / audit / flatten in ONE capsule | `test/unit/renderer/commandBar.test.tsx` (a11y sweep) | (qa: no-op sweep by data-*) |
+| Actions group | `.glass-control-group[aria-label='Document actions']` | Merge / Split / Sign / More (ellipsis, `data-tools-toggle` kept), pinned to the trailing edge | `test/unit/renderer/commandBar.test.tsx` | (qa: capsule pinned right, palette opens) |
+| GlassChrome title bar | `.titlebar.glass-chrome-title` | Standardized 44px caption strip (drag region + no-drag children unchanged) | `test/unit/renderer/glassChrome.test.tsx` (variant class + height var + data passthrough), `test/unit/renderer/phase14Glass.test.ts` (44px token) | `e2e/phase13_gate_final.spec.cjs` SC1 (drag/controls unchanged) |
+| GlassSidebar header (Pages) | `.side-rail .glass-sidebar-header` | "Pages" title left + view tabs right in ONE 44px shared row | `test/unit/renderer/glassSidebar.test.tsx` | (qa: rail header) |
+| GlassSidebar header (Tools) | `.tools-palette .glass-sidebar-header` | "Tools" title + layout toggle + close; SAME header component as Pages (material parity) | `test/unit/renderer/glassSidebar.test.tsx` | (qa: palette header) |
+| Selected thumbnail | `.thumb-current` / `.thumb-selected` | Thin accent outline + `0 0 0 4px` accent halo (2px outline drawn via box-shadow so the rail's 1px-border slot math never shifts); canvas stays opaque | `test/unit/renderer/phase14Glass.test.ts` ("thin accent outline + halo") | (qa: thumbnails) |
+| Measured band offset | `--tf-band-h` (published by DocumentView on `.app-main` + `.workspace`) | The floating cards drop below the command band even when it WRAPS on narrow windows (fallback `--chrome-commandbar-h` 52px) | `test/unit/renderer/phase14Glass.test.ts` (band var in rail/palette rules) | (qa: 900px window - no overlap) |
+
+### QA gate notes for this round (Phase 14.1)
+
+- Screenshots: `screenshots/phase141-01-welcome-frosted.png`,
+  `phase141-02-workspace-frosted.png`, `phase141-03-palette-open-frosted.png`,
+  `phase141-04-workspace-light.png`, `phase141-04-workspace-dark.png`,
+  `phase141-06-commandbar-closeup.png`, `phase141-07-narrow-frosted.png`,
+  `phase141-08-palette-light.png`. DOM facts logged by the harness:
+  titlebar 44px (white 0.75 film, blur 20px saturate 1.2), command bar
+  52px full-width band, rail x=16 y=112, palette right=1424 (16px
+  insets), both headers 44px, capsules File/Navigation/Save/Zoom/Tools/
+  Document actions, Open = rgb(37,99,235), page canvas backdrop none +
+  paper white, zero renderer errors.
+- E2E CONTRACTS THAT MUST BE RE-TIMED (qa-owned, pinned to the OLD
+  blue material): `e2e/frost_verify.spec.cjs` (films
+  rgba(126,178,250,.54-.65) + blur(22px) + saturate(1.3) checks),
+  `e2e/phase14_qa.spec.cjs` P14-A/P14-B (`blur(22px)` /
+  `saturate(1.3|130%)` assertions; blur is now 20px / saturate 1.2),
+  `e2e/retests/def189_190_final.spec.cjs` (`blur(22px)` check),
+  `e2e/retests/qa_frost_glass_visual_1103.spec.cjs` (blue-film band).
+  The neutral films are white rgba(255,255,255,.68-.75) + blur(20px)
+  saturate(1.2); DEF-182's "glass reads blue" now comes from the
+  wallpaper behind the window, not a painted film.
+- E2E SELECTOR CHANGES (qa-owned): the Open button left the title bar
+  `.header-actions .btn-primary` (now `[data-toolbar-open]` in the
+  command bar) - `e2e/phase13_qa_sweep.spec.cjs` and
+  `e2e/phase13_visual_verification.spec.cjs` reference the old
+  selector for opening files and in the no-drag list. The welcome
+  screen's "Open PDF" button is unchanged (canonical opener).
+- Unit tests: 2140 renderer tests pass (incl. new
+  `glassChrome.test.tsx` / `commandBar.test.tsx` /
+  `glassSidebar.test.tsx`; contract updates in `phase14Glass.test.ts`,
+  `def183_188_frostedGlassFix.test.ts` (glass composites recomputed
+  for the neutral films), `designTokensContract.test.ts` (token
+  indirection). `appHeader.test.tsx` / `phase13Controls.test.tsx` /
+  `updateIndicator.test.tsx` drop the removed `onOpen` prop.
+- Performance: no render-path change; the measure effect adds two
+  custom-property writes per re-measure (resize-gated). The Phase-13
+  budget is unaffected.

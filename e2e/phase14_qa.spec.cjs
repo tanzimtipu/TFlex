@@ -166,9 +166,11 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     facts('titlebar', { bg: titlebar.bg, backdropFilter: titlebar.backdropFilter, radius: titlebar.borderRadius });
     expect(titlebar.alpha).not.toBeNull();
     expect(titlebar.alpha).toBeLessThan(0.9); // translucent, not solid
-    expect(titlebar.backdropFilter).toContain('blur(22px)');
-    // Computed style serializes saturate(130%) as saturate(1.3).
-    expect(titlebar.backdropFilter).toMatch(/saturate\((?:1\.3|130%)\)/);
+    // Phase 14.1 — the neutral glass drops the blur 22px -> 20px and the
+    // saturation boost 1.3 -> 1.2 (restrained saturation is a 14.1 goal).
+    expect(titlebar.backdropFilter).toContain('blur(20px)');
+    // Computed style serializes saturate(120%) as saturate(1.2).
+    expect(titlebar.backdropFilter).toMatch(/saturate\((?:1\.2|120%)\)/);
 
     const appAndBody = await win.evaluate(() => ({
       htmlBg: getComputedStyle(document.documentElement).backgroundColor,
@@ -215,8 +217,8 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     const rail = await materialOf('.side-rail');
     facts('sideRail', { bg: rail.bg, alpha: rail.alpha, backdropFilter: rail.backdropFilter, radius: rail.borderRadius });
     expect(rail.alpha).toBeLessThan(0.9);
-    expect(rail.backdropFilter).toContain('blur(22px)');
-    // Rounded inner corners: 0 16px 16px 0 (spec band 16-20px).
+    expect(rail.backdropFilter).toContain('blur(20px)');
+    // Floating card: ALL four corners rounded at the 16px panel radius.
     expect(rail.borderRadius.replace(/0px/g, '0')).toContain('16px');
 
     await snap('phase14-qa-02-workspace-frosted.png');
@@ -301,7 +303,10 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
 
     const structure = await win.evaluate(() => {
       const palette = document.querySelector('[data-tools-palette]');
-      const title = palette.querySelector('.tools-palette-title');
+      // Phase 14.1: the palette header is the shared GlassSidebarHeader,
+      // so the title span is .glass-sidebar-title (the old
+      // .tools-palette-title span is gone with the legacy header).
+      const title = palette.querySelector('.glass-sidebar-title');
       const toggles = Array.from(palette.querySelectorAll('[data-tools-layout]')).map((b) => ({
         layout: b.getAttribute('data-tools-layout'),
         pressed: b.getAttribute('aria-pressed'),
@@ -413,7 +418,7 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     const palAlpha = Number(/rgba?\([^)]*,\s*([\d.]+)\)/.exec(structure.paletteBg)[1]);
     facts('paletteAlpha', palAlpha);
     expect(palAlpha).toBeLessThan(0.9);
-    expect(structure.backdropFilter).toContain('blur(22px)');
+    expect(structure.backdropFilter).toContain('blur(20px)');
 
     await snap('phase14-qa-03-palette-list-frosted.png');
   });
@@ -603,7 +608,7 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     expect(Math.abs(parseFloat(parallax.y))).toBeGreaterThan(0);
   });
 
-  test('P14-F focus/defocus blur intensity change (22px <-> 12px)', async () => {
+  test('P14-F focus/defocus blur intensity change (20px <-> 12px)', async () => {
     test.setTimeout(180000);
     electronApp = await launchApp();
     win = await electronApp.firstWindow();
@@ -621,7 +626,7 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     }));
     facts('focusState', focusedBlur);
     expect(focusedBlur.focus).toBe('focused');
-    expect(focusedBlur.paletteBackdrop).toContain('blur(22px)');
+    expect(focusedBlur.paletteBackdrop).toContain('blur(20px)');
 
     // Real defocus first: blur the native window. NOTE: Playwright keeps
     // focus emulation on for its targets, so the DOM blur may never fire
@@ -653,7 +658,7 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     expect(blurredBlur.paletteBackdrop).toContain('blur(12px)');
     await snap('phase14-qa-06-defocused.png');
 
-    // Refocus restores 22px (same harness boundary: the native focus()
+    // Refocus restores 20px (same harness boundary: the native focus()
     // alone may not reach the renderer; deliver the event too).
     await electronApp.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0].focus();
@@ -668,6 +673,6 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     const refocused = await win.evaluate(() =>
       getComputedStyle(document.querySelector('[data-tools-palette]')).backdropFilter);
     facts('refocusedBlur', refocused);
-    expect(refocused).toContain('blur(22px)');
+    expect(refocused).toContain('blur(20px)');
   });
 });

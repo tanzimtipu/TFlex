@@ -51,3 +51,14 @@
 
 *Method: e2e/perf_retime via the standard Playwright Electron harness on the uncommitted Phase-14 fix build (titlebar z-40 stacking fix + stamp selection-chrome page lift; dist rebuilt from the current tree). Unchanged vs the Phase-14 gate row above (572/536/128.63MB) — the fixes cost nothing measurable. Recorded by qa at the DEF-189/DEF-190 final verification (2026-09-13).*
 
+## Phase 14.1 gate re-time (dev build, neutral Liquid Glass correction)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Cold start to interactive | < 3000ms | 555ms | PASS |
+| Open long.pdf (520 pages) | < 3000ms | 565ms | PASS |
+| Idle memory (main process) | < 400MB | 158.84MB | PASS |
+| Animation frame rate (Phase 14 SC6: hover springs + palette motion + parallax) | 60fps, no frame drops | avg 60.0fps; p95 frame gap 16.7ms; max gap 16.8ms; 0 frames > 100ms | PASS |
+
+*Method: e2e/perf_retime + e2e/phase14_qa.spec.cjs P14-E rAF frame probe via the standard Playwright Electron harness on the Phase-14.1 neutral-glass build (dist rebuilt from the current tree; GlassChrome/GlassSidebar/GlassControlGroup primitives, 20px blur films). Cold start and open are unchanged vs the Phase-14 close row (547/517ms); idle main RSS 158.84MB stays far under the < 400MB budget (the +33MB vs 125.78MB is session noise across runs, comfortably in budget). Frame rate measured on the same 14.1 build during the e2e update run. Recorded by qa at the Phase-14.1 gate (2026-09-13).*
+

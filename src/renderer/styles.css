@@ -67,7 +67,11 @@
    * ladder lives on the per-surface --tf-surface-* tokens in the
    * frosted block. */
   --tf-acrylic-opacity-main: 0.78;
-  --tf-acrylic-blur: 22px;
+  /* Phase 14.1 — the glass blur drops 22px -> 20px (the neutral material
+   * needs less diffusion than the old blue film) and the saturate boost
+   * is retuned 1.3 -> 1.2 (restrained saturation). The defocused state
+   * (data-window-focus="blurred") still relaxes this var to 12px. */
+  --tf-acrylic-blur: 20px;
   --tf-radius-sm: 5px;
   --tf-radius-md: 8px;
   --tf-radius-lg: 10px;
@@ -87,6 +91,81 @@
   --radius-1: 3px;
   --radius-2: 5px;
   --radius-3: 8px;
+
+  /* =========================================================================
+   * Phase 14.1 — LIQUID GLASS CORRECTION: the standardized design-token
+   * system. Eight fixes in one block:
+   *   1. Spacing — the 8px grid (micro/small/control/standard/section/major).
+   *   2. Corner radii — one ladder per hierarchy level (window / panel /
+   *      control group / control / pill).
+   *   3. Control sizes — visual height + hit target.
+   *   4. Chrome heights — the THREE top bars are tokenized: title bar 44px,
+   *      command bar 52px, context toolbar 40px. NO arbitrary heights.
+   *   5. Neutral frosted-glass material — white/gray translucent base,
+   *      NEVER blue (blue is the accent for selected/active/focus/primary
+   *      states only).
+   *   6. Material hierarchy — chrome / sidebar / control-group / hover /
+   *      selected films, each with its own opacity, border, shadow and
+   *      edge highlight.
+   * These live in :root next to the motion tokens (same convention);
+   * per-theme overrides only re-map the SURFACE colors below.
+   * ------------------------------------------------------------------------- */
+  --space-micro: 4px;
+  --space-small: 8px;
+  --space-control: 12px;
+  --space-standard: 16px;
+  --space-section: 24px;
+  --space-major: 32px;
+
+  --radius-window: 20px;
+  --radius-panel: 16px;
+  --radius-group: 12px;
+  --radius-control: 10px;
+  --radius-pill: 9999px;
+
+  --control-height: 36px;
+  --control-height-large: 44px;
+  --hit-target: 40px;
+
+  --chrome-titlebar-h: 44px;
+  --chrome-commandbar-h: 52px;
+  --chrome-contextbar-h: 40px;
+  /* Legacy alias — the toolbar height predates the chrome tokens and is
+   * read by the Tools palette + OCR-bar sibling offsets (bugB4 contract
+   * reads this exact name in the base palette rule). */
+  --toolbar-h: var(--chrome-commandbar-h);
+
+  /* Neutral frosted glass — the ONE glass material. White translucent
+   * base, luminous edge, soft shadow, restrained saturation. The :root
+   * values below are the LIGHT-theme mapping (slate hairlines keep the
+   * capsules visible on solid light chrome); the FROSTED block carries
+   * the canonical Liquid Glass values verbatim (white translucent
+   * films + white luminous borders) and dark remaps the whole family.
+   * The --tf-acrylic-blur numeric var feeds the focus/defocus tween;
+   * the composed filter is --glass-blur. */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(15, 23, 42, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.55);
+  --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.12);
+  --glass-blur: blur(var(--tf-acrylic-blur, 20px)) saturate(1.2);
+
+  /* Material hierarchy: chrome (title/command bars) > sidebars >
+   * control groups > hover > selected. Chrome is the densest film
+   * (needs text contrast), sidebars are a touch clearer, groups are
+   * the lightest capsule so controls read as "floating on glass". */
+  --glass-chrome-bg: rgba(255, 255, 255, 0.75);
+  --glass-chrome-border: rgba(15, 23, 42, 0.08);
+  --glass-sidebar-bg: rgba(255, 255, 255, 0.68);
+  --glass-sidebar-border: rgba(15, 23, 42, 0.08);
+  --glass-group-bg: rgba(15, 23, 42, 0.045);
+  --glass-group-border: rgba(15, 23, 42, 0.08);
+  --glass-hover-bg: rgba(15, 23, 42, 0.05);
+  --glass-selected-bg: rgba(37, 99, 235, 0.12);
+  --glass-selected-border: rgba(37, 99, 235, 0.35);
+  /* The glass sidebar header row (shared by Pages + Tools). */
+  --glass-sidebar-header-h: 44px;
+  /* Floating-panel margin: sidebars never touch the window edges. */
+  --panel-margin: 16px;
 
   /* GLOBAL MOTION SYSTEM — the single theme-independent timing +
    * easing source for the whole app. Deliberately OUTSIDE any
@@ -360,6 +439,22 @@
   --icon-red: #e07a74;
   --icon-pink: #d88bb0;
 
+  /* Phase 14.1 — dark mapping of the glass material. The chips flip to
+   * translucent white on the near-black panels (the same inversion the
+   * --bg-hover family uses); the structural values (blur, radii,
+   * heights) are theme-independent and stay in :root. */
+  --glass-bg: rgba(20, 24, 29, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-highlight: rgba(255, 255, 255, 0.18);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --glass-chrome-bg: rgba(21, 25, 31, 0.75);
+  --glass-chrome-border: rgba(255, 255, 255, 0.16);
+  --glass-sidebar-bg: rgba(19, 23, 28, 0.68);
+  --glass-sidebar-border: rgba(255, 255, 255, 0.12);
+  --glass-group-bg: rgba(255, 255, 255, 0.06);
+  --glass-group-border: rgba(255, 255, 255, 0.1);
+  --glass-hover-bg: rgba(255, 255, 255, 0.1);
+
   color-scheme: dark;
 }
 
@@ -391,66 +486,61 @@
  * per-rule restyle (that sweep is Phase B).
  * ------------------------------------------------------------------------- */
 :root[data-theme="frosted"] {
-  /* Light frosted palette, BLUE-TINTED (DEF-182). The reference mock's
-   * glass reads blue over every backdrop — the material is a cool
-   * azure acrylic lit from above, not a neutral white sheet. The base
-   * (#dfe9fb) and the per-family sheets carry the same hue family as
-   * the mock's measured titlebar rgb(126,178,250): the glass films are
-   * translucent rgb(126,178,250) sheets, so the desktop wallpaper
-   * behind the window keeps the composite firmly in the blue family
-   * regardless of the backdrop behind the window. */
-  --tf-bg: #dfe9fb;
-  --tf-surface-1: #e7eefb;
-  --tf-surface-2: #e2eafb;
-  --tf-surface-3: #f4f8ff;
-  /* Phase C — glass-material opacity ladder. One alpha per chrome
-   * family so the workspace reads as ONE continuous frosted pane with
-   * four hierarchy levels (frame -> toolbar/sidebars -> floating ->
-   * menus/dialogs), never as near-opaque plastic cards. The sheets sit
-   * in the 0.55-0.93 translucent band: low enough that the REAL
-   * desktop wallpaper visibly diffuses through the blur behind each
-   * sheet (DEF-183 — the two-backdrop see-through contract), high
-   * enough that the dark text ladder keeps its contrast. Diffuses,
-   * never hides. */
-  --tf-surface-frame: rgba(126, 178, 250, 0.65);    /* window frame / titlebar */
-  --tf-surface-toolbar: rgba(126, 178, 250, 0.56);  /* command + annotation toolbars, search */
-  --tf-surface-rail: rgba(126, 178, 250, 0.54);     /* left thumbnail sidebar (cooler) */
-  --tf-surface-panel: rgba(126, 178, 250, 0.62);    /* right tools panel — floating sheet */
-  --tf-surface-menu: rgba(190, 214, 252, 0.86);     /* menus / popovers */
-  --tf-surface-dialog: rgba(222, 235, 253, 0.93);   /* dialogs / sheets */
-  --tf-surface-float: rgba(190, 214, 252, 0.84);    /* floating chip controls */
-  --tf-surface-tab-active: rgba(190, 214, 252, 0.76); /* active tab (a touch clearer than frame) */
+  /* Phase 14.1 — NEUTRAL frosted palette. The Phase-14 blue films
+   * (rgba(126,178,250,*)) misread the Liquid Glass reference as "blue +
+   * transparent"; the correction makes the glass NEUTRAL: white/gray
+   * translucent sheets, restrained saturation, blue demoted to the
+   * accent (selected / active / focus / primary actions only). The
+   * films now resolve into the :root --glass-* material tokens so the
+   * whole chrome is ONE coherent material system.
+   * DEF-182 note: the reference mock's glass read blue because of the
+   * BLUE WALLPAPER behind it — the material itself is neutral white
+   * acrylic; the tint the user sees is the wallpaper diffusing through
+   * it, not a painted film. Painting the film blue (the Phase-14
+   * reading) made the glass blue over EVERY backdrop; the corrected
+   * material stays neutral and lets the wallpaper supply the color. */
+  --tf-bg: #eef1f5;
+  --tf-surface-1: #f3f5f8;
+  --tf-surface-2: #eef1f5;
+  --tf-surface-3: #fafbfd;
+  /* Phase C — glass-material opacity ladder, now pointing at the
+   * neutral Phase-14.1 material tokens (one source of truth). */
+  --tf-surface-frame: var(--glass-chrome-bg);      /* window frame / titlebar */
+  --tf-surface-toolbar: rgba(255, 255, 255, 0.68); /* command + annotation toolbars, search */
+  --tf-surface-rail: var(--glass-sidebar-bg);      /* left thumbnail sidebar */
+  --tf-surface-panel: var(--glass-sidebar-bg);     /* right tools panel — SAME material */
+  --tf-surface-menu: rgba(255, 255, 255, 0.86);    /* menus / popovers */
+  --tf-surface-dialog: rgba(255, 255, 255, 0.93);  /* dialogs / sheets */
+  --tf-surface-float: rgba(255, 255, 255, 0.84);   /* floating chip controls */
+  --tf-surface-tab-active: rgba(255, 255, 255, 0.76); /* active tab */
   /* Phase-A legacy aliases — the old names keep resolving into the
    * new per-surface hierarchy so nothing regresses. */
   --tf-surface-1-acrylic: var(--tf-surface-toolbar);
   --tf-surface-2-acrylic: var(--tf-surface-rail);
   --tf-surface-3-acrylic: var(--tf-surface-dialog);
-  /* Hairlines read as a cool light-blue edge catching the frosted
-   * pane — never a white outline and never black. */
-  --tf-border: #c3d3f0;
-  --tf-highlight: rgba(255, 255, 255, 0.55);
-  --tf-divider: #dbe5f6;
-  /* DEF-188 — dark ink ladder, re-anchored to the reference mock. qa
-   * measured the old muted tiers drowning on the mid-blue glass (desc
-   * luma spread 11-16, "Undo last change" 28, group labels BELOW the
-   * glass: -28). The whole ladder moves to the mock's dark-navy ink
-   * family; against qa's measured glass composites (palette
-   * rgb(97,135,213) over aurora / rgb(98,131,182) over near-black) the
-   * strong tier clears WCAG 4.5:1, body ink clears it on the aurora
-   * grab, and the muted/faint tiers land rendered qa-spreads of 55-70
-   * (the mock's description spread is 57). The faint tier sits just one
-   * step below the muted tier on purpose: qa's glass is far darker than
-   * the mock's, and the mock's own group labels read nearly as dark as
-   * its descriptions — the hierarchy there is carried by size/weight. */
+  /* Hairlines: a translucent neutral edge that reads on light AND dark
+   * wallpapers, never an obvious white outline and never a blue cast.
+   * The luminous edge comes from the --glass-highlight inset (below). */
+  --tf-border: var(--glass-border);
+  --tf-highlight: var(--glass-highlight);
+  --tf-divider: rgba(15, 23, 42, 0.06);
+  /* DEF-188 — dark ink ladder. The Phase-14.1 glass is NEUTRAL light
+   * acrylic (0.68-0.75 white films), so the ink needs to stay a deep,
+   * low-saturation slate-navy: on the light glass the old mock-tuned
+   * navy ladder now clears contrast with a wide margin (the corrected
+   * material is far lighter than the Phase-14 blue films, where qa
+   * measured dark-on-dark drowning). The ladder stays navy rather than
+   * pure zinc so tab/heading ink keeps the app's professional cast. */
   --tf-text-primary: #0e1830;
   --tf-text-secondary: #14203a;
   --tf-text-tertiary: #1f2a4a;
   --tf-text-disabled: #24325a;
 
-  /* Base + workspace. The document canvas stays a SOLID very light
-   * cool blue — never translucent (only chrome gets the blur). */
+  /* Base + workspace. The document canvas stays a SOLID neutral
+   * near-white — never translucent (only chrome gets the blur), never
+   * tinted, never competing with the PDF page. */
   --bg-base: var(--tf-bg);
-  --bg-sunken: #d9e4f8;
+  --bg-sunken: #e8ebf0;
   --bg-raised: var(--tf-surface-dialog);
   --bg-toolbar: var(--tf-surface-toolbar);
   --bg-rail: var(--tf-surface-rail);
@@ -479,32 +569,33 @@
 
   /* Hairlines */
   --border: var(--tf-border);
-  --border-strong: #b3c6e8;
-  --border-subtle: #dfe8f7;
+  --border-strong: rgba(15, 23, 42, 0.18);
+  --border-subtle: rgba(15, 23, 42, 0.06);
   --divider: var(--tf-divider);
 
   /* Menus + floating surfaces — acrylic so they read as one
    * continuous light frosted glass layer over the workspace. */
   --menu-bg: var(--tf-surface-menu);
-  --menu-border: #b9cbe9;
+  --menu-border: var(--glass-border);
 
   --sample-card-bg: var(--tf-surface-2);
   --sample-card-bg-hover: var(--tf-surface-3);
   --sample-card-border: var(--tf-border);
   --sample-card-border-hover: rgba(37, 99, 235, 0.35);
 
-  /* Soft cool shadows — elevation without harsh black, tinted toward
-   * the blue glass family (never warm gray). */
-  --shadow-page: 0 2px 10px rgba(30, 58, 138, 0.10), 0 10px 28px rgba(30, 58, 138, 0.10);
-  --shadow-menu: 0 2px 8px rgba(30, 58, 138, 0.10), 0 10px 26px rgba(30, 58, 138, 0.12);
-  --shadow-dialog: 0 4px 14px rgba(30, 58, 138, 0.12), 0 14px 42px rgba(30, 58, 138, 0.16);
-  --shadow-popover: 0 2px 6px rgba(30, 58, 138, 0.08), 0 10px 24px rgba(30, 58, 138, 0.12);
-  --shadow-toast: 0 4px 12px rgba(30, 58, 138, 0.12), 0 2px 4px rgba(30, 58, 138, 0.06);
+  /* Soft neutral shadows — elevation without harsh black and without
+   * the old blue cast (Phase 14.1: the glass is neutral, so its
+   * shadows are neutral slate). */
+  --shadow-page: 0 2px 10px rgba(15, 23, 42, 0.10), 0 10px 28px rgba(15, 23, 42, 0.10);
+  --shadow-menu: 0 2px 8px rgba(15, 23, 42, 0.10), 0 10px 26px rgba(15, 23, 42, 0.12);
+  --shadow-dialog: 0 4px 14px rgba(15, 23, 42, 0.12), 0 14px 42px rgba(15, 23, 42, 0.16);
+  --shadow-popover: 0 2px 6px rgba(15, 23, 42, 0.08), 0 10px 24px rgba(15, 23, 42, 0.12);
+  --shadow-toast: 0 4px 12px rgba(15, 23, 42, 0.12), 0 2px 4px rgba(15, 23, 42, 0.06);
 
   /* Loading placeholders sit against the lighter rail/workspace, so
    * the well reads as a hair lighter than its container. */
-  --placeholder-from: #dbe6f8;
-  --placeholder-to: #cddcf5;
+  --placeholder-from: #e2e6ec;
+  --placeholder-to: #d5dae2;
 
   --hit: rgba(37, 99, 235, 0.28);
   --hit-active: rgba(37, 99, 235, 0.55);
@@ -535,15 +626,32 @@
   --icon-red: #d0615d;
   --icon-pink: #c9769f;
 
+  /* Phase 14.1 — the CANONICAL Liquid Glass values (the task-spec
+   * token block, verbatim). The frosted theme is the one theme that
+   * actually renders the glass material, so the spec's neutral white
+   * films land here; :root/dark carry their own light/dark mappings. */
+  --glass-bg: rgba(255, 255, 255, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.35);
+  --glass-highlight: rgba(255, 255, 255, 0.55);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --glass-chrome-bg: rgba(255, 255, 255, 0.75);
+  --glass-chrome-border: rgba(255, 255, 255, 0.4);
+  --glass-sidebar-bg: rgba(255, 255, 255, 0.68);
+  --glass-sidebar-border: rgba(255, 255, 255, 0.32);
+  --glass-group-bg: rgba(255, 255, 255, 0.55);
+  --glass-group-border: rgba(255, 255, 255, 0.25);
+  --glass-hover-bg: rgba(255, 255, 255, 0.85);
+
   color-scheme: light;
 }
 
-/* Phase-15 — frosted chrome treatment: blur(18px) saturate(115%) on
- * the app frame, toolbars, sidebar, tools panel, menus, dialogs and
- * floating controls ONLY. The document workspace (`.document-scroller`,
- * `.workspace-main`, `.pdf-page`, `.page-slot`, `.textLayer`, canvases)
- * is deliberately absent from this list — the sheet stays crisp and
- * the DEF-099 white-page contract is untouched.
+/* Phase-15 — frosted chrome treatment (Phase 14.1 material):
+ * blur(20px) saturate(1.2) on the app frame, toolbars, sidebar, tools
+ * panel, menus, dialogs and floating controls ONLY. The document
+ * workspace (`.document-scroller`, `.workspace-main`, `.pdf-page`,
+ * `.page-slot`, `.textLayer`, canvases) is deliberately absent from
+ * this list — the sheet stays crisp and the DEF-099 white-page
+ * contract is untouched.
  * DEF-183 — `.app-header` is deliberately ABSENT: it is the strip
  * INSIDE `.titlebar`'s slot, so a second blur+film here stacked a
  * ~0.88-effective double glass over the caption strip and blocked the
@@ -562,8 +670,8 @@
 :root[data-theme="frosted"] .sheet,
 :root[data-theme="frosted"] .color-popover,
 :root[data-theme="frosted"] .toast {
-  -webkit-backdrop-filter: blur(var(--tf-acrylic-blur)) saturate(130%);
-  backdrop-filter: blur(var(--tf-acrylic-blur)) saturate(130%);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
   /* Phase 14 — focus/defocus blur intensity change. The
    * --tf-acrylic-blur var drops when <html> carries
    * data-window-focus="blurred"; this tween relaxes the glass
@@ -842,13 +950,14 @@ input[type="checkbox"] {
   width: 100%;
   justify-content: space-between;
   align-items: center;
-  padding: 0 var(--sp-4);
-  /* Phase 2 — compact borderless caption: 34px lets the 34px tab
-   * strip fill the row exactly (tabs bottom-align via .tab-area's
-   * align-items: end), while brand + header-actions (28px buttons)
-   * keep 3px breathing room. The old 44px row read as a thick
-   * chrome bar; this reads as a slim VS Code-style caption. */
-  height: 34px;
+  padding: 0 var(--space-standard);
+  /* Phase 14.1 — the caption strip is tokenized at 44px
+   * (--chrome-titlebar-h): the ONE standardized top-bar height, so
+   * brand, tabs and the trailing controls share one consistent
+   * vertical centering (the old 34px strip was the "arbitrary height"
+   * the correction bans). The 34px tab strip keeps its browser-style
+   * bottom alignment inside the taller bar. */
+  height: var(--chrome-titlebar-h);
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar);
   flex-shrink: 0;
@@ -1519,6 +1628,18 @@ input[type="checkbox"] {
   border-color: var(--accent-pressed);
 }
 
+/* Phase 14.1 — the command bar's PRIMARY action. The reference puts
+ * Open as the blue accent button at the leading edge of the command
+ * bar (blue is reserved for primary actions); it rides the .btn
+ * lifecycle at the standardized --control-height with the
+ * --radius-control corner. */
+.commandbar-open {
+  height: var(--control-height);
+  padding: 0 var(--space-control);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-sm);
+}
+
 /* B8 — destructive primary (e.g. Delete). The accent colour reads
  * as "go", but a destructive action should be visually distinct so
  * the user doesn't accidentally commit. The error token's solid
@@ -1785,18 +1906,19 @@ input[type="checkbox"] {
 
 .side-rail {
   display: grid;
-  /* DEF-185 — the rail now carries a title header ("Pages") above the
-   * icon tab strip: auto row for the header, 38px tab strip, 1fr
-   * content. */
-  grid-template-rows: auto 38px 1fr;
+  /* DEF-185 + Phase 14.1 — the rail's header row now carries BOTH the
+   * title ("Pages" / "Annotations" / "Bookmarks") and the view-toggle
+   * tabs (GlassSidebar header: title left, actions right), so the grid
+   * is two rows: the 44px header, then the content. */
+  grid-template-rows: auto 1fr;
   border-right: 1px solid var(--border);
   background: var(--bg-rail);
   min-height: 0;
 }
 
-/* DEF-185 — the rail's title header. The mock shows a bold "Pages"
- * label at the panel top identifying the panel (the label follows the
- * active rail view: Pages / Annotations / Bookmarks). */
+/* DEF-185 — the rail's title header. Phase 14.1: the header is the
+ * shared GlassSidebarHeader (title left, view toggle right, 44px row);
+ * the legacy .rail-header class stays on it for the CSS contracts. */
 .rail-header {
   display: flex;
   align-items: center;
@@ -1804,20 +1926,16 @@ input[type="checkbox"] {
   padding: 4px 12px 0;
 }
 
-.rail-title {
-  font-size: var(--fs-lg);
-  font-weight: 700;
-  color: var(--fg-strong);
-  letter-spacing: -0.01em;
-}
-
 .rail-tabs {
   display: flex;
   align-items: stretch;
-  /* Phase-3 workspace: the tab strip is a section separator inside
-   * the rail — a subtle --divider hairline, not a full --border. */
-  border-bottom: 1px solid var(--divider);
-  background: var(--bg-toolbar);
+  /* Phase 14.1 — the tab strip is now the GlassSidebar header's right
+   * action cluster (title left, toggle right): no own hairline or
+   * background (the 44px header row carries the divider), and it
+   * stretches the full header height so the active-tab indicator can
+   * sit on the header's bottom edge. */
+  align-self: stretch;
+  background: transparent;
 }
 
 .rail-tab {
@@ -1889,7 +2007,9 @@ input[type="checkbox"] {
   padding: 6px;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: var(--radius-2);
+  /* Phase 14.1 — thumbnails round at the control-group radius band
+   * (8px), matching the radii ladder; the selected state re-uses it. */
+  border-radius: var(--radius-3);
   cursor: pointer;
   margin-bottom: 6px;
   text-align: center;
@@ -2071,11 +2191,15 @@ input[type="checkbox"] {
    * buttons (Merge / Split / Sign / Flatten / Optimize / Audit /
    * Tools) never overlap the navigation group. */
   flex-wrap: wrap;
-  gap: 4px var(--sp-3);
-  padding: 6px var(--sp-3);
+  gap: var(--space-small) var(--space-control);
+  /* Phase 14.1 — the command bar is tokenized at 52px
+   * (--chrome-commandbar-h) with 16px horizontal padding; the
+   * controls live in .glass-control-group capsules (12px between
+   * groups). */
+  padding: var(--space-small) var(--space-standard);
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar);
-  min-height: 44px;
+  min-height: var(--chrome-commandbar-h);
   flex-shrink: 0;
   /* Each side can use `margin-left: auto` to push the right cluster
    * to the trailing edge; this selector matches the second group. */
@@ -2097,12 +2221,30 @@ input[type="checkbox"] {
   min-width: 0;
 }
 
+/* ---------------------------------------------------------------------------
+ * Phase 14.1 — GLASS CONTROL GROUP: the command bar's capsule.
+ *
+ * Related controls live in one translucent capsule ("[< 1/34 >]",
+ * "[- 372% +]", the tools icon group, the actions group) instead of a
+ * field of loose heavy buttons. The capsule is a GlassControlGroup
+ * (React primitive in GlassChrome.tsx): a fixed --control-height row,
+ * --radius-group corners, the lightest glass film of the hierarchy
+ * (--glass-group-*) with the luminous top edge, and a 2px inner gap.
+ * The film is themed: light/dark get a quiet neutral chip, frosted
+ * gets the true translucent capsule over the blurred band.
+ * The .glass-control-group rule lives in the Phase 14.1 glass-material
+ * block at the end of this file, next to its sibling primitives. */
+
 .tool-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 28px;
-  height: 28px;
+  /* Phase 14.1 — visual height 32px (spec band 32-38px) inside the
+   * 36px capsule; the capsule's padding lifts the effective hit row
+   * to ~40px (spec hit target 36-44px). Width stays 28px so the dense
+   * tool capsules keep their rhythm. */
+  height: 32px;
   /* Buttons never shrink below 28px; this stops the navigation
    * cluster (page input, zoom percent) from compressing into
    * illegibility when the toolbar is narrow. */
@@ -5189,22 +5331,11 @@ rect.ann-highlight.ann-preview {
  * icon-tile width is gone. */
 .tools-palette-grid { width: 380px; }
 
-.tools-palette-header {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3);
-  /* Phase-3 workspace: header is a panel section separator — the
-   * subtle --divider hairline, not a full --border. */
-  border-bottom: 1px solid var(--divider);
-  background: var(--bg-toolbar);
-}
-.tools-palette-title {
-  flex: 1 1 auto;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  color: var(--fg-strong);
-}
+/* Phase 14.1 — the palette header is the shared GlassSidebarHeader
+ * (title left, layout toggle + close right, 44px row); the legacy
+ * .tools-palette-header class stays on the element for the CSS/e2e
+ * contracts. The .tools-palette-title rule is gone — the title renders
+ * through .glass-sidebar-title now. */
 .tools-palette-toggle {
   display: inline-flex;
   border: 1px solid var(--border);
@@ -8021,23 +8152,23 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .titlebar {
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -1px 0 rgba(96, 130, 190, 0.35);
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.1);
 }
 
 /* Primary command toolbar + secondary/annotation toolbar + search:
  * the same acrylic layer, sitting just above the frame. The two lower
  * rows are subtly lighter sheets (their own --tf-surface-toolbar
  * base already separates them); the inset edges put a bright light
- * catch on top and a soft cool lower edge on each row. Active tools
- * get the spec's 0.13 orange wash PLUS a soft warm ambient glow (the
- * accent control lights up the glass around it). */
+ * catch on top and a soft neutral lower edge on each row. Active tools
+ * get the accent wash PLUS a soft ambient glow (the accent control
+ * lights up the glass around it). */
 :root[data-theme="frosted"] .toolbar,
 :root[data-theme="frosted"] .ann-toolbar,
 :root[data-theme="frosted"] .search-bar {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.4),
-    inset 0 -1px 0 rgba(96, 130, 190, 0.25);
+    inset 0 -1px 0 rgba(15, 23, 42, 0.08);
 }
 
 :root[data-theme="frosted"] .tool-btn-active {
@@ -8045,64 +8176,69 @@ rect.ann-highlight.ann-preview {
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.3), 0 2px 10px rgba(37, 99, 235, 0.16);
 }
 
-/* Left thumbnail sidebar — a FLOATING frosted card (DEF-184): inset
- * 16px from the window's left edge by the glass gutters, starting
- * 12px below the toolbar band (the mock's ~15px gap), ALL four
- * corners rounded, hairline on all sides (no docked right edge), a
- * soft blue ambient drop shadow, a bright top light catch and a
- * faint darker lower inner edge (lit from above). */
+/* Left thumbnail sidebar — a FLOATING GLASS card (DEF-184, Phase 14.1
+ * material): inset 16px from the window's left edge by the glass
+ * gutters, starting 16px below the command-bar band (--panel-margin;
+ * --tf-band-h is the MEASURED band height DocumentView publishes, so a
+ * wrapped band on a narrow window pushes the card down instead of
+ * under it), ALL four corners rounded, the neutral glass hairline on
+ * all sides (no docked right edge), the soft neutral elevation shadow,
+ * the luminous top light catch and a faint darker lower inner edge (lit
+ * from above). Same material as the right sidebar. */
 :root[data-theme="frosted"] .side-rail {
-  margin-top: calc(var(--toolbar-h, 56px) + 12px);
-  border: 1px solid var(--tf-border);
+  margin-top: calc(var(--tf-band-h, var(--chrome-commandbar-h, 52px)) + var(--panel-margin, 16px));
+  border: 1px solid var(--glass-sidebar-border);
   border-radius: var(--tf-radius-panel);
   box-shadow:
-    0 12px 32px rgba(30, 58, 138, 0.16),
-    0 2px 8px rgba(30, 58, 138, 0.10),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -1px 0 rgba(96, 130, 190, 0.28);
+    var(--glass-shadow),
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.06);
 }
 
-/* Right Tools panel — a FLOATING frosted card (DEF-186): inset 16px
- * from the window's right edge, 12px above the bottom edge, 12px
- * below the toolbar band (anchored to .app-main, whose box spans the
- * window, so these are window-edge insets), ALL four corners rounded,
- * a crisp cool-blue hairline all around, a soft blue ambient shadow
- * beneath, and a faint inner top highlight. The docked left-edge
- * hairline and the left-falling dock shadow are gone. */
+/* Right Tools panel — a FLOATING GLASS card (DEF-186, Phase 14.1):
+ * inset 16px from the window's right edge, 16px above the bottom
+ * edge, 16px below the command-bar band (anchored to .app-main, whose
+ * box spans the window, so these are window-edge insets), ALL four
+ * corners rounded, the SAME neutral glass material as the left
+ * sidebar (one GlassSidebar material for both), soft neutral
+ * elevation shadow beneath, and the luminous inner top highlight. The
+ * docked left-edge hairline and the left-falling dock shadow are
+ * gone. */
 :root[data-theme="frosted"] .tools-palette {
-  top: calc(var(--toolbar-h, 56px) + 12px);
-  right: 16px;
-  bottom: 12px;
-  background: var(--tf-surface-panel);
-  border: 1px solid var(--tf-border);
+  top: calc(var(--tf-band-h, var(--chrome-commandbar-h, 52px)) + var(--panel-margin, 16px));
+  right: var(--panel-margin, 16px);
+  bottom: var(--panel-margin, 16px);
+  background: var(--glass-sidebar-bg);
+  border: 1px solid var(--glass-sidebar-border);
   border-radius: var(--tf-radius-panel);
   box-shadow:
-    0 12px 32px rgba(30, 58, 138, 0.16),
-    0 2px 8px rgba(30, 58, 138, 0.10),
-    inset 0 0 1px rgba(255, 255, 255, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    var(--glass-shadow),
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 rgba(15, 23, 42, 0.06);
 }
 
 /* Menus / popovers — the floating layer: nearly opaque white sheet,
- * cool hairline border, soft slate shadow and a faint top highlight
+ * neutral hairline border, soft slate shadow and a faint top highlight
  * so the panel reads as a raised lit pane. */
 :root[data-theme="frosted"] .titlebar-menu-popover,
 :root[data-theme="frosted"] .theme-toggle-popover,
 :root[data-theme="frosted"] .color-popover {
   background: var(--tf-surface-menu);
-  border: 1px solid #b9cbe9;
+  border: 1px solid var(--glass-border);
   border-radius: var(--tf-radius-md);
-  box-shadow: 0 10px 28px rgba(30, 58, 138, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
 :root[data-theme="frosted"] .titlebar-menu-popover,
 :root[data-theme="frosted"] .theme-toggle-popover,
 :root[data-theme="frosted"] .color-popover {
-  -webkit-backdrop-filter: blur(24px) saturate(130%);
-  backdrop-filter: blur(24px) saturate(130%);
+  -webkit-backdrop-filter: blur(24px) saturate(1.2);
+  backdrop-filter: blur(24px) saturate(1.2);
 }
 
-/* Dialogs / sheets — the most opaque sheet (0.97) with the dialog
+/* Dialogs / sheets — the most opaque sheet (0.93) with the dialog
  * radius token (10px), a faint lit top edge and the retuned soft
  * ambient shadow. The overlay dim stays rgba(15,23,42,0.4). */
 :root[data-theme="frosted"] .modal-dialog,
@@ -8112,21 +8248,21 @@ rect.ann-highlight.ann-preview {
   box-shadow:
     var(--shadow-popover),
     inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -1px 0 rgba(138, 152, 170, 0.2);
+    inset 0 -1px 0 rgba(15, 23, 42, 0.08);
 }
 
 /* Floating zoom chip — a thick light frosted acrylic pill: high
- * opacity, crisp cool edge, shadow beneath, smooth hover/press on the
- * global motion tokens. It feels physically elevated but NOT 3D. */
+ * opacity, crisp neutral edge, shadow beneath, smooth hover/press on
+ * the global motion tokens. It feels physically elevated but NOT 3D. */
 :root[data-theme="frosted"] .zoom-percent {
   height: 26px;
   padding: 0 8px;
   line-height: 26px;
   background: var(--tf-surface-float);
-  border: 1px solid #b9cbe9;
+  border: 1px solid var(--glass-border);
   border-radius: var(--tf-radius-sm);
   box-shadow:
-    0 4px 14px rgba(30, 58, 138, 0.12),
+    0 4px 14px rgba(15, 23, 42, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
   transition:
     background var(--motion-fast) var(--ease-out),
@@ -8136,16 +8272,16 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .zoom-percent:hover {
   background: rgba(255, 255, 255, 0.96);
-  border-color: #a9bfe4;
+  border-color: rgba(15, 23, 42, 0.16);
   box-shadow:
-    0 6px 18px rgba(30, 58, 138, 0.15),
+    0 6px 18px rgba(15, 23, 42, 0.15),
     inset 0 1px 0 rgba(255, 255, 255, 0.6);
 }
 
 :root[data-theme="frosted"] .zoom-percent:active {
-  background: #dfe9fb;
+  background: rgba(255, 255, 255, 0.88);
   box-shadow:
-    0 2px 8px rgba(30, 58, 138, 0.12),
+    0 2px 8px rgba(15, 23, 42, 0.12),
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
@@ -8158,35 +8294,38 @@ rect.ann-highlight.ann-preview {
  * The paper sheets and their content stay untouched (DEF-099). */
 
 /* ---------------------------------------------------------------------------
- * Phase 14 — FLOATING GLASS SHELL (DEF-184 / DEF-185 / DEF-186 / DEF-187).
+ * Phase 14.1 — FLOATING GLASS SHELL (DEF-184 / DEF-185 / DEF-186 / DEF-187,
+ * corrected by the Liquid Glass material system).
  *
- * The reference mock's window is a floating glass sheet over the
- * desktop: the window shell itself has rounded corners, and the chrome
- * is a set of floating inset cards with the wallpaper visible in the
- * gutters around and between them:
+ * The window is a floating glass sheet over the desktop: the shell has
+ * rounded corners (--radius-window) and the chrome is a set of floating
+ * inset cards with the wallpaper visible in the gutters around and
+ * between them:
  *
- *   - the command toolbar is one full-width glass band attached to the
+ *   - the command bar is one full-width glass band attached to the
  *     caption strip (it reaches both window edges);
- *   - the Pages rail is a floating card inset 16px from the window's
- *     left edge, starting 12px below the toolbar band, all four
- *     corners rounded;
+ *   - the Pages rail is a floating GLASS card inset 16px from the
+ *     window's left edge, starting 16px below the command band
+ *     (--panel-margin), all four corners rounded;
  *   - the Tools panel is a floating card inset 16px from the window's
- *     right edge with the same 12px top gap and rounding;
+ *     right edge with the same 16px top gap and rounding — the SAME
+ *     GlassSidebar material as the left rail;
  *   - the document canvas ends BESIDE the Tools panel (it no longer
  *     extends under it), so the panel's backdrop-filter diffuses the
  *     wallpaper, not the white page (DEF-183);
- *   - the shell (.app) rounds at 16px so the chrome meets the
- *     backdrop in the mock's rounded silhouette (DEF-187).
+ *   - the shell (.app) rounds at the window radius (20px) so the chrome
+ *     meets the backdrop in the mock's rounded silhouette (DEF-187).
  *
  * All of this is frosted-scoped; light/dark keep the docked layout.
  * ------------------------------------------------------------------------- */
 
 :root[data-theme="frosted"] .workspace {
-  /* Outer gutters (wallpaper shows through): 16px left/right, 12px
-   * bottom; no top padding — the toolbar band attaches to the title
-   * bar like the mock's continuous glass band. The 12px column gap
-   * separates the rail card from the canvas column. */
-  padding: 0 16px 12px 16px;
+  /* Outer gutters (wallpaper shows through): 16px left/right/bottom —
+   * the standardized --panel-margin; no top padding — the command
+   * band attaches to the title bar like the mock's continuous glass
+   * band. The 12px column gap separates the rail card from the canvas
+   * column. */
+  padding: 0 var(--panel-margin, 16px) var(--panel-margin, 16px) var(--panel-margin, 16px);
   column-gap: 12px;
 }
 
@@ -8224,15 +8363,17 @@ rect.ann-highlight.ann-preview {
   right: 392px; /* 380px grid panel + 12px gap */
 }
 
-/* DEF-187 — the window shell rounds at the panel radius so the chrome
+/* DEF-187 — the window shell rounds at the WINDOW radius (--radius-
+ * window, 20px — the top of the spec's 18-22px band) so the chrome
  * meets the desktop in the mock's rounded silhouette. The window is
  * transparent in the main process, so the corners composite the
  * wallpaper. `overflow: hidden` clips the chrome (title bar band, the
- * full-width toolbar, the ambient layer's 1.06 parallax scale) to the
- * rounded bounds. Maximized windows keep square corners — a rounded
- * shell pressed against the screen edges would show wallpaper notches. */
+ * full-width command bar, the ambient layer's 1.06 parallax scale) to
+ * the rounded bounds. Maximized windows keep square corners — a
+ * rounded shell pressed against the screen edges would show wallpaper
+ * notches. */
 :root[data-theme="frosted"] .app {
-  border-radius: var(--tf-radius-panel);
+  border-radius: var(--radius-window, 20px);
   overflow: hidden;
 }
 
@@ -8240,10 +8381,13 @@ rect.ann-highlight.ann-preview {
   border-radius: 0;
 }
 
-/* Selected thumbnail (left rail) — the frosted state glows softly:
- * a slightly brighter acrylic wash, a subtle orange border, a soft
- * warm ambient glow, and a smooth animated transition via the global
- * --motion-* tokens. The glow is an outer light, not a neon ring. */
+/* Selected thumbnail (left rail) — the Phase 14.1 selection state:
+ * a thin accent outline + a soft accent halo ("0 0 0 4px" ring), NOT
+ * a heavy blue rectangle. The 2px outline is drawn with box-shadows
+ * (never a wider border) so the thumbnail's slot geometry — which the
+ * rail's virtualization math pins at a 1px border — never shifts.
+ * The thumbnail's own canvas stays opaque and PDF-accurate; only the
+ * outline/glow carry the accent. */
 :root[data-theme="frosted"] .thumb {
   transition:
     background var(--motion-fast) var(--ease-out),
@@ -8254,12 +8398,12 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .thumb-current,
 :root[data-theme="frosted"] .thumb-selected {
-  background: rgba(37, 99, 235, 0.14);
-  border-color: rgba(37, 99, 235, 0.55);
+  background: var(--glass-selected-bg);
+  border-color: var(--glass-selected-border);
+  border-radius: var(--radius-3);
   box-shadow:
-    inset 0 0 0 1px rgba(37, 99, 235, 0.35),
-    0 0 12px rgba(37, 99, 235, 0.18),
-    0 2px 8px rgba(15, 23, 42, 0.1);
+    0 0 0 2px var(--glass-selected-border),
+    0 0 0 4px rgba(37, 99, 235, 0.15);
 }
 
 /* The windowed page-overlay editors keep their OPAQUE sheets so the
@@ -8523,16 +8667,17 @@ rect.ann-highlight.ann-preview {
  * wallpaper behind the window. The base is transparent now — html,
  * body and this layer all step aside — and the aurora survives as pure
  * low-alpha gradient hints tinting the wallpaper the glass reads
- * against. Blue leads (the single accent family), violet and pink stay
- * hints: every stop sits at or under 0.14 alpha, never a purple theme
- * or a gradient hero. */
+ * against. Phase 14.1 — the hints go NEUTRAL (zinc/slate/sky): the
+ * glass must read neutral over every backdrop, so the in-app backdrop
+ * tint may not push it blue/violet/pink. Every stop sits at or under
+ * 0.10 alpha — a quiet tonal variation, never a theme of its own. */
 :root[data-theme="frosted"] .tf-ambient {
   background-color: transparent;
   background-image:
-    radial-gradient(44% 40% at 16% 6%, rgba(37, 99, 235, 0.14), transparent 70%),
-    radial-gradient(38% 34% at 88% 10%, rgba(139, 92, 246, 0.10), transparent 72%),
-    radial-gradient(46% 44% at 82% 90%, rgba(236, 72, 153, 0.09), transparent 74%),
-    radial-gradient(52% 48% at 24% 94%, rgba(14, 165, 233, 0.11), transparent 72%);
+    radial-gradient(44% 40% at 16% 6%, rgba(148, 163, 184, 0.1), transparent 70%),
+    radial-gradient(38% 34% at 88% 10%, rgba(203, 213, 225, 0.09), transparent 72%),
+    radial-gradient(46% 44% at 82% 90%, rgba(100, 116, 139, 0.08), transparent 74%),
+    radial-gradient(52% 48% at 24% 94%, rgba(125, 211, 252, 0.06), transparent 72%);
 }
 
 /* DEF-181 — html/body painted the opaque --bg-base across the whole
@@ -8554,18 +8699,18 @@ rect.ann-highlight.ann-preview {
 /* DEF-181 — the welcome screen is the launch surface, and its solid
  * --bg-sunken / --bg-base sheets covered the whole window under the
  * frosted title bar (same defeat as the ambient base). In frosted both
- * become translucent BLUE-tinted washes over the wallpaper the OS
- * composites through (DEF-182 — the glass reads blue everywhere).
- * Deliberately NO backdrop-filter here: the acrylic blur of
- * the wallpaper is the OS material's job (backgroundMaterial), and the
- * 14-surface chrome blur contract stays exact. Light/dark keep the
- * solid sheets. */
+ * become translucent NEUTRAL white washes over the wallpaper the OS
+ * composites through (Phase 14.1 — the material is neutral; the
+ * wallpaper supplies the color). Deliberately NO backdrop-filter here:
+ * the acrylic blur of the wallpaper is the OS material's job
+ * (backgroundMaterial), and the 14-surface chrome blur contract stays
+ * exact. Light/dark keep the solid sheets. */
 :root[data-theme="frosted"] .welcome {
-  background: rgba(222, 234, 252, 0.42);
+  background: rgba(255, 255, 255, 0.42);
 }
 
 :root[data-theme="frosted"] .welcome-hero {
-  background: rgba(214, 230, 252, 0.62);
+  background: rgba(255, 255, 255, 0.62);
 }
 
 /* Frosted panel radii — SUPERSEDED by the Phase-14 floating-shell
@@ -8674,4 +8819,146 @@ rect.ann-highlight.ann-preview {
     color var(--motion-fast) var(--ease-out),
     box-shadow var(--motion-fast) var(--ease-out),
     transform var(--motion-fast) var(--ease-out);
+}
+
+/* ===========================================================================
+ * Phase 14.1 — GLASS MATERIAL COMPONENTS (GlassChrome / GlassControlGroup /
+ * GlassSidebar).
+ *
+ * Three shared primitives, one material system:
+ *
+ *   .glass-chrome         — a top bar (title bar, command bar): standardized
+ *                           token height, flex row, vertically centered.
+ *   .glass-control-group  — the command bar's capsule: related controls in
+ *                           ONE translucent capsule instead of loose buttons.
+ *   .glass-sidebar        — the shared floating panel material: header row
+ *                           (title + toggle) + body, used by BOTH the Pages
+ *                           rail (left) and the Tools panel (right).
+ *
+ * The frosted theme carries the canonical Liquid Glass films; light/dark
+ * resolve the same classes through their themed --glass-* tokens so the
+ * structure (heights, radii, groupings) is identical everywhere.
+ * ------------------------------------------------------------------------- */
+
+/* GlassChrome — the standardized top-bar surface. The React primitive
+ * (GlassChromeBar) renders one of the height variants; the height comes
+ * from the chrome tokens so no bar ever invents its own. The title
+ * variant stretches its children (the caption strip's header row and
+ * window controls own their internal centering and full-height hit
+ * strips); the command variant centers its capsules. */
+.glass-chrome {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.glass-chrome-title {
+  min-height: var(--chrome-titlebar-h);
+  align-items: stretch;
+}
+
+.glass-chrome-command {
+  min-height: var(--chrome-commandbar-h);
+}
+
+.glass-chrome-context {
+  min-height: var(--chrome-contextbar-h);
+}
+
+/* GlassControlGroup — the capsule. Base look is the themed neutral chip;
+ * the frosted film override lives in the frosted block below (the
+ * capsule floats on the command bar's own glass there). */
+.glass-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--control-height);
+  padding: 0 var(--space-small);
+  border-radius: var(--radius-group);
+  background: var(--glass-group-bg);
+  border: 1px solid var(--glass-group-border);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+  min-width: 0;
+}
+
+.glass-control-group:hover {
+  background: var(--glass-hover-bg);
+}
+
+/* GlassSidebar — the shared floating-panel system (Pages left, Tools
+ * right). The base layer owns STRUCTURE only: flex column, header row,
+ * body region. Surfaces stay on the panels' own theme rules (light/dark
+ * are docked solid panels; frosted turns them into floating glass
+ * cards in the floating-shell block above). */
+.glass-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.glass-sidebar-header {
+  height: var(--glass-sidebar-header-h);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-small);
+  padding: 0 var(--space-standard);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.glass-sidebar-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--fg-strong);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.glass-sidebar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  min-height: 0;
+}
+
+.glass-sidebar-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Frosted films for the glass components. The command bar's capsules
+ * float on the band's own glass; the sidebars share ONE film (the
+ * floating-shell block above carries the card geometry). */
+:root[data-theme="frosted"] .glass-control-group {
+  background: var(--glass-group-bg);
+  border-color: var(--glass-group-border);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+:root[data-theme="frosted"] .glass-control-group:hover {
+  background: var(--glass-hover-bg);
+}
+
+:root[data-theme="frosted"] .glass-sidebar-header {
+  border-bottom-color: var(--glass-sidebar-border);
+}
+
+:root[data-theme="frosted"] .glass-sidebar-header,
+:root[data-theme="frosted"] .tools-palette-header {
+  background: transparent;
+}
+
+:root[data-theme="frosted"] .rail-tabs {
+  background: transparent;
 }

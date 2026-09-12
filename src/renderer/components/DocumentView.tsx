@@ -144,6 +144,11 @@ interface DocumentViewProps {
   onReorder?: (fromIndex: number, toIndex: number) => void;
   onUndo?: () => void;
   /** Toolbar action callbacks. */
+  /** Phase 14.1 — the command bar's accent Open button (the reference
+   *  places Open in the command bar, not the title bar). Only wired
+   *  in the real app; optional so tests/harnesses can omit it (the
+   *  File group then doesn't render). */
+  onOpenFile?: () => void;
   onSave?: () => void;
   onSaveAs?: () => void;
   onMerge?: () => void;
@@ -387,6 +392,7 @@ export function DocumentView({
   onDelete,
   onReorder,
   onUndo,
+  onOpenFile,
   onSave,
   onSaveAs,
   onMerge,
@@ -636,6 +642,20 @@ export function DocumentView({
       chromeYRef.current = themeName === "frosted" ? chromePx : 0;
       if (chromePx > 0) {
         main.style.setProperty("--tf-chrome-y", `${chromePx}px`);
+      }
+      // Phase 14.1 — publish the MEASURED command-band height (the
+      // .toolbar row alone) on the layout ancestors the floating
+      // sidebars anchor to, so the frosted floating cards can drop
+      // below the band even when it WRAPS on a narrow window (the
+      // static --chrome-commandbar-h token only covers the single-row
+      // baseline). The palette anchors to .app-main; the rail to
+      // .workspace; custom properties inherit down from both.
+      const toolbar = main.querySelector<HTMLElement>(".toolbar");
+      if (toolbar !== null) {
+        const bandPx = `${toolbar.offsetHeight}px`;
+        const appMain = main.closest<HTMLElement>(".app-main");
+        appMain?.style.setProperty("--tf-band-h", bandPx);
+        main.parentElement?.style.setProperty("--tf-band-h", bandPx);
       }
     };
     recompute();
@@ -1952,6 +1972,7 @@ export function DocumentView({
           zoomMode={zoom.mode}
           modified={modified}
           saveInPlaceEnabled={saveInPlaceEnabled}
+          onOpenFile={onOpenFile}
           onJump={pageJump}
           onZoomIn={(): void => zoomTo(1)}
           onZoomOut={(): void => zoomTo(-1)}

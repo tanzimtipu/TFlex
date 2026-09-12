@@ -896,7 +896,10 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
       "--tf-surface-menu",
       "--tf-surface-dialog",
     ]) {
-      expect(frosted).toMatch(new RegExp(`${token}\\s*:\\s*rgba\\(`));
+      // Phase 14.1 — the films either carry an explicit rgba() value or
+      // resolve into the :root --glass-* material tokens (one source of
+      // truth for the neutral white sheets).
+      expect(frosted).toMatch(new RegExp(`${token}\\s*:\\s*(rgba\\(|var\\(--glass-)`));
     }
   });
 
