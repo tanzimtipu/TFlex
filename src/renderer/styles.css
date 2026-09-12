@@ -166,6 +166,25 @@
   --glass-sidebar-header-h: 44px;
   /* Floating-panel margin: sidebars never touch the window edges. */
   --panel-margin: 16px;
+  /* Phase 14.2 — the ONE panel material contract. BOTH side panels
+   * (left Pages rail, right Tools palette) consume these tokens in
+   * EVERY theme so the pair always shares one surface, one hairline,
+   * one shadow family and one radius policy — neither panel can
+   * drift away from the other or from the docked UI. The :root values
+   * are the LIGHT mapping (docked solid panels: hairline edge only,
+   * no shadow, square corners); dark and frosted remap below. */
+  --panel-bg: var(--bg-rail);
+  --panel-border: var(--border);
+  --panel-radius: 0px;
+  --panel-shadow: none;
+  /* Gap between the page view's right edge and the open Tools panel
+   * (both palette layouts + the 12px breathing gap), shared by the
+   * scroller inset rule and the palette's own geometry. */
+  --tools-panel-gap: 12px;
+  /* The simultaneous panel/page slide (Phase 14.2 FIX 5): panel and
+   * page view animate together on the same duration + easing. */
+  --panel-slide-duration: 300ms;
+  --panel-slide-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* GLOBAL MOTION SYSTEM — the single theme-independent timing +
    * easing source for the whole app. Deliberately OUTSIDE any
@@ -211,12 +230,19 @@
    * (DEF: palette overlaps toolbar options). The toolbar can wrap
    * to two rows on narrow widths; this is the single-row baseline
    * that the palette currently uses as its top offset. */
-  --toolbar-h: 56px;
-  /* DEF-107 — the annotation toolbar (`.ann-toolbar`) is a second
-   * horizontal strip under the page-toolbar row (min-height 40px).
-   * Right-side rail overlays that must clear BOTH rows (the OCR
-   * suspects panel) offset their top by the sum of the two tokens. */
-  --ann-toolbar-h: 40px;
+  /* Phase 14.2 — single source of truth. The duplicate `--toolbar-h:
+   * 56px` literal that used to live here shadowed the chrome-token
+   * alias above and left the absolutely positioned siblings (tools
+   * palette, OCR bar offset) anchoring to a stale 56px baseline.
+   * The alias alone now resolves to --chrome-commandbar-h (52px). */
+  --toolbar-h: var(--chrome-commandbar-h);
+  /* Phase 14.2 — the annotation toolbar (`.ann-toolbar`) is the
+   * context bar and is tokenized at the SAME 52px command-bar height
+   * (--chrome-commandbar-h) with the same material and vertical
+   * centering. Right-side rail overlays that must clear BOTH rows
+   * (the OCR suspects panel, the tools palette) offset their top by
+   * the sum of the two tokens. */
+  --ann-toolbar-h: var(--chrome-commandbar-h);
   /* DEF-126 — fixed height of the OCR suspects bar. The bar is a
    * FLOW element at the top of `.app-main` (it reserves space, it
    * never overlays the workspace), and the aside uses this token
@@ -351,6 +377,22 @@
   --hit-active: rgba(37, 99, 235, 0.55);
 
   color-scheme: light;
+}
+
+/* Phase 14.2 FIX 4/5 — the animated page-view inset. The open Tools
+ * panel must push the page view in EVERY theme, and panel + page must
+ * move TOGETHER (same 300ms ease-out). The inset is a REGISTERED
+ * custom property (--tf-tools-inset) declared on .app-main and
+ * transitioned on .workspace-main; the scroller merely consumes it as
+ * its right margin. Registering the property is what makes the length
+ * interpolate (unregistered custom properties flip discretely), and
+ * keeping the transition declaration OFF .document-scroller is what
+ * keeps the PDF-safety audit intact (no transitions on the document
+ * surfaces — the animation lives on the chrome-level token). */
+@property --tf-tools-inset {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
 }
 
 :root[data-theme="dark"] {
@@ -642,6 +684,15 @@
   --glass-group-border: rgba(255, 255, 255, 0.25);
   --glass-hover-bg: rgba(255, 255, 255, 0.85);
 
+  /* Phase 14.2 — frosted re-maps the shared panel contract to the
+   * Liquid Glass card material (same values the floating cards use
+   * today, now through the ONE token set so the rail and the Tools
+   * panel can never drift apart). */
+  --panel-bg: var(--glass-sidebar-bg);
+  --panel-border: var(--glass-sidebar-border);
+  --panel-radius: var(--tf-radius-panel);
+  --panel-shadow: var(--glass-shadow), 0 1px 2px rgba(0, 0, 0, 0.08);
+
   color-scheme: light;
 }
 
@@ -828,7 +879,18 @@ body,
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  /* Phase 14.2 — overflow: CLIP, not hidden. `overflow: hidden` boxes
+   * are still programmatically scrollable, and the Phase-14 ambient
+   * layer (scale 1.06 for the parallax pad + +-6px drift) creates a
+   * ~50x20px scrollable overflow area on .app. The first focus-driven
+   * scroll-into-view after a document opens then SCROLLS the whole
+   * window content up-left by that amount — the Open button's icon
+   * clipped at the window edge, the rail header half off-window, and
+   * a dead band on the right (the visible "overlapping element" and
+   * "everything below does not fill the window" polish complaints).
+   * overflow: clip forbids scrolling entirely — same visual clipping,
+   * no scrollable overflow, nothing can ever shift the shell. */
+  overflow: clip;
 }
 
 html {
@@ -918,6 +980,11 @@ input[type="checkbox"] {
   height: 100vh;
   background: var(--bg-base);
   color: var(--fg);
+  /* Phase 14.2 — clip (never scroll). See the html/body/#root rule:
+   * the ambient layer's parallax pad must stay a pure paint effect;
+   * the shell must never become a scroll container that focus-driven
+   * scroll-into-view can shift the whole UI with. */
+  overflow: clip;
 }
 
 .app-main {
@@ -1640,6 +1707,41 @@ input[type="checkbox"] {
   font-size: var(--fs-sm);
 }
 
+/* Phase 14.2 FIX 3 — the Open button is a CLEAN SINGLE-LAYER control.
+ * The File group used to paint the generic glass capsule AROUND the
+ * solid-accent button (a translucent chip + hairline + shadow behind
+ * the blue), which read as an overlapping ghost element. The capsule
+ * stays in the DOM (the labelled "File" group keeps its role +
+ * aria-label contract) but paints NOTHING — the blue button is the
+ * one and only visible layer. */
+.toolbar-group.commandbar-group-open {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.toolbar-group.commandbar-group-open:hover {
+  background: transparent;
+}
+
+/* DEF-191 — the frosted ghost rim. The FIX 3 clean rules above are
+ * 0-2-0 specific, but the frosted glass film rule
+ * (:root[data-theme="frosted"] .glass-control-group) is 0-3-0 (its
+ * hover variant 0-4-0), so in frosted the translucent capsule +
+ * hairline + shadow painted straight back through the clean rules —
+ * the ghost layer behind the blue Open button. Re-state the clean
+ * look at frosted scope (0-4-0, hover 0-5-0) so it outranks the film:
+ * the blue button is the one and only visible layer in EVERY theme. */
+:root[data-theme="frosted"] .toolbar-group.commandbar-group-open {
+  background: transparent; /* override the frosted capsule film */
+  border-color: transparent;
+  box-shadow: none;
+}
+
+:root[data-theme="frosted"] .toolbar-group.commandbar-group-open:hover {
+  background: transparent;
+}
+
 /* B8 — destructive primary (e.g. Delete). The accent colour reads
  * as "go", but a destructive action should be visually distinct so
  * the user doesn't accidentally commit. The error token's solid
@@ -1902,6 +2004,46 @@ input[type="checkbox"] {
   background: var(--bg-canvas);
   min-width: 0;
   min-height: 0;
+  /* Phase 14.2 FIX 4/5 — the page-view inset. The open Tools panel
+   * sets --tf-tools-inset on .app-main (data-tools-open /
+   * data-tools-mode attributes from the SAME React state that mounts
+   * the palette); this grid animates the token and the scroller
+   * consumes it as its right margin — so panel and page move
+   * TOGETHER on the identical 300ms ease-out curve (the panel's
+   * TfPanel tween uses the same duration + curve). The transition
+   * lives on the registered custom property, never on the scroller
+   * itself (the PDF-safety audit keeps transitions off the document
+   * surfaces). */
+  /* DEF-192 — this grid must INHERIT --tf-tools-inset from .app-main,
+   * never declare its own value: a declared value beats an inherited
+   * one at the same element, so the old local `--tf-tools-inset: 0px`
+   * here swallowed the .app-main[data-tools-open] driver and the open
+   * panel's inset never reached the scroller — the page stayed put
+   * while the panel slid in (DEF-193's "not simultaneous" was the
+   * same root cause). With no local declaration the closed state
+   * resolves to the @property's initial 0px, the open state inherits
+   * the driver value, and the transition below fires on that inherited
+   * change so panel and page tween together. */
+  transition:
+    --tf-tools-inset var(--panel-slide-duration, 300ms)
+    var(--panel-slide-ease, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+/* Phase 14.2 FIX 4 — the open Tools panel pushes the page view over
+ * in ALL themes (light and dark included, not just frosted). The
+ * state lives on .app-main as data attributes driven by the same
+ * `toolsPaletteOpen` state that mounts the palette, so the inset and
+ * the panel's own enter motion start on the same frame — no
+ * mount/unmount lag, no sequential steps. The panel width follows
+ * the persisted layout mode (list 344px / grid 380px) plus the 12px
+ * breathing gap. */
+.app-main[data-tools-open="true"] {
+  --tools-panel-w: 344px;
+  --tf-tools-inset: calc(var(--tools-panel-w, 344px) + var(--tools-panel-gap, 12px));
+}
+
+.app-main[data-tools-open="true"][data-tools-mode="grid"] {
+  --tools-panel-w: 380px;
 }
 
 .side-rail {
@@ -1911,8 +2053,14 @@ input[type="checkbox"] {
    * tabs (GlassSidebar header: title left, actions right), so the grid
    * is two rows: the 44px header, then the content. */
   grid-template-rows: auto 1fr;
-  border-right: 1px solid var(--border);
-  background: var(--bg-rail);
+  /* Phase 14.2 — panel unification: the rail consumes the shared
+   * panel contract (--panel-*), the same tokens the Tools palette
+   * uses, so the two side panels always share one surface, hairline,
+   * shadow family and radius policy in every theme. Light/dark stay
+   * docked (solid surface + right hairline, no shadow, square
+   * corners); frosted re-maps to the floating glass card material. */
+  background: var(--panel-bg);
+  border-right: 1px solid var(--panel-border);
   min-height: 0;
 }
 
@@ -2252,6 +2400,13 @@ input[type="checkbox"] {
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-2);
+  /* DEF-194 — zero the UA button padding (Chromium ships 1px 6px on
+   * every button): under border-box it crushed this 28px box's inner
+   * row to 14px and flex-shrank the 22px glyph into it (~14.7px,
+   * measured by qa). The full 26px inner row lets every icon render
+   * at its declared size, centered. (.ann-tool-btn already carried
+   * its own padding: 0 — this fixes the whole class at the root.) */
+  padding: 0;
   /* Phase 6 — default icon sits at --fg-muted (the shared icon
    * default across the header, title bar, rail and toolbar — spec
    * "default #9299A2/--fg-muted") so the dense toolbar reads as a
@@ -2499,6 +2654,13 @@ input[type="checkbox"] {
    * .workspace-main 1fr row (row 5), no matter which conditional
    * chrome rows above it are mounted. */
   grid-row: 5;
+  /* Phase 14.2 FIX 4/5 — the page view ends BESIDE the open Tools
+   * panel in EVERY theme (light and dark included, not just frosted).
+   * The inset is the --tf-tools-inset length that .app-main declares
+   * and .workspace-main animates (registered @property — see the
+   * token block); the transition itself is never declared on this
+   * element, so the document surfaces stay animation-free. */
+  margin-right: var(--tf-tools-inset, 0px);
 }
 
 .document-scroller::-webkit-scrollbar { width: 10px; }
@@ -4233,10 +4395,17 @@ rect.ann-highlight.ann-preview {
   display: flex;
   align-items: center;
   gap: var(--sp-1);
-  padding: 0 var(--sp-2);
+  /* Phase 14.2 FIX 1 — the context bar is tokenized at the SAME
+   * 52px command-bar height (--chrome-commandbar-h) with the SAME
+   * vertical centering and the same 8px/16px padding as the command
+   * bar, so the two top rows read as one chrome system (the old
+   * 40px strip sat visibly shorter and off-center). The min-height
+   * lets the row grow (flex-wrap) on narrow windows; the chrome
+   * measurement in DocumentView tracks the real height either way. */
+  padding: var(--space-small) var(--space-standard);
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar);
-  min-height: 40px;
+  min-height: var(--ann-toolbar-h);
   flex-wrap: wrap;
 }
 
@@ -4247,8 +4416,13 @@ rect.ann-highlight.ann-preview {
 }
 
 .ann-tool-btn {
-  height: 28px;
-  width: 28px;
+  /* Phase 14.2 FIX 6 — 32px box for the 24px glyphs (the top of the
+   * chrome icon ladder): 24 + 2x4px padding keeps the same breathing
+   * room the 28px box gave the old 20px glyphs, and the 32px visual
+   * height matches the command bar's .tool-btn row. The bar's 52px
+   * min-height still absorbs the box (32px + 2x8px padding = 48px). */
+  height: 32px;
+  width: 32px;
   padding: 0;
 }
 
@@ -5291,16 +5465,16 @@ rect.ann-highlight.ann-preview {
 
 .tools-palette {
   position: absolute;
-  /* Anchor the palette to the BOTTOM of the workspace (just below
-   * the toolbar's natural height) and stretch to the bottom edge.
+  /* Anchor the palette to the BOTTOM of the workspace, below BOTH
+   * chrome rows (command bar 52px + context annotation bar 52px).
    * Previously `top: 0` made the palette overlay the toolbar's
    * right-side controls, hiding Tools/Edit/Optimize/etc. (DEF:
-   * palette overlaps toolbar options). The toolbar in
-   * .workspace-main uses `grid-template-rows: auto auto auto auto 1fr`
-   * with min-height 44px and can wrap to multiple rows; the
-   * calc(--toolbar-h + var(--sp-1)) below matches the current
-   * single-row toolbar height plus a hairline gap. */
-  top: var(--toolbar-h, 44px);
+   * palette overlaps toolbar options), and the old `--toolbar-h`
+   * baseline alone let the panel cover the right end of the
+   * annotation row. The sum of the two chrome tokens matches the
+   * current chrome stack exactly (Phase 14.2: both rows are
+   * tokenized at 52px). */
+  top: calc(var(--toolbar-h, 52px) + var(--ann-toolbar-h, 52px));
   right: 0;
   bottom: 0;
   /* Phase 14 — dynamic panel sizing. The panel widens from 280px to
@@ -5310,13 +5484,16 @@ rect.ann-highlight.ann-preview {
    * triplet as two-column cards. */
   width: 344px;
   /* Phase-3 workspace: the palette reads as a clean contextual
-   * panel — --bg-panel surface (#14181D in dark), a --border
-   * (#242A31) left hairline against the canvas, and only a subtle
-   * left-falling shadow. NO strong black shadow and no tint of the
-   * accent (the list entries stay neutral zinc/slate). */
-  background: var(--bg-panel);
-  border-left: 1px solid var(--border);
-  box-shadow: -6px 0 16px rgba(0, 0, 0, 0.12);
+   * panel. Phase 14.2 — panel unification: the SAME --panel-*
+   * material contract as the left rail (one surface, one hairline,
+   * one shadow family, one radius policy in every theme). In
+   * light/dark this is the docked panel look — the left hairline
+   * against the canvas and NO floating shadow, so the panel reads
+   * as part of the docked UI instead of a floating island. Frosted
+   * re-maps the tokens to the glass card material. */
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+  box-shadow: var(--panel-shadow);
   display: flex;
   flex-direction: column;
   /* Lift the palette above the workspace overlays (text / forms /
@@ -5347,8 +5524,9 @@ rect.ann-highlight.ann-preview {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 22px;
+  /* Phase 14.2 FIX 6 — 26x24 box for the 22px sidebar glyphs. */
+  width: 26px;
+  height: 24px;
   background: transparent;
   border: none;
   color: var(--fg-muted);
@@ -5367,8 +5545,9 @@ rect.ann-highlight.ann-preview {
 }
 .tools-palette-toggle-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 .tools-palette-close {
-  width: 24px;
-  height: 24px;
+  /* Phase 14.2 FIX 6 — 28px box for the 22px close glyph. */
+  width: 28px;
+  height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -7301,12 +7480,17 @@ rect.ann-highlight.ann-preview {
 
 /* DEF-126 — Tools palette downshift. The palette is an
  * absolutely positioned sibling of `.ocr-suspects-panel` inside
- * `.app-main` (top: var(--toolbar-h)). With the suspect bar open
- * the toolbar row starts BELOW the bar, so the palette must add
+ * `.app-main` (top: the two chrome rows). With the suspect bar open
+ * the workspace rows start BELOW the bar, so the palette must add
  * the bar's height to its own top or it would overlap the bar's
- * right edge. Electron ships Chromium 105+, so `:has` is safe. */
+ * right edge. Electron ships Chromium 105+, so `:has` is safe.
+ * Phase 14.2 — the chrome stack is now two 52px rows, so the sum
+ * carries both chrome tokens. */
 .app-main:has(.ocr-suspects-panel) .tools-palette {
-  top: calc(var(--ocr-bar-h, 148px) + var(--toolbar-h, 56px));
+  top: calc(
+    var(--ocr-bar-h, 148px) + var(--toolbar-h, 52px) +
+    var(--ann-toolbar-h, 52px)
+  );
 }
 
 .ocr-suspects-header {
@@ -8341,6 +8525,18 @@ rect.ann-highlight.ann-preview {
   margin-right: -16px;
 }
 
+/* Phase 14.2 FIX 1 — the annotation (context) bar is the SAME
+ * full-width band as the command bar in frosted: identical height
+ * token, identical material, identical vertical centering, and the
+ * identical negative margins that stretch its sheet across the rail
+ * column + gutters. Without this the 52px context bar sat indented
+ * beside the rail (a truncated strip) while the command band above
+ * it ran edge to edge. */
+:root[data-theme="frosted"] .ann-toolbar {
+  margin-left: calc(-1 * (220px + 12px + 16px));
+  margin-right: -16px;
+}
+
 /* (The rail card's floating geometry — margin-top below the band,
  * all-corner hairline + radius — and the Tools card's window-edge
  * insets live on their first frosted rules above, where the CSS
@@ -8352,29 +8548,26 @@ rect.ann-highlight.ann-preview {
  * backdrop-filter samples the page instead of the wallpaper, making
  * the panel backdrop-independent. The inset frees the card's column
  * so the wallpaper (ambient -> OS acrylic) is what the glass diffuses.
- * `:has()` matches the palette from its .app-main parent while it is
- * mounted — including the AnimatePresence exit, so the canvas only
- * reflows after the card is gone. */
-:root[data-theme="frosted"] .app-main:has(> .tools-palette) .document-scroller {
-  right: 356px; /* 344px list panel + 12px gap */
-}
-
-:root[data-theme="frosted"] .app-main:has(> .tools-palette-grid) .document-scroller {
-  right: 392px; /* 380px grid panel + 12px gap */
-}
+ * Phase 14.2 FIX 4/5 — the inset itself now comes from the SAME
+ * state-driven --tf-tools-inset token every theme uses (declared on
+ * .app-main[data-tools-open], animated on .workspace-main, consumed
+ * by the scroller's margin-right), so frosted no longer needs its
+ * own :has() rules and the canvas + card move TOGETHER here too. */
 
 /* DEF-187 — the window shell rounds at the WINDOW radius (--radius-
  * window, 20px — the top of the spec's 18-22px band) so the chrome
  * meets the desktop in the mock's rounded silhouette. The window is
  * transparent in the main process, so the corners composite the
- * wallpaper. `overflow: hidden` clips the chrome (title bar band, the
+ * wallpaper. `overflow: clip` clips the chrome (title bar band, the
  * full-width command bar, the ambient layer's 1.06 parallax scale) to
- * the rounded bounds. Maximized windows keep square corners — a
- * rounded shell pressed against the screen edges would show wallpaper
- * notches. */
+ * the rounded bounds — Phase 14.2: clip, not hidden, so the parallax
+ * pad can never create a scrollable overflow area that focus-driven
+ * scroll-into-view could shift the whole shell with. Maximized windows
+ * keep square corners — a rounded shell pressed against the screen
+ * edges would show wallpaper notches. */
 :root[data-theme="frosted"] .app {
   border-radius: var(--radius-window, 20px);
-  overflow: hidden;
+  overflow: clip;
 }
 
 :root[data-theme="frosted"] .app-maximized {
@@ -8557,14 +8750,20 @@ rect.ann-highlight.ann-preview {
 }
 
 :root[data-theme="frosted"] .document-content {
-  /* Keep the first page clear of the floating chrome at rest. The
-   * chrome stack height is measured live by DocumentView (toolbar
-   * wrap, search bar, edit toolbar all change it) and published as
-   * --tf-chrome-y; the fallback 96px matches the single-row toolbar
-   * (~56px) + annotation toolbar (40px) until the first measure
-   * lands. The bottom 28px + centering are untouched, so page
-   * positions stay pixel-identical to the in-flow layout. */
-  padding: calc(var(--tf-chrome-y, 96px) + 28px) 0 28px;
+  /* Phase 14.2 FIX 8 — tighter floating margins. The chrome stack
+   * height is measured live by DocumentView (toolbar wrap, search
+   * bar, edit toolbar all change it) and published as --tf-chrome-y;
+   * the fallback matches the two 52px chrome rows until the first
+   * measure lands. The page now sits 16px below the floating chrome
+   * stack (the floating aesthetic minimum) instead of 28px, and 16px
+   * above the bottom edge — the SAME visual margin the page keeps
+   * beside the floating rail card, and the same side margins the
+   * in-flow light/dark layout gives the page, so frosted stops
+   * reading as a page floating in a field of empty glass. The scroll
+   * math in DocumentView consumes the matching constant (the mount's
+   * topPad = chromeY + 16), so jump landings and the mount window
+   * track the real slot positions. */
+  padding: calc(var(--tf-chrome-y, 104px) + 16px) 0 16px;
 }
 
 /* ===========================================================================

@@ -143,11 +143,14 @@ describe("Phase 13 — Toolbar is icon-only", () => {
     unmount(host);
   });
 
-  it("the More (ellipsis) button keeps the stable data-tools-toggle attribute", () => {
+  it("the All tools button keeps the stable data-tools-toggle attribute", () => {
     const host = mountToolbar();
     const more = host.querySelector<HTMLButtonElement>("[data-tools-toggle]");
     expect(more).not.toBeNull();
-    expect(more?.getAttribute("aria-label")).toBe("More tools");
+    // Phase 14.2 FIX 7 — the ambiguous three-dot ellipsis became the
+    // "All tools" grid glyph; the accessible name follows.
+    expect(more?.getAttribute("aria-label")).toBe("All tools");
+    expect(more?.getAttribute("title")).toBe("All tools (Ctrl+Shift+P)");
     expect(more?.querySelector("svg")).not.toBeNull();
     // The label text is gone (icon-only) — the accessible name comes
     // from aria-label.

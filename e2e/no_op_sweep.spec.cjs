@@ -154,7 +154,15 @@ test.describe('No-op Sweep and Feature Verification', () => {
     const sigId = diagSigs.signatures[0].id;
     
     // Save
-    await window.click('[aria-label="Save"]');
+    // Phase 14.1 CommandBar restructure note (qa, 2026-09-13): the command
+    // bar now wraps each cluster in a GlassControlGroup capsule with
+    // role="group" aria-label="Save" (GlassChrome.tsx), so the old
+    // '[aria-label="Save"]' page.click resolved to the INERT group div
+    // (its center is the gap between the Save / Save a copy buttons) and
+    // the click missed the button - the sweep timed out 2/2 on the current
+    // build. The button itself still resolves per the 14.1 selector
+    // contract; target the BUTTON explicitly.
+    await window.click('button[aria-label="Save"]');
     await window.waitForFunction(() => !window.tflexDiagnostics().modified);
     
     // Close and Reopen

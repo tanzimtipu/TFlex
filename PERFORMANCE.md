@@ -62,3 +62,13 @@
 
 *Method: e2e/perf_retime + e2e/phase14_qa.spec.cjs P14-E rAF frame probe via the standard Playwright Electron harness on the Phase-14.1 neutral-glass build (dist rebuilt from the current tree; GlassChrome/GlassSidebar/GlassControlGroup primitives, 20px blur films). Cold start and open are unchanged vs the Phase-14 close row (547/517ms); idle main RSS 158.84MB stays far under the < 400MB budget (the +33MB vs 125.78MB is session noise across runs, comfortably in budget). Frame rate measured on the same 14.1 build during the e2e update run. Recorded by qa at the Phase-14.1 gate (2026-09-13).*
 
+## Phase 14.2 gate re-time (dev build, Liquid Glass polish)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Cold start to interactive | < 3000ms | 575ms | PASS |
+| Open long.pdf (520 pages) | < 3000ms | 523ms | PASS |
+| Idle memory (main process) | < 400MB | 126.14MB | PASS |
+
+*Method: e2e/perf_retime via the standard Playwright Electron harness on the uncommitted Phase-14.2 polish build (dist rebuilt from the current tree before the run: 52px tokenized ann-toolbar, panel contract tokens, dead --tf-tools-inset token still pending DEF-192 fix, LayoutGrid tools glyph, 24/22px icon ladder). Unchanged vs the Phase-14.1 gate (555/565/158.84MB) and the Phase-14 close row (547/517/125.78MB) — the polish costs nothing measurable. Recorded by qa during the Phase-14.2 fix verification (2026-09-13).*
+

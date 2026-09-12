@@ -90,7 +90,10 @@ describe("Phase C — frosted chrome over the document (full-bleed scroller)", (
     const body = lastRule(":root\\[data-theme=\"frosted\"\\]\\s+\\.document-content");
     expect(body, "frosted .document-content padding override missing").not.toBe("");
     expect(body).toMatch(/--tf-chrome-y/);
-    expect(body).toMatch(/padding:\s*calc\(var\(--tf-chrome-y[^)]*\)\s*\+\s*28px\)\s+0\s+28px/);
+    // Phase 14.2 FIX 8 — the page sits 16px (the floating minimum)
+    // below the floating chrome stack and 16px above the bottom edge,
+    // instead of the old 28px pair.
+    expect(body).toMatch(/padding:\s*calc\(var\(--tf-chrome-y[^)]*\)\s*\+\s*16px\)\s+0\s+16px/);
   });
 
   it("the base (light / dark) layout is untouched — in-flow chrome, in-flow scroller (no regressions)", () => {

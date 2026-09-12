@@ -80,10 +80,11 @@ describe("DEF-094 — Toolbar exposes data-tools-toggle for stable e2e selection
       expect(matches.length).toBe(1);
       const btn = matches[0] as HTMLButtonElement;
       expect(btn.tagName.toLowerCase()).toBe("button");
-      // Phase 13 — the button is the icon-only "More tools" ellipsis
-      // (the Tools palette is the overflow surface); the accessible
-      // name changed with the redesign, the stable attribute did not.
-      expect(btn.getAttribute("aria-label")).toBe("More tools");
+      // Phase 14.2 FIX 7 — the button is the icon-only "All tools"
+      // grid glyph (the Tools palette is the all-tools surface); the
+      // accessible name changed with the Phase-14.2 polish, the
+      // stable attribute did not.
+      expect(btn.getAttribute("aria-label")).toBe("All tools");
       // And the click handler is wired — clicking it doesn't throw.
       expect((): void => btn.click()).not.toThrow();
     } finally {

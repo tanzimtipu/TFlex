@@ -122,9 +122,10 @@ describe("B14 — OCR suspects panel placement and empty-tab guard", () => {
       styles.indexOf(".ocr-suspects-header"),
     );
     // With the bar open, the palette's top adds the bar's height so
-    // it never overlaps the bar's right edge.
+    // it never overlaps the bar's right edge. Phase 14.2 — the chrome
+    // stack is two 52px rows, so the sum carries both chrome tokens.
     expect(rule).toMatch(
-      /top:\s*calc\(var\(--ocr-bar-h, 148px\)\s*\+\s*var\(--toolbar-h, 56px\)\)\s*;/,
+      /top:\s*calc\(\s*var\(--ocr-bar-h, 148px\)\s*\+\s*var\(--toolbar-h, 52px\)\s*\+\s*var\(--ann-toolbar-h, 52px\)\s*\)\s*;/,
     );
   });
 });

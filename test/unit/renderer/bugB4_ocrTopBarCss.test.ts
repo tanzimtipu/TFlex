@@ -72,8 +72,11 @@ describe("DEF-126 — OCR suspects panel reserves space (never covers the rail /
   it("the Tools palette shifts below the bar when the panel is open (:has downshift)", () => {
     const css = stylesCss();
     const toolsBlock = css.slice(css.indexOf(".tools-palette {"), css.indexOf(".tools-palette-grid"));
-    // The palette's baseline top (no bar open) stays as-is.
-    expect(toolsBlock).toMatch(/top:\s*var\(--toolbar-h/);
+    // The palette's baseline top (no bar open) stays as-is. Phase
+    // 14.2 — the offset is the sum of BOTH chrome rows (command bar +
+    // annotation bar), so the palette never covers the context row.
+    expect(toolsBlock).toMatch(/top:\s*calc\(\s*var\(--toolbar-h/);
+    expect(toolsBlock).toMatch(/var\(--ann-toolbar-h/);
     expect(toolsBlock).toMatch(/z-index:\s*30/);
     // With the bar open, the palette adds the bar's height. The
     // rule is found via lastIndexOf + "{" because the token block
@@ -81,7 +84,9 @@ describe("DEF-126 — OCR suspects panel reserves space (never covers the rail /
     const downshiftStart = css.lastIndexOf(".app-main:has(.ocr-suspects-panel) .tools-palette {");
     expect(downshiftStart).toBeGreaterThan(-1);
     const downshift = css.slice(downshiftStart, css.indexOf(".ocr-suspects-header"));
-    expect(downshift).toMatch(/top:\s*calc\(var\(--ocr-bar-h/);
+    // Phase 14.2 — the downshift sums BOTH chrome rows after the bar.
+    expect(downshift).toMatch(/top:\s*calc\(\s*var\(--ocr-bar-h/);
+    expect(downshift).toMatch(/var\(--ann-toolbar-h/);
     expect(downshift).toMatch(/148px/);
   });
 });

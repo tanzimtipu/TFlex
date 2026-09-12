@@ -114,6 +114,20 @@ describe("styles.css — toolbar overflow regression (P9 fix #1)", () => {
     expect(declarationValue(body, "white-space")).toBe("nowrap");
   });
 
+  it("DEF-194 — .tool-btn zeroes the UA button padding so glyphs render full-size", () => {
+    const body = findRuleBody(stripCssComments(readStyles()), ".tool-btn");
+    expect(body).not.toBeNull();
+    if (body === null) return;
+    // Chromium's UA stylesheet gives every button `padding: 1px 6px`;
+    // under border-box that crushed the 28px box's inner row to 14px
+    // and flex-shrank the 22px glyph into it (~14.7px, measured by qa).
+    // Zero padding + centered flex keeps the declared icon size.
+    expect(declarationValue(body, "padding")).toBe("0");
+    expect(declarationValue(body, "display")).toBe("inline-flex");
+    expect(declarationValue(body, "align-items")).toBe("center");
+    expect(declarationValue(body, "justify-content")).toBe("center");
+  });
+
   it("Phase 13 — no label-width opt-out survives (the toolbar is icon-only)", () => {
     // The toolbar's labels are gone; the width-opt-out rule they
     // needed must not linger half-dead in the stylesheet. A re-added

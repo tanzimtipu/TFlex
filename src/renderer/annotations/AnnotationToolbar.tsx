@@ -23,6 +23,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence } from "motion/react";
 import { useDragWindow } from "../components/useDragWindow";
+import { GlassChromeBar } from "../components/GlassChrome";
 import {
   PEN_WIDTHS,
   annotationColorToCss,
@@ -249,39 +250,56 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
     );
   };
 
+  // Phase 14.2 FIX 1 — the context bar is a standardized GlassChromeBar
+  // (variant "commandBar"): the SAME primitive + height token
+  // (--chrome-commandbar-h, 52px), the same vertical centering and the
+  // same surface treatment as the command bar, so the two top rows read
+  // as one chrome system. `height: auto` keeps the bar wrappable on
+  // narrow windows — the standardized height rides the
+  // .glass-chrome-command min-height + the .ann-toolbar token, so the
+  // bar is never SHORTER than the command bar. FIX 6 — tool glyphs at
+  // 24px in 32px buttons (the 28px box was sized for the old 20px
+  // glyphs; 24 + 2x4px padding keeps the hit-target proportions), the
+  // top of the chrome icon ladder. The width/pen swatch Minus glyphs
+  // below stay size-driven, they ARE the pen widths.
   return (
-    <div className="ann-toolbar" data-annotation-toolbar>
-      {toolBtn("select", <MousePointer2 size={16} aria-hidden />, "Select (no annotation tool)")}
+    <GlassChromeBar
+      variant="commandBar"
+      className="ann-toolbar"
+      style={{ height: "auto" }}
+      data-annotation-toolbar=""
+    >
+      {toolBtn("select", <MousePointer2 size={24} aria-hidden />, "Select (no annotation tool)")}
 
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Text markup">
-        {toolBtn("highlight", <Highlighter size={16} aria-hidden />, "Highlight")}
-        {toolBtn("underline", <Underline size={16} aria-hidden />, "Underline")}
-        {toolBtn("strikeout", <Strikethrough size={16} aria-hidden />, "Strikethrough")}
+        {toolBtn("highlight", <Highlighter size={24} aria-hidden />, "Highlight")}
+        {toolBtn("underline", <Underline size={24} aria-hidden />, "Underline")}
+        {toolBtn("strikeout", <Strikethrough size={24} aria-hidden />, "Strikethrough")}
       </div>
 
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Pen">
-        {toolBtn("ink", <Pen size={16} aria-hidden />, "Pen")}
+        {toolBtn("ink", <Pen size={24} aria-hidden />, "Pen")}
       </div>
 
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Text box">
-        {toolBtn("textbox", <Type size={16} aria-hidden />, "Text box")}
+        {toolBtn("textbox", <Type size={24} aria-hidden />, "Text box")}
       </div>
 
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Shapes">
-        {toolBtn("rect", <Square size={16} aria-hidden />, "Rectangle")}
-        {toolBtn("ellipse", <Circle size={16} aria-hidden />, "Ellipse")}
-        {toolBtn("arrow", <ArrowUpRight size={16} aria-hidden />, "Arrow")}
+        {toolBtn("rect", <Square size={24} aria-hidden />, "Rectangle")}
+        {toolBtn("ellipse", <Circle size={24} aria-hidden />, "Ellipse")}
+        {toolBtn("arrow", <ArrowUpRight size={24} aria-hidden />, "Arrow")}
         {toolBtn(
           "callout",
-          <MessageCirclePlus size={16} aria-hidden />,
+          <MessageCirclePlus size={24} aria-hidden />,
           "Callout",
         )}
       </div>
@@ -289,7 +307,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
       <span className="toolbar-sep" aria-hidden />
 
       <div className="ann-toolbar-group" role="group" aria-label="Note">
-        {toolBtn("note", <StickyNote size={16} aria-hidden />, "Sticky note")}
+        {toolBtn("note", <StickyNote size={24} aria-hidden />, "Sticky note")}
       </div>
 
       {/* Color picker — single rounded-square swatch under the active
@@ -398,7 +416,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
           </div>
         </>
       )}
-    </div>
+    </GlassChromeBar>
   );
 }
 

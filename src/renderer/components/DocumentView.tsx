@@ -334,6 +334,14 @@ const EMPTY_HITS: SearchHit[] = [];
 // idle GPU memory on the open canvas (DEF-016 exit target).
 const INITIAL_MOUNT_PAGES = 3;
 
+// Phase 14.2 FIX 8 — the frosted content's top/bottom padding BELOW the
+// floating chrome stack (the floating-aesthetic minimum the spec keeps).
+// The frosted .document-content rule paints `chromeY + 16` above the
+// first page and 16px below the last; this constant is the scroll-math
+// half of that same 16px. The in-flow themes keep CONTENT_PADDING_PX
+// (28px) on both sides.
+const FROSTED_CONTENT_PAD_PX = 16;
+
 // How many pages of buffer to keep mounted on each side of the viewport, on
 // top of the IO rootMargin. The buffer covers the case where the user scrolls
 // fast enough that IO callbacks have not yet caught up with the geometry.
@@ -614,19 +622,27 @@ export function DocumentView({
   // is theme-agnostic (cheap; the variable is only read by the
   // frosted rule).
   //
-  // The same height drives the SCROLL MATH via `chromeYRef`: the
-  // frosted .document-content's top padding is `chromeY + 28`, so
-  // every slot sits `chromeY` px lower in the content than the
+  // The same height drives the SCROLL MATH via `contentTopPadRef`: the
+  // frosted .document-content's top padding is `chromeY + 16` (Phase
+  // 14.2 FIX 8 — the floating-aesthetic minimum, was chromeY + 28), so
+  // every slot sits that many px lower in the content than the
   // in-flow layout the mixed geometry helpers assume. The helpers
-  // take the REAL content top padding (`CONTENT_PADDING_PX + chromeY`)
-  // so jump landings, the current-page heuristic and the virtualized
-  // mount all track the true slot positions — without it the scroller
-  // would read every scroll position ~one chrome height early (page
-  // indicator flips ahead, jump targets land low, and the mount
-  // unmounts a page whose tail is still on screen behind/under the
-  // glass). Zero in the light/dark themes (their chrome stays
-  // in-flow, content padding stays 28px).
+  // take the REAL content top padding (28px in the in-flow themes,
+  // `chromeY + 16` in frosted) so jump landings, the current-page
+  // heuristic and the virtualized mount all track the true slot
+  // positions — without it the scroller would read every scroll
+  // position ~one chrome height early (page indicator flips ahead,
+  // jump targets land low, and the mount unmounts a page whose tail
+  // is still on screen behind/under the glass). In the light/dark
+  // themes the chrome stays in-flow and the content padding stays
+  // the 28px CONTENT_PADDING_PX.
   const chromeYRef = useRef(0);
+  // Phase 14.2 FIX 8 — the REAL top pad the CSS paints: 28px in the
+  // in-flow themes, the measured chrome stack + the 16px floating
+  // minimum in frosted. Every scroll-geometry helper reads this ref
+  // instead of the bare CONTENT_PADDING_PX + chromeY sum, so the
+  // reduced 16px margin and the scroll math can never drift apart.
+  const contentTopPadRef = useRef(CONTENT_PADDING_PX);
   useEffect(() => {
     const recompute = (): void => {
       const main = mainRef.current;
@@ -640,6 +656,10 @@ export function DocumentView({
         chromePx += el.offsetHeight;
       }
       chromeYRef.current = themeName === "frosted" ? chromePx : 0;
+      contentTopPadRef.current =
+        themeName === "frosted"
+          ? chromePx + FROSTED_CONTENT_PAD_PX
+          : CONTENT_PADDING_PX;
       if (chromePx > 0) {
         main.style.setProperty("--tf-chrome-y", `${chromePx}px`);
       }
@@ -939,10 +959,11 @@ export function DocumentView({
       pageCount,
       PAGE_BUFFER_PAGES,
       // Phase C — the frosted content's top padding is the measured
-      // chrome stack + 28, so the mount's "fully above the viewport"
-      // math must subtract the REAL padding (chromeYRef.current is 0
-      // outside the frosted theme → the in-flow value).
-      CONTENT_PADDING_PX + chromeYRef.current,
+      // chrome stack + 16 (Phase 14.2 FIX 8), so the mount's "fully
+      // above the viewport" math must subtract the REAL padding
+      // (contentTopPadRef.current is CONTENT_PADDING_PX outside the
+      // frosted theme → the in-flow value).
+      contentTopPadRef.current,
     );
     const rangeStart = range.start;
     const rangeEnd = range.end;
@@ -1011,8 +1032,8 @@ export function DocumentView({
     const pending = jumpTargetRef.current;
     if (pending !== null && pendingJumpLandingRef.current && firstPageSize !== null) {
       const top =
-        mixedSlotOffsetTop(pending, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current) -
-        CONTENT_PADDING_PX;
+        mixedSlotOffsetTop(pending, pageGeomRef.current, contentTopPadRef.current) -
+        contentTopPadRef.current;
       if (Math.abs(scroller.scrollTop - top) > 1) {
         scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
       }
@@ -1030,8 +1051,8 @@ export function DocumentView({
       // the transition (guarded by the ref), never on `currentPage`
       // changes driven by the heuristic.
       const top =
-        mixedSlotOffsetTop(currentPage, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current) -
-        CONTENT_PADDING_PX;
+        mixedSlotOffsetTop(currentPage, pageGeomRef.current, contentTopPadRef.current) -
+        contentTopPadRef.current;
       if (Math.abs(scroller.scrollTop - top) > 1) {
         scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
       }
@@ -1129,7 +1150,7 @@ export function DocumentView({
       scroller.scrollTop,
       pageGeomRef.current,
       pageCount,
-      CONTENT_PADDING_PX + chromeYRef.current,
+      contentTopPadRef.current,
     );
     setCurrentPage((prev) => (prev === page ? prev : page));
   }, [firstPageSize, pageCount]);
@@ -1149,8 +1170,8 @@ export function DocumentView({
       const target = jumpTargetRef.current;
       if (target !== null && firstPageSize !== null) {
         const targetTop =
-          mixedSlotOffsetTop(target, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current) -
-          CONTENT_PADDING_PX;
+          mixedSlotOffsetTop(target, pageGeomRef.current, contentTopPadRef.current) -
+        contentTopPadRef.current;
         const scroller = scrollerRef.current;
         if (scroller !== null && scroller.scrollTop >= targetTop - 1) {
           jumpTargetRef.current = null;
@@ -1267,14 +1288,14 @@ export function DocumentView({
         pendingJumpLandingRef.current = true;
         return;
       }
-      const target = mixedSlotOffsetTop(page, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current);
+      const target = mixedSlotOffsetTop(page, pageGeomRef.current, contentTopPadRef.current);
       // DEF-098 — the click's own scroll runs now; make sure the
       // mount-sync effect does not re-apply it as a queued jump
       // (which would INSTANT-kill this smooth scroll). A subsequent
       // bail (geometry missing) re-flags it above.
       pendingJumpLandingRef.current = false;
       scroller.scrollTo({
-        top: Math.max(target - CONTENT_PADDING_PX, 0),
+        top: Math.max(target - contentTopPadRef.current, 0),
         behavior: smooth ? "smooth" : "instant",
       });
       // DEF-058 — set the jump target FIRST so the scroll heuristic
@@ -1675,7 +1696,7 @@ export function DocumentView({
       if (scroller === null || firstPageSize === null) {
         return;
       }
-      const pageTop = mixedSlotOffsetTop(page, pageGeomRef.current, CONTENT_PADDING_PX + chromeYRef.current);
+      const pageTop = mixedSlotOffsetTop(page, pageGeomRef.current, contentTopPadRef.current);
       const target = pageTop + cssTop - scroller.clientHeight / 2;
       scroller.scrollTo({ top: Math.max(target, 0), behavior: "smooth" });
     },

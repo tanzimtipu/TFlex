@@ -54,7 +54,7 @@ export function EditToolbar(props: EditToolbarProps): ReactElement {
         title="Edit mode off: plain viewer"
         data-edit-tool="off"
       >
-        <MousePointer2 size={16} aria-hidden />
+        <MousePointer2 size={20} aria-hidden />
       </button>
       <button
         type="button"
@@ -66,7 +66,7 @@ export function EditToolbar(props: EditToolbarProps): ReactElement {
         title="Edit text: click a run to replace it"
         data-edit-tool="text"
       >
-        <Type size={16} aria-hidden />
+        <Type size={20} aria-hidden />
       </button>
       <button
         type="button"
@@ -78,7 +78,7 @@ export function EditToolbar(props: EditToolbarProps): ReactElement {
         title="Add a text box: drag on the page to place it"
         data-edit-tool="box"
       >
-        <Plus size={16} aria-hidden />
+        <Plus size={20} aria-hidden />
       </button>
       <button
         type="button"
@@ -90,7 +90,7 @@ export function EditToolbar(props: EditToolbarProps): ReactElement {
         title="Edit images: click an image to select, drag a rect to place a new one"
         data-edit-tool="image"
       >
-        <Image size={16} aria-hidden />
+        <Image size={20} aria-hidden />
       </button>
       <div className="edit-toolbar-divider" aria-hidden />
       <label className="edit-toolbar-font">

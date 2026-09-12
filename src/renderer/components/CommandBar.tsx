@@ -20,12 +20,12 @@
 import {
   ChevronLeft,
   ChevronRight,
-  Ellipsis,
   Expand,
   FileSignature,
   FolderOpen,
   GitMerge,
   Hand,
+  LayoutGrid,
   Layers,
   Minus,
   Minimize2,
@@ -126,7 +126,16 @@ export interface CommandBarProps {
 
 /** The grouped command bar. Every control is icon-only (the Open
  *  button is the ONE labelled control — the accent primary), and every
- *  button keeps aria-label + title so the no-op sweep can name it. */
+ *  button keeps aria-label + title so the no-op sweep can name it.
+ *
+ *  Phase 14.2 FIX 6 — the icon ladder is 20px minimum across the
+ *  chrome: command-bar glyphs render at 22px (the Open button's
+ *  inline icon at 20px to sit with its 13px label), up from the
+ *  16px the Phase-13 toolbar shipped. Hit targets are unchanged:
+ *  the 28px button inside the 36px capsule keeps its ~40px
+ *  effective hit row. FIX 7 — the Tools palette toggle carries the
+ *  "All tools" grid glyph (LayoutGrid) instead of the ambiguous
+ *  three-dot ellipsis. */
 export function CommandBar(props: CommandBarProps) {
   const {
     onOpenFile,
@@ -190,7 +199,7 @@ export function CommandBar(props: CommandBarProps) {
             title="Open PDF"
             data-toolbar-open
           >
-            <FolderOpen size={16} aria-hidden />
+            <FolderOpen size={20} aria-hidden />
             Open
           </button>
         </GlassControlGroup>
@@ -206,7 +215,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Previous page"
           title="Previous page"
         >
-          <ChevronLeft size={16} aria-hidden />
+          <ChevronLeft size={22} aria-hidden />
         </button>
         <div className="page-indicator">
           <input
@@ -241,7 +250,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Next page"
           title="Next page"
         >
-          <ChevronRight size={16} aria-hidden />
+          <ChevronRight size={22} aria-hidden />
         </button>
       </GlassControlGroup>
 
@@ -267,7 +276,7 @@ export function CommandBar(props: CommandBarProps) {
           }
           aria-label="Save"
         >
-          <Save size={16} aria-hidden />
+          <Save size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -278,20 +287,20 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Save a copy"
           data-toolbar-save-as
         >
-          <SaveAll size={16} aria-hidden />
+          <SaveAll size={22} aria-hidden />
         </button>
       </GlassControlGroup>
 
       {/* GROUP: Zoom — [- 372% +] + the two fit modes */}
       <GlassControlGroup label="Zoom" className="toolbar-group">
         <button type="button" className="tool-btn" onClick={onZoomOut} aria-label="Zoom out" title="Zoom out">
-          <Minus size={16} aria-hidden />
+          <Minus size={22} aria-hidden />
         </button>
         <span className="zoom-percent" title="Current zoom">
           {zoomPercent}%
         </span>
         <button type="button" className="tool-btn" onClick={onZoomIn} aria-label="Zoom in" title="Zoom in">
-          <Plus size={16} aria-hidden />
+          <Plus size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -301,7 +310,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Fit width"
           title="Fit width"
         >
-          <MoveHorizontal size={16} aria-hidden />
+          <MoveHorizontal size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -311,7 +320,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Fit page"
           title="Fit page"
         >
-          <Expand size={16} aria-hidden />
+          <Expand size={22} aria-hidden />
         </button>
       </GlassControlGroup>
 
@@ -325,7 +334,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Find in document"
           title="Find in document (Ctrl+F)"
         >
-          <Search size={16} aria-hidden />
+          <Search size={22} aria-hidden />
         </button>
         {onRotateCounterClockwise !== undefined && (
           <button
@@ -336,7 +345,7 @@ export function CommandBar(props: CommandBarProps) {
             aria-label="Rotate counter-clockwise"
             data-toolbar-rotate-ccw
           >
-            <RotateCcw size={16} aria-hidden />
+            <RotateCcw size={22} aria-hidden />
           </button>
         )}
         {onRotateClockwise !== undefined && (
@@ -352,7 +361,7 @@ export function CommandBar(props: CommandBarProps) {
             aria-label="Rotate clockwise"
             data-toolbar-rotate-cw
           >
-            <RotateCw size={16} aria-hidden />
+            <RotateCw size={22} aria-hidden />
           </button>
         )}
         <button
@@ -365,7 +374,7 @@ export function CommandBar(props: CommandBarProps) {
           data-hand-toggle
           data-hand-active={handActive ? 'true' : 'false'}
         >
-          <Hand size={16} aria-hidden />
+          <Hand size={22} aria-hidden />
         </button>
         {onEditModeToggle !== undefined && (
           <button
@@ -378,7 +387,7 @@ export function CommandBar(props: CommandBarProps) {
             data-toolbar-edit-toggle
             data-icon="edit"
           >
-            <Pencil size={16} aria-hidden />
+            <Pencil size={22} aria-hidden />
           </button>
         )}
         {onDeletePage !== undefined && (
@@ -392,7 +401,7 @@ export function CommandBar(props: CommandBarProps) {
             data-toolbar-delete-pages
             data-icon="delete"
           >
-            <Trash2 size={16} aria-hidden />
+            <Trash2 size={22} aria-hidden />
           </button>
         )}
         <button
@@ -404,7 +413,7 @@ export function CommandBar(props: CommandBarProps) {
           data-toolbar-optimize
           data-icon="optimize"
         >
-          <Minimize2 size={16} aria-hidden />
+          <Minimize2 size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -415,7 +424,7 @@ export function CommandBar(props: CommandBarProps) {
           data-toolbar-audit
           data-icon="audit"
         >
-          <PieChart size={16} aria-hidden />
+          <PieChart size={22} aria-hidden />
         </button>
         {hasFormFields && (
           <button
@@ -426,7 +435,7 @@ export function CommandBar(props: CommandBarProps) {
             aria-label="Flatten form fields"
             data-icon="flatten"
           >
-            <Layers size={16} aria-hidden />
+            <Layers size={22} aria-hidden />
           </button>
         )}
       </GlassControlGroup>
@@ -442,7 +451,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Merge with another PDF"
           data-icon="merge"
         >
-          <GitMerge size={16} aria-hidden />
+          <GitMerge size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -452,7 +461,7 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Extract or split pages"
           data-icon="split"
         >
-          <Scissors size={16} aria-hidden />
+          <Scissors size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -463,24 +472,26 @@ export function CommandBar(props: CommandBarProps) {
           aria-label="Sign tool"
           data-icon="sign"
         >
-          <FileSignature size={16} aria-hidden />
+          <FileSignature size={22} aria-hidden />
         </button>
         <button
           type="button"
           className={toolsPaletteOpen ? 'tool-btn tool-btn-active' : 'tool-btn'}
           onClick={onToolsPaletteToggle}
           aria-pressed={toolsPaletteOpen}
-          title="More tools (Ctrl+Shift+P)"
-          aria-label="More tools"
+          title="All tools (Ctrl+Shift+P)"
+          aria-label="All tools"
           data-tools-toggle
         >
-          {/* Phase 13 — the Tools palette toggle renders as the "More"
-              (ellipsis) affordance: the palette IS the overflow surface,
-              so the icon says "everything else lives here". The stable
+          {/* Phase 14.2 FIX 7 — the Tools palette toggle carries the
+              "All tools" affordance: a grid glyph (LayoutGrid) that
+              reads as "the panel with every tool" instead of the
+              ambiguous three-dot ellipsis. The stable
               data-tools-toggle attribute keeps every e2e selector
-              resolving. The PanelRightOpen glyph survives as the
+              resolving (hundreds of specs target the attribute, not
+              the label). The PanelRightOpen glyph survives as the
               palette-open state indicator in the ToolsPalette header. */}
-          <Ellipsis size={16} aria-hidden />
+          <LayoutGrid size={22} aria-hidden />
         </button>
       </GlassControlGroup>
     </div>

@@ -1,3 +1,109 @@
+## DEF-191: Phase-14.2 Fix 3 does not hold in the frosted theme — the Open button's ghost capsule still paints (translucent film + hairline + shadow extend ~17px past the blue button)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14.2
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs; default frosted theme), open report.pdf.
+2. Look at the command bar's leading blue "Open" button.
+3. Measure the File group capsule vs the button: `getComputedStyle` on `.toolbar-group.commandbar-group-open` and its box vs `.commandbar-open`.
+
+Expected: Phase 14.2 Fix 3 — "clean single-layer button; blue accent only, no ghost element". The 14.2 override (src/renderer/styles.css line ~1717: `.toolbar-group.commandbar-group-open { background: transparent; border-color: transparent; box-shadow: none; }`) should make the capsule paint nothing so the blue button is the only visible layer.
+
+Actual: the capsule still paints a full ghost layer: background `rgba(255, 255, 255, 0.55)`, border `rgba(255, 255, 255, 0.25)`, and the box-shadow `rgba(255,255,255,0.55) 0 1px 0 inset, rgba(0,0,0,0.08) 0 1px 2px` — and the capsule is 101.55px wide while the button is 84.22px (btnH = groupH = 36), so the translucent film rim + luminous top edge + drop shadow are visibly painted around the blue button (screenshot). Root cause: specificity — the fix rule is (0,2,0) while the frosted film `:root[data-theme="frosted"] .glass-control-group` (styles.css ~line 9106) is (0,3,0), so the fix loses ONLY in frosted; light/dark measure clean (the same override beats their (0,1,0) base rule).
+
+Screenshot: screenshots/fix3-open-button.png (frosted; the translucent rim around the blue button)
+
+Evidence run: e2e/phase14_2_verify.spec.cjs "fix3: Open button is a clean single layer (frosted)" — measured values in the run log (5 consecutive runs, stable).
+
+History:
+- qa: opened (Phase 14.2 verification, 2026-09-13; reproduced identically across 5 runs on dist rebuilt from the current tree)
+- qa: CLOSED (2026-09-13 retest on the dev build; dist 17:43 carries the fix — `:root[data-theme=frosted] .toolbar-group.commandbar-group-open{background:0 0;border-color:#0000;box-shadow:none}`). Measured (e2e/retests/def_191_194_retest.spec.cjs, DEF-191 test, passed): File capsule background rgba(0,0,0,0) alpha 0, border rgba(0,0,0,0), box-shadow none, and both ::before/::after paint nothing; the button keeps rgb(37,99,235) + white. Hover re-measured after a real hover: the capsule STILL paints nothing (the 0-4-0 film hover variant stays overridden by the 0-5-0 clean rule) — the lighter rgb(59,130,246) on hover is the button's own hover wash, not a ghost layer. The group box keeps 101.55px vs the button's 84.22px, but that ~17.3px is layout padding that paints NOTHING (the filing's mismatch only mattered because the film painted there) — the visible rim/hairline/shadow are gone. Visual: screenshots/def-191-retest.png (rest) + def-191-retest-hover.png — clean solid blue capsule, no film. The clean-button contract also hold-checks in dark and light inside the DEF-192 test.
+
+## DEF-192: Phase-14.2 Fix 4 is dead in EVERY theme — the page view never adjusts when the Tools panel opens (margin stays 0; the panel mounts OVER the document, occluding ~306px of the page)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 14.2
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf (any theme — frosted default, dark, and light all reproduce).
+2. Click the "All tools" grid button in the command bar.
+3. Measure: `.document-scroller` computed margin-right, `.workspace-main` computed `--tf-tools-inset`, and the rects of `[data-tools-palette]` vs `.pdf-page[data-page="1"]`.
+
+Expected: Phase 14.2 Fix 4 — in ALL themes the open Tools panel pushes the page view: scroller margin-right = panel width + 12px gap (356px), scroller width shrinks, the canvas ends BESIDE the panel.
+
+Actual: with `data-tools-open="true"` on `.app-main`, the scroller's margin-right stays `0px`, `--tf-tools-inset` reads `0px` on `.workspace-main`, and the palette mounts flush over the page: dark/light palette left 1096 vs page right 1402 (306px of page occluded — the subtitle text is cut off under the panel's left edge, screenshots); frosted palette left 1080 vs page right 1386 (same 306px). The page does not move at all.
+
+Root cause (CSS): `.workspace-main` re-declares `--tf-tools-inset: 0px` on itself (src/renderer/styles.css ~line 1999) while the open-state value is declared on the ANCESTOR (`.app-main[data-tools-open="true"] { --tf-tools-inset: calc(344px + 12px); }`, ~line 2013). A self-declaration always beats the inherited value, so the registered-property transition on `.workspace-main` never sees a change and the consumed `margin-right: var(--tf-tools-inset)` on `.document-scroller` is permanently 0. Fix direction: remove the `--tf-tools-inset: 0px` self-declaration from `.workspace-main` (the @property's `initial-value: 0px` already provides it) so the `.app-main[data-tools-open]` value inherits down and the transition animates it.
+
+Note: this also undoes the Phase-14.1 frosted behavior where the canvas ended beside the Tools card (DEF-183's fix) — the white page now extends under the glass card again in frosted.
+
+Screenshot: screenshots/fix4-dynamic-dark.png, screenshots/fix4-dynamic-light.png, screenshots/fix4-dynamic-frosted.png (panel over page in all three; compare with the -closed.png variants)
+
+Evidence run: e2e/phase14_2_verify.spec.cjs (frosted battery + dark + light tests; measured snapshots in the run logs, 5 consecutive runs)
+
+History:
+- qa: opened (Phase 14.2 verification, 2026-09-13)
+- qa: CLOSED (2026-09-13 retest, e2e/retests/def_191_194_retest.spec.cjs DEF-192 test, passed). Closed -> open -> re-closed measured in ALL THREE themes: dark margin-right 0 -> 356px (.workspace-main insetVar 356px, scroller 1220 -> 864 wide), page right edge 1402 -> 1046 and the page reflowed 1154 -> 798px wide (fit-width re-zoom 181% -> 130%); palette left 1096 vs page right 1046 — 50px clear, NO occlusion; re-closed restores 0px and the full-width page. Light: identical numbers (palette 1096 vs page 1046). Frosted: margin 0 -> 356, scroller 1176 -> 820, page right 1386 -> 1030, palette left 1080 vs page right 1030 — 50px clear; re-closed restores 0px/1110px. The dead token is gone: `.workspace-main` no longer self-declares `--tf-tools-inset`, the `.app-main[data-tools-open]` driver (calc(344px + 12px) = 356px) inherits down, and the page lands beside the panel instead of under it. Visual: screenshots/def-192-retest.png (dark), -light.png, -frosted.png (page beside the panel in all three), plus the -closed baselines for each theme.
+
+## DEF-193: Phase-14.2 Fix 5 animates only the PANEL — the page never participates, so panel and page do not animate together (rAF sampler: margin constant 0px across 46 frames while the palette tweens 300ms)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14.2
+
+Steps to reproduce:
+1. Launch TFlex (dev build), open report.pdf (frosted or dark).
+2. Start a requestAnimationFrame sampler recording `getComputedStyle(.document-scroller).marginRight`, the palette's computed opacity/transform, and frame timestamps (e2e/phase14_2_verify.spec.cjs FIX 5 test does exactly this).
+3. Click the "All tools" button; sample for ~750ms.
+
+Expected: Fix 5 — the panel AND the page view animate TOGETHER on the same 300ms ease-out (the `.workspace-main` transition `--tf-tools-inset 0.3s cubic-bezier(0.16, 1, 0.3, 1)` drives the scroller's margin while TfPanel tweens the palette).
+
+Actual: the transition declaration IS present and correct (computed transition string `--tf-tools-inset 0.3s cubic-bezier(0.16, 1, 0.3, 1)`), and the palette's own enter motion is healthy: opacity 0 -> 1 and translateX 24px -> 0 over ~300ms ease-out. But the page's margin-right stays 0.000px through every one of the 46 rAF samples (t=8ms..759ms) — the page never moves, so there is no simultaneous panel+page motion and no 300ms page slide to measure. Same dead token as DEF-192 (`.workspace-main` self-declares `--tf-tools-inset: 0px`, so the transitioned property never changes value). The close direction is identical (palette tweens out, page static).
+
+Screenshot: screenshots/fix5-anim-frame-00..06.png (frame sequence: the palette slides/fades in over a static page)
+
+Evidence run: e2e/phase14_2_verify.spec.cjs fix5 test (rAF sampler logs; reproducible across runs)
+
+History:
+- qa: opened (Phase 14.2 verification, 2026-09-13; same root cause as DEF-192 — fixing the token restore should fix both)
+- qa: CLOSED (2026-09-13 retest, rAF sampler with the same shape as the filing spec, e2e/retests/def_191_194_retest.spec.cjs DEF-193 test, passed). Declared transition confirmed: `--tf-tools-inset 0.3s cubic-bezier(0.16, 1, 0.3, 1)` on `.workspace-main` (--panel-slide-duration .3s). OPEN-frosted: margin 0 -> 356px with 11 distinct intermediate values, strictly monotonic (no jumps), movement 74ms -> 232ms; the palette enters on the same curve (first mounted sample t=51ms opacity 0 translateX 24px); 7 rAF samples show panel AND page mid-flight in the SAME frame window; settle order palette 232ms / margin 232ms — the same frame, not sequential. CLOSE-frosted: margin 356 -> 0, movement 67 -> 218ms, 9 together-samples. OPEN-dark: 0 -> 356, movement 69 -> 220ms, 11 values, 7 together-samples, settle palette 238ms / margin 220ms. Visual: screenshots/def-193-retest-frame-00..06.png — frame 0 catches mid-flight (page still at 181% fit-width with the panel translucent and offset; page right edge and panel both in motion), frames 1-6 settled at the reflowed 123% layout beside the opaque panel; composite strip screenshots/def-193-retest-frames.png. Note for the record: a full-window Playwright capture takes ~200-240ms, so only frame 0 lands inside the 300ms tween — the rAF curve (overlapping motion windows, monotonic, settle-together) is the quantitative proof.
+
+## DEF-194: Phase-14.2 Fix 6 — command-bar icons still render ~14.7px, not 22px (the svg flex-item shrinks to the button's content box because `.tool-btn` never resets the UA button padding)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 14.2
+
+Steps to reproduce:
+1. Launch TFlex (dev build), open report.pdf (any theme).
+2. Measure every `.toolbar .tool-btn > svg`: computed width/height and getBoundingClientRect.
+3. Compare with `.ann-toolbar .ann-tool-btn > svg` and `.side-rail` button svgs.
+
+Expected: Fix 6 — command bar icons render at 22px (spec: 20px minimum), matching the 24px annotation-toolbar and 22px sidebar glyphs.
+
+Actual: ALL 20 command-bar tool svgs carry width="22" height="22" attributes but LAY OUT at 14.6667 x 22 CSS px (computed style and rect agree; the 24/24 viewBox glyph is letterboxed down to a ~14.7px drawing — visibly smaller than the annotation bar's true 24px glyphs, screenshots). The 22px attribute and even an inline `style.width = '22px'` are ignored; the value is pinned by layout. Isolation probes (e2e/retests/diag_cmd_icon_width*.spec.cjs, 7 probes):
+- a CLONE of the same svg in a plain div, or in a synthetic 28px inline-flex div, sizes correctly at 22px;
+- the LIVE svg inside the real `.tool-btn` measures 14.6667px, and a FRESH CLONE inserted into that same button ALSO measures 14.6667px, with an attribute change (width 45) ignored;
+- no stylesheet rule matches the svgs (recursive CSSOM walk), no zoom/transform/container on any ancestor; DPR is 1.5 and 14.6667 = 22/1.5 exactly.
+Root cause: `.tool-btn` (styles.css ~2359) sets `width: 28px` border-box but never resets the UA `<button>` padding (1px 6px), leaving a ~14.7px content box; the 22px svg is a flex item (`flex: 0 1 auto`) that shrinks into it (Chromium treats an svg's min-content width as 0). `.ann-tool-btn` explicitly sets `padding: 0` (styles.css ~4390) — which is why the annotation bar's 24px glyphs render true to size, and the sidebar buttons (wider boxes) are clean at 22px. Fix hint: add `padding: 0` to `.tool-btn` (same as `.ann-tool-btn`).
+
+Hit targets are intact (ann/cmd button boxes 32px, capsule row 36px, bars 52px) — only the command-bar glyph size regressed.
+
+Screenshot: screenshots/fix6-icons-large.png (command bar icons visibly smaller than the 24px annotation-bar icons below), screenshots/fix3-open-button.png
+
+Evidence run: e2e/phase14_2_verify.spec.cjs fix6 test + e2e/retests/diag_cmd_icon_width*.spec.cjs
+
+History:
+- qa: opened (Phase 14.2 verification, 2026-09-13)
+- qa: CLOSED (2026-09-13 retest, e2e/retests/def_191_194_retest.spec.cjs DEF-194 test, passed). ALL 20 command-bar `.tool-btn` svgs now measure computed AND getBoundingClientRect 22x22 (was 14.6667x22): Previous page, Next page, Save, Save a copy, Zoom out, Zoom in, Fit width, Fit page, Find in document, Rotate CCW, Rotate CW, Pan mode, Edit content, Delete pages, Reduce file size, Audit space usage, Merge, Extract or split, Sign tool, All tools — every one of the 20 at 22x22, none letterboxed. Root cause verified in the bundle: `.tool-btn` computed padding is now "0px" (the UA button padding 1px 6px used to crush the 28px border-box's inner row to ~14.7px). Hit targets intact (command buttons 32px tall, capsule row 36px). Neighbors unaffected: annotation-bar glyphs still 24x24, sidebar icons >= 22px. Visual: screenshots/def-194-retest.png — command-bar glyphs read full-size beside the 24px annotation glyphs below (the filing's visible size gap is gone).
+
 ## DEF-190: Stamp type editor is unclickable near a page boundary — the next page's subtree paints over the floating toolbox (Cancel button and Escape both dead)
 
 - Status: CLOSED

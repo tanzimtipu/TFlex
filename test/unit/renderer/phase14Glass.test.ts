@@ -177,24 +177,56 @@ describe("Phase 14 — floating glass shell (DEF-184/186/187, Phase 14.1 margins
   });
 
   it("the document canvas ends beside the tools card so the wallpaper is its backdrop", () => {
+    // Phase 14.2 FIX 4/5 — the inset is state-driven now: .app-main
+    // carries data-tools-open (the same React state that mounts the
+    // palette) and the scroller consumes the animated --tf-tools-inset
+    // as its right margin, in EVERY theme. The inset equals the panel
+    // width (list 344px / grid 380px) + the 12px gap.
     const stripped = stripCssComments(css);
-    const list = stripped.match(
-      /:root\[data-theme="frosted"\]\s+\.app-main:has\(>\s*\.tools-palette\)\s+\.document-scroller\s*\{([^}]*)\}/,
+    const driver = stripped.match(
+      /\.app-main\[data-tools-open="true"\]\s*\{([^}]*)\}/,
     );
-    expect(list, "list-layout scroller inset rule missing").not.toBeNull();
-    expect(list?.[1] ?? "").toMatch(/right:\s*356px/);
-    const grid = stripped.match(
-      /:root\[data-theme="frosted"\]\s+\.app-main:has\(>\s*\.tools-palette-grid\)\s+\.document-scroller\s*\{([^}]*)\}/,
+    expect(driver, "the tools-inset driver rule missing").not.toBeNull();
+    expect(driver?.[1] ?? "").toMatch(
+      /--tf-tools-inset:\s*calc\(var\(--tools-panel-w,\s*344px\)\s*\+\s*var\(--tools-panel-gap,\s*12px\)\)/,
     );
-    expect(grid, "grid-layout scroller inset rule missing").not.toBeNull();
-    expect(grid?.[1] ?? "").toMatch(/right:\s*392px/);
+    // The grid layout mode widens the panel token to 380px.
+    const gridDriver = stripped.match(
+      /\.app-main\[data-tools-open="true"\]\[data-tools-mode="grid"\]\s*\{([^}]*)\}/,
+    );
+    expect(gridDriver, "the grid-mode panel width rule missing").not.toBeNull();
+    expect(gridDriver?.[1] ?? "").toMatch(/--tools-panel-w:\s*380px/);
+    // The scroller consumes the inset as a margin (transition-free —
+    // the PDF-safety audit keeps motion off the document surfaces).
+    const scroller = findRuleBody(css, ".document-scroller");
+    expect(scroller ?? "").toMatch(/margin-right:\s*var\(--tf-tools-inset,\s*0px\)/);
+  });
+
+  it("panel and page animate TOGETHER (the inset token is transitioned on the chrome, not the scroller)", () => {
+    const stripped = stripCssComments(css);
+    // The registered @property makes the length interpolate.
+    expect(stripped).toMatch(
+      /@property\s+--tf-tools-inset\s*\{[^}]*syntax:\s*"<length>"[^}]*\}/,
+    );
+    // The transition lives on .workspace-main (chrome level) with the
+    // shared 300ms ease-out tokens.
+    const main = findRuleBody(css, ".workspace-main");
+    expect(main ?? "").toMatch(/transition:[\s\S]*--tf-tools-inset/);
+    expect(main ?? "").toMatch(/var\(--panel-slide-duration,\s*300ms\)/);
+    // ...and NEVER on the scroller itself (the PDF-safety contract).
+    const scroller = findRuleBody(css, ".document-scroller");
+    expect(scroller ?? "").not.toMatch(/transition\s*:/);
   });
 
   it("the window shell rounds at the window radius and squares when maximized", () => {
     const body = findRuleBody(css, ':root[data-theme="frosted"] .app');
     expect(body).not.toBeNull();
     expect(body ?? "").toMatch(/border-radius:\s*var\(--radius-window,\s*20px\)/);
-    expect(body ?? "").toMatch(/overflow:\s*hidden/);
+    // Phase 14.2 — clip, not hidden: the box must stay NON-scrollable
+    // (overflow: hidden boxes are programmatically scrollable, and
+    // the ambient parallax pad created a scroll area that focus-driven
+    // scroll-into-view used to shift the whole shell with).
+    expect(body ?? "").toMatch(/overflow:\s*clip/);
     const maximized = findRuleBody(css, ':root[data-theme="frosted"] .app-maximized');
     expect(maximized).not.toBeNull();
     expect(maximized ?? "").toMatch(/border-radius:\s*0/);

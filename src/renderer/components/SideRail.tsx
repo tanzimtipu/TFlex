@@ -155,7 +155,7 @@ export function SideRail(props: SideRailProps) {
               onClick={() => setTab('thumbs')}
               title="Page thumbnails"
             >
-              <Images size={16} aria-hidden />
+              <Images size={22} aria-hidden />
             </button>
             <button
               type="button"
@@ -164,7 +164,7 @@ export function SideRail(props: SideRailProps) {
               title="Annotations"
               data-rail-tab="annotations"
             >
-              <MessageSquare size={16} aria-hidden />
+              <MessageSquare size={22} aria-hidden />
             </button>
             {outline !== null && (
               <button
@@ -173,7 +173,7 @@ export function SideRail(props: SideRailProps) {
                 onClick={() => setTab('outline')}
                 title="Bookmarks"
               >
-                <List size={16} aria-hidden />
+                <List size={22} aria-hidden />
               </button>
             )}
           </div>
@@ -634,7 +634,7 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
             title={canUndo ? 'Undo last change' : 'Nothing to undo'}
             aria-label="Undo last change"
           >
-            <Undo2 size={16} aria-hidden />
+            <Undo2 size={22} aria-hidden />
             <span>Undo last change</span>
           </button>
         </div>
@@ -1018,7 +1018,7 @@ function ThumbActions(props: ThumbActionsProps): ReactElement {
           title="Rotate counter-clockwise"
           aria-label="Rotate counter-clockwise"
         >
-          <RotateCcw size={16} aria-hidden />
+          <RotateCcw size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -1028,7 +1028,7 @@ function ThumbActions(props: ThumbActionsProps): ReactElement {
           title="Rotate clockwise"
           aria-label="Rotate clockwise"
         >
-          <RotateCw size={16} aria-hidden />
+          <RotateCw size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -1038,7 +1038,7 @@ function ThumbActions(props: ThumbActionsProps): ReactElement {
           title="Delete this page"
           aria-label="Delete this page"
         >
-          <Trash2 size={16} aria-hidden />
+          <Trash2 size={22} aria-hidden />
         </button>
         <button
           type="button"
@@ -1104,7 +1104,7 @@ function OutlinePanel({ doc, outline, onJump, onError }: OutlinePanelProps) {
                   aria-label={isCollapsed ? 'Expand' : 'Collapse'}
                 >
                   <span className={isCollapsed ? 'chevron chevron-closed' : 'chevron'}>
-                    <ChevronRight size={16} aria-hidden />
+                    <ChevronRight size={22} aria-hidden />
                   </span>
                 </button>
               ) : (

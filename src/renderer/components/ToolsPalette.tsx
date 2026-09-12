@@ -108,6 +108,12 @@ interface ToolsPaletteProps {
   /** Whether the active document has form fields. The Forms entry is
    *  disabled when false (Flatten would no-op). */
   hasFormFields: boolean;
+  /** Phase 14.2 FIX 5 — the layout mode the panel will EXIT with.
+   *  TfPanel pins the exit transform to the mode's travel; App passes
+   *  the persisted setting so the exit reads the mode the panel is
+   *  actually closing in (a component-local `layout` prop goes stale
+   *  for grid-mode exits). Defaults to 'list'. */
+  exitLayout?: ToolsPaletteLayout;
 }
 
 interface ToolEntry {
@@ -181,6 +187,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     hasOcrSuspects,
     documentRequired,
     hasFormFields,
+    exitLayout = 'list',
   } = props;
 
   const isEntryEnabled = (id: ToolEntry['id']): boolean => {
@@ -232,7 +239,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       id: 'merge',
       label: 'Merge PDFs',
       description: 'Combine another PDF with the active document.',
-      icon: <GitMerge size={16} aria-hidden />,
+      icon: <GitMerge size={22} aria-hidden />,
       shortcut: 'Ctrl+Shift+O',
       action: onMerge,
     },
@@ -240,7 +247,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       id: 'split',
       label: 'Split pages',
       description: 'Split a range of pages into a new document.',
-      icon: <Scissors size={16} aria-hidden />,
+      icon: <Scissors size={22} aria-hidden />,
       shortcut: '',
       action: onSplit,
     },
@@ -248,7 +255,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       id: 'extract',
       label: 'Extract pages',
       description: 'Pull specific pages into a new document.',
-      icon: <ArrowDownToLine size={16} aria-hidden />,
+      icon: <ArrowDownToLine size={22} aria-hidden />,
       shortcut: '',
       action: onExtract,
     },
@@ -256,7 +263,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       id: 'rotate',
       label: 'Rotate pages',
       description: 'Rotate the selected page clockwise or counter-clockwise.',
-      icon: <RotateCw size={16} aria-hidden />,
+      icon: <RotateCw size={22} aria-hidden />,
       shortcut: '',
       action: onRotate,
     },
@@ -264,7 +271,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       id: 'delete',
       label: 'Delete pages',
       description: 'Remove the selected page from the document.',
-      icon: <Trash2 size={16} aria-hidden />,
+      icon: <Trash2 size={22} aria-hidden />,
       shortcut: '',
       action: onDelete,
     },
@@ -272,7 +279,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       id: 'sign',
       label: 'Sign',
       description: 'Draw, type, or place a saved signature.',
-      icon: <Pen size={16} aria-hidden />,
+      icon: <Pen size={22} aria-hidden />,
       shortcut: '',
       action: onSign,
     },
@@ -280,7 +287,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       id: 'forms',
       label: 'Forms',
       description: 'Fill AcroForm fields. Flatten when finished.',
-      icon: <Layers size={16} aria-hidden />,
+      icon: <Layers size={22} aria-hidden />,
       shortcut: '',
       action: onForms,
     },
@@ -289,7 +296,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'flatten' as const,
           label: 'Flatten',
           description: 'Bake filled form values into the page content.',
-          icon: <FileStack size={16} aria-hidden />,
+          icon: <FileStack size={22} aria-hidden />,
           shortcut: '',
           action: onFlatten,
         }]
@@ -298,7 +305,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       id: 'optimize',
       label: 'Reduce file size',
       description: 'Re-serialise the document with a compression preset.',
-      icon: <Minimize2 size={16} aria-hidden />,
+      icon: <Minimize2 size={22} aria-hidden />,
       shortcut: '',
       action: onOptimize,
     },
@@ -306,7 +313,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       id: 'audit',
       label: 'Audit space usage',
       description: 'See a per-element breakdown of the file size.',
-      icon: <PieChart size={16} aria-hidden />,
+      icon: <PieChart size={22} aria-hidden />,
       shortcut: '',
       action: onAudit,
     },
@@ -315,7 +322,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'recognizeText' as const,
           label: 'Recognize text (OCR)',
           description: 'Add a searchable text layer to a scanned PDF.',
-          icon: <ScanText size={16} aria-hidden />,
+          icon: <ScanText size={22} aria-hidden />,
           // DEF-049 — surface the renderer-side keyboard shortcut in
           // the palette so users can discover it without opening the
           // native menu. The accelerator is also wired on the menu
@@ -332,7 +339,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'batchOcr' as const,
           label: 'Batch OCR all tabs',
           description: 'Run OCR on every open document, sequentially.',
-          icon: <ScanText size={16} aria-hidden />,
+          icon: <ScanText size={22} aria-hidden />,
           shortcut: '',
           action: onBatchOcr,
         }]
@@ -342,7 +349,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'ocrSuspects' as const,
           label: 'OCR suspects',
           description: 'Browse low-confidence words from the last OCR run.',
-          icon: <ScanText size={16} aria-hidden />,
+          icon: <ScanText size={22} aria-hidden />,
           shortcut: '',
           action: onOcrSuspects,
         }]
@@ -352,7 +359,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'createFromImages' as const,
           label: 'Create PDF from images',
           description: 'Combine picked images into a new PDF document.',
-          icon: <FileImage size={16} aria-hidden />,
+          icon: <FileImage size={22} aria-hidden />,
           shortcut: '',
           action: onCreateFromImages,
         }]
@@ -362,7 +369,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'exportPages' as const,
           label: 'Export pages as images',
           description: 'Save selected pages as PNG, JPEG, or TIFF files.',
-          icon: <ArrowDownToLine size={16} aria-hidden />,
+          icon: <ArrowDownToLine size={22} aria-hidden />,
           shortcut: '',
           action: onExportPages,
         }]
@@ -372,7 +379,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'exportText' as const,
           label: 'Export text',
           description: 'Save extracted text as .txt or .rtf.',
-          icon: <FileText size={16} aria-hidden />,
+          icon: <FileText size={22} aria-hidden />,
           shortcut: '',
           action: onExportText,
         }]
@@ -382,7 +389,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'exportDocx' as const,
           label: 'Export to Word (.docx)',
           description: 'Render every page to a single .docx document.',
-          icon: <ArrowDownToLine size={16} aria-hidden />,
+          icon: <ArrowDownToLine size={22} aria-hidden />,
           shortcut: '',
           action: onExportDocx,
         }]
@@ -392,7 +399,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'insertPages' as const,
           label: 'Insert pages',
           description: 'Insert a blank page, or import pages from another PDF.',
-          icon: <FilePlus2 size={16} aria-hidden />,
+          icon: <FilePlus2 size={22} aria-hidden />,
           shortcut: '',
           action: onInsertPages,
         }]
@@ -402,7 +409,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'replacePages' as const,
           label: 'Replace pages',
           description: 'Swap a contiguous range with another PDF; outline and links survive.',
-          icon: <Replace size={16} aria-hidden />,
+          icon: <Replace size={22} aria-hidden />,
           shortcut: '',
           action: onReplacePages,
         }]
@@ -412,7 +419,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'renumberPages' as const,
           label: 'Renumber pages',
           description: 'Set logical page labels (e.g. i, ii, iii).',
-          icon: <ArrowLeftRight size={16} aria-hidden />,
+          icon: <ArrowLeftRight size={22} aria-hidden />,
           shortcut: '',
           action: onRenumberPages,
         }]
@@ -422,7 +429,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'cropPages' as const,
           label: 'Crop pages',
           description: 'Set the CropBox/TrimBox for every page.',
-          icon: <Crop size={16} aria-hidden />,
+          icon: <Crop size={22} aria-hidden />,
           shortcut: '',
           action: onCropPages,
         }]
@@ -432,7 +439,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'stamp' as const,
           label: 'Stamp',
           description: 'Drop an APPROVED, DRAFT, CONFIDENTIAL or FINAL stamp.',
-          icon: <Stamp size={16} aria-hidden />,
+          icon: <Stamp size={22} aria-hidden />,
           shortcut: '',
           action: onStamp,
         }]
@@ -442,7 +449,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'exportComments' as const,
           label: 'Export comments (FDF)',
           description: 'Save every annotation to a local .fdf file.',
-          icon: <MessagesSquare size={16} aria-hidden />,
+          icon: <MessagesSquare size={22} aria-hidden />,
           shortcut: '',
           action: onExportComments,
         }]
@@ -452,7 +459,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           id: 'importComments' as const,
           label: 'Import comments (FDF)',
           description: 'Merge a local .fdf file into the active document.',
-          icon: <MessagesSquare size={16} aria-hidden />,
+          icon: <MessagesSquare size={22} aria-hidden />,
           shortcut: '',
           action: onImportComments,
         }]
@@ -470,6 +477,25 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       data-layout={layout}
       role="complementary"
       aria-label="Tools"
+      // Phase 14.2 FIX 5 — the panel and the page view animate
+      // TOGETHER. The page view's inset animates over a 300ms
+      // cubic-bezier(0.16,1,0.3,1) ease-out (the --panel-slide-*
+      // tokens); the panel used to ride the shared 280ms panel
+      // SPRING, a different character and length than the page
+      // slide. Overriding the transition with the same 300ms tween
+      // pins both surfaces to one identical motion — they start on
+      // the same frame (the open state is the same React state that
+      // flips .app-main's data-tools-open attribute) and settle on
+      // the same curve. Reduced motion keeps the TfMotion
+      // opacity-only path (this override is bypassed there).
+      transition={{ type: 'tween', duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      exit={{
+        opacity: 0,
+        // TfPanel pins the exit transform to the mode's travel; the
+        // persisted mode the panel is closing in decides which one.
+        x: exitLayout === 'grid' ? 24 : 18,
+        pointerEvents: 'none',
+      }}
     >
       {/* Phase 14.1 — the shared GlassSidebar header: title left, layout
        * toggle + close right. The SAME 44px header component the Pages
@@ -491,7 +517,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                 title="List layout"
                 data-tools-layout="list"
               >
-                <LayoutList size={16} aria-hidden />
+                <LayoutList size={22} aria-hidden />
               </button>
               <button
                 type="button"
@@ -502,7 +528,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                 title="Grid layout"
                 data-tools-layout="grid"
               >
-                <LayoutGrid size={16} aria-hidden />
+                <LayoutGrid size={22} aria-hidden />
               </button>
             </div>
             <button
@@ -512,7 +538,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
               aria-label="Close tools palette"
               title="Close"
             >
-              <X size={16} aria-hidden />
+              <X size={22} aria-hidden />
             </button>
           </>
         }

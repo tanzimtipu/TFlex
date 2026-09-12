@@ -209,31 +209,46 @@ describe("GlassSidebar — the Pages rail (left) uses it", () => {
   });
 });
 
+const noop = (): void => undefined;
+
+function mountPalette(): HTMLElement {
+  return mount(
+    <ToolsPalette
+      layout="list"
+      onLayoutChange={noop}
+      onMerge={noop}
+      onSplit={noop}
+      onExtract={noop}
+      onRotate={noop}
+      onDelete={noop}
+      onSign={noop}
+      onForms={noop}
+      onOptimize={noop}
+      onAudit={noop}
+      onClose={noop}
+      onFlatten={noop}
+      onCreateFromImages={noop}
+      onExportPages={noop}
+      onExportText={noop}
+      onExportDocx={noop}
+      onInsertPages={noop}
+      onRecognizeText={noop}
+      onBatchOcr={noop}
+      onOcrSuspects={noop}
+      onReplacePages={noop}
+      onRenumberPages={noop}
+      onCropPages={noop}
+      onStamp={noop}
+      onExportComments={noop}
+      onImportComments={noop}
+      hasOcrSuspects={false}
+      documentRequired={false}
+      hasFormFields={false}
+    />,
+  );
+}
+
 describe("GlassSidebar — the Tools palette (right) uses the same header", () => {
-  const noop = (): void => undefined;
-
-  function mountPalette(): HTMLElement {
-    return mount(
-      <ToolsPalette
-        layout="list"
-        onLayoutChange={noop}
-        onMerge={noop}
-        onSplit={noop}
-        onExtract={noop}
-        onRotate={noop}
-        onDelete={noop}
-        onSign={noop}
-        onForms={noop}
-        onOptimize={noop}
-        onAudit={noop}
-        onClose={noop}
-        hasOcrSuspects={false}
-        documentRequired={false}
-        hasFormFields={false}
-      />,
-    );
-  }
-
   it("renders the SAME GlassSidebar header as the Pages rail", () => {
     const host = mountPalette();
     try {
@@ -257,6 +272,55 @@ describe("GlassSidebar — the Tools palette (right) uses the same header", () =
       expect(body).not.toBeNull();
       expect(body?.classList.contains("tools-palette-body")).toBe(true);
       expect(body?.querySelector(".tools-palette-entry")).not.toBeNull();
+    } finally {
+      unmount(host);
+    }
+  });
+});
+
+describe("GlassSidebar — the 22px sidebar icon ladder (Phase 14.2 FIX 6)", () => {
+  // The chrome icon ladder: command bar 22px (Open inline 20px),
+  // annotation bar 24px, SIDEBAR 22px. The panels' every interactive
+  // glyph — the rail's view tabs / undo / thumb actions / outline
+  // chevrons and the palette's tool entries / layout toggle / close —
+  // renders at the 22px sidebar rung; nothing in either panel falls
+  // back to the old 20px chrome size.
+
+  it("every SideRail icon button glyph renders at 22px", () => {
+    const host = mountRail();
+    try {
+      const svgs = Array.from(host.querySelectorAll<SVGSVGElement>("button svg"));
+      // 2 view tabs + the Undo action (no selection -> no thumb-action
+      // bar) = the 3 buttons the bare rail mounts.
+      expect(svgs.length).toBeGreaterThanOrEqual(3);
+      for (const svg of svgs) {
+        const w = Number(svg.getAttribute("width"));
+        const h = Number(svg.getAttribute("height"));
+        expect(
+          w,
+          `rail glyph too small: ${svg.getAttribute("class") ?? "unknown"}`,
+        ).toBe(22);
+        expect(h).toBe(22);
+      }
+    } finally {
+      unmount(host);
+    }
+  });
+
+  it("every ToolsPalette icon glyph renders at 22px", () => {
+    const host = mountPalette();
+    try {
+      const svgs = Array.from(host.querySelectorAll<SVGSVGElement>("svg"));
+      expect(svgs.length).toBeGreaterThanOrEqual(24);
+      for (const svg of svgs) {
+        const w = Number(svg.getAttribute("width"));
+        const h = Number(svg.getAttribute("height"));
+        expect(
+          w,
+          `palette glyph off the 22px ladder: ${svg.getAttribute("class") ?? "unknown"}`,
+        ).toBe(22);
+        expect(h).toBe(22);
+      }
     } finally {
       unmount(host);
     }

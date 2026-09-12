@@ -6110,7 +6110,7 @@ pushToast(
     return (
       <div className={isMaximized ? "app app-maximized" : "app"}>
         <TitleBar maximized={false} />
-        <div className="app-main" />
+        <div className="app-main" data-tools-open="false" data-tools-mode="list" />
         <Toasts items={[]} onDismiss={dismissToast} />
       </div>
     );
@@ -6154,7 +6154,20 @@ pushToast(
           updateIndicator={<UpdateIndicator externalState={updateState} />}
         />
       </TitleBar>
-      <div className="app-main">
+      {/* Phase 14.2 FIX 4/5 — the open Tools panel's state lives on
+          .app-main as data attributes, driven by the SAME
+          `toolsPaletteOpen` state that mounts the palette below. The
+          CSS animates --tf-tools-inset from these (registered
+          @property, transitioned on .workspace-main, consumed by the
+          scroller's margin-right) so the page view narrows beside the
+          open panel in EVERY theme and panel + page move together on
+          the same 300ms ease-out. data-tools-mode mirrors the
+          persisted palette layout (list 344px / grid 380px). */}
+      <div
+        className="app-main"
+        data-tools-open={toolsPaletteOpen ? "true" : "false"}
+        data-tools-mode={settings.toolsPaletteLayout ?? 'list'}
+      >
         <div className="tab-stage">
           {tabs.tabs.length === 0 || activeIsEmpty ? (
             <div className="tab-pane" key={tabs.activeId ?? 'welcome'}>
@@ -6344,6 +6357,13 @@ pushToast(
           {toolsPaletteOpen && (
             <ToolsPalette
               layout={settings.toolsPaletteLayout ?? 'list'}
+              // Phase 14.2 FIX 5 — the persisted layout mode the panel
+              // is EXITING with. TfPanel pins the exit transform to the
+              // mode's travel the mount target promised; without the
+              // persisted value the exit reads `layout === 'list'`
+              // (component-local) and a closed-in-grid-mode panel
+              // snapped to the list travel mid-fade.
+              exitLayout={settings.toolsPaletteLayout ?? 'list'}
               onLayoutChange={(next): void => {
                 setSettings((prev) => {
                   if (prev === null) return prev;

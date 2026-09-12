@@ -689,3 +689,83 @@ All glass surfaces need:
 10. Side-by-side comparison matches reference
 
 **Settings impact:** none (visual correction only).
+
+## Phase 14.2 — Liquid Glass Polish (Remaining Issues)
+
+**Purpose:** Address remaining visual polish issues from user feedback.
+
+### 1. ANNOTATION BAR SIZE CONSISTENCY
+**Issue:** Annotation bar is not same size as top bars
+**Fix:** 
+- Context annotation bar must match `--chrome-commandbar-h` (52px)
+- Same material as command bar
+- Consistent vertical centering
+- Everything below fills entire app window
+
+### 2. UNIFY PANELS WITH REST OF UI (ALL THEMES)
+**Issue:** Left/right panels disconnected in frosted glass; look unified in dark/light
+**Fix:**
+- Apply same panel styling across ALL themes
+- Panels should feel connected to main UI, not floating islands
+- Consistent borders, shadows, spacing across themes
+- Dark/light themes: panels should also adjust page view dynamically
+
+### 3. OPEN BUTTON VISUAL
+**Issue:** Open button has overlapping element with blue icon on top
+**Fix:**
+- Remove background overlap
+- Clean single-layer button
+- Blue accent only, no ghost element
+
+### 4. DYNAMIC PAGE VIEW ADJUSTMENT (ALL THEMES)
+**Issue:** Only frosted glass adjusts page view; dark/light don't
+**Fix:**
+- Light theme: page view adjusts when panels open/close
+- Dark theme: page view adjusts when panels open/close
+- Same responsive behavior as frosted glass
+
+### 5. SMOOTH ANIMATION FOR PANEL/PAGE ADJUSTMENT
+**Issue:** Clunky animation - panel collapses first, then page adjusts
+**Fix:**
+- Simultaneous animation of panel AND page view
+- Use CSS transitions with `transition: width 0.3s ease, margin 0.3s ease`
+- Both elements animate together, not sequentially
+- Smooth 300ms ease-out
+
+### 6. INCREASE ICON SIZES
+**Issue:** Icons too small
+**Fix:**
+- Increase toolbar icons from ~16-18px to ~20-24px
+- Command bar icons: 20px minimum
+- Sidebar icons: 20px minimum
+- Maintain proper hit targets (40px)
+
+### 7. REPLACE THREE DOTS WITH "ALL TOOLS" ICON
+**Issue:** Three dots (⋯) unclear
+**Fix:**
+- Replace with distinct "All tools" icon
+- Use grid/layout icon or tools/wrench icon
+- Clearly indicates tools panel
+
+### 8. REDUCE EMPTY SPACE IN FROSTED GLASS PAGE VIEW
+**Issue:** Too much margin around PDF in frosted glass
+**Fix:**
+- Mimic dark/light theme page positioning
+- Tighter margins around document
+- Page takes more available space
+- Keep 16px minimum for floating aesthetic
+
+**Success Criteria**
+
+1. Annotation bar matches top bar height (52px)
+2. Panels unified with UI in all themes (not disconnected)
+3. Open button clean, no overlap
+4. All themes dynamically adjust page view
+5. Smooth simultaneous panel/page animations
+6. Icons increased to 20-24px
+7. "All tools" distinct icon (not three dots)
+8. Frosted glass page margins match dark/light
+9. No visual regressions in any theme
+10. User approves final result
+
+**Settings impact:** none (polish fixes only).

@@ -51,13 +51,15 @@ function findRuleBody(src: string, selector: string): string | null {
 describe("Bug 13 — tools palette anchors below toolbar", () => {
   const src = readStyles();
 
-  it(".tools-palette top is offset by --toolbar-h, not 0", () => {
+  it(".tools-palette top is offset by the chrome tokens, not 0", () => {
     const body = findRuleBody(src, ".tools-palette");
     expect(body).not.toBeNull();
     // Old behaviour: `top: 0` overlapped the toolbar. New
     // behaviour uses the --toolbar-h token to start below the
-    // toolbar's baseline.
-    expect(body ?? "").toMatch(/top:\s*var\(--toolbar-h/);
+    // toolbar's baseline — Phase 14.2 extends the offset with the
+    // annotation-bar token so the palette clears BOTH chrome rows.
+    expect(body ?? "").toMatch(/top:\s*calc\(\s*var\(--toolbar-h/);
+    expect(body ?? "").toMatch(/var\(--ann-toolbar-h/);
     // The previous `top: 0` would have left the right cluster
     // hidden — lock against that regression.
     expect(body ?? "").not.toMatch(/top:\s*0\s*;/);
@@ -68,7 +70,11 @@ describe("Bug 13 — tools palette anchors below toolbar", () => {
     const rootIdx = stripped.indexOf(":root {");
     expect(rootIdx).toBeGreaterThan(-1);
     const body = extractRuleBody(stripped, rootIdx);
-    expect(body).toMatch(/--toolbar-h:\s*\d+px/);
+    // Phase 14.2 — the token is the --chrome-commandbar-h alias (the
+    // duplicate 56px literal was shadowing the alias); the literal
+    // 52px baseline it resolves to lives on the chrome token beside it.
+    expect(body).toMatch(/--toolbar-h:\s*var\(--chrome-commandbar-h\)/);
+    expect(body).toMatch(/--chrome-commandbar-h:\s*52px/);
   });
 
   it(".tools-palette z-index lifts the palette above workspace overlays (>=30)", () => {
