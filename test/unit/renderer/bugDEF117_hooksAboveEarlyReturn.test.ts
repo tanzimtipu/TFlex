@@ -83,7 +83,10 @@ const OPEN_GUARD_SOURCE = /if\s*\(\s*!open\s*\)\s*return\s+null/;
 /** Any `return` at component-body depth. A hook after the FIRST one
  *  would change the hook count between renders. */
 const RETURN_SOURCE = /\breturn\b/;
-const ANIMATE_PRESENCE_SOURCE = /<AnimatePresence>/;
+/** The open gate lives inside a presence boundary — the dialog's own
+ *  <AnimatePresence>, or the canonical AnimatedDialog wrapper (DEF-197),
+ *  which owns one internally. */
+const ANIMATE_PRESENCE_SOURCE = /<AnimatePresence>|<AnimatedDialog/;
 const FN_DECL_SOURCE = /^(?:export\s+)?function\s+([A-Za-z0-9_$]+)\s*\(/;
 
 /** Blank comments and string / template-literal contents, keeping

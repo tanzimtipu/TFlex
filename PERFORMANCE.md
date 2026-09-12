@@ -72,3 +72,38 @@
 
 *Method: e2e/perf_retime via the standard Playwright Electron harness on the uncommitted Phase-14.2 polish build (dist rebuilt from the current tree before the run: 52px tokenized ann-toolbar, panel contract tokens, dead --tf-tools-inset token still pending DEF-192 fix, LayoutGrid tools glyph, 24/22px icon ladder). Unchanged vs the Phase-14.1 gate (555/565/158.84MB) and the Phase-14 close row (547/517/125.78MB) — the polish costs nothing measurable. Recorded by qa during the Phase-14.2 fix verification (2026-09-13).*
 
+## Phase 15 animation-system audit timing (dev build, cross-theme animation system)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Theme crossfade frame rate (workspace, page 1 rendered, frosted -> dark and back) | 60fps maintained | 28-30fps during the 400ms window; worst frame gap 88-105ms (quiet idle baseline in the SAME session: 59-60fps, max gap 17ms) | FAIL -> DEF-195 |
+| Layout shift during theme switch (CLS entries) | 0 | 0.0 across 4 runs | PASS |
+| PDF content during theme switch | not animated/tinted | .pdf-page/.pdf-page-canvas opacity 1, transform none, filter none across every sampled frame while transitioning | PASS |
+| Tab materialize/dissolve | 200ms / 150ms bands | materialize opacity 0 -> 1 settles ~240ms; dissolve 1 -> 0 over ~190ms; exit removes the node; 0 ghost tabs | PASS |
+| Popover Pop In / Pop Out (theme dropdown) | 180-200ms band | in ~240ms (scale .95 -> 1, y -4 -> 0), out ~220ms, node removed | PASS |
+| Tools palette spring (x 24 -> 0) | ~280ms band | settles ~340ms; page-inset margin tween 356px -> 0 (~300ms) rides alongside | PASS |
+| Dialog spring (y 10, scale .97 -> 1) | ~240ms band | settles ~250ms; backdrop exit opacity-only ~140ms; nodes removed | PASS |
+| Press / hover / fill / thumb / indicator | per token bands | press 0.982+ty1 @70ms (legacy group wins -> DEF-196); hover ty -1 @120ms; fill + thumb-select + indicator-in @180ms | PARTIAL |
+| Reduced motion (CSS tokens + state changes) | collapse to instant, states visible | tokens 0s; theme flip instant; popover/tabs state changes work | PASS (boot-time) |
+| Reduced motion (mid-session OS toggle) | respected live | JS springs keep running until restart (motion/react useReducedMotion captures once) | FAIL -> DEF-198 |
+
+*Method: e2e/anim_audit.spec.cjs via the standard Playwright Electron harness on the uncommitted Phase-15 animation-system build (dist built 20:02 from the current tree). fps via an in-page rAF timestamp loop; the crossfade number is the unconfounded reverse-flip measurement (fps-only loop; the forward-flip sample that also ran the PDF-pin probe reads the same 30fps). Layout shift via PerformanceObserver layout-shift entries. PDF pinning via per-frame computed-style probes on .pdf-page/.pdf-page-canvas during the 900ms crossfade window. Spring/transition timings via 60fps rAF computed-style samplers. Boot-time reduced motion could not be forced at launch in this environment (--force-prefers-reduced-motion registered on the main process but did not reach the renderer); hook-level reduced variants are locked by unit tests. Recorded by qa during the Phase-15 animation-system audit (2026-09-13).*
+
+## Phase 15 DEF-195/196/197 fix re-time (dev build, View Transitions crossfade + token wiring)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Theme crossfade frame rate (View Transitions API path, workspace, page 1 rendered, frosted -> dark and back) | 60fps maintained | 59-60fps; avg frame gap 16.7ms; worst 25-26ms (quiet idle baseline in the SAME session: 59-60fps, max 17ms) | PASS (was 28-30fps / worst 88-105ms -> DEF-195 CLOSED) |
+| Frame-time graph | all frames < 33ms | screenshots/perf-60fps.png: 54 frames, every bar under the 33ms line (worst 25.1ms) | PASS |
+| Crossfade duration | 400ms token | 452ms via startViewTransition (wrapper-proved); fallback class never applied while the API exists | PASS |
+| Layout shift during theme switch (CLS) | 0 | 0.0 (API path and fallback path both) | PASS |
+| PDF content during theme switch | not animated/tinted | .pdf-page/.pdf-page-canvas opacity 1 / transform none / filter none, one distinct state across all sampled frames | PASS |
+| Fallback class-crossfade (API shadowed for the probe) | scoped 6-property colour transition | computed transition-property on <body> while the class is on: background-color, color, border-color, box-shadow, fill, stroke @ 0.4s; class lifecycle 520ms. Fallback fps ~29-30 (logged, never reached in Electron) | PASS (scope) |
+| Tool-btn press (command bar, real pointer hold) | scale 0.97 @ 70ms band | matrix(0.97, 0, 0, 0.97, 0, 1) @ 70ms transform transition; release returns to hover lift; 0.982 literals: 0 in loaded CSS | PASS (was 0.982+ty1 -> DEF-196 CLOSED) |
+| AnimatedDialog bloom (flatten confirm) | scale 0.95 -> 1 | first frame 0.95, settles ~250ms; exit mid-flight 0.9756 toward the 0.98 token; backdrop opacity-only | PASS |
+| TfMenu / TfPanel token values | MOTION_SCALE.enter 0.95 / MOTION_TRANSLATE.panel 24px | menu 0.95 + y -4; panel x 20.2 -> 0, w/h constant 344x752, no CSS keyframes | PASS |
+| fps battery: palette open/close, popover pop, tab materialize, wheel scroll | >= 50fps, no stalls | 58-60fps each; avg 16.7ms; worst gaps 17-30ms; CLS 0 | PASS |
+| Renderer errors during the battery | none | one benign "Transition was skipped" unhandled rejection per boot/flip (echo double-apply) | FAIL -> DEF-199 (LOW, console-only) |
+
+*Method: e2e/retests/def_195_196_197_retest.spec.cjs via the standard Playwright Electron harness on the uncommitted Phase-15 fix build (dist 20:47 from the current tree: View Transitions crossfade in hooks/useAnimations.ts, scoped 6-property fallback in styles/animations.css, press token wired in styles.css chunk 2, tfPresets -> motionTokens wiring). Same measurement shapes as the filing run e2e/anim_audit.spec.cjs so the numbers are directly comparable. Frame-time graph rendered from the raw rAF timestamps by e2e/lib/framegraph.cjs (pngjs). Recorded by qa at the DEF-195/196/197 retest (2026-09-13).*
+

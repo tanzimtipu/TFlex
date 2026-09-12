@@ -188,11 +188,16 @@ describe("DEF-100 — Flatten confirm dialog buttons are not blocked by the back
   it("FlattenConfirmDialog source gates backdrop close on the shared hook", () => {
     // The load-bearing check. The backdrop closes ONLY when the
     // interaction started on the backdrop AND the click target IS
-    // the backdrop — never for a click on a dialog descendant. The
-    // dialog wires the shared `useBackdropClose` hook (which owns
-    // the target === currentTarget + mousedown-origin guards).
-    expect(dialogSource).toMatch(/useBackdropClose/);
-    expect(dialogSource).toMatch(/\{\.\.\.backdrop\}/);
+    // the backdrop — never for a click on a dialog descendant.
+    // DEF-197: the dialog delegates to the canonical AnimatedDialog
+    // wrapper, which wires the shared `useBackdropClose` hook
+    // (target === currentTarget + mousedown-origin guards) itself.
+    expect(dialogSource).toMatch(/AnimatedDialog/);
+    const wrapperSource = fs.readFileSync(
+      path.join(process.cwd(), "src", "renderer", "components", "AnimatedDialog.tsx"),
+      "utf8",
+    );
+    expect(wrapperSource).toMatch(/useBackdropClose/);
     // And there is no window-level click listener any more (the
     // previous none-backdrop approach installed one) — the backdrop
     // handles its own clicks.

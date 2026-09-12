@@ -7,6 +7,10 @@
  * never bouncy — nothing ordinary above ~350ms. */
 
 @import url("@fontsource-variable/inter/index.css");
+/* Cross-theme animation system — canonical --motion-* tokens, named
+ * animation utilities, the theme-crossfade machinery and reduced-motion
+ * handling. Imported FIRST so its tokens resolve for every rule below. */
+@import "./styles/animations.css";
 
 :root {
   /* Type scale */
@@ -1667,11 +1671,13 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
-/* Chunk 2 — press settles slightly (translateY 1px + scale 0.982);
+/* Chunk 2 — press settles slightly (translateY 1px + scale press token);
  * the base transition releases it smoothly back to 1. The faster
  * 70ms press-in transition lives in the shared press rule at the
- * end of this file (interactive press/settle group). */
-.btn:active { transform: translateY(1px) scale(0.982); }
+ * end of this file (interactive press/settle group). The scale reads
+ * the canonical cross-theme --motion-scale-press token (0.97) so the
+ * press value can never drift from the motion system. */
+.btn:active { transform: translateY(1px) scale(var(--motion-scale-press)); }
 
 /* Phase 4 — every dialog/hero button shows the shared orange focus
  * ring on keyboard focus. */
@@ -1943,7 +1949,7 @@ input[type="checkbox"] {
   background: var(--sample-card-bg-hover);
 }
 
-.sample-card:active { transform: translateY(1px) scale(0.982); }
+.sample-card:active { transform: translateY(1px) scale(var(--motion-scale-press)); }
 
 .sample-card:focus-visible {
   outline: none;
@@ -3052,8 +3058,13 @@ input[type="checkbox"] {
   box-shadow: var(--shadow-popover);
   padding: 4px;
   z-index: 60;
+  /* Cross-theme animation system — the entrance (Pop In) AND the exit
+   * (Pop Out) are owned by the motion variants on the component (scale
+   * 0.95 + 4px drop -> 1; Pop Out reverses to 0.98). The old
+   * entrance-only menu-enter keyframe was removed so the CSS animation
+   * and the motion transform can never fight over the transform
+   * channel during the same 200ms window. */
   transform-origin: top right;
-  animation: menu-enter var(--tf-motion-normal) var(--tf-ease-standard);
 }
 
 .theme-toggle-option {
@@ -8007,11 +8018,19 @@ rect.ann-highlight.ann-preview {
  *
  * ONE shared press language for every button-family control in the
  * app: hover lifts 1px (--tf-motion-fast, the 100-150ms band),
- * press settles translateY(1px) + scale(0.982) over --tf-motion-
- * instant (70ms, the 70-100ms press band), and releasing returns to
- * the base transition (--tf-motion-fast) so the settle eases back to
- * 1 with no bounce and no large scaling. The pressed-wash system
- * (Phase 4) owns the background; this group owns the motion.
+ * press settles translateY(1px) + scale(--motion-scale-press) over
+ * --tf-motion-instant (70ms, the 70-100ms press band), and releasing
+ * returns to the base transition (--tf-motion-fast) so the settle
+ * eases back to 1 with no bounce and no large scaling. The pressed-
+ * wash system (Phase 4) owns the background; this group owns the
+ * motion.
+ *
+ * DEF-196 — the scale is the canonical cross-theme
+ * --motion-scale-press token (0.97) from styles/animations.css, NEVER
+ * a literal: this group loads after animations.css, so the hardcoded
+ * 0.982 it used to carry was winning the cascade and leaving the
+ * token rule in animations.css dead. Both layers now read the same
+ * token, so the press scale is defined exactly once.
  *
  * Guard rails honored:
  *   - transform-only + opacity (no layout, no scroll/zoom).
@@ -8053,10 +8072,13 @@ rect.ann-highlight.ann-preview {
   transform: translateY(-1px);
 }
 
-/* Press settle — translateY(1px) + scale(0.982) @ --tf-motion-instant
- * (70ms). The transition list comes from the pressed state, so the
- * press-in is fast; on release the base rules ease everything back
- * to rest over --tf-motion-fast. */
+/* Press settle — translateY(1px) + scale(--motion-scale-press) @
+ * --tf-motion-instant (70ms). The transition list comes from the
+ * pressed state, so the press-in is fast; on release the base rules
+ * ease everything back to rest over --tf-motion-fast. The scale reads
+ * the canonical --motion-scale-press token (0.97, DEF-196) so this
+ * rule and the animations.css token rule agree — the cascade resolves
+ * to the token either way. */
 .btn:active,
 .tool-btn:active:not([disabled]),
 .rail-action-btn:active:not([disabled]),
@@ -8084,7 +8106,7 @@ rect.ann-highlight.ann-preview {
 .create-image-remove:active,
 .tools-palette-toggle-btn:active,
 .tools-palette-close:active {
-  transform: translateY(1px) scale(0.982);
+  transform: translateY(1px) scale(var(--motion-scale-press));
   transition:
     background var(--tf-motion-instant) var(--tf-ease-fast),
     border-color var(--tf-motion-instant) var(--tf-ease-fast),

@@ -33,8 +33,21 @@
 // surface can never swallow a click meant for whatever is beneath it.
 // Motion treats non-animatable values as instant sets, so this is
 // immediate, not spring-eased.
+//
+// DEF-197 — the canonical token layer is wired: every scale and every
+// travel distance that has a token reads it from motionTokens.ts (the
+// TS mirror of styles/animations.css). Scales map by role: 0.97 ->
+// MOTION_SCALE.press (Soft Compression band), 0.95/0.96 ->
+// MOTION_SCALE.enter (Bloom/Pop In), 0.985/0.98/0.96-exit ->
+// MOTION_SCALE.exit. Travel distances 24px/4px/2px read
+// MOTION_TRANSLATE.panel/small/micro. The few odd settle distances the
+// catalog has no token for (10/5/8/6/3px dialog & toast & popover
+// travel, the 18/12px panel settle-back) stay as literals on purpose:
+// they mirror the legacy CSS keyframe travel exactly and inventing a
+// token per pixel would be worse than the literal.
 
 import type { TargetAndTransition, Transition } from "motion/react";
+import { MOTION_SCALE, MOTION_TRANSLATE } from "../../hooks/motionTokens";
 
 export const springPanel: Transition = { type: "spring", stiffness: 420, damping: 34 };
 export const springDialog: Transition = { type: "spring", stiffness: 560, damping: 38 };
@@ -50,7 +63,7 @@ export const tfPanel: {
   exit: TargetAndTransition;
   transition: Transition;
 } = {
-  initial: { opacity: 0, x: 24 },
+  initial: { opacity: 0, x: MOTION_TRANSLATE.panel },
   animate: { opacity: 1, x: 0 },
   exit: { opacity: 0, x: 18, pointerEvents: "none" },
   transition: springPanel,
@@ -77,9 +90,9 @@ export const tfDialog: {
   exit: TargetAndTransition;
   transition: Transition;
 } = {
-  initial: { opacity: 0, y: 10, scale: 0.97 },
+  initial: { opacity: 0, y: 10, scale: MOTION_SCALE.press },
   animate: { opacity: 1, y: 0, scale: 1 },
-  exit: { opacity: 0, y: 5, scale: 0.985, pointerEvents: "none" },
+  exit: { opacity: 0, y: 5, scale: MOTION_SCALE.exit, pointerEvents: "none" },
   transition: springDialog,
 };
 
@@ -97,29 +110,29 @@ export const tfBackdrop: {
   transition: springQuick,
 };
 
-/** Downward-opening menus / flyouts: scale 0.96 + y -4 -> 0. */
+/** Downward-opening menus / flyouts: scale 0.95 + y -4 -> 0. */
 export const tfMenu: {
   initial: TargetAndTransition;
   animate: TargetAndTransition;
   exit: TargetAndTransition;
   transition: Transition;
 } = {
-  initial: { opacity: 0, scale: 0.96, y: -4 },
+  initial: { opacity: 0, scale: MOTION_SCALE.enter, y: -MOTION_TRANSLATE.small },
   animate: { opacity: 1, scale: 1, y: 0 },
-  exit: { opacity: 0, scale: 0.96, y: -4, pointerEvents: "none" },
+  exit: { opacity: 0, scale: MOTION_SCALE.exit, y: -MOTION_TRANSLATE.small, pointerEvents: "none" },
   transition: springQuick,
 };
 
-/** Upward-opening menus: scale 0.96 + y 4 -> 0 (menu-enter-up). */
+/** Upward-opening menus: scale 0.95 + y 4 -> 0 (menu-enter-up). */
 export const tfMenuUp: {
   initial: TargetAndTransition;
   animate: TargetAndTransition;
   exit: TargetAndTransition;
   transition: Transition;
 } = {
-  initial: { opacity: 0, scale: 0.96, y: 4 },
+  initial: { opacity: 0, scale: MOTION_SCALE.enter, y: MOTION_TRANSLATE.small },
   animate: { opacity: 1, scale: 1, y: 0 },
-  exit: { opacity: 0, scale: 0.96, y: 4, pointerEvents: "none" },
+  exit: { opacity: 0, scale: MOTION_SCALE.exit, y: MOTION_TRANSLATE.small, pointerEvents: "none" },
   transition: springQuick,
 };
 
@@ -131,9 +144,9 @@ export const tfPopover: {
   exit: TargetAndTransition;
   transition: Transition;
 } = {
-  initial: { opacity: 0, scale: 0.97, y: -3 },
+  initial: { opacity: 0, scale: MOTION_SCALE.press, y: -3 },
   animate: { opacity: 1, scale: 1, y: 0 },
-  exit: { opacity: 0, scale: 0.97, y: -3, pointerEvents: "none" },
+  exit: { opacity: 0, scale: MOTION_SCALE.press, y: -3, pointerEvents: "none" },
   transition: springQuick,
 };
 
@@ -158,9 +171,9 @@ export const tfToastSuccess: {
   exit: TargetAndTransition;
   transition: Transition;
 } = {
-  initial: { opacity: 0, y: 8, scale: 0.95 },
+  initial: { opacity: 0, y: 8, scale: MOTION_SCALE.enter },
   animate: { opacity: 1, y: 0, scale: 1 },
-  exit: { opacity: 0, y: 6, scale: 0.96, pointerEvents: "none" },
+  exit: { opacity: 0, y: 6, scale: MOTION_SCALE.exit, pointerEvents: "none" },
   transition: springToastSuccess,
 };
 
@@ -173,9 +186,9 @@ export const tfBar: {
   exit: TargetAndTransition;
   transition: Transition;
 } = {
-  initial: { opacity: 0, y: -2 },
+  initial: { opacity: 0, y: -MOTION_TRANSLATE.micro },
   animate: { opacity: 1, y: 0 },
-  exit: { opacity: 0, y: -2, pointerEvents: "none" },
+  exit: { opacity: 0, y: -MOTION_TRANSLATE.micro, pointerEvents: "none" },
   transition: springQuick,
 };
 

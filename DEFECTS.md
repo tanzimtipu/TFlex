@@ -1,3 +1,157 @@
+## DEF-200: A pressed .btn stays at the hover lift — .btn:hover:not([disabled]) (0,3,0) outranks the .btn:active press rule (0,2,0) while the pointer is down, so the press transform never applies to the .btn family
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 15 (found during the DEF-196/197 retest, 2026-09-13)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open form.pdf, click the "Flatten form fields" tool button.
+2. In the Flatten dialog, hover the Cancel (.btn) button and hold the mouse down ~200ms.
+3. Read getComputedStyle(button).transform while held (e2e/retests/def_195_196_197_retest.spec.cjs logs it as "[197] .btn pressed (hover-mask probe, DEF-200)").
+
+Expected: the shared press group (styles.css ~8082) — translateY(1px) scale(var(--motion-scale-press)) while pressed — the button settles down+in like every tool-btn does (measured 0.97 + ty 1).
+
+Actual: computed transform stays matrix(1, 0, 0, 1, 0, -1) — the hover lift. Root cause: .btn:active (styles.css ~1680) and the press group's .btn:active (~8082) are specificity (0,2,0), while .btn:hover:not([disabled]) (~8043) is (0,3,0); while the pointer is down BOTH :hover and :active match, the hover rule outranks, and the press transform never applies. The pressed-wash background still applies (feedback is visible) and both press rules DO read the token — only the transform is masked. Measured unaffected families on the same build: .tool-btn (0.97 + ty 1 @70ms) and .tab-new (0.97 + ty 1) — their :active selectors carry :not(...) guards, so the masking class is narrower than the whole press group; every press-group member whose :active selector lacks a :not() guard while its :hover has one is suspect (.tab-close, .sample-card, .modal-close, .toast-close, ... — only .btn measured here).
+
+Note: DEF-196's own subject (the tool-btn press token) is verified fixed; this is the residual cascade gap the retest surfaced while regression-testing around that fix. Fix direction: give .btn:active the same :not([disabled]) guard as its :hover (both then (0,3,0), press later in source wins) or drop the redundant standalone rule at ~1680.
+
+Screenshot: none needed (computed-value evidence in the spec log; the pressed dialog is visible in screenshots/def-197-retest.png).
+
+History:
+- qa: opened (found during the DEF-196 retest regression sweep, 2026-09-13)
+
+## DEF-199: Every theme application echo starts a second View Transition that skips the first — unhandled "Transition was skipped" rejection in the renderer console at boot and on every theme flip
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 15 (found during the DEF-195 retest)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs) with the console/pageerror stream observed.
+2. Optionally wrap document.startViewTransition to count calls (e2e/retests/def_195_196_197_retest.spec.cjs does).
+3. Boot the app (no interaction) and/or open the theme popover and click a theme option.
+
+Expected: one View Transition per theme application, no renderer errors.
+
+Actual: document.startViewTransition is invoked TWICE per user theme flip (measured calls: 2 every flip) and once more at boot — the UI flip writes settings, the settings-echo handler (App.tsx settings.changed -> setTheme) re-applies the same theme through useThemeTransition, and the second startViewTransition SKIPS the first (Chromium skips an older transition when a new one begins). The skip rejects the first transition's finished promise, which the app never holds, so Chromium surfaces an unhandled rejection as a pageerror: "Transition was skipped" — present at every boot in every one of the 4 retest tests and after every theme flip. No visual impact: the second transition renders the full 400ms crossfade (measured 452ms, blend visible in screenshots/def-195-retest.png) and CLS stays 0; the only cost is console noise on every flip plus a cut of the first transition's partial blend at the echo instant if a flip is ever re-triggered mid-crossfade.
+
+Fix direction: deduplicate the apply (skip the echo when the theme already matches, e.g. an identity check in setTheme or in the settings.changed handler) and/or hold/ignore the VT promise so a skip is handled, not an unhandled rejection.
+
+Screenshot: none (console-level; the visible crossfade is unaffected).
+
+History:
+- qa: opened (found during the DEF-195 retest, 2026-09-13; reproduced in every launch of e2e/retests/def_195_196_197_retest.spec.cjs)
+
+## DEF-195: Theme crossfade drops to ~30fps during the 400ms flip (idle baseline 59-60fps in the same session) — "60fps maintained" fails
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 15
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf (frosted theme, page 1 rendered).
+2. Run `npx playwright test e2e/anim_audit.spec.cjs -g "A1"` — it measures a quiet idle fps baseline, then flips theme frosted -> dark while sampling rAF.
+3. Read the logged numbers: quiet baseline fps vs crossfade fps (fps-only rAF loop, no getComputedStyle probing).
+
+Expected: The 400ms theme crossfade runs at ~60fps (REQUIREMENTS: "no frame drops during animations; 60fps maintained"; audit checklist: "60fps maintained").
+
+Actual: idle workspace measures 59-60fps (avg frame gap 16.7ms, max 17ms); during the crossfade the same rAF loop drops to 28-30fps with worst frame gaps of 88-105ms. Reproduced 4 consecutive runs (fps 28, 30, 30, 28), both directions (frosted->dark and dark->frosted), with a fps-only sampler (no instrumentation bias — the quiet baseline in the same session hits 60). Secondary symptom: the transitioning class is removed 545-572ms after the flip instead of the expected 450ms (400ms token + 50ms grace) because the removal callback is delayed by the same jank.
+
+Root cause direction: src/renderer/styles/animations.css lines 260-274 — `html.tf-theme-transitioning body *:not(.pdf-page)...` puts NINE transition properties (!important) on EVERY element in the tree for the whole crossfade window; the workspace recalc/repaints the entire chrome (frosted backdrop-filter surfaces re-rasterize during the blend). The PDF canvas is correctly excluded (measured constant across all frames, CLS=0).
+
+Screenshot: screenshots/anim-theme-crossfade.png (mid-crossfade frame)
+Evidence run: e2e/anim_audit.spec.cjs A1 (fps logs: quiet {fps:59-60, avgDelta:16.7, maxDelta:17} vs crossfade {fps:28-30, avgDelta:33, maxDelta:88-105})
+
+History:
+- qa: opened (Phase-15 animation-system audit, 2026-09-13; 4 consecutive reproductions)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build, e2e/retests/def_195_196_197_retest.spec.cjs, 4/4 passed). The crossfade now runs through the View Transitions API: a wrapper around document.startViewTransition proves the API path is invoked on every runtime flip, the fallback class NEVER appears while the API is available, VT duration 452ms (token 400), PDF page/canvas computed styles constant across every sampled frame, CLS 0. Unconfounded crossfade fps (fps-only rAF, same shape as the filing): 59-60fps, avg frame gap 16.7ms, worst 25-26ms — was 28-30fps / avg 33ms / worst 88-105ms; the quiet idle baseline in the same session is 59-60fps (identical to the crossfade now). Frame-time graph: screenshots/perf-60fps.png (54 frames, every bar under the 33ms jank line, budget line 16.7ms). Visible crossfade blend captured mid-flight in screenshots/def-195-retest.png (titlebar/rail mid-blend frosted->dark, popover still frosted, PDF page white/pinned). Fallback path (API shadowed for the probe): class applied and removed within 520ms, computed transition-property on <body> while the class is on = exactly background-color, color, border-color, box-shadow, fill, stroke at 0.4s each (screenshots/def-195-retest-fallback.png). Honest note: the class-based fallback still measures ~29-30fps (avg 33.7ms, max 92ms) on this machine if ever reached — Electron never reaches it (startViewTransition is always available); logged, not a reopen. New LOW finding from this retest filed separately as DEF-199 (echo double-apply skips the first VT; console-only, no visual impact).
+
+## DEF-196: The canonical press token never applies to the tool buttons — animations.css `.tool-btn:active` press rule is dead in the cascade (measured press stays legacy translateY(1px) scale(0.982) @70ms)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 15
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open report.pdf.
+2. Hold the mouse down on any enabled command-bar `.tool-btn` for 200ms and read `getComputedStyle(el).transform`.
+3. Compare against `--motion-scale-press` (0.97) which animations.css claims owns the press scale.
+
+Expected: src/renderer/styles/animations.css line 234 — `.tool-btn:active:not([disabled]) { transform: scale(var(--motion-scale-press)) }` — "the press value can never drift from the motion system" (comment in the same file). Press = scale(0.97).
+
+Actual: computed transform is `matrix(0.982, 0, 0, 0.982, 0, 1)` — the legacy press-settle group in styles.css (`.btn:active, .tool-btn:active:not([disabled]), ... { transform: translateY(1px) scale(0.982); }`, ~line 8071-8098) wins the cascade: same specificity (0,3,0), later in source order (animations.css is imported first). The animations.css rule never applies to any tool button. Meanwhile `.btn:active` (styles.css line ~1678, updated in this changeset) DOES read the token (0.97) — so the app ships TWO press languages: 0.97 for `.btn`, 0.982 + translateY(1px) @70ms for the tool-btn/tab/close family.
+
+Note: the press still FEELS fine (0.982@70ms is the tuned Phase-4 band) — the defect is the dead token rule and the false comment in animations.css, i.e. the cross-theme system does not actually own the value it claims to own.
+
+Evidence run: e2e/anim_audit.spec.cjs A4 ("tool-btn pressed: matrix(0.982, 0, 0, 0.982, 0, 1) => scale 0.982 ty 1 (token=0.97; legacy group=0.982+ty1)")
+
+History:
+- qa: opened (Phase-15 animation-system audit, 2026-09-13)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build, e2e/retests/def_195_196_197_retest.spec.cjs, 4/4 passed). Live press on the command-bar .tool-btn measured with a real pointer hold: hover translateY(-1px), pressed matrix(0.97, 0, 0, 0.97, 0, 1) — scale = --motion-scale-press (0.97) + the 1px settle — over a 70ms transform transition (the instant band), release eases back to the hover lift; a second tool button presses at 0.97 too. The element resolves --motion-scale-press to .97. CSSOM sweep over every loaded rule: ZERO 0.982 declarations remain; all three press rules now read var(--motion-scale-press) — animations.css .tool-btn:active:not([disabled]) { scale(var(--motion-scale-press)) }, the standalone .btn:active, and the shared press group (translateY(1px) scale(var(--motion-scale-press))). Screenshot: screenshots/def-196-retest.png (pressed state with the pressed wash). One press language now, at the token. Residual finding from the regression sweep filed separately as DEF-200: the .btn family's press TRANSFORM is still masked while pressed by its own (0,3,0) :hover rule (the token VALUE is wired everywhere; the .btn cascade masking is a distinct, narrower defect).
+
+## DEF-197: The cross-theme animation system's canonical layer is largely unwired — the named animations ship with hardcoded spring values from a parallel preset system instead
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 15
+
+What exists vs what the audit checklist names:
+1. animations.css defines the full `.anim-*` utility set (bloom/pop/drop/slide/tab/materialize/lift/press) — NONE of these classes is used by any component (grep: only animations.css itself references them). Dead code.
+2. AnimatedDialog.tsx and AnimatedPanel.tsx (the useBloomAnimation/useSlideAnimation wrappers) are defined but imported by NO component. Only AnimatedTab is wired (AppHeader strip) and the theme popover uses usePopAnimation — those two DO work (measured live).
+3. The surfaces the checklist names actually animate through src/renderer/components/motion/tfPresets.ts, which hardcodes ~14 literal motion constants (scale 0.96/0.97/0.95, y ±4/-3/8/-2/-6, x 24/-18, spring stiffness 420/560/1000, damping 34/38/50) that read NEITHER the CSS tokens nor motionTokens.ts.
+4. Because of that, the checklist's timings do not match the shipped app (all measured live in e2e/anim_audit.spec.cjs):
+   - "Dialog Open: Bloom In (scale 0.95 -> 1, 200ms)" -> actual TfDialog spring: y 10 -> 0, scale 0.97 -> 1, settles ~240ms.
+   - "Popover Open: Pop In (scale 0.95 -> 1, 180ms)" -> theme popover plays the real Pop In (0.95 -> 1 over ~240ms tween), but titlebar menu + color popover run TfMenu/TfPopover (scale 0.96/0.97, y -4/-3, spring ~180ms band) — popovers of the SAME category animate by two different systems.
+   - "Dropdown: Drop Reveal (translateY -8px -> 0, 180ms)" -> actual drop travel is -4px (TfMenu) — no -8px anywhere.
+   - "Sidebar Open: Slide In (280ms)" -> actual TfPanel spring x 24 -> 0 settling ~340ms; "Slide Out (220ms)" -> actual exit x -> 18 spring; no 220ms token exists (the only literal 220ms in the codebase is an unrelated spring-hover box-shadow/transform rule, styles.css ~line 8935).
+   - "Button Press: scale 0.97, 100ms" -> measured 0.982 + translateY(1px) @70ms (see DEF-196).
+   - "Button Hover: Luminous 150ms" -> measured translateY(-1px) @ --tf-motion-fast 120ms.
+   - "Toggle On: Selection Fill (150ms)" -> measured 180ms (--tf-motion-normal).
+   - "Thumbnail Select: Selection Bloom (150ms)" -> measured thumb-select @ 180ms.
+   - "Tab Switch: Crossfade (200ms)" -> .tab transitions background/color/box-shadow @ 180ms (legacy alias --motion-normal).
+   - Tooltip Micro Fade Lift 120ms — MATCHES (legacy token).
+
+What DOES hold: cross-THEME consistency is real (all motion values are :root-level; zero redeclarations inside [data-theme] blocks — measured live; the only per-theme motion value is the sanctioned --motion-elevation-color shadow-strength channel). The app is not janky from this — it is a wiring/contract gap, not a broken animation.
+
+Expected: the audit checklist's named animations and the animations.css header contract ("every NEW surface ... consumes ONLY this --motion-* system") match the shipped behavior.
+
+Actual: the canonical token layer is consumed by exactly three things (theme crossfade, `.btn:active` press scale, AnimatedTab/theme popover variants); everything else rides the hardcoded TfMotion presets, and the checklist numbers match neither system.
+
+Evidence run: e2e/anim_audit.spec.cjs A1-A4 measured values (quoted above); unit test test/unit/renderer/animationsTokens.test.ts pins tokens<->motionTokens.ts but nothing pins the PRESETS to tokens.
+
+History:
+- qa: opened (Phase-15 animation-system audit, 2026-09-13)
+- qa: CLOSED (2026-09-13 retest on the fixed dev build, e2e/retests/def_195_196_197_retest.spec.cjs, 4/4 passed). The canonical layer is measured live in production: (1) AnimatedPanel IS the docked pages rail — data-animated-panel="side-rail" mounts and settles to transform none / opacity 1; (2) AnimatedDialog IS the flatten-forms confirm — data-animated-dialog="flatten-confirm" (FlattenConfirmDialog.tsx): bloom starts at scale 0.95 = MOTION_SCALE.enter (the old preset hardcoded 0.97), settles ~250ms, exit sampled mid-flight at scale 0.9756 travelling toward the 0.98 MOTION_SCALE.exit token (old hardcoded 0.985), backdrop opacity-only 0 -> 1; (3) TfMenu initial scale 0.95 + y -4 (was the hardcoded 0.96); (4) TfPanel slide x 20.2 -> 0 (MOTION_TRANSLATE.panel 24px travel) with width/height constant 344x752 through the whole tween and zero CSS keyframes; (5) token values resolve live: press .97 / enter .95 / exit .98 / translate-panel 24px / crossfade .4s, zero redeclarations inside any [data-theme] block; (6) the .anim-* utilities resolve (tf-anim-pop-in @ 0.2s computed on a probe element); (7) tfPresets.ts reads every scale/travel from motionTokens.ts (source inspected; pinned by the new unit contract test/unit/renderer/def197_canonicalLayerWired.test.tsx). Visual: screenshots/def-197-retest.png (AnimatedDialog open + AnimatedPanel rail in the same frame). Remaining notes, not blockers: the .anim-* utility set still has NO production consumer (dormant-but-working utility layer); the audit checklist's sketch numbers disagree with the token table the same phase established (dialog bloom 200ms vs --motion-duration-standard 250ms; dropdown travel -8px vs --motion-translate-small 4px) — the shipped app follows the token table, which is the canonical contract this defect pointed at.
+
+## DEF-198: Mid-session prefers-reduced-motion changes are not picked up by the JS motion layer — springs keep running until app restart
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 15
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs) with the OS reduced-motion setting OFF, open report.pdf.
+2. Emulate/enable prefers-reduced-motion WHILE the app is running (test: `win.emulateMedia({ reducedMotion: 'reduce' })`; e2e/anim_audit.spec.cjs A5).
+3. Verify the CSS side collapsed (measured: --motion-duration-* resolve 0s; styles.css catch-all collapses transitions to 0.01ms — works).
+4. Click the theme toggle and sample `.theme-toggle-popover` with rAF.
+
+Expected: the popover's Pop In collapses (no scale travel, instant state change) — the useAnimations.ts contract says "Every hook degrades under prefers-reduced-motion".
+
+Actual: the popover still springs scale 0.95 -> 1 over ~240ms under active reduced motion. Root cause: motion/react 13.2.0's `useReducedMotion` does `useState(prefersReducedMotion.current)` — the value is captured ONCE at first call and the module-level matchMedia listener updates only the ref, never React state, so every hook in the app keeps its boot-time value until remount. The CSS token collapse (the other half of the system) DOES react live, so the theme crossfade is visually instant; the JS-driven springs (popover, dialog, palette, tabs) are not.
+
+Scope: boot-time reduced motion (the normal user scenario — the OS setting predates the session) is handled correctly and is locked by test/unit/renderer/useAnimations.test.tsx. The gap is only a MID-SESSION toggle of the OS setting. Fix direction: subscribe to the media query in-app (a tiny effect flipping a context/state) instead of relying on useReducedMotion's reactivity.
+
+Evidence run: e2e/anim_audit.spec.cjs A5 (popover samples: full 0.95 -> 1 scale travel over ~240ms while matchMedia('(prefers-reduced-motion: reduce)').matches === true)
+
+History:
+- qa: opened (Phase-15 animation-system audit, 2026-09-13)
+
 ## DEF-191: Phase-14.2 Fix 3 does not hold in the frosted theme — the Open button's ghost capsule still paints (translucent film + hairline + shadow extend ~17px past the blue button)
 
 - Status: CLOSED

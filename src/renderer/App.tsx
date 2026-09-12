@@ -40,7 +40,8 @@ import {
   updateActionableKey,
 } from "./components/updatePromptMachine";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
-import { applyTheme, nextTheme } from "./state/theme";
+import { nextTheme } from "./state/theme";
+import { useThemeTransition } from "./hooks/useAnimations";
 import { createAmbientController } from "./state/ambient";
 import { resolveInitialSettings } from "./state/settings";
 import {
@@ -641,6 +642,15 @@ export function App(): ReactElement {
   const settingsWriteSeqRef = useRef(0);
   const settingsPersistedRef = useRef<AppSettings | null>(null);
 
+  // Cross-theme animation system — every theme application (boot, echo,
+  // toggle, explicit picker choice) routes through the crossfade
+  // controller. The FIRST apply (boot) lands without the transitioning
+  // class (nothing is painted yet to crossfade from); every later apply
+  // crossfades colours/borders/shadows over --motion-theme-crossfade
+  // while the PDF page surfaces stay pinned white (see
+  // styles/animations.css — .tf-theme-transitioning rules).
+  const { setTheme } = useThemeTransition();
+
   const trackAndSave = useCallback((s: AppSettings): void => {
     settingsWriteSeqRef.current += 1;
     settingsPersistedRef.current = s;
@@ -654,7 +664,7 @@ export function App(): ReactElement {
       if (cancelled) return;
       setBootstrap(b);
       setSettings(b.settings);
-      applyTheme(b.settings.theme);
+      setTheme(b.settings.theme);
       setBootDone(true);
     };
     runBoot();
@@ -673,13 +683,13 @@ export function App(): ReactElement {
         return;
       }
       setSettings(s);
-      applyTheme(s.theme);
+      setTheme(s.theme);
     });
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, []);
+  }, [setTheme]);
 
   // Phase 14 — Liquid Glass ambient surface. One controller owns the
   // two app-wide ambient behaviors the frosted theme needs: the
@@ -841,11 +851,11 @@ export function App(): ReactElement {
     setSettings((prev) => {
       if (prev === null) return prev;
       const next: AppSettings = { ...prev, theme: nextTheme(prev.theme) };
-      applyTheme(next.theme);
+      setTheme(next.theme);
       trackAndSave(next);
       return next;
     });
-  }, [trackAndSave]);
+  }, [trackAndSave, setTheme]);
 
   // Phase-15 — the frosted-acrylic theme picker. Sets an EXPLICIT
   // theme (light / dark / frosted) instead of toggling, and persists
@@ -855,11 +865,11 @@ export function App(): ReactElement {
     setSettings((prev) => {
       if (prev === null) return prev;
       const updated: AppSettings = { ...prev, theme: next };
-      applyTheme(next);
+      setTheme(next);
       trackAndSave(updated);
       return updated;
     });
-  }, [trackAndSave]);
+  }, [trackAndSave, setTheme]);
 
   const pushToast = useCallback((kind: Toast["kind"], text: string): void => {
     dispatchError({ type: "push", toast: { kind, text } });
@@ -1284,8 +1294,15 @@ export function App(): ReactElement {
     // engineUi mirror (which is updated in the same `setEngineUiFor`
     // call) catches that case. If either signal says "modified",
     // we surface the prompt — the user has work to lose.
-    const open = openTabsRef.current[id];
-    if (open === undefined) return;
+    //
+    // NOTE: the old `openTabs[id] === undefined -> return` guard is
+    // GONE. Empty placeholder tabs never register an OpenTab entry
+    // (onNewEmptyTab only dispatches `open-empty`), so that guard
+    // turned every empty-tab close into a silent no-op — an X that
+    // did nothing. The real double-close race guard is the
+    // `tabMeta === undefined` check below (the reducer state is the
+    // source of truth for "this tab exists"), and performCloseTab
+    // already tolerates a missing OpenTab entry.
     const tabMeta = tabsRef.current.tabs.find((t) => t.id === id);
     if (tabMeta === undefined) return;
     // Skip the prompt for the empty placeholder tabs — they

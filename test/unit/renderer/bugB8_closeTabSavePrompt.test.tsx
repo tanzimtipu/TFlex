@@ -256,15 +256,22 @@ describe("B8 — App wiring routes closeTab through the prompt for modified tabs
     expect(body).toMatch(/setPendingCloseTabId\(id\)/);
   });
 
-  it("closeTab short-circuits for empty / missing tabs without showing the prompt", () => {
+  it("closeTab short-circuits for missing tabs without showing the prompt", () => {
     const match = appSource.match(/const closeTab = useCallback\([\s\S]*?\},\s*\[\]\);/);
     expect(match).not.toBeNull();
     if (match === null) return;
     const body = match[0];
-    // Empty placeholder tabs: skipped (no doc to save).
+    // Missing / undefined tabs: skipped (already-closed race). The guard
+    // is the reducer state — the old `openTabsRef.current[id]` early
+    // return also swallowed EMPTY placeholder tabs (they never register
+    // an OpenTab entry), turning the X on an empty tab into a silent
+    // no-op; it was removed.
+    expect(body).toMatch(/tabMeta === undefined/);
+    // Empty placeholder tabs: closed directly, no prompt (no doc to save).
     expect(body).toMatch(/tabMeta\.kind\s*===\s*"empty"/);
-    // Missing / undefined tabs: skipped (already-closed race).
-    expect(body).toMatch(/openTabsRef\.current\[id\]/);
+    expect(body).toMatch(/performCloseTab\(id\)/);
+    // The prompt path is still the only remaining branch.
+    expect(body).toMatch(/setPendingCloseTabId\(id\)/);
   });
 
   it("closeTab consults BOTH tabMeta.modified and the engineUi mirror — never skips the prompt when the engine reports modified", () => {

@@ -22,6 +22,17 @@ function mouseDown(el: Element, button: 0 | 1 | 2 = 0): void {
   });
 }
 
+/** Flush the theme popover's exit animation. The popover closes through
+ *  an AnimatePresence boundary (Pop Out), so the node leaves the DOM a
+ *  frame AFTER the state flip even with skipAnimations completing the
+ *  motion — and jsdom's pretendToBeVisual frame clock ticks every
+ *  ~16ms, so the wait must cover at least one full frame. */
+async function flushExit(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 40));
+  });
+}
+
 /**
  * Phase 7 — fix #2: the "+ tab" affordance moved from the right
  * edge of the header (sibling of `.tab-list`) to INSIDE `.tab-list`,
@@ -416,7 +427,7 @@ describe("AppHeader — Phase-15 embedded theme picker", () => {
     unmount();
   });
 
-  it("calls onThemeChange with the chosen theme and closes the list", () => {
+  it("calls onThemeChange with the chosen theme and closes the list", async () => {
     const onChange = vi.fn();
     const { container, unmount } = renderHeaderFull({
       theme: "dark",
@@ -435,11 +446,12 @@ describe("AppHeader — Phase-15 embedded theme picker", () => {
       light.click();
     });
     expect(onChange).toHaveBeenCalledWith("light");
+    await flushExit();
     expect(container.querySelector(".theme-toggle-popover")).toBeNull();
     unmount();
   });
 
-  it("closes when the current theme is re-chosen, without a redundant change call", () => {
+  it("closes when the current theme is re-chosen, without a redundant change call", async () => {
     const onChange = vi.fn();
     const { container, unmount } = renderHeaderFull({
       theme: "frosted",
@@ -458,11 +470,12 @@ describe("AppHeader — Phase-15 embedded theme picker", () => {
       current.click();
     });
     expect(onChange).not.toHaveBeenCalled();
+    await flushExit();
     expect(container.querySelector(".theme-toggle-popover")).toBeNull();
     unmount();
   });
 
-  it("navigates with the keyboard: Enter opens, arrows move, Enter selects", () => {
+  it("navigates with the keyboard: Enter opens, arrows move, Enter selects", async () => {
     const onChange = vi.fn();
     const { container, unmount } = renderHeaderFull({
       theme: "frosted",
@@ -489,11 +502,12 @@ describe("AppHeader — Phase-15 embedded theme picker", () => {
     if (dark === null) return;
     keyDown(dark, "Enter");
     expect(onChange).toHaveBeenCalledWith("dark");
+    await flushExit();
     expect(container.querySelector(".theme-toggle-popover")).toBeNull();
     unmount();
   });
 
-  it("closes on Escape and returns focus to the trigger", () => {
+  it("closes on Escape and returns focus to the trigger", async () => {
     const { container, unmount } = renderHeaderFull({ theme: "light" });
     const trigger = container.querySelector<HTMLButtonElement>("[data-theme-toggle]");
     expect(trigger).not.toBeNull();
@@ -503,12 +517,15 @@ describe("AppHeader — Phase-15 embedded theme picker", () => {
     });
     expect(container.querySelector(".theme-toggle-popover")).not.toBeNull();
     keyDown(trigger, "Escape");
-    expect(container.querySelector(".theme-toggle-popover")).toBeNull();
+    // Focus returns synchronously with the close; the popover node
+    // leaves after its Pop Out exit completes.
     expect(document.activeElement).toBe(trigger);
+    await flushExit();
+    expect(container.querySelector(".theme-toggle-popover")).toBeNull();
     unmount();
   });
 
-  it("closes on an outside pointerdown without swallowing the click", () => {
+  it("closes on an outside pointerdown without swallowing the click", async () => {
     const { container, unmount } = renderHeaderFull();
     const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
     expect(trigger).not.toBeNull();
@@ -522,6 +539,7 @@ describe("AppHeader — Phase-15 embedded theme picker", () => {
         new MouseEvent("pointerdown", { bubbles: true }),
       );
     });
+    await flushExit();
     expect(container.querySelector(".theme-toggle-popover")).toBeNull();
     unmount();
   });

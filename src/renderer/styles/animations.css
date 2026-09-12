@@ -1,0 +1,302 @@
+/* =============================================================================
+ * TFlex cross-theme animation system — canonical motion tokens.
+ *
+ * THE motion contract for the whole application, deliberately OUTSIDE any
+ * [data-theme=...] block: themes supply colours/surfaces/shadow strength,
+ * motion (durations, easings, scales, travel distances) is IDENTICAL in
+ * light, dark and frosted. A theme may only remap the visual channels
+ * explicitly listed in the spec (highlight brightness, shadow strength,
+ * surface opacity, border visibility, focus intensity, contrast) — never
+ * a duration, easing, scale or distance.
+ *
+ * Layering: styles.css keeps the legacy Phase-13/14 `--tf-motion-*` bands
+ * for the surfaces already tuned against them; every NEW surface (the
+ * useAnimations hooks, Animated* wrappers and the .anim-* utilities below)
+ * consumes ONLY this `--motion-*` system. The TS mirror of these values
+ * lives in src/renderer/hooks/motionTokens.ts and is pinned to this file
+ * by test/unit/renderer/animationsTokens.test.ts — do not change one side
+ * without the other.
+ *
+ * Performance rules baked into every utility here:
+ *   - transform + opacity ONLY (no width/height/margin/top/left animation)
+ *   - will-change is scoped to the animating element and short-lived
+ *   - the theme crossfade transitions colours only, never layout, and
+ *     never touches the PDF page surfaces (.pdf-page / .pdf-page-canvas)
+ * ========================================================================== */
+
+:root {
+  /* ---- Durations -------------------------------------------------------- */
+  /* Micro: tooltips, icon lifts, tick reveals. */
+  --motion-duration-micro: 150ms;
+  /* Fast: popovers, menus, button press/release, tab materialize. */
+  --motion-duration-fast: 200ms;
+  /* Standard: dialogs bloom, selection fills, focus halos. */
+  --motion-duration-standard: 250ms;
+  /* Panel: sidebars, inspectors, docked rails. */
+  --motion-duration-panel: 280ms;
+  /* Layout: large coordinated layout morphs. */
+  --motion-duration-layout: 350ms;
+  /* Theme crossfade (colors/borders/shadows together). */
+  --motion-theme-crossfade: 400ms;
+  /* Canonical no-motion duration (see the reduced-motion block below). */
+  --motion-duration-reduced: 0ms;
+
+  /* ---- Easings ---------------------------------------------------------- */
+  /* Standard: symmetric ease-out for state changes. */
+  --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Enter: fast start, gentle settle. */
+  --motion-ease-enter: cubic-bezier(0, 0, 0.2, 1);
+  /* Exit: quick but not abrupt. */
+  --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  /* Layout: smooth between-position moves. */
+  --motion-ease-layout: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ---- Scales ----------------------------------------------------------- */
+  --motion-scale-press: 0.97;   /* Soft Compression / press states. */
+  --motion-scale-enter: 0.95;   /* Bloom In / Pop In start scale. */
+  --motion-scale-exit: 0.98;    /* Bloom Out / Pop Out end scale. */
+
+  /* ---- Translate distances ---------------------------------------------- */
+  --motion-translate-micro: 2px;   /* Icon hover lift, floating bars. */
+  --motion-translate-small: 4px;   /* Thumbnail lift, tooltip drop. */
+  --motion-translate-panel: 24px;  /* Docked rail slide travel. */
+
+  /* ---- Opacity ------------------------------------------------------------ */
+  --motion-opacity-hidden: 0;
+  --motion-opacity-visible: 1;
+
+  /* ---- Elevation ----------------------------------------------------------
+   * The COLOR of the elevation shadow is the one theme-tunable channel
+   * (shadow strength may differ per theme); geometry and blur stay fixed. */
+  --motion-elevation-color: rgba(15, 23, 42, 0.14);
+  --motion-elevation-hover: 0 2px 10px var(--motion-elevation-color);
+  --motion-elevation-active: 0 6px 20px var(--motion-elevation-color);
+}
+
+/* Frosted/dark remap ONLY the visual channel (shadow strength) — the
+ * motion values above are untouched by design. */
+:root[data-theme="dark"],
+:root[data-theme="frosted"] {
+  --motion-elevation-color: rgba(0, 0, 0, 0.32);
+}
+
+/* ---------------------------------------------------------------------------
+ * Reduced motion — the OS asks, the whole system obeys. Every duration
+ * token collapses to 0ms, so all consumers (hooks via the TS mirror's
+ * reduced variants, and every .anim-* utility) become immediate state
+ * changes. Focus indicators, selection states and loading/progress
+ * feedback are colour/state driven and keep working.
+ * ------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-micro: var(--motion-duration-reduced);
+    --motion-duration-fast: var(--motion-duration-reduced);
+    --motion-duration-standard: var(--motion-duration-reduced);
+    --motion-duration-panel: var(--motion-duration-reduced);
+    --motion-duration-layout: var(--motion-duration-reduced);
+    --motion-theme-crossfade: var(--motion-duration-reduced);
+  }
+
+  /* Movement is disabled outright; the state change remains. */
+  .anim-bloom-in,
+  .anim-bloom-out,
+  .anim-pop-in,
+  .anim-pop-out,
+  .anim-slide-in-left,
+  .anim-slide-in-right,
+  .anim-slide-out-left,
+  .anim-slide-out-right,
+  .anim-bar-reveal,
+  .anim-drop-in,
+  .anim-tab-in,
+  .anim-lift,
+  .anim-press {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * NAMED ANIMATION UTILITIES
+ * One class per named animation from the motion catalog. Every value
+ * comes from a token — nothing here is hardcoded.
+ * ------------------------------------------------------------------------- */
+
+/* Dialogs/modals — Bloom In / Bloom Out (scale 0.95 -> 1, opacity 0 -> 1). */
+@keyframes tf-anim-bloom-in {
+  from { opacity: var(--motion-opacity-hidden); transform: scale(var(--motion-scale-enter)); }
+  to   { opacity: var(--motion-opacity-visible); transform: scale(1); }
+}
+@keyframes tf-anim-bloom-out {
+  from { opacity: var(--motion-opacity-visible); transform: scale(1); }
+  to   { opacity: var(--motion-opacity-hidden); transform: scale(var(--motion-scale-exit)); }
+}
+.anim-bloom-in  { animation: tf-anim-bloom-in var(--motion-duration-standard) var(--motion-ease-enter) both; }
+.anim-bloom-out { animation: tf-anim-bloom-out var(--motion-duration-fast) var(--motion-ease-exit) both; }
+
+/* Popovers/menus — Pop In / Pop Out (scale + slight drop, opacity). */
+@keyframes tf-anim-pop-in {
+  from { opacity: var(--motion-opacity-hidden); transform: translateY(calc(-1 * var(--motion-translate-small))) scale(var(--motion-scale-enter)); }
+  to   { opacity: var(--motion-opacity-visible); transform: translateY(0) scale(1); }
+}
+@keyframes tf-anim-pop-out {
+  from { opacity: var(--motion-opacity-visible); transform: translateY(0) scale(1); }
+  to   { opacity: var(--motion-opacity-hidden); transform: translateY(calc(-1 * var(--motion-translate-micro))) scale(var(--motion-scale-exit)); }
+}
+.anim-pop-in  { animation: tf-anim-pop-in var(--motion-duration-fast) var(--motion-ease-enter) both; }
+.anim-pop-out { animation: tf-anim-pop-out var(--motion-duration-fast) var(--motion-ease-exit) both; }
+
+/* Dropdowns — Drop Reveal (translateY -4 -> 0, opacity 0 -> 1). */
+@keyframes tf-anim-drop-in {
+  from { opacity: var(--motion-opacity-hidden); transform: translateY(calc(-1 * var(--motion-translate-small))); }
+  to   { opacity: var(--motion-opacity-visible); transform: translateY(0); }
+}
+.anim-drop-in { animation: tf-anim-drop-in var(--motion-duration-fast) var(--motion-ease-enter) both; }
+
+/* Sidebars/panels — Slide In / Slide Out (full-width drawer travel). */
+@keyframes tf-anim-slide-in-left {
+  from { opacity: var(--motion-opacity-hidden); transform: translateX(-100%); }
+  to   { opacity: var(--motion-opacity-visible); transform: translateX(0); }
+}
+@keyframes tf-anim-slide-out-left {
+  from { opacity: var(--motion-opacity-visible); transform: translateX(0); }
+  to   { opacity: var(--motion-opacity-hidden); transform: translateX(-100%); }
+}
+@keyframes tf-anim-slide-in-right {
+  from { opacity: var(--motion-opacity-hidden); transform: translateX(100%); }
+  to   { opacity: var(--motion-opacity-visible); transform: translateX(0); }
+}
+@keyframes tf-anim-slide-out-right {
+  from { opacity: var(--motion-opacity-visible); transform: translateX(0); }
+  to   { opacity: var(--motion-opacity-hidden); transform: translateX(100%); }
+}
+.anim-slide-in-left   { animation: tf-anim-slide-in-left var(--motion-duration-panel) var(--motion-ease-enter) both; }
+.anim-slide-out-left  { animation: tf-anim-slide-out-left var(--motion-duration-fast) var(--motion-ease-exit) both; }
+.anim-slide-in-right  { animation: tf-anim-slide-in-right var(--motion-duration-panel) var(--motion-ease-enter) both; }
+.anim-slide-out-right { animation: tf-anim-slide-out-right var(--motion-duration-fast) var(--motion-ease-exit) both; }
+
+/* Toolbars — Bar Reveal (drops from above the chrome edge). */
+@keyframes tf-anim-bar-reveal {
+  from { opacity: var(--motion-opacity-hidden); transform: translateY(-100%); }
+  to   { opacity: var(--motion-opacity-visible); transform: translateY(0); }
+}
+.anim-bar-reveal { animation: tf-anim-bar-reveal var(--motion-duration-standard) var(--motion-ease-enter) both; }
+
+/* Tabs — Tab Materialize / Tab Dissolve (opacity-only: the strip never
+ * moves, so opening/closing a tab can never jank the tab row). */
+@keyframes tf-anim-tab-in {
+  from { opacity: var(--motion-opacity-hidden); }
+  to   { opacity: var(--motion-opacity-visible); }
+}
+.anim-tab-in  { animation: tf-anim-tab-in var(--motion-duration-fast) var(--motion-ease-enter) both; }
+.anim-tab-out { animation: tf-anim-tab-in var(--motion-duration-micro) var(--motion-ease-exit) both reverse; }
+
+/* Thumbnails/pages — Materialize / Dissolve (scale 0.95 <-> 1 + opacity). */
+@keyframes tf-anim-materialize {
+  from { opacity: var(--motion-opacity-hidden); transform: scale(var(--motion-scale-enter)); }
+  to   { opacity: var(--motion-opacity-visible); transform: scale(1); }
+}
+@keyframes tf-anim-dissolve {
+  from { opacity: var(--motion-opacity-visible); transform: scale(1); }
+  to   { opacity: var(--motion-opacity-hidden); transform: scale(var(--motion-scale-exit)); }
+}
+.anim-materialize { animation: tf-anim-materialize var(--motion-duration-standard) var(--motion-ease-enter) both; }
+.anim-dissolve    { animation: tf-anim-dissolve var(--motion-duration-fast) var(--motion-ease-exit) both; }
+
+/* Hover lift + press compression utility pair (buttons/controls/thumbnails). */
+.anim-lift {
+  transition:
+    transform var(--motion-duration-micro) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-micro) var(--motion-ease-standard);
+}
+.anim-lift:hover:not([disabled]) {
+  transform: translateY(calc(-1 * var(--motion-translate-micro)));
+  box-shadow: var(--motion-elevation-hover);
+}
+.anim-press {
+  transition: transform var(--motion-duration-micro) var(--motion-ease-standard);
+}
+.anim-press:active:not([disabled]) {
+  transform: scale(var(--motion-scale-press));
+}
+
+/* Focus halo bloom — box-shadow only, no layout impact. */
+.anim-focus-halo:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  transition: box-shadow var(--motion-duration-micro) var(--motion-ease-standard);
+}
+
+/* Soft Compression on the command-bar tool buttons (Button Press in the
+ * motion catalog). The base .tool-btn transition list already includes
+ * transform, so the press rides the existing token band; scale is the
+ * canonical --motion-scale-press, never a per-control literal. */
+.tool-btn:active:not([disabled]) {
+  transform: scale(var(--motion-scale-press));
+}
+
+/* Hardware-acceleration hints — attach ONLY while a surface animates
+ * (entrance/exit windows), never as a permanent resting style: a stale
+ * will-change keeps a compositor layer alive for the element's life. */
+.tf-will-transform { will-change: transform; }
+.tf-will-opacity   { will-change: opacity; }
+
+/* ---------------------------------------------------------------------------
+ * THEME CROSSFADE
+ *
+ * While `tf-theme-transitioning` sits on <html>, every colour-ish property
+ * interpolates over the crossfade token. DEF-195: the list is SIX colour
+ * properties only (was nine — outline/text-decoration/caret dropped; they
+ * are invisible at the 400ms scale), so each matched element runs six
+ * compositor-cheap colour transitions instead of nine. Colours/borders/
+ * shadows still crossfade TOGETHER, layout is preserved (no layout
+ * property is listed), and no flash frame exists because the class is
+ * applied in the SAME style recalc as the data-theme flip.
+ *
+ * The PRIMARY path is the View Transitions API (useThemeTransition in
+ * hooks/useAnimations.ts): when document.startViewTransition exists the
+ * hook never applies this class at all — the browser snapshots the old
+ * paint, flips data-theme in one synchronous recalc and crossfades the
+ * two snapshots on the compositor (60fps even on huge documents). The
+ * class rules below are the fallback for engines without the API.
+ *
+ * The hook removes the class right after the crossfade so hover/press
+ * transitions return to their own per-element timings.
+ *
+ * PDF CONTENT IS EXCLUDED: the page canvas, its paper placeholder and the
+ * page surface never transition — a white PDF page stays white in every
+ * theme, with no tint and no fade. The page's shadow may follow the theme
+ * (shadow strength is a theme visual channel); its content may not.
+ * ------------------------------------------------------------------------- */
+html.tf-theme-transitioning,
+html.tf-theme-transitioning body,
+html.tf-theme-transitioning body *:not(.pdf-page):not(.pdf-page *):not(.pdf-page-canvas):not(.page-placeholder) {
+  transition:
+    background-color var(--motion-theme-crossfade) var(--motion-ease-standard),
+    color var(--motion-theme-crossfade) var(--motion-ease-standard),
+    border-color var(--motion-theme-crossfade) var(--motion-ease-standard),
+    box-shadow var(--motion-theme-crossfade) var(--motion-ease-standard),
+    fill var(--motion-theme-crossfade) var(--motion-ease-standard),
+    stroke var(--motion-theme-crossfade) var(--motion-ease-standard) !important;
+  transition-delay: 0s !important;
+}
+
+/* View Transitions path — the whole-window snapshot crossfade runs on the
+ * compositor over the SAME 400ms token, so API-capable engines (Electron
+ * Chromium) get the crossfade without touching a single element's
+ * transition list. Reduced motion never reaches this path: the hook
+ * skips startViewTransition entirely and flips instantly. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-theme-crossfade);
+  animation-timing-function: var(--motion-ease-standard);
+}
+
+/* The PDF surfaces are pinned: no crossfade, no filter, no tint — the
+ * document bitmap is theme-independent by contract. */
+html.tf-theme-transitioning .pdf-page,
+html.tf-theme-transitioning .pdf-page-canvas,
+html.tf-theme-transitioning .page-placeholder {
+  transition: none !important;
+  filter: none !important;
+}

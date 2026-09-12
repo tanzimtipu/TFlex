@@ -462,8 +462,10 @@ describe("Global motion system — components consume the shared primitives", ()
   it(".tools-palette / .side-rail travel comes from tfPresets, not a CSS keyframe", () => {
     expect(animatedRule("tools-palette")).not.toMatch(/animation:/);
     expect(animatedRule("side-rail")).not.toMatch(/animation:/);
-    // panel-enter: x 24 -> 0 -> 18 (right panel)
-    expect(presets).toMatch(/initial:\s*\{ opacity: 0, x: 24 \}/);
+    // panel-enter: x MOTION_TRANSLATE.panel -> 0 -> 18 settle-back
+    // (DEF-197: the travel reads the canonical token, the settle-back
+    // distance has no token and stays a literal).
+    expect(presets).toMatch(/initial:\s*\{ opacity: 0, x: MOTION_TRANSLATE\.panel \}/);
     expect(presets).toMatch(/exit:\s*\{ opacity: 0, x: 18/);
     // panel-enter-left: x -18 -> 0 -> -12 (left rail)
     expect(presets).toMatch(/initial:\s*\{ opacity: 0, x: -18 \}/);
@@ -473,10 +475,14 @@ describe("Global motion system — components consume the shared primitives", ()
   it(".titlebar-menu-popover / .color-popover travel comes from tfPresets", () => {
     expect(animatedRule("titlebar-menu-popover")).not.toMatch(/animation:/);
     expect(animatedRule("color-popover")).not.toMatch(/animation:/);
-    // menu-enter: scale 0.96 + y -4
-    expect(presets).toMatch(/initial:\s*\{ opacity: 0, scale: 0\.96, y: -4 \}/);
-    // popover-enter: scale 0.97 + y -3
-    expect(presets).toMatch(/initial:\s*\{ opacity: 0, scale: 0\.97, y: -3 \}/);
+    // menu-enter: MOTION_SCALE.enter + y -MOTION_TRANSLATE.small
+    expect(presets).toMatch(
+      /initial:\s*\{ opacity: 0, scale: MOTION_SCALE\.enter, y: -MOTION_TRANSLATE\.small \}/,
+    );
+    // popover-enter: MOTION_SCALE.press + y -3
+    expect(presets).toMatch(
+      /initial:\s*\{ opacity: 0, scale: MOTION_SCALE\.press, y: -3 \}/,
+    );
   });
 
   it(".modal-dialog and .sheet rise+settle via tfPresets @ 240ms band", () => {
@@ -484,9 +490,12 @@ describe("Global motion system — components consume the shared primitives", ()
     expect(animatedRule("sheet")).not.toMatch(/animation:/);
     expect(animatedRule("modal-backdrop")).not.toMatch(/animation:/);
     expect(animatedRule("sheet-backdrop")).not.toMatch(/animation:/);
-    // dialog-enter: y 10 + scale 0.97 -> 1; dialog-exit: y 5 + scale 0.985
-    expect(presets).toMatch(/initial:\s*\{ opacity: 0, y: 10, scale: 0\.97 \}/);
-    expect(presets).toMatch(/exit:\s*\{ opacity: 0, y: 5, scale: 0\.985/);
+    // dialog-enter: y 10 + scale MOTION_SCALE.press -> 1;
+    // dialog-exit: y 5 + scale MOTION_SCALE.exit
+    expect(presets).toMatch(
+      /initial:\s*\{ opacity: 0, y: 10, scale: MOTION_SCALE\.press \}/,
+    );
+    expect(presets).toMatch(/exit:\s*\{ opacity: 0, y: 5, scale: MOTION_SCALE\.exit/);
   });
 
   it("the tooltip stays on the hover CSS primitive with a 250-400ms dwell delay", () => {

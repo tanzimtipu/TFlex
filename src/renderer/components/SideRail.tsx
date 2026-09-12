@@ -8,7 +8,7 @@ import type { EngineState } from '../engine/types';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
 import { buildPageLabelMap } from './pageGeometry';
-import { TfPanelLeft } from './motion/TfMotion';
+import { AnimatedPanel } from './AnimatedPanel';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 
 interface SideRailProps {
@@ -139,7 +139,11 @@ export function SideRail(props: SideRailProps) {
     tab === 'thumbs' ? 'Pages' : tab === 'annotations' ? 'Annotations' : 'Bookmarks';
 
   return (
-    <TfPanelLeft className="side-rail">
+    // DEF-197 — the canonical AnimatedPanel wrapper (docked Slide In /
+    // Slide Out from the token layer) replaces the TfPanelLeft preset
+    // wrapper. The rail is permanently mounted, so `open` is constant
+    // and the slide plays on mount exactly as before.
+    <AnimatedPanel open side="left" mode="docked" className="side-rail" testId="side-rail">
       {/* Phase 14.1 — the shared GlassSidebar header: title left, view
        * toggle right, ONE 44px row for both floating panels. The legacy
        * .rail-header / .rail-tabs classes stay on the elements so the
@@ -209,7 +213,7 @@ export function SideRail(props: SideRailProps) {
           <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} />
         )}
       </GlassSidebarBody>
-    </TfPanelLeft>
+    </AnimatedPanel>
   );
 }
 

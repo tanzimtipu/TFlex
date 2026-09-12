@@ -16,10 +16,12 @@ import {
   Settings,
   Sparkles,
   Sun,
-  X,
 } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import type { Theme } from "../state/theme";
-import { resolveTabMouseDown, type TabInput } from "../state/tabMouseDown";
+import type { TabInput } from "../state/tabMouseDown";
+import { AnimatedTab } from "./AnimatedTab";
+import { usePopAnimation } from "../hooks/useAnimations";
 
 export type AppHeaderTab = TabInput;
 
@@ -80,6 +82,11 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  // Cross-theme animation system — the theme picker popover plays Pop In
+  // (scale + drop) on open and Pop Out on close, replacing the old
+  // entrance-only CSS keyframe. Theme-independent travel/timing; the
+  // menu surface itself stays a theme visual.
+  const themePop = usePopAnimation();
   const themeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const themePopoverRef = useRef<HTMLDivElement | null>(null);
   const themeOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
@@ -195,45 +202,20 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     [theme, focusThemeOption, onThemeSelect],
   );
 
-  // Single mousedown handler for the tab strip. We use mousedown (not
-  // click) so the activate mutation lands synchronously and is not
-  // dropped by a re-render that swaps the button element between
-  // mousedown and mouseup (DEF-034: state-churn click loss). The
-  // resolver classifies the hit as activate / close / no-op, so
-  // padding, gap, and inner title clicks all flow through the same
-  // path. Phase 7: the resolver walks up to `.tab` only, so a
-  // mousedown that lands on the "+ tab" button (a sibling of `.tab`
-  // inside `.tab-list`) cannot accidentally activate a tab.
-  const onTabMouseDown = useCallback(
-    (e: ReactMouseEvent<HTMLDivElement>): void => {
-      const action = resolveTabMouseDown(
-        { target: e.target, button: e.button },
-        tabs,
-      );
-      if (action === null) return;
-      if (action.kind === "activate") {
-        if (action.id === activeId) return;
-        onActivate(action.id);
-      } else {
-        onClose(action.id);
-      }
-    },
-    [tabs, activeId, onActivate, onClose],
-  );
-
-  // Close button stops mousedown from bubbling so the resolver above
-  // sees the close-button hit and the tab-level mousedown doesn't
-  // ALSO fire an activate. stopPropagation on mousedown is the right
-  // level here — stopping click alone would let the outer mousedown
-  // race past before click resolved.
-  const onCloseMouseDown = useCallback((e: ReactMouseEvent<HTMLButtonElement>): void => {
-    e.stopPropagation();
-  }, []);
-
-  // "+ tab" button also stops mousedown so the tab strip's
-  // onTabMouseDown handler never sees it — the resolver already
-  // filters it out (no .tab ancestor) but stopping here is the
-  // structural guarantee.
+  // Tab strip interaction contract (DEF-034): activation resolves on
+  // MOUSEDOWN via the shared resolveTabMouseDown classifier, so padding,
+  // gap and inner-title hits all activate and the close button closes.
+  // Phase 7: the resolver walks up to `.tab` only, so a mousedown that
+  // lands on the "+ tab" button (a sibling of `.tab` inside
+  // `.tab-list`) cannot accidentally activate a tab.
+  //
+  // Cross-theme animation system — the per-tab resolution now lives in
+  // AnimatedTab (same classifier, fed one tab), so each tab owns its own
+  // Tab Materialize / Tab Dissolve presence while the interaction
+  // contract stays byte-identical.
+  //
+  // The "+ tab" button keeps its mousedown stopPropagation so a future
+  // strip-level listener can never misread it as an activation hit.
   const onNewTabMouseDown = useCallback((e: ReactMouseEvent<HTMLButtonElement>): void => {
     e.stopPropagation();
   }, []);
@@ -253,47 +235,28 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
       </div>
       <div className="tab-area" role="tablist" aria-label="Open documents">
         <ul className="tab-list">
-          {tabs.length === 0 ? null : tabs.map((tab) => {
-            const isActive = tab.id === activeId;
-            return (
-              <li key={tab.id}>
-                <div
-                  className={isActive ? "tab tab-active" : "tab"}
-                  role="tab"
-                  aria-selected={isActive}
-                  data-tab-id={tab.id}
-                  onMouseDown={onTabMouseDown}
-                >
-                  <span
-                    className="tab-title"
-                    title={tab.title}
-                  >
-                    <span
-                      className={
-                        tab.modified
-                          ? "tab-modified-dot"
-                          : "tab-modified-dot tab-modified-dot-hidden"
-                      }
-                      aria-hidden
-                    />
-                    {tab.title}
-                  </span>
-                  <button
-                    type="button"
-                    className="tab-close"
-                    onMouseDown={onCloseMouseDown}
-                    onClick={(e): void => {
-                      e.stopPropagation();
-                      onClose(tab.id);
-                    }}
-                    aria-label={`Close ${tab.title}`}
-                  >
-                    <X size={16} aria-hidden />
-                  </button>
-                </div>
-              </li>
-            );
-          })}
+          {/* Cross-theme animation system — one presence boundary owns
+              every tab: new tabs play Tab Materialize (opacity in),
+              closed tabs play Tab Dissolve (opacity out) before the li
+              unmounts. `initial={false}` keeps the page-load tabs from
+              animating — only tabs opened during the session
+              materialize. */}
+          <AnimatePresence initial={false}>
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeId;
+              return (
+                <AnimatedTab
+                  key={tab.id}
+                  id={tab.id}
+                  title={tab.title}
+                  active={isActive}
+                  modified={tab.modified}
+                  onActivate={onActivate}
+                  onClose={onClose}
+                />
+              );
+            })}
+          </AnimatePresence>
           {/* Phase 7 — the "+ tab" affordance now sits immediately
               after the rightmost tab.
               Rendered as its own <li> so it stays on the tab strip's
@@ -367,38 +330,44 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             <span className="theme-toggle-label">{currentThemeLabel}</span>
             <ChevronDown size={12} aria-hidden />
           </button>
-          {themeMenuOpen && (
-            <div
-              ref={themePopoverRef}
-              className="theme-toggle-popover"
-              role="menu"
-              aria-label="Change theme"
-              onKeyDown={onThemePopoverKeyDown}
-            >
-              {THEME_OPTIONS.map((opt, i) => {
-                const selected = opt.value === theme;
-                return (
-                  <button
-                    key={opt.value}
-                    ref={(el): void => {
-                      themeOptionRefs.current[i] = el;
-                    }}
-                    type="button"
-                    role="menuitem"
-                    aria-checked={selected}
-                    className={selected ? "theme-toggle-option theme-toggle-option-selected" : "theme-toggle-option"}
-                    data-theme-option={opt.value}
-                    onClick={(): void => onThemeSelect(opt.value)}
-                  >
-                    <span className="theme-toggle-option-mark" aria-hidden>
-                      {selected && <Check size={14} />}
-                    </span>
-                    <span className="theme-toggle-option-label">{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <AnimatePresence>
+            {themeMenuOpen && (
+              <motion.div
+                ref={themePopoverRef}
+                className="theme-toggle-popover"
+                role="menu"
+                aria-label="Change theme"
+                onKeyDown={onThemePopoverKeyDown}
+                variants={themePop}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+              >
+                {THEME_OPTIONS.map((opt, i) => {
+                  const selected = opt.value === theme;
+                  return (
+                    <button
+                      key={opt.value}
+                      ref={(el): void => {
+                        themeOptionRefs.current[i] = el;
+                      }}
+                      type="button"
+                      role="menuitem"
+                      aria-checked={selected}
+                      className={selected ? "theme-toggle-option theme-toggle-option-selected" : "theme-toggle-option"}
+                      data-theme-option={opt.value}
+                      onClick={(): void => onThemeSelect(opt.value)}
+                    >
+                      <span className="theme-toggle-option-mark" aria-hidden>
+                        {selected && <Check size={14} />}
+                      </span>
+                      <span className="theme-toggle-option-label">{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
         {/* Phase 14.1 — the Open button MOVED to the command bar
          *  (CommandBar's accent File group). The header-actions cluster

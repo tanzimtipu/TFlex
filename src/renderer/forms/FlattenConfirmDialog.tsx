@@ -6,9 +6,10 @@
 // "Cancel" as the obvious exit.
 
 import { useEffect, type ReactElement } from "react";
-import { useBackdropClose } from "../components/modalBackdrop";
-import { AnimatePresence } from "motion/react";
-import { TfBackdrop, TfDialog } from "../components/motion/TfMotion";
+// DEF-197 — the canonical AnimatedDialog wrapper (bloom/backdrop token
+// variants + the shared backdrop-close guard) replaces the hand-assembled
+// motion pair this dialog used to assemble itself.
+import { AnimatedDialog } from "../components/AnimatedDialog";
 
 interface FlattenConfirmDialogProps {
   open: boolean;
@@ -37,55 +38,40 @@ export function FlattenConfirmDialog(props: FlattenConfirmDialogProps): ReactEle
     };
   }, [open, onCancel, onConfirm]);
 
-  // B3/B6 — backdrop close only when the interaction started on the
-  // backdrop. DEF-100 — the click must ALSO target the backdrop
-  // element itself (a dialog descendant's click never equals the
-  // backdrop), so the Confirm / Cancel buttons fire unchanged.
-  const backdrop = useBackdropClose(onCancel);
-
-  
-
   return (
-    <AnimatePresence>
-      {open && (
-        <TfBackdrop
-          className="modal-backdrop"
-          {...backdrop}
-        >
-      <TfDialog
-        className="modal-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="flatten-title"
-      >
-        <div className="modal-header">
-          <h2 id="flatten-title" className="modal-title">
-            Flatten form fields
-          </h2>
-        </div>
-        <div className="modal-body">
-          <p className="modal-help">
-            This will bake every filled value into the page content and
-            remove {fieldCount} form field{fieldCount === 1 ? "" : "s"}.
-            After flattening, the values can no longer be edited in any
-            reader.
-          </p>
-          <p className="modal-help" style={{ color: "var(--fg-faint)", fontSize: "var(--fs-xs)" }}>
-            Tip: Save a non-flattened copy with Save As first if you want
-            to keep an editable version.
-          </p>
-        </div>
-        <div className="modal-footer">
-          <button type="button" className="btn btn-secondary" onClick={onCancel}>
-            Cancel
-          </button>
-          <button type="button" className="btn btn-primary" onClick={onConfirm}>
-            Flatten
-          </button>
-        </div>
-      </TfDialog>
-        </TfBackdrop>
-      )}
-    </AnimatePresence>
+    <AnimatedDialog
+      open={open}
+      onClose={onCancel}
+      className="modal-dialog"
+      backdropClassName="modal-backdrop"
+      labelledBy="flatten-title"
+      testId="flatten-confirm"
+    >
+      <div className="modal-header">
+        <h2 id="flatten-title" className="modal-title">
+          Flatten form fields
+        </h2>
+      </div>
+      <div className="modal-body">
+        <p className="modal-help">
+          This will bake every filled value into the page content and
+          remove {fieldCount} form field{fieldCount === 1 ? "" : "s"}.
+          After flattening, the values can no longer be edited in any
+          reader.
+        </p>
+        <p className="modal-help" style={{ color: "var(--fg-faint)", fontSize: "var(--fs-xs)" }}>
+          Tip: Save a non-flattened copy with Save As first if you want
+          to keep an editable version.
+        </p>
+      </div>
+      <div className="modal-footer">
+        <button type="button" className="btn btn-secondary" onClick={onCancel}>
+          Cancel
+        </button>
+        <button type="button" className="btn btn-primary" onClick={onConfirm}>
+          Flatten
+        </button>
+      </div>
+    </AnimatedDialog>
   );
 }
