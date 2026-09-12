@@ -989,7 +989,7 @@ Actual:
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-203
 
 ---
 
@@ -1014,7 +1014,7 @@ Actual:
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-204
 
 ---
 
@@ -1039,7 +1039,7 @@ Actual:
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-205
 
 ---
 
@@ -1064,7 +1064,7 @@ Actual:
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-206
 
 ---
 
@@ -1089,7 +1089,7 @@ Actual:
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-207
 
 ---
 
@@ -1115,7 +1115,7 @@ Actual:
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-208
 
 ---
 
@@ -1142,7 +1142,7 @@ Actual:
 
 Screenshot: N/A
 
-Disposition: PENDING
+Disposition: ACCEPTED -> DEF-209
 
 ---
 
@@ -1218,6 +1218,67 @@ Disposition: REJECTED - repro used out-of-range delete index (page 68 on a 68-pa
 
 **Total new findings: 1 (1 HIGH)**
 
+---
+
+## Phase 16 gate — collapsible page panel with ruler mode
+
+Session label: `phase-16 gate`. Ran against the production build
+(`npm.cmd run build`; dist main + dist renderer launched with
+`ELECTRON_RENDERER_URL=file://.../dist/renderer/index.html`). Probes:
+`probe-phase16-silence.cjs`, `probe-phase16-diag-deep.cjs`.
+
+## ADV-040: tflexDiagnostics() does not expose pagesPanelCollapsed state
+
+- Session: phase-16 gate
+- Suggested severity: LOW
+
+What I did:
+1. Launched TFlex and opened report.pdf (34-page sample).
+2. Called `window.tflexDiagnostics()` from the renderer and inspected all 31
+   returned keys before any Phase 16 interaction.
+3. Collapsed the panel by clicking `[data-rail-collapse]` and called
+   `window.tflexDiagnostics()` again.
+4. Expanded the panel and repeated the diagnostic read.
+5. Searched the diagnostic keys for any Phase 16 state:
+   `pagesPanelCollapsed`, `collapsed`, `ruler`, `rail`.
+
+Expected:
+- `tflexDiagnostics()` should include a key reflecting the pages-panel
+  collapse state (e.g. `pagesPanelCollapsed: boolean`), so diagnostic-based
+  tests can verify the collapse/expand state without DOM queries.
+
+Actual:
+- The 31 diagnostic keys do not include any Phase 16 state:
+  `["activeDocBytes","activeTabId","activeTool","auditDialogOpen",
+  "canRedo","canUndo","createImageQuality","currentPage",
+  "engineAvailable","engineDocId","engineState","exportImageDpi",
+  "exportImageFormat","formFields","formFieldsLoaded","hasFormFields",
+  "mode","modified","openTabs","optimizeDialogOpen","optimizePreset",
+  "pageCount","recovered","sampleCount","searchHits",
+  "searchIndexProgress","searchQuery","signatures","tabModified",
+  "theme","zoom"]`
+- No `pagesPanelCollapsed`, `collapsed`, `ruler`, or `rail` key is present.
+
+Impact: Low — DOM state (`.rail-ruler` presence, `[data-rail-collapse]`
+title attribute) is sufficient to verify collapse/expand, but diagnostic
+readers that depend on `tflexDiagnostics()` for all UI state cannot
+detect or assert the panel state without walking the DOM.
+
+Note: All three Phase 16 controls ([data-rail-collapse] collapse,
+[data-ruler-page] click-to-jump, [data-rail-collapse] expand) passed
+their functional tests — every click produces the correct state change,
+no silent no-ops were found. The `[data-rail-expand]` / `.rail-tab-expand`
+selector pair does not exist as separate elements; the same
+`[data-rail-collapse]` button handles both collapse and expand via
+conditional icon rendering, which is a deliberate implementation choice
+and not a defect.
+
+Screenshot: N/A
+
+Disposition: REJECTED - diagnostics field not required by any Phase 16 success criterion; DOM state is sufficient for verification and all 5 e2e tests pass without it.
+
+---
+
 ## Cumulative total across all sessions
 
 | Source | HIGH | MEDIUM | LOW | Total |
@@ -1228,4 +1289,5 @@ Disposition: REJECTED - repro used out-of-range delete index (page 68 on a 68-pa
 | Full-sweep silence (ADV-019..023) | 1 | 3 | 1 | 5 |
 | Deep-sweep final (ADV-039) | 1 | 0 | 0 | 1 |
 | Bug-sweep adversarial (ADV-024..030) | 0 | 4 | 3 | 7 |
-| **All phases** | **7** | **16** | **8** | **31** |
+| Phase 16 gate (ADV-040) | 0 | 0 | 1 | 1 |
+| **All phases** | **7** | **16** | **9** | **32** |
