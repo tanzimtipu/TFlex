@@ -663,20 +663,6 @@ export function DocumentView({
       if (chromePx > 0) {
         main.style.setProperty("--tf-chrome-y", `${chromePx}px`);
       }
-      // Phase 14.1 — publish the MEASURED command-band height (the
-      // .toolbar row alone) on the layout ancestors the floating
-      // sidebars anchor to, so the frosted floating cards can drop
-      // below the band even when it WRAPS on a narrow window (the
-      // static --chrome-commandbar-h token only covers the single-row
-      // baseline). The palette anchors to .app-main; the rail to
-      // .workspace; custom properties inherit down from both.
-      const toolbar = main.querySelector<HTMLElement>(".toolbar");
-      if (toolbar !== null) {
-        const bandPx = `${toolbar.offsetHeight}px`;
-        const appMain = main.closest<HTMLElement>(".app-main");
-        appMain?.style.setProperty("--tf-band-h", bandPx);
-        main.parentElement?.style.setProperty("--tf-band-h", bandPx);
-      }
     };
     recompute();
     // The toolbar wraps (grows) when the window narrows; re-measure

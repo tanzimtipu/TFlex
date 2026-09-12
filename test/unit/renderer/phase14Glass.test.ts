@@ -10,7 +10,8 @@
 // Phase 14.1 (the CORRECTION) re-pins the material itself: the glass
 // films are NEUTRAL white/gray translucent sheets (never the Phase-14
 // blue films), the chrome heights are tokenized (title 44 / command
-// 52), and both sidebars float with 16px margins.
+// 52), and both side panels DOCK like light/dark (square corners, the
+// shared panel contract — no floating card geometry).
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -65,9 +66,11 @@ function findRuleBody(src: string, selector: string): string | null {
 describe("Phase 14 — liquid glass tokens and ambient backdrop", () => {
   const css = readStyles();
 
-  it("defines the iOS spring curve and the 16px panel radius token", () => {
+  it("defines the iOS spring curve (the panels are docked — no panel radius token)", () => {
     expect(css).toMatch(/--tf-ease-spring:\s*cubic-bezier\(0\.34,\s*1\.56,\s*0\.64,\s*1\)/);
-    expect(css).toMatch(/--tf-radius-panel:\s*16px/);
+    // The floating-card panel radius is retired: the panels dock with
+    // square corners like light/dark, so no --tf-radius-panel token.
+    expect(css).not.toMatch(/--tf-radius-panel/);
   });
 
   it("defocusing the window relaxes the frosted blur (20px -> 12px)", () => {
@@ -120,68 +123,107 @@ describe("Phase 14 — liquid glass tokens and ambient backdrop", () => {
     expect(scroller ?? "").toMatch(/background:\s*transparent/);
   });
 
-  it("glass panels round on ALL four corners (frosted only)", () => {
+  it("the glass panels DOCK with square corners (no floating card radius)", () => {
     const stripped = stripCssComments(css);
-    expect(stripped).toMatch(
-      /:root\[data-theme="frosted"\]\s+\.tools-palette\s*\{[^}]*border-radius:\s*var\(--tf-radius-panel\)\s*;/,
+    // No frosted-scoped panel rule may declare a border-radius: the
+    // panels keep the base docked geometry (square corners like
+    // light/dark); only the surface is glass.
+    expect(stripped).not.toMatch(
+      /:root\[data-theme="frosted"\]\s+\.tools-palette\s*\{[^}]*border-radius/,
     );
-    expect(stripped).toMatch(
-      /:root\[data-theme="frosted"\]\s+\.side-rail\s*\{[^}]*border-radius:\s*var\(--tf-radius-panel\)\s*;/,
+    expect(stripped).not.toMatch(
+      /:root\[data-theme="frosted"\]\s+\.side-rail\s*\{[^}]*border-radius/,
     );
+    // The shared panel contract resolves to the docked geometry.
+    expect(stripped).toMatch(/--panel-radius:\s*0px/);
   });
 });
 
-describe("Phase 14 — floating glass shell (DEF-184/186/187, Phase 14.1 margins)", () => {
+describe("Phase 14 — docked glass shell (the panels behave like light/dark)", () => {
   const css = readStyles();
 
-  it("the workspace carries the wallpaper gutters (16px sides + bottom, 12px column gap)", () => {
-    const body = findRuleBody(css, ':root[data-theme="frosted"] .workspace');
-    expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(
-      /padding:\s*0\s+var\(--panel-margin,\s*16px\)\s+var\(--panel-margin,\s*16px\)\s+var\(--panel-margin,\s*16px\)/,
-    );
-    expect(body ?? "").toMatch(/column-gap:\s*12px/);
+  it("the frosted workspace carries NO gutters (the docked grid like light/dark)", () => {
+    // The floating-shell wallpaper gutters are gone: .workspace keeps
+    // its base grid (220px rail column + 1fr) with no padding and no
+    // column gap, so the rail sits flush at the window edge and the
+    // columns touch — the same docked structure as light/dark.
+    const workspace = findRuleBody(css, ':root[data-theme="frosted"] .workspace');
+    expect(workspace, "no frosted .workspace layout override").toBeNull();
+    const base = findRuleBody(css, ".workspace");
+    expect(base ?? "").toMatch(/grid-template-columns:\s*220px\s+1fr/);
+    expect(base ?? "").not.toMatch(/padding:/);
+    expect(base ?? "").not.toMatch(/column-gap:/);
   });
 
-  it("the command toolbar is one full-width glass band across both window edges", () => {
-    const body = findRuleBody(css, ':root[data-theme="frosted"] .toolbar');
-    expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(
-      /margin-left:\s*calc\(-1\s*\*\s*\(220px\s*\+\s*12px\s*\+\s*16px\)\)/,
-    );
-    expect(body ?? "").toMatch(/margin-right:\s*-16px/);
+  it("the chrome rows stay in column 2 (no full-width negative-margin bands)", () => {
+    const stripped = stripCssComments(css);
+    // The command + annotation bars no longer stretch over the rail
+    // column: that full-width band OVERLAPPED the docked rail card
+    // (the chrome stack is two 52px rows; the floating cards only
+    // cleared the first). Docked = the base in-flow rows of
+    // .workspace-main, exactly like light/dark.
+    expect(stripped).not.toMatch(/margin-left:\s*calc\(-1\s*\*\s*\(220px/);
+    const toolbarFrosted = findRuleBodies(css, ':root[data-theme="frosted"] .toolbar');
+    for (const body of toolbarFrosted) {
+      expect(body).not.toMatch(/margin-left:/);
+      expect(body).not.toMatch(/margin-right:/);
+    }
+    const annFrosted = findRuleBodies(css, ':root[data-theme="frosted"] .ann-toolbar');
+    for (const body of annFrosted) {
+      expect(body).not.toMatch(/margin-left:/);
+      expect(body).not.toMatch(/margin-right:/);
+    }
   });
 
-  it("the pages rail starts below the command band with a 16px glass gap", () => {
-    const body = findRuleBody(css, ':root[data-theme="frosted"] .side-rail');
-    expect(body).not.toBeNull();
-    // --tf-band-h is the MEASURED band height DocumentView publishes, so
-    // a wrapped band on a narrow window pushes the card down; the
-    // fallback is the static command-bar token.
-    expect(body ?? "").toMatch(
-      /margin-top:\s*calc\(var\(--tf-band-h,\s*var\(--chrome-commandbar-h,\s*52px\)\)\s*\+\s*var\(--panel-margin,\s*16px\)\)/,
-    );
-    // Floating card: glass hairline on all sides, never a docked right edge.
-    expect(body ?? "").toMatch(/border:\s*1px solid var\(--glass-sidebar-border\)/);
+  it("the pages rail is docked — no floating margin, no all-side card border", () => {
+    // The floating margin-top (band height + 16px) is gone: the rail
+    // owns grid column 1 of .workspace from the workspace's top edge
+    // down, exactly like light/dark. The base rule carries the docked
+    // contract: panel surface + right docking hairline, no radius,
+    // no elevation shadow.
+    const frosted = findRuleBodies(css, ':root[data-theme="frosted"] .side-rail');
+    for (const body of frosted) {
+      expect(body).not.toMatch(/margin-top:/);
+      expect(body).not.toMatch(/border:\s*1px solid/);
+      expect(body).not.toMatch(/border-radius:/);
+      expect(body).not.toMatch(/box-shadow:/);
+    }
+    const base = findRuleBody(css, ".side-rail");
+    expect(base ?? "").toMatch(/background:\s*var\(--panel-bg\)/);
+    expect(base ?? "").toMatch(/border-right:\s*1px solid var\(--panel-border\)/);
   });
 
-  it("the tools panel is inset from the window edges (16px right/top-gap/bottom)", () => {
-    const body = findRuleBody(css, ':root[data-theme="frosted"] .tools-palette');
-    expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(
-      /top:\s*calc\(var\(--tf-band-h,\s*var\(--chrome-commandbar-h,\s*52px\)\)\s*\+\s*var\(--panel-margin,\s*16px\)\)/,
+  it("the tools panel is docked on the base geometry (below both chrome rows, flush right)", () => {
+    // The floating window-edge insets are gone: the palette anchors
+    // below BOTH chrome rows (--toolbar-h + --ann-toolbar-h), flush
+    // right and bottom — the light theme's docked geometry. No
+    // frosted rule may override top/right/bottom with the floating
+    // insets, and no all-side card border survives.
+    const frosted = findRuleBodies(css, ':root[data-theme="frosted"] .tools-palette');
+    for (const body of frosted) {
+      expect(body).not.toMatch(/top:\s*calc\(var\(--tf-band-h/);
+      expect(body).not.toMatch(/right:\s*var\(--panel-margin/);
+      expect(body).not.toMatch(/bottom:\s*var\(--panel-margin/);
+      expect(body).not.toMatch(/border:\s*1px solid/);
+      expect(body).not.toMatch(/border-radius:/);
+      expect(body).not.toMatch(/box-shadow:/);
+    }
+    // The base docked geometry stays the single source of truth.
+    const base = findRuleBody(css, ".tools-palette");
+    expect(base ?? "").toMatch(
+      /top:\s*calc\(var\(--toolbar-h,\s*52px\)\s*\+\s*var\(--ann-toolbar-h,\s*52px\)\)/,
     );
-    expect(body ?? "").toMatch(/right:\s*var\(--panel-margin,\s*16px\)/);
-    expect(body ?? "").toMatch(/bottom:\s*var\(--panel-margin,\s*16px\)/);
-    expect(body ?? "").toMatch(/border:\s*1px solid var\(--glass-sidebar-border\)/);
+    expect(base ?? "").toMatch(/right:\s*0/);
+    expect(base ?? "").toMatch(/bottom:\s*0/);
   });
 
-  it("the document canvas ends beside the tools card so the wallpaper is its backdrop", () => {
-    // Phase 14.2 FIX 4/5 — the inset is state-driven now: .app-main
+  it("the open tools panel drives the page-view inset (state-driven, every theme)", () => {
+    // Phase 14.2 FIX 4/5 — the inset is state-driven: .app-main
     // carries data-tools-open (the same React state that mounts the
     // palette) and the scroller consumes the animated --tf-tools-inset
     // as its right margin, in EVERY theme. The inset equals the panel
-    // width (list 344px / grid 380px) + the 12px gap.
+    // width (list 344px / grid 380px) + the 12px gap, so the docked
+    // panel and the page move together.
     const stripped = stripCssComments(css);
     const driver = stripped.match(
       /\.app-main\[data-tools-open="true"\]\s*\{([^}]*)\}/,
@@ -497,18 +539,23 @@ describe("Phase 14.1 — standardized chrome heights + glass material components
     expect(title ?? "").toMatch(/font-weight:\s*600/);
   });
 
-  it("both sidebars consume the SAME glass sidebar material (left = right)", () => {
-    const rail = findRuleBody(css, ':root[data-theme="frosted"] .side-rail');
-    const panel = findRuleBody(css, ':root[data-theme="frosted"] .tools-palette');
-    expect(rail ?? "").toMatch(/border:\s*1px solid var\(--glass-sidebar-border\)/);
-    expect(panel ?? "").toMatch(/border:\s*1px solid var\(--glass-sidebar-border\)/);
-    expect(rail ?? "").toMatch(/var\(--glass-shadow\)/);
-    expect(panel ?? "").toMatch(/var\(--glass-shadow\)/);
-    // One material: both panels paint --glass-sidebar-bg (the panel
-    // resolves it directly; the rail through --bg-rail -> --tf-surface-rail).
-    expect(panel ?? "").toMatch(/background:\s*var\(--glass-sidebar-bg\)/);
+  it("both side panels share ONE docked glass material (left = right)", () => {
+    // The base rules carry the shared --panel-* contract in every
+    // theme; frosted re-points the tokens at the glass material while
+    // keeping the docked geometry (no floating card elevation).
+    const rail = findRuleBody(css, ".side-rail");
+    const panel = findRuleBody(css, ".tools-palette");
+    expect(rail ?? "").toMatch(/background:\s*var\(--panel-bg\)/);
+    expect(rail ?? "").toMatch(/border-right:\s*1px solid var\(--panel-border\)/);
+    expect(panel ?? "").toMatch(/background:\s*var\(--panel-bg\)/);
+    expect(panel ?? "").toMatch(/border-left:\s*1px solid var\(--panel-border\)/);
+    expect(panel ?? "").toMatch(/box-shadow:\s*var\(--panel-shadow\)/);
+    // Frosted: the SAME glass surface for both panels, DOCKED (square
+    // corners, no elevation shadow — --panel-shadow resolves to none).
+    expect(css).toMatch(/--panel-bg:\s*var\(--glass-sidebar-bg\)/);
     expect(css).toMatch(/--tf-surface-rail:\s*var\(--glass-sidebar-bg\)/);
     expect(css).toMatch(/--tf-surface-panel:\s*var\(--glass-sidebar-bg\)/);
+    expect(css).toMatch(/--panel-shadow:\s*none/);
   });
 
   it("the command bar's Open button is the accent primary at control height", () => {

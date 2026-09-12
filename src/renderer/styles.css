@@ -684,14 +684,18 @@
   --glass-group-border: rgba(255, 255, 255, 0.25);
   --glass-hover-bg: rgba(255, 255, 255, 0.85);
 
-  /* Phase 14.2 — frosted re-maps the shared panel contract to the
-   * Liquid Glass card material (same values the floating cards use
-   * today, now through the ONE token set so the rail and the Tools
-   * panel can never drift apart). */
+  /* Phase 14.2 — the shared panel contract re-maps to the glass
+   * SURFACE but keeps the DOCKED geometry of light/dark: square
+   * corners, the shared docking hairline, no floating elevation.
+   * The panels read as one glass pane joined to the UI (same layout
+   * structure as light/dark), never as floating cards. The docking
+   * hairline is a NEUTRAL slate edge — the translucent white
+   * --glass-sidebar-border is invisible against the light glass, and
+   * a docked pane needs its docking edge to read. */
   --panel-bg: var(--glass-sidebar-bg);
-  --panel-border: var(--glass-sidebar-border);
-  --panel-radius: var(--tf-radius-panel);
-  --panel-shadow: var(--glass-shadow), 0 1px 2px rgba(0, 0, 0, 0.08);
+  --panel-border: rgba(15, 23, 42, 0.12);
+  --panel-radius: 0px;
+  --panel-shadow: none;
 
   color-scheme: light;
 }
@@ -2055,10 +2059,11 @@ input[type="checkbox"] {
   grid-template-rows: auto 1fr;
   /* Phase 14.2 — panel unification: the rail consumes the shared
    * panel contract (--panel-*), the same tokens the Tools palette
-   * uses, so the two side panels always share one surface, hairline,
-   * shadow family and radius policy in every theme. Light/dark stay
-   * docked (solid surface + right hairline, no shadow, square
-   * corners); frosted re-maps to the floating glass card material. */
+   * uses, so the two side panels always share one surface, hairline
+   * and radius policy in every theme. The DOCKED geometry is the same
+   * in every theme (solid-or-glass surface + right hairline, no
+   * shadow, square corners); frosted only re-maps the SURFACE to the
+   * translucent glass film. */
   background: var(--panel-bg);
   border-right: 1px solid var(--panel-border);
   min-height: 0;
@@ -5486,11 +5491,11 @@ rect.ann-highlight.ann-preview {
   /* Phase-3 workspace: the palette reads as a clean contextual
    * panel. Phase 14.2 — panel unification: the SAME --panel-*
    * material contract as the left rail (one surface, one hairline,
-   * one shadow family, one radius policy in every theme). In
-   * light/dark this is the docked panel look — the left hairline
-   * against the canvas and NO floating shadow, so the panel reads
-   * as part of the docked UI instead of a floating island. Frosted
-   * re-maps the tokens to the glass card material. */
+   * one radius policy in every theme). The DOCKED geometry is the
+   * same in every theme — the left hairline against the canvas and
+   * NO floating shadow, so the panel reads as part of the docked UI
+   * instead of a floating island. Frosted re-maps the SURFACE to the
+   * translucent glass film. */
   background: var(--panel-bg);
   border-left: 1px solid var(--panel-border);
   box-shadow: var(--panel-shadow);
@@ -8360,48 +8365,20 @@ rect.ann-highlight.ann-preview {
   box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.3), 0 2px 10px rgba(37, 99, 235, 0.16);
 }
 
-/* Left thumbnail sidebar — a FLOATING GLASS card (DEF-184, Phase 14.1
- * material): inset 16px from the window's left edge by the glass
- * gutters, starting 16px below the command-bar band (--panel-margin;
- * --tf-band-h is the MEASURED band height DocumentView publishes, so a
- * wrapped band on a narrow window pushes the card down instead of
- * under it), ALL four corners rounded, the neutral glass hairline on
- * all sides (no docked right edge), the soft neutral elevation shadow,
- * the luminous top light catch and a faint darker lower inner edge (lit
- * from above). Same material as the right sidebar. */
-:root[data-theme="frosted"] .side-rail {
-  margin-top: calc(var(--tf-band-h, var(--chrome-commandbar-h, 52px)) + var(--panel-margin, 16px));
-  border: 1px solid var(--glass-sidebar-border);
-  border-radius: var(--tf-radius-panel);
-  box-shadow:
-    var(--glass-shadow),
-    0 1px 2px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 var(--glass-highlight),
-    inset 0 -1px 0 rgba(15, 23, 42, 0.06);
-}
-
-/* Right Tools panel — a FLOATING GLASS card (DEF-186, Phase 14.1):
- * inset 16px from the window's right edge, 16px above the bottom
- * edge, 16px below the command-bar band (anchored to .app-main, whose
- * box spans the window, so these are window-edge insets), ALL four
- * corners rounded, the SAME neutral glass material as the left
- * sidebar (one GlassSidebar material for both), soft neutral
- * elevation shadow beneath, and the luminous inner top highlight. The
- * docked left-edge hairline and the left-falling dock shadow are
- * gone. */
-:root[data-theme="frosted"] .tools-palette {
-  top: calc(var(--tf-band-h, var(--chrome-commandbar-h, 52px)) + var(--panel-margin, 16px));
-  right: var(--panel-margin, 16px);
-  bottom: var(--panel-margin, 16px);
-  background: var(--glass-sidebar-bg);
-  border: 1px solid var(--glass-sidebar-border);
-  border-radius: var(--tf-radius-panel);
-  box-shadow:
-    var(--glass-shadow),
-    0 1px 2px rgba(0, 0, 0, 0.08),
-    inset 0 1px 0 var(--glass-highlight),
-    inset 0 -1px 0 rgba(15, 23, 42, 0.06);
-}
+/* Left Pages rail + right Tools panel — DOCKED glass panes (the
+ * Phase-14 floating-card geometry is retired). Both panels are part
+ * of the normal document flow, exactly like light/dark: the rail owns
+ * grid column 1 of .workspace (flush top + left, full height, square
+ * corners), the Tools panel anchors below BOTH chrome rows, flush
+ * right and bottom (its base absolute geometry). The shared
+ * --panel-* contract carries the look in every theme — the surface is
+ * the translucent glass film (--panel-bg), the docking edge is the
+ * shared hairline (--panel-border), and there is NO floating margin,
+ * no all-side border and no elevation shadow. The glass material
+ * stays: the Phase-A blur list above still carries the panels'
+ * backdrop-filter, so the wallpaper diffuses through the docked
+ * sheets. The chrome rows above them no longer stretch over the rail
+ * column either — see the docked-shell block at the end of this file. */
 
 /* Menus / popovers — the floating layer: nearly opaque white sheet,
  * neutral hairline border, soft slate shadow and a faint top highlight
@@ -8478,81 +8455,31 @@ rect.ann-highlight.ann-preview {
  * The paper sheets and their content stay untouched (DEF-099). */
 
 /* ---------------------------------------------------------------------------
- * Phase 14.1 — FLOATING GLASS SHELL (DEF-184 / DEF-185 / DEF-186 / DEF-187,
- * corrected by the Liquid Glass material system).
+ * Phase 14 — GLASS SHELL (docked): the frosted chrome is one continuous
+ * glass material over the desktop, and the side panels DOCK like
+ * light/dark.
  *
- * The window is a floating glass sheet over the desktop: the shell has
- * rounded corners (--radius-window) and the chrome is a set of floating
- * inset cards with the wallpaper visible in the gutters around and
- * between them:
+ * The window is a glass sheet over the desktop: the shell rounds at the
+ * window radius and the chrome rows carry the Phase-A blur. The side
+ * panels are NOT floating cards — the Pages rail owns grid column 1 of
+ * .workspace from the top of the workspace down (beside the chrome
+ * rows), the Tools panel anchors below both chrome rows flush right,
+ * and the document canvas runs beside/below them exactly as the base
+ * docked layout lays it out. There are NO wallpaper gutters around the
+ * workspace and NO full-width chrome bands: the .workspace grid, the
+ * chrome rows and the panels all keep the base (light/dark) geometry —
+ * only the SURFACES are glass. The panels' docking edges are the shared
+ * --panel-border hairline (a neutral slate edge on the light glass).
  *
- *   - the command bar is one full-width glass band attached to the
- *     caption strip (it reaches both window edges);
- *   - the Pages rail is a floating GLASS card inset 16px from the
- *     window's left edge, starting 16px below the command band
- *     (--panel-margin), all four corners rounded;
- *   - the Tools panel is a floating card inset 16px from the window's
- *     right edge with the same 16px top gap and rounding — the SAME
- *     GlassSidebar material as the left rail;
- *   - the document canvas ends BESIDE the Tools panel (it no longer
- *     extends under it), so the panel's backdrop-filter diffuses the
- *     wallpaper, not the white page (DEF-183);
- *   - the shell (.app) rounds at the window radius (20px) so the chrome
- *     meets the backdrop in the mock's rounded silhouette (DEF-187).
- *
- * All of this is frosted-scoped; light/dark keep the docked layout.
+ * All of this is frosted-scoped; light/dark keep the identical layout.
  * ------------------------------------------------------------------------- */
 
-:root[data-theme="frosted"] .workspace {
-  /* Outer gutters (wallpaper shows through): 16px left/right/bottom —
-   * the standardized --panel-margin; no top padding — the command
-   * band attaches to the title bar like the mock's continuous glass
-   * band. The 12px column gap separates the rail card from the canvas
-   * column. */
-  padding: 0 var(--panel-margin, 16px) var(--panel-margin, 16px) var(--panel-margin, 16px);
-  column-gap: 12px;
-}
-
-:root[data-theme="frosted"] .toolbar {
-  /* The command band spans the full window width: it reaches over the
-   * rail column (220px) + the column gap (12px) + the left gutter
-   * (16px) and over the right gutter (16px), so the glass band is one
-   * continuous surface from window edge to window edge (the mock's
-   * top band). Content positions are unchanged — only the sheet's box
-   * grows; heights are untouched so the --tf-chrome-y measure keeps
-   * working. */
-  margin-left: calc(-1 * (220px + 12px + 16px));
-  margin-right: -16px;
-}
-
-/* Phase 14.2 FIX 1 — the annotation (context) bar is the SAME
- * full-width band as the command bar in frosted: identical height
- * token, identical material, identical vertical centering, and the
- * identical negative margins that stretch its sheet across the rail
- * column + gutters. Without this the 52px context bar sat indented
- * beside the rail (a truncated strip) while the command band above
- * it ran edge to edge. */
-:root[data-theme="frosted"] .ann-toolbar {
-  margin-left: calc(-1 * (220px + 12px + 16px));
-  margin-right: -16px;
-}
-
-/* (The rail card's floating geometry — margin-top below the band,
- * all-corner hairline + radius — and the Tools card's window-edge
- * insets live on their first frosted rules above, where the CSS
- * contract tests read them.) */
-
-/* DEF-183/186 — the document canvas ends BESIDE the floating Tools
- * card (the mock: "the canvas clips at the panel edge"). Without the
- * inset the white page extends under the card and the card's
- * backdrop-filter samples the page instead of the wallpaper, making
- * the panel backdrop-independent. The inset frees the card's column
- * so the wallpaper (ambient -> OS acrylic) is what the glass diffuses.
- * Phase 14.2 FIX 4/5 — the inset itself now comes from the SAME
- * state-driven --tf-tools-inset token every theme uses (declared on
- * .app-main[data-tools-open], animated on .workspace-main, consumed
- * by the scroller's margin-right), so frosted no longer needs its
- * own :has() rules and the canvas + card move TOGETHER here too. */
+/* DEF-183/186 — the document page ends BESIDE the docked Tools panel
+ * (the page never runs under it). Phase 14.2 FIX 4/5 — the inset comes
+ * from the SAME state-driven --tf-tools-inset token every theme uses
+ * (declared on .app-main[data-tools-open], animated on
+ * .workspace-main, consumed by the scroller's margin-right), so panel
+ * and page move TOGETHER in every theme on the same 300ms ease-out. */
 
 /* DEF-187 — the window shell rounds at the WINDOW radius (--radius-
  * window, 20px — the top of the spec's 18-22px band) so the chrome
@@ -8756,11 +8683,9 @@ rect.ann-highlight.ann-preview {
    * the fallback matches the two 52px chrome rows until the first
    * measure lands. The page now sits 16px below the floating chrome
    * stack (the floating aesthetic minimum) instead of 28px, and 16px
-   * above the bottom edge — the SAME visual margin the page keeps
-   * beside the floating rail card, and the same side margins the
-   * in-flow light/dark layout gives the page, so frosted stops
-   * reading as a page floating in a field of empty glass. The scroll
-   * math in DocumentView consumes the matching constant (the mount's
+   * above the bottom edge — the same side margins the in-flow
+   * light/dark layout gives the page. The scroll math in
+   * DocumentView consumes the matching constant (the mount's
    * topPad = chromeY + 16), so jump landings and the mount window
    * track the real slot positions. */
   padding: calc(var(--tf-chrome-y, 104px) + 16px) 0 16px;
@@ -8805,12 +8730,10 @@ rect.ann-highlight.ann-preview {
 :root {
   /* iOS liquid-glass spring curve — the one overshooting ease for
    * small hover/press lifts. Panels keep their calibrated motion
-   * springs (tfPresets); this is the CSS-side companion. */
+   * springs (tfPresets); this is the CSS-side companion. The panels
+   * are DOCKED (square corners, the shared panel contract), so there
+   * is no separate panel radius token. */
   --tf-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  /* Phase 14 panel radius — the glass panels round at 16px (the spec's
-   * 16-20px band) on their inner corners; controls stay on the tight
-   * --tf-radius-* ladder. */
-  --tf-radius-panel: 16px;
 }
 
 /* Window defocused: the glass relaxes — less blur, calmer read. The
@@ -8912,10 +8835,9 @@ rect.ann-highlight.ann-preview {
   background: rgba(255, 255, 255, 0.62);
 }
 
-/* Frosted panel radii — SUPERSEDED by the Phase-14 floating-shell
- * block: both glass cards now round on ALL four corners (floating
- * cards), with the radii declared in the floating-shell rules. The
- * old inner-corner-only radii (docking edges flush) are gone. */
+/* Frosted panel radii — RETIRED with the floating shell: the panels
+ * DOCK with square corners like light/dark (--panel-radius resolves
+ * to 0px; no separate radius token exists). */
 
 /* Frosted grid cards — the same acrylic as the panel, one step up:
  * a translucent white chip with a hairline and a soft drop so the
@@ -9087,11 +9009,11 @@ rect.ann-highlight.ann-preview {
   background: var(--glass-hover-bg);
 }
 
-/* GlassSidebar — the shared floating-panel system (Pages left, Tools
- * right). The base layer owns STRUCTURE only: flex column, header row,
- * body region. Surfaces stay on the panels' own theme rules (light/dark
- * are docked solid panels; frosted turns them into floating glass
- * cards in the floating-shell block above). */
+/* GlassSidebar — the shared panel system (Pages left, Tools right).
+ * The base layer owns STRUCTURE only: flex column, header row, body
+ * region. Surfaces stay on the panels' own theme rules — the panels
+ * DOCK in every theme (light/dark solid, frosted glass surface; the
+ * shared --panel-* contract carries the geometry). */
 .glass-sidebar {
   display: flex;
   flex-direction: column;
@@ -9136,7 +9058,7 @@ rect.ann-highlight.ann-preview {
 
 /* Frosted films for the glass components. The command bar's capsules
  * float on the band's own glass; the sidebars share ONE film (the
- * floating-shell block above carries the card geometry). */
+ * docked panels carry it through the shared --panel-* tokens). */
 :root[data-theme="frosted"] .glass-control-group {
   background: var(--glass-group-bg);
   border-color: var(--glass-group-border);
@@ -9150,7 +9072,10 @@ rect.ann-highlight.ann-preview {
 }
 
 :root[data-theme="frosted"] .glass-sidebar-header {
-  border-bottom-color: var(--glass-sidebar-border);
+  /* Docked glass panes: the header divider is the same neutral
+   * docking hairline family as the panel edges (the translucent white
+   * --glass-sidebar-border is invisible against the light glass). */
+  border-bottom-color: var(--border-subtle);
 }
 
 :root[data-theme="frosted"] .glass-sidebar-header,

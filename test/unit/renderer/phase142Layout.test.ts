@@ -6,8 +6,8 @@
 // jsdom run cannot resolve — pin the rules at the source instead.
 //
 //   FIX 2 — the ONE panel material: both side panels consume the
-//           --panel-* tokens in every theme; frosted re-maps them to
-//           the glass card material.
+//           --panel-* tokens in every theme; frosted re-points them at
+//           the glass surface but keeps the DOCKED geometry.
 //   FIX 3 — the Open button's capsule paints nothing (single layer).
 //   FIX 4/5 — the animated page-view inset: @property + workspace
 //           driver + state attributes; the transition never touches
@@ -79,14 +79,20 @@ describe("Phase 14.2 — the ONE panel material contract (FIX 2)", () => {
     expect(palette ?? "").toMatch(/box-shadow:\s*var\(--panel-shadow\)/);
   });
 
-  it("frosted re-maps the panel tokens to the glass card material", () => {
+  it("frosted keeps the DOCKED panel geometry with the glass surface", () => {
     const m = /:root\[data-theme="frosted"\]\s*\{([\s\S]*?)\n\}/.exec(css);
     expect(m).not.toBeNull();
     const frosted = m?.[1] ?? "";
+    // The glass SURFACE stays (the translucent white film), but the
+    // floating-card geometry is retired: square corners, no floating
+    // elevation — the panels behave exactly like the light theme's.
     expect(frosted).toMatch(/--panel-bg:\s*var\(--glass-sidebar-bg\)/);
-    expect(frosted).toMatch(/--panel-border:\s*var\(--glass-sidebar-border\)/);
-    expect(frosted).toMatch(/--panel-radius:\s*var\(--tf-radius-panel\)/);
-    expect(frosted).toMatch(/--panel-shadow:\s*var\(--glass-shadow\)/);
+    expect(frosted).toMatch(/--panel-radius:\s*0px/);
+    expect(frosted).toMatch(/--panel-shadow:\s*none/);
+    // The docking hairline is a visible neutral slate edge (the
+    // translucent white glass border is invisible on the light glass).
+    expect(frosted).toMatch(/--panel-border:\s*rgba\(15,\s*23,\s*42,\s*0\.12\)/);
+    expect(frosted).not.toMatch(/--panel-border:\s*var\(--glass-sidebar-border\)/);
   });
 });
 
@@ -148,16 +154,23 @@ describe("Phase 14.2 — annotation bar is the command-height bar (FIX 1)", () =
     expect(body).toMatch(/--chrome-commandbar-h:\s*52px/);
   });
 
-  it("frosted gives the annotation bar the same full-width band as the command bar", () => {
+  it("frosted keeps the annotation bar docked in column 2 (no full-width band)", () => {
+    // The floating shell's full-width band stretched the bar over the
+    // rail column with negative margins — that band OVERLAPPED the
+    // docked rail card. The bar is back in the base in-flow grid row
+    // (column 2 only), identical to light/dark.
+    const stripped = stripCssComments(css);
     const band = findRuleBody(
-      clean,
+      stripped,
       ':root[data-theme="frosted"] .ann-toolbar {',
     );
-    expect(band).not.toBeNull();
-    expect(band ?? "").toMatch(
-      /margin-left:\s*calc\(-1\s*\*\s*\(220px\s*\+\s*12px\s*\+\s*16px\)\)/,
-    );
-    expect(band ?? "").toMatch(/margin-right:\s*-16px/);
+    if (band !== null) {
+      expect(band).not.toMatch(/margin-left:\s*calc\(-1/);
+      expect(band).not.toMatch(/margin-right:\s*-/);
+    }
+    // The base row keeps its token height + centering in every theme.
+    const base = findRuleBody(css, ".ann-toolbar {");
+    expect(base ?? "").toMatch(/min-height:\s*var\(--ann-toolbar-h\)/);
   });
 });
 
