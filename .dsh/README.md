@@ -35,7 +35,7 @@ Six roles, one dispatch tool each. Two run locally; the rest use `openrouter-cus
 | --- | --- | --- | --- |
 | backend-dev | `dispatch_backend_dev` | **local** `local-ninfer` / `qwen3.8-27b` | yes |
 | frontend-dev | `dispatch_frontend_dev` | **local** `local-ninfer` / `qwen3.8-27b` | yes |
-| qa | `dispatch_qa` | `z-ai/glm-5.3-flash` | **yes** |
+| qa | `dispatch_qa` | `openrouter-custom` / `z-ai/glm-5.3-flash` | yes |
 | adversary | `dispatch_adversary` | `deepseek/deepseek-v4-flash` | no |
 | git-agent | `dispatch_git_agent` | `z-ai/glm-5.3-flash` | yes |
 | feature-scout | `dispatch_feature_scout` | `z-ai/glm-5.3-flash` | yes — **read-only, no write/edit/pwsh** |
@@ -59,17 +59,26 @@ change `--max-context`/`--kv-capacity` in `scripts/ninfer-model.ps1` **and** `co
 `settings.yaml` together - they must agree, or DSH compacts far too early (declared too low) or
 overruns the server (declared too high).
 
-Two constraints shape the whole arrangement.
+One constraint shapes the whole arrangement.
 
 **The model owns the GPU.** Loaded, it holds about 23 GiB of the 24.5 GiB card. That is why the
-orchestrator loads it before dispatching a local role and offloads it when that work is finished,
-and why it must be offloaded before any e2e run.
+orchestrator loads it before dispatching a local role and offloads it when that work is finished.
 
-**qa does not run locally, on purpose.** qa drives the real Electron app under Playwright, and
-that needs the GPU the model occupies. A local qa would ask one card to hold both the model and
-the app under test, leaving the app about a gigabyte. So qa stays on a cloud route: it is the one
-role whose duty is in direct conflict with the model.
+**qa does not use it.** qa stays on a cloud route (`openrouter-custom` / `z-ai/glm-5.3-flash`). It
+is the one role that drives the real Electron app under Playwright, so keeping it off the local
+model means the e2e suite never depends on the server being up or on a free decode slot.
 
+**The app and the model can still share the card.** Measured, not assumed: with the model loaded
+the card holds 22,980 MiB of 24,564, and launching the app on top adds only about 205 MiB,
+leaving 1,380 MiB free; the window opens and renders normally. So stop the model before an e2e
+run only to free the card generally, not because the app needs the room.
+
+**Concurrency is 3, and that matters.** The server runs `--max-concurrency 3` with
+`--pending-timeout-ms 300000`. With a single decode slot and the default 30-second pending
+timeout, concurrent role dispatches queued past the limit and the server rejected them
+("expired while waiting for admission"), which arrives in DSH as a dispatch error with zero
+content. Three slots cover the three local roles running together; measured ttft is under half a
+second and aggregate decode throughput is higher, because the engine batches.
 Control it with:
 
 ```powershell
@@ -83,6 +92,11 @@ scope, which means Restricted, so a `.ps1` cannot be invoked directly. `start` i
 blocks until the endpoint answers. Server logs land in `dsh-server.out.log` and
 `dsh-server.err.log` beside the model.
 
+**The provider needs an `apiKeyEnv`.** A custom (non-catalogue) provider always demands a
+credential even when the server ignores auth, so `local-ninfer` declares
+`apiKeyEnv: NINFER_API_KEY` and the credential store holds a dummy value. Omit it and every call
+fails with `No API key for provider` *before* any HTTP request is made - the server log stays
+empty, and that empty log is the tell for this particular fault.
 Cloud fallbacks for the two local roles, one edit away: `z-ai/glm-5.2` (backend-dev) and
 `z-ai/glm-5.3-flash` (frontend-dev). Only the human repins them.
 Documented fallbacks, held in the allow-list for repinning: `deepseek/deepseek-v4-pro`
@@ -103,6 +117,12 @@ wrong, and no model-selection schema in the tool's prompt.
 provider in the child's creation window. The orchestrator passes only a task spec. Role briefs
 cost the orchestrator nothing, cannot be mis-pasted, and cannot be truncated on the way down.
 
+**Every dispatch is announced.** The orchestrator prints the role and its route before each
+dispatch (`-> backend-dev  [local-ninfer / qwen3.8-27b]  fix DEF-200 cascade order`) and names the
+role again when it reports the result. This has to come from the persona rather than the tool: a
+role's route is baked into its row and is not readable from the tool schema. The roster the
+persona reads lives in the same preset file as those rows, so the two can be diffed - and the
+persona text is checked against the baked routes.
 **Roles do not fan out.** Each row's `toolFilter.deny` removes the five sibling dispatch tools,
 `subagent_fork` and `workflow` from the child, with the filter applied in that child's creation
 window. The orchestrator is the single fan-out point, which keeps the token graph bounded.

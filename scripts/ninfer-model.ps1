@@ -44,14 +44,22 @@ $Base   = "http://127.0.0.1:$Port"
 #   --kv-dtype rk4v4-e8 4-bit E8 lattice KV: 98.7% cosine vs FP32. Text-only reaches
 #                       ~433k theoretical; enabling vision costs about a third of that.
 #   --spec mtp ...      speculative decoding; worth roughly 4x on decode
+#
+#   --max-concurrency 3   the orchestrator probes and can run three local roles at once.
+#                         With 1 slot the queue wait climbed past 30s and the server rejected
+#                         queued work - "expired while waiting for admission" - which surfaced
+#                         in DSH as a dispatch error with zero content.
+#   --pending-timeout-ms 300000
+#                         a queued request must outlive a slow one ahead of it, not be killed.
 $ServeArgs = @(
     $Model
     '--host', '127.0.0.1'
     '--port', "$Port"
     '--max-context', '131072'
     '--kv-capacity', '131072'
-    '--max-concurrency', '1'
-    '--max-pending-requests', '16'
+    '--max-concurrency', '3'
+    '--max-pending-requests', '32'
+    '--pending-timeout-ms', '300000'
     '--prefill-chunk', '1024'
     '--kv-dtype', 'rk4v4-e8'
     '--vision'
