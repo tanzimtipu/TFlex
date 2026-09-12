@@ -36,7 +36,7 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm.cmd ci
+        run: npm ci
 
       - name: Verify (conventions, typecheck, unit tests)
-        run: npm.cmd run verify:full
+        run: npm run verify:full
