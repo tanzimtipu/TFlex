@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { AnimatePresence } from "motion/react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -245,9 +246,10 @@ interface DocumentViewProps {
    *  stamp is pending, the host drops the pending stamp so the pan
    *  drag is the only gesture that handles the press. */
   onDisarmStamp?: () => void;
-  /** Phase 6 — Tools palette. App owns the open/closed state; this view
-   *  just threads it into the toolbar so the toggle button can render
-   *  the active treatment when the palette is up. */
+  /** Phase 6 — Tools palette. App owns the open/closed state. The
+   *  toolbar no longer carries the toggle: when `onToolsPaletteToggle`
+   *  is wired, this view renders the floating badge on the page view's
+   *  right edge (.tools-badge / data-tools-badge) that flips it. */
   toolsPaletteOpen?: boolean;
   onToolsPaletteToggle?: () => void;
   /** Phase 6 — annotation color palette. The toolbar shows a
@@ -268,6 +270,14 @@ interface DocumentViewProps {
    *  forms), so a single mode is active at a time. */
   editModeOpen?: boolean;
   onEditModeToggle?: () => void;
+  /** Phase 16 — the side-rail pages panel is collapsed to the ruler
+   *  strip. The host (App) owns the persisted value; DocumentView
+   *  only threads it to the SideRail. */
+  pagesPanelCollapsed?: boolean;
+  /** Phase 16 — asks the host to toggle the pages-panel collapsed
+   *  state. Threaded to the SideRail, whose expand/collapse button
+   *  calls it; the rail never owns the value itself. */
+  onTogglePagesPanelCollapsed?: () => void;
   /** Per-tab Edit state. DocumentView only forwards it to
    *  PageView; App owns the reducer. */
   edit?: {
@@ -447,6 +457,8 @@ export function DocumentView({
   editModeOpen = false,
   edit = null,
   onEditModeToggle,
+  pagesPanelCollapsed,
+  onTogglePagesPanelCollapsed,
 }: DocumentViewProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   // Phase-C frosted layering — the full-bleed scroller needs the
@@ -1969,6 +1981,11 @@ export function DocumentView({
         onEditAnnotation={onEditAnnotation}
         onDeleteAnnotation={onDeleteAnnotation}
         onJumpToAnnotation={onAnnJump}
+        // Phase 16 — pages-panel collapsed state is App-owned
+        // (persisted in settings); the rail only renders it and
+        // reports toggles through the callback.
+        pagesPanelCollapsed={pagesPanelCollapsed}
+        onTogglePagesPanelCollapsed={onTogglePagesPanelCollapsed}
       />
       <div ref={mainRef} className="workspace-main">
         <Toolbar
@@ -2006,8 +2023,6 @@ export function DocumentView({
           onFlattenClick={(): void => {
             window.dispatchEvent(new CustomEvent("tflex:flatten-button"));
           }}
-          toolsPaletteOpen={toolsPaletteOpen}
-          onToolsPaletteToggle={(): void => onToolsPaletteToggle?.()}
           editModeOpen={editModeOpen}
           onEditModeToggle={onEditModeToggle}
           onOptimize={(): void => onOptimize?.()}
@@ -2238,6 +2253,39 @@ export function DocumentView({
             })}
           </div>
         </div>
+        {/* Tools palette badge — the floating toggle on the page view's
+            right edge (moved out of the command bar). Anchored in
+            .workspace-main (position: relative); `right` reads the
+            SAME --tf-tools-inset token the scroller consumes, so when
+            the panel opens the badge slides to the page area's new
+            edge on the identical 300ms curve. ChevronLeft while closed
+            (click slides the panel in from the right), ChevronRight
+            while open (click slides it back out). Kept below the
+            modal sheets (z-index 100+) in styles.css. data-tools-toggle
+            is kept alongside data-tools-badge so the long-standing
+            e2e selector still resolves on the moved control. */}
+        {onToolsPaletteToggle !== undefined && (
+          <button
+            type="button"
+            className="tools-badge"
+            onClick={onToolsPaletteToggle}
+            aria-pressed={toolsPaletteOpen}
+            aria-label={toolsPaletteOpen ? "Close tools palette" : "Open tools palette"}
+            title={
+              toolsPaletteOpen
+                ? "Close tools palette (Ctrl+Shift+P)"
+                : "Open tools palette (Ctrl+Shift+P)"
+            }
+            data-tools-badge
+            data-tools-toggle
+          >
+            {toolsPaletteOpen ? (
+              <ChevronRight size={16} aria-hidden />
+            ) : (
+              <ChevronLeft size={16} aria-hidden />
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

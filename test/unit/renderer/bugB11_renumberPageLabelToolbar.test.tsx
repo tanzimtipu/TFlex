@@ -50,8 +50,6 @@ function mountToolbar(args: {
         onSignClick={noop}
         hasFormFields={false}
         onFlattenClick={noop}
-        toolsPaletteOpen={false}
-        onToolsPaletteToggle={noop}
         onOptimize={noop}
         onAuditSpace={noop}
       />,

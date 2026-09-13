@@ -1291,3 +1291,64 @@ Disposition: REJECTED - diagnostics field not required by any Phase 16 success c
 | Bug-sweep adversarial (ADV-024..030) | 0 | 4 | 3 | 7 |
 | Phase 16 gate (ADV-040) | 0 | 0 | 1 | 1 |
 | **All phases** | **7** | **16** | **9** | **32** |
+
+---
+
+## Tools badge silence attack
+
+Session label: `tools-badge-silence`. Ran against the production build
+(`npm.cmd run build`; dist main + dist renderer launched with
+`ELECTRON_RENDERER_URL=file://.../dist/renderer/index.html`). Harness:
+`e2e/adversary-tools-badge-silence.cjs`.
+
+No findings — all probes passed cleanly. Detailed results below.
+
+### Probes performed
+
+All probes target the `[data-tools-badge]` floating pill on the right edge of
+the page view, which toggles the tools panel.
+
+| # | Probe | Result | Detail |
+|---|-------|--------|--------|
+| 1 | Badge exists in DOM | PASS | `document.querySelector('[data-tools-badge]')` resolves |
+| 2 | Badge click opens tools panel | PASS | `data-tools-open="true"`, `aria-pressed="true"`, palette header visible in DOM |
+| 3 | Badge click closes tools panel | PASS | `data-tools-open="false"`, `aria-pressed="false"`, palette header removed from DOM |
+| 4 | Badge persists after open/close cycle | PASS | Badge still present and clickable after each toggle |
+| 5 | Rapid double-click (two clicks) | PASS | State internally consistent: `data-tools-open` matches `aria-pressed` matches palette visibility |
+| 6 | Rapid 5-click | PASS | All three state signals agree after rapid sequence |
+| 7 | Triple-click | PASS | Internal consistency maintained through odd number of toggles |
+| 8 | Close via palette close button | PASS | `data-tools-open="false"`, `aria-pressed="false"`, badge persists |
+| 9 | Arrow icon changes on toggle | PASS | ChevronLeft (`m15 18-6-6 6-6`) while closed, ChevronRight (`m9 18 6-6-6-6`) while open — two different icon paths confirmed |
+| 10 | Ctrl+Shift+P keyboard shortcut | PASS | Confirmed working via Electron `webContents.sendInputEvent({keyCode:'P', modifiers:['ctrl','shift']})`; also confirmed via `webContents.send('menu-action', 'showToolsPalette')` IPC |
+
+### Keyboard shortcut note
+
+Playwright's `keyboard.press('Control+Shift+P')` does NOT trigger Electron
+menu accelerators, because Playwright sends synthetic keyboard events to the
+renderer's DOM event system, while accelerators are handled by Electron's
+main-process native input event layer. This is a testing-infrastructure
+limitation, not a product defect. The shortcut was confirmed working by:
+
+1. **`webContents.sendInputEvent`**: `{type:'keyDown', keyCode:'P', modifiers:['ctrl','shift']}` successfully toggled the palette (`data-tools-open` flipped from `false` to `true`).
+2. **Menu IPC**: `webContents.send('menu-action', 'showToolsPalette')` also correctly toggled the panel.
+
+Both paths proved the handler (`setToolsPaletteOpen((v) => !v)`) and the
+menu accelerator registration (`accelerator: "Ctrl+Shift+P"`) work correctly.
+
+### No silent no-ops found
+
+Every click on the badge produced a visible state change. The palette close
+button maintains correct synchronization. No control failed to respond.
+
+### No state desync found
+
+All three state signals (`data-tools-open` on `.app-main`, `aria-pressed` on
+the badge, palette element presence/absence in DOM) agreed after every probe
+sequence including rapid clicks, keyboard toggles, and palette-close-button
+interactions. The single React state variable (`toolsPaletteOpen`) drives all
+three outputs, making desync structurally impossible.
+
+### Conclusion
+
+The `[data-tools-badge]` surface passes all adversarial probes. No findings
+to report.

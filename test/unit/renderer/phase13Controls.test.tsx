@@ -107,8 +107,6 @@ function mountToolbar(overrides: Partial<Parameters<typeof Toolbar>[0]> = {}): H
       onSignClick={NOOP}
       hasFormFields={false}
       onFlattenClick={NOOP}
-      toolsPaletteOpen={false}
-      onToolsPaletteToggle={NOOP}
       onOptimize={NOOP}
       onAuditSpace={NOOP}
       handActive={false}
@@ -143,18 +141,13 @@ describe("Phase 13 — Toolbar is icon-only", () => {
     unmount(host);
   });
 
-  it("the All tools button keeps the stable data-tools-toggle attribute", () => {
+  it("the Tools palette toggle has moved off the toolbar to the page-view badge", () => {
+    // The floating badge (data-tools-badge, also keeping the stable
+    // data-tools-toggle e2e hook) now lives in DocumentView on the
+    // page view's right edge — the command bar no longer hosts it.
     const host = mountToolbar();
-    const more = host.querySelector<HTMLButtonElement>("[data-tools-toggle]");
-    expect(more).not.toBeNull();
-    // Phase 14.2 FIX 7 — the ambiguous three-dot ellipsis became the
-    // "All tools" grid glyph; the accessible name follows.
-    expect(more?.getAttribute("aria-label")).toBe("All tools");
-    expect(more?.getAttribute("title")).toBe("All tools (Ctrl+Shift+P)");
-    expect(more?.querySelector("svg")).not.toBeNull();
-    // The label text is gone (icon-only) — the accessible name comes
-    // from aria-label.
-    expect(more?.textContent ?? "").not.toMatch(/Tools/);
+    expect(host.querySelector("[data-tools-toggle]")).toBeNull();
+    expect(host.querySelector("[data-tools-badge]")).toBeNull();
     unmount(host);
   });
 

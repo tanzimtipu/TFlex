@@ -399,6 +399,21 @@
   initial-value: 0px;
 }
 
+/* Phase 16 — the animated pages-rail width. The rail column of
+ * .workspace resolves from this REGISTERED custom property, so the
+ * collapse (220px -> 48px ruler strip) and expand interpolate instead
+ * of snapping: .app-main carries the state as data-rail-collapsed
+ * (the SAME React state that swaps the rail body to the ruler strip),
+ * declares the collapsed value here, and .workspace transitions the
+ * inherited token on --motion-duration-panel (280ms) with
+ * --motion-ease-layout — the centralized Phase-15 motion tokens, same
+ * mechanism as --tf-tools-inset. */
+@property --tf-rail-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 220px;
+}
+
 :root[data-theme="dark"] {
   --bg-base: #0b0d0f;
   --bg-sunken: #090b0d;
@@ -1671,13 +1686,13 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
-/* Chunk 2 — press settles slightly (translateY 1px + scale press token);
- * the base transition releases it smoothly back to 1. The faster
- * 70ms press-in transition lives in the shared press rule at the
- * end of this file (interactive press/settle group). The scale reads
- * the canonical cross-theme --motion-scale-press token (0.97) so the
- * press value can never drift from the motion system. */
-.btn:active { transform: translateY(1px) scale(var(--motion-scale-press)); }
+/* Chunk 2 — DEF-200: the standalone .btn:active rule used to live here.
+ * It was (0,2,0) while .btn:hover:not([disabled]) is (0,3,0), so while
+ * the pointer was down BOTH matched and hover's translateY(-1px) won
+ * the cascade — the press transform never applied. The press transform
+ * now lives ONLY in the shared press/settle group at the end of this
+ * file (guarded, (0,3,0), later source position, so it wins), and the
+ * faster 70ms press-in transition lives there too. */
 
 /* Phase 4 — every dialog/hero button shows the shared orange focus
  * ring on keyboard focus. */
@@ -1992,12 +2007,26 @@ input[type="checkbox"] {
 .workspace {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: 220px 1fr;
+  /* Phase 16 — the rail column resolves from the REGISTERED
+   * --tf-rail-w token (220px at rest). .app-main[data-rail-collapsed]
+   * flips it to the 48px ruler strip and this transition interpolates
+   * the inherited token over the centralized panel motion token
+   * (280ms, --motion-ease-layout) — the same registered-property
+   * mechanism as --tf-tools-inset, so the rail shrink and the 1fr
+   * page-column reflow move together, in every theme, with no
+   * hardcoded duration in this rule. */
+  grid-template-columns: var(--tf-rail-w) 1fr;
+  transition: --tf-rail-w var(--motion-duration-panel) var(--motion-ease-layout);
   min-height: 0;
 }
 
 .workspace-main {
   display: grid;
+  /* Positioning context for the chrome rows that float over the
+   * scroller AND for the .tools-badge: the floating Tools palette
+   * toggle anchored to this container's right edge (the frosted
+   * theme block below declares the same value). */
+  position: relative;
   /* Five explicit rows: the two unconditional chrome rows (command
    * toolbar, annotation toolbar), the two CONDITIONAL chrome rows
    * (edit toolbar, search bar) and the scroller's 1fr row. The
@@ -2056,6 +2085,17 @@ input[type="checkbox"] {
   --tools-panel-w: 380px;
 }
 
+/* Phase 16 — the collapsed pages-rail width. The SAME React state
+ * (pagesPanelCollapsed, persisted in AppSettings) that swaps the rail
+ * body to the ruler strip also sets data-rail-collapsed on .app-main;
+ * this rule declares the 48px strip width as --tf-rail-w and
+ * .workspace transitions the inherited token (see the .workspace
+ * rule above). The @property initial-value (220px) covers the
+ * expanded rest state. */
+.app-main[data-rail-collapsed="true"] {
+  --tf-rail-w: 48px;
+}
+
 .side-rail {
   display: grid;
   /* DEF-185 + Phase 14.1 — the rail's header row now carries BOTH the
@@ -2087,14 +2127,14 @@ input[type="checkbox"] {
 
 .rail-tabs {
   display: flex;
-  align-items: stretch;
-  /* Phase 14.1 — the tab strip is now the GlassSidebar header's right
-   * action cluster (title left, toggle right): no own hairline or
-   * background (the 44px header row carries the divider), and it
-   * stretches the full header height so the active-tab indicator can
-   * sit on the header's bottom edge. */
-  align-self: stretch;
-  background: transparent;
+  align-items: center;
+  /* Phase 16 — the view-tab + collapse cluster rides on the shared
+   * capsule: the JSX adds .glass-control-group (one round glass pill
+   * for every view tab AND the collapse icon, the same material as
+   * the command-bar group) in the expanded state; while collapsed the
+   * header carries a single icon button and the plain flex wrapper
+   * stays chrome-free. The pre-capsule rule (full-header-height
+   * transparent strip with an underline indicator) is retired. */
 }
 
 .rail-tab {
@@ -2121,20 +2161,16 @@ input[type="checkbox"] {
   box-shadow: var(--focus-ring);
 }
 
-.rail-tab-active { color: var(--fg-strong); }
-
-.rail-tab-active::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: -1px;
-  height: 2px;
-  background: var(--accent);
-  border-radius: 2px 2px 0 0;
-  /* Chunk 2 — the rail indicator travels in (fade + slide + swell)
-   * over --tf-motion-normal instead of teleporting. */
-  animation: indicator-in var(--tf-motion-normal) var(--tf-ease-standard);
+/* Phase 16 — the active view tab inside the glass capsule is a
+ * SELECTION FILL (the shared 0.10 accent wash, the same treatment
+ * the command-bar capsule buttons and the thumb selection use)
+ * instead of the pre-capsule underline: the underline floated on
+ * the pill's lower edge and read as a stray accent bar. The wash
+ * rides the .rail-tab background transition (token-driven). */
+.rail-tab-active {
+  color: var(--fg-strong);
+  background: var(--accent-selected);
+  border-radius: var(--radius-2);
 }
 
 .rail-content {
@@ -2661,6 +2697,11 @@ input[type="checkbox"] {
   scrollbar-width: thin;
   min-height: 0;
   height: 100%;
+  /* Scrollbar inset — pulls the 10px webkit scrollbar off the box edge
+   * so it sits visually inside the content area, clear of the window's
+   * rounded corners in the frosted theme. .document-content carries no
+   * horizontal padding (28px 0 / calc() 0 16px), so no double gap. */
+  padding-right: 8px;
   /* DEF-178/179 — pinned grid row: the scroller ALWAYS owns the
    * .workspace-main 1fr row (row 5), no matter which conditional
    * chrome rows above it are mounted. */
@@ -2679,6 +2720,67 @@ input[type="checkbox"] {
   background: var(--border-strong);
   border-radius: 8px;
   border: 2px solid var(--bg-canvas);
+}
+
+/* Tools badge — the floating Tools palette toggle on the page view's
+ * right edge. It moved OUT of the command bar into the page view, so
+ * the affordance stays reachable beside whatever page is on screen.
+ * The pill rides the same glass-capsule tokens as the command-bar
+ * groups (--glass-group-* remap per theme, so the surface matches in
+ * light / dark / frosted without theme-specific rules).
+ *
+ * Position: anchored to the page view's RIGHT EDGE — `right` reads
+ * the same --tf-tools-inset token the scroller consumes as its right
+ * margin, plus the 8px scrollbar gutter, so when the panel opens the
+ * badge glides to the page area's new edge on the identical 300ms
+ * curve. The transition lives on the REGISTERED token at
+ * .workspace-main (never on this element), so the badge follows the
+ * token's per-frame value and this rule stays transform/opacity-only,
+ * per the Phase-15 motion contract.
+ *
+ * Stacking: z-index 35 floats the badge above the page content
+ * (scroller overlays top out at z 7) and the Tools palette (30), but
+ * below the titlebar (40), popovers (50+) and the modal sheets
+ * (100+) / modal backdrops (800) / toasts (1000).
+ *
+ * Quiet at rest (opacity .35), fully visible on hover / focus, and
+ * while the palette is open — open state makes it the panel's close
+ * handle. */
+.tools-badge {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--tf-tools-inset, 0px) + 8px);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 48px;
+  border: 1px solid var(--glass-group-border);
+  border-radius: 999px;
+  background: var(--glass-group-bg);
+  box-shadow:
+    inset 0 1px 0 var(--glass-highlight),
+    0 1px 2px rgba(0, 0, 0, 0.08);
+  color: var(--fg-muted);
+  cursor: pointer;
+  opacity: 0.35;
+  z-index: 35;
+  transition:
+    opacity var(--motion-duration-fast, 200ms)
+    var(--motion-ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.tools-badge:hover,
+.tools-badge:focus-visible,
+.tools-badge[aria-pressed="true"] {
+  opacity: 1;
+}
+
+/* Press: soft compression on the press-scale token (the translateY
+ * offset that centers the pill is kept, only the scale animates). */
+.tools-badge:active {
+  transform: translateY(-50%) scale(var(--motion-scale-press, 0.97));
 }
 
 /* Phase 13 — Hand (pan) mode. While armed, the scroller advertises
@@ -8078,8 +8180,14 @@ rect.ann-highlight.ann-preview {
  * ease everything back to rest over --tf-motion-fast. The scale reads
  * the canonical --motion-scale-press token (0.97, DEF-196) so this
  * rule and the animations.css token rule agree — the cascade resolves
- * to the token either way. */
-.btn:active,
+ * to the token either way.
+ *
+ * DEF-200 — .btn:active carries the same :not([disabled]) guard as
+ * its :hover rule so both selectors are (0,3,0); while the pointer is
+ * down both states match and this later, equally specific rule wins,
+ * so the press transform actually applies to the .btn family (the
+ * unguarded (0,2,0) rule lost the cascade to hover's (0,3,0)). */
+.btn:active:not([disabled]),
 .tool-btn:active:not([disabled]),
 .rail-action-btn:active:not([disabled]),
 .toolbox-action-btn:active,
@@ -8627,6 +8735,96 @@ rect.ann-highlight.ann-preview {
   );
 }
 
+/* Phase 16 — Collapsed ruler mode.
+ *
+ * The strip is a SWAP layer inside the rail body: it and the expanded
+ * content (thumbnails / annotations / outline) are both absolute
+ * (.rail-content-swap), so AnimatePresence can crossfade them
+ * (opacity + a slight scale, token-driven via useRailSwapAnimation)
+ * while the .workspace grid column tweens 220px -> 48px on
+ * --motion-duration-panel / --motion-ease-layout. The strip carries
+ * NO scrollbar chrome — just the numbers ladder. The hover/focus
+ * LIFT on the numbers is the standard LiftMotionProps (JS,
+ * token-driven); the CSS only paints the theme-tuned colour wash. */
+
+.rail-content-swap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.rail-ruler {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  height: 100%;
+  /* Phase 16 contract: the ruler strip shows no scrollbar chrome.
+   * It still scrolls for long documents — the chrome just hides. */
+  scrollbar-width: none;
+}
+
+.rail-ruler::-webkit-scrollbar {
+  display: none;
+}
+
+.rail-ruler-page {
+  appearance: none;
+  background: transparent;
+  border: none;
+  color: var(--fg-strong);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 4px 2px;
+  min-width: 28px;
+  text-align: center;
+  cursor: pointer;
+  border-radius: 4px;
+  /* The hover/focus lift itself comes from the JS LiftMotionProps
+   * (useLiftAnimation, micro distance — token-driven); the CSS only
+   * transitions the theme-tuned colour wash. */
+  transition:
+    background-color var(--motion-duration-micro) var(--motion-ease-standard),
+    color var(--motion-duration-micro) var(--motion-ease-standard);
+}
+
+.rail-ruler-page:hover {
+  background: var(--glass-hover-bg);
+}
+
+.rail-ruler-page:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.rail-ruler-page.rail-ruler-current {
+  color: var(--accent, #2563eb);
+  font-weight: 700;
+  background: var(--accent-selected);
+}
+
+.rail-ruler-page.rail-ruler-current:hover {
+  background: var(--glass-selected-bg, var(--accent-selected));
+}
+
+/* The collapse / expand control in the rail header tab group. */
+.rail-tab-collapse {
+  margin-left: 4px;
+}
+
+/* Phase 16 — collapsed rail header: the strip is 48px wide, so the
+ * 44px header drops the view tabs (the JSX removes them) and centres
+ * the lone expand button; no capsule chrome around a single control. */
+.glass-sidebar-header.rail-header-ruler {
+  padding: 0 2px;
+  justify-content: center;
+  gap: 0;
+}
+
 @keyframes acrylic-sheen {
   0% { transform: translateX(-120%); }
   55%, 100% { transform: translateX(420%); }
@@ -8685,6 +8883,10 @@ rect.ann-highlight.ann-preview {
   height: auto;
   z-index: 0;
   background: transparent;
+  /* The scroller is full-bleed (inset: 0) here, so restate the base
+   * rule's right inset explicitly: the scrollbar stays off the window
+   * edge instead of riding the rounded-corner window border. */
+  padding-right: 8px;
 }
 
 :root[data-theme="frosted"] .toolbar,
@@ -9102,9 +9304,5 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .glass-sidebar-header,
 :root[data-theme="frosted"] .tools-palette-header {
-  background: transparent;
-}
-
-:root[data-theme="frosted"] .rail-tabs {
   background: transparent;
 }

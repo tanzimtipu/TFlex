@@ -3,7 +3,12 @@
 // The reference's second top surface: a full-width glass band of
 // control GROUPS in glass capsules, not a field of loose buttons:
 //
-//   [ Open (accent) ]  [ < 1/34 > ]  [ Save ]  [ - 372% + ]  [ tools... ]  [ Merge Split Sign More ]
+//   [ Open (accent) ]  [ < 1/34 > ]  [ Save ]  [ - 372% + ]  [ tools... ]  [ Merge Split Sign ]
+//
+// The Tools palette toggle no longer lives in this bar: it is the
+// floating badge on the page view's right edge (DocumentView's
+// .tools-badge, data-tools-badge). The bar only carries the working
+// tool controls.
 //
 // Each cluster is a GlassControlGroup capsule (role="group" +
 // aria-label). The component is a RESTRUCTURING of the Phase-13 icon
@@ -25,7 +30,6 @@ import {
   FolderOpen,
   GitMerge,
   Hand,
-  LayoutGrid,
   Layers,
   Minus,
   Minimize2,
@@ -85,11 +89,6 @@ export interface CommandBarProps {
    *  action) opens the flatten flow. */
   hasFormFields: boolean;
   onFlattenClick: () => void;
-  /** Phase 6 — Tools palette toggle. The trailing "More" capsule opens /
-   *  closes the right-side palette. Mirrors the Ctrl+Shift+P accelerator
-   *  the menu wires up. */
-  toolsPaletteOpen: boolean;
-  onToolsPaletteToggle: () => void;
   /** Phase 8 — Optimize / Audit Space. Both are disabled when no
    *  document is open. */
   onOptimize: () => void;
@@ -133,9 +132,9 @@ export interface CommandBarProps {
  *  inline icon at 20px to sit with its 13px label), up from the
  *  16px the Phase-13 toolbar shipped. Hit targets are unchanged:
  *  the 28px button inside the 36px capsule keeps its ~40px
- *  effective hit row. FIX 7 — the Tools palette toggle carries the
- *  "All tools" grid glyph (LayoutGrid) instead of the ambiguous
- *  three-dot ellipsis. */
+ *  effective hit row. The Tools palette toggle no longer ships here
+ *  (it was FIX 7's "All tools" LayoutGrid glyph): it lives on the
+ *  page view's right edge as the floating .tools-badge. */
 export function CommandBar(props: CommandBarProps) {
   const {
     onOpenFile,
@@ -161,8 +160,6 @@ export function CommandBar(props: CommandBarProps) {
     onSignClick,
     hasFormFields,
     onFlattenClick,
-    toolsPaletteOpen,
-    onToolsPaletteToggle,
     onOptimize,
     onAuditSpace,
     onRotateClockwise,
@@ -441,7 +438,10 @@ export function CommandBar(props: CommandBarProps) {
       </GlassControlGroup>
 
       {/* GROUP: Actions — [Merge] [Split] [Sign] [More]; the trailing
-       * capsule pins to the edge via .toolbar > .toolbar-group:last-child. */}
+       * capsule pins to the edge via .toolbar > .toolbar-group:last-child.
+        * The Tools palette toggle no longer lives in this bar: it is the
+        * floating badge on the page view's right edge (DocumentView's
+        * .tools-badge, data-tools-badge). */}
       <GlassControlGroup label="Document actions" className="toolbar-group commandbar-group-actions">
         <button
           type="button"
@@ -473,25 +473,6 @@ export function CommandBar(props: CommandBarProps) {
           data-icon="sign"
         >
           <FileSignature size={22} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className={toolsPaletteOpen ? 'tool-btn tool-btn-active' : 'tool-btn'}
-          onClick={onToolsPaletteToggle}
-          aria-pressed={toolsPaletteOpen}
-          title="All tools (Ctrl+Shift+P)"
-          aria-label="All tools"
-          data-tools-toggle
-        >
-          {/* Phase 14.2 FIX 7 — the Tools palette toggle carries the
-              "All tools" affordance: a grid glyph (LayoutGrid) that
-              reads as "the panel with every tool" instead of the
-              ambiguous three-dot ellipsis. The stable
-              data-tools-toggle attribute keeps every e2e selector
-              resolving (hundreds of specs target the attribute, not
-              the label). The PanelRightOpen glyph survives as the
-              palette-open state indicator in the ToolsPalette header. */}
-          <LayoutGrid size={22} aria-hidden />
         </button>
       </GlassControlGroup>
     </div>

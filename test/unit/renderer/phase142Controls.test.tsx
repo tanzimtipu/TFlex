@@ -14,8 +14,9 @@
 //           glyph 20px), annotation-bar glyphs at 24px (the top of the
 //           ladder, in 32px buttons). The SIDEBAR ladder (Pages rail +
 //           Tools palette, 22px) is pinned in glassSidebar.test.tsx.
-//   FIX 7 — the Tools palette toggle carries the "All tools" grid
-//           glyph, not the three-dot ellipsis.
+//   FIX 7 — the Tools palette toggle moved off the command bar: it is
+//           now the floating badge on the page view's right edge
+//           (DocumentView's .tools-badge); the bar must not host it.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { describe, expect, it, vi } from "vitest";
@@ -76,8 +77,6 @@ function mountBar(overrides: BarOverrides = {}): HTMLElement {
     onSignClick: NOOP,
     hasFormFields: false,
     onFlattenClick: NOOP,
-    toolsPaletteOpen: false,
-    onToolsPaletteToggle: NOOP,
     onOptimize: NOOP,
     onAuditSpace: NOOP,
     handActive: false,
@@ -194,33 +193,19 @@ describe("Phase 14.2 FIX 6 — the command-bar icon ladder is 20px minimum", () 
   });
 });
 
-describe("Phase 14.2 FIX 7 — the All tools toggle carries the grid glyph", () => {
-  it("renders LayoutGrid, never the three-dot ellipsis", () => {
-    const host = mountBar({ toolsPaletteOpen: true });
+describe("Phase 14.2 FIX 7 — the All tools toggle has moved off the command bar", () => {
+  // The "All tools" toggle left the command bar: it is now the floating
+  // badge on the page view's right edge (DocumentView's .tools-badge,
+  // data-tools-badge, keeping the stable data-tools-toggle e2e hook).
+  // The bar itself must not host the toggle — the badge coverage lives
+  // in the DocumentView-level tests (bugDEF094).
+  it("the command bar no longer renders the toggle (no data-tools-toggle / data-tools-badge)", () => {
+    const host = mountBar();
     try {
-      const toggle = host.querySelector<HTMLButtonElement>("[data-tools-toggle]");
-      expect(toggle).not.toBeNull();
-      expect(toggle?.getAttribute("aria-label")).toBe("All tools");
-      expect(toggle?.getAttribute("title")).toBe("All tools (Ctrl+Shift+P)");
-      expect(toggle?.getAttribute("aria-pressed")).toBe("true");
-      const icon = toggle?.querySelector("svg");
-      expect(icon?.getAttribute("class")).toContain("lucide-layout-grid");
+      expect(host.querySelector("[data-tools-toggle]")).toBeNull();
+      expect(host.querySelector("[data-tools-badge]")).toBeNull();
       // No ellipsis glyph anywhere in the command bar.
       expect(host.querySelector(".lucide-ellipsis")).toBeNull();
-    } finally {
-      unmount(host);
-    }
-  });
-
-  it("clicking the toggle still fires the palette callback (stable data-tools-toggle)", () => {
-    const onToggle = vi.fn();
-    const host = mountBar({ onToolsPaletteToggle: onToggle });
-    try {
-      const toggle = host.querySelector<HTMLButtonElement>("[data-tools-toggle]");
-      act((): void => {
-        toggle?.click();
-      });
-      expect(onToggle).toHaveBeenCalledTimes(1);
     } finally {
       unmount(host);
     }

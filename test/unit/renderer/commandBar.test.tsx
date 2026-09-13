@@ -11,8 +11,11 @@
 //      onOpenFile and keeps the primary treatment.
 //   3. The Phase-13 icon-only a11y contract survives the regrouping:
 //      no label spans, every button named by aria-label + title.
-//   4. The stable data-* hooks (data-tools-toggle, data-hand-toggle,
-//      data-toolbar-rotate-*, page input commit) keep resolving.
+//   4. The stable data-* hooks (data-hand-toggle, data-toolbar-rotate-*,
+//      page input commit) keep resolving. The Tools palette toggle
+//      (data-tools-toggle) no longer lives in the bar — it is the
+//      floating badge on the page view's right edge (DocumentView's
+//      .tools-badge, data-tools-badge); the bar must NOT render it.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { describe, expect, it, vi } from "vitest";
@@ -52,8 +55,6 @@ function mountBar(overrides: MountOverrides = {}): HTMLElement {
     onSignClick: NOOP,
     hasFormFields: false,
     onFlattenClick: NOOP,
-    toolsPaletteOpen: false,
-    onToolsPaletteToggle: NOOP,
     onOptimize: NOOP,
     onAuditSpace: NOOP,
     handActive: false,
@@ -168,10 +169,15 @@ describe("CommandBar — glass control groups", () => {
     }
   });
 
-  it("keeps the stable control hooks (data-tools-toggle / data-hand-toggle / rotate / save-as)", () => {
+  it("keeps the stable control hooks (data-hand-toggle / rotate / save-as); the tools toggle moved to the page-view badge", () => {
     const host = mountBar({ onRotateClockwise: NOOP, onRotateCounterClockwise: NOOP, onDeletePage: NOOP });
     try {
-      expect(host.querySelector("[data-tools-toggle]")).not.toBeNull();
+      // The Tools palette toggle left the command bar: it is now the
+      // floating badge on the page view's right edge (data-tools-badge
+      // in DocumentView, keeping the data-tools-toggle e2e hook). The
+      // bar itself must not render it.
+      expect(host.querySelector("[data-tools-toggle]")).toBeNull();
+      expect(host.querySelector("[data-tools-badge]")).toBeNull();
       expect(host.querySelector("[data-hand-toggle]")).not.toBeNull();
       expect(host.querySelector("[data-toolbar-rotate-cw]")).not.toBeNull();
       expect(host.querySelector("[data-toolbar-rotate-ccw]")).not.toBeNull();
@@ -212,17 +218,17 @@ describe("CommandBar — glass control groups", () => {
     }
   });
 
-  it("armed states reflect through aria-pressed + tool-btn-active (Sign / Hand / More)", () => {
-    const host = mountBar({ signToolActive: true, handActive: true, toolsPaletteOpen: true, onHandToggle: NOOP });
+  it("armed states reflect through aria-pressed + tool-btn-active (Sign / Hand)", () => {
+    const host = mountBar({ signToolActive: true, handActive: true, onHandToggle: NOOP });
     try {
       const sign = host.querySelector<HTMLButtonElement>("[data-icon='sign']");
       expect(sign?.classList.contains("tool-btn-active")).toBe(true);
       expect(sign?.getAttribute("aria-pressed")).toBe("true");
       const hand = host.querySelector<HTMLButtonElement>("[data-hand-toggle]");
       expect(hand?.getAttribute("data-hand-active")).toBe("true");
-      const more = host.querySelector<HTMLButtonElement>("[data-tools-toggle]");
-      expect(more?.classList.contains("tool-btn-active")).toBe(true);
-      expect(more?.getAttribute("aria-pressed")).toBe("true");
+      // The Tools palette toggle is no longer in the command bar — it
+      // is the floating badge in DocumentView (data-tools-badge).
+      expect(host.querySelector("[data-tools-toggle]")).toBeNull();
     } finally {
       unmount(host);
     }
