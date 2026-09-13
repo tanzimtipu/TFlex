@@ -837,3 +837,64 @@ describe('Phase 13 / DEF-073: saveAsLinearize validation', () => {
     }
   });
 });
+
+// Phase 16: pagesPanelCollapsed validation
+describe('Phase 16: pagesPanelCollapsed validation', () => {
+  it('preserves pagesPanelCollapsed: true', () => {
+    expect(normalizeSettings({ pagesPanelCollapsed: true }).pagesPanelCollapsed).toBe(true);
+  });
+
+  it('preserves pagesPanelCollapsed: false', () => {
+    expect(normalizeSettings({ pagesPanelCollapsed: false }).pagesPanelCollapsed).toBe(false);
+  });
+
+  it('rejects non-boolean pagesPanelCollapsed values (left undefined)', () => {
+    expect(normalizeSettings({ pagesPanelCollapsed: 'yes' }).pagesPanelCollapsed).toBeUndefined();
+    expect(normalizeSettings({ pagesPanelCollapsed: 'no' }).pagesPanelCollapsed).toBeUndefined();
+    expect(normalizeSettings({ pagesPanelCollapsed: 1 }).pagesPanelCollapsed).toBeUndefined();
+    expect(normalizeSettings({ pagesPanelCollapsed: 0 }).pagesPanelCollapsed).toBeUndefined();
+    expect(normalizeSettings({ pagesPanelCollapsed: null }).pagesPanelCollapsed).toBeUndefined();
+    expect(normalizeSettings({ pagesPanelCollapsed: undefined }).pagesPanelCollapsed).toBeUndefined();
+    expect(normalizeSettings({ pagesPanelCollapsed: ['true'] }).pagesPanelCollapsed).toBeUndefined();
+    expect(normalizeSettings({ pagesPanelCollapsed: { value: true } }).pagesPanelCollapsed).toBeUndefined();
+  });
+
+  it('does not set pagesPanelCollapsed when absent (consumer applies default false)', () => {
+    const result = normalizeSettings({});
+    expect(result.pagesPanelCollapsed).toBeUndefined();
+    expect('pagesPanelCollapsed' in result).toBe(false);
+  });
+
+  it('save/load round-trips pagesPanelCollapsed', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      pagesPanelCollapsed: true,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pagesPanelCollapsed).toBe(true);
+    }
+  });
+
+  it('invalid pagesPanelCollapsed on disk is dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      pagesPanelCollapsed: 'yes',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pagesPanelCollapsed).toBeUndefined();
+      expect('pagesPanelCollapsed' in result.value).toBe(false);
+      expect(result.value.theme).toBe('light');
+    }
+  });
+});

@@ -204,6 +204,13 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.saveAsLinearize = rawObj.saveAsLinearize;
   }
 
+  // Phase 16: preserve pagesPanelCollapsed if it is a real boolean.
+  // Non-boolean values are rejected; the consumer applies default `false`
+  // when the field is absent.
+  if (typeof rawObj.pagesPanelCollapsed === 'boolean') {
+    settings.pagesPanelCollapsed = rawObj.pagesPanelCollapsed;
+  }
+
   return settings;
 }
 

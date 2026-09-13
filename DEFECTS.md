@@ -1,3 +1,32 @@
+## DEF-210: Pen tool (freehand ink) throws engine error on every stroke — normalizeAnnotationPayload has no branch for points-only ink payloads
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: user (live usage)
+- Phase: 15 (live regression)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs).
+2. Open any PDF (e.g., report.pdf).
+3. Arm the Pen tool in the annotation toolbar.
+4. Draw a short stroke on page 1 and release.
+
+Expected: the stroke commits as an ink annotation and renders on the page.
+Actual: an engine-error toast appears with message "Annotation requires at least one rect" and no annotation is created.
+
+Actual (fixed behavior, verified 2026-09-13): no toast of any kind at the stroke checkpoint (the only toast in the entire run was the info toast "Saved a copy of ...report.pdf."). The stroke commits — exactly one engine annotation { kind:'ink', page:1, points:11, width:3, rects[0]: {x:214.20, y:237.60, w:122.40, h:95.04} } whose rects[0] numerically equals the points' min/max extent (<0.5pt), proving the derived-bbox branch runs. The committed `.ann-ink.ann-content` overlay path renders on page 1 (stroke #2563eb, 3pt); the annotations panel lists "Pen stroke / Page 1"; window.tflexDiagnostics().engineState.annotations shows the ink annotation. Disarm: Escape sets activeTool=null and clicking Highlight sets activeTool=highlight — the ink line stays visible through both. Round-trip: Save As -> close tab -> reopen; pdf-lib re-parse of the saved file finds exactly one /Ink annotation with /InkList of 11 points and /Rect [214.2000129474924, 459.36121409398015, 336.60003884247726, 554.400857961777] equal to the InkList min/max extent (PDF bottom-left space, y-flipped) — the fix's derivation persisted in the file; after reopen the engine state again holds 1 ink annotation with the same 11 points and the overlay re-renders (also visible in the page-1 thumbnail). Zero renderer pageerrors. Evidence run: e2e/retests/def_210_pen_retest.spec.cjs (1 passed, 10.6s). Allowlist half verified first-hand: test/unit/main/annotations.test.ts 100/100 pass.
+
+Screenshot: screenshots/def-210-stroke-committed.png (stroke renders, Pen armed, no toast), def-210-annotations-panel.png (panel row), def-210-disarm-escape.png (disarmed, line persists), def-210-reopened.png (saved file reopened with the stroke)
+
+Root cause: `normalizeAnnotationPayload` in `src/main/services/annotations.ts` checked geometry sources in order: `rect` → `at` → `rects[]` → `from`+`to` (arrow) → throw. The renderer's pen commit sends `{ kind: 'ink', points[], width }` with no rect field, so it fell into the throw branch before the `points` validation was ever reached. Additionally, `normalizeKind` silently cast unknown kinds (e.g. `'pen'`) through, which would corrupt the saved PDF.
+
+Fix: backend-dev — added an `else if` branch in `normalizeAnnotationPayload` that derives `/Rect` from the points' min/max extent when `points` is a non-empty array. Rewrote `normalizeKind` with an `ANN_KINDS` allowlist so unknown kinds are rejected at create with a typed `engine-error`.
+Files changed: `src/main/services/annotations.ts` (normalizeAnnotationPayload lines 229-253, normalizeKind lines 286-312, plus new ANN_KINDS set). Unit tests added: 5 new tests in `test/unit/main/annotations.test.ts`. Full suite: 3086/3086 pass.
+History:
+- user: reported live during usage
+- backend-dev: FIX-READY (2026-09-13; derived bbox from points extent; kind allowlist enforced)
+- qa: CLOSED (2026-09-13 retest on the rebuilt dev bundle, dist rebuilt with npm run build; e2e evidence e2e/retests/def_210_pen_retest.spec.cjs, screenshots above; note: the committed ink stroke renders full-opacity blue #2563eb — the "translucent" wording in the retest request describes the shipped look loosely, opacity applies to markup fills only, not a defect)
+
 ## DEF-209: A PDF with >1000 annotations on one page opens into a broken shell — the open must be refused with a clear limit error
 
 - Status: CLOSED
@@ -212,7 +241,7 @@ History:
 
 ## DEF-200: A pressed .btn stays at the hover lift — .btn:hover:not([disabled]) (0,3,0) outranks the .btn:active press rule (0,2,0) while the pointer is down, so the press transform never applies to the .btn family
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 15 (found during the DEF-196/197 retest, 2026-09-13)
@@ -233,10 +262,12 @@ Screenshot: none needed (computed-value evidence in the spec log; the pressed di
 History:
 - qa: opened (found during the DEF-196 retest regression sweep, 2026-09-13)
 - qa: re-verified OPEN (bug sweep 2026-09-12, dev build 1.13.0 from the current tree): e2e/bug_sweep_full.spec.cjs SWEEP-8 re-measured the flatten-dialog Cancel press — computed transform matrix(1, 0, 0, 1, 0, -1) (scale 1.0, hover lift, no press compression) while the pointer is held; the tool-btn control on the same build measures 0.97 + ty 1, so the .btn masking gap persists. Cascade confirmed in the built CSS: .btn:hover:not([disabled]) (0,3,0) at a later source position than both .btn:active rules (0,2,0).
+- frontend-dev: FIX-READY (2026-09-14; shared press-group `.btn:active` changed to `.btn:active:not([disabled])` at line 8088, specificity now (0,3,0) matching hover rule; press group is later in source so it wins. Verified live: held Cancel button measures `matrix(0.97, 0, 0, 0.97, 0, 1)` — scale 0.97 + translateY 1px. Build pass, verify pass, 3089/3089 unit tests pass. Screenshot: screenshots/def-200-verify.png)
+- qa: CLOSED (2026-09-13 retest on the rebuilt dev build, e2e/retests/def_200_retest.spec.cjs, passed). CSSOM guard on the loaded stylesheet: the guarded `.btn:active:not([disabled])` press rule is present, no unguarded `.btn:active` rule remains, and `--motion-scale-press` resolves to 0.97 on :root. Live real-pointer hold on the flatten dialog's Cancel (.btn): hover = matrix(1, 0, 0, 1, 0, -1) (the lift), pressed = matrix(0.97, 0, 0, 0.97, 0, 1) — scale 0.97 (--motion-scale-press) + the 1px press settle, exactly the expected value (pre-fix: matrix(1, 0, 0, 1, 0, -1), hover lift only). Regression control on the same build: the command-bar .tool-btn press (DEF-196 subject) still measures matrix(0.97, 0, 0, 0.97, 0, 1). Screenshot: screenshots/def-200-retest.png (pressed Cancel with the pressed wash, dialog open over form.pdf).
 
 ## DEF-199: Every theme application echo starts a second View Transition that skips the first — unhandled "Transition was skipped" rejection in the renderer console at boot and on every theme flip
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 15 (found during the DEF-195 retest)
@@ -257,6 +288,8 @@ Screenshot: none (console-level; the visible crossfade is unaffected).
 History:
 - qa: opened (found during the DEF-195 retest, 2026-09-13; reproduced in every launch of e2e/retests/def_195_196_197_retest.spec.cjs)
 - qa: re-verified OPEN (bug sweep 2026-09-12, dev build 1.13.0 from the current tree): e2e/bug_sweep_full.spec.cjs SWEEP-10 counted document.startViewTransition calls per user theme flip = 2 (echo defect still live) with 1 "Transition was skipped" pageerror in the same flip; SWEEP-8 measured the visible crossfade healthy at 61fps so the visual impact remains zero — console noise only.
+- frontend-dev: FIX-READY (2026-09-14; fix already present in working tree — `useAnimations.ts:useThemeTransition` has two-guard identity dedupe `lastAppliedRef` + `data-theme` attribute check at lines 441-448, and the VT promise is caught with `.finished.catch` at lines 478-481. `App.tsx` `settings.changed` handler also gates with `document.documentElement.getAttribute("data-theme") !== s.theme` at lines 742-744. Build pass, verify pass, 3089/3089 unit tests pass. Awaiting qa retest.)
+- qa: CLOSED (2026-09-14 retest on dev build 1.13.1 from current tree): `e2e/retests/def_195_196_197_retest.spec.cjs` all 4 tests pass — startViewTransition calls = 1 per theme flip (was 2), renderer errors (all) = `[]` for every test including boot and multiple flips, zero "Transition was skipped" pageerrors. DEF-199 filter in the spec now sees empty arrays before and after filtering. Unit suite 3090/3090 pass.)
 
 ## DEF-195: Theme crossfade drops to ~30fps during the 400ms flip (idle baseline 59-60fps in the same session) — "60fps maintained" fails
 
@@ -344,7 +377,7 @@ History:
 
 ## DEF-198: Mid-session prefers-reduced-motion changes are not picked up by the JS motion layer — springs keep running until app restart
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 15
@@ -366,6 +399,8 @@ Evidence run: e2e/anim_audit.spec.cjs A5 (popover samples: full 0.95 -> 1 scale 
 History:
 - qa: opened (Phase-15 animation-system audit, 2026-09-13)
 - qa: re-verified OPEN (bug sweep 2026-09-12, dev build 1.13.0 from the current tree): e2e/bug_sweep_full.spec.cjs SWEEP-10 emulated prefers-reduced-motion: reduce MID-SESSION and sampled the theme popover — CSS tokens collapse correctly (--motion-duration-standard 0s, crossfade 0s) but the popover still travels scale 0.05 (~0.95 -> 1) over ~240ms, i.e. the JS spring keeps running until restart, exactly as filed.
+- frontend-dev: FIX-READY (2026-09-14; fix already present in working tree — `useAnimations.ts` implements `useLiveReducedMotion()` with a live `matchMedia("(prefers-reduced-motion: reduce)")` subscription that flips React state on every OS `change` event (lines 101-118). Every animation hook in the file (usePopMotion, useSlideMotion, useBloomMotion, etc.) consumes `useLiveReducedMotion()` instead of motion/react's stale `useReducedMotion`. Build pass, verify pass, 3089/3089 unit tests pass. Existing unit test `test/unit/renderer/useAnimations.test.tsx` verifies boot-time reduced-motion; awaiting qa retest for mid-session flip.)
+- qa: CLOSED (2026-09-14 retest on dev build 1.13.1 from current tree): `e2e/anim_audit.spec.cjs` A5 passes — after emulating `prefers-reduced-motion: reduce` mid-session, popover enter frames show `transform: none` on every sampled frame (no scale travel), instant `opacity: 0 → 1` collapse (was ~0.95→1 scale spring over ~240ms). CSS tokens also collapse to `0s`. Empty tab close works under mid-session reduce. Unit suite 3090/3090 pass.)
 
 ## DEF-191: Phase-14.2 Fix 3 does not hold in the frosted theme — the Open button's ghost capsule still paints (translucent film + hairline + shadow extend ~17px past the blue button)
 
@@ -966,7 +1001,7 @@ History:
 
 ## DEF-172: Standard e2e sweeps targeting the INSTALLED app fail whenever a newer version is published - the OTA update prompt's full-screen backdrop intercepts every pointer event and the sweeps never dismiss it
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 16 (hit while regression-testing the DEF-171 fix; the trigger is the v1.9.0 release itself - the installed v1.8.0 pops the update prompt mid-run)
@@ -985,6 +1020,7 @@ Screenshot: screenshots/diag-installed-sheet-backdrop.png
 History:
 - qa: opened (found during the DEF-171 close regression run; 4 failures on sweep_annotations_sign against installed v1.8.0 root-caused to the update prompt, not to the v1.9.0 code changes)
 - qa: re-verified OPEN (bug sweep 2026-09-12): the qa-suite gap is unchanged — e2e/lib/helpers.cjs still has no update-prompt dismissal step, and the version gap that triggers the prompt still exists (installed app ProductVersion 1.12.1 vs the v1.13.0 repo/OTA channel), so any sweep run against the installed exe would hit the same full-screen sheet backdrop mid-run. Not re-triggered live in this sweep (standard suite runs the dev build); the mitigation options from the filing (dismissUpdatePrompt step in the sweeps, or matching the installed version) are still unimplemented.
+- qa: CLOSED (test-infrastructure fix, 2026-09-13). (1) FIX: e2e/lib/helpers.cjs gains dismissUpdatePrompt(window, timeoutMs=20000) - polls for the prompt ([data-update-prompt] / .sheet-update-prompt, falling back to a .sheet-backdrop whose .sheet-title is exactly "Update available"/"Restart to update"), dismisses via the dialog's Cancel/Later/OK button, then Escape, then the sheet X (fail-loud if it survives all three), and returns false without throwing when no prompt appears; it fast-exits via window.tflex.update.getStatus() once the state is up-to-date/error/unsupported so an up-to-date installed launch pays ~0ms instead of the full poll window. launchInstalled() now calls it after the .sample-card wait, so every installed-app launch is sweep-safe by construction. (2) The exact live repro (newer release published) is not triggerable today (installed v1.13.1 == channel latest; the public releases API returned 404), so the dismiss path was proven against the REAL installed app with the exact UpdatePromptDialog DOM mounted live (.sheet-backdrop + .sheet.sheet-update-prompt, "Update available" title, data-update-prompt-cancel with a working onClose): elementFromPoint at the viewport center landed inside the backdrop (the DEF-172 harm), dismissUpdatePrompt detected it in 1-2ms and dismissed it in 32-169ms, and a real .sample-card click then landed and opened the workspace (375-1091ms). (3) REGRESSION SPEC e2e/installed/def_172_update_prompt_dismiss.spec.cjs (installed config only): 5/5 green (A: no-prompt run exits in 5-11ms with no backdrop; B: dismiss + control-returned proof; the spec polls the interception proof because the app restores window geometry right after launch, which briefly skews elementFromPoint). (4) Callers updated: launchInstalled (wired in), e2e/installed/installed_verification.spec.cjs beforeEach, e2e/installed/installed-app-test.spec.cjs beforeAll; ota_bug9_live and the diag_installed_sheet_190 probe deliberately NOT updated (they exist to observe the prompt itself). Residual watch: when the next release ships, the first installed-app sweep is the real-prompt confirmation; if it still trips, reopen with those steps.
 
 ## DEF-170: A SECOND Extract in the same session orphans its result document - success toast, but no tab opens and the app refocuses the OLD extraction tab (still showing the old doc)
 

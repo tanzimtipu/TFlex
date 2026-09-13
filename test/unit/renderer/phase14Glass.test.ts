@@ -144,13 +144,15 @@ describe("Phase 14 — docked glass shell (the panels behave like light/dark)", 
 
   it("the frosted workspace carries NO gutters (the docked grid like light/dark)", () => {
     // The floating-shell wallpaper gutters are gone: .workspace keeps
-    // its base grid (220px rail column + 1fr) with no padding and no
-    // column gap, so the rail sits flush at the window edge and the
-    // columns touch — the same docked structure as light/dark.
+    // its base grid (rail column via the registered --tf-rail-w token —
+    // 220px at rest — + 1fr) with no padding and no column gap, so the
+    // rail sits flush at the window edge and the columns touch — the
+    // same docked structure as light/dark. Phase 16 turned the static
+    // 220px column into the token so the collapse/expand can tween it.
     const workspace = findRuleBody(css, ':root[data-theme="frosted"] .workspace');
     expect(workspace, "no frosted .workspace layout override").toBeNull();
     const base = findRuleBody(css, ".workspace");
-    expect(base ?? "").toMatch(/grid-template-columns:\s*220px\s+1fr/);
+    expect(base ?? "").toMatch(/grid-template-columns:\s*var\(--tf-rail-w\)\s+1fr/);
     expect(base ?? "").not.toMatch(/padding:/);
     expect(base ?? "").not.toMatch(/column-gap:/);
   });

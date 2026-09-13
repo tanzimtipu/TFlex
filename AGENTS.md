@@ -27,14 +27,17 @@ never grow the settings shape ad-hoc.
 
 - **orchestrator** (primary) — plans, delegates, reviews, gates phases. Does not write code.
 - **frontend-dev** — all renderer code (React UI, PDF.js display, interactions) and
-  renderer unit tests. Text-only model: it captures screenshots on request, but visual
-  judgment belongs to qa.
+  renderer unit tests. It can look at its own screenshots, but judgment of the product's
+  intended look belongs to qa.
 - **backend-dev** — all main-process code: the PDF engine (pdf-lib), file I/O, persistence,
   IPC services, packaging — and backend unit tests.
 - **qa** — end-to-end tests, test runs, screenshots, DEFECTS.md. Does not fix code.
-  Owns all visual judgment of screenshots.
+  Owns all visual judgment of screenshots. Runs on the local vision model, and the local
+  server is deliberately left loaded while it works — offloading it would kill the agent
+  running the suite.
 - **adversary** — tries to break the running app and its PDF handling; records findings in
-  ADVERSARIAL_REVIEW.md.
+  ADVERSARIAL_REVIEW.md. Runs on the local vision model, so it can judge the screenshots it
+  captures for itself.
 - **git-agent** — local git operations: initial commits, remote setup, tagging, pushes to
   origin, and verifying the OTA update release pipeline. Never edits product code,
   tests, or ledgers.
@@ -46,6 +49,11 @@ never grow the settings shape ad-hoc.
 
 Role boundaries are enforced by permissions and are absolute. Do not work around them with
 shell commands: if the edit tool would deny a file, do not modify that file any other way.
+
+**One developer at a time.** backend-dev and frontend-dev share a single working tree, so
+they are never given work simultaneously — two of them editing at once can overwrite each
+other or collide in `src/shared/`. The orchestrator runs one developer and, where the
+harness has the capacity, puts other roles alongside it rather than the second developer.
 
 Shared contracts live in `src/shared/` (typed IPC and domain types). Both developers may
 read them; only the orchestrator may approve changes to them mid-phase (a developer
@@ -83,6 +91,21 @@ proposes, the orchestrator amends the task spec).
   Prefer popular, well-supported libraries over custom code.
 - No network calls in product code. v1 is fully offline.
 
+## Test discipline — do not run the full suite by default
+
+`npm run test:unit` with no filter runs the entire suite. **Do not run it** unless the human
+explicitly asks, you are at a pre-release gate, or the task itself requires full regression.
+It is slow and burns the operator's budget for no extra signal on a small change.
+
+What to run instead, after every task:
+
+- `npm run typecheck` — fast, catches the obvious breakage.
+- Targeted unit tests for the files you changed, e.g. `npm run test:unit -- --grep "<pattern>"`.
+- A build check where the change could affect bundling: `npm run build:renderer` or `npm run build`.
+
+This applies to **frontend-dev, backend-dev, qa and the orchestrator**: the orchestrator must not
+ask a developer for a full suite run unless one of the two conditions above holds. The full suite
+belongs in CI, which runs `verify:full` on every push.
 ## DEFECTS.md — the defect ledger
 
 All defects live in `DEFECTS.md` at the repo root, one entry per defect, newest first.
@@ -169,16 +192,26 @@ impact line**. The page list the scout reads is maintained by hand in
 
 ## Model integrity — hard stop rule
 
-Every agent runs only on the model pinned in its `.opencode/agents/*.md` definition.
+Every agent runs only on the model pinned for its role. The pin has one source per
+harness, and in both it is the only source:
+
+- **OpenCode** — the `model:` field in that role's `.opencode/agents/*.md` definition.
+  The orchestrator's startup probe gate (its definition, "Model verification gate")
+  checks the whole roster before any real dispatch.
+- **DeepSeek Harness** — the baked `provider` / `model` in that role's dispatch row in
+  `agent.cordis.yml` of the `tflex-orchestrator` preset. There is no probe and no route
+  parameter: the harness attaches the row's route to every dispatch, so a sub-agent
+  cannot start on another model. Readiness there is only the local server
+  (`scripts/ninfer-model.ps1 status`); see `.dsh/README.md`.
+
 The orchestrator's model, `openrouter/moonshotai/kimi-k2.5`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
 other wrong model. If a sub-agent cannot load its pinned model (provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
 no planning, no real task dispatch, no work on the fallback model. The orchestrator
-reports the failure to the human operator and waits. The orchestrator's startup probe
-gate (see its definition, "Model verification gate") enforces this. Only the human may
-resolve a model failure (fix the account setting, or swap the `model:` field per the
-fallback table below) and restart the build.
+reports the failure to the human operator and waits. Only the human may resolve a model
+failure (fix the account setting, or swap the pin per the fallback table below) and
+restart the build.
 
 ## Model fallbacks
 
@@ -188,24 +221,32 @@ the human operator may swap that agent's `model:` field to the documented fallba
 
 - backend-dev: z-ai/glm-5.2 -> deepseek/deepseek-v4-pro
 - frontend-dev: ~deepseek/deepseek-v4-flash-latest -> deepseek/deepseek-v4-flash
-  (no vision needed — screenshot judgment belongs to qa, so any text-capable fallback
-  is valid; then minimax/minimax-m3:free, then minimax/minimax-m3 paid. Note: the
+  (a vision-capable fallback is preferable now that frontend-dev runs on a vision
+  model; then minimax/minimax-m3:free, then minimax/minimax-m3 paid. Note: the
   alias carries a leading tilde — the plain `deepseek/deepseek-v4-flash-latest` is NOT
   a valid OpenRouter ID)
 - qa: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview (native multimodal model used
   for screenshot inspection; gemini-3-flash-preview is the vision-capable fallback)
 - adversary: deepseek/deepseek-v4-flash -> google/gemini-3-flash-preview
 - git-agent: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview
-- backend-dev, frontend-dev (DeepSeek Harness only): local `local-ninfer` / qwen3.8-27b
-  served by NInfer on the RTX 4090 -> z-ai/glm-5.2 and z-ai/glm-5.3-flash respectively. The
-  local server must be loaded before dispatch and offloaded after; see `.dsh/README.md`.
+- backend-dev, frontend-dev, qa, adversary, git-agent (DeepSeek Harness only): local
+  `local-ninfer` / qwen3.8-27b served by NInfer on the RTX 4090, 264000-token context
+  with vision -> that role's cloud pin listed above (`z-ai/glm-5.2`,
+  `~deepseek/deepseek-v4-flash-latest`, `z-ai/glm-5.3-flash`, `deepseek/deepseek-v4-flash`,
+  `z-ai/glm-5.3-flash` respectively). The local server holds ~23.8 GiB of the 24.5 GiB
+  card and serves three decode slots, so up to three of those roles can work at once
+  (never both developers — see "One developer at a time"). qa runs on that same model,
+  so the server is deliberately NOT offloaded before an e2e run: measured, the packaged
+  app still starts, gets its GPU process and comes up with a window alongside the loaded
+  model. See `.dsh/README.md`.
 - feature-scout: z-ai/glm-5.3-flash -> deepseek/deepseek-v4-flash (DeepSeek Harness
   only — it has no `.opencode/agents/` definition; its pin lives in the
   `tflex-orchestrator` preset as the `dispatch_feature_scout` row)
 - orchestrator: no fallback — stop and ask the human.
 
-Note: frontend-dev and adversary intentionally share the `deepseek/deepseek-v4-flash`
-pin — both are text-only workloads.
+Note: in OpenCode, frontend-dev and adversary intentionally share the
+`deepseek/deepseek-v4-flash` pin — both were text-only workloads there. In the DeepSeek
+Harness both now run on the local vision model instead.
 
 Fallback to the orchestrator's model (`openrouter/moonshotai/kimi-k2.5`) is never
 permitted for any sub-agent. The table above is the only valid fallback source.
@@ -249,6 +290,12 @@ about the root cause, a different approach to try, or an amended task spec or sh
 contract if the spec is the problem — then re-dispatches the same sub-agent to
 continue. The orchestrator never takes over the fix and never writes code; the same
 agent keeps doing its own work.
+
+A sub-agent that stops because it ran out of context or token budget has **not** failed the
+task, and its work is not lost. Resume that session where the harness allows it (DeepSeek
+Harness: `send_message(id, "continue ...")` on the durable child), or hand it a one-line
+continuation naming where it stopped. Never restart the same task from scratch because a child
+filled its context, and never treat it as a reason for the orchestrator to take over.
 
 ## Cross-bubbling event rules (to prevent ghost/unclickable regressions)
 
@@ -382,16 +429,39 @@ When adding any animated component:
 
 ## Release pipeline (OTA)
 
+Release artifacts are published to the **separate public repo
+`tanzimtipu/tflex-releases`**; the source repo (`tanzimtipu/TFlex`) is private
+and must never contain release binaries, installers, or `latest.yml`. Only
+`release/` output lands in `tflex-releases`; everything else (source, tests,
+screenshots, fixtures, ledgers) stays in the private repo.
+
 A release is NOT complete when the tag is pushed. electron-updater only offers
-an update once a GitHub Release exists for the tag with these assets attached:
+an update once a GitHub Release exists in `tflex-releases` for the tag with
+these assets attached:
 `latest.yml`, `TFlex-Setup-<version>.exe` and its `.blockmap` (the portable
 build is attached for users but is not auto-updateable).
 
-- git-agent creates the GitHub Release with assets (`gh release create` /
-  `gh release upload`) after verifying artifact names in `release/` match the
-  tag; verification is the release URL listing all required assets.
-- The repo is private: publishing needs `GH_TOKEN` (build-time,
-  electron-builder) and the installed app needs `TFLEX_GH_TOKEN` (runtime
-  updater). Tokens live in `.env` (gitignored, never committed); only the
-  operator supplies the real token value.
-- A pushed tag without a GitHub Release plus assets is an incomplete release.
+- git-agent creates the GitHub Release **in `tanzimtipu/tflex-releases`** with
+  assets (`gh release create` / `gh release upload`) after verifying artifact
+  names in `release/` match the tag; verification is the release URL listing
+  all required assets.
+- `GH_TOKEN` (build-time, for `electron-builder --publish`) is needed to
+  upload release assets to `tanzimtipu/tflex-releases` via the GitHub API.
+- `TFLEX_GH_TOKEN` / `GH_TOKEN` (runtime, for the in-app updater) is **optional**
+  because `tflex-releases` is public — unauthenticated API calls can read the
+  release feed. The token is only for higher rate limits. Tokens live in `.env`
+  (gitignored, never committed); only the operator supplies the real token
+  value.
+- A pushed tag without a matching GitHub Release plus assets in
+  `tflex-releases` is an incomplete release.
+
+## Operator-authorised push
+
+Pushing commits, tags, or GitHub Releases to origin is gated on **explicit human
+permission**. The orchestrator must not dispatch git-agent to push — not for tags,
+not for version bumps, not for CI — unless the operator has said to push in the
+same session. This is a hard rule, not a convention. It exists because the
+repository is private, the OTA pipeline is wired to real GitHub Releases, and an
+unauthorised push to origin can ship a broken or partially-tested build to users
+who have auto-update enabled. When a phase gate is green, the orchestrator reports
+"ready to push" and waits for the operator's go/no-go before dispatching git-agent.

@@ -2346,3 +2346,115 @@ describe('createAnnotation input validation (ADV-024..027)', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pen tool (freehand ink): the renderer commits an ink payload with ONLY
+// `points` + `width` (no rect/rects/at/from/to) — see AnnotationOverlay's
+// ink commit. The engine must derive the /Rect bbox from the stroke extent.
+// ---------------------------------------------------------------------------
+
+describe('Pen tool: points-only ink payload (renderer wire shape)', () => {
+  const inkPoints = [
+    { x: 100, y: 100 },
+    { x: 150, y: 140 },
+    { x: 200, y: 90 },
+    { x: 260, y: 130 },
+  ];
+
+  function inkPayload(overrides?: Partial<CreateAnnotationPayload>): CreateAnnotationPayload {
+    return {
+      id: `ann-ink-${Math.random().toString(36).slice(2, 10)}`,
+      kind: 'ink',
+      page: 1,
+      color: 'red',
+      points: inkPoints,
+      width: 2,
+      ...overrides,
+    };
+  }
+
+  it('creates a points-only ink annotation (no rect/rects in payload)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-ink-a', path);
+
+    const r = await engine.createAnnotation('doc-ink-a', inkPayload());
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const ann = getAnns(r.value).find((a: any) => a.kind === 'ink') as any;
+      expect(ann).toBeDefined();
+      // bbox derived from the stroke extent: x 100..260, y 90..140
+      expect(ann.rects[0]).toEqual({ x: 100, y: 90, width: 160, height: 50 });
+      expect(ann.points.length).toBe(4);
+      expect(ann.width).toBe(2);
+    }
+  });
+
+  it('points-only ink survives save-load round-trip (InkList reparses)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-ink-b', path);
+
+    const r = await engine.createAnnotation('doc-ink-b', inkPayload());
+    expect(r.ok).toBe(true);
+
+    const savePath = join(dir, 'rt-ink.pdf');
+    const s = await engine.saveAs('doc-ink-b', savePath);
+    expect(s.ok).toBe(true);
+    await engine.loadDocument('doc-ink-b-reloaded', savePath);
+
+    const state = await engine.getState('doc-ink-b-reloaded');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const anns = getAnns(state.value);
+      expect(anns.length).toBe(1);
+      expect(anns[0].kind).toBe('ink');
+      const ann = anns[0] as any;
+      expect(ann.points.length).toBe(4);
+      expect(ann.width).toBe(2);
+      // bbox from the parsed /Rect (stroke extent, flipped back to top-left)
+      expect(ann.rects[0]).toEqual({ x: 100, y: 90, width: 160, height: 50 });
+    }
+  });
+
+  it("kind:'pen' is not in the AnnKind contract — rejected at create, not at save", async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-ink-c', path);
+
+    const r = await engine.createAnnotation('doc-ink-c', inkPayload({ kind: 'pen' as any }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/unknown annotation kind: pen/i);
+    }
+  });
+
+  it('ink with a single point is rejected (renderer MIN_INK_POINTS = 2)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-ink-d', path);
+
+    const r = await engine.createAnnotation('doc-ink-d', inkPayload({ points: [{ x: 10, y: 10 }] }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/at least two points/i);
+    }
+  });
+
+  it('ink with a NaN point is rejected', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-ink-e', path);
+
+    const r = await engine.createAnnotation('doc-ink-e', inkPayload({
+      points: [{ x: 10, y: 10 }, { x: Number.NaN, y: 20 }],
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/finite non-negative/i);
+    }
+  });
+});

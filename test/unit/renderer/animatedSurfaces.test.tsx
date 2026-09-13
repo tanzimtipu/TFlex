@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReactElement } from "react";
-import { prefersReducedMotion } from "motion-dom";
 import { AnimatedDialog } from "../../../src/renderer/components/AnimatedDialog";
 import { AnimatedPanel } from "../../../src/renderer/components/AnimatedPanel";
 import { AnimatedTab } from "../../../src/renderer/components/AnimatedTab";
@@ -66,7 +65,6 @@ async function flushExit(): Promise<void> {
 beforeEach((): void => {
   roots = [];
   containers = [];
-  prefersReducedMotion.current = false;
 });
 
 afterEach((): void => {

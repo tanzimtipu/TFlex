@@ -1,7 +1,10 @@
 // Shared driving helpers for the v1.7.11 deep sweep. Canonical under e2e/lib.
 // Only qa writes here. launchDev() (dev build) is the DEFAULT for every
 // standard/regression/sweep spec; launchInstalled() is ONLY for specs under
-// e2e/installed/, when the orchestrator explicitly asks for installed-app runs.
+// e2e/installed/, when the orchestrator explicitly asks for installed-app
+// runs. launchInstalled() auto-dismisses the OTA update prompt (DEF-172) via
+// dismissUpdatePrompt(); installed-app specs that launch through launchApp()
+// directly must call dismissUpdatePrompt(window) themselves.
 
 const path = require('node:path');
 const fs = require('node:fs');
@@ -30,8 +33,100 @@ async function launchInstalled(extraArgs = []) {
   const electronApp = await launchApp(extraArgs, null, INSTALLED);
   const window = await electronApp.firstWindow();
   await window.waitForSelector('.sample-card', { timeout: 30000 });
+  // DEF-172: when a release newer than the installed build is published, the
+  // startup autoUpdater check pops the modal UpdatePromptDialog within ~3s of
+  // launch and its full-screen .sheet-backdrop intercepts every pointer
+  // event. Dismiss it here so every installed-app launch is sweep-safe.
+  await dismissUpdatePrompt(window);
   currentWin = window;
   return { electronApp, window };
+}
+
+// ---------------------------------------------------------------------------
+// DEF-172 - dismiss the OTA update prompt on the INSTALLED app.
+//
+// When the installed build is older than the latest published release,
+// electron-updater's startup check makes the renderer open the modal
+// UpdatePromptDialog within ~3s of launch. Its full-screen .sheet-backdrop
+// (aria-modal, position:fixed inset:0) intercepts every pointer event, so the
+// first click of a sweep retry-loops for 30s and the spec dies.
+//
+// dismissUpdatePrompt polls for the prompt and dismisses it before the spec
+// touches anything: click the dialog's Cancel/Later/OK button first (a real
+// click, present for every prompt kind), then Escape, then the sheet's X
+// button. It fails loud if the prompt is seen but survives all three. No
+// prompt within the timeout window (installed build up to date / offline /
+// unsupported) is the normal path - it returns false without throwing. Once
+// closed, the host's prompt machine (updatePromptMachine.ts dismissedKey)
+// never re-opens the same prompt, so one dismissal per launch is enough.
+// ---------------------------------------------------------------------------
+const UPDATE_PROMPT_SELECTOR = '[data-update-prompt], .sheet-update-prompt';
+
+function updatePromptIsOpen(window) {
+  return window.evaluate(() => {
+    if (document.querySelector('[data-update-prompt], .sheet-update-prompt')) return true;
+    // Fallback for builds that predate the data attribute: a sheet-backdrop
+    // hosting the prompt's exact title strings. Matching .sheet-title by
+    // equality keeps AboutDialog's "Update available: vX" line from matching.
+    const bd = document.querySelector('.sheet-backdrop');
+    const title = bd ? bd.querySelector('.sheet-title') : null;
+    const t = title ? title.textContent.trim() : '';
+    return t === 'Update available' || t === 'Restart to update';
+  }).catch(() => false);
+}
+
+async function dismissUpdatePrompt(window, timeoutMs = 20000) {
+  const t0 = Date.now();
+  let detected = false;
+  while (Date.now() - t0 < timeoutMs) {
+    if (await updatePromptIsOpen(window)) {
+      detected = true;
+      break;
+    }
+    // Fast exit: once the update API settles on a state that never opens a
+    // prompt (up to date / error / unsupported), stop polling - the common
+    // up-to-date case then costs one getStatus round trip, not the full
+    // window. Missing API (very old build) just keeps polling the DOM.
+    const st = await window.evaluate(async () => {
+      try {
+        const api = window.tflex && window.tflex.update;
+        if (!api || typeof api.getStatus !== 'function') return null;
+        return await api.getStatus();
+      } catch (_) {
+        return null;
+      }
+    }).catch(() => null);
+    if (st && (st.kind === 'up-to-date' || st.kind === 'error' || st.kind === 'unsupported')) {
+      return false;
+    }
+    await window.waitForTimeout(500);
+  }
+  if (!detected) return false;
+
+  console.log(`[dismissUpdatePrompt] update prompt detected after ${Date.now() - t0}ms - dismissing`);
+  const prompt = window.locator(UPDATE_PROMPT_SELECTOR).first();
+  // 1. Cancel / Later / OK - the dialog's own dismiss button.
+  await window
+    .locator('[data-update-prompt-cancel], [data-update-prompt-later], [data-update-prompt-close]')
+    .first()
+    .click({ timeout: 3000 })
+    .catch(() => {});
+  await prompt.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+  // 2. Escape (UpdatePromptDialog closes on Escape).
+  if (await prompt.isVisible().catch(() => false)) {
+    await window.keyboard.press('Escape');
+    await prompt.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+  }
+  // 3. The sheet's X close button.
+  if (await prompt.isVisible().catch(() => false)) {
+    await window.locator('.sheet-update-prompt .sheet-close').first().click({ timeout: 3000 }).catch(() => {});
+    await prompt.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
+  }
+  if (await prompt.isVisible().catch(() => false)) {
+    throw new Error('dismissUpdatePrompt: update prompt still open after Cancel click, Escape and the sheet close button');
+  }
+  console.log(`[dismissUpdatePrompt] update prompt dismissed in ${Date.now() - t0}ms`);
+  return true;
 }
 
 async function openSample(window, electronApp, name) {
@@ -300,4 +395,4 @@ async function hardClose(electronApp, label = 'hardClose') {
   log(`hardClose done (force path) in ${Date.now() - t0}ms`);
 }
 
-module.exports = { launchDev, launchInstalled, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose };
+module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose };

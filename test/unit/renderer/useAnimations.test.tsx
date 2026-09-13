@@ -6,7 +6,6 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import type { ReactElement } from "react";
-import { prefersReducedMotion } from "motion-dom";
 import type { MotionVariantSet, ThemeTransitionApi } from "../../../src/renderer/hooks/useAnimations";
 import {
   shouldAnimateThemeTransition,
@@ -29,6 +28,51 @@ import {
   THEME_TRANSITION_CLASS,
   msToSeconds,
 } from "../../../src/renderer/hooks/motionTokens";
+
+/** DEF-198 — the hooks read the OS setting through
+ *  matchMedia("(prefers-reduced-motion: reduce)") and react to its
+ *  `change` events, so jsdom's never-matching built-in stub is no
+ *  longer a simulation channel. Tests install a controllable fake:
+ *  boot-time reduced motion sets `matches` BEFORE rendering; a
+ *  mid-session flip sets `matches` and dispatches `change` (the
+ *  exact DEF-198 regression). A fresh function identity per install
+ *  also forces the hook module to build a fresh subscription. */
+interface FakeMql {
+  matches: boolean;
+  media: string;
+  addEventListener(_type: string, listener: (ev: { matches: boolean }) => void): void;
+  removeEventListener(_type: string, listener: (ev: { matches: boolean }) => void): void;
+  /** Simulate the OS flipping the setting. */
+  dispatchChange(): void;
+}
+
+let fakeMql: FakeMql | null = null;
+
+function installReducedMotionStub(matches = false): FakeMql {
+  const listeners = new Set<(ev: { matches: boolean }) => void>();
+  const mql: FakeMql = {
+    matches,
+    media: "(prefers-reduced-motion: reduce)",
+    addEventListener: (_type: string, listener: (ev: { matches: boolean }) => void): void => {
+      listeners.add(listener);
+    },
+    removeEventListener: (_type: string, listener: (ev: { matches: boolean }) => void): void => {
+      listeners.delete(listener);
+    },
+    dispatchChange(): void {
+      const ev = { matches: mql.matches };
+      for (const listener of [...listeners]) listener(ev);
+    },
+  };
+  (window as unknown as { matchMedia: (query: string) => FakeMql }).matchMedia = (
+    query: string,
+  ): FakeMql => {
+    mql.media = query;
+    return mql;
+  };
+  fakeMql = mql;
+  return mql;
+}
 
 /** One probe component calls every variant hook so a single mount
  *  snapshots them all (hooks must run unconditionally — same contract
@@ -80,7 +124,7 @@ function renderProbe(): { root: Root; container: HTMLElement } {
 }
 
 beforeEach((): void => {
-  prefersReducedMotion.current = false;
+  installReducedMotionStub(false);
   document.documentElement.dataset.theme = "";
   document.documentElement.classList.remove(THEME_TRANSITION_CLASS);
 });
@@ -222,7 +266,7 @@ describe("variant hooks (full motion)", () => {
 
 describe("variant hooks under reduced motion", () => {
   it("collapse to opacity-only with zero duration and keep the exit guard", () => {
-    prefersReducedMotion.current = true;
+    installReducedMotionStub(true);
     renderProbe();
     const s = snap as HookSnapshot;
     for (const v of [
@@ -246,6 +290,39 @@ describe("variant hooks under reduced motion", () => {
     // keeps communicating hover state.
     expect(s.lift.hover.whileHover).toBeUndefined();
     expect(s.press.press.whileTap).toBeUndefined();
+  });
+});
+
+describe("live reduced motion (DEF-198)", () => {
+  it("picks up a mid-session OS flip on the SAME mounted hooks — no remount", () => {
+    // Boot with reduced motion OFF (beforeEach installs the false stub).
+    renderProbe();
+    const full = snap as HookSnapshot;
+    expect(full.bloom.initial).toMatchObject({ scale: MOTION_SCALE.enter });
+    expect(full.lift.hover.whileHover).toEqual({ y: -MOTION_TRANSLATE.micro });
+
+    // The user flips the OS "reduce motion" setting while the app runs:
+    // the MediaQueryList `change` event must reach every mounted hook.
+    act((): void => {
+      (fakeMql as FakeMql).matches = true;
+      (fakeMql as FakeMql).dispatchChange();
+    });
+    const collapsed = snap as HookSnapshot;
+    expect(collapsed.bloom.initial).toEqual({ opacity: 0 });
+    expect(collapsed.bloom.animate).toMatchObject({
+      transition: { duration: 0, ease: "linear" },
+    });
+    expect(collapsed.lift.hover.whileHover).toBeUndefined();
+    expect(collapsed.press.press.whileTap).toBeUndefined();
+
+    // Flipping the setting back restores full motion on the same hooks.
+    act((): void => {
+      (fakeMql as FakeMql).matches = false;
+      (fakeMql as FakeMql).dispatchChange();
+    });
+    const restored = snap as HookSnapshot;
+    expect(restored.bloom.initial).toMatchObject({ scale: MOTION_SCALE.enter });
+    expect(restored.lift.hover.whileHover).toEqual({ y: -MOTION_TRANSLATE.micro });
   });
 });
 
@@ -372,7 +449,7 @@ describe("useThemeTransition", () => {
 
   it("reduced motion applies the theme instantly, never crossfading", () => {
     vi.useFakeTimers();
-    prefersReducedMotion.current = true;
+    installReducedMotionStub(true);
     const api = mountedApi();
     act((): void => {
       api.setTheme("dark");
@@ -407,8 +484,92 @@ describe("useThemeTransition", () => {
     }
   });
 
+  it("dedupes a same-theme re-apply: the settings echo starts no second transition (DEF-199)", () => {
+    const startViewTransition = vi.fn((cb: () => void): void => {
+      cb();
+    });
+    (document as unknown as { startViewTransition?: unknown }).startViewTransition =
+      startViewTransition;
+    try {
+      const api = mountedApi();
+      act((): void => {
+        api.setTheme("dark"); // boot apply — instant, no API call
+      });
+      act((): void => {
+        api.setTheme("light"); // the real apply — one View Transition
+      });
+      act((): void => {
+        api.setTheme("light"); // settings.changed echo — deduped, no 2nd VT
+      });
+      expect(startViewTransition).toHaveBeenCalledTimes(1);
+      expect(document.documentElement.dataset.theme).toBe("light");
+      // The class-based machinery never engages on this path.
+      expect(document.documentElement.classList.contains(THEME_TRANSITION_CLASS)).toBe(false);
+    } finally {
+      delete (document as unknown as { startViewTransition?: unknown }).startViewTransition;
+    }
+  });
+
+  it("holds a skipped transition's .finished rejection so it cannot surface as a pageerror (DEF-199)", () => {
+    // Chromium REJECTS ViewTransition.finished with "Transition was
+    // skipped" when a newer transition takes over. The hook must
+    // attach a handled catch to .finished so that rejection never
+    // reaches the renderer's pageerror stream.
+    const finishedCatch = vi.fn();
+    const startViewTransition = vi.fn((cb: () => void) => {
+      cb();
+      return { finished: { catch: finishedCatch } };
+    });
+    (document as unknown as { startViewTransition?: unknown }).startViewTransition =
+      startViewTransition;
+    try {
+      const api = mountedApi();
+      act((): void => {
+        api.setTheme("dark"); // boot apply — instant, no API call
+      });
+      act((): void => {
+        api.setTheme("light"); // real apply — the hook catches .finished
+      });
+      expect(startViewTransition).toHaveBeenCalledTimes(1);
+      // Exactly one rejection handler was attached to .finished.
+      expect(finishedCatch).toHaveBeenCalledTimes(1);
+    } finally {
+      delete (document as unknown as { startViewTransition?: unknown }).startViewTransition;
+    }
+  });
+
+  it("skips a boot apply the data-theme preset already shows, and the first real flip still crossfades (DEF-199)", () => {
+    // index.html presets <html data-theme="frosted"> before any React
+    // code runs. When the persisted theme matches the preset, the boot
+    // apply must be a no-op via the attribute ground-truth guard (a
+    // fresh hook instance has no lastAppliedRef to consult) — and that
+    // skip must still spend the boot slot, so the user's first REAL
+    // flip runs the View Transition instead of an instant flip.
+    const startViewTransition = vi.fn((cb: () => void): void => {
+      cb();
+    });
+    (document as unknown as { startViewTransition?: unknown }).startViewTransition =
+      startViewTransition;
+    try {
+      document.documentElement.setAttribute("data-theme", "frosted"); // the index.html boot preset
+      const api = mountedApi();
+      act((): void => {
+        api.setTheme("frosted"); // boot apply — preset already shows it: no VT, no paint work
+      });
+      expect(startViewTransition).not.toHaveBeenCalled();
+      act((): void => {
+        api.setTheme("dark"); // first REAL flip — must still earn the crossfade
+      });
+      expect(startViewTransition).toHaveBeenCalledTimes(1);
+      expect(document.documentElement.dataset.theme).toBe("dark");
+      expect(document.documentElement.classList.contains(THEME_TRANSITION_CLASS)).toBe(false);
+    } finally {
+      delete (document as unknown as { startViewTransition?: unknown }).startViewTransition;
+    }
+  });
+
   it("never calls startViewTransition under reduced motion (DEF-195)", () => {
-    prefersReducedMotion.current = true;
+    installReducedMotionStub(true);
     const startViewTransition = vi.fn();
     (document as unknown as { startViewTransition?: unknown }).startViewTransition =
       startViewTransition;

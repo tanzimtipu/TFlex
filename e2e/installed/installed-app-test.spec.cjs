@@ -2,7 +2,7 @@
 // playwright.config.js testIgnore (e2e/installed/**). Run ONLY when the
 // orchestrator explicitly asks to test the installed app.
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, dismissUpdatePrompt } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -20,6 +20,10 @@ test.describe('Installed App Verification', () => {
     // Launch WITHOUT the sample path argument for now, we'll click it.
     electronApp = await launchApp([], null, installedPath);
     firstWindow = await electronApp.firstWindow();
+    await firstWindow.waitForLoadState('domcontentloaded');
+    // DEF-172: dismiss the OTA update prompt (full-screen .sheet-backdrop on
+    // a newer published release) before the first pointer event of the spec.
+    await dismissUpdatePrompt(firstWindow);
   });
 
   test.afterAll(async () => {

@@ -7,10 +7,14 @@ untouched and still works; this layer is additive and independently revertible.
 
 | Location | Change |
 | --- | --- |
-| `~/.dsh/.agent-presets/tflex-orchestrator/` | The preset. Orchestrator charter as the persona, plus five role dispatch tools. **Single source of truth for every role's persona and route.** |
+| `~/.dsh/.agent-presets/tflex-orchestrator/agent.cordis.yml` | The preset: six role dispatch tools, the guard row, and the persona. **Single source of truth for every role's persona and route.** |
+| `~/.dsh/.agent-presets/tflex-orchestrator/orchestrator-guard.vN.js` | Preset-local enforcement (ledgers, full suite, polling, resumability, model pre-flight). Bump `.vN` to change it. |
+| `~/.dsh/.agent-presets/tflex-orchestrator/orchestrator-charter.js` | Makes the orchestrator's rules a file-backed prompt variable, so charter edits are live. |
+| `TFlex/.dsh/ORCHESTRATOR-CHARTER.md` | The orchestrator's rules. Edit this freely — it takes effect on the next turn, no new session. |
 | `~/.dsh/settings.yaml` | `input: ['text', 'image']` declared on five multimodal catalogue entries that were silently text-only. |
 | `~/.dsh/settings.yaml` | A `subagent-model-selection` allow-list, kept in sync as a second line of defence. |
-| `TFlex/.dsh/` | This README and the ported model-selector skill. |
+| `TFlex/.dsh/` | This README, the charter, `roster-check.mjs` (charter roster vs baked routes) and `guard.selftest.mjs`, plus the ported model-selector skill. |
+| `TFlex/scripts/ninfer-model.ps1` | The local model's serving profile and lifecycle, with every measured number recorded. |
 | `TFlex/scripts/check-conventions.mjs`, `package.json` | The missing verification gate, and a `verify` script. |
 | `TFlex/.github/workflows/verify.yml` | CI running that gate on push and pull request. |
 
@@ -22,63 +26,143 @@ If you edit the provider's model list in the DSH UI, it may rewrite
 `llm-pi-ai.providers.openrouter-custom.models` and drop the `input:` declarations — re-check them
 after any provider edit.
 
-## Starting a build
+## Changing the orchestration — what is live and what needs a new session
 
-Start a **new** DSH session on the **TFlex Orchestrator** preset. It must be new: the harness
-snapshots delegation tool definitions when a session is composed.
+**The orchestrator's rules are a FILE, and editing it is live.** `~/.dsh/.agent-presets/
+tflex-orchestrator/orchestrator-charter.js` registers a prompt *variable* that reads
+`.dsh/ORCHESTRATOR-CHARTER.md`. Prompt variables are evaluated on every assembly, and assembly
+runs before every model step — so a charter edit reaches a session that is **already open**, on its
+next turn. No new session, no process restart, no `.vN` bump.
+
+Verified, not assumed: appending a marker line to the charter changed the assembled variable from
+15,891 to 15,913 characters and moved the tail to the marker, in a running process, with no new
+session.
+
+Everything else, by what it changes:
+
+| What you edit | Reaches an open session? | Why |
+| --- | --- | --- |
+| `.dsh/ORCHESTRATOR-CHARTER.md` | **yes, next turn** | file-backed prompt variable, re-read per assembly |
+| `AGENTS.md` | **yes, next turn** | `agent-instructions` re-reads workspace instruction files |
+| Host composition, `settings.yaml` | **yes** | host rows hot-reload; the model route is read per request |
+| `agent.cordis.yml` **rows** — routes, `backgroundMode`, `toolFilter`, a role's persona, which tools exist | **no — new session** | these become the agent's composition when it is composed |
+| `orchestrator-guard.vN.js` logic | **no — bump `.vN`** | the Loader imports it by URL and Node caches an ESM module for the process lifetime |
+
+The row case is a harness invariant, not a limitation of this preset: `dsh-scope` keys are
+**identity-compared** (`WeakMap`, and `ensureStanding` builds a fresh `{ agentPreset }` literal per
+generation), so an agent already bound to one standing generation never sees a later one. Prompt
+text is live; the tool table is not.
+
+So: **start a new session only when you change a ROW.** Starting one per rules tweak was never
+necessary, and the charter is where rules belong. Nothing here ever needs killing the `dsh web`
+server — if a change looks inert, the cause is an open session or a stale `.vN`, not the process.
 
 ## The roster
 
-Six roles, one dispatch tool each. Two run locally; the rest use `openrouter-custom`.
+Six roles, one dispatch tool each. Five run locally; `feature-scout` alone uses `openrouter-custom`.
 
 | Role | Tool | Route | Sees images |
 | --- | --- | --- | --- |
 | backend-dev | `dispatch_backend_dev` | **local** `local-ninfer` / `qwen3.8-27b` | yes |
 | frontend-dev | `dispatch_frontend_dev` | **local** `local-ninfer` / `qwen3.8-27b` | yes |
-| qa | `dispatch_qa` | `openrouter-custom` / `z-ai/glm-5.3-flash` | yes |
-| adversary | `dispatch_adversary` | `deepseek/deepseek-v4-flash` | no |
-| git-agent | `dispatch_git_agent` | `z-ai/glm-5.3-flash` | yes |
-| feature-scout | `dispatch_feature_scout` | `z-ai/glm-5.3-flash` | yes — **read-only, no write/edit/pwsh** |
+| adversary | `dispatch_adversary` | **local** `local-ninfer` / `qwen3.8-27b` | yes |
+| git-agent | `dispatch_git_agent` | **local** `local-ninfer` / `qwen3.8-27b` | yes |
+| qa | `dispatch_qa` | **local** `local-ninfer` / `qwen3.8-27b` | yes |
+| feature-scout | `dispatch_feature_scout` | `openrouter-custom` / `z-ai/glm-5.3-flash` | yes — **read-only, no write/edit/pwsh** |
 
 The orchestrator runs on `moonshotai/kimi-k2.5` and is deliberately absent from the allow-list,
 so no child can be pinned to it.
 
 ## The local model
 
-`backend-dev` and `frontend-dev` run on Qwen3.8-27B served locally by NInfer on the RTX 4090, at
-`http://127.0.0.1:8080/v1`. The checks that cleared it for agent use:
+`backend-dev`, `frontend-dev`, `qa`, `adversary` and `git-agent` run on Qwen3.8-27B served locally
+by NInfer on the RTX 4090, at `http://127.0.0.1:8080/v1`. The checks that cleared it for agent use:
 
 - `finish_reason: tool_calls` with a correctly named function and well-formed JSON arguments;
 - a tool result fed back producing a correct final answer - both halves of the agent loop;
-- reasoning returned in a separate `reasoning_content` field, ~148 tok/s decode with MTP.
+- reasoning returned in a separate `reasoning_content` field;
+- vision: an image sent through the OpenAI chat shape is described correctly (measured 1.4 s for
+  a solid-colour test image, answered "Red").
 
-**Context is 128k, not the engine's maximum.** The engine will take the whole card if asked:
-measured free-after-startup is 2.35 GiB at 64k, 1.06 GiB at 128k, 124 MiB at 192k, and zero at
-224k and above. 128k is the largest value that still leaves the desktop room. If you change it,
-change `--max-context`/`--kv-capacity` in `scripts/ninfer-model.ps1` **and** `contextWindow` in
-`settings.yaml` together - they must agree, or DSH compacts far too early (declared too low) or
-overruns the server (declared too high).
+**Context is 264000 tokens, and the KV dtype is what makes that fit.** Weights are 16.95 GiB and
+the Windows desktop already holds ~2.2 GiB of the 24.0 GiB card, so the pool has to fit in what
+is left. Measured engine reservations at 264000 tokens, vision on, **at 2 slots** (the dtype
+choice; the slot count is a separate trade in the table further down):
+
+| KV dtype | Engine needs | Fits in 5.55 GiB? |
+| --- | --- | --- |
+| `rk4v4-e8` (4-bit K/V) | 6.71 GiB | no |
+| `rk2v4-e8` (2-bit K, 4-bit V) | 5.09 GiB | yes, 476 MiB slack |
+
+`rk2v4-e8` is therefore the only layout that reaches 264k with vision at all. The cost is K-side
+precision, so very long retrieval is less reliable than at 4-bit (`rk4v4-e8` measures 98.7% cosine
+against FP32). Short and mid context verified accurate; retrieval beyond ~100k is unverified.
+
+**Do not add `--wddm-evictable-budget` at this context length.** It raises the engine's budget
+from 5.55 GiB to 6.54 GiB, which makes the 4-bit layout "fit" - and it is a trap. The flag budgets
+against *total* VRAM while ignoring the desktop's 2.2 GiB, so the engine over-commits and WDDM
+evicts the pool to system RAM. Measured with it: decode fell to 0.7 tok/s, ttft 2986 ms, 164 s for
+120 tokens. Without it, at `rk2v4-e8`: **103.6 tok/s** single-stream decode, 114 ms ttft, ~1830
+tok/s prefill (a 14458-token prompt in 7.9 s) on a fresh server, settling to 45-63 tok/s on warm
+sequential requests.
+
+If you change the context, change `--max-context`/`--kv-capacity` in `scripts/ninfer-model.ps1`
+**and** `contextWindow` in `settings.yaml` together - they must agree, or DSH compacts far too
+early (declared too low) or overruns the server (declared too high). `/v1/models` reports the
+server's own `context_window` and `max_model_len`, so the two can be diffed directly.
 
 One constraint shapes the whole arrangement.
 
-**The model owns the GPU.** Loaded, it holds about 23 GiB of the 24.5 GiB card. That is why the
-orchestrator loads it before dispatching a local role and offloads it when that work is finished.
+**The model owns the GPU.** Loaded, it holds about 23.8 GiB of the 24.5 GiB card, leaving ~250
+MiB free. That is why the orchestrator loads it before dispatching a local role and offloads it
+when that work is finished.
 
-**qa does not use it.** qa stays on a cloud route (`openrouter-custom` / `z-ai/glm-5.3-flash`). It
-is the one role that drives the real Electron app under Playwright, so keeping it off the local
-model means the e2e suite never depends on the server being up or on a free decode slot.
+**feature-scout alone is off the local model.** It stays on `openrouter-custom` /
+`z-ai/glm-5.3-flash`.
 
-**The app and the model can still share the card.** Measured, not assumed: with the model loaded
-the card holds 22,980 MiB of 24,564, and launching the app on top adds only about 205 MiB,
-leaving 1,380 MiB free; the window opens and renders normally. So stop the model before an e2e
-run only to free the card generally, not because the app needs the room.
+**qa runs ON the local model, and the e2e suite shares the card with it.** This replaces the
+earlier "stop the model before an e2e run" rule, which was written when qa was cloud and the
+context was 131072 tokens. qa now *is* a local child, so offloading the model to free the GPU
+would kill the agent running the suite. Measured on this machine at the 264000-token profile with
+only ~240 MiB free: the packaged app still starts, spawns its `gpu-process` and renderer, and
+comes up with a titled window, while `ninfer-serve.exe` stays resident and keeps serving. Both
+appear simultaneously in `nvidia-smi` as GPU clients. So the model is left loaded for qa.
 
-**Concurrency is 3, and that matters.** The server runs `--max-concurrency 3` with
-`--pending-timeout-ms 300000`. With a single decode slot and the default 30-second pending
-timeout, concurrent role dispatches queued past the limit and the server rejected them
-("expired while waiting for admission"), which arrives in DSH as a dispatch error with zero
-content. Three slots cover the three local roles running together; measured ttft is under half a
-second and aggregate decode throughput is higher, because the engine batches.
+The honest limit on that measurement: it proves a **launch and a window**, not a full Playwright
+run. PDF canvas rendering, screenshots and long renderer sessions are heavier than the idle window
+I measured. If an e2e run does misbehave on the GPU, treat it as a finding and report it with the
+evidence - do not work around it by offloading the model mid-suite, because that kills qa's own
+inference. The pressure valve, if it comes to that, is the context length: it scales every slot's
+pool proportionally, so it is the one lever that buys back real memory.
+
+**Concurrency is 3, and slots are expensive because the KV pool is per slot.** The engine reported
+`pages=4125` at concurrency 1, `8250` at 2 and `12375` at 3 - each decode slot gets its own
+full-capacity pool, which is why the third slot had to be bought from the vision scratchpad.
+Measured at `--max-context 264000`, `rk2v4-e8`, `--vision`:
+
+| Slots | `--vision-max-tokens` | Engine needs | Result |
+| --- | --- | --- | --- |
+| 2 | 8192 | 5.09 GiB | fits, 476 MiB slack |
+| 3 | 8192 | 5.63 GiB | **refused, 81 MiB short** |
+| 3 | 2048 | 5.26 GiB | fits, 304 MiB slack (current) |
+| 4 | any | ~5.8 GiB | cannot fit |
+
+Three is therefore the ceiling at 264000 tokens. Verified with three concurrent requests:
+`avg_decode_batch=3.00` and all three completed. The cost of using all three is throughput - each
+stream falls to ~16 tok/s (a lone request gets 45-103 tok/s) and speculative acceptance drops from
+~60% to ~31%. Three slower streams still beat three strictly sequential ones, which is the point.
+
+`--vision-max-tokens 2048` is the price of the third slot, and it does **not** fail on a large
+image: the encoder downsamples to the budget. A 1280x800 and a 2560x1440 screenshot both came back
+at exactly 2049 prompt tokens, and both were transcribed correctly. What it costs is fine detail -
+treat a very small UI label as unreadable. The alternative, if that detail is ever needed, is 3
+slots at `--max-context 250048` with the full 8192 scratchpad; that also starts, but with only
+107 MiB of slack, so one more desktop allocation could stop the server from starting at all.
+
+`--pending-timeout-ms 300000` is what makes queueing safe. With the default 30-second pending
+timeout, work queued behind the slots was rejected ("expired while waiting for admission"), which
+arrives in DSH as a dispatch error with zero content. A five-minute timeout means a queued request
+waits instead of failing.
 Control it with:
 
 ```powershell
@@ -88,8 +172,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ninfer-model.ps1 sto
 ```
 
 `-ExecutionPolicy Bypass` is mandatory here: the machine's execution policy is Undefined at every
-scope, which means Restricted, so a `.ps1` cannot be invoked directly. `start` is idempotent and
-blocks until the endpoint answers. Server logs land in `dsh-server.out.log` and
+scope, which means Restricted, so a `.ps1` cannot be invoked directly. `start` is idempotent,
+blocks until the endpoint answers, and then serves one throwaway request, because the HTTP
+listener answers several seconds before the engine finishes warming (a first request measured 8.0
+tok/s against 45-63 tok/s once warm). Server logs land in `dsh-server.out.log` and
 `dsh-server.err.log` beside the model.
 
 **The provider needs an `apiKeyEnv`.** A custom (non-catalogue) provider always demands a
@@ -97,12 +183,12 @@ credential even when the server ignores auth, so `local-ninfer` declares
 `apiKeyEnv: NINFER_API_KEY` and the credential store holds a dummy value. Omit it and every call
 fails with `No API key for provider` *before* any HTTP request is made - the server log stays
 empty, and that empty log is the tell for this particular fault.
-Cloud fallbacks for the two local roles, one edit away: `z-ai/glm-5.2` (backend-dev) and
-`z-ai/glm-5.3-flash` (frontend-dev). Only the human repins them.
+Cloud fallbacks for the five local roles, one edit away: `z-ai/glm-5.2` (backend-dev),
+`~deepseek/deepseek-v4-flash-latest` (frontend-dev), `z-ai/glm-5.3-flash` (qa and git-agent)
+and `deepseek/deepseek-v4-flash` (adversary). Only the human repins them.
 Documented fallbacks, held in the allow-list for repinning: `deepseek/deepseek-v4-pro`
 (backend-dev), `minimax/minimax-m3` (frontend-dev, vision-capable),
-`google/gemini-3-flash-preview` (qa, vision-capable), `deepseek/deepseek-v4-flash` (adversary,
-and feature-scout).
+`google/gemini-3-flash-preview` (qa, vision-capable), `deepseek/deepseek-v4-flash` (feature-scout).
 
 ## How dispatch works
 
@@ -119,37 +205,55 @@ cost the orchestrator nothing, cannot be mis-pasted, and cannot be truncated on 
 
 **Every dispatch is announced.** The orchestrator prints the role and its route before each
 dispatch (`-> backend-dev  [local-ninfer / qwen3.8-27b]  fix DEF-200 cascade order`) and names the
-role again when it reports the result. This has to come from the persona rather than the tool: a
-role's route is baked into its row and is not readable from the tool schema. The roster the
-persona reads lives in the same preset file as those rows, so the two can be diffed - and the
-persona text is checked against the baked routes.
+role again when it reports the result. This has to come from the charter rather than the tool: a
+role's route is baked into its row and is not readable from the tool schema. The roster is therefore
+a second copy of the truth, and nothing in the harness compares it — so `.dsh/roster-check.mjs`
+does: it parses the roster out of the charter and the `agentOptions` out of every dispatch row and
+fails on any difference. Run it after touching either file. It matters because the two are edited
+differently (the charter is live, the rows need a new session), so they can drift silently — and a
+wrong route in an announcement is a lie about which model did the work.
 **Roles do not fan out.** Each row's `toolFilter.deny` removes the five sibling dispatch tools,
-`subagent_fork` and `workflow` from the child, with the filter applied in that child's creation
-window. The orchestrator is the single fan-out point, which keeps the token graph bounded.
+`subagent_fork`, `workflow` and the three child-control tools from the child, with the filter
+applied in that child's creation window. The orchestrator is the single fan-out point, which
+keeps the token graph bounded.
 
-**A dispatch blocks and returns its result.** Every delegation row is `backgroundMode: one-shot`,
-so an omitted `run_in_background` waits for the child and returns its answer as the call's own
-result. This is a deliberate correction: the earlier `continuable` mode made calls return a child
-id immediately, and the orchestrator — which has no blocking primitive at that point and a
-`list_agents` tool that always answers — filled the gap by polling it in a loop.
+**How a dispatch returns depends on the role.** `feature-scout` is `backgroundMode: one-shot`, so
+an omitted `run_in_background` waits for the child and returns its answer as the call's own result.
+**Every local role - backend-dev, frontend-dev, qa, adversary, git-agent - is `continuable`**: the
+call returns a durable subagent id at once and the runtime sends the orchestrator a notice when that
+run settles. Two things follow, and they are the reason for the split:
 
-Three things were removed rather than documented around:
+1. **A child that runs out of room can be resumed.** Its session is durable, so a context or token
+   exhaustion is recoverable with `send_message(id, "continue ...")` instead of throwing away
+   everything the child had read. That matters most for the source-reading roles, whose context is
+   the most expensive on the team to lose, and for qa, which loses a whole e2e run.
+2. **`list_agents` does not exist here, so nothing can poll.** The polling loop that forced the
+   earlier rollback came from that tool always answering. `tool-subagent-control` registers only
+   `send_message` and `interrupt_agent` — its `list-agents.ts` module is a separate plugin that no
+   row names. So there is no status tool to poll *at all*, which is stronger than denying one. The
+   guard still refuses the name if it ever appears (a future row could mount that plugin), but today
+   the check is dormant insurance rather than the thing keeping the loop away.
 
-- **`tool-subagent-control` is gone.** `list_agents`, `send_message` and `interrupt_agent` only
-  address *continuable* children. With none in the composition they were three permanently
-  callable tools that always answer and never advance the work — the attractor itself. Removing
-  them takes `list_agents` out of the tool catalog entirely, so the loop is not merely discouraged,
-  it is unavailable. `interrupt` capability is retained through `job_kill`.
-- **`continuable` mode is gone**, which also removes the harness-injected prompt section that told
-  the orchestrator to "continue useful work while they run" and wait for a settlement notice.
-- **`subagent_fork` is now one-shot too**, so a fork child is something you get an answer from, not
-  something to wait on.
+**Which roles can actually be resumed.** Every local role. `send_message` addresses *continuable*
+children and nothing else, so a dispatch to `feature-scout` - the one remaining one-shot row - ends
+that child's run with no durable id to continue, and recovering there means a fresh dispatch with a
+hand-off spec. Resuming does not restart or kill anything either: `send_message` steers a working
+child at its nearest step boundary, and on an idle child it appends a turn. `interrupt_agent` is the
+only tool that stops a turn, and the persona reserves it for a child that has genuinely gone off the
+rails.
 
-Concurrency is preserved for the case that needs it. `subagent` is classified *exclusive* by the
-harness, so two dispatches in one message run sequentially — but issuing both in one message with
-`run_in_background: true` starts both children immediately, and each is then collected with a
-single `job_output(wait: true)` (a wait blocks, capped at 10 minutes). That is the documented
-parallel pattern in the orchestrator charter, and it needs no polling.
+**Up to three local agents run at once.** The server has three decode slots, and the persona now
+says so explicitly (the harness injects a "these run in the background by default, start independent
+delegations together" section for every continuable row, which for these rows is now accurate rather
+than something to override). Two rules bound it:
+
+- **backend-dev and frontend-dev are never in flight together.** They share one working tree, so two
+  of them editing at once can overwrite each other or collide in `src/shared/`. One developer at a
+  time; the other slots go to other roles. This is the operator's standing rule and it is
+  deliberately advisory in the brief rather than enforced by the guard - the guard cannot see which
+  children are still in flight.
+- **One task per role.** Three things to do means three dispatches to three different roles, sent
+  together in one message if you like; never a queue behind one role.
 
 ## Feature scouting
 
@@ -223,6 +327,65 @@ it pays no agent-turn cost, and a push is exactly the pre-release point that the
 directive reserves the full suite for. The workflow is inert if Actions is not enabled for the
 repo, and the e2e suite stays out of it: it drives a real Electron app and needs a display, which
 makes it a poor fit for every push. qa owns running it.
+
+## Enforcement — what the harness refuses on the orchestrator's behalf
+
+Five of the orchestrator's rules are not prose any more: the preset itself refuses the call. The
+row is `orchestrator-guard` → `orchestrator-guard.v7.js` in the preset directory (a
+preset-relative module, so the preset ships its own policy code, not a package). It registers a
+`tools/pre-execute` listener and checks `ctx.agents.roots()` first, so **every rule applies to
+the orchestrator only** — backend-dev, frontend-dev, qa, adversary, git-agent and feature-scout
+are sub-agents, are not roots, and are untouched.
+
+| Rule | What is refused |
+| --- | --- |
+| Ledgers only | `write`/`edit` on anything but DEFECTS.md, ADVERSARIAL_REVIEW.md, REQUIREMENTS.md, docs/FEATURE-BACKLOG.md, AGENTS_NOTES.md |
+| No full suite | a bare `npm run test:unit`, `verify:full`, `test:e2e` or `playwright test`. A filtered run (`-- --grep`, a spec path) is allowed |
+| No polling | `list_agents` — **dormant**: that tool is not registered in this deployment at all (`tool-subagent-control` registers only `send_message` and `interrupt_agent`), so there is nothing to poll. The refusal is insurance in case a future row mounts the `list-agents` plugin |
+| Resumable roles | `run_in_background: false` on any local dispatch (backend-dev, frontend-dev, qa, adversary, git-agent) — the foreground path is a one-shot run, so the child gets no durable id and `send_message` could never resume it. Omit the parameter instead |
+| Model before dispatch | a backend-dev, frontend-dev, qa, adversary or git-agent dispatch while nothing answers on `http://127.0.0.1:8080/v1/models` — the guard runs `scripts/ninfer-model.ps1 start` first and refuses the dispatch only if the server still will not come up |
+
+The guard also does one thing that is **not** a denial: on the first tool call of each new TURN it
+ensures the local model is loaded, so a cold server warms while the orchestrator plans instead of
+stalling its first dispatch. Turn-scoped, not per-call — per-call would fight the orchestrator's own
+`stop` at the end of a run (the stop call would load the model, and the next call would undo the
+unload). A load failure there is only logged; the per-dispatch pre-flight is the gate that actually
+protects a dispatch, and a `ninfer-model.ps1` lifecycle command never triggers a load at all.
+
+Every branch **fails open**: if the caller cannot be identified, the `agents` service is missing,
+or the sandbox denies the probe, the call proceeds. A fault in the guard can never wedge the
+build. Setting `TFLEX_GUARD=off` in the harness process environment disables all five checks.
+Each decision is appended to `guard.log` beside the preset, which is the only way to see them
+from outside a session. `.dsh/guard.selftest.mjs` drives the real module with a fake context and
+asserts all 44 decisions — run `node .dsh/guard.selftest.mjs` after editing the guard.
+
+**A `toolFilter` name must be a REGISTERED global tool, and no mount check will tell you.**
+`tools.restrict()` rejects a deny/allow name it does not know — but that call happens in the child's
+creation window, so a bad name fails at the first dispatch, not at session start or mount. This bit
+us: seven rows denied `list_agents`, which is not registered, and the first dispatch died with
+`tools.restrict() names unknown global tool "list_agents"`. Mount validation had passed, because it
+never composes a child.
+
+Before changing a `toolFilter`, confirm every name appears in the tool list the runtime reports (an
+unknown name produces exactly that error, and the error helpfully lists the valid ones), or in the
+preset's own rows for the `dispatch_*` names. The `dispatch_*` tools are registered by this preset,
+so they are valid; anything from a package must actually be registered by a row you mount.
+
+**A full slot set queues; it does not fail.** With three slots and a 16-deep pending queue
+(`--pending-timeout-ms 300000`), a fourth and fifth local dispatch wait for a slot rather than being
+rejected. Measured: five requests onto three slots all completed, the excess simply showing a longer
+time to first token (12–18s while three agents were mid-turn). So a local dispatch that takes a
+while is the system working; a real failure announces itself explicitly.
+
+Note what a guard can and cannot do. It cannot make the orchestrator *triage well* — only the
+brief and the model do that. It removes the five drift modes that cost the most: editing source
+instead of dispatching, burning a turn on a full suite, dispatching into a stopped server, and
+polling a child that will report itself.
+
+**Editing the guard needs the `.vN` suffix bumped.** The row names the file by URL, Node caches
+an ESM module for the process lifetime, and the roster's change stamp covers only
+`agent.cordis.yml`. Bump the suffix, update the row, update the URL in `.dsh/guard.selftest.mjs`,
+and the next session picks it up with no process restart.
 
 ## Known limits
 

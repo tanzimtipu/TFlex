@@ -18,8 +18,8 @@
 //      frame (DEF-087/088/090 class guard): a closing surface can never
 //      swallow a click meant for whatever is beneath it.
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import { useReducedMotion, type TargetAndTransition } from "motion/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type TargetAndTransition } from "motion/react";
 import { applyTheme, type Theme } from "../state/theme";
 import {
   MOTION_DURATION,
@@ -50,6 +50,71 @@ export interface LiftMotionProps {
   whileHover?: TargetAndTransition;
   whileTap?: TargetAndTransition;
   transition?: TargetAndTransition["transition"];
+}
+
+/* ----------------------------------------------------------------------- */
+/* Reduced motion — live OS setting (DEF-198)                              */
+/* ----------------------------------------------------------------------- */
+
+/** DEF-198 — motion/react's `useReducedMotion` snapshots
+ *  prefers-reduced-motion into React state ONCE at first use; its
+ *  module-level matchMedia listener only updates an internal ref, so a
+ *  mid-session OS flip left every hook pinned to the boot-time value.
+ *  This module keeps ONE shared
+ *  `matchMedia("(prefers-reduced-motion: reduce)")` subscription for
+ *  the whole app: the initial value is read live (boot-time reduced
+ *  motion still works), and every `change` event flips the React
+ *  state of each hook subscribed through `useLiveReducedMotion()`, so
+ *  JS-driven springs collapse to instant state changes when the OS
+ *  setting flips mid-session. */
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+interface ReducedMotionSource {
+  /** The window.matchMedia function this source was created from; a
+   *  different function (a test re-stub) forces a fresh subscription. */
+  matchMediaFn: typeof window.matchMedia;
+  mql: MediaQueryList;
+  /** One setter per mounted hook; the shared listener flips them all. */
+  subscribers: Set<(matches: boolean) => void>;
+}
+
+let reducedMotionSource: ReducedMotionSource | null = null;
+
+function getReducedMotionSource(): ReducedMotionSource | null {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return null;
+  }
+  const matchMediaFn = window.matchMedia;
+  if (!reducedMotionSource || reducedMotionSource.matchMediaFn !== matchMediaFn) {
+    const mql = matchMediaFn(REDUCED_MOTION_QUERY);
+    const subscribers = new Set<(matches: boolean) => void>();
+    mql.addEventListener("change", (e: MediaQueryListEvent): void => {
+      for (const notify of subscribers) notify(e.matches);
+    });
+    reducedMotionSource = { matchMediaFn, mql, subscribers };
+  }
+  return reducedMotionSource;
+}
+
+/** Live prefers-reduced-motion value: boot-time state from the real
+ *  MediaQueryList, flipped on every OS `change` event (DEF-198). */
+export function useLiveReducedMotion(): boolean {
+  const [reduced, setReduced] = useState<boolean>(() => {
+    const source = getReducedMotionSource();
+    return source ? source.mql.matches : false;
+  });
+  useEffect(() => {
+    const source = getReducedMotionSource();
+    if (!source) return undefined;
+    const notify = (matches: boolean): void => setReduced(matches);
+    source.subscribers.add(notify);
+    // Re-sync in case the OS setting changed while no hook was mounted.
+    setReduced(source.mql.matches);
+    return (): void => {
+      source.subscribers.delete(notify);
+    };
+  }, []);
+  return reduced;
 }
 
 /** Opacity-only fallback shared by every hook under reduced motion:
@@ -86,7 +151,7 @@ export interface BloomOptions {
  *  while the dim stays opacity-only (a moving black sheet reads as
  *  camera wobble). */
 export function useBloomAnimation(options: BloomOptions = {}): MotionVariantSet {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return useMemo<MotionVariantSet>(() => {
     if (reduced) return reducedVariants();
     const fromScale = options.fromScale ?? MOTION_SCALE.enter;
@@ -111,7 +176,7 @@ export function useBloomAnimation(options: BloomOptions = {}): MotionVariantSet 
 /** Modal backdrop fade: opacity-only (Backdrop Fade In / Fade Out) at the
  *  fast band. Deliberately does NOT move — the dim layer never travels. */
 export function useBackdropFadeAnimation(): MotionVariantSet {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return useMemo<MotionVariantSet>(() => {
     if (reduced) return reducedVariants();
     return {
@@ -148,7 +213,7 @@ export interface SlideOptions {
 /** Panel slide: 280ms ease-out entry over the full overlay travel (or the
  *  docked 24px nudge), 200ms ease-out-exit on close. */
 export function useSlideAnimation(options: SlideOptions): MotionVariantSet {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   const { side, mode = "docked" } = options;
   return useMemo<MotionVariantSet>(() => {
     if (reduced) return reducedVariants();
@@ -175,6 +240,38 @@ export function useSlideAnimation(options: SlideOptions): MotionVariantSet {
 }
 
 /* ----------------------------------------------------------------------- */
+/* Rail content swap — Phase 16 collapse/expand                            */
+
+/** Rail content swap (Phase 16 collapse/expand): OPACITY + a SLIGHT
+ *  SCALE (--motion-scale-exit 0.98 swell — subtle, per the spec), no
+ *  travel. Entry runs on the PANEL band (280ms) so the ruler numbers /
+ *  thumbnail panel appear in step with the grid-column width tween;
+ *  exit runs on the FAST band so the outgoing content recedes a touch
+ *  ahead of the incoming one. The pair is always absolute-positioned
+ *  swap layers (.rail-content-swap), so both can be mid-crossfade
+ *  without any layout jump. Reduced motion: opacity only, instant. */
+export function useRailSwapAnimation(): MotionVariantSet {
+  const reduced = useLiveReducedMotion();
+  return useMemo<MotionVariantSet>(() => {
+    if (reduced) return reducedVariants();
+    return {
+      initial: { opacity: MOTION_OPACITY.hidden, scale: MOTION_SCALE.exit },
+      animate: {
+        opacity: MOTION_OPACITY.visible,
+        scale: 1,
+        transition: { duration: msToSeconds(MOTION_DURATION.panel), ease: MOTION_EASE.enter },
+      },
+      exit: {
+        opacity: MOTION_OPACITY.hidden,
+        scale: MOTION_SCALE.exit,
+        transition: { duration: msToSeconds(MOTION_DURATION.fast), ease: MOTION_EASE.exit },
+        pointerEvents: "none",
+      },
+    };
+  }, [reduced]);
+}
+
+/* ----------------------------------------------------------------------- */
 /* Popovers / menus / dropdowns — Pop In / Pop Out / Drop Reveal            */
 
 export interface PopOptions {
@@ -188,7 +285,7 @@ export interface PopOptions {
 /** Popover/dropdown reveal: scale (optional) + a --motion-translate-small
  *  drop + opacity over the FAST band. Exit reverses with the exit ease. */
 export function usePopAnimation(options: PopOptions = {}): MotionVariantSet {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   const { from = "above", scale = true } = options;
   return useMemo<MotionVariantSet>(() => {
     if (reduced) return reducedVariants();
@@ -233,7 +330,7 @@ export interface LiftOptions {
 export function useLiftAnimation(
   options: LiftOptions = {},
 ): { hover: LiftMotionProps } {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   const { distance = "micro" } = options;
   return useMemo<{ hover: LiftMotionProps }>(() => {
     if (reduced) return { hover: {} };
@@ -256,7 +353,7 @@ export function useLiftAnimation(
  *  micro band (the smallest token duration; the spec's 80-100ms press
  *  maps onto it since no token exists below 150ms). */
 export function useScaleAnimation(): { press: LiftMotionProps } {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return useMemo<{ press: LiftMotionProps }>(() => {
     if (reduced) return { press: {} };
     return {
@@ -277,7 +374,7 @@ export function useScaleAnimation(): { press: LiftMotionProps } {
  *  the CSS crossfade on .tab (background/colour tokens); the active-tab
  *  indicator glide stays with its CSS keyframe. */
 export function useTabVariants(): MotionVariantSet {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return useMemo<MotionVariantSet>(() => {
     if (reduced) return reducedVariants();
     return {
@@ -350,13 +447,39 @@ export interface ThemeTransitionApi {
  *  transitions take over again. Re-triggering mid-crossfade restarts the
  *  timer instead of stacking classes. */
 export function useThemeTransition(): ThemeTransitionApi {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   const reducedRef = useRef(reduced);
   reducedRef.current = reduced;
   const firstApplyRef = useRef(true);
+  const lastAppliedRef = useRef<Theme | null>(null);
+  const activeTransitionRef = useRef<{ finished?: Promise<unknown> } | null>(null);
   const timerRef = useRef<number | null>(null);
 
   const setTheme = useCallback((next: Theme): void => {
+    // DEF-199 — identity dedupe, two guards:
+    //   1. lastAppliedRef — the hook's own record of its last apply
+    //      (catches the settings.changed echo of our write and a picker
+    //      re-selecting the active theme, before any attribute read).
+    //   2. the data-theme attribute on <html> — the ground truth of
+    //      what the document actually shows. index.html presets
+    //      data-theme="frosted" before any React code runs, so a boot
+    //      apply that matches the preset is a no-op even on a fresh
+    //      hook instance (and the attribute also survives remounts,
+    //      where the closure ref would be stale).
+    // Re-applying an already-shown theme would start a SECOND View
+    // Transition that Chromium skips, rejecting the first transition's
+    // .finished promise unhandled (renderer pageerror "Transition was
+    // skipped"). The document already carries `next` — nothing to do.
+    if (lastAppliedRef.current === next) return;
+    if (document.documentElement.getAttribute("data-theme") === next) {
+      lastAppliedRef.current = next;
+      // The document already carried `next` when this apply landed
+      // (boot preset or an earlier apply): the boot slot is spent, so
+      // the first REAL flip still earns its crossfade.
+      firstApplyRef.current = false;
+      return;
+    }
+    lastAppliedRef.current = next;
     const firstApply = firstApplyRef.current;
     firstApplyRef.current = false;
     const doc = document as ViewTransitionDocument;
@@ -375,9 +498,20 @@ export function useThemeTransition(): ThemeTransitionApi {
       // style recalc between the two snapshots — no flash frame), and
       // no transitioning class is ever applied, so no per-element
       // transition list and no cleanup timer exist on this path.
-      doc.startViewTransition(() => {
+      const transition = doc.startViewTransition(() => {
         applyTheme(next);
-      });
+      }) as { finished?: Promise<unknown> } | undefined;
+      // DEF-199 — hold the transition: if a faster apply starts a NEWER
+      // transition, Chromium skips this one and REJECTS its .finished
+      // promise. Attach a handled catch so that skip is a graceful
+      // takeover (the newer transition owns the document paint) instead
+      // of an unhandled renderer pageerror.
+      activeTransitionRef.current = transition ?? null;
+      if (transition?.finished) {
+        void transition.finished.catch((): void => {
+          /* Skipped by a newer theme transition — nothing to clean up. */
+        });
+      }
       return;
     }
     // Fallback path: class-based per-element colour crossfade.

@@ -184,13 +184,18 @@ describe("GlassSidebar — the Pages rail (left) uses it", () => {
       const header = host.querySelector<HTMLElement>(".glass-sidebar-header");
       expect(header).not.toBeNull();
       expect(header?.classList.contains("rail-header")).toBe(true);
-      // The title is the active rail view ("Pages" on the thumbs tab).
-      expect(header?.querySelector(".glass-sidebar-title")?.textContent).toBe("Pages");
+      // Phase 16 — the rail header is icon-only: the "Pages" title text
+      // was removed, so no .glass-sidebar-title span renders.
+      expect(header?.querySelector(".glass-sidebar-title")).toBeNull();
       // The view toggle lives INSIDE .glass-sidebar-actions.
       const tabs = header?.querySelector(".rail-tabs");
       expect(tabs).not.toBeNull();
       expect(header?.querySelector(".glass-sidebar-actions")?.contains(tabs ?? null)).toBe(true);
-      expect(tabs?.querySelectorAll("button.rail-tab").length).toBe(2);
+      // Two view tabs (thumbs + annotations). The Phase 16 collapse
+      // toggle also carries .rail-tab, so it is excluded here.
+      expect(
+        tabs?.querySelectorAll("button.rail-tab:not(.rail-tab-collapse)").length,
+      ).toBe(2);
     } finally {
       unmount(host);
     }

@@ -128,6 +128,10 @@ export interface AppSettings {
    *  is applied by the consumer (the renderer's Stamp tool) when the field
    *  is absent — same pattern as editDefaultFont/ocrLanguage. */
   defaultStampId?: StampId;
+  /** Phase 16 — left page panel collapsed state. When true the thumbnails
+   *  rail renders as a narrow ruler strip showing only page numbers.
+   *  Validated preserve-if-valid in settings.ts; default `false`. */
+  pagesPanelCollapsed?: boolean;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

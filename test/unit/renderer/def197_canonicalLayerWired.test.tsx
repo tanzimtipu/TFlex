@@ -15,7 +15,6 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { prefersReducedMotion } from "motion-dom";
 import { AnimatedDialog } from "../../../src/renderer/components/AnimatedDialog";
 import { AnimatedPanel } from "../../../src/renderer/components/AnimatedPanel";
 import {
@@ -111,7 +110,6 @@ describe("AnimatedDialog / AnimatedPanel mount through the token variants", () =
   let container: HTMLElement | null = null;
 
   beforeEach((): void => {
-    prefersReducedMotion.current = false;
     container = document.body.appendChild(document.createElement("div"));
     root = createRoot(container);
   });

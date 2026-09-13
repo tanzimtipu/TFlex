@@ -40,6 +40,7 @@ import {
   updateActionableKey,
 } from "./components/updatePromptMachine";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
+import { pagesPanelReducer, initialPagesPanelState } from "./state/pagesPanel";
 import { nextTheme } from "./state/theme";
 import { useThemeTransition } from "./hooks/useAnimations";
 import { createAmbientController } from "./state/ambient";
@@ -348,6 +349,15 @@ export function App(): ReactElement {
   const [bootDone, setBootDone] = useState(false);
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  // Phase 16 — the side-rail pages panel can be collapsed to the ruler
+  // strip. App owns the value through the pagesPanelReducer (persisted
+  // in settings so it survives a restart); the rail itself never owns
+  // the state (see SideRail props).
+  const [pagesPanel, dispatchPagesPanel] = useReducer(
+    pagesPanelReducer,
+    initialPagesPanelState,
+  );
+  const pagesPanelCollapsed = pagesPanel.collapsed;
   const [tabs, dispatchTabs] = useReducer(tabsReducer, initialTabsState);
   const [openTabs, setOpenTabs] = useState<Record<string, OpenTab>>({});
   const [errorState, dispatchError] = useReducer(errorReducer, { toasts: [], nextId: 1 });
@@ -686,6 +696,12 @@ export function App(): ReactElement {
       setBootstrap(b);
       setSettings(b.settings);
       setTheme(b.settings.theme);
+      // Phase 16 — restore the pages-panel collapsed state from the
+      // boot settings; absent field means the documented default (false).
+      dispatchPagesPanel({
+        type: "set",
+        collapsed: b.settings.pagesPanelCollapsed ?? false,
+      });
       // DEF-202 — seed the caption from the boot settings' geometry.
       setWindowMaximized(b.settings.geometry.maximized);
       setBootDone(true);
@@ -730,7 +746,23 @@ export function App(): ReactElement {
         return;
       }
       setSettings(s);
-      setTheme(s.theme);
+      // Phase 16 — keep the pages-panel collapsed state in sync with
+      // settings echoes (main re-sends the persisted value, e.g. after
+      // another window writes it). Absent / invalid field: the reducer
+      // leaves local state alone (preserve-if-valid, like the backend).
+      dispatchPagesPanel({ type: "sync", value: s.pagesPanelCollapsed });
+      // DEF-199 — skip the theme re-apply when the document is already
+      // showing the echoed theme. The settings.changed echo of our own
+      // write re-applies an identical theme, and that second apply
+      // used to start a SECOND View Transition that Chromium skips,
+      // rejecting the first transition's .finished promise unhandled
+      // (renderer pageerror "Transition was skipped" — at boot and on
+      // every flip). The data-theme attribute is the ground truth of
+      // what <html> shows; the hook's own identity guards are the
+      // second line of defense for the same echo.
+      if (document.documentElement.getAttribute("data-theme") !== s.theme) {
+        setTheme(s.theme);
+      }
     });
     return () => {
       cancelled = true;
@@ -917,6 +949,20 @@ export function App(): ReactElement {
       return updated;
     });
   }, [trackAndSave, setTheme]);
+
+  // Phase 16 — collapse / expand the side-rail pages panel. App owns
+  // the value and persists it through the same trackAndSave path as
+  // every other settings field. No persist while settings hasn't
+  // loaded: the backend save replaces the ENTIRE settings object, so
+  // writing a partial object would wipe theme / geometry / recents
+  // (same null-guard shape as onToggleTheme above).
+  const togglePagesPanelCollapsed = useCallback((): void => {
+    const next = !pagesPanel.collapsed;
+    dispatchPagesPanel({ type: "set", collapsed: next });
+    if (settings === null) return;
+    const updated: AppSettings = { ...settings, pagesPanelCollapsed: next };
+    trackAndSave(updated);
+  }, [pagesPanel.collapsed, settings, trackAndSave]);
 
   const pushToast = useCallback((kind: Toast["kind"], text: string): void => {
     dispatchError({ type: "push", toast: { kind, text } });
@@ -6246,11 +6292,19 @@ pushToast(
           scroller's margin-right) so the page view narrows beside the
           open panel in EVERY theme and panel + page move together on
           the same 300ms ease-out. data-tools-mode mirrors the
-          persisted palette layout (list 344px / grid 380px). */}
+          persisted palette layout (list 344px / grid 380px).
+
+          Phase 16 — data-rail-collapsed is driven by the SAME
+          `pagesPanel` state that swaps the rail body to the ruler
+          strip: it flips the registered --tf-rail-w token (220px ->
+          48px) that .workspace's grid column tweens over the shared
+          280ms panel motion token, so the rail shrinks and the page
+          reflows together in every theme. */}
       <div
         className="app-main"
         data-tools-open={toolsPaletteOpen ? "true" : "false"}
         data-tools-mode={settings.toolsPaletteLayout ?? 'list'}
+        data-rail-collapsed={pagesPanelCollapsed ? "true" : "false"}
       >
         <div className="tab-stage">
           {tabs.tabs.length === 0 || activeIsEmpty ? (
@@ -6431,6 +6485,11 @@ pushToast(
                     editModeOpen={editModeOpen}
                     onEditModeToggle={(): void => setEditMode(!editModeOpen)}
                     edit={editModeOpen ? editHandlers(meta.id) : null}
+                    // Phase 16 — pages-panel collapsed state: App owns
+                    // the persisted value; DocumentView threads it to
+                    // the SideRail (the rail never owns the state).
+                    pagesPanelCollapsed={pagesPanelCollapsed}
+                    onTogglePagesPanelCollapsed={togglePagesPanelCollapsed}
                   />
                 </div>
               );

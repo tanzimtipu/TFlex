@@ -38,8 +38,11 @@ export function GlassSidebar(props: GlassSidebarProps): ReactElement {
 }
 
 export interface GlassSidebarHeaderProps {
-  /** The header title, rendered at the leading edge. */
-  title: string;
+  /** The header title, rendered at the leading edge. Phase 16 —
+   *  optional: the Pages rail header is icon-only (no title text), so a
+   *  caller that omits `title` gets a header with no title span and the
+   *  action cluster alone. */
+  title?: string;
   /** The trailing action cluster (view toggle, layout toggle, close).
    *  Rendered inside .glass-sidebar-actions so the no-drag/hit-target
    *  contracts of the inner controls stay theirs. */
@@ -53,7 +56,9 @@ export function GlassSidebarHeader(props: GlassSidebarHeaderProps): ReactElement
   const { title, actions, className } = props;
   return (
     <header className={`glass-sidebar-header${className ? ` ${className}` : ""}`}>
-      <span className="glass-sidebar-title">{title}</span>
+      {title !== undefined && title !== "" && (
+        <span className="glass-sidebar-title">{title}</span>
+      )}
       {actions !== undefined && (
         <div className="glass-sidebar-actions">{actions}</div>
       )}

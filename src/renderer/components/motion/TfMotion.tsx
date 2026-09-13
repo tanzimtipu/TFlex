@@ -4,9 +4,10 @@
 //   1. The theme-independent spring presets from tfPresets.ts (with
 //      per-call overrides merged on top — entering surfaces never
 //      re-declare travel, exiting surfaces can pin pointer-events).
-//   2. useReducedMotion(): when the OS asks for reduced motion, the
-//      wrapper renders the SAME surface with opacity-only variants
-//      and zero travel — no transform ever animates.
+//   2. useLiveReducedMotion() (DEF-198): when the OS asks for reduced
+//      motion — at boot or flipped mid-session — the wrapper renders
+//      the SAME surface with opacity-only variants and zero travel —
+//      no transform ever animates.
 //   3. The shared DOM tag per surface family (aside for panels,
 //      div for dialogs/menus/popovers/bars) so the existing CSS
 //      selectors and e2e data-* attributes keep matching.
@@ -24,12 +25,12 @@
 
 import {
   motion,
-  useReducedMotion,
   type HTMLMotionProps,
   type TargetAndTransition,
   type Transition,
   type VariantLabels,
 } from "motion/react";
+import { useLiveReducedMotion } from "../../hooks/useAnimations";
 import type { ReactElement } from "react";
 import {
   tfBackdrop,
@@ -138,26 +139,26 @@ function applyPreset(
 
 /** Right-side overlay panels (Tools palette): 24px travel, 280ms. */
 export function TfPanel(props: TfSurfaceProps): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return applyPreset(motion.aside, tfPanel, props, reduced);
 }
 
 /** Left-side rail panel (thumbnail rail): -18px travel, 280ms. */
 export function TfPanelLeft(props: TfSurfaceProps): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return applyPreset(motion.aside, tfPanelLeft, props, reduced);
 }
 
 /** Modal/sheet BACKDROP layer: opacity-only dim, 180ms. The sheet is
  *  rendered as this element's child so its grid centering survives. */
 export function TfBackdrop(props: TfSurfaceProps): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return applyPreset(motion.div, tfBackdrop, props, reduced);
 }
 
 /** Modal dialog box (`.modal-dialog`): 10px rise + 0.97 swell, 240ms. */
 export function TfDialog(props: TfSurfaceProps): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return applyPreset(motion.div, tfDialog, props, reduced);
 }
 
@@ -165,20 +166,20 @@ export function TfDialog(props: TfSurfaceProps): ReactElement {
  *  share the dialog-enter keyframe. Kept as a separate family so a
  *  future sheet-only tuning never touches modals. */
 export function TfSheet(props: TfSurfaceProps): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return applyPreset(motion.div, tfDialog, props, reduced);
 }
 
 /** Downward-opening menu popover: scale 0.96 + y -4, 180ms. */
 export function TfMenu(props: TfSurfaceProps): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return applyPreset(motion.div, tfMenu, props, reduced);
 }
 
 /** Anchored popover (annotation color palette): scale 0.97 + y -3,
  *  180ms. Drag offsets are folded into x/y via `animate`. */
 export function TfPopover(props: TfSurfaceProps): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return applyPreset(motion.div, tfPopover, props, reduced);
 }
 
@@ -186,7 +187,7 @@ export function TfPopover(props: TfSurfaceProps): ReactElement {
 export function TfToast(
   props: TfSurfaceProps & { toastKind?: string },
 ): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   const { toastKind, ...rest } = props;
   const isSuccess = toastKind === "success";
   const preset: TfPresetRef = isSuccess ? tfToastSuccess : tfToast;
@@ -196,12 +197,12 @@ export function TfToast(
 /** Floating contextual bar (edit toolbar / content action bar /
  *  image placement toolbar): y -2 rise, 180ms. */
 export function TfBar(props: TfSurfaceProps): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return applyPreset(motion.div, tfBar, props, reduced);
 }
 
 /** Top-of-workspace flow bar (OCR suspects): y -6 drop, 180ms. */
 export function TfBarTop(props: TfSurfaceProps): ReactElement {
-  const reduced = useReducedMotion() === true;
+  const reduced = useLiveReducedMotion();
   return applyPreset(motion.aside, tfBarTop, props, reduced);
 }

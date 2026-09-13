@@ -2,7 +2,7 @@
 // playwright.config.js testIgnore (e2e/installed/**). Run ONLY when the
 // orchestrator explicitly asks to test the installed app.
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, dismissUpdatePrompt } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
 
@@ -16,6 +16,10 @@ test.describe('Installed App Verification (Behavior-First Fixes)', () => {
     electronApp = await launchApp([], 'default', EXE_PATH);
     window = await electronApp.firstWindow();
     await window.waitForSelector('.welcome, .workspace');
+    // DEF-172: a published release newer than the installed build pops the
+    // modal update prompt on launch; its full-screen .sheet-backdrop would
+    // intercept every click below. Dismiss it before driving anything.
+    await dismissUpdatePrompt(window);
     // Ensure we are NOT in Edit mode
     const editToggle = window.locator('[data-toolbar-edit-toggle]');
     if (await editToggle.isVisible()) {

@@ -98,20 +98,28 @@ Follow these rules when fetching run-time data. They exist because this session 
 ## Current TFlex baseline discovery
 
 Read the model fields from the agent definitions instead of assuming them. The two harnesses now
-diverge deliberately on one pin, so each row names both.
+diverge on most pins, so each row names both.
 
 | Agent | OpenCode pin (`openrouter/…`) | DSH pin (`openrouter-custom` / …) |
 | --- | --- | --- |
-| `backend-dev` | `z-ai/glm-5.2` | `z-ai/glm-5.2` |
-| `frontend-dev` | `~deepseek/deepseek-v4-flash-latest` | `z-ai/glm-5.3-flash` (vision, for self-check) |
-| `qa` | `z-ai/glm-5.3-flash` | `z-ai/glm-5.3-flash` |
-| `adversary` | `deepseek/deepseek-v4-flash` | `deepseek/deepseek-v4-flash` |
-| `git-agent` | `z-ai/glm-5.3-flash` | `z-ai/glm-5.3-flash` |
+| `backend-dev` | `z-ai/glm-5.2` | `local-ninfer` / `qwen3.8-27b` |
+| `frontend-dev` | `~deepseek/deepseek-v4-flash-latest` | `local-ninfer` / `qwen3.8-27b` |
+| `qa` | `z-ai/glm-5.3-flash` | `local-ninfer` / `qwen3.8-27b` |
+| `adversary` | `deepseek/deepseek-v4-flash` | `local-ninfer` / `qwen3.8-27b` |
+| `git-agent` | `z-ai/glm-5.3-flash` | `local-ninfer` / `qwen3.8-27b` |
+| `feature-scout` | (no definition) | `openrouter-custom` / `z-ai/glm-5.3-flash` |
+
+Five of the six DSH roles now run on the operator's own RTX 4090 through `local-ninfer`, so for
+them the interesting comparison is no longer price - it is whether a candidate beats
+`qwen3.8-27b` at the role, and whether it fits the card. The local server serves a 264000-token
+context with vision. qa is on it too, deliberately: the local server is NOT offloaded for an e2e
+run, because offloading it would kill the agent running the suite, and a measured launch shows the
+packaged app still gets a window alongside the loaded model. See `.dsh/README.md`.
 
 The DSH pins are authoritative in `~/.dsh/.agent-presets/tflex-orchestrator/agent.cordis.yml`,
 inside each `dispatch_*` row's `agentOptions`; the OpenCode pins live in `.opencode/agents/*.md`.
 If either file differs from this table, the file wins and the report must call out the
-difference. The two differ on `frontend-dev` on purpose - see `AGENTS_NOTES.md` (2026-09-11).
+difference.
 
 When costing a DSH candidate, remember that a route is only usable if its model id is present
 under `llm-pi-ai.providers.openrouter-custom.models` in `${DSH_HOME}/settings.yaml`, and that a

@@ -152,4 +152,4 @@ Retired 2026-09-05. Full rationale per file in `e2e/archived/README.md`:
 
 ## Support / Library
 - `lib/launch.cjs`: Canonical Electron launcher. No executablePath -> DEV build; an explicit executablePath is used only by the installed-app suite.
-- `lib/helpers.cjs`: `launchDev()` (standard), `launchInstalled()` (installed-app specs ONLY), plus shared driving helpers (`openSample`, `diag`, `shot`, `scrollToPage`, `hardClose`).
+- `lib/helpers.cjs`: `launchDev()` (standard), `launchInstalled()` (installed-app specs ONLY; auto-dismisses the OTA update prompt via `dismissUpdatePrompt`, DEF-172), `dismissUpdatePrompt()` (call after any manual installed-app launch), plus shared driving helpers (`openSample`, `diag`, `shot`, `scrollToPage`, `hardClose`).

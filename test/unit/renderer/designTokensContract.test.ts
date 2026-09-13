@@ -796,16 +796,19 @@ describe("Phase D — reduced motion (motion wrappers + frosted reflection)", ()
     return m?.[1] ?? "";
   };
 
-  it("every TfMotion surface wrapper honours useReducedMotion()", () => {
+  it("every TfMotion surface wrapper honours the live reduced-motion hook (DEF-198)", () => {
     // Each exported surface (TfPanel/TfPanelLeft/TfBackdrop/TfDialog/
     // TfSheet/TfMenu/TfPopover/TfToast/TfBar/TfBarTop) must branch on
-    // the OS setting BEFORE applying any spring travel.
+    // the OS setting BEFORE applying any spring travel. DEF-198: the
+    // value must come from useLiveReducedMotion (a matchMedia
+    // subscription that reacts to mid-session OS flips), not
+    // motion/react's boot-time useReducedMotion snapshot.
     const wrappers = [...tfmotion.matchAll(/export function (Tf\w+)/g)].map((m) => m[1] ?? "");
     expect(wrappers.length).toBeGreaterThanOrEqual(10);
     const bodies = [...tfmotion.matchAll(/export function (Tf\w+)\([\s\S]*?\): ReactElement \{([\s\S]*?)\n\}/g)];
     expect(bodies.length).toBe(wrappers.length);
     for (const m of bodies) {
-      expect(m[2] ?? "").toMatch(/useReducedMotion\(\)\s*===\s*true/);
+      expect(m[2] ?? "").toMatch(/useLiveReducedMotion\(\)/);
     }
   });
 

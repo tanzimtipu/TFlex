@@ -323,7 +323,8 @@ Repo-safety amendments:
   purge as part of P6 gate.
 
 Completion demands: all Phase-6 green; tag v1.x.x pushed; OTA verified by a version
-bump against tanzimtipu/TFlex; thumbnails/screenshots included per gate; timing per
+bump against tanzimtipu/tflex-releases (release artifacts in the public releases repo,
+source-only commits stay in the private tanzimtipu/TFlex repo); thumbnails/screenshots included per gate; timing per
 performance budget as RECheckWise for the new tab-switch/palette work.
 
 ### Phase-6 no-op remediation checklist (required to close Phase 6)
@@ -769,3 +770,56 @@ All glass surfaces need:
 10. User approves final result
 
 **Settings impact:** none (polish fixes only).
+
+### Phase 15 — Cross-Theme Animation System
+
+**Features**
+
+- Centralized motion token system: CSS custom properties (`--motion-duration-*`, `--motion-ease-*`, `--motion-scale-*`) and a matching JS constants file (`motionTokens.ts`) consumed by all animated surfaces.
+- Named animation wrappers/components: `AnimatedDialog` (bloom in/out), `AnimatedPanel` (slide in/out), `AnimatedTab` (crossfade + liquid glide), popover hooks (`usePopAnimation`), scale hooks (`useScaleAnimation`).
+- Theme crossfade: a 400ms View-Transitions-based (or CSS-class fallback) crossfade on every theme switch; PDF page content is excluded from all transitions.
+- Uniform motion across light/dark/frosted themes — only visual properties (shadow, highlight) differ; timing and easing stay identical.
+- Reduced-motion support: all JS-driven springs and CSS transitions degrade when `prefers-reduced-motion: reduce` is active.
+- Performance target: all animations stay within a 16ms frame budget and maintain 60fps.
+
+**Success criteria**
+
+1. Theme crossfade runs at ~60fps on a quiet workspace (measured via rAF sampling); no frame gaps exceed 33ms and the 400ms transition completes within its token duration.
+2. Every pressable button family (`.btn`, `.tool-btn`, `.tab-new`, etc.) resolves the canonical `--motion-scale-press` token in its `:active` transform; no hardcoded scale values survive in the cascade.
+3. The centralized token layer is wired to every animated surface named in the feature list: dialogs, panels, tabs, popovers, buttons, and thumbnails each consume the token system (not a parallel hardcoded preset).
+4. Mid-session changes to the OS `prefers-reduced-motion` setting are picked up live: JS-driven springs collapse to instant state changes without an app restart.
+5. Theme application does not trigger duplicate View Transitions or unhandled "Transition was skipped" pageerrors; at most one transition runs per user flip.
+6. Unit tests cover the token constants, the animation hooks, and the component wrappers; e2e measures live fps and computed transform values.
+7. No regressions: full unit + e2e suites green.
+
+**Settings impact:** none.
+
+### Phase 16 — Collapsible page panel with ruler mode
+
+**Features**
+
+- **Remove "Pages" title text** from the left sidebar header. The header shows only icon controls in a consistent layout.
+- **Round/pill icon backgrounds** on every header icon in the left sidebar: the view-toggle icons (thumbnails, annotations, bookmarks) and the new collapse/expand icon all sit inside matching round glass-pill backgrounds (`glass-control-group` or `glass-icon-pill` treatment), matching the command bar's capsule style.
+- **Collapse icon** on the left sidebar header: a chevron-left (or panel-left-close) button that collapses the entire left panel.
+- **Collapsed ruler mode**: when collapsed, the left panel shrinks to a narrow vertical strip (~48px wide) that shows only page numbers stacked vertically. No thumbnails, no scroll bar chrome — just the numbers in the current theme's text color. The strip has a subtle separator border against the workspace.
+- **Current-page highlight in ruler mode**: the number of the page currently visible in the main workspace is highlighted with the accent color (`#2563eb`) and/or bold weight so it stands out from the other numbers.
+- **Click-to-jump in ruler mode**: clicking any page number in the ruler jumps the main workspace to that page (same behavior as clicking a thumbnail in expanded mode).
+- **Expand icon** on the collapsed strip: a chevron-right (or panel-left-open) button that expands the panel back to full thumbnail view.
+- **Panel state persistence**: the collapsed/expanded choice survives app restart.
+- **Consistent animations**: the collapse and expand transitions use the centralized token system (Phase 15):
+  - Panel width change: `AnimatedPanel` slide/resize with `--motion-duration-panel` (280ms) and `--motion-ease-layout` easing.
+  - Page number appearance/disappearance: opacity + slight scale, not a hard cut.
+  - Ruler number hover/focus: the standard `LiftMotionProps` hover lift (subtle, token-driven).
+
+**Success criteria**
+
+1. The left sidebar header shows zero text titles — only grouped round-background icons. The view tabs (thumbnails/annotations/bookmarks) and the collapse icon share the same pill background treatment.
+2. Clicking the collapse icon shrinks the panel to the ruler strip within 280ms; the workspace reflows smoothly (page view adjusts, not overlapped).
+3. In ruler mode: only page numbers are visible, rendered vertically, current page highlighted in accent color. Clicking a number jumps the workspace to that page.
+4. Clicking the expand icon restores the full thumbnail panel within 280ms; the workspace reflows back.
+5. The collapsed/expanded state persists across app restart (verified by closing and reopening the app).
+6. No visual regressions in the thumbnail rail (drag reorder, rotate, delete, annotation panel, bookmarks panel) when expanded.
+7. Unit tests for the collapse state reducer and ruler click handler; e2e covers collapse → ruler click → jump → expand cycle and persistence restart.
+8. All animations resolved from the centralized motion token system; no hardcoded transition values in the collapse/expand CSS or JS.
+
+**Settings impact:** `pagesPanelCollapsed?: boolean` (default `false`; validation: boolean, preserve-if-valid; transported via AppSettings IPC so the state survives restart).

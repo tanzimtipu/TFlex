@@ -226,6 +226,31 @@ function normalizeAnnotationPayload(payload: CreateAnnotationPayload): AnnModel 
     const maxX = Math.max(from.x, to.x);
     const maxY = Math.max(from.y, to.y);
     rects = [{ x: minX, y: minY, width: maxX - minX, height: maxY - minY }];
+  } else if (payload.points !== undefined && Array.isArray(payload.points) && payload.points.length > 0) {
+    // Ink (pen tool): the renderer commits a freehand stroke as `points`
+    // only — no rect/rects/at/from/to (AnnotationOverlay's ink commit sends
+    // { kind:'ink', page, color, points, width }). Derive the /Rect bbox
+    // from the stroke extent, like the arrow branch does for from/to. A
+    // zero-area bbox (single point, or a perfectly straight vertical/
+    // horizontal stroke) is fine: the real geometry lives in /InkList, so
+    // the computed bbox is NOT run through validateRect's positive-size
+    // check. A stroke needs at least two points — the renderer enforces
+    // the same minimum (MIN_INK_POINTS = 2) before committing.
+    const pts = payload.points.map((p) => validatePoint(p));
+    if (pts.length < 2) {
+      throw new Error('Ink annotation requires at least two points');
+    }
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    rects = [{ x: minX, y: minY, width: maxX - minX, height: maxY - minY }];
   } else {
     // ADV-025/DEF-204: no geometry source at all. Previously this created a
     // zero-size annotation at (0,0); now it fails loud so bad input surfaces.
@@ -258,15 +283,33 @@ function normalizeAnnotationPayload(payload: CreateAnnotationPayload): AnnModel 
   };
 }
 
+/** The AnnKind values the engine accepts on the create path. Anything else
+ *  (e.g. 'pen' — the renderer's pen tool sends kind 'ink') is rejected at
+ *  create time: an unknown kind would survive normalizeAnnotationPayload's
+ *  cast and only explode later in subtypeName, which has no case for it and
+ *  returns undefined, corrupting the serialized annotation dict on save. */
+const ANN_KINDS: ReadonlySet<string> = new Set<AnnKind>([
+  'text-box',
+  'rect',
+  'ellipse',
+  'note',
+  'ink',
+  'arrow',
+  'highlight',
+  'underline',
+  'squiggly',
+  'strikeout',
+  'callout',
+]);
+
 function normalizeKind(k: string): AnnKind {
-  switch (k) {
-    case 'textbox':
-      return 'text-box';
-    default:
-      // The AnnKind union covers text-box/rect/ellipse/note/ink/arrow/highlight/underline/squiggly/strikeout
-      // Check if k is a valid AnnKind after the above remapping
-      return k as AnnKind;
+  if (k === 'textbox') {
+    return 'text-box';
   }
+  if (typeof k !== 'string' || !ANN_KINDS.has(k)) {
+    throw new Error(`Unknown annotation kind: ${String(k)}`);
+  }
+  return k as AnnKind;
 }
 
 // ---------------------------------------------------------------------------

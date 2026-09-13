@@ -1,8 +1,10 @@
-import { ChevronRight, Images, List, MessageSquare, Undo2, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { ChevronRight, Images, List, MessageSquare, PanelLeftClose, PanelRightOpen, Undo2, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveOutlinePage, isInvalidPageRequest, type OutlineNode } from '../pdf/pdfjs';
+import { useLiftAnimation, useRailSwapAnimation } from '../hooks/useAnimations';
 import { computeThumbGeometry } from './thumbGeometry';
 import type { EngineState } from '../engine/types';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
@@ -61,6 +63,13 @@ interface SideRailProps {
    *  id; passing it back through `flashAnnotationId` makes the overlay
    *  draw the highlight. */
   onJumpToAnnotation?: (page: number, id: string) => void;
+  /** Phase 16 — the pages panel is collapsed to the ruler strip. The
+   *  body shows only the RulerStrip (no view tabs, no annotations,
+   *  no outline) and the header shrinks to a lone expand button. */
+  pagesPanelCollapsed?: boolean;
+  /** Phase 16 — asks the host (App) to toggle the collapsed state;
+   *  the rail never owns the value itself. */
+  onTogglePagesPanelCollapsed?: () => void;
 }
 
 type RailTab = 'thumbs' | 'outline' | 'annotations';
@@ -91,8 +100,15 @@ export function SideRail(props: SideRailProps) {
     onEditAnnotation,
     onDeleteAnnotation,
     onJumpToAnnotation,
+    pagesPanelCollapsed = false,
+    onTogglePagesPanelCollapsed,
   } = props;
   const [tab, setTab] = useState<RailTab>('thumbs');
+  // Phase 16 — the swap variants for the collapsed ruler strip vs the
+  // expanded tab content (useRailSwapAnimation: opacity + slight swell,
+  // entry on the 280ms panel token so the numbers appear in step with
+  // the grid-column width tween).
+  const railSwap = useRailSwapAnimation();
 
   useEffect(() => {
     if (outline === null && tab === 'outline') {
@@ -132,27 +148,37 @@ export function SideRail(props: SideRailProps) {
     onJumpToAnnotation?.(page, id);
   };
 
-  // DEF-185 — the mock's pages panel carries a "Pages" label at the
-  // panel top; the label follows the active rail view so the header
-  // never lies about what the panel is showing.
-  const railTitle: string =
-    tab === 'thumbs' ? 'Pages' : tab === 'annotations' ? 'Annotations' : 'Bookmarks';
-
   return (
     // DEF-197 — the canonical AnimatedPanel wrapper (docked Slide In /
     // Slide Out from the token layer) replaces the TfPanelLeft preset
     // wrapper. The rail is permanently mounted, so `open` is constant
     // and the slide plays on mount exactly as before.
     <AnimatedPanel open side="left" mode="docked" className="side-rail" testId="side-rail">
-      {/* Phase 14.1 — the shared GlassSidebar header: title left, view
-       * toggle right, ONE 44px row for both floating panels. The legacy
-       * .rail-header / .rail-tabs classes stay on the elements so the
-       * existing CSS/e2e contracts keep resolving. */}
+      {/* Phase 14.1 — the shared GlassSidebar header: ONE 44px row for
+       * both floating panels. Phase 16 — the rail header is icon-only
+       * (the "Pages" title text is gone): the view tabs and the
+       * collapse icon share ONE round glass capsule
+       * (glass-control-group, the same material as the command-bar
+       * groups), and while collapsed the header is the lone expand
+       * button centred in the 48px strip. The legacy .rail-header /
+       * .rail-tabs classes stay on the elements so the existing
+       * CSS/e2e contracts keep resolving. */}
       <GlassSidebarHeader
-        title={railTitle}
-        className="rail-header"
+        className={
+          pagesPanelCollapsed ? 'rail-header rail-header-ruler' : 'rail-header'
+        }
         actions={
-          <div className="rail-tabs">
+          <div
+            className={
+              pagesPanelCollapsed ? 'rail-tabs' : 'rail-tabs glass-control-group'
+            }
+          >
+            {/* Phase 16 — the view tabs are hidden while collapsed
+             * (the 48px strip has no room for the capsule); the
+             * active-tab state stays in the rail's tab state, so
+             * expanding restores the previously selected view. */}
+            {!pagesPanelCollapsed && (
+              <>
             <button
               type="button"
               className={tab === 'thumbs' ? 'rail-tab rail-tab-active' : 'rail-tab'}
@@ -180,38 +206,69 @@ export function SideRail(props: SideRailProps) {
                 <List size={22} aria-hidden />
               </button>
             )}
+            </>
+            )}
+            <button
+              type="button"
+              className="rail-tab rail-tab-collapse"
+              onClick={() => onTogglePagesPanelCollapsed?.()}
+              title={pagesPanelCollapsed ? 'Expand panel' : 'Collapse panel'}
+              data-rail-collapse
+            >
+              {pagesPanelCollapsed ? <PanelRightOpen size={22} aria-hidden /> : <PanelLeftClose size={22} aria-hidden />}
+            </button>
           </div>
         }
       />
       <GlassSidebarBody className="rail-content">
-        {tab === 'thumbs' ? (
-          <ThumbnailRail
-            doc={doc}
-            pageCount={engineState.pageCount}
-            currentPage={currentPage}
-            aspectRatio={aspect}
-            pageSizes={pageSizes}
-            rotations={engineState.rotations}
-            visibleToSource={visibleToSource}
-            proxyVisibleOrder={proxyVisibleOrder}
-            pageLabelMap={pageLabelMap}
-            canUndo={canUndo}
-            onOp={onOp}
-            onDelete={onDelete}
-            onReorder={onReorder}
-            onUndo={onUndo}
-            onJump={onJump}
-          />
-        ) : tab === 'annotations' ? (
-          <AnnotationsPanel
-            annotations={annotations}
-            onJumpTo={jumpToAnnotation}
-            onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
-            onDelete={(id): void => onDeleteAnnotation?.(id)}
-          />
-        ) : (
-          <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} />
-        )}
+        {/* Phase 16 — the body is an AnimatePresence swap: the ruler
+         * strip and the thumbnails / annotations / bookmarks content
+         * are absolute layers that crossfade (opacity + a slight
+         * swell, token-driven via useRailSwapAnimation) while the
+         * workspace grid column tweens the registered rail width over
+         * the same 280ms panel token. initial={false} keeps the mount
+         * clean — the panel slide already animates the whole rail in. */}
+        <AnimatePresence initial={false}>
+          <motion.div
+            key={pagesPanelCollapsed ? 'ruler' : tab}
+            className="rail-content-swap"
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={railSwap}
+          >
+            {pagesPanelCollapsed ? (
+              <RulerStrip pageCount={engineState.pageCount} currentPage={currentPage} onJump={onJump} />
+            ) : tab === 'thumbs' ? (
+              <ThumbnailRail
+                doc={doc}
+                pageCount={engineState.pageCount}
+                currentPage={currentPage}
+                aspectRatio={aspect}
+                pageSizes={pageSizes}
+                rotations={engineState.rotations}
+                visibleToSource={visibleToSource}
+                proxyVisibleOrder={proxyVisibleOrder}
+                pageLabelMap={pageLabelMap}
+                canUndo={canUndo}
+                onOp={onOp}
+                onDelete={onDelete}
+                onReorder={onReorder}
+                onUndo={onUndo}
+                onJump={onJump}
+              />
+            ) : tab === 'annotations' ? (
+              <AnnotationsPanel
+                annotations={annotations}
+                onJumpTo={jumpToAnnotation}
+                onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
+                onDelete={(id): void => onDeleteAnnotation?.(id)}
+              />
+            ) : (
+              <OutlinePanel doc={doc} outline={outline ?? []} onJump={onJump} onError={onError} />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </GlassSidebarBody>
     </AnimatedPanel>
   );
@@ -741,6 +798,42 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
           onClearSelection={(): void => setSelected(null)}
         />
       )}
+    </div>
+  );
+}
+
+// Phase 16 — collapsed ruler strip: one numbered button per visible
+// page, stacked vertically. Replaces the tab bodies whenever the pages
+// panel is collapsed (regardless of the active tab); the current page
+// is highlighted and every number is a click-to-jump target. Exported
+// so unit tests can exercise the click handler directly. The per-button
+// hover lift is the shared LiftMotionProps (micro distance — token
+// driven, off under reduced motion); the colour wash stays in CSS.
+
+export function RulerStrip({
+  pageCount,
+  currentPage,
+  onJump,
+}: {
+  pageCount: number;
+  currentPage: number;
+  onJump: (page: number) => void;
+}): ReactElement {
+  const { hover } = useLiftAnimation({ distance: 'micro' });
+  return (
+    <div className="rail-ruler" data-rail-ruler>
+      {Array.from({ length: pageCount }, (_, i) => i + 1).map((page) => (
+        <motion.button
+          key={page}
+          type="button"
+          className={page === currentPage ? 'rail-ruler-page rail-ruler-current' : 'rail-ruler-page'}
+          onClick={() => onJump(page)}
+          data-ruler-page={page}
+          {...hover}
+        >
+          {page}
+        </motion.button>
+      ))}
     </div>
   );
 }
