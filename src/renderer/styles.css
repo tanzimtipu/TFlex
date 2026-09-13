@@ -678,14 +678,14 @@
    * the SAME hues would wash out, so each icon is pulled slightly
    * deeper (still vivid, still unmistakably colorful, never
    * monochrome) so the hue holds its contrast on white glass. */
-  --icon-blue: #4d8fd8;
-  --icon-cyan: #3cb7c9;
-  --icon-green: #65a87b;
-  --icon-orange: #d9762f;
-  --icon-yellow: #d3a03f;
-  --icon-purple: #9674cf;
-  --icon-red: #d0615d;
-  --icon-pink: #c9769f;
+  --icon-blue: #3a7bc8;
+  --icon-cyan: #2a9da8;
+  --icon-green: #4a8f6a;
+  --icon-orange: #c55f1a;
+  --icon-yellow: #b88a2f;
+  --icon-purple: #7d5fc0;
+  --icon-red: #b84a47;
+  --icon-pink: #b0608a;
 
   /* Phase 14.1 — the CANONICAL Liquid Glass values (the task-spec
    * token block, verbatim). The frosted theme is the one theme that
@@ -2754,7 +2754,8 @@ input[type="checkbox"] {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
+  min-width: 32px;
+  padding: 0 8px;
   height: 48px;
   border: 1px solid var(--glass-group-border);
   border-radius: 999px;
@@ -2781,6 +2782,32 @@ input[type="checkbox"] {
  * offset that centers the pill is kept, only the scale animates). */
 .tools-badge:active {
   transform: translateY(-50%) scale(var(--motion-scale-press, 0.97));
+}
+
+/* "All tools" text badge inside the pill — shown only while the
+ * palette is closed (the open state keeps the bare chevron, so the
+ * pill collapses back to its 32px icon-only width via min-width).
+ * A small semi-transparent chip behind the text; the pill's
+ * min-width/padding let it grow to fit label + chevron. The light
+ * values are the base; dark / frosted tint it below. */
+.tools-badge-label {
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.15);
+  color: #333;
+}
+
+:root[data-theme="dark"] .tools-badge-label {
+  background: rgba(255, 255, 255, 0.2);
+  color: #eee;
+}
+
+:root[data-theme="frosted"] .tools-badge-label {
+  background: rgba(15, 23, 42, 0.15);
+  color: #1e293b;
 }
 
 /* Phase 13 — Hand (pan) mode. While armed, the scroller advertises
@@ -8845,9 +8872,9 @@ rect.ann-highlight.ann-preview {
  * .edit-toolbar) float above it at z-index 1 with their translucent
  * sheets + the Phase-A backdrop-filter. As the user scrolls, page
  * content moves UP under the rows and visibly diffuses through the
- * glass; at rest the content is padded down by the MEASURED chrome
- * stack (--tf-chrome-y, published by DocumentView) so the first page
- * sits exactly where it did in the in-flow layout. Horizontal page
+ * glass; at rest the page starts 28px below the window top — the
+ * same top margin the in-flow themes give the page — with the page
+ * top under the frosted rows. Horizontal page
  * positions are untouched (the scroller keeps its column-2 origin),
  * and the side rail (column 1) + title bar keep their own sheets
  * over the workspace tonal gradient.
@@ -8901,18 +8928,16 @@ rect.ann-highlight.ann-preview {
 }
 
 :root[data-theme="frosted"] .document-content {
-  /* Phase 14.2 FIX 8 — tighter floating margins. The chrome stack
-   * height is measured live by DocumentView (toolbar wrap, search
-   * bar, edit toolbar all change it) and published as --tf-chrome-y;
-   * the fallback matches the two 52px chrome rows until the first
-   * measure lands. The page now sits 16px below the floating chrome
-   * stack (the floating aesthetic minimum) instead of 28px, and 16px
-   * above the bottom edge — the same side margins the in-flow
-   * light/dark layout gives the page. The scroll math in
-   * DocumentView consumes the matching constant (the mount's
-   * topPad = chromeY + 16), so jump landings and the mount window
-   * track the real slot positions. */
-  padding: calc(var(--tf-chrome-y, 104px) + 16px) 0 16px;
+  /* The frosted scroller is full-bleed behind the floating chrome
+   * rows (Phase C block above), so the page keeps the in-flow
+   * light/dark themes' 28px top/bottom padding: page 1 starts 28px
+   * below the window top and its top sits UNDER the frosted chrome
+   * rows, which diffuse it at rest. The scroll math in DocumentView
+   * (contentTopPadRef) must feed the same 28px top pad in frosted so
+   * jump landings, the current-page readout and the mount window
+   * stay in step with this padding. */
+  padding: 28px 0;
+  gap: 18px;
 }
 
 /* ===========================================================================

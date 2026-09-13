@@ -2,7 +2,9 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { AnimatePresence } from "motion/react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import {
+  forwardRef,
   useCallback,
+  useImperativeHandle,
   useEffect,
   useMemo,
   useReducer,
@@ -386,12 +388,17 @@ const DOC_IDLE_CLEANUP_MS = 3000;
 // UI thread responsive while building the search index on a 500+ page doc.
 const SEARCH_CHUNK_PAGES = 8;
 
+export interface DocumentViewHandle {
+  /** Reset any active annotation tool to 'select' (no tool active). */
+  disarmAnnotationTool(): void;
+}
+
 /**
  * The full document workspace: side rail (thumbnails / outline), toolbar,
  * search bar, and the virtualized continuous scroller. All per-document
  * view state (zoom, page, search) lives here and is persisted upwards.
  */
-export function DocumentView({
+export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(function DocumentView({
   doc,
   pageCount,
   outline,
@@ -459,7 +466,9 @@ export function DocumentView({
   onEditModeToggle,
   pagesPanelCollapsed,
   onTogglePagesPanelCollapsed,
-}: DocumentViewProps) {
+}: DocumentViewProps,
+  ref,
+) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   // Phase-C frosted layering — the full-bleed scroller needs the
   // measured chrome stack height so .document-content pads down by
@@ -542,6 +551,13 @@ export function DocumentView({
     annotationToolReducer,
     initialAnnotationToolState,
   );
+  // DEF-211 — imperative handle so the host can disarm the annotation
+  // tool before opening a dialog overlaying the workspace.
+  useImperativeHandle(ref, () => ({
+    disarmAnnotationTool: (): void => {
+      dispatchAnnTool({ type: "set-tool", tool: "select" });
+    },
+  }), []);
   const [flashId, setFlashId] = useState<string | null>(null);
   const flashTimerRef = useRef<number | null>(null);
 
@@ -2282,14 +2298,17 @@ export function DocumentView({
             {toolsPaletteOpen ? (
               <ChevronRight size={16} aria-hidden />
             ) : (
-              <ChevronLeft size={16} aria-hidden />
+              <>
+                <span className="tools-badge-label">All tools</span>
+                <ChevronLeft size={16} aria-hidden />
+              </>
             )}
           </button>
         )}
       </div>
     </div>
   );
-}
+});
 
 // Stable no-op for PageView's `registerPage` prop. With virtualization, slot
 // mounting is driven by DocumentView's own IntersectionObserver; PageView no
