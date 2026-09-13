@@ -239,6 +239,25 @@ test('P16C-2: collapse button -> 48px ruler strip, settled on the registered tok
   }
 });
 
+test('P16C-2b: rail width tweens through intermediate frames (no snap)', async () => {
+  const { electronApp, window } = await openWorkspace();
+  try {
+    // rAF sampling is fine HERE: this assertion only needs evidence that the
+    // transition ran (some frame strictly between 48 and 220) - never the
+    // settled value, which P16C-2 proves deterministically. Start the sampler
+    // before the click so the 280ms tween fits inside the 500ms window.
+    const samples = sampleRailColumn(window, 500);
+    await window.locator('[data-rail-collapse]').click();
+    const s = await samples;
+
+    const mids = s.filter((x) => x.w !== null && x.w > 48.5 && x.w < 219.5);
+    expect(mids.length, 'width must TWEEN 220->48 with intermediate frames, not snap').toBeGreaterThan(0);
+    console.log(`[P16C-2b] mid-tween frames: ${JSON.stringify(mids.slice(0, 6))} ... total=${mids.length}`);
+  } finally {
+    await hardClose(electronApp);
+  }
+});
+
 test('P16C-3: ruler numbers visible; current page in accent; plain numbers in text colour', async () => {
   const { electronApp, window } = await openWorkspace();
   try {
