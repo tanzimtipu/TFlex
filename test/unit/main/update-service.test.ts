@@ -761,3 +761,151 @@ describe('UpdateService — checkForUpdates (manual re-check)', () => {
     expect(_downloadUpdate).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// UpdateService — OTA fallback (primary feed empty -> source-repo retry)
+// ---------------------------------------------------------------------------
+
+describe('UpdateService — OTA fallback', () => {
+  beforeEach(() => {
+    clearEnv();
+    _mockReadFileSync.mockReturnValue(JSON.stringify({ repository: 'tanzimtipu/TFlex' }));
+    _autoUpdaterRemoveAll();
+    _autoUpdaterOn.mockClear();
+    _checkForUpdates.mockClear();
+    _checkForUpdates.mockResolvedValue(undefined);
+    _setFeedURL.mockClear();
+  });
+
+  afterEach(() => {
+    clearEnv();
+  });
+
+  function getHandler(event: string): (...args: unknown[]) => void {
+    const calls = _autoUpdaterOn.mock.calls.filter((c: unknown[]) => c[0] === event);
+    return calls.length > 0
+      ? calls[calls.length - 1][1] as (...args: unknown[]) => void
+      : vi.fn();
+  }
+
+  describe('primary feed empty, no token', () => {
+    it('reports a clean up-to-date state on the error event (no fallback configured)', () => {
+      const svc = new UpdateService();
+      svc.init();
+      getHandler('error')(new Error('No published versions on GitHub'));
+      const status = svc.getStatus();
+      expect(status.kind).toBe('up-to-date');
+      if (status.kind === 'up-to-date') {
+        expect(status.version).toBe('1.5.0');
+      }
+      // Only the primary feed was ever configured — no fallback retry.
+      expect(_setFeedURL).toHaveBeenCalledTimes(1);
+      expect(_checkForUpdates).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a clean up-to-date state when the check promise rejects', async () => {
+      const svc = new UpdateService();
+      svc.init();
+      _checkForUpdates.mockClear();
+      _checkForUpdates.mockRejectedValueOnce(
+        new Error('Unable to find latest version on GitHub (tanzimtipu/tflex-releases), please ensure a production release exists'),
+      );
+      const result = await svc.checkForUpdates();
+      expect(result.kind).toBe('up-to-date');
+      if (result.kind === 'up-to-date') {
+        expect(result.version).toBe('1.5.0');
+      }
+      // No fallback exists (no token), so no retry was started.
+      expect(_checkForUpdates).toHaveBeenCalledTimes(1);
+      expect(_setFeedURL).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not demote real errors to up-to-date', async () => {
+      const svc = new UpdateService();
+      svc.init();
+      _checkForUpdates.mockClear();
+      _checkForUpdates.mockRejectedValueOnce(new Error('network down'));
+      const result = await svc.checkForUpdates();
+      expect(result.kind).toBe('error');
+      if (result.kind === 'error') {
+        expect(result.message).toBe('network down');
+      }
+    });
+  });
+
+  describe('primary feed empty, token present', () => {
+    beforeEach(() => {
+      process.env.TFLEX_GH_TOKEN = 'test-token';
+    });
+
+    it('retries once against the private source repo on the error event', () => {
+      const svc = new UpdateService();
+      svc.init();
+      _setFeedURL.mockClear();
+      _checkForUpdates.mockClear();
+      getHandler('error')(new Error('No published versions on GitHub'));
+      expect(_setFeedURL).toHaveBeenCalledWith({
+        provider: 'github',
+        owner: 'tanzimtipu',
+        repo: 'TFlex',
+        private: true,
+        token: 'test-token',
+      });
+      // Exactly one fallback retry check.
+      expect(_checkForUpdates).toHaveBeenCalledTimes(1);
+    });
+
+    it('retries via the source repo when the check promise rejects', async () => {
+      const svc = new UpdateService();
+      svc.init();
+      _setFeedURL.mockClear();
+      _checkForUpdates.mockClear();
+      _checkForUpdates.mockRejectedValueOnce(
+        new Error("Cannot read properties of undefined (reading 'assets')"),
+      );
+      const result = await svc.checkForUpdates();
+      expect(_setFeedURL).toHaveBeenCalledWith({
+        provider: 'github',
+        owner: 'tanzimtipu',
+        repo: 'TFlex',
+        private: true,
+        token: 'test-token',
+      });
+      // Primary check (rejected) + one fallback retry (resolves in the mock).
+      expect(_checkForUpdates).toHaveBeenCalledTimes(2);
+      // The retry is still in flight when the manual check returns.
+      expect(result.kind).toBe('checking');
+    });
+
+    it('switches to the source repo and recovers when it has releases', () => {
+      const svc = new UpdateService();
+      svc.init();
+      getHandler('error')(new Error('No published versions on GitHub'));
+      // The fallback check (source repo) finds a release.
+      getHandler('update-available')({ version: '2.0.0' });
+      expect(svc.getStatus().kind).toBe('available');
+    });
+
+    it('does not retry the fallback twice and ends clean when the source repo is also empty', () => {
+      const svc = new UpdateService();
+      svc.init();
+      getHandler('error')(new Error('No published versions on GitHub'));
+      // The source-repo fallback reports no releases either.
+      getHandler('error')(new Error('No published versions on GitHub'));
+      const status = svc.getStatus();
+      expect(status.kind).toBe('up-to-date');
+      if (status.kind === 'up-to-date') {
+        expect(status.version).toBe('1.5.0');
+      }
+      // Primary feed at init + exactly one fallback switch.
+      expect(_setFeedURL).toHaveBeenCalledTimes(2);
+      expect(_setFeedURL).toHaveBeenLastCalledWith({
+        provider: 'github',
+        owner: 'tanzimtipu',
+        repo: 'TFlex',
+        private: true,
+        token: 'test-token',
+      });
+    });
+  });
+});
