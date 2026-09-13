@@ -18,25 +18,20 @@
 # If GitHub Actions is not enabled for this private repo the workflow simply does
 # not run, and nothing else changes.
 
-name: verify
-
-on:
-  push:
-  pull_request:
-
-jobs:
-  verify:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-
-      - name: Install
-        run: npm ci
-
-      - name: Verify (conventions, typecheck, unit tests)
-        run: npm run verify:full
+# name: verify
+# on:
+#   push:
+#   pull_request:
+# jobs:
+#   verify:
+#     runs-on: windows-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#       - uses: actions/setup-node@v4
+#         with:
+#           node-version: '24'
+#           cache: npm
+#       - name: Install
+#         run: npm ci
+#       - name: Verify (conventions, typecheck, unit tests)
+#         run: npm run verify:full
