@@ -253,10 +253,10 @@ describe("Phase 14 — docked glass shell (the panels behave like light/dark)", 
       /@property\s+--tf-tools-inset\s*\{[^}]*syntax:\s*"<length>"[^}]*\}/,
     );
     // The transition lives on .workspace-main (chrome level) with the
-    // shared 300ms ease-out tokens.
+    // shared 150ms ease-out tokens.
     const main = findRuleBody(css, ".workspace-main");
     expect(main ?? "").toMatch(/transition:[\s\S]*--tf-tools-inset/);
-    expect(main ?? "").toMatch(/var\(--panel-slide-duration,\s*300ms\)/);
+    expect(main ?? "").toMatch(/var\(--panel-slide-duration,\s*150ms\)/);
     // ...and NEVER on the scroller itself (the PDF-safety contract).
     const scroller = findRuleBody(css, ".document-scroller");
     expect(scroller ?? "").not.toMatch(/transition\s*:/);

@@ -52,7 +52,7 @@ describe("animations.css token layer", () => {
     expect(root.get("--motion-duration-micro")).toBe("150ms");
     expect(root.get("--motion-duration-fast")).toBe("200ms");
     expect(root.get("--motion-duration-standard")).toBe("250ms");
-    expect(root.get("--motion-duration-panel")).toBe("280ms");
+    expect(root.get("--motion-duration-panel")).toBe("140ms");
     expect(root.get("--motion-duration-layout")).toBe("350ms");
     expect(root.get("--motion-duration-reduced")).toBe("0ms");
   });
@@ -168,7 +168,7 @@ describe("motionTokens.ts mirror", () => {
     expect(MOTION_DURATION.micro).toBe(150);
     expect(MOTION_DURATION.fast).toBe(200);
     expect(MOTION_DURATION.standard).toBe(250);
-    expect(MOTION_DURATION.panel).toBe(280);
+    expect(MOTION_DURATION.panel).toBe(140);
     expect(MOTION_DURATION.layout).toBe(350);
     expect(MOTION_DURATION.reduced).toBe(0);
     expect(MOTION_THEME_CROSSFADE).toBe(400);

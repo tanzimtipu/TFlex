@@ -187,7 +187,7 @@
   --tools-panel-gap: 12px;
   /* The simultaneous panel/page slide (Phase 14.2 FIX 5): panel and
    * page view animate together on the same duration + easing. */
-  --panel-slide-duration: 300ms;
+  --panel-slide-duration: 150ms;
   --panel-slide-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* GLOBAL MOTION SYSTEM — the single theme-independent timing +
@@ -385,7 +385,7 @@
 
 /* Phase 14.2 FIX 4/5 — the animated page-view inset. The open Tools
  * panel must push the page view in EVERY theme, and panel + page must
- * move TOGETHER (same 300ms ease-out). The inset is a REGISTERED
+ * move TOGETHER (same 150ms ease-out). The inset is a REGISTERED
  * custom property (--tf-tools-inset) declared on .app-main and
  * transitioned on .workspace-main; the scroller merely consumes it as
  * its right margin. Registering the property is what makes the length
@@ -405,7 +405,7 @@
  * of snapping: .app-main carries the state as data-rail-collapsed
  * (the SAME React state that swaps the rail body to the ruler strip),
  * declares the collapsed value here, and .workspace transitions the
- * inherited token on --motion-duration-panel (280ms) with
+ * inherited token on --motion-duration-panel (140ms) with
  * --motion-ease-layout — the centralized Phase-15 motion tokens, same
  * mechanism as --tf-tools-inset. */
 @property --tf-rail-w {
@@ -2048,7 +2048,7 @@ input[type="checkbox"] {
    * data-tools-mode attributes from the SAME React state that mounts
    * the palette); this grid animates the token and the scroller
    * consumes it as its right margin — so panel and page move
-   * TOGETHER on the identical 300ms ease-out curve (the panel's
+   * TOGETHER on the identical 150ms ease-out curve (the panel's
    * TfPanel tween uses the same duration + curve). The transition
    * lives on the registered custom property, never on the scroller
    * itself (the PDF-safety audit keeps transitions off the document
@@ -2064,7 +2064,7 @@ input[type="checkbox"] {
    * the driver value, and the transition below fires on that inherited
    * change so panel and page tween together. */
   transition:
-    --tf-tools-inset var(--panel-slide-duration, 300ms)
+    --tf-tools-inset var(--panel-slide-duration, 150ms)
     var(--panel-slide-ease, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
@@ -2732,7 +2732,7 @@ input[type="checkbox"] {
  * Position: anchored to the page view's RIGHT EDGE — `right` reads
  * the same --tf-tools-inset token the scroller consumes as its right
  * margin, plus the 8px scrollbar gutter, so when the panel opens the
- * badge glides to the page area's new edge on the identical 300ms
+ * badge glides to the page area's new edge on the identical 150ms
  * curve. The transition lives on the REGISTERED token at
  * .workspace-main (never on this element), so the badge follows the
  * token's per-frame value and this rule stays transform/opacity-only,
@@ -8636,7 +8636,7 @@ rect.ann-highlight.ann-preview {
  * from the SAME state-driven --tf-tools-inset token every theme uses
  * (declared on .app-main[data-tools-open], animated on
  * .workspace-main, consumed by the scroller's margin-right), so panel
- * and page move TOGETHER in every theme on the same 300ms ease-out. */
+ * and page move TOGETHER in every theme on the same 150ms ease-out. */
 
 /* DEF-187 — the window shell rounds at the WINDOW radius (--radius-
  * window, 20px — the top of the spec's 18-22px band) so the chrome

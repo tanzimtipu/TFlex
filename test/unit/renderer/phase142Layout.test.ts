@@ -205,10 +205,10 @@ describe("Phase 14.2 — state-driven page view in every theme (FIX 4/5)", () =>
     expect(scroller ?? "").not.toMatch(/transition\s*:/);
   });
 
-  it("the panel + page slide shares one 300ms ease-out", () => {
+  it("the panel + page slide shares one 150ms ease-out", () => {
     const rootIdx = css.indexOf(":root {");
     const body = extractRuleBody(css, rootIdx);
-    expect(body).toMatch(/--panel-slide-duration:\s*300ms/);
+    expect(body).toMatch(/--panel-slide-duration:\s*150ms/);
     expect(body).toMatch(/--panel-slide-ease:\s*cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/);
     const main = findRuleBody(css, ".workspace-main {");
     expect(main ?? "").toMatch(/transition:[\s\S]*--tf-tools-inset/);
@@ -223,7 +223,7 @@ describe("Phase 14.2 — state-driven page view in every theme (FIX 4/5)", () =>
     const main = findRuleBody(css, ".workspace-main {");
     expect(main, ".workspace-main rule missing").not.toBeNull();
     expect(main ?? "").not.toMatch(/--tf-tools-inset\s*:/);
-    // The transition on the inherited token stays (the 300ms tween
+    // The transition on the inherited token stays (the 150ms tween
     // that keeps panel + page moving together).
     expect(main ?? "").toMatch(/transition:[\s\S]*--tf-tools-inset/);
   });

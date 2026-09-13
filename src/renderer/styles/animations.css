@@ -33,7 +33,7 @@
   /* Standard: dialogs bloom, selection fills, focus halos. */
   --motion-duration-standard: 250ms;
   /* Panel: sidebars, inspectors, docked rails. */
-  --motion-duration-panel: 280ms;
+  --motion-duration-panel: 140ms;
   /* Layout: large coordinated layout morphs. */
   --motion-duration-layout: 350ms;
   /* Theme crossfade (colors/borders/shadows together). */

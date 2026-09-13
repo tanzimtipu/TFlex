@@ -13,7 +13,7 @@ export const MOTION_DURATION = {
   micro: 150,
   fast: 200,
   standard: 250,
-  panel: 280,
+  panel: 140,
   layout: 350,
   /** The canonical no-motion duration (prefers-reduced-motion). */
   reduced: 0,

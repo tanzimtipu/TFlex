@@ -478,17 +478,17 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
       role="complementary"
       aria-label="Tools"
       // Phase 14.2 FIX 5 — the panel and the page view animate
-      // TOGETHER. The page view's inset animates over a 300ms
+      // TOGETHER. The page view's inset animates over a 150ms
       // cubic-bezier(0.16,1,0.3,1) ease-out (the --panel-slide-*
       // tokens); the panel used to ride the shared 280ms panel
       // SPRING, a different character and length than the page
-      // slide. Overriding the transition with the same 300ms tween
+      // slide. Overriding the transition with the same 150ms tween
       // pins both surfaces to one identical motion — they start on
       // the same frame (the open state is the same React state that
       // flips .app-main's data-tools-open attribute) and settle on
       // the same curve. Reduced motion keeps the TfMotion
       // opacity-only path (this override is bypassed there).
-      transition={{ type: 'tween', duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+      transition={{ type: 'tween', duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
       exit={{
         opacity: 0,
         // TfPanel pins the exit transform to the mode's travel; the
