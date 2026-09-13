@@ -225,11 +225,20 @@ test('P16C-2: collapse button -> 48px ruler strip, settled on the registered tok
         webkitWidth: webkit.width,
         webkitDisplay: webkit.display,
         railBorder: getComputedStyle(document.querySelector('.side-rail')).borderRightWidth,
+        railBorderStyle: getComputedStyle(document.querySelector('.side-rail')).borderRightStyle,
       };
     });
     const noChrome = sb.scrollbarWidth === 'none' || sb.webkitWidth === '0px' || sb.webkitDisplay === 'none';
     expect(noChrome, `ruler strip must hide scrollbar chrome (got ${JSON.stringify(sb)})`).toBe(true);
-    expect(sb.railBorder, 'ruler strip keeps its separator border').toBe('1px');
+    // Chromium reports border widths in DEVICE-SNAPPED pixels: at a 1.5x
+    // DPR display a declared 1px border comes back as 0.666667px (1
+    // device px) and at 2x as 0.5px - an identical control element with a
+    // plain 1px border reads the same snapped value (verified on this
+    // machine). The contract is "a separator border exists", so assert
+    // solid + non-zero used width instead of the DPR-fragile exact "1px".
+    const borderOk =
+      sb.railBorderStyle === 'solid' && parseFloat(sb.railBorder) > 0;
+    expect(borderOk, `ruler strip keeps its separator border (got ${JSON.stringify(sb)})`).toBe(true);
 
     // data-rail-collapsed is the state driver on .app-main.
     expect(await window.locator('.app-main[data-rail-collapsed="true"]').count()).toBe(1);
