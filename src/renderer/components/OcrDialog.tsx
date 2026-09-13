@@ -113,7 +113,10 @@ interface OcrDialogProps {
 interface RunProgress {
   /** Total pages in scope. */
   total: number;
-  /** 0-based page counter — how many pages we've finished. */
+  /** Page counter — pages finished or in progress. During the
+   *  rasterisation step it counts completed renders; when the
+   *  recognition phase starts it is reset to zero and refilled
+   *  from the engine's per-page events. */
   completed: number;
   /** Currently running page label, 1-based; null when idle. */
   currentPage: number | null;
@@ -197,14 +200,17 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
   useEffect(() => {
     if (!open || !running) return undefined;
     const unsub = subscribeOcrProgress((p) => {
-      // The engine reports per-page progress for the active doc;
-      // we update the progress bar in place without resetting
-      // `completed` so the user sees a smooth fill as the
-      // engine progresses through pages.
+      // The engine reports per-page progress for the active doc.
+      // `completed` was reset to zero when rasterisation finished,
+      // so refill it here: the reported page counts as in progress,
+      // and keeping the higher of that and the last value means a
+      // late 'writing' event for an earlier page can't drag the
+      // bar backwards.
       setProgress((prev) => ({
         ...prev,
         currentPage: p.page,
         phase: p.phase,
+        completed: Math.min(Math.max(prev.completed, p.page), prev.total),
       }));
     });
     progressUnsubRef.current = unsub;
@@ -348,6 +354,16 @@ export function OcrDialog(props: OcrDialogProps): ReactElement | null {
         setRunning(false);
         return;
       }
+      // Rasterisation finished: reset the counter so the bar
+      // starts low again when the recognition phase begins. The
+      // engine's per-page events (subscribed in the effect above)
+      // refill it from zero, instead of the bar sitting at 100%
+      // for the entire recognition run.
+      setProgress((prev) => ({
+        ...prev,
+        completed: 0,
+        phase: 'recognizing',
+      }));
       // Step 3: send the rasterised pages to the engine. The
       // engine runs tesseract, writes the invisible text layer
       // onto each page, and pushes per-page progress events

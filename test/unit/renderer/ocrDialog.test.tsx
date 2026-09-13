@@ -14,6 +14,7 @@ vi.mock("../../../src/renderer/pdf/ocrRasterize", () => ({
   rasterizePagesForOcr: async (args: {
     pages: number[];
     dpi: number;
+    onProgress?: (page: number) => void;
   }): Promise<Array<{
     page: number;
     pngBytes: Uint8Array;
@@ -21,6 +22,11 @@ vi.mock("../../../src/renderer/pdf/ocrRasterize", () => ({
     widthPx: number;
     heightPx: number;
   }>> => {
+    // Mirror the real helper: notify per completed render so the
+    // dialog's rasterisation-phase bar updates are exercised.
+    for (const p of args.pages) {
+      args.onProgress?.(p);
+    }
     return args.pages.map((p) => ({
       page: p,
       pngBytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
@@ -462,6 +468,79 @@ describe("OcrDialog — progress subscription (Phase 11)", () => {
     expect(fill).not.toBeNull();
     // Release the runOcr gate so the dialog's onConfirm fires
     // and the test cleans up cleanly.
+    await act(async (): Promise<void> => {
+      release?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    cleanup();
+  });
+
+  it("resets the bar to zero when recognition starts and refills from engine events", async () => {
+    // Pins the fix for the bar sitting at 100% while tesseract runs:
+    // the rasterisation step fills the bar to its top, then the
+    // dialog resets the counter before the engine run begins, and
+    // the engine's per-page events refill it page by page.
+    let captured: ((p: OcrProgress) => void) | null = null;
+    const subscribe = (cb: (p: OcrProgress) => void): (() => void) => {
+      captured = cb;
+      return (): void => undefined;
+    };
+    // Gate the engine run so we can observe the mid-run bar state.
+    let release: (() => void) | null = null;
+    const runOcr = vi.fn(
+      async (): Promise<{ ok: true; suspects: OcrSuspect[] }> => {
+        await new Promise<void>((r) => {
+          release = r;
+        });
+        return { ok: true, suspects: [] };
+      },
+    );
+    const { container, cleanup } = renderDialog({
+      totalPages: 3,
+      runOcr,
+      subscribeOcrProgress: subscribe,
+    });
+    const confirm = container.querySelector<HTMLButtonElement>('[data-ocr-confirm]');
+    expect(confirm).not.toBeNull();
+    if (confirm === null) return cleanup();
+    await act(async (): Promise<void> => {
+      confirm.click();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(captured).not.toBeNull();
+    if (captured === null) return cleanup();
+    const fillWidth = ((): string | undefined => {
+      const fill = container.querySelector<HTMLElement>('[data-ocr-progress-fill]');
+      return fill?.style.width;
+    })();
+    const percentText = ((): string => {
+      const el = container.querySelector<HTMLElement>('.ocr-progress-percent');
+      return el?.textContent ?? '';
+    })();
+    // Rasterisation of all three pages filled the bar to 100%; once
+    // the engine run has started the dialog must reset it to zero
+    // instead of leaving a stuck full bar during recognition.
+    expect(fillWidth).toBe('0%');
+    expect(percentText).toBe('0%');
+    // Engine events refill the bar: page 2 in progress -> 2/3.
+    act((): void => {
+      captured!({ docId: 'd', page: 2, totalPages: 3, phase: 'recognizing' });
+    });
+    expect(container.querySelector<HTMLElement>('[data-ocr-progress-fill]')?.style.width).toBe('67%');
+    // A late 'writing' event for an earlier page must not regress
+    // the bar.
+    act((): void => {
+      captured!({ docId: 'd', page: 1, totalPages: 3, phase: 'writing' });
+    });
+    expect(container.querySelector<HTMLElement>('[data-ocr-progress-fill]')?.style.width).toBe('67%');
+    // The final page completes the bar.
+    act((): void => {
+      captured!({ docId: 'd', page: 3, totalPages: 3, phase: 'writing' });
+    });
+    expect(container.querySelector<HTMLElement>('[data-ocr-progress-fill]')?.style.width).toBe('100%');
     await act(async (): Promise<void> => {
       release?.();
       await Promise.resolve();
