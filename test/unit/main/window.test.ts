@@ -346,10 +346,12 @@ describe('createMainWindow', () => {
   // Phase 14 — transparent window so the desktop wallpaper shows through the
   // renderer's frosted-glass panels. The CSS backdrop-filter only blurs what
   // is behind the element in the compositor, so without an opaque OS backdrop
-  // the wallpaper composites through. hasShadow keeps the frameless drop
-  // shadow; backgroundMaterial:'acrylic' requests the Windows 11 native acrylic
-  // backdrop (no-op on non-Windows-11). frame:false stays frameless — these
-  // options do not re-introduce native caption buttons.
+  // the wallpaper composites through the renderer's translucent sheets. No
+  // backgroundMaterial: the Windows 11 DWM acrylic material re-renders its
+  // wallpaper blur on every mouse-move invalidation, which made the wallpaper
+  // behind the glass flicker as the mouse moved — the frosted effect is
+  // CSS-only. hasShadow keeps the frameless drop shadow. frame:false stays
+  // frameless — these options do not re-introduce native caption buttons.
   it('enables window transparency for desktop wallpaper show-through', () => {
     createMainWindow(defaultSettings, {
       rendererHtml: '/app/renderer/index.html',
@@ -361,7 +363,14 @@ describe('createMainWindow', () => {
     expect(opts.transparent).toBe(true);
   });
 
-  it('sets the Windows 11 acrylic background material', () => {
+  // No DWM background material must be requested: Windows 11 acrylic
+  // re-renders its wallpaper blur on every mouse-move invalidation (Chromium
+  // repaints hover states on each move), which made the wallpaper behind the
+  // glass flicker as the mouse moved. The frosted effect is CSS-only
+  // (translucent sheets + backdrop-filter). Mica was rejected: it is a static
+  // monochrome tone, not see-through glass, and would break the
+  // wallpaper-shows-through contract.
+  it('does not request a DWM background material (acrylic flickers on mouse move)', () => {
     createMainWindow(defaultSettings, {
       rendererHtml: '/app/renderer/index.html',
       onGeometryChanged: vi.fn(),
@@ -369,7 +378,7 @@ describe('createMainWindow', () => {
 
     const win = lastWindow();
     const opts = win._opts as Record<string, unknown>;
-    expect(opts.backgroundMaterial).toBe('acrylic');
+    expect(opts.backgroundMaterial).toBeUndefined();
   });
 
   it('keeps the frameless window drop shadow (hasShadow:true)', () => {

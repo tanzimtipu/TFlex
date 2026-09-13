@@ -66,16 +66,26 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
   // renderer's frosted-glass panels (`backdrop-filter: blur()` in CSS only blurs
   // what is *behind* the element *in the compositor*; with an opaque window that
   // is the app's own aurora background, not the wallpaper). `transparent: true`
-  // removes the OS-supplied opaque backdrop so the wallpaper composites through.
-  // `backgroundMaterial: 'acrylic'` requests the Windows 11 native acrylic
-  // backdrop as a fallback/extension of the effect (no-op on non-Windows-11);
-  // `hasShadow: true` keeps the frameless window's drop shadow so it still reads
-  // as a floating surface against the wallpaper. Frameless (`frame: false`)
-  // remains compatible — transparency does not re-introduce the native title bar
-  // or caption buttons, so the renderer's custom controls stay the only set.
-  // `show: false` + `ready-to-show` (below) is retained because a transparent
-  // window flashing its uninitialized background is more visible than an opaque
-  // one; the show gate already hides that.
+  // removes the OS-supplied opaque backdrop so the wallpaper composites through
+  // the renderer's translucent sheets — the sheets diffuse whatever the OS
+  // composites behind the window, and the wallpaper supplies the glass tint
+  // (the DEF-182 design contract).
+  // No `backgroundMaterial` (no native acrylic/mica): the Windows 11 DWM
+  // acrylic material re-renders its wallpaper blur on every mouse-move
+  // invalidation (Chromium repaints hover states on each move), so the
+  // wallpaper behind the glass flickered as the mouse moved. The CSS-only
+  // effect is the intended one: `backdrop-filter` still blurs the
+  // renderer-drawn content behind each chrome surface, and no DWM material is
+  // re-sampled on mouse move. (Mica was rejected as the alternative: it is a
+  // static monochrome tone, not see-through glass, and would break the
+  // wallpaper-shows-through contract.)
+  // `hasShadow: true` keeps the frameless window's drop shadow so it still
+  // reads as a floating surface against the wallpaper. Frameless
+  // (`frame: false`) remains compatible — transparency does not re-introduce
+  // the native title bar or caption buttons, so the renderer's custom controls
+  // stay the only set. `show: false` + `ready-to-show` (below) is retained
+  // because a transparent window flashing its uninitialized background is more
+  // visible than an opaque one; the show gate already hides that.
   const win = new BrowserWindow({
     width: geometry.width,
     height: geometry.height,
@@ -88,7 +98,6 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     show: false,
     autoHideMenuBar: false,
     transparent: true,
-    backgroundMaterial: 'acrylic',
     hasShadow: true,
     webPreferences: {
       preload: resolvePreloadPath(),
