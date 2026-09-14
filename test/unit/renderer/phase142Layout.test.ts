@@ -196,7 +196,9 @@ describe("Phase 14.2 — state-driven page view in every theme (FIX 4/5)", () =>
     expect(css).toMatch(/\.app-main\[data-tools-open="true"\]\s*\{/);
     expect(css).toMatch(/\.app-main\[data-tools-open="true"\]\[data-tools-mode="grid"\]/);
     const driver = css.match(/\.app-main\[data-tools-open="true"\]\s*\{([^}]*)\}/);
-    expect(driver?.[1] ?? "").toMatch(/--tf-tools-inset:\s*calc\(/);
+    expect(driver?.[1] ?? "").toMatch(
+      /--tf-tools-inset:\s*var\(--tools-panel-w,\s*344px\);/,
+    );
   });
 
   it("the scroller consumes the inset with NO transition of its own", () => {

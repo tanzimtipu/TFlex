@@ -2282,8 +2282,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             the same token the page-view inset consumes) on the same
             150ms curve — badge, panel and page move together. The
             chevron glyph flips with the state (ChevronLeft closed,
-            ChevronRight open) and the .tools-badge-tracker-open
-            class adds a 180deg transform spin. Kept below modal
+            ChevronRight open) via the icon swap itself. Kept below modal
             sheets in styles.css. data-tools-toggle is kept alongside
             data-tools-badge so the long-standing e2e selector still
             resolves on the moved control. */}

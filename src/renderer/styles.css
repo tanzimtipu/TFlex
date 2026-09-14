@@ -181,11 +181,7 @@
   --panel-border: var(--border);
   --panel-radius: 0px;
   --panel-shadow: none;
-  /* Gap between the page view's right edge and the open Tools panel
-   * (both palette layouts + the 12px breathing gap), shared by the
-   * scroller inset rule and the palette's own geometry. */
-  --tools-panel-gap: 12px;
-  /* The simultaneous panel/page slide (Phase 14.2 FIX 5): panel and
+   /* The simultaneous panel/page slide (Phase 14.2 FIX 5): panel and
    * page view animate together on the same duration + easing. */
   --panel-slide-duration: 150ms;
   --panel-slide-ease: cubic-bezier(0.16, 1, 0.3, 1);
@@ -2075,11 +2071,11 @@ input[type="checkbox"] {
  * `toolsPaletteOpen` state that mounts the palette, so the inset and
  * the panel's own enter motion start on the same frame — no
  * mount/unmount lag, no sequential steps. The panel width follows
- * the persisted layout mode (list 344px / grid 380px) plus the 12px
- * breathing gap. */
+ * the persisted layout mode (list 344px / grid 380px); the page view
+ * ends flush against the panel's left edge — no breathing gap. */
 .app-main[data-tools-open="true"] {
   --tools-panel-w: 344px;
-  --tf-tools-inset: calc(var(--tools-panel-w, 344px) + var(--tools-panel-gap, 12px));
+  --tf-tools-inset: var(--tools-panel-w, 344px);
 }
 
 .app-main[data-tools-open="true"][data-tools-mode="grid"] {
@@ -2746,10 +2742,10 @@ input[type="checkbox"] {
  * and backdrops (800) / toasts (1000) still cover it.
  *
  * Chevron: the glyph flips with the palette state (ChevronLeft
- * closed, ChevronRight open) and the .tools-badge-tracker-open
- * class rotates it a further 180deg on the standard 250ms curve —
- * transform-only (Phase-15 motion contract: transform/opacity only,
- * token-driven durations). */
+ * closed, ChevronRight open) via the React icon swap itself — no CSS
+ * counter-rotation: a 180deg spin on the open-state glyph used to
+ * rotate the right-pointing icon back to left, so the arrow never
+ * changed direction. */
 .tools-badge-tracker {
   position: fixed;
   /* When closed: at the window right edge. */
@@ -2820,11 +2816,6 @@ input[type="checkbox"] {
   justify-content: center;
   color: #ffffff;
   margin-bottom: 4px;
-  transition: transform var(--motion-duration-standard, 250ms) var(--motion-ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
-}
-
-.tools-badge-tracker-open .tools-badge-chevron {
-  transform: rotate(180deg);
 }
 
 /* Vertical "All Tools" label below the chevron — bottom-to-top

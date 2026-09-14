@@ -224,16 +224,21 @@ describe("Phase 14 — docked glass shell (the panels behave like light/dark)", 
     // carries data-tools-open (the same React state that mounts the
     // palette) and the scroller consumes the animated --tf-tools-inset
     // as its right margin, in EVERY theme. The inset equals the panel
-    // width (list 344px / grid 380px) + the 12px gap, so the docked
-    // panel and the page move together.
+    // width (list 344px / grid 380px) exactly — the page view ends
+    // flush against the panel's left edge, no breathing gap — so the
+    // docked panel and the page move together.
     const stripped = stripCssComments(css);
     const driver = stripped.match(
       /\.app-main\[data-tools-open="true"\]\s*\{([^}]*)\}/,
     );
     expect(driver, "the tools-inset driver rule missing").not.toBeNull();
     expect(driver?.[1] ?? "").toMatch(
-      /--tf-tools-inset:\s*calc\(var\(--tools-panel-w,\s*344px\)\s*\+\s*var\(--tools-panel-gap,\s*12px\)\)/,
+      /--tf-tools-inset:\s*var\(--tools-panel-w,\s*344px\);/,
     );
+    // The gap token is gone: the page content must sit flush against
+    // the panel (a 12px breathing gap used to leave a visible empty
+    // band between the scrollbar and the panel).
+    expect(stripped).not.toMatch(/--tools-panel-gap/);
     // The grid layout mode widens the panel token to 380px.
     const gridDriver = stripped.match(
       /\.app-main\[data-tools-open="true"\]\[data-tools-mode="grid"\]\s*\{([^}]*)\}/,
