@@ -8,9 +8,10 @@
 //           (thumbnails / annotations / bookmarks) still work while expanded.
 //   P16C-2  Collapse button shrinks the rail to the 48px ruler strip; the
 //           grid column tweens 220px -> 48px on the registered --tf-rail-w
-//           token (Phase-15 motion token, 280ms). The SETTLED width is
-//           asserted deterministically (ruler mounted, then 350ms past the
-//           280ms token, one-shot read) - never from a rAF sample.
+//           token (Phase-15 motion token, 140ms since the 2026-09-14 panel
+//           speed-up). The SETTLED width is asserted deterministically
+//           (ruler mounted, then 350ms past the 140ms token, one-shot read)
+//           - never from a rAF sample.
 //   P16C-2b The tween itself is proven by rAF sampling mid-flight (a frame
 //           strictly between 48 and 220), kept in its own test so a slow
 //           React commit can never race a settled assertion.
