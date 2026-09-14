@@ -2787,27 +2787,39 @@ input[type="checkbox"] {
 /* "All tools" text badge inside the pill — shown only while the
  * palette is closed (the open state keeps the bare chevron, so the
  * pill collapses back to its 32px icon-only width via min-width).
- * A small semi-transparent chip behind the text; the pill's
- * min-width/padding let it grow to fit label + chevron. The light
- * values are the base; dark / frosted tint it below. */
+ * A distinct blue-accent chip behind the text so the label reads
+ * clearly in every theme; the pill's min-width/padding let it grow
+ * to fit label + chevron. The light values are the base; dark /
+ * frosted tune the gradient and shadow below. */
 .tools-badge-label {
-  font-size: 12px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  margin-right: 4px;
+  font-size: 10px;
+  padding: 4px 2px;
+  border-radius: 12px;
+  margin-right: 6px;
   white-space: nowrap;
-  background: rgba(0, 0, 0, 0.15);
-  color: #333;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  /* Distinct blue accent - visible in all themes */
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+  /* Vertical text rotated 180 degrees */
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  line-height: 1.2;
 }
 
 :root[data-theme="dark"] .tools-badge-label {
-  background: rgba(255, 255, 255, 0.2);
-  color: #eee;
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  color: #ffffff;
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.4);
 }
 
 :root[data-theme="frosted"] .tools-badge-label {
-  background: rgba(15, 23, 42, 0.15);
-  color: #1e293b;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.9));
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
 }
 
 /* Phase 13 — Hand (pan) mode. While armed, the scroller advertises
