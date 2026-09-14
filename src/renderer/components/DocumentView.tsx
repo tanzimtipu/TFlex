@@ -251,7 +251,10 @@ interface DocumentViewProps {
   /** Phase 6 — Tools palette. App owns the open/closed state. The
    *  toolbar no longer carries the toggle: when `onToolsPaletteToggle`
    *  is wired, this view renders the floating badge on the page view's
-   *  right edge (.tools-badge / data-tools-badge) that flips it. */
+   *  right edge (.tools-badge-tracker / data-tools-badge) that flips
+   *  it. The palette is conditionally mounted, so the badge is a
+   *  separate element that tracks the panel's slide via CSS (see the
+   *  badge block in styles.css). */
   toolsPaletteOpen?: boolean;
   onToolsPaletteToggle?: () => void;
   /** Phase 6 — annotation color palette. The toolbar shows a
@@ -2269,21 +2272,25 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             })}
           </div>
         </div>
-        {/* Tools palette badge — the floating toggle on the page view's
-            right edge (moved out of the command bar). Anchored in
-            .workspace-main (position: relative); `right` reads the
-            SAME --tf-tools-inset token the scroller consumes, so when
-            the panel opens the badge slides to the page area's new
-            edge on the identical 300ms curve. ChevronLeft while closed
-            (click slides the panel in from the right), ChevronRight
-            while open (click slides it back out). Kept below the
-            modal sheets (z-index 100+) in styles.css. data-tools-toggle
-            is kept alongside data-tools-badge so the long-standing
-            e2e selector still resolves on the moved control. */}
+        {/* Tools palette badge — the arrow-shaped tab on the page
+            view's right edge (moved out of the command bar). The
+            Tools palette is conditionally mounted (AnimatePresence),
+            so the badge is a SEPARATE element that tracks it via
+            CSS: a `position: fixed` arrow tab pinned to the window's
+            right edge while closed, whose `right` property
+            transitions to the open panel's width (--tools-panel-w,
+            the same token the page-view inset consumes) on the same
+            150ms curve — badge, panel and page move together. The
+            chevron glyph flips with the state (ChevronLeft closed,
+            ChevronRight open) and the .tools-badge-tracker-open
+            class adds a 180deg transform spin. Kept below modal
+            sheets in styles.css. data-tools-toggle is kept alongside
+            data-tools-badge so the long-standing e2e selector still
+            resolves on the moved control. */}
         {onToolsPaletteToggle !== undefined && (
           <button
             type="button"
-            className="tools-badge"
+            className={`tools-badge-tracker ${toolsPaletteOpen ? "tools-badge-tracker-open" : ""}`}
             onClick={onToolsPaletteToggle}
             aria-pressed={toolsPaletteOpen}
             aria-label={toolsPaletteOpen ? "Close tools palette" : "Open tools palette"}
@@ -2295,14 +2302,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             data-tools-badge
             data-tools-toggle
           >
-            {toolsPaletteOpen ? (
-              <ChevronRight size={16} aria-hidden />
-            ) : (
-              <>
-                <span className="tools-badge-label">All tools</span>
-                <ChevronLeft size={16} aria-hidden />
-              </>
-            )}
+            <span className="tools-badge-chevron" aria-hidden="true">
+              {toolsPaletteOpen ? (
+                <ChevronRight size={12} aria-hidden />
+              ) : (
+                <ChevronLeft size={12} aria-hidden />
+              )}
+            </span>
+            <span className="tools-badge-label">All Tools</span>
           </button>
         )}
       </div>

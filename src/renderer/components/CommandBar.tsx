@@ -7,7 +7,7 @@
 //
 // The Tools palette toggle no longer lives in this bar: it is the
 // floating badge on the page view's right edge (DocumentView's
-// .tools-badge, data-tools-badge). The bar only carries the working
+// .tools-badge-tracker, data-tools-badge). The bar only carries the working
 // tool controls.
 //
 // Each cluster is a GlassControlGroup capsule (role="group" +
@@ -134,7 +134,7 @@ export interface CommandBarProps {
  *  the 28px button inside the 36px capsule keeps its ~40px
  *  effective hit row. The Tools palette toggle no longer ships here
  *  (it was FIX 7's "All tools" LayoutGrid glyph): it lives on the
- *  page view's right edge as the floating .tools-badge. */
+ *  page view's right edge as the floating .tools-badge-tracker. */
 export function CommandBar(props: CommandBarProps) {
   const {
     onOpenFile,
@@ -437,11 +437,11 @@ export function CommandBar(props: CommandBarProps) {
         )}
       </GlassControlGroup>
 
-      {/* GROUP: Actions — [Merge] [Split] [Sign] [More]; the trailing
-       * capsule pins to the edge via .toolbar > .toolbar-group:last-child.
-        * The Tools palette toggle no longer lives in this bar: it is the
-        * floating badge on the page view's right edge (DocumentView's
-        * .tools-badge, data-tools-badge). */}
+{/* GROUP: Actions — [Merge] [Split] [Sign] [More]; the trailing
+        * capsule pins to the edge via .toolbar > .toolbar-group:last-child.
+         * The Tools palette toggle no longer lives in this bar: it is the
+         * floating badge on the page view's right edge (DocumentView's
+         * .tools-badge-tracker, data-tools-badge). */}
       <GlassControlGroup label="Document actions" className="toolbar-group commandbar-group-actions">
         <button
           type="button"

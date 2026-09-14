@@ -2023,9 +2023,10 @@ input[type="checkbox"] {
 .workspace-main {
   display: grid;
   /* Positioning context for the chrome rows that float over the
-   * scroller AND for the .tools-badge: the floating Tools palette
-   * toggle anchored to this container's right edge (the frosted
-   * theme block below declares the same value). */
+   * scroller (the frosted theme block below declares the same value).
+   * The .tools-badge-tracker no longer needs this context — the
+   * redesigned arrow badge is `position: fixed` against the viewport
+   * (see the badge block below). */
   position: relative;
   /* Five explicit rows: the two unconditional chrome rows (command
    * toolbar, annotation toolbar), the two CONDITIONAL chrome rows
@@ -2722,104 +2723,135 @@ input[type="checkbox"] {
   border: 2px solid var(--bg-canvas);
 }
 
-/* Tools badge — the floating Tools palette toggle on the page view's
- * right edge. It moved OUT of the command bar into the page view, so
- * the affordance stays reachable beside whatever page is on screen.
- * The pill rides the same glass-capsule tokens as the command-bar
- * groups (--glass-group-* remap per theme, so the surface matches in
- * light / dark / frosted without theme-specific rules).
+/* Tools badge — the floating Tools palette toggle on the page
+ * view's right edge (moved OUT of the command bar). The palette is
+ * conditionally mounted (AnimatePresence), so the badge is a
+ * SEPARATE element that tracks it via CSS: an arrow-shaped tab
+ * pinned `position: fixed` at the viewport's right edge (right: 0,
+ * vertically centered) that transitions its `right` property to the
+ * open panel's width when the palette opens — the same
+ * --tools-panel-w token the page-view inset consumes, on the same
+ * --panel-slide-* curve, so the badge, the panel and the page view
+ * all move together on one identical motion.
  *
- * Position: anchored to the page view's RIGHT EDGE — `right` reads
- * the same --tf-tools-inset token the scroller consumes as its right
- * margin, plus the 8px scrollbar gutter, so when the panel opens the
- * badge glides to the page area's new edge on the identical 150ms
- * curve. The transition lives on the REGISTERED token at
- * .workspace-main (never on this element), so the badge follows the
- * token's per-frame value and this rule stays transform/opacity-only,
- * per the Phase-15 motion contract.
+ * Position: no ancestor of the badge carries a transform/filter
+ * (the frosted theme's .tf-ambient parallax layer is a SIBLING of
+ * .app, never an ancestor), so the fixed box resolves against the
+ * viewport in every theme. The arrow's flat side rides the window
+ * edge while closed and the panel's left edge while open; the tip
+ * points left, into the page area.
  *
- * Stacking: z-index 35 floats the badge above the page content
- * (scroller overlays top out at z 7) and the Tools palette (30), but
- * below the titlebar (40), popovers (50+) and the modal sheets
- * (100+) / modal backdrops (800) / toasts (1000).
+ * Stacking: z-index 100 floats the badge above the Tools palette
+ * (30) and the titlebar (40); modal sheets (100+, later in the DOM)
+ * and backdrops (800) / toasts (1000) still cover it.
  *
- * Quiet at rest (opacity .35), fully visible on hover / focus, and
- * while the palette is open — open state makes it the panel's close
- * handle. */
-.tools-badge {
-  position: absolute;
+ * Chevron: the glyph flips with the palette state (ChevronLeft
+ * closed, ChevronRight open) and the .tools-badge-tracker-open
+ * class rotates it a further 180deg on the standard 250ms curve —
+ * transform-only (Phase-15 motion contract: transform/opacity only,
+ * token-driven durations). */
+.tools-badge-tracker {
+  position: fixed;
+  /* When closed: at the window right edge. */
+  right: 0;
   top: 50%;
-  right: calc(var(--tf-tools-inset, 0px) + 8px);
   transform: translateY(-50%);
-  display: inline-flex;
+  width: 36px;
+  height: 100px;
+  padding: 0;
+  border: none;
+  /* Arrow shape pointing left. */
+  clip-path: polygon(25% 0, 100% 0, 100% 100%, 25% 100%, 0% 50%);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.95), rgba(37, 99, 235, 0.95));
+  border-radius: 10px 0 0 10px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 32px;
-  padding: 0 8px;
-  height: 48px;
-  border: 1px solid var(--glass-group-border);
-  border-radius: 999px;
-  background: var(--glass-group-bg);
-  box-shadow:
-    inset 0 1px 0 var(--glass-highlight),
-    0 1px 2px rgba(0, 0, 0, 0.08);
-  color: var(--fg-muted);
+  color: #ffffff;
   cursor: pointer;
-  opacity: 0.35;
-  z-index: 35;
+  z-index: 100;
+  /* The badge slides WITH the panel: the same duration + easing
+   * tokens the page-view inset animates on (--panel-slide-*), so
+   * the two surfaces can never lead or lag each other (Phase 15 —
+   * no hardcoded motion values). */
   transition:
-    opacity var(--motion-duration-fast, 200ms)
-    var(--motion-ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+    right var(--panel-slide-duration, 150ms)
+      var(--panel-slide-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+    filter var(--motion-duration-fast, 200ms)
+      var(--motion-ease-standard, cubic-bezier(0.4, 0, 0.2, 1)),
+    transform var(--motion-duration-fast, 200ms)
+      var(--motion-ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
 }
 
-.tools-badge:hover,
-.tools-badge:focus-visible,
-.tools-badge[aria-pressed="true"] {
-  opacity: 1;
+/* When the panel is open: the badge moves left with it. The offset
+ * is the shared --tools-panel-w token (.app-main declares it per
+ * layout: list 344px / grid 380px), so the badge tracks the
+ * panel's left edge in BOTH layouts. */
+.tools-badge-tracker-open {
+  right: var(--tools-panel-w, 344px);
 }
 
-/* Press: soft compression on the press-scale token (the translateY
- * offset that centers the pill is kept, only the scale animates). */
-.tools-badge:active {
+/* Hover: the flat blue surface brightens a step (the old design
+ * intensified an outer glow the new compact tab doesn't carry;
+ * brightness is the quiet equivalent). */
+.tools-badge-tracker:hover {
+  filter: brightness(1.08);
+}
+
+/* Focus: an inset white ring keeps keyboard focus visible on the
+ * solid blue surface (a positive outline offset would be clipped
+ * away by the clip-path). */
+.tools-badge-tracker:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.9);
+}
+
+/* Press: soft compression on the press-scale token (the two
+ * transforms compose on the button's translateY centering). */
+.tools-badge-tracker:active {
   transform: translateY(-50%) scale(var(--motion-scale-press, 0.97));
 }
 
-/* "All tools" text badge inside the pill — shown only while the
- * palette is closed (the open state keeps the bare chevron, so the
- * pill collapses back to its 32px icon-only width via min-width).
- * A distinct blue-accent chip behind the text so the label reads
- * clearly in every theme; the pill's min-width/padding let it grow
- * to fit label + chevron. The light values are the base; dark /
- * frosted tune the gradient and shadow below. */
+.tools-badge-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  margin-bottom: 4px;
+  transition: transform var(--motion-duration-standard, 250ms) var(--motion-ease-standard, cubic-bezier(0.4, 0, 0.2, 1));
+}
+
+.tools-badge-tracker-open .tools-badge-chevron {
+  transform: rotate(180deg);
+}
+
+/* Vertical "All Tools" label below the chevron — bottom-to-top
+ * reading (vertical-rl turned 180deg). */
 .tools-badge-label {
   font-size: 10px;
-  padding: 4px 2px;
-  border-radius: 12px;
-  margin-right: 6px;
-  white-space: nowrap;
   font-weight: 600;
-  letter-spacing: 0.5px;
-  /* Distinct blue accent - visible in all themes */
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #ffffff;
-  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
-  /* Vertical text rotated 180 degrees */
   writing-mode: vertical-rl;
   text-orientation: mixed;
   transform: rotate(180deg);
-  line-height: 1.2;
+  white-space: nowrap;
+  line-height: 1;
 }
 
-:root[data-theme="dark"] .tools-badge-label {
-  background: linear-gradient(135deg, #60a5fa, #3b82f6);
-  color: #ffffff;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.4);
+/* Dark theme — the surface reads one step brighter over the dark
+ * canvas. */
+:root[data-theme="dark"] .tools-badge-tracker {
+  background: linear-gradient(135deg, rgba(96, 165, 250, 0.95), rgba(59, 130, 246, 0.95));
 }
 
-:root[data-theme="frosted"] .tools-badge-label {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.9), rgba(37, 99, 235, 0.9));
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);
+/* Frosted theme — the glass reads one blur step deeper over the
+ * wallpaper the window shows through. */
+:root[data-theme="frosted"] .tools-badge-tracker {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.88), rgba(37, 99, 235, 0.88));
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
 }
 
 /* Phase 13 — Hand (pan) mode. While armed, the scroller advertises
