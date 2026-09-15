@@ -136,6 +136,24 @@ export interface AppSettings {
    *  rail renders as a narrow ruler strip showing only page numbers.
    *  Validated preserve-if-valid in settings.ts; default `false`. */
   pagesPanelCollapsed?: boolean;
+  /** Phase 17 — show welcome screen on startup. When true, the app
+   *  opens the welcome screen on launch instead of restoring the
+   *  previous session's documents. */
+  showWelcomeOnStartup?: boolean;
+  /** Phase 17 — confirm before closing multiple tabs. When true, a
+   *  dialog asks for confirmation when closing a window with multiple
+   *  open tabs. */
+  confirmCloseMultipleTabs?: boolean;
+  /** Phase 17 — confirm before deleting pages. When true, a dialog
+   *  asks for confirmation before deleting pages from a document. */
+  confirmDeletePages?: boolean;
+  /** Phase 17 — default zoom mode for new documents. 'fit-width'
+   *  scales to page width; 'fit-page' scales to full page; 'last-used'
+   *  restores the zoom from the previous session. */
+  defaultZoomMode?: 'fit-width' | 'fit-page' | 'last-used';
+  /** Phase 17 — show edit warnings. When true, the app shows warning
+   *  dialogs for destructive edit operations. */
+  showEditWarnings?: boolean;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

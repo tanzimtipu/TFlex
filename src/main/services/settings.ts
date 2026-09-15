@@ -211,6 +211,27 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.pagesPanelCollapsed = rawObj.pagesPanelCollapsed;
   }
 
+  // Phase 17 — new preference fields
+  if (typeof rawObj.showWelcomeOnStartup === 'boolean') {
+    settings.showWelcomeOnStartup = rawObj.showWelcomeOnStartup;
+  }
+  if (typeof rawObj.confirmCloseMultipleTabs === 'boolean') {
+    settings.confirmCloseMultipleTabs = rawObj.confirmCloseMultipleTabs;
+  }
+  if (typeof rawObj.confirmDeletePages === 'boolean') {
+    settings.confirmDeletePages = rawObj.confirmDeletePages;
+  }
+  if (
+    rawObj.defaultZoomMode === 'fit-width' ||
+    rawObj.defaultZoomMode === 'fit-page' ||
+    rawObj.defaultZoomMode === 'last-used'
+  ) {
+    settings.defaultZoomMode = rawObj.defaultZoomMode;
+  }
+  if (typeof rawObj.showEditWarnings === 'boolean') {
+    settings.showEditWarnings = rawObj.showEditWarnings;
+  }
+
   return settings;
 }
 
