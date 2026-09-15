@@ -1,23 +1,29 @@
 // Phase 6 — Preferences sheet.
 //
 // Layout: category sidebar (General, Appearance, Documents, Export,
-// Edit, OCR, Signatures, Storage) + a detail panel. Only the General
-// panel carries settings for now; the other seven categories render a
+// Edit, OCR, Signatures, Storage) + a detail panel. General and
+// Appearance carry settings; the other six categories render a
 // quiet placeholder until their panels land in a later task.
 //
 // General panel sections:
 //   - Startup: show the Welcome screen on launch
 //   - Confirmations: confirm before closing multiple tabs / deleting
 //     pages
-//   - Appearance: theme default — kept in the General panel for now
-//     (the e2e contract reads the select from the sheet's default
-//     view); it moves to the Appearance panel when that panel gets
-//     its own content
 //   - Recent files: cap
 //   - Storage locations (informational: links into the OS file
 //     browser, backed by the same `app.openPath` IPC the About
 //     dialog uses)
 //   - Default handler: register TFlex as the OS default PDF app
+//
+// Appearance panel sections:
+//   - Theme: theme default — moved out of the General panel now that
+//     this panel has its own content (it sat in General temporarily
+//     while the e2e contract read the select from the sheet's
+//     default view; specs that target [data-prefs-theme-default]
+//     without first clicking the Appearance category need that
+//     click added)
+//   - Tools Palette: default layout (list / grid)
+//   - Side Panel: collapse the page panel on startup
 //
 // The theme default applies IMMEDIATELY on change (no Save click, the
 // dialog stays open): the host's `onThemeChange` flips the live theme
@@ -33,12 +39,13 @@
 // current cap is owned by the backend settings service, which would
 // have to honour it on the next `addRecentFile`.)
 //
-// The three General toggles and the default-handler action are
-// OPTIONAL props: until App.tsx wires them to the settings service,
-// the controls run on in-dialog draft state (they stay interactive
-// instead of rendering dead) and the callbacks simply go uncalled.
-// Once the host supplies a value it becomes the source of truth and
-// the draft is ignored.
+// The General toggles, the default-handler action, and the two
+// Appearance controls (tools-palette layout, pages-panel collapse)
+// are OPTIONAL props: until App.tsx wires them to the settings
+// service, the controls run on in-dialog draft state (they stay
+// interactive instead of rendering dead) and the callbacks simply go
+// uncalled. Once the host supplies a value it becomes the source of
+// truth and the draft is ignored.
 
 import type { ReactElement } from 'react';
 import { useEffect, useState } from 'react';
@@ -58,8 +65,8 @@ type PrefsCategoryId =
   | 'signatures'
   | 'storage';
 
-/** Sidebar categories in display order. Only `general` has a panel
- *  implemented so far; the rest are navigation placeholders. */
+/** Sidebar categories in display order. `general` and `appearance`
+ *  have panels implemented; the rest are navigation placeholders. */
 const PREFERENCES_CATEGORIES: ReadonlyArray<{ id: PrefsCategoryId; label: string }> = [
   { id: 'general', label: 'General' },
   { id: 'appearance', label: 'Appearance' },
@@ -91,6 +98,17 @@ interface PreferencesDialogProps {
   onSetConfirmCloseMultipleTabs?: (next: boolean) => void;
   onSetConfirmDeletePages?: (next: boolean) => void;
   onSetDefaultPdfHandler?: () => void;
+  // --- Appearance panel (optional during the transition — same
+  // --- contract as the General toggles above: while the host does
+  // --- not wire a setting the control toggles an in-dialog draft,
+  // --- and once the host supplies a value it becomes the source of
+  // --- truth and the draft is ignored).
+  /** Default tools-palette layout ('list' | 'grid'). */
+  toolsPaletteLayout?: 'list' | 'grid';
+  onSetToolsPaletteLayout?: (next: 'list' | 'grid') => void;
+  /** Collapse the page panel on startup. */
+  pagesPanelCollapsed?: boolean;
+  onSetPagesPanelCollapsed?: (next: boolean) => void;
 }
 
 /** A checkbox setting the host may not wire yet: when `value` is
@@ -144,6 +162,16 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
   const [confirmDeletePages, setConfirmDeletePages] = useOptionalCheckbox(
     props.confirmDeletePages,
     props.onSetConfirmDeletePages,
+  );
+  const [pagesCollapsed, setPagesCollapsed] = useOptionalCheckbox(
+    props.pagesPanelCollapsed,
+    props.onSetPagesPanelCollapsed,
+  );
+  // Tools-palette layout follows the same transition shape as the
+  // checkboxes: the host value wins when provided, otherwise the
+  // select toggles a local draft so it never renders dead.
+  const [layoutDraft, setLayoutDraft] = useState<'list' | 'grid'>(
+    props.toolsPaletteLayout ?? 'list',
   );
 
   useEffect(() => {
@@ -205,6 +233,11 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     const tflex = (window as unknown as { tflex?: { app?: { openPath?: (p: string) => Promise<void> } } }).tflex;
     if (tflex?.app?.openPath === undefined) return;
     void tflex.app.openPath(path).catch(() => undefined);
+  };
+
+  const setToolsLayout = (next: 'list' | 'grid'): void => {
+    setLayoutDraft(next);
+    if (props.onSetToolsPaletteLayout !== undefined) props.onSetToolsPaletteLayout(next);
   };
 
   return (
@@ -298,33 +331,6 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                   </section>
 
                   <section className="preference-section">
-                    <h3>Appearance</h3>
-                    <div className="prefs-row">
-                      <label className="prefs-row-label" htmlFor="prefs-theme-default">Theme default</label>
-                      <select
-                        id="prefs-theme-default"
-                        className="prefs-select"
-                        value={themeDefault}
-                        onChange={(e): void => {
-                          const next = e.target.value as ThemeDefault;
-                          // Persist the default (next launch), then apply the
-                          // choice to the LIVE theme immediately — no Save
-                          // click, the dialog stays open.
-                          onSetThemeDefault(next);
-                          onThemeChange(next);
-                        }}
-                        data-prefs-theme-default
-                      >
-                        <option value="light">Light</option>
-                        <option value="dark">Dark</option>
-                        <option value="frosted">Frosted</option>
-                        <option value="system">System default</option>
-                      </select>
-                    </div>
-                    <p className="prefs-hint">Applies immediately, and is the theme the app starts in on the next launch.</p>
-                  </section>
-
-                  <section className="preference-section">
                     <h3>Recent files</h3>
                     <div className="prefs-row">
                       <label className="prefs-row-label" htmlFor="prefs-recents-cap">Maximum entries</label>
@@ -397,6 +403,69 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                         Set TFlex as default PDF application
                       </button>
                     </div>
+                  </section>
+                </>
+              ) : activeCategory === 'appearance' ? (
+                <>
+                  <section className="preference-section">
+                    <h3>Theme</h3>
+                    <div className="prefs-row">
+                      <label className="prefs-row-label" htmlFor="prefs-theme-default">Application theme</label>
+                      <select
+                        id="prefs-theme-default"
+                        className="prefs-select"
+                        value={themeDefault}
+                        onChange={(e): void => {
+                          const next = e.target.value as ThemeDefault;
+                          // Persist the default (next launch), then apply the
+                          // choice to the LIVE theme immediately — no Save
+                          // click, the dialog stays open.
+                          onSetThemeDefault(next);
+                          onThemeChange(next);
+                        }}
+                        data-prefs-theme-default
+                      >
+                        <option value="light">Light</option>
+                        <option value="dark">Dark</option>
+                        <option value="frosted">Frosted</option>
+                        <option value="system">System default</option>
+                      </select>
+                    </div>
+                    <p className="prefs-hint">Applies immediately. The theme you select will be used on next launch.</p>
+                  </section>
+
+                  <section className="preference-section">
+                    <h3>Tools Palette</h3>
+                    <div className="prefs-row">
+                      <label className="prefs-row-label" htmlFor="prefs-tools-palette-layout">Default layout</label>
+                      <select
+                        id="prefs-tools-palette-layout"
+                        className="prefs-select"
+                        value={props.toolsPaletteLayout ?? layoutDraft}
+                        onChange={(e): void => {
+                          setToolsLayout(e.target.value as 'list' | 'grid');
+                        }}
+                        data-prefs-tools-palette-layout
+                      >
+                        <option value="list">List</option>
+                        <option value="grid">Grid</option>
+                      </select>
+                    </div>
+                  </section>
+
+                  <section className="preference-section">
+                    <h3>Side Panel</h3>
+                    <label className="preference-row">
+                      <input
+                        type="checkbox"
+                        checked={pagesCollapsed}
+                        onChange={(e): void => {
+                          setPagesCollapsed(e.target.checked);
+                        }}
+                        data-prefs-pages-panel-collapsed
+                      />
+                      Collapse page panel on startup
+                    </label>
                   </section>
                 </>
               ) : (

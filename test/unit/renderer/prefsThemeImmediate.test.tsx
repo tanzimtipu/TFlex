@@ -52,6 +52,16 @@ function mountPrefs(themeDefault: ThemeDefault = "dark"): Mount {
       />,
     );
   });
+  // The theme select lives in the Appearance panel (it moved out of
+  // General when that panel got its own content); the sheet opens on
+  // General, so activate Appearance first.
+  const appearanceBtn = host.querySelector<HTMLButtonElement>(
+    '.preferences-sidebar [data-prefs-category="appearance"]',
+  );
+  expect(appearanceBtn).not.toBeNull();
+  act((): void => {
+    appearanceBtn?.click();
+  });
   return {
     host,
     unmount: (): void => {

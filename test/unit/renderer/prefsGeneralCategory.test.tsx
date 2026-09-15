@@ -8,7 +8,9 @@
 //      the placeholder (no General sections, no theme select).
 //   3. The General panel shows the four sections (Startup,
 //      Confirmations, Recent files, Default handler) alongside the
-//      pre-existing theme + storage controls.
+//      pre-existing storage controls. The theme select moved to the
+//      Appearance panel when that panel got its own content, so it
+//      is NOT in the General default view.
 //   4. Each General checkbox calls its callback with the new value.
 //   5. While the host is not wired yet (no value/callback props),
 //      the toggles stay interactive on in-dialog draft state.
@@ -115,9 +117,9 @@ describe("Preferences category navigation + General panel", () => {
     expect(titles).toContain("Confirmations");
     expect(titles).toContain("Recent files");
     expect(titles).toContain("Default handler");
-    // Pre-existing controls remain in the default view (the e2e
-    // contract reads the theme select without any category click).
-    expect(host.querySelector("[data-prefs-theme-default]")).not.toBeNull();
+    // The theme select moved to the Appearance panel; it is NOT in
+    // the General default view anymore.
+    expect(host.querySelector("[data-prefs-theme-default]")).toBeNull();
     expect(host.querySelector("[data-prefs-recents-cap]")).not.toBeNull();
     expect(host.querySelectorAll(".prefs-path")).toHaveLength(3);
     // New General controls.
@@ -233,6 +235,14 @@ describe("Preferences category navigation + General panel", () => {
     render(true);
     expect(sidebarButton(host, "general")?.classList.contains("active")).toBe(true);
     expect(sidebarButton(host, "export")?.classList.contains("active")).toBe(false);
+    // The resumed default view is General, so the theme select (which
+    // now lives in the Appearance panel) is not rendered...
+    expect(host.querySelector("[data-prefs-theme-default]")).toBeNull();
+    // ...and clicking Appearance brings it back.
+    const appearanceBtn = sidebarButton(host, "appearance");
+    act((): void => {
+      appearanceBtn?.click();
+    });
     expect(host.querySelector("[data-prefs-theme-default]")).not.toBeNull();
     unmount();
   });
