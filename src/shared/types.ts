@@ -76,8 +76,12 @@ export interface AppSettings {
   geometry: WindowGeometry;
   recentFiles: RecentFile[];
   /** Phase 6 — default theme the user picks on first boot. When the
-   *  preference sheet changes this, the live theme flips too. */
-  themeDefault?: 'light' | 'dark' | 'system';
+   *  preference sheet changes this, the live theme flips too.
+   *  DEF-212 — widened to include `'frosted'` so the Preferences
+   *  theme-default dropdown offers all three concrete themes plus
+   *  `'system'`. The backend settings service must preserve the
+   *  same four values (preserve-if-valid). */
+  themeDefault?: 'light' | 'dark' | 'system' | 'frosted';
   /** Phase 6 — cap for the recent-files list (1..50). The backend
    *  enforces a matching cap on its side; this is what the renderer
    *  asks for next save. */

@@ -22,7 +22,11 @@ export const MIN_RECENTS_CAP = 1;
 export const MAX_RECENTS_CAP = 50;
 export const DEFAULT_RECENTS_CAP = 10;
 
-export type ThemeDefault = 'light' | 'dark' | 'system';
+// DEF-212 — 'frosted' joins the theme-default set so the
+// Preferences dropdown offers all three concrete themes plus the
+// 'system' meta-option. Mirrors the AppSettings.themeDefault union
+// in shared/types.ts.
+export type ThemeDefault = 'light' | 'dark' | 'system' | 'frosted';
 
 export type PreferencesAction =
   | { type: 'set-theme-default'; value: ThemeDefault }

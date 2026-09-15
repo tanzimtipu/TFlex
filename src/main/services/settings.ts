@@ -126,7 +126,7 @@ export function normalizeSettings(raw: unknown): AppSettings {
   if (typeof rawObj.toolsPaletteLayout === 'string' && (rawObj.toolsPaletteLayout === 'list' || rawObj.toolsPaletteLayout === 'grid')) {
     settings.toolsPaletteLayout = rawObj.toolsPaletteLayout;
   }
-  if (typeof rawObj.themeDefault === 'string' && (rawObj.themeDefault === 'light' || rawObj.themeDefault === 'dark' || rawObj.themeDefault === 'system')) {
+  if (typeof rawObj.themeDefault === 'string' && (rawObj.themeDefault === 'light' || rawObj.themeDefault === 'dark' || rawObj.themeDefault === 'system' || rawObj.themeDefault === 'frosted')) {
     settings.themeDefault = rawObj.themeDefault;
   }
   if (typeof rawObj.recentsCap === 'number' && Number.isFinite(rawObj.recentsCap) && rawObj.recentsCap >= 1 && rawObj.recentsCap <= 50) {
