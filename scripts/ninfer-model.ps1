@@ -61,11 +61,43 @@ $ServeArgs = @(
 )
 
 function Get-NinferProcess {
-    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.Name -eq 'ninfer-serve.exe' -and
-            $_.CommandLine -match ("--port\\s+" + [regex]::Escape("$Port"))
-        }
+    # Prefer the process which actually owns the configured listener. This avoids WMI's
+    # command-line access restriction and works regardless of argument formatting.
+    try {
+        $listenerProcessIds = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction Stop |
+            ForEach-Object { [int]$_.OwningProcess } | Select-Object -Unique)
+        $listeners = @($listenerProcessIds | ForEach-Object {
+            Get-Process -Id $_ -ErrorAction SilentlyContinue
+        } | Where-Object { $_.ProcessName -eq 'ninfer-serve' })
+        if ($listeners.Count -gt 0) { return $listeners }
+    } catch {
+        # Some constrained hosts deny this cmdlet; try the built-in network utility
+        # before falling back to process-name detection below.
+    }
+
+    try {
+        $listenerProcessIds = @(
+            & netstat.exe -ano -p tcp 2>$null |
+                ForEach-Object {
+                    if ($_ -match "^\s*TCP\s+\S+:$Port\s+\S+\s+LISTENING\s+(\d+)\s*$") {
+                        [int]$Matches[1]
+                    }
+                } |
+                Select-Object -Unique
+        )
+        $listeners = @($listenerProcessIds | ForEach-Object {
+            Get-Process -Id $_ -ErrorAction SilentlyContinue
+        } | Where-Object { $_.ProcessName -eq 'ninfer-serve' })
+        if ($listeners.Count -gt 0) { return $listeners }
+    } catch {
+        # Fall through to the loading-process fallback below.
+    }
+
+    # During startup NInfer has not opened the listener yet. A single NInfer process is
+    # unambiguous; if more than one exists, refuse to guess and leave it for the operator.
+    $allNinfer = @(Get-Process -Name 'ninfer-serve' -ErrorAction SilentlyContinue)
+    if ($allNinfer.Count -eq 1) { return $allNinfer }
+    return @()
 }
 
 function Test-Endpoint {
@@ -80,18 +112,27 @@ function Test-Endpoint {
 function Stop-Ninfer {
     $procs = @(Get-NinferProcess)
     if ($procs.Count -eq 0) {
-        Write-Output 'ninfer: already stopped (no ninfer-serve.exe running)'
+        Write-Output ("ninfer: already stopped (no ninfer-serve.exe associated with port {0})" -f $Port)
         return
     }
+    $failedPids = @()
     foreach ($p in $procs) {
-        try { Stop-Process -Id $p.ProcessId -Force -ErrorAction Stop } catch {
-            Write-Output ("ninfer: could not stop pid {0}: {1}" -f $p.ProcessId, $_.Exception.Message)
+        try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch {
+            $failedPids += $p.Id
+            Write-Output ("ninfer: could not stop pid {0}: {1}" -f $p.Id, $_.Exception.Message)
         }
     }
     # Wait for the port to actually release so a following start cannot collide.
     for ($i = 0; $i -lt 20; $i++) {
         Start-Sleep -Milliseconds 500
         if (@(Get-NinferProcess).Count -eq 0) { break }
+    }
+    $remaining = @(Get-NinferProcess)
+    if ($remaining.Count -gt 0) {
+        $details = if ($failedPids.Count -gt 0) { " (initial failures: $($failedPids -join ', '))" } else { '' }
+        throw ("ninfer: stop FAILED; process(es) still alive: {0}{1}. " +
+            "Run the server and this script from the same non-elevated Windows account, then retry." -f
+            ($remaining.Id -join ', '), $details)
     }
     Write-Output ("ninfer: stopped {0} process(es); GPU freed" -f $procs.Count)
 }
@@ -155,11 +196,11 @@ switch ($Action) {
     'status' {
         $up = @(Test-Endpoint)
         if ($up.Count -gt 0) {
-            $pids = @(Get-NinferProcess | ForEach-Object { $_.ProcessId })
+            $pids = @(Get-NinferProcess | ForEach-Object { $_.Id })
             $profile = if ($up -contains $ExpectedModelId) { 'expected profile' } else { 'UNEXPECTED MODEL' }
             Write-Output ("ninfer: UP on {0} models={1} pid={2} ({3}; 220000 context, 1 slot, vision 8192)" -f $Base, ($up -join ','), ($pids -join ','), $profile)
         } else {
-            $pids = @(Get-NinferProcess | ForEach-Object { $_.ProcessId })
+            $pids = @(Get-NinferProcess | ForEach-Object { $_.Id })
             if ($pids.Count -gt 0) {
                 Write-Output ("ninfer: DOWN but process alive (pid={0}) - still loading or wedged" -f ($pids -join ','))
             } else {

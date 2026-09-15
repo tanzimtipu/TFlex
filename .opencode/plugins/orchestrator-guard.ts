@@ -34,6 +34,9 @@ export const OrchestratorGuard: Plugin = async ({ client, directory }) => {
   const orchestratorSessions = new Set<string>()
   // Sessions the server currently reports busy (session.status -> "busy").
   const busy = new Set<string>()
+  // Both session.status(idle) and session.idle are emitted by supported OpenCode
+  // versions.  They can arrive back-to-back, so allow only one stop attempt.
+  let offloadInProgress = false
 
   function log(message: string) {
     try {
@@ -43,6 +46,13 @@ export const OrchestratorGuard: Plugin = async ({ client, directory }) => {
     } catch {
       // Never break the intercept path.
     }
+  }
+
+  function commandErrorSummary(error: unknown): string {
+    const commandError = error as Error & { stdout?: string; stderr?: string }
+    return [commandError.message, commandError.stderr, commandError.stdout]
+      .filter((part): part is string => typeof part === "string" && part.trim().length > 0)
+      .join(" | ")
   }
 
   async function endpointUp(): Promise<boolean> {
@@ -76,7 +86,7 @@ export const OrchestratorGuard: Plugin = async ({ client, directory }) => {
       )
     } catch (e) {
       // The start script already waits and warms; a throw here is a real failure.
-      const msg = e instanceof Error ? e.message : String(e)
+      const msg = commandErrorSummary(e)
       log(`load FAILED: ${msg}`)
       throw new Error(
         `orchestrator-guard: could not start the local model (${msg}). Refusing the dispatch.`,
@@ -100,9 +110,33 @@ export const OrchestratorGuard: Plugin = async ({ client, directory }) => {
       )
       log("offload: local model stopped")
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
+      const msg = commandErrorSummary(err)
       const alreadyStopped = /already stopped|not running/i.test(msg)
       log(alreadyStopped ? "offload: model already stopped" : `offload FAILED: ${msg}`)
+    }
+  }
+
+  async function offloadWhenRunEnds(sessionID: string, source: string) {
+    if (!GUARD_ENABLED || !orchestratorSessions.has(sessionID)) return
+
+    busy.delete(sessionID)
+    // Keep the server resident while any child is still working.  A later idle event
+    // from the orchestrator will retry once the run has genuinely finished.
+    if (busy.size > 0) {
+      log(`run end (${source}) but ${busy.size} session(s) still busy -> keep model loaded`)
+      return
+    }
+    if (offloadInProgress) {
+      log(`run end (${source}) -> offload already in progress`)
+      return
+    }
+
+    offloadInProgress = true
+    try {
+      log(`run end (${source}, 0 busy) -> offloading`)
+      await offload()
+    } finally {
+      offloadInProgress = false
     }
   }
 
@@ -122,25 +156,14 @@ export const OrchestratorGuard: Plugin = async ({ client, directory }) => {
         if (!sid) return
         const status = props?.status as { type?: string } | undefined
         if (status?.type === "busy") busy.add(sid)
-        else if (status?.type === "idle") busy.delete(sid)
+        else if (status?.type === "idle") await offloadWhenRunEnds(sid, "session.status")
         return
       }
 
       if (event.type !== "session.idle") return
       const sid = props?.sessionID as string | undefined
-      if (!sid || !orchestratorSessions.has(sid)) return
-
-      if (!GUARD_ENABLED) return
-
-      busy.delete(sid)
-      // Offload only when no known session is busy. This intentionally errs on the side
-      // of keeping the model resident if event ordering leaves a child uncertain.
-      if (busy.size === 0) {
-        log(`run end (orchestrator idle, 0 busy) -> offloading`)
-        await offload()
-      } else {
-        log(`run end but ${busy.size} session(s) still busy -> keep model loaded`)
-      }
+      if (!sid) return
+      await offloadWhenRunEnds(sid, "session.idle")
     },
 
     async "tool.execute.before"(input, output) {

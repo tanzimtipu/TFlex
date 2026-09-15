@@ -29,31 +29,5 @@
         }
       }
     }
-  ,
-    "local-flash": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "llama.cpp (Qwen3.8-Flash-Next 177B, port 8081)",
-      "options": {
-        "baseURL": "http://127.0.0.1:8081/v1",
-        "apiKey": "llama"
-      },
-      "models": {
-        "qwen3.8-flash-next": {
-          "name": "Qwen3.8-Flash-Next 177B (local, slow/smart)",
-          "tool_call": true,
-          "attachment": true,
-          "reasoning": true,
-          "interleaved": "reasoning_content",
-          "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"]
-          },
-          "limit": {
-            "context": 120000,
-            "output": 8192
-          }
-        }
-      }
-    }
   }
 }
