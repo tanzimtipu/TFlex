@@ -11,7 +11,9 @@ REQUIREMENTS.md wins.
 For post-v1 feature work: the orchestrator promotes human feature requests into
 REQUIREMENTS.md itself — appended numbered phases (Phase 6, 7, ...) with feature lists
 and demonstrable success criteria, in the original format and phase template. The
-original v1 text stays frozen; extensions are appended, never rewritten. Ledgers
+original v1 text remains historical, but a short **Current-scope supersession** section
+may correct an earlier exclusion when a later accepted phase deliberately adds that
+capability. The latest numbered phase and that supersession section control. Ledgers
 (DEF-NNN, ADV-NNN numbering) continue across all phases and extend forever.
 
 Every phase plan also carries a **Settings impact** line: either "none" or the new
@@ -192,17 +194,14 @@ impact line**. The page list the scout reads is maintained by hand in
 
 ## Model integrity — hard stop rule
 
-Every agent runs only on the model pinned for its role. The pin has one source per
-harness, and in both it is the only source:
+Every agent runs only on the model pinned for its role. OpenCode is the only active
+orchestration harness:
 
 - **OpenCode** — the `model:` field in that role's `.opencode/agents/*.md` definition.
-  The orchestrator's startup probe gate (its definition, "Model verification gate")
-  checks the whole roster before any real dispatch.
-- **DeepSeek Harness** — the baked `provider` / `model` in that role's dispatch row in
-  `agent.cordis.yml` of the `tflex-orchestrator` preset. There is no probe and no route
-  parameter: the harness attaches the row's route to every dispatch, so a sub-agent
-  cannot start on another model. Readiness there is only the local server
-  (`scripts/ninfer-model.ps1 status`); see `.dsh/README.md`.
+  Local roles point at `local-ninfer/qwen3.8-27b`, whose provider and endpoint live in
+  `opencode.json` (NInfer on `http://127.0.0.1:8080/v1`). The active serving profile is
+  **220000 context tokens, one decode slot and 8192 vision tokens**. The guard loads it
+  before the first local dispatch; it is stopped only after all local work has settled.
 
 The orchestrator's model, `openrouter/moonshotai/kimi-k2.5`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
@@ -215,66 +214,18 @@ restart the build.
 
 ## Model fallbacks
 
-Each agent's model is pinned in its definition in `.opencode/agents/`. If a model
-repeatedly fails at its role (tool-call errors, ignoring formats, incoherent output),
-the human operator may swap that agent's `model:` field to the documented fallback:
+The active pin is the agent definition. A fallback is a human-approved configuration
+change, not an automatic retry. Keep it short and current:
 
-- backend-dev: z-ai/glm-5.2 -> deepseek/deepseek-v4-pro
-- frontend-dev: ~deepseek/deepseek-v4-flash-latest -> deepseek/deepseek-v4-flash
-  (a vision-capable fallback is preferable now that frontend-dev runs on a vision
-  model; then minimax/minimax-m3:free, then minimax/minimax-m3 paid. Note: the
-  alias carries a leading tilde — the plain `deepseek/deepseek-v4-flash-latest` is NOT
-  a valid OpenRouter ID)
-- qa: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview (native multimodal model used
-  for screenshot inspection; gemini-3-flash-preview is the vision-capable fallback)
-- adversary: deepseek/deepseek-v4-flash -> google/gemini-3-flash-preview
-- git-agent: z-ai/glm-5.3-flash -> google/gemini-3-flash-preview
-- backend-dev, frontend-dev, qa, adversary, git-agent (DeepSeek Harness only): local
-  `local-ninfer` / qwen3.8-27b served by NInfer on the RTX 4090, 264000-token context
-  with vision -> that role's cloud pin listed above (`z-ai/glm-5.2`,
-  `~deepseek/deepseek-v4-flash-latest`, `z-ai/glm-5.3-flash`, `deepseek/deepseek-v4-flash`,
-  `z-ai/glm-5.3-flash` respectively). The local server holds ~23.8 GiB of the 24.5 GiB
-  card and serves three decode slots, so up to three of those roles can work at once
-  (never both developers — see "One developer at a time"). qa runs on that same model,
-  so the server is deliberately NOT offloaded before an e2e run: measured, the packaged
-  app still starts, gets its GPU process and comes up with a window alongside the loaded
-  model. See `.dsh/README.md`.
-- feature-scout: z-ai/glm-5.3-flash -> deepseek/deepseek-v4-flash (DeepSeek Harness
-  only — it has no `.opencode/agents/` definition; its pin lives in the
-  `tflex-orchestrator` preset as the `dispatch_feature_scout` row)
+- backend-dev, frontend-dev, qa, adversary, git-agent:
+  `local-ninfer/qwen3.8-27b` -> `openrouter/z-ai/glm-5.3-flash`.
+- feature-scout: `openrouter/z-ai/glm-5.3-flash` ->
+  `openrouter/deepseek/deepseek-v4-flash`.
 - orchestrator: no fallback — stop and ask the human.
 
-Note: in OpenCode, frontend-dev and adversary intentionally share the
-`deepseek/deepseek-v4-flash` pin — both were text-only workloads there. In the DeepSeek
-Harness both now run on the local vision model instead.
-
-Fallback to the orchestrator's model (`openrouter/moonshotai/kimi-k2.5`) is never
-permitted for any sub-agent. The table above is the only valid fallback source.
-
-2026-08-30 (third swap): frontend-dev re-pinned from minimax/minimax-m3 back to
-minimax/minimax-m3:free. The operator updated the OpenRouter account data policy to allow
-the free-route providers, unblocking the route that failed the earlier probe gate.
-Paid route remains the fallback for rate-limit outages.
-
-2026-08-30 (second swap): frontend-dev reverted from minimax/minimax-m3:free back to
-minimax/minimax-m3. The free route failed the probe gate with an account-level provider
-rejection ("No endpoints available matching your guardrail restrictions and data policy")
-— same class as the 2026-08-27 qa vision-exp rejection. Fallback applied per this table;
-backend-dev stays on z-ai/glm-5.2 (probed READY).
-
-2026-08-30: backend-dev primary changed from deepseek/deepseek-v4-pro to z-ai/glm-5.2
-($0.33/M in vs $0.57/M in, 77% discount, 1M context; the old primary becomes the fallback),
-and frontend-dev primary changed from minimax/minimax-m3 to minimax/minimax-m3:free
-(identical weights, free route; the paid route becomes the fallback for rate-limit
-outages). New primary selections by the human operator after a discounted/free-model cost
-analysis — not emergency fallbacks. Recorded here per this section's rule.
-
-2026-08-27: qa model changed from deepseek/deepseek-v4-flash-vision-exp to
-google/gemini-3-flash-preview before first run — vision-exp is single-provider (DeepSeek)
-and was rejected by the operator account's data policy ("No endpoints available matching
-your guardrail restrictions"). Recorded here per this section's rule.
-
-After any swap, note it in `AGENTS_NOTES.md` (create it if needed) with the date and reason.
+No sub-agent may fall back to `openrouter/moonshotai/kimi-k2.5`. Record approved
+model changes in `AGENTS_NOTES.md`; that file is historical reference, not mandatory
+startup context.
 
 ## Escalation after three failed attempts
 
@@ -292,8 +243,7 @@ continue. The orchestrator never takes over the fix and never writes code; the s
 agent keeps doing its own work.
 
 A sub-agent that stops because it ran out of context or token budget has **not** failed the
-task, and its work is not lost. Resume that session where the harness allows it (DeepSeek
-Harness: `send_message(id, "continue ...")` on the durable child), or hand it a one-line
+task, and its work is not lost. Resume that OpenCode task with its `task_id` and a one-line
 continuation naming where it stopped. Never restart the same task from scratch because a child
 filled its context, and never treat it as a reason for the orchestrator to take over.
 
@@ -437,14 +387,15 @@ screenshots, fixtures, ledgers) stays in the private repo.
 
 A release is NOT complete when the tag is pushed. electron-updater only offers
 an update once a GitHub Release exists in `tflex-releases` for the tag with
-these assets attached:
-`latest.yml`, `TFlex-Setup-<version>.exe` and its `.blockmap` (the portable
-build is attached for users but is not auto-updateable).
+these assets attached: FOUR files every release —
+`latest.yml`, `TFlex-Setup-<version>.exe`, its `.blockmap` (the three REQUIRED
+for auto-update) AND `TFlex-<version>-portable.exe` (always uploaded, for direct
+download, but NOT part of the auto-update feed).
 
 - git-agent creates the GitHub Release **in `tanzimtipu/tflex-releases`** with
-  assets (`gh release create` / `gh release upload`) after verifying artifact
-  names in `release/` match the tag; verification is the release URL listing
-  all required assets.
+  all four assets (`gh release create` / `gh release upload`) after verifying
+  artifact names in `release/` match the tag; verification is the release URL
+  listing all four assets.
 - `GH_TOKEN` (build-time, for `electron-builder --publish`) is needed to
   upload release assets to `tanzimtipu/tflex-releases` via the GitHub API.
 - `TFLEX_GH_TOKEN` / `GH_TOKEN` (runtime, for the in-app updater) is **optional**

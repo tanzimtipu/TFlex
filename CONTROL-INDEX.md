@@ -1,4 +1,9 @@
-# TFlex Phase 13 — Control Index
+# TFlex Control Index — Phase 13/14 baseline
+
+> This is the verified baseline for Phase 13/14 chrome and glass controls, not a blanket
+> all-project test plan. QA sweeps only the controls named by its assigned task or current
+> phase. Phase 15/16 controls must be indexed beside their implementation before that phase
+> can close; do not infer their coverage from this historical baseline.
 
 This index enumerates every Phase 13 control (frameless window chrome,
 custom controls, menu popover, semantic colors). For each control it

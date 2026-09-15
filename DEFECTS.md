@@ -1,3 +1,94 @@
+# Defects
+
+> Read discipline: this is a long-lived evidence ledger, not default agent context. For a
+> focused task, search for the assigned `DEF-NNN` and read only that entry. For triage,
+> inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
+> historical evidence and must not be loaded wholesale.
+
+## DEF-214: Installed v1.16.1 ships without the annotation toolbar - and the Edit toggle is missing from the CommandBar, so the edit toolbar is unreachable
+
+- Status: OPEN
+- Severity: HIGH
+- Found by: qa (user report, installed v1.16.1)
+- Phase: installed v1.16.1 (release build)
+
+Steps to reproduce:
+1. Launch the installed TFlex v1.16.1 (`%LOCALAPPDATA%\Programs\tflex\TFlex.exe`, FileVersion 1.16.1 — the task referenced `%LOCALAPPDATA%\tflex\TFlex.exe`, but that path does not exist; the NSIS install lives under `%LOCALAPPDATA%\Programs\tflex\`).
+2. On the welcome screen, click the "report" sample card (or open any PDF).
+3. Wait for the PDF page canvas to render, then inspect the workspace chrome below the CommandBar, and the DOM for `.ann-toolbar`, `.edit-toolbar`, `[data-toolbar-edit-toggle]`.
+
+Expected: `.ann-toolbar` (text markup / pen / text box / shapes / note / color swatch tools) is mounted directly below the CommandBar whenever a document is open (current source mounts it unconditionally: `src/renderer/components/DocumentView.tsx` line ~2056); the CommandBar carries the "Edit content" toggle (`data-toolbar-edit-toggle`), and arming it mounts `.edit-toolbar`.
+Actual: `.ann-toolbar` is NOT in the DOM at all (not merely hidden — no element exists); `[data-toolbar-edit-toggle]` is also absent from the CommandBar, so Edit mode cannot be armed and `.edit-toolbar` can never mount. The CommandBar itself renders correctly (Open, page nav, save/save-as, zoom, search, rotate, pan, delete, sign, optimize, audit all present), the PDF canvas renders (34-page report.pdf), and there are ZERO renderer console errors and ZERO uncaught page errors — the renderer did not crash; the toolbar components simply never mounted. `.workspace-main` children are exactly: `div.toolbar`, `div.document-scroller`, `button.tools-badge-tracker` — no toolbar row between the CommandBar and the page. User-confirmed symptom: annotation/edit toolbars not visible when opening PDFs in the installed v1.16.1 (About dialog confirms 1.16.1).
+
+Screenshot: screenshots/missing-toolbars.png (installed v1.16.1 with report.pdf open: CommandBar present, page canvas directly below it, no annotation toolbar row)
+
+History:
+- qa: opened (2026-09-15; reproduced on the actually installed v1.16.1 build. Evidence run: `npm.cmd run test:e2e -- e2e/investigate_missing_toolbars.spec.cjs` — the spec was repointed from launchDev to the canonical launchApp() pointed at the installed exe; probe output: `ann-toolbar = NOT IN DOM`, `edit-toolbar = NOT IN DOM`, `.toolbar (CommandBar) = IN DOM`, `CommandBar Edit toggle [data-toolbar-edit-toggle] not found`, console errors after open: none, 1 passed / 4.6s. State B (arm Edit mode) could not be executed because the toggle itself is missing from the installed CommandBar. Dev-build status for this spec was out of scope for this run; whether the current source reproduces it (i.e. the release was built from a regressed renderer) is for the developer to triage.)
+
+## DEF-212: Preferences "Theme default" dropdown is missing the Frosted option — only Light / Dark / Match system are offered
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 6+ (post-v1 Preferences theme dropdown feature)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs).
+2. Click the settings gear `[data-open-preferences]` in the title bar (or Edit → Preferences / Ctrl+,).
+3. The Preferences sheet opens; locate the "Appearance → Theme default" dropdown.
+4. Expand the dropdown.
+
+Expected: The theme-default dropdown offers all four promised options — Light, Dark, Frosted and a system option — so the user can persist any of them as the startup theme (Phase 6 contract: "Preferences (theme default, …)"; the feature spec for this dispatch promises Light/Dark/Frosted/System default).
+Actual: The dropdown offers exactly three options: "Light" (value `light`), "Dark" (value `dark`), "Match system" (value `system`). There is no "Frosted" entry anywhere in the Preferences sheet, so Frosted cannot be set as the default startup theme from Preferences — it is only reachable at runtime via the title-bar theme popover. Secondary: the system option is labeled "Match system" rather than the promised "System default" label.
+Screenshot: screenshots/def-212-prefs-theme-dialog.png (Preferences sheet, Theme default dropdown showing "Dark"; the evidence run logged OPTIONS_EVIDENCE ["Light","Dark","Match system"] with values light/dark/system)
+
+History:
+- qa: opened (2026-09-15; e2e/theme_dropdown_exists.spec.cjs FAILED — `expect(options).toContain('Frosted')` against the actual option list ['Light','Dark','Match system']; the select control itself exists and opens, but one of the four promised options is absent)
+- qa: CLOSED (2026-09-15 retest after frontend-dev added Frosted + backend-dev settings persistence fix). Retested the exact repro: e2e/theme_dropdown_exists.spec.cjs PASSED — options now ['Light', 'Dark', 'Frosted', 'System default'] (secondary label issue also fixed). Regression: new e2e/theme_frosted_persist.spec.cjs 2/2 PASSED — (1) Frosted selectable, `themeDefault: "frosted"` re-parsed from settings.json on disk, dropdown still shows Frosted after app restart; (2) persisted themeDefault applies on next launch (boot theme followed themeDefault 'frosted' over a persisted theme 'dark'). Fresh evidence: screenshots/def-212-closed-frosted-selected.png (dialog visually clean, Frosted selected, header pill reads "Frosted Glass"). Follow-up edge case filed as DEF-213.
+
+## DEF-213: Preferences "Theme default" shows "Dark" when the field is absent, and re-selecting Dark is a silent no-op
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 6+ (post-v1 Preferences theme dropdown feature; surfaced during DEF-212 retest)
+
+Steps to reproduce:
+1. Launch TFlex with a fresh profile (no settings.json — e.g. new install; in e2e: launchApp with an empty userData dir).
+2. The app boots with the Frosted theme (factory default). Open Preferences via the gear button.
+3. Look at the "Appearance → Theme default" dropdown: it displays "Dark".
+4. Select "Dark" in the dropdown (re-selecting the displayed value), wait, then close the app and read settings.json in the profile directory.
+
+Expected: The dropdown shows the default the app actually boots with (Frosted on a factory profile); explicitly selecting "Dark" persists `themeDefault: "dark"` so the choice is stored.
+Actual: The dropdown displays "Dark" while the app actually boots Frosted (display mismatch for an absent field). Selecting "Dark" persists nothing — settings.json contains no `themeDefault` key at all (the reducer treats an absent field as already 'dark' and returns state unchanged; the renderer still calls trackAndSave, which rewrites the file with unchanged defaults). Selecting Light / Frosted / System default persists correctly, so the impact is limited to the displayed-value no-op and the wrong displayed default. Code refs for the developer: `src/renderer/state/preferences.ts:134` (`state.themeDefault ?? 'dark'`) and `src/renderer/App.tsx:7120` (`settings.themeDefault ?? 'dark'`).
+Screenshot: (none — evidence is on-disk state; repro spec e2e/probe_theme_persist.spec.cjs logs settings.json before/after the Dark selection: after select, DOM select value = 'dark' but file content is unchanged defaults with no themeDefault)
+
+History:
+- qa: opened (2026-09-15; found by the e2e probe run while verifying DEF-212 persistence — selecting Dark on a fresh profile left settings.json without themeDefault, confirmed while the app was still running, so it is not a quit-time clobber)
+
+## DEF-211: Ghost annotation remains interactive when dialog opens — annotation tool not disarmed before dialog mount
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (tool-disarm regression sweep)
+- Phase: 15/16 (live regression)
+
+Steps to reproduce:
+1. Launch TFlex (dev build via e2e/lib/launch.cjs), open any PDF (e.g., report.pdf).
+2. Arm an annotation tool in the toolbar (e.g., "Text box", "Note", or "Pen").
+3. Place the ghost on a page (click on page 1) so the annotation is in a pending/unconfirmed state.
+4. Without confirming the annotation (do NOT click "Confirm" on the floating action bar, do NOT press Escape), open a dialog from the toolbar, menu or Tools palette: "Insert Pages", "Optimize", "Save As", "Merge", "Split/Extract", "Delete Pages", "About", "Preferences", or any other modal dialog.
+
+Expected: Before the dialog mounts, the active annotation tool is DISARMED — the ghost and any pending overlay are removed, the action bar disappears, and the underlying document canvas becomes non-interactive for annotation purposes. The dialog then opens cleanly on a neutral workspace with no overlay artifacts.
+Actual (pre-fix): The dialog mounted OVER the live ghost/pending annotation; the ghost annotation overlay remained interactive in the background, and the pending action bar could remain visible over the dialog backdrop.
+
+Screenshot: screenshots/def-211-t1-insert-pages.png (dialog open, no ghost overlay), def-211-t1-ghost-armed.png (ghost before the dialog), def-211-t1-insert-pages-moment.png (dialog-mount instant), def-211-t2-optimize.png, def-211-t2-ghost-armed.png, def-211-t3-saveas.png, def-211-t3-ghost-armed.png
+
+History:
+- qa: opened (2026-09-14; reported incomplete from DEF-090/DEF-088 cross-bubbling rule sweep; no prior tracking entry exists)
+- frontend-dev: FIX-READY (2026-09-14; DocumentView.tsx wrapped with forwardRef + useImperativeHandle exposing disarmAnnotationTool; App.tsx wires per-tab refs and calls disarm before 20+ dialog openers; typecheck + build:renderer clean)
+- qa: CLOSED (2026-09-14 retest on the rebuilt dev build, dist rebuilt fresh via `npm run build` so the working-tree fix is in the bundle; evidence: e2e/retests/def_211_ghost_dialog_retest.spec.cjs — 3 scenarios, 3/3 pass, 24.3s, zero renderer pageerrors. T1 Insert Pages over a pending Text-box ghost (Tools palette -> insertPages): ghost+action bar confirmed present pre-dialog, tflexDiagnostics().activeTool flips to the disarmed value (null; the only path an armed tool reaches it is disarmAnnotationTool()) and the ghost DOM (editor + action bar) is gone once the dialog mounts; the dialog's own controls respond (from-PDF radio reveals Pick button; close via the sheet X). T2 Optimize over a pending Note ghost: same disarm verified, Cancel button responds. T3 Save As sheet over a Text-box ghost on a modified doc: sheet mounts clean, the linearize checkbox toggles, Cancel closes cleanly. Post-close the canvas is neutral (a click places no ghost) and the re-armed tool still functions. Regression note: a mid-run triage probe (e2e/retests/def_211_probe_place.spec.cjs) initially suggested "placement does not land" — that was the retest's own viewport-clamping bug (page slot is taller than the window at fit-width; the click landed below the window), not a product issue; the probe kept as a placement sanity test.)
+
 ## DEF-210: Pen tool (freehand ink) throws engine error on every stroke — normalizeAnnotationPayload has no branch for points-only ink payloads
 
 - Status: CLOSED

@@ -95,6 +95,18 @@ Deliberately left out of v1. Do not build these:
   existing PDFs, except that merge/split/extract produce new PDFs.
 - No macOS or Linux packaging — Windows only.
 
+### Current-scope supersession
+
+The original v1 exclusions above describe the first release. A later numbered phase that
+explicitly adds a capability supersedes the matching exclusion for the current project.
+Therefore Phases 9–11 authorise their specified create/export, edit, and OCR work; Phase 6
+authorises the OTA release workflow. All other original exclusions remain in force.
+
+Where a later phase sets a visual or motion rule that differs from the general look-and-feel
+guidance, the later phase controls for that feature. In particular, Phase 14's glass motion
+may use its stated 200–400 ms spring transitions; all unrelated UI keeps the 150–250 ms,
+non-bouncy baseline.
+
 ## Look and feel
 
 Applies to the whole app:
@@ -309,10 +321,11 @@ Features and success criteria:
    About+toolbar indicator; silent download+prompt restart; portable build explicitly
    no-auto-update (documented); private repo credentials not committed. Success: bump
    version then simulated/published release surfaces "Update available" in app.
-6. Auto-push pipeline: after full green loop (build, unit+e2e, package checks) for a
+6. Release pipeline: after a full green loop (build, unit+e2e, package checks) for a
    phase/fix batch, git-agent tags v1.x.x (`npm version <level> --no-git-tag-version`,
-   commit bump, `git tag`, then push) and pushes. Success: tag lands only on green
-   builds, and the pushed tag's `package.json` version matches the local working copy.
+   commit bump, `git tag`, then push) **only after explicit operator authorisation in the
+   current session**. Success: tag lands only on green builds, and the pushed tag's
+   `package.json` version matches the local working copy.
 
 Repo-safety amendments:
 - Prune duplicate reduntant e2e/unused harnesses before first commit; no new debug

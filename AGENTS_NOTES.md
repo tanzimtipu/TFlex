@@ -1,4 +1,303 @@
-# AGENTS_NOTES.md — model swaps and operational log
+# AGENTS_NOTES.md — archived operational history
+
+> This is a chronological record, not a runtime instruction file. Do not load it wholesale
+> into agent context. Read only the entry named by a current task or an incident. Active
+> policy lives in `AGENTS.md`, agent definitions, `opencode.json`, and
+> `scripts/ninfer-model.ps1`. The active NInfer profile is 220000 context tokens, one
+> decode slot, and 8192 vision tokens; earlier 264000/three-slot entries are superseded.
+
+## 2026-09-15: QA returned to local model with new structured contract
+
+Operator applied a rewritten QA contract that replaces the previous flat-bullet approach
+with task-type-specific sections (focused verification, FIX-READY defect, phase validation,
+performance validation, adversarial finding), a structured final report format, and a
+`"*": deny` / `"e2e/**": allow` permission model using OpenCode's last-match-wins rule.
+
+- `qa.md` fully replaced with the new contract: `model: local-ninfer/qwen3.8-27b`,
+  `temperature: 0.1`, `task/webfetch/websearch: deny`.
+- `orchestrator.md` "QA SPECS ARE BOUNDED" updated: now requires every qa spec to name
+  the task type first word, so qa enters the correct contract section immediately.
+- `AGENTS.md` fallback table: QA back to local (`local-ninfer/qwen3.8-27b ->
+  z-ai/glm-5.3-flash`), local role list back to five.
+
+## 2026-09-15: QA reverted to cloud model (z-ai/glm-5.3-flash)
+
+Operator directive: QA returns to its pre-local-model setup. Changes:
+
+- `qa.md`: model `local-ninfer/qwen3.8-27b` → `openrouter/z-ai/glm-5.3-flash`.
+  Retained the five behavioral rules (size-the-test, follow-spec-literally, write+run,
+  syntax-check, no self-flagellation). Removed the three local-model-specific context rules
+  (read-discipline, "whole repo" / "read nothing" — no longer needed with the cloud model's
+  larger context window).
+- `AGENTS.md` fallback table: QA removed from the local-model role list (now 4 local roles:
+  backend-dev, frontend-dev, adversary, git-agent). QA runs on cloud and is unaffected by
+  the local server lifecycle.
+
+## 2026-09-15: "report what happened" dispatch anti-pattern banned
+
+Root cause of the QA wander: the orchestrator dispatched a spec saying both "Do NOT write
+more tests, just report what happened" AND "report badge size / animation / chevron status"
+— a contradiction, because QA had no handle to a prior run and so re-read old specs/screens
+forensically. Added to `orchestrator.md` "DISPATCH": never dispatch a "report what happened"
+spec; ask a sub-agent to RUN a named test and report, never to report a run it did not
+produce; never combine "report" with "do not write tests".
+
+## 2026-09-14: dispatch-precision hard rule added to orchestrator
+
+Operator rule: every dispatch must be precise, no room for interpretation. Added to
+`orchestrator.md` "DISPATCH": each spec states (1) the exact outcome in concrete terms,
+(2) the exact scope incl. what NOT to touch, (3) the exact tests by name, (4) explicit
+task-specific DO NOTs. A vague spec ("improve the tab UX") is a dispatch failure — rewrite
+it or ask the human; never dispatch a fuzzy spec.
+
+## 2026-09-14: qa-follows-dev demoted from guard to strict guide
+
+Operator: the guard's "refuse a second dev/git dispatch until qa has run" block prevented
+redirecting the orchestrator after a frontend task finished. Fix:
+
+- `orchestrator-guard.ts` no longer tracks `devUnverified` and no longer refuses dev /
+  git-agent / git shell commands. It now enforces only the two model-lifecycle duties
+  (load-before-dispatch, offload-at-end).
+- `orchestrator.md` "QA FOLLOWS EVERY DEVELOPER TASK" reworded from MANDATORY to a strict
+  guide: follow it by default, but a human redirect ("don't run qa now, do X") always
+  wins; never block on qa when the operator says do something else; note any skipped qa
+  in the report.
+
+## 2026-09-14: qa step cap removed; read discipline made the strict rule
+
+Operator preferred a strict rule over a hard cap. Removed `steps` from `qa.md` entirely
+(the 8-cap choked legitimate test-writing, and even 20 was the wrong lever). Strengthened
+the read rule instead: grep before any read, open the smallest window, never whole files,
+stop at a fourth file or a re-read, and "read NOTHING before you know what you are
+verifying" — start from the spec's named control/selector/model spec, not from exploring.
+
+## 2026-09-14: qa steps cap relaxed 8 -> 20 (was too tight)
+
+The `steps: 8` cap was too aggressive — qa could not finish writing an e2e spec before
+hitting the limit. Raised to `steps: 20`: still a hard backstop against the 11-round /
+74k-token spiral, but with room for grep -> read-window -> write -> syntax-check -> run
+-> fix -> rerun -> screenshot -> report. Read-discipline rule (grep + small windows,
+~15k token budget) remains the primary defence; the cap is the fail-safe.
+
+## 2026-09-14: qa context bloat fixed (step cap + read discipline)
+
+Server log showed a single QA task grew 13k -> 74k prompt tokens over ~11 tool rounds
+(`tool_history=yes` accumulates every read). Decode was fine (30-58 tok/s) but prefill
+time ballooned (ttft 5-34s). Fixes in `qa.md`: (1) `steps: 8` frontmatter cap so qa
+cannot spiral past 8 agentic iterations; (2) a "do not read the whole repo" rule — grep
+for the exact symbol, read a small window, never open huge files whole, keep reading
+under ~15k tokens.
+
+## 2026-09-14: open-queue plugin installed (Option A, npm)
+
+Installed the community `@0xsero/open-queue` prompt-queue plugin: added it to the
+`plugin` array in `opencode.json` and copied the `/queue` slash command to
+`.opencode/command/queue.md`. Default mode is `immediate` (no queueing); opt in with
+`/queue hold` or start opencode with `OPENCODE_MESSAGE_QUEUE_MODE=hold`. Replaces the
+earlier hand-rolled prompt-queue plugin (removed). Restart opencode to load it.
+
+## 2026-09-14: context references synced to 220000 (1-slot profile)
+
+After the 1-slot serving change, swept the remaining `264000` context references in the
+OpenCode orchestration docs (`AGENTS.md` fallback table, `orchestrator.md` CHUNK THE WORK)
+to `220000`, matching the server and `opencode.json`. Verified live: 132 tok/s steady
+decode, vision correct on a full screenshot.
+
+## 2026-09-14: local model concurrency dropped to 1 slot, vision restored to 8192
+
+Operator directive: do NOT downsample images; instead drop the server to one decode slot.
+
+- Reverted the `attachment.image` 1024x1024 cap in `opencode.json` (images now go full-res).
+- `scripts/ninfer-model.ps1`: `--max-concurrency` 3 -> 1, `--vision-max-tokens` 2048 -> 8192.
+  One slot + full vision fits comfortably in VRAM.
+- `orchestrator.md` and `AGENTS.md` updated: local roles are now strictly serialised (one at
+  a time); removed all "three slots / up to three in flight" language.
+- Consequence: no parallelism across local agents — dispatch one, wait, dispatch next.
+
+## 2026-09-14: QA "compacted" was a vision failure, not a context limit
+
+The recurring "compacted" the operator saw was misdiagnosed. Log shows the real sequence:
+QA reads a screenshot -> `AI_APICallError: vision raw patches exceed processor budget`
+(the server runs `--vision-max-tokens 2048` to fit the 3rd slot, and full-res screenshots
+exceed the vision encoder's raw-patch budget) -> OpenCode runs its `agent=compaction`
+summarize step as error recovery. Fix (no parallelism change): capped the image size
+OpenCode sends via `attachment.image` (auto_resize, max 1024x1024) in `opencode.json`, so
+screenshots are downsampled before hitting the vision budget. Restart opencode.
+
+## 2026-09-14: qa compacted early — reasoning field + context limit declared
+
+QA sessions were compacting well before 264k. Two causes in `opencode.json`: (1) the model
+had no `limit.context` so OpenCode read the window as 0 and compacted immediately (fixed
+prior edit); (2) the model was not declared `reasoning: true` — qwen3.8-27b emits a separate
+`reasoning_content` field, so its thinking tokens were being miscounted against the visible
+context. Added `"reasoning": true` and `"interleaved": "reasoning_content"`. Restart opencode.
+
+## 2026-09-14: local model context limit declared (was showing 0)
+
+The local model entry had no `limit` field, so opencode showed a context of `0`. Added
+`"limit": { "context": 264000, "output": 8192 }` to `qwen3.8-27b` in `opencode.json`
+(matches the server's `context_window: 264000` and `--default-max-tokens 8192`). Token
+speed is not a config value — opencode measures it live from the stream.
+
+## 2026-09-14: bounded qa specs (over-thinking/over-complication)
+
+Operator reported QA keeps over-thinking and over-complicating simple tests. Fix lands on
+BOTH sides of the dispatch:
+
+- `orchestrator.md` "DISPATCH" gained **QA SPECS ARE BOUNDED**: every qa spec carries
+  three parts — (1) the one thing to verify, (2) the one test to write (name the file),
+  (3) explicit DO NOTs (no CONTROL-INDEX sweep, no full harness, no pixel scripts, no
+  extra screenshots, no retesting unrelated features). Over-reach is sent back "out of
+  scope".
+- `qa.md` gained **Follow the spec literally; do not expand it** — build exactly what the
+  spec names; flag a need for more coverage in the report rather than quietly building
+  more.
+
+## 2026-09-14: guard qa-state now resets on a fresh session
+
+Operator reported "frontend-dev: BLOCKED by guard (previous task not QA-verified)" in a
+NEW session — the `devUnverified` flag was a single in-memory boolean carrying forward
+from a previously interrupted session. Fix: `orchestrator-guard.ts` now resets
+`devUnverified` when it first sees a NEW orchestrator sessionID (resuming the SAME
+session still keeps the flag, which is correct).
+
+## 2026-09-14: guard now auto-loads the local model before a local dispatch
+
+Operator reported the orchestrator dispatched frontend-dev without loading the local
+model. The prose rule existed but was missed, so the guard now enforces it:
+
+- `orchestrator-guard.ts` gained check #1: on any dispatch to a local role (backend-dev,
+  frontend-dev, qa, adversary, git-agent) it probes the endpoint and runs
+  `ninfer-model.ps1 start` if down, **fail-closed** — if the model still does not answer,
+  the dispatch is refused with the cause instead of dying as an opaque transport error.
+- Reordered: the guard now enforces three things — (1) load before local dispatch,
+  (2) offload at run end, (3) qa-follows-every-developer-dispatch.
+
+## 2026-09-14: release asset count made unambiguous (4, not 3)
+
+git-agent looped on a conflict: the release procedure said "portable is attached too"
+while the asset list enumerated only three. Fixed both sources of truth to agree:
+
+- `git-agent.md` release procedure now states plainly: upload FOUR assets every release
+  (`latest.yml` + Setup exe + blockmap = the three REQUIRED for OTA, plus the portable,
+  always uploaded for direct download). A three-asset release is incomplete.
+- `AGENTS.md` "Release pipeline (OTA)" rewritten to match (four files, three required).
+
+## 2026-09-14: orchestrator-guard plugin (enforces the two missed duties)
+
+Prose rules were insufficient — the same two completion duties kept being missed, so they
+are now enforced mechanically by `.opencode/plugins/orchestrator-guard.ts`:
+
+- **Offload at run end** — when the orchestrator's session goes idle and no child session
+  is busy, the guard runs `scripts/ninfer-model.ps1 stop` itself. A completion reply can no
+  longer be sent with the model still loaded.
+- **QA follows every developer dispatch** — the guard refuses a `git-agent` dispatch (and a
+  bare git/dist/gh shell command) while the previous backend-dev/frontend-dev task has had
+  no `qa` dispatch after it, and refuses a second developer task while the first is
+  unverified. Throws in `tool.execute.before`, scoped to the orchestrator session only.
+
+Escape hatch: set `TFLEX_GUARD=off` in the process environment to disable both checks.
+Restart opencode to load the plugin.
+
+## 2026-09-14: dispatch-flow enforcement (qa-after-dev + offload-at-end)
+
+Operator reported the SAME two misses a second time: no QA check after a frontend task
+completes, and the local model not offloaded at run end. The rules existed but as
+bottom-of-file prose the orchestrator treated as optional. Fix: moved them INTO the flow.
+
+- `orchestrator.md` "DISPATCH" gained a **QA FOLLOWS EVERY DEVELOPER TASK — MANDATORY**
+  rule: a developer "done" forces an immediate qa dispatch to verify that change (run +
+  output) before the item is ticked or anything proceeds; qa runs after EACH task, not
+  after a whole phase.
+- `orchestrator.md` "THE LOCAL MODEL" gained an **OFFLOAD IS A FINISHING STEP** rule:
+  every time the orchestrator is about to send its final "done" reply it must first run
+  `ninfer-model.ps1 stop` and say "local model offloaded" — checked at every turn-end.
+
+## 2026-09-14: qa couldn't read screenshots — local model image input undeclared
+
+QA reported the read tool returning "Cannot read image (this model does not support
+image input)" despite running on the vision-capable local model. Cause: `opencode.json`
+declared `attachment: true` but no `modalities`, so OpenCode's model registry reported
+`input: [text]` only and the read tool refused to attach screenshots. The server itself
+has always served vision (NInfer runs `--vision`, `/v1/models` reports
+`modalities.vision: true`).
+
+- Fix: added `"modalities": { "input": ["text", "image"], "output": ["text"] }` to the
+  `qwen3.8-27b` model entry in `opencode.json`. Restart opencode to reload.
+
+## 2026-09-14: core completion duties hardened (orchestrator missed jobs)
+
+Operator-reported: orchestrator skipped focused QA before commit, didn't offload the
+local model at run end, didn't bump version after a bug fix, and accepted a QA "done"
+that had only created a test file without running it. Root cause: these were core jobs
+with no explicit, unmissable checklist; the orchestrator drifted.
+
+- `orchestrator.md` gained a **CORE DUTIES** section (five non-negotiable completion
+  jobs): verify QA actually RAN the test (a "created the spec" report is not a pass);
+  focused QA before any commit/push; version bump after every bug fix (patch); offload
+  the local model at run end; confirm every sub-agent result is real work with evidence.
+- `qa.md` gained: **size the test to the job** (a one-line fix needs a focused spec, not
+  a 300-line harness — over-engineering is a miss) and **writing the file is not the job,
+  running it is** (report the command + pass/fail output).
+- `git-agent.md` gained: every bug fix is a patch bump (`npm version patch` as part of
+  the fix commit).
+
+Note: the run that missed these jobs was launched under the `build` agent, not the
+`orchestrator` agent — so the orchestrator persona (with these duties) may not have been
+active. Still, the duties now live in the orchestrator definition so they cannot be
+silently dropped again.
+
+## 2026-09-13 (later still 12): "frontend-dev failed three times" was a transport failure, not the refactor
+
+The operator relayed a report from the orchestrator: three frontend-dev dispatches failed to
+implement a `forwardRef` + `useImperativeHandle` change, with the stated root cause "likely context
+limits or complexity with the forwardRef pattern across multiple files". **The evidence does not
+support that, and the guard log shows what actually happened.**
+
+`~/.dsh/.agent-presets/tflex-orchestrator/guard.log` for session `190ab8dc`, local times (UTC+10):
+
+- `20:15:08 task-start load failed ... could not be started (exit 1)` — the local model was down.
+- `20:19:21 task-start load failed (exit 1)`, then **`model pre-flight unavailable: [object Object]`**,
+  then **`ALLOW dispatch_frontend_dev after model pre-flight`**.
+- The agent itself ended with `Retry delay: 8039ms / Failure reason: Connection error.`
+
+**That ALLOW is the bug, and it is mine.** `ensureLocalModel` failed OPEN on every ambiguous path: if
+`shell.run` threw, or the sandbox denied the start script, or the shell service was missing, it
+returned `undefined` = allow. So a dispatch was permitted against a server that had just refused to
+start, and it died as an opaque transport error after burning a child run. Three "failed attempts"
+is what that looks like from the outside — and the orchestrator then wrote a plausible-sounding
+narrative about `forwardRef` complexity around it.
+
+**Fix (guard v8).** The model pre-flight is now the ONE check that fails CLOSED. Every ambiguous path
+re-probes the endpoint first and, only if it still does not answer, refuses the dispatch with the
+actual cause — a thrown shell error, a sandbox denial (with its mode), a missing script, or the
+start script's exit code and output. Rationale, written into the module: the other checks guard
+*drift* and must never wedge a build, so they allow when unsure; this one guards an *outcome*, and an
+unverifiable dispatch cannot succeed.
+
+Two supporting fixes: `describe()` replaces `String(error)` so a thrown non-Error can no longer
+render as `[object Object]`, and `guard.selftest.mjs` now supplies a stub `shell` to its fake
+context, so the local-dispatch cases are deterministic whether or not the real server is up — a
+fail-closed pre-flight had made them depend on live endpoint state. Verified: the suite passes with
+the server down.
+
+**Also worth recording: the orchestrator tried to make the fix itself.** At `20:30:08` the guard
+denied `edit src/renderer/components/DocumentView.tsx` from the orchestrator. That is the guard doing
+exactly its job on the one behaviour it can enforce — after three failed dispatches its instinct was
+to take the task over rather than re-dispatch.
+
+**The reported next step is wrong and must not be followed.** It proposed giving the fix to
+`backend-dev` "who can modify both files". `DocumentView.tsx` and `App.tsx` are renderer files —
+`frontend-dev`'s domain. AGENTS.md says backend-dev owns `src/main`, `src/preload` and `src/shared`
+and explicitly must not edit `src/renderer`. Handing it to backend-dev would break the role boundary
+*and* produce edits the harness permissions are set against.
+
+**The correct next step is to re-dispatch the same task to frontend-dev now that dispatch cannot
+silently fail.** The task itself is unremarkable: `src/renderer/annotations/ColorPalette.tsx` already
+uses this exact pattern — `export interface ColorPaletteHandle` at line 49, `forwardRef<…>` at line
+78, `useImperativeHandle(ref, …)` at line 130 — so the repo contains a working precedent, and the
+task spec should point at that file instead of describing the pattern abstractly. `DocumentView.tsx`
+has no `forwardRef` today, so it is the file that needs the change.
 
 ## 2026-09-13 (later still 11): the broken `toolFilter` — and a wrong claim I had been repeating
 
@@ -594,6 +893,10 @@ pre-warn relevant entries when dispatching.
   contrast fixes. Rule: the neutral-zinc palette + Lucide only.
 - qa: improvises launch code instead of using `e2e/lib/launch.cjs`; rewrites a spec
   to pass instead of asserting the bug. Rule: helper only; assertions stay honest.
+- qa: hand-rolls pixel-analysis scripts instead of using its own vision (the read tool)
+  to look at a screenshot, then loops on "this is embarrassing / I keep writing broken
+  code". Rule: use the read tool for visual judgment; any script must pass
+  `node --check` before running; never self-flagellate in output.
 - adversary: un-reproducible "slow once" findings. Rule: precise repro is mandatory —
   no guesses.
 - git-agent: stages `.env` / screenshots / test-results despite deny-list. Rule:
@@ -1426,3 +1729,33 @@ not just a git tag. For private repos, the runtime token (`TFLEX_GH_TOKEN`) is a
   any release that claims to support OTA.
 
 **Token scope:** Fine-grained PAT with Contents: Read and write for `tanzimtipu/TFlex`.
+
+## 2026-09-15: Release checklist added — prevent stale dist/ builds (DEF-214 post-mortem)
+
+**Incident:** v1.16.1 shipped without AnnotationToolbar and EditToolbar despite source code
+having them. Root cause: `dist/` folder was stale during `npm run dist`. The source at commit
+502e7a6 had toolbars, but the packaged `dist/renderer/` was from an earlier build.
+
+**Root cause:** Release process ran `npm run dist` without ensuring `dist/` was fresh.
+`electron-builder` packages whatever exists in `dist/`, even if stale.
+
+**New release checklist (mandatory for every release):**
+
+```markdown
+## Pre-Release Verification Checklist
+
+- [ ] **Clean build** — Run `rm -rf dist/ release/win-unpacked/` before building
+- [ ] **Verify source** — Confirm latest commit is in working tree: `git log --oneline -1`
+- [ ] **Full build** — Run `npm run build` (not just `npm run dist`)
+- [ ] **Verify dist/** — Check `dist/renderer/assets/index-*.js` timestamp matches build time
+- [ ] **Spot-check bundle** — Search for critical components: `grep -o "ann-toolbar\|edit-toolbar" dist/renderer/assets/index-*.js`
+- [ ] **Test installer** — Install the built exe and verify toolbars render
+- [ ] **Version alignment** — Confirm `package.json`, `latest.yml`, and GitHub tag all match
+- [ ] **OTA assets** — All 4 files: `latest.yml`, Setup exe, blockmap, portable exe
+```
+
+**Orchestrator dispatch rule:** For every release, git-agent must verify the checklist
+before pushing. Backend-dev must verify the bundle contains critical components.
+QA must verify the installed app. No release proceeds without all three confirmations.
+
+**File:** `scripts/release-checklist.md` (optional canonical copy for human operators).

@@ -331,7 +331,7 @@ makes it a poor fit for every push. qa owns running it.
 ## Enforcement — what the harness refuses on the orchestrator's behalf
 
 Five of the orchestrator's rules are not prose any more: the preset itself refuses the call. The
-row is `orchestrator-guard` → `orchestrator-guard.v7.js` in the preset directory (a
+row is `orchestrator-guard` → `orchestrator-guard.v8.js` in the preset directory (a
 preset-relative module, so the preset ships its own policy code, not a package). It registers a
 `tools/pre-execute` listener and checks `ctx.agents.roots()` first, so **every rule applies to
 the orchestrator only** — backend-dev, frontend-dev, qa, adversary, git-agent and feature-scout
@@ -343,7 +343,7 @@ are sub-agents, are not roots, and are untouched.
 | No full suite | a bare `npm run test:unit`, `verify:full`, `test:e2e` or `playwright test`. A filtered run (`-- --grep`, a spec path) is allowed |
 | No polling | `list_agents` — **dormant**: that tool is not registered in this deployment at all (`tool-subagent-control` registers only `send_message` and `interrupt_agent`), so there is nothing to poll. The refusal is insurance in case a future row mounts the `list-agents` plugin |
 | Resumable roles | `run_in_background: false` on any local dispatch (backend-dev, frontend-dev, qa, adversary, git-agent) — the foreground path is a one-shot run, so the child gets no durable id and `send_message` could never resume it. Omit the parameter instead |
-| Model before dispatch | a backend-dev, frontend-dev, qa, adversary or git-agent dispatch while nothing answers on `http://127.0.0.1:8080/v1/models` — the guard runs `scripts/ninfer-model.ps1 start` first and refuses the dispatch only if the server still will not come up |
+| Model before dispatch | a backend-dev, frontend-dev, qa, adversary or git-agent dispatch while nothing answers on `http://127.0.0.1:8080/v1/models`. The guard runs `scripts/ninfer-model.ps1 start` first, and this is the ONE check that **fails closed**: if it still cannot confirm the endpoint, the dispatch is refused with the cause, because a dispatch into a stopped server otherwise dies as an opaque "Connection error" after burning a child run |
 
 The guard also does one thing that is **not** a denial: on the first tool call of each new TURN it
 ensures the local model is loaded, so a cold server warms while the orchestrator plans instead of
@@ -352,12 +352,16 @@ stalling its first dispatch. Turn-scoped, not per-call — per-call would fight 
 unload). A load failure there is only logged; the per-dispatch pre-flight is the gate that actually
 protects a dispatch, and a `ninfer-model.ps1` lifecycle command never triggers a load at all.
 
-Every branch **fails open**: if the caller cannot be identified, the `agents` service is missing,
-or the sandbox denies the probe, the call proceeds. A fault in the guard can never wedge the
-build. Setting `TFLEX_GUARD=off` in the harness process environment disables all five checks.
+The **drift** checks fail open: if the caller cannot be identified or the `agents` service is
+missing, the call proceeds, so a fault there can never wedge the build. The **model pre-flight is the
+deliberate exception and fails closed** — it guards an outcome rather than a policy, and an
+unverifiable local dispatch is refused with its cause instead of being allowed to die as a transport
+error. Setting `TFLEX_GUARD=off` in the harness process environment disables all five checks.
 Each decision is appended to `guard.log` beside the preset, which is the only way to see them
 from outside a session. `.dsh/guard.selftest.mjs` drives the real module with a fake context and
-asserts all 44 decisions — run `node .dsh/guard.selftest.mjs` after editing the guard.
+asserts all 44 decisions — run `node .dsh/guard.selftest.mjs` after editing the guard. Its fake
+context supplies a stub shell that reports a successful start, so the local-dispatch cases stay
+deterministic whether or not the real server happens to be running.
 
 **A `toolFilter` name must be a REGISTERED global tool, and no mount check will tell you.**
 `tools.restrict()` rejects a deny/allow name it does not know — but that call happens in the child's

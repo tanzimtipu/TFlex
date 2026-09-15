@@ -1,5 +1,8 @@
 # Adversarial Review
 
+> Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
+> or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
+
 ## Phase 2 gate — page organization
 
 Session label: `phase-2 gate`. Ran against the production build
