@@ -5,7 +5,11 @@ import {
   resolveInitialSettings,
   settingsRecoveryNotice,
 } from "../../../src/renderer/state/settings";
-import { applyTheme, nextTheme } from "../../../src/renderer/state/theme";
+import {
+  applyTheme,
+  nextTheme,
+  resolveThemeDefault,
+} from "../../../src/renderer/state/theme";
 import { ok, err } from "../../../src/shared/result";
 
 describe("theme", () => {
@@ -26,6 +30,21 @@ it("nextTheme cycles all three themes so frosted stays reachable", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
     applyTheme("frosted");
     expect(document.documentElement.dataset.theme).toBe("frosted");
+  });
+
+  // Immediate-apply theme fix: the Preferences dropdown offers four
+  // values but the live theme is a concrete AppTheme, so 'system' must
+  // resolve to dark/light from the OS preference at choice time.
+  it("resolveThemeDefault passes concrete themes through unchanged", () => {
+    expect(resolveThemeDefault("light", false)).toBe("light");
+    expect(resolveThemeDefault("dark", true)).toBe("dark");
+    expect(resolveThemeDefault("frosted", true)).toBe("frosted");
+    expect(resolveThemeDefault("light", true)).toBe("light");
+  });
+
+  it("resolveThemeDefault maps 'system' to the OS preference", () => {
+    expect(resolveThemeDefault("system", true)).toBe("dark");
+    expect(resolveThemeDefault("system", false)).toBe("light");
   });
 });
 

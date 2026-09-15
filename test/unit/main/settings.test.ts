@@ -898,3 +898,61 @@ describe('Phase 16: pagesPanelCollapsed validation', () => {
     }
   });
 });
+
+// DEF-212: themeDefault validation — preserve-if-valid against
+// 'light' | 'dark' | 'system' | 'frosted' (see AppSettings.themeDefault).
+describe('DEF-212: themeDefault validation', () => {
+  it('preserves all four valid themeDefault values', () => {
+    expect(normalizeSettings({ themeDefault: 'light' }).themeDefault).toBe('light');
+    expect(normalizeSettings({ themeDefault: 'dark' }).themeDefault).toBe('dark');
+    expect(normalizeSettings({ themeDefault: 'system' }).themeDefault).toBe('system');
+    expect(normalizeSettings({ themeDefault: 'frosted' }).themeDefault).toBe('frosted');
+  });
+
+  it('rejects invalid themeDefault values (not set on output)', () => {
+    expect(normalizeSettings({ themeDefault: 'purple' }).themeDefault).toBeUndefined();
+    expect(normalizeSettings({ themeDefault: 'Frosted' }).themeDefault).toBeUndefined();
+    expect(normalizeSettings({ themeDefault: '' }).themeDefault).toBeUndefined();
+    expect(normalizeSettings({ themeDefault: 123 }).themeDefault).toBeUndefined();
+    expect(normalizeSettings({ themeDefault: true }).themeDefault).toBeUndefined();
+    expect(normalizeSettings({ themeDefault: ['frosted'] }).themeDefault).toBeUndefined();
+  });
+
+  it('does not set themeDefault when absent', () => {
+    expect(normalizeSettings({}).themeDefault).toBeUndefined();
+  });
+
+  it('save/load round-trips themeDefault: frosted', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'frosted' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      themeDefault: 'frosted' as const,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.themeDefault).toBe('frosted');
+    }
+    const text = await readFile(file, 'utf8');
+    expect(JSON.parse(text).themeDefault).toBe('frosted');
+  });
+
+  it('invalid themeDefault on disk is dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      themeDefault: 'neon',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.themeDefault).toBeUndefined();
+      expect(result.value.theme).toBe('light');
+    }
+  });
+});

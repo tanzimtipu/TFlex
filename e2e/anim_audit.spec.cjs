@@ -24,7 +24,7 @@ const MOTION_TOKENS = {
   '--motion-duration-micro': '150ms',
   '--motion-duration-fast': '200ms',
   '--motion-duration-standard': '250ms',
-  '--motion-duration-panel': '280ms',
+  '--motion-duration-panel': '140ms',
   '--motion-duration-layout': '350ms',
   '--motion-theme-crossfade': '400ms',
   '--motion-scale-press': '0.97',

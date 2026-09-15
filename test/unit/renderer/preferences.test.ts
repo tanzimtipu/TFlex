@@ -35,6 +35,26 @@ describe("preferencesReducer.set-theme-default", () => {
     const next = preferencesReducer(s, { type: "set-theme-default", value: "dark" });
     expect(next).toBe(s);
   });
+  // DEF-212 — the Preferences dropdown gained a Frosted option; the
+  // reducer must accept 'frosted' like any other concrete theme.
+  it("stores 'frosted' as the default", () => {
+    const s = makeSettings();
+    const next = preferencesReducer(s, { type: "set-theme-default", value: "frosted" });
+    expect(next.themeDefault).toBe("frosted");
+  });
+  it("accepts every ThemeDefault value the dropdown offers", () => {
+    const values = ["light", "dark", "frosted", "system"] as const;
+    for (const value of values) {
+      // Seed an explicit default DIFFERENT from `value`: the reducer's
+      // equality guard treats an absent field as the implicit 'dark',
+      // so writing 'dark' into an unseeded state is an intentional
+      // no-op (no redundant persist) and would skip the assertion.
+      const seed = value === "light" ? "dark" : "light";
+      const s = makeSettings({ themeDefault: seed });
+      const next = preferencesReducer(s, { type: "set-theme-default", value });
+      expect(next.themeDefault).toBe(value);
+    }
+  });
 });
 
 describe("preferencesReducer.set-recents-cap", () => {

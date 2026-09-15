@@ -624,13 +624,14 @@ describe("Phase D — PDF-safety audit (acrylic/reflection stays chrome-only)", 
     "thumb-scroller",
   ];
 
-  /** The exact 13 frosted chrome surfaces (Phase-A blur list). This
-   *  is the COMPLETE frosted acrylic surface set — nothing else may
-   *  carry the frosted blur. DEF-183: `.app-header` was removed from
-   *  the set — it is the strip INSIDE `.titlebar`'s slot, and its own
-   *  blur+film stacked a ~0.88 effective double glass over the caption
-   *  strip that blocked the wallpaper. The `.titlebar` is the caption
-   *  strip's one and only frosted surface. */
+  /** The exact 14 frosted chrome surfaces: the Phase-A blur list
+   *  (13) plus the All-tools badge tracker (the 1.15.x panel-attached
+   *  badge). This is the COMPLETE frosted acrylic surface set —
+   *  nothing else may carry the frosted blur. DEF-183: `.app-header`
+   *  was removed from the set — it is the strip INSIDE `.titlebar`'s
+   *  slot, and its own blur+film stacked a ~0.88 effective double
+   *  glass over the caption strip that blocked the wallpaper. The
+   *  `.titlebar` is the caption strip's one and only frosted surface. */
   const CHROME_FROSTED = [
     "titlebar",
     "toolbar",
@@ -645,6 +646,7 @@ describe("Phase D — PDF-safety audit (acrylic/reflection stays chrome-only)", 
     "sheet",
     "color-popover",
     "toast",
+    "tools-badge-tracker",
   ];
 
   /** Comments mention the PDF classes (and even `{`) in prose, which

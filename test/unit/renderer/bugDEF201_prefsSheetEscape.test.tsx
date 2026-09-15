@@ -41,6 +41,7 @@ function mountPrefs(open: boolean): {
           themeDefault="dark"
           recentsCap={10}
           onSetThemeDefault={(): void => undefined}
+          onThemeChange={(): void => undefined}
           onSetRecentsCap={(): void => undefined}
         />,
       );

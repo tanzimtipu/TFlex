@@ -2,8 +2,10 @@
 //
 // Phase 13 — Hand (pan) mode in the real DocumentView:
 //   - The toolbar's Hand button arms pan mode: the scroller gets the
-//     hand class + data-hand flag and the annotation toolbar goes
-//     inert (two pointer-active surfaces must never be hot at once).
+//     hand class + data-hand flag and the annotation tool state drops
+//     to select (two pointer-active surfaces must never be hot at
+//     once; the button-level inertness now rides on the App-level
+//     UnifiedToolbar ribbon, wired in the next chunk).
 //   - Escape exits pan mode before anything else.
 //   - A pan press on a PAGE surface starts the drag (dragging flag)
 //     and a press on an INTERACTIVE control is left alone — the click
@@ -139,7 +141,7 @@ function pointer(el: Element, type: "pointerdown" | "pointermove" | "pointerup",
 }
 
 describe("Phase 13 — Hand (pan) mode", () => {
-  it("arming Hand sets the pressed state, the scroller affordance, and disarms annotation tools", async () => {
+  it("arming Hand sets the pressed state and the scroller affordance", async () => {
     const { host, unmount } = await mountView();
     try {
       const hand = host.querySelector<HTMLButtonElement>("[data-hand-toggle]");
@@ -153,10 +155,10 @@ describe("Phase 13 — Hand (pan) mode", () => {
       const sc = scroller(host);
       expect(sc.classList.contains("document-scroller-hand")).toBe(true);
       expect(sc.getAttribute("data-hand")).toBe("true");
-      // Annotation tools go inert while pan owns the pointer.
-      const note = host.querySelector<HTMLButtonElement>(".ann-toolbar button[data-tool='note']");
-      expect(note?.disabled).toBe(true);
-      expect(note?.getAttribute("aria-disabled")).toBe("true");
+      // The annotation tool state drop on the hand rising edge is
+      // pinned in bug4_escapeAndDisarm.test.ts (reducer level); the
+      // button-level inertness moves with the ribbon's Annotate
+      // wiring.
       // The toolbar Hand button flips to its armed tooltip.
       expect(after?.getAttribute("title")).toMatch(/Pan mode active/);
     } finally {

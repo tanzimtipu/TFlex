@@ -7,6 +7,7 @@ import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { AppHeader } from "../../../src/renderer/components/AppHeader";
 import type { Theme } from "../../../src/renderer/state/theme";
+import type { ThemeDefault } from "../../../src/renderer/state/preferences";
 
 /** Fire a mousedown with an explicit button. React listens at the
  *  root via its own event delegation, so a native bubbling
@@ -356,7 +357,11 @@ interface ThemeRenderer {
 }
 
 function renderHeaderFull(
-  args: { theme?: Theme; onThemeChange?: (next: Theme) => void } = {},
+  args: {
+    theme?: Theme;
+    themeDefault?: ThemeDefault;
+    onThemeChange?: (next: ThemeDefault) => void;
+  } = {},
 ): ThemeRenderer {
   const container = document.createElement("div");
   document.body.appendChild(container);
@@ -369,6 +374,7 @@ function renderHeaderFull(
         onActivate={(): void => undefined}
         onClose={(): void => undefined}
         theme={args.theme ?? "frosted"}
+        themeDefault={args.themeDefault}
         onThemeChange={args.onThemeChange ?? ((): void => undefined)}
         onNewEmptyTab={(): void => undefined}
         onOpenPreferences={(): void => undefined}
@@ -402,7 +408,7 @@ describe("AppHeader — Phase-15 embedded theme picker", () => {
     unmount();
   });
 
-  it("lists Frosted Glass / Dark / Light in that order, marking the current selection", () => {
+  it("lists Frosted Glass / Dark / Light / System default in that order, marking the current selection", () => {
     const { container, unmount } = renderHeaderFull({ theme: "dark" });
     const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
     expect(trigger).not.toBeNull();
@@ -415,7 +421,10 @@ describe("AppHeader — Phase-15 embedded theme picker", () => {
       "frosted",
       "dark",
       "light",
+      "system",
     ]);
+    // No themeDefault persisted: the selection falls back to the
+    // concrete theme (legacy behaviour), so 'dark' is marked.
     const selected = container.querySelector(".theme-toggle-option-selected");
     expect(selected?.getAttribute("data-theme-option")).toBe("dark");
     // aria-checked marks only the current option.
@@ -541,6 +550,134 @@ describe("AppHeader — Phase-15 embedded theme picker", () => {
     });
     await flushExit();
     expect(container.querySelector(".theme-toggle-popover")).toBeNull();
+    unmount();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// "System default" option — the 4th picker entry. It is a PREFERENCE, not a
+// theme: the host resolves it to the OS colour preference at pick time and
+// applies the concrete theme. The header's selection state is the SAVED
+// preference (themeDefault), so 'system' stays marked in the trigger and the
+// popover even though the live theme is the resolved light/dark. When no
+// preference is persisted (first run) the selection falls back to the
+// concrete theme — the legacy toggle behaviour.
+// ---------------------------------------------------------------------------
+describe("AppHeader — System default option", () => {
+  it("shows 'System default' on the trigger when themeDefault is 'system', even when the concrete theme differs", () => {
+    const { container, unmount } = renderHeaderFull({
+      theme: "dark",
+      themeDefault: "system",
+    });
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    expect(trigger?.textContent).toContain("System default");
+    expect(trigger?.getAttribute("title")).toContain("System default");
+    unmount();
+  });
+
+  it("marks the system option as the single selected entry in the popover", () => {
+    const { container, unmount } = renderHeaderFull({
+      theme: "light",
+      themeDefault: "system",
+    });
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+    act((): void => {
+      trigger.click();
+    });
+    const selected = container.querySelector(".theme-toggle-option-selected");
+    expect(selected?.getAttribute("data-theme-option")).toBe("system");
+    const checked = Array.from(
+      container.querySelectorAll('[data-theme-option][aria-checked="true"]'),
+    );
+    expect(checked.length).toBe(1);
+    expect(checked[0]?.getAttribute("data-theme-option")).toBe("system");
+    unmount();
+  });
+
+  it("calls onThemeChange with 'system' when the option is clicked", async () => {
+    const onChange = vi.fn();
+    const { container, unmount } = renderHeaderFull({
+      theme: "light",
+      themeDefault: "light",
+      onThemeChange: onChange,
+    });
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+    act((): void => {
+      trigger.click();
+    });
+    const system = container.querySelector<HTMLElement>(
+      '[data-theme-option="system"]',
+    );
+    expect(system).not.toBeNull();
+    if (system === null) return;
+    act((): void => {
+      system.click();
+    });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith("system");
+    await flushExit();
+    expect(container.querySelector(".theme-toggle-popover")).toBeNull();
+    unmount();
+  });
+
+  it("re-choosing the active system pick closes the list without a redundant change call", async () => {
+    const onChange = vi.fn();
+    const { container, unmount } = renderHeaderFull({
+      theme: "dark",
+      themeDefault: "system",
+      onThemeChange: onChange,
+    });
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+    act((): void => {
+      trigger.click();
+    });
+    const system = container.querySelector<HTMLElement>(
+      '[data-theme-option="system"]',
+    );
+    expect(system).not.toBeNull();
+    if (system === null) return;
+    act((): void => {
+      system.click();
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    await flushExit();
+    expect(container.querySelector(".theme-toggle-popover")).toBeNull();
+    unmount();
+  });
+
+  it("falls back to the concrete theme label on the trigger when no preference is persisted", () => {
+    const { container, unmount } = renderHeaderFull({ theme: "light" });
+    const trigger = container.querySelector<HTMLElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    expect(trigger?.textContent).toContain("Light");
+    unmount();
+  });
+
+  it("keyboard: with 'system' selected, opening the menu focuses it and ArrowDown wraps to the first option", async () => {
+    const { container, unmount } = renderHeaderFull({
+      theme: "dark",
+      themeDefault: "system",
+    });
+    const trigger = container.querySelector<HTMLButtonElement>("[data-theme-toggle]");
+    expect(trigger).not.toBeNull();
+    if (trigger === null) return;
+
+    keyDown(trigger, "Enter");
+    const popover = container.querySelector(".theme-toggle-popover");
+    expect(popover).not.toBeNull();
+    expect(document.activeElement?.getAttribute("data-theme-option")).toBe("system");
+
+    // 'system' is the LAST option; ArrowDown wraps to the first.
+    if (popover === null) return;
+    keyDown(popover, "ArrowDown");
+    expect(document.activeElement?.getAttribute("data-theme-option")).toBe("frosted");
     unmount();
   });
 });

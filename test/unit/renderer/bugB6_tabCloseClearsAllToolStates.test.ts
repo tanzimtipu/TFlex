@@ -26,10 +26,11 @@
 //      across the unmount because the overlay lives inside
 //      PageView, which is a child of DocumentView, so it
 //      unmounts with its parent.
-//   4. The annotation toolbar (which is rendered inside
-//      DocumentView, not at App level) also unmounts — its
-//      local state (color picker open, swatch selection) can't
-//      leak.
+//   4. The per-tab annotation tool reducer lives inside
+//      DocumentView (the tab's keyed root component), so its
+//      state can't leak across the unmount either. (The old
+//      AnnotationToolbar sat in the same component; the unified
+//      toolbar that replaced it is App-level and stateless.)
 import { describe, expect, it } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -73,21 +74,10 @@ const annotationOverlayPath = path.join(
   "annotations",
   "AnnotationOverlay.tsx",
 );
-const annotationToolbarPath = path.join(
-  __dirname,
-  "..",
-  "..",
-  "..",
-  "src",
-  "renderer",
-  "annotations",
-  "AnnotationToolbar.tsx",
-);
 const appSource = fs.readFileSync(appPath, "utf8");
 const documentViewSource = fs.readFileSync(documentViewPath, "utf8");
 const pageViewSource = fs.readFileSync(pageViewPath, "utf8");
 const annotationOverlaySource = fs.readFileSync(annotationOverlayPath, "utf8");
-const annotationToolbarSource = fs.readFileSync(annotationToolbarPath, "utf8");
 
 describe("B6 — tab close clears ALL tool states (App + per-tab)", () => {
   it("App performCloseTab still resets every App-level armed / dialog flag", () => {
@@ -151,15 +141,15 @@ describe("B6 — tab close clears ALL tool states (App + per-tab)", () => {
     expect(overlayUsesState).toBe(true);
   });
 
-  it("AnnotationToolbar lives inside DocumentView (not at App level) — its state unmounts with the tab", () => {
-    // The toolbar's color-picker open state, pen-width
-    // selection, etc. all live in its local useState hooks.
-    // Because DocumentView is the tab's root component and
-    // keyed on meta.id, the toolbar unmounts on close.
-    const inDoc = documentViewSource.includes("<AnnotationToolbar");
-    const toolbarUsesState = annotationToolbarSource.includes("useState");
+  it("the per-tab annotation tool state lives inside DocumentView, so it unmounts with the tab", () => {
+    // The annotation tool reducer (annTool) lives on the tab's
+    // root component. Because DocumentView is keyed on meta.id,
+    // the reducer state unmounts on close and can't leak into the
+    // next open tab. (The old AnnotationToolbar's local state sat
+    // in the same component; the unified toolbar that replaced it
+    // is App-level and carries no per-tab state of its own.)
+    const inDoc = documentViewSource.includes("annotationToolReducer");
     expect(inDoc).toBe(true);
-    expect(toolbarUsesState).toBe(true);
   });
 
   it("closeTab clears the per-tab OCR suspects list / OCR run flag so they don't surface against a new tab", () => {

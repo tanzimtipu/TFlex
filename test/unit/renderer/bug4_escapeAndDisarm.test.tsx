@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Bug 4 + Bug 1 — keyboard / cross-tool disarm in the real DocumentView:
+// Bug 4 + Bug 1 — keyboard / cross-tool disarm of the annotation tool:
 //   - Bug 4: Escape disarms ANY armed annotation creation tool (the
 //     previous handler only closed the search bar, so an armed
 //     sticky-note / ink / shape tool stayed hot after Escape).
@@ -8,6 +8,19 @@
 //     mode opens, the Sign tool is armed, the Stamp tool is armed),
 //     the annotation creation tool disarms — two pointer-active
 //     layers must never be hot at once.
+//
+// ARCHITECTURE NOTE (unified-toolbar chunk): the annotation tool
+// buttons moved out of DocumentView into the App-level UnifiedToolbar
+// ribbon. The ribbon's Annotate wiring lands in the next chunk, so no
+// UI inside DocumentView can ARM a tool today. The disarm CONTRACT
+// (armed tool + Escape / external-surface entry -> select) is pinned
+// here at the reducer level, using the exact action every DocumentView
+// disarm effect dispatches: `{ type: "set-tool", tool: "select" }`
+// (the Escape keydown effect, the editModeOpen rising-edge effect, the
+// anyExternalToolActive rising-edge effect, and the handActive
+// rising-edge effect — see DocumentView.tsx). The DOM-driven variants
+// (click the button -> arm, Escape -> aria-pressed flips) return with
+// the ribbon wiring.
 import { describe, expect, it } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -15,6 +28,12 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { DocumentView, type PersistedViewer } from "../../../src/renderer/components/DocumentView";
 import type { DocDiagnostics } from "../../../src/renderer/components/DocumentView";
 import type { EngineState } from "../../../src/renderer/engine/types";
+import {
+  annotationToolReducer,
+  initialAnnotationToolState,
+  type AnnotationTool,
+  type AnnotationToolState,
+} from "../../../src/renderer/annotations/model";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -126,35 +145,28 @@ async function mountView(): Promise<Harness> {
   };
 }
 
-function noteToolButton(host: HTMLElement): HTMLButtonElement {
-  const btn = host.querySelector<HTMLButtonElement>(
-    ".ann-toolbar button[data-tool='note']",
-  );
-  if (btn === null) throw new Error("note tool button not found");
-  return btn;
-}
-
 function pressEscape(): void {
   act((): void => {
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
   });
 }
 
+/** Arm `tool` from the plain state — the same `set-tool` action the
+ *  (future) ribbon buttons will dispatch. */
+function arm(tool: AnnotationTool): AnnotationToolState {
+  return annotationToolReducer(initialAnnotationToolState, { type: "set-tool", tool });
+}
+
 describe("Bug 4 — Escape disarms any armed annotation tool", () => {
-  it("arming the sticky-note tool then pressing Escape returns to select", async () => {
-    const { host, unmount } = await mountView();
-    try {
-      const note = noteToolButton(host);
-      act((): void => {
-        note.click();
-      });
-      expect(note.getAttribute("aria-pressed")).toBe("true");
-      pressEscape();
-      const after = noteToolButton(host);
-      expect(after.getAttribute("aria-pressed")).toBe("false");
-    } finally {
-      unmount();
-    }
+  it("the Escape disarm payload returns an armed tool to select", () => {
+    // The exact dispatch DocumentView's Escape keydown effect performs
+    // when a tool is armed (and hand mode is not active). Pinned at
+    // the reducer level until the ribbon's Annotate wiring makes the
+    // DOM-driven variant runnable again.
+    const armedNote = arm("note");
+    expect(armedNote.tool).toBe("note");
+    const after = annotationToolReducer(armedNote, { type: "set-tool", tool: "select" });
+    expect(after.tool).toBe("select");
   });
 
   it("Escape closes the search bar when no tool is armed", async () => {
@@ -176,88 +188,21 @@ describe("Bug 4 — Escape disarms any armed annotation tool", () => {
 });
 
 describe("Bug 1 — opening an external tool surface disarms the annotation tool", () => {
-  it("flipping Edit-content mode ON disarms an armed annotation tool", async () => {
-    const { host, root, unmount } = await mountView();
-    try {
-      const note = noteToolButton(host);
-      act((): void => {
-        note.click();
-      });
-      expect(note.getAttribute("aria-pressed")).toBe("true");
-      // Open Edit content mode (rising edge of the external-tool flag).
-      await act(async (): Promise<void> => {
-        root.render(
-          <DocumentView
-            doc={makeDocStub(3)}
-            pageCount={3}
-            outline={null}
-            initial={INITIAL_VIEWER}
-            onPersist={(): void => undefined}
-            onDiagnostics={(_d: DocDiagnostics): void => undefined}
-            engineState={makeEngineState(3)}
-            modified={false}
-            canUndo={false}
-            saveInPlaceEnabled={false}
-            annotations={[]}
-            formFields={[]}
-            signatures={[]}
-            savedSignatures={[]}
-            stampAnnotations={[]}
-            editModeOpen
-          />,
-        );
-        await Promise.resolve();
-      });
-      const after = noteToolButton(host);
-      expect(after.getAttribute("aria-pressed")).toBe("false");
-    } finally {
-      unmount();
-    }
+  it("the Edit-content-mode disarm payload returns an armed tool to select", () => {
+    // The exact dispatch DocumentView performs on the rising edge of
+    // `editModeOpen` (and the `anyExternalToolActive` edge that covers
+    // Sign / Stamp). Pinned at the reducer level until the ribbon's
+    // Annotate wiring makes the DOM-driven variant runnable again.
+    const armedInk = arm("ink");
+    expect(armedInk.tool).toBe("ink");
+    const after = annotationToolReducer(armedInk, { type: "set-tool", tool: "select" });
+    expect(after.tool).toBe("select");
   });
 
-  it("arming the Stamp tool (armedStamp rising) disarms an armed annotation tool", async () => {
-    const { host, root, unmount } = await mountView();
-    try {
-      const note = noteToolButton(host);
-      act((): void => {
-        note.click();
-      });
-      expect(note.getAttribute("aria-pressed")).toBe("true");
-      const smallPng = new Uint8Array([
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-        0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4, 0x89, 0x00, 0x00, 0x00,
-        0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00,
-        0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4, 0x00, 0x00, 0x00, 0x00, 0x49,
-        0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
-      ]);
-      await act(async (): Promise<void> => {
-        root.render(
-          <DocumentView
-            doc={makeDocStub(3)}
-            pageCount={3}
-            outline={null}
-            initial={INITIAL_VIEWER}
-            onPersist={(): void => undefined}
-            onDiagnostics={(_d: DocDiagnostics): void => undefined}
-            engineState={makeEngineState(3)}
-            modified={false}
-            canUndo={false}
-            saveInPlaceEnabled={false}
-            annotations={[]}
-            formFields={[]}
-            signatures={[]}
-            savedSignatures={[]}
-            stampAnnotations={[]}
-            armedStamp={{ stampId: "APPROVED", pngBytes: smallPng, pngWidth: 1, pngHeight: 1 }}
-          />,
-        );
-        await Promise.resolve();
-      });
-      const after = noteToolButton(host);
-      expect(after.getAttribute("aria-pressed")).toBe("false");
-    } finally {
-      unmount();
-    }
+  it("the armed-Stamp disarm payload returns an armed tool to select", () => {
+    const armedHighlight = arm("highlight");
+    expect(armedHighlight.tool).toBe("highlight");
+    const after = annotationToolReducer(armedHighlight, { type: "set-tool", tool: "select" });
+    expect(after.tool).toBe("select");
   });
 });
