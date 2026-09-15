@@ -92,6 +92,15 @@ export function sameSettings(a: AppSettings, b: AppSettings): boolean {
   if (a.ocrDownsample !== b.ocrDownsample) return false;
   if (a.defaultStampId !== b.defaultStampId) return false;
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
+  // Phase 16 / 17 — every later field joins the comparison too
+  // (the DEF-072 rule: a field the comparator misses lets a stale
+  // echo silently clobber a newer local write of it).
+  if (a.pagesPanelCollapsed !== b.pagesPanelCollapsed) return false;
+  if (a.showWelcomeOnStartup !== b.showWelcomeOnStartup) return false;
+  if (a.confirmCloseMultipleTabs !== b.confirmCloseMultipleTabs) return false;
+  if (a.confirmDeletePages !== b.confirmDeletePages) return false;
+  if (a.defaultZoomMode !== b.defaultZoomMode) return false;
+  if (a.showEditWarnings !== b.showEditWarnings) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   return sameAnnotationColors(a.annotationColors, b.annotationColors);
@@ -127,6 +136,13 @@ export function differsOnlyInRecentFiles(
   if (a.ocrDownsample !== b.ocrDownsample) return false;
   if (a.defaultStampId !== b.defaultStampId) return false;
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
+  // Phase 16 / 17 — same coverage rule as sameSettings.
+  if (a.pagesPanelCollapsed !== b.pagesPanelCollapsed) return false;
+  if (a.showWelcomeOnStartup !== b.showWelcomeOnStartup) return false;
+  if (a.confirmCloseMultipleTabs !== b.confirmCloseMultipleTabs) return false;
+  if (a.confirmDeletePages !== b.confirmDeletePages) return false;
+  if (a.defaultZoomMode !== b.defaultZoomMode) return false;
+  if (a.showEditWarnings !== b.showEditWarnings) return false;
   if (!sameGeometry(a.geometry, b.geometry)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   // All other fields agree; recentFiles must ACTUALLY differ for
@@ -224,6 +240,13 @@ export function differsOnlyInGeometry(a: AppSettings, b: AppSettings): boolean {
   if (a.ocrDownsample !== b.ocrDownsample) return false;
   if (a.defaultStampId !== b.defaultStampId) return false;
   if (a.saveAsLinearize !== b.saveAsLinearize) return false;
+  // Phase 16 / 17 — same coverage rule as sameSettings.
+  if (a.pagesPanelCollapsed !== b.pagesPanelCollapsed) return false;
+  if (a.showWelcomeOnStartup !== b.showWelcomeOnStartup) return false;
+  if (a.confirmCloseMultipleTabs !== b.confirmCloseMultipleTabs) return false;
+  if (a.confirmDeletePages !== b.confirmDeletePages) return false;
+  if (a.defaultZoomMode !== b.defaultZoomMode) return false;
+  if (a.showEditWarnings !== b.showEditWarnings) return false;
   if (!sameRecentFiles(a.recentFiles, b.recentFiles)) return false;
   if (!sameAnnotationColors(a.annotationColors, b.annotationColors)) return false;
   // All other fields agree; geometry must ACTUALLY differ for this

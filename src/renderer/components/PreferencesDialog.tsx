@@ -98,6 +98,18 @@ interface PreferencesDialogProps {
   onSetConfirmCloseMultipleTabs?: (next: boolean) => void;
   onSetConfirmDeletePages?: (next: boolean) => void;
   onSetDefaultPdfHandler?: () => void;
+  // --- Phase 17 — Documents / Edit panel fields (optional during
+  // --- the transition: the Documents and Edit categories render
+  // --- placeholders until their panels land, so these values are
+  // --- persisted host-side without an in-sheet control yet. App.tsx
+  // --- already consumes defaultZoomMode when seeding a new tab's
+  // --- viewer state (openFromBytes).
+  /** Phase 17 — default zoom mode for new documents. */
+  defaultZoomMode?: 'fit-width' | 'fit-page' | 'last-used';
+  onSetDefaultZoomMode?: (next: 'fit-width' | 'fit-page' | 'last-used') => void;
+  /** Phase 17 — show warning dialogs for destructive edit operations. */
+  showEditWarnings?: boolean;
+  onSetShowEditWarnings?: (next: boolean) => void;
   // --- Appearance panel (optional during the transition — same
   // --- contract as the General toggles above: while the host does
   // --- not wire a setting the control toggles an in-dialog draft,

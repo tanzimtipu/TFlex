@@ -887,6 +887,136 @@ describe("DEF-073 — saveAsLinearize echo handling (Save-As linearize toggle)",
   });
 });
 
+// Phase 16 / 17 — the later preference fields join the comparator.
+// A stale echo that drifts ANY of them must be discarded (the
+// DEF-072 rule), and a canonical echo matching them is applied.
+describe("sameSettings — Phase 16/17 preference fields participate", () => {
+  it("returns false when pagesPanelCollapsed differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ pagesPanelCollapsed: true }),
+        baseSettings({ pagesPanelCollapsed: false }),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when showWelcomeOnStartup differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ showWelcomeOnStartup: true }),
+        baseSettings({ showWelcomeOnStartup: false }),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when confirmCloseMultipleTabs differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ confirmCloseMultipleTabs: true }),
+        baseSettings({ confirmCloseMultipleTabs: false }),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when confirmDeletePages differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ confirmDeletePages: true }),
+        baseSettings({ confirmDeletePages: false }),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when defaultZoomMode differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ defaultZoomMode: "fit-width" }),
+        baseSettings({ defaultZoomMode: "fit-page" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("returns false when showEditWarnings differs", () => {
+    expect(
+      sameSettings(
+        baseSettings({ showEditWarnings: true }),
+        baseSettings({ showEditWarnings: false }),
+      ),
+    ).toBe(false);
+  });
+
+  it("treats an absent field as distinct from a present one (undefined vs value)", () => {
+    expect(
+      sameSettings(
+        baseSettings({ showWelcomeOnStartup: true }),
+        baseSettings(),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("shouldApplyEcho — Phase 16/17 fields cannot be clobbered by stale echos", () => {
+  it("discards a stale echo whose defaultZoomMode drifted", () => {
+    // Local write N set fit-page; a stale echo from write N-1
+    // (fit-width) must not be applied over it.
+    const localWrite = baseSettings({ defaultZoomMode: "fit-page" });
+    const staleEcho = baseSettings({ defaultZoomMode: "fit-width" });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("accepts a canonical reflection matching defaultZoomMode", () => {
+    const localWrite = baseSettings({ defaultZoomMode: "fit-page" });
+    const echoFromMain = baseSettings({ defaultZoomMode: "fit-page" });
+    expect(shouldApplyEcho(echoFromMain, 2, localWrite)).toBe(true);
+  });
+
+  it("discards a stale echo whose confirmDeletePages drifted", () => {
+    const localWrite = baseSettings({ confirmDeletePages: false });
+    const staleEcho = baseSettings({ confirmDeletePages: true });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("discards a stale echo whose pagesPanelCollapsed drifted", () => {
+    const localWrite = baseSettings({ pagesPanelCollapsed: true });
+    const staleEcho = baseSettings({ pagesPanelCollapsed: false });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("discards a stale echo whose showWelcomeOnStartup drifted", () => {
+    const localWrite = baseSettings({ showWelcomeOnStartup: false });
+    const staleEcho = baseSettings({ showWelcomeOnStartup: true });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("discards a stale echo whose confirmCloseMultipleTabs drifted", () => {
+    const localWrite = baseSettings({ confirmCloseMultipleTabs: false });
+    const staleEcho = baseSettings({ confirmCloseMultipleTabs: true });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("discards a stale echo whose showEditWarnings drifted", () => {
+    const localWrite = baseSettings({ showEditWarnings: false });
+    const staleEcho = baseSettings({ showEditWarnings: true });
+    expect(shouldApplyEcho(staleEcho, 2, localWrite)).toBe(false);
+  });
+
+  it("does not treat a Phase 17 drift as a recent-files-only delta", () => {
+    // differsOnlyInRecentFiles must reject an echo that agrees on
+    // recentFiles but drifts a Phase 17 field — otherwise a
+    // backend addRecentFile echo from BEFORE a local Phase 17
+    // write would carry the stale preference back in.
+    const localWrite = baseSettings({
+      confirmDeletePages: false,
+      recentFiles: [{ path: "/x.pdf", name: "x.pdf", openedAt: "2026-01-01T00:00:00Z" }],
+    });
+    const staleEcho = baseSettings({
+      confirmDeletePages: true,
+      recentFiles: [{ path: "/x.pdf", name: "x.pdf", openedAt: "2026-01-01T00:00:00Z" }],
+    });
+    expect(differsOnlyInRecentFiles(staleEcho, localWrite)).toBe(false);
+  });
+});
+
 // DEF-072 — coverage guard for future fields.
 //
 // The previous regression came from "a Phase 9/10 field was
@@ -923,6 +1053,12 @@ describe("DEF-072 — sameSettings covers every optional AppSettings field", () 
     { field: "ocrDownsample", hint: "Phase 11 OCR downsample" },
     { field: "defaultStampId", hint: "Phase 12 default stamp id" },
     { field: "saveAsLinearize", hint: "Phase 13 Save-As linearize" },
+    { field: "pagesPanelCollapsed", hint: "Phase 16 pages panel collapsed" },
+    { field: "showWelcomeOnStartup", hint: "Phase 17 show welcome on startup" },
+    { field: "confirmCloseMultipleTabs", hint: "Phase 17 confirm close multiple tabs" },
+    { field: "confirmDeletePages", hint: "Phase 17 confirm delete pages" },
+    { field: "defaultZoomMode", hint: "Phase 17 default zoom mode" },
+    { field: "showEditWarnings", hint: "Phase 17 show edit warnings" },
   ];
 
   for (const { field, hint } of requiredFields) {
