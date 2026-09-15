@@ -836,3 +836,94 @@ All glass surfaces need:
 8. All animations resolved from the centralized motion token system; no hardcoded transition values in the collapse/expand CSS or JS.
 
 **Settings impact:** `pagesPanelCollapsed?: boolean` (default `false`; validation: boolean, preserve-if-valid; transported via AppSettings IPC so the state survives restart).
+
+### Phase 17 — Comprehensive Preferences Dialog
+
+**Features**
+
+A redesigned Preferences dialog with multiple categories, matching the design language of professional PDF tools (inspired by Adobe Acrobat's preferences). All settings must be wired to actual app behavior — no placeholder options.
+
+**Categories and Settings**
+
+1. **General**
+   - Startup behavior: "Show Welcome screen on launch" checkbox
+   - Confirmations: "Confirm before closing multiple tabs" checkbox
+   - Confirmations: "Confirm before deleting pages" checkbox
+   - Recent files cap: number input (1-50, existing `recentsCap`)
+   - Default PDF handler: "Set TFlex as default PDF application" button
+
+2. **Appearance** (already partially implemented)
+   - Theme: Light / Dark / Frosted / System default dropdown (existing `themeDefault`)
+   - Tools palette layout: List / Grid toggle (existing `toolsPaletteLayout`)
+   - Collapse side panel on startup: checkbox (existing `pagesPanelCollapsed`)
+
+3. **Documents**
+   - Optimize preset: None / Compact / Max dropdown (existing `optimizePreset`)
+   - Linearize PDFs for Fast Web View: checkbox (existing `saveAsLinearize`)
+   - Default zoom mode: Fit Width / Fit Page / Last Used dropdown
+
+4. **Export**
+   - Default export format: PNG / JPEG / BMP dropdown (existing `exportImageFormat`)
+   - Default export DPI: 72-600 number input (existing `exportImageDpi`)
+   - Create PDF from images - JPEG quality: 0.0-1.0 slider (existing `createImageQuality`)
+
+5. **Edit**
+   - Default font for text tools: Helvetica / Times / Courier dropdown (existing `editDefaultFont`)
+   - Show edit warnings: checkbox
+
+6. **OCR**
+   - Recognition language: English / French / German / Spanish / Chinese / Japanese dropdown (existing `ocrLanguage`)
+   - Recognition quality (DPI): 72-600 number input (existing `ocrDownsample`)
+
+7. **Signatures & Stamps**
+   - Default stamp: APPROVED / DRAFT / CONFIDENTIAL / FINAL dropdown (existing `defaultStampId`)
+   - Signature storage location: informational (read-only path display)
+
+8. **Storage** (already partially implemented)
+   - User data location: informational path display
+   - Settings file location: informational path display
+   - Clear cache button (with confirmation)
+
+**Implementation Requirements**
+
+- **Category sidebar**: Left side list of categories (General, Appearance, Documents, Export, Edit, OCR, Signatures, Storage) — clicking switches the right panel
+- **Right panel**: Scrollable form with settings for the selected category
+- **Apply immediately**: Settings apply on change (no "Save" button needed), except those requiring relaunch (marked with "(restart required)" label)
+- **Validation**: All inputs validated; invalid values revert or show inline error
+- **Persistence**: Changes saved to `settings.json` via existing `window.tflex.saveSettings` IPC
+- **Wiring**: Each setting must actually affect app behavior (e.g., default zoom mode actually sets zoom on new documents)
+
+**New AppSettings Fields**
+
+```typescript
+interface AppSettings {
+  // Phase 17 additions
+  showWelcomeOnStartup?: boolean;        // default: true
+  confirmCloseMultipleTabs?: boolean;    // default: true
+  confirmDeletePages?: boolean;          // default: true
+  defaultZoomMode?: 'fit-width' | 'fit-page' | 'last-used';  // default: 'last-used'
+  showEditWarnings?: boolean;              // default: true
+}
+```
+
+All new fields must be validated in `src/main/services/settings.ts` following the "preserve-if-valid" pattern.
+
+**Success criteria**
+
+1. All 8 categories render in the left sidebar with clear labels and icons
+2. Each category displays its relevant settings in the right panel, wired to actual app state
+3. Theme dropdown (existing) still works and applies immediately
+4. Recents cap (existing) saves on change
+5. New settings (show welcome, confirmations, default zoom) save to settings.json and persist across restart
+6. Default zoom mode actually affects zoom on new document open
+7. Confirmation dialogs appear/don't appear based on preference settings
+8. No placeholder settings — every control affects real app behavior
+9. Unit tests for new settings reducers and validation
+10. E2E tests verify each category opens, settings change, and persist
+11. No visual regressions in existing Preferences functionality
+
+**Settings impact:** 
+- `showWelcomeOnStartup?: boolean` (default: true; validation: boolean)
+- `confirmCloseMultipleTabs?: boolean` (default: true; validation: boolean)
+- `confirmDeletePages?: boolean` (default: true; validation: boolean)
+- `defaultZoomMode?: 'fit-width' | 'fit-page' | 'last-used'` (default: 'last-used'; validation: enum)
