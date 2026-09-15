@@ -1,37 +1,17 @@
-# The mechanical gate the orchestration was missing.
-#
-# Before this workflow, `typecheck`, `test:unit` and `test:e2e` existed as scripts
-# but nothing ran them: there was no CI, no lint config and no git hook, so a
-# "green build" was an agent's claim plus a log file that same agent wrote.
-#
-# This job runs the conventions gate (no emoji in src/, no network calls in
-# product code, no dev files under release/), typecheck, and the unit suite.
-# The e2e suite is deliberately excluded: it drives a real Electron app and needs
-# a display, which makes it a poor fit for every push. qa owns running it.
-#
-# It runs `verify:full` rather than `verify`. AGENTS_NOTES.md (2026-09-07) directs
-# that AGENTS do not run the full suite automatically, because agent turns and
-# tokens are what that costs. CI is not an agent, and a push is exactly the
-# pre-release point that directive reserves the full suite for. Agents run the
-# cheap `npm run verify`; this job runs the expensive one for free.
-#
-# If GitHub Actions is not enabled for this private repo the workflow simply does
-# not run, and nothing else changes.
-
-# name: verify
-# on:
-#   push:
-#   pull_request:
-# jobs:
-#   verify:
-#     runs-on: windows-latest
-#     steps:
-#       - uses: actions/checkout@v4
-#       - uses: actions/setup-node@v4
-#         with:
-#           node-version: '24'
-#           cache: npm
-#       - name: Install
-#         run: npm ci
-#       - name: Verify (conventions, typecheck, unit tests)
-#         run: npm run verify:full
+name: verify
+on:
+  push:
+  pull_request:
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Verify (conventions, typecheck, unit tests)
+        run: npm run verify:full
