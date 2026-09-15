@@ -1,5 +1,5 @@
-import { createRef, useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ReactElement, RefObject } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import type { ReactElement } from "react";
 import { AnimatePresence } from "motion/react";
 import type {
   AppSettings,
@@ -29,7 +29,6 @@ import { AppHeader } from "./components/AppHeader";
 import { Toasts, type Toast } from "./components/Toasts";
 import { TitleBar, type MenuGroup } from "./components/TitleBar";
 import { ToolsPalette } from "./components/ToolsPalette";
-import { UnifiedToolbar, type ToolbarTab } from "./components/UnifiedToolbar";
 import { AboutDialog } from "./components/AboutDialog";
 import { PreferencesDialog } from "./components/PreferencesDialog";
 import { UpdateIndicator } from "./components/UpdateIndicator";
@@ -58,6 +57,7 @@ import {
   preferencesReducer,
   type ThemeDefault,
 } from "./state/preferences";
+import { applyAnnotationPaletteChange } from "./state/colorPalette";
 import {
   dispatchMenuAction,
   gateOnActiveDoc,
@@ -69,7 +69,6 @@ import { openPdfDocument, readOutline, type OutlineNode } from "./pdf/pdfjs";
 import {
   DocumentView,
   type DocDiagnostics,
-  type DocumentViewHandle,
   type PersistedViewer,
   type SearchIndexProgress,
 } from "./components/DocumentView";
@@ -492,16 +491,6 @@ export function App(): ReactElement {
   // active tool / selection / placements list is per-tab and
   // lives on `openTabs[id].edit`.
   const [editModeOpen, setEditModeOpen] = useState(false);
-  // Unified toolbar (ribbon) — App-level state. The ribbon is
-  // mounted in App (above the tab stage, not per tab), so the
-  // active section tab and the armed Edit tool must live here to
-  // survive tab switches and re-renders. `activeEditMode` is the
-  // data-tool id the Edit tab's grid has armed (null = none); the
-  // per-page edit tool actions that consume it land in a later
-  // chunk. Reset alongside the other App-level tool arms on tab
-  // close / switch / new tab (see the B7 / B10 resets below).
-  const [activeToolbarTab, setActiveToolbarTab] = useState<ToolbarTab>("annotate");
-  const [activeEditMode, setActiveEditMode] = useState<string | null>(null);
   // Phase 11 — OCR dialog. The dialog drives its own engine call;
   // the host routes the result back into a refresh of the active
   // tab's engine state. The suspects panel is a side-rail overlay
@@ -644,33 +633,6 @@ export function App(): ReactElement {
   // when the queue changes.
   const windowCloseQueueRef = useRef<string[] | null>(null);
   windowCloseQueueRef.current = windowCloseQueue;
-  // DEF-211 — one stable ref per tab so the host can address each
-  // DocumentView imperatively (currently: disarm its active annotation
-  // tool before a dialog overlays the workspace). Refs are created
-  // lazily and kept for the session lifetime; a closed tab's ref just
-  // points at an unmounted component and is harmless.
-  const docViewRefs = useRef(new Map<string, RefObject<DocumentViewHandle | null>>());
-  const getOrCreateDocViewRef = useCallback(
-    (tabId: string): RefObject<DocumentViewHandle | null> => {
-      let r = docViewRefs.current.get(tabId);
-      if (r === undefined) {
-        r = createRef<DocumentViewHandle>();
-        docViewRefs.current.set(tabId, r);
-      }
-      return r;
-    },
-    [],
-  );
-  // DEF-211 — disarm the active tab's annotation tool (back to
-  // "select") before a dialog overlays the workspace, so an armed
-  // tool's ghost preview / crosshair never lingers under a dialog.
-  // No-op when no tab is active or the tab has no mounted view.
-  const disarmActiveDocView = useCallback((): void => {
-    const activeId = activeTabIdRefLocal.current;
-    if (activeId === null) return;
-    const ref = docViewRefs.current.get(activeId);
-    ref?.current?.disarmAnnotationTool();
-  }, []);
 
   /** Persist the latest settings to main immediately. Bumps the
    *  echo-filter seq and snapshots the object that went out so the
@@ -1530,10 +1492,6 @@ export function App(): ReactElement {
     if (editModeOpenRef.current) {
       setEditModeOpen(false);
     }
-    // B7 — the ribbon's armed Edit tool is App-level too; drop it
-    // with the other tool arms so a fresh tab starts with no
-    // armed ribbon tool.
-    setActiveEditMode(null);
     // B6 — drop the closed tab's per-tab OCR suspect / OCR run
     // maps so a freshly-opened tab (or the welcome screen) doesn't
     // inherit stale "OCR has run on this doc" markers. The maps
@@ -1626,8 +1584,7 @@ export function App(): ReactElement {
     dispatchTabs({ type: "activate", id });
     // B10 — tool-state reset on tab switch. The active tab
     // changes; App-level tool state (armed Sign / Stamp, Edit
-    // mode, the ribbon's armed Edit tool, the OCR suspects
-    // panel) must NOT carry into the
+    // mode, the OCR suspects panel) must NOT carry into the
     // newly-activated tab. Previously only `performCloseTab`
     // cleared these, so a tab switch inherited the previous
     // tab's arming — the Sign pill stayed lit and the next page
@@ -1638,7 +1595,6 @@ export function App(): ReactElement {
     setArmedSignatureId(null);
     setArmedStamp(null);
     setEditModeOpen(false);
-    setActiveEditMode(null);
     setOcrSuspectsOpen(false);
   }, []);
 
@@ -1667,7 +1623,6 @@ export function App(): ReactElement {
     setArmedSignatureId(null);
     setArmedStamp(null);
     setEditModeOpen(false);
-    setActiveEditMode(null);
     setOcrSuspectsOpen(false);
   }, []);
 
@@ -2808,7 +2763,6 @@ export function App(): ReactElement {
   // of App state.
   useEffect(() => {
     const onSignButton = (): void => {
-      disarmActiveDocView();
       // Cross-arming guard — arming the Sign tool while the Stamp
       // tool is armed would leave both overlays visible (the
       // stamp ghost following the cursor AND the signatures
@@ -2836,7 +2790,6 @@ export function App(): ReactElement {
       setSigModalOpen(true);
     };
     const onFlattenButton = (): void => {
-      disarmActiveDocView();
       setFlattenOpen(true);
     };
     // B10 — Esc inside the StampOverlay dispatches this event so
@@ -2855,7 +2808,7 @@ export function App(): ReactElement {
       window.removeEventListener("tflex:flatten-button", onFlattenButton);
       window.removeEventListener("tflex:stamp-disarm", onStampDisarm);
     };
-  }, [armedSignatureId, armedStamp, disarmActiveDocView]);
+  }, [armedSignatureId, armedStamp]);
 
   const onSigManagerApply = useCallback((signatureId: string): void => {
     // DEF-125 — the modal-confirm arm also exits Edit mode (the
@@ -3239,7 +3192,6 @@ export function App(): ReactElement {
   // accelerator, menu File -> Save As, and the toolbar's Save…
   // button all funnel through this entry point.
   const onSaveAs = useCallback((tabId: string): void => {
-    disarmActiveDocView();
     const tab = openTabsRef.current[tabId];
     if (tab === undefined) return;
     setSaveAsOpen(true);
@@ -3322,7 +3274,6 @@ const menuContext: MenuActionContext = useMemo<MenuActionContext>(
         void onOpenClick();
       },
       merge: (): void => {
-        disarmActiveDocView();
         setMergeOpen(true);
       },
       // DEF-065 — Save / Save As / Close Tab / Undo / Redo are
@@ -3385,20 +3336,16 @@ const menuContext: MenuActionContext = useMemo<MenuActionContext>(
         setToolsPaletteOpen((v) => !v);
       },
       about: (): void => {
-        disarmActiveDocView();
         setAboutOpen(true);
       },
       preferences: (): void => {
-        disarmActiveDocView();
         setPrefsOpen(true);
       },
       optimize: (): void => {
-        disarmActiveDocView();
         if (activeTabIdRefLocal.current === null) return;
         setOptimizeOpen(true);
       },
       auditSpace: (): void => {
-        disarmActiveDocView();
         if (activeTabIdRefLocal.current === null) return;
         setAuditOpen(true);
       },
@@ -3407,11 +3354,9 @@ const menuContext: MenuActionContext = useMemo<MenuActionContext>(
       // active doc; gate on the same active-tab id the other
       // doc-bound actions use.
       createFromImages: (): void => {
-        disarmActiveDocView();
         setCreateOpen(true);
       },
       exportPages: (): void => {
-        disarmActiveDocView();
         if (activeTabIdRefLocal.current === null) return;
         setExportOpen(true);
       },
@@ -3421,24 +3366,20 @@ const menuContext: MenuActionContext = useMemo<MenuActionContext>(
       // dialogs own their own engine IPC and the user can also
       // reach these via the Tools palette.
       exportText: (): void => {
-        disarmActiveDocView();
         if (activeTabIdRefLocal.current === null) return;
         setTextExportOpen(true);
       },
       exportDocx: (): void => {
-        disarmActiveDocView();
         if (activeTabIdRefLocal.current === null) return;
         setDocxExportOpen(true);
       },
       insertPages: (): void => {
-        disarmActiveDocView();
         if (activeTabIdRefLocal.current === null) return;
         setInsertPagesOpen(true);
       },
       // Phase 11 — Recognize Text (OCR). Same funnel as the
       // toolbar's OCR button and the Tools palette entry.
       recognizeText: (): void => {
-        disarmActiveDocView();
         if (activeTabIdRefLocal.current === null) return;
         setOcrOpen(true);
       },
@@ -3466,7 +3407,6 @@ const menuContext: MenuActionContext = useMemo<MenuActionContext>(
       onRedo,
       onToggleTheme,
       onCheckForUpdate,
-      disarmActiveDocView,
     ],
   );
 
@@ -3479,7 +3419,6 @@ useEffect(() => {
 
   // ---- merge / split dialogs ----
   const onMergeClick = useCallback((): void => {
-    disarmActiveDocView();
     setMergeOpen(true);
   }, []);
 
@@ -3567,7 +3506,6 @@ useEffect(() => {
   );
 
   const onSplitClick = useCallback((): void => {
-    disarmActiveDocView();
     setSplitOpen(true);
   }, []);
 
@@ -3687,7 +3625,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
    *  the dialog and routes the resulting bytes into a brand-new tab
    *  via openEngineBytesAsTab (same path split/extract use). */
   const onOptimizeClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setOptimizeOpen(true);
   }, []);
@@ -3784,7 +3721,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
   );
 
   const onAuditClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setAuditOpen(true);
   }, []);
@@ -3796,7 +3732,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
   // ---- Phase 9: Create-from-images + Export-Pages ----
 
   const onCreateClick = useCallback((): void => {
-    disarmActiveDocView();
     setCreateOpen(true);
   }, []);
 
@@ -3888,7 +3823,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
   );
 
   const onExportClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setExportOpen(true);
   }, []);
@@ -3915,7 +3849,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
   // ---- Phase 9 advanced: text + docx + insert ----
 
   const onTextExportClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setTextExportOpen(true);
   }, []);
@@ -3957,7 +3890,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
   );
 
   const onDocxExportClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setDocxExportOpen(true);
   }, []);
@@ -4073,7 +4005,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
   );
 
   const onInsertPagesClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setInsertPagesOpen(true);
   }, []);
@@ -4208,7 +4139,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
    *  but we share the same seed function so the dialog opens
    *  instantly). */
   const onReplacePagesClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setReplacePagesOpen(true);
   }, []);
@@ -4269,7 +4199,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
    *  itself from the engine state's pageLabels so the user sees
    *  their previous choice. */
   const onRenumberPagesClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setRenumberPagesOpen(true);
   }, []);
@@ -4315,7 +4244,6 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
   /** Phase 12 — open the Crop-pages dialog. Lazy-load the page
    *  sizes for the active doc so the per-page preview is accurate. */
   const onCropPagesClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setCropPagesOpen(true);
     void seedActivePageSizes();
@@ -4414,7 +4342,6 @@ pushToast(
    *  stamp so the next page click embeds it at the cursor point.
    *  Esc / a second Stamp toolbar click disarms. */
   const onStampClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     if (armedStampRef.current !== null) {
       // Already armed — toggle off.
@@ -4731,7 +4658,6 @@ pushToast(
    *  `engine.exportFdf` and hands the bytes to a host-side OS save
    *  dialog. */
   const onCommentExportClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setCommentExportOpen(true);
   }, []);
@@ -4755,7 +4681,6 @@ pushToast(
    *  a host-side OS open dialog for the .fdf file, then calls
    *  `engine.importFdf`. */
   const onCommentImportClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setCommentImportOpen(true);
   }, []);
@@ -4787,7 +4712,6 @@ pushToast(
    *  per-thumb delete still uses `onDelete(tabId, [page])`
    *  directly (no dialog) for the single-thumb case. */
   const onDeletePageClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setDeletePageOpen(true);
   }, []);
@@ -4817,7 +4741,6 @@ pushToast(
    *  Tools palette / "Recognize Text" menu entry all funnel through
    *  this. */
   const onOcrClick = useCallback((): void => {
-    disarmActiveDocView();
     if (activeTabIdRefLocal.current === null) return;
     setOcrOpen(true);
   }, []);
@@ -6373,10 +6296,7 @@ pushToast(
           // Phase 13 — the Settings (gear) affordance in the title bar
           // opens the same Preferences sheet the Edit menu and Ctrl+,
           // open. Same single source of truth (`prefsOpen`).
-          onOpenPreferences={(): void => {
-            disarmActiveDocView();
-            setPrefsOpen(true);
-          }}
+          onOpenPreferences={(): void => setPrefsOpen(true)}
           // OTA UX — the toolbar update indicator reads its state
           // from the App's shared `onStatusChanged` subscription via
           // `externalState` so the same push that opens the prompt
@@ -6409,37 +6329,6 @@ pushToast(
         data-tools-mode={settings.toolsPaletteLayout ?? 'list'}
         data-rail-collapsed={pagesPanelCollapsed ? "true" : "false"}
       >
-        {/* Unified toolbar (ribbon) — the tabbed Annotate / Edit /
-            Document surface that replaced the former per-view
-            annotation / edit toolbars. App-owned (section tab +
-            armed Edit tool are App state) and mounted above the
-            tab stage, only while a document is open — on the
-            welcome / empty-tab screen the old toolbars never
-            rendered either, so no ribbon appears there. Document
-            actions resolve the ACTIVE tab: save / save-as go
-            through the per-tab saveHandlers, the rest reuse the
-            active-tab dialog openers the menu + Tools palette
-            already share. Print / Share / Props have no app
-            action yet (no IPC channel), so the host passes no
-            callback and those three ribbon buttons stay inert. */}
-        {tabs.tabs.length > 0 && !activeIsEmpty && (
-          <UnifiedToolbar
-            activeTab={activeToolbarTab}
-            onTabChange={setActiveToolbarTab}
-            editMode={activeEditMode}
-            onEditModeChange={setActiveEditMode}
-            onSave={tabs.activeId !== null ? saveHandlers(tabs.activeId).save : undefined}
-            onSaveAs={tabs.activeId !== null ? saveHandlers(tabs.activeId).saveAs : undefined}
-            onExport={onExportClick}
-            onMerge={onMergeClick}
-            onSplit={onSplitClick}
-            onOptimize={onOptimizeClick}
-            onFlatten={(): void => {
-              disarmActiveDocView();
-              setFlattenOpen(true);
-            }}
-          />
-        )}
         <div className="tab-stage">
           {tabs.tabs.length === 0 || activeIsEmpty ? (
             <div className="tab-pane" key={tabs.activeId ?? 'welcome'}>
@@ -6485,10 +6374,6 @@ pushToast(
                   aria-hidden={meta.id !== tabs.activeId}
                 >
                   <DocumentView
-                    // DEF-211 — stable per-tab ref so the host can address
-                    // this view imperatively (disarm the active annotation
-                    // tool before a dialog overlays the workspace).
-                    ref={getOrCreateDocViewRef(meta.id)}
                     doc={open.session.doc}
                     pageCount={engine.engineState.pageCount}
                     outline={open.session.outline}
@@ -6577,6 +6462,48 @@ pushToast(
                     }}
                     toolsPaletteOpen={toolsPaletteOpen}
                     onToolsPaletteToggle={(): void => setToolsPaletteOpen((v) => !v)}
+                    annotationPalette={
+                      settings.annotationColors === undefined
+                        ? null
+                        : {
+                            light: (settings.annotationColors.light ?? []).map((p) =>
+                              typeof p === 'string'
+                                ? { id: `legacy-${p}`, hex: p }
+                                : p,
+                            ),
+                            dark: (settings.annotationColors.dark ?? []).map((p) =>
+                              typeof p === 'string'
+                                ? { id: `legacy-${p}`, hex: p }
+                                : p,
+                            ),
+                          }
+                    }
+                    onAnnotationPaletteChange={(next): void => {
+                      // DEF-037 — use the updater-form of `setSettings`
+                      // so `prev` is React's latest pending state, not
+                      // the render-scope `settings` (which can be stale
+                      // when the user toggles the theme and adds a
+                      // custom color back-to-back before a re-render).
+                      // Building the persisted object inside the
+                      // updater also guarantees the theme matches the
+                      // current renderer state — the previous
+                      // implementation wrote the captured-render
+                      // settings object with an old theme, which then
+                      // echoed back from the backend and clobbered the
+                      // per-theme palette buckets.
+                      //
+                      // The persist goes through `trackAndSave`
+                      // so the echo filter in the settings.changed
+                      // listener can detect stale echoes that arrive
+                      // after a newer local write has already
+                      // superseded them.
+                      setSettings((prev) => {
+                        if (prev === null) return prev;
+                        const updated = applyAnnotationPaletteChange(prev, next);
+                        if (updated !== prev) trackAndSave(updated);
+                        return updated;
+                      });
+                    }}
                     themeName={settings.theme}
                     editModeOpen={editModeOpen}
                     onEditModeToggle={(): void => setEditMode(!editModeOpen)}
@@ -6616,10 +6543,7 @@ pushToast(
               }}
               onMerge={onMergeClick}
               onSplit={onSplitClick}
-              onExtract={(): void => {
-                disarmActiveDocView();
-                setSplitOpen(true);
-              }}
+              onExtract={(): void => setSplitOpen(true)}
               onRotate={(): void => {
                 // DEF: palette rotate was a no-op stub (the
                 // comment claimed "rotate happens per-page in the
@@ -6648,7 +6572,6 @@ pushToast(
                 onDeletePageClick();
               }}
               onSign={(): void => {
-                disarmActiveDocView();
                 if (armedSignatureId !== null) {
                   setArmedSignatureId(null);
                 } else {
@@ -6662,14 +6585,8 @@ pushToast(
                   setSigModalOpen(true);
                 }
               }}
-              onForms={(): void => {
-                disarmActiveDocView();
-                setFlattenOpen(true);
-              }}
-              onFlatten={(): void => {
-                disarmActiveDocView();
-                setFlattenOpen(true);
-              }}
+              onForms={(): void => setFlattenOpen(true)}
+              onFlatten={(): void => setFlattenOpen(true)}
               onOptimize={onOptimizeClick}
               onAudit={onAuditClick}
               onCreateFromImages={onCreateClick}
