@@ -6283,6 +6283,93 @@ rect.ann-highlight.ann-preview {
   word-break: break-all;
 }
 
+/* ----- Preferences: category sidebar + panel -----
+ * The sheet body stops scrolling as a whole: the sidebar stays put
+ * while the active panel scrolls on its own. The body is a flex item
+ * of `.sheet` (a flex column capped by its max-height); flex/min-height
+ * give it a definite height when the content overflows, and
+ * height:100% on the row below then pins sidebar + panel to it. */
+.sheet-body-prefs {
+  /* override .sheet-body's overflow-y: the PANEL scrolls, not the body */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.preferences-dialog {
+  display: flex;
+  height: 100%;
+}
+.preferences-sidebar {
+  flex: 0 0 180px;
+  width: 180px;
+  border-right: 1px solid var(--border);
+  padding: 16px 8px;
+}
+.preferences-sidebar button {
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out);
+}
+.preferences-sidebar button:hover {
+  background: var(--bg-hover);
+}
+.preferences-sidebar button.active,
+.preferences-sidebar button.active:hover {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+.preferences-sidebar button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.preferences-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 24px;
+  overflow-y: auto;
+}
+.preferences-panel-empty {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+}
+.preference-section {
+  margin-bottom: 24px;
+}
+.preference-section:last-child {
+  margin-bottom: 0;
+}
+.preference-section h3 {
+  margin: 0 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+.preference-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+}
+.preference-row:last-child {
+  margin-bottom: 0;
+}
+.preference-row input[type="checkbox"] {
+  margin-right: 8px;
+}
+
 /* ----- Annotation color palette (single swatch + popover) ----- */
 
 .ann-color-anchor {
