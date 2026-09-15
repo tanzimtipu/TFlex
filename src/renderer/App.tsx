@@ -3,7 +3,6 @@ import type { ReactElement, RefObject } from "react";
 import { AnimatePresence } from "motion/react";
 import type {
   AppSettings,
-  AppTheme,
   DocxImageEntry,
   EditFont,
   ExportPageEntry,
@@ -42,7 +41,7 @@ import {
 } from "./components/updatePromptMachine";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
 import { pagesPanelReducer, initialPagesPanelState } from "./state/pagesPanel";
-import { nextTheme } from "./state/theme";
+import { nextTheme, resolveThemeDefault } from "./state/theme";
 import { useThemeTransition } from "./hooks/useAnimations";
 import { createAmbientController } from "./state/ambient";
 import { resolveInitialSettings, settingsRecoveryNotice } from "./state/settings";
@@ -57,6 +56,7 @@ import {
   DEFAULT_STAMP_ID,
   clampOcrDownsample,
   preferencesReducer,
+  type ThemeDefault,
 } from "./state/preferences";
 import {
   dispatchMenuAction,
@@ -974,15 +974,33 @@ export function App(): ReactElement {
     });
   }, [trackAndSave, setTheme]);
 
-  // Phase-15 — the frosted-acrylic theme picker. Sets an EXPLICIT
-  // theme (light / dark / frosted) instead of toggling, and persists
-  // through the same trackAndSave path so the choice survives a
-  // restart. Shared shape with onToggleTheme, minus the toggle math.
-  const onThemeChange = useCallback((next: AppTheme): void => {
+  // Phase-15 — the frosted-acrylic theme picker. Receives the
+  // picker's selection: one of the three explicit themes (light /
+  // dark / frosted) OR the 'system' meta-option. 'system' resolves
+  // to the OS's current colour preference at choice time
+  // (resolveThemeDefault, same contract as the Preferences sheet);
+  // the resolved concrete theme is applied live and persisted as
+  // `theme` so the same look boots on the next launch, while
+  // `themeDefault` records which option the user picked so the
+  // header shows the right entry (e.g. "System default") as
+  // selected after a restart. Persists through the same trackAndSave
+  // path so the choice survives a restart. Shared shape with
+  // onToggleTheme, minus the toggle math.
+  const onThemeChange = useCallback((next: ThemeDefault): void => {
+    const concrete = resolveThemeDefault(
+      next,
+      window.matchMedia("(prefers-color-scheme: dark)").matches,
+    );
     setSettings((prev) => {
       if (prev === null) return prev;
-      const updated: AppSettings = { ...prev, theme: next };
-      setTheme(next);
+      // No-op guard: the pick resolves to the theme already showing
+      // AND the selection hasn't moved. themeDefault falls back to
+      // the concrete theme when unset — the same fallback the header
+      // display uses, so "re-pick the current selection" never
+      // churns a persist.
+      if (concrete === prev.theme && (prev.themeDefault ?? prev.theme) === next) return prev;
+      const updated: AppSettings = { ...prev, theme: concrete, themeDefault: next };
+      setTheme(concrete);
       trackAndSave(updated);
       return updated;
     });
@@ -6345,6 +6363,11 @@ pushToast(
           onActivate={activateTab}
           onClose={closeTab}
           theme={settings.theme}
+          // The picker's selection state: the persisted preference
+          // ('light' | 'dark' | 'frosted' | 'system'). Absent on
+          // first run — the header then falls back to the concrete
+          // theme, the legacy behaviour.
+          themeDefault={settings.themeDefault}
           onThemeChange={onThemeChange}
           onNewEmptyTab={onNewEmptyTab}
           // Phase 13 — the Settings (gear) affordance in the title bar
@@ -7129,6 +7152,30 @@ pushToast(
           setSettings((prev) => {
             if (prev === null) return prev;
             const updated = preferencesReducer(prev, { type: 'set-theme-default', value: next });
+            trackAndSave(updated);
+            return updated;
+          });
+        }}
+        // Immediate apply: flipping the dropdown also flips the LIVE
+        // theme right now (the shared contract promises "the live
+        // theme flips too"). 'system' resolves to the OS's current
+        // colour preference at choice time (resolveThemeDefault); the
+        // resolved concrete theme is persisted alongside
+        // themeDefault (written by onSetThemeDefault above) so boot —
+        // which applies `settings.theme` — shows the same look on the
+        // next launch. Same trackAndSave + setTheme path as the
+        // header picker; the no-op guard skips a redundant persist
+        // when the pick resolves to the theme already showing.
+        onThemeChange={(next): void => {
+          const concrete = resolveThemeDefault(
+            next,
+            window.matchMedia("(prefers-color-scheme: dark)").matches,
+          );
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            if (concrete === prev.theme) return prev;
+            const updated: AppSettings = { ...prev, theme: concrete };
+            setTheme(concrete);
             trackAndSave(updated);
             return updated;
           });

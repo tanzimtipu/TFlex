@@ -6,11 +6,12 @@
 //   - storage locations (informational: links into the OS file browser,
 //     backed by the same `app.openPath` IPC the About dialog uses).
 //
-// The theme default takes effect immediately on next launch — the
-// current session's theme is owned by the existing toggle in the
-// header (changing the default doesn't visually flip the active
-// theme, so a user reading preferences doesn't get surprised by a
-// colour swap they didn't ask for).
+// The theme default applies IMMEDIATELY on change (no Save click, the
+// dialog stays open): the host's `onThemeChange` flips the live theme
+// through the same crossfade + persist path as the header toggle, and
+// persists the resolved concrete `theme` so the same look boots on the
+// next launch. 'system' resolves to the OS's current colour preference
+// at choice time (see resolveThemeDefault in state/theme.ts).
 //
 // The recents cap is also informational on the current session: the
 // list is built once at boot from the saved settings.json, so the
@@ -33,6 +34,10 @@ interface PreferencesDialogProps {
   themeDefault: ThemeDefault;
   recentsCap: number;
   onSetThemeDefault: (next: ThemeDefault) => void;
+  /** Immediate apply: the host flips the LIVE theme (and persists the
+   *  resolved concrete theme) as soon as the dropdown changes — the
+   *  user should never need a Save click for a theme change. */
+  onThemeChange: (theme: ThemeDefault) => void;
   onSetRecentsCap: (next: number) => void;
 }
 
@@ -50,6 +55,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     themeDefault,
     recentsCap,
     onSetThemeDefault,
+    onThemeChange,
     onSetRecentsCap,
   } = props;
   const [capDraft, setCapDraft] = useState(String(recentsCap));
@@ -146,15 +152,23 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
                 id="prefs-theme-default"
                 className="prefs-select"
                 value={themeDefault}
-                onChange={(e): void => onSetThemeDefault(e.target.value as ThemeDefault)}
+                onChange={(e): void => {
+                  const next = e.target.value as ThemeDefault;
+                  // Persist the default (next launch), then apply the
+                  // choice to the LIVE theme immediately — no Save
+                  // click, the dialog stays open.
+                  onSetThemeDefault(next);
+                  onThemeChange(next);
+                }}
                 data-prefs-theme-default
               >
                 <option value="light">Light</option>
                 <option value="dark">Dark</option>
-                <option value="system">Match system</option>
+                <option value="frosted">Frosted</option>
+                <option value="system">System default</option>
               </select>
             </div>
-            <p className="prefs-hint">Applies on next launch. Toggle the theme any time from the header.</p>
+            <p className="prefs-hint">Applies immediately, and is the theme the app starts in on the next launch.</p>
           </section>
 
           <section className="prefs-section">

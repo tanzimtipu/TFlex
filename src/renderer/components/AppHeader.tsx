@@ -11,6 +11,7 @@ import {
 import {
   Check,
   ChevronDown,
+  Monitor,
   Moon,
   Plus,
   Settings,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type { Theme } from "../state/theme";
+import type { ThemeDefault } from "../state/preferences";
 import type { TabInput } from "../state/tabMouseDown";
 import { AnimatedTab } from "./AnimatedTab";
 import { usePopAnimation } from "../hooks/useAnimations";
@@ -31,10 +33,18 @@ interface AppHeaderProps {
   onActivate: (id: string) => void;
   onClose: (id: string) => void;
   theme: Theme;
-  /** Phase-15 — the embedded theme picker. Receives the EXPLICIT
-   *  chosen theme ('frosted' | 'dark' | 'light') instead of a blind
-   *  toggle, so the dropdown can persist any of the three values. */
-  onThemeChange: (next: Theme) => void;
+  /** Saved theme preference — the picker's SELECTION state. When
+   *  absent the header falls back to the concrete `theme` (legacy
+   *  behaviour: the selection mirrors the applied theme). */
+  themeDefault?: ThemeDefault;
+  /** Phase-15 — the embedded theme picker. Receives the picker
+   *  selection — one of the three explicit themes ('frosted' |
+   *  'dark' | 'light') OR the 'system' meta-option — instead of a
+   *  blind toggle, so the dropdown can persist any of the four
+   *  values. The host resolves 'system' to the OS colour
+   *  preference, applies the concrete theme live, and persists both
+   *  `theme` (resolved) and `themeDefault` (the pick itself). */
+  onThemeChange: (next: ThemeDefault) => void;
   /** Phase 14.1 — REMOVED: the Open button moved to the command bar
    *  (CommandBar's accent File group) per the Liquid Glass reference:
    *  the caption strip is logo | tabs | app controls | window controls,
@@ -59,28 +69,39 @@ interface AppHeaderProps {
 
 /** Phase-15 — the three themes the picker offers, in display order
  *  (frosted is the default, so it leads the list). Module-level const
- *  so the focus-on-open effect below has a stable reference. */
-const THEME_OPTIONS: ReadonlyArray<{ value: Theme; label: string }> = [
+ *  so the focus-on-open effect below has a stable reference.
+ *  The 'system' meta-option follows the concrete themes: it is a
+ *  preference (which theme to follow), not a theme itself, so it
+ *  resolves to light/dark at pick time (the host owns that math). */
+const THEME_OPTIONS: ReadonlyArray<{ value: ThemeDefault; label: string }> = [
   { value: "frosted", label: "Frosted Glass" },
   { value: "dark", label: "Dark" },
   { value: "light", label: "Light" },
+  { value: "system", label: "System default" },
 ];
 
-function themeIcon(value: Theme, size: number): ReactElement {
+function themeIcon(value: ThemeDefault, size: number): ReactElement {
   const props = { size, "aria-hidden": true } as const;
   if (value === "dark") return <Moon {...props} />;
   if (value === "light") return <Sun {...props} />;
+  if (value === "system") return <Monitor {...props} />;
   return <Sparkles {...props} />;
 }
 
-function themeLabel(value: Theme): string {
+function themeLabel(value: ThemeDefault): string {
   return THEME_OPTIONS.find((o) => o.value === value)?.label ?? "Frosted Glass";
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, onThemeChange, onNewEmptyTab, onOpenPreferences, updateIndicator = null } = props;
+  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, updateIndicator = null } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
+  // The picker's selection is the SAVED preference (themeDefault) —
+  // 'system' stays marked even though the live `theme` is the
+  // resolved concrete value. When no preference is persisted yet
+  // (first run), fall back to the concrete theme so the selection
+  // mirrors the applied look, exactly like the legacy toggle did.
+  const selected: ThemeDefault = themeDefault ?? theme;
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
   // Cross-theme animation system — the theme picker popover plays Pop In
   // (scale + drop) on open and Pop Out on close, replacing the old
@@ -96,10 +117,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // list). This is the keyboard-visible anchor for arrow navigation.
   useEffect(() => {
     if (!themeMenuOpen) return;
-    const idx = THEME_OPTIONS.findIndex((o) => o.value === theme);
+    const idx = THEME_OPTIONS.findIndex((o) => o.value === selected);
     const target = themeOptionRefs.current[idx >= 0 ? idx : 0];
     target?.focus();
-  }, [themeMenuOpen, theme]);
+  }, [themeMenuOpen, selected]);
 
   // Close on outside click / Escape (same pattern as the TitleBar's
   // menu popover). The pointerdown listener only closes — it never
@@ -162,12 +183,12 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   );
 
   const onThemeSelect = useCallback(
-    (next: Theme): void => {
+    (next: ThemeDefault): void => {
       setThemeMenuOpen(false);
-      if (next !== theme) onThemeChange(next);
+      if (next !== selected) onThemeChange(next);
       themeTriggerRef.current?.focus();
     },
-    [onThemeChange, theme],
+    [onThemeChange, selected],
   );
 
   // Roving focus on the option list: arrows move, Home/End jump, and
@@ -183,7 +204,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const focused = themeOptionRefs.current.findIndex((el) => el === document.activeElement);
-        const base = focused >= 0 ? focused : THEME_OPTIONS.findIndex((o) => o.value === theme);
+        const base = focused >= 0 ? focused : THEME_OPTIONS.findIndex((o) => o.value === selected);
         const dir = e.key === "ArrowDown" ? 1 : -1;
         focusThemeOption(base + dir);
       } else if (e.key === "Home") {
@@ -199,7 +220,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         if (opt !== undefined) onThemeSelect(opt.value);
       }
     },
-    [theme, focusThemeOption, onThemeSelect],
+    [selected, focusThemeOption, onThemeSelect],
   );
 
   // Tab strip interaction contract (DEF-034): activation resolves on
@@ -220,7 +241,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     e.stopPropagation();
   }, []);
 
-  const currentThemeLabel = themeLabel(theme);
+  const currentThemeLabel = themeLabel(selected);
 
   // Phase 7 — the "+ tab" button lives INSIDE the tab list as the
   // last <li>, so it renders immediately adjacent to the rightmost
@@ -326,7 +347,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             aria-label="Change theme"
             title={`Change theme (current: ${currentThemeLabel})`}
           >
-            {themeIcon(theme, 14)}
+            {themeIcon(selected, 14)}
             <span className="theme-toggle-label">{currentThemeLabel}</span>
             <ChevronDown size={12} aria-hidden />
           </button>
@@ -344,7 +365,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                 exit="exit"
               >
                 {THEME_OPTIONS.map((opt, i) => {
-                  const selected = opt.value === theme;
+                  const isSelected = opt.value === selected;
                   return (
                     <button
                       key={opt.value}
@@ -353,13 +374,13 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                       }}
                       type="button"
                       role="menuitem"
-                      aria-checked={selected}
-                      className={selected ? "theme-toggle-option theme-toggle-option-selected" : "theme-toggle-option"}
+                      aria-checked={isSelected}
+                      className={isSelected ? "theme-toggle-option theme-toggle-option-selected" : "theme-toggle-option"}
                       data-theme-option={opt.value}
                       onClick={(): void => onThemeSelect(opt.value)}
                     >
                       <span className="theme-toggle-option-mark" aria-hidden>
-                        {selected && <Check size={14} />}
+                        {isSelected && <Check size={14} />}
                       </span>
                       <span className="theme-toggle-option-label">{opt.label}</span>
                     </button>
