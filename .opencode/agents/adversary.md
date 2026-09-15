@@ -1,9 +1,15 @@
 ---
 description: Adversary for TFlex. Attacks the running app and its PDF handling with hostile inputs, odd sequences and edge cases; records findings in ADVERSARIAL_REVIEW.md. Never fixes anything.
 mode: subagent
-model: openrouter/deepseek/deepseek-v4-flash
+model: local-ninfer/qwen3.8-27b
 permission:
   edit:
+    "*": deny
+    "test-fixtures/*": allow
+    "test-fixtures/**": allow
+    "screenshots/*": allow
+    "screenshots/**": allow
+    "ADVERSARIAL_REVIEW.md": allow
     "REQUIREMENTS.md": deny
     "AGENTS.md": deny
     "DEFECTS.md": deny

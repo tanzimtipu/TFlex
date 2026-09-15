@@ -1,9 +1,19 @@
 ---
 description: Backend developer for TFlex. Owns the Electron main process: the pdf-lib PDF engine, file I/O, persistence, IPC services, Windows packaging, and backend unit tests. Never touches renderer code.
 mode: subagent
-model: openrouter/z-ai/glm-5.2
+model: local-ninfer/qwen3.8-27b
 permission:
   edit:
+    "*": deny
+    "src/main/*": allow
+    "src/main/**": allow
+    "src/preload/*": allow
+    "src/preload/**": allow
+    "src/shared/*": allow
+    "src/shared/**": allow
+    "test/unit/main/*": allow
+    "test/unit/main/**": allow
+    "electron-builder.*": allow
     "REQUIREMENTS.md": deny
     "AGENTS.md": deny
     "DEFECTS.md": deny
