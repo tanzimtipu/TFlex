@@ -1,10 +1,9 @@
 # ninfer-model.ps1 - load, offload and inspect the local NInfer model server.
 #
-# The local Qwen3.8-27B server holds essentially the whole RTX 4090: 16.95 GiB of
-# weights plus a 5.09 GiB KV pool for a 264000-token context. TFlex's e2e suite
-# drives Electron and Playwright on that same GPU, and at this context length the
-# two no longer fit together, so the model must be OFFLOADED before an e2e run and
-# reloaded afterwards. This script is the orchestrator's handle on that lifecycle.
+# Active, measured profile: Qwen3.8-27B on RTX 4090, 220000 context tokens, one
+# decode slot, rk4v4-e8 KV, and full 8192-token vision. This is the sole active
+# profile. It leaves enough headroom for the packaged Electron app while QA runs;
+# do not offload the model between local agent dispatches or before QA's e2e run.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ninfer-model.ps1 status
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ninfer-model.ps1 start
@@ -30,102 +29,43 @@ $Port  = if ($env:NINFER_PORT) { [int]$env:NINFER_PORT } else { 8080 }
 
 $Exe    = Join-Path $Root 'build-ninja\apps\ninfer-serve.exe'
 $Model  = Join-Path $Root 'models\qwen3_8_27b.ninfer'
-$OutLog = Join-Path $Root 'dsh-server.out.log'
-$ErrLog = Join-Path $Root 'dsh-server.err.log'
+$OutLog = Join-Path $Root 'ninfer-server.out.log'
+$ErrLog = Join-Path $Root 'ninfer-server.err.log'
 $Base   = "http://127.0.0.1:$Port"
+$ExpectedModelId = 'qwen3.8-27b'
 
-# Serving profile. Measured on this machine, not guessed.
-#
-# THE MEMORY BUDGET, AND WHY SLOTS ARE EXPENSIVE. Weights are 16.95 GiB and the
-# Windows desktop already holds ~2.2 GiB, so everything the runtime needs has to fit
-# in the ~5.55 GiB that is left. The engine states its own reservation and REFUSES TO
-# START when it does not fit, so every number below is a measured start-or-refuse.
-#
-# The KV pool is allocated PER DECODE SLOT, not shared: the engine reported
-# pages=4125 at concurrency 1, 8250 at 2 and 12375 at 3. That is why each extra
-# slot costs real memory and why the context had to be traded against them.
-# Measured at --max-context 264000, rk2v4-e8, --vision:
-#     slots 2, --vision-max-tokens 8192  -> needs 5.09 GiB, fits, 476 MiB slack
-#     slots 3, --vision-max-tokens 8192  -> needs 5.63 GiB, REFUSED (81 MiB short)
-#     slots 3, --vision-max-tokens 2048  -> needs 5.26 GiB, fits, 304 MiB slack  (chosen)
-#     slots 4, at any of the above       -> needs ~5.8 GiB, cannot fit
-# So THREE is the ceiling at 264000 tokens, and reaching it means giving up most of
-# the vision scratchpad.
-#
-#   --max-concurrency 3  three decode slots, so the orchestrator can have three local
-#                        agents in flight: measured with three concurrent requests,
-#                        avg_decode_batch=3.00 and all three completed.
-#                        Cost, measured under that full load: ~16 tok/s per stream
-#                        (a lone request gets 45-103 tok/s), and speculative acceptance
-#                        falls from ~60% to ~31%. Anything queued behind the slots waits
-#                        rather than fails - --pending-timeout-ms 300000 is what makes
-#                        that safe, and is the fix for the old "expired while waiting
-#                        for admission" failure that surfaced in DSH as a dispatch error
-#                        with zero content.
-#
-#   --vision-max-tokens 2048
-#                        the vision scratchpad, cut from the 8192 default because it is
-#                        the only lever that fits slot 3. It does NOT fail on a large
-#                        image: the encoder downsamples to the budget. Measured - a
-#                        1280x800 and a 2560x1440 screenshot both came back with exactly
-#                        2049 prompt tokens, and both were transcribed correctly. The cost
-#                        is fine detail, so treat a very small UI label as unverified.
-#                        ALTERNATIVE if that detail is ever needed: 3 slots at
-#                        --max-context 250048 with --vision-max-tokens 8192 also starts,
-#                        but with only 107 MiB slack, so one more desktop allocation could
-#                        stop the server from starting at all.
-#
-#   --kv-dtype rk2v4-e8  2-bit E8 lattice Keys, 4-bit Values. Against rk4v4-e8 (6.71 GiB
-#                        at 2 slots, refused) it removes ~1.07 GiB of pool, which is what
-#                        buys the context. The cost is K-side precision, so long-context
-#                        retrieval is less reliable than at 4-bit (rk4v4-e8 measures 98.7%
-#                        cosine vs FP32).
-#
-#   --prefill-chunk 512  halves the prefill workspace. Worth ~5 MiB - measured, not
-#   --max-pending-requests 16
-#                        assumed - so these are tidiness, not the reason anything fits.
-#
-#   --vision             five roles read screenshots now: frontend-dev, qa, adversary.
-#   --spec mtp ...       speculative decoding; worth roughly 4x on decode.
-#
-# DO NOT ADD --wddm-evictable-budget. It raises the engine's budget from 5.55 GiB to
-# 6.54 GiB, which makes almost anything "fit" - and it is a trap. The flag budgets
-# against TOTAL VRAM while ignoring the desktop's ~2.2 GiB, so the engine over-commits
-# and WDDM evicts the pool to system RAM. Measured with it: decode fell to 0.7 tok/s,
-# ttft 2986 ms, 164 s for 120 tokens.
-#
-# VERIFIED after this profile: 103.6 tok/s single-stream decode, 114 ms ttft, ~1830 tok/s
-# prefill (a 14458-token prompt in 7.9 s), 3 concurrent streams at batch 3, and correct
-# vision on 1280x800 and 2560x1440 test images. /v1/models reports context_window=264000
-# and modalities.vision=true.
-#
-# Free VRAM after startup is ~250 MiB. qa RUNS ON THIS MODEL, so do NOT stop the server
-# before an e2e run - that would kill the agent running the suite. Measured with the model
-# resident at this size: the packaged app still starts, gets its gpu-process and comes up
-# with a titled window alongside it.
+# Serving profile. Measured on this machine, not guessed. The KV pool is allocated
+# per decode slot; one slot is deliberate so visual QA receives full-resolution vision
+# and the renderer keeps usable GPU headroom. Measured at this profile: ~183 tok/s
+# decode and ~115 ms TTFT. Do not add --wddm-evictable-budget: it overcommits WDDM
+# memory and causes severe eviction stalls.
 $ServeArgs = @(
     $Model
     '--host', '127.0.0.1'
     '--port', "$Port"
-    '--max-context', '264000'
-    '--kv-capacity', '264000'
-    '--max-concurrency', '3'
+    '--max-context', '220000'
+    '--kv-capacity', '220000'
+    '--max-concurrency', '1'
     '--max-pending-requests', '16'
     '--pending-timeout-ms', '300000'
     '--prefill-chunk', '512'
-    '--kv-dtype', 'rk2v4-e8'
+    '--kv-dtype', 'rk4v4-e8'
     '--vision'
-    '--vision-max-tokens', '2048'
+    '--vision-max-tokens', '8192'
     '--spec', 'mtp'
     '--draft-tokens', '4'
     '--lm-head-draft'
     '--default-max-tokens', '8192'
+    '--no-cuda-graph'
     '--no-ui'
 )
 
 function Get-NinferProcess {
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -eq 'ninfer-serve.exe' }
+        Where-Object {
+            $_.Name -eq 'ninfer-serve.exe' -and
+            $_.CommandLine -match ("--port\\s+" + [regex]::Escape("$Port"))
+        }
 }
 
 function Test-Endpoint {
@@ -185,6 +125,9 @@ function Start-Ninfer {
 
     $up = @(Test-Endpoint)
     if ($up.Count -gt 0) {
+        if ($up -notcontains $ExpectedModelId) {
+            throw ("ninfer: port {0} is occupied by an unexpected model ({1}); expected {2}" -f $Port, ($up -join ', '), $ExpectedModelId)
+        }
         Write-Output ("ninfer: already up on port {0} (models: {1})" -f $Port, ($up -join ', '))
         return
     }
@@ -213,7 +156,8 @@ switch ($Action) {
         $up = @(Test-Endpoint)
         if ($up.Count -gt 0) {
             $pids = @(Get-NinferProcess | ForEach-Object { $_.ProcessId })
-            Write-Output ("ninfer: UP on {0} models={1} pid={2}" -f $Base, ($up -join ','), ($pids -join ','))
+            $profile = if ($up -contains $ExpectedModelId) { 'expected profile' } else { 'UNEXPECTED MODEL' }
+            Write-Output ("ninfer: UP on {0} models={1} pid={2} ({3}; 220000 context, 1 slot, vision 8192)" -f $Base, ($up -join ','), ($pids -join ','), $profile)
         } else {
             $pids = @(Get-NinferProcess | ForEach-Object { $_.ProcessId })
             if ($pids.Count -gt 0) {
