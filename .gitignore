@@ -12,7 +12,6 @@ coverage/
 .env
 test-results/
 screenshots/
-test-fixtures/*.pdf
 
 # qa scratch scripts — ad-hoc debug launchers, DOM dumps and button probes.
 # Never committed; phase and retest specs (*.spec.cjs / *.spec.js) stay tracked.
