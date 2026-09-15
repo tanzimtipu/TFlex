@@ -71,13 +71,6 @@ const RELEASES_REPO = 'tflex-releases';
  * token keeps the documented TFLEX_GH_TOKEN > GH_TOKEN precedence and stops
  * the provider factory from substituting a raw GH_TOKEN env value.
  */
-type GithubFeedConfig = {
-  provider: 'github';
-  owner: string;
-  repo: string;
-  private: boolean;
-  token?: string;
-};
 
 /**
  * Matches the error signatures electron-updater emits when the feed
@@ -116,18 +109,9 @@ export class UpdateService {
    *  calling autoUpdater with an unconfigured client. A token is NOT
    *  required — the public releases repo needs no auth. */
   private _feedConfigured = false;
-  /** The feed currently configured on autoUpdater (primary public feed, or
-   *  the source-repo fallback once the latter has been activated). Used to
-   *  name the feed in user-facing "no releases published" messages. */
+  /** The feed currently configured on autoUpdater. Used to name the feed in
+   *  user-facing "no releases published" messages. */
   private _activeFeed: { owner: string; repo: string } | null = null;
-  /** Fallback feed: the PRIVATE source repo (package.json `repository`),
-   *  which holds the full historical release list. Set in `init()` only
-   *  when a runtime token is available — a token is what makes the private
-   *  repo readable. Consumed at most once (see `_fallbackUsed`). */
-  private _fallbackFeed: GithubFeedConfig | null = null;
-  /** True once the source-repo fallback check has run, so a failing
-   *  fallback cannot loop the fallback logic. */
-  private _fallbackUsed = false;
 
   constructor() {
     this._state = { kind: 'checking' };
@@ -211,29 +195,9 @@ export class UpdateService {
       ...(token ? { token } : {}),
     });
     this._activeFeed = { owner: repoInfo.owner, repo: RELEASES_REPO };
-    if (token) {
-      // The private source repo (package.json `repository`) holds the full
-      // historical release list. It is only reachable WITH a token, so the
-      // fallback feed exists only when a token is present. `private: true`
-      // plus the token keeps electron-updater on the API-based provider,
-      // which can read releases in private repos.
-      this._fallbackFeed = {
-        provider: 'github',
-        owner: repoInfo.owner,
-        repo: repoInfo.repo,
-        private: true,
-        token,
-      };
-    }
-    this._fallbackUsed = false;
     this._feedConfigured = true;
     // Operator-facing diagnostics (main process only).
-    console.log(
-      `[update] feed ${this._activeFeed.owner}/${this._activeFeed.repo}` +
-        (this._fallbackFeed
-          ? `, fallback ${this._fallbackFeed.owner}/${this._fallbackFeed.repo}`
-          : ''),
-    );
+    console.log(`[update] feed ${this._activeFeed.owner}/${this._activeFeed.repo}`);
 
     // Wire up autoUpdater events to our state machine.
     // Event types use the electron-updater UpdateInfo / UpdateDownloadedEvent
@@ -326,29 +290,15 @@ export class UpdateService {
   }
 
   /** Shared handler for a failed update check. Both the `error` event and
-   *  the rejected `checkForUpdates()` promise report the same failure, so
-   *  both routes funnel through here (the `_fallbackUsed` flag makes the
-   *  double delivery idempotent).
+   *  the rejected `checkForUpdates()` promise report the same failure.
    *
-   *  A "no releases published" failure on the active feed is not something
-   *  the user can act on: if a token-backed fallback feed (the private
-   *  source repo, which keeps the full historical release list) is
-   *  configured and has not been consumed yet, switch to it and retry
-   *  once. Otherwise — and when the fallback itself finds no releases —
-   *  report a clean `up-to-date` state instead of a raw error. Genuine
-   *  failures (network, auth, malformed feed) still surface as `error`. */
+   *  A "no releases published" failure is treated as up-to-date (the user
+   *  is on a build that predates the first public release, or the releases
+   *  repo is genuine empty for the first push). Genuine failures (network,
+   *  auth, malformed feed) surface as `error`. */
   private _handleCheckError(message: string): void {
     if (!isNoReleasesError(message)) {
       this._setState({ kind: 'error', message });
-      return;
-    }
-    if (this._fallbackFeed && !this._fallbackUsed) {
-      this._fallbackUsed = true;
-      this._activeFeed = { owner: this._fallbackFeed.owner, repo: this._fallbackFeed.repo };
-      autoUpdater.setFeedURL(this._fallbackFeed);
-      void autoUpdater.checkForUpdates().catch((err: Error) => {
-        this._handleCheckError(err.message ?? String(err));
-      });
       return;
     }
     this._setState({ kind: 'up-to-date', version: app.getVersion() });
