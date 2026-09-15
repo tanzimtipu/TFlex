@@ -2648,6 +2648,373 @@ input[type="checkbox"] {
   color: var(--fg);
 }
 
+/* ---------------------------------------------------------------------------
+ * Unified toolbar — the tabbed ribbon base (UnifiedToolbar.tsx) that
+ * consolidates the formerly separate annotation / edit / document
+ * toolbars into one bar. This block styles the tab shell only; each
+ * section's tool groups land in .toolbar-content in later chunks.
+ *
+ * The tab headers reuse the AppHeader tab-strip design language:
+ * transparent frame, the shared --bg-hover wash on hover, the raised
+ * --bg-tab-active surface on the selected tab, and the SAME inset 2px
+ * accent underline .tab-active::after draws (the indicator-in
+ * primitive, driven by the Phase-15 --motion-duration-fast token,
+ * 200ms, per the ribbon spec). All three themes resolve the surfaces
+ * through the existing tokens — no per-theme rules needed here.
+ * ------------------------------------------------------------------------- */
+.unified-toolbar {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-toolbar);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.toolbar-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 8px 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Same geometry as .tab: 34px-tall header sitting on the strip's
+ * bottom edge, 1px transparent frame (reserved space, no visible
+ * outline), top-only radius. The section tabs read one step larger
+ * than the document tabs (--fs-md / weight 500): they are ribbon
+ * section headers, not document tabs. */
+.toolbar-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-top-left-radius: var(--radius-2);
+  border-top-right-radius: var(--radius-2);
+  background: var(--bg-tab);
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  position: relative;
+  /* Tab switch rides the Phase-15 fast token (200ms) on the
+   * standardized ease — colors/borders only, never layout. */
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.toolbar-tab:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+/* Same inside-ring treatment as .tab:focus-visible (the strip clips
+ * overflow, so an outside ring would be cut off). */
+.toolbar-tab:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: -2px;
+}
+
+.toolbar-tab-active {
+  color: var(--fg-strong);
+  background: var(--bg-tab-active);
+  border-color: transparent;
+  z-index: 1;
+}
+
+/* The selected section's 2px accent underline — the same inset
+ * indicator .tab-active::after paints, faded + slid in via
+ * indicator-in over --motion-duration-fast (200ms). The ::after box
+ * never moves layout: transform/opacity only. */
+.toolbar-tab-active::after {
+  content: "";
+  position: absolute;
+  left: var(--sp-3);
+  right: var(--sp-3);
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px 1px 0 0;
+  background: var(--accent);
+  animation: indicator-in var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+/* The active section's tool row. 80px keeps a wrapped two-row tool
+ * group (icon row + label/options row) on one screen without forcing
+ * an empty bar tall enough for the tallest future layout. */
+.toolbar-content {
+  min-height: 80px;
+  padding: 12px;
+}
+
+.toolbar-placeholder {
+  color: var(--fg-muted);
+  font-size: var(--fs-md);
+}
+
+/* ---------------------------------------------------------------------------
+ * Annotate section — the tool grid in the unified toolbar's Annotate tab
+ * (UnifiedToolbar.tsx). The five most-used tools (Highlight, Comment,
+ * Text, Rect, Sign) sit on the always-visible row; the dashed More/Less
+ * pill reveals a second row with the remaining seven (Underline, Strike,
+ * Oval, Line, Arrow, Stamp, Erase) and rotates its chevron.
+ *
+ * The tool buttons reuse the legacy `.tool-btn` class name, but every
+ * rule here is scoped under `.annotation-tools`: the unscoped `.tool-btn`
+ * earlier in this file styles the CommandBar/SearchBar chrome buttons,
+ * and redefining it globally would restyle them. The scoped rules win on
+ * specificity; the legacy base only supplements what these rules do not
+ * set (e.g. `flex-shrink: 0`), and the legacy hover/active color +
+ * pressed-wash states still apply on top.
+ *
+ * Surfaces resolve through shared tokens (--bg-raised card, --border
+ * frame, --bg-hover wash) so all three themes pick the right values
+ * with no per-theme rules. Motion rides the Phase-15 tokens: 200ms
+ * standard ease on the buttons, chevron rotation on
+ * --motion-duration-fast, and the More/Less row's expand/collapse on
+ * --motion-duration-panel / --motion-ease-layout (the shared rules below
+ * the .expand-btn block, covering all three sections). Every token
+ * collapses under prefers-reduced-motion.
+ * ------------------------------------------------------------------------- */
+.annotation-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tools-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.annotation-tools .tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 56px;
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--fg);
+  transition: all var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.annotation-tools .tool-btn:hover {
+  background: var(--bg-hover);
+  transform: translateY(-2px);
+}
+
+.annotation-tools .tool-btn:active {
+  transform: scale(var(--motion-scale-press));
+}
+
+.expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 12px;
+  margin-top: 4px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--fg-muted);
+  align-self: center;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.expand-btn:hover {
+  background: var(--bg-hover);
+  border-style: solid;
+}
+
+/* Same inset focus ring as .toolbar-tab:focus-visible. */
+.expand-btn:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: -2px;
+}
+
+/* The chevron spins on BOTH directions: the transition lives on the
+ * base svg (declaring it only on .rotated would animate the un-rotate
+ * not at all, since transitions read the after-state). Transform only
+ * — no layout involved. */
+.expand-btn svg {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.expand-btn svg.rotated {
+  transform: rotate(180deg);
+}
+
+/* Expand/collapse motion for the dashed More/Less second row — shared by
+ * all three tab sections (.annotation-tools, .edit-tools, .document-tools;
+ * the row carries the single .tools-row class, so one rule pair covers
+ * every section). "More" mounts the row with .expanded, which plays
+ * expandRow over --motion-duration-panel with --motion-ease-layout
+ * (opacity + a small settle from above, transform-origin pinned to the
+ * top edge); "Less" swaps the class to .collapsing, which plays
+ * collapseRow over the fast band with the exit ease, and React unmounts
+ * the row once that band elapses (the component mirrors the same token,
+ * so the unmount lands on the animation's last frame). Transform +
+ * opacity only — no height/margin/width animation, so the toolbar never
+ * layout-thrashes. Under prefers-reduced-motion the tokens collapse to
+ * 0ms on the CSS side and the unmount deadline to the reduced token on
+ * the JS side: an instant state change on both. The exiting row drops
+ * pointer-events so it can never swallow a click meant for the chrome
+ * beneath it (DEF-087/088/090 class guard). */
+.tools-row.expanded {
+  animation: expandRow var(--motion-duration-panel) var(--motion-ease-layout);
+  transform-origin: top;
+}
+
+@keyframes expandRow {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tools-row.collapsing {
+  animation: collapseRow var(--motion-duration-fast) var(--motion-ease-exit) both;
+  transform-origin: top;
+  pointer-events: none;
+  will-change: transform;
+}
+
+@keyframes collapseRow {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Edit section — the tool grid in the unified toolbar's Edit tab
+ * (UnifiedToolbar.tsx). Mirrors the Annotate section's card buttons: the
+ * five most-used tools (Move, Scale, Rotate, Crop, Delete) sit on the
+ * always-visible row; the dashed More/Less pill (the shared .expand-btn
+ * chrome above) reveals a second row with the remaining five (Text,
+ * Image, Link, Page #, Header) and rotates its chevron.
+ *
+ * Same scoping logic as the Annotate block: the unscoped .tool-btn
+ * styles the CommandBar chrome, so these rules re-declare the card
+ * geometry under .edit-tools and the legacy hover/pressed states still
+ * apply on top. An armed tool carries .active — the solid accent fill
+ * per the Edit-tab spec — and that rule sits LAST in this block so the
+ * equal-specificity hover wash can never paint over it. Surfaces resolve
+ * through the shared tokens so all three themes pick the right values
+ * with no per-theme rules.
+ * ------------------------------------------------------------------------- */
+.edit-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.edit-tools .tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 56px;
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--fg);
+  transition: all var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.edit-tools .tool-btn:hover {
+  background: var(--bg-hover);
+  transform: translateY(-2px);
+}
+
+.edit-tools .tool-btn:active {
+  transform: scale(var(--motion-scale-press));
+}
+
+/* Armed tool — solid accent fill. Last in the block on purpose: it
+ * beats the equal-specificity :hover wash on a hovered armed button. */
+.edit-tools .tool-btn.active {
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  border-color: var(--accent);
+}
+
+/* ---------------------------------------------------------------------------
+ * Document section — the action grid in the unified toolbar's Document tab
+ * (UnifiedToolbar.tsx). Mirrors the Annotate and Edit sections' card
+ * buttons: the five most-used actions (Save, Save As, Export, Print,
+ * Share) sit on the always-visible row; the dashed More/Less pill (the
+ * shared .expand-btn chrome above) reveals a second row with the
+ * remaining five (Merge, Split, Optimize, Flatten, Props) and rotates its
+ * chevron.
+ *
+ * Same scoping logic as the other two sections: the unscoped .tool-btn
+ * styles the CommandBar chrome, so these rules re-declare the card
+ * geometry under .document-tools and the legacy hover/pressed states
+ * still apply on top. The buttons are plain actions — no armed state.
+ * Surfaces resolve through the shared tokens so all three themes pick
+ * the right values with no per-theme rules.
+ * ------------------------------------------------------------------------- */
+.document-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.document-tools .tool-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 56px;
+  gap: 4px;
+  padding: 6px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--fg);
+  transition: all var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.document-tools .tool-btn:hover {
+  background: var(--bg-hover);
+  transform: translateY(-2px);
+}
+
+.document-tools .tool-btn:active {
+  transform: scale(var(--motion-scale-press));
+}
+
 .search-bar {
   display: flex;
   align-items: center;
