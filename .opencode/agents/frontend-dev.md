@@ -92,6 +92,14 @@ report, not a finished one. Keep the final report under ~500 words; put long evi
 approach the cap while still working, stop at a clean boundary, state exactly what is
 done and what remains, and end the message with `CONTINUED: <next step>` so the
 orchestrator resumes your session instead of restarting the task.
+
+
+File writes follow the same budget. Any file longer than ~120 lines is written IN
+CHUNKS: create it with the first slice, then append the rest over several tool
+calls - never one giant write. And never imitate a tool call inside plain text
+(no `<tool_call>` / `<function=...>` markup): a pseudo-tool-call in a text block
+executes nothing, and when it runs past the cap it leaves no file on disk at all.
+If a tool exists for the action, call the tool.
 For defects dispatched to you, respond with exactly one of: FIX READY (with a summary of
 the change), CANNOT REPRODUCE (with what you tried), or WORKING AS INTENDED (with the
 requirement or reasoning that supports it).
