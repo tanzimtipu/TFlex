@@ -1,12 +1,17 @@
 # ninfer-model.ps1 - load, offload and inspect the local NInfer model server.
 #
 # Active, measured profile: Qwen3.8-27B on RTX 4090, 220000 context tokens, one
-# decode slot, rk4v4-e8 KV, full 8192-token vision, and a 65536 default output
-# cap (raised from 8192 on 2026-09-17 after output-cap truncations broke tool
-# calls; output shares the 220000-token KV pool with the prompt, so effective
-# output shrinks for prompts above ~154k tokens). This is the sole active
-# profile. It leaves enough headroom for the packaged Electron app while QA runs;
-# do not offload the model between local agent dispatches or before QA's e2e run.
+# decode slot, rk4v4-e8 KV, full 20480-token vision, and a 65536 default output
+# cap (both raised on 2026-09-17: output 8192 -> 65536 after output-cap
+# truncations broke tool calls; vision 8192 -> 20480 after "vision raw patches
+# exceed processor budget" rejections on multi-screenshot QA requests - the
+# engine's own reservation check caps vision at ~24000 tokens on this card:
+# 24576 needed 6.01GB runtime reservation vs 5.96GB available, so 20480 keeps
+# ~450MB margin). Output shares the 220000-token KV pool with the prompt, so
+# effective output shrinks for prompts above ~154k tokens. This is the sole
+# active profile. It leaves enough headroom for the packaged Electron app while
+# QA runs; do not offload the model between local agent dispatches or before
+# QA's e2e run.
 #
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ninfer-model.ps1 status
 #   powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ninfer-model.ps1 start
@@ -54,7 +59,7 @@ $ServeArgs = @(
     '--prefill-chunk', '512'
     '--kv-dtype', 'rk4v4-e8'
     '--vision'
-    '--vision-max-tokens', '8192'
+    '--vision-max-tokens', '20480'
     '--spec', 'mtp'
     '--draft-tokens', '4'
     '--lm-head-draft'
