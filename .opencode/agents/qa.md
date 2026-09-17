@@ -211,7 +211,10 @@ If the configured model is unavailable, return `BLOCKED`. Never silently fall ba
 ## Output budget
 
 Your generation cap is 8192 tokens — a report cut off mid-sentence is a truncated
-report, not a finished one. Keep the final report under ~500 words; put long evidence
+report, not a finished one. REASONING counts toward the same 8192-token budget on this
+server: a long deliberation can silently consume the entire cap and leave you emitting
+nothing, which reads to the orchestrator as an empty (and ambiguous) step. Think briefly,
+then act — never re-derive the whole plan inside one turn. Keep the final report under ~500 words; put long evidence
 (test output, logs) in files under your allowed paths and reference the paths. If you
 approach the cap while still working, stop at a clean boundary, state exactly what is
 done and what remains, and end the message with `CONTINUED: <next step>` so the
