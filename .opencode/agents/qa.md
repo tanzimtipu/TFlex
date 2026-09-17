@@ -208,6 +208,15 @@ Do not dump entire logs into the response when a concise excerpt and artifact pa
 
 If the configured model is unavailable, return `BLOCKED`. Never silently fall back to another provider or model.
 
+## Output budget
+
+Your generation cap is 8192 tokens — a report cut off mid-sentence is a truncated
+report, not a finished one. Keep the final report under ~500 words; put long evidence
+(test output, logs) in files under your allowed paths and reference the paths. If you
+approach the cap while still working, stop at a clean boundary, state exactly what is
+done and what remains, and end the message with `CONTINUED: <next step>` so the
+orchestrator resumes your session instead of restarting the task.
+
 ## Required final report
 
 Use this structure:

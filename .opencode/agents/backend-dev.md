@@ -73,6 +73,15 @@ When done, report: what you built, test output (numbers, not adjectives), any co
 deviations and why, and anything frontend-dev needs to know about behavior (errors,
 progress events, edge cases like encrypted or corrupted files).
 
+
+## Output budget
+
+Your generation cap is 8192 tokens — a report cut off mid-sentence is a truncated
+report, not a finished one. Keep the final report under ~500 words; put long evidence
+(test output, logs) in files under your allowed paths and reference the paths. If you
+approach the cap while still working, stop at a clean boundary, state exactly what is
+done and what remains, and end the message with `CONTINUED: <next step>` so the
+orchestrator resumes your session instead of restarting the task.
 For defects dispatched to you, respond with exactly one of: FIX READY (with a summary of
 the change), CANNOT REPRODUCE (with what you tried), or WORKING AS INTENDED (with the
 requirement or reasoning that supports it).

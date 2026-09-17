@@ -223,6 +223,13 @@ stopped and what to do next. Never restart the same task from scratch, and never
 task over yourself because a child filled its context. Resuming costs a fraction of
 re-reading everything the child had already consumed.
 
+The local model's generation cap is 8192 tokens, so judge the child's REPORT, not its
+silence: a report that ends mid-sentence, or that lacks the required final-report
+structure its definition demands, has hit the output cap — that is a token-limit stop,
+not a finished task. Resume that session with its task_id and a one-line continuation;
+never tick the item, never re-dispatch fresh, and never treat a truncated report as
+evidence of completion.
+
 **QA FOLLOWS EVERY DEVELOPER TASK — a strict guide, not a hard block.** The normal
 sequence is: a developer reports done -> you dispatch qa to verify that change (run the
 relevant test, check the CONTROL-INDEX control, capture a screenshot where it applies) ->
