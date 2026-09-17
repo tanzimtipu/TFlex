@@ -2297,3 +2297,51 @@ deletion. Left for a dedicated cleanup hatch; do not mix it into a feature commi
 enforces 4..2000), max 10 watermarks per document, max 5000 tile placements per page — each
 rejects with a typed `engine-error` and mutates nothing. A present-but-invalid optional field
 rejects the whole `addWatermark` payload; only an absent field defaults.
+
+## 2026-09-18: Release 1.18.0 published (OTA) — plus the manifest regression it repaired
+
+**Version regression found during the release review:** commit `5ccedfa` had set the manifests to
+1.17.0 and the later Phase-18 WIP commit `855ad17` reverted BOTH `package.json` and
+`package-lock.json` to 1.16.2 — i.e. the tree sat below the highest shipped version while 1.17.0
+artifacts existed in `release/`. The release therefore bumped to **1.18.0** (minor), which both
+supersedes 1.17.0 for the OTA comparison and repairs the regression. Rule going forward: a version
+commit must never be reverted by a feature/WIP commit — check `package.json` before any build that
+will be packaged.
+
+**Release record:** `package.json` + `package-lock.json` -> 1.18.0 (lockfile regenerated with
+`npm install --package-lock-only`), commit `e8a92b6`, tag `v1.18.0`, pushed to the private source
+repo. GitHub Release in the PUBLIC `tanzimtipu/tflex-releases`:
+https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.18.0 with all four OTA assets —
+`latest.yml` (342 B, version 1.18.0, path `TFlex-Setup-1.18.0.exe`), `TFlex-Setup-1.18.0.exe`
+(157,755,803 B), its `.blockmap` (165,792 B) and `TFlex-1.18.0-portable.exe` (157,525,952 B).
+The unauthenticated public feed was fetched with no token and returns the 1.18.0 manifest, so
+`electron-updater` can serve it. (`is_latest` returns `null` for EVERY release in that repo via the
+raw API — a pre-existing cosmetic quirk; the page badge and `gh release list` both say Latest.)
+
+**The three release confirmations (all PASS, per the 2026-09-15 checklist):**
+1. backend-dev — clean `dist/` + `release/win-unpacked/`, `npm run build`, bundle spot-check
+   (`ann-toolbar` x7, `edit-toolbar` x19, watermark dialog markers, and `engine:addWatermark` in
+   dist/renderer + dist/preload + dist/main + the packaged `app.asar` — the DEF-216 guard),
+   `npm run dist --publish never`, packaged FileVersion 1.18.0.
+2. qa — installed `TFlex-Setup-1.18.0.exe /S` and verified the INSTALLED build with the version
+   gate first (`app.getVersion() === "1.18.0"`): DEF-214 toolbar guard, watermark apply/delete by id
+   with exact toasts, the DEF-217/218/220 typed bounds, DEF-213 theme default on a fresh profile.
+   All 8 disposition lines PASS; 6/6 tests in `e2e/release_1_18_0_installed.spec.cjs`.
+3. git-agent — version alignment (package.json = latest.yml = tag), the four artifacts named for
+   the tag, plain `git push origin master v1.18.0`, `gh release create` with the four assets, then
+   `gh release view` showing all four + the public-feed fetch.
+
+**Environment finding (not a product defect):** the first silent installer runs installed nothing
+because `HKCU\Software\f890a78b-...\InstallLocation` was corrupted (`C\Users\...`, missing colon)
+pointing at a deleted temp dir. qa backed up and cleared that key (and the stale uninstall key) in
+`Temp\opencode` and the install then succeeded. If a future silent install appears to no-op, check
+that registry key first.
+
+**Harness gap for the operator (unchanged from this run):** git-agent's permission gate denies
+every worktree-writing git subcommand (`restore`, `checkout`) and every PowerShell cmdlet (only
+`git`/`npm`/`gh` prefixes pass), so git-agent cannot repair the working tree or do file hygiene.
+Commits, tags, pushes and `gh` work fine.
+
+**Style note:** the repo's version-commit convention is prefix-less (`version: 1.17.0`); this
+release used `chore: version: 1.18.0` because the dispatch said so. Future version commits should
+match the prefix-less style.
