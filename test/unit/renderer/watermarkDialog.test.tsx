@@ -203,4 +203,21 @@ describe("Phase 18 — WatermarkDialog underline + applied watermarks", () => {
     expect(rows[1]?.getAttribute("data-watermark-applied")).toBe("wm-2");
     m.unmount();
   });
+
+  // Phase 18 closure: the image-mode preview placeholder must be
+  // self-describing. The e2e CONTROL-INDEX addresses controls by hook,
+  // so the placeholder carries both the data attribute and its
+  // original class.
+  it("renders the image-mode placeholder with both the data hook and its class", () => {
+    const m = mountDialog({ watermarks: [] });
+    const imageType = m.host.querySelector<HTMLInputElement>('[data-watermark-type="image"]');
+    expect(imageType).not.toBeNull();
+    act((): void => {
+      imageType?.click();
+    });
+    const missing = m.host.querySelector("[data-watermark-preview-missing]");
+    expect(missing).not.toBeNull();
+    expect(missing?.classList.contains("watermark-preview-missing")).toBe(true);
+    m.unmount();
+  });
 });

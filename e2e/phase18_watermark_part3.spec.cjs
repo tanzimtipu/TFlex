@@ -3,12 +3,10 @@
 // drops wm-1). Compact validation spec: 3 tests, one serial describe,
 // a single launchApp in beforeAll (canonical e2e/lib/launch.cjs).
 //
-// Selector note: the task text names `[data-watermark-preview-image]`; the
-// live markup carries the image preview as the CLASS `.watermark-preview-image`
-// on the <img> (frame keeps data-watermark-preview="single"). T2 accepts the
-// preview via either selector, logs which one matched, and additionally proves
-// the <img> carries a loaded blob:/data: src — the same dual-selector
-// treatment part 1 applied to the missing-image indicator.
+// Selector note: the preview <img> now carries
+// `[data-watermark-preview-image]` (the class is kept for styling). T2
+// asserts that data attribute directly and additionally proves the <img>
+// carries a loaded blob:/data: src.
 
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
@@ -105,22 +103,13 @@ test.describe('Phase 18 watermark — part 3 (baseline, image, delete-by-id)', (
 
     await expect(window.locator('[data-watermark-image-name]'), 'picked image name')
       .toContainText('phase18-wm-image.png');
-    // Contract: the task names [data-watermark-preview-image]; the live
-    // markup carries the class .watermark-preview-image on the <img>
-    // (frame: data-watermark-preview="single"). Accept either and log which
-    // matched — same treatment as part 1's missing-indicator deviation.
-    const viaAttr = await window.locator('[data-watermark-preview-image]')
-      .isVisible().catch(() => false);
-    const viaClass = await window.locator('img.watermark-preview-image')
-      .isVisible().catch(() => false);
-    console.log(`PHASE18_IMAGE_PREVIEW=${viaAttr ? 'data-attr' : viaClass ? 'class-only' : 'ABSENT'}`);
-    expect(viaAttr || viaClass, 'image preview visible')
-      .toBeTruthy();
+    const previewImg = window.locator('[data-watermark-preview-image]');
+    console.log('PHASE18_IMAGE_PREVIEW=data-watermark-preview-image');
+    await expect(previewImg, 'image preview visible').toBeVisible();
     // The preview <img> must carry the LOADED image (blob:/data: src),
     // not an empty or broken placeholder.
     const imgSrc = await window.evaluate(() => {
-      const img = [...document.querySelectorAll('img')].find((i) =>
-        i.alt === 'Watermark image preview' || i.className.includes('watermark-preview-image'));
+      const img = document.querySelector('[data-watermark-preview-image]');
       return img ? (img.currentSrc || img.src) : null;
     });
     expect(imgSrc, 'preview img has a loaded image src').toMatch(/^(blob:|data:)/);

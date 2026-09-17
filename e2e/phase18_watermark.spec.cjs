@@ -7,13 +7,14 @@
 // T2 exercises preview + the 9-slot grid, T3 applies a full text watermark
 // (all pages) and verifies the engine record, T4 captures the baked page.
 //
-// Selector note: the task text names `[data-watermark-preview-missing]`;
-// the current dialog markup carries the missing-image indicator as the
-// CLASS `.watermark-preview-missing` (no data attribute). T2 accepts the
-// indicator via either selector and logs which one matched — a missing
-// indicator through BOTH is a product failure, a missing attribute with
-// the class present is a (logged) contract deviation, not a behaviour
-// failure.
+// Selector note: the dialog markup now carries the missing-image indicator
+// as `[data-watermark-preview-missing]` (the class is kept for styling).
+// T2 asserts that data attribute directly — no class fallback.
+//
+// T4 is a real pixel proof: T3 snapshots the page-1 top-left quadrant (the
+// watermark target) and the bottom-right control quadrant from the live
+// pdf.js canvas BEFORE the apply; T4 re-samples both after the proxy
+// refresh and asserts a visible, localised change.
 
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
@@ -32,6 +33,9 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
 
   let electronApp = null;
   let window = null;
+  // T3 captures the page-1 canvas non-white counts BEFORE the apply; T4
+  // re-samples and asserts the delta. Null until T3 runs.
+  let pixelBaseline = null;
 
   test.beforeAll(async () => {
     electronApp = await launchApp([], null, null);
@@ -57,14 +61,52 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
     }, [selector, String(value)]);
   }
 
+  // Non-white pixel count of one page-1 canvas quadrant, read straight from
+  // the live pdf.js canvas backing store. Quadrants: 'top-left' (the
+  // watermark target, wm-1 top-left) and 'bottom-right' (control the
+  // watermark cannot reach). A pixel counts as non-white when its green OR
+  // blue channel is < 235 (the red watermark at 25% opacity drops G/B to
+  // ~224); the page's own text is in both samples, so the DELTA isolates
+  // the watermark. getImageData throwing (tainted canvas) fails loud.
+  async function nonWhiteQuadrant(quadrant) {
+    return window.evaluate((q) => {
+      const page = document.querySelector('.pdf-page[data-page="1"]');
+      const canvas = page && page.querySelector('canvas');
+      if (!canvas || canvas.width === 0 || canvas.height === 0) {
+        throw new Error(`page-1 canvas unavailable for ${q} sample`);
+      }
+      const ctx = canvas.getContext('2d');
+      const w = Math.floor(canvas.width / 2);
+      const h = Math.floor(canvas.height / 2);
+      const x0 = q === 'top-left' ? 0 : canvas.width - w;
+      const y0 = q === 'top-left' ? 0 : canvas.height - h;
+      let img;
+      try {
+        img = ctx.getImageData(x0, y0, w, h);
+      } catch (e) {
+        throw new Error(`getImageData threw for ${q} (tainted canvas?): ${e && e.message ? e.message : e}`);
+      }
+      let nonWhite = 0;
+      for (let i = 0; i < img.data.length; i += 4) {
+        if (img.data[i + 1] < 235 || img.data[i + 2] < 235) nonWhite += 1;
+      }
+      return { quadrant: q, x: x0, y: y0, w, h, total: w * h, nonWhite };
+    }, quadrant);
+  }
+
   test('T1: palette gate on welcome screen, enabled + dialog on open doc', async () => {
     test.setTimeout(120000);
 
     // Welcome screen (no doc): the watermark entry must NOT be actionable.
+    // Explicit gate: palette unreachable (`[data-tools-toggle]` count 0) OR
+    // the watermark entry absent OR the present entry disabled. A
+    // present-and-enabled entry is a hard failure.
     const toggleCount = await window.locator('[data-tools-toggle]').count();
-    let gate;
+    let entryCount = 0;
+    let entryEnabled = false;
+    let branch;
     if (toggleCount === 0) {
-      gate = 'data-tools-toggle absent on welcome screen';
+      branch = 'palette-unreachable (no [data-tools-toggle] on welcome screen)';
       // Evidence path: the menu accelerator is a real user route to the
       // palette on the welcome screen — open it and record the entry state.
       await window.keyboard.press('Control+Shift+P');
@@ -74,31 +116,35 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
         .then(() => true, () => false);
       if (opened) {
         const entry = window.locator('[data-tool-id="watermark"]');
-        if ((await entry.count()) === 0) {
-          gate += ' | palette open, watermark entry absent';
-        } else if (await entry.isEnabled()) {
-          gate = 'FAIL: watermark entry ENABLED on doc-less welcome screen';
-        } else {
-          gate += ' | palette open, watermark entry disabled';
-        }
+        entryCount = await entry.count();
+        entryEnabled = entryCount > 0 ? await entry.isEnabled() : false;
+        branch += entryCount === 0
+          ? ' | palette open, watermark entry absent'
+          : entryEnabled
+            ? ' | palette open, watermark entry ENABLED'
+            : ' | palette open, watermark entry disabled';
       } else {
-        gate += ' | palette not reachable on welcome screen';
+        branch += ' | palette not reachable on welcome screen';
       }
     } else {
       await window.locator('[data-tools-toggle]').first().click();
       await window.locator('[data-tools-palette]')
         .waitFor({ state: 'visible', timeout: 10000 });
       const entry = window.locator('[data-tool-id="watermark"]');
-      if ((await entry.count()) === 0) {
-        gate = 'watermark entry absent from palette';
-      } else if (await entry.isEnabled()) {
-        gate = 'FAIL: watermark entry ENABLED on doc-less welcome screen';
-      } else {
-        gate = 'watermark entry present but disabled';
-      }
+      entryCount = await entry.count();
+      entryEnabled = entryCount > 0 ? await entry.isEnabled() : false;
+      branch = entryCount === 0
+        ? 'watermark entry absent from palette'
+        : entryEnabled
+          ? 'watermark entry ENABLED'
+          : 'watermark entry present but disabled';
     }
-    console.log(`PHASE18_T1_GATE=${gate}`);
-    expect(gate, 'welcome-screen watermark gate').not.toMatch(/^FAIL/);
+    const presentAndEnabled = entryCount > 0 && entryEnabled;
+    const notActionable = toggleCount === 0 || entryCount === 0 || !entryEnabled;
+    console.log(`PHASE18_T1_GATE_BRANCH=${branch}`);
+    console.log(`PHASE18_T1_GATE=${JSON.stringify({ toggleCount, entryCount, entryEnabled, presentAndEnabled, notActionable })}`);
+    expect(presentAndEnabled, 'no present-and-enabled watermark entry on the doc-less welcome screen').toBe(false);
+    expect(notActionable, 'welcome-screen watermark gate disjunction (unreachable OR absent OR disabled)').toBe(true);
 
     // Open the bundled report sample; the entry must become actionable.
     await openSample(window, electronApp, 'report.pdf');
@@ -142,12 +188,9 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
     await expect(window.locator('[data-watermark-preview-text]'))
       .toHaveCount(0, 'text preview gone in image mode');
     const missingAttr = window.locator('[data-watermark-preview-missing]');
-    const missingClass = window.locator('.watermark-preview-missing');
-    const viaAttr = await missingAttr.isVisible().catch(() => false);
-    const viaClass = await missingClass.isVisible().catch(() => false);
-    console.log(`PHASE18_T2_MISSING_INDICATOR=${viaAttr ? 'data-attr' : viaClass ? 'class-only' : 'ABSENT'}`);
-    expect(viaAttr || viaClass, 'missing-image indicator visible')
-      .toBeTruthy();
+    console.log('PHASE18_T2_MISSING_INDICATOR=data-watermark-preview-missing');
+    await expect(missingAttr, 'missing-image indicator visible')
+      .toBeVisible();
   });
 
   test('T3: text + typography + opacity + timed all-pages apply', async () => {
@@ -167,6 +210,14 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
 
     expect(await window.locator('[data-watermark-opacity]').inputValue())
       .toBe('25', 'opacity control sticks at 25%');
+
+    // T4 baseline: sample the page-1 canvas BEFORE the apply. The watermark
+    // target is the top-left quadrant; bottom-right is the control the
+    // watermark cannot reach.
+    const beforeTopLeft = await nonWhiteQuadrant('top-left');
+    const beforeBottomRight = await nonWhiteQuadrant('bottom-right');
+    pixelBaseline = { topLeft: beforeTopLeft.nonWhite, bottomRight: beforeBottomRight.nonWhite };
+    console.log(`PHASE18_T4_BASELINE beforeTopLeft=${beforeTopLeft.nonWhite} (${beforeTopLeft.w}x${beforeTopLeft.h}) beforeBottomRight=${beforeBottomRight.nonWhite} (${beforeBottomRight.w}x${beforeBottomRight.h})`);
 
     // Time from confirm click to the resulting toast.
     const t0 = Date.now();
@@ -264,6 +315,23 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
       return !!(canvas && canvas.width > 0 && canvas.height > 0);
     }, undefined, { timeout: 30000 });
     await window.waitForTimeout(1500); // settle the re-rendered page
+
+    // Real pixel proof on the live pdf.js canvas. before* were captured in
+    // T3 BEFORE the apply; after* now that the proxy has re-rendered page 1.
+    expect(pixelBaseline, 'T3 captured the pre-apply pixel baseline').not.toBeNull();
+    const afterTopLeft = await nonWhiteQuadrant('top-left');
+    const afterBottomRight = await nonWhiteQuadrant('bottom-right');
+    const deltaTopLeft = afterTopLeft.nonWhite - pixelBaseline.topLeft;
+    const deltaBottomRight = Math.abs(afterBottomRight.nonWhite - pixelBaseline.bottomRight);
+    console.log(`PHASE18_T4_PIXELS beforeTopLeft=${pixelBaseline.topLeft} afterTopLeft=${afterTopLeft.nonWhite} beforeBottomRight=${pixelBaseline.bottomRight} afterBottomRight=${afterBottomRight.nonWhite} deltaTopLeft=${deltaTopLeft} deltaBottomRight=${deltaBottomRight}`);
+    expect(
+      deltaTopLeft,
+      `visible watermark change on page-1 top-left (before=${pixelBaseline.topLeft}, after=${afterTopLeft.nonWhite})`,
+    ).toBeGreaterThanOrEqual(100);
+    expect(
+      deltaBottomRight,
+      `change localised to the watermark quadrant (deltaBottomRight=${deltaBottomRight}, deltaTopLeft=${deltaTopLeft})`,
+    ).toBeLessThan(0.2 * deltaTopLeft);
 
     const pageEl = window.locator('.pdf-page[data-page="1"]');
     await expect(pageEl).toBeVisible();

@@ -781,7 +781,7 @@ function WatermarkPreview(props: {
     }
     if (imageUrl === null) {
       return (
-        <span className="watermark-preview-content watermark-preview-missing" style={s}>
+        <span className="watermark-preview-content watermark-preview-missing" style={s} data-watermark-preview-missing>
           (no image picked)
         </span>
       );
@@ -794,6 +794,7 @@ function WatermarkPreview(props: {
         style={{ ...s, height: heightPx, maxWidth: "90%" }}
         src={imageUrl}
         alt="Watermark image preview"
+        data-watermark-preview-image
       />
     );
   };
