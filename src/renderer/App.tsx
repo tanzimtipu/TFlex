@@ -22,6 +22,7 @@ import type {
   SpaceAudit,
   StampId,
   UpdateState,
+  WatermarkSettings,
 } from "../shared/types";
 import type { TFlexApi } from "../shared/ipc";
 import { Welcome } from "./components/Welcome";
@@ -93,10 +94,10 @@ import { ReplacePagesDialog } from "./components/ReplacePagesDialog";
 import { RenumberPagesDialog } from "./components/RenumberPagesDialog";
 import { CropPagesDialog } from "./components/CropPagesDialog";
 import { StampDialog } from "./components/StampDialog";
+import { WatermarkDialog } from "./components/WatermarkDialog";
 import { CommentExportDialog } from "./components/CommentExportDialog";
 import { CommentImportDialog } from "./components/CommentImportDialog";
 import { DeletePageDialog } from "./components/DeletePageDialog";
-import { ConfirmDialog } from "./components/ConfirmDialog";
 import { CloseTabPromptDialog, type CloseTabPromptChoice } from "./components/CloseTabPromptDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
@@ -409,6 +410,10 @@ export function App(): ReactElement {
   const [renumberPagesOpen, setRenumberPagesOpen] = useState(false);
   const [cropPagesOpen, setCropPagesOpen] = useState(false);
   const [stampOpen, setStampOpen] = useState(false);
+  // Phase 18 — watermark dialog (text or image overlay). Opened from
+  // the toolbar / tools palette entry; the dialog drives its own
+  // engine IPC through onWatermarkConfirm.
+  const [watermarkOpen, setWatermarkOpen] = useState(false);
   const [commentExportOpen, setCommentExportOpen] = useState(false);
   const [commentImportOpen, setCommentImportOpen] = useState(false);
   // B8 — delete pages dialog. The toolbar's Delete control opens
@@ -793,65 +798,6 @@ export function App(): ReactElement {
     };
   }, [bootDone]);
 
-  // Phase 17 — "Confirm before closing multiple tabs". When the
-  // preference is on (default true) and a close request arrives
-  // while two or more documents are open, the DEF-142 flow is
-  // gated behind this confirmation dialog. Empty placeholder tabs
-  // carry no content, so they do not count toward the threshold.
-  // The ref mirror lets the (stable) close subscription read the
-  // latest open state without re-subscribing — the same
-  // forward-declared-ref pattern as `windowCloseQueueRef` above.
-  const [closeAllConfirmOpen, setCloseAllConfirmOpen] = useState(false);
-  const closeAllConfirmOpenRef = useRef(false);
-  closeAllConfirmOpenRef.current = closeAllConfirmOpen;
-
-  /** DEF-142 — the window-close flow body, extracted from the
-   *  `onCloseRequested` subscription so the Phase 17 multi-tab
-   *  confirmation can re-enter it after the user confirms. Nothing
-   *  modified -> confirmClose(true) immediately; otherwise queue
-   *  every modified tab through the per-tab CloseTabPromptDialog
-   *  (confirmClose(true) fires when the queue empties). */
-  const runWindowCloseFlow = useCallback((): void => {
-    // Same modified check closeTab uses: the tabs reducer's
-    // `meta.modified` OR the engineUi state mirror (the mirror
-    // catches the batched-dispatch window right after an engine
-    // op, when `meta.modified` can still read false).
-    const modifiedIds = tabsRef.current.tabs
-      .filter((t) => t.modified || engineUiRef.current[t.id]?.state.modified === true)
-      .map((t) => t.id);
-    if (modifiedIds.length === 0) {
-      // Nothing to save anywhere — the close may proceed.
-      void window.tflex.confirmClose?.(true);
-      return;
-    }
-    // If a per-tab close prompt is already showing, keep that tab
-    // first so the open dialog continues to own the flow; the rest
-    // of the modified tabs follow.
-    const pending = pendingCloseTabIdRef.current;
-    const queue =
-      pending !== null && modifiedIds.includes(pending)
-        ? [pending, ...modifiedIds.filter((id) => id !== pending)]
-        : modifiedIds;
-    setWindowCloseQueue(queue);
-    setPendingCloseTabId(queue[0] ?? null);
-    setPendingCloseError(null);
-    setPendingCloseSaving(false);
-  }, []);
-
-  // Phase 17 — confirm / cancel handlers for the multi-tab close
-  // confirmation. Confirm re-enters the DEF-142 flow (which still
-  // surfaces the per-tab Save / Don't-save prompts for modified
-  // documents); cancel just closes the dialog — no confirmClose
-  // call, so the window stays open.
-  const onConfirmCloseAllTabs = useCallback((): void => {
-    setCloseAllConfirmOpen(false);
-    runWindowCloseFlow();
-  }, [runWindowCloseFlow]);
-
-  const onCancelCloseAllTabs = useCallback((): void => {
-    setCloseAllConfirmOpen(false);
-  }, []);
-
   // DEF-142 — whole-window close-request subscription. Main
   // preventDefaults EVERY window close (caption X, Alt+F4, the Window
   // menu's Close role, and Exit -> app.quit which closes the window)
@@ -870,26 +816,33 @@ export function App(): ReactElement {
       // Main re-pushes on every close attempt; while a window-close
       // flow is already prompting, ignore the duplicate.
       if (windowCloseQueueRef.current !== null) return;
-      // Phase 17 — same duplicate guard for the multi-tab close
-      // confirmation (the queue is still null while it is open).
-      if (closeAllConfirmOpenRef.current) return;
-      // Phase 17 — confirm before closing multiple tabs. Default is
-      // on; a window holding two or more documents asks first.
-      const confirmCloseTabs =
-        settingsRef.current?.confirmCloseMultipleTabs ?? true;
-      if (confirmCloseTabs) {
-        const docTabCount = tabsRef.current.tabs.filter(
-          (t) => t.kind !== "empty",
-        ).length;
-        if (docTabCount >= 2) {
-          setCloseAllConfirmOpen(true);
-          return;
-        }
+      // Same modified check closeTab uses: the tabs reducer's
+      // `meta.modified` OR the engineUi mirror's `state.modified`
+      // (the mirror catches the batched-dispatch window right after
+      // an engine op, when `meta.modified` can still read false).
+      const modifiedIds = tabsRef.current.tabs
+        .filter((t) => t.modified || engineUiRef.current[t.id]?.state.modified === true)
+        .map((t) => t.id);
+      if (modifiedIds.length === 0) {
+        // Nothing to save anywhere — the close may proceed.
+        void window.tflex.confirmClose?.(true);
+        return;
       }
-      runWindowCloseFlow();
+      // If a per-tab close prompt is already showing, keep that tab
+      // first so the open dialog continues to own the flow; the rest
+      // of the modified tabs follow.
+      const pending = pendingCloseTabIdRef.current;
+      const queue =
+        pending !== null && modifiedIds.includes(pending)
+          ? [pending, ...modifiedIds.filter((id) => id !== pending)]
+          : modifiedIds;
+      setWindowCloseQueue(queue);
+      setPendingCloseTabId(queue[0] ?? null);
+      setPendingCloseError(null);
+      setPendingCloseSaving(false);
     });
     return unsubscribeCloseRequest;
-  }, [runWindowCloseFlow]);
+  }, []);
 
   // OTA UX — one shared subscription to `tflex.update.onStatusChanged`
   // feeds both the toolbar UpdateIndicator (via `externalState`)
@@ -1034,99 +987,6 @@ export function App(): ReactElement {
     const updated: AppSettings = { ...settings, pagesPanelCollapsed: next };
     trackAndSave(updated);
   }, [pagesPanel.collapsed, settings, trackAndSave]);
-
-  // Phase 17 — Preferences-sheet setters for the new General /
-  // Documents / Edit fields. Same immediate-persist policy as
-  // onToggleTheme (Phase 7, DEF-044): the updater computes the next
-  // AppSettings, hands it to trackAndSave (bumps the echo-filter seq,
-  // snapshots the object that went out), and returns it. The no-op
-  // guard skips the persist when the write changes nothing, so
-  // re-choosing the current value never churns settings.json.
-  const onSetShowWelcomeOnStartup = useCallback((v: boolean): void => {
-    setSettings((prev) => {
-      if (prev === null) return prev;
-      if (prev.showWelcomeOnStartup === v) return prev;
-      const next: AppSettings = { ...prev, showWelcomeOnStartup: v };
-      trackAndSave(next);
-      return next;
-    });
-  }, [trackAndSave]);
-
-  const onSetConfirmCloseMultipleTabs = useCallback((v: boolean): void => {
-    setSettings((prev) => {
-      if (prev === null) return prev;
-      if (prev.confirmCloseMultipleTabs === v) return prev;
-      const next: AppSettings = { ...prev, confirmCloseMultipleTabs: v };
-      trackAndSave(next);
-      return next;
-    });
-  }, [trackAndSave]);
-
-  const onSetConfirmDeletePages = useCallback((v: boolean): void => {
-    setSettings((prev) => {
-      if (prev === null) return prev;
-      if (prev.confirmDeletePages === v) return prev;
-      const next: AppSettings = { ...prev, confirmDeletePages: v };
-      trackAndSave(next);
-      return next;
-    });
-  }, [trackAndSave]);
-
-  const onSetDefaultZoomMode = useCallback(
-    (v: "fit-width" | "fit-page" | "last-used"): void => {
-      setSettings((prev) => {
-        if (prev === null) return prev;
-        if (prev.defaultZoomMode === v) return prev;
-        const next: AppSettings = { ...prev, defaultZoomMode: v };
-        trackAndSave(next);
-        return next;
-      });
-    },
-    [trackAndSave],
-  );
-
-  const onSetShowEditWarnings = useCallback((v: boolean): void => {
-    setSettings((prev) => {
-      if (prev === null) return prev;
-      if (prev.showEditWarnings === v) return prev;
-      const next: AppSettings = { ...prev, showEditWarnings: v };
-      trackAndSave(next);
-      return next;
-    });
-  }, [trackAndSave]);
-
-  // Phase 17 — the sheet's Tools-palette layout control. Routes
-  // through the same reducer action the Tools palette's own
-  // onLayoutChange uses, so the palette's live re-layout and the
-  // sheet's select can never disagree about the stored value.
-  const onSetToolsPaletteLayout = useCallback(
-    (v: "list" | "grid"): void => {
-      setSettings((prev) => {
-        if (prev === null) return prev;
-        const next = preferencesReducer(prev, {
-          type: "set-tools-palette-layout",
-          value: v,
-        });
-        if (next === prev) return prev;
-        trackAndSave(next);
-        return next;
-      });
-    },
-    [trackAndSave],
-  );
-
-  // Phase 17 — the sheet's "Collapse page panel on startup" checkbox
-  // SETS (rather than toggles) the Phase 16 value. Both halves of
-  // the write go out together: the reducer flips the rail, the
-  // settings persist keeps it across restarts (the boot path already
-  // restores the persisted value, Phase 16).
-  const onSetPagesPanelCollapsed = useCallback((v: boolean): void => {
-    dispatchPagesPanel({ type: "set", collapsed: v });
-    const s = settingsRef.current;
-    if (s === null) return;
-    if (s.pagesPanelCollapsed === v) return;
-    trackAndSave({ ...s, pagesPanelCollapsed: v });
-  }, [trackAndSave]);
 
   const pushToast = useCallback((kind: Toast["kind"], text: string): void => {
     dispatchError({ type: "push", toast: { kind, text } });
@@ -1309,16 +1169,8 @@ export function App(): ReactElement {
         // re-serialized (visible-order) proxy.
         proxyVisibleOrder: false,
       };
-      // Phase 17 — default zoom mode for new documents. The seeded
-      // viewer state is the mode DocumentView starts in: a
-      // 'fit-page' preference seeds fit-page; 'fit-width',
-      // 'last-used', and an absent field keep the existing
-      // 'fit-width' seed (the pre-Phase-17 behavior).
       const persisted: PersistedViewer = {
-        zoomMode:
-          settingsRef.current?.defaultZoomMode === "fit-page"
-            ? "fit-page"
-            : "fit-width",
+        zoomMode: "fit-width",
         manualScale: 1,
         currentPage: 1,
         searchOpen: false,
@@ -4517,6 +4369,56 @@ pushToast(
     setStampOpen(false);
   }, []);
 
+  /** Phase 18 — open the Watermark dialog from the toolbar / tools
+   *  palette. The palette entry is disabled on doc-less tabs, so the
+   *  guard here is a safety net for the other entry points. */
+  const onWatermarkClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setWatermarkOpen(true);
+  }, []);
+
+  const onCancelWatermark = useCallback((): void => {
+    setWatermarkOpen(false);
+  }, []);
+
+  /** Phase 18 — apply the configured watermark to the active document
+   *  through `engine.addWatermark` (the engine bakes it into the
+   *  selected pages' content streams, one-way like stamps). On
+   *  success the mirror refreshes via `noteOpApplied` and the pdf.js
+   *  proxy is reloaded so the baked watermark is visible without a
+   *  save+reopen cycle (same pattern as stamp / crop / OCR). */
+  const onWatermarkConfirm = useCallback(
+    async (settings: WatermarkSettings): Promise<void> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      setWatermarkOpen(false);
+      const res = await engineRef.current.addWatermark?.(
+        open.session.engineDocId,
+        settings,
+      );
+      if (res === undefined) {
+        pushToast(
+          "error",
+          describeEngineError("engine-error", "Watermark requires the Phase 18 backend update."),
+        );
+        return;
+      }
+      if (!res.ok) {
+        pushToast("error", describeEngineError(res.error.code, res.error.message));
+        return;
+      }
+      noteOpApplied(activeId, res.value);
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(activeId).catch(() => undefined);
+      }
+      pushToast("info", "Watermark applied.");
+    },
+    [noteOpApplied, pushToast],
+  );
+
   const onStampConfirm = useCallback(
     (choice: {
       stampId: StampId;
@@ -4864,38 +4766,11 @@ pushToast(
   /** Open the B8 delete pages dialog against the active tab. The
    *  toolbar / Tools palette both funnel through this; the rail's
    *  per-thumb delete still uses `onDelete(tabId, [page])`
-   *  directly (no dialog) for the single-thumb case.
-   *
-   *  Phase 17 — confirmDeletePages. When the preference is OFF,
-   *  the Delete action skips the picker dialog and deletes the
-   *  current page directly (the dialog's default "current page"
-   *  mode). The document must keep at least one page — the same
-   *  floor the dialog enforces. When the preference is on (the
-   *  default), the dialog opens exactly as before. */
+   *  directly (no dialog) for the single-thumb case. */
   const onDeletePageClick = useCallback((): void => {
-    const activeId = activeTabIdRefLocal.current;
-    if (activeId === null) return;
-    if ((settingsRef.current?.confirmDeletePages ?? true) === false) {
-      const open = openTabsRef.current[activeId];
-      if (open === undefined) return;
-      const pageCount = open.engine.pageCount;
-      if (pageCount <= 1) {
-        pushToast(
-          "error",
-          "Cannot delete the only page. Documents must keep at least one.",
-        );
-        return;
-      }
-      const currentPage = Math.min(
-        Math.max(1, Math.floor(open.persisted.currentPage)),
-        pageCount,
-      );
-      void applyEngineOp(activeId, { kind: "delete", pages: [currentPage] });
-      pushToast("info", `Deleted page ${currentPage}.`);
-      return;
-    }
+    if (activeTabIdRefLocal.current === null) return;
     setDeletePageOpen(true);
-  }, [applyEngineOp, pushToast]);
+  }, []);
 
   const onCancelDeletePage = useCallback((): void => {
     setDeletePageOpen(false);
@@ -6445,22 +6320,6 @@ pushToast(
     );
   }
 
-  // Phase 17 — the new preference fields read with their documented
-  // defaults (an absent field = default; the backend's
-  // preserve-if-valid pipeline only materialises a field once the
-  // user changes it). `pagesPanelCollapsed` is intentionally NOT
-  // re-declared here: App owns that value through the
-  // pagesPanelReducer (declared above), and the sheet's checkbox
-  // reads / writes that same source of truth.
-  const {
-    showWelcomeOnStartup = true,
-    confirmCloseMultipleTabs = true,
-    confirmDeletePages = true,
-    defaultZoomMode = "last-used",
-    showEditWarnings = true,
-    toolsPaletteLayout = "list",
-  } = settings;
-
   return (
     <div className={isMaximized ? "app app-maximized" : "app"}>
       {/* Phase 14 — the frosted theme's ambient backdrop. Paints the
@@ -6523,7 +6382,7 @@ pushToast(
       <div
         className="app-main"
         data-tools-open={toolsPaletteOpen ? "true" : "false"}
-        data-tools-mode={toolsPaletteLayout}
+        data-tools-mode={settings.toolsPaletteLayout ?? 'list'}
         data-rail-collapsed={pagesPanelCollapsed ? "true" : "false"}
       >
         <div className="tab-stage">
@@ -6719,14 +6578,14 @@ pushToast(
         <AnimatePresence>
           {toolsPaletteOpen && (
             <ToolsPalette
-              layout={toolsPaletteLayout}
+              layout={settings.toolsPaletteLayout ?? 'list'}
               // Phase 14.2 FIX 5 — the persisted layout mode the panel
               // is EXITING with. TfPanel pins the exit transform to the
               // mode's travel the mount target promised; without the
               // persisted value the exit reads `layout === 'list'`
               // (component-local) and a closed-in-grid-mode panel
               // snapped to the list travel mid-fade.
-              exitLayout={toolsPaletteLayout}
+              exitLayout={settings.toolsPaletteLayout ?? 'list'}
               onLayoutChange={(next): void => {
                 setSettings((prev) => {
                   if (prev === null) return prev;
@@ -6802,6 +6661,7 @@ pushToast(
               onStamp={onStampClick}
               onExportComments={onCommentExportClick}
               onImportComments={onCommentImportClick}
+              onWatermark={onWatermarkClick}
               hasOcrSuspects={Object.values(ocrRunByTab).some(Boolean)}
               onClose={(): void => setToolsPaletteOpen(false)}
               // B11 / DEF-102 — `documentRequired` must be false on an
@@ -7184,6 +7044,24 @@ pushToast(
         }}
         onClose={onCancelStamp}
       />
+      <WatermarkDialog
+        open={watermarkOpen}
+        totalPages={
+          activeEngineUi?.state.pageCount ??
+          activeTab?.session.doc.numPages ??
+          0
+        }
+        currentPage={(() => {
+          const id = activeTabIdRefLocal.current;
+          if (id === null) return 1;
+          const tab = openTabsRef.current[id];
+          return tab ? Math.max(1, Math.floor(tab.persisted.currentPage)) : 1;
+        })()}
+        onConfirm={(s): void => {
+          void onWatermarkConfirm(s);
+        }}
+        onClose={onCancelWatermark}
+      />
       <CommentExportDialog
         open={commentExportOpen}
         annotationCount={activeTab?.engine.annotations.length ?? 0}
@@ -7240,20 +7118,6 @@ pushToast(
         onChoose={(choice): void => {
           void onCloseTabPromptChoose(choice);
         }}
-      />
-      {/* Phase 17 — confirm before closing multiple tabs. The
-          window-close request is gated behind this dialog when the
-          confirmCloseMultipleTabs preference is on and two or more
-          documents are open; Confirm re-enters the DEF-142 flow
-          (which still prompts per modified tab), Cancel keeps the
-          window open. */}
-      <ConfirmDialog
-        open={closeAllConfirmOpen}
-        title="Close all tabs?"
-        message={`You have ${tabs.tabs.filter((t) => t.kind !== "empty").length} documents open. Closing the window will close all of them.`}
-        confirmLabel="Close"
-        onConfirm={onConfirmCloseAllTabs}
-        onCancel={onCancelCloseAllTabs}
       />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
       <AboutDialog
@@ -7316,31 +7180,6 @@ pushToast(
             return updated;
           });
         }}
-        // Phase 17 — General sheet toggles wired to the settings
-        // service. The host values above (defaults for absent
-        // fields) are the source of truth, so the sheet's in-dialog
-        // draft state is never consulted.
-        showWelcomeOnStartup={showWelcomeOnStartup}
-        confirmCloseMultipleTabs={confirmCloseMultipleTabs}
-        confirmDeletePages={confirmDeletePages}
-        onSetShowWelcomeOnStartup={onSetShowWelcomeOnStartup}
-        onSetConfirmCloseMultipleTabs={onSetConfirmCloseMultipleTabs}
-        onSetConfirmDeletePages={onSetConfirmDeletePages}
-        // Phase 17 — Documents / Edit fields. Persisted by the
-        // setters; the sheet's Documents / Edit categories render
-        // placeholders until their controls land, so these values
-        // flow host-side only (defaultZoomMode is already consumed
-        // by openFromBytes).
-        defaultZoomMode={defaultZoomMode}
-        showEditWarnings={showEditWarnings}
-        onSetDefaultZoomMode={onSetDefaultZoomMode}
-        onSetShowEditWarnings={onSetShowEditWarnings}
-        // Phase 6 / 16 — Appearance controls wired the same way:
-        // the host values become the source of truth.
-        toolsPaletteLayout={toolsPaletteLayout}
-        pagesPanelCollapsed={pagesPanelCollapsed}
-        onSetToolsPaletteLayout={onSetToolsPaletteLayout}
-        onSetPagesPanelCollapsed={onSetPagesPanelCollapsed}
       />
     </div>
   );

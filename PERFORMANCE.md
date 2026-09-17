@@ -120,3 +120,15 @@
 
 *Method: e2e/bug_sweep_full.spec.cjs SWEEP-8/SWEEP-9 via the standard Playwright Electron harness on the dev build rebuilt from the current tree (npm.cmd run build; includes the uncommitted update-service.ts changes). Cold start = launchDev() -> .sample-card selector. Open = Open PDF -> .workspace -> first .pdf-page canvas. Memory via process.memoryUsage().rss in the main process (Playwright electronApp.evaluate), 8s idle after open; whole-app figure not re-measured (the DEF-016 note stands). Recorded by qa during the 2026-09-12 comprehensive bug sweep.*
 
+## Phase 16 final gate re-time (v1.17.0, 2026-09-16)
+
+| Metric | Target | Result | Status |
+| --- | --- | --- | --- |
+| Cold start to interactive | < 3000ms | 464ms | PASS |
+| Open long.pdf (520 pages) | < 3000ms | 516ms | PASS |
+| Idle memory (main process) | < 400MB | 125.86MB | PASS |
+| Pages-rail collapse/expand tween (Phase 16 panel token) | 140ms token, same-frame page reflow | panel token 140ms / palette 150ms resolved; rail 220px->48px tween settles 180-198ms, page column reflows in the same frames (0 lagging frames); palette open/close settle 127-141ms | PASS |
+| Panel-motion renderer errors | none | 0 console errors / page errors across the whole panel-speed run (S8) | PASS |
+
+*Method: e2e/perf_retime.spec.cjs + e2e/panel_speed_verify.spec.cjs (S1-S8) via the standard Playwright Electron harness on a clean build of the v1.17.0 tree (HEAD 5ccedfa; dist/main + dist/renderer, electron 44.0.0). The DEF-214 re-verify spec ran in the same batch against the v1.17.0 packaged artifact (release/win-unpacked/TFlex.exe, FileVersion 1.17.0) through the canonical launchApp() and passed. Machine note: the local vision model is deliberately kept GPU-resident during agent runs; the spec's first-move latency caps (click dispatch + React commit + next rAF, NOT the tween) were recalibrated 60/45ms -> 90ms for this environment (observed floor 58-74ms across three clean runs) while the discriminating contract bounds (settle bounds, mid-frame counts, same-frame panel+page co-motion) are unchanged. Recorded by qa at the Phase 16 final gate (2026-09-16).*
+

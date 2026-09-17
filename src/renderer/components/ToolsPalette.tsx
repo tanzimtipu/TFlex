@@ -38,6 +38,7 @@ import {
   Scissors,
   Stamp,
   Trash2,
+  Type,
   X,
 } from 'lucide-react';
 import { TfPanel } from './motion/TfMotion';
@@ -101,6 +102,11 @@ interface ToolsPaletteProps {
   onExportComments?: () => void;
   /** Phase 12 — Import comments from a local FDF file. */
   onImportComments?: () => void;
+  /** Phase 18 — Watermark (text or image overlay). Opens the
+   *  watermark tool for the active document: text or image content
+   *  with typography, position, opacity, tiling and page-range
+   *  controls. */
+  onWatermark?: () => void;
   /** True when a real document is open. The palette always renders,
    *  but every entry EXCEPT Sign is greyed out when no doc is open
    *  (Sign opens the manager modal regardless). */
@@ -141,7 +147,7 @@ const TOOL_GROUPS: ReadonlyArray<{ id: string; label: string; entryIds: readonly
   {
     id: 'document',
     label: 'Document',
-    entryIds: ['sign', 'forms', 'flatten', 'optimize', 'audit', 'stamp', 'createFromImages'],
+    entryIds: ['sign', 'forms', 'flatten', 'optimize', 'audit', 'stamp', 'watermark', 'createFromImages'],
   },
   {
     id: 'recognition',
@@ -184,6 +190,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     onFlatten,
     onExportComments,
     onImportComments,
+    onWatermark,
     hasOcrSuspects,
     documentRequired,
     hasFormFields,
@@ -231,6 +238,7 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     if (id === 'stamp') return onStamp !== undefined;
     if (id === 'exportComments') return onExportComments !== undefined;
     if (id === 'importComments') return onImportComments !== undefined;
+    if (id === 'watermark') return onWatermark !== undefined;
     return true;
   };
 
@@ -442,6 +450,16 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           icon: <Stamp size={22} aria-hidden />,
           shortcut: '',
           action: onStamp,
+        }]
+      : []),
+    ...(onWatermark !== undefined
+      ? [{
+          id: 'watermark' as const,
+          label: 'Watermark',
+          description: 'Overlay text or an image across the selected pages.',
+          icon: <Type size={22} aria-hidden />,
+          shortcut: '',
+          action: onWatermark,
         }]
       : []),
     ...(onExportComments !== undefined

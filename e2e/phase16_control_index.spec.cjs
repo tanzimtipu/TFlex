@@ -191,21 +191,23 @@ test('P16C-2: collapse button -> 48px ruler strip, settled on the registered tok
       base.hasRailTokenTransition,
       '.workspace must transition --tf-rail-w (registered token; no hardcoded duration)',
     ).toBe(true);
-    // Computed styles normalize the token to seconds (".28s" == 280ms),
-    // so parse seconds and convert to ms before comparing.
+    // Computed styles normalize the token to seconds (".14s" == 140ms),
+    // so parse seconds and convert to ms before comparing. The token is
+    // 140ms since the 2026-09-14 50% panel speed-up (280ms at the
+    // original Phase-16 gate).
     const trMs = parseFloat(base.trDuration) * 1000;
     const tokenMs = parseFloat(base.panelToken) * 1000;
-    expect(trMs, 'transition duration is the 280ms panel token').toBeCloseTo(280, 0);
-    expect(tokenMs, '--motion-duration-panel must be 280ms').toBeCloseTo(280, 0);
+    expect(trMs, 'transition duration is the 140ms panel token').toBeCloseTo(140, 0);
+    expect(tokenMs, '--motion-duration-panel must be 140ms').toBeCloseTo(140, 0);
 
     // Deterministic settle: wait for the ruler to mount, then outlast the
-    // 280ms --motion-duration-panel transition and read the column width
+    // 140ms --motion-duration-panel transition and read the column width
     // exactly once. (The old rAF "last sample" raced React's render commit
     // and landed mid-tween ~92px, so it can never back a settled
     // assertion; mid-flight sampling lives in P16C-2b instead.)
     await window.locator('[data-rail-collapse]').click();
     await window.locator('[data-rail-ruler]').waitFor({ timeout: 10000 });
-    await window.waitForTimeout(350); // 280ms transition + buffer
+    await window.waitForTimeout(350); // 140ms transition + buffer
     await window.locator('.thumb-scroller').waitFor({ state: 'detached', timeout: 5000 });
 
     const col = await window.evaluate(() =>
@@ -255,7 +257,7 @@ test('P16C-2b: rail width tweens through intermediate frames (no snap)', async (
     // rAF sampling is fine HERE: this assertion only needs evidence that the
     // transition ran (some frame strictly between 48 and 220) - never the
     // settled value, which P16C-2 proves deterministically. Start the sampler
-    // before the click so the 280ms tween fits inside the 500ms window.
+    // before the click so the 140ms tween fits inside the 500ms window.
     const samples = sampleRailColumn(window, 500);
     await window.locator('[data-rail-collapse]').click();
     const s = await samples;
@@ -372,7 +374,7 @@ test('P16C-5: expand button on the ruler strip restores the thumbnail rail', asy
 test('P16C-6: no-op sweep - every new control double-clicked, nothing hangs', async () => {
   const { electronApp, window } = await openWorkspace();
   try {
-    const settle = () => window.waitForTimeout(650); // past the 280ms tween + settle
+    const settle = () => window.waitForTimeout(650); // past the 140ms tween + settle
 
     // 1. Collapse/expand control twice: collapse -> expand (net: expanded).
     await window.locator('[data-rail-collapse]').click();

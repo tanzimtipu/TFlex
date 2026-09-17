@@ -5,8 +5,13 @@ import type {
   AnnotationColorPreset,
   AppSettings,
   AppTheme,
+  EditColor,
+  EditFont,
   LoadSettingsResult,
   RecentFile,
+  WatermarkPosition,
+  WatermarkSettings,
+  WatermarkType,
   WindowGeometry,
 } from '../../shared/types';
 
@@ -43,6 +48,122 @@ export const STAMP_IDS = ['APPROVED', 'DRAFT', 'CONFIDENTIAL', 'FINAL'] as const
 /** Phase 12 — default stamp id applied by the consumer when `defaultStampId`
  *  is absent. Mirrors the editDefaultFont/ocrLanguage default convention. */
 export const DEFAULT_STAMP_ID: (typeof STAMP_IDS)[number] = 'APPROVED';
+
+/** Phase 18 — watermark type allowlist. 'text' draws the watermark string
+ *  with bundled standard fonts; 'image' embeds a renderer-provided PNG/JPEG
+ *  raster (pdf-lib has no rasteriser — same pattern as stamps). */
+export const WATERMARK_TYPES: readonly WatermarkType[] = ['text', 'image'];
+
+/** Phase 18 — predefined watermark position grid (3x3). The engine centers
+ *  the watermark on the given slot (10% page-margin inset); explicit x/y
+ *  in the payload override the slot. */
+export const WATERMARK_POSITIONS: readonly WatermarkPosition[] = [
+  'top-left',
+  'top-center',
+  'top-right',
+  'center-left',
+  'center',
+  'center-right',
+  'bottom-left',
+  'bottom-center',
+  'bottom-right',
+];
+
+/** Phase 18 — default watermark opacity used by the engine when the
+ *  payload omits it. Half-strength keeps the page content legible under
+ *  the overlay (the 0%–100% slider covers the full range). */
+export const DEFAULT_WATERMARK_OPACITY = 0.5;
+
+/** Phase 18 — default watermark glyph color (light gray) used by the
+ *  engine for text watermarks when the payload omits `color`. */
+export const DEFAULT_WATERMARK_COLOR: EditColor = { r: 0.5, g: 0.5, b: 0.5 };
+
+/** Phase 18 — default font size (points) for text watermarks when the
+ *  payload omits `size`. */
+export const DEFAULT_WATERMARK_TEXT_SIZE = 48;
+
+/**
+ * Phase 18 — normalise a raw watermark settings value, preserve-if-valid.
+ * Returns `null` when the core fields are invalid: unknown `type`, missing/
+ * empty `text` for a text watermark, or missing/empty `imageBytes` for an
+ * image watermark. Valid optional fields are preserved and clamped
+ * (`opacity` into 0..1, `size` must be > 0, `color` components into 0..1,
+ * `range` integers with start >= 1 and start <= end); invalid optional
+ * fields are dropped individually (unknown font/position, partial x/y).
+ * The engine uses this to validate the `addWatermark` payload before
+ * touching the document (reject -> 'engine-error').
+ */
+export function normalizeWatermarkSettings(raw: unknown): WatermarkSettings | null {
+  if (raw === null || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.type !== 'string' || !(WATERMARK_TYPES as readonly string[]).includes(r.type)) {
+    return null;
+  }
+  const type = r.type as WatermarkType;
+  const out: WatermarkSettings = { type };
+  if (type === 'text') {
+    if (typeof r.text !== 'string' || r.text.length === 0) return null;
+    out.text = r.text;
+  } else {
+    const bytes =
+      r.imageBytes instanceof Uint8Array
+        ? r.imageBytes
+        : r.imageBytes instanceof ArrayBuffer
+          ? new Uint8Array(r.imageBytes)
+          : null;
+    if (bytes === null || bytes.length === 0) return null;
+    out.imageBytes = bytes;
+  }
+  if (
+    typeof r.font === 'string' &&
+    (r.font === 'Helvetica' || r.font === 'Times' || r.font === 'Courier')
+  ) {
+    out.font = r.font as EditFont;
+  }
+  if (typeof r.bold === 'boolean') out.bold = r.bold;
+  if (typeof r.italic === 'boolean') out.italic = r.italic;
+  if (typeof r.size === 'number' && Number.isFinite(r.size) && r.size > 0) {
+    out.size = r.size;
+  }
+  if (r.color !== null && typeof r.color === 'object') {
+    const c = r.color as Record<string, unknown>;
+    const inUnit = (v: unknown): number | null =>
+      typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1 ? v : null;
+    const cr = inUnit(c.r);
+    const cg = inUnit(c.g);
+    const cb = inUnit(c.b);
+    if (cr !== null && cg !== null && cb !== null) {
+      out.color = { r: cr, g: cg, b: cb };
+    }
+  }
+  if (typeof r.opacity === 'number' && Number.isFinite(r.opacity)) {
+    out.opacity = Math.max(0, Math.min(1, r.opacity));
+  }
+  if (
+    typeof r.position === 'string' &&
+    (WATERMARK_POSITIONS as readonly string[]).includes(r.position)
+  ) {
+    out.position = r.position as WatermarkPosition;
+  }
+  if (
+    typeof r.x === 'number' && Number.isFinite(r.x) &&
+    typeof r.y === 'number' && Number.isFinite(r.y)
+  ) {
+    out.x = r.x;
+    out.y = r.y;
+  }
+  if (typeof r.tile === 'boolean') out.tile = r.tile;
+  if (Array.isArray(r.range) && r.range.length === 2) {
+    const [a, b] = r.range;
+    if (
+      typeof a === 'number' && typeof b === 'number' &&
+      Number.isInteger(a) && Number.isInteger(b) && a >= 1 && a <= b
+    ) {
+      out.range = [a, b];
+    }
+  }
+  return out;
+}
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'frosted',
@@ -209,27 +330,6 @@ export function normalizeSettings(raw: unknown): AppSettings {
   // when the field is absent.
   if (typeof rawObj.pagesPanelCollapsed === 'boolean') {
     settings.pagesPanelCollapsed = rawObj.pagesPanelCollapsed;
-  }
-
-  // Phase 17 — new preference fields
-  if (typeof rawObj.showWelcomeOnStartup === 'boolean') {
-    settings.showWelcomeOnStartup = rawObj.showWelcomeOnStartup;
-  }
-  if (typeof rawObj.confirmCloseMultipleTabs === 'boolean') {
-    settings.confirmCloseMultipleTabs = rawObj.confirmCloseMultipleTabs;
-  }
-  if (typeof rawObj.confirmDeletePages === 'boolean') {
-    settings.confirmDeletePages = rawObj.confirmDeletePages;
-  }
-  if (
-    rawObj.defaultZoomMode === 'fit-width' ||
-    rawObj.defaultZoomMode === 'fit-page' ||
-    rawObj.defaultZoomMode === 'last-used'
-  ) {
-    settings.defaultZoomMode = rawObj.defaultZoomMode;
-  }
-  if (typeof rawObj.showEditWarnings === 'boolean') {
-    settings.showEditWarnings = rawObj.showEditWarnings;
   }
 
   return settings;

@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFTextField, StandardFonts, rgb, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState } from 'pdf-lib';
+import { degrees, PDFCheckBox, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFTextField, StandardFonts, rgb, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, type PDFImage, type PDFFont } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AddStampPayload,
@@ -34,6 +34,7 @@ import type {
   SpaceAudit,
   TextBoxModel,
   TextPage,
+  WatermarkSettings,
 } from '../../shared/types';
 import {
   cloneAnnotations,
@@ -61,7 +62,14 @@ import {
 } from './forms';
 import { auditSpace as auditSpacePdf } from './optimize';
 import { OcrService, selectLowConfidence, type RawOcrWord, SUSPECT_CONFIDENCE_THRESHOLD } from './ocr';
-import { OCR_LANGUAGES, STAMP_IDS } from './settings';
+import {
+  DEFAULT_WATERMARK_COLOR,
+  DEFAULT_WATERMARK_OPACITY,
+  DEFAULT_WATERMARK_TEXT_SIZE,
+  OCR_LANGUAGES,
+  STAMP_IDS,
+  normalizeWatermarkSettings,
+} from './settings';
 
 // ---------------------------------------------------------------------------
 // Internal document state
@@ -2508,6 +2516,166 @@ export class EngineService {
   }
 
   // -----------------------------------------------------------------------
+  // Phase 18: addWatermark — bake text/image watermarks onto pages
+  // -----------------------------------------------------------------------
+  async addWatermark(
+    docId: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._addWatermarkImpl(docId, settings));
+  }
+
+  private async _addWatermarkImpl(
+    docId: string,
+    rawSettings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const settings = normalizeWatermarkSettings(rawSettings);
+    if (settings === null) {
+      return err('engine-error', 'addWatermark: settings are invalid');
+    }
+
+    // Page range: 1-based inclusive, against the visible page count.
+    // `normalizeWatermarkSettings` already guarantees start >= 1 and
+    // start <= end; only the upper bound needs checking here.
+    const pageCount = doc.order.length;
+    const start = settings.range ? settings.range[0] : 1;
+    const end = settings.range ? settings.range[1] : pageCount;
+    if (start < 1 || end > pageCount || start > end) {
+      return err('out-of-range', `addWatermark: range [${start},${end}] out of bounds for ${pageCount} pages`);
+    }
+
+    const isText = settings.type === 'text';
+    const opacity = clamp(settings.opacity ?? DEFAULT_WATERMARK_OPACITY, 0, 1);
+    const c = settings.color ?? DEFAULT_WATERMARK_COLOR;
+    const color = rgb(c.r, c.g, c.b);
+
+    // Sanitize the text up front (does not touch the document) so a
+    // fully-non-Latin string is rejected before any state is snapshotted.
+    let text = '';
+    if (isText) {
+      text = sanitizeForStandardFont(settings.text ?? '');
+      if (text.length === 0) {
+        return err('engine-error', 'addWatermark: text is empty after encoding');
+      }
+    }
+
+    const snapshot = await snapshotDocWithPdf(doc);
+    try {
+      // Embed the font / image once (after the snapshot, like addStamp) and
+      // reuse it on every page.
+      let font: PDFFont | null = null;
+      let image: PDFImage | null = null;
+      if (isText) {
+        font = await doc.pdfDoc.embedFont(
+          selectStandardFont(settings.font ?? 'Helvetica', !!settings.bold, !!settings.italic),
+        );
+      } else {
+        const imageBytes = settings.imageBytes as Uint8Array;
+        image = detectImageFormat(imageBytes) === 'png'
+          ? await doc.pdfDoc.embedPng(imageBytes)
+          : await doc.pdfDoc.embedJpg(imageBytes);
+      }
+
+      const size = isText ? (settings.size ?? DEFAULT_WATERMARK_TEXT_SIZE) : 0;
+
+      for (let vi = start - 1; vi < end; vi++) {
+        const origIdx = doc.order[vi];
+        if (origIdx === undefined || origIdx < 0 || origIdx >= doc.pdfDoc.getPageCount()) {
+          return err('out-of-range', `addWatermark: page ${vi + 1} resolves to invalid original index ${origIdx}`);
+        }
+        const page = doc.pdfDoc.getPage(origIdx);
+        const { width: pw, height: ph } = page.getSize();
+
+        // Watermark box dimensions (PDF points).
+        let w: number;
+        let h: number;
+        if (isText && font !== null) {
+          w = font.widthOfTextAtSize(text, size);
+          // The font's line height bounds the box; the baseline sits 80%
+          // down the box (the ascent for all three standard families is
+          // ~0.72-0.78 of the line height, so this centers the glyphs
+          // visually without per-family metrics).
+          h = font.heightAtSize(size);
+        } else if (image !== null) {
+          // `size` is the drawn HEIGHT; the width scales to the image's
+          // aspect ratio. Default height: 33% of the page's shorter side.
+          h = settings.size ?? Math.min(pw, ph) * 0.33;
+          w = h * (image.width / image.height);
+        } else {
+          return err('engine-error', 'addWatermark: internal error (missing font or image)');
+        }
+
+        // Draw the watermark with its CENTER at (cx, cy) in top-left page
+        // space. Text baselines convert to bottom-left space via the font's
+        // ascent; image rects convert via the page height (same convention
+        // as addStamp's drawImage).
+        const drawAt = (cx: number, cy: number): void => {
+          if (isText && font !== null) {
+            const baseline = ph - (cy - h / 2) - h * 0.8;
+            page.drawText(text, {
+              x: cx - w / 2,
+              y: baseline,
+              size,
+              font,
+              color,
+              opacity,
+            });
+          } else if (image !== null) {
+            page.drawImage(image, {
+              x: cx - w / 2,
+              y: ph - cy - h / 2,
+              width: w,
+              height: h,
+              opacity,
+            });
+          }
+        };
+
+        if (settings.tile) {
+          // Staggered grid: rows step 1.5x the watermark height, columns
+          // 1.5x the width; odd rows shift half a column so the pattern
+          // reads as a diagonal field (classic "CONFIDENTIAL" look).
+          const stepX = w * 1.5;
+          const stepY = h * 1.5;
+          let row = 0;
+          for (let cy = h / 2; cy <= ph + h / 2; cy += stepY, row++) {
+            const shift = row % 2 === 1 ? stepX / 2 : 0;
+            for (let cx = w / 2 + shift; cx <= pw + w / 2; cx += stepX) {
+              drawAt(cx, cy);
+            }
+          }
+        } else if (settings.x !== undefined && settings.y !== undefined) {
+          // Explicit placement: x/y is the box's TOP-LEFT (top-left origin,
+          // PDF points — same convention as annotation rects).
+          drawAt(settings.x + w / 2, settings.y + h / 2);
+        } else {
+          // Predefined slot: the box is centered on the grid point
+          // (10% page-margin inset from the edges).
+          const slot = settings.position ?? 'center';
+          const [slotRow, slotCol] = slot.split('-');
+          const mx = pw * 0.1;
+          const my = ph * 0.1;
+          const cx = slotCol === 'left' ? mx + w / 2 : slotCol === 'right' ? pw - mx - w / 2 : pw / 2;
+          const cy = slotRow === 'top' ? my + h / 2 : slotRow === 'bottom' ? ph - my - h / 2 : ph / 2;
+          drawAt(cx, cy);
+        }
+      }
+
+      doc.undoStack.push(snapshot);
+      doc.redoStack = [];
+      doc.modified = true;
+      return ok(buildState(doc));
+    } catch (e) {
+      await tryRestorePdfBytes(doc, snapshot.pdfBytes);
+      return err('engine-error', `addWatermark failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Phase 12: exportFdf / importFdf — comments interchange
   // -----------------------------------------------------------------------
   async exportFdf(
@@ -2680,6 +2848,35 @@ function standardFontFor(font: EditFont): StandardFonts {
     default:
       return StandardFonts.Helvetica;
   }
+}
+
+/**
+ * Phase 18 — map a (family, bold, italic) style triple to the matching
+ * pdf-lib StandardFonts entry for watermark text. All nine combinations
+ * exist among the bundled standard fonts (WinAnsiEncoding, so Latin text
+ * round-trips like the Phase 10 edit tools).
+ */
+function selectStandardFont(
+  family: EditFont,
+  bold: boolean,
+  italic: boolean,
+): StandardFonts {
+  if (family === 'Times') {
+    if (bold && italic) return StandardFonts.TimesRomanBoldItalic;
+    if (bold) return StandardFonts.TimesRomanBold;
+    if (italic) return StandardFonts.TimesRomanItalic;
+    return StandardFonts.TimesRoman;
+  }
+  if (family === 'Courier') {
+    if (bold && italic) return StandardFonts.CourierBoldOblique;
+    if (bold) return StandardFonts.CourierBold;
+    if (italic) return StandardFonts.CourierOblique;
+    return StandardFonts.Courier;
+  }
+  if (bold && italic) return StandardFonts.HelveticaBoldOblique;
+  if (bold) return StandardFonts.HelveticaBold;
+  if (italic) return StandardFonts.HelveticaOblique;
+  return StandardFonts.Helvetica;
 }
 
 /**

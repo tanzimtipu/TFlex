@@ -27,6 +27,7 @@ import type {
   SignaturePlacement,
   SpaceAudit,
   TextPage,
+  WatermarkSettings,
 } from "../../shared/types";
 import type { Annotation, AnnotationPatch } from "../annotations/model";
 
@@ -515,6 +516,20 @@ export interface EngineApi {
   importFdf?(
     docId: string,
     fdfBytes: Uint8Array,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 18 — bake a text or image watermark into the content
+   *  streams of the selected pages. `settings` is the shared
+   *  `WatermarkSettings` payload (type, text / imageBytes, typography,
+   *  color, opacity, position or explicit x/y, tile, and the 1-based
+   *  inclusive page range). The watermark is one-way (like stamps): the
+   *  engine bakes it at apply time and there is no re-editable watermark
+   *  entity after apply — undo via the per-doc queue removes it.
+   *  Optional so a pre-Phase-18 backend degrades with a friendly
+   *  engine-error. */
+  addWatermark?(
+    docId: string,
+    settings: WatermarkSettings,
   ): Promise<Result<EngineState, EngineError>>;
 
   /** Peek the renderer's most-recent normalized EngineState for `docId`

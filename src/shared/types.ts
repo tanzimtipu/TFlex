@@ -136,24 +136,6 @@ export interface AppSettings {
    *  rail renders as a narrow ruler strip showing only page numbers.
    *  Validated preserve-if-valid in settings.ts; default `false`. */
   pagesPanelCollapsed?: boolean;
-  /** Phase 17 — show welcome screen on startup. When true, the app
-   *  opens the welcome screen on launch instead of restoring the
-   *  previous session's documents. */
-  showWelcomeOnStartup?: boolean;
-  /** Phase 17 — confirm before closing multiple tabs. When true, a
-   *  dialog asks for confirmation when closing a window with multiple
-   *  open tabs. */
-  confirmCloseMultipleTabs?: boolean;
-  /** Phase 17 — confirm before deleting pages. When true, a dialog
-   *  asks for confirmation before deleting pages from a document. */
-  confirmDeletePages?: boolean;
-  /** Phase 17 — default zoom mode for new documents. 'fit-width'
-   *  scales to page width; 'fit-page' scales to full page; 'last-used'
-   *  restores the zoom from the previous session. */
-  defaultZoomMode?: 'fit-width' | 'fit-page' | 'last-used';
-  /** Phase 17 — show edit warnings. When true, the app shows warning
-   *  dialogs for destructive edit operations. */
-  showEditWarnings?: boolean;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The
@@ -768,4 +750,77 @@ export interface AddStampPayload {
   stampId: StampId;
   name: string;
   pngBytes: ArrayBuffer | Uint8Array;
+}
+
+// ---- Phase 18: Watermark (text or image overlay) ----
+
+/** Phase 18 — watermark content kind. `'text'` draws `text` with the chosen
+ *  standard-font typography; `'image'` embeds `imageBytes` (PNG or JPEG —
+ *  pdf-lib has no rasteriser, same pattern as stamps/signatures). */
+export type WatermarkType = 'text' | 'image';
+
+/** Phase 18 — predefined watermark positions: a 3x3 grid on the page. The
+ *  watermark's center is placed at the slot (with a margin of 10% of the
+ *  page dimension from the edges). Explicit `WatermarkSettings.x`/`y`
+ *  (top-left origin, PDF points) take precedence over `position` and place
+ *  the watermark's TOP-LEFT corner at those coordinates. */
+export type WatermarkPosition =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'center-left'
+  | 'center'
+  | 'center-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+
+/** Phase 18 — payload for `engine.addWatermark`. The engine bakes the
+ *  watermark into each selected page's content stream at apply time
+ *  (one-way, like stamps: pixels survive the save round-trip, but there is
+ *  no re-editable watermark entity after apply).
+ *
+ *  Text watermark: `text` is required; `font`/`bold`/`italic` select among
+ *  the bundled standard fonts, `size` is the font size in points, `color`
+ *  is the glyph color. The glyph box is measured via the embedded font.
+ *  Image watermark: `imageBytes` is required (PNG or JPEG); `size` is the
+ *  drawn HEIGHT in PDF points and the width scales to the image's aspect
+ *  ratio (default height is 33% of the page's shorter dimension).
+ *
+ *  `position` selects one of the nine grid slots (default 'center');
+ *  explicit `x`/`y` override it. `opacity` is 0..1 (default 0.5).
+ *  `tile: true` repeats the watermark in a staggered grid across the whole
+ *  page (position/x/y are ignored when tiling). `range` is a 1-based
+ *  inclusive visible-page range; omitted means all pages.
+ *
+ *  Validation lives in `normalizeWatermarkSettings` (settings.ts,
+ *  preserve-if-valid): unknown types, missing/empty text or image bytes,
+ *  and malformed optional fields are rejected with 'engine-error'. */
+export interface WatermarkSettings {
+  type: WatermarkType;
+  /** Text watermark content. Required when `type` is 'text'. */
+  text?: string;
+  /** Image watermark bytes (PNG or JPEG). Required when `type` is 'image'. */
+  imageBytes?: ArrayBuffer | Uint8Array;
+  /** Typography: font family (text watermark only). Default 'Helvetica'. */
+  font?: EditFont;
+  /** Typography: bold style (text watermark only). */
+  bold?: boolean;
+  /** Typography: italic style (text watermark only). */
+  italic?: boolean;
+  /** Font size in points (text) / drawn height in points (image). */
+  size?: number;
+  /** Text glyph color, components in [0,1]. Default is light gray. */
+  color?: EditColor;
+  /** Watermark opacity in [0,1]. Default 0.5. */
+  opacity?: number;
+  /** Predefined grid slot; overridden when both `x` and `y` are present. */
+  position?: WatermarkPosition;
+  /** Explicit top-left placement in PDF points (top-left origin). */
+  x?: number;
+  y?: number;
+  /** Repeat the watermark in a staggered grid across the whole page. */
+  tile?: boolean;
+  /** 1-based inclusive visible-page range; omitted = all pages. */
+  range?: [number, number];
 }

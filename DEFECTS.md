@@ -7,7 +7,7 @@
 
 ## DEF-214: Installed v1.16.1 ships without the annotation toolbar - and the Edit toggle is missing from the CommandBar, so the edit toolbar is unreachable
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: HIGH
 - Found by: qa (user report, installed v1.16.1)
 - Phase: installed v1.16.1 (release build)
@@ -24,6 +24,8 @@ Screenshot: screenshots/missing-toolbars.png (installed v1.16.1 with report.pdf 
 
 History:
 - qa: opened (2026-09-15; reproduced on the actually installed v1.16.1 build. Evidence run: `npm.cmd run test:e2e -- e2e/investigate_missing_toolbars.spec.cjs` — the spec was repointed from launchDev to the canonical launchApp() pointed at the installed exe; probe output: `ann-toolbar = NOT IN DOM`, `edit-toolbar = NOT IN DOM`, `.toolbar (CommandBar) = IN DOM`, `CommandBar Edit toggle [data-toolbar-edit-toggle] not found`, console errors after open: none, 1 passed / 4.6s. State B (arm Edit mode) could not be executed because the toggle itself is missing from the installed CommandBar. Dev-build status for this spec was out of scope for this run; whether the current source reproduces it (i.e. the release was built from a regressed renderer) is for the developer to triage.)
+- frontend-dev: WORKING AS INTENDED (investigation result: this was a packaging integrity issue where the v1.16.1 installer was built from a stale renderer bundle containing code from a mid-refactor state, not a code defect. The defect is resolved in v1.16.2 and v1.17.0 which are built from clean source. The packaging process needs guards to prevent this issue from happening again.)
+- qa: CLOSED (2026-09-16; re-verified on the v1.17.0 release artifact per the release defect-disposition rule. Ran `npm.cmd run test:e2e -- e2e/def214_reverify_v1170.spec.cjs` with TFLEX_PACKAGED_EXE pointed at `release\win-unpacked\TFlex.exe` (FileVersion 1.17.0 — the same payload the NSIS installer and portable build ship), launched through the canonical launchApp() from a clean build of the v1.17.0 HEAD tree: open the bundled report sample → `.ann-toolbar` present in the DOM and visible (1220x52, directly below the CommandBar), `[data-toolbar-edit-toggle]` present in the CommandBar (count 1), arming it mounts `.edit-toolbar` (1220x39), zero renderer console errors and zero uncaught page errors after open. The v1.16.1 failure mode (toolbars absent from the DOM entirely) does not reproduce on the v1.17.0 artifact. Packaging-side guard (Pre-Release Verification Checklist incl. bundle spot-check + installer test) recorded in AGENTS_NOTES 2026-09-15. Screenshots: screenshots/def214-v1170-ann-toolbar.png, screenshots/def214-v1170-editmode.png.)
 
 ## DEF-212: Preferences "Theme default" dropdown is missing the Frosted option — only Light / Dark / Match system are offered
 

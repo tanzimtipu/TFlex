@@ -32,6 +32,7 @@ import type {
   SignaturePlacement,
   SpaceAudit,
   TextPage,
+  WatermarkSettings,
 } from "../../shared/types";
 import type { Annotation, AnnotationPatch, PagePoint, PageRect } from "../annotations/model";
 import { toArrayBuffer } from "../utils/toArrayBuffer";
@@ -402,6 +403,13 @@ export interface TFlexApiEngine {
     docId: string,
     fdfBytes: Uint8Array,
   ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 18 — bake a text or image watermark into the content
+   *  streams of the selected pages. Optional so a pre-Phase-18
+   *  backend degrades with a friendly engine-error. */
+  addWatermark?(
+    docId: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<SharedEngineState, EngineError>>;
 }
 
 /** Normalize a wire EngineState into the renderer's EngineState: the Phase 3
@@ -622,6 +630,13 @@ function missingPhase12(): Result<never, EngineError> {
   return err(
     "engine-error",
     "replacePages / renumberPages / cropPages / addStamp / exportFdf / importFdf require the Phase 12 backend update",
+  );
+}
+
+function missingPhase18(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "watermark requires the Phase 18 backend update",
   );
 }
 
@@ -1178,6 +1193,23 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.importFdf === undefined) return missingPhase12();
     const r = await this.inner.importFdf(docId, fdfBytes);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  // -- Phase 18: watermark --
+
+  /** Phase 18 — bake a text or image watermark into the selected
+   *  pages' content streams. The engine echoes the new state so the
+   *  renderer's `modified` / pageCount mirror refreshes through the
+   *  standard `normalizeAndCache` path. The host refreshes the pdf.js
+   *  proxy afterwards (the watermark is a content-stream mutation the
+   *  original load bytes do not reflect — same as OCR / stamps). */
+  async addWatermark(
+    docId: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.addWatermark === undefined) return missingPhase18();
+    const r = await this.inner.addWatermark(docId, settings);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 }

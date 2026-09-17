@@ -25,6 +25,7 @@ import type {
   SignatureSource,
   TextPage,
   UpdateState,
+  WatermarkSettings,
 } from "./types";
 
 export const IPC = {
@@ -137,6 +138,10 @@ export const IPC = {
   engineAddStamp: "engine:addStamp",
   engineExportFdf: "engine:exportFdf",
   engineImportFdf: "engine:importFdf",
+  // Phase 18: watermark (text or image overlay). The engine bakes the
+  // watermark into each selected page's content stream (one-way, like
+  // stamps: undoable via the per-doc queue, no re-editable entity).
+  engineAddWatermark: "engine:addWatermark",
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
@@ -402,6 +407,18 @@ export interface TFlexApiEngine {
   importFdf?(
     docId: string,
     fdfBytes: Uint8Array,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 18 — bake a text or image watermark into the content streams
+   *  of the selected pages (one-way, like stamps: the pixels survive the
+   *  save round-trip, but there is no re-editable watermark entity after
+   *  apply; undo via the per-doc queue removes it). `settings` is the
+   *  shared `WatermarkSettings` payload — type, text / imageBytes,
+   *  typography, color, opacity, position (or explicit x/y), tile, and
+   *  the 1-based inclusive page range. Optional so a pre-Phase-18
+   *  backend degrades with a friendly engine-error. */
+  addWatermark?(
+    docId: string,
+    settings: WatermarkSettings,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
 }
 
