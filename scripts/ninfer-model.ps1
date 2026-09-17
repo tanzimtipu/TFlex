@@ -174,8 +174,25 @@ function Start-Ninfer {
     }
 
     Write-Output "ninfer: loading $Model (expect ~5s load, then warmup)..."
-    Start-Process -FilePath $Exe -ArgumentList $ServeArgs -WindowStyle Hidden `
-        -RedirectStandardOutput $OutLog -RedirectStandardError $ErrLog | Out-Null
+
+    # Spawn DETACHED — this is not cosmetic. Start-Process duplicates every inheritable
+    # handle of this PowerShell process into the child, including the stdout pipe of the
+    # tool session that invoked this script (OpenCode bash tool / guard execFile). The
+    # server holds that pipe for its whole lifetime, so the caller never sees EOF and the
+    # tool call hangs forever even though this script finished. WMI Win32_Process.Create
+    # spawns with NO inherited handles; the cmd wrapper gives the server file logs and
+    # holds no pipe.
+    $quoted = $ServeArgs | ForEach-Object {
+        if ($_ -match '[ "]') { '"{0}"' -f ($_ -replace '"', '\"') } else { $_ }
+    }
+    $inner = "`"$Exe`" " + ($quoted -join ' ') + " 1> `"$OutLog`" 2> `"$ErrLog`""
+    $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+        CommandLine      = "cmd.exe /s /c `"$inner`""
+        CurrentDirectory = $Root
+    }
+    if ($result.ReturnValue -ne 0) {
+        throw ("ninfer: detached spawn failed (WMI ReturnValue {0})" -f $result.ReturnValue)
+    }
 
     # Model load is ~5s; allow generous headroom for the KV pool and vision allocations.
     for ($i = 0; $i -lt 60; $i++) {
