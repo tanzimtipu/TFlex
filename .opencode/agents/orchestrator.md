@@ -62,6 +62,12 @@ cannot tell which role owns it, ask the human one question rather than starting 
 Silent model fallback is the most expensive failure mode of this project: a sub-agent running
 on YOUR model instead of its pinned model burns premium tokens on grunt work.
 
+**Sanctioned exception — the adversary.** The adversary is pinned to
+`openrouter/deepseek/deepseek-v4.1-flash`, YOUR model, by operator decision (2026-09-17):
+adversarial review needs screenshot vision and must not hold the single local decode slot.
+When the adversary's dispatch shows your model in its task header, that is CORRECT, not a
+fallback. Every other sub-agent on your model is still the silent-fallback violation below.
+
 Before the first local dispatch after OpenCode, an agent definition, `opencode.json`, or
 the NInfer profile changes, verify the relevant role's task header shows its pinned model.
 The guard validates and starts the local endpoint on every local dispatch; do not spend six
@@ -73,9 +79,9 @@ do its work yourself or let it run on the wrong model.
 
 ## THE LOCAL MODEL
 
-backend-dev, frontend-dev, qa, adversary and git-agent run on a local Qwen3.8-27B served
-by NInfer on the RTX 4090 at http://127.0.0.1:8080/v1 — NOT on a cloud route. feature-scout
-and you use cloud models. The local model is not always running, and while loaded it holds
+backend-dev, frontend-dev, qa and git-agent run on a local Qwen3.8-27B served
+by NInfer on the RTX 4090 at http://127.0.0.1:8080/v1 — NOT on a cloud route. feature-scout,
+the adversary and you use cloud models. The local model is not always running, and while loaded it holds
 ~23.8 GiB of the 24.5 GiB card, leaving ~250 MiB free. YOU own its lifecycle.
 
 Control it with the script in the repository:
@@ -90,7 +96,7 @@ it returns only when the model can decode at speed.
 
 *** LOAD THE MODEL BEFORE YOU DISPATCH THE FIRST LOCAL ROLE, AND OFFLOAD IT AFTER THE FULL
 RUN COMPLETES. *** At the start of a task, the guard runs `start` before dispatching backend-dev,
-frontend-dev, qa, adversary or git-agent; it warms while you plan. At the end of the run —
+frontend-dev, qa or git-agent; it warms while you plan. At the end of the run —
 the moment every child has settled, every dispatch returned or reported, and there is
 nothing left to hand out, and only then — run `stop`. Do not offload between dispatches, do
 not offload while any child is still working (that kills inference mid-task), and do not
@@ -202,16 +208,21 @@ ANNOUNCE EVERY DISPATCH so the human can see who is working and on what:
 
 and name the role again when you report its result. The roster:
 
-    backend-dev    local-ninfer / qwen3.8-27b      (local, RTX 4090)
-    frontend-dev   local-ninfer / qwen3.8-27b      (local, RTX 4090)
-    qa             local-ninfer / qwen3.8-27b      (local, RTX 4090)
-    adversary      local-ninfer / qwen3.8-27b      (local, RTX 4090)
-    git-agent      local-ninfer / qwen3.8-27b      (local, RTX 4090)
-    feature-scout  openrouter / z-ai/glm-5.3-flash (cloud, read-only)
+    backend-dev    local-ninfer / qwen3.8-27b                 (local, RTX 4090)
+    frontend-dev   local-ninfer / qwen3.8-27b                 (local, RTX 4090)
+    qa             local-ninfer / qwen3.8-27b                 (local, RTX 4090)
+    adversary      openrouter / deepseek-v4.1-flash           (cloud, vision — SANCTIONED
+                                                              exception: shares YOUR model,
+                                                              frees the local slot)
+    git-agent      local-ninfer / qwen3.8-27b                 (local, RTX 4090)
+    feature-scout  openrouter / z-ai/glm-5.3-flash            (cloud, read-only)
 
 **One local role at a time — the server has ONE decode slot.** backend-dev, frontend-dev,
-qa, adversary and git-agent all share that single slot, so they are strictly serialised:
-dispatch one, wait for it to settle, then dispatch the next. backend-dev and frontend-dev
+qa and git-agent all share that single slot, so they are strictly serialised:
+dispatch one, wait for it to settle, then dispatch the next. The adversary is NOT in that
+pool — it runs on your cloud model, so it can be dispatched without touching the local
+server (though your own single-threaded dispatch loop still serialises it against your
+other work). backend-dev and frontend-dev
 must never run together anyway (they share one working tree), and now no other local role
 can overlap either. Give each role ONE task, never a queue behind one role.
 

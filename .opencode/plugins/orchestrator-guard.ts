@@ -2,7 +2,7 @@
 // missing, mechanically, so they cannot be forgotten:
 //
 //   1. LOAD THE LOCAL MODEL BEFORE A LOCAL DISPATCH. When the orchestrator dispatches a
-//      local role (backend-dev, frontend-dev, qa, adversary, git-agent), the guard checks
+//      local role (backend-dev, frontend-dev, qa, git-agent), the guard checks
 //      the endpoint and runs `ninfer-model.ps1 start` if it is down — fail-closed: a
 //      dispatch into a stopped server is refused instead of dying as an opaque error.
 //   2. OFFLOAD THE LOCAL MODEL AT RUN END. When the orchestrator's session goes idle and
@@ -23,7 +23,7 @@ import type { Plugin } from "@opencode-ai/plugin"
 const STOP = "scripts/ninfer-model.ps1"
 const START = "scripts/ninfer-model.ps1"
 const ENDPOINT = "http://127.0.0.1:8080/v1/models"
-const LOCAL_ROLES = new Set(["backend-dev", "frontend-dev", "qa", "adversary", "git-agent"])
+const LOCAL_ROLES = new Set(["backend-dev", "frontend-dev", "qa", "git-agent"])
 // Named roles only: the orchestrator dispatches TFlex's specialist roles, never the
 // generic `worker`/built-in subagents — an unnamed sub-agent runs unpinned and unaudited.
 const APPROVED_ROLES = new Set([...LOCAL_ROLES, "feature-scout"])

@@ -201,12 +201,16 @@ orchestration harness:
 - **OpenCode** — the `model:` field in that role's `.opencode/agents/*.md` definition.
   Local roles point at `local-ninfer/qwen3.8-27b`, whose provider and endpoint live in
   `opencode.json` (NInfer on `http://127.0.0.1:8080/v1`). The active serving profile is
-  **220000 context tokens, one decode slot and 8192 vision tokens**. The guard loads it
+  **220000 context tokens, one decode slot and 20480 vision tokens**. The guard loads it
   before the first local dispatch; it is stopped only after all local work has settled.
 
 The orchestrator's model, `openrouter/deepseek/deepseek-v4.1-flash`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
-other wrong model. If a sub-agent cannot load its pinned model (provider error, account
+other wrong model. SANCTIONED EXCEPTION (operator-approved 2026-09-17): the adversary is
+pinned to that same model deliberately — adversarial review needs cloud vision and must
+free the single local decode slot. The adversary on it is correct, not a fallback; every
+other sub-agent on it is still a hard stop. If a sub-agent cannot load its pinned model
+(provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
 no planning, no real task dispatch, no work on the fallback model. The orchestrator
 reports the failure to the human operator and waits. Only the human may resolve a model
@@ -218,13 +222,15 @@ restart the build.
 The active pin is the agent definition. A fallback is a human-approved configuration
 change, not an automatic retry. Keep it short and current:
 
-- backend-dev, frontend-dev, qa, adversary, git-agent:
+- backend-dev, frontend-dev, qa, git-agent:
   `local-ninfer/qwen3.8-27b` -> `openrouter/z-ai/glm-5.3-flash`.
+- adversary: no automatic fallback — its pin needs cloud vision; stop and ask the human.
 - feature-scout: `openrouter/z-ai/glm-5.3-flash` ->
   `openrouter/deepseek/deepseek-v4-flash`.
 - orchestrator: no fallback — stop and ask the human.
 
-No sub-agent may fall back to `openrouter/deepseek/deepseek-v4.1-flash`. Record approved
+No sub-agent other than the adversary may run on, or fall back to,
+`openrouter/deepseek/deepseek-v4.1-flash`. Record approved
 model changes in `AGENTS_NOTES.md`; that file is historical reference, not mandatory
 startup context.
 
