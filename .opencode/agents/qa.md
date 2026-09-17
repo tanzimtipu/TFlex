@@ -210,8 +210,8 @@ If the configured model is unavailable, return `BLOCKED`. Never silently fall ba
 
 ## Output budget
 
-Your generation cap is 8192 tokens — a report cut off mid-sentence is a truncated
-report, not a finished one. REASONING counts toward the same 8192-token budget on this
+Your generation cap is 65536 tokens — a report cut off mid-sentence is a truncated
+report, not a finished one. REASONING counts toward the same 65536-token budget on this
 server: a long deliberation can silently consume the entire cap and leave you emitting
 nothing, which reads to the orchestrator as an empty (and ambiguous) step. Think briefly,
 then act — never re-derive the whole plan inside one turn. Keep the final report under ~500 words; put long evidence

@@ -223,18 +223,18 @@ stopped and what to do next. Never restart the same task from scratch, and never
 task over yourself because a child filled its context. Resuming costs a fraction of
 re-reading everything the child had already consumed.
 
-**An EMPTY step is a token-limit stop, not a dead session.** On the local model the 8192-token
+**An EMPTY step is a token-limit stop, not a dead session.** On the local model the 65536-token
 generation budget counts REASONING tokens too: a resumed child can spend the whole budget
 silently planning and return zero content while the step reports success. When a child settles
 with no output at all (no text, no tool calls), the session is ALIVE — its reasoning just ate
 the budget. Do NOT judge the session dead after one or two empty steps and do NOT re-dispatch
 fresh. Resume the SAME session with a HALVED scope and this exact prefix: "Do not deliberate —
-reasoning and your answer share one 8192-token budget. Start producing output immediately."
+reasoning and your answer share one 65536-token budget. Start producing output immediately."
 Only if THREE consecutive resumes in that form all return empty may you treat the child as
 stuck, and then you still do not restart the task from scratch: you strip it to the smallest
 possible unit (one file, one assertion) and say why in your report.
 
-The local model's generation cap is 8192 tokens, so judge the child's REPORT, not its
+The local model's generation cap is 65536 tokens, so judge the child's REPORT, not its
 silence: a report that ends mid-sentence, or that lacks the required final-report
 structure its definition demands, has hit the output cap — that is a token-limit stop,
 not a finished task. Resume that session with its task_id and a one-line continuation;

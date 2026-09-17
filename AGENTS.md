@@ -249,7 +249,7 @@ continuation naming where it stopped. Never restart the same task from scratch b
 filled its context, and never treat it as a reason for the orchestrator to take over.
 
 An empty step — the child settles with no text and no tool calls — is also a token-limit
-stop, not a dead session: on the local model the 8192-token generation budget includes
+stop, not a dead session: on the local model the 65536-token generation budget includes
 reasoning, so a resumed child can burn the whole cap silently planning. Resume the same
 session with a halved scope and the prefix "Do not deliberate — start producing output
 immediately"; never re-dispatch fresh after one or two empty steps.

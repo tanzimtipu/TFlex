@@ -76,7 +76,7 @@ progress events, edge cases like encrypted or corrupted files).
 
 ## Output budget
 
-Your generation cap is 8192 tokens — a report cut off mid-sentence is a truncated
+Your generation cap is 65536 tokens — a report cut off mid-sentence is a truncated
 report, not a finished one. Keep the final report under ~500 words; put long evidence
 (test output, logs) in files under your allowed paths and reference the paths. If you
 approach the cap while still working, stop at a clean boundary, state exactly what is
