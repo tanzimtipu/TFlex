@@ -26,7 +26,10 @@ const ENDPOINT = "http://127.0.0.1:8080/v1/models"
 const LOCAL_ROLES = new Set(["backend-dev", "frontend-dev", "qa", "git-agent"])
 // Named roles only: the orchestrator dispatches TFlex's specialist roles, never the
 // generic `worker`/built-in subagents — an unnamed sub-agent runs unpinned and unaudited.
-const APPROVED_ROLES = new Set([...LOCAL_ROLES, "feature-scout"])
+// APPROVED includes every dispatched role; LOCAL is only the subset that needs the
+// local model loaded. The adversary is approved but NOT local (cloud, orchestrator's
+// model) — do not derive APPROVED from LOCAL or the adversary gets refused.
+const APPROVED_ROLES = new Set([...LOCAL_ROLES, "adversary", "feature-scout"])
 // Emergency escape hatch for an operator debugging the guard. It must never be used as
 // normal workflow configuration.
 const GUARD_ENABLED = process.env.TFLEX_GUARD !== "off"
