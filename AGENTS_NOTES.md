@@ -6,6 +6,447 @@
 > `scripts/ninfer-model.ps1`. The active NInfer profile is 220000 context tokens, one
 > decode slot, and 8192 vision tokens; earlier 264000/three-slot entries are superseded.
 
+> **ROLLBACK NOTICE (2026-09-17):** every entry dated 2026-09-17 above the 2026-09-15
+> entries (task-planner, GPU broker, Nemotron / Qwen3-Coder-30B orchestrator, the loop
+> nets, broker offload lifecycle, docs/task-specs) documents a local-orchestrator
+> experiment that was ROLLED BACK on 2026-09-17. None of those roles, models, ports
+> (8082/8083/8084/8085), scripts (gpu-broker.py, start-gpu-broker.cmd), or files
+> (.opencode/agents/task-planner.md) exist anymore — do NOT glob, dispatch, or reference
+> them. Current state: orchestrator = `openrouter/deepseek/deepseek-v4.1-flash` (cloud);
+> backend-dev/frontend-dev/qa/adversary/git-agent = `local-ninfer/qwen3.8-27b` via
+> scripts/ninfer-model.ps1 at 127.0.0.1:8080 (220000 context, direct NInfer, no broker);
+> feature-scout = cloud. Pre-rollback state is preserved under
+> `.opencode/backups/2026-09-17-pre-rollback-to-kimi/`. Entries dated 2026-09-15 and
+> earlier below remain valid history.
+
+## 2026-09-17 (post-rollback): run-close rules + guard hardening
+
+Full orchestration review after the rollback; operator approved all items. Backup:
+`.opencode/backups/2026-09-17-run-close-rules/`.
+
+- AGENTS.md concurrency fix: "one developer at a time ... puts other roles alongside"
+  was stale three-slot-era text and contradicted orchestrator.md's one-decode-slot
+  serialisation. Now: one LOCAL role at a time; cloud roles may overlap.
+- orchestrator.md, new SPEC ANCHORS rule: every backend-dev/frontend-dev spec must carry
+  file:line anchors (verified by the orchestrator's own reading), the pattern to mirror,
+  the one verification command, and inline contract excerpts — so local children code
+  instead of researching. Mirrored as "anchors mean code" in both dev definitions.
+- orchestrator.md, new Core Duty 6 RUN-CLOSE QA: one closing focused qa pass over the
+  whole run's diff before a run is declared done (operator redirect still overrides).
+- orchestrator.md, new Core Duty 7 RUN-CLOSE COMMIT: after run-close QA, git-agent
+  commits ALL run-produced tracked changes (local commits need no approval); pushes,
+  tags and GitHub Releases stay behind the operator gate — the run then offloads and
+  reports "ready to release, awaiting approval".
+- orchestrator-guard.ts: (a) load/offload spawn PowerShell via the full
+  `System32\WindowsPowerShell\v1.0\powershell.exe` path with one ENOENT retry — bare
+  "powershell" is not resolvable from every host process; (b) named-roles net restored:
+  task dispatches outside {backend-dev, frontend-dev, qa, adversary, git-agent,
+  feature-scout} are refused fail-closed (generic `worker` and the retired task-planner
+  both refused). Verified by `smoke/guard-mock-test-v2.mjs`, 8/8 PASS.
+- Known minor, unfixed: feature-scout fallback name `deepseek-v4.1-flash` vs
+  orchestrator `deepseek-v4.1-flash` similarity is accepted (different model IDs).
+
+## 2026-09-17 (post-rollback): orchestrator model changed to deepseek-v4.1-flash
+
+- From: `openrouter/moonshotai/kimi-k2.5`.
+- To: `openrouter/deepseek/deepseek-v4.1-flash` (OpenRouter, cloud).
+- Reason: operator decision after the local-orchestrator rollback (see ROLLBACK
+  NOTICE above); local experiment abandoned, kimi pin not retained.
+- Updated: `orchestrator.md` frontmatter, the reserved-model lines in
+  `backend-dev.md`, `frontend-dev.md`, `adversary.md`, `git-agent.md`,
+  `AGENTS.md` (2 places), the rollback notice above, and
+  `.opencode/skills/openrouter-subagent-model-selector/SKILL.md` (2 places).
+  Orchestrator fallback rule unchanged: no fallback — stop and ask the human.
+
+## 2026-09-17: task-planner role — developers follow spec files, never research
+
+Operator decision: developer sessions were burning most of their context on app-setup
+research (the WatermarkDialog frontend session spent 78k input tokens and ~50 minutes
+researching before writing nothing). New role: task-planner researches a chunk's
+requirement and current code, then writes a small (<120-line) task-spec file under
+`docs/task-specs/` that backend-dev/frontend-dev follow verbatim — anchors with file:line,
+the pattern to mirror, numbered steps, the one verification command, DO NOTs. Specs live
+and die with their phase: the orchestrator deletes docs/task-specs/<phase>-*.md when the
+phase's QA gate passes.
+
+Model choice: Qwen3-4B-Instruct-2507 Q5_K_M (already on disk, 2.9 GB) at 131,072 context
+via YaRN (native 32k, `--rope-scaling yarn --yarn-orig-ctx 32768`, q8_0 KV ~5 GB).
+Text-only, no vision tax; the September-2025 refresh is strong at exactly this
+extract-and-structure job. Long-context alternatives were rejected: DeepSeek-R1-Distill-32B
+(thinking traces waste the output cap), Qwen2.5-VL-32B (vision unneeded, 20 GB),
+Mistral Small 24B (minute-long handovers). Step-up if the 4B disappoints in eval:
+Qwen3-14B.
+
+Changes (backup `.opencode/backups/2026-09-17-task-planner/`):
+
+- `scripts/gpu-broker.py`: third broker state PLANNER — internal port 8084, opencode
+  route 8085. Activity tracking generalized per role (LAST_ACTIVITY/IN_FLIGHT dicts);
+  the idle watchdog hands the GPU back to ninfer after ORCH_IDLE_SECONDS of planner
+  OR orchestrator inactivity; /shutdown and startup port-reclaim cover 8084.
+- `opencode.json`: `local-planner` provider (baseURL 127.0.0.1:8085, model
+  qwen3-4b-planner, context 131072, output 8192).
+- `.opencode/agents/task-planner.md`: new agent. Read broadly, write ONLY
+  docs/task-specs/*; strict spec template; refresh protocol (in-place rewrite,
+  Spec version increment, Changelog); surgical reading rules (grep-first, windowed
+  reads); deliverable-is-the-file discipline.
+- `orchestrator-guard.ts`: task-planner added to LOCAL_ROLES/APPROVED_ROLES; planner
+  dispatches exempt from the research- and meta-dispatch nets (exploration IS its
+  contract) but must carry a requirement identifier (Phase N / DEF-NNN / ADV-NNN /
+  FEA-NNN) or an explicit REFRESH path; developer dispatches must now reference a
+  docs/task-specs/<file>.md spec (or, as fallback, exact src/ paths) plus the
+  verification command and DO NOTs; empty-completion net extended to task-planner
+  (a planner task finishing with zero spec-file writes is refused like a dev task
+  finishing with zero code writes).
+- `orchestrator.md`: new "PLAN BEFORE DISPATCH" workflow (check existing spec ->
+  dispatch planner with grounded intent -> review file -> dispatch developer ->
+  delete specs at phase gate); roster, broker section, routing table, and
+  model-fallback entries updated. `AGENTS.md`: team roster, model-integrity route
+  list, and fallback table updated. backend-dev/frontend-dev: "your spec arrives as
+  a FILE — read it first, follow it exactly, first tool call is an edit" rule.
+
+Verification: guard mock harness 14/14 across both suites (empty-completion,
+repeated-command, QA-gate, planner grounding, spec-file requirement, planner
+empty-result). Live broker rotation test: planner load+first token 4.7s on GPU
+(105 tok/s decode, n_ctx_slot 131072), full planner->worker->orchestrator->planner
+rotation 4.8-10.8s per switch, /shutdown leaves all six ports clear. (Side note:
+the worker's empty reply in the rotation test was NInfer spending the whole 16-token
+probe budget on reasoning_content — not a broker fault, and a live reminder of why
+the reasoning-budget rules exist.) Restart OpenCode Desktop to load the new guard
+and agent definitions.
+
+## 2026-09-17: completion-ceremony loop + reasoning-cap asphyxiation — verification is mechanical now
+
+Interactive "Continuing Phase 18" run (orchestrator ses_f53cff2fc, frontend child
+ses_f53cd12aa, ~07:50-09:30 local) exposed two failure modes the dispatch nets could
+not see. (1) The frontend WatermarkDialog session completed with ZERO writes: it spent
+78k input tokens on app-setup research, then its entire final-turn 8192-token output
+budget on one 31,500-character reasoning block — no tool calls, no code. OpenCode
+recorded "completed"; compaction never triggered because context was 180k of 220k —
+the death was output-based, not context-based. (2) The orchestrator accepted the empty
+completion, declared "IMPLEMENTATION STATUS: COMPLETE" 17 times, and kept the turn
+alive by re-running no-op bash (echo ... COMPLETE, git log --oneline -1) — never
+dispatching the mandatory QA pre-build gate, because it believed there was nothing
+left to gate. Core Duty 5 (verify the deliverable) and the QA gate existed only as
+prose; the model skipped both.
+
+Fixes (backup `.opencode/backups/2026-09-17-empty-completion-and-loop-nets/`):
+
+- `orchestrator-guard.ts`: (a) EMPTY-COMPLETION NET — write/edit calls are counted
+  per session; a dev-role task completing with zero writes is refused on
+  tool.execute.after with the RESUME corrective (child sessions attributed via
+  session ids in the task result or session.created events; fails open with a loud
+  log when unattributable); (b) REPEATED-COMMAND NET — the orchestrator may not
+  re-run an exact or near-duplicate bash command (exact always; word-jaccard >= 0.85
+  for short commands, >= 0.7 for low-information ceremony with no paths/flags);
+  (c) QA-GATE TRACKING — a completed qa task marks the session gate-passed, which
+  switches the refusal message from "dispatch qa now" to "write the report once".
+- `orchestrator.md`: NO LOOPS rule 4 — a completion report is one-shot and valid
+  only with a qa Pre-build validation PASS in this session; Core Duty 5 now states
+  the guard enforces emptiness mechanically and the refusal is final.
+- `backend-dev.md` / `frontend-dev.md`: reasoning discipline — reasoning shares the
+  8192-token output cap; keep blocks under ~200 words, think between tool calls;
+  a no-tool-call turn is flagged EMPTY and resumed at a fraction of the value.
+
+Verified with a mock harness (7/7: written-task accepted, empty-task refused, exact
+and reworded ceremony refused, real new commands allowed, qa completion tracked).
+esbuild build clean. Restart OpenCode Desktop before the next run — and cancel the
+still-looping "Continuing Phase 18" session, which predates these nets.
+
+## 2026-09-17: empty-result flail — plan-only worker, orchestrator self-implementation, the resume path
+
+Phase 18 headless verify run 1 (orchestrator ses_f548bead, backend child ses_f548adff,
+~04:41-05:00 local). Every net fired as designed — the first vague backend spec was refused
+(missing verification command + DO NOTs) and rewritten into a proper four-part anchored spec;
+the Jaccard net refused the re-dispatch after the child returned empty; the permission wall
+refused the orchestrator's own write to src/shared/types.ts. The run still died in the gap
+between nets: backend-dev answered the anchored spec with a single 29,500-character
+implementation plan that hard-truncated at the 8192-token output cap — zero lines of code.
+The orchestrator, barred from re-dispatching AND from writing code, flailed through refused
+self-dispatches and spec-file writes instead of using the sanctioned RESUME path. Two real
+defects: worker over-planning into the output cap, and orchestrator recovery after an empty
+child result.
+
+Fixes (backup `.opencode/backups/2026-09-17-recovery-nets/`):
+
+- `backend-dev.md` / `frontend-dev.md` Hard rules: new "Implementation discipline" rule —
+  at most a 5-line plan, then START EDITING; every response ends with a tool call that
+  writes, edits, or runs something; never emit a design document as chat text (the 29.5k-char
+  plan hit the cap and wrote nothing). The output cap is deliberate — output shares the 220k
+  KV budget — so the fix is behaviour, not capacity.
+- `orchestrator.md`: new "A child that returns WITHOUT the deliverable has not done the task
+  — RESUME it" rule. An empty result (plan only; no diff, file change, or run output) is not
+  final; the loop-breaker refuses a fresh re-dispatch precisely so the orchestrator does not
+  re-ask. The recovery is a RESUME of that same task with its task_id and a one-line
+  corrective ("your last turn produced no code — stop planning, edit <file> now"). Resuming
+  bypasses the similarity check by design.
+- `orchestrator-guard.ts`: (1) the dup-refusal error now names the resume escape route;
+  (2) new ledger-only backstop — an orchestrator write/edit/multiedit outside the five ledger
+  paths is refused with a corrective that routes the work to the owning role (the permission
+  wall already denied these, but without routing guidance; the run had tried
+  src/shared/types.ts, task-spec-18.md, backend-spec-18.md in sequence). Build verified.
+
+Verification (headless `opencode run "Implement Phase 18"`, orchestrator ses_f54787f9,
+~05:23-06:20 local): the orchestrator's first backend spec was refused by the nets, rewritten
+anchored, and accepted (outcome / scope with src/ files / named test
+`npm.cmd run test:unit -- --grep "watermark"` / DO NOTs). backend-dev read only the anchor
+files (~17 reads/greps), then wrote code within its first responses: edits across
+src/shared/types.ts, src/main/services/settings.ts, src/main/services/engine.ts, new
+test/unit/main/watermark.test.ts, typecheck + focused watermark tests + bounded
+stamp/settings regression — no mega-plan in chat, no full suite. The orchestrator accepted
+the result and moved to the next chunk; its instinctive self-edit of ToolsPalette.tsx was
+refused by the new backstop and it dispatched frontend-dev with an equally anchored spec
+("Add watermark tool to tools palette"), which also wrote code immediately. One agent at a
+time throughout; no loops. Run stopped deliberately after two clean chunks (verification goal
+met); broker watchdog offloaded the GPU (ports 8080-8083 clear ~2 min after exit). Restart
+OpenCode Desktop before the next interactive run.
+
+## 2026-09-17: meta-dispatch — workers asked to WRITE specs, run produced documents not code
+
+Phase 18 run (orchestrator ses_f54a6b68e, ~04:02-04:05 local). The orchestrator read the
+codebase itself (correct, read-first), then dispatched backend-dev with a prompt that
+ENDED in "Please create a detailed task spec for the backend-dev role". backend-dev
+obediently spent 20 minutes and 60+ tool calls re-verifying the entire codebase and
+drafting a spec document; its final message was cut mid-word ("### `src/shared/types'").
+Why it stopped: no error — the model's chain-of-thought in that step alone was ~28k chars
+(~8-10k tokens) before the visible text, and the NInfer profile caps generation at
+`--default-max-tokens 8192`, so the response hard-truncated mid-generation
+(finish_reason=length). The orchestrator then "accepted" the truncated document and
+dispatched frontend-dev with the same defect ("Create a detailed spec for frontend-dev"),
+so the whole run produced specs, not code. The output cap is deliberate: output tokens
+share the 220k KV budget, so raising it would shrink the non-negotiable context — the
+fix is behaviour, not capacity.
+
+Fixes (backup `.opencode/backups/2026-09-17-0410-meta-dispatch-fix/`):
+
+- `orchestrator.md` "DISPATCH": new "NEVER DISPATCH SPEC-WRITING — you are the spec
+  author" rule. A dispatch whose deliverable is a spec/plan is a dispatch failure; the
+  only exception is the AGENTS.md shared-contract flow (a developer PROPOSES concrete
+  src/shared/ types/code, the orchestrator amends the spec).
+- `orchestrator-guard.ts`: meta-dispatch net — a task prompt whose verb is
+  write/create/draft/produce and that mentions a "spec" within ~60 chars is refused with
+  the corrective error. Build verified; resumes with task_id still bypass all checks.
+
+Abort the current Phase 18 run (both children are authoring documents, and backend-dev's
+context is largely spent) and restart OpenCode Desktop before re-issuing "Implement
+Phase 18".
+
+## 2026-09-17: research dispatch burned the child's context — read-first rule + net
+
+The chunked watermark spec (ses_f54aec8b, backend-dev) was in-territory and
+under the size cap, but it said "use the existing engine patterns from the
+codebase" — a research assignment. backend-dev spent 50+ tool calls reading
+REQUIREMENTS, types, ipc, preload, index.ts, and engine.ts in slices before
+writing a line, eating a large share of its context on exploration. Operator:
+the prompt visible in the UI must be the working context itself, in proper
+chunks — not a map-the-repo invitation.
+
+Fixes (backup `.opencode/backups/2026-09-17-0350-research-dispatch-fix/`):
+
+- `orchestrator.md` "DISPATCH ENVELOPE": new "NO RESEARCH DISPATCHES — you read
+  first, the child codes" rule. Before dispatching a code chunk the orchestrator
+  MUST read the target files itself and paste exact anchors into the spec
+  (function names + file:line it mirrors, imported types, test file and command).
+  The child starts AT the anchors. If it has not read the target code yet, its
+  next action is a read, not a dispatch.
+- `orchestrator-guard.ts`: mechanical net — a task prompt containing
+  explore/investigate/familiarize/understand-the-style phrasing is refused with
+  the read-first corrective error. Resumes with task_id still bypass all checks.
+
+Restart OpenCode Desktop before the next run, and abort the current backend-dev
+session — its context is already half spent on exploration; a fresh anchored
+dispatch after restart is cheaper than resuming it.
+
+## 2026-09-17: whole-phase spec to one role — chunking rule + mechanical cap
+
+After the denial-derail fix, the restarted "Phase 18 implementation" run
+(ses_f54b66b05) dispatched the ENTIRE watermark phase to backend-dev as one
+3,399-char "comprehensive plan" (session ses_f54b4c1c): shared types + engine +
+renderer dialog + preview + tools-palette + IPC + CONTROL-INDEX in a single
+spec. Two charter violations: "CHUNK THE WORK" (never hand a role one enormous
+spec) and the role boundary (WatermarkDialog/ToolsPalette are frontend-dev
+territory; backend-dev's permissions deny renderer paths, so the child cannot
+even execute the spec). The earlier 1,423-char "analysis" dispatch to
+backend-dev was already off-contract — analysis is the orchestrator's own job.
+
+Fixes (backup `.opencode/backups/2026-09-17-0345-chunking-fix/`):
+
+- `orchestrator.md` "DISPATCH": new "ONE CHUNK PER DISPATCH — a phase is never
+  one spec" rule (first dispatch of a phase = one cohesive chunk; a long plan
+  is a queue — keep it in the to-do list, dispatch chunk 1) and "Never cross
+  territories in one spec" (backend spec names no renderer files and vice
+  versa; mixed phases alternate roles chunk by chunk).
+- `orchestrator-guard.ts`: mechanical net — a task dispatch whose prompt
+  exceeds 2,500 characters is refused with a corrective error (resumes with a
+  task_id still bypass all checks). Bounded single-chunk specs fit well under
+  the cap; whole-phase essays do not.
+
+Restart OpenCode Desktop before the next run. The watermark run built on the
+old definitions should be aborted; Phase 18 already exists in REQUIREMENTS.md,
+so re-issuing "implement feature 1" after restart starts clean.
+
+## 2026-09-17: orchestrator stalled after a permission denial — charter fix
+
+Session ses_f54c4149 ("Future feature ideas list", ~03:20-03:27 local). The operator
+asked to implement Feature 1 (Watermark). The orchestrator correctly recorded the FEA
+batch in docs/FEATURE-BACKLOG.md and appended Phase 18 to REQUIREMENTS.md (both
+completed, contract work intact), then tried to edit CONTROL-INDEX.md — DENIED (not one
+of its five writable paths). The denial derailed it: it apologized, wrote the whole
+watermark implementation spec into chat instead of into a dispatch, ended its turn, and
+no developer was ever dispatched. The user saw it as "orchestrator stopped".
+
+Two gaps closed in `orchestrator.md` "NO LOOPS" (backup:
+`.opencode/backups/2026-09-17-0335-denial-derail-fix/`):
+
+- Rule 2 extended: a permission denial is final AND never ends the task — it is a
+  routing signal. The next action after a denial is the owning route (put the content
+  in the owning role's spec and dispatch) or one question to the human. Apologizing,
+  dumping a spec in chat, and stopping is a failed task.
+- New paragraph: CONTROL-INDEX is never a file the orchestrator writes — it is a
+  section of the developer's task spec; the developer maintains the artifact.
+
+Restart OpenCode Desktop before the next run — agent definitions load at startup.
+
+## 2026-09-17: end-to-end orchestrator smoke test — PASS
+
+Operator-requested live test of the fixed orchestration loop. Method: OpenCode
+CLI 1.18.31 (same version as the desktop, installed under the task workspace,
+not global) run headless against the TFlex project with the real agents,
+plugins, broker and GPU. Task given to the orchestrator: dispatch qa for one
+Focused verification — rerun `e2e/def214_reverify_v1170.spec.cjs` against the
+packaged v1.17.0 artifact, one test only, accept the result, stop.
+
+Observed (session ses_f54ea9dc orchestrator / ses_f54ea45f qa):
+
+- Exactly ONE dispatch (`qa | qa smoke test`), correctly typed and bounded; the
+  guard's broker ensure ran; model routed to pinned qwen3.8-27b.
+- qa ran exactly one test command (5 bash calls total, all setup for that one
+  run) — no suite batching, no over-reach, fresh screenshots visually checked.
+  Real Playwright output: 1 passed (6.8s).
+- The orchestrator accepted the result and closed with a two-sentence summary.
+  No re-dispatch, no filename-shopping, no loop — the 00:55 behaviour is gone.
+- On run exit the broker was offloaded and all ports cleared (dispose and/or
+  watchdog path).
+
+Incidents found and fixed during the test:
+
+- `opencode run` resolved the session directory from its own executable
+  location, not the cwd — `--dir "C:\Users\tanzi\OneDrive\App Development\TFlex"`
+  must be passed explicitly (quoting safe only inside a .cmd file; spaces in
+  the OneDrive path break Start-Process -ArgumentList strings).
+- The guard's dispose log line does not reach opencode.log (client torn down
+  before the log call) — cosmetic only; the shutdown itself works.
+
+## 2026-09-17: smoke test of the offload lifecycle — two fixes
+
+Live-tested every path after wiring the lifecycle (below). All six checks pass:
+
+1. `/shutdown` with no backends loaded -> broker exits, all four ports clear.
+2. Plugin init with broker down -> ensureBroker starts it, endpointUp (incl.
+   /heartbeat probe) green.
+3. Tiny POST to 8083 -> proxy handed over, ninfer loaded on GPU (port 8080),
+   real generation returned.
+4. Plugin `dispose` -> `/shutdown` -> ninfer killed, broker exited, ports clear.
+5. Standalone broker (started by hand), no heartbeat ever -> watchdog stays
+   disarmed, still up after 60+s.
+6. One heartbeat, then silence (45s test timeout) -> watchdog offloaded and
+   exited; ports clear. Default production timeout stays 120s.
+
+Fixes made during the test:
+
+- `orchestrator-guard.ts`: this machine has no powershell.exe stub in System32
+  root — only `System32\WindowsPowerShell\v1.0\` — so bare `powershell` (and
+  `powershell.exe` via PATH) fails with spawn ENOENT from some host processes.
+  `runFirstExisting` now resolves `%SystemRoot%\System32\WindowsPowerShell\v1.0
+  \powershell.exe` (and full System32 paths for netstat/taskkill) with the bare
+  name as fallback, logs every candidate's error, and retries a spawn-level
+  ENOENT once after 1s (first spawn of a freshly-written file can transiently
+  fail — observed live, retry succeeds).
+- Note for the operator: OpenCode Desktop must be RESTARTED to load the current
+  plugin + definitions (agents/plugins load at startup).
+
+Final smoke state: GPU clean, no broker, no backends — exactly what closing
+OpenCode should now do automatically.
+
+## 2026-09-17: automatic GPU offload — broker lifecycle tied to OpenCode
+
+Operator directive: all models must be offloaded when OpenCode closes, and the
+broker must come up automatically when OpenCode starts. Changes (backups:
+`.opencode/backups/2026-09-17-0125-offload-lifecycle/`):
+
+- `scripts/gpu-broker.py`: new `/heartbeat` and `/shutdown` endpoints; a
+  heartbeat watchdog offloads everything and exits if heartbeats stop for
+  `BROKER_HEARTBEAT_TIMEOUT` seconds (default 120) without a `/shutdown` —
+  covering crash/kill. A broker started by hand (no heartbeat ever seen) is
+  NOT watchdogged, so `start-gpu-broker.cmd` still works standalone.
+- `.opencode/plugins/orchestrator-guard.ts`: at plugin init (OpenCode startup)
+  it now ensures the broker is running in the background; it heartbeats every
+  30 s; its `dispose` hook calls `/shutdown`, which stops both backends
+  (llama-server on 8081, ninfer on 8080) and exits the broker. `endpointUp`
+  now also probes `/heartbeat` — a broker that answers `/v1/models` but not
+  `/heartbeat` is the pre-lifecycle build; `ensureBroker` clears ports 8082/8083
+  and starts the current broker (whose startup already reaps orphaned
+  backends on 8080/8081).
+
+Net behaviour: OpenCode start -> broker up (models still load on first request,
+as before); OpenCode close -> guard dispose hits `/shutdown` -> both models
+offloaded and broker exits; OpenCode dies unexpectedly -> watchdog offloads
+within ~2 min. Restart OpenCode Desktop to load the new plugin; the currently
+running old broker is replaced automatically on that start.
+
+## 2026-09-17: QA scope tightening — operator-only full suite + orchestrator routing table
+
+Operator directive after the 01:00 run: QA must not run the full suite by default — only
+on the operator's explicit command relayed by the orchestrator; otherwise exactly the one
+focused test the spec names, no over-thinking. Root cause of the incident: the
+orchestrator dispatched "Confirm TFlex Phase 16 readiness for final validation" — an
+open-ended readiness audit with no named test — and qa (both loop sessions,
+ses_f55f2213 / ses_f556d35a) reasonably read it as a Phase validation and self-expanded
+into a 5-spec e2e batch plus unit batches plus repeated re-runs and test-cap edits. The
+spec type, not qa, was the failure.
+
+Changes (backups: `.opencode/backups/2026-09-17-0120-qa-scope-fix/`):
+
+- `qa.md` "Authority and scope": new FULL-SUITE RUNS ARE OPERATOR-ONLY rule — more than
+  the named test (no-filter `test:e2e`, multiple spec files per command, unfiltered
+  `test:unit`) only when the spec quotes the operator's command; "validate the phase" /
+  "confirm readiness" does NOT qualify. New "one test, one run, no improvisation" rule.
+- `qa.md` "Phase validation": runs exactly the named specs, one file per command; a
+  readiness question is the orchestrator's gate job, not a validation.
+- `orchestrator.md`: new "WHEN TO DISPATCH WHICH — routing is your job" section — a
+  routing table per role, "is it done / confirm readiness" goes to nobody (orchestrator
+  assembles the gate from evidence on the table, at most ONE bounded named test per
+  missing criterion), and full-suite runs are operator-only and must be relayed quoted.
+
+Restart OpenCode Desktop before the next run — agent definitions load at startup.
+
+## 2026-09-17: orchestrator loop fix — termination discipline + mechanical guard
+
+Session ses_f561c51cbffe0F8LxJ4D34ySc9 (2026-09-17 ~00:30-00:54) showed two compounding
+failure modes. (1) The orchestrator decided its deliverable was a "final status report"
+file and tried write under seven different filenames (STATUS_REPORT.md,
+PROJECT_FINAL_STATUS.md, PHASE16_FINAL_STATUS / PHASE16_STATUS / PHASE16_COMPLETE /
+PHASE16_SUMMARY / PHASE16_COMPLETE_REPORT variants) — all DENIED by its permission
+frontmatter, which allows only the five ledger paths; it filename-shopped around the wall
+instead of stopping. (2) It re-dispatched near-identical QA verifications ~6 times,
+re-wording the description each time; QA returned complete PASS reports with command and
+evidence, but the orchestrator never accepted them because its self-imposed "write the
+report" step never completed. Even a direct human "You are going into loop... Close it"
+did not stop the pattern; the run was aborted at 00:54.
+
+Fix (restart OpenCode Desktop before the next run — agents/plugins load at startup):
+
+- `orchestrator.md`: new "NO LOOPS — termination discipline" section — a returned result
+  is final (re-dispatch only with a materially different written spec); a permission
+  denial is final (never retry a denied write under a different filename; if a
+  deliverable does not fit the five ledger paths, answer in chat or write a dated entry
+  here); a human "stop/close/done" ends the pattern immediately.
+- `orchestrator-guard.ts`: mechanical loop-breaker in the task branch — per-session log
+  of (role, normalized spec word-set); refuses a dispatch when Jaccard word overlap vs
+  any prior dispatch to the same role is >= 0.6, or when the role has been dispatched
+  >= 4 times in the session. Resumes (task_id present) bypass both checks.
+
+Backups of the pre-change files: `.opencode/backups/2026-09-17-0056-loop-fix/`.
+
 ## 2026-09-15: QA returned to local model with new structured contract
 
 Operator applied a rewritten QA contract that replaces the previous flat-bullet approach
@@ -1750,6 +2191,7 @@ having them. Root cause: `dist/` folder was stale during `npm run dist`. The sou
 - [ ] **Verify dist/** — Check `dist/renderer/assets/index-*.js` timestamp matches build time
 - [ ] **Spot-check bundle** — Search for critical components: `grep -o "ann-toolbar\|edit-toolbar" dist/renderer/assets/index-*.js`
 - [ ] **Test installer** — Install the built exe and verify toolbars render
+- [ ] **Defect disposition** — List every OPEN/FIX-READY DEF-NNN this release fixes; dispatch qa to re-verify each on the INSTALLED build and set CLOSED with the run evidence. The release is not done while any claimed fix is still OPEN or FIX-READY.
 - [ ] **Version alignment** — Confirm `package.json`, `latest.yml`, and GitHub tag all match
 - [ ] **OTA assets** — All 4 files: `latest.yml`, Setup exe, blockmap, portable exe
 ```
@@ -1759,3 +2201,46 @@ before pushing. Backend-dev must verify the bundle contains critical components.
 QA must verify the installed app. No release proceeds without all three confirmations.
 
 **File:** `scripts/release-checklist.md` (optional canonical copy for human operators).
+
+## 2026-09-16 — Model route reconciliation (broker era)
+
+- Orchestrator: `openrouter/moonshotai/kimi-k2.5` -> `local-nemotron/nemotron-orchestrator-8b`
+  (65,536 context) via the GPU handover broker on port 8082.
+- Local roles keep `local-ninfer/qwen3.8-27b`, now served through the broker's worker
+  route on port 8083 instead of NInfer's private port 8080.
+- The broker owns the GPU lifecycle (one resident backend; idle handback to NInfer).
+  `scripts/ninfer-model.ps1` is legacy for direct operation only — agents must not
+  start/stop backends; the guard validates the broker route and starts
+  `scripts/start-gpu-broker.cmd` if the broker is down.
+- The `local-flash` provider (port 8081) was removed: 8081 is the broker's private
+  Nemotron backend, never a client-facing route.
+
+## 2026-09-16 — Orchestrator model swap to Qwen3-Coder-30B-A3B
+
+- The orchestrator slot now serves **Qwen3-Coder-30B-A3B-Instruct Q4_K_M**
+ (model id `local-orchestrator/orchestrator-30b`, 131,072 context, q4_0 KV)
+ through the GPU broker on port 8082. Nemotron-Orchestrator-8B (65,536, q8_0 KV)
+ remains the fallback: `ORCHESTRATOR_MODEL=<gguf path>` (or the legacy
+ `NEMOTRON_ORCHESTRATOR_MODEL`) env var on the broker restores it.
+- Rationale: Nemotron's generic orchestration training made it dispatch against the
+ TFlex role contract and fail to serialize long tool-call arguments; the 30B follows
+ the charter faithfully. Verified: 101k-token needle test, all answers correct.
+- `opencode.json` provider `local-nemotron` was renamed `local-orchestrator`;
+ the removed `local-flash` provider stays removed (port 8081 is broker-private).
+
+## 2026-09-16: Process fix — releases now disposition their defects
+
+**Gap:** DEF-214 (toolbars missing from installed v1.16.1) was root-caused and fixed in
+v1.16.2, but its ledger entry stayed OPEN — the release checklist verified the build
+(clean dist, bundle spot-check, installer test) yet nothing tied the release to the
+defect ledger, and no qa re-verification on the installed build was ever dispatched.
+
+**Fix (three linked changes):**
+1. orchestrator.md Core Duty 3a — every release batch carries a defect-disposition
+   list; qa re-verifies each listed defect on the installed build before setting CLOSED.
+2. orchestrator.md THE PUSH GATE — "ready to push" must include the disposition list.
+3. Pre-Release Verification Checklist — new "Defect disposition" step.
+
+**Convention going forward:** a green build with un-dispositioned defects is not a
+green gate. (DEF-214 itself remains OPEN until qa re-verifies an installed build —
+correct per the new rule; v1.17.0's release must disposition it.)

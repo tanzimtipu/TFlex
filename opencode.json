@@ -1,8 +1,5 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "@0xsero/open-queue"
-  ],
   "provider": {
     "local-ninfer": {
       "npm": "@ai-sdk/openai-compatible",

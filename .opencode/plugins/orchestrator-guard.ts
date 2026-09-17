@@ -24,11 +24,47 @@ const STOP = "scripts/ninfer-model.ps1"
 const START = "scripts/ninfer-model.ps1"
 const ENDPOINT = "http://127.0.0.1:8080/v1/models"
 const LOCAL_ROLES = new Set(["backend-dev", "frontend-dev", "qa", "adversary", "git-agent"])
+// Named roles only: the orchestrator dispatches TFlex's specialist roles, never the
+// generic `worker`/built-in subagents — an unnamed sub-agent runs unpinned and unaudited.
+const APPROVED_ROLES = new Set([...LOCAL_ROLES, "feature-scout"])
 // Emergency escape hatch for an operator debugging the guard. It must never be used as
 // normal workflow configuration.
 const GUARD_ENABLED = process.env.TFLEX_GUARD !== "off"
 
 const execFileAsync = promisify(execFile)
+
+// This machine has no powershell.exe stub in System32 root — only the v1.0
+// folder — so bare "powershell" is NOT resolvable from every host process
+// (observed as spawn ENOENT). Resolve the full path first, with one retry for
+// a freshly-written executable's transient first-spawn failure (AV scanning).
+const SYSTEM_ROOT = process.env.SystemRoot ?? process.env.WINDIR ?? "C:\\Windows"
+const POWERSHELL = [
+  `${SYSTEM_ROOT}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`,
+  "powershell.exe",
+]
+
+async function runFirstExisting(candidates: string[], args: string[], opts: object): Promise<{ stdout: string; stderr: string }> {
+  const errors: string[] = []
+  for (const exe of candidates) {
+    try {
+      return await execFileAsync(exe, args, opts)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      errors.push(`${exe}: ${msg}`)
+      // One retry after a 1s pause: a freshly-written executable can fail its
+      // first spawn with a transient ENOENT. The retry virtually always succeeds.
+      if (/ENOENT/i.test(msg)) {
+        await new Promise((r) => setTimeout(r, 1000))
+        try {
+          return await execFileAsync(exe, args, opts)
+        } catch (e2) {
+          errors.push(`${exe} (retry): ${e2 instanceof Error ? e2.message : String(e2)}`)
+        }
+      }
+    }
+  }
+  throw new Error(errors.join(" | "))
+}
 
 export const OrchestratorGuard: Plugin = async ({ client, directory }) => {
   const orchestratorSessions = new Set<string>()
@@ -79,8 +115,8 @@ export const OrchestratorGuard: Plugin = async ({ client, directory }) => {
     if (await endpointUp()) return
     log("local model down -> running ninfer-model.ps1 start")
     try {
-      await execFileAsync(
-        "powershell",
+      await runFirstExisting(
+        POWERSHELL,
         ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", START, "start"],
         { cwd: directory, timeout: 180000 },
       )
@@ -103,8 +139,8 @@ export const OrchestratorGuard: Plugin = async ({ client, directory }) => {
 
   async function offload() {
     try {
-      await execFileAsync(
-        "powershell",
+      await runFirstExisting(
+        POWERSHELL,
         ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", STOP, "stop"],
         { cwd: directory, timeout: 30000 },
       )
@@ -176,6 +212,15 @@ export const OrchestratorGuard: Plugin = async ({ client, directory }) => {
       if (input.tool === "task") {
         const agent = (args.subagent_type ?? args.agent ?? args.name) as string | undefined
         if (!agent) return
+
+        // Named roles only: refuse generic worker/built-in subagents (fail-closed).
+        if (!APPROVED_ROLES.has(agent)) {
+          throw new Error(
+            `orchestrator-guard: "${agent}" is not a TFlex role. Dispatch one of: ` +
+              [...APPROVED_ROLES].join(", ") +
+              ". A generic sub-agent runs unpinned and is refused.",
+          )
+        }
 
         // Load the local model before any local dispatch (fail-closed).
         if (LOCAL_ROLES.has(agent)) {

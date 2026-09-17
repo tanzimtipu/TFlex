@@ -52,10 +52,11 @@ never grow the settings shape ad-hoc.
 Role boundaries are enforced by permissions and are absolute. Do not work around them with
 shell commands: if the edit tool would deny a file, do not modify that file any other way.
 
-**One developer at a time.** backend-dev and frontend-dev share a single working tree, so
-they are never given work simultaneously — two of them editing at once can overwrite each
-other or collide in `src/shared/`. The orchestrator runs one developer and, where the
-harness has the capacity, puts other roles alongside it rather than the second developer.
+**One local role at a time.** backend-dev and frontend-dev share a single working tree,
+and every local role shares the single NInfer decode slot, so local roles are strictly
+serialised: the orchestrator dispatches one local role, waits for it to settle, then
+dispatches the next. Cloud roles (feature-scout, and the orchestrator itself) may overlap
+a running local role — they do not consume the decode slot.
 
 Shared contracts live in `src/shared/` (typed IPC and domain types). Both developers may
 read them; only the orchestrator may approve changes to them mid-phase (a developer
@@ -203,7 +204,7 @@ orchestration harness:
   **220000 context tokens, one decode slot and 8192 vision tokens**. The guard loads it
   before the first local dispatch; it is stopped only after all local work has settled.
 
-The orchestrator's model, `openrouter/moonshotai/kimi-k2.5`, is reserved for the
+The orchestrator's model, `openrouter/deepseek/deepseek-v4.1-flash`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
 other wrong model. If a sub-agent cannot load its pinned model (provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
@@ -223,7 +224,7 @@ change, not an automatic retry. Keep it short and current:
   `openrouter/deepseek/deepseek-v4-flash`.
 - orchestrator: no fallback — stop and ask the human.
 
-No sub-agent may fall back to `openrouter/moonshotai/kimi-k2.5`. Record approved
+No sub-agent may fall back to `openrouter/deepseek/deepseek-v4.1-flash`. Record approved
 model changes in `AGENTS_NOTES.md`; that file is historical reference, not mandatory
 startup context.
 

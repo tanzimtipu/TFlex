@@ -48,6 +48,6 @@ A numbered batch (default 10, adapting down as sources run dry), each entry:
 - **Do not repeat.** Read `docs/FEATURE-BACKLOG.md` so later batches never re-propose a
   feature the human has already disposed of.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/moonshotai/kimi-k2.5` belongs to the orchestrator — running on
-  it is a silent fallback, and you must report it instead of working on the wrong model.
+  frontmatter. If you find yourself running on any other model, that is a silent
+  fallback — report it instead of working on the wrong model.
 - No emojis anywhere.
