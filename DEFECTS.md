@@ -5,6 +5,158 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-220: Tiled watermarks scale superlinearly - 100 tiled stamps cost ~101 s of blocked IPC and a ~50 MiB file
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-044)
+- Phase: 18
+
+Steps to reproduce:
+1. Launch TFlex (dev build via the canonical launchApp helper).
+2. Open the 34-page sample report.pdf (source file 33,028 bytes).
+3. Apply 100 tiled text watermarks through the engine API: `window.tflex.engine.addWatermark(docId, {type:'text', text:'WM<i>', size:24, tile:true})` for i=0..99, then `getWatermarks` and `saveAs`. Harness: `node test-fixtures/tools/adv041_perf.cjs 100 24 1` (control: `node test-fixtures/tools/adv041_perf.cjs 10 24 1`).
+
+Expected: A document has a bounded number of watermarks and a bounded placement count, with a typed limit error instead of an unbounded op; file-size growth stays proportional.
+Actual: Reproduced on the current tree (2026-09-18). No watermark-count cap and no placement cap: all 100 `addWatermark` calls return `ok` (0 failures), 3,400 (watermark,page) content streams. Measured:
+- 10 tiled @24 pt: apply 1,032 ms, save 241 ms, saved file 6,039,275 bytes (~5.8 MiB).
+- 100 tiled @24 pt: apply 100,587 ms (checkpoints: 10 -> 1,081 ms, 20 -> 3,947 ms, 30 -> 8,842 ms, 40 -> 15,762 ms, 50 -> 24,731 ms, 60 -> 35,499 ms, 70 -> 48,596 ms, 80 -> 64,238 ms, 90 -> 81,638 ms, 100 -> 100,586 ms - clearly superlinear as each addWatermark re-scans prior marker streams), getWatermarks 33 ms, save 2,173 ms, saved file 52,239,404 bytes (~49.8 MiB, ~1,582x the 33,028-byte source).
+- The 101 s apply is a single blocked IPC round trip; the renderer waits and the UI is frozen for the whole duration. Shares its root cause with DEF-217 (no size/placement bounds) and DEF-218 (invalid optional fields silently dropped).
+
+History:
+- qa: CLOSED (2026-09-18; retest - `node test-fixtures/tools/adv041_perf.cjs 10 24 1`: apply 1136 ms, save 238 ms, 10 watermarks / 340 page placements, file 6,039,272 B (~5.8 MiB), 0 failures. `node test-fixtures/tools/adv041_perf.cjs 100 24 1`: 90 failures (first 10 ok, 11th+ rejected with the typed "already has 10 watermarks (maximum)" error), total apply 1333 ms, save 222 ms, file 6,039,272 B - not 101 s / 50 MiB, wall time low seconds.)
+- backend-dev: FIX-READY (2026-09-18; covered by the same limits as DEF-217 - MAX_WATERMARKS_PER_DOC=10 makes the 100-tiled-stamp case impossible (the 11th apply returns the typed "already has 10 watermarks (maximum)" engine-error with nothing mutated), and MAX_WATERMARK_PLACEMENTS_PER_PAGE=5000 bounds each apply so the per-call cost stays proportional. The size bound (1..2000) also removes the tiny-size blow-up that made the 100-stamp case superlinear. The 10-tiled-on-34-pages control still succeeds and measures ~1 s apply / ~6 MB. Evidence: `npm.cmd run verify` exit 0; `npm.cmd run test:unit -- test/unit/main/watermark.test.ts` 37/37 passed (includes the 11th-watermark cap test). qa retest owed.)
+- qa: opened (2026-09-17; accepted from ADV-044 - reproduced on current tree: `adv041_perf.cjs 10 24 1` apply 1032 ms / 6,039,275 B file; `adv041_perf.cjs 100 24 1` apply 100,587 ms superlinear / 52,239,404 B file (~1582x source), 100/100 ok, 3400 (watermark,page) streams, 0 failures)
+
+## DEF-219: The applied-watermarks list overflows the dialog and pushes its actions ~3000 px below the viewport; a fast double delete shows a spurious not-found toast
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-043)
+- Phase: 18
+
+Steps to reproduce:
+1. Launch TFlex; open the 34-page sample report.pdf.
+2. Apply 50 watermarks through the engine API: `window.tflex.engine.addWatermark(docId, {type:'text', text:'L<i>', size:24})` for i=0..49.
+3. Open Tools palette -> Watermark (viewport 1440x900) and inspect the applied-watermarks list. Harness: `node test-fixtures/tools/adv041_layout.cjs` and `node test-fixtures/tools/adv041_ui_delete.cjs 50`.
+4. Click one row's Delete, then quickly click the first row's Delete again while the deleted row is still present in the DOM.
+
+Expected: The applied list stays inside the dialog (scrolls within it), the footer/Apply row stays reachable, and a row's Delete is single-flight (a second click while the first is in flight cannot fire a delete for an already-deleted id).
+Actual: Reproduced on the current tree (2026-09-18, viewport 1440x900, 50 watermarks).
+- Layout: `.modal-dialog` is 460x836 at x=490, but `.modal-body` is 544 px wide starting at x=389 - ~101 px wider than the dialog and spilling out to its left. Dialog scrollWidth 544 vs clientWidth 443 (horizontal overflow), `.modal-body` computed `overflow: visible`, body height 2,932 px. The footer (Cancel / Apply watermark, height 61) sits at y=3017 in the 900 px viewport, ~2,117 px below the fold; only after scrolling the dialog ~2,932 px does it reach y=791 (reachable, not lost, but effectively buried). The wide "Pages 1, 2, ... 34" cell is the width driver.
+- Delete refresh: after clicking Delete on wm-1 the DOM list still showed all 50 rows (including wm-1's Delete button) through every 300 ms poll up to ~1.9 s, while the engine-side delete had already landed (a reopened dialog lists 49 rows). A fast second click on the still-present row therefore fired a second delete of the already-deleted id, surfacing the toast "Engine error: deleteWatermark: no watermark with id wm-2 found" (observed toast sequence: "Watermark deleted.", "Watermark deleted.", "Engine error: deleteWatermark: no watermark with id wm-2 found").
+Screenshot: screenshots/adv-041-applied-50-bottom.png (recaptured 2026-09-18 by the layout harness: 50-row list spilling past the dialog's left edge, footer only visible at the bottom after the ~2,932 px scroll), screenshots/adv-041-applied-50.png (dialog body overflowing its box at the top)
+
+History:
+- qa: CLOSED (2026-09-18; retest - `node test-fixtures/tools/adv041_layout.cjs` raw: 1440x900, dialog 460x836 @ x=490 with scrollWidth 459 == clientWidth 459, body 459 @ x=491 (sw 443 == cw 443), footer y 807 bottom 868 <= 900, dialog body scrolls internally (sh 1381/ch 721 auto). `npm.cmd run test:e2e -- e2e/def217_219_retest.spec.cjs` 5/5 passed: 10-row dialog sw 459 == cw 459, footer bottom 867 <= 900, list sh 1158 > ch 180 overflow-y auto; 0-row dialog sw 459 == cw 459, footer bottom 867; Apply and Cancel both elementFromPoint-hittable at 0 and 10 rows; same-tick double delete -> exactly one row removed (10 -> 9, engine 9), one "Watermark deleted." toast, no "no watermark with id" toast. Screenshot screenshots/def-219-retest.png: dialog contained, X/Y/Tile row wrapped, footer Cancel/Apply visible.)
+- qa: OPEN - retest PARTIAL (2026-09-18; delete single-flight FIXED: same-tick double click on wm-1 -> exactly 9 rows remain, engine count 9, one "Watermark deleted." toast, no "no watermark with id ... found" toast, app responsive. Containment NOT fixed at the new 10-row maximum: viewport 1440x900, `.modal-dialog` 460 px at x=490 but `dialog.scrollWidth`=544 > `clientWidth`=443 and `.modal-body` 544 px at x=389 (101 px wider, same as pre-fix); footer at y=1409 (bottom 1470), outside the 900 px viewport; page itself not scrolled (doc 900/900). The applied list DOES scroll internally (list 180 px, scrollHeight 1158 > clientHeight 180, overflow-y auto). Baseline with 0 applied rows already overflows identically (body 544, footer bottom 1218), so the remaining overflow is not caused by the applied list - the fix does not meet the stated containment criteria. `node test-fixtures/tools/adv041_layout.cjs` and the `e2e/def217_219_retest.spec.cjs` layout test both fail at "dialog scrollWidth <= clientWidth" (544 vs 443). Screenshot: screenshots/def-219-retest.png (body clipped/left-shifted, footer not visible).)
+- frontend-dev: FIX-READY (2026-09-18; the applied rows now live in their own `.watermark-applied-list` scroll area (`max-height: 180px; overflow-y: auto;`) and `.watermark-applied-row` is `min-width: 0; flex-wrap: wrap;` so the list can never widen the dialog or push the footer below the viewport (styles.css, inside the existing `.watermark-*` block, no new motion values). Delete is now single-flight: the dialog gained `busyWatermarkId?: string | null` and the matching row renders its Delete button `disabled` + `aria-busy="true"`; App tracks `deletingWatermarkId` with a `deleteInFlightRef` guard that returns immediately while a delete is in flight and clears it in a `finally`, so a double click can no longer fire a second delete and surface the spurious "no watermark with id ... found" toast. Note the 50-row repro is no longer reachable by design after DEF-220's 10-watermark document cap; the containment fix is verified at the new maximum (10 rows). Tests: test/unit/renderer/watermarkDialog.test.tsx 3 -> 6 (busy-row disabled/enabled pair, size 2001 rejected, size 0 rejected). Evidence: `npm.cmd run verify` exit 0; `npm.cmd run test:unit -- test/unit/renderer/watermarkDialog.test.tsx test/unit/renderer/tools-palette-watermark.test.tsx` 12/12 passed. qa retest owed.)
+- qa: opened (2026-09-17; accepted from ADV-043 - reproduced: body 544 px wide at x=389 vs 460 px dialog at x=490 (101 px overflow), dialog scrollWidth 544 vs clientWidth 443, footer at y=3017 in the 900 px viewport (2,932 px scroll to reach it, y=791 after scroll); fast double delete produced the "no watermark with id wm-2 found" toast)
+
+## DEF-218: A provided-but-invalid watermark page range is silently dropped, so the watermark is applied to every page
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-042)
+- Phase: 18
+
+Steps to reproduce:
+1. Launch TFlex; load the 34-page sample report.pdf into a fresh engine document.
+2. For each value below, call `window.tflex.engine.addWatermark(docId, {type:'text', text:'RG', range:<value>})` (fresh document per case): [0,0], [3,2], [1.5,3], ["1",2], [1,2,3], [NaN,2], [-5,-1], plus controls [1,9999] (out-of-bounds), [1,1] and [5,6] (valid). Harness: `node test-fixtures/tools/adv041_wm_api.cjs ranges`.
+
+Expected: A range that is present but invalid (start < 1, inverted, non-integer, non-numeric, NaN, wrong length) must reject the payload with a typed engine-error, so the caller does not silently get a different scope than requested.
+Actual: Reproduced on the current tree (2026-09-18). Every malformed range is silently dropped by `normalizeWatermarkSettings` (fallback `[1, 34]`) and the watermark is baked irreversibly onto all 34 pages, returning `ok` each time (document marked modified, getWatermarks pages = 1..34):
+- `[0,0]` -> ok, pages 1..34
+- `[3,2]` -> ok, pages 1..34
+- `[1.5,3]` -> ok, pages 1..34
+- `["1",2]` -> ok, pages 1..34
+- `[1,2,3]` -> ok, pages 1..34
+- `[NaN,2]` -> ok, pages 1..34
+- `[-5,-1]` -> ok, pages 1..34
+- `[1,9999]` -> rejected `out-of-range` ("addWatermark: range [1,9999] out of bounds for 34 pages") - the only check that fires
+- `[1,1]` -> ok, page 1; `[5,6]` -> ok, pages 5-6 (valid controls)
+Screenshot: N/A
+
+History:
+- qa: CLOSED (2026-09-18; retest - `node test-fixtures/tools/adv041_wm_api.cjs ranges`: [0,0], [3,2], [1.5,3], ["1",2], [1,2,3], [NaN,2], [-5,-1] each return typed engine-error "addWatermark: settings are invalid" with applied:false and 0 watermarks (nothing stamped); [1,9999] still returns the separate out-of-range error "addWatermark: range [1,9999] out of bounds for 34 pages"; valid controls honour exactly their pages - [1,1] -> pages [1], [5,6] -> pages [5,6].)
+- backend-dev: FIX-READY (2026-09-18; covered by the same validation-contract fix as DEF-217 - a present-but-invalid `range` now rejects the whole payload instead of being dropped, so a mistyped range can no longer silently stamp every page. Rejected cases: [0,0], [3,2], [1.5,3], ['1',2], [1,2,3], [NaN,2], [-5,-1]; accepted controls [2,2] and [5,6]; out-of-bounds [1,9] on a 2-page doc still returns the separate `out-of-range` error. Regression pin added in the unit suite: `range: [3,2]` -> typed `engine-error` and NO pages stamped. Evidence: `npm.cmd run verify` exit 0; `npm.cmd run test:unit -- test/unit/main/watermark.test.ts` 37/37 passed. qa retest owed.)
+- qa: opened (2026-09-17; accepted from ADV-042 - reproduced: all seven malformed ranges return ok and bake the watermark onto pages 1..34; only [1,9999] errors with out-of-range; valid controls [1,1] and [5,6] honor the range)
+
+## DEF-217: A tiled text watermark with a tiny size freezes and then crashes the app (unbounded tile placement loop)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-041)
+- Phase: 18
+
+Steps to reproduce:
+1. Launch TFlex; open a PDF (the 1-page sample form.pdf suffices; also reproducible on the 34-page report.pdf).
+2. UI path: Tools palette -> Watermark; put "X" in the text field; tick Tile; set Size = 0.25 (the dialog's `min={4}` is advisory - typing a smaller number is accepted); click Apply watermark.
+3. API path (equivalent): `window.tflex.engine.addWatermark(docId, {type:'text', text:'X', size:0.25, tile:true})`.
+4. Harness: `node test-fixtures/tools/adv041_tile.cjs 0.25 form` (controls: `... 1 form`, `... 0.5 form`).
+
+Expected: A bounded, responsive apply (or a clear typed limit error); the app stays alive.
+Actual: Reproduced on the current tree (2026-09-18). `normalizeWatermarkSettings` accepts any `size > 0` with no lower bound and the tile loop emits ~270,000/size^2 placements with no cap, so apply cost scales ~size^-2. Measured single-page apply on form.pdf:
+- size 1 -> `addWatermark` ok in 1,059 ms
+- size 0.5 -> ok in 3,819 ms
+- size 0.25 -> never returns: the renderer becomes unresponsive and the Electron target dies; the harness FATALs with `page.evaluate: Target page, context or browser has been closed` (that target-closed exit IS the reproduction; the adversary measured the Electron working set peaking at 4,569 MB in the same scenario).
+No typed error, no recovery. The same missing bound is unbounded in the other direction: `size: 1e9` also bakes (invisible off-page glyph) without complaint.
+Screenshot: screenshots/adv-041-tile-size-025-before-apply.png (Watermark dialog with Size 0.25 + Tile checked, captured immediately before the freezing Apply; the dialog body is also visible overflowing its box)
+
+History:
+- qa: CLOSED (2026-09-18; retest - `node test-fixtures/tools/adv041_tile.cjs 0.25 form` / `0.5 form` -> typed engine-error "addWatermark: settings are invalid" (1 ms), `1 form` -> typed engine-error "tiling at this size would place more than 5000 copies on page 1" (9 ms); app alive, no target death. `e2e/def217_219_retest.spec.cjs` API test confirms each rejected payload leaves modified:false and 0 watermarks; 10 valid applies then the 11th returns "already has 10 watermarks (maximum)" with exactly 10 kept. UI half: dialog Tile + Size 0.25 + Apply shows "The watermark size must be between 4 and 2000 points." with no toast and no engine call.)
+- backend-dev: FIX-READY (2026-09-18; `normalizeWatermarkSettings` now rejects a PRESENT-but-invalid payload instead of dropping the field (absent fields still default): range must be exactly 2 integers with start >= 1 and start <= end; size must be finite and within MIN_WATERMARK_SIZE=1 .. MAX_WATERMARK_SIZE=2000; x/y must come as a finite pair; color r/g/b finite in [0,1]; font/position/type from their allow-lists; boolean flags must be booleans. Invalid payload -> typed `engine-error` "addWatermark: settings are invalid" with NOTHING mutated. New exported limits in settings.ts: MIN_WATERMARK_SIZE=1, MAX_WATERMARK_SIZE=2000, MAX_WATERMARK_PLACEMENTS_PER_PAGE=5000, MAX_WATERMARKS_PER_DOC=10. Engine guards before any mutation: the 11th watermark on a document -> "addWatermark: this document already has 10 watermarks (maximum)"; the tile branch computes its row/col counts arithmetically (no loop) and rejects above 5000 placements per page -> "addWatermark: tiling at this size would place more than 5000 copies on page <n> (increase the size or turn tiling off)". The dialog additionally refuses size outside 4..2000 in-dialog. Tests: 28 -> 37 in test/unit/main/watermark.test.ts (9 added: per-field rejects, opacity clamp controls, tiny-tile untouched-no-mutation, placement cap at size 1 + tile, legit size-24 tile still succeeds, 11th-watermark cap, inverted-range pin). Evidence: `npm.cmd run verify` exit 0; `npm.cmd run test:unit -- test/unit/main/watermark.test.ts` 37/37 passed. qa retest owed.)
+- qa: opened (2026-09-17; accepted from ADV-041 - reproduced: size 1 = 1,059 ms ok, size 0.5 = 3,819 ms ok, size 0.25 never returns and the renderer target closed ("Target page, context or browser has been closed"); no typed limit error)
+
+## DEF-216: Phase 18 Watermark "Apply watermark" is a dead path - the engine:addWatermark channel is never registered in main and never exposed in preload
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (phase-18 gate triage)
+- Phase: 18
+
+Steps to reproduce:
+1. Build the dev bundle: `npm.cmd run build:renderer` + `npm.cmd run build:node` (the full `npm.cmd run build` halts in typecheck on the known DEF-215 errors before it reaches bundling).
+2. Launch the dev build through the canonical `launchApp` helper from `e2e/lib/launch.cjs` (spec: `e2e/verify/def216_watermark_deadpath.spec.cjs`).
+3. On the welcome screen, open the bundled `report.pdf` sample.
+4. Open the Tools palette (`[data-tools-toggle]`, the "All Tools" badge) and click the `Watermark` entry (`[data-tool-id="watermark"]`).
+5. In the Watermark dialog (`[data-watermark-dialog]`), type "CONFIDENTIAL" into the text field (`[data-watermark-text]`).
+6. Click "Apply watermark" (`[data-watermark-confirm]`).
+
+Expected: The engine bakes the watermark into the document and the host shows the info toast "Watermark applied." with the baked watermark visible on the page (the Phase 18 promise).
+Actual: The dialog closes and an ERROR toast is shown instead: `Engine error: watermark requires the Phase 18 backend update` (DOM class `toast toast-error`); nothing is baked onto the page. Root cause, confirmed at HEAD: the IPC channel `engineAddWatermark` = `"engine:addWatermark"` is declared at `src/shared/ipc.ts:144`, but (a) `src/main/index.ts` has NO `ipcMain.handle` registration for it — the engine handler block (~lines 176-360) ends at `engineImportFdf` — and (b) `src/preload/preload.ts` exposes no `addWatermark` method on the engine bridge (the bridge ends at `importFdf`; the `addStamp` block, ~lines 294-299, is the last Phase 12 entry). `engineClient.addWatermark` therefore hits its `missingPhase18()` guard (`src/renderer/engine/engineClient.ts:1211`, message at `:639`) and returns `err("engine-error", "watermark requires the Phase 18 backend update")`, which `onWatermarkConfirm` in `src/renderer/App.tsx` surfaces as the error toast via `describeEngineError`.
+Screenshot: screenshots/def-216-watermark-deadpath.png
+
+History:
+- qa: opened (2026-09-17; phase-18 gate triage - new spec e2e/verify/def216_watermark_deadpath.spec.cjs, 0 passed/1 failed)
+- qa: CLOSED (2026-09-17; retest after the backend fix - `npm.cmd run test:e2e -- e2e/verify/def216_watermark_deadpath.spec.cjs` 1 passed/0 failed (5.4s, exit 0); toast now "Watermark applied." (class toast-info, isError=false); the baked "CONFIDENTIAL" watermark is visible on page 1 and its thumbnail; addWatermark is registered in src/main/index.ts and exposed in src/preload/preload.ts; screenshot screenshots/def-216-retest.png)
+
+## DEF-215: `npm run verify` fails at HEAD - two stale Phase-17 PreferencesDialog specs reference props the redesigned component no longer declares
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (phase-18 gate triage)
+- Phase: 18 (gate)
+
+Steps to reproduce:
+1. On the current HEAD tree, run `npm.cmd run verify` (which is `node scripts/check-conventions.mjs && npm run typecheck`).
+
+Expected: Exit code 0 — "conventions: clean" plus a clean typecheck (`tsc --noEmit -p tsconfig.json`).
+Actual: Exit code 1. Conventions pass ("conventions: clean (135 source file(s) scanned)") but typecheck fails with exactly two TS2322 errors:
+  - `test/unit/renderer/prefsAppearanceCategory.test.tsx(54,9)` — Property 'toolsPaletteLayout' does not exist on type 'IntrinsicAttributes & PreferencesDialogProps'.
+  - `test/unit/renderer/prefsGeneralCategory.test.tsx(56,11)` — Property 'showWelcomeOnStartup' does not exist on type 'IntrinsicAttributes & PreferencesDialogProps'.
+Exact compiler output (verbatim from `npm.cmd run verify` at HEAD):
+    test/unit/renderer/prefsAppearanceCategory.test.tsx(54,9): error TS2322: Type '{ open: true; onClose: () => void; themeDefault: "dark"; recentsCap: number; onSetThemeDefault: (v: ThemeDefault) => void; onThemeChange: (v: ThemeDefault) => void; ... 4 more ...; onSetPagesPanelCollapsed: ((v: boolean) => void) | undefined; }' is not assignable to type 'IntrinsicAttributes & PreferencesDialogProps'.
+      Property 'toolsPaletteLayout' does not exist on type 'IntrinsicAttributes & PreferencesDialogProps'.
+    test/unit/renderer/prefsGeneralCategory.test.tsx(56,11): error TS2322: Type '{ open: boolean; onClose: () => void; themeDefault: "dark"; recentsCap: number; onSetThemeDefault: () => void; onThemeChange: (v: ThemeDefault) => void; onSetRecentsCap: () => void; showWelcomeOnStartup: boolean | undefined; ... 5 more ...; onSetDefaultPdfHandler: (() => void) | undefined; }' is not assignable to type 'IntrinsicAttributes & PreferencesDialogProps'.
+      Property 'showWelcomeOnStartup' does not exist on type 'IntrinsicAttributes & PreferencesDialogProps'.
+The two specs test the OLD Phase-17 sidebar-navigation PreferencesDialog that the single-panel redesign (commit 855ad17) removed: the redesign dropped `toolsPaletteLayout` / `showWelcomeOnStartup` from `PreferencesDialogProps` but left the two unit specs behind, so the phase-gate typecheck cannot pass at HEAD.
+
+History:
+- qa: opened (2026-09-17; phase-18 gate triage - reproduction of the two TS2322 errors on the current HEAD tree)
+- frontend-dev: FIX-READY (2026-09-17; deleted the two obsolete specs `test/unit/renderer/prefsAppearanceCategory.test.tsx` + `prefsGeneralCategory.test.tsx` (they test the removed sidebar-navigation design) and added `test/unit/renderer/prefsDialogRedesign.test.tsx` with 5 tests pinning the redesigned single-panel dialog: dialog mounts, the three section titles in order (Appearance / Recent files / Storage locations), the theme select offers exactly Light/Dark/Frosted/System default, changing it fires onSetThemeDefault + onThemeChange, and entering 25 in the recents-cap input lanes to onSetRecentsCap(25). `PreferencesDialog.tsx` untouched. Evidence: `npm.cmd run verify` exit 0 ("conventions: clean (135 source file(s) scanned)" + clean tsc); targeted run `npm.cmd run test:unit -- test/unit/renderer/preferences.test.ts test/unit/renderer/prefsDialogRedesign.test.tsx test/unit/renderer/prefsThemeImmediate.test.tsx` = 3 files / 68 tests passed. qa retest owed.)
+- qa: CLOSED (2026-09-18; run-close retest of the red gate - `npm.cmd run verify` exit 0 with conventions clean + clean tsc; the two stale specs `prefsAppearanceCategory.test.tsx` / `prefsGeneralCategory.test.tsx` are gone and `prefsDialogRedesign.test.tsx` (5 tests) is present; targeted run `npm.cmd run test:unit -- test/unit/renderer/prefsDialogRedesign.test.tsx test/unit/renderer/preferences.test.ts test/unit/renderer/prefsThemeImmediate.test.tsx` = 3 files / 68 tests passed. The status was set CLOSED by the retest batch; this History line restores the required close record, citing the evidence re-verified by the run-close QA pass, item 2.)
+
 ## DEF-214: Installed v1.16.1 ships without the annotation toolbar - and the Edit toggle is missing from the CommandBar, so the edit toolbar is unreachable
 
 - Status: CLOSED
@@ -50,7 +202,7 @@ History:
 
 ## DEF-213: Preferences "Theme default" shows "Dark" when the field is absent, and re-selecting Dark is a silent no-op
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 6+ (post-v1 Preferences theme dropdown feature; surfaced during DEF-212 retest)
@@ -67,6 +219,8 @@ Screenshot: (none — evidence is on-disk state; repro spec e2e/probe_theme_pers
 
 History:
 - qa: opened (2026-09-15; found by the e2e probe run while verifying DEF-212 persistence — selecting Dark on a fresh profile left settings.json without themeDefault, confirmed while the app was still running, so it is not a quit-time clobber)
+- frontend-dev: FIX-READY (2026-09-17; the implicit default now follows the concrete booted theme instead of the hardcoded 'dark': `src/renderer/state/preferences.ts:134` is now `state.themeDefault ?? state.theme` and `src/renderer/App.tsx:7141` is now `settings.themeDefault ?? settings.theme` (the file had drifted from :7120 to :7141 since the report). On a factory profile `theme` is 'frosted' (src/main/services/settings.ts:169) and `themeDefault` is only written when the persisted value is a valid string (:250), so the dropdown now shows Frosted — the theme the app actually boots — and explicitly picking Dark produces `{...state, themeDefault:'dark'}` instead of the identity no-op. Unit tests added in `test/unit/renderer/preferences.test.ts` (`set-theme-default` describe): factory shape theme:'frosted' + pick 'dark' -> themeDefault 'dark' and result !== input; pick 'frosted' -> identity (no redundant persist). The stale comment at the old lines 49-51 was updated to name the concrete `theme` as the implicit default. Evidence: `npm.cmd run verify` exit 0; `npm.cmd run test:unit -- test/unit/renderer/preferences.test.ts test/unit/renderer/prefsDialogRedesign.test.tsx test/unit/renderer/prefsThemeImmediate.test.tsx` = 68 tests passed. qa retest owed.)
+- qa: CLOSED (2026-09-17; retest via `npm.cmd run test:e2e -- e2e/probe_theme_persist.spec.cjs` (fresh empty user-data profile) 1 passed/0 failed (1.7s, exit 0). Assertion 1: fresh-profile "Theme default" select value = `frosted` (pre-fix `dark`). Assertion 2: after selecting `dark`, settings.json read WHILE the app was still running = `{"theme":"frosted","geometry":{"x":100,"y":100,"width":1440,"height":900,"maximized":false},"recentFiles":[],"themeDefault":"dark"}` — the `"themeDefault":"dark"` key is now present (pre-fix it was a silent no-op, key absent); post-quit content identical, so it was a live write. Screenshot screenshots/def-213-retest.png (Preferences open on the fresh profile, the theme-default dropdown showing Frosted).)
 
 ## DEF-211: Ghost annotation remains interactive when dialog opens — annotation tool not disarmed before dialog mount
 

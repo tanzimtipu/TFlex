@@ -139,9 +139,13 @@ export const IPC = {
   engineExportFdf: "engine:exportFdf",
   engineImportFdf: "engine:importFdf",
   // Phase 18: watermark (text or image overlay). The engine bakes the
-  // watermark into each selected page's content stream (one-way, like
-  // stamps: undoable via the per-doc queue, no re-editable entity).
+  // watermark into each selected page's content stream (undoable via the
+  // per-doc queue). DEF-216: each application is an individually
+  // addressable watermark (marker line in the page's content stream), so
+  // applied watermarks can be listed and deleted by id.
   engineAddWatermark: "engine:addWatermark",
+  engineGetWatermarks: "engine:getWatermarks",
+  engineDeleteWatermark: "engine:deleteWatermark",
   signaturesList: "signatures:list",
   signaturesSave: "signatures:save",
   signaturesDelete: "signatures:delete",
@@ -409,9 +413,11 @@ export interface TFlexApiEngine {
     fdfBytes: Uint8Array,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
   /** Phase 18 — bake a text or image watermark into the content streams
-   *  of the selected pages (one-way, like stamps: the pixels survive the
-   *  save round-trip, but there is no re-editable watermark entity after
-   *  apply; undo via the per-doc queue removes it). `settings` is the
+   *  of the selected pages. Each application is an individually
+   *  addressable watermark (id `wm-N`): the marker baked into each page's
+   *  content stream survives the save round-trip, so `getWatermarks` can
+   *  still report it after a reopen and `deleteWatermark` can remove it by
+   *  id. Undo via the per-doc queue also removes it. `settings` is the
    *  shared `WatermarkSettings` payload — type, text / imageBytes,
    *  typography, color, opacity, position (or explicit x/y), tile, and
    *  the 1-based inclusive page range. Optional so a pre-Phase-18
@@ -419,6 +425,21 @@ export interface TFlexApiEngine {
   addWatermark?(
     docId: string,
     settings: WatermarkSettings,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 18 / DEF-216 — report the watermarks applied to the document:
+   *  one record per applied watermark (ids like `wm-1`, in first-seen
+   *  order), each listing the 1-based visible page numbers that carry it
+   *  (ascending). `text` is '' for image watermarks. Identity is read
+   *  from the marker line baked into each page's content stream, so the
+   *  records survive a save/reopen. */
+  getWatermarks?(docId: string): Promise<Result<import("./types").WatermarkInfo[], import("./types").EngineError>>;
+  /** Phase 18 / DEF-216 — delete an applied watermark by id (see
+   *  `getWatermarks`): its content stream is removed from every page that
+   *  carries it. Unknown or empty ids, and ids with no matching stream,
+   *  fail with 'engine-error' (never a silent success). */
+  deleteWatermark?(
+    docId: string,
+    watermarkId: string,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
 }
 

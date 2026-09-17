@@ -82,14 +82,45 @@ export const DEFAULT_WATERMARK_COLOR: EditColor = { r: 0.5, g: 0.5, b: 0.5 };
  *  payload omits `size`. */
 export const DEFAULT_WATERMARK_TEXT_SIZE = 48;
 
+/** Phase 18 / DEF-217 — watermark size bounds (points). `size` is the text
+ *  font size or the image's drawn height. A present-but-out-of-bounds size
+ *  rejects the payload (see `normalizeWatermarkSettings`); the lower bound
+ *  is what stops a tiled `size: 0.25` from emitting millions of
+ *  placements (DEF-217). */
+export const MIN_WATERMARK_SIZE = 1;
+export const MAX_WATERMARK_SIZE = 2000;
+
+/** Phase 18 / DEF-220 — per-page placement bound. The engine computes a
+ *  tiled pattern's row*column count arithmetically from the same bounds the
+ *  draw loop uses and rejects the payload before mutating the document; a
+ *  tiled 0.25 pt watermark would otherwise place ~4.3 million copies. */
+export const MAX_WATERMARK_PLACEMENTS_PER_PAGE = 5000;
+
+/** Phase 18 / DEF-220 — per-document watermark cap. Counted from the baked
+ *  content-stream markers (the same scan `getWatermarks` uses), so the
+ *  bound survives undo/restore and save/reopen. */
+export const MAX_WATERMARKS_PER_DOC = 10;
+
 /**
- * Phase 18 — normalise a raw watermark settings value, preserve-if-valid.
- * Returns `null` when the core fields are invalid: unknown `type`, missing/
- * empty `text` for a text watermark, or missing/empty `imageBytes` for an
- * image watermark. Valid optional fields are preserved and clamped
- * (`opacity` into 0..1, `size` must be > 0, `color` components into 0..1,
- * `range` integers with start >= 1 and start <= end); invalid optional
- * fields are dropped individually (unknown font/position, partial x/y).
+ * Phase 18 — normalise a raw watermark settings value, reject-if-invalid.
+ * Returns `null` when the payload must be rejected. A field that is ABSENT
+ * gets its default (applied by the engine); a field that is PRESENT but
+ * invalid rejects the whole payload, so a mistyped range can never silently
+ * become an all-pages stamp (DEF-218).
+ *
+ * Core fields: unknown `type`, missing/empty `text` for a text watermark,
+ * or missing/empty `imageBytes` for an image watermark reject.
+ *
+ * Optional fields, present-but-invalid -> reject:
+ *   - `size`: finite, MIN_WATERMARK_SIZE..MAX_WATERMARK_SIZE (DEF-217)
+ *   - `range`: array of exactly 2 integers, start >= 1, start <= end
+ *   - `x`/`y`: either present -> both required, finite (any sign)
+ *   - `color`: object with finite r/g/b each in 0..1
+ *   - `font`/`position`/`type`: allowlist members
+ *   - `bold`/`italic`/`underline`/`tile`: booleans
+ *
+ * `opacity` is unchanged: absent -> default, present -> clamped into 0..1
+ * (documented behaviour, not a defect). `text`/`imageBytes` are unchanged.
  * The engine uses this to validate the `addWatermark` payload before
  * touching the document (reject -> 'engine-error').
  */
@@ -114,53 +145,79 @@ export function normalizeWatermarkSettings(raw: unknown): WatermarkSettings | nu
     if (bytes === null || bytes.length === 0) return null;
     out.imageBytes = bytes;
   }
-  if (
-    typeof r.font === 'string' &&
-    (r.font === 'Helvetica' || r.font === 'Times' || r.font === 'Courier')
-  ) {
+  if (r.font !== undefined) {
+    if (r.font !== 'Helvetica' && r.font !== 'Times' && r.font !== 'Courier') return null;
     out.font = r.font as EditFont;
   }
-  if (typeof r.bold === 'boolean') out.bold = r.bold;
-  if (typeof r.italic === 'boolean') out.italic = r.italic;
-  if (typeof r.size === 'number' && Number.isFinite(r.size) && r.size > 0) {
+  if (r.bold !== undefined) {
+    if (typeof r.bold !== 'boolean') return null;
+    out.bold = r.bold;
+  }
+  if (r.italic !== undefined) {
+    if (typeof r.italic !== 'boolean') return null;
+    out.italic = r.italic;
+  }
+  if (r.underline !== undefined) {
+    if (typeof r.underline !== 'boolean') return null;
+    out.underline = r.underline;
+  }
+  if (r.size !== undefined) {
+    if (
+      typeof r.size !== 'number' || !Number.isFinite(r.size) ||
+      r.size < MIN_WATERMARK_SIZE || r.size > MAX_WATERMARK_SIZE
+    ) {
+      return null;
+    }
     out.size = r.size;
   }
-  if (r.color !== null && typeof r.color === 'object') {
+  if (r.color !== undefined) {
+    if (r.color === null || typeof r.color !== 'object') return null;
     const c = r.color as Record<string, unknown>;
     const inUnit = (v: unknown): number | null =>
       typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1 ? v : null;
     const cr = inUnit(c.r);
     const cg = inUnit(c.g);
     const cb = inUnit(c.b);
-    if (cr !== null && cg !== null && cb !== null) {
-      out.color = { r: cr, g: cg, b: cb };
-    }
+    if (cr === null || cg === null || cb === null) return null;
+    out.color = { r: cr, g: cg, b: cb };
   }
+  // Unchanged: absent -> default (engine), present numeric -> clamped.
   if (typeof r.opacity === 'number' && Number.isFinite(r.opacity)) {
     out.opacity = Math.max(0, Math.min(1, r.opacity));
   }
-  if (
-    typeof r.position === 'string' &&
-    (WATERMARK_POSITIONS as readonly string[]).includes(r.position)
-  ) {
+  if (r.position !== undefined) {
+    if (
+      typeof r.position !== 'string' ||
+      !(WATERMARK_POSITIONS as readonly string[]).includes(r.position)
+    ) {
+      return null;
+    }
     out.position = r.position as WatermarkPosition;
   }
-  if (
-    typeof r.x === 'number' && Number.isFinite(r.x) &&
-    typeof r.y === 'number' && Number.isFinite(r.y)
-  ) {
+  if (r.x !== undefined || r.y !== undefined) {
+    if (
+      typeof r.x !== 'number' || !Number.isFinite(r.x) ||
+      typeof r.y !== 'number' || !Number.isFinite(r.y)
+    ) {
+      return null;
+    }
     out.x = r.x;
     out.y = r.y;
   }
-  if (typeof r.tile === 'boolean') out.tile = r.tile;
-  if (Array.isArray(r.range) && r.range.length === 2) {
+  if (r.tile !== undefined) {
+    if (typeof r.tile !== 'boolean') return null;
+    out.tile = r.tile;
+  }
+  if (r.range !== undefined) {
+    if (!Array.isArray(r.range) || r.range.length !== 2) return null;
     const [a, b] = r.range;
     if (
-      typeof a === 'number' && typeof b === 'number' &&
-      Number.isInteger(a) && Number.isInteger(b) && a >= 1 && a <= b
+      typeof a !== 'number' || typeof b !== 'number' ||
+      !Number.isInteger(a) || !Number.isInteger(b) || a < 1 || a > b
     ) {
-      out.range = [a, b];
+      return null;
     }
+    out.range = [a, b];
   }
   return out;
 }

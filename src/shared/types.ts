@@ -777,8 +777,11 @@ export type WatermarkPosition =
 
 /** Phase 18 — payload for `engine.addWatermark`. The engine bakes the
  *  watermark into each selected page's content stream at apply time
- *  (one-way, like stamps: pixels survive the save round-trip, but there is
- *  no re-editable watermark entity after apply).
+ *  (pixels survive the save round-trip). Each application is an
+ *  individually addressable watermark: the marker baked into each page's
+ *  content stream stays individually addressable — `getWatermarks` lists
+ *  the applied watermarks and `deleteWatermark` removes one by id, and
+ *  the identity survives a save/reopen round-trip.
  *
  *  Text watermark: `text` is required; `font`/`bold`/`italic` select among
  *  the bundled standard fonts, `size` is the font size in points, `color`
@@ -808,6 +811,8 @@ export interface WatermarkSettings {
   bold?: boolean;
   /** Typography: italic style (text watermark only). */
   italic?: boolean;
+  /** Typography: underline style (text watermark only). */
+  underline?: boolean;
   /** Font size in points (text) / drawn height in points (image). */
   size?: number;
   /** Text glyph color, components in [0,1]. Default is light gray. */
@@ -823,4 +828,12 @@ export interface WatermarkSettings {
   tile?: boolean;
   /** 1-based inclusive visible-page range; omitted = all pages. */
   range?: [number, number];
+}
+
+/** Phase 18 — one applied watermark as reported by `engine.getWatermarks`. */
+export interface WatermarkInfo {
+  id: string;
+  type: WatermarkType;
+  text: string;
+  pages: number[];
 }

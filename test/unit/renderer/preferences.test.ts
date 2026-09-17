@@ -46,14 +46,32 @@ describe("preferencesReducer.set-theme-default", () => {
     const values = ["light", "dark", "frosted", "system"] as const;
     for (const value of values) {
       // Seed an explicit default DIFFERENT from `value`: the reducer's
-      // equality guard treats an absent field as the implicit 'dark',
-      // so writing 'dark' into an unseeded state is an intentional
-      // no-op (no redundant persist) and would skip the assertion.
+      // equality guard treats an absent field as the state's concrete
+      // `theme` (the theme the app actually boots with — DEF-213),
+      // so writing the booted theme into an unseeded state is an
+      // intentional no-op (no redundant persist) and would skip the
+      // assertion.
       const seed = value === "light" ? "dark" : "light";
       const s = makeSettings({ themeDefault: seed });
       const next = preferencesReducer(s, { type: "set-theme-default", value });
       expect(next.themeDefault).toBe(value);
     }
+  });
+  // DEF-213 — on a factory profile `themeDefault` is absent while the
+  // app boots on the concrete `theme` (factory default 'frosted').
+  // The guard must read that concrete theme: a user picking 'dark'
+  // while on frosted previously no-opped silently (the guard compared
+  // against the implicit 'dark').
+  it("materialises themeDefault when the booted theme differs (factory shape)", () => {
+    const s = makeSettings({ theme: "frosted" });
+    const next = preferencesReducer(s, { type: "set-theme-default", value: "dark" });
+    expect(next.themeDefault).toBe("dark");
+    expect(next).not.toBe(s);
+  });
+  it("no-ops when the value equals the booted theme (factory shape)", () => {
+    const s = makeSettings({ theme: "frosted" });
+    const next = preferencesReducer(s, { type: "set-theme-default", value: "frosted" });
+    expect(next).toBe(s);
   });
 });
 

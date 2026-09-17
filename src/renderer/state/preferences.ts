@@ -131,7 +131,12 @@ export function preferencesReducer(
 ): AppSettings {
   switch (action.type) {
     case 'set-theme-default': {
-      const current: ThemeDefault = state.themeDefault ?? 'dark';
+      // DEF-213 — when the factory profile leaves `themeDefault`
+      // absent, the implicit default is the concrete `theme` the
+      // app actually boots with (factory default 'frosted'), not
+      // 'dark': picking the booted theme no-ops, and picking any
+      // other theme persists instead of silently no-op-ing.
+      const current: ThemeDefault = state.themeDefault ?? state.theme;
       if (current === action.value) return state;
       return { ...state, themeDefault: action.value };
     }

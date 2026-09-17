@@ -22,6 +22,7 @@ import type {
   SpaceAudit,
   StampId,
   UpdateState,
+  WatermarkInfo,
   WatermarkSettings,
 } from "../shared/types";
 import type { TFlexApi } from "../shared/ipc";
@@ -414,6 +415,15 @@ export function App(): ReactElement {
   // the toolbar / tools palette entry; the dialog drives its own
   // engine IPC through onWatermarkConfirm.
   const [watermarkOpen, setWatermarkOpen] = useState(false);
+  // Phase 18 — applied-watermark list for the active doc, fetched from
+  // `engine.getWatermarks` each time the dialog opens (informational
+  // only: the dialog's list also drives per-id delete).
+  const [watermarkList, setWatermarkList] = useState<WatermarkInfo[]>([]);
+  // DEF-219 — single-flight delete: id whose delete is in flight (drives
+  // the dialog row's disabled Delete), backed by a ref so the guard does
+  // not read a stale state value when two clicks land in one tick.
+  const [deletingWatermarkId, setDeletingWatermarkId] = useState<string | null>(null);
+  const deleteInFlightRef = useRef<boolean>(false);
   const [commentExportOpen, setCommentExportOpen] = useState(false);
   const [commentImportOpen, setCommentImportOpen] = useState(false);
   // B8 — delete pages dialog. The toolbar's Delete control opens
@@ -4369,13 +4379,32 @@ pushToast(
     setStampOpen(false);
   }, []);
 
+  /** Phase 18 — fetch the applied-watermark list for the active doc
+   *  (informational: it feeds the dialog's "Applied watermarks"
+   *  section and its per-id delete buttons). A failure — or a
+   *  pre-Phase-18 backend without `getWatermarks` — just clears the
+   *  list; no toast, the list is not a user action. */
+  const refreshWatermarkList = useCallback(async (): Promise<void> => {
+    const activeId = activeTabIdRefLocal.current;
+    if (activeId === null) return;
+    const open = openTabsRef.current[activeId];
+    if (open === undefined) return;
+    const res = await engineRef.current.getWatermarks?.(open.session.engineDocId);
+    if (res === undefined || !res.ok) {
+      setWatermarkList([]);
+      return;
+    }
+    setWatermarkList(res.value);
+  }, []);
+
   /** Phase 18 — open the Watermark dialog from the toolbar / tools
    *  palette. The palette entry is disabled on doc-less tabs, so the
    *  guard here is a safety net for the other entry points. */
   const onWatermarkClick = useCallback((): void => {
     if (activeTabIdRefLocal.current === null) return;
     setWatermarkOpen(true);
-  }, []);
+    void refreshWatermarkList();
+  }, [refreshWatermarkList]);
 
   const onCancelWatermark = useCallback((): void => {
     setWatermarkOpen(false);
@@ -4417,6 +4446,57 @@ pushToast(
       pushToast("info", "Watermark applied.");
     },
     [noteOpApplied, pushToast],
+  );
+
+  /** Phase 18 — delete an applied watermark by id from the active
+   *  document through `engine.deleteWatermark`. On success the mirror
+   *  refreshes via `noteOpApplied` and the pdf.js proxy reloads (the
+   *  watermark's content stream was removed from the pages), then the
+   *  dialog's applied-watermark list refreshes. The dialog stays open
+   *  so the user can delete more watermarks in one pass. */
+  const onDeleteWatermark = useCallback(
+    async (id: string): Promise<void> => {
+      // DEF-219 — single-flight: a second click while the first delete is
+      // still awaiting the engine must not fire a delete for an id the
+      // engine already removed (the stale row stays in the DOM until the
+      // list refresh returns). The ref is authoritative; the state value
+      // would be stale inside this callback.
+      if (deleteInFlightRef.current) return;
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      deleteInFlightRef.current = true;
+      setDeletingWatermarkId(id);
+      try {
+        const res = await engineRef.current.deleteWatermark?.(
+          open.session.engineDocId,
+          id,
+        );
+        if (res === undefined) {
+          pushToast(
+            "error",
+            describeEngineError("engine-error", "Watermark requires the Phase 18 backend update."),
+          );
+          return;
+        }
+        if (!res.ok) {
+          pushToast("error", describeEngineError(res.error.code, res.error.message));
+          return;
+        }
+        noteOpApplied(activeId, res.value);
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(activeId).catch(() => undefined);
+        }
+        pushToast("info", "Watermark deleted.");
+        void refreshWatermarkList();
+      } finally {
+        deleteInFlightRef.current = false;
+        setDeletingWatermarkId(null);
+      }
+    },
+    [noteOpApplied, pushToast, refreshWatermarkList],
   );
 
   const onStampConfirm = useCallback(
@@ -7061,6 +7141,11 @@ pushToast(
           void onWatermarkConfirm(s);
         }}
         onClose={onCancelWatermark}
+        watermarks={watermarkList}
+        busyWatermarkId={deletingWatermarkId}
+        onDeleteWatermark={(id): void => {
+          void onDeleteWatermark(id);
+        }}
       />
       <CommentExportDialog
         open={commentExportOpen}
@@ -7138,7 +7223,9 @@ pushToast(
       <PreferencesDialog
         open={prefsOpen}
         onClose={(): void => setPrefsOpen(false)}
-        themeDefault={settings.themeDefault ?? 'dark'}
+        // DEF-213 — an absent themeDefault means the app boots on
+        // the concrete `settings.theme`; show that, not 'dark'.
+        themeDefault={settings.themeDefault ?? settings.theme}
         recentsCap={settings.recentsCap ?? DEFAULT_RECENTS_CAP}
         onSetThemeDefault={(next): void => {
           setSettings((prev) => {

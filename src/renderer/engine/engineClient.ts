@@ -32,6 +32,7 @@ import type {
   SignaturePlacement,
   SpaceAudit,
   TextPage,
+  WatermarkInfo,
   WatermarkSettings,
 } from "../../shared/types";
 import type { Annotation, AnnotationPatch, PagePoint, PageRect } from "../annotations/model";
@@ -406,9 +407,22 @@ export interface TFlexApiEngine {
   /** Phase 18 — bake a text or image watermark into the content
    *  streams of the selected pages. Optional so a pre-Phase-18
    *  backend degrades with a friendly engine-error. */
-  addWatermark?(
+addWatermark?(
+     docId: string,
+     settings: WatermarkSettings,
+   ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 18 — report the watermarks applied to the document (one
+   *  record per id, in first-seen order; `text` is '' for image
+   *  watermarks; pages are 1-based visible, ascending). Optional so a
+   *  pre-Phase-18 backend degrades with a friendly engine-error. */
+  getWatermarks?(docId: string): Promise<Result<WatermarkInfo[], EngineError>>;
+  /** Phase 18 — delete an applied watermark by id (see
+   *  `getWatermarks`). Unknown or empty ids fail with 'engine-error'
+   *  (never a silent success). Optional so a pre-Phase-18 backend
+   *  degrades with a friendly engine-error. */
+  deleteWatermark?(
     docId: string,
-    settings: WatermarkSettings,
+    watermarkId: string,
   ): Promise<Result<SharedEngineState, EngineError>>;
 }
 
@@ -1210,6 +1224,28 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.addWatermark === undefined) return missingPhase18();
     const r = await this.inner.addWatermark(docId, settings);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** Phase 18 — list the watermarks applied to the document (one
+   *  record per id, in first-seen order). The record list needs no
+   *  state normalization, so the raw engine result is returned as-is. */
+  async getWatermarks(docId: string): Promise<Result<WatermarkInfo[], EngineError>> {
+    if (this.inner.getWatermarks === undefined) return missingPhase18();
+    return this.inner.getWatermarks(docId);
+  }
+
+  /** Phase 18 — delete an applied watermark by id from every page
+   *  that carries it. The engine echoes the new state so the
+   *  renderer's mirror refreshes through the standard
+   *  `normalizeAndCache` path (the host refreshes the pdf.js proxy
+   *  afterwards, same as addWatermark). */
+  async deleteWatermark(
+    docId: string,
+    watermarkId: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.deleteWatermark === undefined) return missingPhase18();
+    const r = await this.inner.deleteWatermark(docId, watermarkId);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 }

@@ -27,6 +27,7 @@ import type {
   SignaturePlacement,
   SpaceAudit,
   TextPage,
+  WatermarkInfo,
   WatermarkSettings,
 } from "../../shared/types";
 import type { Annotation, AnnotationPatch } from "../annotations/model";
@@ -522,14 +523,33 @@ export interface EngineApi {
    *  streams of the selected pages. `settings` is the shared
    *  `WatermarkSettings` payload (type, text / imageBytes, typography,
    *  color, opacity, position or explicit x/y, tile, and the 1-based
-   *  inclusive page range). The watermark is one-way (like stamps): the
-   *  engine bakes it at apply time and there is no re-editable watermark
-   *  entity after apply — undo via the per-doc queue removes it.
+   *  inclusive page range). Each application is an individually
+   *  addressable watermark (id `wm-N`): it is baked into per-page
+   *  content streams but stays individually addressable —
+   *  `getWatermarks` lists them and `deleteWatermark` removes one by
+   *  id, and the identity survives a save/reopen round-trip.
    *  Optional so a pre-Phase-18 backend degrades with a friendly
    *  engine-error. */
   addWatermark?(
     docId: string,
     settings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 18 — report the watermarks applied to the document: one
+   *  record per applied watermark (ids like `wm-1`, in first-seen
+   *  order), each listing the 1-based visible page numbers that carry
+   *  it (ascending). `text` is '' for image watermarks. Optional so a
+   *  pre-Phase-18 backend degrades with a friendly engine-error. */
+  getWatermarks?(docId: string): Promise<Result<WatermarkInfo[], EngineError>>;
+
+  /** Phase 18 — delete an applied watermark by id (see
+   *  `getWatermarks`): its content stream is removed from every page
+   *  that carries it. Unknown or empty ids fail with 'engine-error'
+   *  (never a silent success). Optional so a pre-Phase-18 backend
+   *  degrades with a friendly engine-error. */
+  deleteWatermark?(
+    docId: string,
+    watermarkId: string,
   ): Promise<Result<EngineState, EngineError>>;
 
   /** Peek the renderer's most-recent normalized EngineState for `docId`

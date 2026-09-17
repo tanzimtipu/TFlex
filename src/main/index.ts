@@ -23,6 +23,8 @@ import type {
   PageLabelEntry,
   PlaceSignaturePayload,
   RecentFile,
+  WatermarkInfo,
+  WatermarkSettings,
 } from '../shared/types';
 import type { SignatureSource } from '../shared/types';
 import { openPdfDialog } from './services/dialog';
@@ -355,6 +357,19 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineImportFdf, (_event, docId: string, fdfBytes: Uint8Array) =>
     engine.importFdf(docId, fdfBytes),
+  );
+  // Phase 18 / DEF-216: watermarks — apply, list (by the marker baked
+  // into each page's content stream), delete by id.
+  ipcMain.handle(IPC.engineAddWatermark, (_event, docId: string, settings: WatermarkSettings) =>
+    engine.addWatermark(docId, settings),
+  );
+  ipcMain.handle(
+    IPC.engineGetWatermarks,
+    (_event, docId: string): Promise<import('../shared/result').Result<WatermarkInfo[], import('../shared/types').EngineError>> =>
+      engine.getWatermarks(docId),
+  );
+  ipcMain.handle(IPC.engineDeleteWatermark, (_event, docId: string, watermarkId: string) =>
+    engine.deleteWatermark(docId, watermarkId),
   );
 
   // Phase 4: saved signatures service

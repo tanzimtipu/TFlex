@@ -31,6 +31,8 @@ import type {
   SpaceAudit,
   TextPage,
   UpdateState,
+  WatermarkInfo,
+  WatermarkSettings,
 } from "../shared/types";
 import type { Result } from "../shared/result";
 import type { FdfOpenError, PdfOpenError } from "../shared/types";
@@ -296,6 +298,24 @@ const engineApi = {
     payload: AddStampPayload,
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineAddStamp, docId, payload);
+  },
+  // Phase 18 / DEF-216: watermarks — apply, list, delete by id
+  addWatermark(
+    docId: string,
+    settings: WatermarkSettings,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineAddWatermark, docId, settings);
+  },
+  getWatermarks(
+    docId: string,
+  ): Promise<Result<WatermarkInfo[], EngineError>> {
+    return ipcRenderer.invoke(IPC.engineGetWatermarks, docId);
+  },
+  deleteWatermark(
+    docId: string,
+    watermarkId: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineDeleteWatermark, docId, watermarkId);
   },
   exportFdf(
     docId: string,

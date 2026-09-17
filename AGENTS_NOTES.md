@@ -2253,3 +2253,47 @@ defect ledger, and no qa re-verification on the installed build was ever dispatc
 **Convention going forward:** a green build with un-dispositioned defects is not a
 green gate. (DEF-214 itself remains OPEN until qa re-verifies an installed build —
 correct per the new rule; v1.17.0's release must disposition it.)
+
+## 2026-09-18: Phase 18 completion — review findings, harness lessons, ledger hygiene
+
+**Review finding (the reason this phase needed a review at all):** Phase 18 was committed as
+"WIP" and looked complete — engine method, shared types, IPC channel constant, renderer client,
+dialog, tools-palette entry, unit tests. It was not wired: `IPC.engineAddWatermark` was declared
+in `src/shared/ipc.ts` but had **no `ipcMain.handle` in `src/main/index.ts`** and **no bridge
+method in `src/preload/preload.ts`**, so `engineClient.addWatermark` hit its
+`missingPhase18()` guard and every Apply produced the error toast. Rule: **a shared IPC channel
+constant is not wiring** — a feature is only wired when main registers the channel, preload
+exposes it, and a real end-to-end run proves the effect. Gate-triage (qa) before any dev dispatch
+is what caught it (DEF-216); do the same whenever a phase lands as "WIP".
+
+**Harness lesson — local-model resume returned empty THREE times.** When the local qwen3.8-27b
+child stalled mid-turn (report truncated mid-sentence / mid-tool-call: the 65,536-token
+generation budget includes reasoning), re-issuing the dispatch with the same `task_id` returned
+**zero output** every time (3/3, including after a partial `Copy-Item` that did land). What
+worked every time: a **fresh dispatch with a halved, patch-free scope** — and for a
+"modify an existing large spec" task, do not ask a local model to emit large edit diffs; have it
+author a small file from scratch with every selector and assertion supplied in the spec.
+Treat document-scale resume as the plan of last resort on the local route.
+
+**Parallel-dispatch lesson (cloud team):** backend-dev and frontend-dev may run together on
+disjoint paths, but a verify run can transiently fail while a sibling is mid-edit (frontend saw
+a `TS6133` unused-constant error from backend's half-applied edit that cleared ~30 s later). The
+gate of record is the **combined tree** run after every child settles, not a sibling's snapshot.
+
+**Ledger hygiene — never round-trip a ledger through PowerShell.** `Get-Content` (Windows-1252
+default in PS 5.1) + `Set-Content -Encoding UTF8` mangles every non-ASCII character
+("—" -> "â€") and adds a BOM. It corrupted `ADVERSARIAL_REVIEW.md` once this run and was repaired
+with the exact inverse transform (read UTF-8 -> encode CP1252 -> decode UTF-8, write UTF-8 no
+BOM); the repair was verified by `git diff --numstat` showing insertions only, 0 deletions.
+**Rule: orchestrator and qa edit ledgers with the edit tool only.**
+
+**Pre-existing damage (not this run):** `DEFECTS.md` HEAD carries 280 mojibake sequences in old
+entries DEF-103..DEF-170 (identical count before and after this run), and `AGENTS_NOTES.md` has
+the same class of damage in older sections. Repair recipe is the single-layer inverse transform
+above, verified by comparing the mojibake count (expect 0) and `git diff` showing no content
+deletion. Left for a dedicated cleanup hatch; do not mix it into a feature commit.
+
+**Phase 18 limits now in force (documented product limits):** watermark size 1..2000 pt (dialog
+enforces 4..2000), max 10 watermarks per document, max 5000 tile placements per page — each
+rejects with a typed `engine-error` and mutates nothing. A present-but-invalid optional field
+rejects the whole `addWatermark` payload; only an absent field defaults.

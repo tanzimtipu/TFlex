@@ -9506,3 +9506,82 @@ rect.ann-highlight.ann-preview {
   left: 50%;
   transform: translate(-50%, -50%);
 }
+
+/* DEF-219 — applied-watermark list containment. The list owns a fixed
+ * scroll area so a document with dozens of watermarks cannot widen the
+ * dialog (the wide "Pages 1, 2, ..." cell was the width driver) or bury
+ * the footer far below the viewport. Rows may wrap instead of forcing
+ * a horizontal overflow. */
+.watermark-applied {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.watermark-applied-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+}
+
+.watermark-applied-row {
+  align-items: center;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.watermark-applied-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* DEF-219 (residual) - dialog containment, scoped to the watermark
+ * dialog via its `data-watermark-dialog` backdrop hook so the shared
+ * `.modal-dialog` / `.modal-body` rules other dialogs depend on stay
+ * untouched. Three separate causes, three scoped rules:
+ *
+ * 1. `.modal-body` is a grid item in the dialog's `1fr` row; with the
+ *    default `min-height: auto` it refuses to shrink below its content
+ *    height, so the dialog overflows its own `max-height` and scrolls
+ *    as a whole - carrying the footer (Apply/Cancel) below the
+ *    viewport. `minmax(0, 1fr)` on the row plus `min-height: 0` on the
+ *    body lets the body itself own the vertical scroll instead.
+ *    Measured before: dialog scrollWidth 544 > clientWidth 443, footer
+ *    bottom 1470 at a 1440x900 viewport. */
+[data-watermark-dialog] .modal-dialog {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+[data-watermark-dialog] .modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 2. The coordinate row (X / Y number inputs + Tile checkbox) is the
+ *    only child whose min-content exceeds the body's content box:
+ *    measured min-content 483 px (197 + 197 + 66 + 2x12 gaps) versus a
+ *    411 px content box, so it spilled ~72 px past the body and got
+ *    clipped. Letting that single row wrap keeps the natural control
+ *    widths and lets the Tile checkbox drop to a second line; no other
+ *    `.modal-row` changes at the dialog's fixed 460 px width.
+ *    Selector: the row is the immediate sibling of the position grid. */
+[data-watermark-dialog] .watermark-position-grid + .modal-row {
+  flex-wrap: wrap;
+}
+
+/* 3. A `<fieldset>` defaults to `min-inline-size: min-content`, so the
+ *    Pages fieldset refused to shrink below its From/To row and its
+ *    right border sat ~6 px under the body's vertical scrollbar
+ *    (measured body scrollWidth 467 > clientWidth 443). Allowing the
+ *    watermark fieldsets to shrink removes the last hidden horizontal
+ *    overflow (body scrollWidth 443 == clientWidth 443); the From/To
+ *    inputs flex to the available width instead. */
+[data-watermark-dialog] .modal-position {
+  min-width: 0;
+}

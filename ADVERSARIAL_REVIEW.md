@@ -1355,3 +1355,208 @@ three outputs, making desync structurally impossible.
 
 The `[data-tools-badge]` surface passes all adversarial probes. No findings
 to report.
+
+---
+
+## Phase 18 gate — Watermark
+
+Session label: `phase-18 gate`. Ran against the built dev bundle
+(`dist/main/index.js` from `npm.cmd run build`, built after the Phase-18
+sources; launched with the canonical `e2e/lib/launch.cjs` `launchApp` —
+required read-only). Harnesses (all pass `node --check`):
+`test-fixtures/tools/adv041_wm_api.cjs`, `adv041_tile.cjs`, `adv041_perf.cjs`,
+`adv041_ui_dialog.cjs`, `adv041_ui_delete.cjs`, `adv041_ui_refresh.cjs`,
+`adv041_ui_tools.cjs`, `adv041_textlayer.cjs`, `adv041_render_ui.cjs`,
+`adv041_hugesize.cjs`, `adv041_extra.cjs`, `adv041_layout.cjs`,
+`adv041_close.cjs`. `saveAs` was driven through a mocked
+`dialog.showSaveDialog` (the renderer `saveAs(docId)` is dialog-driven).
+
+## ADV-041: `tile:true` with a small positive font size freezes then crashes the app (unbounded tile placement loop)
+
+- Session: phase-18 gate
+- Suggested severity: HIGH
+
+What I did:
+1. API repro (1-page `form.pdf`): `window.tflex.engine.addWatermark('tl',
+   {type:'text', text:'X', size:<s>, tile:true})` for a series of sizes,
+   timing each call in a fresh app.
+2. `node test-fixtures/tools/adv041_tile.cjs <size> form` for
+   size 24, 4, 1, 0.5, 0.25.
+3. UI repro: opened `report.pdf`, opened `[data-tool-id="watermark"]`, typed
+   `0.25` into `[data-watermark-size]`, checked `[data-watermark-tile]`,
+   clicked `[data-watermark-confirm]`, then polled renderer responsiveness.
+   `node test-fixtures/tools/adv041_ui_tools.cjs crash`.
+
+Expected:
+- Any caller-supplied `size` must either be rejected with a typed
+  `engine-error` (or clamped) or complete in bounded time without exhausting
+  the process. The tile loop must cap the number of placements.
+
+Actual:
+- Measured single-page apply: size 24 = 20 ms, size 4 = 72 ms, size 1 = 1139 ms,
+  size 0.5 = 4183 ms (cost scales ~size^-2: the staggered grid emits roughly
+  270,000/size^2 placements, each 6+ operators, into one content stream).
+- size 0.25: `addWatermark` never returns. The Electron process working set
+  peaked at 4,569 MB and the renderer target closed; the driver reported
+  `FATAL page.evaluate: Target page, context or browser has been closed`.
+  Reproduced twice (API run and a second run sampling memory).
+- UI repro (34-page report, size 0.25 + Tile): the renderer was already
+  unresponsive 2 s after clicking Apply (evaluate timed out), and Electron
+  working set reached ~2,875 MB before the harness was stopped. No typed
+  error, no recovery.
+- Root cause shape: `normalizeWatermarkSettings` only requires
+  `size > 0` (settings.ts line 126) with no lower bound, and the tile loop
+  (engine.ts ~2709-2721) has no placement cap. The dialog's `min={4}` is
+  advisory only (`onChange` stores `Number(value)` and confirm copies it
+  straight through), so this is reachable by a user typing `0.25`.
+- The same missing upper bound lets `size: 1e9` bake (38 ms, no crash) —
+  the watermark is then effectively off-page/invisible while still listed
+  by `getWatermarks` (`screenshots/adv-041-size1e9-reopen.png`).
+
+Screenshot: screenshots/adv-041-tile-size-025-before-apply.png (dialog with
+size 0.25 + Tile checked, captured immediately before the freezing Apply).
+
+Disposition: ACCEPTED -> DEF-217 (HIGH; unbounded tile placement loop - size 0.25 with tile froze the renderer and killed the target twice; needs a size lower/upper bound and a per-page placement cap)
+
+---
+
+## ADV-042: An invalid `range` is silently dropped and the watermark is applied to every page
+
+- Session: phase-18 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Loaded the 34-page `report.pdf` into a fresh engine doc per case and called
+   `addWatermark(docId, {type:'text', text:'RG', range:<value>})`.
+2. `node test-fixtures/tools/adv041_wm_api.cjs ranges`.
+
+Expected:
+- A range the caller supplied but the normalizer cannot honour (start < 1,
+  inverted, non-integer, non-numeric, NaN, wrong length) should fail loudly
+  (`out-of-range` / `engine-error`), so the caller does not silently get a
+  different scope than requested.
+
+Actual:
+- Every invalid range is dropped and the engine falls back to `[1, pageCount]`,
+  so the watermark is baked onto all 34 pages. Returned `ok` each time
+  (`getWatermarks` pages array = 1..34):
+  - `[0,0]`, `[3,2]`, `[1.5,3]`, `["1",2]`, `[1,2,3]`, `[NaN,2]`,
+    `[-5,-1]` -> all 34 pages, `ok:true`.
+  - Only `[1,9999]` errors (`out-of-range`); `[1,1]` -> page 1; `[5,6]` -> pages 5-6.
+- The watermark is baked irreversibly into page content, so a caller that
+  mistyped a range (e.g. an inverted `[3,2]`) gets a whole-document stamp with
+  no error. The dialog guards this path (it validates before confirming), so
+  the exposure is direct `window.tflex.engine.addWatermark` callers/automation.
+
+Screenshot: N/A
+
+Disposition: ACCEPTED -> DEF-218 (MEDIUM; a provided-but-invalid range must reject the payload, never be dropped - dropping silently applied the watermark to all 34 pages)
+
+---
+
+## ADV-043: Applied-watermark list overflows the dialog horizontally and pushes the actions ~3017 px below the viewport
+
+- Session: phase-18 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Opened `report.pdf`, applied 50 watermarks via
+   `engine.addWatermark(docId, {type:'text', text:'L<i>', size:24})`, reopened
+   the dialog (`[data-tool-id="watermark"]`), and measured the layout.
+   `node test-fixtures/tools/adv041_layout.cjs`.
+2. Clicked one row's `[data-watermark-delete]` and polled both engine
+   `getWatermarks` count and DOM row count for 12 s.
+   `node test-fixtures/tools/adv041_ui_refresh.cjs 50`.
+3. Earlier full pass: `node test-fixtures/tools/adv041_ui_dialog.cjs`.
+
+Expected:
+- The dialog body should scroll inside a fixed-height dialog; the footer
+  (Cancel / Apply watermark) should stay on screen, and the content should
+  not spill outside the dialog box. Deleting a row should refresh the list
+  immediately.
+
+Actual (viewport 1440x900):
+- Initial: `.modal-dialog` is 460x836 at x=490, but `.modal-body` is 544 px
+  wide at x=389 — i.e. the body is ~101 px wider than the dialog and spills
+  out to the left of it. `.modal-dialog` scrollWidth 544 vs clientWidth 443
+  (horizontal overflow), `.modal-body` computed `overflow: visible`. The wide
+  `Pages 1, 2, ... 34` cell is the driver.
+- The footer is at y=3017 (height 61) in a 900 px viewport, i.e. ~2117 px
+  below the fold; `.modal-body` is 2932 px tall. The user must scroll the
+  dialog ~2932 px to reach Apply/Cancel (after scrolling to the bottom the
+  footer reaches y=791, so it is reachable, not lost).
+- Delete refresh with 50 rows: engine `getWatermarks` reported 49 within
+  500 ms, but the DOM still showed 50 rows / the deleted row's button until
+  ~1500 ms (with 3 rows the list updated in <300 ms). A fast double-click on
+  the same Delete button therefore fires a second delete and shows
+  "Engine error: deleteWatermark: no watermark with id wm-1 found" — harmless
+  but avoidable.
+
+Screenshot: screenshots/adv-041-applied-50.png (list clipping/horizontal
+scrollbar), screenshots/adv-041-applied-50-bottom.png (footer only visible
+after scrolling 2932 px).
+
+Disposition: ACCEPTED -> DEF-219 (MEDIUM; applied list must stay inside the dialog and a row delete must be single-flight so a double click cannot produce a not-found toast)
+
+---
+
+## ADV-044: Tiled watermarks scale superlinearly and bloat the file (100 tiled stamps: 101 s apply, 49.8 MiB file)
+
+- Session: phase-18 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Opened the 34-page `report.pdf`, called
+   `addWatermark(docId, {type:'text', text:'WM<i>', size:24, tile:true})`
+   100 times, then `getWatermarks` and `saveAs` (mocked dialog).
+   `node test-fixtures/tools/adv041_perf.cjs 100 24 1`.
+2. Controls: `adv041_perf.cjs 10 24 1` and `adv041_perf.cjs 1 400 1`.
+
+Expected:
+- Repeated stamping should stay roughly linear and the app should not freeze
+  for minutes; REQUIREMENTS.md ("the app never freezes during load"; 16 ms
+  frame budget) is the bar.
+
+Actual (34-page report, 33,028-byte source):
+- 10 tiled watermarks: apply 1,067 ms, save 223 ms, file 6,039,272 bytes.
+- 100 tiled watermarks: apply 101,437 ms (10 -> 1,020 ms, 90 -> 81,868 ms,
+  100 -> 101,437 ms — clearly superlinear as each `addWatermark` re-scans all
+  prior marker streams for the next id and each page's Contents array grows),
+  `getWatermarks` 34 ms, save 2,161 ms, file 52,239,404 bytes (~49.8 MiB,
+  ~1,580x the source). All 100 returned `ok`, 3,400 (watermark,page) streams.
+- One watermark at size 400 tile on all 34 pages is cheap (26 ms, 41,827 bytes).
+- The 101 s apply is a single IPC call; the renderer is blocked waiting and
+  the UI is frozen for that period.
+
+Screenshot: N/A
+
+Disposition: ACCEPTED -> DEF-220 (MEDIUM; needs a per-document watermark cap and the same placement cap so 100 tiled stamps cannot cost 101 s and 50 MiB)
+
+---
+
+## Phase 18 gate — negative results (attacks that did NOT reproduce)
+
+These were probed and passed; listed so the team does not re-spend effort:
+
+| Attack | Result |
+|---|---|
+| `addWatermark` with `size` 0/-5/NaN/Infinity, `opacity` -1/2/NaN, bad `color` `{r:2,g:-1,b:NaN}`, `x`/`y` NaN/Infinity/x-only/y-only, unknown `font`/`position` | Typed `ok` with the invalid optional field dropped to the documented default (preserve-if-valid). No IPC throw, no partial apply. |
+| `type` unknown, `text` ''/missing, settings null/string, image with missing/empty `imageBytes`, truncated PNG (`Invalid typed array length`), random bytes / text-as-bytes (`SOI not found in JPEG`), 100 MB zero buffer | Typed `engine-error`; `getState().modified` stays false and `getWatermarks` stays empty — no partial application. |
+| `text` = 100,000 chars | Applies in bounded time; `text` = 100,000 Chinese chars is rejected `engine-error: text is empty after encoding` with no partial state. |
+| Delete path: `''`, `'wm-999'`, `null`, `undefined`, 7, `{}`, `[]`, `'wm-1 '`, `' wm-1'`, `'WM-1'`, `'__proto__'`, `'constructor'`, `'toString'`, `'wm-1\n'` | Every one returns a typed `engine-error`; real delete returns `ok`; second delete of the same id errors cleanly; no silent success. |
+| Delete from a doc with two watermarks, add a third | Correct ids (`wm-2`,`wm-3`; no `wm-1` reuse while `wm-2` exists). |
+| Undo/redo after apply, and after delete | `getWatermarks` follows exactly (apply -> listed, undo -> gone, redo -> listed; delete -> gone, undo -> listed, redo -> gone). `add-undo-add` yields `wm-1` again correctly. |
+| Save/reopen identity | Two watermarks (`wm-1` on pages 1-2, `wm-2` on 1-34) survive `saveAs` + `loadDocument`: `getWatermarks` identical. After deleting `wm-1` and saving again, the file has 34 markers, all `wm-2`; no orphan `wm-1` marker remains anywhere in the bytes; file parses with pdf-lib (34 pages). |
+| Text layer / no content corruption | `exportText` before 48,490 chars, after 48,966 (+476 = 34 x 14-char `INTEGRITY-MARK`); original text preserved; page count 34. Marker prefix count as expected. |
+| Injection-style text (`%TFLEX-WATERMARK <base64url>`, `) Tj /F1 ... (`, `a(b)c<d>e%f`, `café 中文 ABC`) | Markers are hex/text-encoded, so no marker spoofing (still `wm-1` after save/reopen) and the saved PDF parses. Text with `\n`/`\t` is a typed `engine-error` (WinAnsi) after restore, no partial apply. |
+| Save+delete race (ADV-008 shape) | Both calls are serialized by `_enqueue`: `saveAs` captures the pre-delete state to disk (`wm-1` present), then the delete applies in memory (`wm-1` gone, `modified:true`). This is correct snapshot semantics, not silent loss. |
+| 50 watermarks: delete-row list refresh | Refreshes correctly (engine 49 at 500 ms, DOM 49 at ~1500 ms) — latency noted in ADV-043, not data loss. |
+| Range "From" field after the inverted-range error | Does NOT reproduce the empty-field suspicion: after `From=5, To=2` -> error, `from` stayed `"5"`, `to` `"2"`; clearing From yields `"0"` (not empty); `-1` stays `-1`. The dialog stays open with the error shown. Screenshots: screenshots/adv-041-range-inverted.png, adv-041-range-cleared.png. |
+| Annotation tool armed + watermark dialog | `activeTool` stays `highlight` while the dialog is open and after closing; no disarm, no no-op. |
+| Control sweep (`[data-watermark-position]` x9, bold/italic/underline, font, size, text, opacity, tile preview, range-all enable/disable, text/image switch, confirm-empty validation) | Every control produced its promised state change; no silent no-ops found. |
+| Tab switch / tab close mid-apply (tile size 4) | No crash, no desync; the modified-doc close is gated by the existing close prompt. |
+| `size: 1e9` baked and reopened through the UI (pdf.js) | File opens, 34 pages, app responsive; the oversized glyph is effectively invisible. No crash. |
+| `app.close()` with 50 watermarks on the doc | Closed in 138 ms (0 watermarks: 180 ms). No quit hang. |
+| UI apply render + proxy refresh | A watermark applied through the dialog renders on the page and thumbnails immediately (`screenshots/adv-041-render-ui-applied.png`); `getWatermarks` lists it. |
+
+**Total new findings: 4 (1 HIGH, 3 MEDIUM).**
