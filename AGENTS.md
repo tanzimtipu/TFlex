@@ -199,18 +199,19 @@ Every agent runs only on the model pinned for its role. OpenCode is the only act
 orchestration harness:
 
 - **OpenCode** — the `model:` field in that role's `.opencode/agents/*.md` definition.
-  Local roles point at `local-ninfer/qwen3.8-27b`, whose provider and endpoint live in
+  The local role (git-agent) points at `local-ninfer/qwen3.8-27b`, whose provider and endpoint live in
   `opencode.json` (NInfer on `http://127.0.0.1:8080/v1`). The active serving profile is
   **220000 context tokens, one decode slot and 20480 vision tokens**. The guard loads it
   before the first local dispatch; it is stopped only after all local work has settled.
 
 The orchestrator's model, `openrouter/deepseek/deepseek-v4.1-flash`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
-other wrong model. SANCTIONED EXCEPTIONS (operator-approved 2026-09-17): qa and the
-adversary are pinned to that same model deliberately — both need cloud vision and must
-free the single local decode slot, and their ~1M-token cloud context removes the local
-220k budget from their work. qa or the adversary on it is correct, not a fallback; every
-other sub-agent on it is still a hard stop. If a sub-agent cannot load its pinned model
+other wrong model. SANCTIONED EXCEPTIONS (operator-approved 2026-09-17/18): the whole
+build team — backend-dev, frontend-dev, qa and the adversary — is pinned to that same
+model deliberately. They share it by design, they have a ~1M-token cloud context, and qa
+and the adversary get cloud vision. Any of the four on it is correct, not a fallback;
+feature-scout on glm-5.3-flash and git-agent on the local model complete the team. Any
+sub-agent on a model other than its pin is still a hard stop. If a sub-agent cannot load its pinned model
 (provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
 no planning, no real task dispatch, no work on the fallback model. The orchestrator
@@ -223,16 +224,16 @@ restart the build.
 The active pin is the agent definition. A fallback is a human-approved configuration
 change, not an automatic retry. Keep it short and current:
 
-- backend-dev, frontend-dev, git-agent:
+- git-agent:
   `local-ninfer/qwen3.8-27b` -> `openrouter/z-ai/glm-5.3-flash`.
-- qa, adversary: no automatic fallback — their pin needs cloud vision; stop and ask the
-  human.
+- backend-dev, frontend-dev, qa, adversary: no automatic fallback — their pin is the
+  orchestrator's cloud model; stop and ask the human.
 - feature-scout: `openrouter/z-ai/glm-5.3-flash` ->
   `openrouter/deepseek/deepseek-v4-flash`.
 - orchestrator: no fallback — stop and ask the human.
 
-No sub-agent other than qa and the adversary may run on, or fall back to,
-`openrouter/deepseek/deepseek-v4.1-flash`. Record approved
+Every cloud role runs on its pinned model by design; no fallback routing between cloud
+models. Record approved
 model changes in `AGENTS_NOTES.md`; that file is historical reference, not mandatory
 startup context.
 

@@ -62,12 +62,14 @@ cannot tell which role owns it, ask the human one question rather than starting 
 Silent model fallback is the most expensive failure mode of this project: a sub-agent running
 on YOUR model instead of its pinned model burns premium tokens on grunt work.
 
-**Sanctioned exceptions — qa and the adversary.** qa and the adversary are pinned to
-`openrouter/deepseek/deepseek-v4.1-flash`, YOUR model, by operator decision (2026-09-17):
-both roles need screenshot vision and must not hold the single local decode slot, and
-their ~1M-token cloud context removes the local 220k budget from the equation. When qa or
-the adversary shows your model in its task header, that is CORRECT, not a fallback. Every
-other sub-agent on your model is still the silent-fallback violation below.
+**Sanctioned exceptions — the whole build team.** backend-dev, frontend-dev, qa and the
+adversary are pinned to `openrouter/deepseek/deepseek-v4.1-flash`, YOUR model, by operator
+decision (2026-09-17/18): the whole build team runs on the cloud now, so every one of them
+shares your model by design. qa and the adversary need screenshot vision; the devs need the
+~1M-token cloud context (no more 220k local budget). When any of them shows your model in
+its task header, that is CORRECT, not a fallback. feature-scout stays on glm-5.3-flash;
+git-agent is the only local role left. Any sub-agent on a model other than its pin is still
+the silent-fallback violation below.
 
 Before the first local dispatch after OpenCode, an agent definition, `opencode.json`, or
 the NInfer profile changes, verify the relevant role's task header shows its pinned model.
@@ -80,9 +82,9 @@ do its work yourself or let it run on the wrong model.
 
 ## THE LOCAL MODEL
 
-backend-dev, frontend-dev and git-agent run on a local Qwen3.8-27B served
+git-agent runs on a local Qwen3.8-27B served
 by NInfer on the RTX 4090 at http://127.0.0.1:8080/v1 — NOT on a cloud route. feature-scout,
-qa, the adversary and you use cloud models. The local model is not always running, and while loaded it holds
+qa, the adversary, backend-dev, frontend-dev and you use cloud models. The local model is not always running, and while loaded it holds
 ~23.8 GiB of the 24.5 GiB card, leaving ~250 MiB free. YOU own its lifecycle.
 
 Control it with the script in the repository:
@@ -96,8 +98,8 @@ Control it with the script in the repository:
 it returns only when the model can decode at speed.
 
 *** LOAD THE MODEL BEFORE YOU DISPATCH THE FIRST LOCAL ROLE, AND OFFLOAD IT AFTER THE FULL
-RUN COMPLETES. *** At the start of a task, the guard runs `start` before dispatching backend-dev,
-frontend-dev or git-agent; it warms while you plan. At the end of the run —
+RUN COMPLETES. *** At the start of a task, the guard runs `start` before dispatching
+git-agent; it warms while you plan. At the end of the run —
 the moment every child has settled, every dispatch returned or reported, and there is
 nothing left to hand out, and only then — run `stop`. Do not offload between dispatches, do
 not offload while any child is still working (that kills inference mid-task), and do not
@@ -210,8 +212,12 @@ ANNOUNCE EVERY DISPATCH so the human can see who is working and on what:
 
 and name the role again when you report its result. The roster:
 
-    backend-dev    local-ninfer / qwen3.8-27b                 (local, RTX 4090)
-    frontend-dev   local-ninfer / qwen3.8-27b                 (local, RTX 4090)
+    backend-dev    openrouter / deepseek-v4.1-flash           (cloud, ~1M context —
+                                                              SANCTIONED exception: shares
+                                                              YOUR model)
+    frontend-dev   openrouter / deepseek-v4.1-flash           (cloud, ~1M context —
+                                                              SANCTIONED exception: shares
+                                                              YOUR model)
     qa             openrouter / deepseek-v4.1-flash           (cloud, vision, ~1M
                                                               context — SANCTIONED
                                                               exception: shares YOUR model,
@@ -219,18 +225,21 @@ and name the role again when you report its result. The roster:
     adversary      openrouter / deepseek-v4.1-flash           (cloud, vision — SANCTIONED
                                                               exception: shares YOUR model,
                                                               frees the local slot)
-    git-agent      local-ninfer / qwen3.8-27b                 (local, RTX 4090)
+    git-agent      local-ninfer / qwen3.8-27b                 (local, RTX 4090 — the only
+                                                              local role left)
     feature-scout  openrouter / z-ai/glm-5.3-flash            (cloud, read-only)
 
-**One local role at a time — the server has ONE decode slot.** backend-dev, frontend-dev
-and git-agent all share that single slot, so they are strictly serialised:
-dispatch one, wait for it to settle, then dispatch the next. qa and the adversary are NOT
-in that pool — they run on your cloud model, so they can be dispatched without touching
-the local
-server (though your own single-threaded dispatch loop still serialises them against your
-other work). backend-dev and frontend-dev
-must never run together anyway (they share one working tree), and now no other local role
-can overlap either. Give each role ONE task, never a queue behind one role.
+**Parallel dispatch — the cloud team no longer shares one slot.** backend-dev,
+frontend-dev, qa and the adversary all run on cloud models with independent sessions, so
+you MAY dispatch them in parallel and let them work concurrently; your own loop only needs
+to serialise dispatches that share the working tree's write surface. The one hard rule for
+parallel work: **never let two children run a build or test step that writes shared outputs
+(`dist/`, e2e screenshots, coverage) at the same time** — stagger those steps (backend-dev
+builds, frontend-dev waits, then runs). Path ownership keeps parallel edits safe:
+backend-dev never touches renderer code and frontend-dev never touches main-process code
+(enforced by their permissions), so parallel file edits land on disjoint paths.
+git-agent is the only local role; it still serialises against nothing but itself, and the
+guard loads the model only for it. Give each role ONE task, never a queue behind one role.
 
 **A child that reaches its context or token limit is CONTINUED, never killed.** A sub-agent
 that stops unfinished because it ran out of room has NOT failed, and its work is not lost.
@@ -271,14 +280,15 @@ interrupt a human's redirect to force a qa pass, and do not block on qa when the
 has told you to do something else. When you do skip qa because the human redirected, say
 so in your report so nothing is silently dropped.
 
-## CHUNK THE WORK — the local model has a limited context
+## CHUNK THE WORK — git-agent is the only local child now
 
 The local model's context is 220000 tokens, and qwen3.8-27b is slower and less reliable at
-the long tail. Do not hand a LOCAL role one enormous spec and hope. Methodically slice
+the long tail. Do not hand git-agent one enormous spec and hope. Methodically slice
 every local task into SMALL chunks and run them one at a time through the single slot.
-qa and the adversary are different: their cloud model has a ~1M-token context, so hand
-them the whole verification plan or campaign brief in one focused dispatch — they can
-hold it. Keep every dispatch (local or cloud) to ONE clearly bounded job either way.
+backend-dev, frontend-dev, qa and the adversary are different: their cloud model has a
+~1M-token context, so hand them the whole plan or campaign brief in one focused dispatch —
+they can hold it. Keep every dispatch (local or cloud) to ONE clearly bounded job either
+way.
 
 - **Plan the current chunk and one likely successor.** Keep each slice small (one function,
   module, defect, or test area), but revise later chunks when evidence changes the plan.

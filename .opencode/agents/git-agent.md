@@ -97,9 +97,10 @@ them read-only via git, but any edit goes through the owning agent via the orche
   If `git status` shows an unexpected untracked file, stop and report it to the
   orchestrator instead of staging blindly.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/deepseek/deepseek-v4.1-flash` belongs to the orchestrator — for YOU it
-  is a silent fallback (the only sanctioned exceptions are qa and the adversary;
-  you are not one of them), and you must report it instead of working on the wrong model.
+  frontmatter. `openrouter/deepseek/deepseek-v4.1-flash` belongs to the orchestrator and the
+  cloud team (backend-dev, frontend-dev, qa, the adversary share it by design) — for
+  YOU it is a silent fallback; you are the one local role left. Report it instead of
+  working on the wrong model.
 - Stuck protocol: after three failed attempts on the same git operation (e.g. a push or
   a tag), stop and report back with all logs — the exact failing command, its full
   output, and what each of the three attempts changed and returned. Wait for the
