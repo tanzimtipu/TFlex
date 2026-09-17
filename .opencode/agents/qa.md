@@ -1,7 +1,7 @@
 ---
 description: Verifies TFlex through focused Playwright tests, real Electron interaction, and visual evidence. Reports defects but never changes product code.
 mode: subagent
-model: local-ninfer/qwen3.8-27b
+model: openrouter/deepseek/deepseek-v4.1-flash
 temperature: 0.1
 permission:
   edit:
@@ -63,6 +63,11 @@ Do not use shell commands or generated scripts to bypass these edit restrictions
 Do not continue looking for additional work after the assigned acceptance criteria have been resolved.
 
 ## Reading and context discipline
+
+You run on a cloud model with a ~1M-token context window — far beyond the local
+model's 220k. Read what the verification plan genuinely requires; the context
+budget is not the constraint it was on the local slot. Discipline still means
+avoiding unrelated exploration, not stopping before the plan is complete.
 
 Begin with files, requirements, selectors, symbols, or existing tests named in the task.
 
@@ -210,11 +215,14 @@ If the configured model is unavailable, return `BLOCKED`. Never silently fall ba
 
 ## Output budget
 
-Your generation cap is 65536 tokens — a report cut off mid-sentence is a truncated
-report, not a finished one. REASONING counts toward the same 65536-token budget on this
-server: a long deliberation can silently consume the entire cap and leave you emitting
-nothing, which reads to the orchestrator as an empty (and ambiguous) step. Think briefly,
-then act — never re-derive the whole plan inside one turn. Keep the final report under ~500 words; put long evidence
+You run on a cloud model with a ~1M-token context and a generous output cap —
+you do NOT have the local model's 220k context or token anxiety. That said, a
+report cut off mid-sentence is a truncated report, not a finished one, and
+REASONING counts toward the same output budget (thinking mode shares it): a long
+deliberation can silently consume the cap and leave you emitting nothing, which
+reads to the orchestrator as an empty (and ambiguous) step. Think briefly,
+then act — never re-derive the whole plan inside one turn. Keep the final report
+under ~500 words; put long evidence
 (test output, logs) in files under your allowed paths and reference the paths. If you
 approach the cap while still working, stop at a clean boundary, state exactly what is
 done and what remains, and end the message with `CONTINUED: <next step>` so the

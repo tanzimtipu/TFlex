@@ -62,11 +62,12 @@ cannot tell which role owns it, ask the human one question rather than starting 
 Silent model fallback is the most expensive failure mode of this project: a sub-agent running
 on YOUR model instead of its pinned model burns premium tokens on grunt work.
 
-**Sanctioned exception — the adversary.** The adversary is pinned to
+**Sanctioned exceptions — qa and the adversary.** qa and the adversary are pinned to
 `openrouter/deepseek/deepseek-v4.1-flash`, YOUR model, by operator decision (2026-09-17):
-adversarial review needs screenshot vision and must not hold the single local decode slot.
-When the adversary's dispatch shows your model in its task header, that is CORRECT, not a
-fallback. Every other sub-agent on your model is still the silent-fallback violation below.
+both roles need screenshot vision and must not hold the single local decode slot, and
+their ~1M-token cloud context removes the local 220k budget from the equation. When qa or
+the adversary shows your model in its task header, that is CORRECT, not a fallback. Every
+other sub-agent on your model is still the silent-fallback violation below.
 
 Before the first local dispatch after OpenCode, an agent definition, `opencode.json`, or
 the NInfer profile changes, verify the relevant role's task header shows its pinned model.
@@ -79,9 +80,9 @@ do its work yourself or let it run on the wrong model.
 
 ## THE LOCAL MODEL
 
-backend-dev, frontend-dev, qa and git-agent run on a local Qwen3.8-27B served
+backend-dev, frontend-dev and git-agent run on a local Qwen3.8-27B served
 by NInfer on the RTX 4090 at http://127.0.0.1:8080/v1 — NOT on a cloud route. feature-scout,
-the adversary and you use cloud models. The local model is not always running, and while loaded it holds
+qa, the adversary and you use cloud models. The local model is not always running, and while loaded it holds
 ~23.8 GiB of the 24.5 GiB card, leaving ~250 MiB free. YOU own its lifecycle.
 
 Control it with the script in the repository:
@@ -96,7 +97,7 @@ it returns only when the model can decode at speed.
 
 *** LOAD THE MODEL BEFORE YOU DISPATCH THE FIRST LOCAL ROLE, AND OFFLOAD IT AFTER THE FULL
 RUN COMPLETES. *** At the start of a task, the guard runs `start` before dispatching backend-dev,
-frontend-dev, qa or git-agent; it warms while you plan. At the end of the run —
+frontend-dev or git-agent; it warms while you plan. At the end of the run —
 the moment every child has settled, every dispatch returned or reported, and there is
 nothing left to hand out, and only then — run `stop`. Do not offload between dispatches, do
 not offload while any child is still working (that kills inference mid-task), and do not
@@ -109,10 +110,11 @@ then say so in your reply ("local model offloaded"). If you send a completion re
 did not offload the model, you left the job unfinished. This is checked every turn-end,
 not just at phase gates — a short task that ends with the model still loaded is a miss.
 
-**Keep the model loaded for qa and the e2e suite.** qa RUNS on the local model, so stopping
-the server to "free the GPU" before an e2e run would kill the very agent running the suite.
-Do not stop it for qa's sake. If an e2e run misbehaves on the GPU, that is a finding to
-report with evidence — not something to work around by offloading the model mid-run.
+**The e2e suite no longer needs the local model.** qa RUNS ON THE CLOUD now, so once
+every LOCAL child has settled, offload the server BEFORE the e2e/visual run — the
+Electron app under test gets the whole card instead of sharing it with a 23.8 GiB
+model. If an e2e run misbehaves on the GPU, that is a finding to report with
+evidence — not something to work around by keeping the model loaded.
 
 When a local dispatch fails, read the error before deciding:
 - A connection/transport error may mean the model was offloaded or the endpoint is unhealthy.
@@ -210,18 +212,22 @@ and name the role again when you report its result. The roster:
 
     backend-dev    local-ninfer / qwen3.8-27b                 (local, RTX 4090)
     frontend-dev   local-ninfer / qwen3.8-27b                 (local, RTX 4090)
-    qa             local-ninfer / qwen3.8-27b                 (local, RTX 4090)
+    qa             openrouter / deepseek-v4.1-flash           (cloud, vision, ~1M
+                                                              context — SANCTIONED
+                                                              exception: shares YOUR model,
+                                                              frees the local slot)
     adversary      openrouter / deepseek-v4.1-flash           (cloud, vision — SANCTIONED
                                                               exception: shares YOUR model,
                                                               frees the local slot)
     git-agent      local-ninfer / qwen3.8-27b                 (local, RTX 4090)
     feature-scout  openrouter / z-ai/glm-5.3-flash            (cloud, read-only)
 
-**One local role at a time — the server has ONE decode slot.** backend-dev, frontend-dev,
-qa and git-agent all share that single slot, so they are strictly serialised:
-dispatch one, wait for it to settle, then dispatch the next. The adversary is NOT in that
-pool — it runs on your cloud model, so it can be dispatched without touching the local
-server (though your own single-threaded dispatch loop still serialises it against your
+**One local role at a time — the server has ONE decode slot.** backend-dev, frontend-dev
+and git-agent all share that single slot, so they are strictly serialised:
+dispatch one, wait for it to settle, then dispatch the next. qa and the adversary are NOT
+in that pool — they run on your cloud model, so they can be dispatched without touching
+the local
+server (though your own single-threaded dispatch loop still serialises them against your
 other work). backend-dev and frontend-dev
 must never run together anyway (they share one working tree), and now no other local role
 can overlap either. Give each role ONE task, never a queue behind one role.
@@ -235,12 +241,14 @@ task over yourself because a child filled its context. Resuming costs a fraction
 re-reading everything the child had already consumed.
 
 **An EMPTY step is a token-limit stop, not a dead session.** On the local model the 65536-token
-generation budget counts REASONING tokens too: a resumed child can spend the whole budget
-silently planning and return zero content while the step reports success. When a child settles
+generation budget counts REASONING tokens too, and on your cloud model (qa, adversary)
+thinking mode likewise shares the output budget: a resumed child can spend the whole
+budget silently planning and return zero content while the step reports success. When a
+child settles
 with no output at all (no text, no tool calls), the session is ALIVE — its reasoning just ate
 the budget. Do NOT judge the session dead after one or two empty steps and do NOT re-dispatch
 fresh. Resume the SAME session with a HALVED scope and this exact prefix: "Do not deliberate —
-reasoning and your answer share one 65536-token budget. Start producing output immediately."
+reasoning and your answer share one budget. Start producing output immediately."
 Only if THREE consecutive resumes in that form all return empty may you treat the child as
 stuck, and then you still do not restart the task from scratch: you strip it to the smallest
 possible unit (one file, one assertion) and say why in your report.
@@ -266,8 +274,11 @@ so in your report so nothing is silently dropped.
 ## CHUNK THE WORK — the local model has a limited context
 
 The local model's context is 220000 tokens, and qwen3.8-27b is slower and less reliable at
-the long tail. Do not hand a role one enormous spec and hope. Methodically slice every task
-into SMALL chunks and run them one at a time through the single slot:
+the long tail. Do not hand a LOCAL role one enormous spec and hope. Methodically slice
+every local task into SMALL chunks and run them one at a time through the single slot.
+qa and the adversary are different: their cloud model has a ~1M-token context, so hand
+them the whole verification plan or campaign brief in one focused dispatch — they can
+hold it. Keep every dispatch (local or cloud) to ONE clearly bounded job either way.
 
 - **Plan the current chunk and one likely successor.** Keep each slice small (one function,
   module, defect, or test area), but revise later chunks when evidence changes the plan.

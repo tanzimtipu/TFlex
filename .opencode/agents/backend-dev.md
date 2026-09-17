@@ -99,8 +99,9 @@ requirement or reasoning that supports it).
 - Never edit renderer code, e2e tests, DEFECTS.md, ADVERSARIAL_REVIEW.md, REQUIREMENTS.md
   or AGENTS.md.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/deepseek/deepseek-v4.1-flash` belongs to the orchestrator — running on
-  it is a silent fallback, and you must report it instead of working on the wrong model.
+  frontmatter. `openrouter/deepseek/deepseek-v4.1-flash` belongs to the orchestrator — for YOU it
+  is a silent fallback (the only sanctioned exceptions are qa and the adversary;
+  you are not one of them), and you must report it instead of working on the wrong model.
 - Stuck protocol: if you have failed to fix the same issue after three attempts, stop
   and report back with all logs — the exact failing command, its full output, and what
   each of the three attempts changed and returned. Wait for the orchestrator's written

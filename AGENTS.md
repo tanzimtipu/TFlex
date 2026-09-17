@@ -206,9 +206,10 @@ orchestration harness:
 
 The orchestrator's model, `openrouter/deepseek/deepseek-v4.1-flash`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
-other wrong model. SANCTIONED EXCEPTION (operator-approved 2026-09-17): the adversary is
-pinned to that same model deliberately — adversarial review needs cloud vision and must
-free the single local decode slot. The adversary on it is correct, not a fallback; every
+other wrong model. SANCTIONED EXCEPTIONS (operator-approved 2026-09-17): qa and the
+adversary are pinned to that same model deliberately — both need cloud vision and must
+free the single local decode slot, and their ~1M-token cloud context removes the local
+220k budget from their work. qa or the adversary on it is correct, not a fallback; every
 other sub-agent on it is still a hard stop. If a sub-agent cannot load its pinned model
 (provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
@@ -222,14 +223,15 @@ restart the build.
 The active pin is the agent definition. A fallback is a human-approved configuration
 change, not an automatic retry. Keep it short and current:
 
-- backend-dev, frontend-dev, qa, git-agent:
+- backend-dev, frontend-dev, git-agent:
   `local-ninfer/qwen3.8-27b` -> `openrouter/z-ai/glm-5.3-flash`.
-- adversary: no automatic fallback — its pin needs cloud vision; stop and ask the human.
+- qa, adversary: no automatic fallback — their pin needs cloud vision; stop and ask the
+  human.
 - feature-scout: `openrouter/z-ai/glm-5.3-flash` ->
   `openrouter/deepseek/deepseek-v4-flash`.
 - orchestrator: no fallback — stop and ask the human.
 
-No sub-agent other than the adversary may run on, or fall back to,
+No sub-agent other than qa and the adversary may run on, or fall back to,
 `openrouter/deepseek/deepseek-v4.1-flash`. Record approved
 model changes in `AGENTS_NOTES.md`; that file is historical reference, not mandatory
 startup context.
