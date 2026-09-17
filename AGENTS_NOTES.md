@@ -45,6 +45,15 @@ Full orchestration review after the rollback; operator approved all items. Backu
   both refused). Verified by `smoke/guard-mock-test-v2.mjs`, 8/8 PASS.
 - Known minor, unfixed: feature-scout fallback name `deepseek-v4.1-flash` vs
   orchestrator `deepseek-v4.1-flash` similarity is accepted (different model IDs).
+- Follow-up fix (same day): `scripts/ninfer-model.ps1` spawned the server with
+  `Start-Process`, which duplicates every inheritable handle of the invoking
+  PowerShell - including the stdout pipe of an OpenCode bash tool call or the
+  guard's execFile. The server held that pipe for its lifetime, so the caller
+  never saw EOF: the orchestrator's own `start` call hung for 7+ minutes even
+  though the script had printed "warm". Spawn is now `Win32_Process.Create` via
+  a cmd wrapper (zero inherited handles; server keeps its file logs). Verified:
+  full restart returns in ~9s. Commit 243fde1. The guard's offload on session
+  cancel during this incident behaved correctly (no race) - confirmed in logs.
 
 ## 2026-09-17 (post-rollback): orchestrator model changed to deepseek-v4.1-flash
 
