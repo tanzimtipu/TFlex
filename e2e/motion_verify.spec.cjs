@@ -5,7 +5,7 @@
 //      (TfPanel wrapper; 1.10.0 replaced the panel-enter CSS keyframe).
 //   3. Dialogs = spring rise y 10 / scale 0.97 -> rest @ ~240ms (TfDialog).
 //   4. Menus/popovers = spring scale 0.96/0.97 + y -4/-3 @ ~180ms (TfMenu/TfPopover).
-//   5. Buttons = hover translateY(-1px), press scale(0.98) @ 70-150ms.
+//   5. Buttons = hover translateY(-1px), press scale(--motion-scale-press) @ 70ms.
 //   6. PDF page/.page-slot/.textLayer have ZERO animation (PDF stable).
 //   7. prefers-reduced-motion collapses motion (opacity-only survivors).
 // Mid-animation computed styles are sampled in-page (rAF) so the verdict is
@@ -336,6 +336,8 @@ test('M2: palette / dialog / menu / popover entrance + buttons + PDF stability',
   await win.waitForTimeout(300);
 
   // ---- 5b. Press settle: hold mouse down on a rail tab ----
+  const pressScale = await win.evaluate(() =>
+    parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--motion-scale-press')));
   const tab = win.locator('.rail-tab').first();
   const tb = await tab.boundingBox();
   await win.mouse.move(tb.x + tb.width / 2, tb.y + tb.height / 2);
@@ -345,11 +347,13 @@ test('M2: palette / dialog / menu / popover entrance + buttons + PDF stability',
     const cs = getComputedStyle(document.querySelector('.rail-tab'));
     return { tr: cs.transform, td: cs.transitionDuration };
   });
-  console.log('[M5] pressed:', JSON.stringify(pressed));
+  console.log('[M5] pressed:', JSON.stringify(pressed), `(live --motion-scale-press=${pressScale})`);
   await win.mouse.up();
   const pm = parseMatrix(pressed.tr);
   expect(pm, 'press must settle (transform != none)').toBeTruthy();
-  expect(Math.abs(pm.a - 0.982), 'press scale ~0.98').toBeLessThan(0.01);
+  // Phase-15 tokens are authoritative: compare against the LIVE token value
+  // rather than a hardcoded legacy 0.982, so this can never rot again.
+  expect(Math.abs(pm.a - pressScale), `press scale must equal --motion-scale-press (${pressScale})`).toBeLessThan(0.01);
   expect(Math.round(pm.f), 'press translateY(1px)').toBe(1);
   expect(parseFloat(pressed.td), 'press transition 70ms').toBeLessThanOrEqual(0.075);
 });

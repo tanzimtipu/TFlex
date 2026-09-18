@@ -32,7 +32,10 @@ async function openReport(electronApp, win) {
   await electronApp.evaluate(async ({ dialog }, sample) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sample] });
   }, p);
-  await win.locator('.header-actions .btn-primary').first().click();
+  // Welcome-screen hero Open (Welcome.tsx:64). The header-actions Open was
+  // retired in Phase 14.1; the CommandBar ([data-toolbar-open]) is not
+  // mounted until a document tab exists.
+  await win.locator('.welcome .btn-primary').first().click();
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .pdf-page canvas', { timeout: 30000 });
   await wait(2000);
@@ -59,7 +62,7 @@ test('P13-VIS: borderless title bar + toolbar + light/dark design-reference scre
     menuButton: !!document.querySelector('[data-menu-button]'),
     gear: !!document.querySelector('.header-gear'),
     themeToggle: !!document.querySelector('[data-theme-toggle]'),
-    openBtn: !!document.querySelector('.header-actions .btn-primary'),
+    openBtn: !!document.querySelector('.welcome .btn-primary'),
     winControls: ['minimize', 'maximize', 'close'].map((k) => ({
       k,
       present: !!document.querySelector(`[data-window-${k}]`),
@@ -67,7 +70,7 @@ test('P13-VIS: borderless title bar + toolbar + light/dark design-reference scre
     })),
     tabCount: document.querySelectorAll('.tab-list .tab-title').length,
     accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
-    openBg: getComputedStyle(document.querySelector('.header-actions .btn-primary')).backgroundColor,
+    openBg: getComputedStyle(document.querySelector('.welcome .btn-primary')).backgroundColor,
     updateIndicator: (() => {
       const el = document.querySelector('.update-indicator');
       return el ? { cls: el.className, text: (el.innerText || '').trim() } : null;
@@ -95,12 +98,17 @@ test('P13-VIS: borderless title bar + toolbar + light/dark design-reference scre
     dataTheme: document.documentElement.getAttribute('data-theme'),
     htmlBg: getComputedStyle(document.documentElement).backgroundColor,
     accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
-    openBg: getComputedStyle(document.querySelector('.header-actions .btn-primary')).backgroundColor,
+    // Workspace state: the accent Open is the CommandBar button
+    // ([data-toolbar-open], CommandBar.tsx:197-211).
+    openBg: getComputedStyle(document.querySelector('[data-toolbar-open]')).backgroundColor,
     iconOnly: (() => {
       const scan = (scope) => Array.from(document.querySelectorAll(`${scope} button`)).map((b) => ({
         label: b.getAttribute('aria-label'),
         title: b.getAttribute('title'),
         innerText: (b.innerText || '').trim(),
+        // The CommandBar's leading Open action is a labelled primary button
+        // (Phase 14.2 FIX 3), unlike the icon-only tool buttons around it.
+        primary: b.matches('.btn-primary'),
       }));
       return {
         main: scan('.toolbar'),
@@ -115,8 +123,15 @@ test('P13-VIS: borderless title bar + toolbar + light/dark design-reference scre
   for (const b of [...lightProbe.iconOnly.main, ...lightProbe.iconOnly.ann]) {
     expect(b.label, 'every toolbar button must have an aria-label').toBeTruthy();
     expect(b.title, 'every toolbar button must have a title tooltip').toBeTruthy();
-    expect(b.innerText, 'icon-only toolbar: buttons must not render text').toBe('');
+    // The command bar's primary Open action is a labelled button by design
+    // (Phase 14.2 FIX 3); every other toolbar button stays icon-only.
+    if (!b.primary) {
+      expect(b.innerText, 'icon-only toolbar: buttons must not render text').toBe('');
+    }
   }
+  const primaryOpen = lightProbe.iconOnly.main.find((b) => b.primary);
+  expect(primaryOpen, 'the labelled primary Open action must be in the command bar').toBeTruthy();
+  expect(primaryOpen.innerText, 'the primary Open action is labelled (Phase 14.2 FIX 3)').toBe('Open');
   expect(lightProbe.iconOnly.labelSpans, 'no text label spans may exist in toolbars').toBe(0);
 
   await win.screenshot({ path: path.join(SHOTS, 'phase13-verification-02-workspace-light.png') });

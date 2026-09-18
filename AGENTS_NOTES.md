@@ -2442,6 +2442,18 @@ Release URL: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.19.0
 **Pre-existing spec rot observed (not caused by Phase 19, worth a cleanup batch):** the phase-13
 sweep specs still click a stale Open selector, and `anim_audit` / `motion_verify` still assert legacy
 animation values (0.982 press / 300 ms crossfade) that the Phase-15 token system replaced.
+
+**Spec-rot cleanup (done 2026-09-19):** six specs repointed, test-only, no product defect found.
+`phase13_qa_sweep` + `phase13_visual_verification` now use `.welcome .btn-primary` on the welcome
+screen and `[data-toolbar-open]` in the workspace (the Open control left the caption strip in Phase
+14.1, so the old no-drag entry was removed rather than repointed); `motion_verify`'s rail-tab press and
+`phase14_2_verify`'s panel timing now read the LIVE token (`--motion-scale-press`, `--panel-slide-duration`)
+instead of literals, so they cannot rot again; `anim_audit`'s A1 turned out not to be a legacy value at
+all - `.tf-theme-transitioning` never appears because View Transitions is the primary path (Phase-15 /
+DEF-195), so it now accepts either mechanism and pins the live `--motion-theme-crossfade`; and
+`def_191_194_retest`'s icon-size assertion moved to the Phase-19 22px ladder. Combined pass: 23 passed
++ 1 pre-existing skip (A6 reduced-motion launch flag), 0 failed. **Rule: assert motion against the
+live CSS token, never a literal - a literal is rot waiting to happen.**
 
 
 ## 2026-09-18: git-agent moves to the cloud — the team is 100% cloud now

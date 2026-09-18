@@ -224,7 +224,7 @@ test('A1: --motion-* tokens on :root; theme crossfade ~400ms; PDF pinned; no lay
   console.log('[A1] quiet baseline fps:', JSON.stringify(quietFps));
 
   await win.evaluate(() => {
-    const obs = { addedAt: null, removedAt: null };
+    const obs = { addedAt: null, removedAt: null, vtInvoked: false, vtDurations: [], vtFinishedMs: null };
     window.__themeObs = obs;
     new MutationObserver(() => {
       const has = document.documentElement.classList.contains('tf-theme-transitioning');
@@ -232,6 +232,33 @@ test('A1: --motion-* tokens on :root; theme crossfade ~400ms; PDF pinned; no lay
       if (has && obs.addedAt === null) obs.addedAt = now;
       if (!has && obs.addedAt !== null && obs.removedAt === null) obs.removedAt = now;
     }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    // DEF-195: Electron Chromium takes the View Transitions primary path, which
+    // never applies .tf-theme-transitioning (useAnimations.ts:495-515). Wrap the
+    // entry point so the test can measure whichever crossfade mechanism the
+    // product actually ran, against the live --motion-theme-crossfade token.
+    const orig = document.startViewTransition;
+    if (typeof orig === 'function') {
+      document.startViewTransition = function (cb) {
+        obs.vtInvoked = true;
+        const t0 = performance.now();
+        const vt = orig.call(document, cb);
+        const sample = () => {
+          for (const a of document.getAnimations()) {
+            const pe = a.effect && a.effect.pseudoElement;
+            if (pe && pe.includes('view-transition')) {
+              const d = a.effect.getTiming().duration;
+              if (typeof d === 'number' && d > 0) obs.vtDurations.push(d);
+            }
+          }
+          if (performance.now() - t0 < 500) requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+        if (vt && vt.finished) {
+          vt.finished.then(() => { obs.vtFinishedMs = performance.now() - t0; }).catch(() => {});
+        }
+        return vt;
+      };
+    }
     window.__pdfFrames = [];
     const t0 = performance.now();
     const tick = () => {
@@ -269,17 +296,37 @@ test('A1: --motion-* tokens on :root; theme crossfade ~400ms; PDF pinned; no lay
   const fps = await readFps();
   const themeAfter = await win.evaluate(() => document.documentElement.getAttribute('data-theme'));
   const distinctPdf = [...new Set(pdfFrames.map((f) => `${f.pageOp}|${f.pageTr}|${f.pageFilter}|${f.canvasOp}|${f.canvasFilter}`))];
+  const crossfadeToken = parseMs(res.computed['--motion-theme-crossfade']);
+  const usedClass = themeObs.addedAt !== null;
+  const usedViewTransition = themeObs.vtInvoked === true;
   console.log('[A1] theme', themeBefore, '->', themeAfter, '| obs:', JSON.stringify(themeObs));
-  console.log('[A1] crossfade duration ms:', themeObs.removedAt - themeObs.addedAt, '(token 400 + grace 50; jank may delay the removal callback)');
+  console.log('[A1] crossfade mechanism:', `class=${usedClass} viewTransition=${usedViewTransition}`,
+    '| class window ms:', themeObs.removedAt !== null ? themeObs.removedAt - themeObs.addedAt : 'n/a',
+    '| vt pseudo durations:', JSON.stringify(themeObs.vtDurations),
+    '| vt finished ms:', themeObs.vtFinishedMs);
   console.log('[A1] quiet fps:', JSON.stringify(quietFps), '| crossfade fps:', JSON.stringify(fps));
   console.log('[A1] layout-shift:', JSON.stringify(cls));
   console.log('[A1] pdf distinct surface states:', JSON.stringify(distinctPdf), '| frames:', pdfFrames.length, '| transitioningSeen:', pdfFrames.some((f) => f.transitioning));
 
   expect(themeAfter).not.toBe(themeBefore);
-  expect(themeObs.addedAt !== null, 'crossfade class must appear on <html>').toBe(true);
-  const dur = themeObs.removedAt - themeObs.addedAt;
-  expect(dur, 'crossfade window ~450ms (token 400 + grace 50)').toBeGreaterThan(330);
-  expect(dur).toBeLessThan(850);
+  // Phase-15 (DEF-195) made the View Transitions API the primary crossfade
+  // mechanism; the .tf-theme-transitioning class is the fallback for engines
+  // without it. Accept either, but pin the duration to the live token.
+  expect(usedClass || usedViewTransition, 'a theme crossfade must run (class fallback or View Transitions)').toBe(true);
+  if (usedClass) {
+    const dur = themeObs.removedAt - themeObs.addedAt;
+    expect(dur, `class crossfade window must run for the --motion-theme-crossfade token (${crossfadeToken}ms)`).toBeGreaterThan(crossfadeToken * 0.8);
+    expect(dur, 'class crossfade window must not drag past the token + grace').toBeLessThan(crossfadeToken + 450);
+  } else {
+    const vtDurations = themeObs.vtDurations.filter((d) => d > 0);
+    if (vtDurations.length > 0) {
+      const vtMs = Math.max(...vtDurations);
+      expect(Math.abs(vtMs - crossfadeToken), `view-transition must run for --motion-theme-crossfade (${crossfadeToken}ms), measured ${vtMs}ms`).toBeLessThanOrEqual(5);
+    } else {
+      expect(themeObs.vtFinishedMs, 'view-transition crossfade must complete').toBeGreaterThan(0);
+      expect(Math.abs(themeObs.vtFinishedMs - crossfadeToken), `view-transition must run for --motion-theme-crossfade (${crossfadeToken}ms), measured ${themeObs.vtFinishedMs}ms`).toBeLessThanOrEqual(150);
+    }
+  }
   expect(pdfFrames.length).toBeGreaterThan(5);
   expect(distinctPdf, 'pdf surfaces must stay constant during crossfade').toHaveLength(1);
   expect(cls.cls, `theme switch layout shift CLS=${cls.cls}`).toBe(0);
@@ -472,7 +519,7 @@ test('A4: press/hover measured against --motion-scale-press; thumbnail + toggle 
     tr: getComputedStyle(document.querySelector('.tool-btn:not([disabled])')).transform,
   }));
   const pm = parseMatrix(pressed.tr);
-  console.log('[A4] tool-btn pressed:', pressed.tr, '=> scale', pm ? pm.a.toFixed(3) : 'none', 'ty', pm ? pm.ty : 'none', '(token=0.97; legacy group=0.982+ty1)');
+  console.log('[A4] tool-btn pressed:', pressed.tr, '=> scale', pm ? pm.a.toFixed(3) : 'none', 'ty', pm ? pm.ty : 'none', '(canonical --motion-scale-press)');
   await win.mouse.up();
   await win.waitForTimeout(300);
 

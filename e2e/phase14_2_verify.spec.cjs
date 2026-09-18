@@ -4,10 +4,13 @@
 //   FIX 2  panels (left rail + tools palette) unified in ALL themes
 //   FIX 3  Open button: clean single layer, blue bg + white text/icon
 //   FIX 4  dynamic page-view inset in ALL themes (panel pushes the page)
-//   FIX 5  panel + page animate TOGETHER on one 300ms ease-out curve
+//   FIX 5  panel + page animate TOGETHER on one --panel-slide-duration curve
 //   FIX 6  icon sizes: toolbar 24px, command bar 22px, sidebar 22px, hits kept
-//   FIX 7  "All tools" grid icon (LayoutGrid), NOT three dots
-//   FIX 8  frosted page margins match dark/light, 16px minimum
+//   FIX 7  "All tools" control distinct from three dots (grid glyph at
+//          Phase 14.2; the floating "All tools" badge with a chevron + label
+//          since the Phase-16/17 badge redesign)
+//   FIX 8  frosted page margins match dark/light (Phase C supersession:
+//          full-bleed scroller, 28px in-flow padding, page under the chrome)
 // Canonical launcher (e2e/lib/launch.cjs), dev build. Screenshots -> screenshots/fix*.
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
@@ -249,21 +252,31 @@ test.describe('phase 14.2 fix verification', () => {
     expect(bar.annBg, "same material as the bar's other capsules").toBe(bar.siblingBg);
     await win.screenshot({ path: path.join(SHOTS, 'fix1-annotation-bar.png'), clip: { x: 0, y: 0, width: 1000, height: 130 } });
 
-    // ---- FIX 7: All tools grid icon (not three dots)
+    // ---- FIX 7: the All-tools control is distinct, never three dots.
+    // REQUIREMENTS.md §7 asks for a distinct "All tools" affordance that
+    // clearly indicates the tools panel. The toggle moved off the command bar
+    // to the floating .tools-badge-tracker (DocumentView.tsx:2326-2363;
+    // unit-pinned by phase142Controls.test.tsx "the All tools toggle has moved
+    // off the command bar"). It now names itself "All tools" with a chevron
+    // instead of the original LayoutGrid, so assert the intent (named,
+    // distinct, not a three-dot glyph) rather than the retired glyph class.
     const toolsIcon = await win.evaluate(() => {
       const btn = document.querySelector('button[data-tools-toggle]');
       if (!btn) return null;
       const svgs = Array.from(btn.querySelectorAll('svg'));
       const classes = svgs.map((s) => s.getAttribute('class') || '');
+      const label = `${btn.getAttribute('aria-label') || ''} ${btn.getAttribute('title') || ''} ${(btn.innerText || '')}`;
       return {
         svgClasses: classes,
-        hasGrid: classes.some((c) => /layout-grid/i.test(c)),
+        hasIcon: svgs.length > 0,
+        namesAllTools: /all tools/i.test(label),
         hasDots: classes.some((c) => /(more-horizontal|ellipsis|dots|more-vertical)/i.test(c)),
       };
     });
     console.log('[fix7] tools toggle icon:', JSON.stringify(toolsIcon));
     expect(toolsIcon, 'tools toggle button mounted').not.toBeNull();
-    expect(toolsIcon.hasGrid, 'tools toggle must use the All-tools grid glyph').toBe(true);
+    expect(toolsIcon.namesAllTools, 'tools toggle must identify itself as the All-tools control').toBe(true);
+    expect(toolsIcon.hasIcon, 'tools toggle must carry a glyph').toBe(true);
     expect(toolsIcon.hasDots, 'tools toggle must NOT use a three-dot glyph').toBe(false);
     {
       const tb = await win.locator('button[data-tools-toggle]').boundingBox();
@@ -273,10 +286,13 @@ test.describe('phase 14.2 fix verification', () => {
       });
     }
 
-    // ---- FIX 8: frosted page margins. The chrome floats over the page, so
-    // the page must sit 16px BELOW the floating chrome stack (not the old
-    // 28px), 16px above the bottom, and keep dark/light's 0 side padding
-    // (fit-width leaves the standard 28px content padding on each side).
+    // ---- FIX 8: frosted page margins match the in-flow themes. Phase C
+    // superseded the original 16px floating pair: the frosted scroller is
+    // full-bleed and the page keeps dark/light's 28px top/bottom padding,
+    // scrolling UNDER the floating chrome rows. That is the pinned current
+    // contract (phase142Layout.test.ts "FIX 8, Phase C supersession";
+    // phaseC_frostedChromeOverDocument.test.ts "keeps the 28px Phase C
+    // padding"), and REQUIREMENTS §8's "16px minimum" is still met (28 >= 16).
     const fix8 = await win.evaluate(() => {
       const wm = document.querySelector('.workspace-main');
       const content = document.querySelector('.document-content');
@@ -300,19 +316,35 @@ test.describe('phase 14.2 fix verification', () => {
     console.log('[fix8] frosted page margins:', JSON.stringify(fix8));
     const chromeYNum = parseFloat(fix8.chromeY.replace('px', '')) || 104;
     expect(fix8.sidePad, 'frosted content side padding must match dark/light (0px)').toBe('0px|0px');
-    expect(fix8.bottomPad, 'frosted bottom margin must be the 16px floating minimum').toBe('16px');
-    expect(Math.abs(fix8.pageTopGap - (chromeYNum + 16)) <= 8,
-      `page must sit 16px below the floating chrome stack (gap ${fix8.pageTopGap}, chrome ${chromeYNum})`).toBe(true);
+    expect(fix8.bottomPad, 'frosted bottom margin must be the Phase-C 28px in-flow padding').toBe('28px');
+    expect(Math.abs(fix8.pageTopGap - 28) <= 2,
+      `page 1 must start 28px below the scroller top (Phase C full-bleed; the ${chromeYNum}px chrome floats over it), got ${fix8.pageTopGap}`).toBe(true);
     expect(Math.abs(fix8.pageLeftGap - 28) <= 6, `frosted page left gap ${fix8.pageLeftGap} must match the dark/light 28px content padding`).toBe(true);
-    // the right gap is the left gap + the scroller's vertical scrollbar
-    // (dark/light show the same +10px) - assert THAT relation, not 28.
-    const scrollbar = await win.evaluate(() => {
+    // FIX 8's actual contract is "frosted margins MATCH dark/light". Measure
+    // the in-flow reference in the same run and compare, instead of the retired
+    // "left gap + scrollbar" proxy the pre-Phase-C layout used (the page's
+    // horizontal slack is 24/42 in BOTH layouts now).
+    await setTheme('light');
+    const light8 = await win.evaluate(() => {
+      const page = document.querySelector('.tab-pane[aria-hidden="false"] .pdf-page[data-page="1"]');
       const sc = document.querySelector('.document-scroller');
-      return sc.clientWidth ? (sc.getBoundingClientRect().width - sc.clientWidth) : 0;
+      const content = document.querySelector('.document-content');
+      const cs = getComputedStyle(content);
+      const pb = page.getBoundingClientRect();
+      const sb = sc.getBoundingClientRect();
+      return {
+        pageTopGap: Math.round(pb.top - sb.top),
+        pageLeftGap: Math.round(pb.left - sb.left),
+        pageRightGap: Math.round(sb.right - pb.right),
+        bottomPad: cs.paddingBottom,
+      };
     });
-    console.log(`[fix8] frosted scrollbar width: ${scrollbar}`);
-    expect(Math.abs(fix8.pageRightGap - (fix8.pageLeftGap + scrollbar)) <= 4,
-      `frosted page right gap ${fix8.pageRightGap} must be leftGap + scrollbar (${fix8.pageLeftGap} + ${scrollbar})`).toBe(true);
+    await setTheme('frosted');
+    console.log('[fix8] in-flow (light) reference:', JSON.stringify(light8));
+    expect(fix8.pageTopGap, 'frosted page top gap must match the in-flow themes').toBe(light8.pageTopGap);
+    expect(fix8.pageLeftGap, 'frosted page left gap must match the in-flow themes').toBe(light8.pageLeftGap);
+    expect(fix8.pageRightGap, 'frosted page right gap must match the in-flow themes').toBe(light8.pageRightGap);
+    expect(fix8.bottomPad, 'frosted bottom padding must match the in-flow themes').toBe(light8.bottomPad);
     await win.screenshot({ path: path.join(SHOTS, 'fix8-margins-frosted.png') });
 
     // ---- FIX 2 (frosted leg): rail + palette share the glass panel contract
@@ -504,7 +536,7 @@ test.describe('phase 14.2 fix verification', () => {
   // ------------------------------------------------------------------
   // FIX 5: simultaneous panel+page animation (frosted + dark), frames
   // ------------------------------------------------------------------
-  test('fix5: panel and page animate together on one 300ms ease-out curve', async () => {
+  test('fix5: panel and page animate together on one token curve', async () => {
     test.setTimeout(240000);
     await launchAndOpen();
 
@@ -515,6 +547,16 @@ test.describe('phase 14.2 fix verification', () => {
     });
     console.log('[fix5] workspace-main transition:', JSON.stringify(trans));
     expect(trans.hasInset, 'the inset custom property must be transitioned on .workspace-main').toBe(true);
+    // The panel/page slide duration is the live --panel-slide-duration token
+    // (150ms since the Phase-16 retime; the old 300ms curve is retired). Read it
+    // so the curve bounds below can never rot to a stale literal again.
+    const slideMs = await win.evaluate(() => {
+      const v = getComputedStyle(document.documentElement).getPropertyValue('--panel-slide-duration').trim();
+      const m = /^([\d.]+)(ms|s)$/.exec(v);
+      return m ? parseFloat(m[1]) * (m[2] === 's' ? 1000 : 1) : NaN;
+    });
+    console.log('[fix5] --panel-slide-duration:', slideMs, 'ms');
+    expect(slideMs, '--panel-slide-duration token must resolve').toBeGreaterThan(0);
 
     // In-page rAF sampler: records margin/inset/palette state every frame.
     await win.evaluate(() => {
@@ -559,7 +601,7 @@ test.describe('phase 14.2 fix verification', () => {
     console.log(`[fix5] OPEN: ${openSamples.length} rAF samples`);
     console.log('[fix5] OPEN head:', JSON.stringify(openSamples.slice(0, 4)));
     console.log('[fix5] OPEN tail:', JSON.stringify(openSamples.slice(-2)));
-    verifyCurve(openSamples, 'OPEN');
+    verifyCurve(openSamples, 'OPEN', slideMs);
 
     // frame sequence for the visual record
     await closeTools();
@@ -584,7 +626,7 @@ test.describe('phase 14.2 fix verification', () => {
     await win.evaluate(() => window.__fix5_stop());
     const closeSamples = await win.evaluate(() => window.__fix5.samples);
     console.log(`[fix5] CLOSE: ${closeSamples.length} rAF samples`);
-    verifyCloseCurve(closeSamples, 'CLOSE');
+    verifyCloseCurve(closeSamples, 'CLOSE', slideMs);
 
     // DARK theme: same shared motion system
     await setTheme('dark');
@@ -594,15 +636,16 @@ test.describe('phase 14.2 fix verification', () => {
     await win.evaluate(() => window.__fix5_stop());
     const darkSamples = await win.evaluate(() => window.__fix5.samples);
     console.log(`[fix5] DARK OPEN: ${darkSamples.length} rAF samples`);
-    verifyCurve(darkSamples, 'OPEN-dark');
+    verifyCurve(darkSamples, 'OPEN-dark', slideMs);
   });
 });
 
 // OPEN-direction curve verifier: the inset must interpolate through MANY
 // distinct intermediate values (registered-property tween, not a discrete
-// flip), be monotonic, settle ~356px inside the ~300ms window, and move in
-// the SAME window as the palette's own enter motion (not sequentially).
-function verifyCurve(samples, label) {
+// flip), be monotonic, settle ~356px on the live --panel-slide-duration
+// token, and move in the SAME window as the palette's own enter motion (not
+// sequentially).
+function verifyCurve(samples, label, slideMs) {
   const withMargin = samples.filter((s) => Number.isFinite(s.marginRight));
   const finalMargin = withMargin[withMargin.length - 1].marginRight;
   const firstMove = withMargin.find((s) => s.marginRight > 4);
@@ -611,8 +654,8 @@ function verifyCurve(samples, label) {
   expect(firstMove, `${label}: the page must actually move (intermediate frames exist)`).toBeTruthy();
   const movementMs = settled.t - firstMove.t;
   console.log(`[fix5] ${label}: margin ${withMargin[0].marginRight}px -> ${finalMargin}px, movement ${firstMove.t}ms -> ${settled.t}ms (${movementMs}ms)`);
-  expect(movementMs, `${label}: slide must take ~300ms (${movementMs}ms), not snap and not drag`).toBeGreaterThanOrEqual(120);
-  expect(movementMs, `${label}: slide must not exceed ~450ms`).toBeLessThanOrEqual(450);
+  expect(movementMs, `${label}: slide must run on the --panel-slide-duration token (${slideMs}ms), measured ${movementMs}ms - not a snap`).toBeGreaterThanOrEqual(slideMs * 0.3);
+  expect(movementMs, `${label}: slide must not drag past the token window (${slideMs}ms), measured ${movementMs}ms`).toBeLessThanOrEqual(slideMs * 1.6);
   const distinct = new Set(withMargin.filter((s) => s.t <= settled.t).map((s) => Math.round(s.marginRight)));
   console.log(`[fix5] ${label}: ${distinct.size} distinct intermediate margin values`);
   expect(distinct.size, `${label}: smooth interpolation needs many intermediate values`).toBeGreaterThanOrEqual(5);
@@ -644,8 +687,8 @@ function verifyCurve(samples, label) {
   expect(Math.abs(settled.t - paletteSettled.t) <= 150, `${label}: page and panel settle together, not sequentially (page ${settled.t}ms vs panel ${paletteSettled.t}ms)`).toBe(true);
 }
 
-// CLOSE-direction curve verifier (margin 356 -> 0).
-function verifyCloseCurve(samples, label) {
+// CLOSE-direction curve verifier (margin 356 -> 0) on the live token.
+function verifyCloseCurve(samples, label, slideMs) {
   const withMargin = samples.filter((s) => Number.isFinite(s.marginRight));
   const startMargin = withMargin[0].marginRight;
   const finalMargin = withMargin[withMargin.length - 1].marginRight;
@@ -656,8 +699,8 @@ function verifyCloseCurve(samples, label) {
   expect(settled, `${label}: the page returns to full width`).toBeTruthy();
   const movementMs = settled.t - firstMove.t;
   console.log(`[fix5] ${label}: margin ${startMargin}px -> ${finalMargin}px, movement ${firstMove.t}ms -> ${settled.t}ms (${movementMs}ms)`);
-  expect(movementMs, `${label}: close slide must take ~300ms (${movementMs}ms)`).toBeGreaterThanOrEqual(120);
-  expect(movementMs, `${label}: close slide must not exceed ~450ms`).toBeLessThanOrEqual(450);
+  expect(movementMs, `${label}: close slide must run on the --panel-slide-duration token (${slideMs}ms), measured ${movementMs}ms`).toBeGreaterThanOrEqual(slideMs * 0.3);
+  expect(movementMs, `${label}: close slide must not drag past the token window (${slideMs}ms), measured ${movementMs}ms`).toBeLessThanOrEqual(slideMs * 1.6);
   const distinct = new Set(withMargin.filter((s) => s.t <= settled.t).map((s) => Math.round(s.marginRight)));
   expect(distinct.size, `${label}: close must interpolate smoothly`).toBeGreaterThanOrEqual(5);
   const paletteSamples = samples.filter((s) => s.paletteMounted);

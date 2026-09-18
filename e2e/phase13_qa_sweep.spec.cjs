@@ -37,7 +37,11 @@ async function openReport(electronApp, win) {
   await electronApp.evaluate(async ({ dialog }, path) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
   }, p);
-  await win.locator('.header-actions .btn-primary').first().click();
+  // The Open primary action on the welcome screen is the hero button
+  // (.welcome .btn-primary, Welcome.tsx:64). The header-actions Open was
+  // retired in Phase 14.1 (moved to the CommandBar), which is not mounted
+  // until a document tab exists.
+  await win.locator('.welcome .btn-primary').first().click();
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .pdf-page canvas', { timeout: 30000 });
   await wait(2000);
@@ -76,7 +80,12 @@ async function dragRegionMap(win) {
     for (let x = b.left + 4; x < b.right - 4; x += 8) {
       if (pointIsDrag(x, b.top + b.height / 2)) draggableXs.push(Math.round(x));
     }
-    const noDragControls = ['[data-window-minimize]', '[data-window-maximize]', '[data-window-close]', '[data-menu-button]', '.header-gear', '[data-theme-toggle]', '.header-actions .btn-primary']
+    // Caption-strip controls that must opt out of window drag. Open is no
+    // longer one of them: it left the header-actions cluster in Phase 14.1
+    // (AppHeader.tsx:393-396) and now lives in the CommandBar
+    // ([data-toolbar-open], CommandBar.tsx:197-211) inside .app-main, which
+    // sits outside the draggable .titlebar, so it carries no app-region rule.
+    const noDragControls = ['[data-window-minimize]', '[data-window-maximize]', '[data-window-close]', '[data-menu-button]', '.header-gear', '[data-theme-toggle]']
       .filter((s) => {
         const el = document.querySelector(s);
         return el && getComputedStyle(el).webkitAppRegion === 'no-drag';
@@ -121,8 +130,8 @@ test('P13-QA: frameless launch + drag region + window controls + gear + menu', a
   expect(region.dragFrac, 'a meaningful fraction of the bar is draggable').toBeGreaterThan(0.05);
   expect(
     region.noDragControls,
-    'window controls + menu + gear + theme + Open must opt out of drag',
-  ).toEqual(expect.arrayContaining(['[data-window-minimize]', '[data-window-maximize]', '[data-window-close]', '[data-menu-button]', '.header-gear', '[data-theme-toggle]', '.header-actions .btn-primary']));
+    'window controls + menu + gear + theme must opt out of drag',
+  ).toEqual(expect.arrayContaining(['[data-window-minimize]', '[data-window-maximize]', '[data-window-close]', '[data-menu-button]', '.header-gear', '[data-theme-toggle]']));
 
   // --- Default theme welcome (record which theme ships) ---
   const theme0 = await win.evaluate(() => document.documentElement.getAttribute('data-theme'));
@@ -417,7 +426,7 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   // --- Single accent rule: --accent + Open button + active tool + thumb ring ---
   const accent = await win.evaluate(() => {
     const cs = getComputedStyle(document.documentElement);
-    const open = document.querySelector('.header-actions .btn-primary');
+    const open = document.querySelector('[data-toolbar-open]');
     const openStyle = open ? getComputedStyle(open) : null;
     return {
       accent: cs.getPropertyValue('--accent').trim(),

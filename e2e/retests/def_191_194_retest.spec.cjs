@@ -236,8 +236,8 @@ test.describe('DEF-191..194 retest (phase 14.2 fix round 2)', () => {
   });
 
   // ------------------------------------------------------------------
-  // DEF-193: panel AND page animate together on the one 300ms ease-out
-  // (open + close curves, rAF sampled; frame sequence for the record).
+  // DEF-193: panel AND page animate together on the one --panel-slide-duration
+  // curve (open + close curves, rAF sampled; frame sequence for the record).
   // ------------------------------------------------------------------
   test('DEF-193: panel and page animate together (open, close, dark)', async () => {
     test.setTimeout(300000);
@@ -254,6 +254,13 @@ test.describe('DEF-191..194 retest (phase 14.2 fix round 2)', () => {
     });
     console.log('[DEF-193] workspace-main transition:', JSON.stringify(trans));
     expect(trans.hasInset, 'the inset custom property must be transitioned on .workspace-main').toBe(true);
+    // The panel/page slide runs on the live --panel-slide-duration token (150ms
+    // since the Phase-16 retime; the old 300ms curve is retired), so the curve
+    // bounds below are token-driven and cannot rot to a stale literal again.
+    const slideMatch = /^([\d.]+)(ms|s)$/.exec((trans.duration || '').trim());
+    const slideMs = slideMatch ? parseFloat(slideMatch[1]) * (slideMatch[2] === 's' ? 1000 : 1) : NaN;
+    console.log('[DEF-193] --panel-slide-duration:', slideMs, 'ms');
+    expect(slideMs, '--panel-slide-duration token must resolve').toBeGreaterThan(0);
 
     // rAF sampler (same shape as the filing spec's fix5 sampler).
     await win.evaluate(() => {
@@ -296,7 +303,7 @@ test.describe('DEF-191..194 retest (phase 14.2 fix round 2)', () => {
     };
 
     // OPEN curve (frosted)
-    verifyCurve(await runCurve('OPEN-frosted'), 'OPEN-frosted');
+    verifyCurve(await runCurve('OPEN-frosted'), 'OPEN-frosted', slideMs);
     await closeTools();
 
     // frame sequence for the visual record (open direction, frosted)
@@ -315,11 +322,11 @@ test.describe('DEF-191..194 retest (phase 14.2 fix round 2)', () => {
 
     // CLOSE curve (frosted)
     await openTools();
-    verifyCloseCurve(await runCurve('CLOSE-frosted'), 'CLOSE-frosted');
+    verifyCloseCurve(await runCurve('CLOSE-frosted'), 'CLOSE-frosted', slideMs);
 
     // DARK theme: same shared motion system
     await setTheme('dark');
-    verifyCurve(await runCurve('OPEN-dark'), 'OPEN-dark');
+    verifyCurve(await runCurve('OPEN-dark'), 'OPEN-dark', slideMs);
   });
 
   // ------------------------------------------------------------------
@@ -389,7 +396,9 @@ test.describe('DEF-191..194 retest (phase 14.2 fix round 2)', () => {
       expect(ic.rectW, `command icon "${ic.label}" rect width ${ic.rectW} must match its css width (no letterbox)`).toBeGreaterThanOrEqual(ic.cssW - 0.5);
     }
     expect(icons.annCount, 'annotation toolbar glyphs present').toBeGreaterThan(0);
-    expect(icons.annSizes, `annotation icons must stay 24px (got ${icons.annSizes})`).toEqual(['24x24']);
+    // Phase 19 - the annotation tools are CommandBar tool-btns now, so they use
+    // the bar's 22px glyph ladder (the separate 24px row is retired).
+    expect(icons.annSizes, `annotation icons must use the CommandBar 22px ladder (got ${icons.annSizes})`).toEqual(['22x22']);
     for (const h of icons.cmdBtnHeights) expect(h, 'command tool hit box').toBeGreaterThanOrEqual(32);
     expect(icons.capsuleH, 'command capsule hit row >= 36px').toBeGreaterThanOrEqual(36);
     expect(icons.railIconMin, 'sidebar icons unaffected (>= 20px)').toBeGreaterThanOrEqual(20);
@@ -402,8 +411,9 @@ test.describe('DEF-191..194 retest (phase 14.2 fix round 2)', () => {
 
 // OPEN-direction curve verifier (ported from the filing spec): the inset must
 // interpolate through MANY distinct intermediate values, be monotonic, settle
-// ~356px inside the ~300ms window, and move in the SAME window as the palette.
-function verifyCurve(samples, label) {
+// ~356px on the live --panel-slide-duration token, and move in the SAME window
+// as the palette.
+function verifyCurve(samples, label, slideMs) {
   const withMargin = samples.filter((s) => Number.isFinite(s.marginRight));
   const finalMargin = withMargin[withMargin.length - 1].marginRight;
   const firstMove = withMargin.find((s) => s.marginRight > 4);
@@ -412,8 +422,8 @@ function verifyCurve(samples, label) {
   expect(firstMove, `${label}: the page must actually move (intermediate frames exist)`).toBeTruthy();
   const movementMs = settled.t - firstMove.t;
   console.log(`[DEF-193] ${label}: margin ${withMargin[0].marginRight}px -> ${finalMargin}px, movement ${firstMove.t}ms -> ${settled.t}ms (${movementMs}ms)`);
-  expect(movementMs, `${label}: slide must take ~300ms (${movementMs}ms), not snap and not drag`).toBeGreaterThanOrEqual(120);
-  expect(movementMs, `${label}: slide must not exceed ~450ms`).toBeLessThanOrEqual(450);
+  expect(movementMs, `${label}: slide must run on the --panel-slide-duration token (${slideMs}ms), measured ${movementMs}ms - not a snap`).toBeGreaterThanOrEqual(slideMs * 0.3);
+  expect(movementMs, `${label}: slide must not drag past the token window (${slideMs}ms), measured ${movementMs}ms`).toBeLessThanOrEqual(slideMs * 1.6);
   const distinct = new Set(withMargin.filter((s) => s.t <= settled.t).map((s) => Math.round(s.marginRight)));
   console.log(`[DEF-193] ${label}: ${distinct.size} distinct intermediate margin values`);
   expect(distinct.size, `${label}: smooth interpolation needs many intermediate values`).toBeGreaterThanOrEqual(5);
@@ -442,8 +452,8 @@ function verifyCurve(samples, label) {
   expect(Math.abs(settled.t - paletteSettled.t) <= 150, `${label}: page and panel settle together, not sequentially (page ${settled.t}ms vs panel ${paletteSettled.t}ms)`).toBe(true);
 }
 
-// CLOSE-direction curve verifier (margin 356 -> 0).
-function verifyCloseCurve(samples, label) {
+// CLOSE-direction curve verifier (margin 356 -> 0) on the live token.
+function verifyCloseCurve(samples, label, slideMs) {
   const withMargin = samples.filter((s) => Number.isFinite(s.marginRight));
   const startMargin = withMargin[0].marginRight;
   const finalMargin = withMargin[withMargin.length - 1].marginRight;
@@ -454,8 +464,8 @@ function verifyCloseCurve(samples, label) {
   expect(settled, `${label}: the page returns to full width`).toBeTruthy();
   const movementMs = settled.t - firstMove.t;
   console.log(`[DEF-193] ${label}: margin ${startMargin}px -> ${finalMargin}px, movement ${firstMove.t}ms -> ${settled.t}ms (${movementMs}ms)`);
-  expect(movementMs, `${label}: close slide must take ~300ms (${movementMs}ms)`).toBeGreaterThanOrEqual(120);
-  expect(movementMs, `${label}: close slide must not exceed ~450ms`).toBeLessThanOrEqual(450);
+  expect(movementMs, `${label}: close slide must run on the --panel-slide-duration token (${slideMs}ms), measured ${movementMs}ms`).toBeGreaterThanOrEqual(slideMs * 0.3);
+  expect(movementMs, `${label}: close slide must not drag past the token window (${slideMs}ms), measured ${movementMs}ms`).toBeLessThanOrEqual(slideMs * 1.6);
   const distinct = new Set(withMargin.filter((s) => s.t <= settled.t).map((s) => Math.round(s.marginRight)));
   expect(distinct.size, `${label}: close must interpolate smoothly`).toBeGreaterThanOrEqual(5);
   const paletteSamples = samples.filter((s) => s.paletteMounted);
