@@ -2402,6 +2402,46 @@ listed Latest. Installed-build verification (version gate 1.18.1 first): DEF-221
 DEF-214 toolbar guard + the watermark apply/delete regression all PASS; 5/5 in
 `e2e/release_1_18_1_installed.spec.cjs`. Release URL:
 https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.18.1
+
+## 2026-09-19: Phase 19 (annotation tools into the CommandBar) + release 1.19.0
+
+**Phase 19 shipped** exactly as contracted (REQUIREMENTS.md Phase 19): the separate annotation row is
+retired; the tools are the CommandBar's trailing capsule — five MRU-ordered buttons, the colour swatch
+immediately left of the dropdown arrow, and a portaled all-tools menu (eleven tools in six groups plus
+the ink-only pen-width row, arrow-key/Enter/Escape support, three close paths). The MRU order persists
+as `AppSettings.annotationRecentTools` (main-process validation: known ids, deduped, capped at 6).
+
+**Two lessons worth keeping:**
+
+1. **An overlay-originated commit must carry the page it is editing — never read the host's
+   "current page" readout.** DEF-232 (HIGH, caught by the release gate, not by the phase suite): the
+   edit-text commit read `currentPageOfTab`, so when the page readout was stale the engine masked and
+   drew on page 1 while the user was editing page 2 — the edit was silently lost and the saved file
+   kept the original text. The stale readout appeared because Phase 19 legitimately changed the
+   chrome-height sum (the annotation row was removed), which shifted the frosted content-top padding
+   and the `scrollToPage` arithmetic by a few pixels. The fix threads the overlay's own page through
+   `handleEditTextRun` / `handleAddTextBox` / the box-move + box-delete fallbacks / `handleEditImage`
+   and deletes the now-unused helper; a value-compare on the page size also stops a byte-identical
+   proxy swap from re-syncing the scroller. **Rule: any op whose target page comes from the viewport
+   is one layout tweak away from writing to the wrong page — derive it from the overlay.**
+2. **A bug-class sweep is only as good as its blast radius.** The same mis-target existed in four
+   sibling commit paths; the DEF-232 fix would have shipped a known latent bug if the siblings had not
+   been audited and fixed in the same batch. When a root cause is "a value read from the wrong
+   source", enumerate every reader of that source in the same dispatch.
+
+**Release 1.19.0** (minor): commits `4600ae6` (Phase 19 + the DEF-226..231 batch), `f1c3a4e` (DEF-232
+fixes), `f8a20c2` (`version: 1.19.0`), tag `v1.19.0`; GitHub Release in the public `tflex-releases`
+with the four OTA assets (latest.yml 342 B, Setup 157,757,102 B, blockmap 165,582 B, portable
+157,527,263 B), listed Latest. **The release gate caught DEF-232 after the phase suite was green** —
+the gate sequence that mattered was: qa `verify:full` (262 files / 3245 tests) + the INSTALLED-build
+verification + the defect-disposition table, then the rebuild, then a full re-verification. A release
+that had already been packaged and installed was still correctly blocked by the installed-build
+regression check; do not let a green phase suite stand in for it.
+Release URL: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.19.0
+
+**Pre-existing spec rot observed (not caused by Phase 19, worth a cleanup batch):** the phase-13
+sweep specs still click a stale Open selector, and `anim_audit` / `motion_verify` still assert legacy
+animation values (0.982 press / 300 ms crossfade) that the Phase-15 token system replaced.
 
 
 ## 2026-09-18: git-agent moves to the cloud — the team is 100% cloud now
