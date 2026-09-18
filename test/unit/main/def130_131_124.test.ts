@@ -47,17 +47,15 @@
 //                          matching the source leaf's effective
 //                          state).
 //
-//   DEF-124 (B2, MED)   — edit-text left a faint trace of the old run
-//                          behind the new text because the white mask
-//                          covered only the pdf.js text-item bbox
-//                          (tight ink box), not the font's ascent /
-//                          descent. Fix: widen the mask symmetrically
-//                          by PAD points on each side and extend the
-//                          top by the font's ascent and the bottom by
-//                          the descent so the mask fully hides the old
-//                          glyphs. Mask-and-redraw stays the v1
-//                          approach (DEF-116 REJECTED); this only
-//                          widens the visual mask.
+//   DEF-124 / DEF-221  — edit-text leaves no trace of the old run. The
+//                          mask covers the OLD run's bbox plus a small
+//                          symmetric PAD on all four sides and nothing
+//                          more (DEF-221 tightened this: an earlier
+//                          DEF-124 widening by the new font's
+//                          ascent/descent over-erased and ate the line
+//                          above). Mask-and-redraw stays the v1
+//                          approach (DEF-116 REJECTED); the new text is
+//                          still drawn at the moved `rect`.
 
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -433,11 +431,11 @@ describe('DEF-131: per-page crop does not propagate the CropBox', () => {
 });
 
 // ---------------------------------------------------------------------------
-// DEF-124 — edit-text mask covers the old run's full glyph extent
+// DEF-124 / DEF-221 — edit-text mask is the old run's bbox + symmetric PAD
 // ---------------------------------------------------------------------------
 
-describe('DEF-124: editTextRun mask covers the old run + ascent/descent', () => {
-  it('new text is present and the mask rect >= old-run bbox + padding', async () => {
+describe('DEF-124/DEF-221: editTextRun mask is the old run bbox + symmetric pad', () => {
+  it('new text is present and the mask rect == old-run bbox + symmetric PAD only', async () => {
     const engine = new EngineService();
     const { path } = await createSinglePagePdfWithText('OLDTITLE');
     await engine.loadDocument('doc-edit', path);
@@ -461,10 +459,14 @@ describe('DEF-124: editTextRun mask covers the old run + ascent/descent', () => 
     // New text is present in the saved content stream.
     expect(await page0ContentHasText(out, 'NEWTITLE')).toBe(true);
 
-    // The mask rectangle in the saved content stream must cover the
-    // old-run bbox + symmetric padding + ascent above + descent below.
-    // The bbox (payload.rect) is top-left origin; convert to PDF
-    // bottom-left for comparison with the mask operands.
+    // Tightened contract (DEF-221): the mask covers the old run's INK
+    // box plus a symmetric PAD on all four sides, and NOTHING more — no
+    // ascent / descent extension that could reach into a neighbouring
+    // text band. The renderer's oldRect is the em box
+    // ([baseline - h, baseline], h = font size), whose top sits 0.25 h
+    // above the ink top, so the mask is shifted DOWN by 0.25 h. The
+    // bbox (payload.rect) is top-left origin; convert to PDF bottom-left
+    // for comparison with the mask operands.
     const content = await decodedPage0Content(out);
     const mask = extractWhiteRect(content);
     expect(mask, `a white-fill mask rectangle must be present in the content stream`).toBeDefined();
@@ -472,36 +474,166 @@ describe('DEF-124: editTextRun mask covers the old run + ascent/descent', () => 
 
     const PAGE_H = 792;
     const PAD = 2;
-    // The font's ascent + descent at size 14 (Helvetica). Computed
-    // here from the same font metrics the engine uses so the test
-    // does not hard-code a magic number that drifts with pdf-lib.
-    const fontDoc = await PDFDocument.create();
-    const font = await fontDoc.embedFont(StandardFonts.Helvetica);
-    const fontFullHeight = font.heightAtSize(14);
-    const fontAscent = font.heightAtSize(14, { descender: false } as { descender?: boolean });
-    const fontDescent = Math.max(0, fontFullHeight - fontAscent);
-
-    // The bbox (payload.rect) in PDF bottom-left coords.
+    const inkShift = rect.height * 0.25;
     const bboxX = rect.x;
     const bboxY = PAGE_H - rect.y - rect.height;
     const bboxW = rect.width;
     const bboxH = rect.height;
 
-    // The mask must start at or left of bboxX - PAD, at or below
-    // bboxY - PAD - descent (extended down by the descent), and cover
-    // at least bboxW + 2*PAD wide and bboxH + 2*PAD + ascent + descent
-    // tall.
-    expect(mask.x).toBeLessThanOrEqual(bboxX - PAD + 0.01);
-    expect(mask.y).toBeLessThanOrEqual(bboxY - PAD - fontDescent + 0.01);
-    expect(mask.x + mask.width).toBeGreaterThanOrEqual(bboxX + bboxW + PAD - 0.01);
-    expect(mask.y + mask.height).toBeGreaterThanOrEqual(
-      bboxY + bboxH + PAD + fontAscent - 0.01,
-    );
-    // The mask must be strictly LARGER than the bbox in BOTH width
-    // and height (i.e. it is not just the bbox itself — the ascent /
-    // descent / padding extension is real).
-    expect(mask.width).toBeGreaterThan(bboxW);
-    expect(mask.height).toBeGreaterThan(bboxH);
+    // x/y are the bottom-left corner: PAD to the left and PAD below the
+    // INK box (which is bbox shifted down by inkShift in top-left
+    // coords, i.e. inkShift lower in PDF coords for the bottom edge).
+    expect(mask.x).toBeGreaterThanOrEqual(bboxX - PAD - 0.5);
+    expect(mask.x).toBeLessThanOrEqual(bboxX - PAD + 0.5);
+    expect(mask.y).toBeGreaterThanOrEqual(bboxY - PAD - inkShift - 0.5);
+    expect(mask.y).toBeLessThanOrEqual(bboxY - PAD - inkShift + 0.5);
+    // Width/height are bbox + 2*PAD, and the height must NOT exceed
+    // oldRect.height + 2*PAD + 0.5 (the DEF-124 ascent/descent widening
+    // is gone and the 0.25 h ink shift does NOT change the height).
+    expect(mask.width).toBeGreaterThanOrEqual(bboxW + 2 * PAD - 0.5);
+    expect(mask.width).toBeLessThanOrEqual(bboxW + 2 * PAD + 0.5);
+    expect(mask.height).toBeGreaterThanOrEqual(bboxH + 2 * PAD - 0.5);
+    expect(mask.height).toBeLessThanOrEqual(bboxH + 2 * PAD + 0.5);
+
+    // Explicit DEF-221 ink-box geometry in top-left coordinates:
+    // maskTop == oldRect.y + 0.25*h - PAD,
+    // maskBottom == oldRect.y + 1.25*h + PAD.
+    const maskTopLeft = PAGE_H - (mask.y + mask.height);
+    const maskBottomLeft = PAGE_H - mask.y;
+    expect(maskTopLeft).toBeGreaterThanOrEqual(rect.y + inkShift - PAD - 0.5);
+    expect(maskTopLeft).toBeLessThanOrEqual(rect.y + inkShift - PAD + 0.5);
+    expect(maskBottomLeft).toBeGreaterThanOrEqual(rect.y + rect.height + inkShift + PAD - 0.5);
+    expect(maskBottomLeft).toBeLessThanOrEqual(rect.y + rect.height + inkShift + PAD + 0.5);
+  });
+
+  // DEF-221 pin: the mask must not reach into the text band directly
+  // above the moved run. Two lines are drawn 20 pt apart; the run's bbox
+  // is derived from Helvetica's ascent/descent at size 14 so the test
+  // does not hard-code font metrics. After editTextRun({rect, oldRect})
+  // the extracted mask's TOP edge must sit at old-run-top + PAD (i.e.
+  // below the band above's ink) and must be anchored to oldRect, not to
+  // the moved rect.
+  it('mask top stays below the text band above the old run (DEF-221 pin)', async () => {
+    const doc = await PDFDocument.create();
+    const page = doc.addPage([612, 792]);
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const ABOVE_BASELINE = 720; // PDF bottom-left baseline of the line above
+    const RUN_BASELINE = 700; // exactly 20 pt below
+    page.drawText('ABOVE', { x: 72, y: ABOVE_BASELINE, size: 14, font });
+    page.drawText('RUN', { x: 72, y: RUN_BASELINE, size: 14, font });
+    const fixturePath = await writeFixture('two-line.pdf', await doc.save());
+
+    const ascent = font.heightAtSize(14, { descender: false } as { descender?: boolean });
+    const fullHeight = font.heightAtSize(14);
+    const descent = Math.max(0, fullHeight - ascent);
+
+    const PAGE_H = 792;
+    const PAD = 2;
+    // The old run's bbox in top-left coords, derived from its baseline.
+    const oldRect = {
+      x: 72,
+      y: PAGE_H - (RUN_BASELINE + ascent),
+      width: 120,
+      height: ascent + descent,
+    };
+    // The moved rect is elsewhere; the mask must NOT be anchored here.
+    const movedRect = { x: 200, y: 300, width: 120, height: ascent + descent };
+
+    const engine = new EngineService();
+    await engine.loadDocument('doc-move', fixturePath);
+    const result = await engine.editTextRun('doc-move', {
+      page: 1,
+      rect: movedRect,
+      oldRect,
+      newText: 'MOVED',
+      font: 'Helvetica',
+      size: 14,
+      color: { r: 0, g: 0, b: 0 },
+    });
+    expect(result.ok).toBe(true);
+
+    const out = join(dir, 'two-line-out.pdf');
+    const saved = await engine.saveAs('doc-move', out);
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+
+    const content = await decodedPage0Content(out);
+    const mask = extractWhiteRect(content);
+    expect(mask, `a white-fill mask rectangle must be present`).toBeDefined();
+    if (!mask) return;
+
+    // The mask is anchored to oldRect (x = 72 - PAD), not the moved rect.
+    expect(mask.x).toBeCloseTo(oldRect.x - PAD, 0);
+
+    const maskTopPdf = mask.y + mask.height;
+    const maskBottomPdf = mask.y;
+    // DEF-221 ink-box shift: the mask is anchored to oldRect shifted
+    // DOWN by 0.25 * oldRect.height (em-box top -> ink top). In PDF
+    // coordinates both edges move down (smaller y) by inkShift:
+    //   mask top    == RUN_BASELINE + ascent - inkShift + PAD
+    //   mask bottom == RUN_BASELINE - descent - inkShift - PAD
+    const inkShift = oldRect.height * 0.25;
+    expect(maskTopPdf).toBeGreaterThanOrEqual(RUN_BASELINE + ascent - inkShift + PAD - 0.5);
+    expect(maskTopPdf).toBeLessThanOrEqual(RUN_BASELINE + ascent - inkShift + PAD + 0.5);
+    expect(maskBottomPdf).toBeGreaterThanOrEqual(RUN_BASELINE - descent - inkShift - PAD - 0.5);
+    expect(maskBottomPdf).toBeLessThanOrEqual(RUN_BASELINE - descent - inkShift - PAD + 0.5);
+    // The mask must NOT cover the band above: its top edge stays BELOW
+    // the band above's descender extent (baseline - descent) by a
+    // positive margin, so it cannot reach the neighbour's ink.
+    const aboveInkBottom = ABOVE_BASELINE - descent;
+    expect(maskTopPdf).toBeLessThanOrEqual(aboveInkBottom - 0.5);
+    expect(aboveInkBottom - maskTopPdf).toBeGreaterThan(0.5);
+    // In top-left coords the mask top sits at oldRect.y + 0.25*h - PAD.
+    const maskTopLeft = PAGE_H - maskTopPdf;
+    expect(maskTopLeft).toBeGreaterThanOrEqual(oldRect.y + inkShift - PAD - 0.5);
+    expect(maskTopLeft).toBeLessThanOrEqual(oldRect.y + inkShift - PAD + 0.5);
+  });
+
+  // DEF-221 ink coverage pin. The renderer rect is the em box, so with
+  // oldRect.height = 20 the mask must span [y + 5 - PAD, y + 25 + PAD]
+  // in top-left coordinates: a descender row at y + 21 (0.05 h below
+  // the rect bottom — the run's own descenders) is covered, while a
+  // neighbour's descender at y - 3 (0.15 h above the rect top) is NOT.
+  it('mask spans the ink box: own descender row covered, neighbour descender not', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('RECTPIX');
+    await engine.loadDocument('doc-ink', path);
+
+    const rect = { x: 80, y: 640, width: 120, height: 20 };
+    const result = await engine.editTextRun('doc-ink', {
+      page: 1,
+      rect,
+      newText: 'INKFIX',
+      font: 'Helvetica',
+      size: 14,
+      color: { r: 0, g: 0, b: 0 },
+    });
+    expect(result.ok).toBe(true);
+
+    const out = join(dir, 'ink-coverage-out.pdf');
+    const saved = await engine.saveAs('doc-ink', out);
+    expect(saved.ok).toBe(true);
+    if (!saved.ok) return;
+
+    const content = await decodedPage0Content(out);
+    const mask = extractWhiteRect(content);
+    expect(mask, `a white-fill mask rectangle must be present`).toBeDefined();
+    if (!mask) return;
+
+    const PAGE_H = 792;
+    const PAD = 2;
+    const maskTopLeft = PAGE_H - (mask.y + mask.height);
+    const maskBottomLeft = PAGE_H - mask.y;
+    // Height unchanged by the shift: h + 2*PAD.
+    expect(mask.height).toBeCloseTo(rect.height + 2 * PAD, 1);
+    expect(maskTopLeft).toBeCloseTo(rect.y + 0.25 * rect.height - PAD, 1);
+    expect(maskBottomLeft).toBeCloseTo(rect.y + 1.25 * rect.height + PAD, 1);
+
+    const ownDescenderRow = rect.y + 21; // 1 pt below the rect bottom
+    const neighbourDescenderRow = rect.y - 3; // 3 pt above the rect top
+    expect(ownDescenderRow).toBeGreaterThanOrEqual(maskTopLeft);
+    expect(ownDescenderRow).toBeLessThanOrEqual(maskBottomLeft);
+    expect(neighbourDescenderRow).toBeLessThan(maskTopLeft);
   });
 });
 

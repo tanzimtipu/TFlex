@@ -5,6 +5,60 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-221: Moving a text run in Edit mode leaves an empty box at the original location after Confirm
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (operator-reported)
+- Phase: 18
+
+Steps to reproduce:
+1. Launch TFlex (dev build via the canonical `launchApp` helper, no executablePath). Open the bundled report.pdf sample from the welcome card; scroll to page 1.
+2. Arm Edit mode (`[data-toolbar-edit-toggle]`) -> `.edit-toolbar` mounts; click `[data-edit-tool="text"]`.
+3. Double-click a body text run on page 1; the inline editor opens (`.edit-inline-editor[data-edit-editor="edit"]`) pre-filled with "A study in PDF orchestration and performance.".
+4. Drag the editor grip `[data-edit-drag-handle]` ~+150/+120 so `[data-edit-confirm]` flips to "true"; click `[data-edit-confirm="true"]`.
+5. Inspect the run's ORIGINAL location, then Save As to a temp path, close the tab, reopen the saved file and inspect it again.
+
+Expected: The run relocates to the new position and the original location is clean - no residual white box and no erased neighbouring content. A plain in-place edit (no move) must leave no leftover.
+
+Actual: After Confirm the ORIGINAL run location is left as a pure-white rectangular mask. Measured on the dev build (2026-09-18), spec `e2e/def221_222_leftover_thumb_flicker.spec.cjs`:
+- DOM probe ~1.2s after Confirm: every candidate overlay is GONE - `[data-edit-box-eraser]` exists=false, `.edit-textrun-selection`=false, `.edit-text-hover`=false, `.edit-box`=false, `.edit-inline-editor`=false. (Pre-Confirm the eraser sat at the original rect {x:546,y:483,w:549,h:26}, computed background rgb(255,255,255), border `0px none`, opacity 1 - it can paint, but it unmounts correctly.) So the leftover is NOT a renderer overlay.
+- Page-1 canvas pixel probe at the ORIGINAL run rect (fixed canvas px [302,290,548,26], immune to the post-edit layout shift caused by the "Undo last change" strip): BEFORE meanRGB [204,204,204], near-white 9,791/14,248, dark-glyph 2,867; AFTER meanRGB [255,255,255], near-white 14,248/14,248, dark-glyph 0. Uniformly white where glyph pixels were -> a white patch.
+- Dense-paragraph probe (page 2, run "orchestration layer correctly handles multiple page streams. Strategic orchestration is" at y=551.7): BEFORE run-band dark 4,458 and the band immediately ABOVE the run dark 3,287; AFTER run-band dark 0 AND above-band dark 0. The mask is taller than the run (it extends up by the new text's font ascent) and erases the line above as well - the white box is punched through the paragraph.
+- BAKED vs RENDERER: Save As -> close tab -> reopen the saved file. The original location is STILL uniformly white (fixed-px meanRGB [255,255,255], near-white 14,248/14,248, dark 0) and no DOM overlay exists. The white box is BAKED into the PDF (baked=true).
+Mechanism: `engine.editTextRun` with the DEF-151 `oldRect` (src/main/services/engine.ts:1772-1816) draws a white rectangle (`drawRectangle`, fill rgb(1,1,1), no border) at `maskRect = payload.oldRect`, padded by the new text's font ascent/descent + PAD=2. That white mask is the "empty box"; it is part of the re-serialized PDF bytes, so it survives save+reopen. The renderer's `.edit-box-eraser` is only a transient cover and unmounts after the proxy refresh.
+Screenshot: screenshots/def-221-before.png (run present before the move), screenshots/def-221-leftover-box.png (original location pure white after Confirm), screenshots/def-221-leftover-box-reopened.png (still white in the reopened saved file), screenshots/def-221-dense-after.png (white gap + neighbouring line partially erased on a dense paragraph)
+
+History:
+- qa: opened (2026-09-18; operator-reported. Dev-build repro via e2e/def221_222_leftover_thumb_flicker.spec.cjs. Move+Confirm leaves a baked white mask at the old rect: page-1 fixed-px BEFORE dark 2,867 / near-white 9,791 -> AFTER dark 0 / near-white 14,248, still white after Save As+reopen (baked=true). On a dense paragraph the mask also erases the line above (dark 3,287 -> 0). The renderer eraser/selection/editor all unmount, so the leftover is the engine's baked white rectangle. Control C (plain in-place edit, no move) leaves NO leftover. HIGH - baked into the saved file and erases neighbouring document content.)
+- qa: retest FAILED (2026-09-18; FIX-READY retest via e2e/def221_222_leftover_thumb_flicker.spec.cjs, dev build). Band above NOT unchanged on the dense paragraph: above-band dark 3,287 -> 2,921. Row profile shows the 6 rows nearest the run (canvas 256-261) go exactly 0 while rows 246-255 are byte-identical; span geometry places those rows inside the line-above's own box (line-above span viewport y=526 h=23 -> 526..549; run span y=552; mask top ~viewport 544), so the neighbouring line's baseline/descender rows are still erased. The removed DEF-124 ascent/descent widening cut the erasure from 100% to ~11%, but the renderer's oldRect (target.rect) sits ~4-6px above the rendered textLayer span, so the tightened mask still clips the line above. Page-1 move: old-rect fixed-px dark 6, not 0 - 6 residual descender px ('y'/'p') on the old rect's bottom row, still 6 after Save As + reopen (baked). Run band 4,458->0 and below band 3,035->3,035 are correct; the moved text renders at the new position (dark 1,973). Control C (plain in-place edit) passed: text redrawn (fixed-px dark 1,979), band above 0->0, no leftover overlay. Screenshots: def-221-retest.png, def-221-dense-above-before.png / -after.png. Stays OPEN.)
+- qa: CLOSED (2026-09-18; FIX-READY retest #2, dev build rebuilt via `npm.cmd run build`, spec `e2e/def221_222_leftover_thumb_flicker.spec.cjs` - 3/3 passed. Acceptance met. Page-1 move +150/+120: old-rect fixed-px dark 2,867 -> **0** (was 6 residual descender px pre-fix); band above 0 -> 0 (this run has no neighbour above - retention is pinned by the dense case). Moved text dark 1,973 -> 1,973 with byte-identical row profile [0,45,52,27,26,194,244,156,137,149,160,127,129,140,206,162,4,4,6,5,0,...], firstDarkRow 1 / lastDarkRow 19, centroid [670.6,419.3] - baseline unchanged, not clipped. Dense page 2: run band 4,458 -> **0**; band ABOVE 3,287 -> **3,287 byte-identical**, rows [298,262,240,332,364,224,226,261,288,426,319,6,9,8,14,10] unchanged (was 3,287 -> 2,921 pre-fix). Below band 3,035 -> 3,018: only the single boundary row immediately under the old run (row idx 3, the run's own descender zone) changed 54 -> 37; rows idx 6+ byte-identical [46,384,493,298,267,244,317,334,238,239] - the 17 px are the old run's own descenders now covered by the ink-anchored mask (same effect that took the page-1 old rect 6 -> 0), not neighbour erasure. Save As -> close -> reopen: old rect dark **0**, band above **0**, moved text 1,973 with identical rows (baked, no leftover, no neighbour loss). Control C (plain in-place edit): text redrawn 1,973 fixed-px, band above 0 -> 0, no leftover. DEF-222 re-confirmed: MutationObserver over 34 `.thumb-canvas` during Confirm = 10 mutations, zeroWidthSets 0 / zeroHeightSets 0 (was 5+5 zeroing); unmount removes all canvases. Screenshot `def-221-retest2.png`: old location + band above clean white; dense-above pair visually identical - paragraph "structures requires careful management of internal objects..." fully intact. Run-close: `npm.cmd run verify` exit 0 (conventions clean, tsc clean); targeted unit 4 files / 218 tests passed (def130_131_124 12, engine 195, sideRail 6, thumbGeometry 5).)
+
+## DEF-222: The thumbnail panel flickers when a text-run edit is confirmed
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa (operator-reported)
+- Phase: 18
+
+Steps to reproduce:
+1. Launch TFlex (dev build via `launchApp`); open report.pdf; scroll to page 1.
+2. Arm Edit mode (`[data-toolbar-edit-toggle]`) -> click `[data-edit-tool="text"]`.
+3. Double-click a body text run; drag `[data-edit-drag-handle]` +150/+120 (so `[data-edit-confirm]`="true"); click `[data-edit-confirm="true"]` and watch the thumbnail panel.
+
+Expected: The thumbnails update without a visible blank/flash.
+
+Actual: Confirming the edit blanks and repaints every rendered thumbnail. Measured on the dev build (2026-09-18), same spec:
+- MutationObserver on all 34 mounted `.thumb-canvas` nodes: at t=116ms after the Confirm click the 5 RENDERED canvases (idx 0..4) had `width=0` AND `height=0` set (bitmap released), then restored to `width=189`/`height=244` at t=119ms - one wave, 20 attribute mutations (5 zero-width + 5 zero-height + 5 restores). The rAF poll independently saw the page-1 thumb canvas at `width=0` for ~1 frame (189->0@116ms, 0->189@131ms).
+- Node identity is unchanged: 34 `.thumb-canvas` nodes before and after, 34/34 the SAME nodes, 0 replaced, and `.thumb-placeholder` stays constant at 29 (no placeholder appears). So the flicker is a canvas clear->async repaint on the SAME nodes, not an unmount->placeholder.
+- The 5-shot screenshot burst of `.thumb-scroller` at ~200ms cadence (screenshots/def-222-thumb-0..4.png) is identical in all 5 - the flash lasts ~3ms (blank) to ~15ms (observed), shorter than the cadence.
+Mechanism: `ThumbCanvas`'s effect (src/renderer/components/SideRail.tsx:913-992) depends on `[shouldRender, doc, page, width]`. When the edit commit calls `refreshDocProxyFor` and swaps the pdf.js `doc` proxy, the effect cleanup sets `canvas.width=0; canvas.height=0` (lines 987-990) to release the bitmap, and the new effect only repaints after `await doc.getPage(page)` resolves - so every rendered thumbnail is blank in between. It fires ONCE, coinciding with the proxy rebuild.
+Screenshot: screenshots/def-222-thumb-0.png .. def-222-thumb-4.png (5-shot burst, no visible blank at that cadence)
+
+History:
+- qa: opened (2026-09-18; operator-reported. Dev-build repro via e2e/def221_222_leftover_thumb_flicker.spec.cjs. MutationObserver: all 5 rendered `.thumb-canvas` zeroed at t=116ms, restored t=119ms; same nodes, no placeholder. Transient blank/repaint of the thumbnail canvases when `refreshDocProxyFor` swaps the doc proxy. LOW - cosmetic, no document change, ~3-15ms.)
+- qa: CLOSED (2026-09-18; FIX-READY retest passed via e2e/def221_222_leftover_thumb_flicker.spec.cjs, dev build. MutationObserver on all 34 `.thumb-canvas` during Confirm: zeroWidthSets 0, zeroHeightSets 0 (previously 5 zero-width + 5 zero-height + restores = 20 mutations; now 10 mutations, all non-zero restore sets width=189/height=244 at t=113-114ms). rAF probe (136 frames): zeroW 0, width constant 189, clearedFrames 0, minOp 1600/1600 -> the page-1 canvas is never zeroed or blanked in any sampled frame. Node identity 34/34 same, 0 replaced, `.thumb-placeholder` constant 29. True unmount: closing the tab removes every thumb canvas (remaining 0); the explicit width/height zeroing record was not captured across the unmount (the canvas ref detaches before passive cleanup) but with the nodes gone no backing store is retained. Flash not capturable; def-222-retest.png shows all thumbnails painted. Screenshots: def-222-retest.png, def-222-thumb-0..4.png.)
+
 ## DEF-220: Tiled watermarks scale superlinearly - 100 tiled stamps cost ~101 s of blocked IPC and a ~50 MiB file
 
 - Status: CLOSED

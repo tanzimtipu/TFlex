@@ -3342,20 +3342,17 @@ describe('DEF-151: editTextRun move (oldRect) does not duplicate the run', () =>
 
     // Replicate the engine's mask math from `oldRect` to know the
     // exact white rectangle the engine should have emitted over the
-    // ORIGINAL run's region.
+    // ORIGINAL run's region. DEF-221: the mask is the old run's INK
+    // box — the renderer rect is the em box ([baseline - h, baseline])
+    // whose top sits 0.25 h above the ink top, so the engine shifts the
+    // mask DOWN by 0.25 h — plus a symmetric PAD on all four sides.
     const PAGE_H = 792;
     const PAD = 2;
-    const doc2 = await PDFDocument.create();
-    doc2.addPage([612, 792]);
-    const font = await doc2.embedFont(StandardFonts.Helvetica);
-    const size = 14;
-    const fontFullHeight = font.heightAtSize(size);
-    const fontAscent = font.heightAtSize(size, { descender: false } as { descender?: boolean });
-    const fontDescent = Math.max(0, fontFullHeight - fontAscent);
+    const inkShift = oldRect.height * 0.25;
     const expMaskX = oldRect.x - PAD;
     const expMaskW = oldRect.width + 2 * PAD;
-    const expMaskTop = oldRect.y - PAD - fontAscent;
-    const expMaskBottom = oldRect.y + oldRect.height + PAD + fontDescent;
+    const expMaskTop = oldRect.y + inkShift - PAD;
+    const expMaskBottom = oldRect.y + oldRect.height + inkShift + PAD;
     const expMaskH = expMaskBottom - expMaskTop;
     const expOldMask = {
       x: expMaskX,
@@ -3374,8 +3371,9 @@ describe('DEF-151: editTextRun move (oldRect) does not duplicate the run', () =>
     // the mask the pre-fix buggy engine would have emitted (mask at
     // `rect` instead of `oldRect`) and assert it is absent — proving the
     // engine masked the original, not the (empty) moved position.
-    const bugMaskTop = movedRect.y - PAD - fontAscent;
-    const bugMaskBottom = movedRect.y + movedRect.height + PAD + fontDescent;
+    const movedInkShift = movedRect.height * 0.25;
+    const bugMaskTop = movedRect.y + movedInkShift - PAD;
+    const bugMaskBottom = movedRect.y + movedRect.height + movedInkShift + PAD;
     const bugMaskH = bugMaskBottom - bugMaskTop;
     const expBugMask = {
       x: movedRect.x - PAD,
@@ -3409,21 +3407,19 @@ describe('DEF-151: editTextRun move (oldRect) does not duplicate the run', () =>
     // New text appears exactly once.
     expect(await countHexOperand(savedPath, 'EDITED')).toBe(1);
 
-    // Mask is at `rect` (the legacy in-place behaviour).
+    // Mask is at `rect` (the legacy in-place behaviour), sized to the
+    // ink box + symmetric PAD only (DEF-221): the em-box rect is
+    // shifted down 0.25 h to the ink top, height unchanged.
     const PAGE_H = 792;
     const PAD = 2;
-    const doc2 = await PDFDocument.create();
-    doc2.addPage([612, 792]);
-    const font = await doc2.embedFont(StandardFonts.Helvetica);
-    const size = 14;
-    const fontFullHeight = font.heightAtSize(size);
-    const fontAscent = font.heightAtSize(size, { descender: false } as { descender?: boolean });
-    const fontDescent = Math.max(0, fontFullHeight - fontAscent);
+    const inkShift = rect.height * 0.25;
+    const expMaskTop = rect.y + inkShift - PAD;
+    const expMaskBottom = rect.y + rect.height + inkShift + PAD;
     const expMask = {
       x: rect.x - PAD,
-      y: PAGE_H - (rect.y + rect.height + PAD + fontDescent),
+      y: PAGE_H - expMaskBottom,
       w: rect.width + 2 * PAD,
-      h: (rect.y + rect.height + PAD + fontDescent) - (rect.y - PAD - fontAscent),
+      h: expMaskBottom - expMaskTop,
     };
     const whiteRects = await extractWhiteRects(savedPath);
     expect(whiteRects.some((r) => approxRect(r, expMask))).toBe(true);

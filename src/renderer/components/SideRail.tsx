@@ -901,6 +901,11 @@ function Thumb({
   onJumpFromRail,
 }: ThumbProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // DEF-222 — tracks whether this Thumb is still mounted. The render
+  // effect's cleanup must release the bitmap on true unmount, but must
+  // NOT blank a still-mounted canvas when it merely re-runs on a
+  // same-slot dependency change (doc proxy swap, page/width change).
+  const mountedRef = useRef(true);
   const [rendered, setRendered] = useState(false);
   const width = THUMB_WIDTH;
   // DEF-148 — the wrap height comes from THIS page's own aspect
@@ -909,6 +914,19 @@ function Thumb({
   // for pages with no reported size. This is what keeps uncropped
   // pages full-size in the rail after page 1 is cropped.
   const height = thumbWrapHeightFor(pageSize, aspectRatio);
+
+  // DEF-222 — declared BEFORE the render effect so that on a true
+  // unmount its cleanup runs first and flips `mountedRef` to false,
+  // letting the render effect's cleanup release the bitmap. On a
+  // re-run of the render effect (deps change, component stays
+  // mounted) this cleanup never fires, so the last painted frame
+  // stays visible until the new render blits over it.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!shouldRender) {
@@ -976,17 +994,21 @@ function Thumb({
       } catch {
         // ignore: cancel can throw if the task already finished
       }
-      // Release the thumb bitmap eagerly. When this slot unmounts (the
-      // geometry mount drops the page from visibleThumbs) or when the
-      // page/doc/source changes (rotation, reorder, etc.), the canvas
-      // DOM stays for a tick before React removes it; without an explicit
-      // width/height reset the ImageBitmap (~190KB at dpr 1.5) lingers
-      // until the next GC cycle. Idle memory on long.pdf accumulates
-      // quickly when many thumbs are in flight.
-      const canvas = canvasRef.current;
-      if (canvas !== null && (canvas.width !== 0 || canvas.height !== 0)) {
-        canvas.width = 0;
-        canvas.height = 0;
+      // Release the thumb bitmap ONLY on true unmount. A same-slot
+      // re-run (doc proxy swap after an edit commit, page/width
+      // change) keeps the previous frame on screen until the new
+      // render blits over it — zeroing here made every rendered
+      // thumbnail flash white for a few ms per commit (DEF-222).
+      // Offscreen slots still release eagerly via the
+      // shouldRender=false effect below, and a width change
+      // reallocates the backing store on the next render, so idle
+      // memory on long.pdf does not accumulate.
+      if (!mountedRef.current) {
+        const canvas = canvasRef.current;
+        if (canvas !== null && (canvas.width !== 0 || canvas.height !== 0)) {
+          canvas.width = 0;
+          canvas.height = 0;
+        }
       }
     };
   }, [shouldRender, doc, page, width]);

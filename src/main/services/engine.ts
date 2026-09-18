@@ -1778,32 +1778,42 @@ export class EngineService {
       // mask `rect` + draw at `rect`.
       const maskRect = payload.oldRect ?? payload.rect;
 
-      // DEF-124: the pdf.js text-item bbox (maskRect) is the
-      // glyphs' tight ink box. The font's ascender rises above it and
-      // the descender (plus anti-aliased pixels) extends below it, so a
-      // mask that covers only the bbox leaves a faint gray trace of
-      // the old run behind/below the new text. Widen the white mask
-      // symmetrically by PAD points on each side and extend the top by
-      // the font's ascent and the bottom by the descent so the mask
-      // fully hides the old glyphs. The new text uses a pdf-lib
-      // StandardFont (Helvetica/Times/Courier); the ascent/descent of
-      // the standard font is a close-enough proxy for the old run's
-      // font metrics that the mask covers the old ink in practice.
-      // (The mask-and-redraw approach is the documented v1 limitation
-      // — DEF-116 REJECTED — so the old text operators stay in the
-      // content stream; this fix only widens the visual mask so the
-      // old glyphs are not painted through it.)
+      // DEF-221 — the mask covers the old run's INK box plus a small
+      // SYMMETRIC pad (PAD points on all four sides), and nothing more.
+      // It must never reach into a neighbouring text band. An earlier
+      // DEF-124 widening extended the top by the NEW font's ascent and
+      // the bottom by its descent, which grew the mask far beyond the
+      // old run's ink box and erased the line above (qa measured the
+      // band above the run going dark 3,287 -> 0).
+      //
+      // INK-BOX CONTRACT: the renderer's `oldRect` (from
+      // `textItemsToGeom`, PageView.tsx:201-226) is `y = pageHeight - f
+      // - h, height = h`, where `f` is pdf.js's baseline and `h` is
+      // `item.height` = the font SIZE (em box). That rect's TOP sits
+      // ~0.25 h ABOVE the ink top (a standard-font ascent is ~0.72-0.75
+      // h) and its BOTTOM sits exactly at the baseline, i.e. ~0.2 h
+      // above the descender bottoms. A mask anchored to that rect
+      // therefore clipped the descenders of the line above (baseline
+      // ~1.2 h higher, descenders reaching ~0.25 h below its baseline
+      // into the mask's top band) and left the old run's own descenders
+      // uncovered. qa's retest measured the band above still erased
+      // 3,287 -> 2,921 and 6 descender pixels surviving on the old rect
+      // (baked after save+reopen). Anchor the mask to the ink box by
+      // shifting it DOWN 0.25 h (em-box top -> ink top); the height and
+      // the symmetric PAD stay unchanged. The renderer rect semantics
+      // are deliberately NOT changed (a blanket change would shift
+      // highlight/markup quads). The mask-and-redraw approach is the
+      // documented v1 limitation (DEF-116 REJECTED), so the old text
+      // operators stay in the content stream and this mask is the only
+      // cover. The new text is still drawn at `rect` with the existing
+      // `pageHeight - y - size` baseline compensation, so its baseline
+      // is unchanged.
       const PAD = 2;
-      // pdf-lib's `heightAtSize(size)` defaults `descender: true`, so
-      // it returns the ascent + descent. Pass `descender: false` to get
-      // the ascent-only height; the difference is the descent.
-      const fontFullHeight = font.heightAtSize(size);
-      const fontAscent = font.heightAtSize(size, { descender: false } as { descender?: boolean });
-      const fontDescent = Math.max(0, fontFullHeight - fontAscent);
+      const inkShift = maskRect.height > 0 ? maskRect.height * 0.25 : 0;
       const maskX = maskRect.x - PAD;
       const maskW = maskRect.width + 2 * PAD;
-      const maskTop = maskRect.y - PAD - fontAscent;
-      const maskBottom = maskRect.y + maskRect.height + PAD + fontDescent;
+      const maskTop = maskRect.y + inkShift - PAD;
+      const maskBottom = maskRect.y + maskRect.height + inkShift + PAD;
       const maskH = maskBottom - maskTop;
 
       // Mask the old run region with a white rectangle (PDF coords).
