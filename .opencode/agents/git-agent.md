@@ -61,7 +61,10 @@ them read-only via git, but any edit goes through the owning agent via the orche
 
 1. Prepare the approved version locally, including `package-lock.json`; do not tag or push.
 2. Wait for backend-dev to run `npm.cmd run dist` against that prepared version and for QA
-   to verify the resulting artifacts. Do not create a release from an old-version build.
+   to verify the resulting artifacts. Also require QA's `npm run verify:full` pass summary
+   (the release-gate full suite — see THE PUSH GATE); without it the release is not
+   pushable, because CI runs the same suite on the push and a red suite mails the operator
+   a failure for every release. Do not create a release from an old-version build.
 3. Commit the versioned manifests, tag that commit, and push only after the operator has
    explicitly authorised the release in this session.
 4. After `npm run dist` succeeds and artifacts are in `release/`:

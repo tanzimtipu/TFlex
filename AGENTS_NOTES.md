@@ -2436,4 +2436,40 @@ future local role.
 packaging no longer share the card with a loaded model, so the "offload before e2e"
 dance is gone. Cloud spend now covers git-agent too; it should batch the run's commits
 into one dispatch instead of several small ones. Backups of all five edited files under
-`.opencode/backups/2026-09-18-pre-git-agent-cloud/`.
+`.opencode/backups/2026-09-18-pre-git-agent-cloud/`.
+
+## 2026-09-18: verify workflow failed after every release — root cause and the release-gate fix
+
+**Symptom:** every release push (version commit, tag, docs commit) failed the `verify`
+GitHub Actions workflow, mailing the operator a failure each time (seen on 1.18.0 and
+1.18.1). The workflow runs `verify:full` — conventions, typecheck and the FULL unit suite —
+on every push, and the local test discipline never runs the full suite, so red tests were
+only discovered post-push.
+
+**Root causes found:**
+1. `test/unit/main/update-service.test.ts` carried a whole `describe('primary feed empty,
+   token present')` block (4 tests) for the source-repo OTA fallback that commit 4dd4b1a
+   deliberately REMOVED from `src/main/services/update-service.ts` on 2026-09-16. Three
+   failed on every run; the fourth passed only accidentally. The current design (public
+   `tflex-releases` feed only, empty feed = up-to-date, token optional) is intentional and
+   heavily documented in the service. Fix: deleted the stale block (51 -> 47 tests, all
+   green).
+2. The full suite was simply never run before releases. AGENTS.md allowed a full run "at a
+   pre-release gate" but nobody owned it and no evidence was required, so the gate did not
+   exist in practice.
+
+**Process fix (now in force):** a RELEASE push (version commit, tag, GitHub Release) has a
+hard new requirement — qa runs `npm run verify:full` locally BEFORE the push, and the
+orchestrator's "ready to push" evidence includes its pass summary. A red full suite stops
+the release. Ordinary run commits keep targeted-tests-only discipline. Written into
+orchestrator.md (THE PUSH GATE), git-agent.md (release procedure step 2) and AGENTS.md
+(test discipline). Non-release pushes still rely on CI as the full-suite safety net.
+
+**Known remaining redness at the time of writing:** designTokensContract
+"CHROME_FROSTED" expects 13 frosted surfaces while styles.css carries 14/15
+(`ann-tool-menu`, `edit-toolbar`) — mid-flight Phase 19 work by the active run; the test's
+own comment already says 14, so the run amends the constant deliberately. Not touched to
+avoid colliding with the live session.
+
+**Lesson:** when a feature is removed from product code, its tests die in the SAME commit
+— the CI workflow is only green if the tree is internally consistent at every commit.

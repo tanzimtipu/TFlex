@@ -97,7 +97,9 @@ proposes, the orchestrator amends the task spec).
 ## Test discipline — do not run the full suite by default
 
 `npm run test:unit` with no filter runs the entire suite. **Do not run it** unless the human
-explicitly asks, you are at a pre-release gate, or the task itself requires full regression.
+explicitly asks, you are at the release-push gate (a version commit, tag or GitHub Release
+push — there it is MANDATORY and must be green before the push; see the orchestrator's
+PUSH GATE), or the task itself requires full regression.
 It is slow and burns the operator's budget for no extra signal on a small change.
 
 What to run instead, after every task:

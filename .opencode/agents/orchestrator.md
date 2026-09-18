@@ -394,6 +394,16 @@ THIS session; consent never carries over. When a gate is green, report "ready to
 the evidence and WAIT for the go/no-go. See AGENTS.md, "Operator-authorised push". Route all
 git operations through git-agent; never run git yourself.
 
+**A RELEASE push has one more hard requirement: the full suite must be green FIRST.**
+`verify:full` runs in CI on every push — a release that ships with a red full suite fails
+the workflow on the version commit, the tag AND the docs commit, and the operator gets a
+failure mail after every release (observed 2026-09-17/18: the 1.18.0 and 1.18.1 pushes all
+failed on unit tests that had never been run locally). So before you report "ready to push"
+for a release: qa runs `npm run verify:full` locally, and the push-gate evidence includes
+its pass summary (test files + counts). If anything in the full suite is red, the release
+STOPS — fix it first; do not push and let CI discover it. Non-release pushes (ordinary run
+commits) keep the normal discipline: targeted tests only, full suite stays in CI.
+
 ## COST DISCIPLINE
 
 Your model is expensive. Spend it on judgment, not typing: read diffs, summaries, test output
