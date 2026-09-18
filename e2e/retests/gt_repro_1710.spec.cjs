@@ -10,7 +10,7 @@
 // .cmd/.ps1 shims; no hand-concatenated file:// URLs.
 
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -143,7 +143,7 @@ test('BUG2: insert blank at pos 2 â€” page order is correct, but pen lands 
 
   // Pen tool on page 2: the drawing is silently stored on the WRONG visible
   // page (source-page vs visible-page mismatch in createAnnotation).
-  await win.locator('.ann-toolbar button[data-tool="ink"]').click();
+  await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(400);
   await scrollToPage(2);
   const slot2 = win.locator('.page-slot[data-page="2"]');
@@ -230,7 +230,7 @@ test('BUG3: per-page crop page 2 â€” which pages end up cropped (rendered +
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: target });
   }, savePath);
   // Trigger Save-As via the toolbar button, stub the OS dialog.
-  await win.click('button[aria-label="Save As"]');
+  await win.click('button[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 8000 });
   await win.click('[data-save-as-confirm]');
   await win.waitForTimeout(2500);

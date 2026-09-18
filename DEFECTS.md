@@ -5,6 +5,147 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-231: The frosted tools menu has no backdrop blur while its sibling colour popover does
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa (ADV-050)
+- Phase: 19
+
+Steps to reproduce:
+1. Launch TFlex (dev build via the canonical `launchApp` helper, no executablePath); open the bundled report.pdf; set the theme to frosted.
+2. Open `[data-ann-dropdown-toggle]`.
+3. Read `getComputedStyle(document.querySelector('[data-ann-dropdown-menu]')).backdropFilter` and compare with `.color-popover`.
+
+Expected: the frosted `.ann-tool-menu` surface matches its sibling `.color-popover` (`blur(24px) saturate(1.2)`) - Phase 14/14.1 "consistent frosted glass across ... tool panels".
+Actual: pre-fix `.ann-tool-menu` `backdropFilter:"none"` while `.color-popover` was `blur(24px) saturate(1.2)`; `.ann-tool-menu` was missing from the frosted blur list at `styles.css` ~8656 (it only got the surface/border/shadow rule).
+Screenshot: screenshots/adv045-theme-frosted-menu.png
+
+History:
+- qa: opened (Phase 19 validation; ADV-050. The one frosted floating surface without the glass blur.)
+- qa: CLOSED (2026-09-18 retest, post-fix `.ann-tool-menu` added to the frosted blur list `styles.css:8651/8661`). `adv045_ann_group.cjs motion` frosted: `.ann-tool-menu` `backdropFilter:"blur(24px) saturate(1.2)"` == `.color-popover`; `color` section `menuBackdrop`==`popBackdrop`=="blur(24px) saturate(1.2)". Screenshot screenshots/def-231-retest-frosted.png - the open menu reads as the same frosted pane as the colour popover.)
+
+## DEF-230: Arming a tool with a read-only settings.json throws unhandled EPERM rejections and silently does not persist
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa (ADV-049)
+- Phase: 19
+
+Steps to reproduce:
+1. `node test-fixtures/tools/adv045_settings_mru.cjs g` - writes `{}` to a fresh `--user-data-dir/settings.json`, marks it read-only (`attrib +R`), launches the dev build, opens report.pdf, installs an `unhandledrejection` listener, arms Highlight (the MRU write path), then reads the file back.
+2. Observe the captured rejections and whether any user feedback appears.
+
+Expected: no unhandled rejection; the last persisted settings state retained; the user told the write failed.
+Actual: pre-fix two unhandled rejections - `Error invoking remote method 'settings:addRecent': Error: EPERM: operation not permitted, rename '...settings.json.tmp' -> '...settings.json'` and the same for `settings:save`; `activeTool:"highlight"`, `alive:true`, file unchanged, no toast.
+Screenshot: N/A
+
+History:
+- qa: opened (Phase 19 validation; ADV-049. Fail-loud rule: a persistence failure must not surface as an unhandled rejection and must tell the user.)
+- qa: CLOSED (2026-09-18 retest, post-fix `_doSave` catch restores `this.current = structuredClone(this.persisted)`, emits `settings:writeError`, and App.tsx toasts it). Scenario g: `rejections:[]`, `pageErrors:[]`, `alive:true`, `settingsUnchanged:true`; 3 error toasts, text `Settings could not be saved: EPERM: operation not permitted, rename '<udd>\settings.json.tmp' -> '<udd>\settings.json'`. Backend in-memory rollback verified directly: after clearing the read-only bit, a forced `addRecentFile` save (which merges `this.current`) wrote `annotationRecentTools` absent (`rollbackProbe:"absent"`) - the failed promotion did not survive in memory. Note: the renderer's optimistic visible order still shows the attempted promotion (`visibleAfterArm:["highlight","select",...]`) until restart; the persisted state and the settings service are correct.)
+
+## DEF-229: The annotation group is clipped offscreen at the app's minimum window width (640 px)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (ADV-048)
+- Phase: 19
+
+Steps to reproduce:
+1. Launch TFlex (dev build via the canonical `launchApp` helper); open the bundled report.pdf.
+2. `node test-fixtures/tools/adv045_ann_group.cjs layout` - resize the window via `BrowserWindow.setSize` to 1440x900, 1000x800, 820x700, 640x600 and measure `.toolbar` and `[data-annotation-toolbar]`.
+3. Inspect the 640x600 measurements and screenshot.
+
+Expected: REQUIREMENTS.md Phase 19 criterion 1 - every group stays reachable at the app's own documented 640 px minimum (`src/main/window.ts` `minWidth: 640`); no overlap, no clipped page slot.
+Actual: at 640x600 the group is `{left:541,right:736}` while `innerWidth:640` -> `groupReachable:false`, `groupClipped:true`; the `.toolbar` box is `left:220 right:752 width:532` with `overflowX:"hidden"` (the available track is only 420 px), so 112 px of the bar and the dropdown arrow are offscreen. The bar wrapped to 3 rows (`toolbarH:141`). 820/1000/1440 remain reachable.
+Screenshot: screenshots/adv045-layout-640.png
+
+History:
+- qa: opened (Phase 19 validation; ADV-048. The dropdown arrow is unreachable at the documented minimum width.)
+- qa: RETEST FAILED (2026-09-18, post-fix `.toolbar { min-width: 0 }` + wrapping, `styles.css:2398`). Clean-session `layout` run: 640x600 `toolbarCW:532 toolbarSW:714`, `.toolbar` `left:220 right:752 width:532`, group `{left:541,right:736,w:195}` -> `groupReachable:false`, `groupClipped:true` (was right:734 pre-fix - effectively unchanged). The `min-width:0` on `.toolbar` did not make the containing `.workspace-main`/`.workspace` chain shrink: the toolbar still renders 532 px wide in a 420 px track, so the last capsule overflows the 640 px viewport. Screenshot screenshots/def-229-retest-640.png - the "All Tools" pill is cut at the right window edge. Left OPEN; the fix is incomplete.)
+- qa: CLOSED (2026-09-18 retest2, post-fix `min-width:0` added to `.titlebar` (`styles.css:1084`) and `.workspace` (`styles.css:2025`), keeping `.workspace-main`/`.toolbar`). Clean-session `layout` run - 1440x900: `toolbarH:53`, group `{left:1229,right:1424}`, reachable/clipped `true/false`; 1000x800: `toolbarH:97`, group `{789,984}` `true/false`; 820x700: `toolbarH:141`, group `{609,804}` `true/false`; 640x600: `toolbarH:185`, group `{left:429,right:624,w:195}` -> `groupReachable:true`, `groupClipped:false`, `toolbarCW:420 toolbarSW:567` (was 532/714). Bar-bottom == scroller-top at every width (97/141/185/229). At 640x600 `elementFromPoint` at the group centre hits the group (`inGroup:true`), a real Playwright click on the visible Highlight button arms it (`activeTool:"highlight"`), and the open dropdown menu rect `{left:415,right:615,top:180,bottom:600}` is fully inside the 640x600 viewport. Titlebar confirm: at 640 `.titlebar` spans `0..640` (`barScrollW:640`, no horizontal overflow), brand `56..128`, `.tab-list` `clientW:141 scrollW:250` (scrolls, not clipped), all three window controls `insideViewport:true` and `hitsSelf:true` via `elementFromPoint`; at 1440 bar spans `0..1440`, brand w72, all controls inside. `e2e/phase19_annotation_group.spec.cjs` 11/11 passed. New focused test `e2e/retests/def229_retest.spec.cjs` passed. Screenshots: screenshots/def-229-retest2-640.png (4-row wrapped bar, group fully visible at right edge, menu flush to viewport bottom), screenshots/def-229-titlebar-640.png (brand/tab/window controls intact, tab strip scrollbar visible).)
+
+## DEF-228: Tab-focusing a menu row and pressing Enter arms the wrong tool
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (ADV-047)
+- Phase: 19
+
+Steps to reproduce:
+1. `node test-fixtures/tools/adv045_ann_group.cjs keys`.
+2. Open the menu, press Tab twice so focus lands on the Highlight row (`button.ann-tool-menu-row[data-tool="highlight"]`), then press Enter; read `window.tflexDiagnostics().activeTool`.
+3. Repeat with Space on a Tab-focused row.
+
+Expected: Enter and Space arm the row that has DOM focus; the Arrow-key highlight + Enter path keeps working.
+Actual: pre-fix `keys-tab-then-enter` gave `focusedRow:"highlight"` but `activeTool:null` (the container's `onMenuKeyDown` armed `MENU_TOOLS[menuIndex]`, still Select) and closed the menu - a keyboard-only user gets the wrong tool.
+Screenshot: N/A
+
+History:
+- qa: opened (Phase 19 validation; ADV-047. Tab focus and arrow highlight disagreed.)
+- qa: CLOSED (2026-09-18 retest, post-fix `focusedMenuRowTool(e.target)` in `AnnotationToolbar.tsx:299-316`). `keys-tab-then-enter` `{focusedRow:"highlight", activeTool:"highlight", menuOpen:0}`; `keys-tab-then-space` `{focusedRow:"underline", activeTool:"underline", menuOpen:0}`; `keys-enter` (ArrowDown+Enter) `{highlighted:"highlight", activeTool:"highlight"}`.)
+
+## DEF-227: Clicking the page while the tools menu is open both dismisses it and performs the armed tool's placement
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (ADV-046)
+- Phase: 19
+
+Steps to reproduce:
+1. `node test-fixtures/tools/adv045_ann_group.cjs click`.
+2. (a) arm Note from the menu, reopen the menu, single-click a blank page area; (b) arm Rect, reopen the menu, drag a 140x80 box on the page; (c) arm Highlight, reopen the menu, single-click the page.
+3. Read the annotation count / note editor and whether the menu closed.
+
+Expected: a click whose only job is to dismiss the open menu closes it and places nothing; the next click places.
+Actual: pre-fix (a) opened the sticky-note editor (`noteEditorOpen:1`) and (b) the same drag that closed the menu committed a rect (`annotationsAfter:1`) - the outside-close handler neither consumed nor cancelled the gesture.
+Screenshot: N/A
+
+History:
+- qa: opened (Phase 19 validation; ADV-046. The dismiss click leaked into the overlay's placement path.)
+- qa: CLOSED (2026-09-18 retest, post-fix capture-phase `markMenuDismissPointer` + overlay `consumeMenuDismissPointer` (`menuDismissGuard.ts`, `AnnotationOverlay.tsx:697`)). `click` harness: (a) `{annotationsBefore:0, annotationsAfter:0, noteEditorOpen:0, noteActionBar:0, menuOpenAfter:0}`; (b) rect drag `{annotationsBefore:0, annotationsAfter:0, rectActionBar:0, menuOpenAfter:0}`; (c) highlight `0 -> 0`. A dismissing click on a CommandBar control still completes: Pan `data-hand-active` false->true, Edit `aria-pressed` false->true + `.edit-toolbar` mounted, menu closed - no double-toggle, no swallowed click.)
+
+## DEF-226: Standard e2e specs still address the retired `.ann-toolbar` row for tools that now live only in the portaled menu; B2-port fails
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa (ADV-045)
+- Phase: 19
+
+Steps to reproduce:
+1. Launch TFlex (dev build via the canonical `launchApp` helper); open the bundled report.pdf.
+2. Run `npm.cmd run test:e2e -- e2e/regression_b_port.spec.cjs -g B2-port`.
+3. `node test-fixtures/tools/adv045_ann_group.cjs hooks` to measure what the old locators resolve to.
+
+Expected: REQUIREMENTS.md Phase 19 criterion 12 - existing annotation e2e specs are repointed to the new group/menu and pass.
+Actual: pre-repoint B2-port `TimeoutError` after 30s waiting for `.ann-toolbar button[data-tool="textbox"]`; hooks measured `.ann-toolbar button[data-tool="textbox"]=0`, `note=0`, `rect=0`, `highlight=1`, and `menuIsInsideAnnToolbar:false` (the menu portals to `document.body`). Same zero-match class in regression_b_port B2/B4/B5/B21/B22 and probe_190_triage T6/_r2/_r3 and other non-archived specs.
+Screenshot: N/A
+
+History:
+- qa: opened (Phase 19 validation; ADV-045. textbox/note/rect/ellipse/arrow/callout moved to `[data-ann-dropdown-menu]`, outside `.ann-toolbar`.)
+- qa: CLOSED (2026-09-18 retest). Repointed every non-archived spec that armed a tool via `.ann-toolbar button[data-tool=...]` through the shared `armAnnotationTool` helper (`e2e/lib/helpers.cjs`; visible five first, otherwise open `[data-ann-dropdown-menu]` and click the row). Repointed: `regression_b_port.spec.cjs` (B2/B4/B5/B6/B21/B22; B5 asserts the menu rows disabled), `probe_190_triage.spec.cjs` (T6), `probe_190_triage_r2.spec.cjs` (R1), `probe_190_triage_r3.spec.cjs` (R3), `sweep_annotations_sign.spec.cjs`, `sweep_visual.spec.cjs`, `sweep_settings_frameless.spec.cjs`, `motion_verify.spec.cjs`, `anim_audit.spec.cjs`, and retests `b2_isolation`, `b3_rig`, `b3_save_reopen`, `color_note_repros`, `def_103_shapes`, `def_210_pen_retest`, `def_211_ghost_dialog_retest`, `def_211_probe_place`, `sign_repros`, `gt_repro_1710`, `gt_verify_1711`, `operator_b123_repro`, `verify_1712_sweep`, `def_154_157_verify_1.7.24`. Also corrected the stale save-path selector `[aria-label="Save As"]` -> `[data-toolbar-save-as]` (renamed in Phase 13; it was masked behind the tool failure) in the repointed specs. Results: `regression_b_port.spec.cjs` 11/11; `probe_190_triage` T6 pass; `_r2` R1 pass; `_r3` R3 pass. No `e2e/archived/**` touched.)
+- qa: follow-up (2026-09-18; sweep_annotations_sign's pre-existing stale Save As selector repointed to [data-toolbar-save-as]; A2/S2 now pass; the earlier repoint claim covered only armTool)
+
+## DEF-225: The all-tools annotation dropdown opens flush at the far-left viewport edge instead of under its arrow
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (Phase 19 validation, 2026-09-18)
+- Phase: 19
+
+Steps to reproduce:
+1. Launch TFlex (dev build via the canonical `launchApp` helper, no executablePath); open the bundled report.pdf sample; size the window 1440x900.
+2. Click `[data-ann-dropdown-toggle]` (the chevron at the far right of the CommandBar's Annotate group).
+3. Observe where the portaled `[data-ann-dropdown-menu]` renders.
+
+Expected: the menu opens anchored under its arrow - right-aligned to the toggle's right edge, 6px below it (`anchor.right - width`), as the placement effect in `AnnotationToolbar.tsx` intends.
+Actual: the menu renders flush at the left viewport edge, detached from its trigger and overlapping the Tools group and the page. Measured: `[data-ann-dropdown-menu]` inline `style.left="0px"`, bounding rect left=0 / right=200, while the toggle's right=1415 and `window.innerWidth`=1440. Reproduces identically in light, dark and frosted. Root cause: `.ann-tool-menu` has no `position: fixed` (unlike `.color-popover` at `src/renderer/styles.css:6383`), so the placement effect measures `el.offsetWidth` while the portaled div is still statically positioned as a `document.body` child - it reports the full body width (1440), so `Math.max(anchor.right - width, 0)` collapses to 0.
+Screenshot: screenshots/phase19-group-frosted.png, screenshots/phase19-menu.png (menu at the left edge)
+
+History:
+- qa: opened (Phase 19 validation; `e2e/phase19_annotation_group.spec.cjs` test "anchoring: dropdown opens right-aligned under its arrow, not at the far-left edge" fails - 10/11 of the spec passes, only this anchoring test fails. MEDIUM - the menu still lists/arms every tool, but it opens detached at the far-left edge over the Tools group and page, materially degrading the dropdown workflow.)
+- qa: CLOSED (2026-09-18 retest, post-fix `position: fixed` on `.ann-tool-menu`; `npm.cmd run build` clean). Strengthened anchoring test in `e2e/phase19_annotation_group.spec.cjs`: at 1440x900 the menu rect is left=1215 / right=1415 / top=92 / bottom=602 (200x510), toggle right=1415 / bottom=85 - right edges align exactly, top = toggle bottom + 7 (6px offset + rounding), inlineLeft=1215.33px, fully inside the 1440x900 viewport (was left=0 / right=200). Clamp on resize to 820x700 while open: menu left=595 / right=795 / top=179 / bottom=669 (200x490) inside 820x700, right edge re-aligned to the reflowed toggle (right=795). Whole spec: 11/11 passed. Screenshot: screenshots/def-225-retest.png - menu sits directly under and right-aligned with the chevron arrow, 6px below, not overlapping the Tools group.)
+
 ## DEF-224: The image placement's SE resize handle is half-clipped so only its inner quadrant is draggable
 
 - Status: CLOSED

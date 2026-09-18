@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -29,8 +29,7 @@ test('BUG-3: custom hex color does not render after confirming a shape', async (
   const pbox = await page.boundingBox();
 
   // arm rect tool
-  await window.locator('.ann-toolbar button[data-tool="rect"]').click();
-  await window.waitForTimeout(200);
+  await armAnnotationTool(window, 'rect');
   // open the color popover
   await window.click('.ann-color-swatch-main');
   await window.waitForSelector('.color-popover', { timeout: 5000 });
@@ -70,8 +69,7 @@ test('BUG-4: sticky note text not visible inside after apply', async () => {
   const page = window.locator('.pdf-page').first();
   const pbox = await page.boundingBox();
 
-  await window.locator('.ann-toolbar button[data-tool="note"]').click();
-  await window.waitForTimeout(200);
+  await armAnnotationTool(window, 'note');
   await window.mouse.click(pbox.x + 400, pbox.y + 400);
   await window.waitForTimeout(400);
   const editorOpen = await window.locator('[data-annotation-editor="note"]').count();
@@ -110,8 +108,7 @@ test('BUG-5: sticky note has no Sign-like selector; icon+text separated', async 
   const page = window.locator('.pdf-page').first();
   const pbox = await page.boundingBox();
 
-  await window.locator('.ann-toolbar button[data-tool="note"]').click();
-  await window.waitForTimeout(200);
+  await armAnnotationTool(window, 'note');
   await window.mouse.click(pbox.x + 400, pbox.y + 400);
   await window.waitForTimeout(400);
   const editor = window.locator('[data-annotation-editor="note"] textarea, [data-annotation-editor="note"] input');

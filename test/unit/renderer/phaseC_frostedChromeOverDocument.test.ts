@@ -11,9 +11,10 @@
 //     relative).
 //   - .document-scroller goes full-bleed (absolute inset 0) under
 //     the chrome rows in the frosted theme only.
-//   - .toolbar / .ann-toolbar / .search-bar / .edit-toolbar float
+//   - .toolbar / .search-bar / .edit-toolbar float
 //     above it (position: relative; z-index: 1) — one comma-joined
-//     rule.
+//     rule. Phase 19 retired the separate `.ann-toolbar` row (the
+//     annotation tools now live inside the `.toolbar` capsule).
 //   - .document-content pads its TOP by the measured chrome stack
 //     (--tf-chrome-y) so the first page sits below the floating rows
 //     at rest while still scrolling under them.
@@ -84,16 +85,19 @@ describe("Phase C — frosted chrome over the document (full-bleed scroller)", (
     const body = m[1] ?? "";
     expect(body).toMatch(/position:\s*relative/);
     expect(body).toMatch(/z-index:\s*1/);
+    // Phase 19 — the retired annotation row is NOT a floating chrome
+    // surface any more; the group rides inside `.toolbar`.
+    expect(cssClean).not.toMatch(
+      /:root\[data-theme="frosted"\]\s+\.ann-toolbar\s*[,{]/,
+    );
   });
 
-  it("the frosted .document-content pads down by the measured chrome stack (--tf-chrome-y)", () => {
+  it("the frosted .document-content keeps the 28px Phase C padding (page scrolls under the chrome)", () => {
     const body = lastRule(":root\\[data-theme=\"frosted\"\\]\\s+\\.document-content");
     expect(body, "frosted .document-content padding override missing").not.toBe("");
-    expect(body).toMatch(/--tf-chrome-y/);
-    // Phase 14.2 FIX 8 — the page sits 16px (the floating minimum)
-    // below the floating chrome stack and 16px above the bottom edge,
-    // instead of the old 28px pair.
-    expect(body).toMatch(/padding:\s*calc\(var\(--tf-chrome-y[^)]*\)\s*\+\s*16px\)\s+0\s+16px/);
+    // Phase C contract: the full-bleed scroller starts the page 28px
+    // from the top so its top sits UNDER the floating chrome rows.
+    expect(body).toMatch(/padding:\s*28px\s+0/);
   });
 
   it("the base (light / dark) layout is untouched — in-flow chrome, in-flow scroller (no regressions)", () => {

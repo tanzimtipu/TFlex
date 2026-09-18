@@ -3,7 +3,7 @@
 // equally polished, no emojis, readability).
 const { test } = require('@playwright/test');
 const path = require('node:path');
-const { launchDev, openSample, getSamplePath , hardClose } = require('./lib/helpers.cjs');
+const { launchDev, openSample, getSamplePath , hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -65,7 +65,7 @@ test('VISUAL: every major screen in both themes', async () => {
   await snap('visual-workspace-dark.png');
 
   // Annotation toolbar prominent (arm highlight) in dark.
-  await win.locator('.ann-toolbar button[data-tool="highlight"]').click();
+  await armAnnotationTool(win, 'highlight');
   await win.waitForTimeout(400);
   await snap('visual-annotations-dark.png');
   await setTheme('light');

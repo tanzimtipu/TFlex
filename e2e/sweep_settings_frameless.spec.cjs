@@ -4,7 +4,7 @@
 // settings actually persist.
 
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
 const path = require('node:path');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
@@ -85,7 +85,7 @@ test('ST2: custom annotation color persists across restart (per app settings)', 
   await win.waitForTimeout(800);
 
   // Arm highlight, open color popover, set custom hex.
-  await win.locator('.ann-toolbar button[data-tool="highlight"]').click();
+  await armAnnotationTool(win, 'highlight');
   await win.waitForTimeout(300);
   const swatchMain = win.locator('.ann-color-swatch-main');
   await swatchMain.click();

@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, rm, stat, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, normalizeSettings, SettingsService } from '../../../src/main/services/settings';
-import type { RecentFile } from '../../../src/shared/types';
+import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, normalizeAnnotationRecentTools, normalizeSettings, SettingsService } from '../../../src/main/services/settings';
+import type { AppSettings, RecentFile } from '../../../src/shared/types';
 
 let dir: string;
 let file: string;
@@ -159,18 +159,16 @@ describe('SettingsService.load', () => {
   });
 
   // DEF-004: failed save cleans up .tmp file
+  // DEF-230: the failed save now RESOLVES (no rejection reaches IPC) and
+  // reports via the write-error callback; the tmp cleanup assertion stays.
   it('cleans up .tmp file when rename fails', async () => {
     // Make the target path a directory so rename fails with EISDIR/ENOTDIR
     await mkdir(file, { recursive: true });
 
-    const svc = new SettingsService(file);
-    let threw = false;
-    try {
-      await svc.save({ ...DEFAULT_SETTINGS, theme: 'light' });
-    } catch {
-      threw = true;
-    }
-    expect(threw).toBe(true);
+    const errors: string[] = [];
+    const svc = new SettingsService(file, undefined, (m) => errors.push(m));
+    await expect(svc.save({ ...DEFAULT_SETTINGS, theme: 'light' })).resolves.toBeUndefined();
+    expect(errors).toHaveLength(1);
 
     // Verify the .tmp file was cleaned up
     let tmpExists = false;
@@ -954,5 +952,133 @@ describe('DEF-212: themeDefault validation', () => {
       expect(result.value.themeDefault).toBeUndefined();
       expect(result.value.theme).toBe('light');
     }
+  });
+});
+
+// Phase 19: annotationRecentTools validation
+describe('Phase 19: annotationRecentTools validation', () => {
+  it('preserves a valid 3-id array in order', () => {
+    expect(normalizeSettings({ annotationRecentTools: ['ink', 'highlight', 'select'] }).annotationRecentTools)
+      .toEqual(['ink', 'highlight', 'select']);
+  });
+
+  it('drops unknown ids and leaves the field absent when none survive', () => {
+    expect(normalizeSettings({ annotationRecentTools: ['ink', 'bogus', 'select', 'pen'] }).annotationRecentTools)
+      .toEqual(['ink', 'select']);
+    expect(normalizeSettings({ annotationRecentTools: ['bogus', 'pen'] }).annotationRecentTools).toBeUndefined();
+    expect('annotationRecentTools' in normalizeSettings({ annotationRecentTools: ['bogus'] })).toBe(false);
+  });
+
+  it('dedupes duplicates keeping the first occurrence', () => {
+    expect(normalizeSettings({ annotationRecentTools: ['rect', 'ink', 'rect', 'ink', 'arrow'] }).annotationRecentTools)
+      .toEqual(['rect', 'ink', 'arrow']);
+  });
+
+  it('truncates an 8-id array to 6 preserving order', () => {
+    const ids = ['select', 'highlight', 'underline', 'strikeout', 'ink', 'textbox', 'rect', 'ellipse'];
+    const normalized = normalizeSettings({ annotationRecentTools: ids }).annotationRecentTools;
+    expect(normalized).toEqual(['select', 'highlight', 'underline', 'strikeout', 'ink', 'textbox']);
+    expect(normalized).toHaveLength(ANNOTATION_RECENT_TOOLS_CAP);
+  });
+
+  it('rejects non-array values (leaves the field absent)', () => {
+    for (const bad of ['ink', 123, { 0: 'ink' }, null] as unknown[]) {
+      expect(normalizeSettings({ annotationRecentTools: bad }).annotationRecentTools).toBeUndefined();
+    }
+    expect(normalizeAnnotationRecentTools('ink')).toBeNull();
+    expect(normalizeAnnotationRecentTools({ 0: 'ink' })).toBeNull();
+  });
+
+  it('does not set annotationRecentTools when absent (consumer applies default [])', () => {
+    expect(normalizeSettings({}).annotationRecentTools).toBeUndefined();
+    expect('annotationRecentTools' in normalizeSettings({})).toBe(false);
+  });
+
+  it('save/load round-trips annotationRecentTools order', async () => {
+    const svc = new SettingsService(file);
+    const settings = {
+      theme: 'dark' as const,
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [] as RecentFile[],
+      annotationRecentTools: ['ink', 'highlight', 'select'],
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.annotationRecentTools).toEqual(['ink', 'highlight', 'select']);
+    }
+    const text = await readFile(file, 'utf8');
+    expect(JSON.parse(text).annotationRecentTools).toEqual(['ink', 'highlight', 'select']);
+  });
+});
+
+// DEF-230: a failed settings write must not reject the IPC promise and must
+// not leave memory claiming a value the disk never got.
+describe('DEF-230: settings write failures', () => {
+  it('save() resolves, reports once and restores the last persisted state when the parent is a file', async () => {
+    const blocker = join(dir, 'blocker');
+    await writeFile(blocker, 'not a directory', 'utf8');
+    const badPath = join(blocker, 'settings.json');
+    const errors: string[] = [];
+    const svc = new SettingsService(badPath, undefined, (m) => errors.push(m));
+
+    const next: AppSettings = { ...structuredClone(DEFAULT_SETTINGS), theme: 'dark' };
+    await expect(svc.save(next)).resolves.toBeUndefined();
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].length).toBeGreaterThan(0);
+    // save() assigns this.current before writing; on failure it must be rolled
+    // back to the last persisted snapshot (defaults here), not left at 'dark'.
+    expect(svc.getCurrent()).toEqual(DEFAULT_SETTINGS);
+  });
+
+  it('addRecentFile resolves under the same failure condition', async () => {
+    const blocker = join(dir, 'blocker');
+    await writeFile(blocker, 'not a directory', 'utf8');
+    const badPath = join(blocker, 'settings.json');
+    const errors: string[] = [];
+    const svc = new SettingsService(badPath, undefined, (m) => errors.push(m));
+
+    const recent: RecentFile = { path: join(dir, 'x.pdf'), name: 'x.pdf', openedAt: '2026-01-01T00:00:00.000Z' };
+    await expect(svc.addRecentFile(recent)).resolves.toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(svc.getCurrent().recentFiles).toEqual([]);
+  });
+
+  it('rename collision with an existing directory resolves, cleans tmp and reports once', async () => {
+    const collision = join(dir, 'collision');
+    await mkdir(collision, { recursive: true });
+    const errors: string[] = [];
+    const svc = new SettingsService(collision, undefined, (m) => errors.push(m));
+
+    await expect(svc.save({ ...structuredClone(DEFAULT_SETTINGS), theme: 'dark' })).resolves.toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(svc.getCurrent()).toEqual(DEFAULT_SETTINGS);
+    await expect(stat(`${collision}.tmp`)).rejects.toThrow();
+  });
+
+  it('recovers once the path becomes writable and the queue is not poisoned', async () => {
+    const sub = join(dir, 'sub');
+    await writeFile(sub, 'blocker', 'utf8');
+    const path = join(sub, 'settings.json');
+    const errors: string[] = [];
+    const saved: AppSettings[] = [];
+    const svc = new SettingsService(path, (s) => saved.push(s), (m) => errors.push(m));
+
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), theme: 'dark' });
+    expect(errors).toHaveLength(1);
+    expect(svc.getCurrent()).toEqual(DEFAULT_SETTINGS);
+
+    await rm(sub, { force: true });
+    await mkdir(sub, { recursive: true });
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), theme: 'light' });
+
+    expect(errors).toHaveLength(1);
+    expect(svc.getCurrent().theme).toBe('light');
+    expect(saved).toHaveLength(1);
+    expect(saved[0].theme).toBe('light');
+    const text = await readFile(path, 'utf8');
+    expect(JSON.parse(text).theme).toBe('light');
   });
 });

@@ -264,6 +264,14 @@ interface DocumentViewProps {
    *  each bucket is an array of `{ id, hex }` preset objects. */
   annotationPalette?: { light?: Array<{ id: string; hex: string }>; dark?: Array<{ id: string; hex: string }> } | null;
   onAnnotationPaletteChange?: (next: { light?: Array<{ id: string; hex: string }>; dark?: Array<{ id: string; hex: string }> }) => void;
+  /** Phase 19 — persisted MRU annotation tool order (most-recent-first,
+   *  sanitised by the backend to known ids, deduped, capped at 6). App
+   *  owns the value; DocumentView threads it to the annotation group so
+   *  the visible five can be computed. */
+  annotationRecentTools?: string[];
+  /** Phase 19 — the host persists a new MRU order after the user arms a
+   *  tool. Threaded through to the annotation group; App owns the write. */
+  onAnnotationRecentToolsChange?: (ids: string[]) => void;
   /** Active theme ('light' | 'dark' | 'frosted'). Drives which
    *  per-theme preset bucket the picker shows. */
   themeName?: AppTheme;
@@ -463,6 +471,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onToolsPaletteToggle,
   annotationPalette,
   onAnnotationPaletteChange,
+  annotationRecentTools,
+  onAnnotationRecentToolsChange,
   themeName = 'frosted',
   editModeOpen = false,
   edit = null,
@@ -681,7 +691,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       let chromePx = 0;
       for (const el of Array.from(
         main.querySelectorAll<HTMLElement>(
-          ".toolbar, .ann-toolbar, .search-bar, .edit-toolbar",
+          ".toolbar, .search-bar, .edit-toolbar",
         ),
       )) {
         chromePx += el.offsetHeight;
@@ -2052,29 +2062,37 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           onHandToggle={toggleHand}
           onDeletePage={onDeletePage}
           canDeletePage={canDeletePage}
-        />
-        <AnnotationToolbar
-          state={annTool}
-          onAction={onAnnToolAction}
-          editModeOpen={editModeOpen}
-          handModeOpen={handActive}
-          palette={
-            annotationPalette === undefined || annotationPalette === null
-              ? undefined
-              : {
-                  light: annotationPalette.light ?? [],
-                  dark: annotationPalette.dark ?? [],
-                }
+          /* Phase 19 — the annotation tools are the CommandBar's LAST
+             capsule. The group element is built here (DocumentView is
+             the prop conduit for the annotation state) and handed to
+             the bar, which only places it. */
+          annotationTools={
+            <AnnotationToolbar
+              state={annTool}
+              onAction={onAnnToolAction}
+              editModeOpen={editModeOpen}
+              handModeOpen={handActive}
+              palette={
+                annotationPalette === undefined || annotationPalette === null
+                  ? undefined
+                  : {
+                      light: annotationPalette.light ?? [],
+                      dark: annotationPalette.dark ?? [],
+                    }
+              }
+              onPaletteChange={
+                onAnnotationPaletteChange === undefined
+                  ? undefined
+                  : (next): void => onAnnotationPaletteChange(next)
+              }
+              /* Phase-15 — frosted is a dark acrylic variant, so the
+                 annotation palette treats it as the 'dark' preset bucket
+                 (the shared AnnotationColors contract has no frosted key). */
+              theme={themeName === 'light' ? 'light' : 'dark'}
+              annotationRecentTools={annotationRecentTools}
+              onAnnotationRecentToolsChange={onAnnotationRecentToolsChange}
+            />
           }
-          onPaletteChange={
-            onAnnotationPaletteChange === undefined
-              ? undefined
-              : (next): void => onAnnotationPaletteChange(next)
-          }
-          /* Phase-15 — frosted is a dark acrylic variant, so the
-             annotation palette treats it as the 'dark' preset bucket
-             (the shared AnnotationColors contract has no frosted key). */
-          theme={themeName === 'light' ? 'light' : 'dark'}
         />
         <AnimatePresence>
           {editModeOpen && edit !== null && (

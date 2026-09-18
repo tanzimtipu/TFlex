@@ -18,7 +18,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -310,7 +310,7 @@ test('M2: palette / dialog / menu / popover entrance + buttons + PDF stability',
   await win.waitForTimeout(400);
 
   // ---- 4b. Annotation color popover entrance ----
-  await win.locator('.ann-toolbar button[data-tool="ink"]').click();
+  await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(400);
   await startSample('.color-popover', 600);
   await win.locator('.ann-color-swatch-main').click();

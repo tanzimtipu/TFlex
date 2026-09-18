@@ -69,6 +69,7 @@ import {
   type PagePoint,
   type PageRect,
 } from "./model";
+import { consumeMenuDismissPointer } from "./menuDismissGuard";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -684,6 +685,16 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   // pointerdown capture.
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0) return;
+    // DEF-227 (ADV-046) — a pointerdown whose only job was to dismiss
+    // the annotation tools menu must NOT also start a placement
+    // gesture (sticky-note editor, rect/highlight drag, ...). The
+    // toolbar's outside-dismiss handler (window capture) marked this
+    // exact native event; consume the mark and bail out. No
+    // preventDefault / stopPropagation: the click still completes for
+    // the text layer and for any interactive surface (AGENTS.md
+    // cross-bubbling rules). A different pointerdown never matches, so
+    // a CommandBar dismiss can't swallow the next page gesture.
+    if (consumeMenuDismissPointer(e.nativeEvent)) return;
     const target = e.target as Element | null;
     if (target !== null && typeof target.closest === "function") {
       // DEF-096 — `.ann-note` is in the bail-out list: clicking a

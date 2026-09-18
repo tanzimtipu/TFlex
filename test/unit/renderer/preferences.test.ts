@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import {
+  ANNOTATION_RECENT_TOOLS_CAP,
+  ANNOTATION_TOOL_ORDER,
+  ANNOTATION_VISIBLE_TOOL_COUNT,
   DEFAULT_CREATE_IMAGE_QUALITY,
   DEFAULT_EXPORT_IMAGE_DPI,
   DEFAULT_EXPORT_IMAGE_FORMAT,
@@ -12,8 +15,10 @@ import {
   clampExportImageDpi,
   clampRecentsCap,
   preferencesReducer,
+  promoteAnnotationTool,
   qualityFractionToPercent,
   qualityPercentToFraction,
+  visibleAnnotationTools,
 } from "../../../src/renderer/state/preferences";
 import type { AppSettings } from "../../../src/shared/types";
 
@@ -553,5 +558,123 @@ describe("preferencesReducer.set-save-as-linearize", () => {
     });
     expect(next.optimizePreset).toBe("max");
     expect(next.saveAsLinearize).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 19 — MRU annotation tool order (CommandBar group)
+//
+// The CommandBar annotation group shows exactly five tools, most-recent
+// first, padded from the canonical order. The persisted list is capped
+// at six so the sixth-most-recent remains known (it reappears as soon
+// as one of the five is displaced). The renderer mirrors the backend's
+// preserve-if-valid sanitiser (known ids only, deduped, capped) because
+// it cannot import the main-process allowlist.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_FIVE = ANNOTATION_TOOL_ORDER.slice(0, ANNOTATION_VISIBLE_TOOL_COUNT);
+
+describe("promoteAnnotationTool", () => {
+  it("moves an existing id to the front (MRU promotion)", () => {
+    const next = promoteAnnotationTool(["highlight", "select", "ink"], "select");
+    expect(next).toEqual(["select", "highlight", "ink"]);
+  });
+
+  it("appends a new id at the front", () => {
+    const next = promoteAnnotationTool(["select", "highlight"], "note");
+    expect(next).toEqual(["note", "select", "highlight"]);
+  });
+
+  it("caps the result at ANNOTATION_RECENT_TOOLS_CAP", () => {
+    const full = ANNOTATION_TOOL_ORDER.slice(0, ANNOTATION_RECENT_TOOLS_CAP);
+    const next = promoteAnnotationTool(full, "note");
+    expect(next).toHaveLength(ANNOTATION_RECENT_TOOLS_CAP);
+    expect(next[0]).toBe("note");
+    // The least-recent entry falls off the end of the six.
+    expect(next).not.toContain(full[full.length - 1]);
+  });
+
+  it("drops unknown ids and keeps the relative order of the rest", () => {
+    const next = promoteAnnotationTool(
+      ["select", "bogus", "ink", "also-bogus", "rect"],
+      "arrow",
+    );
+    expect(next).toEqual(["arrow", "select", "ink", "rect"]);
+  });
+
+  it("drops an unknown tool id but keeps the sanitised list", () => {
+    const next = promoteAnnotationTool(["select", "ink"], "bogus");
+    expect(next).toEqual(["select", "ink"]);
+  });
+
+  it("dedupes repeated ids", () => {
+    const next = promoteAnnotationTool(
+      ["highlight", "highlight", "select", "select"],
+      "highlight",
+    );
+    expect(next).toEqual(["highlight", "select"]);
+  });
+});
+
+describe("visibleAnnotationTools", () => {
+  it("returns exactly the default five for a fresh profile", () => {
+    const visible = visibleAnnotationTools([]);
+    expect(visible).toHaveLength(ANNOTATION_VISIBLE_TOOL_COUNT);
+    expect(visible).toEqual(DEFAULT_FIVE);
+  });
+
+  it("returns five in MRU order with canonical padding", () => {
+    const visible = visibleAnnotationTools(["note", "callout", "ink"]);
+    expect(visible).toEqual(["note", "callout", "ink", "select", "highlight"]);
+    expect(new Set(visible).size).toBe(ANNOTATION_VISIBLE_TOOL_COUNT);
+  });
+
+  it("takes only the first five of a longer recent list", () => {
+    const recent = ["note", "callout", "arrow", "ellipse", "rect", "textbox"];
+    const visible = visibleAnnotationTools(recent);
+    expect(visible).toEqual(recent.slice(0, ANNOTATION_VISIBLE_TOOL_COUNT));
+  });
+
+  it("drops unknown/duplicate entries before padding", () => {
+    const visible = visibleAnnotationTools(["bogus", "note", "note", "ink"]);
+    expect(visible).toEqual(["note", "ink", "select", "highlight", "underline"]);
+  });
+});
+
+describe("preferencesReducer.set-annotation-recent-tools", () => {
+  it("persists a sanitised order (known ids, deduped, capped)", () => {
+    const s = makeSettings();
+    const next = preferencesReducer(s, {
+      type: "set-annotation-recent-tools",
+      value: ["note", "bogus", "note", "ink", "select", "rect", "arrow", "ellipse"],
+    });
+    expect(next.annotationRecentTools).toEqual([
+      "note",
+      "ink",
+      "select",
+      "rect",
+      "arrow",
+      "ellipse",
+    ]);
+    expect(next.annotationRecentTools).toHaveLength(ANNOTATION_RECENT_TOOLS_CAP);
+  });
+
+  it("is an identity no-op when the sanitised order is unchanged", () => {
+    const s = makeSettings({ annotationRecentTools: ["select", "ink"] });
+    const next = preferencesReducer(s, {
+      type: "set-annotation-recent-tools",
+      value: ["select", "ink"],
+    });
+    expect(next).toBe(s);
+  });
+
+  it("materialises the field on the first write from a fresh profile", () => {
+    const s = makeSettings();
+    const next = preferencesReducer(s, {
+      type: "set-annotation-recent-tools",
+      value: ["note"],
+    });
+    expect(next.annotationRecentTools).toEqual(["note"]);
+    expect(next).not.toBe(s);
   });
 });

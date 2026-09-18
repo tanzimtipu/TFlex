@@ -80,7 +80,8 @@ export function GlassChromeBar(props: GlassChromeBarProps): ReactElement {
   );
 }
 
-export interface GlassControlGroupProps {
+export interface GlassControlGroupProps
+  extends HTMLAttributes<HTMLDivElement> {
   /** The group's accessible name — role="group" + aria-label so the
    *  control cluster is announced and the no-op sweep can name it. */
   label: string;
@@ -91,11 +92,15 @@ export interface GlassControlGroupProps {
 }
 
 /** The command bar's glass capsule. Renders a non-interactive group
- *  wrapper; the interactive children carry their own semantics. */
+ *  wrapper; the interactive children carry their own semantics. Every
+ *  other prop (data-* hooks, ids, handlers) forwards to the wrapper so
+ *  a capsule can carry its own stable e2e contract (Phase 19's
+ *  `data-annotation-toolbar`). */
 export function GlassControlGroup(props: GlassControlGroupProps): ReactElement {
-  const { label, className, children } = props;
+  const { label, className, children, ...rest } = props;
   return (
     <div
+      {...rest}
       role="group"
       aria-label={label}
       className={`glass-control-group${className ? ` ${className}` : ""}`}

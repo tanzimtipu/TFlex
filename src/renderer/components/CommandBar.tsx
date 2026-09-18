@@ -46,6 +46,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import type { ZoomMode } from '../state/zoom';
 import { GlassControlGroup } from './GlassChrome';
 
@@ -121,6 +122,12 @@ export interface CommandBarProps {
    *  Disabled when there's only one page left. */
   onDeletePage?: () => void;
   canDeletePage?: boolean;
+  /** Phase 19 — the annotation tool GROUP, rendered as the bar's LAST
+   *  capsule (after Document actions). The host passes the
+   *  AnnotationToolbar group element; the CommandBar only places it,
+   *  so the annotation UI keeps owning its own state/props. Optional
+   *  so standalone harnesses that predate the move keep rendering. */
+  annotationTools?: ReactNode;
 }
 
 /** The grouped command bar. Every control is icon-only (the Open
@@ -170,6 +177,7 @@ export function CommandBar(props: CommandBarProps) {
     onEditModeToggle,
     onDeletePage,
     canDeletePage = true,
+    annotationTools,
   } = props;
 
   const [pageInput, setPageInput] = useState(String(page));
@@ -475,6 +483,12 @@ export function CommandBar(props: CommandBarProps) {
           <FileSignature size={22} aria-hidden />
         </button>
       </GlassControlGroup>
+
+      {/* GROUP: Annotate — Phase 19. The annotation tools render as the
+       * bar's LAST capsule (the group element is supplied by the host).
+       * Keeping it last preserves the trailing-capsule edge pin
+       * (.toolbar > .toolbar-group:last-child). */}
+      {annotationTools}
     </div>
   );
 }

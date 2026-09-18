@@ -1005,6 +1005,24 @@ export function App(): ReactElement {
     dispatchError({ type: "dismiss", id });
   }, []);
 
+  // DEF-230 (ADV-049) — a failed settings write no longer rejects:
+  // the backend rolls the in-memory state back to the last persisted
+  // value and resolves, then pushes `settings:writeError`. This
+  // subscription is the ONLY signal the renderer gets that the value
+  // did not persist, so surface it as an error toast (the DEF-207
+  // settings-recovery notice style) instead of letting the failure
+  // pass as a silent no-op. Mirrors the settings.changed subscription
+  // above, including its unsubscribe.
+  useEffect(() => {
+    const settingsApi = window.tflex.settings;
+    if (settingsApi === undefined || typeof settingsApi.writeError !== "function") {
+      return;
+    }
+    return settingsApi.writeError((message): void => {
+      pushToast("error", `Settings could not be saved: ${message}`);
+    });
+  }, [pushToast]);
+
   // OTA UX — manual re-check handler. Wires Help -> Check for
   // Update and the About dialog's "Check for Updates" button.
   // Calls `update.check()` — the renderer -> main IPC that
@@ -6641,6 +6659,24 @@ pushToast(
                       });
                     }}
                     themeName={settings.theme}
+                    // Phase 19 — MRU annotation tool order. The group
+                    // (next chunk) promotes a tool and reports the new
+                    // order; App persists it through the preferences
+                    // reducer so it survives restart. The backend
+                    // sanitises the field on the way in, so the reducer
+                    // only guards against an unchanged-order no-op.
+                    annotationRecentTools={settings.annotationRecentTools ?? []}
+                    onAnnotationRecentToolsChange={(ids): void => {
+                      setSettings((prev) => {
+                        if (prev === null) return prev;
+                        const updated = preferencesReducer(prev, {
+                          type: 'set-annotation-recent-tools',
+                          value: ids,
+                        });
+                        if (updated !== prev) trackAndSave(updated);
+                        return updated;
+                      });
+                    }}
                     editModeOpen={editModeOpen}
                     onEditModeToggle={(): void => setEditMode(!editModeOpen)}
                     edit={editModeOpen ? editHandlers(meta.id) : null}

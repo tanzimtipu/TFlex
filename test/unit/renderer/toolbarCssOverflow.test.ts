@@ -92,6 +92,39 @@ describe("styles.css — toolbar overflow regression (P9 fix #1)", () => {
     expect(declarationValue(body, "min-width")).toBe("0");
   });
 
+  it("DEF-229 — .toolbar shrinks below min-content so the groups wrap at 640px", () => {
+    // ADV-048: as a grid item of .workspace-main the bar's default
+    // `min-width: auto` kept the box (and the trailing Annotate group)
+    // offscreen at the 640px minimum window width. The explicit 0 lets
+    // the bar take the workspace track width and flex-wrap then puts
+    // the capsules on extra lines.
+    const body = findRuleBody(stripCssComments(readStyles()), ".toolbar");
+    expect(body).not.toBeNull();
+    if (body === null) return;
+    expect(declarationValue(body, "min-width")).toBe("0");
+  });
+
+  it("DEF-229 — .workspace and .titlebar unfloor the .app grid chain at 640px", () => {
+    // ADV-048 retest: min-width:0 on .toolbar (and the pre-existing one
+    // on .workspace-main) was not sufficient. .app is a single implicit
+    // column grid; .titlebar is a grid item in that column whose default
+    // `min-width: auto` floored the shared column at its min-content
+    // (751px), so .app-main — and the whole .workspace / .workspace-main
+    // / .toolbar chain — merely stretched to the over-wide column.
+    // .workspace is the grid item between the app shell and
+    // .workspace-main. Both carry min-width:0 so the column can shrink
+    // to the 640px minimum window.
+    const workspace = findRuleBody(stripCssComments(readStyles()), ".workspace");
+    expect(workspace).not.toBeNull();
+    if (workspace === null) return;
+    expect(declarationValue(workspace, "min-width")).toBe("0");
+
+    const titlebar = findRuleBody(stripCssComments(readStyles()), ".titlebar");
+    expect(titlebar).not.toBeNull();
+    if (titlebar === null) return;
+    expect(declarationValue(titlebar, "min-width")).toBe("0");
+  });
+
   it(".toolbar pushes the last group to the trailing edge", () => {
     const body = findRuleBody(
       stripCssComments(readStyles()),

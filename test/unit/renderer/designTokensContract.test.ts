@@ -624,18 +624,18 @@ describe("Phase D — PDF-safety audit (acrylic/reflection stays chrome-only)", 
     "thumb-scroller",
   ];
 
-  /** The exact 14 frosted chrome surfaces: the Phase-A blur list
-   *  (13) plus the All-tools badge tracker (the 1.15.x panel-attached
-   *  badge). This is the COMPLETE frosted acrylic surface set —
-   *  nothing else may carry the frosted blur. DEF-183: `.app-header`
-   *  was removed from the set — it is the strip INSIDE `.titlebar`'s
-   *  slot, and its own blur+film stacked a ~0.88 effective double
-   *  glass over the caption strip that blocked the wallpaper. The
-   *  `.titlebar` is the caption strip's one and only frosted surface. */
+  /** The exact frosted chrome surfaces: the Phase-A blur list plus
+   *  the All-tools badge tracker (the 1.15.x panel-attached badge).
+   *  This is the COMPLETE frosted acrylic surface set — nothing else
+   *  may carry the frosted blur. DEF-183: `.app-header` was removed
+   *  from the set. Phase 19: `.ann-toolbar` was removed — the
+   *  annotation tools now live inside the `.toolbar` capsule, which
+   *  already carries the blur. DEF-231: the portaled all-tools menu
+   *  `.ann-tool-menu` joins the 24px frosted menu sub-list (the
+   *  `.ann-tools-visible` group wrapper itself carries no blur). */
   const CHROME_FROSTED = [
     "titlebar",
     "toolbar",
-    "ann-toolbar",
     "search-bar",
     "side-rail",
     "rail-tabs",
@@ -647,6 +647,7 @@ describe("Phase D — PDF-safety audit (acrylic/reflection stays chrome-only)", 
     "color-popover",
     "toast",
     "tools-badge-tracker",
+    "ann-tool-menu",
   ];
 
   /** Comments mention the PDF classes (and even `{`) in prose, which
@@ -697,7 +698,7 @@ describe("Phase D — PDF-safety audit (acrylic/reflection stays chrome-only)", 
     }
   });
 
-  it("frosted acrylic blur applies to the 14 chrome surfaces and nothing else", () => {
+  it("frosted acrylic blur applies to the chrome surface set and nothing else", () => {
     // Collect every frosted-scoped selector that carries a
     // backdrop-filter (the 18px chrome list + the 20px popover
     // sub-list). The union must be EXACTLY the 14 chrome surfaces —
@@ -1102,5 +1103,81 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
         /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab)=|tools-palette-entry-icon|icon-detail|::after/,
       );
     }
+  });
+});
+
+describe("Phase 19 — annotation tool-group motion resolves from the centralized tokens", () => {
+  // Criterion 11: every animation added by the Phase-19 tool group
+  // (the portaled all-tools menu, its visibility wrapper, the dropdown
+  // arrow rotation and the menu-row hover) must resolve its timing
+  // from the centralized motion tokens — never a raw ms/s duration or
+  // a raw cubic-bezier() easing. Same read-the-stylesheet pattern as
+  // the other contracts in this spec.
+  const css = readStyles();
+  // Comments mention motion prose freely — strip them before scanning.
+  const cssClean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  /** Every rule whose selector touches the Phase-19 tool-group hooks
+   *  (`.ann-tools-visible`, `.ann-tool-menu*`, `.ann-dropdown-toggle*`).
+   *  The frosted re-style blocks are included deliberately: they must
+   *  carry no timing either. */
+  const phase19Rules = (): { selector: string; body: string }[] =>
+    [...cssClean.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
+      .filter((m) => /\bann-(?:tool-menu|tools-visible|dropdown-toggle)\b/.test(m[1] ?? ""))
+      .map((m) => ({ selector: m[1] ?? "", body: m[2] ?? "" }));
+
+  it("finds the Phase-19 tool-group rules (non-vacuous scan)", () => {
+    const selectors = phase19Rules().map((r) => r.selector).join("\n");
+    for (const sel of [
+      ".ann-tools-visible",
+      ".ann-tool-menu",
+      ".ann-tool-menu-row",
+      ".ann-dropdown-toggle",
+    ]) {
+      expect(selectors).toContain(sel);
+    }
+  });
+
+  it("declares no hardcoded ms/s/cubic-bezier timing in any Phase-19 rule", () => {
+    for (const { selector, body } of phase19Rules()) {
+      // Any transition/animation declaration must read a --motion-*
+      // token for its duration and easing.
+      for (const line of body.split("\n")) {
+        if (
+          !/(?:^|[\s;])(?:transition|animation)(?:-duration|-timing-function)?\s*:/.test(line)
+        ) {
+          continue;
+        }
+        expect(line, `${selector} must resolve its timing from var(--motion-*)`).toMatch(
+          /var\(--motion-/,
+        );
+      }
+      expect(body, `${selector} carries a hardcoded ms duration`).not.toMatch(/\d+(?:\.\d+)?ms\b/);
+      expect(body, `${selector} carries a hardcoded s duration`).not.toMatch(
+        /[\s,(]\d+(?:\.\d+)?s\b/,
+      );
+      expect(body, `${selector} carries a raw cubic-bezier easing`).not.toMatch(/cubic-bezier\(/);
+    }
+  });
+
+  it("the arrow rotation and menu-row hover read the shared fast token", () => {
+    const rules = phase19Rules();
+    const arrow = rules.find((r) => /\.ann-dropdown-toggle svg/.test(r.selector));
+    expect(arrow).toBeDefined();
+    expect(arrow?.body).toMatch(
+      /transition:\s*transform\s+var\(--motion-duration-fast\)\s+var\(--motion-ease-standard\)/,
+    );
+    // The open-state rotation is geometry (180deg), not timing.
+    const open = rules.find((r) => /\.ann-dropdown-toggle-open svg/.test(r.selector));
+    expect(open?.body).toMatch(/transform:\s*rotate\(180deg\)/);
+    // The hover rule is the row highlight; its timing lives on the
+    // base row rule and reads the same token pair.
+    const hover = rules.find((r) => /\.ann-tool-menu-row:hover/.test(r.selector));
+    expect(hover?.body).toMatch(/background:\s*var\(--bg-hover\)/);
+    const row = rules.find((r) => r.selector.trim() === ".ann-tool-menu-row");
+    expect(row).toBeDefined();
+    expect(row?.body).toMatch(
+      /transition:\s*background\s+var\(--motion-duration-fast\)\s+var\(--motion-ease-standard\)/,
+    );
   });
 });

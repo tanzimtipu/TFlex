@@ -1,7 +1,7 @@
 // QA triage probe round 3 for the 1.9.0 full-suite run.
 const { test, expect } = require('@playwright/test');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -75,7 +75,7 @@ test('R1: callout drag on scrolled page 4 opens editor?', async () => {
   if (ay > pr.vh - 20) throw new Error('drag anchor below viewport (scroll drift): ' + ay);
 
   // arm callout tool
-  await win.click('button[data-tool="callout"]');
+  await armAnnotationTool(win, 'callout');
   await win.waitForTimeout(400);
   await win.mouse.move(ax, ay);
   await win.mouse.down();

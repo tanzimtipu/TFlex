@@ -3,7 +3,7 @@
 // adjudicate product bug vs stale test. Only qa writes this file.
 const { test, expect } = require('@playwright/test');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -221,7 +221,7 @@ test('T5: titlebar drag region (BUG1 premise check)', async () => {
 test('T6: note editor action buttons (B4 premise check)', async () => {
   test.setTimeout(120000);
   await openSampleViaDialog('report.pdf');
-  await win.click('button[data-tool="note"]');
+  await armAnnotationTool(win, 'note');
   await win.waitForTimeout(400);
   const page = await win.evaluate(() => {
     const c = document.querySelector('.page-slot[data-page="1"] canvas');

@@ -17,7 +17,7 @@
 // .cmd/.ps1 shims; no hand-concatenated file:// URLs.
 
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -146,7 +146,7 @@ test('DEF-137: ink + note hydrate on save/reopen; saved PDF carries /Annots', as
   const box = await slot.boundingBox();
 
   // Ink stroke.
-  await win.locator('.ann-toolbar button[data-tool="ink"]').click();
+  await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(300);
   await win.mouse.move(box.x + 220, box.y + 260);
   await win.mouse.down();
@@ -155,8 +155,7 @@ test('DEF-137: ink + note hydrate on save/reopen; saved PDF carries /Annots', as
   await win.waitForTimeout(700);
 
   // Sticky note with content.
-  await win.locator('.ann-toolbar button[data-tool="note"]').click();
-  await win.waitForTimeout(300);
+  await armAnnotationTool(win, 'note');
   await win.mouse.click(box.x + 260, box.y + 300);
   await win.waitForSelector('textarea[data-annotation-editor="note"], [data-annotation-editor="note"] textarea', { timeout: 6000 }).catch(() => {});
   const ne = win.locator('[data-annotation-editor="note"] textarea').first();
@@ -183,7 +182,7 @@ test('DEF-137: ink + note hydrate on save/reopen; saved PDF carries /Annots', as
   await electronApp.evaluate(async ({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, outPath);
-  await win.click('button[aria-label="Save As"]');
+  await win.click('button[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await win.click('[data-save-as-confirm]');
   await win.waitForTimeout(2500);
@@ -266,7 +265,7 @@ test('DEF-138: page-1 rotation survives save/reopen (landscape render + rotation
   await electronApp.evaluate(async ({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, outPath);
-  await win.click('button[aria-label="Save As"]');
+  await win.click('button[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await win.click('[data-save-as-confirm]');
   await win.waitForTimeout(2500);

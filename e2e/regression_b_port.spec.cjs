@@ -18,7 +18,9 @@
 // and was retired - see e2e/DIRECTORY.md for the full mapping.
 //
 // Current model notes:
-//   - annotation tools arm via `.ann-toolbar button[data-tool=...]`; pending
+//   - annotation tools arm via the Phase 19 group: the visible five live in
+//     `[data-ann-tools-visible]`, the rest in the portaled
+//     `[data-ann-dropdown-menu]` (use `armAnnotationTool`); pending
 //     bars commit/cancel through `[data-annotation-action*]`,
 //   - the note editor is `[data-annotation-editor="note"]`, the committed
 //     note surface is `.ann-note`,
@@ -39,7 +41,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let window = null;
@@ -99,7 +101,7 @@ test('B1-port: Sign pending-bar Cancel disarms the Sign tool', async () => {
 // pending textbox must unmount its floating action bar.
 test('B2-port: Textbox pending-bar Confirm unmounts the bar', async () => {
   await openSample('report.pdf');
-  await window.locator('.ann-toolbar button[data-tool="textbox"]').click();
+  await armAnnotationTool(window, 'textbox');
   const box = await firstPageBox();
   await window.mouse.click(box.x + 300, box.y + 300);
   await window.waitForSelector('[data-annotation-action-bar="textbox"]', { timeout: 8000 });
@@ -112,7 +114,7 @@ test('B2-port: Textbox pending-bar Confirm unmounts the bar', async () => {
 // editor pre-filled with the exact text that was confirmed.
 test('B4-port: Sticky note content round-trips through the committed icon', async () => {
   await openSample('report.pdf');
-  await window.locator('.ann-toolbar button[data-tool="note"]').click();
+  await armAnnotationTool(window, 'note');
   const box = await firstPageBox();
   await window.mouse.click(box.x + 150, box.y + 150);
   const editor = window.locator('[data-annotation-editor="note"]');
@@ -136,9 +138,13 @@ test('B5-port: Edit mode disables annotation tools', async () => {
   await openSample('report.pdf');
   await window.click('[data-toolbar-edit-toggle]');
   await window.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
-  const rectBtn = window.locator('.ann-toolbar button[data-tool="rect"]').first();
+  // Phase 19 / DEF-226: rect and note are not in the visible five, so open the
+  // portaled menu and assert the rows are disabled (mutual exclusion).
+  await window.click('[data-ann-dropdown-toggle]');
+  await window.waitForSelector('[data-ann-dropdown-menu]', { state: 'visible', timeout: 8000 });
+  const rectBtn = window.locator('[data-ann-dropdown-menu] button[data-tool="rect"]');
   await expect(rectBtn, 'shape tool must be disabled while Edit mode is open').toBeDisabled();
-  const noteBtn = window.locator('.ann-toolbar button[data-tool="note"]').first();
+  const noteBtn = window.locator('[data-ann-dropdown-menu] button[data-tool="note"]');
   await expect(noteBtn, 'note tool must be disabled while Edit mode is open').toBeDisabled();
 });
 
@@ -146,7 +152,7 @@ test('B5-port: Edit mode disables annotation tools', async () => {
 // toolbar state - the active tool must clear (DEF-097 strict null shape).
 test('B6-port: Tab close clears the active tool', async () => {
   await openSample('report.pdf');
-  await window.locator('.ann-toolbar button[data-tool="highlight"]').click();
+  await armAnnotationTool(window, 'highlight');
   await window.waitForTimeout(300);
   await window.click('.tab-close');
   await window.waitForSelector('.sample-card, .welcome', { timeout: 10000 });
@@ -239,7 +245,7 @@ test('B21-port: Saved shape fill is translucent (ExtGState ca 0.1, no inline ca 
   const box = await firstPageBox();
 
   // rect
-  await window.locator('.ann-toolbar button[data-tool="rect"]').click();
+  await armAnnotationTool(window, 'rect');
   await window.mouse.move(box.x + 200, box.y + 260);
   await window.mouse.down();
   await window.mouse.move(box.x + 340, box.y + 360, { steps: 6 });
@@ -247,7 +253,7 @@ test('B21-port: Saved shape fill is translucent (ExtGState ca 0.1, no inline ca 
   await window.waitForTimeout(800);
 
   // ellipse
-  await window.locator('.ann-toolbar button[data-tool="ellipse"]').click();
+  await armAnnotationTool(window, 'ellipse');
   await window.mouse.move(box.x + 420, box.y + 300);
   await window.mouse.down();
   await window.mouse.move(box.x + 560, box.y + 400, { steps: 6 });
@@ -262,7 +268,7 @@ test('B21-port: Saved shape fill is translucent (ExtGState ca 0.1, no inline ca 
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
   }, outPath);
-  await window.click('[aria-label="Save As"]');
+  await window.click('[data-toolbar-save-as]');
   await window.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await window.click('[data-save-as-confirm]');
   await window.waitForFunction(() => !window.tflexDiagnostics().modified, null, { timeout: 15000 });
@@ -306,7 +312,7 @@ test('B22-port: Textbox move + Confirm relocates text exactly once (view + saved
   const box = await firstPageBox();
 
   // Create a committed textbox with a distinctive marker.
-  await window.locator('.ann-toolbar button[data-tool="textbox"]').click();
+  await armAnnotationTool(window, 'textbox');
   await window.mouse.click(box.x + 200, box.y + 200);
   const editor = window.locator('[data-annotation-editor="textbox"] textarea');
   await editor.waitFor({ timeout: 8000 });
@@ -333,7 +339,7 @@ test('B22-port: Textbox move + Confirm relocates text exactly once (view + saved
   expect(eng0, 'the engine must carry the textbox annotation').toBeTruthy();
 
   // Select + drag the body +150/+100, then Confirm on the pending bar.
-  await window.locator('.ann-toolbar button[data-tool="select"]').click();
+  await armAnnotationTool(window, 'select');
   await window.waitForTimeout(400);
   const sx = firstRect.x + firstRect.w * 0.5;
   const sy = firstRect.y + firstRect.h * 0.4;
@@ -407,7 +413,7 @@ test('B22-port: Textbox move + Confirm relocates text exactly once (view + saved
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
   }, outPath);
-  await window.click('[aria-label="Save As"]');
+  await window.click('[data-toolbar-save-as]');
   await window.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await window.click('[data-save-as-confirm]');
   await window.waitForFunction(() => !window.tflexDiagnostics().modified, null, { timeout: 15000 });

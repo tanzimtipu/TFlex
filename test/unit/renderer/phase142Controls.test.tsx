@@ -25,7 +25,6 @@ import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
 import { CommandBar } from "../../../src/renderer/components/CommandBar";
 import { AnnotationToolbar } from "../../../src/renderer/annotations/AnnotationToolbar";
-import { GLASS_CHROME_HEIGHTS } from "../../../src/renderer/components/GlassChrome";
 import type { ZoomMode } from "../../../src/renderer/state/zoom";
 import {
   initialAnnotationToolState,
@@ -85,47 +84,65 @@ function mountBar(overrides: BarOverrides = {}): HTMLElement {
   return mount(<CommandBar {...props} />);
 }
 
-describe("Phase 14.2 FIX 1 — the annotation bar is the standardized command-height bar", () => {
-  it("renders the shared GlassChromeBar command variant under the legacy .ann-toolbar class", () => {
+describe("Phase 14.2 FIX 1 (Phase 19 supersession) — the annotation group is a CommandBar capsule", () => {
+  it("renders as the GlassControlGroup primitive under the legacy .ann-toolbar hook", () => {
     const host = mount(
       <AnnotationToolbar state={initialAnnotationToolState} onAction={NOOP} />,
     );
     try {
-      const bar = host.querySelector<HTMLElement>(".ann-toolbar");
-      expect(bar).not.toBeNull();
-      // The shared chrome primitive classes ride the legacy class.
-      expect(bar?.classList.contains("glass-chrome")).toBe(true);
-      expect(bar?.classList.contains("glass-chrome-command")).toBe(true);
-      // The e2e data hook survives the primitive swap.
-      expect(bar?.hasAttribute("data-annotation-toolbar")).toBe(true);
-      // The variant carries the 52px command-bar height token (the
-      // standardized height the annotation bar must match); the bar
-      // itself stays wrappable (height auto, the min-height comes
-      // from the class + token).
-      expect(bar?.style.height).toBe("auto");
-      expect(GLASS_CHROME_HEIGHTS.commandBar).toBe(52);
+      const group = host.querySelector<HTMLElement>(".ann-toolbar");
+      expect(group).not.toBeNull();
+      // Phase 19 — the group is the CommandBar's own group primitive.
+      expect(group?.classList.contains("glass-control-group")).toBe(true);
+      expect(group?.classList.contains("toolbar-group")).toBe(true);
+      expect(group?.classList.contains("commandbar-group-annotate")).toBe(true);
+      // The e2e data hook survives the move.
+      expect(group?.hasAttribute("data-annotation-toolbar")).toBe(true);
+      expect(group?.getAttribute("role")).toBe("group");
+      expect(group?.getAttribute("aria-label")).toBe("Annotate");
+      // The retired standalone row chrome is gone.
+      expect(group?.classList.contains("glass-chrome-command")).toBe(false);
     } finally {
       unmount(host);
     }
   });
 
-  it("keeps every annotation tool button + its data-tool contract", () => {
+  it("keeps the five visible tools + the all-tools menu data-tool contract", () => {
     const host = mount(
-      <AnnotationToolbar state={initialAnnotationToolState} onAction={NOOP} />,
+      <AnnotationToolbar
+        state={initialAnnotationToolState}
+        onAction={NOOP}
+        annotationRecentTools={[]}
+      />,
     );
     try {
-      const tools = Array.from(host.querySelectorAll<HTMLElement>("[data-tool]"));
-      const names = tools.map((t) => t.getAttribute("data-tool"));
-      expect(names).toContain("select");
-      expect(names).toContain("highlight");
-      expect(names).toContain("ink");
-      expect(names).toContain("rect");
-      expect(names).toContain("note");
-      for (const btn of tools) {
+      const visible = Array.from(
+        host.querySelectorAll<HTMLElement>("[data-ann-tools-visible] [data-tool]"),
+      );
+      expect(visible.map((t) => t.getAttribute("data-tool"))).toEqual([
+        "select",
+        "highlight",
+        "underline",
+        "strikeout",
+        "ink",
+      ]);
+      const toggle = host.querySelector<HTMLElement>("[data-ann-dropdown-toggle]");
+      act((): void => {
+        toggle?.click();
+      });
+      const menu = document.body.querySelector<HTMLElement>("[data-ann-dropdown-menu]");
+      expect(menu).not.toBeNull();
+      const menuBtns = Array.from(menu?.querySelectorAll<HTMLElement>("[data-tool]") ?? []);
+      const names = menuBtns.map((t) => t.getAttribute("data-tool"));
+      for (const id of ["select", "highlight", "ink", "rect", "note"]) {
+        expect(names).toContain(id);
+      }
+      for (const btn of [...visible, ...menuBtns]) {
         expect(btn.getAttribute("aria-label")).toBeTruthy();
       }
     } finally {
       unmount(host);
+      document.body.innerHTML = "";
     }
   });
 });
@@ -212,17 +229,21 @@ describe("Phase 14.2 FIX 7 — the All tools toggle has moved off the command ba
   });
 });
 
-describe("Phase 14.2 FIX 6 — the annotation bar icons are 24px", () => {
-  it("every annotation tool glyph renders at 24px", () => {
+describe("Phase 14.2 FIX 6 (Phase 19) — the annotation glyphs ride the CommandBar 22px ladder", () => {
+  it("every visible annotation tool glyph renders at 22px", () => {
     const host = mount(
-      <AnnotationToolbar state={initialAnnotationToolState} onAction={NOOP} />,
+      <AnnotationToolbar
+        state={initialAnnotationToolState}
+        onAction={NOOP}
+        annotationRecentTools={[]}
+      />,
     );
     try {
       const svgs = Array.from(host.querySelectorAll<SVGSVGElement>(".ann-toolbar .tool-btn svg"));
-      expect(svgs.length).toBeGreaterThanOrEqual(11);
+      expect(svgs.length).toBeGreaterThanOrEqual(5);
       for (const svg of svgs) {
-        expect(Number(svg.getAttribute("width"))).toBe(24);
-        expect(Number(svg.getAttribute("height"))).toBe(24);
+        expect(Number(svg.getAttribute("width"))).toBe(22);
+        expect(Number(svg.getAttribute("height"))).toBe(22);
       }
     } finally {
       unmount(host);

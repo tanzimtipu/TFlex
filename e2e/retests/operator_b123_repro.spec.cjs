@@ -15,7 +15,7 @@
 // Launch ONLY through e2e/lib/launch.cjs against the packaged exe.
 
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -247,7 +247,7 @@ test('BUG2: insert blank after page 1; visual rail + draw on pages 2/3', async (
   const p2 = await pageRect(2);
   const hashBefore2 = await canvasHash(2);
   console.log(`[BUG2] page2 rect=${JSON.stringify(p2)} hashBefore2=${JSON.stringify(hashBefore2)}`);
-  await win.locator('.ann-toolbar button[data-tool="ink"]').click();
+  await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(300);
   await win.mouse.move(p2.x + 200, p2.y + 200);
   await win.mouse.down();
@@ -265,8 +265,7 @@ test('BUG2: insert blank after page 1; visual rail + draw on pages 2/3', async (
   const p3 = await pageRect(3);
   const hashBefore3 = await canvasHash(3);
   console.log(`[BUG2] page3 rect=${JSON.stringify(p3)} hashBefore3=${JSON.stringify(hashBefore3)}`);
-  await win.locator('.ann-toolbar button[data-tool="rect"]').click();
-  await win.waitForTimeout(300);
+  await armAnnotationTool(win, 'rect');
   await win.mouse.move(p3.x + 180, p3.y + 180);
   await win.mouse.down();
   await win.mouse.move(p3.x + 360, p3.y + 300, { steps: 12 });

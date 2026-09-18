@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -29,8 +29,7 @@ test('CONTROL: textbox single-click creates bar fresh', async () => {
   const page = window.locator('.pdf-page').first();
   const pbox = await page.boundingBox();
 
-  await window.locator('.ann-toolbar button[data-tool="textbox"]').click();
-  await window.waitForTimeout(200);
+  await armAnnotationTool(window, 'textbox');
   await window.mouse.click(pbox.x + 300, pbox.y + 400);
   await window.waitForTimeout(500);
   const bar = await window.locator('[data-annotation-action-bar="textbox"]').count();
@@ -73,9 +72,8 @@ test('AFTER-SIGN: textbox single-click creates bar', async () => {
   console.log('AFTER-SIGN sig toolbar pressed:', sigToolbar);
 
   // textbox after sign
-  await window.locator('.ann-toolbar button[data-tool="textbox"]').click();
-  await window.waitForTimeout(200);
-  const tbActive = await window.locator('.ann-toolbar button[data-tool="textbox"]').getAttribute('aria-pressed');
+  await armAnnotationTool(window, 'textbox');
+  const tbActive = await window.evaluate(() => window.tflexDiagnostics().activeTool);
   await window.mouse.click(pbox.x + 300, pbox.y + 400);
   await window.waitForTimeout(600);
   const bar = await window.locator('[data-annotation-action-bar="textbox"]').count();

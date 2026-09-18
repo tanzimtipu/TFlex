@@ -15,7 +15,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { PDFDocument, PDFName, PDFDict, PDFNumber } = require('pdf-lib');
-const { launchDev, diag, getSamplePath, hardClose } = require('../lib/helpers.cjs');
+const { launchDev, diag, getSamplePath, hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -114,10 +114,10 @@ test('DEF-210 retest: pen stroke commits, disarms, and survives save/reopen', as
   expect(await slotBox(1), 'page slot 1 mounted').not.toBeNull();
 
   // Step 3: arm the Pen tool. The retest names it "the Pen icon, labeled Pen".
-  const penBtn = win.locator('.ann-toolbar button[data-tool="ink"]');
+  const penBtn = win.locator('[data-ann-tools-visible] button[data-tool="ink"]');
   await expect(penBtn).toBeVisible();
   expect(await penBtn.getAttribute('aria-label'), 'Pen button label').toBe('Pen');
-  await penBtn.click();
+  await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(400);
   const d1 = await diag(win);
   console.log(`[DEF210] pen armed: activeTool=${d1.activeTool}`);
@@ -202,13 +202,13 @@ test('DEF-210 retest: pen stroke commits, disarms, and survives save/reopen', as
   await shot(win, 'def-210-disarm-escape.png');
 
   // Step 6b: disarm via clicking another tool - ink line still visible.
-  await win.click('.ann-toolbar button[data-tool="highlight"]');
+  await armAnnotationTool(win, 'highlight');
   await win.waitForTimeout(400);
   const dHl = await diag(win);
   console.log(`[DEF210] after clicking Highlight: activeTool=${dHl.activeTool}`);
   expect(dHl.activeTool, 'highlight armed (pen disarmed by tool switch)').toBe('highlight');
   expect((await committedInk()), 'ink line stays visible after tool switch').toHaveLength(1);
-  await win.click('.ann-toolbar button[data-tool="select"]');
+  await armAnnotationTool(win, 'select');
   await win.waitForTimeout(300);
 
   // Step 7: save round-trip. Save As -> close tab -> reopen the saved file.

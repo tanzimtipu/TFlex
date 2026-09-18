@@ -51,15 +51,15 @@ function findRuleBody(src: string, selector: string): string | null {
 describe("Bug 13 — tools palette anchors below toolbar", () => {
   const src = readStyles();
 
-  it(".tools-palette top is offset by the chrome tokens, not 0", () => {
+  it(".tools-palette top is offset by the chrome token, not 0", () => {
     const body = findRuleBody(src, ".tools-palette");
     expect(body).not.toBeNull();
-    // Old behaviour: `top: 0` overlapped the toolbar. New
-    // behaviour uses the --toolbar-h token to start below the
-    // toolbar's baseline — Phase 14.2 extends the offset with the
-    // annotation-bar token so the palette clears BOTH chrome rows.
-    expect(body ?? "").toMatch(/top:\s*calc\(\s*var\(--toolbar-h/);
-    expect(body ?? "").toMatch(/var\(--ann-toolbar-h/);
+    // Old behaviour: `top: 0` overlapped the toolbar. New behaviour
+    // uses the --toolbar-h token to start below the toolbar's
+    // baseline. Phase 19 retired the second annotation row, so the
+    // palette clears the single CommandBar row.
+    expect(body ?? "").toMatch(/top:\s*var\(--toolbar-h,\s*52px\)/);
+    expect(body ?? "").not.toMatch(/--ann-toolbar-h/);
     // The previous `top: 0` would have left the right cluster
     // hidden — lock against that regression.
     expect(body ?? "").not.toMatch(/top:\s*0\s*;/);

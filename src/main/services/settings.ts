@@ -49,6 +49,27 @@ export const STAMP_IDS = ['APPROVED', 'DRAFT', 'CONFIDENTIAL', 'FINAL'] as const
  *  is absent. Mirrors the editDefaultFont/ocrLanguage default convention. */
 export const DEFAULT_STAMP_ID: (typeof STAMP_IDS)[number] = 'APPROVED';
 
+/** Phase 19 — annotation tool id allowlist. Mirrors `AnnotationTool` in the
+ *  renderer's annotations model (main cannot import renderer code). The
+ *  persisted `annotationRecentTools` order is validated against this list;
+ *  ids outside it are dropped. */
+export const ANNOTATION_TOOL_IDS: readonly string[] = [
+  'select',
+  'highlight',
+  'underline',
+  'strikeout',
+  'ink',
+  'textbox',
+  'rect',
+  'ellipse',
+  'arrow',
+  'note',
+  'callout',
+];
+
+/** Phase 19 — maximum persisted length of the annotation MRU list. */
+export const ANNOTATION_RECENT_TOOLS_CAP = 6;
+
 /** Phase 18 — watermark type allowlist. 'text' draws the watermark string
  *  with bundled standard fonts; 'image' embeds a renderer-provided PNG/JPEG
  *  raster (pdf-lib has no rasteriser — same pattern as stamps). */
@@ -273,6 +294,26 @@ function normalizeRecentFiles(raw: unknown, cap: number = RECENT_FILES_CAP): Rec
   return files.slice(0, effectiveCap);
 }
 
+/** Phase 19 — normalise a raw `annotationRecentTools` value,
+ *  preserve-if-valid / reject-if-invalid. Returns `null` when the value must
+ *  be rejected (not an array, or no known ids survive filtering) so the field
+ *  stays absent and the consumer applies the default `[]`. Known ids are
+ *  kept, duplicates deduped (first occurrence wins), the order preserved, and
+ *  the list capped at `ANNOTATION_RECENT_TOOLS_CAP`.
+ */
+export function normalizeAnnotationRecentTools(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string') continue;
+    if (!(ANNOTATION_TOOL_IDS as readonly string[]).includes(entry)) continue;
+    if (out.includes(entry)) continue;
+    out.push(entry);
+    if (out.length >= ANNOTATION_RECENT_TOOLS_CAP) break;
+  }
+  return out.length > 0 ? out : null;
+}
+
 function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
   if (typeof raw === 'string' && raw.length > 0) {
     return { id: raw, hex: raw };
@@ -389,16 +430,28 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.pagesPanelCollapsed = rawObj.pagesPanelCollapsed;
   }
 
+  // Phase 19: preserve annotationRecentTools only when the value survives
+  // allowlist filtering + dedupe + cap. Absent is the default ([]); an
+  // invalid value leaves the field absent, exactly like themeDefault.
+  const annotationRecentTools = normalizeAnnotationRecentTools(rawObj.annotationRecentTools);
+  if (annotationRecentTools !== null) {
+    settings.annotationRecentTools = annotationRecentTools;
+  }
+
   return settings;
 }
 
 export class SettingsService {
   private current: AppSettings = structuredClone(DEFAULT_SETTINGS);
+  /** Last settings snapshot that actually reached disk. `current` is restored
+   *  to this on a failed write so memory and disk never diverge (DEF-230). */
+  private persisted: AppSettings = structuredClone(DEFAULT_SETTINGS);
   private _saveQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly filePath: string,
     private readonly onChange?: (settings: AppSettings) => void,
+    private readonly onWriteError?: (message: string) => void,
   ) {}
 
   getCurrent(): AppSettings {
@@ -412,6 +465,7 @@ export class SettingsService {
     } catch (e: unknown) {
       if ((e as NodeJS.ErrnoException).code === 'ENOENT') {
         this.current = structuredClone(DEFAULT_SETTINGS);
+        this.persisted = structuredClone(DEFAULT_SETTINGS);
         return ok(structuredClone(DEFAULT_SETTINGS));
       }
       return err('io', message(e));
@@ -426,6 +480,7 @@ export class SettingsService {
       return err('corrupt-settings', 'settings.json does not contain an object');
     }
     this.current = normalizeSettings(parsed);
+    this.persisted = structuredClone(this.current);
     return ok(structuredClone(this.current));
   }
 
@@ -447,13 +502,14 @@ export class SettingsService {
   }
 
   private async _doSave(settings: AppSettings): Promise<void> {
-    const normalized = normalizeSettings(settings);
-    await mkdir(dirname(this.filePath), { recursive: true });
     const tmp = `${this.filePath}.tmp`;
     try {
+      const normalized = normalizeSettings(settings);
+      await mkdir(dirname(this.filePath), { recursive: true });
       await writeFile(tmp, JSON.stringify(normalized, null, 2), 'utf8');
       await rename(tmp, this.filePath);
       this.current = normalized;
+      this.persisted = structuredClone(normalized);
       this.onChange?.(structuredClone(normalized));
     } catch (e) {
       try {
@@ -461,7 +517,11 @@ export class SettingsService {
       } catch {
         // Best-effort tmp cleanup — ignore secondary errors
       }
-      throw e;
+      const msg = message(e);
+      console.warn(`[settings] could not write settings.json: ${msg}`);
+      // Never let memory claim a value the disk never got (DEF-230).
+      this.current = structuredClone(this.persisted);
+      this.onWriteError?.(msg);
     }
   }
 

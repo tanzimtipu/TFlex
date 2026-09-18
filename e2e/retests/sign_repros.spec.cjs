@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -107,9 +107,8 @@ test('BUG-2: after Sign tool, Text Box/Rectangle/Ellipse tools stop working', as
   await window.waitForTimeout(500);
 
   // Now try Text Box tool
-  await window.locator('.ann-toolbar button[data-tool="textbox"]').click();
-  await window.waitForTimeout(200);
-  const tbActive = await window.locator('.ann-toolbar button[data-tool="textbox"]').getAttribute('aria-pressed');
+  await armAnnotationTool(window, 'textbox');
+  const tbActive = await window.evaluate(() => window.tflexDiagnostics().activeTool);
   await window.mouse.click(pbox.x + 400, pbox.y + 400);
   await window.waitForTimeout(500);
   const tbBar = await window.locator('[data-annotation-action-bar="textbox"]').count();
@@ -120,9 +119,8 @@ test('BUG-2: after Sign tool, Text Box/Rectangle/Ellipse tools stop working', as
   await snap('bug2-after-sign-textbox');
 
   // Rectangle tool
-  await window.locator('.ann-toolbar button[data-tool="rect"]').click();
-  await window.waitForTimeout(200);
-  const rectActive = await window.locator('.ann-toolbar button[data-tool="rect"]').getAttribute('aria-pressed');
+  await armAnnotationTool(window, 'rect');
+  const rectActive = await window.evaluate(() => window.tflexDiagnostics().activeTool);
   await window.mouse.click(pbox.x + 600, pbox.y + 600);
   await window.waitForTimeout(500);
   const rectCount = await window.locator('.ann[data-kind="rect"]').count();
@@ -130,8 +128,7 @@ test('BUG-2: after Sign tool, Text Box/Rectangle/Ellipse tools stop working', as
   await snap('bug2-after-sign-rect');
 
   // Ellipse tool
-  await window.locator('.ann-toolbar button[data-tool="ellipse"]').click();
-  await window.waitForTimeout(200);
+  await armAnnotationTool(window, 'ellipse');
   await window.mouse.click(pbox.x + 350, pbox.y + 650);
   await window.waitForTimeout(500);
   const ellipseCount = await window.locator('.ann[data-kind="ellipse"]').count();

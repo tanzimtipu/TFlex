@@ -211,10 +211,11 @@ describe("Phase 14 — docked glass shell (the panels behave like light/dark)", 
       expect(body).not.toMatch(/box-shadow:/);
     }
     // The base docked geometry stays the single source of truth.
+    // Phase 19 retired the second annotation row, so the palette
+    // clears the single CommandBar row.
     const base = findRuleBody(css, ".tools-palette");
-    expect(base ?? "").toMatch(
-      /top:\s*calc\(var\(--toolbar-h,\s*52px\)\s*\+\s*var\(--ann-toolbar-h,\s*52px\)\)/,
-    );
+    expect(base ?? "").toMatch(/top:\s*var\(--toolbar-h,\s*52px\)/);
+    expect(base ?? "").not.toMatch(/--ann-toolbar-h/);
     expect(base ?? "").toMatch(/right:\s*0/);
     expect(base ?? "").toMatch(/bottom:\s*0/);
   });

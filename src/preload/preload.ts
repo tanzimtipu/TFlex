@@ -408,6 +408,13 @@ const api = {
         ipcRenderer.removeListener(IPC.settingsChangedEvent, listener);
       };
     },
+    writeError(cb: (message: string) => void): () => void {
+      const listener = (_event: unknown, message: string): void => cb(message);
+      ipcRenderer.on(IPC.settingsWriteErrorEvent, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.settingsWriteErrorEvent, listener);
+      };
+    },
   },
   // Phase 7: application menu actions pushed from main to renderer
   menu: {

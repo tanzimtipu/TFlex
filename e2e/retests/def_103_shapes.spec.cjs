@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -48,8 +48,7 @@ test('DEF-103: rect and ellipse place after sign', async () => {
   await window.waitForTimeout(600);
 
   // Rectangle after sign
-  await window.locator('.ann-toolbar button[data-tool="rect"]').click();
-  await window.waitForTimeout(200);
+  await armAnnotationTool(window, 'rect');
   await window.mouse.move(pbox.x + 200, pbox.y + 550);
   await window.mouse.down();
   await window.mouse.move(pbox.x + 400, pbox.y + 700, { steps: 6 });
@@ -62,8 +61,7 @@ test('DEF-103: rect and ellipse place after sign', async () => {
   const rectCount = await window.locator('.ann[data-kind="rect"]').count();
 
   // Ellipse after sign
-  await window.locator('.ann-toolbar button[data-tool="ellipse"]').click();
-  await window.waitForTimeout(200);
+  await armAnnotationTool(window, 'ellipse');
   await window.mouse.move(pbox.x + 200, pbox.y + 500);
   await window.mouse.down();
   await window.mouse.move(pbox.x + 350, pbox.y + 620, { steps: 6 });

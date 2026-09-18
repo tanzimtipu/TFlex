@@ -13,7 +13,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -484,7 +484,7 @@ test('A4: press/hover measured against --motion-scale-press; thumbnail + toggle 
   });
   console.log('[A4] current thumbnail:', JSON.stringify(thumbSt));
 
-  await win.locator('.ann-toolbar button[data-tool="ink"]').click();
+  await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(260);
   const armed = await win.evaluate(() => {
     const el = document.querySelector('.tool-btn-active');

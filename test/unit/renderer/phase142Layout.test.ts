@@ -134,43 +134,32 @@ describe("Phase 14.2 — clean single-layer Open button (FIX 3)", () => {
   });
 });
 
-describe("Phase 14.2 — annotation bar is the command-height bar (FIX 1)", () => {
+describe("Phase 14.2 FIX 1 (Phase 19 supersession) — the annotation row is retired", () => {
   const css = readStyles();
   const clean = stripCssComments(css);
 
-  it(".ann-toolbar min-height rides the annotation token", () => {
-    const body = findRuleBody(css, ".ann-toolbar {");
-    expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/min-height:\s*var\(--ann-toolbar-h\)/);
-    // Same vertical centering + padding rhythm as the command bar.
-    expect(body ?? "").toMatch(/align-items:\s*center/);
-    expect(body ?? "").toMatch(/padding:\s*var\(--space-small\)\s+var\(--space-standard\)/);
+  it("the .ann-toolbar row chrome is gone; the group's visible container is styled instead", () => {
+    // Phase 19 — the tools live inside the CommandBar capsule, so the
+    // legacy class carries no rule at all (inert e2e hook only).
+    expect(findRuleBody(clean, ".ann-toolbar {")).toBeNull();
+    const visible = findRuleBody(css, ".ann-tools-visible {");
+    expect(visible).not.toBeNull();
+    expect(visible ?? "").toMatch(/display:\s*inline-flex/);
   });
 
-  it("--ann-toolbar-h resolves to the 52px command-bar token", () => {
+  it("the --ann-toolbar-h token is retired and --toolbar-h still resolves to 52px", () => {
     const rootIdx = clean.indexOf(":root {");
     const body = extractRuleBody(clean, rootIdx);
-    expect(body).toMatch(/--ann-toolbar-h:\s*var\(--chrome-commandbar-h\)/);
+    expect(body).not.toMatch(/--ann-toolbar-h\s*:/);
+    expect(body).toMatch(/--toolbar-h:\s*var\(--chrome-commandbar-h\)/);
     expect(body).toMatch(/--chrome-commandbar-h:\s*52px/);
   });
 
-  it("frosted keeps the annotation bar docked in column 2 (no full-width band)", () => {
-    // The floating shell's full-width band stretched the bar over the
-    // rail column with negative margins — that band OVERLAPPED the
-    // docked rail card. The bar is back in the base in-flow grid row
-    // (column 2 only), identical to light/dark.
+  it("frosted carries no annotation-row override (the group rides the CommandBar glass)", () => {
     const stripped = stripCssComments(css);
-    const band = findRuleBody(
-      stripped,
-      ':root[data-theme="frosted"] .ann-toolbar {',
-    );
-    if (band !== null) {
-      expect(band).not.toMatch(/margin-left:\s*calc\(-1/);
-      expect(band).not.toMatch(/margin-right:\s*-/);
-    }
-    // The base row keeps its token height + centering in every theme.
-    const base = findRuleBody(css, ".ann-toolbar {");
-    expect(base ?? "").toMatch(/min-height:\s*var\(--ann-toolbar-h\)/);
+    expect(
+      findRuleBody(stripped, ':root[data-theme="frosted"] .ann-toolbar {'),
+    ).toBeNull();
   });
 });
 
@@ -231,14 +220,16 @@ describe("Phase 14.2 — state-driven page view in every theme (FIX 4/5)", () =>
   });
 });
 
-describe("Phase 14.2 — frosted floating margins are the 16px minimum (FIX 8)", () => {
+describe("Phase 14.2 — frosted floating margins are the 16px minimum (FIX 8, Phase C supersession)", () => {
   const css = stripCssComments(readStyles());
 
-  it("the frosted content pads 16px below the chrome stack and above the bottom", () => {
+  it("the frosted content padding follows the Phase C contract (28px, page scrolls under the chrome)", () => {
+    // Phase C superseded FIX 8's measured-chrome pad: the frosted
+    // scroller is full-bleed and the page intentionally starts 28px
+    // from the top, scrolling UNDER the floating chrome rows. This
+    // test pins that current contract so a revert is caught.
     const bodies = [...css.matchAll(/:root\[data-theme="frosted"\]\s+\.document-content\s*\{([^}]*)\}/g)];
     const body = bodies.at(-1)?.[1] ?? "";
-    expect(body).toMatch(
-      /padding:\s*calc\(var\(--tf-chrome-y,\s*104px\)\s*\+\s*16px\)\s+0\s+16px/,
-    );
+    expect(body).toMatch(/padding:\s*28px\s+0/);
   });
 });

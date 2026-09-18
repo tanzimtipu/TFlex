@@ -40,7 +40,8 @@ export type PreferencesAction =
   | { type: 'set-ocr-language'; value: OcrLanguage }
   | { type: 'set-ocr-downsample'; value: number }
   | { type: 'set-default-stamp-id'; value: StampId }
-  | { type: 'set-save-as-linearize'; value: boolean };
+  | { type: 'set-save-as-linearize'; value: boolean }
+  | { type: 'set-annotation-recent-tools'; value: string[] };
 
 /** Default compression preset used by the Optimize dialog when the
  *  user hasn't picked one yet. Matches the backend settings.ts default
@@ -227,6 +228,23 @@ export function preferencesReducer(
       if (current === action.value) return state;
       return { ...state, saveAsLinearize: action.value };
     }
+    case 'set-annotation-recent-tools': {
+      // Phase 19 — MRU annotation tool order. Sanitise through the
+      // same rules the backend applies (known ids only, deduped,
+      // most-recent-first, capped at 6) so the renderer can never
+      // persist a shape the settings service would reject. An
+      // unchanged order is an identity no-op, mirroring the other
+      // cases, so a re-render doesn't churn the settings IPC.
+      const next = sanitizeRecentTools(action.value);
+      const current = state.annotationRecentTools ?? [];
+      if (
+        current.length === next.length &&
+        current.every((id, i) => id === next[i])
+      ) {
+        return state;
+      }
+      return { ...state, annotationRecentTools: next };
+    }
   }
 }
 
@@ -314,3 +332,91 @@ export const STAMP_IDS: readonly StampId[] = [
 /** Default stamp id used by the Stamp tool when the user hasn't
  *  picked one. Matches the backend's settings.ts default. */
 export const DEFAULT_STAMP_ID: StampId = 'APPROVED';
+
+// ---- Phase 19: Annotation tools in the CommandBar (MRU five) ----
+
+/** How many most-recently-used annotation tools the backend persists.
+ *  Mirrors the cap in `src/main/services/settings.ts`
+ *  (preserve-if-valid keeps at most this many, most-recent-first). */
+export const ANNOTATION_RECENT_TOOLS_CAP = 6;
+
+/** How many tool buttons the CommandBar group shows. The visible set is
+ *  the MRU list padded from the canonical order. */
+export const ANNOTATION_VISIBLE_TOOL_COUNT = 5;
+
+/** The eleven annotation tool ids in canonical order. The renderer
+ *  cannot import the main-process allowlist, so this mirrors
+ *  `ANNOTATION_TOOL_IDS` in `src/main/services/settings.ts` — keep the
+ *  two in step. Order is the dropdown's five-group order: Select; Text
+ *  markup; Pen; Text box; Shapes; Note. */
+export const ANNOTATION_TOOL_ORDER: readonly string[] = [
+  'select',
+  'highlight',
+  'underline',
+  'strikeout',
+  'ink',
+  'textbox',
+  'rect',
+  'ellipse',
+  'arrow',
+  'callout',
+  'note',
+];
+
+/** Preserve-if-valid sanitiser for an MRU list: keep only known ids,
+ *  drop duplicates and garbage, cap at `ANNOTATION_RECENT_TOOLS_CAP`,
+ *  preserving the incoming order (most-recent-first). */
+function sanitizeRecentTools(recent: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const id of recent) {
+    if (!ANNOTATION_TOOL_ORDER.includes(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
+    if (result.length >= ANNOTATION_RECENT_TOOLS_CAP) break;
+  }
+  return result;
+}
+
+/** Promote `tool` to the front of the MRU order. Returns the new
+ *  most-recent-first list: `tool` first, then the existing entries with
+ *  `tool` removed. Unknown ids (including an unknown `tool`) are dropped
+ *  and the result is capped at `ANNOTATION_RECENT_TOOLS_CAP`. */
+export function promoteAnnotationTool(
+  current: readonly string[],
+  tool: string,
+): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  if (ANNOTATION_TOOL_ORDER.includes(tool)) {
+    seen.add(tool);
+    result.push(tool);
+  }
+  for (const id of current) {
+    if (!ANNOTATION_TOOL_ORDER.includes(id)) continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
+    if (result.length >= ANNOTATION_RECENT_TOOLS_CAP) break;
+  }
+  return result;
+}
+
+/** The five buttons the CommandBar group shows. Takes the first five of
+ *  the sanitised MRU list and pads from `ANNOTATION_TOOL_ORDER` (in
+ *  canonical order) so a fresh profile (`[]`) still yields exactly the
+ *  default five. Always returns exactly `ANNOTATION_VISIBLE_TOOL_COUNT`
+ *  unique entries. */
+export function visibleAnnotationTools(recent: readonly string[]): string[] {
+  const result = sanitizeRecentTools(recent).slice(
+    0,
+    ANNOTATION_VISIBLE_TOOL_COUNT,
+  );
+  for (const id of ANNOTATION_TOOL_ORDER) {
+    if (result.length >= ANNOTATION_VISIBLE_TOOL_COUNT) break;
+    if (result.includes(id)) continue;
+    result.push(id);
+  }
+  return result;
+}

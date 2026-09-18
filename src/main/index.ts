@@ -97,7 +97,17 @@ export async function start(): Promise<void> {
     }
   };
 
-  const settings = new SettingsService(join(app.getPath('userData'), 'settings.json'), broadcast);
+  // DEF-230 — a failed settings write no longer rejects the IPC call; the
+  // renderer learns about it here instead.
+  const broadcastWriteError = (message: string): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.settingsWriteErrorEvent, message);
+      }
+    }
+  };
+
+  const settings = new SettingsService(join(app.getPath('userData'), 'settings.json'), broadcast, broadcastWriteError);
   const samples = new SamplesService(join(app.getAppPath(), 'assets', 'samples'));
   // Phase 11 — OCR runs tesseract.js with language data loaded from the
   // bundled `assets/tessdata` directory so recognition is fully offline.

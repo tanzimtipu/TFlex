@@ -1560,3 +1560,253 @@ These were probed and passed; listed so the team does not re-spend effort:
 | UI apply render + proxy refresh | A watermark applied through the dialog renders on the page and thumbnails immediately (`screenshots/adv-041-render-ui-applied.png`); `getWatermarks` lists it. |
 
 **Total new findings: 4 (1 HIGH, 3 MEDIUM).**
+
+---
+
+## Phase 19 gate — annotation group in the CommandBar (MRU five + colour + all-tools dropdown)
+
+Session label: `phase-19 gate`. Built the dev bundle first (`npm.cmd run build:renderer`,
+`npm.cmd run build:node`) and ran two harnesses against it:
+`node test-fixtures/tools/adv045_ann_group.cjs <hooks|click|keys|disabled|layout|motion|color|pen>`
+and `node test-fixtures/tools/adv045_settings_mru.cjs`. Both pass `node --check`. Screenshots:
+`screenshots/adv045-*.png`.
+
+## ADV-045: Standard e2e specs still address the retired `.ann-toolbar` row for tools that now live only in the portaled menu; B2-port fails
+
+- Session: phase-19 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Listed every current spec selector that arms an annotation tool
+   (`rg 'data-tool="' e2e/*.spec.cjs`).
+2. Measured what the old locators resolve to now, with the menu closed and
+   open (`node test-fixtures/tools/adv045_ann_group.cjs hooks`):
+   - menu closed: `.ann-toolbar button[data-tool="textbox"]` = 0,
+     `...="note"` = 0, `...="rect"` = 0, `...="highlight"` = 1;
+     `button[data-tool="note"]` = 0.
+   - menu open: `.ann-toolbar button[data-tool="textbox"]` still 0;
+     `button[data-tool="note"]` = 1 (the portaled menu row);
+     `document.querySelector(".ann-toolbar [data-ann-dropdown-menu]")` = false
+     (the menu is portaled to `document.body`, outside `.ann-toolbar`).
+3. Ran one affected test for real:
+   `npm.cmd run test:e2e -- e2e/regression_b_port.spec.cjs -g "B2-port" --timeout=45000 --reporter=line`.
+
+Expected:
+- REQUIREMENTS.md Phase 19 criterion 12: "Existing annotation e2e/unit specs that
+  asserted `.ann-toolbar` are repointed to the new group and pass". Tools that
+  left the visible five must be reachable through the new `[data-ann-dropdown-menu]`
+  address in every spec that arms them.
+
+Actual:
+- B2-port fails: `TimeoutError: locator.click: Timeout 30000ms exceeded.
+  waiting for locator('.ann-toolbar button[data-tool="textbox"]')`.
+  textbox/note/rect/ellipse are no longer inside `.ann-toolbar` (only the five
+  MRU buttons are) and the menu is portaled out of it, so those locators match
+  zero elements whenever the menu is closed.
+- Same zero-match class in the current standard suite (unmodified files):
+  `e2e/regression_b_port.spec.cjs` B2-port (textbox, line 102), B4-port (note,
+  line 115), B5-port (rect + note, lines 139/141), B21-port (rect + ellipse,
+  lines 242/250), B22-port (textbox, line 309); `e2e/probe_190_triage.spec.cjs`
+  T6 (`button[data-tool="note"]`, line 224), `e2e/probe_190_triage_r2.spec.cjs`
+  line 78 and `e2e/probe_190_triage_r3.spec.cjs` line 63 (callout).
+- Only `e2e/sweep_annotations_sign.spec.cjs` and `e2e/phase14_2_verify.spec.cjs`
+  were repointed (they now scope `[data-ann-tools-visible]` vs
+  `[data-ann-dropdown-menu]`); the rest were missed, so the phase gate cannot be
+  green.
+
+Screenshot: N/A
+
+Disposition: ACCEPTED -> DEF-226 (HIGH; the phase requires the existing annotation specs to be repointed to the new group/menu - the tools that moved into the portaled menu are unreachable from the old `.ann-toolbar button[data-tool=...]` selectors)
+
+---
+
+## ADV-046: Clicking the page while the tools menu is open both dismisses the menu and performs the armed tool's placement
+
+- Session: phase-19 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. `node test-fixtures/tools/adv045_ann_group.cjs click`.
+2. (a) armed `note` from the menu, reopened the menu, then single-clicked a blank
+   area of the page (`pageBlankPoint` fracY 0.35 -> x=821,y=647).
+3. (b) armed `rect` from the menu, reopened the menu, then dragged a 140x80 box
+   on the page.
+4. (c) armed `highlight` from the visible five, reopened the menu, single-clicked
+   the page.
+
+Expected (per the phase's own close contract and the overlay lesson class):
+- A click on the document whose only job is to dismiss the open menu must close
+  the menu and NOT start an annotation gesture (the menu's window pointerdown
+  handler closes it, but the pointerup/click must not also reach the tool).
+
+Actual:
+- (a) `annotationsBefore:0, annotationsAfter:0, noteEditorOpen:1,
+  noteActionBar:0, menuOpenAfter:0, activeTool:"note"` — the dismissing click
+  opened the sticky-note editor.
+- (b) `annotationsBefore:0, annotationsAfter:1, menuOpenAfter:0` — the same drag
+  that closed the menu committed a rect annotation.
+- (c) highlight single click: `annotationsBefore:1, annotationsAfter:1` (no new
+  annotation — highlight needs a text drag), `menuOpenAfter:0`.
+- Root cause: `AnnotationToolbar`'s outside-close uses a bubble-phase
+  `window.addEventListener('pointerdown', ...)` that only calls
+  `setMenuOpen(false)`; it neither consumes nor cancels the gesture, so the
+  document overlay's own pointerdown/pointerup/click run to completion.
+- Same click on a CommandBar button does both too (measured): Pan one click ->
+  `data-hand-active` false->true and menu closed; Edit one click ->
+  `aria-pressed` false->true and `.edit-toolbar` attached.
+
+Screenshot: screenshots/adv045-color-and-menu.png (both surfaces), N/A for the page gesture
+
+Disposition: ACCEPTED -> DEF-227 (MEDIUM; a click that dismisses the menu must not also perform the armed tool's placement gesture)
+
+---
+
+## ADV-047: Tab-focusing a menu row and pressing Enter arms the wrong tool
+
+- Session: phase-19 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. `node test-fixtures/tools/adv045_ann_group.cjs keys`.
+2. Opened the menu, pressed Tab twice so focus landed on the Highlight row
+   (`activeElement` = `button.ann-tool-menu-row[data-tool="highlight"]`), while
+   the keyboard highlight (`.ann-tool-menu-row-highlight`) stayed on Select.
+3. Pressed Enter, read `window.tflexDiagnostics().activeTool`.
+
+Expected:
+- Enter on the focused menu row arms that row (Highlight). The two keyboard
+  models (Tab focus vs Arrow-key highlight) should not disagree.
+
+Actual:
+- `keys-tab-then-enter {"initialHighlight":"select","focusedRow":"highlight",
+  "keyboardHighlight":"select","activeTool":null,"menuOpen":0}` — Enter armed
+  Select (the container's `onMenuKeyDown` used `MENU_TOOLS[menuIndex]`, still 0),
+  not the focused Highlight row, and the menu closed. A keyboard-only user who
+  Tabs to a row and presses Enter gets the wrong tool armed (here a no-op back to
+  Select). Arrow-key + Enter on the container works correctly
+  (`keys-enter {"highlighted":"highlight","activeTool":"highlight"}`).
+
+Screenshot: N/A
+
+Disposition: ACCEPTED -> DEF-228 (MEDIUM; Enter must arm the focused row, not the container's arrow-highlight index)
+
+---
+
+## ADV-048: The annotation group is clipped offscreen at the app's minimum window width (640 px)
+
+- Session: phase-19 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. `node test-fixtures/tools/adv045_ann_group.cjs layout` — resized the window to
+   1440x900, 1000x800, 820x700, 640x600 via `BrowserWindow.setSize` and measured
+   `.toolbar` and `[data-annotation-toolbar]` rects.
+2. Confirmed the window minimum is 640x480 (`src/main/window.ts` `minWidth: 640`).
+3. Screenshot at 640: `screenshots/adv045-layout-640.png`.
+
+Expected:
+- REQUIREMENTS.md Phase 19 criterion 1: the tools render inside the CommandBar
+  "no overlap, no clipped page slot", and every group stays reachable. 640 px is
+  the app's own documented minimum.
+
+Actual:
+- 640x600: `innerWidth 640`, `.toolbar` rect left=220 right=752 width=532
+  (`overflowX: hidden`), `[data-annotation-toolbar]` rect
+  `{left:538, right:734, top:140, bottom:176, w:195}` ->
+  `groupReachable:false`, `groupClipped:true`. The group extends 94 px past the
+  right window edge and 112 px of the toolbar box is offscreen; the dropdown
+  arrow (rightmost) is unreachable. The bar wrapped to 3 rows (`toolbarH:141`).
+- 820/1000/1440: group right 804/984/1424 <= innerWidth, reachable.
+- Measured `.toolbar` `scrollWidth` vs `clientWidth`: 1431/1220 at 1440,
+  1013/780 at 1000, 787/600 at 820, 711/530 at 640 — the bar's content box
+  always reports horizontal overflow (the widest real descendant, the annotation
+  group, still fits at >=820, so the 640 case is the actionable one).
+- No gap/overlap after the row was removed: toolbarBottom=97, scrollerTop=97,
+  pageTop=125 and `--ann-toolbar-h` = "" in light/dark/frosted (negative below).
+
+Screenshot: screenshots/adv045-layout-640.png, adv045-layout-820.png
+
+Disposition: ACCEPTED -> DEF-229 (MEDIUM; the new group must stay reachable at the 640 px minimum window width)
+
+---
+
+## ADV-049: Arming a tool with a read-only settings.json throws unhandled EPERM rejections and silently does not persist
+
+- Session: phase-19 gate
+- Suggested severity: LOW
+
+What I did:
+1. `node test-fixtures/tools/adv045_settings_mru.cjs` — scenario g writes `{}` to
+   a fresh `--user-data-dir/settings.json`, runs `attrib +R` on it, launches the
+   dev build, opens report.pdf, installs an `unhandledrejection` listener, arms
+   Highlight (the new MRU write path), then reads back the file.
+
+Expected:
+- Arming a tool is a UI action; a persistence failure must not surface as an
+  unhandled rejection, and the user should not be told nothing when their MRU
+  order silently fails to save.
+
+Actual:
+- `rejections`/`pageErrors` captured two entries:
+  `Error invoking remote method 'settings:addRecent': Error: EPERM: operation not
+  permitted, rename '...\settings.json.tmp' -> '...\settings.json'` (file open)
+  and `Error invoking remote method 'settings:save': ... EPERM ... rename` (the
+  tool arm). `activeTool:"highlight"`, `alive:true`, `settingsUnchanged:true` —
+  no crash, the tool arms, but the MRU order silently does not persist and the
+  renderer logs unhandled promise rejections (`App.tsx` does
+  `void window.tflex.saveSettings(s)` with no catch).
+
+Screenshot: N/A
+
+Disposition: ACCEPTED -> DEF-230 (LOW; a failed settings write must not surface as unhandled rejections - fail loud, tell the user)
+
+---
+
+## ADV-050: The frosted tools menu has no backdrop blur while its sibling colour popover does
+
+- Session: phase-19 gate
+- Suggested severity: LOW
+
+What I did:
+1. `node test-fixtures/tools/adv045_ann_group.cjs motion` and
+   `... color` (real theme toggle, default frosted), read
+   `getComputedStyle(...).backdropFilter` on `[data-ann-dropdown-menu]` and
+   `.color-popover`.
+
+Expected:
+- REQUIREMENTS.md Phase 14/14.1: "consistent frosted glass across title bar, side
+  panels, and tool panels"; the sibling floating popover `.color-popover` gets
+  `blur(24px) saturate(1.2)` in frosted.
+
+Actual:
+- frosted: `.ann-tool-menu` `backdropFilter:"none"` (and `-webkit-` none);
+  `.color-popover` `backdropFilter:"blur(24px) saturate(1.2)"`. The CSS frosted
+  blur list at `styles.css` ~line 8656 includes `.titlebar-menu-popover`,
+  `.theme-toggle-popover`, `.color-popover` but NOT `.ann-tool-menu`, which only
+  gets the surface/border/shadow rule. The menu is the one frosted floating
+  surface without the glass blur. Border is present in all three themes
+  (light `rgb(203,213,225)`, dark `rgb(46,53,61)`, frosted
+  `rgba(255,255,255,0.35)`), so no border loss and no double-blur.
+
+Screenshot: screenshots/adv045-theme-frosted-menu.png
+
+Disposition: ACCEPTED -> DEF-231 (LOW; the frosted menu surface must match its sibling popover's blur treatment - Phase 19 consistency)
+
+---
+
+## Phase 19 gate — negative results (attacks that did NOT reproduce)
+
+| Attack | Result |
+|---|---|
+| Duplicate `data-tool` hooks while the menu is open (item 1) | `document.querySelectorAll('[data-tool="highlight"]')` = 2 (visible first, menu row second, DOM order measured); `document.querySelector` returns the VISIBLE button (`qsIsVisible:true`); zero duplicate `id` attributes; Playwright strict locator resolves to 2 and `locator('[data-tool="highlight"]').click()` throws `strict mode violation ... resolved to 2 elements`. No current spec trips it: `sweep_annotations_sign.spec.cjs` scopes `[data-ann-tools-visible]` vs `[data-ann-dropdown-menu]`, and the unscoped `phase13_qa_sweep.spec.cjs:431 [data-tool="highlight"]` resolves to 1 with the menu closed. The duplicate hook itself is mandated by REQUIREMENTS.md ("every tool button (visible and in the dropdown) keeps `data-tool`"), so this is a latent automation hazard, not a spec violation. |
+| Clicking CommandBar Pan / Edit while the menu is open (item 2) | One real click both closes the menu and activates the button (Pan `data-hand-active` false->true, Edit `aria-pressed` false->true + `.edit-toolbar` attached); no double-toggle, no swallowed click. |
+| Keyboard wrap + focus (item 3) | ArrowDown from Select wraps past Note back to Select; ArrowUp at Select wraps to Note; Escape while a row is highlighted closes and focuses the toggle; reopening focuses the menu container; Tab stays inside the menu (select -> highlight -> underline -> strikeout -> ... -> note) and only after the last row escapes to `.titlebar-menu-button`; ArrowDown on the focused toggle opens the menu; Enter on the container-arrow-highlighted row arms it and returns focus to the toggle. Exit unmount measured at 441 ms after Escape with `pointer-events:none` on the exit preset. |
+| Disabled/blocked states inside the menu (item 4) | Edit mode open: Select enabled, the other 10 rows `disabled`/`aria-disabled` with the "Edit mode is open" tooltip; Pan active: all 11 disabled with the "Pan mode is on" tooltip. Arming rect from the menu marks it active in BOTH places (`aria-pressed:true` first in the visible five, `aria-checked:true` + check icon in the menu). |
+| MRU abuse via settings.json (item 5, a-f) | 100 valid ids -> sanitised to 6, visible default five; garbage strings -> `['select']`; duplicates -> `['ink','select']`; non-array -> field dropped; `__proto__`/`constructor` -> dropped; non-canonical 6-id order -> visible `['note','callout','arrow','ellipse','rect']`. App launched, opened report.pdf, stayed interactive, no crash/rejection in every case. |
+| Layout offsets / retired row (item 6) | toolbarBottom=97, scrollerTop=97, pageTop=125 identical in light/dark/frosted; `--ann-toolbar-h` is empty; no overlap and no gap. The 820/1000/1440 widths keep the group reachable. |
+| Motion tokens / theme switch (item 7) | Arrow rotation transition is `0.2s cubic-bezier(0.4,0,0.2,1)` (`--motion-duration-fast` / `--motion-ease-standard`); menu enter is the `springQuick` spring (scale 0.97->1.0004 overshoot, opacity 0->1 in ~130 ms, settle ~330 ms); row hover uses `var(--motion-duration-fast)`; switching the theme while the menu is open leaves it open, visible, 11 rows, in every theme. |
+| Colour edge cases (item 8) | Select armed -> `[data-ann-color]` count 0; arming callout FROM THE MENU -> swatch present and visible, `data-color-current` correct. Menu + colour popover coexist only when driven programmatically; a real swatch/toggle click closes the other first (pointerdown handlers), so the 86703 px^2 overlap with equal `z-index:50` (later-mounted popover on top, `elementFromPoint` at its centre = `.color-pad`) is not reachable by a user. |
+| Pen-width row (item 8b) | Ink armed -> `[data-pen-width-row]` present; clicking width 5 moves `aria-pressed` from 3 to 5; the menu stays open; no no-op. |
+| Silence attack on the new controls | Every new control (5 visible tool buttons, swatch, dropdown toggle, 11 menu rows, 3 pen widths) produced its promised state change when clicked; no silent no-op found. |
+
+**Total Phase-19-gate findings: 6 (1 HIGH, 3 MEDIUM, 2 LOW).**

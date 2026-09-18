@@ -37,7 +37,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
-const { launchDev, diag, hardClose } = require('../lib/helpers.cjs');
+const { launchDev, diag, hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { getSamplePath } = require('../lib/launch.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
@@ -150,8 +150,7 @@ test('DEF-211 T1: Insert Pages dialog disarms the ghost (textbox tool)', async (
   await openDoc();
 
   // Arm the Text box tool and place an UNCONFIRMED ghost on page 1.
-  await win.click('.ann-toolbar button[data-tool="textbox"]');
-  await win.waitForTimeout(400);
+  await armAnnotationTool(win, 'textbox');
   let d = await diag(win);
   expect(d.activeTool, 'textbox tool armed').toBe('textbox');
   await pageClick();
@@ -193,7 +192,7 @@ test('DEF-211 T1: Insert Pages dialog disarms the ghost (textbox tool)', async (
   expect((await diag(win)).activeTool, 'still disarmed after the dialog round-trip (null == no tool armed)').toBeNull();
 
   // ...and the tool is not broken by the disarm: re-arming still works.
-  await win.click('.ann-toolbar button[data-tool="textbox"]');
+  await armAnnotationTool(win, 'textbox');
   await pageClick();
   await win.waitForTimeout(500);
   const re = await ghostDom();
@@ -211,8 +210,7 @@ test('DEF-211 T2: Optimize dialog disarms the ghost (note tool)', async () => {
   await openDoc();
 
   // A different pending-editor class: the Note tool.
-  await win.click('.ann-toolbar button[data-tool="note"]');
-  await win.waitForTimeout(400);
+  await armAnnotationTool(win, 'note');
   let d = await diag(win);
   expect(d.activeTool, 'note tool armed').toBe('note');
   await pageClick();
@@ -260,8 +258,7 @@ test('DEF-211 T3: Save As sheet disarms the ghost (textbox, modified doc)', asyn
 
   // Commit one real text box first: the document becomes modified, which
   // enables the Save-As button in the command bar.
-  await win.click('.ann-toolbar button[data-tool="textbox"]');
-  await win.waitForTimeout(400);
+  await armAnnotationTool(win, 'textbox');
   await pageClick();
   await win.waitForSelector('[data-annotation-action="textbox-confirm"]', { timeout: 10000 });
   await win.locator('.ann-textbox-editor').first().fill('def211');
@@ -272,8 +269,7 @@ test('DEF-211 T3: Save As sheet disarms the ghost (textbox, modified doc)', asyn
   expect(d.modified, 'document is modified after the committed text box').toBe(true);
 
   // Arm the tool again and place a fresh UNCONFIRMED ghost.
-  await win.click('.ann-toolbar button[data-tool="textbox"]');
-  await win.waitForTimeout(400);
+  await armAnnotationTool(win, 'textbox');
   await pageClick();
   await win.waitForTimeout(500);
   d = await diag(win);

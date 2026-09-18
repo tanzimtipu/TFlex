@@ -151,6 +151,27 @@ async function diag(window) {
   return window.evaluate(() => window.tflexDiagnostics());
 }
 
+// Phase 19 / DEF-226 (ADV-045) — arm an annotation tool through the CURRENT
+// structure. The visible five live in [data-ann-tools-visible]; every other
+// tool lives in the portaled [data-ann-dropdown-menu], which is OUTSIDE
+// `.ann-toolbar`. The retired `.ann-toolbar button[data-tool=...]` address
+// therefore only resolves the visible five. Prefer the visible button so a
+// spec's original per-tool intent is preserved; otherwise open the menu and
+// click the row. Waits for the menu to detach so the caller's next page
+// gesture is not swallowed by the dismiss guard (DEF-227).
+async function armAnnotationTool(window, kind) {
+  const visible = window.locator(`[data-ann-tools-visible] button[data-tool="${kind}"]`);
+  if ((await visible.count()) > 0) {
+    await visible.first().click();
+  } else {
+    await window.click('[data-ann-dropdown-toggle]');
+    await window.waitForSelector('[data-ann-dropdown-menu]', { state: 'visible', timeout: 8000 });
+    await window.click(`[data-ann-dropdown-menu] button[data-tool="${kind}"]`);
+    await window.waitForSelector('[data-ann-dropdown-menu]', { state: 'detached', timeout: 8000 });
+  }
+  await window.waitForTimeout(300);
+}
+
 // Step-scroll the (virtualized) document scroller until the requested page-slot
 // is mounted, then nudge it near the top of the viewport so pointer gestures on
 // it land on the page, not on the toolbar / window chrome.
@@ -395,4 +416,4 @@ async function hardClose(electronApp, label = 'hardClose') {
   log(`hardClose done (force path) in ${Date.now() - t0}ms`);
 }
 
-module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose };
+module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool };

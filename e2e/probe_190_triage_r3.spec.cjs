@@ -1,7 +1,7 @@
 // QA triage probe round 4: callout on a scrolled page, drag point INSIDE viewport.
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -60,7 +60,7 @@ test('R3: callout drag on scrolled page 4, drag point INSIDE viewport', async ()
   console.log('[R3] drag from (' + Math.round(ax) + ',' + Math.round(ay) + ') viewport h=' + pr.vh);
   if (ay > pr.vh - 20) throw new Error('drag anchor still below viewport: ' + ay);
 
-  await win.click('button[data-tool="callout"]');
+  await armAnnotationTool(win, 'callout');
   await win.waitForTimeout(400);
   await win.mouse.move(ax, ay);
   await win.mouse.down();

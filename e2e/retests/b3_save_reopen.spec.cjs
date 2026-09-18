@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const os = require('node:os');
 const path = require('node:path');
@@ -32,8 +32,7 @@ test('B3: custom #00ff00 rect survives Save As + reopen', async () => {
   const page = window.locator('.pdf-page').first();
   const pbox = await page.boundingBox();
 
-  await window.locator('.ann-toolbar button[data-tool="rect"]').click();
-  await window.waitForTimeout(200);
+  await armAnnotationTool(window, 'rect');
   await window.click('.ann-color-swatch-main');
   await window.waitForSelector('.color-popover', { timeout: 5000 });
   await window.fill('input[aria-label="Custom color hex"]', '#00ff00');
@@ -43,8 +42,7 @@ test('B3: custom #00ff00 rect survives Save As + reopen', async () => {
   await window.waitForTimeout(300);
   // Since the Escape-disarm fix (qa 2026-09-06), Escape closes the
   // palette AND disarms the armed tool — re-arm rect before drawing.
-  await window.locator('.ann-toolbar button[data-tool="rect"]').click();
-  await window.waitForTimeout(200);
+  await armAnnotationTool(window, 'rect');
 
   // drag rect
   await window.mouse.move(pbox.x + 300, pbox.y + 500);
@@ -64,7 +62,7 @@ test('B3: custom #00ff00 rect survives Save As + reopen', async () => {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
   }, savePath);
-  await window.click('[aria-label="Save As"]');
+  await window.click('[data-toolbar-save-as]');
   await window.click('[data-save-as-confirm="true"]');
   await window.waitForFunction(() => !window.tflexDiagnostics().modified, null, { timeout: 20000 });
   console.log('B3 saved to', savePath);

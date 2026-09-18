@@ -58,6 +58,7 @@ export const IPC = {
   settingsSave: "settings:save",
   settingsAddRecent: "settings:addRecent",
   settingsChangedEvent: "settings:changed",
+  settingsWriteErrorEvent: "settings:writeError",
   // Phase 7: application menu actions pushed from main to renderer
   menuActionEvent: "menu:action",
   // DEF-065: renderer -> main command that toggles the enabled state of
@@ -482,6 +483,10 @@ export interface TFlexApi {
   addRecentFile(f: RecentFile): Promise<void>;
   settings: {
     changed(cb: (s: AppSettings) => void): () => void;
+    /** DEF-230 — fired when a settings write fails (e.g. EPERM on rename).
+     *  The save promise still resolves; this is the only signal the renderer
+     *  gets that the value did not persist. Message is non-empty. */
+    writeError(cb: (message: string) => void): () => void;
   };
   /** Phase 4 — saved-signatures service. The signature list lives in the
    *  renderer's localStorage cache (one entry per user) and is exposed via

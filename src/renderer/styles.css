@@ -236,13 +236,9 @@
    * palette, OCR bar offset) anchoring to a stale 56px baseline.
    * The alias alone now resolves to --chrome-commandbar-h (52px). */
   --toolbar-h: var(--chrome-commandbar-h);
-  /* Phase 14.2 — the annotation toolbar (`.ann-toolbar`) is the
-   * context bar and is tokenized at the SAME 52px command-bar height
-   * (--chrome-commandbar-h) with the same material and vertical
-   * centering. Right-side rail overlays that must clear BOTH rows
-   * (the OCR suspects panel, the tools palette) offset their top by
-   * the sum of the two tokens. */
-  --ann-toolbar-h: var(--chrome-commandbar-h);
+  /* Phase 14.2 — the annotation row is retired (Phase 19): the tools now live
+   * inside the CommandBar, so overlays that clear the chrome stack
+   * offset by the command-bar token alone. */
   /* DEF-126 — fixed height of the OCR suspects bar. The bar is a
    * FLOW element at the top of `.app-main` (it reserves space, it
    * never overlays the workspace), and the aside uses this token
@@ -729,7 +725,6 @@
  * strip; the header goes fully transparent below (Phase-B block). */
 :root[data-theme="frosted"] .titlebar,
 :root[data-theme="frosted"] .toolbar,
-:root[data-theme="frosted"] .ann-toolbar,
 :root[data-theme="frosted"] .search-bar,
 :root[data-theme="frosted"] .side-rail,
 :root[data-theme="frosted"] .rail-tabs,
@@ -1078,6 +1073,15 @@ input[type="checkbox"] {
   min-height: 32px;
   height: auto;
   width: 100%;
+  /* DEF-229 (ADV-048) — .app is a single implicit column grid; this
+   * caption strip is a grid item in that column, so its default
+   * `min-width: auto` (min-content 751px: brand + tab strip + window
+   * controls) forced the shared column wider than the 640px minimum
+   * window. .app-main (and the whole workspace/CommandBar chain) merely
+   * stretched to that over-wide column. min-width: 0 lets the column
+   * shrink to the viewport; the flex children (.titlebar-slot has its
+   * own min-width: 0, .tab-area scrolls) absorb the narrow width. */
+  min-width: 0;
   background: var(--bg-toolbar);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
@@ -2013,6 +2017,12 @@ input[type="checkbox"] {
    * hardcoded duration in this rule. */
   grid-template-columns: var(--tf-rail-w) 1fr;
   transition: --tf-rail-w var(--motion-duration-panel) var(--motion-ease-layout);
+  /* DEF-229 (ADV-048) — the grid item default `min-width: auto` floors this
+   * container at the 1fr column's min-content, so the whole workspace (and
+   * the CommandBar inside it) refused to shrink to the 640px window's
+   * available track. min-width: 0 lets the chain shrink; .workspace-main
+   * already carries the same declaration one level down. */
+  min-width: 0;
   min-height: 0;
 }
 
@@ -2393,6 +2403,14 @@ input[type="checkbox"] {
   background: var(--bg-toolbar);
   min-height: var(--chrome-commandbar-h);
   flex-shrink: 0;
+  /* DEF-229 (ADV-048) — as a grid item of .workspace-main the bar
+   * defaults to `min-width: auto`, so its content refused to shrink
+   * below min-content and the box (with the annotation group) grew
+   * past the viewport at the 640px minimum window width. min-width: 0
+   * lets the bar take the track width; the flex-wrap above then wraps
+   * the groups onto extra lines, which offsetHeight (the chrome-height
+   * accounting source) measures correctly. */
+  min-width: 0;
   /* Each side can use `margin-left: auto` to push the right cluster
    * to the trailing edge; this selector matches the second group. */
 }
@@ -4568,42 +4586,113 @@ rect.ann-highlight.ann-preview {
 .ann-note-btn { height: 24px; padding: 0 8px; font-size: var(--fs-xs); }
 
 /* ---------------------------------------------------------------------------
- * Phase 3 � Annotation toolbar (row of tool buttons inside the toolbar)
+ * Phase 19 - Annotation tool group inside the CommandBar
+ *
+ * The standalone `.ann-toolbar` row is retired. The group is the
+ * CommandBar's last GlassControlGroup capsule; `.ann-toolbar` remains
+ * an inert hook (no row chrome) so the existing e2e selectors resolve.
+ * `.ann-tool-btn` keeps only its per-tool icon-colour hook below (the
+ * sizing rides the CommandBar's `.tool-btn` 22px ladder).
  * ------------------------------------------------------------------------- */
 
-.ann-toolbar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-1);
-  /* Phase 14.2 FIX 1 — the context bar is tokenized at the SAME
-   * 52px command-bar height (--chrome-commandbar-h) with the SAME
-   * vertical centering and the same 8px/16px padding as the command
-   * bar, so the two top rows read as one chrome system (the old
-   * 40px strip sat visibly shorter and off-center). The min-height
-   * lets the row grow (flex-wrap) on narrow windows; the chrome
-   * measurement in DocumentView tracks the real height either way. */
-  padding: var(--space-small) var(--space-standard);
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-toolbar);
-  min-height: var(--ann-toolbar-h);
-  flex-wrap: wrap;
-}
-
-.ann-toolbar-group {
+.ann-tools-visible {
   display: inline-flex;
   align-items: center;
   gap: 2px;
 }
 
-.ann-tool-btn {
-  /* Phase 14.2 FIX 6 — 32px box for the 24px glyphs (the top of the
-   * chrome icon ladder): 24 + 2x4px padding keeps the same breathing
-   * room the 28px box gave the old 20px glyphs, and the 32px visual
-   * height matches the command bar's .tool-btn row. The bar's 52px
-   * min-height still absorbs the box (32px + 2x8px padding = 48px). */
-  height: 32px;
-  width: 32px;
-  padding: 0;
+/* The all-tools dropdown arrow. Its rotation animates on the central
+ * motion token - no hardcoded timing. */
+.ann-dropdown-toggle svg {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.ann-dropdown-toggle-open svg {
+  transform: rotate(180deg);
+}
+
+/* The portaled all-tools menu (TfPopover supplies enter/exit motion).
+ * It lives at document.body and is placed in viewport coordinates
+ * there (right-aligned under the arrow, 6px below, clamped to the
+ * viewport). `position: fixed` in the ROOT stacking context escapes
+ * the frosted CommandBar's backdrop-filter stacking context (the
+ * DEF-175 escape, same contract as .color-popover) AND is what makes
+ * the placement effect's `el.offsetWidth` measure the menu's own
+ * min-width instead of the full static body width - without it the
+ * right-align maths collapses to left: 0 (DEF-225). */
+.ann-tool-menu {
+  position: fixed;
+  min-width: 200px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  padding: var(--sp-2);
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-popover);
+  z-index: 50;
+}
+
+.ann-tool-menu-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: var(--sp-1);
+}
+.ann-tool-menu-group:last-child {
+  margin-bottom: 0;
+}
+
+.ann-tool-menu-label {
+  padding: 4px 8px 2px;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ann-tool-menu-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.ann-tool-menu-row:hover:not([disabled]),
+.ann-tool-menu-row-highlight:not([disabled]) {
+  background: var(--bg-hover);
+}
+.ann-tool-menu-row[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ann-tool-menu-row[aria-checked="true"] {
+  color: var(--accent);
+}
+.ann-tool-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.ann-tool-menu-text {
+  flex: 1 1 auto;
+}
+.ann-tool-menu-check {
+  flex: 0 0 auto;
+}
+
+.ann-tool-menu-pen {
+  margin-top: var(--sp-1);
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--border);
 }
 
 .ann-color-row,
@@ -5645,16 +5734,13 @@ rect.ann-highlight.ann-preview {
 
 .tools-palette {
   position: absolute;
-  /* Anchor the palette to the BOTTOM of the workspace, below BOTH
-   * chrome rows (command bar 52px + context annotation bar 52px).
-   * Previously `top: 0` made the palette overlay the toolbar's
-   * right-side controls, hiding Tools/Edit/Optimize/etc. (DEF:
-   * palette overlaps toolbar options), and the old `--toolbar-h`
-   * baseline alone let the panel cover the right end of the
-   * annotation row. The sum of the two chrome tokens matches the
-   * current chrome stack exactly (Phase 14.2: both rows are
-   * tokenized at 52px). */
-  top: calc(var(--toolbar-h, 52px) + var(--ann-toolbar-h, 52px));
+  /* Anchor the palette to the BOTTOM of the workspace, below the
+   * single CommandBar row. Previously `top: 0` made the palette
+   * overlay the toolbar's right-side controls, hiding
+   * Tools/Edit/Optimize/etc. (DEF: palette overlaps toolbar options).
+   * Phase 19 retired the separate annotation row, so the palette now
+   * clears the command bar alone. */
+  top: var(--toolbar-h, 52px);
   right: 0;
   bottom: 0;
   /* Phase 14 — dynamic panel sizing. The panel widens from 280px to
@@ -6317,7 +6403,7 @@ rect.ann-highlight.ann-preview {
    * (see AnnotationToolbar) and is placed in viewport coordinates
    * there: right-aligned under the swatch, 6px below, clamped to the
    * viewport. `position: fixed` in the ROOT stacking context escapes
-   * the frosted .ann-toolbar's backdrop-filter stacking context (the
+   * the frosted CommandBar's backdrop-filter stacking context (the
    * old `position: absolute; top: calc(100% + 6px); right: 0` was
    * trapped inside that context and painted/hit-tested UNDER the
    * .document-scroller — the palette was invisible and click-through
@@ -7670,13 +7756,10 @@ rect.ann-highlight.ann-preview {
  * the workspace rows start BELOW the bar, so the palette must add
  * the bar's height to its own top or it would overlap the bar's
  * right edge. Electron ships Chromium 105+, so `:has` is safe.
- * Phase 14.2 — the chrome stack is now two 52px rows, so the sum
- * carries both chrome tokens. */
+ * Phase 14.2 — the chrome stack is now the single CommandBar row (Phase 19),
+ * so the sum carries the command-bar token alone. */
 .app-main:has(.ocr-suspects-panel) .tools-palette {
-  top: calc(
-    var(--ocr-bar-h, 148px) + var(--toolbar-h, 52px) +
-    var(--ann-toolbar-h, 52px)
-  );
+  top: calc(var(--ocr-bar-h, 148px) + var(--toolbar-h, 52px));
 }
 
 .ocr-suspects-header {
@@ -8543,15 +8626,12 @@ rect.ann-highlight.ann-preview {
     inset 0 -1px 0 rgba(15, 23, 42, 0.1);
 }
 
-/* Primary command toolbar + secondary/annotation toolbar + search:
- * the same acrylic layer, sitting just above the frame. The two lower
- * rows are subtly lighter sheets (their own --tf-surface-toolbar
- * base already separates them); the inset edges put a bright light
- * catch on top and a soft neutral lower edge on each row. Active tools
- * get the accent wash PLUS a soft ambient glow (the accent control
- * lights up the glass around it). */
+/* Primary command toolbar + search: the same acrylic layer, sitting
+ * just above the frame. Phase 19 retired the separate annotation row,
+ * so the command bar carries the annotation group inside it. Active
+ * tools get the accent wash PLUS a soft ambient glow (the accent
+ * control lights up the glass around it). */
 :root[data-theme="frosted"] .toolbar,
-:root[data-theme="frosted"] .ann-toolbar,
 :root[data-theme="frosted"] .search-bar {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.4),
@@ -8583,6 +8663,7 @@ rect.ann-highlight.ann-preview {
  * so the panel reads as a raised lit pane. */
 :root[data-theme="frosted"] .titlebar-menu-popover,
 :root[data-theme="frosted"] .theme-toggle-popover,
+:root[data-theme="frosted"] .ann-tool-menu,
 :root[data-theme="frosted"] .color-popover {
   background: var(--tf-surface-menu);
   border: 1px solid var(--glass-border);
@@ -8592,6 +8673,7 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .titlebar-menu-popover,
 :root[data-theme="frosted"] .theme-toggle-popover,
+:root[data-theme="frosted"] .ann-tool-menu,
 :root[data-theme="frosted"] .color-popover {
   -webkit-backdrop-filter: blur(24px) saturate(1.2);
   backdrop-filter: blur(24px) saturate(1.2);
@@ -8745,7 +8827,7 @@ rect.ann-highlight.ann-preview {
  * DEF-087/088/090 cross-bubbling guards are untouched.
  *
  * The reflection must NEVER hide anchored popovers: surfaces that
- * open popovers that hang below them (`.titlebar`, `.ann-toolbar`)
+ * open popovers that hang below them (`.titlebar`)
  * do NOT clip, so they carry the static top highlight instead of the
  * moving band.
  * ------------------------------------------------------------------------- */
@@ -8909,8 +8991,8 @@ rect.ann-highlight.ann-preview {
  *
  * In the frosted theme the scroller is full-bleed inside
  * .workspace-main (inset 0, painted under the chrome at z-index 0)
- * and the chrome rows (.toolbar / .ann-toolbar / .search-bar /
- * .edit-toolbar) float above it at z-index 1 with their translucent
+ * and the chrome rows (.toolbar / .search-bar / .edit-toolbar) float
+ * above it at z-index 1 with their translucent
  * sheets + the Phase-A backdrop-filter. As the user scrolls, page
  * content moves UP under the rows and visibly diffuses through the
  * glass; at rest the page starts 28px below the window top — the
@@ -8958,7 +9040,6 @@ rect.ann-highlight.ann-preview {
 }
 
 :root[data-theme="frosted"] .toolbar,
-:root[data-theme="frosted"] .ann-toolbar,
 :root[data-theme="frosted"] .search-bar,
 :root[data-theme="frosted"] .edit-toolbar {
   /* The chrome rows float above the scroller: their translucent
@@ -9591,3 +9672,4 @@ rect.ann-highlight.ann-preview {
 [data-watermark-dialog] .modal-position {
   min-width: 0;
 }
+

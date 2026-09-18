@@ -10,7 +10,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -174,8 +174,9 @@ async function noPageErrors(label) {
 }
 
 async function armAnnTool(tool) {
-  await win.click(`[data-annotation-toolbar] [data-tool="${tool}"]`);
-  await win.waitForTimeout(350);
+  // Phase 19 / DEF-226: tools outside the visible five live in the portaled
+  // [data-ann-dropdown-menu]; [data-annotation-toolbar] only holds the five.
+  await armAnnotationTool(win, tool);
 }
 
 async function drag(x, y, dx, dy) {
@@ -282,11 +283,10 @@ test('T1 DEF-157: live callout arrow renders with non-zero length', async () => 
   await win.screenshot({ path: 'screenshots/def-157-t1-after-drag.png' });
   const editorState = await win.evaluate(() => {
     const ed = document.querySelector('[data-annotation-editor="callout"]');
-    const armed = document.querySelector('.ann-toolbar button[data-tool="callout"]');
     return {
       editorMounted: !!ed,
       editorClasses: ed ? ed.className : null,
-      calloutArmed: armed ? armed.getAttribute('aria-pressed') : null,
+      calloutArmed: window.tflexDiagnostics().activeTool === 'callout',
       anyEditor: Array.from(document.querySelectorAll('[data-annotation-editor]')).map((e) => e.getAttribute('data-annotation-editor')),
       calloutCount: document.querySelectorAll('.ann[data-kind="callout"]').length,
     };
@@ -557,7 +557,7 @@ test('T4 DEF-157: callout arrow survives save/reopen with non-zero length', asyn
   await electronApp.evaluate(({ dialog }, p) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
   }, savePath);
-  await win.click('[aria-label="Save As"]');
+  await win.click('[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.click('[data-save-as-confirm]');

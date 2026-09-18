@@ -136,6 +136,8 @@ export interface AppSettings {
    *  rail renders as a narrow ruler strip showing only page numbers.
    *  Validated preserve-if-valid in settings.ts; default `false`. */
   pagesPanelCollapsed?: boolean;
+  /** Phase 19 - the annotation tools' most-recently-used order, most recent first (capped, deduped). */
+  annotationRecentTools?: string[];
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

@@ -4,7 +4,7 @@
 const { test } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
-const { launchDev, diag, hardClose } = require('../lib/helpers.cjs');
+const { launchDev, diag, hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { getSamplePath } = require('../lib/launch.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
@@ -56,8 +56,7 @@ test('probe: textbox ghost placement mechanics', async () => {
   const s0 = await dump('open');
   console.log('[PROBE] launch + open done; slot box:', JSON.stringify(s0.dom.slotBox), 'win', JSON.stringify(s0.dom.winSize));
 
-  await win.click('.ann-toolbar button[data-tool="textbox"]');
-  await win.waitForTimeout(500);
+  await armAnnotationTool(win, 'textbox');
   const s1 = await dump('after arm');
   console.log('activeTool after arm =', s1.d.activeTool);
 

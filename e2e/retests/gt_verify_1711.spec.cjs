@@ -17,7 +17,7 @@
 // .cmd/.ps1 shims; no hand-concatenated file:// URLs.
 
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -295,7 +295,7 @@ test('DEF-133: post-insert pen on visible page 2 + rect on page 3 land correctly
   expect(afterOrder[1], 'visible page 2 must be the new blank').toBe(beforeCount);
 
   // PEN on visible page 2.
-  await win.locator('.ann-toolbar button[data-tool="ink"]').click();
+  await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(400);
   await scrollToPage(2);
   const slot2 = win.locator('.page-slot[data-page="2"]');
@@ -308,12 +308,8 @@ test('DEF-133: post-insert pen on visible page 2 + rect on page 3 land correctly
   await win.waitForTimeout(1000);
 
   // RECT on visible page 3.
-  await win.locator('.ann-toolbar button[data-tool="rect"]').click();
-  await win.waitForTimeout(400);
-  const activeTool = await win.evaluate(() => {
-    const a = document.querySelector('.ann-toolbar button[aria-pressed="true"]');
-    return a ? a.getAttribute('data-tool') : null;
-  });
+  await armAnnotationTool(win, 'rect');
+  const activeTool = await win.evaluate(() => window.tflexDiagnostics().activeTool);
   console.log('[DEF-133] active annotation tool after rect click =', activeTool);
   await scrollToPage(3);
   const slot3 = win.locator('.page-slot[data-page="3"]');
@@ -512,7 +508,7 @@ test('DEF-135: moving a text box that covered the title does not erase it', asyn
   await electronApp.evaluate(async ({ dialog }, target) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: target });
   }, savePath);
-  await win.click('button[aria-label="Save As"]');
+  await win.click('button[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 8000 });
   await win.click('[data-save-as-confirm]');
   await win.waitForTimeout(2500);

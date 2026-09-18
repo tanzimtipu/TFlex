@@ -53,7 +53,7 @@ async function saveAs(name) {
   await electronApp.evaluate(async ({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, outPath);
-  await win.click('button[aria-label="Save As"]');
+  await win.click('[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await win.click('[data-save-as-confirm]');
   await win.waitForTimeout(2500);
@@ -76,7 +76,19 @@ async function slotBox(pageNum) {
 }
 
 async function armTool(kind) {
-  await win.locator(`.ann-toolbar button[data-tool="${kind}"]`).click();
+  // Phase 19 - the CommandBar group shows only the MRU five; tools outside
+  // the visible set (rect / ellipse / arrow / textbox / callout / note) are
+  // reachable from the all-tools dropdown. Prefer the visible button when it
+  // exists so the spec's original per-tool intent is preserved.
+  const visible = win.locator(`[data-ann-tools-visible] button[data-tool="${kind}"]`);
+  if ((await visible.count()) > 0) {
+    await visible.first().click();
+  } else {
+    await win.click('[data-ann-dropdown-toggle]');
+    await win.waitForSelector('[data-ann-dropdown-menu]', { timeout: 8000 });
+    await win.click(`[data-ann-dropdown-menu] button[data-tool="${kind}"]`);
+    await win.waitForSelector('[data-ann-dropdown-menu]', { state: 'detached', timeout: 8000 });
+  }
   await win.waitForTimeout(400);
 }
 
@@ -196,7 +208,7 @@ test('A2: custom annotation color hex persists across save + reopen', async () =
   await win.waitForTimeout(300);
   // Since the Escape-disarm fix (qa 2026-09-06), Escape closes the
   // palette AND disarms the armed tool — re-arm ink before drawing.
-  await win.locator('.ann-toolbar button[data-tool="ink"]').click();
+  await armTool('ink');
   await win.waitForTimeout(300);
 
   await win.mouse.move(box.x + 300, box.y + 300);

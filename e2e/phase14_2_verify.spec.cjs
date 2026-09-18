@@ -193,7 +193,9 @@ test.describe('phase 14.2 fix verification', () => {
     console.log('[fix6] icon sizes:', JSON.stringify(icons));
     await win.screenshot({ path: path.join(SHOTS, 'fix6-icons-large.png'), clip: { x: 0, y: 0, width: 1100, height: 180 } });
     expect(icons.annCount, 'annotation toolbar glyphs present').toBeGreaterThan(0);
-    expect(icons.annSizes, `toolbar icons must be 24px (got ${icons.annSizes})`).toEqual(['24x24']);
+    // Phase 19 - the annotation tools are CommandBar tool-btns now, so they
+    // use the bar's 22px glyph ladder (the separate 24px row is retired).
+    expect(icons.annSizes, `annotation glyphs must use the CommandBar 22px ladder (got ${icons.annSizes})`).toEqual(['22x22']);
     expect(icons.cmdCount, 'command bar glyphs present').toBeGreaterThan(0);
     for (const s of icons.cmdSizes) {
       const w = parseFloat(s.split('x')[0]);
@@ -216,27 +218,35 @@ test.describe('phase 14.2 fix verification', () => {
     await launchAndOpen();
     test.info().annotations.push({ type: 'theme', description: 'frosted (default)' });
 
-    // ---- FIX 1: annotation bar height == command bar (52px), same material
+    // ---- FIX 1 (Phase 19 repoint): the annotation tools are now the
+    // CommandBar's LAST capsule - there is no second row. The original
+    // intent (annotation chrome uses the command bar's material/height
+    // contract) now means: the group is INSIDE the bar, the bar stays
+    // 52px, and the group shares the other capsules' geometry/material.
     const bar = await win.evaluate(() => {
       const ann = document.querySelector('.ann-toolbar');
       const cmd = document.querySelector('.workspace .toolbar');
+      const groups = Array.from(document.querySelectorAll('.toolbar > .toolbar-group'));
+      const sibling = groups.filter((g) => g !== ann).pop();
       const cs = (el) => (el ? getComputedStyle(el) : null);
       return {
+        inBar: cmd.contains(ann),
+        isGroup: ann.classList.contains('toolbar-group'),
         annH: ann ? ann.getBoundingClientRect().height : null,
         cmdH: cmd ? cmd.getBoundingClientRect().height : null,
+        siblingH: sibling ? sibling.getBoundingClientRect().height : null,
         annBg: cs(ann).backgroundColor,
-        cmdBg: cs(cmd).backgroundColor,
-        annBorder: cs(ann).borderBottomColor,
-        cmdBorder: cs(cmd).borderBottomColor,
+        siblingBg: cs(sibling).backgroundColor,
       };
     });
     console.log('[fix1] frosted bars:', JSON.stringify(bar));
-    expect(bar.annH, 'annotation bar must be mounted').not.toBeNull();
-    expect(Math.abs(bar.annH - 52), `annotation bar height ${bar.annH} must be 52px`).toBeLessThanOrEqual(1.5);
+    expect(bar.annH, 'annotation group must be mounted').not.toBeNull();
+    expect(bar.inBar, 'annotation group must render INSIDE the command bar').toBe(true);
+    expect(bar.isGroup, 'annotation group must use the shared toolbar-group material class').toBe(true);
     expect(Math.abs(bar.cmdH - 52), `command bar height ${bar.cmdH} must be 52px`).toBeLessThanOrEqual(1.5);
-    expect(Math.abs(bar.annH - bar.cmdH), 'annotation bar same height as command bar').toBeLessThanOrEqual(1.5);
-    expect(bar.annBg, 'same material as command bar (background)').toBe(bar.cmdBg);
-    expect(bar.annBorder, 'same material as command bar (bottom border)').toBe(bar.cmdBorder);
+    expect(bar.annH, `annotation capsule height ${bar.annH} must sit in the capsule band`).toBeGreaterThanOrEqual(32);
+    expect(Math.abs(bar.annH - bar.siblingH), "annotation capsule same height as the bar's other capsules").toBeLessThanOrEqual(2);
+    expect(bar.annBg, "same material as the bar's other capsules").toBe(bar.siblingBg);
     await win.screenshot({ path: path.join(SHOTS, 'fix1-annotation-bar.png'), clip: { x: 0, y: 0, width: 1000, height: 130 } });
 
     // ---- FIX 7: All tools grid icon (not three dots)
@@ -353,20 +363,24 @@ test.describe('phase 14.2 fix verification', () => {
     await launchAndOpen();
     await setTheme('dark');
 
-    // FIX 1 re-check in dark (same 52px + material contract)
+    // FIX 1 re-check in dark (Phase 19 repoint: group lives inside the bar)
     const bar = await win.evaluate(() => {
       const ann = document.querySelector('.ann-toolbar');
       const cmd = document.querySelector('.workspace .toolbar');
+      const groups = Array.from(document.querySelectorAll('.toolbar > .toolbar-group'));
+      const sibling = groups.filter((g) => g !== ann).pop();
       return {
+        inBar: cmd.contains(ann),
         annH: ann.getBoundingClientRect().height,
-        cmdH: cmd.getBoundingClientRect().height,
+        siblingH: sibling.getBoundingClientRect().height,
         annBg: getComputedStyle(ann).backgroundColor,
-        cmdBg: getComputedStyle(cmd).backgroundColor,
+        siblingBg: getComputedStyle(sibling).backgroundColor,
       };
     });
     console.log('[fix1] dark bars:', JSON.stringify(bar));
-    expect(Math.abs(bar.annH - bar.cmdH), 'dark: annotation bar == command bar height').toBeLessThanOrEqual(1.5);
-    expect(bar.annBg, 'dark: same material').toBe(bar.cmdBg);
+    expect(bar.inBar, 'dark: annotation group inside the command bar').toBe(true);
+    expect(Math.abs(bar.annH - bar.siblingH), "dark: annotation capsule == the bar's other capsules").toBeLessThanOrEqual(2);
+    expect(bar.annBg, "dark: same material as the bar's other capsules").toBe(bar.siblingBg);
 
     // FIX 4 dark: closed -> open
     const closedSnap = await measureView();
@@ -424,19 +438,24 @@ test.describe('phase 14.2 fix verification', () => {
     await launchAndOpen();
     await setTheme('light');
 
+    // FIX 1 re-check in light (Phase 19 repoint: group lives inside the bar)
     const bar = await win.evaluate(() => {
       const ann = document.querySelector('.ann-toolbar');
       const cmd = document.querySelector('.workspace .toolbar');
+      const groups = Array.from(document.querySelectorAll('.toolbar > .toolbar-group'));
+      const sibling = groups.filter((g) => g !== ann).pop();
       return {
+        inBar: cmd.contains(ann),
         annH: ann.getBoundingClientRect().height,
-        cmdH: cmd.getBoundingClientRect().height,
+        siblingH: sibling.getBoundingClientRect().height,
         annBg: getComputedStyle(ann).backgroundColor,
-        cmdBg: getComputedStyle(cmd).backgroundColor,
+        siblingBg: getComputedStyle(sibling).backgroundColor,
       };
     });
     console.log('[fix1] light bars:', JSON.stringify(bar));
-    expect(Math.abs(bar.annH - bar.cmdH), 'light: annotation bar == command bar height').toBeLessThanOrEqual(1.5);
-    expect(bar.annBg, 'light: same material').toBe(bar.cmdBg);
+    expect(bar.inBar, 'light: annotation group inside the command bar').toBe(true);
+    expect(Math.abs(bar.annH - bar.siblingH), "light: annotation capsule == the bar's other capsules").toBeLessThanOrEqual(2);
+    expect(bar.annBg, "light: same material as the bar's other capsules").toBe(bar.siblingBg);
 
     const closedSnap = await measureView();
     console.log('[fix4] light closed:', JSON.stringify(closedSnap));
