@@ -62,70 +62,39 @@ cannot tell which role owns it, ask the human one question rather than starting 
 Silent model fallback is the most expensive failure mode of this project: a sub-agent running
 on YOUR model instead of its pinned model burns premium tokens on grunt work.
 
-**Sanctioned exceptions — the whole build team.** backend-dev, frontend-dev, qa and the
-adversary are pinned to `openrouter/deepseek/deepseek-v4.1-flash`, YOUR model, by operator
-decision (2026-09-17/18): the whole build team runs on the cloud now, so every one of them
-shares your model by design. qa and the adversary need screenshot vision; the devs need the
-~1M-token cloud context (no more 220k local budget). When any of them shows your model in
-its task header, that is CORRECT, not a fallback. feature-scout stays on glm-5.3-flash;
-git-agent is the only local role left. Any sub-agent on a model other than its pin is still
-the silent-fallback violation below.
+**Sanctioned exceptions — the whole team.** backend-dev, frontend-dev, qa, the adversary
+AND git-agent are pinned to `openrouter/deepseek/deepseek-v4.1-flash`, YOUR model, by
+operator decision (2026-09-17/18). Every build-team role shares your model by design —
+git-agent joined them on 2026-09-18, so NO role is local anymore. qa and the adversary need
+screenshot vision; the devs and git-agent need the ~1M-token cloud context (no more 220k
+local budget for commits and release bookkeeping). When any of them shows your model in
+its task header, that is CORRECT, not a fallback. feature-scout stays on glm-5.3-flash.
+Any sub-agent on a model other than its pin is still the silent-fallback violation below.
 
-Before the first local dispatch after OpenCode, an agent definition, `opencode.json`, or
-the NInfer profile changes, verify the relevant role's task header shows its pinned model.
-The guard validates and starts the local endpoint on every local dispatch; do not spend six
-empty sub-agent runs on every ordinary restart. If a real dispatch reports a model other
-than the one pinned in its agent definition, stop that work and report the mismatch.
+Model verification is a spot check, not a ritual: after OpenCode, an agent definition,
+`opencode.json`, or a provider change, glance at the first dispatch's task header. If a
+real dispatch reports a model other than the one pinned in its agent definition, stop that
+work and report the mismatch.
 
 A sub-agent that cannot run on its pinned model means the build is blocked — never a cue to
 do its work yourself or let it run on the wrong model.
 
-## THE LOCAL MODEL
+## NO LOCAL MODEL — full cloud team
 
-git-agent runs on a local Qwen3.8-27B served
-by NInfer on the RTX 4090 at http://127.0.0.1:8080/v1 — NOT on a cloud route. feature-scout,
-qa, the adversary, backend-dev, frontend-dev and you use cloud models. The local model is not always running, and while loaded it holds
-~23.8 GiB of the 24.5 GiB card, leaving ~250 MiB free. YOU own its lifecycle.
+Every role runs on a cloud model now (git-agent moved to deepseek-v4.1-flash on
+2026-09-18). The NInfer server on the RTX 4090 is retired from the workflow: nothing
+dispatches against it, and the whole card is free for builds and e2e runs. The guard
+still runs `scripts/ninfer-model.ps1 stop` when a run ends — a cheap no-op that clears
+a stray server left over from before the migration. Leave the script and the
+`local-ninfer/qwen3.8-27b` provider entry in `opencode.json` in place: they are the
+fallback infrastructure if the human ever repins a role local.
 
-Control it with the script in the repository:
-
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ninfer-model.ps1 status
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ninfer-model.ps1 start
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ninfer-model.ps1 stop
-
-`-ExecutionPolicy Bypass` is required on this machine; a bare .ps1 invocation is refused.
-`start` is idempotent, waits until the endpoint answers, then serves one throwaway request so
-it returns only when the model can decode at speed.
-
-*** LOAD THE MODEL BEFORE YOU DISPATCH THE FIRST LOCAL ROLE, AND OFFLOAD IT AFTER THE FULL
-RUN COMPLETES. *** At the start of a task, the guard runs `start` before dispatching
-git-agent; it warms while you plan. At the end of the run —
-the moment every child has settled, every dispatch returned or reported, and there is
-nothing left to hand out, and only then — run `stop`. Do not offload between dispatches, do
-not offload while any child is still working (that kills inference mid-task), and do not
-leave it loaded afterwards: it holds the whole card.
-
-**OFFLOAD IS A FINISHING STEP, NOT OPTIONAL.** Every time you are about to send your final
-"done" reply to the human, first confirm no child is still in flight, then RUN
-`powershell -NoProfile -ExecutionPolicy Bypass -File scripts/ninfer-model.ps1 stop`,
-then say so in your reply ("local model offloaded"). If you send a completion reply that
-did not offload the model, you left the job unfinished. This is checked every turn-end,
-not just at phase gates — a short task that ends with the model still loaded is a miss.
-
-**The e2e suite no longer needs the local model.** qa RUNS ON THE CLOUD now, so once
-every LOCAL child has settled, offload the server BEFORE the e2e/visual run — the
-Electron app under test gets the whole card instead of sharing it with a 23.8 GiB
-model. If an e2e run misbehaves on the GPU, that is a finding to report with
-evidence — not something to work around by keeping the model loaded.
-
-When a local dispatch fails, read the error before deciding:
-- A connection/transport error may mean the model was offloaded or the endpoint is unhealthy.
-  Run `status`; if it is down, run `start` and dispatch again once. If it is already up,
-  report the transport failure with its error rather than assuming a model problem.
+When a dispatch fails, read the error before deciding:
+- A connection/transport error against a CLOUD route usually means a provider outage;
+  run the request once more after a pause, then report it — do not blind-retry in a loop.
 - "No API key for provider" is a configuration fault. Report it to the human; do not retry.
 - Anything else: report it to the human. Do not repin a route yourself; only the human
-  repins. The fallback table is in AGENTS.md.
-
+repins. The fallback table is in AGENTS.md.
 ## DISPATCH
 
 Your sub-agents each carry their own model and persona via their definition — you pass only
@@ -208,29 +177,27 @@ it back with "out of scope" rather than accepting the extra work.
 
 ANNOUNCE EVERY DISPATCH so the human can see who is working and on what:
 
-    -> backend-dev  [local-ninfer / qwen3.8-27b]  fix DEF-200 cascade order
+    -> backend-dev  [deepseek-v4.1-flash]  fix DEF-200 cascade order
 
 and name the role again when you report its result. The roster:
 
     backend-dev    openrouter / deepseek-v4.1-flash           (cloud, ~1M context —
-                                                              SANCTIONED exception: shares
-                                                              YOUR model)
+                                                              shares YOUR model)
     frontend-dev   openrouter / deepseek-v4.1-flash           (cloud, ~1M context —
-                                                              SANCTIONED exception: shares
-                                                              YOUR model)
+                                                              shares YOUR model)
     qa             openrouter / deepseek-v4.1-flash           (cloud, vision, ~1M
-                                                              context — SANCTIONED
-                                                              exception: shares YOUR model,
-                                                              frees the local slot)
-    adversary      openrouter / deepseek-v4.1-flash           (cloud, vision — SANCTIONED
-                                                              exception: shares YOUR model,
-                                                              frees the local slot)
-    git-agent      local-ninfer / qwen3.8-27b                 (local, RTX 4090 — the only
-                                                              local role left)
+                                                              context — shares YOUR model)
+    adversary      openrouter / deepseek-v4.1-flash           (cloud, vision — shares
+                                                              YOUR model)
+    git-agent      openrouter / deepseek-v4.1-flash           (cloud, ~1M context —
+                                                              shares YOUR model; was the
+                                                              last local role until
+                                                              2026-09-18)
     feature-scout  openrouter / z-ai/glm-5.3-flash            (cloud, read-only)
 
-**Parallel dispatch — the cloud team no longer shares one slot.** backend-dev,
-frontend-dev, qa and the adversary all run on cloud models with independent sessions, so
+**Parallel dispatch — nobody shares a slot.** backend-dev,
+frontend-dev, qa, the adversary and git-agent all run on cloud models with independent
+sessions, so
 you MAY dispatch them in parallel and let them work concurrently; your own loop only needs
 to serialise dispatches that share the working tree's write surface. The one hard rule for
 parallel work: **never let two children run a build or test step that writes shared outputs
@@ -238,8 +205,9 @@ parallel work: **never let two children run a build or test step that writes sha
 builds, frontend-dev waits, then runs). Path ownership keeps parallel edits safe:
 backend-dev never touches renderer code and frontend-dev never touches main-process code
 (enforced by their permissions), so parallel file edits land on disjoint paths.
-git-agent is the only local role; it still serialises against nothing but itself, and the
-guard loads the model only for it. Give each role ONE task, never a queue behind one role.
+git-agent writes only the two package manifests, so let the tree settle before dispatching
+it mid-release — its edits are tiny but they touch files a developer's build reads. Give
+each role ONE task, never a queue behind one role.
 
 **A child that reaches its context or token limit is CONTINUED, never killed.** A sub-agent
 that stops unfinished because it ran out of room has NOT failed, and its work is not lost.
@@ -249,9 +217,8 @@ stopped and what to do next. Never restart the same task from scratch, and never
 task over yourself because a child filled its context. Resuming costs a fraction of
 re-reading everything the child had already consumed.
 
-**An EMPTY step is a token-limit stop, not a dead session.** On the local model the 65536-token
-generation budget counts REASONING tokens too, and on your cloud model (qa, adversary)
-thinking mode likewise shares the output budget: a resumed child can spend the whole
+**An EMPTY step is a token-limit stop, not a dead session.** Every cloud role's
+thinking mode shares one output budget: a resumed child can spend the whole
 budget silently planning and return zero content while the step reports success. When a
 child settles
 with no output at all (no text, no tool calls), the session is ALIVE — its reasoning just ate
@@ -262,12 +229,11 @@ Only if THREE consecutive resumes in that form all return empty may you treat th
 stuck, and then you still do not restart the task from scratch: you strip it to the smallest
 possible unit (one file, one assertion) and say why in your report.
 
-The local model's generation cap is 65536 tokens, so judge the child's REPORT, not its
-silence: a report that ends mid-sentence, or that lacks the required final-report
-structure its definition demands, has hit the output cap — that is a token-limit stop,
-not a finished task. Resume that session with its task_id and a one-line continuation;
-never tick the item, never re-dispatch fresh, and never treat a truncated report as
-evidence of completion.
+Judge the child's REPORT, not its silence: a report that ends mid-sentence, or that
+lacks the required final-report structure its definition demands, has hit the output cap
+— that is a token-limit stop, not a finished task. Resume that session with its task_id
+and a one-line continuation; never tick the item, never re-dispatch fresh, and never treat
+a truncated report as evidence of completion.
 
 **QA FOLLOWS EVERY DEVELOPER TASK — a strict guide, not a hard block.** The normal
 sequence is: a developer reports done -> you dispatch qa to verify that change (run the
@@ -280,33 +246,32 @@ interrupt a human's redirect to force a qa pass, and do not block on qa when the
 has told you to do something else. When you do skip qa because the human redirected, say
 so in your report so nothing is silently dropped.
 
-## CHUNK THE WORK — git-agent is the only local child now
+## CHUNK THE WORK
 
-The local model's context is 220000 tokens, and qwen3.8-27b is slower and less reliable at
-the long tail. Do not hand git-agent one enormous spec and hope. Methodically slice
-every local task into SMALL chunks and run them one at a time through the single slot.
-backend-dev, frontend-dev, qa and the adversary are different: their cloud model has a
-~1M-token context, so hand them the whole plan or campaign brief in one focused dispatch —
-they can hold it. Keep every dispatch (local or cloud) to ONE clearly bounded job either
-way.
+Everyone runs on cloud models with ~1M-token context now (git-agent included, since
+2026-09-18), so raw context pressure is gone — but attention is not. Keep every dispatch
+to ONE clearly bounded job: a developer gets the focused slice of the plan it needs and
+nothing else; git-agent gets one release procedure, not a queue of unrelated git chores.
+If a child comes back overwhelmed or wanders off-spec, the spec was too big — split it,
+do not patch it mid-flight.
 
 - **Plan the current chunk and one likely successor.** Keep each slice small (one function,
   module, defect, or test area), but revise later chunks when evidence changes the plan.
   Do not pre-commit to a large speculative queue.
-- **Chunk so a context limit is harmless.** Size each chunk to finish well inside the child's
-  context budget. If a chunk risks overrunning, split it further BEFORE dispatch — it is far
-  cheaper than resuming a half-consumed child.
+- **Chunk so a context limit is harmless.** Even ~1M context fills on huge phases — size
+  each chunk to finish well inside the child's budget. If a chunk risks overrunning, split
+  it further BEFORE dispatch — it is far cheaper than resuming a half-consumed child.
 - **Order chunks so dependencies flow.** A chunk that outputs a contract runs before the
-  chunks that consume it. The single slot means everything is serialised anyway — order
-  chunks so each one's inputs are already produced by the one before it.
-- **One chunk in flight at a time.** Never queue multiple chunks. The queue is your to-do
-  list, not a parked dispatch. When a child settles, tick its chunk, then dispatch the next
-  one.
+  chunks that consume it. Order chunks so each one's inputs are already produced by the
+  one before it.
+- **One chunk per role in flight.** Never queue multiple chunks behind one role. The queue
+  is your to-do list, not a parked dispatch. When a child settles, tick its chunk, then
+  dispatch the next one.
 
-The goal: the single slot stays busy with small, independently completable chunks, and no
-agent ever re-derives context it already burned. If a chunk comes back untouched because the
-child hit its limit, you chunked too coarse — halve the next one and resume the session, do
-not restart.
+The goal: every child gets a small, independently completable job it can execute without
+re-deriving context, and no agent ever re-reads what a sibling already reported. If a
+chunk comes back untouched because the child hit its limit, you chunked too coarse —
+halve the next one and resume the session, do not restart.
 
 ## FEATURE SCOUT
 
@@ -326,7 +291,8 @@ writes nothing.
    write one task spec per developer. A UI phase's spec carries a CONTROL-INDEX: every
    control the phase introduces, its promised action, and the e2e test that proves it.
    Decompose the phase into the chunk list per CHUNK THE WORK before dispatching.
-2. Work the phase ONE local agent at a time (the server has a single decode slot). Review
+2. Work the phase with the cloud team in parallel where paths are disjoint (see
+   Parallel dispatch); stagger build/test steps that write shared outputs. Review
    each result as it arrives, then dispatch the next task.
 3. Review their evidence yourself, including the screenshots. Look at the images.
 4. Have qa write and run the phase's end-to-end tests, run the relevant suites, sweep the
@@ -375,9 +341,10 @@ without its evidence is a failure to run, not a finished job.
    then have git-agent choose the approved semver bump, update both package manifests,
    build the resulting version, tag it, and publish only after the operator authorises it.
 
-4. **Offload the local model when the run is done.** Re-check THE LOCAL MODEL before you
-   report completion: every child settled, nothing left to hand out → run
-   `ninfer-model.ps1 stop`. Leaving it loaded is a missed job, not a minor omission.
+4. **Confirm no stray local model is loaded.** There is no local role anymore, so there
+   should be nothing to offload — the guard already runs `ninfer-model.ps1 stop` at run
+   end. If your completion checks find the NInfer server still holding the card, report
+   it; do not leave it loaded.
 
 5. **Confirm each sub-agent's result is real work, not a placeholder.** A child that
    reports "done" without the deliverable (a diff, a run, a file change, a screenshot) has
@@ -396,7 +363,7 @@ without its evidence is a failure to run, not a finished job.
    e2e specs, ledgers (DEFECTS.md, ADVERSARIAL_REVIEW.md, AGENTS_NOTES.md), docs — with an
    imperative message referencing the phase and DEF/ADV numbers. Local commits need no
    operator approval; only pushes, tags and GitHub Releases do (THE PUSH GATE). Report the
-   commit hash, THEN offload the local model, THEN send your completion reply. The run is
+   commit hash, THEN send your completion reply. The run is
    not done while the working tree carries uncommitted run work.
 
 ## TEST DISCIPLINE
@@ -431,8 +398,9 @@ git operations through git-agent; never run git yourself.
 
 Your model is expensive. Spend it on judgment, not typing: read diffs, summaries, test output
 and screenshots — not whole source trees; do not micro-manage mid-task; keep plans and task
-specs short; do not re-read a file a child has already reported on. The bulk of the team runs
-on the local model, so keep cloud spend (you + feature-scout) minimal.
+specs short; do not re-read a file a child has already reported on. The whole team runs on
+cloud models now, so token discipline is spend discipline: git-agent batches the run's
+commits into one dispatch instead of five, and feature-scout stays read-only and brief.
 
 ## DESKTOP-APP SPECIFICS
 

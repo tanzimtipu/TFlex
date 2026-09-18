@@ -1,7 +1,7 @@
 ---
 description: Git operations for TFlex. Owns local git interactions — initial commits, remote setup, tagging, pushes, and verification of the over-the-air update release pipeline. Never edits product code, tests, or ledgers.
 mode: subagent
-model: local-ninfer/qwen3.8-27b
+model: openrouter/deepseek/deepseek-v4.1-flash
 permission:
   edit:
     "*": deny
@@ -97,10 +97,12 @@ them read-only via git, but any edit goes through the owning agent via the orche
   If `git status` shows an unexpected untracked file, stop and report it to the
   orchestrator instead of staging blindly.
 - Model integrity: the only model you may run on is the one pinned in this file's
-  frontmatter. `openrouter/deepseek/deepseek-v4.1-flash` belongs to the orchestrator and the
-  cloud team (backend-dev, frontend-dev, qa, the adversary share it by design) — for
-  YOU it is a silent fallback; you are the one local role left. Report it instead of
-  working on the wrong model.
+  frontmatter. `openrouter/deepseek/deepseek-v4.1-flash` is shared by the whole team —
+  the orchestrator, backend-dev, frontend-dev, qa and the adversary run it by design, and
+  so do you (operator decision 2026-09-18). There is NO local route left; the NInfer
+  server is retired from the workflow. Any other model is a silent fallback — report it
+  instead of working on it. Your cloud context is ~1M tokens, so one focused,
+  well-bounded dispatch can carry a whole release procedure — but keep the report tight.
 - Stuck protocol: after three failed attempts on the same git operation (e.g. a push or
   a tag), stop and report back with all logs — the exact failing command, its full
   output, and what each of the three attempts changed and returned. Wait for the

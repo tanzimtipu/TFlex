@@ -1,12 +1,15 @@
 // orchestrator-guard.ts — enforce the two model-lifecycle duties the orchestrator keeps
 // missing, mechanically, so they cannot be forgotten:
 //
-//   1. LOAD THE LOCAL MODEL BEFORE A LOCAL DISPATCH. When the orchestrator dispatches a
-//      local role (git-agent — the only local role left), the guard checks
-//      the endpoint and runs `ninfer-model.ps1 start` if it is down — fail-closed: a
-//      dispatch into a stopped server is refused instead of dying as an opaque error.
+//   1. LOAD THE LOCAL MODEL BEFORE A LOCAL DISPATCH (dormant). LOCAL_ROLES is empty
+//      since git-agent moved to the cloud (2026-09-18). The load-before-dispatch
+//      machinery stays in place so a future local role re-arms by editing LOCAL_ROLES —
+//      fail-closed: a dispatch into a stopped server is refused instead of dying as an
+//      opaque error.
 //   2. OFFLOAD THE LOCAL MODEL AT RUN END. When the orchestrator's session goes idle and
-//      no child session is still busy, run `scripts/ninfer-model.ps1 stop`.
+//      no child session is still busy, run `scripts/ninfer-model.ps1 stop`. With no
+//      local roles this is a cheap no-op that also clears a stray server left over from
+//      before the cloud migration.
 //
 // Note: the "QA follows every developer dispatch" rule is intentionally NOT enforced
 // here — it is a strict prose guide in orchestrator.md, because the operator must be able
@@ -23,14 +26,16 @@ import type { Plugin } from "@opencode-ai/plugin"
 const STOP = "scripts/ninfer-model.ps1"
 const START = "scripts/ninfer-model.ps1"
 const ENDPOINT = "http://127.0.0.1:8080/v1/models"
-const LOCAL_ROLES = new Set(["git-agent"])
+// EMPTY since 2026-09-18: git-agent moved to the cloud, so no role needs the local
+// model. Keep this as the single re-arm point if a local role ever returns.
+const LOCAL_ROLES = new Set<string>()
 // Named roles only: the orchestrator dispatches TFlex's specialist roles, never the
 // generic `worker`/built-in subagents — an unnamed sub-agent runs unpinned and unaudited.
 // APPROVED includes every dispatched role; LOCAL is only the subset that needs the
-// local model loaded. Only git-agent is local now (the whole cloud team shares the
-// orchestrator's model) — do not derive APPROVED from LOCAL or cloud roles get refused.
+// local model loaded. The whole team shares the orchestrator's cloud model now —
+// do not derive APPROVED from LOCAL or cloud roles get refused.
 const APPROVED_ROLES = new Set([
-  ...LOCAL_ROLES,
+  "git-agent",
   "backend-dev",
   "frontend-dev",
   "qa",

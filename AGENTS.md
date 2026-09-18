@@ -52,11 +52,11 @@ never grow the settings shape ad-hoc.
 Role boundaries are enforced by permissions and are absolute. Do not work around them with
 shell commands: if the edit tool would deny a file, do not modify that file any other way.
 
-**One local role at a time.** backend-dev and frontend-dev share a single working tree,
-and every local role shares the single NInfer decode slot, so local roles are strictly
-serialised: the orchestrator dispatches one local role, waits for it to settle, then
-dispatches the next. Cloud roles (feature-scout, and the orchestrator itself) may overlap
-a running local role — they do not consume the decode slot.
+**One local role at a time.** There is no local-model role since 2026-09-18 (git-agent
+moved to the cloud), so nothing contends for the NInfer decode slot — this stays only as
+the rule of record if a role is ever repinned local: local roles would be strictly
+serialised through the single decode slot, one dispatch at a time, while cloud roles may
+overlap them. Parallel-dispatch guardrails for the cloud team live in orchestrator.md.
 
 Shared contracts live in `src/shared/` (typed IPC and domain types). Both developers may
 read them; only the orchestrator may approve changes to them mid-phase (a developer
@@ -199,19 +199,18 @@ Every agent runs only on the model pinned for its role. OpenCode is the only act
 orchestration harness:
 
 - **OpenCode** — the `model:` field in that role's `.opencode/agents/*.md` definition.
-  The local role (git-agent) points at `local-ninfer/qwen3.8-27b`, whose provider and endpoint live in
-  `opencode.json` (NInfer on `http://127.0.0.1:8080/v1`). The active serving profile is
-  **220000 context tokens, one decode slot and 20480 vision tokens**. The guard loads it
-  before the first local dispatch; it is stopped only after all local work has settled.
+  Every role is a cloud route now (git-agent moved off `local-ninfer/qwen3.8-27b` on
+  2026-09-18). The retired NInfer provider entry stays in `opencode.json` and the serving
+  script stays in `scripts/` as fallback infrastructure only; the guard runs
+  `ninfer-model.ps1 stop` at run end to keep the card clear.
 
 The orchestrator's model, `openrouter/deepseek/deepseek-v4.1-flash`, is reserved for the
 orchestrator alone — a sub-agent starting on it is a silent fallback, exactly like any
 other wrong model. SANCTIONED EXCEPTIONS (operator-approved 2026-09-17/18): the whole
-build team — backend-dev, frontend-dev, qa and the adversary — is pinned to that same
-model deliberately. They share it by design, they have a ~1M-token cloud context, and qa
-and the adversary get cloud vision. Any of the four on it is correct, not a fallback;
-feature-scout on glm-5.3-flash and git-agent on the local model complete the team. Any
-sub-agent on a model other than its pin is still a hard stop. If a sub-agent cannot load its pinned model
+build team — backend-dev, frontend-dev, qa, the adversary and git-agent — is pinned to
+that same model deliberately. They share it by design and have a ~1M-token cloud context;
+qa and the adversary get cloud vision. Any of the five on it is correct, not a fallback;
+feature-scout on glm-5.3-flash completes the team. Any sub-agent on a model other than its pin is still a hard stop. If a sub-agent cannot load its pinned model
 (provider error, account
 data-policy rejection, invalid ID) or starts on any other model, the build **stops** —
 no planning, no real task dispatch, no work on the fallback model. The orchestrator
@@ -225,7 +224,9 @@ The active pin is the agent definition. A fallback is a human-approved configura
 change, not an automatic retry. Keep it short and current:
 
 - git-agent:
-  `local-ninfer/qwen3.8-27b` -> `openrouter/z-ai/glm-5.3-flash`.
+  `openrouter/deepseek/deepseek-v4.1-flash` -> `openrouter/z-ai/glm-5.3-flash`.
+  (Back to local: human repins `local-ninfer/qwen3.8-27b` AND re-adds git-agent to the
+  guard's LOCAL_ROLES — the provider entry and serving script stay in place.)
 - backend-dev, frontend-dev, qa, adversary: no automatic fallback — their pin is the
   orchestrator's cloud model; stop and ask the human.
 - feature-scout: `openrouter/z-ai/glm-5.3-flash` ->

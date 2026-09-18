@@ -2345,3 +2345,38 @@ Commits, tags, pushes and `gh` work fine.
 **Style note:** the repo's version-commit convention is prefix-less (`version: 1.17.0`); this
 release used `chore: version: 1.18.0` because the dispatch said so. Future version commits should
 match the prefix-less style.
+
+
+## 2026-09-18: git-agent moves to the cloud — the team is 100% cloud now
+
+**Operator decision (2026-09-18):** git-agent's pin changed from
+`local-ninfer/qwen3.8-27b` to `openrouter/deepseek/deepseek-v4.1-flash`, the same model as
+qa and the rest of the build team. No role dispatches against NInfer anymore. Changes,
+committed together:
+
+- `.opencode/agents/git-agent.md` — model pin swapped and the model-integrity hard rule
+  rewritten (the cloud model is now its CORRECT route, not a silent fallback; it is no
+  longer "the one local role left").
+- `.opencode/plugins/orchestrator-guard.ts` — `LOCAL_ROLES` is EMPTY; `APPROVED_ROLES`
+  keeps git-agent as an explicit named role (never derive APPROVED from LOCAL). The
+  load-before-dispatch machinery is dormant but intact — a future local role re-arms by
+  editing LOCAL_ROLES. Run-end offload stays active as a safety net that clears a stray
+  server left over from before the migration.
+- `AGENTS.md` — model-integrity section, the "one local role at a time" paragraph (now
+  historical), and the fallback table (git-agent's cloud fallback is glm-5.3-flash; going
+  back local needs a human repin PLUS re-adding git-agent to the guard's LOCAL_ROLES).
+- `.opencode/agents/orchestrator.md` — THE LOCAL MODEL section replaced by "NO LOCAL
+  MODEL — full cloud team"; roster, parallel-dispatch, chunking, PER PHASE step 2 and
+  cost-discipline language updated; the offload completion job becomes a stray-server
+  check.
+
+**Deliberately NOT changed:** `opencode.json` keeps the `local-ninfer` provider entry
+and `scripts/ninfer-model.ps1` stays in place — they are the fallback infrastructure if
+a role is ever repinned local. The 220k NInfer context limit remains the ceiling for any
+future local role.
+
+**Operational consequences:** the whole RTX 4090 is free during runs now — e2e and
+packaging no longer share the card with a loaded model, so the "offload before e2e"
+dance is gone. Cloud spend now covers git-agent too; it should batch the run's commits
+into one dispatch instead of several small ones. Backups of all five edited files under
+`.opencode/backups/2026-09-18-pre-git-agent-cloud/`.
