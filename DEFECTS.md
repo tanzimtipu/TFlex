@@ -5,6 +5,58 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-224: The image placement's SE resize handle is half-clipped so only its inner quadrant is draggable
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa (class sweep, 2026-09-18)
+- Phase: 18
+
+Steps to reproduce:
+1. Launch TFlex (installed build via the canonical `launchApp` helper with `executablePath`). Open the bundled report.pdf sample; scroll to page 2 (dense paragraph).
+2. Arm Edit mode (`[data-toolbar-edit-toggle]`) -> click `[data-edit-tool="image"]`.
+3. Drag a rect just below a text line; pick `test-fixtures/red.png` in the file chooser. The placement commits.
+4. Click the `.edit-image-placement` body to select it; the four corner handles (`.edit-image-handle-se` etc.) mount at -5px outside the box.
+5. Probe with `elementFromPoint` at the SE handle's OUTER corner quadrant (~3px outside the placement's SE corner, i.e. `placement.right + 3, placement.bottom + 3`).
+6. Drag from that outer quadrant by +70/+50 and release.
+
+Expected: The SE handle is fully hit-testable - `elementFromPoint` at the outer corner quadrant returns `.edit-image-handle-se` (not the placement or the page host) - and a drag from that outer quadrant resizes the placement and commits to the engine.
+
+Actual: Pre-fix (1.18.0 tree), `.edit-image-placement` carried `overflow: hidden`; the handle is 10x10 at `right:-5px; bottom:-5px`, so its outer 5x5 half was clipped and the outer-corner point hit-tested to the host div - only the inner quadrant was draggable. Fix (source-verified, `src/renderer/styles.css:7034-7066`): the placement no longer clips (`overflow: hidden` removed; `.edit-image-placement-img` rounds its own corners instead). Post-fix verification on the INSTALLED 1.18.1 build (spec `e2e/release_1_18_1_installed.spec.cjs`, test 5): outer-corner `elementFromPoint` returned class `"edit-image-handle edit-image-handle-se"` (`isHandle=true`); drag from that outer quadrant grew the overlay 509x40 -> 579x90 and the resize committed - the saved/reopened file carries the image at the new rect (dark 52,110).
+Screenshot: screenshots/release-1181-handle.png (SE handle fully visible, protruding outside the placement corner)
+
+History:
+- qa: opened (found in the class sweep 2026-09-18; pre-fix outer-corner `elementFromPoint` returned the host div, not `.edit-image-handle-se` - the placement's `overflow: hidden` clipped the handle's outer half. LOW - only the inner quadrant of the SE handle was draggable; resize still worked from there.)
+- qa: CLOSED (verified on the installed 1.18.1 build - outer-corner `elementFromPoint` returned `.edit-image-handle-se` (`isHandle=true`); drag from the outer quadrant grew the overlay 509x40 -> 579x90 and the resize committed; reopened file image at the new rect dark 52,110. Spec `e2e/release_1_18_1_installed.spec.cjs` test 5, 5/5 passed.)
+
+## DEF-223: Moving an image placement in Edit mode is a silent no-op - the saved PDF keeps the image at its original rect
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 18
+
+Steps to reproduce:
+1. Launch TFlex (dev build via the canonical `launchApp` helper, no executablePath). Open the bundled report.pdf sample; scroll to page 2 (dense paragraph).
+2. Arm Edit mode (`[data-toolbar-edit-toggle]`) -> click `[data-edit-tool="image"]`.
+3. Drag a rect on the page just below a text line; pick `test-fixtures/red.png` in the file chooser. The image placement appears and its engine op commits.
+4. Drag the `.edit-image-placement` body +110/+90 CSS px; release. The overlay moves.
+5. Inspect the OLD and TARGET rects, then Save As to a temp path, close the tab, reopen the saved file and inspect both rects again.
+
+Expected: The image relocates to the dragged position; the old rect is masked and the target rect carries the image, in the live canvas and in the saved/reopened file (the same contract the text-run and text-box move paths meet).
+
+Actual: The overlay moves but the engine never receives the move. Measured on the dev build (2026-09-18), spec `e2e/class_sweep_def221_222.spec.cjs` (test A1c), fixed canvas-px rects:
+- DOM overlay: `.edit-image-placement` before `{x:380,y:608.4,w:509,h:40}` -> after `{x:490,y:698.4,w:509,h:40}` (the drag is recognised and the mirror moves).
+- Engine/proxy: MutationObserver on all 34 `.thumb-canvas` across the drag = 0 mutations; no toast. The doc proxy is never rebuilt, i.e. no engine op fired.
+- Reopen: Save As -> close -> reopen. OLD rect dark 4,914 -> 4,914 (live) -> **20,360** (reopened = the full red image is still at the original rect); TARGET rect dark 2,967 -> 2,967 -> 2,967 (underlying text unchanged, no image). The move is lost from the saved file.
+- Band ABOVE the image is byte-stable (4,193 -> 4,193 -> 4,193), so this is not the DEF-221 mask-anchor class.
+Mechanism (source-verified, `src/renderer/edit/EditOverlay.tsx`): the image-move branch resolves `placement = placementsForPage.find(...)` (line 835) and `placementNow = edit.placements.find(...)` (line 838) - both are the CURRENT placements after the drag - then early-returns on `rectsClose(newRect, placement.rect)` (line 841), which compares the new rect with itself. `onCommitImageEdit` is never called. The resize branch (lines 854-860) has the identical self-comparison; resize was not measured in this sweep.
+Screenshot: screenshots/class-sweep-a1c-after.png (overlay moved down), screenshots/class-sweep-a1c-reopen.png (reopened file has the image back at the original rect)
+
+History:
+- qa: opened (2026-09-18; Class-sweep pre-1.18.1. A1c image-move path: overlay moves, engine gets no op (0 thumb mutations), reopened file keeps the image at the old rect (20,360 dark) and leaves the target empty (2,967). Band above stable, so not Class A. Source: EditOverlay.tsx:835-841 self-compares the placement rect and returns before committing. HIGH - the user's move is silently lost on save.)
+- qa: CLOSED (2026-09-18 retest, post-fix `EditOverlay.tsx` imageDrag.startRect). Spec `e2e/class_sweep_def221_222.spec.cjs` B1/B2 (+ A1c) all pass. MOVE: overlay mirror `{x:380,y:608.4}` -> `{x:490,y:698.4}` (+110/+90); old rect dark 4,914 -> 4,914 (live, canvas is the pre-edit render by design) -> 0 (reopened, nearWhite=20,360/20,360 = fully white); target 2,967 -> 2,967 -> 20,360 (image); band above 4,193 stable; frame strips around the old rect byte-identical to before (hashes equal), so the white mask is exactly the old rect - no padding, no neighbour erasure. RESIZE (SE handle +70/+50): overlay 509x40 -> 579x90; reopened old 20,360 (image), new 52,110 (image), region beyond the new rect unchanged 71->71; above 4,193 stable. Flash: 0 thumb width/height-zero mutations, 0 zero-width/zero-painted main-canvas frames on both commits. Screenshots: screenshots/def-223-retest-{before,after,reopen}.png. Class A INCONCLUSIVE from the pre-1.18.1 sweep is now resolved: editImage's mask is clean (old rect only). Note: image placements have no live proxy refresh (the DOM overlay is the live surface; the canvas shows the edit after save/reopen) - pre-existing behaviour, not a move failure.)
+
 ## DEF-221: Moving a text run in Edit mode leaves an empty box at the original location after Confirm
 
 - Status: CLOSED

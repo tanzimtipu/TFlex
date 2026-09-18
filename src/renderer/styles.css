@@ -7036,7 +7036,10 @@ rect.ann-highlight.ann-preview {
   border: 1px solid transparent;
   border-radius: var(--radius-1);
   background: rgba(255, 255, 255, 0.5);
-  overflow: hidden;
+  /* No `overflow: hidden` here: the corner resize handles sit at
+   * -5px outside the box, and clipping the placement box cut their
+   * outer halves off (only the inner quadrant was hit-testable).
+   * The image rounds its own corners instead. */
   cursor: move;
   user-select: none;
   transition: border-color var(--motion-fast) var(--ease-out), background var(--motion-fast) var(--ease-out);
@@ -7055,6 +7058,9 @@ rect.ann-highlight.ann-preview {
   display: block;
   width: 100%;
   height: 100%;
+  /* Preserves the placement's corner rounding now that the parent
+   * no longer clips (see .edit-image-placement). */
+  border-radius: inherit;
   pointer-events: none;
   object-fit: fill;
 }

@@ -832,16 +832,15 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       }
       if (imageDrag.kind === "move" && imageDrag.id !== undefined) {
         const id = imageDrag.id;
-        const placement = placementsForPage.find((p) => p.id === id);
+        const oldRect = imageDrag.startRect;
         setImageDrag(null);
-        if (placement === undefined) return;
         const placementNow = edit.placements.find((p) => p.id === id);
         if (placementNow === undefined) return;
         const newRect = placementNow.rect;
-        if (rectsClose(newRect, placement.rect)) return;
+        if (rectsClose(newRect, oldRect)) return;
         onCommitImageEdit({
           op: "move",
-          oldRect: placement.rect,
+          oldRect,
           newRect,
           bytes: placementNow.bytes,
           format: placementNow.format,
@@ -851,16 +850,15 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       }
       if (imageDrag.kind === "resize" && imageDrag.id !== undefined) {
         const id = imageDrag.id;
-        const placement = placementsForPage.find((p) => p.id === id);
+        const oldRect = imageDrag.startRect;
         setImageDrag(null);
-        if (placement === undefined) return;
         const placementNow = edit.placements.find((p) => p.id === id);
         if (placementNow === undefined) return;
         const newRect = placementNow.rect;
-        if (rectsClose(newRect, placement.rect)) return;
+        if (rectsClose(newRect, oldRect)) return;
         onCommitImageEdit({
           op: "resize",
-          oldRect: placement.rect,
+          oldRect,
           newRect,
           bytes: placementNow.bytes,
           format: placementNow.format,

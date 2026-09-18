@@ -19,10 +19,11 @@
 // fires during render reconciliation, not after the DOM mounts.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { EditOverlay } from "../../../src/renderer/edit/EditOverlay";
+import { editReducer } from "../../../src/renderer/edit/model";
 import type {
   EditAction,
   EditState,
@@ -227,6 +228,243 @@ describe("EditOverlay — hook order is stable across tool transitions (DEF-061)
       expect(errors).toEqual([]);
       // Final state should be "off" — no layer rendered.
       expect(host.querySelector(".edit-layer")).toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-223 — an image placement move/resize must commit the PRE-DRAG rect.
+//
+// The regression: the move and resize branches resolved the placement
+// AFTER the live drag had already updated its rect, then compared the
+// new rect against that same current rect (`rectsClose` was always
+// true) and returned before calling `onCommitImageEdit`. The engine
+// never received the op, so the saved file kept the image at the
+// original rect. The fix parks `imageDrag.startRect` (captured at
+// pointerdown) as `oldRect` and uses it for the no-op guard.
+// ---------------------------------------------------------------------------
+
+const PNG_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const IMAGE_ID = "img-1";
+const PRE_DRAG_RECT = { x: 100, y: 100, width: 200, height: 100 };
+
+function makeImageState(overrides: Partial<EditState> = {}): EditState {
+  return {
+    tool: "image",
+    placements: [
+      {
+        id: IMAGE_ID,
+        page: 1,
+        rect: { ...PRE_DRAG_RECT },
+        bytes: PNG_BYTES,
+        format: "png",
+      },
+    ],
+    selectedImage: null,
+    selectedTextBox: null,
+    textBoxes: [],
+    pendingReplace: null,
+    cropping: false,
+    ...overrides,
+  };
+}
+
+interface ImageDragHarness {
+  host: HTMLElement;
+  getState: () => EditState;
+  unmount: () => void;
+}
+
+/** Mirror of the bug010 image-tool harness, extended with a
+ *  reducer-backed `dispatch` so the live drag actually updates
+ *  `edit.placements` (the production parent owns that state). */
+function mountImageDragHarness(
+  onCommitImageEdit: ReturnType<typeof vi.fn>,
+  initialState: EditState,
+): ImageDragHarness {
+  const host = document.createElement("div");
+  host.style.position = "absolute";
+  host.style.left = "0px";
+  host.style.top = "0px";
+  host.style.width = "800px";
+  host.style.height = "600px";
+  document.body.appendChild(host);
+  host.getBoundingClientRect = (): DOMRect => ({
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: 800,
+    bottom: 600,
+    width: 800,
+    height: 600,
+    toJSON: () => ({}),
+  });
+  // jsdom lacks pointer capture and object-URL support; stub both so
+  // the placement renders and the drag gesture completes.
+  Element.prototype.setPointerCapture = function (this: Element): void {
+    void this;
+  };
+  Element.prototype.releasePointerCapture = function (this: Element): void {
+    void this;
+  };
+  const originalCreateObjectURL = URL.createObjectURL;
+  URL.createObjectURL = (): string => "blob:def-223-test";
+  const root = createRoot(host);
+  let lastState = initialState;
+  const render = (): void => {
+    root.render(
+      createElement(EditOverlay, {
+        page: 1,
+        pageWidthPt: 612,
+        pageHeightPt: 792,
+        cssScale: 1,
+        tool: lastState.tool,
+        getTextItems: (): never[] => [],
+        edit: lastState,
+        dispatch: (action: EditAction): void => {
+          lastState = editReducer(lastState, action);
+          render();
+        },
+        pickImage: async (): Promise<null> => null,
+        defaultFont: "Helvetica",
+        onCommitTextEdit: (): void => undefined,
+        onCommitTextBox: (): void => undefined,
+        onCommitImageEdit: onCommitImageEdit as never,
+        onCommitTextBoxMove: (): void => undefined,
+      }),
+    );
+  };
+  act((): void => {
+    render();
+  });
+  return {
+    host,
+    getState: (): EditState => lastState,
+    unmount: (): void => {
+      URL.createObjectURL = originalCreateObjectURL;
+      act((): void => {
+        root.unmount();
+      });
+      host.remove();
+    },
+  };
+}
+
+function pointerEvent(type: string, x: number, y: number): PointerEvent {
+  return new PointerEvent(type, {
+    bubbles: true,
+    clientX: x,
+    clientY: y,
+    pointerId: 1,
+  });
+}
+
+describe("DEF-223 — image placement move/resize commits the pre-drag rect", () => {
+  it("a move drag commits op 'move' with oldRect = the pre-drag rect", () => {
+    const onCommitImageEdit = vi.fn();
+    const { host, getState, unmount } = mountImageDragHarness(
+      onCommitImageEdit,
+      makeImageState(),
+    );
+    try {
+      const layer = host.querySelector(".edit-layer") as HTMLElement | null;
+      expect(layer).not.toBeNull();
+      if (layer === null) return;
+
+      // pointerdown inside the placement body starts a move drag.
+      act((): void => {
+        layer.dispatchEvent(pointerEvent("pointerdown", 150, 150));
+      });
+      // pointermove +110/+90 updates the live rect.
+      act((): void => {
+        layer.dispatchEvent(pointerEvent("pointermove", 260, 240));
+      });
+      act((): void => {
+        layer.dispatchEvent(pointerEvent("pointerup", 260, 240));
+      });
+
+      expect(onCommitImageEdit).toHaveBeenCalledTimes(1);
+      expect(onCommitImageEdit.mock.calls[0]?.[0]).toMatchObject({
+        op: "move",
+        id: IMAGE_ID,
+        oldRect: PRE_DRAG_RECT,
+        newRect: { x: 210, y: 190, width: 200, height: 100 },
+      });
+      // The live overlay update is preserved (registry rect moved).
+      expect(getState().placements[0]?.rect).toEqual({
+        x: 210,
+        y: 190,
+        width: 200,
+        height: 100,
+      });
+    } finally {
+      unmount();
+    }
+  });
+
+  it("a resize drag commits op 'resize' with oldRect = the pre-drag rect", () => {
+    const onCommitImageEdit = vi.fn();
+    const { host, unmount } = mountImageDragHarness(
+      onCommitImageEdit,
+      makeImageState({ selectedImage: { id: IMAGE_ID } }),
+    );
+    try {
+      const layer = host.querySelector(".edit-layer") as HTMLElement | null;
+      const handle = host.querySelector(
+        ".edit-image-handle-se",
+      ) as HTMLElement | null;
+      expect(layer).not.toBeNull();
+      expect(handle).not.toBeNull();
+      if (layer === null || handle === null) return;
+
+      // pointerdown on the SE corner handle starts a resize drag.
+      act((): void => {
+        handle.dispatchEvent(pointerEvent("pointerdown", 300, 200));
+      });
+      act((): void => {
+        layer.dispatchEvent(pointerEvent("pointermove", 350, 240));
+      });
+      act((): void => {
+        layer.dispatchEvent(pointerEvent("pointerup", 350, 240));
+      });
+
+      expect(onCommitImageEdit).toHaveBeenCalledTimes(1);
+      expect(onCommitImageEdit.mock.calls[0]?.[0]).toMatchObject({
+        op: "resize",
+        id: IMAGE_ID,
+        oldRect: PRE_DRAG_RECT,
+        newRect: { x: 100, y: 100, width: 250, height: 140 },
+      });
+    } finally {
+      unmount();
+    }
+  });
+
+  it("a no-op move (within the rectsClose epsilon) commits nothing", () => {
+    const onCommitImageEdit = vi.fn();
+    const { host, unmount } = mountImageDragHarness(
+      onCommitImageEdit,
+      makeImageState(),
+    );
+    try {
+      const layer = host.querySelector(".edit-layer") as HTMLElement | null;
+      expect(layer).not.toBeNull();
+      if (layer === null) return;
+
+      act((): void => {
+        layer.dispatchEvent(pointerEvent("pointerdown", 150, 150));
+      });
+      act((): void => {
+        layer.dispatchEvent(pointerEvent("pointermove", 150.2, 150.2));
+      });
+      act((): void => {
+        layer.dispatchEvent(pointerEvent("pointerup", 150.2, 150.2));
+      });
+
+      expect(onCommitImageEdit).not.toHaveBeenCalled();
     } finally {
       unmount();
     }
