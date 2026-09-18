@@ -2345,6 +2345,63 @@ Commits, tags, pushes and `gh` work fine.
 **Style note:** the repo's version-commit convention is prefix-less (`version: 1.17.0`); this
 release used `chore: version: 1.18.0` because the dispatch said so. Future version commits should
 match the prefix-less style.
+
+## 2026-09-18: Release 1.18.1 + the edit-text bug class (operator-reported)
+
+**Operator report:** moving text in Edit mode left an "empty box" at the original location and the
+thumbnail rail flickered on Confirm. Triage found TWO defects and a whole class behind the first.
+
+**DEF-221 (HIGH) — the "empty box" was a BAKED white mask, and it was anchored to the wrong box.**
+`_editTextRunImpl` erases the old run by drawing a white rectangle (mask-and-redraw; true
+content-stream editing is not feasible with pdf-lib — DEF-116 REJECTED). Two compounding faults:
+1. DEF-124's "faint trace" widening extended the mask upward by the NEW font's ascent and downward
+   by its descent, so it erased the text band ABOVE the run (measured: that band 3287 -> 0).
+2. The rect the renderer passes is pdf.js's **em box** (`textItemsToGeom`, `PageView.tsx:201-226`:
+   `y = pageHeight - baseline - item.height`), whose top sits ~0.25 h above the ink and whose bottom
+   sits at the baseline. ANY mask anchored there clips the line above and leaves descender pixels
+   (measured: 6 px survived, baked). The fix keeps the rect semantics (a blanket change would shift
+   highlight/markup quads) and re-anchors the MASK to the ink box: a 0.25 h downward shift, height
+   unchanged, draw position untouched. Verified on the installed build: old rect 4458 -> 0, band
+   above byte-identical (hash-equal), intact after save+reopen.
+   **Rule: any cover/mask rect derived from a text item must be anchored to the INK box, never the
+   em box — and the em box is `item.height` = font size.**
+
+**DEF-222 (LOW) — the flicker was a canvas backing-store reset, not a re-render.** `refreshDocProxyFor`
+swaps the pdf.js proxy after a commit; `ThumbCanvas`'s effect cleanup zeroed every visible canvas
+(`width/height = 0`) because `doc` is a dependency — 20 zeroing mutations across the 5 rendered
+thumbs, a 3-15 ms rail-wide blank per confirm. Fixed by gating the release to TRUE unmount (the
+`shouldRender === false` offscreen release is untouched). Verified: 0 zero-dimension mutations,
+main page canvas never blanks, offscreen release still happens.
+   **Rule: a canvas backing-store release belongs on unmount / offscreen, never in a cleanup that
+   also fires on a same-slot dependency change.**
+
+**DEF-223 (HIGH) — found by the class sweep, not the operator.** Moving (or resizing) an image
+placement in Edit mode was a SILENT NO-OP: `EditOverlay.tsx`'s move/resize branches compared
+`placementNow.rect` (current) against `placement.rect` (also current — the same value), so
+`rectsClose` always returned true and `engine.editImage` was never called. The overlay moved
+visually and the change was lost on save/reopen. Fixed by parking `imageDrag.startRect` (the
+pointerdown-time rect) as `oldRect`, mirroring the text-box move path. **Rule: a drag-commit guard
+must compare the new rect against the rect captured at drag START; comparing against the live store
+is a self-comparison.**
+
+**DEF-224 (LOW)** — the image placement's corner resize handles were half-clipped by
+`overflow: hidden` on `.edit-image-placement`, so only the inner quadrant was hit-testable. Fixed by
+dropping the clip and moving the corner rounding onto the image (`border-radius: inherit`).
+
+**The class sweep (the operator asked "is this widespread?"):** qa swept both classes across the
+edit tools and the refresh triggers. Result: **not widespread** — text-box move (no engine mask),
+`editImage`'s mask (exact old rect, no padding, neighbours byte-identical), and every refresh trigger
+(edit confirm run/box/image, watermark apply/delete, crop, rotate, delete page, optimize) measured
+0 zero-dimension thumbnail mutations and no main-canvas blank. The sweep DID find DEF-223, which is
+the argument for sweeping a bug class rather than spot-fixing it.
+
+**Release 1.18.1** (patch, published on the operator's authorisation): commit `1551f6f` (fixes) +
+`f2c5bb4` (`version: 1.18.1`), tag `v1.18.1`, GitHub Release in the public `tflex-releases` with the
+four OTA assets (latest.yml 342 B, Setup 157,755,777 B, blockmap 165,556 B, portable 157,525,928 B),
+listed Latest. Installed-build verification (version gate 1.18.1 first): DEF-221/222/223/224 + the
+DEF-214 toolbar guard + the watermark apply/delete regression all PASS; 5/5 in
+`e2e/release_1_18_1_installed.spec.cjs`. Release URL:
+https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.18.1
 
 
 ## 2026-09-18: git-agent moves to the cloud — the team is 100% cloud now
