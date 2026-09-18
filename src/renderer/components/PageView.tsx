@@ -157,12 +157,16 @@ interface PageViewProps {
       newText: string;
       style: import('../edit/model').EditTextStyle;
       oldRect?: { x: number; y: number; width: number; height: number };
+      /** DEF-232 — the page the committing overlay owns. */
+      page: number;
     }) => void;
     onCommitTextBox: (args: {
       rect: { x: number; y: number; width: number; height: number };
       text: string;
       style: import('../edit/model').EditTextStyle;
       background: "white" | "none";
+      /** DEF-232 sibling — the page the committing overlay owns. */
+      page: number;
     }) => void;
     onCommitImageEdit: (args: {
       op: "move" | "resize" | "replace" | "crop";
@@ -171,6 +175,8 @@ interface PageViewProps {
       bytes: Uint8Array;
       format: "png" | "jpeg";
       id: string;
+      /** DEF-232 sibling — the page the committing overlay owns. */
+      page: number;
     }) => void;
     /** DEF-127 — commit a committed text box's drag (move/resize):
      *  the host re-bakes the box at `newRect` through the engine's
@@ -182,6 +188,8 @@ interface PageViewProps {
       style: import('../edit/model').EditTextStyle;
       background: "white" | "none";
       id: string;
+      /** DEF-232 sibling — the page the committing overlay owns. */
+      page: number;
     }) => void;
     /** DEF-135/136 — delete a committed text box through the engine's
      *  registry. Threaded to the EditOverlay's box placement toolbar. */

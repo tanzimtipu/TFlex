@@ -304,12 +304,16 @@ interface DocumentViewProps {
       newText: string;
       style: import("../edit/model").EditTextStyle;
       oldRect?: { x: number; y: number; width: number; height: number };
+      /** DEF-232 — the page the committing overlay owns. */
+      page: number;
     }) => void;
     onCommitTextBox: (args: {
       rect: { x: number; y: number; width: number; height: number };
       text: string;
       style: import("../edit/model").EditTextStyle;
       background: "white" | "none";
+      /** DEF-232 sibling — the page the committing overlay owns. */
+      page: number;
     }) => void;
     onCommitImageEdit: (args: {
       op: "move" | "resize" | "replace" | "crop";
@@ -318,6 +322,8 @@ interface DocumentViewProps {
       bytes: Uint8Array;
       format: "png" | "jpeg";
       id: string;
+      /** DEF-232 sibling — the page the committing overlay owns. */
+      page: number;
     }) => void;
     /** DEF-127 — commit a committed text box's drag (move/resize):
      *  the host re-bakes the box at `newRect` through the engine's
@@ -329,6 +335,8 @@ interface DocumentViewProps {
       style: import("../edit/model").EditTextStyle;
       background: "white" | "none";
       id: string;
+      /** DEF-232 sibling — the page the committing overlay owns. */
+      page: number;
     }) => void;
     /** DEF-135/136 — delete a committed text box through the engine's
      *  registry (engine.deleteTextBox). Wire → DocumentView → PageView
@@ -364,6 +372,18 @@ const INITIAL_MOUNT_PAGES = 3;
 // half of that same 16px. The in-flow themes keep CONTENT_PADDING_PX
 // (28px) on both sides.
 const FROSTED_CONTENT_PAD_PX = 16;
+
+/** DEF-232 — compare two reported page-1 sizes by VALUE. A doc-proxy
+ *  swap re-publishes an equal-but-new `{ w, h }` object; treating that
+ *  as a geometry transition made the DEF-098 mount-sync effect yank
+ *  the scroller back to the current-page readout on every refresh. */
+function samePageSize(
+  a: { w: number; h: number } | null,
+  b: { w: number; h: number } | null,
+): boolean {
+  if (a === null || b === null) return a === b;
+  return a.w === b.w && a.h === b.h;
+}
 
 // How many pages of buffer to keep mounted on each side of the viewport, on
 // top of the IO rootMargin. The buffer covers the case where the user scrolls
@@ -1068,7 +1088,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     } else if (
       pending === null &&
       firstPageSize !== null &&
-      (syncGuardRef.current.firstPageSize !== firstPageSize ||
+      (!samePageSize(syncGuardRef.current.firstPageSize, firstPageSize) ||
         syncGuardRef.current.pageCount !== pageCount)
     ) {
       // No jump in flight, but the geometry (or page count) just
@@ -1077,6 +1097,19 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // scroller on the currently-active page. This runs only on
       // the transition (guarded by the ref), never on `currentPage`
       // changes driven by the heuristic.
+      //
+      // DEF-232 — the comparison is by VALUE, not object identity. A
+      // doc-proxy swap (`refreshDocProxyFor`: edit / annotation /
+      // crop / OCR bakes re-serialize the engine doc) publishes a NEW
+      // `{ w, h }` object for the SAME page size, and an identity
+      // compare treated that as a geometry change: every refresh
+      // instantly re-scrolled to `currentPage`, which the heuristic
+      // can report as the PREVIOUS page while the target page's top
+      // is still below the chrome line. The result was a viewport
+      // yank (page 2 at scrollTop 1439 jumped to 0 on Confirm) plus
+      // a wrong `currentPage`-derived jump. A byte-identical swap
+      // must leave the scroll position untouched; a real size change
+      // (page-1 crop, re-laid-out page) still re-syncs.
       const top =
         mixedSlotOffsetTop(currentPage, pageGeomRef.current, contentTopPadRef.current) -
         contentTopPadRef.current;

@@ -2271,19 +2271,14 @@ export function App(): ReactElement {
 
   // ---- Phase 10: Edit content (text run / text box / image) ----
 
-  /** Read the active tab's "current page" (1-based, from the
-   *  per-tab persisted viewer state). The Edit overlay is
-   *  per-page, so every edit op needs the page number; we read
-   *  the user's last-known visible page rather than a separate
-   *  "edit page" so the user edits what they see. */
-  function currentPageOfTab(
-    tabId: string,
-    tabsRef: { current: Record<string, OpenTab | undefined> },
-  ): number {
-    const tab = tabsRef.current[tabId];
-    if (tab === undefined) return 1;
-    return Math.max(1, Math.floor(tab.persisted.currentPage));
-  }
+  /** DEF-232 — every overlay-originated edit commit now carries the
+   *  page the committing EditOverlay owns (threaded through
+   *  PageView/DocumentView) or derives it from the placement itself
+   *  (text-box registry entry). The old `currentPageOfTab` helper is
+   *  gone: the viewer's "current page" readout reports the page whose
+   *  TOP has passed the chrome line, so at a scroll position where the
+   *  target page's top is still below that line it reports the
+   *  PREVIOUS page and the engine op landed on the wrong page. */
 
   /** Toggle Edit mode. Closing the mode clears the active tool on
    *  every tab; the placements list is preserved so the user can
@@ -2346,11 +2341,21 @@ export function App(): ReactElement {
        *  the engine must mask the ORIGINAL rect (not `rect`) and draw
        *  at `rect`; omit for a plain in-place edit. */
       oldRect?: { x: number; y: number; width: number; height: number };
+      /** DEF-232 — the page the committing EditOverlay owns. The
+       *  engine op MUST be targeted at this page, never at the
+       *  viewer's current-page readout: the current-page heuristic
+       *  reports the page whose TOP has passed the chrome line, so at
+       *  a scroll position where the target page's top is still below
+       *  that line (page 2 top at viewport y=197 in the DEF-232
+       *  repro) it reports the PREVIOUS page while the run under the
+       *  cursor is on the target page. The old code read
+       *  `currentPageOfTab` and silently masked/drew on page 1. */
+      page: number;
     }): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
       const result = await engineRef.current.editTextRun(open.session.engineDocId, {
-        page: currentPageOfTab(tabId, openTabsRef),
+        page: args.page,
         rect: args.rect,
         newText: args.newText,
         font: args.style.font,
@@ -2396,6 +2401,12 @@ export function App(): ReactElement {
       text: string;
       style: EditTextStyle;
       background: "white" | "none";
+      /** DEF-232 sibling — the page the committing EditOverlay owns.
+       *  Same rule as the text-run commit: never resolve the target
+       *  page from the viewer's current-page readout, which reports
+       *  the PREVIOUS page while the target page's top is still below
+       *  the chrome line. */
+      page: number;
     }): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
@@ -2407,7 +2418,7 @@ export function App(): ReactElement {
       // with the echoed TextBoxModel carrying the same id, keeping the
       // selection / drag handle on the right box.
       const boxId = crypto.randomUUID();
-      const page = currentPageOfTab(tabId, openTabsRef);
+      const page = args.page;
       const result = await engineRef.current.addTextBox(open.session.engineDocId, {
         id: boxId,
         page,
@@ -2492,6 +2503,10 @@ export function App(): ReactElement {
       style: EditTextStyle;
       background: "white" | "none";
       id: string;
+      /** DEF-232 sibling — the page the committing EditOverlay owns.
+       *  Only the pre-registry FALLBACK below targets a page (the
+       *  registry path looks the box up by id). */
+      page: number;
     }): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
@@ -2569,7 +2584,7 @@ export function App(): ReactElement {
         return;
       }
       const result = await engine.editImage(open.session.engineDocId, {
-        page: currentPageOfTab(tabId, openTabsRef),
+        page: args.page,
         op: "move",
         oldRect: args.oldRect,
         newRect: args.newRect,
@@ -2674,7 +2689,10 @@ export function App(): ReactElement {
         return;
       }
       const result = await engine.editImage(open.session.engineDocId, {
-        page: currentPageOfTab(tabId, openTabsRef),
+        // DEF-232 sibling — the registry entry owns the box's page, so
+        // derive the target from the box itself rather than the
+        // viewer's current-page readout (which can be a page behind).
+        page: box.page,
         op: "replace",
         oldRect: box.rect,
         newRect: box.rect,
@@ -2707,6 +2725,10 @@ export function App(): ReactElement {
       bytes: Uint8Array;
       format: "png" | "jpeg";
       id: string;
+      /** DEF-232 sibling — the page the committing EditOverlay owns.
+       *  Never resolve the target from the viewer's current-page
+       *  readout (see handleAddTextBox). */
+      page: number;
     }): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
@@ -2745,7 +2767,7 @@ export function App(): ReactElement {
         return;
       }
       const result = await engineRef.current.editImage(open.session.engineDocId, {
-        page: currentPageOfTab(tabId, openTabsRef),
+        page: args.page,
         op: args.op,
         oldRect: args.oldRect,
         newRect: args.newRect,
@@ -5863,12 +5885,16 @@ pushToast(
           newText: string;
           style: EditTextStyle;
           oldRect?: { x: number; y: number; width: number; height: number };
+          /** DEF-232 — the page the committing overlay owns. */
+          page: number;
         }) => void | Promise<void>;
         onCommitTextBox: (args: {
           rect: { x: number; y: number; width: number; height: number };
           text: string;
           style: EditTextStyle;
           background: "white" | "none";
+          /** DEF-232 sibling — the page the committing overlay owns. */
+          page: number;
         }) => void;
         onCommitImageEdit: (args: {
           op: "move" | "resize" | "replace" | "crop";
@@ -5877,6 +5903,8 @@ pushToast(
           bytes: Uint8Array;
           format: "png" | "jpeg";
           id: string;
+          /** DEF-232 sibling — the page the committing overlay owns. */
+          page: number;
         }) => void;
         onCommitTextBoxMove: (args: {
           oldRect: { x: number; y: number; width: number; height: number };
@@ -5885,6 +5913,8 @@ pushToast(
           style: EditTextStyle;
           background: "white" | "none";
           id: string;
+          /** DEF-232 sibling — the page the committing overlay owns. */
+          page: number;
         }) => void | Promise<void>;
         onDeleteTextBox: (id: string) => void;
       }
@@ -5929,12 +5959,16 @@ pushToast(
           newText: string;
           style: EditTextStyle;
           oldRect?: { x: number; y: number; width: number; height: number };
+          /** DEF-232 — the page the committing overlay owns. */
+          page: number;
         }): void | Promise<void> => handleEditTextRun(tabId, args),
         onCommitTextBox: (args: {
           rect: { x: number; y: number; width: number; height: number };
           text: string;
           style: EditTextStyle;
           background: "white" | "none";
+          /** DEF-232 sibling — the page the committing overlay owns. */
+          page: number;
         }): void => {
           void handleAddTextBox(tabId, args);
         },
@@ -5945,6 +5979,8 @@ pushToast(
           bytes: Uint8Array;
           format: "png" | "jpeg";
           id: string;
+          /** DEF-232 sibling — the page the committing overlay owns. */
+          page: number;
         }): void => {
           void handleEditImage(tabId, args);
         },
@@ -5955,6 +5991,8 @@ pushToast(
           style: EditTextStyle;
           background: "white" | "none";
           id: string;
+          /** DEF-232 sibling — the page the committing overlay owns. */
+          page: number;
         }): Promise<void> => handleTextBoxMove(tabId, args),
         onDeleteTextBox: (id: string): void => {
           void handleTextBoxDelete(tabId, id);

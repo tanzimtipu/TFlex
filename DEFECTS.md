@@ -5,6 +5,29 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-232: The DEF-221 edit-text move is lost on page 2 (dense paragraph) - the run is not masked and the saved file keeps it at the original rect
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 19 (release 1.19.0 validation)
+
+Steps to reproduce:
+1. Install `release\TFlex-Setup-1.19.0.exe /S`, then launch the INSTALLED `%LOCALAPPDATA%\Programs\tflex\TFlex.exe` via `e2e/lib/launch.cjs` with `executablePath`; open the bundled `report.pdf`; scroll to page 2.
+2. Arm Edit mode (`[data-toolbar-edit-toggle]`) -> `[data-edit-tool="text"]`.
+3. Double-click the dense body run "orchestration layer correctly handles multiple page streams. Strategic orchestration is"; drag `[data-edit-drag-handle]` +150/+120 until `[data-edit-confirm]="true"`; click `[data-edit-confirm="true"]`.
+4. Probe the original run rect (canvas px [136,264,849,23]) and the +150/+120 rect; then Save As to a temp path, close the tab, reopen the saved file and probe both again.
+Commands: `npm.cmd run test:e2e -- e2e/release_1_19_0_installed.spec.cjs -g "REGRESSION DEF-221"` (installed 1.19.0) and the original `npm.cmd run test:e2e -- e2e/release_1_18_1_installed.spec.cjs -g "DEF-221"` against the same installed exe.
+
+Expected: the DEF-221 contract holds - the old run rect is masked (dark 0), the band above is byte-identical, and the saved/reopened file carries the run only at the new position.
+
+Actual: On the INSTALLED 1.19.0 build the page-2 dense run is never masked. Live, old rect dark stays 4458 (was reported 0 at the 1.18.1 closure) and the moved rect stays at the underlying text (2660 -> 2660); after Save As + close + reopen the old rect is still 4458, so the move is absent from the saved file. The page-2 canvas shows no change at all after Confirm (`modified:true`, no toast, editor closes). The original 1.18.1 spec test 3 - which passed 5/5 on installed 1.18.1 - now fails identically (Expected 0, Received 4458). The dev suite's dense-paragraph case (`e2e/def221_222_leftover_thumb_flicker.spec.cjs` test 3) reproduces it on the 1.19.0 tree (run band 4458 -> 4458), while its page-1 move case still passes (old rect 2867 -> 0, moved text 1973). Introduced by Phase 19 commit `4600ae6` (which changed `DocumentView.tsx` and `styles.css`, not `EditOverlay.tsx`).
+Screenshot: screenshots/release-1190-handle-640.png (release context)
+
+History:
+- qa: opened (release 1.19.0 installed-build validation; the mandated DEF-221 regression spot-check fails. HIGH - a page-2 text edit is silently lost on save.)
+- qa: CLOSED (2026-09-19 release 1.19.0 rebuilt-installer retest). Installed `release\TFlex-Setup-1.19.0.exe /S` over the prior 1.19.0; installed exe FileVersion 1.19.0, `app.getVersion()==='1.19.0'`. Dense page-2 run move +150/+120: old rect dark 4458 -> 0 live, band above byte-identical (hash 1712841557, dark 4193), moved dark 2660 -> 5407; after Save As + close + reopen old rect dark 0, moved present at the NEW rect (dark 5407, hash 1158894619), band above hash unchanged (1712841557). Sibling paths with the page-2 top below the chrome line (stale readout currentPage=1 at commit): text box `PAGE2 BOX` registered and reopened on page 2, page-1 rect hash 282248805 unchanged; image placement move old canvas-px {170,400,220,80} -> new {470,540,220,80}, reopened old rect 99.0% white (112/17600 dark, 160-px boundary AA residue), image present at the new rect (dark 10895, hash changed), page-1 whole-canvas hash 2114593833 unchanged. `e2e/release_1_19_0_installed.spec.cjs` 14/14 passed; GATE 0 `verify:full` 262 files / 3245 tests green.
+
 ## DEF-231: The frosted tools menu has no backdrop blur while its sibling colour popover does
 
 - Status: CLOSED

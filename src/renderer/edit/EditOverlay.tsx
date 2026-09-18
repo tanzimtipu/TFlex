@@ -95,6 +95,15 @@ export interface EditOverlayProps {
      *  Present only when committing a MOVE of an already-edited run;
      *  omitted for a plain in-place edit. */
     oldRect?: { x: number; y: number; width: number; height: number };
+    /** DEF-232 — the page this overlay owns, i.e. the page the run
+     *  actually lives on. The host MUST target the engine op at THIS
+     *  page, never at the viewer's "current page" readout: at a scroll
+     *  position where the page top is still below the chrome, the
+     *  current-page heuristic reports the PREVIOUS page while the run
+     *  under the cursor is on this one, and the mask/draw would land on
+     *  the wrong page (silently losing the edit and corrupting the
+     *  other page). */
+    page: number;
   }) => void | Promise<void>;
   /** Commit a new text box. */
   onCommitTextBox: (args: {
@@ -102,6 +111,12 @@ export interface EditOverlayProps {
     text: string;
     style: EditTextStyle;
     background: "white" | "none";
+    /** DEF-232 sibling — the page this overlay owns. Same rule as the
+     *  text-run commit: the host MUST target the engine op at THIS
+     *  page, never at the viewer's current-page readout, which can
+     *  report the previous page while this page's top is still below
+     *  the chrome line. */
+    page: number;
   }) => void;
   /** Commit an image edit. `bytes` are the transformed PNG/JPEG
    *  bytes the engine will draw. */
@@ -112,6 +127,9 @@ export interface EditOverlayProps {
     bytes: Uint8Array;
     format: "png" | "jpeg";
     id: string;
+    /** DEF-232 sibling — the page this overlay owns (see
+     *  onCommitTextBox.page). */
+    page: number;
   }) => void;
   /** DEF-127/127b — commit a COMMITTED text box's drag (move or
    *  resize). The host rasterises the box at `newRect` and re-bakes
@@ -130,6 +148,10 @@ export interface EditOverlayProps {
     style: EditTextStyle;
     background: "white" | "none";
     id: string;
+    /** DEF-232 sibling — the page this overlay owns. Only the
+     *  pre-registry fallback (editImage mask-and-redraw) targets a
+     *  page; the registry path looks the box up by id. */
+    page: number;
   }) => void | Promise<void>;
   /** DEF-135/136 — delete a COMMITTED text box through the engine's
    *  registry (engine.deleteTextBox). The placement toolbar's Delete
@@ -410,6 +432,9 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       style: p.style,
       background: p.background,
       id: p.id,
+      // DEF-232 sibling — target the pre-registry fallback at THIS
+      // overlay's page.
+      page,
     });
     if (result !== undefined) {
       // The host resolved the engine mask + proxy refresh; wait two
@@ -827,6 +852,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           bytes: picked.bytes,
           format: picked.format,
           id,
+          // DEF-232 sibling — target the engine at THIS overlay's page.
+          page,
         });
         return;
       }
@@ -845,6 +872,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           bytes: placementNow.bytes,
           format: placementNow.format,
           id,
+          // DEF-232 sibling — target the engine at THIS overlay's page.
+          page,
         });
         return;
       }
@@ -863,6 +892,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           bytes: placementNow.bytes,
           format: placementNow.format,
           id,
+          // DEF-232 sibling — target the engine at THIS overlay's page.
+          page,
         });
         return;
       }
@@ -982,6 +1013,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         bytes: selectedPlacement.bytes,
         format: selectedPlacement.format,
         id: selectedPlacement.id,
+        // DEF-232 sibling — target the engine at THIS overlay's page.
+        page,
       });
       return;
     }
@@ -1002,6 +1035,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       bytes: picked.bytes,
       format: picked.format,
       id: selectedPlacement.id,
+      // DEF-232 sibling — target the engine at THIS overlay's page.
+      page,
     });
     // Update the local registry so the next crop / resize reads
     // the new bytes.
@@ -1332,6 +1367,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               newText: p.text,
               style,
               ...(moved ? { oldRect: { ...p.oldRect } } : {}),
+              // DEF-232 — target the engine at THIS overlay's page.
+              page,
             });
             if (res !== undefined) {
               void res
@@ -1372,6 +1409,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               rect: { ...runSelection.rect },
               newText: "",
               style,
+              // DEF-232 — target the engine at THIS overlay's page.
+              page,
             });
             setRunSelection(null);
             setPendingRunMove(null);
@@ -1572,6 +1611,9 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
                   style,
                   background,
                   id: target.textBoxId,
+                  // DEF-232 sibling — target the pre-registry fallback
+                  // at THIS overlay's page.
+                  page,
                 });
                 void (result !== undefined
                   ? result.then(() => waitForPaintBarrier())
@@ -1634,6 +1676,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
                       },
                     }
                   : {}),
+                // DEF-232 — target the engine at THIS overlay's page.
+                page,
               });
               if (runResult !== undefined) {
                 void runResult
@@ -1661,6 +1705,8 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               text,
               style,
               background: options.background,
+              // DEF-232 sibling — target the engine at THIS overlay's page.
+              page,
             });
           }}
           onCancel={(): void => {
