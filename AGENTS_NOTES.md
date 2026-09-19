@@ -2495,6 +2495,49 @@ pass silently.**
 **Harness note:** `playwright test -- a.spec b.spec c.spec` only ran the FIRST positional file in this
 environment; run specs individually or via a glob when you need all of them.
 
+## 2026-09-19: Phase 21 (text panel) + Phase 22 (title-bar Open/Save) + release 1.20.0
+
+**Phase 21 shipped**: a docked LEFT text-properties panel (right of the thumbnail rail) with
+Word/Adobe-class controls, replacing the floating text toolboxes. The engine grew
+`TextStyleFields` (align, lineHeight, bold/italic/underline, baselineShift, highlight, list,
+indent) plus a new `engine.updateTextBox` patch op and one shared styled-text renderer with real
+justify; the renderer grew the panel, an animated `--tf-text-w` page reflow, and pending defaults
+that feed the next created box.
+
+**Phase 22 shipped**: Open + Save + Save As relocated into the caption strip between the logo and
+the tabs (the CommandBar groups are gone), with responsive compaction and an active-tab scroll.
+
+**Lessons worth keeping:**
+
+1. **"Clear" needs a removal representation, not a sentinel.** The panel's highlight-clear first wrote
+   white `{1,1,1}` because the patch had no way to say "remove" — which paints a white band on a
+   coloured page. The contract now allows `highlight: null` on the PATCH only (absent = preserve).
+   **Rule: a toggle-style control needs an explicit removal value in the contract.**
+2. **Two side panels plus a minimum window width is a coexistence problem, not a layout detail.** At
+   640 px the right-anchored Tools palette covered 15 enabled controls of the left text panel. The fix
+   caps the palette's left edge at the page column (`--tf-tools-clear`) so each surface owns its
+   region. **Rule: when you add a docked panel, re-check every other docked/floating surface at the
+   minimum window width and assert `elementFromPoint` on each enabled control.**
+3. **A key branch without the modifier guard swallows its variant.** The Ctrl+S branch had no
+   `!e.shiftKey`, so Ctrl+Shift+S saved in place and never reached Save As (the menu route worked, the
+   keyboard did not). **Rule: every modified accelerator needs its own guard and its own test.**
+4. **All routes to one action must agree.** The relocated Save As button was disabled on a clean
+   document while the menu and Ctrl+Shift+S both opened it. Settled by enabling Save As whenever a
+   document is open. **Rule: enumerate every route (button, menu, accelerator, palette) for an action
+   and assert the same state matrix on each.**
+5. **Compaction must not swallow content.** Hiding the Open label below 900 px kept the tab strip
+   alive; the strip then still needed to scroll the ACTIVE tab into view (at 640 a 227 px tab cannot
+   fit a 113 px strip, so "start + title visible" is the honest acceptance). **Rule: when a bar
+   compacts, assert what remains visible, not just that nothing is clipped.**
+
+**Release 1.20.0** (minor): commits `42d651f` (Phase 20 + DEF-235..240), `69fe88c` (Phase 21),
+`ad929ab` (Phase 22), `7d94582` (`version: 1.20.0`); tag `v1.20.0`; GitHub Release in the public
+`tflex-releases` with the four OTA assets (latest.yml 342 B, Setup 157,767,998 B, blockmap 164,883 B,
+portable 157,538,086 B), listed Latest. Gate: `verify:full` 273 files / 3419 tests; installed-build
+verification of all three phases with the 14-defect disposition table (DEF-233..246); the packaged
+asar byte-matched the fresh dist (SHA-256) — the DEF-214 stale-dist guard.
+Release URL: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.20.0
+
 **Spec-rot cleanup (done 2026-09-19):** six specs repointed, test-only, no product defect found.
 `phase13_qa_sweep` + `phase13_visual_verification` now use `.welcome .btn-primary` on the welcome
 screen and `[data-toolbar-open]` in the workspace (the Open control left the caption strip in Phase
