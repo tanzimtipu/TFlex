@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
+import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
   ANNOTATION_DISABLED_REASON,
   TextPropertiesPanel,
@@ -18,6 +19,8 @@ import {
 } from "../../../src/renderer/edit/TextPropertiesPanel";
 import { EditInlineEditor } from "../../../src/renderer/edit/EditInlineEditor";
 import { AnnotationOverlay } from "../../../src/renderer/annotations/AnnotationOverlay";
+import { DocumentView } from "../../../src/renderer/components/DocumentView";
+import type { EngineState } from "../../../src/renderer/engine/types";
 import type {
   Annotation,
   AnnotationToolState,
@@ -530,6 +533,446 @@ describe("Phase 21 chunk 3b — annotation selection reporting", () => {
     cleanup();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 21 regression — placing an annotation text object must AUTO-SELECT it.
+//
+// Operator report: "after placing any text like 'text box', 'comments' etc,
+// single or double clicking does not work. The screen just glitches for a
+// bit." Root cause: the one-shot text tool disarms in the same tick the
+// annotation is committed, so nothing kept the host's text-properties panel
+// open — it closed, its 248px reflow moved the page origin, and the user's
+// follow-up click on the annotation they had just placed missed.
+//
+// The overlay is the conduit: it must select the just-placed annotation and
+// KEEP that selection across the disarm re-render, so the host's
+// `selectedAnnText` branch stays true (panel open, no reflow) while the
+// engine's create echo is still in flight.
+
+const TEXTBOX_TOOL: AnnotationToolState = { tool: "textbox", color: "blue", penWidth: 2 };
+const RECT_TOOL: AnnotationToolState = { tool: "rect", color: "blue", penWidth: 2 };
+
+function fireTextareaChange(el: Element | null, value: string): void {
+  const area = el as HTMLTextAreaElement;
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  act((): void => {
+    setter?.call(area, value);
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+    area.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+}
+
+function firePointer(
+  el: Element,
+  type: "pointerdown" | "pointermove" | "pointerup",
+  x: number,
+  y: number,
+): void {
+  act((): void => {
+    el.dispatchEvent(
+      new PointerEvent(type, {
+        bubbles: true,
+        button: 0,
+        clientX: x,
+        clientY: y,
+        pointerId: 1,
+      }),
+    );
+  });
+}
+
+interface PlacementHarness {
+  host: HTMLElement;
+  rerender: (tool: AnnotationToolState, annotations: Annotation[]) => void;
+  cleanup: () => void;
+}
+
+function mountPlacement(args: {
+  tool: AnnotationToolState;
+  annotations: Annotation[];
+  onCreate: (a: Annotation) => void;
+  onSelectAnnotation: (a: Annotation | null) => void;
+  onFinishedOneShot: () => void;
+}): PlacementHarness {
+  const host = document.createElement("div");
+  host.style.position = "absolute";
+  host.style.left = "0px";
+  host.style.top = "0px";
+  host.style.width = "800px";
+  host.style.height = "600px";
+  document.body.appendChild(host);
+  Element.prototype.setPointerCapture = function (): void { /* jsdom no-op */ };
+  Element.prototype.releasePointerCapture = function (): void { /* jsdom no-op */ };
+  host.getBoundingClientRect = (): DOMRect => ({
+    x: 0, y: 0, left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600,
+    toJSON: () => ({}),
+  });
+  const root = createRoot(host);
+  const render = (tool: AnnotationToolState, annotations: Annotation[]): void => {
+    act((): void => {
+      root.render(
+        createElement(AnnotationOverlay, {
+          page: 1,
+          widthPt: 612,
+          heightPt: 792,
+          cssScale: 1,
+          annotations,
+          tool,
+          flashId: null,
+          getTextItems: (): never[] => [],
+          onCreate: args.onCreate,
+          onFinishedOneShot: args.onFinishedOneShot,
+          onSelectAnnotation: args.onSelectAnnotation,
+        }),
+      );
+    });
+  };
+  render(args.tool, args.annotations);
+  return {
+    host,
+    rerender: (tool: AnnotationToolState, annotations: Annotation[]): void =>
+      render(tool, annotations),
+    cleanup: (): void => {
+      act((): void => root.unmount());
+      host.remove();
+    },
+  };
+}
+
+/** Place a textbox through the real editor flow: press the page with the
+ *  textbox tool armed, type, Confirm. */
+function placeTextbox(h: PlacementHarness): void {
+  const layer = h.host.querySelector("[data-annotation-layer='1']");
+  if (layer === null) throw new Error("annotation layer not found");
+  firePointer(layer, "pointerdown", 120, 160);
+  const editor = h.host.querySelector("[data-annotation-editor='textbox']");
+  if (editor === null) throw new Error("textbox editor did not open");
+  fireTextareaChange(editor.querySelector(".ann-textbox-editor"), "PLACED TEXT");
+  const confirm = h.host.querySelector("[data-annotation-action='textbox-confirm']");
+  if (confirm === null) throw new Error("textbox confirm not found");
+  click(confirm);
+}
+
+describe("Phase 21 regression — a placed annotation text object is auto-selected", () => {
+  it("selects and reports the placed textbox in the same commit as the disarm", () => {
+    const onCreate = vi.fn<(a: Annotation) => void>();
+    const onSelect = vi.fn<(a: Annotation | null) => void>();
+    const onFinished = vi.fn();
+    const h = mountPlacement({
+      tool: TEXTBOX_TOOL,
+      annotations: [],
+      onCreate,
+      onSelectAnnotation: onSelect,
+      onFinishedOneShot: onFinished,
+    });
+    try {
+      placeTextbox(h);
+      expect(onCreate).toHaveBeenCalledTimes(1);
+      const created = onCreate.mock.calls[0]?.[0] as Annotation;
+      expect(created.kind).toBe("textbox");
+      // The selection report carries the SAME object identity the host
+      // received through onCreate — the host keeps it while the engine
+      // echo is pending, so the panel never dips closed.
+      expect(onSelect).toHaveBeenLastCalledWith(created);
+      expect(onFinished).toHaveBeenCalledTimes(1);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it("keeps the placed annotation selected across the one-shot disarm re-render", () => {
+    const onCreate = vi.fn<(a: Annotation) => void>();
+    const onSelect = vi.fn<(a: Annotation | null) => void>();
+    const h = mountPlacement({
+      tool: TEXTBOX_TOOL,
+      annotations: [],
+      onCreate,
+      onSelectAnnotation: onSelect,
+      onFinishedOneShot: (): void => undefined,
+    });
+    try {
+      placeTextbox(h);
+      const created = onCreate.mock.calls[0]?.[0] as Annotation;
+      // The host's one-shot disarm: the tool flips to "select" while the
+      // engine's create echo has NOT landed yet (annotations still []).
+      h.rerender(SELECT_TOOL, []);
+      expect(onSelect).toHaveBeenLastCalledWith(created);
+      // The placed annotation is still rendered (the local draft stands in
+      // for the not-yet-echoed engine entry).
+      expect(h.host.querySelector(`[data-annotation-id='${created.id}']`)).not.toBeNull();
+      // The echo lands: still selected, no deselect frame in between.
+      h.rerender(SELECT_TOOL, [created]);
+      expect(onSelect).toHaveBeenLastCalledWith(created);
+      expect(h.host.querySelector(`[data-annotation-id='${created.id}']`)).not.toBeNull();
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it("a single click on the placed annotation after the disarm keeps the selection stable", () => {
+    const onCreate = vi.fn<(a: Annotation) => void>();
+    const onSelect = vi.fn<(a: Annotation | null) => void>();
+    const h = mountPlacement({
+      tool: TEXTBOX_TOOL,
+      annotations: [],
+      onCreate,
+      onSelectAnnotation: onSelect,
+      onFinishedOneShot: (): void => undefined,
+    });
+    try {
+      placeTextbox(h);
+      const created = onCreate.mock.calls[0]?.[0] as Annotation;
+      h.rerender(SELECT_TOOL, [created]);
+      const callsBefore = onSelect.mock.calls.length;
+      const surface = h.host.querySelector(`[data-annotation-id='${created.id}']`);
+      if (surface === null) throw new Error("placed textbox surface not found");
+      // The follow-up single click (the operator's "clicking does not work").
+      firePointer(surface, "pointerdown", 130, 170);
+      firePointer(surface, "pointerup", 130, 170);
+      click(surface);
+      // No deselect / re-select churn: the panel's open branch never flips.
+      for (const call of onSelect.mock.calls.slice(callsBefore)) {
+        expect(call[0]).not.toBeNull();
+      }
+      expect(onSelect).toHaveBeenLastCalledWith(created);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it("still clears the selection when the user clicks elsewhere (panel closes)", () => {
+    const onCreate = vi.fn<(a: Annotation) => void>();
+    const onSelect = vi.fn<(a: Annotation | null) => void>();
+    const h = mountPlacement({
+      tool: TEXTBOX_TOOL,
+      annotations: [],
+      onCreate,
+      onSelectAnnotation: onSelect,
+      onFinishedOneShot: (): void => undefined,
+    });
+    try {
+      placeTextbox(h);
+      const created = onCreate.mock.calls[0]?.[0] as Annotation;
+      h.rerender(SELECT_TOOL, [created]);
+      const layer = h.host.querySelector("[data-annotation-layer='1']");
+      if (layer === null) throw new Error("annotation layer not found");
+      firePointer(layer, "pointerdown", 400, 500);
+      expect(onSelect).toHaveBeenLastCalledWith(null);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it("does not auto-select a shape placement (the panel is not theirs)", () => {
+    const onCreate = vi.fn<(a: Annotation) => void>();
+    const onSelect = vi.fn<(a: Annotation | null) => void>();
+    const h = mountPlacement({
+      tool: RECT_TOOL,
+      annotations: [],
+      onCreate,
+      onSelectAnnotation: onSelect,
+      onFinishedOneShot: (): void => undefined,
+    });
+    try {
+      const layer = h.host.querySelector("[data-annotation-layer='1']");
+      if (layer === null) throw new Error("annotation layer not found");
+      firePointer(layer, "pointerdown", 120, 160);
+      firePointer(layer, "pointermove", 220, 260);
+      firePointer(layer, "pointerup", 220, 260);
+      expect(onCreate).toHaveBeenCalledTimes(1);
+      expect((onCreate.mock.calls[0]?.[0] as Annotation).kind).toBe("rect");
+      // Only the mount report (null) — a shape placement selects nothing.
+      expect(onSelect.mock.calls.length).toBe(1);
+      expect(onSelect).toHaveBeenLastCalledWith(null);
+    } finally {
+      h.cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 21 regression — the host panel's open state across a placement.
+//
+// `data-text-panel-open` on `.workspace` is the panel's single source of
+// truth; the 248px page reflow rides its open/close transition. The
+// regression was that placing an annotation text object flipped it to
+// "false" for a frame (armed tool disarmed, nothing selected yet), so the
+// page slid out from under the user's follow-up click.
+
+function stubObservers(): void {
+  const g = globalThis as unknown as {
+    IntersectionObserver?: unknown;
+    ResizeObserver?: unknown;
+  };
+  if (g.IntersectionObserver === undefined) {
+    class NoopIntersectionObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+    }
+    g.IntersectionObserver = NoopIntersectionObserver;
+  }
+  if (g.ResizeObserver === undefined) {
+    class NoopResizeObserver {
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {}
+    }
+    g.ResizeObserver = NoopResizeObserver;
+  }
+}
+
+function makeDocStub(numPages: number): PDFDocumentProxy {
+  return {
+    numPages,
+    async getPage(): Promise<unknown> {
+      return {
+        view: [0, 0, 612, 792],
+        getViewport: (_args: { scale: number }): { width: number; height: number } => ({
+          width: 612,
+          height: 792,
+        }),
+        render: (_args: unknown): { promise: Promise<void> } => ({
+          promise: Promise.resolve(),
+        }),
+        cleanup: async (): Promise<void> => undefined,
+      };
+    },
+    destroy: async (): Promise<void> => undefined,
+  } as unknown as PDFDocumentProxy;
+}
+
+function makeEngineState(pageCount: number): EngineState {
+  return {
+    pageCount,
+    pageOrder: Array.from({ length: pageCount }, (_, i) => i),
+    rotations: Array.from({ length: pageCount }, () => 0),
+    deleted: Array.from({ length: pageCount }, () => false),
+    modified: false,
+    annotations: [],
+  };
+}
+
+function workspacePanelOpen(host: HTMLElement): string | null {
+  return host.querySelector(".workspace")?.getAttribute("data-text-panel-open") ?? null;
+}
+
+/** Arm the textbox tool the way a user does: the MRU row when it is there,
+ *  otherwise the all-tools dropdown (the default MRU row is select /
+ *  highlight / underline / strikeout / ink, so textbox lives in the menu). */
+function armTextboxTool(host: HTMLElement): void {
+  const direct = host.querySelector(
+    "[data-annotation-toolbar] button[data-tool='textbox']",
+  );
+  if (direct !== null) {
+    click(direct);
+    return;
+  }
+  const toggle = host.querySelector("[data-ann-dropdown-toggle]");
+  if (toggle === null) throw new Error("annotation toolbar dropdown toggle not found");
+  click(toggle);
+  const menuRow = document.querySelector(
+    "[data-ann-dropdown-menu] button[data-tool='textbox']",
+  );
+  if (menuRow === null) throw new Error("textbox entry not found in the tools menu");
+  click(menuRow);
+}
+
+describe("Phase 21 regression — the text-properties panel across a placement", () => {
+  async function mountDocView(args: {
+    onCreateAnnotation: (a: Annotation) => void;
+  }): Promise<{ host: HTMLElement; unmount: () => void }> {
+    stubObservers();
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async (): Promise<void> => {
+      root.render(
+        createElement(DocumentView, {
+          doc: makeDocStub(3),
+          pageCount: 3,
+          outline: null,
+          initial: {
+            zoomMode: "fit-width",
+            manualScale: 1,
+            currentPage: 1,
+            searchOpen: false,
+            query: "",
+            activeHitIndex: -1,
+          },
+          onPersist: (): void => undefined,
+          onDiagnostics: (): void => undefined,
+          engineState: makeEngineState(3),
+          modified: false,
+          canUndo: false,
+          saveInPlaceEnabled: false,
+          annotations: [],
+          formFields: [],
+          signatures: [],
+          savedSignatures: [],
+          stampAnnotations: [],
+          onCreateAnnotation: args.onCreateAnnotation,
+        }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    return {
+      host,
+      unmount: (): void => {
+        act((): void => root.unmount());
+        host.remove();
+      },
+    };
+  }
+
+  it("stays open from arming through placement, then closes on a blank-page click", async () => {
+    const onCreateAnnotation = vi.fn<(a: Annotation) => void>();
+    const { host, unmount } = await mountDocView({ onCreateAnnotation });
+    try {
+      const layer = host.querySelector("[data-annotation-layer='1']");
+      if (layer === null) throw new Error("page 1 annotation layer did not mount");
+      // Closed before any text surface is engaged.
+      expect(workspacePanelOpen(host)).toBe("false");
+      // Arm the annotation text tool: the panel opens.
+      armTextboxTool(host);
+      expect(workspacePanelOpen(host)).toBe("true");
+      // Place: press the page, type, Confirm.
+      firePointer(layer, "pointerdown", 10, 10);
+      const editor = host.querySelector("[data-annotation-editor='textbox']");
+      if (editor === null) throw new Error("textbox editor did not open");
+      fireTextareaChange(editor.querySelector(".ann-textbox-editor"), "PLACED TEXT");
+      const confirm = host.querySelector("[data-annotation-action='textbox-confirm']");
+      if (confirm === null) throw new Error("textbox confirm not found");
+      click(confirm);
+      expect(onCreateAnnotation).toHaveBeenCalledTimes(1);
+      expect((onCreateAnnotation.mock.calls[0]?.[0] as Annotation).kind).toBe("textbox");
+      // THE REGRESSION: the one-shot disarm must not close the panel. The
+      // engine's create echo has not landed either (annotations is still
+      // []), so this also pins the host's retention of the reported
+      // annotation object.
+      expect(workspacePanelOpen(host)).toBe("true");
+      expect(host.querySelector("[data-text-panel]")?.getAttribute("data-text-panel-mode")).toBe(
+        "annotation",
+      );
+      // The intentional close path is untouched: a blank-page press
+      // deselects and the panel closes (the reflow runs only here).
+      firePointer(layer, "pointerdown", 2, 2);
+      expect(workspacePanelOpen(host)).toBe("false");
+    } finally {
+      unmount();
+    }
+  });
+});
+
+
 
 
 

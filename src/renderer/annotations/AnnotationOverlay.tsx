@@ -334,6 +334,20 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   // which is already React-throttled by the event loop).
   const toolKind = tool.tool;
 
+  /** Phase 21 regression fix — the id of the annotation this commit
+   *  JUST placed. A one-shot text tool (textbox / note / callout)
+   *  disarms itself in the same tick the annotation is committed
+   *  (`onFinishedOneShot` -> the host sets the tool to "select"), which
+   *  runs the tool-change reset below. Without this marker the reset
+   *  cleared the freshly placed annotation's selection one tick after
+   *  placement, the host's text-properties panel saw `selectedAnnText`
+   *  flip false, closed, and its 248px reflow pulled the page out from
+   *  under the user's follow-up click on the annotation they had just
+   *  placed. The marker lets the reset honor the selection ONCE (the
+   *  placement's own disarm) while a later, deliberate tool switch
+   *  still deselects. */
+  const placedSelectionRef = useRef<string | null>(null);
+
   // Cancel any in-progress interaction when the tool changes or the page
   // re-renders at a new scale mid-drag (zoom during a drag abandons it).
   useEffect(() => {
@@ -345,8 +359,13 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     setEditingNote(null);
     setEditTarget(null);
     setColorEditId(null);
-    setSelectedAnnId(null);
-    setAnnDraft(null);
+    const keepPlacedId = placedSelectionRef.current;
+    placedSelectionRef.current = null;
+    setSelectedAnnId((prev) => (prev !== null && prev === keepPlacedId ? prev : null));
+    // The just-placed annotation also keeps its local draft: it is not
+    // in the engine's list yet, so dropping the draft here would blank
+    // the annotation (and its selection) until the create echo lands.
+    if (keepPlacedId === null) setAnnDraft(null);
     setAnnPending(null);
     setHintPos(null);
     selDrag.endDrag();
@@ -941,6 +960,20 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
 
   // ---- editors -------------------------------------------------------------
 
+  /** Phase 21 regression fix — make a just-committed text annotation the
+   *  selection IMMEDIATELY, in the same batched update as its creation.
+   *  The local draft substitutes for the not-yet-echoed engine entry so
+   *  `selectedAnn` (and therefore the `onSelectAnnotation` report the
+   *  host's text-properties panel follows) resolves on this very render
+   *  — the panel never sees a closed frame on placement, so its 248px
+   *  close transition never reflows the page out from under the user's
+   *  next click on the placed annotation. */
+  const selectPlacedAnnotation = (ann: Annotation): void => {
+    placedSelectionRef.current = ann.id;
+    setAnnDraft({ id: ann.id, ann });
+    setSelectedAnnId(ann.id);
+  };
+
   // DEF-092 — the textbox editor's "Confirm" handler must clear
   // pending state AND unmount the editor. The unconditional
   // `setTextboxEditor(null)` at the top of the function takes care
@@ -972,7 +1005,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       onFinishedOneShot?.();
       return;
     }
-    onCreate({
+    const ann: Annotation = {
       id: newId(),
       kind: "textbox",
       page,
@@ -980,7 +1013,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       createdAt: nowIso(),
       rect: textBoxRectFor(at, text, widthPt),
       text,
-    });
+    };
+    selectPlacedAnnotation(ann);
+    onCreate(ann);
     onFinishedOneShot?.();
   };
 
@@ -1001,7 +1036,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       onFinishedOneShot?.();
       return;
     }
-    onCreate({
+    const ann: Annotation = {
       id: newId(),
       kind: "note",
       page,
@@ -1009,7 +1044,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       createdAt: nowIso(),
       at,
       text,
-    });
+    };
+    selectPlacedAnnotation(ann);
+    onCreate(ann);
     onFinishedOneShot?.();
   };
 
@@ -1036,7 +1073,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       onFinishedOneShot?.();
       return;
     }
-    onCreate({
+    const ann: Annotation = {
       id: newId(),
       kind: "callout",
       page,
@@ -1045,7 +1082,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       rect: { ...box },
       at: { ...at },
       text,
-    });
+    };
+    selectPlacedAnnotation(ann);
+    onCreate(ann);
     onFinishedOneShot?.();
   };
 

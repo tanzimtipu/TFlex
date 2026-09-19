@@ -2620,3 +2620,31 @@ avoid colliding with the live session.
 
 **Lesson:** when a feature is removed from product code, its tests die in the SAME commit
 — the CI workflow is only green if the tree is internally consistent at every commit.
+
+## 2026-09-20: Phase 21 lifecycle bugs - the settled-state testing gap
+
+Two operator-reported regressions on the installed 1.20.0 app (both from Phase 21):
+
+**DEF-251/252 (MEDIUM/HIGH):** placing an annotation text object (callout/note/textbox annotation)
+triggered a cascade: the tool disarmed in the SAME render cycle as placement, 	extPanelOpen dropped
+false, the AnimatedPanel exit animation ran (248 px page reflow), the page canvas had a transitional
+getBoundingClientRect(), and any click on the placed annotation during the 280 ms reflow hit the
+wrong page coordinate. From the user's perspective: the panel 
+ever worked for annotations and
+clicking the placed annotation doesn't work (coordinate miss during the reflow).
+
+**Fix:** auto-select the newly-placed annotation in the same batched update as the tool disarm, so
+	extPanelOpen stays true via selectedAnnText and the reflow never fires on placement.
+
+**Root cause of the testing miss:**
+Both the Phase-21 e2e spec and the adversary tested from a SETTLED STATE (panel open, page at rest).
+Neither exercised the full lifecycle: arm annotation text tool -> PLACE annotation -> tool disarms
+-> interact with the placed annotation. The adversary's place a text box with the panel open check
+used a TFlex-owned text box (not an annotation), with the panel already settled, and only tested
+place + confirm works - not place + the panel stays open + subsequent click lands.
+
+**Rule: every feature that opens or closes a panel or changes the page geometry must have a test
+that exercises the full lifecycle - arm -> USE THE TOOL (place/interact) -> observe immediately
+after - verifying that the geometry/coordinates are correct after the transition, not just in the
+settled state. A panel open precondition hides lifecycle gaps; the test must start from the
+panel closed initial state and go through the full flow.**

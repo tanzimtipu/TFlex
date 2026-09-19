@@ -5,6 +5,47 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-252: Placing an annotation text box/comment glitches the page and the follow-up click on it does not register
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 21
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`), open `report.pdf`.
+2. Arm the annotation Text box tool (or Callout / Note) - the text-properties panel opens.
+3. Place the annotation on page 1 and click its Confirm.
+4. Immediately single-click the placed annotation.
+
+Expected: the text-properties panel stays open, the page does not move, and the click on the just-placed annotation selects/keeps it selected.
+Actual (pre-fix): the one-shot tool disarmed in the same cycle as the commit, `textPanelOpen` dropped false, the panel's 248px exit transition reflowed the page canvas, and the user's follow-up click on the placed annotation landed on a transitional coordinate - the screen "glitched for a bit" and the click did not register. Root cause (orchestrator, code): `textPanelOpen = ... || annTextToolArmed || selectedAnnText`; the disarm dropped the armed branch while the not-yet-echoed annotation left `selectedAnnText` false for a frame.
+Screenshot: screenshots/def252-no-glitch.png
+
+History:
+- qa: opened (2026-09-20; operator-reported: "after placing a text box or comment ... single or double clicking doesn't work and the screen glitches")
+- qa: CLOSED (2026-09-20 FIX-READY retest; independent measurement in the dev build, `e2e/retests/def_251_252_retest.spec.cjs`). rAF probe across the placement window (67 frames): `data-text-panel-open` never flipped false (0 frames), page-1 left range 0.00px (no 248px reflow), panel width stayed 248px. `elementFromPoint` at the placed textbox centre resolved to the annotation (`DIV.ann.ann-textbox.ann-content`, id match, not the canvas). Immediately after placement panel-open="true"; after the raw single click at the annotation centre panel-open="true" and the selection chrome (`[data-content-selection-frame]`) was present. Closed baseline pageLeft 244 -> open 492 -> post-click 492. 3/3 retest tests pass.
+
+## DEF-251: Annotation text tools close the text-properties panel the moment the annotation is placed
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 21
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`), open `report.pdf`.
+2. Arm the annotation Note (or Text box / Callout) tool - the text-properties panel opens in annotation mode.
+3. Place the annotation on page 1 and click its Confirm.
+
+Expected: the text-properties panel stays open on the placed annotation (annotation mode, the annotation's colour) so the user can immediately use it.
+Actual (pre-fix): the one-shot tool disarmed on commit and the panel closed immediately - annotation text mode was barely usable because the panel vanished the instant content was placed.
+Screenshot: screenshots/def251-panel-stays-open.png
+
+History:
+- qa: opened (2026-09-20; operator-reported: "annotation text tools don't allow using the text manipulation panel")
+- qa: CLOSED (2026-09-20 FIX-READY retest; `e2e/retests/def_251_252_retest.spec.cjs`). Note placement: panel still mounted, mode "annotation", `[data-txt-color]`="#2563eb" (the placed note's default colour), placed note `data-note-selected`="true"; rAF probe (65 frames) panel-open never false, page-1 left range 0.00px, width 248px. Double-clicking the note icon opened the committed note editor; a blank-page click then unmounted the panel (0) and reset the workspace attr to "false". 3/3 retest tests pass.
+
 ## DEF-250: The CI verify workflow fails on every push - `test/unit/main/ocr.test.ts` asserts a font-dependent tesseract outcome
 
 - Status: CLOSED

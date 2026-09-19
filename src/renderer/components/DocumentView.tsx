@@ -580,15 +580,22 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // Phase 21 (annotations) — the committed annotation the page overlay
   // reports as selected, if any. The overlay owns per-page selection; it
   // reports upward so the panel can reflect a selected annotation text
-  // object's ACTUAL colour without a second selection model.
-  const [selectedAnnId, setSelectedAnnId] = useState<string | null>(null);
+  // object's ACTUAL colour without a second selection model. The reported
+  // OBJECT is kept (not just its id): a just-placed annotation is not in
+  // the engine's `annotations` list yet (the create round-trips over IPC),
+  // and looking the id up in that list alone made `selectedAnnText` flip
+  // false for a frame — the panel closed, reflowed 248px, and the user's
+  // follow-up click on the placed annotation landed on a moving origin.
+  const [selectedAnn, setSelectedAnn] = useState<Annotation | null>(null);
   const onSelectAnnotation = useCallback((ann: Annotation | null): void => {
-    setSelectedAnnId(ann === null ? null : ann.id);
+    setSelectedAnn(ann);
   }, []);
   const selectedAnnotation = useMemo(
     () =>
-      selectedAnnId === null ? null : annotations.find((a) => a.id === selectedAnnId) ?? null,
-    [selectedAnnId, annotations],
+      selectedAnn === null
+        ? null
+        : (annotations.find((a) => a.id === selectedAnn.id) ?? selectedAnn),
+    [selectedAnn, annotations],
   );
   const selectedAnnText =
     selectedAnnotation !== null &&
@@ -1944,6 +1951,25 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     dispatchAnnTool({ type: "set-tool", tool: "select" });
   }, []);
 
+  // Phase 21 regression fix — a text-bearing annotation is selected the
+  // instant it is placed, in the SAME batched update as the one-shot
+  // disarm above. The panel then stays open on the selection branch
+  // (`selectedAnnText`) instead of the armed-tool branch. Before this,
+  // the disarm dropped the last open branch on placement: the panel
+  // closed, reflowed the page 248px, and the user's follow-up click on
+  // the annotation they had just placed landed on a moving origin.
+  // Only the annotation text kinds take part — the panel is theirs;
+  // shape / ink / arrow placement is unchanged.
+  const onAnnCreate = useCallback(
+    (ann: Annotation): void => {
+      if (ann.kind === "textbox" || ann.kind === "note" || ann.kind === "callout") {
+        setSelectedAnn(ann);
+      }
+      onCreateAnnotation?.(ann);
+    },
+    [onCreateAnnotation],
+  );
+
   // ---- Bug 1 / cross-disarm: an external tool surface must disarm the ----
   // annotation creation tool. When Edit-content mode opens, the Sign tool
   // is armed, or the Stamp tool is armed, the page has (or is about to
@@ -2395,7 +2421,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       annotationTool={annTool}
                       flashId={flashId}
                       liveAnnTextIds={liveAnnTextIds}
-                      onCreateAnnotation={(a): void => onCreateAnnotation?.(a)}
+                      onCreateAnnotation={onAnnCreate}
                       onFinishedOneShot={onAnnFinishedOneShot}
                       // DEF-096 — committed note icons open their
                       // editor; Confirm/Delete route through these
