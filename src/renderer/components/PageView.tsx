@@ -84,8 +84,11 @@ interface PageViewProps {
   onDisarmAnnTool?: () => void;
   /** Phase 21 (annotations) — reports the overlay's selected committed
    *  annotation (or null) upward so the host's text-properties panel can
-   *  reflect a selected annotation text object's actual colour. */
-  onSelectAnnotation?: (ann: Annotation | null) => void;
+   *  reflect a selected annotation text object's actual colour. DEF-254 —
+   *  the report carries THIS page's visible index so the host can tell a
+   *  genuine deselect (this page reporting null for the page that HOLDS the
+   *  selection) from a neighbouring page mounting and reporting null. */
+  onSelectAnnotation?: (ann: Annotation | null, page: number) => void;
   /** B10 / DEF-101 — successfully placed stamps for this page
    *  (rect + raster as recorded by the host on `addStamp` success).
    *  Rendered as `.stamp-annotation` DOM surfaces so a placed stamp
@@ -727,6 +730,16 @@ export function PageView(props: PageViewProps) {
 
   const getTextItems = useCallback((): TextItemGeom[] => textItemsRef.current, []);
 
+  // DEF-254 — tag the overlay's selection report with this page's visible
+  // index. Stable identity (only `page` / the host callback can change) so
+  // the overlay's reporting effect does not re-fire on unrelated renders.
+  const reportAnnSelection = useCallback(
+    (ann: Annotation | null): void => {
+      onSelectAnnotation?.(ann, page);
+    },
+    [onSelectAnnotation, page],
+  );
+
   // Wrapper dims follow the rotated viewport: at 90/270 the visible
   // width and height swap. We compute the post-rotation width / height
   // from the un-rotated page dims + rotation (0,1,2,3) so the slot
@@ -788,7 +801,7 @@ export function PageView(props: PageViewProps) {
         onEditAnnotation={onEditAnnotation}
         onDeleteAnnotation={onDeleteAnnotation}
         onDisarmTool={onDisarmAnnTool}
-        onSelectAnnotation={onSelectAnnotation}
+        onSelectAnnotation={reportAnnSelection}
       />
       {/* B10 / DEF-101 + Bug 6 — placed-stamp DOM surfaces. Painted above
        * the textLayer; selectable / movable / deletable like every

@@ -1136,4 +1136,53 @@ preserve-if-valid / reject-if-invalid in `src/main/services/settings.ts` (must b
 else is rejected so the field falls back to the default); transported via the AppSettings IPC so the
 choice survives restart. The main-process validation lands before any renderer code reads the field.
 
+## Phase 24 — Full text-style support for annotation text objects (textbox, callout, note)
+
+**Supersession note:** this phase supersedes the Phase-21 per-family scope restriction that limited
+annotation text objects to colour-only in the text-properties panel. Every control in the panel
+(font family, size, bold, italic, underline, alignment, line spacing, list, indent, highlight,
+superscript/subscript, clear formatting) is now live for textbox/callout/note annotations, stored in
+the annotation model, honoured by the baked appearance stream, and surviving save/reopen.
+
+**Features**
+
+- **The text-properties panel is fully live for annotation text objects.** When a textbox, callout
+  or sticky-note annotation is selected, every panel control — font family, size, bold, italic,
+  underline, colour, highlight, alignment, line spacing, bulleted/numbered lists, indent,
+  superscript/subscript, clear formatting — operates exactly as it does for Edit-mode text boxes.
+  The disabled-with-tooltip "not supported" message is retired.
+- **Annotation model extended:** `AnnModel` carries the same `TextStyleFields` set introduced in
+  Phase 21 (`font`, `size`, `bold`, `italic`, `underline`, `align`, `lineHeight`, `highlight`,
+  `baselineShift`, `list`, `indent`); default values reproduce the previous behaviour when the
+  fields are absent so all existing annotations are unaffected.
+- **Baked appearance honours the style:** `buildFreeTextAPStream` (annotations.ts) uses the stored
+  style fields when building the /AP stream — font variant selected via `selectStandardFont`, size
+  from the stored value, colour from the stored colour, alignment positioning, highlight bands, line
+  height, list prefixes and indent offset mirror the Phase-21 `drawStyledTextLines` logic. The auto-
+  fit still applies when the stored size would overflow the box.
+- **`createAnnotation` / `editAnnotation` payloads** accept the new style fields. Validation:
+  preserve-if-valid / reject-if-invalid (same contract as Phase-21 `TextBoxStylePatch`).
+- **Round-trip:** style fields are baked into the /AP stream and also persisted in the annotation's
+  custom metadata so a reopen accurately reflects the stored style (the baked stream is what other
+  viewers see; TFlex reads the metadata on reopen to re-populate the panel).
+
+**Success criteria**
+
+1. With a textbox/callout/note annotation selected, every text panel control is live (no disabled
+   control and no "not supported" tooltip); changing font/size/bold/italic/alignment/etc. through
+   the panel applies immediately to the annotation's rendered text.
+2. All style changes survive save + reopen — the annotation opens in the other viewer with the
+   correct appearance (via the baked /AP stream) and TFlex's panel reflects the stored style.
+3. Existing annotations (no style fields stored) reopen unchanged (default values reproduce the
+   old Helvetica appearance).
+4. Validation rejects malformed style fields (same contract as Phase-21 text boxes) and fails loud;
+   valid fields are preserved; absent fields default.
+5. Unit tests for the new annotation payload validation + the appearance-stream style application
+   (font variant, alignment, line height, list prefix, highlight band); e2e for the live apply +
+   save/reopen round-trip for each style group.
+6. The Phase-21 text-box / edit-text-run contracts are unchanged.
+
+**Settings impact:** none (the style fields ride the existing annotation IPC; no new AppSettings
+field).
+
 

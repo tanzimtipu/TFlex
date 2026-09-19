@@ -10,6 +10,14 @@
 // AnimatedPanel (Phase 20 motion tokens only). The host adds the
 // `--tf-text-w` grid column so the page view reflows with the panel — the
 // same "page adjusts, never overlapped" contract the Tools panel follows.
+//
+// Phase 24 — the Phase-21 per-family scope is retired. `mode: "annotation"`
+// is now IDENTICAL to `"text"` for control gating: every control is live for
+// a selected textbox / callout / note annotation, and a patch from any
+// control is forwarded verbatim (the host routes it to `editAnnotation`'s
+// `style` payload). The `mode` prop is kept only to tag the panel surface
+// (`data-text-panel-mode`) and to label the colour control — it must never
+// gate a control again.
 
 import { useCallback, type ReactElement } from "react";
 import {
@@ -58,31 +66,15 @@ export interface TextPropertiesPanelProps {
   defaults: TextStyleValues;
   /** Emit the smallest style patch for a control gesture. */
   onPatch: (patch: TextBoxStylePatch) => void;
-  /** Phase 21 per-family scope. "text" (default) is the full Word/Adobe
-   *  control set for TFlex-owned text objects. "annotation" is the
-   *  annotation text object mode: the engine bakes the annotation's
-   *  glyphs, so only the COLOUR control is live; every other control
-   *  renders disabled with `ANNOTATION_DISABLED_REASON` as its tooltip
-   *  and must never dispatch a patch. */
+  /** Phase 24 — the target family tag. `"text"` (default) is a
+   *  TFlex-owned text object; `"annotation"` is a textbox / callout /
+   *  note annotation. Since Phase 24 the two are identical for control
+   *  gating: every control is live in both. The tag survives only for
+   *  the panel surface attribute and the colour-control label. */
   mode?: "text" | "annotation";
 }
 
-/** Exact tooltip every control disabled in annotation mode carries. The
- *  reason is contract text (REQUIREMENTS.md Phase 21, per-family scope);
- *  a disabled control must never silently no-op, so this is the only
- *  explanation the user gets for the whole disabled set. */
-export const ANNOTATION_DISABLED_REASON =
-  "not supported for annotations - the annotation's text is baked by the annotation engine";
-
 const FONT_OPTIONS: readonly EditFont[] = ["Helvetica", "Times", "Courier"];
-
-/** Disabled-state props for a control in annotation mode. Returns an
- *  empty object in text mode so the control stays fully live; the
- *  caller spreads this AFTER its own `title` so the reason overrides
- *  the control's own tooltip when the control is annotation-disabled. */
-function annotationOff(annotationMode: boolean): { disabled?: boolean; title?: string } {
-  return annotationMode ? { disabled: true, title: ANNOTATION_DISABLED_REASON } : {};
-}
 
 /** Parse a numeric input; null when the field is empty / not finite. */
 function numberOrNull(raw: string): number | null {
@@ -104,24 +96,17 @@ function Group(props: { title: string; children: ReactElement | ReactElement[] }
 export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactElement {
   const { open, values, defaults } = props;
   const annotationMode = props.mode === "annotation";
-  const rawPatch = props.onPatch;
 
-  // Phase 21 per-family scope — the single dispatch gate. In annotation
-  // mode ONLY a colour-only patch may leave the panel: every other
-  // control renders `disabled`, and this guard is the belt-and-braces
-  // backstop so a programmatically dispatched event on a disabled
-  // control can never reach the engine. A disabled control must never
-  // silently no-op, and must never silently write either.
+  // Phase 24 — no dispatch gate. The panel forwards the control's patch
+  // verbatim; the host decides the route (text-object patch vs annotation
+  // `style` / colour payload). Kept as a useCallback so the panel's own
+  // identity churn stays zero for the memoized children.
+  const rawPatch = props.onPatch;
   const onPatch = useCallback(
     (patch: TextBoxStylePatch): void => {
-      if (!annotationMode) {
-        rawPatch(patch);
-        return;
-      }
-      const keys = Object.keys(patch);
-      if (keys.length === 1 && keys[0] === "color") rawPatch(patch);
+      rawPatch(patch);
     },
-    [annotationMode, rawPatch],
+    [rawPatch],
   );
 
   return (
@@ -140,12 +125,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
         <div className="text-props-header">
           <span className="text-props-title">Text</span>
         </div>
-        {annotationMode && (
-          <p className="text-props-hint text-props-annotation-note" data-txt-annotation-note>
-            Annotation text is drawn by the annotation engine; only its colour can be
-            changed here.
-          </p>
-        )}
 
         <Group title="Font">
           <label className="text-props-row">
@@ -154,7 +133,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               className="text-props-select"
               data-txt-font
               value={values.font}
-              {...annotationOff(annotationMode)}
               onChange={(e): void => onPatch({ font: e.target.value as EditFont })}
             >
               {FONT_OPTIONS.map((f) => (
@@ -178,7 +156,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               max={TEXT_SIZE_MAX}
               step={1}
               value={values.size}
-              {...annotationOff(annotationMode)}
               onChange={(e): void => {
                 const n = numberOrNull(e.target.value);
                 if (n === null) return;
@@ -194,7 +171,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               aria-label="Bold"
               aria-pressed={values.bold}
               title="Bold"
-              {...annotationOff(annotationMode)}
               onClick={(): void => onPatch({ bold: !values.bold })}
             >
               <Bold size={14} />
@@ -206,7 +182,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               aria-label="Italic"
               aria-pressed={values.italic}
               title="Italic"
-              {...annotationOff(annotationMode)}
               onClick={(): void => onPatch({ italic: !values.italic })}
             >
               <Italic size={14} />
@@ -220,7 +195,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               aria-label="Underline"
               aria-pressed={values.underline}
               title="Underline"
-              {...annotationOff(annotationMode)}
               onClick={(): void => onPatch({ underline: !values.underline })}
             >
               <Underline size={14} />
@@ -234,7 +208,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               aria-label="Superscript"
               aria-pressed={values.baselineShift > 0}
               title="Superscript"
-              {...annotationOff(annotationMode)}
               onClick={(): void =>
                 onPatch({ baselineShift: values.baselineShift > 0 ? 0 : TEXT_SUPER_SHIFT })
               }
@@ -250,7 +223,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               aria-label="Subscript"
               aria-pressed={values.baselineShift < 0}
               title="Subscript"
-              {...annotationOff(annotationMode)}
               onClick={(): void =>
                 onPatch({ baselineShift: values.baselineShift < 0 ? 0 : TEXT_SUB_SHIFT })
               }
@@ -278,7 +250,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 data-txt-highlight
                 type="color"
                 value={editColorToHex(values.highlight ?? TEXT_NO_HIGHLIGHT)}
-                {...annotationOff(annotationMode)}
                 onChange={(e): void => onPatch({ highlight: hexToEditColor(e.target.value) })}
               />
               <button
@@ -286,7 +257,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 data-txt-highlight-clear
                 className="text-props-mini-btn"
                 title="No highlight"
-                {...annotationOff(annotationMode)}
                 aria-label="No highlight"
                 onClick={(): void => onPatch({ highlight: null })}
               >
@@ -299,7 +269,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             data-txt-clear
             className="text-props-wide-btn"
             title="Clear formatting"
-            {...annotationOff(annotationMode)}
             onClick={(): void => onPatch(clearFormattingPatch(defaults))}
           >
             <Eraser size={13} />
@@ -327,7 +296,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 aria-label={label}
                 aria-pressed={values.align === align}
                 title={label}
-                {...annotationOff(annotationMode)}
                 onClick={(): void => onPatch({ align: align as TextAlign })}
               >
                 <Icon size={14} />
@@ -344,7 +312,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               max={TEXT_LINE_HEIGHT_MAX}
               step={0.1}
               value={values.lineHeight}
-              {...annotationOff(annotationMode)}
               onChange={(e): void => {
                 const n = numberOrNull(e.target.value);
                 if (n === null) return;
@@ -370,7 +337,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 aria-label={label}
                 aria-pressed={values.list === list}
                 title={label}
-                {...annotationOff(annotationMode)}
                 onClick={(): void => onPatch({ list: list as TextListStyle })}
               >
                 <Icon size={14} />
@@ -385,8 +351,8 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 data-txt-indent-dec
                 className="text-props-btn"
                 aria-label="Decrease indent"
-                title={annotationMode ? ANNOTATION_DISABLED_REASON : "Decrease indent"}
-                disabled={annotationMode || values.indent <= 0}
+                title="Decrease indent"
+                disabled={values.indent <= 0}
                 onClick={(): void => onPatch({ indent: clampIndent(values.indent - TEXT_INDENT_STEP) })}
               >
                 <IndentDecrease size={14} />
@@ -399,8 +365,8 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
                 data-txt-indent-inc
                 className="text-props-btn"
                 aria-label="Increase indent"
-                title={annotationMode ? ANNOTATION_DISABLED_REASON : "Increase indent"}
-                disabled={annotationMode || values.indent >= 200}
+                title="Increase indent"
+                disabled={values.indent >= 200}
                 onClick={(): void => onPatch({ indent: clampIndent(values.indent + TEXT_INDENT_STEP) })}
               >
                 <IndentIncrease size={14} />
@@ -411,18 +377,16 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
 
         {/* Two controls the PDF engine cannot represent: pdf-lib exposes no
             Tc / Tz operators, so they ship disabled-with-tooltip per the
-            FEA-011 research decision. */}
+            FEA-011 research decision. This is a PDF-engine limit, not a
+            per-family scope — they stay disabled for text objects and
+            annotation text objects alike. */}
         <Group title="Spacing">
           <button
             type="button"
             data-txt-character-spacing
             className="text-props-wide-btn"
             disabled
-            title={
-              annotationMode
-                ? ANNOTATION_DISABLED_REASON
-                : "Character spacing is not available: the PDF engine has no Tc operator."
-            }
+            title="Character spacing is not available: the PDF engine has no Tc operator."
           >
             <span>Character spacing</span>
           </button>
@@ -431,11 +395,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             data-txt-horizontal-scaling
             className="text-props-wide-btn"
             disabled
-            title={
-              annotationMode
-                ? ANNOTATION_DISABLED_REASON
-                : "Horizontal scaling is not available: the PDF engine has no Tz operator."
-            }
+            title="Horizontal scaling is not available: the PDF engine has no Tz operator."
           >
             <span>Horizontal scaling</span>
           </button>
@@ -462,5 +422,3 @@ export function clearFormattingPatch(defaults: TextStyleValues): TextBoxStylePat
     indent: clampIndent(defaults.indent),
   };
 }
-
-

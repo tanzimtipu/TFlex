@@ -41,6 +41,7 @@ import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
 import { EditToolbar, defaultEditHint } from "../edit/EditToolbar";
 import { TextPropertiesPanel } from "../edit/TextPropertiesPanel";
 import {
+  annotationStyleFromPanelPatch,
   applyPatchToValues,
   defaultTextStyleValues,
   editColorToHex,
@@ -447,6 +448,32 @@ export interface DocumentViewHandle {
 }
 
 /**
+ * DEF-254 — the annotation-selection conduit's page guard.
+ *
+ * Every mounted page's `AnnotationOverlay` reports its own selection upward:
+ * `(null, ownPage)` while nothing on that page is selected, `(ann, ownPage)`
+ * when the user selects one. The host keeps a SINGLE selection, so without
+ * this guard a page that MOUNTS later (virtualization mounting page 5 while
+ * page 4's overlay is selected, or a neighbour remounting during the panel's
+ * reflow) reported `null` and clobbered the live selection — the text
+ * properties panel opened and then closed on its own.
+ *
+ * Rule: a non-null report from ANY page is authoritative (it sets the
+ * selection). A null report only clears when it comes from the page that
+ * currently HOLDS the selection — a neighbouring page saying "nothing is
+ * selected over here" is not a deselect gesture.
+ */
+export function applyAnnSelectionReport(
+  prev: Annotation | null,
+  report: Annotation | null,
+  fromPage: number,
+): Annotation | null {
+  if (report !== null) return report;
+  if (prev !== null && prev.page === fromPage) return null;
+  return prev;
+}
+
+/**
  * The full document workspace: side rail (thumbnails / outline), toolbar,
  * search bar, and the virtualized continuous scroller. All per-document
  * view state (zoom, page, search) lives here and is persisted upwards.
@@ -587,8 +614,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // false for a frame — the panel closed, reflowed 248px, and the user's
   // follow-up click on the placed annotation landed on a moving origin.
   const [selectedAnn, setSelectedAnn] = useState<Annotation | null>(null);
-  const onSelectAnnotation = useCallback((ann: Annotation | null): void => {
-    setSelectedAnn(ann);
+  // DEF-254 — the report carries the reporting page's number. `page` is the
+  // VISIBLE page index, the same space `Annotation.page` uses, so the guard
+  // can compare them. See `applyAnnSelectionReport`.
+  const onSelectAnnotation = useCallback((ann: Annotation | null, fromPage: number): void => {
+    setSelectedAnn((prev) => applyAnnSelectionReport(prev, ann, fromPage));
   }, []);
   const selectedAnnotation = useMemo(
     () =>
@@ -632,19 +662,44 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const textPanelValues: TextStyleValues =
     textPanelMode === "text"
       ? textPanelTextValues
-      : { ...textPanelDefaults, color: annotationPanelColor };
+      : {
+          // Phase 24 — the annotation panel reflects the SELECTED
+          // annotation's STORED style (font/size/bold/italic/underline/
+          // highlight/align/lineHeight/baselineShift/list/indent), falling
+          // back to the per-tool defaults for any field the annotation has
+          // never set (absent fields never overwrite the default). The
+          // colour is always the annotation's ACTUAL colour, or the armed
+          // tool's colour while nothing is selected yet.
+          ...textPanelDefaults,
+          ...selectedAnnotation?.style,
+          color: annotationPanelColor,
+        };
   const handleTextPanelPatch = useCallback(
     (patch: TextBoxStylePatch): void => {
       if (textPanelMode === "annotation") {
-        // Only the colour control is live in annotation mode; the panel's
-        // own gate already drops every other patch, and this guard keeps
-        // the contract explicit at the host boundary.
-        if (patch.color === undefined) return;
-        const color = editColorToHex(patch.color);
+        // Phase 24 — a selected annotation text object now takes the FULL
+        // patch. Every non-colour field rides `editAnnotation`'s `style`
+        // payload (the engine validates + merges it and re-bakes the /AP
+        // stream); colour keeps its own path. A colour-only patch never
+        // reaches the style route, and a style-only patch never re-sends
+        // colour — a mixed patch (clear formatting) goes out as ONE call
+        // so it is a single undo step.
+        const { color: patchColor, ...rest } = patch;
+        const style = annotationStyleFromPanelPatch(rest);
+        const hasStyle = Object.keys(style).length > 0;
+        const hasColor = patchColor !== undefined;
         if (selectedAnnText && selectedAnnotation !== null) {
-          onEditAnnotation?.(selectedAnnotation.id, { color });
-        } else {
-          dispatchAnnTool({ type: "set-color", color });
+          if (!hasStyle && !hasColor) return;
+          onEditAnnotation?.(selectedAnnotation.id, {
+            ...(hasStyle ? { style } : {}),
+            ...(hasColor ? { color: editColorToHex(patchColor) } : {}),
+          });
+          return;
+        }
+        // Nothing selected yet: only the armed tool's colour is real
+        // state. A style gesture before placement would have no target.
+        if (hasColor) {
+          dispatchAnnTool({ type: "set-color", color: editColorToHex(patchColor) });
         }
         return;
       }

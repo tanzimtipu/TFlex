@@ -1,16 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import {
   PDFArray,
+  PDFDict,
   PDFDocument,
   PDFName,
   PDFNumber,
   PDFRef,
   PDFString,
-  StandardFonts,
   type PDFFont,
+  type PDFPage,
   type PDFPageLeaf,
 } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
+import { drawStyledTextLines, selectStandardFont } from './engine';
+import {
+  EDIT_FONTS,
+  MAX_TEXT_SIZE,
+  MIN_TEXT_SIZE,
+  validateTextStyleFields,
+} from './text-style';
 import type {
   AnnColor,
   AnnColorValue,
@@ -19,9 +27,12 @@ import type {
   AnnModel,
   AnnPoint,
   AnnRect,
+  AnnTextStyle,
   CreateAnnotationPayload,
   EditAnnotationPayload,
+  EditFont,
   EngineError,
+  TextStyleFields,
 } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
@@ -122,6 +133,109 @@ export function colorToRgb(color: string): [number, number, number] {
 export function normalizeColorValue(color: string | undefined): string {
   if (typeof color === 'string' && isValidColorValue(color)) return color;
   throw new Error(`Invalid annotation color: ${color}`);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 24 — text-style round-trip sentinel
+//
+// pdf-lib has no round-trip-safe annotation metadata store, so a text-bearing
+// annotation's `TextStyleFields` are persisted as the FIRST LINE of the
+// annotation's /Contents string:
+//
+//   TFLEX-STYLE <base64url(JSON.stringify(TextStyleFields))>
+//   <the user's text, unchanged>
+//
+// This mirrors the Phase-18 watermark content-stream marker (`%TFLEX-WATERMARK
+// ...` in engine.ts) and survives save/reopen because /Contents is a normal
+// PDF string. The baked /AP stream is what other viewers see; TFlex reads this
+// sentinel on reopen to re-populate the text-properties panel. A sentinel is
+// only written when the annotation actually carries a style, so a legacy
+// annotation's /Contents is byte-for-byte unchanged.
+// ---------------------------------------------------------------------------
+
+const STYLE_MARKER_PREFIX = 'TFLEX-STYLE ';
+
+type AnnStyleValidation =
+  | { ok: true; value: AnnTextStyle }
+  | { ok: false; reason: string };
+
+/** Phase 24 follow-up — validate the annotation text style: the Phase-21
+ *  `TextStyleFields` (via `validateTextStyleFields`) plus the `font`/`size`
+ *  extension the font-family picker and size stepper send. Same contract as
+ *  every other text payload: a supplied-but-invalid field rejects the whole
+ *  payload; absent fields are simply not carried.
+ *
+ *  Phase 24 follow-up — `highlight: null` is an explicit REMOVAL on this
+ *  path (the panel's "None" / clear-highlight button), mirroring
+ *  `TextBoxStylePatch.highlight`. The shared `validateTextStyleFields`
+ *  rejects `null`, so strip it before that call and carry the removal
+ *  through as `null`; an ABSENT `highlight` still preserves the stored
+ *  band. Every non-null highlight keeps the existing `EditColor`
+ *  validation. */
+function validateAnnTextStyle(raw: unknown): AnnStyleValidation {
+  const rawObj = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
+  const removesHighlight = rawObj !== null && rawObj.highlight === null;
+  const base = validateTextStyleFields(
+    removesHighlight && rawObj !== null ? { ...rawObj, highlight: undefined } : raw,
+  );
+  if (!base.ok) return base;
+  const out: AnnTextStyle = { ...base.value };
+  if (removesHighlight) out.highlight = null;
+  const r = raw as Record<string, unknown>;
+  if (r.font !== undefined) {
+    if (typeof r.font !== 'string' || !(EDIT_FONTS as readonly string[]).includes(r.font)) {
+      return {
+        ok: false,
+        reason: `unsupported font ${JSON.stringify(r.font)}; the StandardFont allowlist is Helvetica, Times, Courier`,
+      };
+    }
+    out.font = r.font as EditFont;
+  }
+  if (r.size !== undefined) {
+    if (
+      typeof r.size !== 'number' || !Number.isFinite(r.size) ||
+      r.size < MIN_TEXT_SIZE || r.size > MAX_TEXT_SIZE
+    ) {
+      return {
+        ok: false,
+        reason: `size must be a finite number in ${MIN_TEXT_SIZE}..${MAX_TEXT_SIZE}`,
+      };
+    }
+    out.size = r.size;
+  }
+  return { ok: true, value: out };
+}
+
+/** Encode `/Contents` for an annotation: prepend the style sentinel when the
+ *  annotation carries a non-empty style. Returns the plain content otherwise. */
+function encodeAnnotationContents(ann: AnnModel): string | undefined {
+  const text = ann.content;
+  if (ann.style === undefined || Object.keys(ann.style).length === 0) {
+    return text;
+  }
+  const payload = Buffer.from(JSON.stringify(ann.style)).toString('base64url');
+  const marker = STYLE_MARKER_PREFIX + payload;
+  return text !== undefined && text.length > 0 ? `${marker}\n${text}` : marker;
+}
+
+/** Decode a `/Contents` string that may carry the style sentinel. Returns the
+ *  user text (undefined when empty) and the validated style (undefined when
+ *  absent or malformed — a hostile payload never throws out of the load path). */
+function decodeAnnotationContents(value: string): { text: string | undefined; style?: AnnTextStyle } {
+  if (!value.startsWith(STYLE_MARKER_PREFIX)) return { text: value };
+  const rest = value.slice(STYLE_MARKER_PREFIX.length);
+  const newline = rest.indexOf('\n');
+  const payload = newline === -1 ? rest : rest.slice(0, newline);
+  const text = newline === -1 ? '' : rest.slice(newline + 1);
+  let style: AnnTextStyle | undefined;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    const v = validateAnnTextStyle(parsed);
+    if (v.ok && Object.keys(v.value).length > 0) style = v.value;
+  } catch {
+    style = undefined;
+  }
+  return { text: text.length > 0 ? text : undefined, style };
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +380,20 @@ function normalizeAnnotationPayload(payload: CreateAnnotationPayload): AnnModel 
 
   const content = payload.content ?? payload.text;
 
+  // Phase 24 — validate the optional text style fields (including the
+  // follow-up `font`/`size` extension). Absent means the legacy appearance (no
+  // `style` on the model = Helvetica 12 / left / default line height). A
+  // present-but-invalid field rejects the WHOLE create with a typed
+  // engine-error (preserve-if-valid / reject-if-invalid, the Phase-21
+  // contract); an empty validated object is omitted so a no-op patch never
+  // stores `{}`.
+  let style: AnnTextStyle | undefined;
+  if (payload.style !== undefined) {
+    const v = validateAnnTextStyle(payload.style);
+    if (!v.ok) throw new Error(v.reason);
+    if (Object.keys(v.value).length > 0) style = v.value;
+  }
+
   return {
     id: payload.id,
     kind,
@@ -280,6 +408,7 @@ function normalizeAnnotationPayload(payload: CreateAnnotationPayload): AnnModel 
     opacity: payload.opacity,
     blendMode: payload.blendMode,
     lineEnds: payload.lineEnds?.slice(),
+    style,
   };
 }
 
@@ -318,7 +447,16 @@ function normalizeKind(k: string): AnnKind {
 
 /** Clone the per-original-page annotations array. */
 export function cloneAnnotations(anns: AnnModel[][]): AnnModel[][] {
-  return anns.map((pageAnns) => pageAnns.map((a) => ({ ...a, rects: a.rects.map((r) => ({ ...r })), points: a.points?.map((p) => ({ ...p })), at: a.at !== undefined ? { ...a.at } : undefined, lineEnds: a.lineEnds?.slice() })));
+  return anns.map((pageAnns) => pageAnns.map((a) => ({
+    ...a,
+    rects: a.rects.map((r) => ({ ...r })),
+    points: a.points?.map((p) => ({ ...p })),
+    at: a.at !== undefined ? { ...a.at } : undefined,
+    lineEnds: a.lineEnds?.slice(),
+    style: a.style !== undefined
+      ? { ...a.style, highlight: a.style.highlight ? { ...a.style.highlight } : undefined }
+      : undefined,
+  })));
 }
 
 /**
@@ -414,8 +552,28 @@ export function editAnnotation(
     ann.text = payload.text;
     ann.content = payload.text;
   }
+  // Phase 24 — partial style patch. Every supplied field (including the
+  // follow-up `font`/`size` extension) is validated; an invalid field rejects
+  // the whole edit with a typed engine-error. Valid fields are merged onto the
+  // stored style so an edit of one property keeps the others (same semantics as
+  // the Phase-21 `updateTextBox` partial merge).
+  if (payload.style !== undefined) {
+    const v = validateAnnTextStyle(payload.style);
+    if (!v.ok) return err('engine-error', v.reason);
+    if (Object.keys(v.value).length > 0) {
+      ann.style = { ...(ann.style ?? {}), ...v.value };
+    }
+  }
 
-  return ok({ ...ann, rects: ann.rects.map((r) => ({ ...r })), points: ann.points?.map((p) => ({ ...p })), lineEnds: ann.lineEnds?.slice() });
+  return ok({
+    ...ann,
+    rects: ann.rects.map((r) => ({ ...r })),
+    points: ann.points?.map((p) => ({ ...p })),
+    lineEnds: ann.lineEnds?.slice(),
+    style: ann.style !== undefined
+      ? { ...ann.style, highlight: ann.style.highlight ? { ...ann.style.highlight } : undefined }
+      : undefined,
+  });
 }
 
 export function deleteAnnotation(
@@ -456,6 +614,12 @@ const SUBTYPE_MAP: Record<string, AnnKind> = {
   Squiggly: 'squiggly',
   StrikeOut: 'strikeout',
 };
+
+/** The /Subtype names the load path models into AnnModel and the save path
+ *  re-serializes from that model. `stripModeledAnnots` uses this to tell
+ *  TFlex's own annotations apart from foreign annotations it does not model
+ *  (Widget, Link, Stamp, ...), which must be carried through untouched. */
+const MODELED_ANNOT_SUBTYPES: ReadonlySet<string> = new Set(Object.keys(SUBTYPE_MAP));
 
 function parsePdfArray(arr: unknown): number[] | undefined {
   if (!(arr instanceof PDFArray)) return undefined;
@@ -548,8 +712,11 @@ function parseOneAnnotation(
     });
   }
 
-  // Contents
-  const contents = parsePdfString(dict.get('Contents'));
+  // Contents (may carry the Phase-24 style sentinel on its first line).
+  const rawContents = parsePdfString(dict.get('Contents'));
+  const decodedContents = rawContents !== undefined ? decodeAnnotationContents(rawContents) : undefined;
+  const contents = decodedContents?.text;
+  const style = decodedContents?.style;
 
   // Color: prefer the verbatim /TFlexColor sidecar (named preset OR free-form
   // hex) so a custom hex round-trips exactly instead of snapping to the
@@ -705,6 +872,7 @@ function parseOneAnnotation(
     width,
     blendMode,
     lineEnds,
+    style,
   };
 }
 
@@ -1057,15 +1225,75 @@ function wrapTextForFreeText(
   return lines;
 }
 
+/** Phase 24 — an operator collector that stands in for a `PDFPage` when the
+ *  shared `drawStyledTextLines` (engine.ts) renders a FreeText /AP stream.
+ *  That renderer only calls `drawText` + `drawRectangle`; this object
+ *  implements exactly those two methods and serialises them to PDF
+ *  content-stream operators, so the annotation appearance reuses the Phase-21
+ *  styled layout (alignment, highlight bands, underline, baseline shift, list
+ *  prefixes, indent) instead of a hand-rolled text loop. */
+class ApStreamOps {
+  readonly ops: string[] = [];
+
+  drawText(
+    text: string,
+    options: {
+      x: number;
+      y: number;
+      size: number;
+      font: PDFFont;
+      color: { red: number; green: number; blue: number };
+    },
+  ): void {
+    const { x, y, size, font, color } = options;
+    this.ops.push('BT');
+    this.ops.push(`/Helv ${round3(size)} Tf`);
+    this.ops.push(`${round3(color.red)} ${round3(color.green)} ${round3(color.blue)} rg`);
+    this.ops.push(`1 0 0 1 ${round3(x)} ${round3(y)} Tm`);
+    this.ops.push(`${font.encodeText(text).toString()} Tj`);
+    this.ops.push('ET');
+  }
+
+  drawRectangle(options: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    color: { red: number; green: number; blue: number };
+  }): void {
+    const { x, y, width, height, color } = options;
+    this.ops.push(`${round3(color.red)} ${round3(color.green)} ${round3(color.blue)} rg`);
+    this.ops.push(`${round3(x)} ${round3(y)} ${round3(width)} ${round3(height)} re`);
+    this.ops.push('f');
+  }
+}
+
+/** Phase 24 — width reserved for a per-line list prefix during wrapping.
+ *  Mirrors engine.ts `listPrefixWidth` (bullet glyph + gap / widest `999. `). */
+function freeTextListPrefixWidth(
+  font: PDFFont,
+  size: number,
+  list: TextStyleFields['list'],
+): number {
+  if (list === 'bullet') return font.widthOfTextAtSize('\u2022 ', size);
+  if (list === 'number') return font.widthOfTextAtSize('999. ', size);
+  return 0;
+}
+
 /** Build a Form XObject appearance stream for a FreeText (textbox or callout)
- *  annotation that draws the wrapped text with a StandardFont (Helvetica) at
- *  the /DA size and color, applying the same auto-fit the renderer uses. The
- *  stream paints ONLY the text (no border, no background, no leader line): the
- *  renderer overlay keeps the box chrome + callout arrow, and pdf.js paints
- *  this /AP for the glyphs — so there is exactly one copy of the text on
- *  reopen instead of TFlex's draw plus pdf.js's generated appearance
- *  (DEF-166). The /BBox is the flipped /Rect; coordinates use the page's
- *  bottom-left user space. */
+ *  annotation that draws the wrapped text with a StandardFont at the /DA size
+ *  and color, applying the same auto-fit the renderer uses. The stream paints
+ *  ONLY the text (no border, no background, no leader line): the renderer
+ *  overlay keeps the box chrome + callout arrow, and pdf.js paints this /AP
+ *  for the glyphs — so there is exactly one copy of the text on reopen instead
+ *  of TFlex's draw plus pdf.js's generated appearance (DEF-166). The /BBox is
+ *  the flipped /Rect; coordinates use the page's bottom-left user space.
+ *
+ *  Phase 24 — the styled layout is delegated to the shared
+ *  `drawStyledTextLines` (the same renderer the Phase-21 text-box bake uses)
+ *  via the `ApStreamOps` collector. The caller passes the font selected for
+ *  the stored bold/italic variant; colour keeps its per-kind value (black for
+ *  a plain text box, the annotation colour for a callout). */
 function buildFreeTextAPStream(
   doc: PDFDocument,
   ann: AnnModel,
@@ -1087,32 +1315,64 @@ function buildFreeTextAPStream(
   const rawText = ann.content ?? ann.text ?? '';
   const safe = sanitizeForAnnotFont(rawText);
 
-  // Auto-fit: wrap at the user size, then shrink so every line fits the
-  // content height (floor 4pt, cap at the user size). Mirrors
-  // `fitTextBoxFontSizePx`.
-  const lines = wrapTextForFreeText(font, safe, FREETEXT_FONT_PT, contentWidth);
-  let size = FREETEXT_FONT_PT;
+  // Phase 24 — style defaults reproduce the legacy appearance when the
+  // annotation carries no style: Helvetica 12, left-aligned, line height 1.35.
+  const style = ann.style ?? {};
+  const lineHeight = style.lineHeight ?? FREETEXT_LINE_HEIGHT;
+  const list = style.list ?? 'none';
+  const indent = style.indent ?? 0;
+
+  // Auto-fit: wrap at the base size (the stored style's `size` when one is
+  // carried, otherwise the legacy 12pt), reserving the indent + list-prefix
+  // width, then shrink so every wrapped line fits the content height (floor
+  // 4pt, cap at the base size). Mirrors `fitTextBoxFontSizePx`.
+  const baseSize = style.size ?? FREETEXT_FONT_PT;
+  const wrapAt = (s: number): string[] =>
+    wrapTextForFreeText(
+      font,
+      safe,
+      s,
+      Math.max(1, contentWidth - indent - freeTextListPrefixWidth(font, s, list)),
+    );
+  let size = baseSize;
+  let lines = wrapAt(size);
   if (lines.length > 0) {
-    const needed = lines.length * size * FREETEXT_LINE_HEIGHT;
+    const needed = lines.length * size * lineHeight;
     if (needed > contentHeight) {
-      size = Math.max(FREETEXT_MIN_SIZE_PT, contentHeight / (lines.length * FREETEXT_LINE_HEIGHT));
+      size = Math.max(FREETEXT_MIN_SIZE_PT, contentHeight / (lines.length * lineHeight));
+      lines = wrapAt(size);
     }
   }
-  size = Math.min(FREETEXT_FONT_PT, Math.max(FREETEXT_MIN_SIZE_PT, size));
-  const lineStep = size * FREETEXT_LINE_HEIGHT;
+  size = Math.min(baseSize, Math.max(FREETEXT_MIN_SIZE_PT, size));
 
-  const ops: string[] = ['q', 'BT'];
-  ops.push(`/Helv ${round3(size)} Tf`);
-  ops.push(`${tr} ${tg} ${tb} rg`);
-  // First baseline: top of the content box (ury - inset) minus the font size.
-  let y = ury - inset - size;
-  const x = llx + inset;
-  for (const ln of lines) {
-    ops.push(`1 0 0 1 ${round3(x)} ${round3(y)} Tm`);
-    ops.push(`${font.encodeText(ln).toString()} Tj`);
-    y -= lineStep;
-  }
-  ops.push('ET', 'Q');
+  // Render through the shared Phase-21 styled-line renderer. `rectTop` is the
+  // content box's top in top-left space, so the renderer's
+  // `pageHeight - cursorTop - size` baseline is identical to the old
+  // first-baseline maths (`ury - inset - size`).
+  const collector = new ApStreamOps();
+  drawStyledTextLines(
+    collector as unknown as PDFPage,
+    pageHeight,
+    lines,
+    llx + inset,
+    bbox.y + inset,
+    contentWidth,
+    size,
+    font,
+    { r: tr, g: tg, b: tb },
+    {
+      align: style.align ?? 'left',
+      lineHeight,
+      underline: style.underline ?? false,
+      baselineShift: style.baselineShift ?? 0,
+      // Phase 24 follow-up — `null` means the stored band was REMOVED; draw
+      // no band exactly like an absent highlight.
+      highlight: style.highlight ?? undefined,
+      list,
+      indent,
+    },
+  );
+  const ops: string[] = ['q', ...collector.ops, 'Q'];
 
   const streamBytes = new TextEncoder().encode(ops.join('\n') + '\n');
   const stream = doc.context.stream(
@@ -1130,6 +1390,48 @@ function buildFreeTextAPStream(
 
 function round3(n: number): string {
   return (Math.round(n * 1000) / 1000).toString();
+}
+
+/**
+ * Drop from an output page's /Annots the entries whose /Subtype TFlex models
+ * and re-serializes from its own annotation state.
+ *
+ * DEF-255: pdf-lib's `copyPages` carries the source page's whole /Annots array
+ * onto the cloned leaf. `serializeAnnotation` then APPENDs TFlex's freshly
+ * serialized dictionaries, so saving a file that was itself written by TFlex
+ * (i.e. every save after a reopen) duplicated every modeled annotation — the
+ * stale copy kept its old /Contents sentinel and /AP appearance, silently
+ * reverting edits such as clearing a highlight. A deleted annotation was also
+ * never persisted for the same reason. Stripping the modeled entries first
+ * makes serializeAnnotations a replace, not an append.
+ *
+ * Foreign subtypes TFlex does not model (Widget, Link, Stamp, Popup, ...) are
+ * left untouched; Widgets are recreated by the form-field migration.
+ */
+function stripModeledAnnots(doc: PDFDocument, pageLeaf: PDFPageLeaf): void {
+  const annotsRef = pageLeaf.get(PDFName.of('Annots'));
+  if (annotsRef === undefined) return;
+  let arr: unknown = annotsRef;
+  if (annotsRef instanceof PDFRef) {
+    arr = doc.context.lookup(annotsRef);
+  }
+  if (!(arr instanceof PDFArray)) return;
+  const kept: unknown[] = [];
+  for (let i = 0; i < arr.size(); i++) {
+    const el = arr.get(i);
+    let obj: unknown = el;
+    if (el instanceof PDFRef) {
+      try {
+        obj = doc.context.lookup(el);
+      } catch {
+        obj = undefined;
+      }
+    }
+    const subtype = obj instanceof PDFDict ? parsePdfName(obj.get(PDFName.of('Subtype'))) : undefined;
+    if (subtype !== undefined && MODELED_ANNOT_SUBTYPES.has(subtype)) continue;
+    kept.push(el);
+  }
+  pageLeaf.set(PDFName.of('Annots'), doc.context.obj(kept as any));
 }
 
 /**
@@ -1162,8 +1464,12 @@ function serializeAnnotation(
   // is a private, non-standard field ignored by other PDF viewers.
   dictEntries.push(['TFlexColor', PDFString.of(ann.color)]);
 
-  if (ann.content !== undefined && ann.content.length > 0) {
-    dictEntries.push(['Contents', PDFString.of(ann.content)]);
+  // Phase 24 — /Contents may carry the style sentinel as its first line so the
+  // text-properties panel can be re-populated on reopen (see
+  // `encodeAnnotationContents`). Legacy/absent styles leave the string as-is.
+  const contents = encodeAnnotationContents(ann);
+  if (contents !== undefined && contents.length > 0) {
+    dictEntries.push(['Contents', PDFString.of(contents)]);
   }
 
   if (ann.opacity !== undefined) {
@@ -1375,23 +1681,39 @@ export async function serializeAnnotations(
   annotations: AnnModel[][],
   order: number[],
 ): Promise<void> {
-  // Embed the standard font once for all FreeText appearance streams. Only
-  // needed when at least one textbox/callout exists; embed unconditionally —
-  // it is cheap and keeps the call sites simple.
-  const font = await outDoc.embedFont(StandardFonts.Helvetica);
+  // Phase 24 — the font is selected per annotation from its stored family +
+  // bold/italic style (defaulting to Helvetica for a legacy annotation), so
+  // cache the embedded StandardFont by (family|bold|italic). A legacy
+  // annotation with no style resolves to plain Helvetica, exactly as before.
+  type EmbeddedFont = Awaited<ReturnType<typeof outDoc['embedFont']>>;
+  const fontCache = new Map<string, EmbeddedFont>();
+  const getFont = async (family: EditFont, bold: boolean, italic: boolean): Promise<EmbeddedFont> => {
+    const key = `${family}|${bold ? 'b' : ''}${italic ? 'i' : ''}`;
+    const cached = fontCache.get(key);
+    if (cached !== undefined) return cached;
+    const embedded = await outDoc.embedFont(selectStandardFont(family, bold, italic));
+    fontCache.set(key, embedded);
+    return embedded;
+  };
 
   const pageCount = outDoc.getPageCount();
   for (let vi = 0; vi < order.length && vi < pageCount; vi++) {
     const origIdx = order[vi];
     const pageAnns = annotations[origIdx];
-    if (pageAnns === undefined || pageAnns.length === 0) continue;
     const outPage = outDoc.getPage(vi);
     const pageHeight = outPage.getSize().height;
     const pageLeaf = (outPage as any).node as PDFPageLeaf;
+    // DEF-255: remove the modeled annotations `copyPages` carried over from the
+    // source page so re-serializing below REPLACES them instead of duplicating.
+    stripModeledAnnots(outDoc, pageLeaf);
+    if (pageAnns === undefined || pageAnns.length === 0) continue;
     if (pageLeaf.get(PDFName.of('Annots')) === undefined) {
       pageLeaf.set(PDFName.of('Annots'), outDoc.context.obj([]));
     }
     for (const ann of pageAnns) {
+      // Only the FreeText kinds bake a text /AP; the font is unused otherwise.
+      const style = ann.style ?? {};
+      const font = await getFont(style.font ?? 'Helvetica', style.bold ?? false, style.italic ?? false);
       serializeAnnotation(outDoc, pageLeaf, ann, pageHeight, font);
     }
   }

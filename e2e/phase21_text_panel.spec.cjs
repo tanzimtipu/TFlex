@@ -8,7 +8,7 @@
 //      (font / character style / colour+highlight / paragraph groups)
 //   C3 no floating style toolbox on any text-bearing path
 //   C4 one panel serves every text-bearing tool and re-targets; annotation
-//      mode colour-live / 22 controls disabled with the exact reason
+//      mode colour-live, per-family disabled set retired (Phase 24)
 //   C5 undo/redo restores text AND the panel's reflected state
 //   C7 reduced motion collapses the panel path with no structural change
 //
@@ -607,7 +607,14 @@ test('C3 no floating style toolbox; grip + Confirm/Cancel/Delete remain', async 
 
 // ===========================================================================
 // C4 — one panel serves every text-bearing tool; re-targets without closing;
-// annotation mode: colour live, 22 controls disabled with the exact reason.
+// annotation mode: colour live, per-family disabled set retired (Phase 24) —
+// only the engine-disabled Tc/Tz pair and the value-disabled indent-decrement
+// stay disabled, and no control carries the retired per-family reason.
+//
+// Process gap (recorded, not a DEF): this C4 section only ever tested from a
+// "panel already open, annotation selected" state.
+// Phase-24 regression note: re-verify with the panel CLOSED and
+// arm→place→interact to catch the DEF-251/252 lifecycle class.
 // ===========================================================================
 test('C4 panel re-target matrix + annotation per-family scope', async () => {
   test.setTimeout(240000);
@@ -650,22 +657,27 @@ test('C4 panel re-target matrix + annotation per-family scope', async () => {
       }
       return {
         mode: body ? body.getAttribute('data-text-panel-mode') : null,
-        note: !!p.querySelector('[data-txt-annotation-note]'),
+        // Phase 24 retired the per-family hint; the surface is tagged by
+        // data-text-panel-mode instead. Assert the retired note is gone.
+        noteRetired: !p.querySelector('[data-txt-annotation-note]'),
         colourDisabled: colour ? colour.disabled : null,
         colourTitle: colour ? colour.getAttribute('title') : null,
-        disabledCount: disabled.length,
-        wrongTitle: disabled.filter((d) => d.title !== reason).length,
+        disabled: disabled.map((d) => d.sel),
+        retiredReasonCount: disabled.filter((d) => d.title === reason).length,
         missing,
       };
     }, { sels: ANNOT_DISABLED_SELECTORS, reason: ANNOT_DISABLED_REASON });
-    matrix.push({ step: 'annotation textbox', mode: annot.mode, colourDisabled: annot.colourDisabled, disabledCount: annot.disabledCount });
+    matrix.push({ step: 'annotation textbox', mode: annot.mode, colourDisabled: annot.colourDisabled, disabledCount: annot.disabled.length });
     log('C4-annotation', annot);
     expect(annot.mode, 'annotation textbox: panel mode annotation').toBe('annotation');
-    expect(annot.note, 'annotation textbox: per-family hint shown').toBe(true);
+    expect(annot.noteRetired, 'annotation textbox: retired per-family hint is gone').toBe(true);
     expect(annot.colourDisabled, 'annotation textbox: colour is LIVE').toBe(false);
     expect(annot.missing, 'annotation textbox: every control is present').toEqual([]);
-    expect(annot.disabledCount, 'annotation textbox: exactly 22 controls disabled').toBe(22);
-    expect(annot.wrongTitle, 'annotation textbox: every disabled control carries the exact reason tooltip').toBe(0);
+    // Phase 24 — the per-family disabled set is retired. Only the engine-disabled
+    // Tc/Tz pair and the value-disabled indent-decrement stay disabled.
+    expect(annot.disabled, 'annotation textbox: only engine/value-disabled controls are disabled')
+      .toEqual(['[data-txt-indent-dec]', '[data-txt-character-spacing]', '[data-txt-horizontal-scaling]']);
+    expect(annot.retiredReasonCount, 'annotation textbox: no control carries the retired per-family reason').toBe(0);
 
     // re-target between annotation tools WITHOUT the panel closing.
     for (const kind of ['callout', 'note', 'textbox']) {

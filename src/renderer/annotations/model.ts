@@ -6,6 +6,8 @@
 // stay aligned at every zoom level. The backend converts to the PDF's
 // bottom-left coordinate space when serializing /Annots.
 
+import type { AnnTextStyle } from "../../shared/types";
+
 // ---------------------------------------------------------------------------
 // Geometry primitives (page points, top-left origin)
 
@@ -143,6 +145,13 @@ interface AnnotationBase {
   page: number;
   color: AnnotationColorValue;
   createdAt: string; // ISO 8601
+  /** Phase 24 — the stored text style for the text-bearing kinds (textbox /
+   *  callout / note). Mirrors the shared `AnnModel.style` (`AnnTextStyle`)
+   *  so a value read off an engine echo, a panel patch, or a create payload
+   *  is the same shape everywhere. Absent means the legacy appearance:
+   *  Helvetica 12, left-aligned, 1.35 line step, no highlight/list/indent.
+   *  The engine bakes the same fields into the /AP stream at save time. */
+  style?: AnnTextStyle;
 }
 
 /** Text markup: highlight / underline / strikeout anchored to text quads
@@ -242,15 +251,20 @@ export function firstPageOverAnnotationLimit(
 
 /** Fields the user can change after creation (via the annotations panel or
  *  the inline note editor). `color` accepts both built-in names and free-form
- *  hex strings so the picker can apply custom colors. */
+ *  hex strings so the picker can apply custom colors. Phase 24 — `style` is
+ *  the partial text-style patch for the text-bearing kinds; it is merged
+ *  onto the stored style (absent fields preserve) and forwarded verbatim as
+ *  `EditAnnotationPayload.style`. */
 export interface AnnotationPatch {
   color?: AnnotationColorValue;
   text?: string;
+  style?: AnnTextStyle;
 }
 
 /** Apply a patch to an annotation. Returns the same object when the patch
  *  is empty or inapplicable (color applies to all kinds; text applies to
- *  markup snapshots, text boxes, notes and callouts). */
+ *  markup snapshots, text boxes, notes and callouts; style applies to the
+ *  text-bearing kinds). */
 export function applyPatch(ann: Annotation, patch: AnnotationPatch): Annotation {
   let next = ann;
   if (patch.color !== undefined && patch.color !== ann.color) {
@@ -265,6 +279,15 @@ export function applyPatch(ann: Annotation, patch: AnnotationPatch): Annotation 
     patch.text !== next.text
   ) {
     next = { ...next, text: patch.text };
+  }
+  // Phase 24 — merge the partial style onto the stored one. Preserve-if-
+  // absent is the engine's own semantics, mirrored here so the stub engine
+  // and the optimistic overlay agree with the real backend.
+  if (
+    patch.style !== undefined &&
+    (next.kind === "textbox" || next.kind === "note" || next.kind === "callout")
+  ) {
+    next = { ...next, style: { ...next.style, ...patch.style } };
   }
   return next;
 }

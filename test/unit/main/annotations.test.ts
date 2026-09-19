@@ -1,8 +1,17 @@
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { PDFArray, PDFDocument, PDFName } from 'pdf-lib';
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  PDFRawStream,
+  PDFRef,
+  PDFStream,
+} from 'pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import { nearestAnnColor } from '../../../src/main/services/annotations';
 import type { CreateAnnotationPayload, EngineState } from '../../../src/shared/types';
@@ -2456,5 +2465,523 @@ describe('Pen tool: points-only ink payload (renderer wire shape)', () => {
       expect(r.error.code).toBe('engine-error');
       expect(r.error.message).toMatch(/finite non-negative/i);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 24 — annotation text style fields (textbox/callout/note)
+// ---------------------------------------------------------------------------
+
+/** Decode a stream object's content bytes to latin1 text, inflating if the
+ *  stream is Flate-encoded (pdf-lib may compress on save). */
+function decodeStreamText(doc: PDFDocument, streamObj: unknown): string {
+  let obj = streamObj;
+  if (obj instanceof PDFRef) obj = doc.context.lookup(obj);
+  if (!(obj instanceof PDFStream)) return '';
+  const raw = (obj as PDFRawStream).contents as unknown as Uint8Array;
+  if (!raw || typeof raw.length !== 'number') return '';
+  try {
+    return new TextDecoder('latin1').decode(inflateSync(raw));
+  } catch {
+    try {
+      return new TextDecoder('latin1').decode(raw);
+    } catch {
+      return '';
+    }
+  }
+}
+
+interface FreeTextAppearance {
+  apText: string;
+  baseFonts: string[];
+  da?: string;
+  contents?: string;
+}
+
+/** Read page-0's FreeText annotation appearance + font resources + /Contents
+ *  from a saved file. Returns undefined when no FreeText annotation exists. */
+async function readFreeTextAppearance(savePath: string): Promise<FreeTextAppearance | undefined> {
+  const buf = await readFile(savePath);
+  const doc = await PDFDocument.load(
+    buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+  );
+  const page = doc.getPage(0);
+  const leaf = (page as any).node as PDFDict;
+  const annotsRef = leaf.get(PDFName.of('Annots'));
+  let annots: unknown = annotsRef;
+  if (annotsRef instanceof PDFRef) annots = doc.context.lookup(annotsRef);
+  if (!(annots instanceof PDFArray)) return undefined;
+  for (let j = 0; j < annots.size(); j++) {
+    let obj: unknown = annots.get(j);
+    if (obj instanceof PDFRef) obj = doc.context.lookup(obj);
+    if (!(obj instanceof PDFDict)) continue;
+    const st = obj.get(PDFName.of('Subtype'));
+    if (!(st instanceof PDFName) || st.asString().slice(1) !== 'FreeText') continue;
+
+    let apText = '';
+    const baseFonts: string[] = [];
+    const ap = obj.get(PDFName.of('AP'));
+    if (ap instanceof PDFDict) {
+      const n = ap.get(PDFName.of('N'));
+      apText = decodeStreamText(doc, n);
+      let nObj: unknown = n;
+      if (n instanceof PDFRef) nObj = doc.context.lookup(n);
+      const nDict = nObj instanceof PDFStream ? nObj.dict : nObj instanceof PDFDict ? nObj : undefined;
+      if (nDict !== undefined) {
+        const res = nDict.get(PDFName.of('Resources'));
+        let resObj: unknown = res;
+        if (res instanceof PDFRef) resObj = doc.context.lookup(res);
+        if (resObj instanceof PDFDict) {
+          const font = resObj.get(PDFName.of('Font'));
+          let fontObj: unknown = font;
+          if (font instanceof PDFRef) fontObj = doc.context.lookup(font);
+          if (fontObj instanceof PDFDict) {
+            for (const [, v] of fontObj.entries()) {
+              let vo: unknown = v;
+              if (vo instanceof PDFRef) vo = doc.context.lookup(vo);
+              if (vo instanceof PDFDict) {
+                const bf = vo.get(PDFName.of('BaseFont'));
+                if (bf instanceof PDFName) baseFonts.push(bf.asString().replace(/^\//, ''));
+              }
+            }
+          }
+        }
+      }
+    }
+    const daRaw = obj.get(PDFName.of('DA'));
+    const da = daRaw && typeof (daRaw as any).decodeText === 'function'
+      ? (daRaw as any).decodeText()
+      : undefined;
+    const conRaw = obj.get(PDFName.of('Contents'));
+    const contents = conRaw && typeof (conRaw as any).decodeText === 'function'
+      ? (conRaw as any).decodeText()
+      : undefined;
+    return { apText, baseFonts, da, contents };
+  }
+  return undefined;
+}
+
+function styledPayload(
+  overrides?: Partial<CreateAnnotationPayload>,
+): CreateAnnotationPayload {
+  return makePayload({
+    kind: 'text-box',
+    rects: [{ x: 80, y: 600, width: 240, height: 80 }],
+    content: 'Styled text',
+    ...overrides,
+  });
+}
+
+describe('Phase 24 — annotation text style fields', () => {
+  it('(a) createAnnotation preserves validated style fields on the model', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24a', path);
+
+    const r = await engine.createAnnotation('doc-p24a', styledPayload({
+      style: {
+        bold: true,
+        align: 'center',
+        lineHeight: 1.8,
+        highlight: { r: 1, g: 0, b: 0 },
+      },
+    }));
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      const ann = getAnns(r.value).find((a: any) => a.kind === 'text-box');
+      expect(ann?.style).toEqual({
+        bold: true,
+        align: 'center',
+        lineHeight: 1.8,
+        highlight: { r: 1, g: 0, b: 0 },
+      });
+    }
+  });
+
+  it('(b) editAnnotation merges a partial style patch onto the stored style', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24b', path);
+
+    const created = await engine.createAnnotation('doc-p24b', styledPayload({
+      id: 'style-merge-1',
+      style: { bold: true, align: 'left', lineHeight: 2 },
+    }));
+    expect(created.ok).toBe(true);
+
+    const edited = await engine.editAnnotation('doc-p24b', 'style-merge-1', {
+      style: { align: 'right', underline: true },
+    });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'style-merge-1');
+      expect(ann?.style).toEqual({
+        bold: true,
+        align: 'right',
+        lineHeight: 2,
+        underline: true,
+      });
+    }
+  });
+
+  it('(c) a malformed style is rejected with a typed engine-error (create + edit)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24c', path);
+
+    const badCreate = await engine.createAnnotation('doc-p24c', styledPayload({
+      style: { lineHeight: 99 } as any,
+    }));
+    expect(badCreate.ok).toBe(false);
+    if (!badCreate.ok) {
+      expect(badCreate.error.code).toBe('engine-error');
+      expect(badCreate.error.message).toMatch(/lineHeight/i);
+    }
+
+    await engine.createAnnotation('doc-p24c', styledPayload({ id: 'style-bad-edit' }));
+    const badEdit = await engine.editAnnotation('doc-p24c', 'style-bad-edit', {
+      style: { align: 'diagonal' } as any,
+    });
+    expect(badEdit.ok).toBe(false);
+    if (!badEdit.ok) {
+      expect(badEdit.error.code).toBe('engine-error');
+      expect(badEdit.error.message).toMatch(/align/i);
+    }
+  });
+
+  it('(d) an absent style keeps the legacy Helvetica 12 appearance', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24d', path);
+
+    const r = await engine.createAnnotation('doc-p24d', styledPayload({
+      rects: [{ x: 80, y: 600, width: 240, height: 60 }],
+      content: 'Legacy box',
+    }));
+    expect(r.ok).toBe(true);
+    const ann = r.ok ? getAnns(r.value).find((a: any) => a.kind === 'text-box') : undefined;
+    expect(ann?.style).toBeUndefined();
+
+    const savePath = join(dir, 'p24-legacy.pdf');
+    const save = await engine.saveAs('doc-p24d', savePath);
+    expect(save.ok).toBe(true);
+
+    const info = await readFreeTextAppearance(savePath);
+    expect(info).toBeDefined();
+    expect(info!.apText).toMatch(/\/Helv 12 Tf/);
+    expect(info!.baseFonts).toContain('Helvetica');
+    // No sentinel on a legacy annotation's /Contents.
+    expect(info!.contents ?? '').not.toMatch(/^TFLEX-STYLE /);
+  });
+
+  it('(e) style survives save + reparse via the /Contents sentinel', async () => {
+    const style = {
+      bold: true,
+      italic: true,
+      underline: true,
+      align: 'center',
+      lineHeight: 1.9,
+      baselineShift: 4,
+      list: 'bullet',
+      indent: 12,
+      highlight: { r: 0, g: 1, b: 0 },
+    } as const;
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24e', path);
+    const created = await engine.createAnnotation('doc-p24e', styledPayload({
+      id: 'style-roundtrip-1',
+      content: 'Round trip text',
+      style,
+    }));
+    expect(created.ok).toBe(true);
+
+    const savePath = join(dir, 'p24-roundtrip.pdf');
+    const save = await engine.saveAs('doc-p24e', savePath);
+    expect(save.ok).toBe(true);
+
+    // The sentinel is written as the FIRST line of /Contents.
+    const info = await readFreeTextAppearance(savePath);
+    expect(info).toBeDefined();
+    const firstLine = (info!.contents ?? '').split('\n')[0];
+    expect(firstLine).toMatch(/^TFLEX-STYLE /);
+
+    // Reopen: the engine restores the style and strips the sentinel.
+    const engine2 = new EngineService();
+    await engine2.loadDocument('doc-p24e-reopen', savePath);
+    const st = await engine2.getState('doc-p24e-reopen');
+    expect(st.ok).toBe(true);
+    if (st.ok) {
+      const ann = (st.value as any).annotations.find((a: any) => a.kind === 'text-box');
+      expect(ann?.style).toEqual(style);
+      expect(ann?.content).toBe('Round trip text');
+    }
+  });
+
+  it('(f) the /AP stream uses the stored bold+italic font variant and size', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24f', path);
+
+    const r = await engine.createAnnotation('doc-p24f', styledPayload({
+      rects: [{ x: 80, y: 600, width: 240, height: 80 }],
+      content: 'Bold italic',
+      style: { bold: true, italic: true },
+    }));
+    expect(r.ok).toBe(true);
+
+    const savePath = join(dir, 'p24-variant.pdf');
+    const save = await engine.saveAs('doc-p24f', savePath);
+    expect(save.ok).toBe(true);
+
+    const info = await readFreeTextAppearance(savePath);
+    expect(info).toBeDefined();
+    // Bold+italic resolves the StandardFont variant, embedded at /Helv.
+    expect(info!.baseFonts).toContain('Helvetica-BoldOblique');
+    // Font size operator reflects the fitted size (12pt in a tall box).
+    expect(info!.apText).toMatch(/\/Helv 12 Tf/);
+    expect(info!.apText).toMatch(/Tj/);
+  });
+
+  // Phase 24 follow-up — the font-family picker + size stepper were dead
+  // controls until `font`/`size` joined the annotation text-style contract.
+  it('(g) font + size persist in the sentinel, reparse, and drive the /AP variant', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24g', path);
+
+    const created = await engine.createAnnotation('doc-p24g', styledPayload({
+      id: 'style-font-size-1',
+      rects: [{ x: 80, y: 600, width: 240, height: 80 }],
+      content: 'Times eighteen',
+      style: { font: 'Times', size: 18, bold: true, italic: true },
+    }));
+    expect(created.ok).toBe(true);
+    if (created.ok) {
+      const ann = getAnns(created.value).find((a: any) => a.id === 'style-font-size-1');
+      expect(ann?.style).toEqual({ font: 'Times', size: 18, bold: true, italic: true });
+    }
+
+    const savePath = join(dir, 'p24-font-size.pdf');
+    const save = await engine.saveAs('doc-p24g', savePath);
+    expect(save.ok).toBe(true);
+
+    const info = await readFreeTextAppearance(savePath);
+    expect(info).toBeDefined();
+
+    // The /Contents sentinel JSON carries BOTH new fields.
+    const firstLine = (info!.contents ?? '').split('\n')[0];
+    expect(firstLine).toMatch(/^TFLEX-STYLE /);
+    const decoded = JSON.parse(
+      Buffer.from(firstLine.slice('TFLEX-STYLE '.length), 'base64url').toString('utf8'),
+    );
+    expect(decoded).toMatchObject({ font: 'Times', size: 18 });
+
+    // The /AP stream embeds the Times bold+italic StandardFont and starts the
+    // auto-fit from the stored 18pt (one short line in a tall box -> no shrink).
+    expect(info!.baseFonts).toContain('Times-BoldItalic');
+    expect(info!.apText).toMatch(/\/Helv 18 Tf/);
+    expect(info!.apText).toMatch(/Tj/);
+
+    // Reopen restores both fields through the sentinel.
+    const engine2 = new EngineService();
+    await engine2.loadDocument('doc-p24g-reopen', savePath);
+    const st = await engine2.getState('doc-p24g-reopen');
+    expect(st.ok).toBe(true);
+    if (st.ok) {
+      // Parse-on-load assigns fresh uuids, so locate the annotation by kind.
+      const ann = (st.value as any).annotations.find((a: any) => a.kind === 'text-box');
+      expect(ann?.style).toMatchObject({ font: 'Times', size: 18 });
+      expect(ann?.content).toBe('Times eighteen');
+    }
+  });
+
+  it('(h) an unsupported font or out-of-range size rejects create + edit', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24h', path);
+
+    const badFont = await engine.createAnnotation('doc-p24h', styledPayload({
+      style: { font: 'Comic Sans' } as any,
+    }));
+    expect(badFont.ok).toBe(false);
+    if (!badFont.ok) {
+      expect(badFont.error.code).toBe('engine-error');
+      expect(badFont.error.message).toMatch(/font/i);
+    }
+
+    const badSize = await engine.createAnnotation('doc-p24h', styledPayload({
+      style: { size: 5000 },
+    }));
+    expect(badSize.ok).toBe(false);
+    if (!badSize.ok) {
+      expect(badSize.error.code).toBe('engine-error');
+      expect(badSize.error.message).toMatch(/size/i);
+    }
+
+    await engine.createAnnotation('doc-p24h', styledPayload({ id: 'style-bad-font-edit' }));
+    const badEdit = await engine.editAnnotation('doc-p24h', 'style-bad-font-edit', {
+      style: { size: -1 } as any,
+    });
+    expect(badEdit.ok).toBe(false);
+    if (!badEdit.ok) {
+      expect(badEdit.error.code).toBe('engine-error');
+      expect(badEdit.error.message).toMatch(/size/i);
+    }
+  });
+
+  it('(i) editAnnotation merges a font + size patch onto the stored style', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24i', path);
+
+    const created = await engine.createAnnotation('doc-p24i', styledPayload({
+      id: 'style-font-merge-1',
+      style: { font: 'Courier', size: 9, bold: true },
+    }));
+    expect(created.ok).toBe(true);
+
+    const edited = await engine.editAnnotation('doc-p24i', 'style-font-merge-1', {
+      style: { size: 14 },
+    });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'style-font-merge-1');
+      expect(ann?.style).toEqual({ font: 'Courier', size: 14, bold: true });
+    }
+  });
+
+  // A highlight band is a filled rectangle op (`<r> <g> <b> rg` -> `re` -> `f`)
+  // drawn BEFORE the glyphs; the black text op is `0 0 0 rg` followed by `Tm`.
+  const RED_BAND = /1 0 0 rg\n[^\n]+ re\nf/;
+
+  it('(j) highlight: null is accepted and removes the stored band (others preserved)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24j', path);
+
+    const created = await engine.createAnnotation('doc-p24j', styledPayload({
+      id: 'style-clear-hl-1',
+      content: 'Clear the band',
+      style: { bold: true, highlight: { r: 1, g: 0, b: 0 } },
+    }));
+    expect(created.ok).toBe(true);
+
+    const beforePath = join(dir, 'p24-clear-hl-before.pdf');
+    expect((await engine.saveAs('doc-p24j', beforePath)).ok).toBe(true);
+    const before = await readFreeTextAppearance(beforePath);
+    expect(before).toBeDefined();
+    expect(before!.apText).toMatch(RED_BAND);
+
+    // The panel's "None" / clear-highlight button sends `highlight: null`.
+    const edited = await engine.editAnnotation('doc-p24j', 'style-clear-hl-1', {
+      style: { highlight: null },
+    });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'style-clear-hl-1');
+      // Only the band is cleared (stored as an explicit null removal); the
+      // sibling bold field survives the merge.
+      expect(ann?.style).toEqual({ bold: true, highlight: null });
+    }
+
+    const afterPath = join(dir, 'p24-clear-hl-after.pdf');
+    expect((await engine.saveAs('doc-p24j', afterPath)).ok).toBe(true);
+    const after = await readFreeTextAppearance(afterPath);
+    expect(after).toBeDefined();
+    expect(after!.apText).not.toMatch(RED_BAND);
+    expect(after!.apText).toMatch(/Tj/);
+
+    // The null removal survives save + reopen via the /Contents sentinel.
+    const engine2 = new EngineService();
+    await engine2.loadDocument('doc-p24j-reopen', afterPath);
+    const st = await engine2.getState('doc-p24j-reopen');
+    expect(st.ok).toBe(true);
+    if (st.ok) {
+      const ann = (st.value as any).annotations.find((a: any) => a.kind === 'text-box');
+      expect(ann?.style).toEqual({ bold: true, highlight: null });
+    }
+  });
+
+  it('(k) a colour highlight still draws the band on the /AP stream', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24k', path);
+
+    const created = await engine.createAnnotation('doc-p24k', styledPayload({
+      id: 'style-color-hl-1',
+      content: 'Banded text',
+      style: { highlight: { r: 1, g: 0, b: 0 } },
+    }));
+    expect(created.ok).toBe(true);
+
+    const savePath = join(dir, 'p24-color-hl.pdf');
+    expect((await engine.saveAs('doc-p24k', savePath)).ok).toBe(true);
+    const info = await readFreeTextAppearance(savePath);
+    expect(info).toBeDefined();
+    expect(info!.apText).toMatch(RED_BAND);
+  });
+
+  it('(l) DEF-255: clearing a highlight survives save after a REOPEN (no duplicate)', async () => {
+    // The bug only reproduced when the file being saved ALREADY carried TFlex
+    // annotations: `copyPages` carried the previous /Annots onto the output
+    // page and `serializeAnnotation` appended a second dictionary, so the
+    // stale copy's red /AP band and sentinel came back on reopen.
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p24l', path);
+
+    const created = await engine.createAnnotation('doc-p24l', styledPayload({
+      id: 'style-reopen-hl-1',
+      content: 'Reopen then clear',
+      style: { font: 'Times', size: 18, bold: true, highlight: { r: 1, g: 0, b: 0 } },
+    }));
+    expect(created.ok).toBe(true);
+
+    // Cycle 1: save the banded annotation, then "close and reopen" it.
+    const firstPath = join(dir, 'p24-reopen-1.pdf');
+    expect((await engine.saveAs('doc-p24l', firstPath)).ok).toBe(true);
+
+    const engine2 = new EngineService();
+    expect((await engine2.loadDocument('doc-p24l-reopen', firstPath)).ok).toBe(true);
+    const reopenedState = await engine2.getState('doc-p24l-reopen');
+    expect(reopenedState.ok).toBe(true);
+    if (!reopenedState.ok) return;
+    const reopened = getAnns(reopenedState.value).find((a: any) => a.kind === 'text-box');
+    expect(reopened).toBeDefined();
+    expect((reopened as any).style.highlight).toEqual({ r: 1, g: 0, b: 0 });
+
+    // Clear the highlight on the REOPENED annotation (parsed id, not the
+    // create-time id) and assert the stored model carries a strict null.
+    const edited = await engine2.editAnnotation('doc-p24l-reopen', (reopened as any).id, {
+      style: { highlight: null },
+    });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.kind === 'text-box') as any;
+      expect(ann).toBeDefined();
+      expect('highlight' in ann.style).toBe(true);
+      expect(ann.style.highlight).toBeNull();
+    }
+
+    // Cycle 2: save the cleared annotation and reopen it again.
+    const secondPath = join(dir, 'p24-reopen-2.pdf');
+    expect((await engine2.saveAs('doc-p24l-reopen', secondPath)).ok).toBe(true);
+
+    const engine3 = new EngineService();
+    expect((await engine3.loadDocument('doc-p24l-reopen-2', secondPath)).ok).toBe(true);
+    const finalState = await engine3.getState('doc-p24l-reopen-2');
+    expect(finalState.ok).toBe(true);
+    if (finalState.ok) {
+      const boxes = getAnns(finalState.value).filter((a: any) => a.kind === 'text-box');
+      // Exactly ONE text box: the fix makes serialize replace, not append.
+      expect(boxes.length).toBe(1);
+      expect((boxes[0] as any).style.highlight).toBeNull();
+    }
+
+    // The saved appearance stream no longer paints the red band.
+    const finalAp = await readFreeTextAppearance(secondPath);
+    expect(finalAp).toBeDefined();
+    expect(finalAp!.apText).not.toMatch(RED_BAND);
   });
 });

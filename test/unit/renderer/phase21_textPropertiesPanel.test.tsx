@@ -13,7 +13,6 @@ import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import {
-  ANNOTATION_DISABLED_REASON,
   TextPropertiesPanel,
   clearFormattingPatch,
 } from "../../../src/renderer/edit/TextPropertiesPanel";
@@ -23,9 +22,11 @@ import { DocumentView } from "../../../src/renderer/components/DocumentView";
 import type { EngineState } from "../../../src/renderer/engine/types";
 import type {
   Annotation,
+  AnnotationPatch,
   AnnotationToolState,
 } from "../../../src/renderer/annotations/model";
 import {
+  annotationStyleFromPanelPatch,
   defaultTextStyleValues,
   type TextStyleValues,
 } from "../../../src/renderer/edit/textStyle";
@@ -316,136 +317,141 @@ describe("Phase 21 — retired floating text toolboxes (criterion 3)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase 21 chunk 3b — annotation text objects (per-family scope).
+// Phase 24 — the panel is FULLY LIVE for annotation text objects.
+//
+// Phase 21's per-family scope (annotation mode = colour-only, every other
+// control disabled with a "not supported" tooltip) is retired. The control
+// matrix is now identical in both modes. Only the two Tc/Tz controls stay
+// disabled — and they are disabled in BOTH modes for an engine reason
+// (pdf-lib exposes no Tc / Tz operator), never a per-family one.
 
-/** Every control that is DISABLED in annotation mode. The colour control is
- *  the one deliberate exception and is asserted live separately. */
-const ANNOTATION_DISABLED_HOOKS = [
-  "[data-txt-font]",
-  "[data-txt-size]",
-  "[data-txt-bold]",
-  "[data-txt-italic]",
-  "[data-txt-underline]",
-  "[data-txt-super]",
-  "[data-txt-sub]",
-  "[data-txt-highlight]",
-  "[data-txt-highlight-clear]",
-  "[data-txt-clear]",
-  "[data-txt-align-left]",
-  "[data-txt-align-center]",
-  "[data-txt-align-right]",
-  "[data-txt-align-justify]",
-  "[data-txt-line-height]",
-  "[data-txt-list-none]",
-  "[data-txt-list-bullet]",
-  "[data-txt-list-number]",
-  "[data-txt-indent-inc]",
-  "[data-txt-indent-dec]",
+/** Hooks that stay disabled in both modes, for the engine reason. */
+const ALWAYS_DISABLED_HOOKS = [
   "[data-txt-character-spacing]",
   "[data-txt-horizontal-scaling]",
 ];
+
+/** Hooks whose disabled state is a VALUE condition, not a mode gate: the
+ *  indent-decrement button sits disabled at indent 0 in the base values. */
+const VALUE_DISABLED_HOOKS = new Set(["[data-txt-indent-dec]"]);
 
 function disabledFlag(el: Element | null): boolean {
   return (el as HTMLButtonElement | HTMLInputElement | HTMLSelectElement | null)?.disabled ?? false;
 }
 
-/** Hooks that are disabled in TEXT mode too, so they are excluded from the
- *  "re-enabled" assertions: indent-dec sits at 0 in the base values, and
- *  the two Tc/Tz controls ship disabled by design in both modes. */
-const TEXT_MODE_ALSO_DISABLED = new Set([
-  "[data-txt-indent-dec]",
-  "[data-txt-character-spacing]",
-  "[data-txt-horizontal-scaling]",
-]);
-
-function textModeLiveHooks(): string[] {
-  return ANNOTATION_DISABLED_HOOKS.filter((h) => !TEXT_MODE_ALSO_DISABLED.has(h));
-}
-
-describe("Phase 21 chunk 3b — annotation mode control matrix", () => {
-  it("annotation mode disables every control except colour", () => {
+describe("Phase 24 — annotation mode control matrix", () => {
+  it("annotation mode leaves every control live (the retired disabled set)", () => {
     const { host, cleanup } = mount(base(), base(), (): void => undefined, "annotation");
     expect(host.querySelector("[data-text-panel]")?.getAttribute("data-text-panel-mode")).toBe(
       "annotation",
     );
-    expect(host.querySelector("[data-txt-annotation-note]")).not.toBeNull();
-    // The one live control.
-    expect(disabledFlag(host.querySelector("[data-txt-color]"))).toBe(false);
-    // Everything else is disabled.
-    for (const hook of ANNOTATION_DISABLED_HOOKS) {
-      expect(disabledFlag(host.querySelector(hook)), hook).toBe(true);
+    // The retired "not supported" note is gone from the surface.
+    expect(host.querySelector("[data-txt-annotation-note]")).toBeNull();
+    for (const hook of ALL_HOOKS) {
+      if (ALWAYS_DISABLED_HOOKS.includes(hook) || VALUE_DISABLED_HOOKS.has(hook)) continue;
+      expect(disabledFlag(host.querySelector(hook)), hook).toBe(false);
     }
     cleanup();
   });
 
-  it("every disabled control carries the exact contract tooltip reason", () => {
+  it("no control carries the retired annotation tooltip reason", () => {
     const { host, cleanup } = mount(base(), base(), (): void => undefined, "annotation");
-    for (const hook of ANNOTATION_DISABLED_HOOKS) {
-      expect(host.querySelector(hook)?.getAttribute("title"), hook).toBe(
-        ANNOTATION_DISABLED_REASON,
+    for (const hook of ALL_HOOKS) {
+      expect(host.querySelector(hook)?.getAttribute("title") ?? "", hook).not.toMatch(
+        /not supported for annotations/i,
       );
     }
-    // The live colour control keeps its own tooltip, not the reason.
+    // The colour control keeps its annotation-specific label.
     expect(host.querySelector("[data-txt-color]")?.getAttribute("title")).toBe("Annotation colour");
     cleanup();
   });
 
-  it("reflects the selected annotation's ACTUAL colour", () => {
-    const values: TextStyleValues = { ...base(), color: { r: 1, g: 0, b: 0 } };
+  it("the two Tc/Tz controls stay disabled with the engine reason in annotation mode", () => {
+    const { host, cleanup } = mount(base(), base(), (): void => undefined, "annotation");
+    const cs = host.querySelector<HTMLButtonElement>("[data-txt-character-spacing]");
+    const hs = host.querySelector<HTMLButtonElement>("[data-txt-horizontal-scaling]");
+    expect(cs?.disabled).toBe(true);
+    expect(hs?.disabled).toBe(true);
+    expect(cs?.getAttribute("title")).toMatch(/Tc|character spacing/i);
+    expect(hs?.getAttribute("title")).toMatch(/Tz|horizontal scaling/i);
+    cleanup();
+  });
+
+  it("reflects the selected annotation's stored font / size / bold / colour", () => {
+    const values: TextStyleValues = {
+      ...base(),
+      font: "Times",
+      size: 18,
+      bold: true,
+      italic: true,
+      align: "center",
+      color: { r: 1, g: 0, b: 0 },
+    };
     const { host, cleanup } = mount(values, base(), (): void => undefined, "annotation");
+    expect(host.querySelector<HTMLSelectElement>("[data-txt-font]")?.value).toBe("Times");
+    expect(host.querySelector<HTMLInputElement>("[data-txt-size]")?.value).toBe("18");
+    expect(host.querySelector("[data-txt-bold]")?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector("[data-txt-italic]")?.getAttribute("aria-pressed")).toBe("true");
+    expect(host.querySelector("[data-txt-align-center]")?.getAttribute("aria-pressed")).toBe("true");
     expect(host.querySelector<HTMLInputElement>("[data-txt-color]")?.value).toBe("#ff0000");
     cleanup();
   });
 
-  it("routes the colour control through the annotation colour path", () => {
+  it("every control now dispatches its patch in annotation mode", () => {
     const onPatch = vi.fn();
-    const { host, cleanup } = mount(base(), base(), onPatch, "annotation");
+    const { host, cleanup } = mount({ ...base(), indent: 12 }, base(), onPatch, "annotation");
+    fireChange(host.querySelector("[data-txt-font]"), "Courier");
+    expect(onPatch).toHaveBeenLastCalledWith({ font: "Courier" });
+    fireChange(host.querySelector("[data-txt-size]"), "20");
+    expect(onPatch).toHaveBeenLastCalledWith({ size: 20 });
+    click(host.querySelector("[data-txt-bold]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ bold: true });
+    click(host.querySelector("[data-txt-italic]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ italic: true });
+    click(host.querySelector("[data-txt-underline]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ underline: true });
+    click(host.querySelector("[data-txt-super]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ baselineShift: 6 });
+    fireChange(host.querySelector("[data-txt-highlight]"), "#ffff00");
+    expect(onPatch).toHaveBeenLastCalledWith({ highlight: { r: 1, g: 1, b: 0 } });
+    click(host.querySelector("[data-txt-highlight-clear]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ highlight: null });
+    click(host.querySelector("[data-txt-align-center]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ align: "center" });
+    fireChange(host.querySelector("[data-txt-line-height]"), "2");
+    expect(onPatch).toHaveBeenLastCalledWith({ lineHeight: 2 });
+    click(host.querySelector("[data-txt-list-bullet]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ list: "bullet" });
+    click(host.querySelector("[data-txt-indent-inc]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ indent: 24 });
+    click(host.querySelector("[data-txt-indent-dec]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ indent: 0 });
+    click(host.querySelector("[data-txt-clear]"));
+    expect(onPatch).toHaveBeenLastCalledWith(clearFormattingPatch(base()));
     fireChange(host.querySelector("[data-txt-color]"), "#00ff00");
-    expect(onPatch).toHaveBeenCalledTimes(1);
     expect(onPatch).toHaveBeenLastCalledWith({ color: { r: 0, g: 1, b: 0 } });
-    cleanup();
-  });
-
-  it("never dispatches from a disabled control", () => {
-    const onPatch = vi.fn();
-    const { host, cleanup } = mount(base(), base(), onPatch, "annotation");
-    for (const hook of ANNOTATION_DISABLED_HOOKS) {
-      const el = host.querySelector(hook);
-      // Buttons and form elements alike: a programmatic click / change
-      // must not reach the engine through a disabled control.
-      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) {
-        fireChange(el, "20");
-      } else {
-        click(el);
-      }
-    }
-    expect(onPatch).not.toHaveBeenCalled();
-    // The live colour control still works in the same mount.
-    fireChange(host.querySelector("[data-txt-color]"), "#123456");
-    expect(onPatch).toHaveBeenCalledTimes(1);
-    expect(onPatch).toHaveBeenLastCalledWith({ color: { r: 0x12 / 255, g: 0x34 / 255, b: 0x56 / 255 } });
     cleanup();
   });
 
   it("re-targets the SAME instance when switching annotation <-> text", () => {
     const onPatch = vi.fn();
     const { host, rerender, cleanup } = mount(base(), base(), onPatch, "annotation");
-    expect(disabledFlag(host.querySelector("[data-txt-bold]"))).toBe(true);
-    // Switch to a TFlex-owned text object: the full control set re-enables
-    // without the panel unmounting.
+    expect(disabledFlag(host.querySelector("[data-txt-bold]"))).toBe(false);
+    click(host.querySelector("[data-txt-bold]"));
+    expect(onPatch).toHaveBeenLastCalledWith({ bold: true });
+    // Switch to a TFlex-owned text object: still live, same instance.
     rerender("text");
     expect(host.querySelector("[data-text-panel]")?.getAttribute("data-text-panel-mode")).toBe(
       "text",
     );
-    for (const hook of textModeLiveHooks()) {
-      expect(disabledFlag(host.querySelector(hook)), hook).toBe(false);
-    }
     click(host.querySelector("[data-txt-bold]"));
     expect(onPatch).toHaveBeenLastCalledWith({ bold: true });
-    // And back to an annotation target: disabled again, same instance.
+    // And back to an annotation target.
     rerender("annotation");
-    expect(disabledFlag(host.querySelector("[data-txt-bold]"))).toBe(true);
-    expect(host.querySelector("[data-txt-annotation-note]")).not.toBeNull();
+    expect(host.querySelector("[data-text-panel]")?.getAttribute("data-text-panel-mode")).toBe(
+      "annotation",
+    );
+    expect(disabledFlag(host.querySelector("[data-txt-bold]"))).toBe(false);
     cleanup();
   });
 
@@ -453,7 +459,8 @@ describe("Phase 21 chunk 3b — annotation mode control matrix", () => {
     const { host, cleanup } = mount(base(), base(), (): void => undefined, "text");
     expect(host.querySelector("[data-text-panel]")?.getAttribute("data-text-panel-mode")).toBe("text");
     expect(host.querySelector("[data-txt-annotation-note]")).toBeNull();
-    for (const hook of textModeLiveHooks()) {
+    for (const hook of ALL_HOOKS) {
+      if (ALWAYS_DISABLED_HOOKS.includes(hook) || VALUE_DISABLED_HOOKS.has(hook)) continue;
       expect(disabledFlag(host.querySelector(hook)), hook).toBe(false);
     }
     cleanup();
@@ -586,7 +593,7 @@ function firePointer(
 
 interface PlacementHarness {
   host: HTMLElement;
-  rerender: (tool: AnnotationToolState, annotations: Annotation[]) => void;
+  rerender: (tool: AnnotationToolState, annotations: Annotation[], cssScale?: number) => void;
   cleanup: () => void;
 }
 
@@ -611,14 +618,18 @@ function mountPlacement(args: {
     toJSON: () => ({}),
   });
   const root = createRoot(host);
-  const render = (tool: AnnotationToolState, annotations: Annotation[]): void => {
+  const render = (
+    tool: AnnotationToolState,
+    annotations: Annotation[],
+    cssScale = 1,
+  ): void => {
     act((): void => {
       root.render(
         createElement(AnnotationOverlay, {
           page: 1,
           widthPt: 612,
           heightPt: 792,
-          cssScale: 1,
+          cssScale,
           annotations,
           tool,
           flashId: null,
@@ -633,8 +644,8 @@ function mountPlacement(args: {
   render(args.tool, args.annotations);
   return {
     host,
-    rerender: (tool: AnnotationToolState, annotations: Annotation[]): void =>
-      render(tool, annotations),
+    rerender: (tool: AnnotationToolState, annotations: Annotation[], cssScale?: number): void =>
+      render(tool, annotations, cssScale),
     cleanup: (): void => {
       act((): void => root.unmount());
       host.remove();
@@ -787,6 +798,104 @@ describe("Phase 21 regression — a placed annotation text object is auto-select
       // Only the mount report (null) — a shape placement selects nothing.
       expect(onSelect.mock.calls.length).toBe(1);
       expect(onSelect).toHaveBeenLastCalledWith(null);
+    } finally {
+      h.cleanup();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-253 — a `cssScale` change is NOT a tool change.
+//
+// The text-properties panel's 248px reflow changes the page's fit scale the
+// moment a selection opens or closes it. That `cssScale` re-render used to run
+// the same reset as a tool switch and cleared `selectedAnnId`, so clicking an
+// EXISTING annotation selected it for ~40ms before the panel dropped closed
+// (the placement path was protected by `placedSelectionRef`, a click selection
+// had no such guard). Only a deliberate tool switch, or a blank-area click,
+// may clear a live selection.
+
+describe("DEF-253 — a cssScale reflow must not clear an annotation selection", () => {
+  it("keeps a click-selected annotation selected when cssScale changes", () => {
+    const onSelect = vi.fn<(a: Annotation | null) => void>();
+    const h = mountPlacement({
+      tool: SELECT_TOOL,
+      annotations: [TEXTBOX_ANN],
+      onCreate: (): void => undefined,
+      onSelectAnnotation: onSelect,
+      onFinishedOneShot: (): void => undefined,
+    });
+    try {
+      expect(onSelect).toHaveBeenLastCalledWith(null);
+      const surface = h.host.querySelector("[data-annotation-id='tbx-1']");
+      if (surface === null) throw new Error("committed textbox surface not found");
+      firePointer(surface, "pointerdown", 130, 170);
+      firePointer(surface, "pointerup", 130, 170);
+      click(surface);
+      expect(onSelect).toHaveBeenLastCalledWith(TEXTBOX_ANN);
+      // The panel's open reflow: the fit scale changes with the selection up.
+      h.rerender(SELECT_TOOL, [TEXTBOX_ANN], 0.82);
+      expect(onSelect).toHaveBeenLastCalledWith(TEXTBOX_ANN);
+      // A further reflow in the other direction keeps it too.
+      h.rerender(SELECT_TOOL, [TEXTBOX_ANN], 1);
+      expect(onSelect).toHaveBeenLastCalledWith(TEXTBOX_ANN);
+      // The report stream never dipped to null after the mount report.
+      expect(onSelect.mock.calls.filter((c) => c[0] === null)).toHaveLength(1);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it("clears the selection on a deliberate tool-kind change (existing behaviour)", () => {
+    const onSelect = vi.fn<(a: Annotation | null) => void>();
+    const h = mountPlacement({
+      tool: SELECT_TOOL,
+      annotations: [TEXTBOX_ANN],
+      onCreate: (): void => undefined,
+      onSelectAnnotation: onSelect,
+      onFinishedOneShot: (): void => undefined,
+    });
+    try {
+      const surface = h.host.querySelector("[data-annotation-id='tbx-1']");
+      if (surface === null) throw new Error("committed textbox surface not found");
+      firePointer(surface, "pointerdown", 130, 170);
+      firePointer(surface, "pointerup", 130, 170);
+      click(surface);
+      expect(onSelect).toHaveBeenLastCalledWith(TEXTBOX_ANN);
+      // A real tool switch still resets the selection.
+      h.rerender(RECT_TOOL, [TEXTBOX_ANN]);
+      expect(onSelect).toHaveBeenLastCalledWith(null);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it("keeps a freshly placed annotation selected across the disarm + panel reflow", () => {
+    const onCreate = vi.fn<(a: Annotation) => void>();
+    const onSelect = vi.fn<(a: Annotation | null) => void>();
+    const h = mountPlacement({
+      tool: TEXTBOX_TOOL,
+      annotations: [],
+      onCreate,
+      onSelectAnnotation: onSelect,
+      onFinishedOneShot: (): void => undefined,
+    });
+    try {
+      placeTextbox(h);
+      const created = onCreate.mock.calls[0]?.[0] as Annotation;
+      expect(onSelect).toHaveBeenLastCalledWith(created);
+      // The one-shot disarm AND the panel's reflow in the SAME re-render:
+      // the tool flips to "select" and the fit scale changes while the
+      // engine's create echo is still in flight (annotations still []).
+      h.rerender(SELECT_TOOL, [], 0.78);
+      expect(onSelect).toHaveBeenLastCalledWith(created);
+      expect(h.host.querySelector(`[data-annotation-id='${created.id}']`)).not.toBeNull();
+      // A bare reflow after the echo lands: still selected, still rendered.
+      h.rerender(SELECT_TOOL, [created], 0.9);
+      expect(onSelect).toHaveBeenLastCalledWith(created);
+      expect(h.host.querySelector(`[data-annotation-id='${created.id}']`)).not.toBeNull();
+      // No closed frame anywhere in the placement + reflow window.
+      expect(onSelect.mock.calls.filter((c) => c[0] === null)).toHaveLength(1);
     } finally {
       h.cleanup();
     }
@@ -971,6 +1080,238 @@ describe("Phase 21 regression — the text-properties panel across a placement",
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 24 — the host wires the panel to the annotation model.
+//
+// Three things are pinned end-to-end at the DocumentView boundary:
+//   1. a SELECTED annotation text object makes the panel show its STORED
+//      style (font / size / bold), not the per-tool defaults;
+//   2. a style gesture in annotation mode reaches `editAnnotation` as a
+//      `{ style }` payload carrying every patched field;
+//   3. a colour gesture keeps the existing colour path and is NEVER
+//      double-sent through the style payload.
+
+const STYLED_TEXTBOX: Annotation = {
+  id: "tbx-styled",
+  kind: "textbox",
+  page: 1,
+  color: "blue",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  rect: { x: 100, y: 100, width: 160, height: 60 },
+  text: "STYLED BOX",
+  style: { font: "Times", size: 18, bold: true, align: "center" },
+};
+
+describe("Phase 24 — panel patch -> AnnTextStyle reduction", () => {
+  it("keeps every style field and never carries colour", () => {
+    const style = annotationStyleFromPanelPatch({
+      font: "Times",
+      size: 18,
+      bold: true,
+      italic: true,
+      underline: true,
+      color: { r: 1, g: 0, b: 0 },
+      highlight: { r: 1, g: 1, b: 0 },
+      baselineShift: 6,
+      align: "center",
+      lineHeight: 1.5,
+      list: "bullet",
+      indent: 24,
+    });
+    expect(style).toEqual({
+      font: "Times",
+      size: 18,
+      bold: true,
+      italic: true,
+      underline: true,
+      highlight: { r: 1, g: 1, b: 0 },
+      baselineShift: 6,
+      align: "center",
+      lineHeight: 1.5,
+      list: "bullet",
+      indent: 24,
+    });
+    expect(Object.prototype.hasOwnProperty.call(style, "color")).toBe(false);
+  });
+
+  it("passes highlight:null through to clear the band (Phase 24)", () => {
+    // Phase 24 widened AnnTextStyle.highlight to `EditColor | null |
+    // undefined`, so the panel's "None" button / clear-formatting removal
+    // is now expressible: null means REMOVAL of the stored band, absent
+    // preserves it. `annotationStyleFromPanelPatch` forwards null rather
+    // than dropping it, matching TextBoxStylePatch semantics.
+    const style = annotationStyleFromPanelPatch({ highlight: null, bold: true });
+    expect(style).toEqual({ bold: true, highlight: null });
+  });
+
+  it("ignores text / background (text-box patch fields, not annotation style)", () => {
+    const style = annotationStyleFromPanelPatch({ text: "hi", background: "none", italic: true });
+    expect(style).toEqual({ italic: true });
+  });
+});
+
+describe("Phase 24 — annotation text style wiring", () => {
+  async function mountStyledDocView(args: {
+    annotations: Annotation[];
+    onEditAnnotation: (id: string, patch: AnnotationPatch) => void;
+  }): Promise<{ host: HTMLElement; unmount: () => void }> {
+    stubObservers();
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    await act(async (): Promise<void> => {
+      root.render(
+        createElement(DocumentView, {
+          doc: makeDocStub(3),
+          pageCount: 3,
+          outline: null,
+          initial: {
+            zoomMode: "fit-width",
+            manualScale: 1,
+            currentPage: 1,
+            searchOpen: false,
+            query: "",
+            activeHitIndex: -1,
+          },
+          onPersist: (): void => undefined,
+          onDiagnostics: (): void => undefined,
+          engineState: makeEngineState(3),
+          modified: false,
+          canUndo: false,
+          saveInPlaceEnabled: false,
+          annotations: args.annotations,
+          formFields: [],
+          signatures: [],
+          savedSignatures: [],
+          stampAnnotations: [],
+          onCreateAnnotation: (): void => undefined,
+          onEditAnnotation: args.onEditAnnotation,
+        }),
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    return {
+      host,
+      unmount: (): void => {
+        act((): void => root.unmount());
+        host.remove();
+      },
+    };
+  }
+
+  /** Click the committed annotation surface so the overlay reports it
+   *  selected and the host panel re-targets it. */
+  function selectStyledTextbox(host: HTMLElement): void {
+    const surface = host.querySelector(".ann-textbox[data-annotation-id='tbx-styled']");
+    if (surface === null) throw new Error("styled textbox surface did not mount");
+    act((): void => {
+      surface.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+  }
+
+  it("shows the selected annotation's stored font / size / bold", async () => {
+    const { host, unmount } = await mountStyledDocView({
+      annotations: [STYLED_TEXTBOX],
+      onEditAnnotation: (): void => undefined,
+    });
+    try {
+      selectStyledTextbox(host);
+      const panel = host.querySelector("[data-text-panel]");
+      expect(panel?.getAttribute("data-text-panel-mode")).toBe("annotation");
+      expect(host.querySelector<HTMLSelectElement>("[data-txt-font]")?.value).toBe("Times");
+      expect(host.querySelector<HTMLInputElement>("[data-txt-size]")?.value).toBe("18");
+      expect(host.querySelector("[data-txt-bold]")?.getAttribute("aria-pressed")).toBe("true");
+      expect(host.querySelector("[data-txt-align-center]")?.getAttribute("aria-pressed")).toBe(
+        "true",
+      );
+      // The annotation's own colour, not the tool default.
+      expect(host.querySelector<HTMLInputElement>("[data-txt-color]")?.value).toBe("#3b82f6");
+    } finally {
+      unmount();
+    }
+  });
+
+  it("routes a style patch to editAnnotation as a style payload", async () => {
+    const onEditAnnotation = vi.fn<(id: string, patch: AnnotationPatch) => void>();
+    const { host, unmount } = await mountStyledDocView({
+      annotations: [STYLED_TEXTBOX],
+      onEditAnnotation,
+    });
+    try {
+      selectStyledTextbox(host);
+      fireChange(host.querySelector("[data-txt-font]"), "Courier");
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { font: "Courier" } });
+      // A multi-field patch carries every patched field (no colour key).
+      fireChange(host.querySelector("[data-txt-size]"), "22");
+      expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { size: 22 } });
+      click(host.querySelector("[data-txt-bold]"));
+      expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { bold: false } });
+      click(host.querySelector("[data-txt-underline]"));
+      expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", {
+        style: { underline: true },
+      });
+      click(host.querySelector("[data-txt-align-right]"));
+      expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { align: "right" } });
+      fireChange(host.querySelector("[data-txt-line-height]"), "1.6");
+      expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", {
+        style: { lineHeight: 1.6 },
+      });
+      click(host.querySelector("[data-txt-list-bullet]"));
+      expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { list: "bullet" } });
+      click(host.querySelector("[data-txt-indent-inc]"));
+      expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { indent: 12 } });
+    } finally {
+      unmount();
+    }
+  });
+
+  it("routes a colour patch through the colour path only (never double-sent)", async () => {
+    const onEditAnnotation = vi.fn<(id: string, patch: AnnotationPatch) => void>();
+    const { host, unmount } = await mountStyledDocView({
+      annotations: [STYLED_TEXTBOX],
+      onEditAnnotation,
+    });
+    try {
+      selectStyledTextbox(host);
+      fireChange(host.querySelector("[data-txt-color]"), "#00ff00");
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      const [id, patch] = onEditAnnotation.mock.calls[0] ?? [];
+      expect(id).toBe("tbx-styled");
+      expect(patch).toEqual({ color: "#00ff00" });
+      expect(Object.prototype.hasOwnProperty.call(patch, "style")).toBe(false);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("clear formatting sends style and colour in ONE call (a single undo step)", async () => {
+    const onEditAnnotation = vi.fn<(id: string, patch: AnnotationPatch) => void>();
+    const { host, unmount } = await mountStyledDocView({
+      annotations: [STYLED_TEXTBOX],
+      onEditAnnotation,
+    });
+    try {
+      selectStyledTextbox(host);
+      click(host.querySelector("[data-txt-clear]"));
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      const [, patch] = onEditAnnotation.mock.calls[0] ?? [];
+      // Style fields reset to the per-tool defaults ...
+      expect(patch?.style?.font).toBe("Helvetica");
+      expect(patch?.style?.size).toBe(12);
+      expect(patch?.style?.bold).toBe(false);
+      expect(patch?.style?.align).toBe("left");
+      // ... and the colour rides the same call, not a second one.
+      expect(typeof patch?.color).toBe("string");
+    } finally {
+      unmount();
+    }
+  });
+});
+
 
 
 

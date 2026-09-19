@@ -330,6 +330,25 @@ export interface AnnPoint {
 
 export type AnnLineEnd = 'OpenArrow' | 'ClosedArrow' | 'None' | 'Square' | 'Circle' | 'Diamond';
 
+/** Phase 24 follow-up — the annotation text style: the Phase-21
+ *  `TextStyleFields` plus the font family + point size the text-box/callout
+ *  tools expose. Kept as an extension ALIAS rather than widening
+ *  `TextStyleFields` itself, so the edit-text-run / text-box contracts that
+ *  share that interface are untouched. Absent `font`/`size` keep the legacy
+ *  Helvetica 12 appearance, exactly like an absent style. */
+export type AnnTextStyle = Omit<TextStyleFields, 'highlight'> & {
+  /** StandardFont family. Validated against the `EditFont` allowlist. */
+  font?: EditFont;
+  /** Point size. Finite, `1..2000` (the Phase-21 text-size bounds). */
+  size?: number;
+  /** Band behind each line's ink. A colour draws/replaces the band; `null`
+   *  explicitly REMOVES it (the annotation clear-highlight path); absent
+   *  preserves the stored band. Mirrors `TextBoxStylePatch.highlight`. The
+   *  base `TextStyleFields.highlight` stays `EditColor` for every other
+   *  payload/model. */
+  highlight?: EditColor | null;
+};
+
 export interface AnnModel {
   id: string;
   kind: AnnKind;
@@ -347,6 +366,12 @@ export interface AnnModel {
   width?: number; // stroke width for ink/arrow/rect/ellipse
   blendMode?: string;
   lineEnds?: AnnLineEnd[];
+  /** Phase 24 — text style fields for the text-bearing kinds (text-box,
+   *  callout, note). Absent means the legacy appearance: Helvetica 12,
+   *  left-aligned, default line height. The baked FreeText /AP stream and
+   *  the round-trip sentinel on /Contents both read this. See
+   *  `AnnTextStyle`. */
+  style?: AnnTextStyle;
 }
 
 /** Payload the renderer sends over IPC for createAnnotation. Matches the
@@ -369,6 +394,11 @@ export interface CreateAnnotationPayload {
   opacity?: number;
   blendMode?: string;
   lineEnds?: AnnLineEnd[];
+  /** Phase 24 — optional text style fields for text-bearing kinds.
+   *  Validated preserve-if-valid / reject-if-invalid with the Phase-21
+   *  `validateTextStyleFields` (plus the `font`/`size` extension); absent
+   *  leaves the annotation unstyled. */
+  style?: AnnTextStyle;
 }
 
 /** Payload the renderer sends over IPC for editAnnotation. */
@@ -376,6 +406,11 @@ export interface EditAnnotationPayload {
   color?: string;
   text?: string;
   content?: string;
+  /** Phase 24 — partial text-style patch. Every supplied field is validated
+   *  (reject-if-invalid) and merged onto the stored `AnnModel.style`; absent
+   *  fields preserve the stored value (same semantics as the Phase-21
+   *  `updateTextBox` patch). Carries the `font`/`size` extension too. */
+  style?: AnnTextStyle;
 }
 
 // ---- Phase 4: Forms (AcroForm) ----

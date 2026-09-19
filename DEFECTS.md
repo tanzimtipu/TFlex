@@ -5,6 +5,71 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-254: Selecting an annotation on a page other than 1 closes the text-properties panel when a neighbouring page mounts
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 24
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchDev`), open `test-fixtures/annot-text-roundtrip-1727.pdf` (a multi-page PDF with a textbox annotation on page 4).
+2. Scroll to page 4.
+3. Single-click the committed `VERIFY TB 1727` textbox.
+4. (Also reproduces via `e2e/phase24_annotation_styles.spec.cjs` C3, which uses the same fixture and a real `win.mouse.click`.)
+
+Expected: the text-properties panel opens and stays open, reflecting the annotation's stored style (Phase-24 criteria 1/2/3).
+Actual: the panel opens, then closes ~350ms later. rAF probe (`e2e/retests/diag_phase24_failures.spec.cjs`, C3): t=6 `panel=true open="true"` `activePages=["4"]` `layerPages=["2","3","4"]`; t=104 `open="false"` and `layerPages=["3","4","5"]` (page 2 unmounted, page 5 mounted during the panel's 248px reflow); t=323 `panel=false`. The real-mouse spec shows the same: panel true at t=17ms, false at t=363ms. Root cause: every mounted page's `AnnotationOverlay` reports `onSelectAnnotation(selectedAnn)` from its effect (`AnnotationOverlay.tsx:473-475`); a page overlay that mounts during the reflow reports `null`, clobbering the host's single `selectedAnn`, so `selectedAnnText` flips false and the panel closes. Page 1 selection is unaffected because no new page mounts.
+Screenshot: screenshots/diag-c3-page4.png, screenshots/phase24-c3-legacy.png
+
+History:
+- qa: opened (2026-09-20; Phase-24 re-verification; `e2e/phase24_annotation_styles.spec.cjs` C3 fails 2/4)
+- qa: CLOSED (2026-09-20 Phase-24 close-out retest; `e2e/retests/def_254_255_retest.spec.cjs`). Stated repro passes: a real `win.mouse.click` on the page-4 legacy textbox held the panel open for all 96 rAF frames with 0 `panel=false` frames after open (panel true from t=17ms, active page ["4"], mode annotation) while a neighbouring page mounted/unmounted in the same window (layerPages changed from ["2","3","4"]); a blank click on page 4 still closed the panel and deselected (panel=false, active=false). Phase-24 spec C3 now passes.
+
+## DEF-255: Clearing an annotation highlight is lost on save + reopen
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 24
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchDev`), open `report.pdf`.
+2. Place a textbox, set highlight `#ff0000`.
+3. Save As, close the tab, reopen the saved file (red band present).
+4. Click the reopened textbox, click Clear highlight (the panel swatch returns to `#ffffff` and the engine model reads `highlight:null`).
+5. Save As again, close the tab, reopen the second file.
+
+Expected: no highlight survives the cleared save (Phase-24 criterion 2/4: all style changes survive save + reopen).
+Actual: the reopened annotation carries the red highlight again. Evidence (`e2e/retests/diag_phase24_failures.spec.cjs`, C4): after the clear click `styleAfterClear={"highlight":null}`, panel `#ffffff`; after save + reopen `styleAfterClearReopen={"highlight":{"r":1,"g":0,"b":0}}`. `e2e/phase24_annotation_styles.spec.cjs` C4 fails at line 523 (`no highlight survives the cleared save`). The in-memory removal is not written to the saved file, so the user's edit is silently reverted.
+Screenshot: screenshots/diag-c4-clear.png, screenshots/phase24-c4-highlight-cleared.png
+
+History:
+- qa: opened (2026-09-20; Phase-24 re-verification; `e2e/phase24_annotation_styles.spec.cjs` C4 fails 2/4)
+- qa: CLOSED (2026-09-20 Phase-24 close-out retest; `e2e/retests/def_254_255_retest.spec.cjs`). Stated repro passes: red highlight -> save/reopen => exactly 1 model annotation + 1 overlay, highlight {r:1,g:0,b:0}, canvas 1048/1514 red px; clear -> save/reopen => exactly 1 annotation, highlight strictly null, canvas 0 red px; delete -> save/reopen => 0 annotations and 0 overlays. Phase-24 spec C4 now passes.
+
+## DEF-253: Clicking an existing annotation text object opens the text-properties panel and it closes ~40ms later
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 24
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`), open `report.pdf`.
+2. Arm the annotation Text box tool, place a box on page 1, type text, click Confirm.
+3. Click a blank part of the page to deselect (the text-properties panel closes).
+4. Single-click the committed textbox.
+5. Repeat with a reopened annotation: Save As, close the tab, reopen the saved file, then single-click the textbox.
+
+Expected: the text-properties panel opens and stays open, reflecting the annotation's stored style (Phase 24 success criterion 2).
+Actual: the panel opens for ~40ms and then closes. rAF sampling of the click (e2e/phase24_annotation_styles.spec.cjs, `select-ann` transitions): t=11ms `active=true panel=true`; t=48ms `active=false panel=true`; t=261ms `active=false panel=false`. The same happens for a reopened textbox (C2), a legacy pre-Phase-24 annotation (C3) and a reopened highlight box (C4). The placement path is unaffected (DEF-251/252 fix) because `placedSelectionRef` preserves the placement selection; a click selection has no such guard, so the AnnotationOverlay `[toolKind, cssScale]` effect clears it when the panel-open reflow changes the fit scale. Net effect: the panel is reachable only at placement time; an existing/reopened annotation cannot be selected to edit its style.
+Screenshot: screenshots/phase24-reopen.png (panel closed after the click), screenshots/phase24-c3-legacy.png
+
+History:
+- qa: opened (2026-09-20; Phase 24 validation, `e2e/phase24_annotation_styles.spec.cjs` C2/C3/C4)
+- qa: CLOSED (2026-09-20 FIX-READY retest; `e2e/retests/def_253_retest.spec.cjs`). Stated repro now passes: with the panel CLOSED, single-clicking a committed textbox, a callout, a note and a reopened textbox each left the panel open with zero `panel=false` frames across a 500ms rAF probe (31 frames each; transitions `[{t~11, active:true, panel:true}]` for all four). The panel reflected the stored style: existing textbox font=Times/size=18/bold=true; reopened textbox the same after save+reopen; callout font=Courier; note font=Times. Screenshot screenshots/def253-retest.png (reopened D253-TB selected, panel annotation mode Times 18 bold). The page-4 legacy-annotation variant (Phase-24 spec C3) still closes the panel for a different reason, tracked as DEF-254.
+
 ## DEF-252: Placing an annotation text box/comment glitches the page and the follow-up click on it does not register
 
 - Status: CLOSED

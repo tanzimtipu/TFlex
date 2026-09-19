@@ -3349,7 +3349,7 @@ function standardFontFor(font: EditFont): StandardFonts {
  * exist among the bundled standard fonts (WinAnsiEncoding, so Latin text
  * round-trips like the Phase 10 edit tools).
  */
-function selectStandardFont(
+export function selectStandardFont(
   family: EditFont,
   bold: boolean,
   italic: boolean,
@@ -4492,7 +4492,7 @@ function alignedLineX(rectX: number, width: number, lineWidth: number, align: Te
  *  (or split on explicit newlines). `rectTop` is the top-left-origin y of the
  *  block's first line. Draw order: every highlight band first (so bands sit
  *  BEHIND the glyphs), then per line the underline rule and the glyphs. */
-function drawStyledTextLines(
+export function drawStyledTextLines(
   page: PDFPage,
   pageHeight: number,
   lines: string[],

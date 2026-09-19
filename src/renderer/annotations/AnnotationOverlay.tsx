@@ -70,6 +70,7 @@ import {
   type PageRect,
 } from "./model";
 import { consumeMenuDismissPointer } from "./menuDismissGuard";
+import { annTextCss, type AnnTextCss } from "./annTextStyle";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -224,6 +225,38 @@ export function fitAnnotationTextSizePx(args: {
   });
 }
 
+/** Phase 24 — the live committed-text style, derived from the annotation's
+ *  stored `AnnTextStyle`. Only the fields the annotation actually stores are
+ *  applied, so an unstyled annotation keeps the pre-Phase-24 rendering
+ *  exactly. `list` prefixes and `baselineShift` are baked-only (see
+ *  `annTextStyle.ts`). */
+function annTextBoxCss(css: AnnTextCss, cssScale: number): CSSProperties {
+  return {
+    ...(css.fontFamily !== undefined ? { fontFamily: css.fontFamily } : {}),
+    ...(css.fontWeight !== undefined ? { fontWeight: css.fontWeight } : {}),
+    ...(css.fontStyle !== undefined ? { fontStyle: css.fontStyle } : {}),
+    ...(css.textDecoration !== undefined ? { textDecoration: css.textDecoration } : {}),
+    ...(css.textAlign !== undefined ? { textAlign: css.textAlign } : {}),
+    ...(css.lineHeight !== undefined ? { lineHeight: css.lineHeight } : {}),
+    ...(css.indentPt !== undefined
+      ? { paddingLeft: TEXTBOX_PAD_PT * cssScale + css.indentPt * cssScale }
+      : {}),
+  };
+}
+
+/** The text node of a committed textbox / callout, wrapped so a stored
+ *  highlight band hugs the glyphs instead of tinting the whole box. */
+function AnnTextBoxText(props: { text: string; css: AnnTextCss }): ReactElement {
+  return (
+    <span
+      className="ann-text-content"
+      style={props.css.highlight !== undefined ? { background: props.css.highlight } : undefined}
+    >
+      {props.text}
+    </span>
+  );
+}
+
 export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   const {
     page,
@@ -348,9 +381,29 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
    *  still deselects. */
   const placedSelectionRef = useRef<string | null>(null);
 
-  // Cancel any in-progress interaction when the tool changes or the page
-  // re-renders at a new scale mid-drag (zoom during a drag abandons it).
+  /** DEF-253 — the previous render's tool kind, so the effect below can
+   *  tell a DELIBERATE tool switch (which resets interaction + selection
+   *  state) apart from a pure `cssScale` change (the text-properties
+   *  panel's 248px reflow resizes the fit scale whenever a selection
+   *  opens or closes it). Treating the reflow as a tool change cleared
+   *  `selectedAnnId` on click-selection, which flipped `selectedAnnText`
+   *  false and closed the panel ~40ms after it opened. */
+  const prevToolKindRef = useRef(toolKind);
+
+  // Cancel an in-progress CREATION gesture when the tool changes or the
+  // page re-renders at a new scale mid-drag (zoom during a drag abandons
+  // it). A scale change is NOT a tool change: it must not touch the
+  // selection, an open editor, a local draft or a pending move, because
+  // the panel's own reflow causes it (DEF-253).
   useEffect(() => {
+    const toolChanged = prevToolKindRef.current !== toolKind;
+    prevToolKindRef.current = toolKind;
+    if (!toolChanged) {
+      setDrag(null);
+      setInk(null);
+      selDrag.endDrag();
+      return;
+    }
     setDrag(null);
     setInk(null);
     setTextboxEditor(null);
@@ -2045,27 +2098,35 @@ function DomAnnotation({
     // wrapped line got clipped by `.ann-textbox`'s overflow guard,
     // and a callout's text spilled below the box. Matches the
     // engine's save-time fit and the DEF-146 box-mirror fit.
+    // Phase 24 — the fit is measured at the STORED size / line step /
+    // font family when the annotation carries a style, so a panel
+    // change is reflected by the live overlay immediately.
+    const annCss = annTextCss(ann.style);
+    const lineHeight = annCss.lineHeight ?? TEXTBOX_LINE_HEIGHT;
+    const userSizePx = (annCss.sizePt ?? TEXTBOX_FONT_PT) * cssScale;
     const fontSize = showOverlayText
       ? fitAnnotationTextSizePx({
           text: ann.text,
-          userSizePx: TEXTBOX_FONT_PT * cssScale,
+          userSizePx,
           boxWidthPx: box.width,
           boxHeightPx: box.height,
-          lineHeight: TEXTBOX_LINE_HEIGHT,
+          lineHeight,
           sideInsetPx: TEXTBOX_PAD_PT * cssScale + TEXTBOX_BORDER_PX,
-          measure: (t, s): number => measureTextWidthCss(t, ANNOTATION_TEXT_FONT_FAMILY, s),
+          measure: (t, s): number =>
+            measureTextWidthCss(t, annCss.fontFamily ?? ANNOTATION_TEXT_FONT_FAMILY, s),
         })
-      : TEXTBOX_FONT_PT * cssScale;
+      : userSizePx;
     const style: CSSProperties = {
       left: box.left,
       top: box.top,
       width: box.width,
       height: box.height,
       fontSize,
-      lineHeight: TEXTBOX_LINE_HEIGHT,
+      lineHeight,
       padding: TEXTBOX_PAD_PT * cssScale,
       borderColor: hex,
       background: hexWithAlpha(hex, 0.08),
+      ...annTextBoxCss(annCss, cssScale),
     };
     return (
       <div
@@ -2090,7 +2151,7 @@ function DomAnnotation({
         }
         onPointerUp={onSurfacePointerUp}
       >
-        {showOverlayText && ann.text}
+        {showOverlayText && <AnnTextBoxText text={ann.text} css={annCss} />}
       </div>
     );
   }
@@ -2258,28 +2319,36 @@ function DomAnnotation({
     // painted over the page content below it. `overflow: "hidden"`
     // is the final guard so a measurement drift can never paint
     // outside the box.
+    // Phase 24 — the fit is measured at the STORED size / line step /
+    // font family when the annotation carries a style (see the textbox
+    // branch above).
+    const annCss = annTextCss(ann.style);
+    const lineHeight = annCss.lineHeight ?? TEXTBOX_LINE_HEIGHT;
+    const userSizePx = (annCss.sizePt ?? TEXTBOX_FONT_PT) * cssScale;
     const fontSize = showOverlayText
       ? fitAnnotationTextSizePx({
           text: ann.text,
-          userSizePx: TEXTBOX_FONT_PT * cssScale,
+          userSizePx,
           boxWidthPx: box.width,
           boxHeightPx: box.height,
-          lineHeight: TEXTBOX_LINE_HEIGHT,
+          lineHeight,
           sideInsetPx: TEXTBOX_PAD_PT * cssScale + CALLOUT_BORDER_PX,
-          measure: (t, s): number => measureTextWidthCss(t, ANNOTATION_TEXT_FONT_FAMILY, s),
+          measure: (t, s): number =>
+            measureTextWidthCss(t, annCss.fontFamily ?? ANNOTATION_TEXT_FONT_FAMILY, s),
         })
-      : TEXTBOX_FONT_PT * cssScale;
+      : userSizePx;
     const style: CSSProperties = {
       left: box.left,
       top: box.top,
       width: box.width,
       height: box.height,
       fontSize,
-      lineHeight: TEXTBOX_LINE_HEIGHT,
+      lineHeight,
       padding: TEXTBOX_PAD_PT * cssScale,
       borderColor: hex,
       background: hexWithAlpha(hex, 0.08),
       overflow: "hidden",
+      ...annTextBoxCss(annCss, cssScale),
     };
     const anchorCss = {
       x: anchor.x * cssScale,
@@ -2399,7 +2468,7 @@ function DomAnnotation({
           }
           onPointerUp={onSurfacePointerUp}
         >
-          {showOverlayText && ann.text}
+          {showOverlayText && <AnnTextBoxText text={ann.text} css={annCss} />}
         </div>
       </>
     );

@@ -14,6 +14,7 @@
 // the neutral swatch value the colour input shows while no band is set.
 
 import type {
+  AnnTextStyle,
   EditColor,
   EditFont,
   TextAlign,
@@ -194,4 +195,33 @@ export function editColorToHex(c: EditColor): string {
       .toString(16)
       .padStart(2, "0");
   return `#${part(c.r)}${part(c.g)}${part(c.b)}`;
+}
+
+/** Phase 24 — reduce a panel patch to the `AnnTextStyle` the annotation
+ *  `editAnnotation` payload carries. `color` is routed separately (it is
+ *  the annotation's own colour, not a text-style field), and the text-box
+ *  patch's `text` / `background` are not annotation style fields.
+ *
+ *  Contract: `AnnTextStyle.highlight` is `EditColor | null | undefined` —
+ *  null means REMOVAL of the stored band, absent preserves it (mirrors
+ *  `TextBoxStylePatch`). The panel's "None" button and "clear formatting"
+ *  therefore pass `highlight: null` through to `editAnnotation`. */
+export function annotationStyleFromPanelPatch(patch: TextBoxStylePatch): AnnTextStyle {
+  const style: AnnTextStyle = {};
+  if (patch.font !== undefined) style.font = patch.font;
+  if (patch.size !== undefined) style.size = clampFontSize(patch.size);
+  if (patch.bold !== undefined) style.bold = patch.bold;
+  if (patch.italic !== undefined) style.italic = patch.italic;
+  if (patch.underline !== undefined) style.underline = patch.underline;
+  if (patch.highlight !== undefined) {
+    style.highlight = patch.highlight === null ? null : { ...patch.highlight };
+  }
+  if (patch.baselineShift !== undefined) {
+    style.baselineShift = clampBaselineShift(patch.baselineShift);
+  }
+  if (patch.align !== undefined) style.align = patch.align;
+  if (patch.lineHeight !== undefined) style.lineHeight = clampLineHeight(patch.lineHeight);
+  if (patch.list !== undefined) style.list = patch.list;
+  if (patch.indent !== undefined) style.indent = clampIndent(patch.indent);
+  return style;
 }
