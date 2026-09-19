@@ -59,7 +59,8 @@ import {
 } from "react";
 import { AnimatePresence } from "motion/react";
 import { dispatchMenuAction, type MenuActionContext } from "../state/menuActions";
-import { TfMenu } from "./motion/TfMotion";
+import { TfMorph } from "./motion/TfMotion";
+import { useMorphPreset } from "./motion/useMorphPreset";
 import { GlassChromeBar } from "./GlassChrome";
 
 /** The shape of a menu entry. Two kinds: a top-level group heading
@@ -160,6 +161,15 @@ export function TitleBar(props: TitleBarProps): ReactElement {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const menuPopoverRef = useRef<HTMLDivElement | null>(null);
+  // Phase 20 — the application menu MORPHS out of its button: the popover
+  // is laid out flush under the button's bottom-left corner (CSS
+  // placement, untouched) and the FLIP preset grows it from that box.
+  const menuMorph = useMorphPreset({
+    open: menuOpen,
+    triggerRef: menuButtonRef,
+    surfaceRef: menuPopoverRef,
+    anchorCorner: "top-left",
+  });
 
   // Close on outside click / Escape. Mirrors the annotation palette's
   // click-outside contract: a global pointerdown listener that
@@ -257,7 +267,8 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           </button>
           <AnimatePresence>
             {menuOpen && (
-              <TfMenu
+              <TfMorph
+                morph={menuMorph}
                 ref={menuPopoverRef}
                 className="titlebar-menu-popover"
                 role="menu"
@@ -309,7 +320,7 @@ export function TitleBar(props: TitleBarProps): ReactElement {
                   </button>
                 );
               })}
-              </TfMenu>
+              </TfMorph>
             )}
           </AnimatePresence>
         </div>

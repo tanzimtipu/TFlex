@@ -43,6 +43,14 @@ import type {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Phase 20 — the floating toolboxes are TfBar surfaces inside
+ *  AnimatePresence, so their DOM removal completes after the exit. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 function mountOverlay(args: {
   onCreate: (a: Annotation) => void;
   tool?: AnnotationToolState;
@@ -217,7 +225,7 @@ describe("B2 followup — action bar buttons stay clickable (no preventDefault o
     }
   });
 
-  it("Cancel button click drops the in-flight textbox without preventDefault swallowing the click", () => {
+  it("Cancel button click drops the in-flight textbox without preventDefault swallowing the click", async () => {
     const { host, onCreate, cleanup } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -254,6 +262,8 @@ describe("B2 followup — action bar buttons stay clickable (no preventDefault o
       cancelBtn.getBoundingClientRect = (): DOMRect => rect as DOMRect;
       dispatchPointerThenClick(cancelBtn, rect.left + 10, rect.top + 10);
       expect(onCreate).not.toHaveBeenCalled();
+      // Phase 20 — the outgoing toolbox exits before leaving the DOM.
+      await settleMotion();
       // The action bar is gone — the editor was torn down by the
       // Cancel handler, not by a swallowed click.
       expect(
@@ -264,7 +274,7 @@ describe("B2 followup — action bar buttons stay clickable (no preventDefault o
     }
   });
 
-  it("Delete button click drops the in-flight textbox (same path as Cancel)", () => {
+  it("Delete button click drops the in-flight textbox (same path as Cancel)", async () => {
     const { host, onCreate, cleanup } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -301,6 +311,7 @@ describe("B2 followup — action bar buttons stay clickable (no preventDefault o
       delBtn.getBoundingClientRect = (): DOMRect => rect as DOMRect;
       dispatchPointerThenClick(delBtn, rect.left + 5, rect.top + 5);
       expect(onCreate).not.toHaveBeenCalled();
+      await settleMotion();
       expect(
         host.querySelector("[data-annotation-action-bar='textbox']"),
       ).toBeNull();

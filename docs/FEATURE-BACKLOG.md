@@ -196,3 +196,64 @@ History:
 ---
 
 _No proposals recorded yet. The first `feature-scout` run appends its batch below this line._
+
+## FEA-011: Dock text properties panel with Adobe's FORMAT TEXT control set
+
+- Status: ACCEPTED -> Phase 21
+- Source: https://helpx.adobe.com/acrobat/desktop/edit-documents/edit-text-in-pdfs/format-text.html (Adobe Acrobat Pro); https://www.pdf-xchange.com/product/pdf-xchange-editor (PDF-XChange Properties Pane / Format Tab)
+- Category: Edit
+- Effort: M
+- Likely new settings: no (reuses `editDefaultFont` and the annotation colour fields)
+- Batch: research for Phase 21 (2026-09-19)
+
+What it does: A docked text-properties panel (not a floating toolbox) beside the left rail, carrying Adobe's
+verbatim FORMAT TEXT set - font family, font size, font colour, bold/italic/underline,
+superscript/subscript, alignment (left/centre/right/justify), line spacing, character spacing,
+horizontal scaling, bulleted/numbered lists - applied on change and committed on deselect, exactly like
+Acrobat's Edit panel.
+
+Why it matters: two independent desktop peers (Acrobat's Edit panel, PDF-XChange's Properties Pane / Format
+Tab) use the docked-panel convention; the floating double-click toolbox is the legacy pattern Phase 21
+retires. Research note: pdf-lib exposes no character-spacing / horizontal-scaling operators, so those two
+controls must ship disabled-with-tooltip unless the engine grows custom `Tc`/`Tz` operators; live reflow of
+foreign content streams is out of scope (Foxit/Adobe reflow is the H item); font changes are substitutions
+by definition under the StandardFont allowlist and must fail loud, the way Sejda's Font Replacement dialog
+does ("This font (embedded in the document) does not support this style change...").
+
+History:
+- orchestrator: recorded from feature-scout research dispatch (Phase 21 design input)
+
+## FEA-012: Format Painter (copy formatting from one text object to another)
+
+- Status: PROPOSED
+- Source: https://support.microsoft.com/en-us/word/training/add-and-edit-text (Microsoft Word, Font group)
+- Category: Edit
+- Effort: M
+- Likely new settings: no
+- Batch: research for Phase 21 (2026-09-19)
+
+What it does: Pick up the formatting of a selected text object and apply it to another with one click,
+like Word's Format Painter.
+
+Why it matters: once the Phase-21 panel exists, re-applying a font/colour/size combination to many objects
+is the most common bulk action; peers ship it and the panel is the natural home for it.
+
+History:
+- orchestrator: recorded from feature-scout research dispatch (deferred candidate after Phase 21)
+
+## FEA-013: Spell check inside the text editor
+
+- Status: PROPOSED
+- Source: https://helpx.adobe.com/acrobat/using/edit-text-pdfs.html (Adobe: spell check as part of Add/Edit text)
+- Category: Edit
+- Effort: M
+- Likely new settings: maybe (dictionary/language)
+- Batch: research for Phase 21 (2026-09-19)
+
+What it does: Underline misspellings in the text being edited and offer suggestions, offline.
+
+Why it matters: Adobe treats it as part of the edit-text flow; a fully offline PDF studio can ship a small
+bundled dictionary without any network call, which keeps it inside the v1 offline rule.
+
+History:
+- orchestrator: recorded from feature-scout research dispatch (deferred candidate after Phase 21)

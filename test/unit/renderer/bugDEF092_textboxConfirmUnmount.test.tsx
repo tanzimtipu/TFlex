@@ -42,6 +42,16 @@ import type {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Phase 20 — the textbox toolbox is now a TfBar inside an
+ *  AnimatePresence, so "gone from the DOM" means the exit animation has
+ *  run to completion. Motion's test setup (skipAnimations) completes it
+ *  on the next tick, so absence assertions settle first. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 function mountOverlay(args: {
   onCreate: (a: Annotation) => void;
   onFinishedOneShot?: () => void;
@@ -174,7 +184,7 @@ function getButtonRect(button: HTMLElement, override?: Partial<DOMRect>): DOMRec
 }
 
 describe("DEF-092 — Confirm unmounts the textbox floating bar", () => {
-  it("after Confirm, the action bar, wrapper, and textarea are all gone", () => {
+  it("after Confirm, the action bar, wrapper, and textarea are all gone", async () => {
     const { host, onCreate, onFinishedOneShot, cleanup } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -207,6 +217,10 @@ describe("DEF-092 — Confirm unmounts the textbox floating bar", () => {
       // onFinishedOneShot fired so the host can disarm the tool.
       expect(onFinishedOneShot).toHaveBeenCalledTimes(1);
 
+      // Phase 20 — the outgoing toolbox exits through the presence
+      // boundary before it leaves the DOM.
+      await settleMotion();
+
       // Post-condition: every editor fragment is gone from the DOM.
       expect(
         host.querySelector("[data-annotation-action-bar='textbox']"),
@@ -222,7 +236,7 @@ describe("DEF-092 — Confirm unmounts the textbox floating bar", () => {
     }
   });
 
-  it("Confirm is idempotent — a second click is a no-op (no duplicate annotations)", () => {
+  it("Confirm is idempotent — a second click is a no-op (no duplicate annotations)", async () => {
     const { host, onCreate, cleanup } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -238,9 +252,12 @@ describe("DEF-092 — Confirm unmounts the textbox floating bar", () => {
         rect.top + rect.height / 2,
       );
       expect(onCreate).toHaveBeenCalledTimes(1);
-      // Second click: the editor is already unmounted, the click is
-      // a no-op (the React tree has no Confirm button to click). The
+      // Phase 20 — while the toolbox exits it pins pointer-events: none
+      // on its first exit frame, so a real second click can never land
+      // on the outgoing Confirm. The node leaves the DOM once the exit
+      // completes; a second click on the detached node is a no-op. The
       // important assertion is that onCreate is NOT called again.
+      await settleMotion();
       act((): void => {
         // Best-effort: try clicking the original DOM node. React
         // unmounted it, so this throws or no-ops depending on the
@@ -257,7 +274,7 @@ describe("DEF-092 — Confirm unmounts the textbox floating bar", () => {
     }
   });
 
-  it("Cancel unmounts the editor without calling onCreate", () => {
+  it("Cancel unmounts the editor without calling onCreate", async () => {
     const { host, onCreate, onFinishedOneShot, cleanup } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -272,6 +289,7 @@ describe("DEF-092 — Confirm unmounts the textbox floating bar", () => {
       dispatchPointerThenClick(cancelBtn, rect.left + 10, rect.top + 10);
       expect(onCreate).not.toHaveBeenCalled();
       expect(onFinishedOneShot).toHaveBeenCalledTimes(1);
+      await settleMotion();
       expect(
         host.querySelector("[data-annotation-action-bar='textbox']"),
       ).toBeNull();
@@ -280,7 +298,7 @@ describe("DEF-092 — Confirm unmounts the textbox floating bar", () => {
     }
   });
 
-  it("Delete unmounts the editor without calling onCreate", () => {
+  it("Delete unmounts the editor without calling onCreate", async () => {
     const { host, onCreate, onFinishedOneShot, cleanup } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -295,6 +313,7 @@ describe("DEF-092 — Confirm unmounts the textbox floating bar", () => {
       dispatchPointerThenClick(delBtn, rect.left + 10, rect.top + 10);
       expect(onCreate).not.toHaveBeenCalled();
       expect(onFinishedOneShot).toHaveBeenCalledTimes(1);
+      await settleMotion();
       expect(
         host.querySelector("[data-annotation-action-bar='textbox']"),
       ).toBeNull();

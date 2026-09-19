@@ -26,6 +26,14 @@
 //      the "focus leaving the textarea to the Confirm button
 //      would commit" symptom that motivated removing onBlur).
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Phase 20 — the textbox/callout toolboxes are TfBar surfaces inside
+ *  AnimatePresence, so their DOM removal completes after the exit. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -123,7 +131,7 @@ describe("B2 — textbox / callout floating action bar", () => {
     expect(del).not.toBeNull();
   });
 
-  it("Confirm commits the textbox; Cancel / Delete drop it without committing", () => {
+  it("Confirm commits the textbox; Cancel / Delete drop it without committing", async () => {
     const { host, onCreate } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -164,10 +172,11 @@ describe("B2 — textbox / callout floating action bar", () => {
     expect(ann?.kind).toBe("textbox");
     expect((ann as { text: string } | undefined)?.text).toBe("hello world");
     // The editor + action bar are gone after commit.
+    await settleMotion();
     expect(host.querySelector("[data-annotation-action-bar='textbox']")).toBeNull();
   });
 
-  it("Cancel drops the in-flight textbox without calling onCreate", () => {
+  it("Cancel drops the in-flight textbox without calling onCreate", async () => {
     const { host, onCreate } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -191,10 +200,11 @@ describe("B2 — textbox / callout floating action bar", () => {
       cancelBtn.click();
     });
     expect(onCreate).not.toHaveBeenCalled();
+    await settleMotion();
     expect(host.querySelector("[data-annotation-action-bar='textbox']")).toBeNull();
   });
 
-  it("Delete drops the in-flight textbox without calling onCreate", () => {
+  it("Delete drops the in-flight textbox without calling onCreate", async () => {
     const { host, onCreate } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -218,6 +228,7 @@ describe("B2 — textbox / callout floating action bar", () => {
       delBtn.click();
     });
     expect(onCreate).not.toHaveBeenCalled();
+    await settleMotion();
     expect(host.querySelector("[data-annotation-action-bar='textbox']")).toBeNull();
   });
 
@@ -349,7 +360,7 @@ describe("B2 — textbox / callout floating action bar", () => {
     expect(onCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("Esc keyboard shortcut cancels the textbox without committing", () => {
+  it("Esc keyboard shortcut cancels the textbox without committing", async () => {
     const { host, onCreate } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -375,6 +386,7 @@ describe("B2 — textbox / callout floating action bar", () => {
       );
     });
     expect(onCreate).not.toHaveBeenCalled();
+    await settleMotion();
     expect(host.querySelector("[data-annotation-action-bar='textbox']")).toBeNull();
   });
 });

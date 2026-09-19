@@ -471,8 +471,12 @@ test('anchoring: dropdown opens right-aligned under its arrow, not at the far-le
     // effect measures its own offsetWidth and right-aligns under the arrow.
     expect(anchor.menuRight, 'menu right edge aligns with the toggle right edge').toBeLessThanOrEqual(anchor.toggleRight + 4);
     expect(anchor.menuRight, 'menu right edge aligns with the toggle right edge').toBeGreaterThanOrEqual(anchor.toggleRight - 6);
-    expect(anchor.menuTop, 'menu top is the toggle bottom + ~6px').toBeGreaterThanOrEqual(anchor.toggleBottom + 3);
-    expect(anchor.menuTop, 'menu top is the toggle bottom + ~6px').toBeLessThanOrEqual(anchor.toggleBottom + 10);
+    // Phase 20 — the all-tools dropdown now MORPHS out of the arrow button:
+    // its first frame IS the trigger box and the anchored edge is flush, so
+    // the old +6px seam is gone by design. Same intent: anchored under the
+    // arrow, not detached.
+    expect(anchor.menuTop, 'menu top is flush with the toggle bottom (Phase 20 morph)').toBeGreaterThanOrEqual(anchor.toggleBottom - 1);
+    expect(anchor.menuTop, 'menu top is flush with the toggle bottom (Phase 20 morph)').toBeLessThanOrEqual(anchor.toggleBottom + 1);
     expect(anchor.menuLeft, 'menu must not detach to the far-left edge').toBeGreaterThan(anchor.innerWidth / 2);
     expect(anchor.menuLeft, 'menu fully inside viewport (left)').toBeGreaterThanOrEqual(0);
     expect(anchor.menuRight, 'menu fully inside viewport (right)').toBeLessThanOrEqual(anchor.innerWidth);

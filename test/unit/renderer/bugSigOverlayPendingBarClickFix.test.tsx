@@ -18,6 +18,14 @@
 // drive the actual SignaturesOverlay and StampOverlay components
 // (no shallow renders) so the real event handlers run end-to-end.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Phase 20 — the signature pending surface is a TfBar inside an
+ *  AnimatePresence, so its DOM removal completes after the exit. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -252,7 +260,7 @@ describe("Fix 1 — Ghost renders an armed footprint placeholder when source is 
 });
 
 describe("Fix 2 — Pending bar buttons remain clickable (no preventDefault on the layer's pointerdown)", () => {
-  it("clicking the Confirm button with the pointerdown handler bound to the layer still triggers Confirm's onClick", () => {
+  it("clicking the Confirm button with the pointerdown handler bound to the layer still triggers Confirm's onClick", async () => {
     // Regression: the layer's onPointerDown handler used to call
     // e.preventDefault() on every pointerdown, which suppressed
     // the subsequent click event on the Confirm button. The user
@@ -295,10 +303,11 @@ describe("Fix 2 — Pending bar buttons remain clickable (no preventDefault on t
     expect(onPlace).toHaveBeenCalledTimes(1);
     expect(onPlace.mock.calls[0]?.[0]).toBe("sig-1");
     // The pending placement is gone after Confirm.
+    await settleMotion();
     expect(host.querySelector("[data-sig-pending]")).toBeNull();
   });
 
-  it("clicking the Cancel button with the pointerdown bubbling to the layer still drops the pending placement", () => {
+  it("clicking the Cancel button with the pointerdown bubbling to the layer still drops the pending placement", async () => {
     const { host, onPlace } = mountSignatures({
       signatures: { "sig-1": TYPED_SIG },
       armedSignatureId: "sig-1",
@@ -324,6 +333,7 @@ describe("Fix 2 — Pending bar buttons remain clickable (no preventDefault on t
       cancelBtn.click();
     });
     expect(onPlace).not.toHaveBeenCalled();
+    await settleMotion();
     expect(host.querySelector("[data-sig-pending]")).toBeNull();
   });
 

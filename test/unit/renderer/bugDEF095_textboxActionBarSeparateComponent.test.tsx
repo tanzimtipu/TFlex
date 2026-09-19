@@ -35,6 +35,14 @@ import type {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Phase 20 — the textbox toolbox is a TfBar inside an AnimatePresence,
+ *  so its removal from the DOM completes after the exit animation. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 function mountOverlay(args: {
   onCreate: (a: Annotation) => void;
   onFinishedOneShot?: () => void;
@@ -127,7 +135,7 @@ function typeIntoTextarea(host: HTMLElement, text: string): void {
 }
 
 describe("DEF-095 — textbox floating action bar is a separate component that unmounts on Confirm", () => {
-  it("after Confirm, both the textarea AND the action bar are gone from the DOM", () => {
+  it("after Confirm, both the textarea AND the action bar are gone from the DOM", async () => {
     const { host, onCreate, cleanup } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -152,6 +160,9 @@ describe("DEF-095 — textbox floating action bar is a separate component that u
       });
 
       expect(onCreate).toHaveBeenCalledTimes(1);
+
+      // Phase 20 — let the outgoing toolbox finish its TfBar exit.
+      await settleMotion();
 
       // Post-condition: bar AND textarea BOTH unmounted. The bug
       // was the bar outliving the textarea on Confirm; this

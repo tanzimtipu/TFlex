@@ -41,6 +41,14 @@ import type {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Phase 20 — the textbox toolbox is a TfBar inside an AnimatePresence,
+ *  so its removal from the DOM completes after the exit animation. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 function mountOverlay(args: {
   onCreate: (a: Annotation) => void;
   tool?: AnnotationToolState;
@@ -145,7 +153,7 @@ describe("DEF-095 — textbox action bar is a real hit target outside the textar
     }
   });
 
-  it("pointerdown + click chain on Confirm commits the textbox and unmounts the wrapper AND the bar", () => {
+  it("pointerdown + click chain on Confirm commits the textbox and unmounts the wrapper AND the bar", async () => {
     const { host, onCreate, cleanup } = mountOverlay({
       onCreate: (): void => undefined,
     });
@@ -178,6 +186,8 @@ describe("DEF-095 — textbox action bar is a real hit target outside the textar
       const ann = onCreate.mock.calls[0]?.[0];
       expect(ann?.kind).toBe("textbox");
       expect((ann as { text: string } | undefined)?.text).toBe("hello world");
+      // Phase 20 — let the outgoing toolbox finish its TfBar exit.
+      await settleMotion();
       // Editor torn down: the bar AND the wrapper are fully gone.
       expect(host.querySelector("[data-annotation-action-bar='textbox']")).toBeNull();
       expect(host.querySelector("[data-annotation-editor='textbox']")).toBeNull();

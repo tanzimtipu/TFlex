@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactElement } from "react";
+import { AnimatePresence, useIsPresent } from "motion/react";
 import type {
   SavedSignature,
   SignaturePlacement,
@@ -26,6 +27,7 @@ import {
 } from "./model";
 import { DRAW_PEN_COLOR, scaledStrokeWidth } from "./canvas";
 import { useDragWindow } from "../components/useDragWindow";
+import { TfBar } from "../components/motion/TfMotion";
 
 // Default size (in page points) for the ghost preview + the new
 // placement when the user clicks with a signature tool armed. The
@@ -126,6 +128,14 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
     rect: SignaturePlacement["rect"];
     signatureId: string;
   } | null>(null);
+  // Phase 20 / DEF-236 defence in depth — ONE-SHOT confirm latch for the
+  // pending placement. The exiting pending view / action bar are inert
+  // (no key can reach them), but if focus somehow survives the exit
+  // window a held Enter would re-fire the stale `onConfirm` closure and
+  // commit a second overlapping placement (ADV-052: 11 placements from
+  // one Confirm). The latch is reset when a NEW pending placement is
+  // created (the only way a second commit can legitimately happen).
+  const confirmedRef = useRef(false);
 
   // Drop the selection when the page changes — no point keeping a
   // selection across pages. The uncommitted move rect goes with it
@@ -410,6 +420,9 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
         pageHeightPt,
       );
       setPendingPlacement({ signatureId: armedSignatureId, rect });
+      // DEF-236 — a NEW pending placement re-arms the one-shot confirm
+      // latch (the previous placement's commit is over).
+      confirmedRef.current = false;
       setGhostPt(null);
     },
     [armedSignatureId, cssScale, pageWidthPt, pageHeightPt],
@@ -439,6 +452,10 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
   // the next page click spawns a fresh pending placement.
   const onConfirmPending = useCallback((): void => {
     if (pendingPlacement === null) return;
+    // DEF-236 — one-shot: the first Confirm commits; every later
+    // invocation (a held-Enter repeat during the exit window) is a no-op.
+    if (confirmedRef.current) return;
+    confirmedRef.current = true;
     onPlace(pendingPlacement.signatureId, pendingPlacement.rect);
     setPendingPlacement(null);
     // B1/B2 — disarm + drop the ghost so the Sign session is
@@ -549,16 +566,18 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
           `onPlace` / local-state handlers the overlay already
           uses. B1 — Cancel exits Sign mode; Delete drops only
           the pending placement. */}
-      {pendingPlacement !== null && (
-        <PendingPlacementView
-          rect={pendingPlacement.rect}
-          signature={signatures[pendingPlacement.signatureId] ?? null}
-          cssScale={cssScale}
-          onConfirm={onConfirmPending}
-          onCancel={onCancelPending}
-          onDelete={onDeletePending}
-        />
-      )}
+      <AnimatePresence>
+        {pendingPlacement !== null && (
+          <PendingPlacementView
+            rect={pendingPlacement.rect}
+            signature={signatures[pendingPlacement.signatureId] ?? null}
+            cssScale={cssScale}
+            onConfirm={onConfirmPending}
+            onCancel={onCancelPending}
+            onDelete={onDeletePending}
+          />
+        )}
+      </AnimatePresence>
 
       {pagePlacements.map((p) => {
         const sig = signatures[p.signatureId];
@@ -603,26 +622,28 @@ export function SignaturesOverlay(props: SignaturesOverlayProps): ReactElement |
           to the placement's current visual rect — the held
           uncommitted rect while one exists, the committed rect
           otherwise. */}
-      {selectedId !== null &&
-        (() => {
-          const selected = pagePlacements.find((p) => p.id === selectedId);
-          if (selected === undefined) return null;
-          const barRect =
-            pendingMoveRect !== null && pendingMoveRect.placementId === selectedId
-              ? pendingMoveRect.rect
-              : selected.rect;
-          return (
-            <SignatureActionBar
-              base={{ x: barRect.x * cssScale, y: barRect.y * cssScale, width: barRect.width * cssScale, height: barRect.height * cssScale }}
-              confirmTitle="Commit position changes"
-              cancelTitle="Cancel (Esc) — revert selection"
-              deleteTitle="Delete signature"
-              onConfirm={onConfirmSelected}
-              onCancel={onCancelSelected}
-              onDelete={onDeleteSelected}
-            />
-          );
-        })()}
+      <AnimatePresence>
+        {selectedId !== null &&
+          (() => {
+            const selected = pagePlacements.find((p) => p.id === selectedId);
+            if (selected === undefined) return null;
+            const barRect =
+              pendingMoveRect !== null && pendingMoveRect.placementId === selectedId
+                ? pendingMoveRect.rect
+                : selected.rect;
+            return (
+              <SignatureActionBar
+                base={{ x: barRect.x * cssScale, y: barRect.y * cssScale, width: barRect.width * cssScale, height: barRect.height * cssScale }}
+                confirmTitle="Commit position changes"
+                cancelTitle="Cancel (Esc) — revert selection"
+                deleteTitle="Delete signature"
+                onConfirm={onConfirmSelected}
+                onCancel={onCancelSelected}
+                onDelete={onDeleteSelected}
+              />
+            );
+          })()}
+      </AnimatePresence>
     </div>
   );
 }
@@ -646,14 +667,25 @@ interface PendingPlacementViewProps {
  *  it enters the engine. */
 function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
   const { rect, signature, cssScale, onConfirm, onCancel, onDelete } = props;
+  // Phase 20 / DEF-236 — the exiting pending view is INERT: its Confirm
+  // button keeps DOM focus otherwise, and a held Enter during the exit
+  // window re-fired the stale commit (11 placements from one Confirm).
+  const isPresent = useIsPresent();
   const leftPx = rect.x * cssScale;
   const topPx = rect.y * cssScale;
   const widthPx = rect.width * cssScale;
   const heightPx = rect.height * cssScale;
   return (
-    <div
+    // Phase 20 — the pending placement (raster + action bar) is one
+    // floating surface: it enters/exits through TfBar tokens instead of
+    // popping, with the exit frame pinning pointer-events: none so the
+    // closing surface can never swallow the page click that creates the
+    // next placement (DEF-087/088/090).
+    <TfBar
       className="sig-pending"
       data-sig-pending
+      // DEF-236 — inert for the whole exit window (no focus, no keys).
+      inert={!isPresent}
       style={{ position: "absolute", left: leftPx, top: topPx, width: widthPx, height: heightPx, pointerEvents: "auto" }}
     >
       <SignatureRaster
@@ -670,7 +702,7 @@ function PendingPlacementView(props: PendingPlacementViewProps): ReactElement {
         onCancel={onCancel}
         onDelete={onDelete}
       />
-    </div>
+    </TfBar>
   );
 }
 
@@ -697,16 +729,30 @@ export function SignatureActionBar(props: {
 }): ReactElement {
   const { base, confirmTitle, cancelTitle, deleteTitle, onConfirm, onCancel, onDelete } = props;
   const drag = useDragWindow({ controlsSelector: ".sig-action-btn, button, [role='button']" });
+  // Phase 20 / DEF-236 — the bar is keyboard-bearing (three buttons) and
+  // is mounted inside an AnimatePresence in BOTH roles (the pending
+  // placement's child bar and the selected-committed bar): while exiting
+  // it must be inert so focus leaves the ghost window and a held Enter
+  // cannot re-fire a commit.
+  const isPresent = useIsPresent();
   // Anchor the action bar above the rect. If there isn't enough
   // room above (top of page), flip it below the rect.
   const ACTION_BAR_HEIGHT_PX = 32;
   const useAbove = base.y >= ACTION_BAR_HEIGHT_PX + 4;
   const barTop = useAbove ? base.y - ACTION_BAR_HEIGHT_PX - 4 : base.y + base.height + 4;
   return (
-    <div
-      ref={drag.windowRef}
+    // Phase 20 — the signature action bar is a floating contextual bar
+    // (TfBar): token-driven enter/exit with the exit-frame
+    // pointer-events guard. The pending placement's bar rides its
+    // parent's exit; the selected-committed bar has its own presence
+    // boundary at the mount site.
+    <TfBar
+      ref={(el): void => {
+        drag.windowRef(el);
+      }}
       className={drag.dragging ? "sig-action-bar sig-action-bar-dragging" : "sig-action-bar"}
       data-sig-action-bar
+      inert={!isPresent}
       style={{
         position: "absolute",
         left: base.x + drag.offset.x,
@@ -750,18 +796,18 @@ export function SignatureActionBar(props: {
       >
         Cancel
       </button>
-      <button
-        type="button"
-        className="toolbox-action-btn toolbox-action-btn--delete sig-action-btn sig-action-btn-delete"
-        onClick={onDelete}
-        data-sig-action="delete"
-        aria-label="Delete"
-        title={deleteTitle}
-        style={{ pointerEvents: "auto" }}
-      >
-        Delete
-      </button>
-    </div>
+        <button
+          type="button"
+          className="toolbox-action-btn toolbox-action-btn--delete sig-action-btn sig-action-btn-delete"
+          onClick={onDelete}
+          data-sig-action="delete"
+          aria-label="Delete"
+          title={deleteTitle}
+          style={{ pointerEvents: "auto" }}
+        >
+          Delete
+        </button>
+      </TfBar>
   );
 }
 

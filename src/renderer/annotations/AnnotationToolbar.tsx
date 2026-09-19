@@ -54,7 +54,8 @@ import ColorPalette, {
 } from "./ColorPalette";
 import { markMenuDismissPointer } from "./menuDismissGuard";
 import type { AnnotationColors } from "../state/colorPalette";
-import { TfPopover } from "../components/motion/TfMotion";
+import { TfMorph, TfPopover } from "../components/motion/TfMotion";
+import { useMorphPreset } from "../components/motion/useMorphPreset";
 import {
   promoteAnnotationTool,
   visibleAnnotationTools,
@@ -273,7 +274,10 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
       const maxTop = Math.max(0, window.innerHeight - h);
       el.style.position = "fixed";
       el.style.left = `${Math.min(Math.max(anchor.right - w, 0), maxLeft)}px`;
-      el.style.top = `${Math.min(Math.max(anchor.bottom + 6, 0), maxTop)}px`;
+      // Phase 20 — flush under the toggle (was anchor.bottom + 6): the
+      // morph's first frame is the toggle's own box, so the anchored edge
+      // must touch it with no seam.
+      el.style.top = `${Math.min(Math.max(anchor.bottom, 0), maxTop)}px`;
     };
     place();
     // Keyboard: move focus into the menu so ArrowUp/Down + Enter reach
@@ -282,6 +286,16 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
     window.addEventListener("resize", place);
     return (): void => window.removeEventListener("resize", place);
   }, [menuOpen]);
+
+  // Phase 20 — the all-tools dropdown MORPHS out of its arrow button. The
+  // measurement runs AFTER the placement effect above (hook order), so the
+  // rect it reads is the final, clamped one.
+  const menuMorph = useMorphPreset({
+    open: menuOpen,
+    triggerRef: toggleRef,
+    surfaceRef: menuRef,
+    anchorCorner: "top-right",
+  });
 
   const selectFromMenu = (tool: AnnotationTool): void => {
     armTool(tool);
@@ -546,7 +560,8 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
       {createPortal(
         <AnimatePresence>
           {menuOpen && (
-            <TfPopover
+            <TfMorph
+              morph={menuMorph}
               ref={(el): void => {
                 menuRef.current = el;
               }}
@@ -631,7 +646,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
                   })}
                 </div>
               )}
-            </TfPopover>
+            </TfMorph>
           )}
         </AnimatePresence>,
         document.body,

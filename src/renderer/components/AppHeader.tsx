@@ -18,12 +18,13 @@ import {
   Sparkles,
   Sun,
 } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import type { Theme } from "../state/theme";
 import type { ThemeDefault } from "../state/preferences";
 import type { TabInput } from "../state/tabMouseDown";
 import { AnimatedTab } from "./AnimatedTab";
-import { usePopAnimation } from "../hooks/useAnimations";
+import { TfMorph } from "./motion/TfMotion";
+import { useMorphPreset } from "./motion/useMorphPreset";
 
 export type AppHeaderTab = TabInput;
 
@@ -103,14 +104,20 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // mirrors the applied look, exactly like the legacy toggle did.
   const selected: ThemeDefault = themeDefault ?? theme;
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
-  // Cross-theme animation system — the theme picker popover plays Pop In
-  // (scale + drop) on open and Pop Out on close, replacing the old
-  // entrance-only CSS keyframe. Theme-independent travel/timing; the
-  // menu surface itself stays a theme visual.
-  const themePop = usePopAnimation();
+  // Phase 20 — the theme picker popover MORPHS out of its trigger (the
+  // pill): the surface is laid out right-aligned under the pill (CSS
+  // placement, untouched) and the FLIP preset grows it out of the pill's
+  // bottom-right corner, flush against it. The old Pop In variant set was
+  // a detached scale/drop, which read as a second window (operator rule).
   const themeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const themePopoverRef = useRef<HTMLDivElement | null>(null);
   const themeOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const themeMorph = useMorphPreset({
+    open: themeMenuOpen,
+    triggerRef: themeTriggerRef,
+    surfaceRef: themePopoverRef,
+    anchorCorner: "top-right",
+  });
 
   // When the menu opens, land focus on the currently-selected option
   // (the first one when the persisted value is somehow outside the
@@ -353,16 +360,13 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           </button>
           <AnimatePresence>
             {themeMenuOpen && (
-              <motion.div
+              <TfMorph
+                morph={themeMorph}
                 ref={themePopoverRef}
                 className="theme-toggle-popover"
                 role="menu"
                 aria-label="Change theme"
                 onKeyDown={onThemePopoverKeyDown}
-                variants={themePop}
-                initial="initial"
-                animate="animate"
-                exit="exit"
               >
                 {THEME_OPTIONS.map((opt, i) => {
                   const isSelected = opt.value === selected;
@@ -386,7 +390,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
                     </button>
                   );
                 })}
-              </motion.div>
+              </TfMorph>
             )}
           </AnimatePresence>
         </div>

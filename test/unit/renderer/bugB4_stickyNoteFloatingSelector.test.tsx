@@ -26,6 +26,14 @@ import type { TextItemGeom } from "../../../src/renderer/annotations/geometry";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Phase 20 — the note editor is a TfBar inside an AnimatePresence, so
+ *  its DOM removal completes after the exit animation. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 function mountOverlay(args: {
   onCreate?: (a: Annotation) => void;
   tool: AnnotationToolState;
@@ -155,7 +163,7 @@ describe("B4 — sticky note floating selector (Confirm / Cancel / Delete)", () 
     }
   });
 
-  it("Cancel drops the editor without saving", () => {
+  it("Cancel drops the editor without saving", async () => {
     const { host, onCreate, cleanup } = mountOverlay({
       tool: { tool: "note", color: "#2563eb", penWidth: 2 },
     });
@@ -169,6 +177,7 @@ describe("B4 — sticky note floating selector (Confirm / Cancel / Delete)", () 
         cancel.click();
       });
       // Editor unmounted; no annotation created.
+      await settleMotion();
       expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
       expect(onCreate).not.toHaveBeenCalled();
     } finally {
@@ -176,7 +185,7 @@ describe("B4 — sticky note floating selector (Confirm / Cancel / Delete)", () 
     }
   });
 
-  it("Delete drops the editor without saving", () => {
+  it("Delete drops the editor without saving", async () => {
     const { host, onCreate, cleanup } = mountOverlay({
       tool: { tool: "note", color: "#2563eb", penWidth: 2 },
     });
@@ -189,6 +198,7 @@ describe("B4 — sticky note floating selector (Confirm / Cancel / Delete)", () 
       act((): void => {
         del.click();
       });
+      await settleMotion();
       expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
       expect(onCreate).not.toHaveBeenCalled();
     } finally {

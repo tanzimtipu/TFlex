@@ -2143,18 +2143,20 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             />
           )}
         </AnimatePresence>
-        {searchOpen && (
-          <SearchBar
-            query={query}
-            onQuery={setQuery}
-            resultCount={hits.length}
-            activeIndex={activeHitIndex}
-            searching={searching}
-            onNext={(): void => cycleHits(1)}
-            onPrev={(): void => cycleHits(-1)}
-            onClose={(): void => setSearchOpen(false)}
-          />
-        )}
+        <AnimatePresence>
+          {searchOpen && (
+            <SearchBar
+              query={query}
+              onQuery={setQuery}
+              resultCount={hits.length}
+              activeIndex={activeHitIndex}
+              searching={searching}
+              onNext={(): void => cycleHits(1)}
+              onPrev={(): void => cycleHits(-1)}
+              onClose={(): void => setSearchOpen(false)}
+            />
+          )}
+        </AnimatePresence>
         <div
           ref={scrollerRef}
           className={handActive ? "document-scroller document-scroller-hand" : "document-scroller"}

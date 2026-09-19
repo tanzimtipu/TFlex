@@ -15,6 +15,11 @@
 // Also pins: the edit editor's new Delete button (only for a committed
 // text box — routed through the overlay's onDeleteTextBox, never a
 // silent no-op), and the signature action bar's text-only labels.
+//
+// Phase 20 — the inline editor is now a token-driven floating surface
+// (TfBar + AnimatePresence), so "the editor closed" means the exit
+// animation has run to completion: the absence assertions settle the
+// motion first (same idiom as the signature modal's escape test).
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { describe, expect, it, vi } from "vitest";
@@ -37,6 +42,14 @@ const stubCapture = function (this: Element): void {
 const stubRelease = function (this: Element): void {
   void this;
 };
+
+/** Phase 20 — let an exiting motion surface finish its exit (the suite
+ *  completes animations on the next tick, not synchronously). */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
 
 // ---------------------------------------------------------------------------
 // EditInlineEditor — direct mount
@@ -407,7 +420,7 @@ describe("EditOverlay — committed text box editor Delete routes through onDele
     };
   }
 
-  it("a DOUBLE-CLICKED committed box reopens the editor WITH a Delete button; clicking it deletes the box and closes the editor without committing", () => {
+  it("a DOUBLE-CLICKED committed box reopens the editor WITH a Delete button; clicking it deletes the box and closes the editor without committing", async () => {
     const { host, onDeleteTextBox, onCommitTextBox, onCommitTextBoxMove, onCommitTextEdit, unmount } = mountOverlay();
     try {
       const box = host.querySelector<HTMLElement>(`.edit-box[data-edit-box-id="${BOX.id}"]`);
@@ -432,12 +445,17 @@ describe("EditOverlay — committed text box editor Delete routes through onDele
       clickBtn(del as HTMLButtonElement);
       // Deletion closes the editor and routes through the host's
       // engine.deleteTextBox callback — never a commit path.
-      expect(host.querySelector('[data-edit-editor="edit"]')).toBeNull();
       expect(onDeleteTextBox).toHaveBeenCalledTimes(1);
       expect(onDeleteTextBox.mock.calls[0]?.[0]).toBe(BOX.id);
       expect(onCommitTextBox).not.toHaveBeenCalled();
       expect(onCommitTextBoxMove).not.toHaveBeenCalled();
       expect(onCommitTextEdit).not.toHaveBeenCalled();
+      // Phase 20 — the outgoing editor is still mounted on this tick: it
+      // cross-fades out through the presence boundary instead of popping
+      // (the committed action bar animates in over the same window).
+      expect(host.querySelector('[data-edit-editor="edit"]')).not.toBeNull();
+      await settleMotion();
+      expect(host.querySelector('[data-edit-editor="edit"]')).toBeNull();
     } finally {
       unmount();
     }

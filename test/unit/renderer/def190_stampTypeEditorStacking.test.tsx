@@ -47,6 +47,15 @@ import {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Phase 20 — the stamp-type editor is a TfBar inside an
+ *  AnimatePresence (it swaps with the action bar), so its DOM removal
+ *  completes after the exit animation. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 const PNG_1x1 = new Uint8Array([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
   0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
@@ -153,7 +162,7 @@ describe("DEF-190 — stamp-type editor paints above sibling pages and closes vi
     }
   });
 
-  it("the Cancel button click closes the editor (fires, not swallowed by page 2's textLayer)", () => {
+  it("the Cancel button click closes the editor (fires, not swallowed by page 2's textLayer)", async () => {
     const { host, onSelectionChange, cleanup } = mount([makePlaced({})]);
     try {
       openStampTypeEditor(host);
@@ -162,26 +171,29 @@ describe("DEF-190 — stamp-type editor paints above sibling pages and closes vi
       );
       if (cancel === null) throw new Error("Cancel button not found");
       clickEl(cancel);
-      expect(
-        host.querySelector("[data-stamp-type-editor]"),
-        "the editor closes on Cancel",
-      ).toBeNull();
       // Closing the editor returns to the action bar — chrome stays
-      // open (the stamp is still selected).
+      // open (the stamp is still selected). The incoming bar mounts
+      // immediately; the outgoing editor finishes its exit first.
       expect(onSelectionChange).toHaveBeenLastCalledWith(true);
       expect(
         host.querySelector("[data-content-action-bar='stamp']"),
       ).not.toBeNull();
+      await settleMotion();
+      expect(
+        host.querySelector("[data-stamp-type-editor]"),
+        "the editor closes on Cancel",
+      ).toBeNull();
     } finally {
       cleanup();
     }
   });
 
-  it("Escape closes the stamp-type editor (window-level, focus-independent)", () => {
+  it("Escape closes the stamp-type editor (window-level, focus-independent)", async () => {
     const { host, cleanup } = mount([makePlaced({})]);
     try {
       openStampTypeEditor(host);
       pressEscape();
+      await settleMotion();
       expect(
         host.querySelector("[data-stamp-type-editor]"),
         "the editor closes on Escape",
@@ -189,6 +201,7 @@ describe("DEF-190 — stamp-type editor paints above sibling pages and closes vi
       // A second Escape with the editor already closed is a no-op
       // (listener removed on close; nothing throws).
       pressEscape();
+      await settleMotion();
       expect(host.querySelector("[data-stamp-type-editor]")).toBeNull();
     } finally {
       cleanup();

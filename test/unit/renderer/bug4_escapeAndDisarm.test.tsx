@@ -37,6 +37,16 @@ import {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Phase 20 — the search bar is a TfBar inside an AnimatePresence, so its
+ *  close now plays a token-driven exit before the node leaves the DOM.
+ *  The Escape contract is unchanged (the bar closes immediately); only
+ *  the DOM removal completes after the exit animation. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 if (typeof globalThis.IntersectionObserver === "undefined") {
   class NoopIntersectionObserver {
     observe(): void {}
@@ -180,6 +190,10 @@ describe("Bug 4 — Escape disarms any armed annotation tool", () => {
       });
       expect(host.querySelector(".search-bar")).not.toBeNull();
       pressEscape();
+      // Phase 20 — the close is animated (TfBar exit), so the node
+      // leaves the DOM once the exit completes. The Escape still closes
+      // the search bar on the same keydown.
+      await settleMotion();
       expect(host.querySelector(".search-bar")).toBeNull();
     } finally {
       unmount();

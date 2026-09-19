@@ -26,7 +26,7 @@ import type {
   ReactNode,
 } from "react";
 import { useDragWindow } from "../components/useDragWindow";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, useIsPresent } from "motion/react";
 import { TfBar } from "../components/motion/TfMotion";
 import {
   ContentActionBar,
@@ -1222,64 +1222,73 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
             <FlashBox key={`flash-${a.id}`} rect={annotationBounds(a)} cssScale={cssScale} />
           ))}
 
-      {textboxEditor !== null && (
-        <TextBoxEditor
-          at={textboxEditor.at}
-          text={textboxEditor.text}
-          cssScale={cssScale}
-          // Functional setter form — the closure previously read
-          // `textboxEditor` from the surrounding render, which goes
-          // stale when several keystrokes fire before React commits
-          // the first update (e.g. paste, IME composition end). The
-          // updater receives the latest committed state from React,
-          // so the `at` is always the live value and the typed text
-          // always appends onto the previous text rather than over-
-          // writing the initial empty string.
-          onChange={(text): void => setTextboxEditor((prev) => (prev === null ? null : { ...prev, text }))}
-          onCommit={(offset): void => commitTextbox(offset)}
-          onCancel={(): void => {
-            setTextboxEditor(null);
-            onFinishedOneShot?.();
-          }}
-        />
-      )}
-      {noteEditor !== null && (
-        <NoteEditor
-          at={noteEditor.at}
-          text={noteEditor.text}
-          cssScale={cssScale}
-          pageWidthCss={widthPt * cssScale}
-          onChange={(text): void => setNoteEditor({ ...noteEditor, text })}
-          onCommit={(offset): void => commitNote(offset)}
-          onCancel={(): void => {
-            setNoteEditor(null);
-            onFinishedOneShot?.();
-          }}
-          // B4 — explicit Discard / Delete path so the user can
-          // drop the in-progress note without committing. The
-          // Sign-like action bar requires a third button beside
-          // Confirm / Cancel; this is it. Identical semantics to
-          // Cancel today; the separate verb matches the textbox /
-          // callout editor so every one-shot tool looks the same.
-          onDelete={(): void => {
-            setNoteEditor(null);
-            onFinishedOneShot?.();
-          }}
-        />
-      )}
-      {calloutEditor !== null && (
-        <CalloutBoxEditor
-          box={calloutEditor.box}
-          text={calloutEditor.text}
-          cssScale={cssScale}
-          onChange={(text): void => setCalloutEditor({ ...calloutEditor, text })}
-          onCommit={(offset): void => commitCallout(offset)}
-          onCancel={(): void => {
-            setCalloutEditor(null);
-            onFinishedOneShot?.();
-          }}
-        />
-      )}
+      {/* Phase 20 — every floating annotation toolbox sits in its own
+          presence boundary so its TfBar exit runs instead of the window
+          popping away (criterion 4). */}
+      <AnimatePresence>
+        {textboxEditor !== null && (
+          <TextBoxEditor
+            at={textboxEditor.at}
+            text={textboxEditor.text}
+            cssScale={cssScale}
+            // Functional setter form — the closure previously read
+            // `textboxEditor` from the surrounding render, which goes
+            // stale when several keystrokes fire before React commits
+            // the first update (e.g. paste, IME composition end). The
+            // updater receives the latest committed state from React,
+            // so the `at` is always the live value and the typed text
+            // always appends onto the previous text rather than over-
+            // writing the initial empty string.
+            onChange={(text): void => setTextboxEditor((prev) => (prev === null ? null : { ...prev, text }))}
+            onCommit={(offset): void => commitTextbox(offset)}
+            onCancel={(): void => {
+              setTextboxEditor(null);
+              onFinishedOneShot?.();
+            }}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {noteEditor !== null && (
+          <NoteEditor
+            at={noteEditor.at}
+            text={noteEditor.text}
+            cssScale={cssScale}
+            pageWidthCss={widthPt * cssScale}
+            onChange={(text): void => setNoteEditor({ ...noteEditor, text })}
+            onCommit={(offset): void => commitNote(offset)}
+            onCancel={(): void => {
+              setNoteEditor(null);
+              onFinishedOneShot?.();
+            }}
+            // B4 — explicit Discard / Delete path so the user can
+            // drop the in-progress note without committing. The
+            // Sign-like action bar requires a third button beside
+            // Confirm / Cancel; this is it. Identical semantics to
+            // Cancel today; the separate verb matches the textbox /
+            // callout editor so every one-shot tool looks the same.
+            onDelete={(): void => {
+              setNoteEditor(null);
+              onFinishedOneShot?.();
+            }}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {calloutEditor !== null && (
+          <CalloutBoxEditor
+            box={calloutEditor.box}
+            text={calloutEditor.text}
+            cssScale={cssScale}
+            onChange={(text): void => setCalloutEditor({ ...calloutEditor, text })}
+            onCommit={(offset): void => commitCallout(offset)}
+            onCancel={(): void => {
+              setCalloutEditor(null);
+              onFinishedOneShot?.();
+            }}
+          />
+        )}
+      </AnimatePresence>
       {/* DEF-096 — editing a committed note. The committed icon's
        * onClick opens this editor pre-filled with the note's
        * existing text; Confirm routes through `onEditAnnotation`
@@ -1290,8 +1299,9 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
        * Confirm commits the move together with the text
        * (delete + re-create with the moved anchor); Cancel reverts
        * the pending move. */}
-      {editingNote !== null &&
-        ((): ReactElement | null => {
+      <AnimatePresence>
+        {editingNote !== null &&
+          ((): ReactElement | null => {
           const target = effectiveAnnotations.find(
             (a) => a.id === editingNote.id && a.kind === "note",
           );
@@ -1352,36 +1362,39 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
             />
           );
         })()}
+      </AnimatePresence>
 
       {/* DEF-153/154 — the committed textbox/callout edit toolbox
        * (double-click / bar Edit). Same shared chrome as the create
        * editors: grip + textarea + Confirm/Cancel/Delete. */}
-      {editTarget !== null && (
-        <CommittedContentEditor
-          id={editTarget.id}
-          kind={editTarget.kind}
-          rect={editTarget.rect}
-          text={editTarget.text}
-          color={editTarget.color}
-          cssScale={cssScale}
-          onChange={(text): void => setEditTarget({ ...editTarget, text })}
-          onPickColor={(color): void => setEditTarget({ ...editTarget, color })}
-          onCommit={(offset): void => commitEditTarget(offset)}
-          onCancel={(): void => {
-            revertPendingAnn(editTarget.id);
-            setEditTarget(null);
-            setSelectedAnnId(null);
-            setHintPos(null);
-          }}
-          onDelete={(): void => {
-            revertPendingAnn(editTarget.id);
-            setSelectedAnnId(null);
-            onDeleteAnnotation?.(editTarget.id);
-            setEditTarget(null);
-            setHintPos(null);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {editTarget !== null && (
+          <CommittedContentEditor
+            id={editTarget.id}
+            kind={editTarget.kind}
+            rect={editTarget.rect}
+            text={editTarget.text}
+            color={editTarget.color}
+            cssScale={cssScale}
+            onChange={(text): void => setEditTarget({ ...editTarget, text })}
+            onPickColor={(color): void => setEditTarget({ ...editTarget, color })}
+            onCommit={(offset): void => commitEditTarget(offset)}
+            onCancel={(): void => {
+              revertPendingAnn(editTarget.id);
+              setEditTarget(null);
+              setSelectedAnnId(null);
+              setHintPos(null);
+            }}
+            onDelete={(): void => {
+              revertPendingAnn(editTarget.id);
+              setSelectedAnnId(null);
+              onDeleteAnnotation?.(editTarget.id);
+              setEditTarget(null);
+              setHintPos(null);
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* DEF-153/154 — the shape / ink / arrow color edit toolbox
        * (double-click / bar Edit — the only properties these kinds
@@ -2395,6 +2408,12 @@ export function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
   // own stopPropagation keeps typing/dragging inside it from ever
   // reaching the wrapper), so their presses keep their own behavior.
   const drag = useDragWindow({ controlsSelector: "button, textarea, input, select, [role='button']" });
+  // Phase 20 — while this toolbox is EXITING it stays mounted for the
+  // TfBar exit. `inert` makes the whole subtree non-interactive (no focus,
+  // no keyboard), so a held Ctrl+Enter key-repeat cannot re-fire the
+  // stale commit closure and duplicate the annotation, and the exiting
+  // node leaves the accessibility tree for the exit window.
+  const isPresent = useIsPresent();
   // B2 — textbox / callout floating action bar (Confirm / Cancel /
   // Delete). Mirrors the sig-pending pattern: the user explicitly
   // commits via Confirm (or Ctrl+Enter, or click-outside), and can
@@ -2411,11 +2430,19 @@ export function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
     Math.max(text.length, 6) * TEXTBOX_FONT_PT * 0.6 * cssScale + TEXTBOX_PAD_PT * 2 * cssScale,
   );
   return (
-    <div
-      ref={drag.windowRef}
+    // Phase 20 — the create textbox toolbox is a floating contextual bar
+    // (TfBar): token-driven enter/exit (y -2 rise / reverse) with the
+    // exit's first frame pinning `pointer-events: none` (DEF-087/088/090).
+    // Mounted inside an AnimatePresence so the exit actually runs instead
+    // of the window popping away.
+    <TfBar
+      ref={(el): void => {
+        drag.windowRef(el);
+      }}
       className={drag.dragging ? "ann-textbox-wrap ann-textbox-wrap-dragging" : "ann-textbox-wrap"}
       data-annotation-editor-wrap="textbox"
       data-annotation-editor="textbox"
+      inert={!isPresent}
       style={{
         position: "absolute",
         left: at.x * cssScale + drag.offset.x,
@@ -2520,7 +2547,7 @@ export function TextBoxEditor(props: TextBoxEditorProps): ReactElement {
         onCommit={(): void => onCommit(drag.getOffset())}
         onCancel={onCancel}
       />
-    </div>
+    </TfBar>
   );
 }
 
@@ -2624,6 +2651,10 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
   // textarea and the action buttons are controls and keep their own
   // presses.
   const drag = useDragWindow({ controlsSelector: "textarea, button, input, select, [role='button']" });
+  // Phase 20 — the exiting editor stays mounted for the TfBar exit; keep
+  // it non-interactive so a held Ctrl+Enter cannot re-fire the stale
+  // commit closure (see TextBoxEditor).
+  const isPresent = useIsPresent();
   // B4 — sticky-note floating selector. The icon and the textarea
   // are co-located in the same wrapper (the icon on the left, the
   // textarea on the right), so the user sees them together as a
@@ -2633,10 +2664,15 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
   const left = Math.min(at.x * cssScale, Math.max(pageWidthCss - NOTE_POPOVER_W - 8, 0)) + drag.offset.x;
   const top = at.y * cssScale + drag.offset.y;
   return (
-    <div
-      ref={drag.windowRef}
+    // Phase 20 — the sticky-note editor is a floating contextual bar
+    // (TfBar): token-driven enter/exit, exit-frame pointer-events guard.
+    <TfBar
+      ref={(el): void => {
+        drag.windowRef(el);
+      }}
       className={drag.dragging ? "ann-editor ann-note-editor ann-note-editor-dragging" : "ann-editor ann-note-editor"}
       data-annotation-editor="note"
+      inert={!isPresent}
       style={{ left, top, width: NOTE_POPOVER_W }}
       onPointerDown={(e): void => {
         e.stopPropagation();
@@ -2711,7 +2747,7 @@ function NoteEditor(props: NoteEditorProps): ReactElement {
           Delete
         </button>
       </div>
-    </div>
+    </TfBar>
   );
 }
 
@@ -2745,17 +2781,25 @@ function CalloutBoxEditor(
   // chrome OR the action bar's chrome moves the whole window; the
   // textarea and the bar buttons stay controls.
   const drag = useDragWindow({ controlsSelector: "button, textarea, input, select, [role='button']" });
+  // Phase 20 — exiting editors stay mounted for the TfBar exit; keep the
+  // subtree non-interactive (see TextBoxEditor).
+  const isPresent = useIsPresent();
   // B2 — callout floating action bar. Same affordance as the
   // textbox editor (see TextBoxEditor for the rationale): Confirm
   // commits, Cancel / Delete drop the in-flight callout without
   // touching the engine. Ctrl+Enter / Esc keyboard shortcuts
   // remain for power users.
   return (
-    <div
-      ref={drag.windowRef}
+    // Phase 20 — the create callout toolbox is a floating contextual bar
+    // (TfBar): token-driven enter/exit, exit-frame pointer-events guard.
+    <TfBar
+      ref={(el): void => {
+        drag.windowRef(el);
+      }}
       className={drag.dragging ? "ann-textbox-wrap ann-textbox-wrap-dragging" : "ann-textbox-wrap"}
       data-annotation-editor-wrap="callout"
       data-annotation-editor="callout"
+      inert={!isPresent}
       style={{
         position: "absolute",
         left: box.x * cssScale + drag.offset.x,
@@ -2863,7 +2907,7 @@ function CalloutBoxEditor(
           Delete
         </button>
       </div>
-    </div>
+    </TfBar>
   );
 }
 
@@ -2998,18 +3042,27 @@ function CommittedContentEditor(props: CommittedContentEditorProps): ReactElemen
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const drag = useDragWindow({ controlsSelector: "button, textarea, input, select, [role='button']" });
+  // Phase 20 — exiting editors stay mounted for the TfBar exit; keep the
+  // subtree non-interactive (see TextBoxEditor).
+  const isPresent = useIsPresent();
   const widthCss = Math.max(
     rect.width * cssScale,
     TEXTBOX_MIN_WIDTH_PT * cssScale,
     Math.max(text.length, 6) * TEXTBOX_FONT_PT * 0.6 * cssScale + TEXTBOX_PAD_PT * 2 * cssScale,
   );
   return (
-    <div
-      ref={drag.windowRef}
+    // Phase 20 — the committed textbox/callout edit toolbox is a floating
+    // contextual bar (TfBar): token-driven enter/exit, exit-frame
+    // pointer-events guard.
+    <TfBar
+      ref={(el): void => {
+        drag.windowRef(el);
+      }}
       className={drag.dragging ? "ann-textbox-wrap ann-textbox-wrap-dragging" : "ann-textbox-wrap"}
       data-annotation-editor-wrap={`edit-${kind}`}
       data-annotation-editor={`edit-${kind}`}
       data-edit-annotation-id={id}
+      inert={!isPresent}
       style={{
         position: "absolute",
         left: rect.x * cssScale + drag.offset.x,
@@ -3096,13 +3149,13 @@ function CommittedContentEditor(props: CommittedContentEditorProps): ReactElemen
           className="toolbox-action-btn toolbox-action-btn--delete ann-textbox-action-btn ann-textbox-action-delete"
           onClick={onDelete}
           data-annotation-action={`edit-${kind}-delete`}
-          aria-label={`Delete ${kind}`}
+          aria-label="Delete annotation"
           title="Delete annotation"
         >
           Delete
         </button>
       </div>
-    </div>
+    </TfBar>
   );
 }
 

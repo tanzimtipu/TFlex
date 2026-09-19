@@ -1520,6 +1520,13 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
         </>
       )}
 
+      {/* Phase 20 — the inline editor is the incoming half of a
+          window-to-window swap (the committed text-box / text-run action
+          bar hands over to it, and hands back on commit). It sits inside
+          a presence boundary so its own enter AND exit come from the bar
+          tokens instead of popping; the outgoing bar animates away at the
+          same time, so the swap is an overlap, never a both-absent frame. */}
+      <AnimatePresence>
       {textTarget !== null && (
         <EditInlineEditor
           rect={textTarget.rect}
@@ -1727,6 +1734,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           onDelete={editorOnDelete}
         />
       )}
+      </AnimatePresence>
     </div>
   );
 }

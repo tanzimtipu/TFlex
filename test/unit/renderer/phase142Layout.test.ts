@@ -199,8 +199,11 @@ describe("Phase 14.2 — state-driven page view in every theme (FIX 4/5)", () =>
   it("the panel + page slide shares one 150ms ease-out", () => {
     const rootIdx = css.indexOf(":root {");
     const body = extractRuleBody(css, rootIdx);
-    expect(body).toMatch(/--panel-slide-duration:\s*150ms/);
-    expect(body).toMatch(/--panel-slide-ease:\s*cubic-bezier\(0\.16,\s*1,\s*0\.3,\s*1\)/);
+    // DEF-240 — the pair is an ALIAS of the canonical motion tokens
+    // (150ms = --motion-duration-micro; the settle curve =
+    // --motion-ease-panel), so there is no literal left to drift.
+    expect(body).toMatch(/--panel-slide-duration:\s*var\(--motion-duration-micro\)/);
+    expect(body).toMatch(/--panel-slide-ease:\s*var\(--motion-ease-panel\)/);
     const main = findRuleBody(css, ".workspace-main {");
     expect(main ?? "").toMatch(/transition:[\s\S]*--tf-tools-inset/);
   });

@@ -19,6 +19,14 @@
 // the layer and assert both the ghost and the action bar render
 // in the right state.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Phase 20 — the signature pending surface is a TfBar inside an
+ *  AnimatePresence, so its DOM removal completes after the exit. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -148,7 +156,7 @@ describe("Bug 2 + Bug 11 — SignaturesOverlay pending + ghost", () => {
     expect(actionBar).not.toBeNull();
   });
 
-  it("Confirm routes the placement through onPlace; Cancel drops it (Bug 2)", () => {
+  it("Confirm routes the placement through onPlace; Cancel drops it (Bug 2)", async () => {
     const { host, onPlace } = mountOverlay({
       armedSignatureId: "sig-1",
       onPlace: (): void => undefined,
@@ -180,10 +188,11 @@ describe("Bug 2 + Bug 11 — SignaturesOverlay pending + ghost", () => {
     const call = onPlace.mock.calls[0];
     expect(call?.[0]).toBe("sig-1");
     // The pending placement is gone after Confirm.
+    await settleMotion();
     expect(host.querySelector("[data-sig-pending]")).toBeNull();
   });
 
-  it("Cancel drops the pending placement without calling onPlace", () => {
+  it("Cancel drops the pending placement without calling onPlace", async () => {
     const { host, onPlace } = mountOverlay({
       armedSignatureId: "sig-1",
       onPlace: (): void => undefined,
@@ -210,6 +219,7 @@ describe("Bug 2 + Bug 11 — SignaturesOverlay pending + ghost", () => {
       cancelBtn.click();
     });
     expect(onPlace).not.toHaveBeenCalled();
+    await settleMotion();
     expect(host.querySelector("[data-sig-pending]")).toBeNull();
   });
 });

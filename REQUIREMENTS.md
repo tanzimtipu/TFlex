@@ -957,4 +957,129 @@ preserve-if-valid / reject-if-invalid in `src/main/services/settings.ts` (must b
 rejected so the field falls back to the default); transported via the AppSettings IPC so the order
 survives restart. The main-process validation lands before any renderer code reads the field.
 
+## Phase 20 — Animation standard: morphing surfaces, animated resizes, no un-animated appearances
+
+**Supersession note:** this phase supersedes the per-component entrance treatments wherever they
+conflict: every surface that appears, grows, shrinks or is replaced by another surface now follows the
+standard below, and the Phase-15 token set stays the only source of durations/easings/scales.
+
+**Features**
+
+- **Morphing dropdowns/menus (the "one element" rule)**: a menu/popover/dropdown must read as the
+  trigger box GROWING into the expanded box. Concretely: the surface animates from the trigger's rect
+  to the menu's rect (origin-aware scale + fade), `transform-origin` pinned to the trigger edge it is
+  anchored to, the menu flush with the trigger (no gap, no offset shadow seam, no separate-window
+  feel), and the reverse morph on close. Applies to every menu/popover/dropdown in the app
+  (annotation tools menu, colour popover, theme popover, title-bar menus, page-zoom and any future
+  one).
+- **Animated context-window resize**: any window whose content swaps to a different size (e.g. the
+  Sign tool's three tabs) animates its width/height change with the standard token duration/easing
+  instead of jumping. Content cross-fades within the resizing frame.
+- **Animated window-to-window swap**: when one window/surface is replaced by another (tab-to-tab,
+  tool panel to tool panel, dialog to dialog where one closes as another opens), the outgoing surface
+  transitions into the incoming one (crossfade + morph) rather than disappearing and popping.
+- **No un-animated appearances**: no element in the app may appear, disappear, grow, shrink or be
+  replaced without an animation from the centralized token system. Any surface found without one gets
+  the standard treatment (a `data-no-anim` escape hatch is allowed ONLY for the PDF content layer and
+  for `prefers-reduced-motion`).
+- **Enforceable standard**: the standard is documented in this phase and pinned by a contract test
+  (every popover/menu/dialog/panel class must resolve its enter/exit from the motion tokens); a
+  `prefers-reduced-motion` path collapses the durations to the reduced token without changing
+  structure.
+- **Consistency**: identical timing in light/dark/frosted; transform/opacity (and layout-aware
+  animation for size changes) only, no layout thrashing; 60fps target preserved; PDF content never
+  animates.
+
+**Success criteria**
+
+1. Opening and closing any dropdown/menu/popover shows a morph from the trigger's rect with no gap
+   between trigger and surface, in all three themes (verified by frame sampling + screenshots).
+2. The Sign tool's context window animates its size change when switching between its three tabs
+   (measured: the frame's height/width interpolates over the token duration rather than jumping).
+3. A window-to-window swap shows the outgoing surface transitioning into the incoming one (no frame
+   where both are absent or both are fully painted at rest positions).
+4. An inventory sweep of the app's surfaces (dialogs, popovers, menus, panels, floating toolbars,
+   badges, toasts, banners) finds ZERO surfaces that appear/disappear without a token-driven
+   animation; the inventory and its evidence are recorded.
+5. The contract test fails when a surface's enter/exit is removed or hardcoded, and passes on the
+   shipped tree.
+6. Reduced motion collapses all of the above to the reduced-duration path with no structural change.
+7. All new animations resolve from the motion tokens; no hardcoded durations/easings/scales.
+
+**Settings impact:** none (uses the existing Phase-15 motion tokens; no new AppSettings fields).
+
+## Phase 21 — Text properties panel (Word/Adobe-style text manipulation, replacing the floating toolbox)
+
+**Supersession note:** this phase retires the floating inline text toolbox that appeared after
+double-clicking a text-bearing tool. The editing surface becomes the left properties panel; the
+in-canvas overlay keeps only the selection/drag affordances.
+
+**Features**
+
+- **Text properties panel**: a left-side panel (docked to the RIGHT of the thumbnail/page rail, on
+  the same edge as the existing left panel) that appears whenever a text-bearing tool is selected or
+  a text object is selected/created - text box, callout, sticky note, and the edit-text run editor.
+  The page view reflows with animation to accommodate it (the same "page adjusts, never overlapped"
+  contract the Tools panel follows).
+- **Word/Adobe-class controls** (researched from Adobe Acrobat's text-edit UI and Microsoft Word's
+  font/paragraph groups): font family, font size, bold / italic / underline, text colour, highlight
+  colour, superscript/subscript, character spacing where feasible, line spacing, paragraph alignment
+  (left/centre/right/justify), bulleted/numbered lists, indent in/out, and clear-formatting. Every
+  control applies live to the selected text object and persists in the panel while any text-bearing
+  tool is active (one shared panel for all of them).
+- **Live application + undo**: each change applies to the engine through the existing text-edit ops
+  with the per-doc undo stack intact; a change that cannot be represented in the PDF (e.g. an
+  unsupported font) must fail loud, not silently drop.
+- **Selection-aware state**: the panel reflects the current text object's actual formatting when a
+  text object is selected, and reverts to per-tool defaults when a new object is created.
+- **Consistency**: the panel uses the standard panel animation (Phase 20), the existing panel tokens,
+  and the app's control styling; disabled controls follow the app's disabled treatment with tooltips.
+
+**Success criteria**
+
+1. Selecting a text-bearing tool (or a text object) opens the left text panel; deselecting closes it;
+   both animate and the page view reflows without overlap or clipping.
+2. The panel exposes the full control list above; each control visibly changes the selected text and
+   the change survives save + reopen (round-trip verified for at least: font family, size, bold,
+   italic, underline, colour, highlight, alignment, line spacing, list style).
+3. The floating double-click toolbox no longer appears for text-bearing tools; the panel is the only
+   editing surface for them.
+4. The same panel serves every text-bearing tool (text box, callout, note, edit-text run) with the
+   same control set - switching tools keeps the panel open and re-targets it.
+5. Undo/redo restores both the text and the panel's reflected state.
+6. Unit tests cover the panel's control -> payload mapping and its selection-aware state; e2e covers
+   open/close, the page reflow, and a save/reopen round-trip per control group.
+7. Reduced motion and all three themes behave per the app standard.
+
+**Settings impact:** none (the panel's visibility derives from the active tool; text defaults reuse the
+existing `editDefaultFont` / annotation colour fields).
+
+## Phase 22 — Title-bar Open + Save/Save As relocation
+
+**Features**
+
+- **Open and Save/Save As move to the title bar** (the bar that carries the TFlex logo and the PDF
+  tabs): the two actions sit immediately to the RIGHT of the TFlex logo and to the LEFT of the tab
+  strip, as one small grouped control that matches the title bar's material and metrics.
+- The CommandBar keeps its page/zoom/view/annotate/edit/delete groups; the Open and Save buttons are
+  removed from it (no duplicate controls anywhere).
+- **Sizing/layout**: the relocated controls are sized to the title-bar ladder (not the CommandBar
+  ladder), keep their existing accelerators (Ctrl+O / Ctrl+S / Ctrl+Shift+S), their aria-labels and
+  their tooltips, and must not collide with the tab strip at the minimum window width (the tab strip
+  scrolls instead).
+- **State**: the Save control keeps its modified-dot / disabled semantics exactly as today.
+
+**Success criteria**
+
+1. The title bar shows Open and Save/Save As immediately right of the logo, left of the tabs, in one
+   grouped control; screenshots in all three themes show it visually consistent with the title bar.
+2. The CommandBar no longer contains Open/Save/Save As; no duplicate remains anywhere in the DOM.
+3. Ctrl+O, Ctrl+S and Ctrl+Shift+S still work and the Save control still reflects the modified state
+   and disables when there is nothing to save.
+4. At the minimum window width the relocated controls stay reachable and the tab strip scrolls rather
+   than clipping either.
+5. Existing e2e/unit specs that addressed the CommandBar Open/Save selectors are repointed and pass.
+
+**Settings impact:** none (pure layout relocation).
+
 

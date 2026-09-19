@@ -51,6 +51,7 @@ describe("animations.css token layer", () => {
   it("defines every canonical duration token with the spec value", () => {
     expect(root.get("--motion-duration-micro")).toBe("150ms");
     expect(root.get("--motion-duration-fast")).toBe("200ms");
+    expect(root.get("--motion-duration-content")).toBe("80ms");
     expect(root.get("--motion-duration-standard")).toBe("250ms");
     expect(root.get("--motion-duration-panel")).toBe("140ms");
     expect(root.get("--motion-duration-layout")).toBe("350ms");
@@ -73,6 +74,7 @@ describe("animations.css token layer", () => {
     expect(root.get("--motion-translate-panel")).toBe("24px");
     expect(root.get("--motion-opacity-hidden")).toBe("0");
     expect(root.get("--motion-opacity-visible")).toBe("1");
+    expect(root.get("--motion-opacity-surface")).toBe("0.85");
   });
 
   it("defines the theme crossfade duration + elevation tokens", () => {
@@ -87,6 +89,7 @@ describe("animations.css token layer", () => {
     const media = ANIMATIONS_CSS.slice(mediaStart, ANIMATIONS_CSS.indexOf("}", ANIMATIONS_CSS.indexOf("--motion-duration-layout", mediaStart)));
     expect(media).toContain("--motion-duration-micro: var(--motion-duration-reduced)");
     expect(media).toContain("--motion-duration-fast: var(--motion-duration-reduced)");
+    expect(media).toContain("--motion-duration-content: var(--motion-duration-reduced)");
     expect(media).toContain("--motion-duration-standard: var(--motion-duration-reduced)");
     expect(media).toContain("--motion-duration-panel: var(--motion-duration-reduced)");
     expect(media).toContain("--motion-duration-layout: var(--motion-duration-reduced)");
@@ -167,6 +170,7 @@ describe("motionTokens.ts mirror", () => {
     );
     expect(MOTION_DURATION.micro).toBe(150);
     expect(MOTION_DURATION.fast).toBe(200);
+    expect(MOTION_DURATION.content).toBe(80);
     expect(MOTION_DURATION.standard).toBe(250);
     expect(MOTION_DURATION.panel).toBe(140);
     expect(MOTION_DURATION.layout).toBe(350);
@@ -197,6 +201,35 @@ describe("motionTokens.ts mirror", () => {
     expect(MOTION_TRANSLATE.panel).toBe(Number(token("--motion-translate-panel").replace("px", "")));
     expect(MOTION_OPACITY.hidden).toBe(Number(token("--motion-opacity-hidden")));
     expect(MOTION_OPACITY.visible).toBe(Number(token("--motion-opacity-visible")));
+    expect(MOTION_OPACITY.surface).toBe(Number(token("--motion-opacity-surface")));
+  });
+});
+
+describe("DEF-240 — the panel-slide pair resolves from the motion tokens", () => {
+  it("registers the panel settle curve as a canonical motion easing token", () => {
+    expect(root.get("--motion-ease-panel")).toBe("cubic-bezier(0.16, 1, 0.3, 1)");
+  });
+
+  it("mirrors the panel easing in motionTokens.ts", async () => {
+    const { MOTION_EASE } = await import("../../../src/renderer/hooks/motionTokens");
+    expect(`cubic-bezier(${MOTION_EASE.panel.join(", ")})`).toBe(
+      root.get("--motion-ease-panel"),
+    );
+  });
+
+  it("declares --panel-slide-* as ALIASES of the motion tokens (no literals)", () => {
+    const rootIdx = STYLES_CSS.indexOf(":root {");
+    const body = STYLES_CSS.slice(rootIdx, STYLES_CSS.indexOf("}", rootIdx));
+    expect(body).toMatch(/--panel-slide-duration:\s*var\(--motion-duration-micro\)/);
+    expect(body).toMatch(/--panel-slide-ease:\s*var\(--motion-ease-panel\)/);
+  });
+
+  it("leaves no literal fallback on the palette width transitions", () => {
+    // ADV-056: the palette list<->grid width channel used to carry the
+    // legacy literal pair as fallbacks. Both consumers now read the
+    // alias with no literal in the declaration.
+    expect(STYLES_CSS).not.toContain("var(--panel-slide-duration, 150ms)");
+    expect(STYLES_CSS).not.toContain("var(--panel-slide-ease, cubic-bezier(0.16, 1, 0.3, 1))");
   });
 });
 

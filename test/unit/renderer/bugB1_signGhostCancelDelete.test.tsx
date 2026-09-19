@@ -39,6 +39,14 @@ import type { SavedSignature } from "../../../src/shared/types";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Phase 20 — the signature pending surface is a TfBar inside an
+ *  AnimatePresence, so its DOM removal completes after the exit. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 const TYPED_SIG: SavedSignature = {
   id: "sig-typed",
   label: "Jane Doe",
@@ -135,7 +143,7 @@ const appPath = path.join(
 const appSource = fs.readFileSync(appPath, "utf8");
 
 describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
-  it("Cancel button drops the pending placement AND fires onCancelArm (exits Sign mode)", () => {
+  it("Cancel button drops the pending placement AND fires onCancelArm (exits Sign mode)", async () => {
     const { host, onCancelArm } = mountOverlay({
       signatures: { "sig-typed": TYPED_SIG },
       armedSignatureId: "sig-typed",
@@ -151,11 +159,12 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
       cancelBtn.click();
     });
     // Pending is gone AND the host was told to exit Sign mode.
+    await settleMotion();
     expect(host.querySelector("[data-sig-pending]")).toBeNull();
     expect(onCancelArm).toHaveBeenCalledTimes(1);
   });
 
-  it("Delete button drops the pending placement but does NOT fire onCancelArm (stays armed)", () => {
+  it("Delete button drops the pending placement but does NOT fire onCancelArm (stays armed)", async () => {
     const { host, onCancelArm } = mountOverlay({
       signatures: { "sig-typed": TYPED_SIG },
       armedSignatureId: "sig-typed",
@@ -170,6 +179,7 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
       delBtn.click();
     });
     // Pending is gone but onCancelArm did NOT fire.
+    await settleMotion();
     expect(host.querySelector("[data-sig-pending]")).toBeNull();
     expect(onCancelArm).not.toHaveBeenCalled();
   });
@@ -197,7 +207,7 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
     expect(onCancelArm).toHaveBeenCalledTimes(1);
   });
 
-  it("Esc on a pending placement fires onCancelArm (exits Sign mode)", () => {
+  it("Esc on a pending placement fires onCancelArm (exits Sign mode)", async () => {
     const { host, onCancelArm } = mountOverlay({
       signatures: { "sig-typed": TYPED_SIG },
       armedSignatureId: "sig-typed",
@@ -209,6 +219,7 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
       );
     });
+    await settleMotion();
     expect(host.querySelector("[data-sig-pending]")).toBeNull();
     expect(onCancelArm).toHaveBeenCalledTimes(1);
   });
@@ -231,7 +242,7 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
     expect(cancel).not.toBeNull();
   });
 
-  it("after Confirm the host is disarmed: no ghost, and no pending on a re-rendered non-armed layer", () => {
+  it("after Confirm the host is disarmed: no ghost, and no pending on a re-rendered non-armed layer", async () => {
     // B1/B2 — "after confirming a sign, exit Sign mode, no
     // ghost". Confirm fires onPlace + onCancelArm; when the host
     // honours the disarm (armedSignatureId becomes null) the
@@ -298,6 +309,7 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
       // ghost surface while the host still holds the (now-stale)
       // armed id in this harness.
       expect(host.querySelector("[data-sig-ghost]")).toBeNull();
+      await settleMotion();
       expect(host.querySelector("[data-sig-pending]")).toBeNull();
       // Host honours the disarm (the real App does: Confirm ->
       // onCancelArm -> setArmedSignatureId(null)). Re-render with
@@ -305,6 +317,7 @@ describe("B1 — sign ghost Cancel/Delete/Confirm action bar contract", () => {
       // placements on the next page click.
       render(null);
       clickPage(200, 200);
+      await settleMotion();
       expect(host.querySelector("[data-sig-pending]")).toBeNull();
       expect(onPlace).toHaveBeenCalledTimes(1);
     } finally {

@@ -15,6 +15,13 @@
 // `onClose` to drive the rest of the UI. The modal itself owns local
 // state for the draw canvas + type input so a half-finished signature
 // survives a tab switch without leaving the modal.
+//
+// Phase 20 — the three tab bodies have three different heights, so a tab
+// switch is an animated context-window resize: `TfResize` measures the
+// incoming pane and tweens the modal body's real height over the standard
+// layout token, while the outgoing pane cross-fades into the incoming one
+// (SigTabPane). Reduced motion keeps the same structure with a
+// zero-duration swap.
 
 import { FileSignature, Trash2 } from "lucide-react";
 import {
@@ -25,8 +32,10 @@ import {
   type ReactElement,
 } from "react";
 import { useBackdropClose } from "../components/modalBackdrop";
-import { AnimatePresence } from "motion/react";
+import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { TfBackdrop, TfDialog } from "../components/motion/TfMotion";
+import { TfResize, paneSwapFor } from "../components/motion/TfResize";
+import { useLiveReducedMotion } from "../hooks/useAnimations";
 import type { SavedSignature, SignatureSource } from "../../shared/types";
 import {
   DRAW_CANVAS_H,
@@ -139,37 +148,47 @@ export function SignatureManagerModal(props: SignatureManagerModalProps): ReactE
           </TabButton>
         </div>
         <div className="modal-body">
-          {tab === "draw" && (
-            <DrawTab
-              onToast={onToast}
-              onSaved={(next): void => {
-                // DEF-143 — adopt the service's returned list verbatim.
-                // `save` returns the FULL persisted list (the main
-                // service appends, the stub prepends), so the Saved tab
-                // renders exactly what was saved — never a stale
-                // duplicate of an earlier signature — and the count
-                // badge stays in sync with the rendered rows.
-                setSaved(next);
-                setTab("saved");
-              }}
-            />
-          )}
-          {tab === "type" && (
-            <TypeTab
-              onToast={onToast}
-              onSaved={(next): void => {
-                setSaved(next);
-                setTab("saved");
-              }}
-            />
-          )}
-          {tab === "saved" && (
-            <SavedTab
-              saved={saved}
-              onPick={onPick}
-              onDelete={onDelete}
-            />
-          )}
+          <TfResize className="sig-tab-stack" axes="height">
+            <AnimatePresence initial={false}>
+              {tab === "draw" && (
+                <SigTabPane key="draw">
+                  <DrawTab
+                    onToast={onToast}
+                    onSaved={(next): void => {
+                      // DEF-143 — adopt the service's returned list verbatim.
+                      // `save` returns the FULL persisted list (the main
+                      // service appends, the stub prepends), so the Saved tab
+                      // renders exactly what was saved — never a stale
+                      // duplicate of an earlier signature — and the count
+                      // badge stays in sync with the rendered rows.
+                      setSaved(next);
+                      setTab("saved");
+                    }}
+                  />
+                </SigTabPane>
+              )}
+              {tab === "type" && (
+                <SigTabPane key="type">
+                  <TypeTab
+                    onToast={onToast}
+                    onSaved={(next): void => {
+                      setSaved(next);
+                      setTab("saved");
+                    }}
+                  />
+                </SigTabPane>
+              )}
+              {tab === "saved" && (
+                <SigTabPane key="saved">
+                  <SavedTab
+                    saved={saved}
+                    onPick={onPick}
+                    onDelete={onDelete}
+                  />
+                </SigTabPane>
+              )}
+            </AnimatePresence>
+          </TfResize>
         </div>
         <div className="modal-footer">
           <span className="modal-help-inline">
@@ -204,6 +223,34 @@ function TabButton({
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Phase 20 — one tab body inside the modal's animated-size frame.
+ *
+ * The outgoing pane keeps its OWN element (a half-finished draw canvas or
+ * typed name survives the swap, and no copy of it is ever mounted), and is
+ * popped out of flow (`[data-tf-pane="out"]` in styles.css) while it
+ * cross-fades away. Being out of flow, it contributes nothing to the
+ * frame's measurement, so the animated target is always the INCOMING pane's
+ * height — one size tween, never a two-step hop through the taller of the
+ * two.
+ */
+function SigTabPane({ children }: { children: React.ReactNode }): ReactElement {
+  const reduced = useLiveReducedMotion();
+  const isPresent = useIsPresent();
+  const swap = paneSwapFor(reduced);
+  return (
+    <motion.div
+      className="sig-tab-pane"
+      data-tf-pane={isPresent ? "in" : "out"}
+      initial={swap.initial}
+      animate={swap.animate}
+      exit={swap.exit}
+    >
+      {children}
+    </motion.div>
   );
 }
 

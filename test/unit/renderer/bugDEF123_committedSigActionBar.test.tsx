@@ -25,6 +25,14 @@
 //      underneath (the bar is a layer sibling, and the click still
 //      completes).
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Phase 20 — the signature action bar is a TfBar inside an
+ *  AnimatePresence, so its DOM removal completes after the exit. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -156,7 +164,7 @@ describe("DEF-123 — selected committed signature shows the action bar", () => 
     }
   });
 
-  it("Confirm commits the held rect through onMove and ends the selection", () => {
+  it("Confirm commits the held rect through onMove and ends the selection", async () => {
     const { host, onMove } = mountCommitted({});
     try {
       dragPlacement(host, { x: 120, y: 120 }, { x: 160, y: 160 });
@@ -170,6 +178,7 @@ describe("DEF-123 — selected committed signature shows the action bar", () => 
       expect(onMove.mock.calls[0]?.[0]).toBe("pl-1");
       expect(onMove.mock.calls[0]?.[1]).toEqual({ x: 140, y: 140, width: 200, height: 60 });
       // Selection session over: no bar, no selection border.
+      await settleMotion();
       expect(barOf(host)).toBeNull();
       expect(placementEl(host).className).not.toContain("sig-placement-selected");
     } finally {
@@ -177,7 +186,7 @@ describe("DEF-123 — selected committed signature shows the action bar", () => 
     }
   });
 
-  it("Cancel reverts the rect (no engine call) and ends the selection", () => {
+  it("Cancel reverts the rect (no engine call) and ends the selection", async () => {
     const { host, onMove } = mountCommitted({});
     try {
       dragPlacement(host, { x: 120, y: 120 }, { x: 160, y: 160 });
@@ -192,13 +201,14 @@ describe("DEF-123 — selected committed signature shows the action bar", () => 
       const el = placementEl(host);
       expect(Number.parseFloat(el.style.left)).toBe(100);
       expect(Number.parseFloat(el.style.top)).toBe(100);
+      await settleMotion();
       expect(barOf(host)).toBeNull();
     } finally {
       host.remove();
     }
   });
 
-  it("Delete removes the placement via onDelete and ends the selection", () => {
+  it("Delete removes the placement via onDelete and ends the selection", async () => {
     const { host, onDelete } = mountCommitted({});
     try {
       dragPlacement(host, { x: 120, y: 120 }, { x: 120, y: 120 });
@@ -209,13 +219,14 @@ describe("DEF-123 — selected committed signature shows the action bar", () => 
       });
       expect(onDelete).toHaveBeenCalledTimes(1);
       expect(onDelete.mock.calls[0]?.[0]).toBe("pl-1");
+      await settleMotion();
       expect(barOf(host)).toBeNull();
     } finally {
       host.remove();
     }
   });
 
-  it("Esc on a selected committed placement reverts like Cancel and ends the selection", () => {
+  it("Esc on a selected committed placement reverts like Cancel and ends the selection", async () => {
     const { host, onMove } = mountCommitted({});
     try {
       dragPlacement(host, { x: 120, y: 120 }, { x: 160, y: 160 });
@@ -226,13 +237,14 @@ describe("DEF-123 — selected committed signature shows the action bar", () => 
       expect(onMove).not.toHaveBeenCalled();
       const el = placementEl(host);
       expect(Number.parseFloat(el.style.left)).toBe(100);
+      await settleMotion();
       expect(barOf(host)).toBeNull();
     } finally {
       host.remove();
     }
   });
 
-  it("a bar-button press does not start a drag on the placement underneath, and the click completes (no swallow)", () => {
+  it("a bar-button press does not start a drag on the placement underneath, and the click completes (no swallow)", async () => {
     const { host, onMove } = mountCommitted({});
     try {
       dragPlacement(host, { x: 120, y: 120 }, { x: 160, y: 160 });
@@ -251,6 +263,7 @@ describe("DEF-123 — selected committed signature shows the action bar", () => 
       // Confirm committed exactly once; no pending placement spawned.
       expect(onMove).toHaveBeenCalledTimes(1);
       expect(host.querySelector("[data-sig-pending]")).toBeNull();
+      await settleMotion();
       expect(barOf(host)).toBeNull();
     } finally {
       host.remove();

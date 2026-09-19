@@ -5,6 +5,164 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-240: Phase-20 palette width/reduced path and TfMotion/TfPresets used legacy literals instead of motion tokens
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-056)
+- Phase: 20
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf`.
+2. Static audit the Phase-20 animation paths: the palette list<->grid width transition, the `TfMotion` reduced fallback and the reduced tooltip override.
+3. Check the `--motion-*` token presence in `animations.css` / `motionTokens.ts` and the consumers.
+
+Expected: every new Phase-20 animation resolves from the Phase-15 motion tokens (criterion 7); no hardcoded durations/easings/scales.
+Actual: the palette width transition read the legacy `var(--panel-slide-duration, 150ms)` / `var(--panel-slide-ease, cubic-bezier(0.16,1,0.3,1))` pair (`styles.css:5818-5819`, `:8959-8960`); `TfMotion.tsx:106` hardcoded `duration: 0, ease: "linear"` in the reduced fallback; the reduced tooltip used `var(--tf-motion-fast)` / `var(--tf-ease-fast)`; `MORPH_MIN_SCALE = 0.01` was an undocumented literal.
+
+History:
+- qa: opened (2026-09-19; accepted from ADV-056, LOW; criterion 7 token hygiene)
+- qa: CLOSED (2026-09-19 FIX-READY retest). `--motion-ease-panel` is registered (`animations.css:61`; `motionTokens.ts` `MOTION_EASE.panel`); `--panel-slide-duration: var(--motion-duration-micro)` and `--panel-slide-ease: var(--motion-ease-panel)` (`styles.css:190-191`); `TfMotion.tsx` reduced duration is `msToSeconds(MOTION_DURATION.reduced)` (`:114`, `:340`); `MORPH_MIN_SCALE`, `ease:"linear"` and the reduced tooltip `--tf-motion-fast`/`--tf-ease-fast` pair are kept and documented as non-motion (`tfPresets.ts:284-289`, `styles.css:8521`).
+
+## DEF-239: The morph exit's first frame still reports pointer-events:auto (one hit-testable frame per exit)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-055)
+- Phase: 20
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf`.
+2. Run `node test-fixtures/tools/adv051_phase20.cjs spam` - 26 rapid open/close toggles per morph menu (theme, titlebar, ann), sampling rect/opacity/pointer-events/`data-tf-morph` every frame.
+3. Count the frames tagged `data-tf-morph="out"` whose computed `pointer-events` is `auto`.
+
+Expected: the exit pins `pointer-events:none` on the FIRST exit frame (the DEF-087/088/090 guard), so a closing surface can never swallow a click.
+Actual: across 93 out-frames per menu, 13 reported `pointer-events:auto` (one per exit); the first out frame read `pe:"auto", op:0.965` and the next `pe:"none"`; `outPeValues:["auto","none"]` for all three menus.
+
+History:
+- qa: opened (2026-09-19; accepted from ADV-055, LOW)
+- qa: CLOSED (2026-09-19 FIX-READY retest). `spam` now reports `outPeValues:["none"]` and `exitFramesWithoutPointerNone:0` for theme/titlebar/ann (outFrameCount 93/93/94, every out-frame `pe:"none"`, first out frames `{op:0.962,pe:"none"}`, `{op:0.948,pe:"none"}`, `{op:0.941,pe:"none"}`).
+
+## DEF-238: The exiting search bar is not inert - focus stays in it and Tab reaches it during the ghost window
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-054)
+- Phase: 20
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf`.
+2. Press Ctrl+F, focus the search input, type `AB`, press Escape; sample the exit frames (pointer-events/inert/focus).
+3. Press Escape, wait 60ms, press Tab; read `document.activeElement` (`node test-fixtures/tools/adv051_phase20.cjs ghosts` / `searchkey`).
+
+Expected: the exiting keyboard-bearing search bar is inert; focus leaves it and Tab cannot enter it (the phase exit treatment).
+Actual: 21 exiting / 14 ghost frames reported `inert:[false]`; `focusAfterEscape` stayed `{tag:"INPUT", inSearch:true}`; 60ms after Escape Tab landed on a `BUTTON` inside the exiting `.search-bar` (`inSearch:true`). Typing `ZZ` did not change the value (focus/a11y leak, not stray input).
+
+History:
+- qa: opened (2026-09-19; accepted from ADV-054, LOW)
+- qa: CLOSED (2026-09-19 FIX-READY retest). `ghosts`: 22 exiting frames `inert:[true]`, `pointerEvents:["none"]`, `focusAfterEscape {tag:"BODY", inSearch:false}`, and Tab 60ms after Escape lands on a `DIV` with `inSearch:false`. `searchkey`: `atEscape {activeTag:"BODY", activeInSearch:false, value:"AB"}`, typing `ZZ` leaves the value `AB`, bar unmounts.
+
+## DEF-237: Re-opening a morphing menu mid-exit grows the surface from its own mid-exit box, not the trigger
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-053)
+- Phase: 20
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf`.
+2. For each morph menu (theme `[data-theme-toggle]`, titlebar `[data-menu-button]`, ann `[data-ann-dropdown-toggle]`): open it, settle 500ms, press Escape, wait 80ms (mid-exit), click the trigger again, and sample rect + `data-tf-morph` + `transform-origin` every frame (`node test-fixtures/tools/adv051_phase20.cjs reopen`; rapid-toggle control `spam`).
+3. Compare the first frame whose `data-tf-morph` is `in` against the trigger rect.
+
+Expected: Phase-20 criterion 1 - the surface morphs from the TRIGGER rect with no gap on every open, including a re-open during the close morph.
+Actual: the first `in` frame was measured off the shrunken mid-exit rect: theme deviated 34.1px (trigger `[1154.4,6.7,131.6,28]` vs `[1130.9,23.3,155.1,62.1]`), titlebar 108.3px, ann 105.4px; in the rapid-toggle control 12/13 re-enters exceeded 2.5px (max 59.8/67.4/97.4px) while the first open from fully closed was 0.0px. `useMorphPreset` measured `surface.getBoundingClientRect()` while the exit transform was still applied.
+Screenshot: screenshots/adv051-reopen-theme.png, screenshots/adv051-reopen-titlebar.png, screenshots/adv051-reopen-ann.png
+
+History:
+- qa: opened (2026-09-19; accepted from ADV-053, MEDIUM; morph measured off the transformed mid-exit rect)
+- qa: CLOSED (2026-09-19 FIX-READY retest). `reopen` first `in` frame equals the trigger rect exactly for all three menus - theme `[1154.4,6.7,131.6,28]`, titlebar `[8,9.7,28,22]`, ann `[1387.3,53,28,32]` - `deviationPx 0.0` each (the morph now measures the final layout rect). `spam`: 13/13 re-enters, `firstFrameDevs` all 0, `maxDev 0.0px`, `entersOver2_5px 0`.
+
+## DEF-236: Held Enter during the signature pending view's exit window commits up to 11 signature placements from one Confirm
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-052)
+- Phase: 20
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf`.
+2. Sign (`button[data-icon="sign"]`) -> Type, create a typed signature, pick it, click page 1 to spawn the pending placement (`[data-sig-pending]`).
+3. Click `[data-sig-pending] [data-sig-action="confirm"]`, then hold Enter (10 presses at ~15ms) during the pending view's exit; wait 1.8s and read `engineState.signatures` / `[data-placement-id]` (`node test-fixtures/tools/adv051_phase20.cjs sigkey`).
+
+Expected: one Confirm commits one signature placement; a held/repeated Enter cannot re-fire the stale `onConfirm` (the exiting keyboard-bearing root is inert).
+Actual: 11 signatures / 11 placements from one Confirm; the exiting `PendingPlacementView` / `SignatureActionBar` stayed keyboard-live with the Confirm button focused, and a save would bake 11 overlapping placements (document corruption).
+Screenshot: screenshots/adv051-sigkey.png
+
+History:
+- qa: opened (2026-09-19; accepted from ADV-052, HIGH)
+- qa: CLOSED (2026-09-19 FIX-READY retest). `sigkey`: `before {signatures:0, placements:0, pending:1}` -> after Confirm plus 10 held Enters `after {signatures:1, placements:1, pending:0}`; focus immediately after Confirm is `BODY` (`inPending:false`), so the inert guard plus the one-shot Confirm guard stop the re-fire.
+
+## DEF-235: Held Ctrl+Enter during the edit editor's exit window duplicates the committed text box (up to 10 boxes from one commit)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-051)
+- Phase: 20
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf` (baseline `.edit-box`=0, `engineState.textBoxes`=0).
+2. Edit content -> box tool (`[data-edit-tool="box"]`), drag a 180x60 box, type `DUP-A`, click Apply (`[data-edit-confirm]`).
+3. Immediately hold Ctrl+Enter (10 presses at ~15ms) while the inline editor is still exiting, wait 1.8s, then read `.edit-box` / `engineState.textBoxes` (`node test-fixtures/tools/adv051_phase20.cjs duprepro` scenario A; fresh-launch control `dupctrl`).
+
+Expected: one commit creates one text box; a key-repeat after the commit cannot re-fire the stale commit closure (the exiting inline editor is inert, as the annotation textbox editors already were).
+Actual: `{boxes:10, editors:0, textBoxes:10}` - nine extra boxes from one commit; `document.activeElement` stayed on the editor's `TEXTAREA.edit-inline-textarea` because the Apply `onMouseDown` preventDefault kept focus there, so every Ctrl+Enter re-fired the old `onCommit` closure during the ~200-350ms exit. A save writes all ten.
+Screenshot: screenshots/adv051-midanim-edit-keyrepeat.png
+
+History:
+- qa: opened (2026-09-19; accepted from ADV-051, HIGH)
+- qa: CLOSED (2026-09-19 FIX-READY retest). `duprepro` scenario A: `rightAfterA {boxes:1, editors:1, textBoxes:1}` -> after 10 Ctrl+Enter presses during the exit `afterA {boxes:1, editors:0, textBoxes:1}`; focus right after Apply is `BODY` (`inEditor:false`), not the textarea, so the shared `inert={!isPresent}` plus the one-shot commit guard stop the duplication. (The harness's scenario B timeout is a harness-flow artifact - see the phase-20 retest report: its drag starts on scenario A's committed box and hits the move branch, moving it exactly +180/+60 with `boxToolbar:1`.)
+
+## DEF-233: The frosted tools palette width still jumps on the list<->grid swap while the page inset and badge slide
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 20
+
+Steps to reproduce:
+1. Launch TFlex (dev build via the canonical `launchApp` helper); open the bundled `report.pdf`; leave the theme at the default frosted.
+2. Open the Tools palette (`[data-tools-toggle]`), then switch layout list->grid (`[data-tools-layout="grid"]`) and back.
+3. Sample `.tools-palette` width, `.document-scroller` right edge and `.tools-badge-tracker` right edge per rAF for 800ms (`npm.cmd run test:e2e -- e2e/phase20_verify.spec.cjs -g C2b`).
+
+Expected: the palette width tweens 344px<->380px over `--panel-slide-duration`/`--panel-slide-ease` in lockstep with its two siblings (criterion 2), as it does in light and dark.
+
+Actual: in frosted the computed `transition-property` on `.tools-palette` is `backdrop-filter, -webkit-backdrop-filter`, not `width`. The frosted rule `:root[data-theme="frosted"] .tools-palette` (styles.css:731, transition at :744) has higher specificity than the Phase-20 base `.tools-palette` rule (styles.css:5761, transition at :5804), so it REPLACES the width transition instead of merging. Measured palette widths are only [344,380] (a single-frame jump) while `.document-scroller` right and `.tools-badge-tracker` right each interpolate over 7 distinct values. Light and dark are correct (7 palette width values, 7 inset/badge values).
+Screenshot: screenshots/phase20-verify-palette-resize.png
+
+History:
+- qa: opened (Phase 20 criterion 2 validation; the default theme is frosted, so the shipped build shows the panel snapping while the page/badge slide.)
+- qa: CLOSED (FIX-READY retest). `e2e/def233_234_retest.spec.cjs` frame-sampled the list<->grid swap in all three themes. Frosted now reports computed `transition-property: backdrop-filter, -webkit-backdrop-filter, width` (duration 0.18s, 0.18s, 0.15s) and interpolates palette widths [344,363,372,377,378,379,380] on grid and [380,361,352,348,346,345,344] on list - identical series to light/dark, with the page inset and badge each showing the matching 7-value series in lockstep. Phase-20 C2b now passes (12/12).
+
+## DEF-234: Reduced motion - the inline editor's first painted frame carries the non-reduced y:-2 travel
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 20
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`), then set CDP `Emulation.setEmulatedMedia` `prefers-reduced-motion: reduce` on the window and confirm `matchMedia(...).matches === true`.
+2. Open `report.pdf`, enter Edit mode (`button[aria-label="Edit content"]`), arm `[data-edit-tool="box"]`, drag on page 1 to create a text box.
+3. Sample `[data-edit-editor]` computed transform every frame during the mount (`npm.cmd run test:e2e -- e2e/phase20_verify.spec.cjs -g C6`).
+
+Expected: the reduced-motion path is opacity-only, so the editor never travels (criterion 6).
+
+Actual: the first mounted frame's computed transform is `matrix(1, 0, 0, 1, 0, -2)` (the non-reduced TfBar initial `y: -MOTION_TRANSLATE.micro`), then `none` for every subsequent frame - a one-frame 2px reduced-motion leak. The morph, Sign tabs and palette resize all collapse cleanly (no travel / instant size). Structure is unchanged (the editor mounts/unmounts correctly).
+
+History:
+- qa: opened (Phase 20 criterion 6 validation; one-frame 2px travel leak on the edit inline editor under emulated reduced motion.)
+- qa: CLOSED (FIX-READY retest). Under CDP `prefers-reduced-motion: reduce` the inline editor mounted 67 frames with first transform `none` and distinct transforms `["none"]` (animation-name `none`), then unmounted structurally (0 nodes after Cancel). Tooltip member of the class: reduced first frame `matrix(1,0,0,1,-25.63,0)` (pure centring, no scale/translateY) settling to opacity 1 / visibility visible; no-preference first frame `matrix(0.98,0,0,0.98,-25.63,3)` settling to `matrix(1,0,0,1,-25.63,0)` - normal entrance unchanged. Phase-20 C6 now passes (12/12).
+
 ## DEF-232: The DEF-221 edit-text move is lost on page 2 (dense paragraph) - the run is not masked and the saved file keeps it at the original rect
 
 - Status: CLOSED

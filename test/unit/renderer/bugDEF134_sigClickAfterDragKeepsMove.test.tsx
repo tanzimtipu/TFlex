@@ -18,6 +18,14 @@
 //   5. A real second drag (beyond the click tolerance) still replaces
 //      the held rect with the new drag result.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Phase 20 — the signature action bar is a TfBar inside an
+ *  AnimatePresence, so its DOM removal completes after the exit. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -156,7 +164,7 @@ describe("DEF-134 — a click after a drag keeps the held move", () => {
     }
   });
 
-  it("Confirm after the click still commits the held rect", () => {
+  it("Confirm after the click still commits the held rect", async () => {
     const { host, onMove } = mountCommitted();
     try {
       drag(host, { x: 120, y: 120 }, { x: 160, y: 160 });
@@ -170,13 +178,14 @@ describe("DEF-134 — a click after a drag keeps the held move", () => {
       expect(onMove).toHaveBeenCalledTimes(1);
       expect(onMove.mock.calls[0]?.[0]).toBe("pl-1");
       expect(onMove.mock.calls[0]?.[1]).toEqual({ x: 140, y: 140, width: 200, height: 60 });
+      await settleMotion();
       expect(barOf(host)).toBeNull();
     } finally {
       host.remove();
     }
   });
 
-  it("Cancel after the click still reverts to the committed rect", () => {
+  it("Cancel after the click still reverts to the committed rect", async () => {
     const { host, onMove } = mountCommitted();
     try {
       drag(host, { x: 120, y: 120 }, { x: 160, y: 160 });
@@ -191,6 +200,7 @@ describe("DEF-134 — a click after a drag keeps the held move", () => {
       const el = placementEl(host);
       expect(Number.parseFloat(el.style.left)).toBe(100);
       expect(Number.parseFloat(el.style.top)).toBe(100);
+      await settleMotion();
       expect(barOf(host)).toBeNull();
     } finally {
       host.remove();

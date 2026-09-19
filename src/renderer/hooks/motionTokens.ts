@@ -12,6 +12,11 @@
 export const MOTION_DURATION = {
   micro: 150,
   fast: 200,
+  /** Phase 20 — morphing surfaces: the surface's CONTENT fade, timed to
+   *  the first ~40% of the fast band (the box itself morphs over `fast`).
+   *  Existing tokens cannot express a sub-band fraction, so this is its
+   *  own token rather than a literal. */
+  content: 80,
   standard: 250,
   panel: 140,
   layout: 350,
@@ -42,6 +47,10 @@ export const MOTION_EASE = {
   enter: [0, 0, 0.2, 1],
   exit: [0.4, 0, 1, 1],
   layout: [0.4, 0, 0.2, 1],
+  /** DEF-240 — the docked panel/page slide settle curve (Phase 14.2),
+   *  registered as a canonical token so the legacy --panel-slide-ease
+   *  alias and this mirror stay one source. */
+  panel: [0.16, 1, 0.3, 1],
 } as const;
 
 /** Motion scales. Mirrors --motion-scale-*. */
@@ -62,6 +71,10 @@ export const MOTION_TRANSLATE = {
 export const MOTION_OPACITY = {
   hidden: 0,
   visible: 1,
+  /** Phase 20 — morphing surfaces start just short of opaque: the box is
+   *  already a solid, recognisable surface (so the "one element growing"
+   *  read survives) instead of a second window fading in from nothing. */
+  surface: 0.85,
 } as const;
 
 /** Class the theme-crossfade machinery puts on <html> for the duration

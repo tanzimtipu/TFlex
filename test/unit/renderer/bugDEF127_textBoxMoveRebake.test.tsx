@@ -31,6 +31,14 @@ import {
   type TextBoxPlacement,
 } from "../../../src/renderer/edit/model";
 
+/** Phase 20 — the inline editor is a TfBar inside an AnimatePresence, so
+ *  its DOM removal completes after the exit animation. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 const stubCapture = function (this: Element): void {
   void this;
 };
@@ -205,7 +213,7 @@ describe("DEF-127 — selecting a committed box reopens the inline editor", () =
     }
   });
 
-  it("committing the reopened editor round-trips the new text into the registry", () => {
+  it("committing the reopened editor round-trips the new text into the registry", async () => {
     const { host, state, unmount } = mountBoxTool({
       ...initialEditState,
       tool: "box",
@@ -234,7 +242,8 @@ describe("DEF-127 — selecting a committed box reopens the inline editor", () =
         commitBtn.click();
       });
       expect(state().textBoxes[0]?.text).toBe("Edited text");
-      // The editor closed after commit.
+      // The editor closed after commit (its TfBar exit runs first).
+      await settleMotion();
       expect(host.querySelector("[data-edit-textarea]")).toBeNull();
     } finally {
       unmount();

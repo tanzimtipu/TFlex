@@ -1,5 +1,7 @@
 import { ChevronDown, ChevronUp, X } from 'lucide-react';
 import { useEffect, useRef } from 'react';
+import { useIsPresent } from 'motion/react';
+import { TfBar } from './motion/TfMotion';
 
 interface SearchBarProps {
   query: string;
@@ -16,6 +18,11 @@ export function SearchBar(props: SearchBarProps) {
   const { query, onQuery, resultCount, activeIndex, searching, onNext, onPrev, onClose } =
     props;
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // Phase 20 / DEF-238 — while the bar EXITS it is inert, so the input
+  // cannot keep DOM focus and Tab / assistive tech cannot reach the
+  // pointer-disabled ghost window (ADV-054: 21 exit frames with
+  // `inert:[false]`, focus stayed in the input).
+  const isPresent = useIsPresent();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -45,7 +52,12 @@ export function SearchBar(props: SearchBarProps) {
   };
 
   return (
-    <div className="search-bar">
+    // Phase 20 — the search bar is a conditional chrome row of the same
+    // floating-bar family as the edit toolbar (TfBar): token-driven
+    // enter/exit (y -2 rise / reverse) with the exit frame pinning
+    // pointer-events: none. Mounted inside an AnimatePresence in
+    // DocumentView so the close actually animates.
+    <TfBar className="search-bar" inert={!isPresent}>
       <input
         ref={inputRef}
         className="search-input"
@@ -77,6 +89,6 @@ export function SearchBar(props: SearchBarProps) {
       <button type="button" className="tool-btn" onClick={onClose} title="Close search (Esc)">
         <X size={16} aria-hidden />
       </button>
-    </div>
+    </TfBar>
   );
 }

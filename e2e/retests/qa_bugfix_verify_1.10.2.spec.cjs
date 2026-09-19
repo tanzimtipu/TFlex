@@ -54,6 +54,23 @@ async function engineAnnCount(win) {
   return d && d.engineState ? d.engineState.annotations.length : null;
 }
 
+/** Phase 19/20 repoint — the annotation tools moved into the CommandBar's
+ *  MRU group plus the portaled all-tools menu; the old standalone
+ *  `button[data-tool="note"]` no longer exists. Same intent: arm the note
+ *  tool. */
+async function armNote(win) {
+  const visible = win.locator('[data-ann-tools-visible] button[data-tool="note"]');
+  if ((await visible.count()) > 0) {
+    await visible.first().click();
+  } else {
+    await win.click('[data-ann-dropdown-toggle]');
+    await win.waitForSelector('[data-ann-dropdown-menu]', { state: 'visible', timeout: 8000 });
+    await win.click('[data-ann-dropdown-menu] button[data-tool="note"]');
+    await win.waitForSelector('[data-ann-dropdown-menu]', { state: 'detached', timeout: 8000 });
+  }
+  await win.waitForTimeout(300);
+}
+
 /** Drag from (x,y) by (dx,dy) with real mouse events. */
 async function dragBy(win, from, dx, dy, steps = 12) {
   await win.mouse.move(from.x, from.y);
@@ -129,8 +146,7 @@ async function placeStamp(win) {
 }
 
 async function createNote(win, text) {
-  await win.click('button[data-tool="note"]');
-  await win.waitForTimeout(300);
+  await armNote(win);
   const at = await pagePoint(win, 0.5, 0.75);
   await win.mouse.click(at.x, at.y);
   await win.waitForSelector('[data-annotation-editor="note"]', { timeout: 10000 });
@@ -147,8 +163,7 @@ test('B1: Edit button disarms an armed sticky-note tool', async () => {
   await openReport(win, electronApp);
 
   // Arm the sticky note tool.
-  await win.click('button[data-tool="note"]');
-  await win.waitForTimeout(300);
+  await armNote(win);
   const toolArmed = await win.evaluate(
     () => document.querySelector('.annotation-layer')?.getAttribute('data-tool'),
   );
@@ -198,8 +213,7 @@ test('B4: Escape disarms the armed tool; search Escape still closes search', asy
   await win.waitForTimeout(1200);
   await openReport(win, electronApp);
 
-  await win.click('button[data-tool="note"]');
-  await win.waitForTimeout(300);
+  await armNote(win);
   expect(
     await win.evaluate(() => document.querySelector('.annotation-layer')?.getAttribute('data-tool')),
   ).toBe('note');
@@ -228,7 +242,10 @@ test('B4: Escape disarms the armed tool; search Escape still closes search', asy
   const searchOpen = await win.locator('.search-bar').count();
   console.log('[B4] search bar open after Ctrl+F =', searchOpen);
   await win.keyboard.press('Escape');
-  await win.waitForTimeout(300);
+  // Phase 20 — the search bar now runs a token exit (TfBar) and unmounts at
+  // the end of it (~361ms), so a fixed 300ms sample caught it mid-exit.
+  // Wait for the AnimatePresence removal instead of a fixed delay.
+  await win.waitForSelector('.search-bar', { state: 'detached', timeout: 4000 });
   const searchAfter = await win.locator('.search-bar').count();
   console.log('[B4] search bar after Escape =', searchAfter);
   expect(searchOpen).toBeGreaterThan(0);

@@ -26,11 +26,13 @@
 // the drag is the inherent tradeoff of the bake-only surface.
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement } from "react";
+import { AnimatePresence, useIsPresent } from "motion/react";
 import type { StampId } from "../../shared/types";
 import {
   ContentActionBar,
   useSelectableDrag,
 } from "../components/selectableContent";
+import { TfBar } from "../components/motion/TfMotion";
 import { rectsClose } from "../edit/geometry";
 import type { ImageResizeHandle } from "../edit/geometry";
 import { clamp } from "../edit/model";
@@ -471,35 +473,39 @@ export function StampAnnotations(props: StampAnnotationsProps): ReactElement | n
               />
             ))}
           </div>
-          {editId === selectedStamp.id ? (
-            <StampTypeEditor
-              left={barPos.left}
-              top={barPos.top}
-              active={selectedStamp.stampId}
-              onPick={retypeSelected}
-              onClose={closeEditor}
-            />
-          ) : (
-            <ContentActionBar
-              className="content-action-bar stamp-action-bar"
-              dataBar="stamp"
-              left={barPos.left}
-              top={barPos.top}
-              onConfirm={pending !== null ? confirmPending : (): void => setSelectedId(null)}
-              onEdit={(): void => setEditId(selectedStamp.id)}
-              onDelete={deleteSelected}
-              confirmLabel="Confirm"
-              editLabel="Edit"
-              deleteLabel="Delete"
-              confirmTitle={pending !== null ? "Confirm the move" : "Clear selection"}
-              editTitle="Change stamp type"
-              deleteTitle="Delete stamp"
-              confirmAria="Confirm stamp move"
-              editAria="Edit stamp"
-              deleteAria="Delete stamp"
-              dataActionPrefix="stamp"
-            />
-          )}
+          <AnimatePresence>
+            {editId === selectedStamp.id ? (
+              <StampTypeEditor
+                key="stamp-type-editor"
+                left={barPos.left}
+                top={barPos.top}
+                active={selectedStamp.stampId}
+                onPick={retypeSelected}
+                onClose={closeEditor}
+              />
+            ) : (
+              <ContentActionBar
+                key="stamp-action-bar"
+                className="content-action-bar stamp-action-bar"
+                dataBar="stamp"
+                left={barPos.left}
+                top={barPos.top}
+                onConfirm={pending !== null ? confirmPending : (): void => setSelectedId(null)}
+                onEdit={(): void => setEditId(selectedStamp.id)}
+                onDelete={deleteSelected}
+                confirmLabel="Confirm"
+                editLabel="Edit"
+                deleteLabel="Delete"
+                confirmTitle={pending !== null ? "Confirm the move" : "Clear selection"}
+                editTitle="Change stamp type"
+                deleteTitle="Delete stamp"
+                confirmAria="Confirm stamp move"
+                editAria="Edit stamp"
+                deleteAria="Delete stamp"
+                dataActionPrefix="stamp"
+              />
+            )}
+          </AnimatePresence>
         </>
       )}
     </>
@@ -528,6 +534,12 @@ function StampTypeEditor(props: {
   onClose: () => void;
 }): ReactElement {
   const { left, top, active, onPick, onClose } = props;
+  // Phase 20 / DEF-235 class — the exiting picker is INERT: it is
+  // keyboard-bearing (four stamp buttons + Cancel) and swaps with the
+  // action bar inside an AnimatePresence, so while exiting it must leave
+  // the focus order and the keyboard path (mirrors the annotation
+  // toolboxes' `inert={!isPresent}`).
+  const isPresent = useIsPresent();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -540,9 +552,15 @@ function StampTypeEditor(props: {
   }, [onClose]);
 
   return (
-    <div
+    // Phase 20 — the stamp-type picker is a floating contextual bar
+    // (TfBar): token-driven enter/exit, exit-frame pointer-events guard.
+    // Mounted inside an AnimatePresence at the call site so its exit runs
+    // (criterion 4) and the swap to/from the action bar overlaps instead
+    // of popping (criterion 3).
+    <TfBar
       className="ann-textbox-wrap stamp-type-editor-wrap"
       data-stamp-type-editor
+      inert={!isPresent}
       style={{ position: "absolute", left, top, zIndex: 60 }}
       onPointerDown={(e): void => e.stopPropagation()}
     >
@@ -584,7 +602,7 @@ function StampTypeEditor(props: {
           Cancel
         </button>
       </div>
-    </div>
+    </TfBar>
   );
 }
 

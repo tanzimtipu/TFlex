@@ -30,6 +30,10 @@
   --motion-duration-micro: 150ms;
   /* Fast: popovers, menus, button press/release, tab materialize. */
   --motion-duration-fast: 200ms;
+  /* Morph content: the surface's CONTENT fade, timed to the first ~40% of
+   * the fast band so the scaled-down content never reads as a smear while
+   * the box morphs out of its trigger (Phase 20). */
+  --motion-duration-content: 80ms;
   /* Standard: dialogs bloom, selection fills, focus halos. */
   --motion-duration-standard: 250ms;
   /* Panel: sidebars, inspectors, docked rails. */
@@ -50,6 +54,11 @@
   --motion-ease-exit: cubic-bezier(0.4, 0, 1, 1);
   /* Layout: smooth between-position moves. */
   --motion-ease-layout: cubic-bezier(0.4, 0, 0.2, 1);
+  /* Panel: the settle curve the docked panel/page slide shares (Phase
+   * 14.2). Registered here (DEF-240) so the legacy --panel-slide-* pair
+   * is an ALIAS of the canonical tokens and every consumer resolves from
+   * one source. */
+  --motion-ease-panel: cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ---- Scales ----------------------------------------------------------- */
   --motion-scale-press: 0.97;   /* Soft Compression / press states. */
@@ -64,6 +73,10 @@
   /* ---- Opacity ------------------------------------------------------------ */
   --motion-opacity-hidden: 0;
   --motion-opacity-visible: 1;
+  /* Morphing surfaces (Phase 20): the box starts just short of opaque so
+   * the "one element growing out of the trigger" read survives — a 0-start
+   * would read as a second window fading in. */
+  --motion-opacity-surface: 0.85;
 
   /* ---- Elevation ----------------------------------------------------------
    * The COLOR of the elevation shadow is the one theme-tunable channel
@@ -91,13 +104,18 @@
   :root {
     --motion-duration-micro: var(--motion-duration-reduced);
     --motion-duration-fast: var(--motion-duration-reduced);
+    --motion-duration-content: var(--motion-duration-reduced);
     --motion-duration-standard: var(--motion-duration-reduced);
     --motion-duration-panel: var(--motion-duration-reduced);
     --motion-duration-layout: var(--motion-duration-reduced);
     --motion-theme-crossfade: var(--motion-duration-reduced);
   }
 
-  /* Movement is disabled outright; the state change remains. */
+  /* Movement is disabled outright; the state change remains. DEF-234
+   * travel class: .anim-materialize (scale 0.95 -> 1) and .anim-dissolve
+   * (scale 1 -> 0.98) carry a `from` transform too, so they belong in
+   * this list alongside the slide/pop/bar utilities. .anim-tab-out is
+   * opacity-only (tf-anim-tab-in, reversed) and needs no override. */
   .anim-bloom-in,
   .anim-bloom-out,
   .anim-pop-in,
@@ -109,6 +127,8 @@
   .anim-bar-reveal,
   .anim-drop-in,
   .anim-tab-in,
+  .anim-materialize,
+  .anim-dissolve,
   .anim-lift,
   .anim-press {
     animation: none !important;
@@ -299,4 +319,53 @@ html.tf-theme-transitioning .pdf-page-canvas,
 html.tf-theme-transitioning .page-placeholder {
   transition: none !important;
   filter: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * MORPHING SURFACES (Phase 20 — the "one element" rule)
+ *
+ * A menu/popover/dropdown must read as its trigger box GROWING into the
+ * expanded box, never as a separate window appearing next to it. The
+ * transform side is JS (tfMorph in components/motion/tfPresets.ts: a FLIP
+ * computed from the trigger and surface rects, with transform-origin on the
+ * pinned corner); this file owns the CONTENT side.
+ *
+ * While the box scales up, the squashed content would smear. The surface's
+ * own opacity ramps 0.85 -> 1 (so it never reads as a fade-in window), and
+ * its DIRECT CHILDREN fade in over --motion-duration-content — roughly the
+ * first 40% of the morph — then reverse on close. The wrapper
+ * (TfMorph) sets data-tf-morph="in" | "out" from the presence context, so
+ * the reverse is driven by the same attribute flip.
+ *
+ * The PDF content layer never carries this attribute.
+ * ------------------------------------------------------------------------- */
+@keyframes tf-morph-content-in {
+  from { opacity: var(--motion-opacity-hidden); }
+  to   { opacity: var(--motion-opacity-visible); }
+}
+@keyframes tf-morph-content-out {
+  from { opacity: var(--motion-opacity-visible); }
+  to   { opacity: var(--motion-opacity-hidden); }
+}
+[data-tf-morph="in"] > * {
+  animation: tf-morph-content-in var(--motion-duration-content) var(--motion-ease-enter) both;
+}
+[data-tf-morph="out"] > * {
+  animation: tf-morph-content-out var(--motion-duration-content) var(--motion-ease-exit) both;
+}
+
+/* ---------------------------------------------------------------------------
+ * ANIMATED CONTEXT-WINDOW RESIZE (Phase 20)
+ *
+ * TfResize (components/motion/TfResize.tsx) owns the JS side: it measures
+ * the content wrapper and tweens the frame's real height/width over
+ * --motion-duration-standard on --motion-ease-layout. This file owns the
+ * one structural rule the shape needs.
+ *
+ * The measured wrapper is the positioning context for a pane that is being
+ * popped out of flow while it cross-fades away, so the frame's target size
+ * is always the INCOMING pane's size.
+ * ------------------------------------------------------------------------- */
+[data-tf-resize-inner] {
+  position: relative;
 }

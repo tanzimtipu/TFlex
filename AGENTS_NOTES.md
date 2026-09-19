@@ -2454,6 +2454,58 @@ DEF-195), so it now accepts either mechanism and pins the live `--motion-theme-c
 `def_191_194_retest`'s icon-size assertion moved to the Phase-19 22px ladder. Combined pass: 23 passed
 + 1 pre-existing skip (A6 reduced-motion launch flag), 0 failed. **Rule: assert motion against the
 live CSS token, never a literal - a literal is rot waiting to happen.**
+
+## 2026-09-19: Phase 20 (animation standard) - what the motion system taught us
+
+Phase 20 is in REQUIREMENTS.md: morphing menus (a trigger box growing into its surface, flush, gap 0),
+animated context-window resizes (`TfResize`), animated window-to-window swaps, no un-animated
+appearances anywhere, and an enforceable 19-row surface-motion contract test. All seven criteria
+verified; DEF-233..240 closed; the adversary's 60fps measurement was clean (p50 16.7 ms, p95 <=16.8 ms,
+0 frames >33 ms, identical in light/dark/frosted).
+
+**Lesson 1 - the exit window is a real input window.** Six of the eight defects this phase produced came
+from one class: a surface that is animating OUT is still in the DOM, still focusable and still wired to
+its handlers. A held Ctrl+Enter during the inline editor's exit committed **10 text boxes** from one
+edit; a held Enter during the signature pending view's exit committed **11 placements**. The fixes:
+`inert={!isPresent}` applied at the SHARED motion wrapper (so no exit path can miss it) plus explicit
+`inert` at the keyboard-bearing roots, and a one-shot commit guard as defence in depth. **Rule: every
+exiting subtree is inert; every commit handler is single-shot.**
+
+**Lesson 2 - animate against the LAYOUT rect, never a mid-animation rect.** Re-opening a menu mid-exit
+made the morph measure the surface's own transformed box (34-108 px of first-frame deviation). The fix
+measures the trigger rect + the surface's final layout rect and stops the in-flight exit on re-present.
+**Rule: geometry that feeds an animation is read from layout state, not from a node that is currently
+transformed.**
+
+**Lesson 3 - a guard that runs "first" must run in the same commit.** The DEF-087/088/090 guard wants
+`pointer-events:none` on the FIRST exit frame; the exiting surface reported `auto` for one frame until
+the style was set in the same commit that flips the exit state. **Rule: state-driven CSS guards belong
+in the same render as the state flip.**
+
+**Lesson 4 - consistency across themes must be asserted per theme.** The tools-palette resize rode the
+panel tokens in light/dark but JUMPED in frosted because a `:root[data-theme="frosted"]` override
+replaced the transition shorthand. **Rule: any transition added for a control needs a per-theme
+assertion (or a contract check), because a theme override can silently replace the channel.**
+
+**Lesson 5 - a probe that cannot fail is not a test.** The phase spec's OCR-suspects probe early-returned
+and "passed" when the runtime trigger could not be produced, so criterion 4's OCR surface was never
+asserted. **Rule: a probe that cannot produce its precondition must FAIL or report UNEVIDENCED - never
+pass silently.**
+
+**Harness note:** `playwright test -- a.spec b.spec c.spec` only ran the FIRST positional file in this
+environment; run specs individually or via a glob when you need all of them.
+
+**Spec-rot cleanup (done 2026-09-19):** six specs repointed, test-only, no product defect found.
+`phase13_qa_sweep` + `phase13_visual_verification` now use `.welcome .btn-primary` on the welcome
+screen and `[data-toolbar-open]` in the workspace (the Open control left the caption strip in Phase
+14.1, so the old no-drag entry was removed rather than repointed); `motion_verify`'s rail-tab press and
+`phase14_2_verify`'s panel timing now read the LIVE token (`--motion-scale-press`, `--panel-slide-duration`)
+instead of literals, so they cannot rot again; `anim_audit`'s A1 turned out not to be a legacy value at
+all - `.tf-theme-transitioning` never appears because View Transitions is the primary path (Phase-15 /
+DEF-195), so it now accepts either mechanism and pins the live `--motion-theme-crossfade`; and
+`def_191_194_retest`'s icon-size assertion moved to the Phase-19 22px ladder. Combined pass: 23 passed
++ 1 pre-existing skip (A6 reduced-motion launch flag), 0 failed. **Rule: assert motion against the
+live CSS token, never a literal - a literal is rot waiting to happen.**
 
 
 ## 2026-09-18: git-agent moves to the cloud — the team is 100% cloud now

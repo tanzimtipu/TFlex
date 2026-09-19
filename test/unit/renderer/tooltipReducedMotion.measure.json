@@ -1,0 +1,137 @@
+﻿[
+  {
+    "reducedMotion": "reduce",
+    "stretched": false,
+    "before": {
+      "reducedQuery": true,
+      "animationName": "none",
+      "animationDuration": "1e-05s",
+      "animationDelay": "0s",
+      "animationFillMode": "none",
+      "transform": "matrix(0.98, 0, 0, 0.98, -35.1875, 3)",
+      "opacity": "0",
+      "visibility": "hidden"
+    },
+    "first": {
+      "reducedQuery": true,
+      "animationName": "tooltip-enter-reduced",
+      "animationDuration": "1e-05s",
+      "animationDelay": "0s",
+      "animationFillMode": "forwards",
+      "transform": "matrix(1, 0, 0, 1, -35.1875, 0)",
+      "opacity": "0",
+      "visibility": "hidden"
+    },
+    "animations": [],
+    "mid": {
+      "reducedQuery": true,
+      "animationName": "tooltip-enter-reduced",
+      "animationDuration": "1e-05s",
+      "animationDelay": "0s",
+      "animationFillMode": "forwards",
+      "transform": "matrix(1, 0, 0, 1, -35.1875, 0)",
+      "opacity": "1",
+      "visibility": "visible"
+    },
+    "settled": {
+      "reducedQuery": true,
+      "animationName": "tooltip-enter-reduced",
+      "animationDuration": "1e-05s",
+      "animationDelay": "0s",
+      "animationFillMode": "forwards",
+      "transform": "matrix(1, 0, 0, 1, -35.1875, 0)",
+      "opacity": "1",
+      "visibility": "visible"
+    }
+  },
+  {
+    "reducedMotion": "reduce",
+    "stretched": true,
+    "before": {
+      "reducedQuery": true,
+      "animationName": "none",
+      "animationDuration": "0.5s",
+      "animationDelay": "0s",
+      "animationFillMode": "none",
+      "transform": "matrix(0.98, 0, 0, 0.98, -35.1875, 3)",
+      "opacity": "0",
+      "visibility": "hidden"
+    },
+    "first": {
+      "reducedQuery": true,
+      "animationName": "tooltip-enter-reduced",
+      "animationDuration": "0.5s",
+      "animationDelay": "0s",
+      "animationFillMode": "forwards",
+      "transform": "matrix(1, 0, 0, 1, -35.1875, 0)",
+      "opacity": "0",
+      "visibility": "hidden"
+    },
+    "animations": [],
+    "mid": {
+      "reducedQuery": true,
+      "animationName": "tooltip-enter-reduced",
+      "animationDuration": "0.5s",
+      "animationDelay": "0s",
+      "animationFillMode": "forwards",
+      "transform": "matrix(1, 0, 0, 1, -35.1875, 0)",
+      "opacity": "0.955931",
+      "visibility": "visible"
+    },
+    "settled": {
+      "reducedQuery": true,
+      "animationName": "tooltip-enter-reduced",
+      "animationDuration": "0.5s",
+      "animationDelay": "0s",
+      "animationFillMode": "forwards",
+      "transform": "matrix(1, 0, 0, 1, -35.1875, 0)",
+      "opacity": "1",
+      "visibility": "visible"
+    }
+  },
+  {
+    "reducedMotion": "no-preference",
+    "stretched": true,
+    "before": {
+      "reducedQuery": false,
+      "animationName": "none",
+      "animationDuration": "0s",
+      "animationDelay": "0s",
+      "animationFillMode": "none",
+      "transform": "matrix(0.98, 0, 0, 0.98, -35.1875, 3)",
+      "opacity": "0",
+      "visibility": "hidden"
+    },
+    "first": {
+      "reducedQuery": false,
+      "animationName": "tooltip-enter",
+      "animationDuration": "0.12s",
+      "animationDelay": "0.3s",
+      "animationFillMode": "forwards",
+      "transform": "matrix(0.98, 0, 0, 0.98, -35.1875, 3)",
+      "opacity": "0",
+      "visibility": "hidden"
+    },
+    "animations": [],
+    "mid": {
+      "reducedQuery": false,
+      "animationName": "tooltip-enter",
+      "animationDuration": "0.12s",
+      "animationDelay": "0.3s",
+      "animationFillMode": "forwards",
+      "transform": "matrix(0.98, 0, 0, 0.98, -35.1875, 3)",
+      "opacity": "0",
+      "visibility": "hidden"
+    },
+    "settled": {
+      "reducedQuery": false,
+      "animationName": "tooltip-enter",
+      "animationDuration": "0.12s",
+      "animationDelay": "0.3s",
+      "animationFillMode": "forwards",
+      "transform": "matrix(1, 0, 0, 1, -35.1875, 0)",
+      "opacity": "1",
+      "visibility": "visible"
+    }
+  }
+]

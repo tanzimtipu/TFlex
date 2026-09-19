@@ -19,13 +19,21 @@
 // The editor is a regular React component (not a class) — the
 // outer overlay owns the open/closed state, the editor just renders
 // when it's mounted.
+//
+// Phase 20 — the window's enter/exit come from the shared floating-bar
+// preset (TfBar: token-driven opacity + 2px rise, `pointer-events: none`
+// on the first exit frame). The overlay wraps the mount site in an
+// AnimatePresence, so the hand-off to/from the committed action bar is a
+// cross-fade in both directions instead of a pop.
 
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent, ReactElement } from "react";
+import { useIsPresent } from "motion/react";
 import type { EditFont } from "../../shared/types";
 import type { EditTextStyle } from "./model";
 import { useDragWindow } from "../components/useDragWindow";
 import { ContentGrip } from "../components/selectableContent";
+import { TfBar } from "../components/motion/TfMotion";
 
 export interface EditInlineEditorProps {
   /** Anchor rect in page points (top-left origin). The editor
@@ -132,6 +140,21 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
   );
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
+  // Phase 20 / DEF-235 — while the editor EXITS (AnimatePresence keeps it
+  // mounted for the TfBar exit) it is inert: the whole subtree leaves the
+  // focus order and the keyboard path, so a held Ctrl+Enter key-repeat
+  // cannot re-fire the stale commit closure and duplicate the text box
+  // (ADV-051: 10 boxes from one commit). The wrapper also applies this at
+  // the shared TfBar level; it is stated here explicitly because this is
+  // the surface the adversary duplicated.
+  const isPresent = useIsPresent();
+  // Phase 20 / DEF-235 defence in depth — a ONE-SHOT commit latch. Even
+  // if focus somehow survives the exit window (or a blur and a click
+  // race inside the same tick), the second invocation of the commit
+  // closure is a no-op. Mirrors the codebase's one-shot ref pattern
+  // (focusedOnceRef / single-flight guards). The editor unmounts on
+  // every commit path, so the latch never needs an explicit reset.
+  const committedRef = useRef(false);
   // DEF-110 — the toolbar's label spans and bar chrome are
   // non-focusable: mousedown on them moves focus to the body, so the
   // textarea's onBlur sees `relatedTarget === null` and wrongly
@@ -224,6 +247,11 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
   // of suppressing the native control's mousedown. Blurring to
   // the page / outside still commits (or cancels for empty text).
   const onTextareaBlur = (e: React.FocusEvent<HTMLTextAreaElement>): void => {
+    // Phase 20 / DEF-235 — an EXITING editor must never commit or cancel
+    // from a blur: applying `inert` to the exiting root blurs the focused
+    // textarea (and a Cancel would otherwise re-open the commit path
+    // through this handler). The exit is already decided by then.
+    if (!isPresent) return;
     const related = e.relatedTarget as Element | null;
     if (
       related !== null &&
@@ -255,11 +283,16 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
   };
 
   const commit = (): void => {
+    // DEF-235 — one-shot: the first commit wins; every later invocation
+    // (a key-repeat, a blur racing the Apply click, the exit-window
+    // ghost) is a no-op.
+    if (committedRef.current) return;
     const trimmed = text.trim();
     if (trimmed.length === 0) {
       onCancel();
       return;
     }
+    committedRef.current = true;
     // DEF-151 — read the window's CURRENT drag offset from the
     // SYNCHRONOUS ref (`drag.getOffset()`), NEVER the `drag.offset`
     // state (a React render value that can lag one cycle behind the
@@ -282,13 +315,17 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
   const leftCss = rect.x * cssScale;
 
   return (
-    <div
+    <TfBar
       ref={(el): void => {
         editorRef.current = el;
         drag.windowRef(el);
       }}
       className={`edit-inline-editor${drag.dragging ? " edit-inline-dragging" : ""}`}
       data-edit-editor={mode}
+      // DEF-235 — inert for the whole exit window (the shared TfBar
+      // wrapper applies the same rule; stated here explicitly for the
+      // surface the adversary duplicated).
+      inert={!isPresent}
       style={{ left: leftCss + drag.offset.x, top: topCss + drag.offset.y, width: widthCss }}
       onPointerDown={(e): void => {
         e.stopPropagation();
@@ -474,6 +511,6 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
         }}
         placeholder={mode === "edit" ? "Replace text..." : "Add text..."}
       />
-    </div>
+    </TfBar>
   );
 }

@@ -36,6 +36,14 @@ import type {
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+/** Phase 20 — the note editor is a TfBar inside an AnimatePresence, so
+ *  its DOM removal completes after the exit animation. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
+
 const COMMITTED_NOTE: Annotation = {
   id: "note-1",
   kind: "note",
@@ -182,7 +190,7 @@ describe("DEF-096 / Bug 3 — committed note icon interaction", () => {
     }
   });
 
-  it("Confirm applies the edited text via onEditAnnotation(id, { text }) and closes the editor", () => {
+  it("Confirm applies the edited text via onEditAnnotation(id, { text }) and closes the editor", async () => {
     const { host, onEditAnnotation, cleanup } = mountOverlay({
       annotations: [COMMITTED_NOTE],
     });
@@ -212,13 +220,14 @@ describe("DEF-096 / Bug 3 — committed note icon interaction", () => {
       expect(onEditAnnotation).toHaveBeenCalledTimes(1);
       expect(onEditAnnotation).toHaveBeenCalledWith("note-1", { text: "revised text" });
       // Editor closed after commit.
+      await settleMotion();
       expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
     } finally {
       cleanup();
     }
   });
 
-  it("Delete removes the note via onDeleteAnnotation(id) and closes the editor", () => {
+  it("Delete removes the note via onDeleteAnnotation(id) and closes the editor", async () => {
     const { host, onDeleteAnnotation, cleanup } = mountOverlay({
       annotations: [COMMITTED_NOTE],
     });
@@ -235,13 +244,14 @@ describe("DEF-096 / Bug 3 — committed note icon interaction", () => {
       });
       expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
       expect(onDeleteAnnotation).toHaveBeenCalledWith("note-1");
+      await settleMotion();
       expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
     } finally {
       cleanup();
     }
   });
 
-  it("Cancel closes the editor without editing or deleting", () => {
+  it("Cancel closes the editor without editing or deleting", async () => {
     const { host, onEditAnnotation, onDeleteAnnotation, cleanup } = mountOverlay({
       annotations: [COMMITTED_NOTE],
     });
@@ -258,6 +268,7 @@ describe("DEF-096 / Bug 3 — committed note icon interaction", () => {
       });
       expect(onEditAnnotation).not.toHaveBeenCalled();
       expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      await settleMotion();
       expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
     } finally {
       cleanup();

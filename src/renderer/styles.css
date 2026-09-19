@@ -182,9 +182,13 @@
   --panel-radius: 0px;
   --panel-shadow: none;
    /* The simultaneous panel/page slide (Phase 14.2 FIX 5): panel and
-   * page view animate together on the same duration + easing. */
-  --panel-slide-duration: 150ms;
-  --panel-slide-ease: cubic-bezier(0.16, 1, 0.3, 1);
+    * page view animate together on the same duration + easing.
+    * DEF-240 — this pair is an ALIAS of the canonical Phase-15 motion
+    * tokens (same values: 150ms = --motion-duration-micro, the settle
+    * curve = --motion-ease-panel), so every consumer and the token layer
+    * resolve from ONE source. */
+  --panel-slide-duration: var(--motion-duration-micro);
+  --panel-slide-ease: var(--motion-ease-panel);
 
   /* GLOBAL MOTION SYSTEM — the single theme-independent timing +
    * easing source for the whole app. Deliberately OUTSIDE any
@@ -841,6 +845,19 @@
   to   { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0) scale(1); }
 }
 
+/* Reduced-motion sibling of tooltip-enter (the DEF-234 travel class).
+ * The tooltip's entrance is its ONLY reveal — its base state is
+ * opacity: 0 + visibility: hidden — so a blanket `animation: none`
+ * would leave the chip permanently invisible. This keyframe keeps the
+ * reveal (opacity + visibility end state, forwards-filled) and drops
+ * every transform: no translate, no scale, no -50% centering travel.
+ * Selected ONLY inside the reduced-motion block below; the non-reduced
+ * entrance above is byte-identical to before. */
+@keyframes tooltip-enter-reduced {
+  from { opacity: 0; visibility: hidden; }
+  to   { opacity: 1; visibility: visible; }
+}
+
 /* STATE MOTION PRIMITIVES (chunk 2) — interactive/state feedback.
  * Selection indicators fade + slide in (tabs, rail tabs), thumbnails
  * swell 0.985 -> 1 on selection, success pops with a tiny overshoot,
@@ -1142,9 +1159,12 @@ input[type="checkbox"] {
 }
 
 /* The menu button — leading edge. Its popover anchors to its
- * bottom-left corner. */
+ * bottom-left corner. Phase 20 — the wrapper shrinks to the button's own
+ * box (align-self: center over the title bar's stretch) so `top: 100%`
+ * on the popover is the button's bottom edge, flush for the morph. */
 .titlebar-menu {
   position: relative;
+  align-self: center;
   display: flex;
   align-items: center;
   padding: 0 var(--sp-1) 0 var(--sp-2);
@@ -1196,7 +1216,9 @@ input[type="checkbox"] {
   position: absolute;
   top: 100%;
   left: var(--sp-1);
-  margin-top: 2px;
+  /* Phase 20 — no margin: the popover's top edge is the trigger button's
+   * bottom edge, so the morph's first frame is exactly the button box. */
+  margin-top: 0;
   min-width: 260px;
   max-height: min(560px, calc(100vh - 40px));
   overflow-y: auto;
@@ -2071,8 +2093,8 @@ input[type="checkbox"] {
    * the driver value, and the transition below fires on that inherited
    * change so panel and page tween together. */
   transition:
-    --tf-tools-inset var(--panel-slide-duration, 150ms)
-    var(--panel-slide-ease, cubic-bezier(0.16, 1, 0.3, 1));
+    --tf-tools-inset var(--panel-slide-duration)
+    var(--panel-slide-ease);
 }
 
 /* Phase 14.2 FIX 4 — the open Tools panel pushes the page view over
@@ -2792,8 +2814,8 @@ input[type="checkbox"] {
    * the two surfaces can never lead or lag each other (Phase 15 —
    * no hardcoded motion values). */
   transition:
-    right var(--panel-slide-duration, 150ms)
-      var(--panel-slide-ease, cubic-bezier(0.16, 1, 0.3, 1)),
+    right var(--panel-slide-duration)
+      var(--panel-slide-ease),
     filter var(--motion-duration-fast, 200ms)
       var(--motion-ease-standard, cubic-bezier(0.4, 0, 0.2, 1)),
     transform var(--motion-duration-fast, 200ms)
@@ -3228,7 +3250,10 @@ input[type="checkbox"] {
 
 .theme-toggle-popover {
   position: absolute;
-  top: calc(100% + 4px);
+  /* Phase 20 — flush with the trigger: the morph's first frame IS the
+   * pill's box, so any gap here would leave a seam at the anchored edge
+   * (was calc(100% + 4px)). */
+  top: 100%;
   right: 0;
   min-width: 176px;
   /* Embedded, surface-matched: the SAME menu surface + hairline as
@@ -5521,6 +5546,24 @@ rect.ann-highlight.ann-preview {
   gap: var(--sp-3);
 }
 
+/* Phase 20 — the modal's tab panes live inside the animated-size frame
+ * (TfResize): the frame's real height tweens over --motion-duration-standard
+ * on --motion-ease-layout while the panes cross-fade (the JS opacity ramps
+ * in paneSwapFor). The exiting pane is taken OUT of flow and pinned to the
+ * stack's top-left, so it keeps the exact geometry it had while it fades and
+ * never feeds the frame's height measurement — the animated target is
+ * always the incoming pane's height. */
+.sig-tab-pane {
+  position: relative;
+}
+
+.sig-tab-pane[data-tf-pane="out"] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+}
+
 .sig-canvas {
   display: block;
   width: 360px;
@@ -5767,6 +5810,17 @@ rect.ann-highlight.ann-preview {
    * (z-index:100+) so the dialogs still cover the palette when
    * both are open. */
   z-index: 30;
+  /* Phase 20 (criterion 2) — the list <-> grid layout swap changes the
+   * panel's own width (344px <-> 380px). Without this the panel JUMPED
+   * while its two siblings — the page-view inset (--tf-tools-inset) and
+   * the Tools badge's `right` — were already tweening on the shared
+   * --panel-slide-* token pair, so the page/badge slid and the panel
+   * snapped. The width channel now rides the SAME tokens as those
+   * siblings, keeping the three surfaces in lockstep. Reduced motion
+   * collapses it via the global media catch-all (0.01ms). */
+  transition:
+    width var(--panel-slide-duration)
+      var(--panel-slide-ease);
 }
 /* Phase 14 — grid layout is never icon-only: it renders the same
  * icon+title+description triplet as two-column cards, so the panel
@@ -8432,6 +8486,64 @@ rect.ann-highlight.ann-preview {
   .tools-palette-entry:focus-visible {
     transform: none !important;
   }
+
+  /* Phase 20 (criterion 6, DEF-234) — the edit inline editor's legacy CSS
+   * entrance keyframe (edit-bar-in, translateY -2px) is collapsed to
+   * 0.01ms by the catch-all above, but a collapsed animation still PAINTS
+   * the keyframe's `from` transform on its first frame — qa measured one
+   * frame of matrix(1,0,0,1,0,-2) before the TfBar wrapper's opacity-only
+   * reduced branch took over. The travel keyframe is removed outright so
+   * the surface is opacity-only (the wrapper still mounts/unmounts it
+   * structurally); the editor's non-reduced entrance is unchanged. */
+  .edit-inline-editor {
+    animation: none !important;
+  }
+
+  /* DEF-234 class, tooltip member — the tooltip is the one surface whose
+   * base state is HIDDEN and whose animation is the only reveal, so it
+   * cannot take `animation: none`: it swaps to the opacity-only reduced
+   * keyframe instead. Same selector, later in the file, so it wins over
+   * the non-reduced shorthand; the catch-all above collapses its
+   * duration + delay (instant reveal).
+   *
+   * The base rule's pre-entrance pose (translateY 3px + scale 0.98) is
+   * pinned to the entrance's END pose — centering only — so the settled
+   * frame paints the designed look. The transform channel is dropped from
+   * the transition as well: a collapsed transition still paints its
+   * FROM value on the first frame (measured: matrix(0.98,0,0,0.98,·,3)),
+   * so the pin has to land in one recalc, not over 0.01ms. Result: the
+   * first frame and the settled frame paint the SAME transform, with
+   * zero travel. */
+  .tooltip-anchor [data-tooltip]::after {
+    transition-property: opacity, visibility;
+  }
+
+  /* DEF-240 — the legacy --tf-motion-fast / --tf-ease-fast pair here is
+   * deliberate: the 0.01ms catch-all above overrides this animation's
+   * duration, so the vars only mirror the BASE rule's declaration (a
+   * swap back to the non-reduced tooltip keeps the same authored pair).
+   * It is not a live motion value on this path and not a Phase-20
+   * animation, so it stays out of the motion-token migration. */
+  .tooltip-anchor [data-tooltip]:hover::after {
+    animation: tooltip-enter-reduced var(--tf-motion-fast) var(--tf-ease-fast) forwards;
+    transform: translateX(-50%);
+  }
+
+  /* DEF-234 class, remaining members — every one of these keyframe-driven
+   * surfaces paints a `from` transform on the collapsed first frame
+   * (indicator-in translateY+scaleX, thumb-select scale, success-pop
+   * scale, shake-x translateX, update-prompt-indeterminate translateX)
+   * while its BASE state is already the visible end state. Removing the
+   * animation outright is the leak-free reduced representation: the
+   * surface still appears — instantly and in place — with no travel. */
+  .tab-active::after,
+  .thumb-current,
+  .tool-btn-save-clean,
+  .color-palette-error,
+  .optimize-error,
+  .update-prompt-progress-indeterminate .update-prompt-progress-bar {
+    animation: none !important;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -8841,6 +8953,21 @@ rect.ann-highlight.ann-preview {
 
 :root[data-theme="frosted"] .tools-palette {
   overflow: hidden;
+  /* DEF-233 — the frosted focus/defocus transition group near the top of
+   * this file declares `transition: backdrop-filter …, -webkit-backdrop-filter …`
+   * on `.tools-palette` (same specificity, earlier in source order), which
+   * REPLACED the Phase-20 base width transition instead of merging with it.
+   * In frosted the list<->grid swap therefore JUMPED (344<->380 in one
+   * frame) while the page inset and the Tools badge slid on
+   * --panel-slide-*. Re-declaring the same backdrop channel here PLUS the
+   * width channel on the identical --panel-slide-* token pair restores the
+   * lockstep; the frosted surface material/blur/radius/colour are
+   * untouched. */
+  transition:
+    backdrop-filter var(--tf-motion-normal) var(--ease-standard),
+    -webkit-backdrop-filter var(--tf-motion-normal) var(--ease-standard),
+    width var(--panel-slide-duration)
+      var(--panel-slide-ease);
 }
 
 :root[data-theme="frosted"] .toolbar::after,

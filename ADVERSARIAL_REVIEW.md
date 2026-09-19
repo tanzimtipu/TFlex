@@ -1810,3 +1810,258 @@ Disposition: ACCEPTED -> DEF-231 (LOW; the frosted menu surface must match its s
 | Silence attack on the new controls | Every new control (5 visible tool buttons, swatch, dropdown toggle, 11 menu rows, 3 pen widths) produced its promised state change when clicked; no silent no-op found. |
 
 **Total Phase-19-gate findings: 6 (1 HIGH, 3 MEDIUM, 2 LOW).**
+
+---
+
+## Phase 20 gate — animation standard (morphing surfaces, animated resizes, token-driven exits)
+
+Session label: `phase-20 gate`. Ran against the production dev bundle
+(`npm.cmd run build`; dist main + dist renderer launched through the canonical
+`e2e/lib/launch.cjs`). One harness: `test-fixtures/tools/adv051_phase20.cjs`
+(sections `spam`, `reopen`, `midanim`, `duprepro`, `dupctrl`, `sigkey`,
+`searchkey`, `edges`, `perf`, `ghosts`, `toolboxexit`, `stacking`). Every
+harness passed `node --check` before running. Screenshots `screenshots/adv051-*.png`.
+
+## ADV-051: Held Ctrl+Enter during the edit editor's exit window duplicates the committed text box (up to 10 boxes from one commit)
+
+- Session: phase-20 gate
+- Suggested severity: HIGH
+
+What I did:
+1. `node test-fixtures/tools/adv051_phase20.cjs duprepro`
+   - Baseline on report.pdf: `.edit-box`=0, `tflexDiagnostics().engineState.textBoxes`=0.
+   - Entered Edit content -> box tool, dragged a 180x60 box, typed `DUP-A`,
+     clicked Apply (`[data-edit-confirm]`). Read state immediately:
+     `{boxes:1, editors:1, textBoxes:1}`.
+   - Held Ctrl+Enter (10 presses at ~15ms) while the editor was still exiting,
+     then waited 1.8s and read state: `{boxes:10, editors:0, textBoxes:10}`.
+2. Control run `... dupctrl` (fresh launch): commit one box, wait 1.5s for the
+   exit to finish, then the same 10 Ctrl+Enter presses:
+   `rightAfter {boxes:1,textBoxes:1}`, `settled {boxes:1,textBoxes:1}`,
+   `afterKeys {boxes:1,textBoxes:1}`.
+
+Expected:
+- One commit creates one text box. A key-repeat after the commit must not
+  re-fire the stale commit closure. This is exactly what the Phase-20
+  `inert={!isPresent}` guard exists for: `AnnotationOverlay`'s textbox/note
+  editors carry it and did NOT duplicate (ADV below is the contrast).
+
+Actual:
+- After the commit, `document.activeElement` is still the editor's
+  `TEXTAREA.edit-inline-textarea` (`inEditor:true`), because the Apply button's
+  `onMouseDown` preventDefault keeps focus on the textarea. `EditInlineEditor`
+  renders its `TfBar` with NO `inert` and no `useIsPresent`, so during the
+  ~200-350ms exit window every Ctrl+Enter re-fires the old `onCommit` closure
+  (`EditOverlay.tsx:1544` -> `onCommitTextBox`). Nine extra boxes were created
+  from one commit; `engineState.textBoxes` reads 10, so a save writes all ten.
+- The annotation textbox (which HAS `inert={!isPresent}`,
+  `AnnotationOverlay.tsx:2445/2675/2802/3065`) did not duplicate:
+  `annBefore:0 -> annAfter:1` under the same Ctrl+Enter hammer.
+
+Screenshot: screenshots/adv051-midanim-edit-keyrepeat.png
+
+Disposition: ACCEPTED -> DEF-235 (HIGH; the exiting inline editor must be inert like the annotation toolboxes - a held Ctrl+Enter re-fired the commit closure and produced 10 text boxes from one)
+
+---
+
+## ADV-052: Held Enter during the signature pending view's exit window commits up to 11 signature placements from one Confirm click
+
+- Session: phase-20 gate
+- Suggested severity: HIGH
+
+What I did:
+1. `node test-fixtures/tools/adv051_phase20.cjs sigkey`
+   - Opened Sign -> Type, created a typed signature, picked it, clicked the
+     page to spawn the pending placement.
+   - Read state: `{signatures:0, placements:0, pending:1}`.
+   - Clicked `[data-sig-pending] [data-sig-action="confirm"]`, then held Enter
+     (10 presses at ~15ms) during the pending view's exit.
+   - Read state after 1.8s: `{signatures:11, placements:11, pending:0}`.
+   - Focus right after Confirm: `{tag:"BUTTON", action:"confirm", inPending:true}`.
+2. `... toolboxexit` measured the same exiting surfaces: `[data-sig-pending]`
+   and `[data-sig-action-bar]` exit with `pointer-events:none` but
+   `inert:[false]` for their whole exit/ghost window (~230ms, 14-15 ghost frames).
+
+Expected:
+- One Confirm commits one signature placement. A held/repeated Enter must not
+  re-fire the stale `onConfirm`; the Phase-20 `inert` guard on exiting
+  keyboard-bearing roots should block it (as it does for the annotation textbox).
+
+Actual:
+- `PendingPlacementView` (`SignaturesOverlay.tsx:665`) and `SignatureActionBar`
+  (`SignaturesOverlay.tsx:722`) are `TfBar`s with no `inert`; the exiting bar
+  stays keyboard-live, the Confirm button keeps DOM focus, and each key-repeat
+  Enter calls the stale `onConfirm` again. Eleven overlapping placements are
+  committed at the same rect; the screenshot shows the `SIGKEY` glyphs
+  over-printed. This is document corruption (a save bakes 11 signatures).
+
+Screenshot: screenshots/adv051-sigkey.png
+
+Disposition: ACCEPTED -> DEF-236 (HIGH; the exiting signature pending view must be inert - a held Enter committed 11 placements from one Confirm)
+
+---
+
+## ADV-053: Re-opening a morphing menu mid-exit grows the surface from its own mid-exit box, not the trigger (morph measured off a transformed rect)
+
+- Session: phase-20 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. `node test-fixtures/tools/adv051_phase20.cjs reopen` — for each of the three
+   morph menus: open, settle 500ms, press Escape, wait 80ms (mid-exit), click
+   the trigger again, and sample every frame (rect + `data-tf-morph` +
+   `transform-origin`). The first frame whose `data-tf-morph` is `in` is the
+   re-open's first morph frame.
+   - theme: trigger `[1154.4, 6.7, 131.6, 28]`; first `in` frame
+     `[1130.9, 23.3, 155.1, 62.1]` -> deviation **34.1px**.
+   - titlebar: trigger `[8, 9.7, 28, 22]`; first `in` frame
+     `[5.9, 21.5, 85.5, 130.3]` -> deviation **108.3px**.
+   - ann: trigger `[1387.3, 53, 28, 32]`; first `in` frame
+     `[1343.3, 69.2, 72.1, 137.4]` -> deviation **105.4px**.
+2. `... spam` (26 trigger clicks at 30-80ms): 13 re-enters detected per menu,
+   **12/13 with a first-frame deviation > 2.5px** (theme max 59.8px, titlebar
+   67.4px, ann 97.4px). The first open from fully closed had deviation 0.0px.
+
+Expected:
+- Phase-20 criterion 1: the surface must morph from the trigger's rect with no
+  gap, on every open — including a re-open during the close morph (a fast
+  double-click on the trigger).
+
+Actual:
+- `useMorphPreset` (`components/motion/useMorphPreset.ts:41`) measures
+  `surface.getBoundingClientRect()` in a layout effect keyed on `open`. When
+  `open` flips true while the exit is still in flight, the element still carries
+  the exit transform, so `morphFromTrigger` computes x/y/scale from the
+  shrunken rect and the enter continues from the exit's mid-state instead of the
+  trigger box. The surface pops in already large and off the trigger seam.
+
+Screenshot: screenshots/adv051-reopen-theme.png, adv051-reopen-titlebar.png, adv051-reopen-ann.png
+
+Disposition: ACCEPTED -> DEF-237 (MEDIUM; a menu re-opened mid-exit must morph from the TRIGGER rect, not the transformed mid-exit rect - measured 34-108px first-frame deviation)
+
+---
+
+## ADV-054: The exiting search bar is not inert — focus stays in it and Tab reaches it during the ghost window
+
+- Session: phase-20 gate
+- Suggested severity: LOW
+
+What I did:
+1. `node test-fixtures/tools/adv051_phase20.cjs ghosts` — opened Ctrl+F,
+   focused the input, typed `AB`, pressed Escape, sampled the exit:
+   `exitingFrames:21, ghostFrames:14` (~230ms at opacity 0),
+   `pointerEvents:["none"]`, **`inert:[false]`**,
+   `focusAfterEscape:{tag:"INPUT", inSearch:true}` (focus stays in the exiting
+   input).
+2. Pressed Escape, waited 60ms, pressed Tab: `activeElement` was a
+   `BUTTON` inside the exiting `.search-bar` (`inSearch:true`).
+3. `... searchkey` — typed `ZZ` 40ms after Escape; the input value stayed `AB`
+   (the keys did not change the value), so the practical impact is focus /
+   assistive-tech reachability, not stray input.
+
+Expected:
+- The dispatch states the Phase-20 exit treatment adds `inert` to the exiting
+  keyboard-bearing search bar (as `AnnotationOverlay` does). A node that is
+  fading out with `pointer-events:none` should also leave the focus order.
+
+Actual:
+- `SearchBar.tsx` renders `TfBar` with no `useIsPresent`/`inert`, so for the
+  ~230ms ghost window the input keeps focus and Tab can move focus into the
+  exiting, pointer-disabled bar. Not a crash; an a11y/focus leak.
+
+Screenshot: N/A
+
+Disposition: ACCEPTED -> DEF-238 (LOW; the exiting search bar must be inert so focus/Tab cannot enter it)
+
+---
+
+## ADV-055: The morph exit's first frame still reports pointer-events:auto (one hit-testable frame per exit)
+
+- Session: phase-20 gate
+- Suggested severity: LOW
+
+What I did:
+1. `node test-fixtures/tools/adv051_phase20.cjs spam` — sampled each menu every
+   frame through 26 rapid open/close toggles. Across 93 frames tagged
+   `data-tf-morph="out"` per menu, **13 reported `pointer-events:auto`** (one
+   per exit); the first out frame reads `pe:"auto", op:0.965`, the next reads
+   `pe:"none"`. `outPeValues:["auto","none"]` for all three menus.
+
+Expected:
+- The tfPresets contract says the exit pins `pointer-events:none` on the FIRST
+  exit frame so a closing surface can never swallow a click (DEF-087/088/090).
+
+Actual:
+- Motion applies the discrete `pointerEvents` one frame after the exit variant
+  starts, leaving a ~16ms hit-testable window at the start of every close. The
+  `TfBar` family measured `none` on all opacity<0.99 frames, so this is a
+  one-frame window specific to the morph exit path as sampled.
+
+Screenshot: N/A
+
+Disposition: ACCEPTED -> DEF-239 (LOW; the DEF-087/088/090 guard requires pointer-events:none on the FIRST exit frame - 13 out-frames measured with auto)
+
+---
+
+## ADV-056: Phase-20 palette width animation and reduced path use legacy literal tokens instead of the Phase-15 motion tokens
+
+- Session: phase-20 gate
+- Suggested severity: LOW
+
+What I did:
+1. Static audit of the Phase-20 code paths (criterion 7, "all new animations
+   resolve from the motion tokens; no hardcoded durations/easings/scales") and
+   token presence.
+
+Expected:
+- Every new Phase-20 animation reads the `--motion-*` tokens; the two new
+  tokens exist in `animations.css`, the `motionTokens.ts` mirror, the reduced
+  block and the preset catalog.
+
+Actual:
+- The two new tokens exist and are consumed (negative results below).
+- Literals on Phase-20 paths:
+  - `src/renderer/styles.css:5818-5819` and `:8959-8960` — the new palette
+    list<->grid width transition reads `var(--panel-slide-duration, 150ms)` /
+    `var(--panel-slide-ease, cubic-bezier(0.16, 1, 0.3, 1))`, i.e. the legacy
+    Phase-14.2 pair (declared as literals at `styles.css:186-187`) with literal
+    fallbacks, not the `--motion-*` set.
+  - `src/renderer/components/motion/TfMotion.tsx:106` — the reduced-motion
+    fallback in `useTfPreset` hardcodes `duration: 0, ease: "linear"` (the
+    `TfMorph` reduced path uses `msToSeconds(MOTION_DURATION.reduced)`).
+  - `src/renderer/components/motion/tfPresets.ts:283` — `MORPH_MIN_SCALE = 0.01`
+    (documented guard).
+  - The reduced-motion tooltip override uses `var(--tf-motion-fast)` /
+    `var(--tf-ease-fast)` (legacy band).
+- The dispatch itself names `--panel-slide-*` for the palette resize, so this
+  may be intentional; it is recorded because criterion 7 says the Phase-15
+  token set is the only source.
+
+Screenshot: N/A
+
+Disposition: ACCEPTED -> DEF-240 (LOW; criterion 7 - the palette width/reduced path and the TfMotion/TfPresets literals must resolve from the motion tokens)
+
+---
+
+## Phase 20 gate — negative results (attacks that did NOT reproduce)
+
+| Attack | Result |
+|---|---|
+| Mid-animation option click (theme popover) | Clicking `[data-theme-option="dark"]` 55ms into the enter morph applied the theme exactly once (`data-theme:"dark"`) and closed the popover (`popoverCount:0`); no double-toggle. |
+| Mid-animation row click (ann menu) | Baseline tool `null`, clicked `[data-tool="rect"]` 50ms into the enter morph -> `activeTool:"rect"`, menu closed (`menuCount:0`). Armed exactly once (a double-fire would have toggled it back to `null`). |
+| Tab click mid-resize (Sign modal) | Clicked Type then Saved 70ms apart mid-resize: final `panes:["in"]`, `paneCount:1`, `outPanes:0`, `frameH:179`, `frameTr:"none"`, active tab `Saved (0)`. No stranded out-pane, no stuck transform. |
+| Escape mid-morph | Escape 50ms into the theme morph closed it (`popoverCount:0`, `aria-expanded:"false"`). |
+| Annotation textbox Ctrl+Enter key-repeat (inert present) | `annBefore:0 -> annAfter:1` under 8 Ctrl+Enter presses during the exit; `inert` guard holds. |
+| Edge clamping at 640x520 | theme `[310,35.7 -> 486,165]`, titlebar `[4,32.7 -> 264,512.7]`, ann `[415.3,156 -> 615.3,520]` — all inside the viewport (`insideViewport:true`); normal-open first-frame deviation 0.0px for all three. |
+| Window resize mid-morph | Theme popover open, resized 640x520 -> 900x700 45ms in: final `x:570..746`, `tr:"none"`, inside 900x700. No stranded surface or stale transform. |
+| Window resize mid-Sign-resize | Resized 50ms into a tab switch: `frameH:262`, `frameW:527`, `outPanes:0`. Settles cleanly. |
+| 60fps frame times (15 runs: morph open/close, sign resize, palette resize, swap x light/dark/frosted) | Every run p50 **16.7ms**, p95 <= **16.8ms**, max **16.9ms**, **0** frames >33ms; only 1-4 frames at 16.8ms (vsync jitter). Frosted is identical to light/dark — no 30fps-class defect (`screenshots/adv051-perf.json`). |
+| Ghost hit-test / click-through (search bar) | Exit frames `pointer-events:["none"]`; `elementFromPoint` at the bar's centre during the exit returned a non-search element (`inSearch:false`); strict locator saw exactly 1 search bar after a ghost cycle; no duplicate `id`s. |
+| Ann menu exit hooks | While the exiting menu twin was present: `[data-ann-dropdown-menu]` count 1, zero duplicate ids, exiting `pointer-events:none`; a strict Playwright click timed out on actionability (no strict-mode ambiguity). |
+| Two floating surfaces / modal stacking | Real clicks never left two floating menus open at once (clicking the theme toggle closed the ann menu and opened the theme popover); a modal dialog blocked a click on the theme toggle behind it (`behind.clicked:false`), dialog stayed open, no menu opened behind it. |
+| Frosted blur / stacking | `:root[data-theme="frosted"] .ann-tool-menu` computes `backdrop-filter: blur(24px) saturate(1.2)`, `z-index:50`, `position:fixed`; `elementFromPoint` at its centre resolves inside the menu (`inMenu:true`) — DEF-231 fixed, no surface painting under the page. |
+| Theme switch mid-morph | Switching to dark 50ms into the morph applied `data-theme:"dark"` and unmounted the popover (`themePop:0`). |
+| New tokens present | `--motion-duration-content: 80ms` and `--motion-opacity-surface: 0.85` exist in `animations.css:36/74`, in `motionTokens.ts` (`MOTION_DURATION.content`, `MOTION_OPACITY.surface`), in the reduced-motion block (`animations.css:102`), and are consumed by `tfPresets.ts` (`MOTION_OPACITY.surface` in `morphFromTrigger`, `MOTION_DURATION.fast` for the morph tween). |
+| Exit pointer-events on the remaining TfBar toolboxes | `[data-sig-pending]`, `[data-sig-action-bar]`, `[data-stamp-type-editor]` all measured `pointerEvents:["none"]` across their exit and ghost frames (the inline `pointerEvents:"auto"` on the sig surfaces does NOT defeat the exit guard); none are `inert`. |
+
+**Total Phase-20-gate findings: 6 (2 HIGH, 1 MEDIUM, 3 LOW).**

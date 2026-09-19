@@ -823,19 +823,41 @@ describe("Phase D — reduced motion (motion wrappers + frosted reflection)", ()
     expect(body).toMatch(/initial:\s*\{ opacity: 0 \}/);
     expect(body).toMatch(/animate:\s*\{ opacity: 1 \}/);
     expect(body).toMatch(/exit:\s*\{ opacity: 0 \}/);
-    expect(body).toMatch(/duration:\s*0/);
+    // DEF-240 — the instant tween resolves its duration from the
+    // canonical reduced-motion token (0ms), not a bare `0` literal.
+    expect(body).toMatch(/duration:\s*msToSeconds\(MOTION_DURATION\.reduced\)/);
+    expect(body).not.toMatch(/duration:\s*0\b/);
     expect(body).not.toMatch(/\b(x|y|scale)\s*:/);
   });
 
   it("every spring target animates compositor-only properties (never layout)", () => {
-    const noComments = presets.replace(/\/\/.*$/gm, "");
+    // The spring catalog ends where the Phase 20 morph primitive begins:
+    // a morph is a measured FLIP (so its rect type carries left/top/…)
+    // and a token tween, not a spring — it has its own contract below.
+    const springCatalog = presets.split("export interface MorphRect")[0] ?? "";
+    const noComments = springCatalog.replace(/\/\/.*$/gm, "");
     // Springs carry transform (x/y/scale) + opacity only; the single
     // exception is the instant pointer-events: none guard on exits
     // (non-animatable, set on the first frame).
     expect(noComments).not.toMatch(/\b(width|height|top|left|right|bottom|margin|padding)\s*:/);
-    // No tween durations anywhere — all presets are spring + damping.
+    // No tween durations anywhere in the spring catalog — all presets
+    // are spring + damping.
     expect(noComments).not.toMatch(/duration\s*:/);
     expect(noComments).toMatch(/type:\s*"spring"/);
+  });
+
+  it("the Phase 20 morph preset resolves entirely from the motion tokens", () => {
+    const morphSection = presets.slice(presets.indexOf("export interface MorphRect"));
+    expect(morphSection.length).toBeGreaterThan(0);
+    // Durations/eases come from the token mirror, never literals.
+    expect(morphSection).toMatch(/duration:\s*msToSeconds\(MOTION_DURATION\.fast\)/);
+    expect(morphSection).toMatch(/ease:\s*MOTION_EASE\.enter/);
+    expect(morphSection).toMatch(/ease:\s*MOTION_EASE\.exit/);
+    // The surface opacity poles are tokens too (0.85 start, 0 end).
+    expect(morphSection).toMatch(/opacity:\s*MOTION_OPACITY\.surface/);
+    expect(morphSection).toMatch(/opacity:\s*MOTION_OPACITY\.hidden/);
+    // A morph is one coordinated move: no spring overshoot at the seam.
+    expect(morphSection).not.toMatch(/stiffness|damping/);
   });
 
   it("the reduced-motion media block disables the frosted reflection outright", () => {
@@ -845,6 +867,22 @@ describe("Phase D — reduced motion (motion wrappers + frosted reflection)", ()
     }
     expect(body).toMatch(/animation:\s*none\s*!important/);
     expect(body).toMatch(/opacity:\s*0\s*!important/);
+  });
+
+  it("the reduced-motion block removes the inline editor's travel keyframe (DEF-234)", () => {
+    // The edit inline editor's CSS entrance (edit-bar-in) carries a
+    // translateY(-2px). The catch-all collapses it to 0.01ms, but a
+    // collapsed animation still paints its `from` transform on the first
+    // frame — qa measured one frame of matrix(1,0,0,1,0,-2) under
+    // emulated reduced motion. The travel keyframe must be removed
+    // outright; the TfBar wrapper's opacity-only reduced branch (asserted
+    // above) still mounts/unmounts the editor structurally.
+    expect(css).toMatch(/@keyframes\s+edit-bar-in\s*\{/);
+    const body = reducedBody();
+    const rule = /\.edit-inline-editor\s*\{([^}]*)\}/.exec(body)?.[1] ?? "";
+    expect(rule, "reduced-motion .edit-inline-editor rule missing").not.toBe("");
+    expect(rule).toMatch(/animation:\s*none\s*!important/);
+    expect(rule).not.toMatch(/animation-name|animation-duration/);
   });
 
   it("collapses every remaining CSS-driven animation via the media catch-all", () => {
@@ -1036,8 +1074,9 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
   });
 
   it("the theme toggle dropdown is embedded and surface-matched (never detached)", () => {
-    // The popover anchors flush under the trigger (top: calc(100% +
-    // 4px) inside a position:relative wrapper) and paints the SAME
+    // The popover anchors FLUSH under the trigger (top: 100% inside a
+    // position:relative wrapper — Phase 20 removed the old 4px gap so the
+    // morph's first frame is the trigger's own box) and paints the SAME
     // menu surface as the titlebar popover — it reads as part of the
     // chrome, not a floating panel.
     const wrap = /\.theme-toggle-wrap\s*\{([\s\S]*?)\n\}/m.exec(css);
@@ -1048,7 +1087,8 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     if (popover === null) return;
     const body = popover[1] ?? "";
     expect(body).toMatch(/position:\s*absolute/);
-    expect(body).toMatch(/top:\s*calc\(100%\s*\+\s*4px\)/);
+    expect(body).toMatch(/top:\s*100%/);
+    expect(body).not.toMatch(/top:\s*calc\(100%/);
     expect(body).toMatch(/background:\s*var\(--menu-bg\)/);
   });
 
@@ -1181,3 +1221,621 @@ describe("Phase 19 — annotation tool-group motion resolves from the centralize
     );
   });
 });
+
+/* ===========================================================================
+ * Phase 20 — the surface motion contract (success criterion 5).
+ *
+ * The enforceable standard: EVERY animated surface family in the app is
+ * listed in ONE table, and the table is checked against the shipped tree:
+ *
+ *   1. its root is one of the token-driven motion primitives (TfDialog /
+ *      TfBackdrop / TfSheet / TfMorph / TfPopover / TfPanel / TfBar /
+ *      TfBarTop / TfToast / TfResize / AnimatedTab) — swapping the
+ *      primitive for a plain element (removing the animation) fails here;
+ *   2. its mount site sits inside an AnimatePresence, so the EXIT actually
+ *      runs instead of the surface popping away;
+ *   3. its preset (tfPresets.ts) names a token spring (or, for a morph, the
+ *      token tween factory) — hardcoding a duration/easing in the preset
+ *      fails here;
+ *   4. every preset's exit pins `pointerEvents: "none"` on its first exit
+ *      frame (the DEF-087/088/090 cross-bubbling guard).
+ *
+ * Removing a surface's animation therefore turns this spec red. The
+ * demonstration used during development (temporarily replacing SearchBar's
+ * <TfBar with a <div) failed at check 1; restoring the tree makes it pass.
+ * ======================================================================== */
+
+describe("Phase 20 — surface motion contract", () => {
+  const css = readStyles();
+  const cssClean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const presets = readFileSync(
+    resolve(process.cwd(), "src/renderer/components/motion/tfPresets.ts"),
+    "utf8",
+  );
+  const resizeSrc = readFileSync(
+    resolve(process.cwd(), "src/renderer/components/motion/TfResize.tsx"),
+    "utf8",
+  );
+  const read = (rel: string): string => readFileSync(resolve(process.cwd(), rel), "utf8");
+
+  /** The token springs a preset transition may name. A literal duration or
+   *  a raw easing here is a hardcoded animation and must fail. */
+  const TOKEN_SPRINGS = ["springPanel", "springDialog", "springQuick", "springToastSuccess"];
+
+  interface SurfaceContract {
+    /** Human label (also the test name). */
+    surface: string;
+    /** The file that OWNS the primitive's root (its enter/exit). */
+    wrapperFile: string;
+    /** The primitive tag that must appear in the wrapper file. */
+    primitive: string;
+    /** File(s) whose AnimatePresence boundary mounts the surface. */
+    presenceFiles: string[];
+    /** The preset constant in tfPresets.ts (null = variant-hook surface). */
+    preset: string | null;
+    /** For variant-hook surfaces: the hook the wrapper must consume. */
+    variantHook?: string;
+  }
+
+  const SURFACES: SurfaceContract[] = [
+    {
+      surface: "modal dialog",
+      wrapperFile: "src/renderer/components/ConfirmDialog.tsx",
+      primitive: "TfDialog",
+      presenceFiles: ["src/renderer/components/ConfirmDialog.tsx"],
+      preset: "tfDialog",
+    },
+    {
+      surface: "dialog backdrop",
+      wrapperFile: "src/renderer/components/ConfirmDialog.tsx",
+      primitive: "TfBackdrop",
+      presenceFiles: ["src/renderer/components/ConfirmDialog.tsx"],
+      preset: "tfBackdrop",
+    },
+    {
+      surface: "sheet dialog",
+      wrapperFile: "src/renderer/components/AboutDialog.tsx",
+      primitive: "TfSheet",
+      presenceFiles: ["src/renderer/components/AboutDialog.tsx"],
+      preset: "tfDialog",
+    },
+    {
+      surface: "title-bar menu (morph)",
+      wrapperFile: "src/renderer/components/AppHeader.tsx",
+      primitive: "TfMorph",
+      presenceFiles: ["src/renderer/components/AppHeader.tsx"],
+      preset: "tfMorph",
+    },
+    {
+      surface: "theme popover (morph)",
+      wrapperFile: "src/renderer/components/TitleBar.tsx",
+      primitive: "TfMorph",
+      presenceFiles: ["src/renderer/components/TitleBar.tsx"],
+      preset: "tfMorph",
+    },
+    {
+      surface: "annotation tools menu (morph)",
+      wrapperFile: "src/renderer/annotations/AnnotationToolbar.tsx",
+      primitive: "TfMorph",
+      presenceFiles: ["src/renderer/annotations/AnnotationToolbar.tsx"],
+      preset: "tfMorph",
+    },
+    {
+      surface: "annotation color popover",
+      wrapperFile: "src/renderer/annotations/AnnotationToolbar.tsx",
+      primitive: "TfPopover",
+      presenceFiles: ["src/renderer/annotations/AnnotationToolbar.tsx"],
+      preset: "tfPopover",
+    },
+    {
+      surface: "tools palette panel",
+      wrapperFile: "src/renderer/components/ToolsPalette.tsx",
+      primitive: "TfPanel",
+      presenceFiles: ["src/renderer/App.tsx"],
+      preset: "tfPanel",
+    },
+    {
+      surface: "signature modal tab resize",
+      wrapperFile: "src/renderer/signatures/SignatureManagerModal.tsx",
+      primitive: "TfResize",
+      presenceFiles: ["src/renderer/signatures/SignatureManagerModal.tsx"],
+      preset: null,
+    },
+    {
+      surface: "edit toolbar",
+      wrapperFile: "src/renderer/edit/EditToolbar.tsx",
+      primitive: "TfBar",
+      presenceFiles: ["src/renderer/components/DocumentView.tsx"],
+      preset: "tfBar",
+    },
+    {
+      surface: "search bar",
+      wrapperFile: "src/renderer/components/SearchBar.tsx",
+      primitive: "TfBar",
+      presenceFiles: ["src/renderer/components/DocumentView.tsx"],
+      preset: "tfBar",
+    },
+    {
+      surface: "edit inline editor",
+      wrapperFile: "src/renderer/edit/EditInlineEditor.tsx",
+      primitive: "TfBar",
+      presenceFiles: ["src/renderer/edit/EditOverlay.tsx"],
+      preset: "tfBar",
+    },
+    {
+      surface: "annotation toolboxes (textbox / callout / note / committed)",
+      wrapperFile: "src/renderer/annotations/AnnotationOverlay.tsx",
+      primitive: "TfBar",
+      presenceFiles: ["src/renderer/annotations/AnnotationOverlay.tsx"],
+      preset: "tfBar",
+    },
+    {
+      surface: "stamp type editor",
+      wrapperFile: "src/renderer/annotations/StampAnnotations.tsx",
+      primitive: "TfBar",
+      presenceFiles: ["src/renderer/annotations/StampAnnotations.tsx"],
+      preset: "tfBar",
+    },
+    {
+      surface: "signature action bar",
+      wrapperFile: "src/renderer/signatures/SignaturesOverlay.tsx",
+      primitive: "TfBar",
+      presenceFiles: ["src/renderer/signatures/SignaturesOverlay.tsx"],
+      preset: "tfBar",
+    },
+    {
+      surface: "content action bar",
+      wrapperFile: "src/renderer/components/selectableContent.tsx",
+      primitive: "TfBar",
+      presenceFiles: [
+        "src/renderer/annotations/AnnotationOverlay.tsx",
+        "src/renderer/annotations/StampAnnotations.tsx",
+        "src/renderer/signatures/SignaturesOverlay.tsx",
+      ],
+      preset: "tfBar",
+    },
+    {
+      surface: "OCR suspects bar",
+      wrapperFile: "src/renderer/components/OcrSuspectsPanel.tsx",
+      primitive: "TfBarTop",
+      presenceFiles: ["src/renderer/App.tsx"],
+      preset: "tfBarTop",
+    },
+    {
+      surface: "toasts",
+      wrapperFile: "src/renderer/components/Toasts.tsx",
+      primitive: "TfToast",
+      presenceFiles: ["src/renderer/components/Toasts.tsx"],
+      preset: "tfToast",
+    },
+    {
+      surface: "document tabs",
+      wrapperFile: "src/renderer/components/AnimatedTab.tsx",
+      primitive: "motion.li",
+      presenceFiles: ["src/renderer/components/AppHeader.tsx"],
+      preset: null,
+      variantHook: "useTabVariants",
+    },
+  ];
+
+  it("the surface table is non-vacuous and every entry is distinct", () => {
+    expect(SURFACES.length).toBeGreaterThanOrEqual(15);
+    const keys = SURFACES.map((s) => `${s.wrapperFile}:${s.primitive}:${s.preset ?? ""}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("every surface is rooted in a token-driven primitive and mounted in a presence boundary", () => {
+    for (const s of SURFACES) {
+      const wrapper = read(s.wrapperFile);
+      expect(wrapper, `${s.surface}: ${s.wrapperFile} must root in <${s.primitive}`).toContain(
+        `<${s.primitive}`,
+      );
+      for (const pf of s.presenceFiles) {
+        const presence = read(pf);
+        expect(
+          presence,
+          `${s.surface}: ${pf} must wrap the mount in AnimatePresence so the exit runs`,
+        ).toContain("AnimatePresence");
+      }
+      if (s.variantHook !== undefined) {
+        expect(wrapper, `${s.surface}: must consume ${s.variantHook}`).toContain(s.variantHook);
+      }
+    }
+  });
+
+  /** The preset block in tfPresets.ts: from `export const <name>` to the
+   *  next export / section comment. */
+  const presetBlock = (name: string): string => {
+    const start = presets.indexOf(`export const ${name}`);
+    expect(start, `tfPresets.ts must declare ${name}`).toBeGreaterThanOrEqual(0);
+    const rest = presets.slice(start + 1);
+    const boundaries = [rest.indexOf("export const "), rest.indexOf("/* ---")].filter(
+      (i) => i >= 0,
+    );
+    const end = boundaries.length > 0 ? Math.min(...boundaries) : rest.length;
+    return rest.slice(0, end);
+  };
+
+  it("every named preset exists with an enter, an animate and an exit", () => {
+    const names = SURFACES.map((s) => s.preset).filter((p): p is string => p !== null);
+    for (const name of new Set(names)) {
+      if (name === "tfMorph") {
+        expect(presets).toContain("export function tfMorph");
+        expect(presets).toMatch(/export const morphTransitionEnter: Transition = \{[\s\S]*?MOTION_DURATION\.fast/);
+        continue;
+      }
+      const block = presetBlock(name);
+      expect(block, `${name} must define initial`).toMatch(/initial:\s*\{/);
+      expect(block, `${name} must define animate`).toMatch(/animate:\s*\{/);
+      expect(block, `${name} must define exit`).toMatch(/exit:\s*\{/);
+    }
+  });
+
+  it("every preset resolves its transition from a token spring (never a literal)", () => {
+    for (const name of [
+      "tfPanel",
+      "tfPanelLeft",
+      "tfDialog",
+      "tfBackdrop",
+      "tfMenu",
+      "tfMenuUp",
+      "tfPopover",
+      "tfToast",
+      "tfToastSuccess",
+      "tfBar",
+      "tfBarTop",
+    ]) {
+      const block = presetBlock(name);
+      const m = /transition:\s*(spring\w+)\s*,/.exec(block);
+      expect(m, `${name} must name its token spring transition`).not.toBeNull();
+      expect(
+        TOKEN_SPRINGS,
+        `${name} transition must be one of the token springs, not a literal`,
+      ).toContain(m?.[1]);
+    }
+    // The spring catalog itself must never carry a raw timing value
+    // (comments explain the bands in ms — strip them before scanning).
+    const springCatalog = (presets.split("export interface MorphRect")[0] ?? "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+    expect(springCatalog).not.toMatch(/\b\d+(?:\.\d+)?ms\b/);
+    expect(springCatalog).not.toMatch(/cubic-bezier\(/);
+    expect(springCatalog).not.toMatch(/duration\s*:/);
+  });
+
+  it("every preset's exit pins pointer-events: none on its first exit frame", () => {
+    for (const name of [
+      "tfPanel",
+      "tfPanelLeft",
+      "tfDialog",
+      "tfBackdrop",
+      "tfMenu",
+      "tfMenuUp",
+      "tfPopover",
+      "tfToast",
+      "tfToastSuccess",
+      "tfBar",
+      "tfBarTop",
+    ]) {
+      expect(presetBlock(name), `${name} exit must pin pointer-events: none`).toMatch(
+        /pointerEvents:\s*"none"/,
+      );
+    }
+  });
+
+  it("the TfResize primitive resolves its size tween from the motion tokens", () => {
+    expect(resizeSrc).toMatch(/duration:\s*msToSeconds\(MOTION_DURATION\.standard\)/);
+    expect(resizeSrc).toMatch(/ease:\s*MOTION_EASE\.layout/);
+    // No raw tween duration anywhere in the primitive.
+    expect(resizeSrc).not.toMatch(/duration:\s*0?\.\d+/);
+  });
+
+  it("the tools palette list<->grid width swap is a token-driven transition (criterion 2)", () => {
+    // The panel's own width (344px list / 380px grid) must tween on the
+    // SAME --panel-slide-* tokens its siblings (the page-view inset and
+    // the Tools badge) already consume — otherwise the panel jumps while
+    // the page and badge slide.
+    const block = /\.tools-palette\s*\{([\s\S]*?)\n\}/.exec(cssClean)?.[1] ?? "";
+    expect(block, ".tools-palette must declare a width transition").toMatch(/transition:/);
+    expect(block).toMatch(/width\s+var\(--panel-slide-duration/);
+    expect(block).toMatch(/var\(--panel-slide-ease/);
+    // The two widths the swap moves between still exist.
+    expect(cssClean).toMatch(/\.tools-palette\s*\{[\s\S]*?width:\s*344px/);
+    expect(cssClean).toMatch(/\.tools-palette-grid\s*\{\s*width:\s*380px/);
+  });
+
+  it("the frosted tools-palette override keeps the width channel alongside its backdrop transition (DEF-233)", () => {
+    // The frosted focus/defocus group declares `transition: backdrop-filter
+    // …, -webkit-backdrop-filter …` on `.tools-palette` with the SAME
+    // specificity as the base rule but earlier in the file — before DEF-233
+    // it REPLACED the width transition (computed transition-property was
+    // "backdrop-filter, -webkit-backdrop-filter"), so the default frosted
+    // theme snapped the panel 344<->380 while the inset and badge slid.
+    // The frosted override must re-declare the backdrop channel AND the
+    // width channel on the same --panel-slide-* token pair.
+    const frosted = /:root\[data-theme="frosted"\]\s+\.tools-palette\s*\{([^}]*)\}/.exec(
+      cssClean,
+    )?.[1] ?? "";
+    expect(frosted, "frosted .tools-palette rule missing").not.toBe("");
+    expect(frosted).toMatch(/backdrop-filter\s+var\(--tf-motion-normal/);
+    expect(frosted).toMatch(/width\s+var\(--panel-slide-duration/);
+    expect(frosted).toMatch(/var\(--panel-slide-ease/);
+    // The frosted surface material/blur/radius/colour stay untouched by the
+    // transition fix: the override carries no surface re-declaration.
+    expect(frosted).not.toMatch(/background:|backdrop-filter:\s*var\(--glass-blur/);
+    expect(frosted).not.toMatch(/border-radius:|box-shadow:/);
+  });
+});
+
+/* ===========================================================================
+ * DEF-234 — the reduced-motion travel class.
+ *
+ * A collapsed CSS animation (the reduced-motion catch-all drops every
+ * duration to 0.01ms) still PAINTS its keyframe's `from` transform on the
+ * first frame. Any surface whose entrance/state keyframe carries a `from`
+ * transform therefore needs an explicit reduced-motion path:
+ *   (a) `animation: none !important` — correct when the element's base
+ *       state is ALREADY the visible end state; the surface still
+ *       appears, instantly and in place, with no travel; or
+ *   (b) an opacity-only reduced keyframe — required when the animation IS
+ *       the reveal (the tooltip's base state is opacity 0 + visibility
+ *       hidden, so (a) would leave it permanently invisible).
+ *
+ * The table below is the audited leak set. It is checked against the
+ * shipped stylesheet in BOTH directions: every listed keyframe must really
+ * carry a `from` transform and really be applied by its selector (so the
+ * table can never rot into vacuity), and every listed surface must really
+ * be neutralised inside the reduced-motion block. Surfaces that are
+ * leak-free by construction (opacity-only keyframes, a spin with no `from`
+ * frame, a shimmer whose `from` equals its resting transform, and the
+ * spring-migrated keyframes no rule applies) are pinned in the tests that
+ * follow.
+ * ======================================================================== */
+
+describe("DEF-234 — reduced-motion travel class", () => {
+  const css = readStyles();
+  const cssClean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  const animCss = readFileSync(
+    resolve(process.cwd(), "src/renderer/styles/animations.css"),
+    "utf8",
+  );
+  const animClean = animCss.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  const normalized = (s: string): string => s.replace(/\s+/g, " ").trim();
+
+  /** The @media (prefers-reduced-motion: reduce) block body. */
+  const reducedBody = (): string => {
+    const m = /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/.exec(cssClean);
+    expect(m).not.toBeNull();
+    return m?.[1] ?? "";
+  };
+
+  /** The stylesheet WITHOUT the reduced block, so a reduced override is
+   *  never mistaken for the live non-reduced rule. */
+  const cssOutsideReduced = (): string => cssClean.replace(reducedBody(), "");
+
+  /** Every @keyframes block: name -> body. */
+  const keyframes = (source: string): Map<string, string> => {
+    const map = new Map<string, string>();
+    for (const m of source.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?)\n\}/g)) {
+      map.set(m[1] ?? "", m[2] ?? "");
+    }
+    return map;
+  };
+  const kfs = keyframes(cssClean);
+
+  /** Every rule that declares `animation`/`animation-name`: selector ->
+   *  the named keyframe (comma-separated selector lists are split). */
+  const animationUses = (source: string): { selector: string; name: string }[] => {
+    const uses: { selector: string; name: string }[] = [];
+    for (const m of source.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+      const decl = /(?:^|[;\s])animation(?:-name)?\s*:\s*([\w-]+)/.exec(m[2] ?? "");
+      if (decl === null) continue;
+      const name = decl[1] ?? "";
+      if (name === "none") continue;
+      for (const sel of (m[1] ?? "").split(",")) {
+        const key = normalized(sel);
+        if (key !== "") uses.push({ selector: key, name });
+      }
+    }
+    return uses;
+  };
+
+  /** The reduced block's animation overrides by selector -> rule body. */
+  const reducedAnimationBySelector = (): Map<string, string> => {
+    const map = new Map<string, string>();
+    for (const m of reducedBody().matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+      const body = m[2] ?? "";
+      if (!/(?:^|[;\s])animation(?:-name)?\s*:/.test(body)) continue;
+      for (const sel of (m[1] ?? "").split(",")) {
+        const key = normalized(sel);
+        if (key !== "") map.set(key, body);
+      }
+    }
+    return map;
+  };
+
+  /** The audited leak set: each keyframe's `from` frame carries travel and
+   *  each surface's base state is already the visible end state, so
+   *  `animation: none` is the reduced representation. */
+  const TRAVEL_SURFACES: { selector: string; keyframe: string; surface: string }[] = [
+    { selector: ".edit-inline-editor", keyframe: "edit-bar-in", surface: "edit inline editor" },
+    { selector: ".tab-active::after", keyframe: "indicator-in", surface: "active tab underline" },
+    { selector: ".thumb-current", keyframe: "thumb-select", surface: "current thumbnail" },
+    { selector: ".tool-btn-save-clean", keyframe: "success-pop", surface: "save-clean button" },
+    { selector: ".color-palette-error", keyframe: "shake-x", surface: "color palette error" },
+    { selector: ".optimize-error", keyframe: "shake-x", surface: "optimize error" },
+    {
+      selector: ".update-prompt-progress-indeterminate .update-prompt-progress-bar",
+      keyframe: "update-prompt-indeterminate",
+      surface: "update indeterminate bar",
+    },
+  ];
+
+  it("the leak table is non-vacuous: every keyframe exists, carries a from transform, and is applied", () => {
+    expect(TRAVEL_SURFACES.length).toBeGreaterThanOrEqual(6);
+    const uses = animationUses(cssOutsideReduced());
+    for (const { selector, keyframe, surface } of TRAVEL_SURFACES) {
+      const body = kfs.get(keyframe);
+      expect(body, `${keyframe} keyframe missing`).toBeTruthy();
+      expect(body ?? "", `${keyframe} must carry a from-frame transform`).toMatch(
+        /(?:from|0%)\s*\{[^}]*transform\s*:/,
+      );
+      expect(
+        uses.some((u) => u.name === keyframe && u.selector.includes(selector)),
+        `${surface}: no non-reduced rule applies ${keyframe} to ${selector}`,
+      ).toBe(true);
+    }
+  });
+
+  it("every audited travel surface is neutralised inside the reduced-motion block", () => {
+    const reduced = reducedAnimationBySelector();
+    for (const { selector, surface } of TRAVEL_SURFACES) {
+      const body = reduced.get(selector);
+      expect(body, `${surface}: no reduced-motion animation override for ${selector}`).toBeTruthy();
+      if (body === undefined) continue;
+      if (/animation:\s*none\s*!important/.test(body)) continue;
+      // Otherwise the override must swap in an opacity-only keyframe.
+      const name = /animation:\s*([\w-]+)/.exec(body)?.[1] ?? "";
+      const kf = kfs.get(name) ?? "";
+      expect(kf, `${surface}: reduced keyframe ${name} must be opacity-only`).not.toMatch(
+        /transform\s*:/,
+      );
+    }
+  });
+
+  it("the tooltip keeps its reveal through an opacity-only reduced keyframe (no travel)", () => {
+    // The tooltip cannot take `animation: none` — its base state is
+    // opacity: 0 + visibility: hidden and the animation is its only
+    // reveal. It gets an opacity-only sibling keyframe selected by the
+    // SAME hover selector inside the reduced block.
+    const kf = kfs.get("tooltip-enter-reduced");
+    expect(kf, "@keyframes tooltip-enter-reduced missing").toBeTruthy();
+    expect(kf ?? "").toMatch(/opacity\s*:/);
+    expect(kf ?? "").toMatch(/visibility:\s*visible/);
+    expect(kf ?? "", "the reduced keyframe must carry no transform").not.toMatch(/transform\s*:/);
+
+    const rule = reducedAnimationBySelector().get(".tooltip-anchor [data-tooltip]:hover::after");
+    expect(rule, "reduced tooltip hover rule missing").toBeTruthy();
+    if (rule === undefined) return;
+    expect(rule).toMatch(
+      /animation:\s*tooltip-enter-reduced\s+var\(--tf-motion-fast\)\s+var\(--tf-ease-fast\)\s+forwards/,
+    );
+    // The base rule's pre-entrance pose is pinned to the entrance's END
+    // pose (centering only), so the collapsed first frame and the settled
+    // frame paint the same static transform.
+    expect(rule).toMatch(/transform:\s*translateX\(-50%\)\s*;/);
+    expect(rule).not.toMatch(/translateY|scale\(/);
+    // Tokens only: no literal duration, no raw easing.
+    expect(rule).not.toMatch(/\d+(?:\.\d+)?ms\b/);
+    expect(rule).not.toMatch(/cubic-bezier\(/);
+
+    // A collapsed TRANSITION also paints its from-value on the first frame
+    // (measured: matrix(0.98,0,0,0.98,·,3)), so the transform channel is
+    // dropped from the tooltip's transition under reduced motion — the pin
+    // must land in one recalc, not over 0.01ms.
+    const base = reducedAnimationBySelector().get(".tooltip-anchor [data-tooltip]::after");
+    const baseRule =
+      /\.tooltip-anchor\s*\[data-tooltip\]::after\s*\{([^}]*)\}/.exec(reducedBody())?.[1] ?? "";
+    expect(base, "reduced tooltip base rule missing").not.toBe("");
+    expect(baseRule, "reduced tooltip base rule missing").not.toBe("");
+    expect(baseRule).toMatch(/transition-property:\s*opacity,\s*visibility\s*;/);
+    expect(baseRule, "the transform channel must not transition").not.toMatch(
+      /transition-property:[^;]*transform/,
+    );
+  });
+
+  it("the non-reduced tooltip entrance is untouched (travel keyframe + dwell delay)", () => {
+    const hover =
+      /\.tooltip-anchor\s*\[data-tooltip\]:hover::after\s*\{([\s\S]*?)\n\}/.exec(cssClean)?.[1] ??
+      "";
+    expect(hover).toMatch(
+      /animation:\s*tooltip-enter\s+var\(--tf-motion-fast\)\s+var\(--tf-ease-fast\)\s+300ms\s+forwards/,
+    );
+    expect(kfs.get("tooltip-enter") ?? "").toMatch(
+      /from\s*\{[^}]*transform:\s*translateX\(-50%\)\s+translateY\(3px\)\s+scale\(0\.98\)/,
+    );
+  });
+
+  it("every remaining applied keyframe is leak-free by construction", () => {
+    const applied = new Set(animationUses(cssOutsideReduced()).map((u) => u.name));
+    const body = (name: string): string => kfs.get(name) ?? "";
+
+    // (1) Opacity-only entrances: no transform anywhere in the keyframe.
+    for (const name of ["tab-fade", "ann-flash"]) {
+      expect(applied.has(name), `${name} must still be applied`).toBe(true);
+      expect(body(name), `${name} must stay opacity-only`).not.toMatch(/transform\s*:/);
+    }
+    // (2) Spin: only a `to` frame exists, so the first painted frame is
+    //     the element's own base transform (identity) — nothing to leak.
+    expect(applied.has("update-indicator-spin")).toBe(true);
+    expect(body("update-indicator-spin")).not.toMatch(/(?:from|0%)\s*\{/);
+    // (3) The placeholder shimmer's `from` frame is byte-identical to the
+    //     band's resting transform, so the first frame displaces nothing.
+    expect(body("shimmer-sweep")).toMatch(/from\s*\{[^}]*transform:\s*translateX\(-100%\)/);
+    for (const sel of ["thumb-placeholder", "page-placeholder"]) {
+      const rule = new RegExp(`\\.${sel}::after\\s*\\{([\\s\\S]*?)\\n\\}`).exec(cssClean)?.[1] ?? "";
+      expect(rule, `.${sel}::after base rule missing`).toMatch(/transform:\s*translateX\(-100%\)/);
+    }
+    // (4) The frosted acrylic sheen is a transform sweep, but it only ever
+    //     attaches to the four chrome surfaces the reduced block disables
+    //     outright (pinned by the Phase D reduced-motion test above).
+    expect(body("acrylic-sheen")).toMatch(/translateX\(/);
+  });
+
+  it("the unused entrance keyframes are applied by no rule (they cannot leak)", () => {
+    // panel/menu/dialog/popover/toast/sheet/ocr entrances migrated to the
+    // token springs (tfPresets); the CSS keyframes survive only as the
+    // documented source of truth. Nothing applies them, so no collapsed
+    // animation can paint their `from` transform.
+    const applied = new Set(animationUses(cssOutsideReduced()).map((u) => u.name));
+    for (const name of [
+      "panel-enter",
+      "panel-exit",
+      "panel-enter-left",
+      "panel-exit-left",
+      "menu-enter",
+      "menu-enter-up",
+      "dialog-enter",
+      "dialog-exit",
+      "popover-enter",
+      "toast-in",
+      "modal-in",
+      "sheet-fade",
+      "ocr-bar-in",
+    ]) {
+      expect(kfs.has(name), `${name} keyframe must still exist`).toBe(true);
+      expect(applied.has(name), `${name} must be applied by no rule`).toBe(false);
+    }
+  });
+
+  it("every transform-bearing .anim-* utility is disabled in the animations.css reduced block", () => {
+    const animKfs = keyframes(animClean);
+    const animReduced = (
+      /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{([\s\S]*?)\n\}/.exec(animClean)?.[1] ??
+      ""
+    ).replace(/\/\*[\s\S]*?\*\//g, "");
+    const disabled = new Set(
+      (/([^}{]*)\{[^}{]*animation:\s*none/.exec(animReduced)?.[1] ?? "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s !== ""),
+    );
+
+    const travelUtilities: string[] = [];
+    for (const { selector, name } of animationUses(animClean)) {
+      if (!/^\.anim-[\w-]+$/.test(selector)) continue;
+      if (!/transform\s*:/.test(animKfs.get(name) ?? "")) continue; // opacity-only — safe
+      travelUtilities.push(selector);
+      expect(
+        Array.from(disabled),
+        `${selector} animates a transform and must be disabled under reduced motion`,
+      ).toContain(selector);
+    }
+    // Non-vacuous: the swell/slide/materialize utilities are in the set.
+    expect(travelUtilities.length).toBeGreaterThanOrEqual(5);
+    expect(travelUtilities).toContain(".anim-materialize");
+    expect(travelUtilities).toContain(".anim-dissolve");
+  });
+});
+

@@ -22,6 +22,15 @@
 //     the ONLY spring with a small overshoot — it reproduces the CSS
 //     toast-success-in 1.04 pop over the emphasized band).
 //
+// Phase 20 — MORPHING SURFACES (the "one element" rule) are the one
+// exception to the spring catalog: a morph is a FLIP transform measured
+// from the live trigger/surface rects (morphFromTrigger below), not a
+// fixed travel, and it runs as a token TWEEN on the fast band — a spring
+// overshoot at the trigger seam would read as a bounce, exactly what the
+// operator rule forbids. `tfMorph` is the preset factory the surfaces
+// consume; see components/motion/TfMotion.tsx (TfMorph) and
+// useMorphPreset.ts (the measurement hook).
+//
 // Every preset mirrors the exact keyframe travel/distances from
 // styles.css (panel x:24->0->18, panel-left x:-18->0->-12,
 // dialog y:10/scale 0.97 -> y:5/scale 0.985, menu scale 0.96/y-4,
@@ -47,7 +56,14 @@
 // token per pixel would be worse than the literal.
 
 import type { TargetAndTransition, Transition } from "motion/react";
-import { MOTION_SCALE, MOTION_TRANSLATE } from "../../hooks/motionTokens";
+import {
+  MOTION_DURATION,
+  MOTION_EASE,
+  MOTION_OPACITY,
+  MOTION_SCALE,
+  MOTION_TRANSLATE,
+  msToSeconds,
+} from "../../hooks/motionTokens";
 
 export const springPanel: Transition = { type: "spring", stiffness: 420, damping: 34 };
 export const springDialog: Transition = { type: "spring", stiffness: 560, damping: 38 };
@@ -205,3 +221,169 @@ export const tfBarTop: {
   exit: { opacity: 0, y: -6, pointerEvents: "none" },
   transition: springQuick,
 };
+/* ---------------------------------------------------------------------------
+ * Phase 20 — MORPHING SURFACES (the "one element" rule)
+ *
+ * A dropdown/menu/popover must read as its TRIGGER BOX growing into the
+ * expanded box, not as a second window appearing next to it. The surface
+ * keeps its final layout (the placement/clamping maths is untouched); the
+ * morph is a FLIP transform that puts it exactly on the trigger's box for
+ * the first frame:
+ *
+ *   scaleX/scaleY  map the surface's size onto the trigger's size,
+ *   x/y            move the anchored corner onto the trigger's matching
+ *                  corner, so the first frame IS the trigger's box,
+ *   transform-origin sits on that anchored corner, which is the seam the
+ *                  surface shares with the trigger (the surface's top edge
+ *                  is flush with the trigger's bottom edge for a downward
+ *                  surface), so the box grows away from the seam.
+ *
+ * `morphFromTrigger` is pure maths (unit-tested, no DOM): the wrapper
+ * measures two rects and hands them over.
+ * ------------------------------------------------------------------------- */
+
+/** Viewport-space rect — the subset of DOMRect the FLIP maths needs, so
+ *  the helper stays pure and testable without a DOM. */
+export interface MorphRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+/** The corner of the SURFACE that the morph is anchored on — its seam with
+ *  the trigger, and the corner the initial transform pins onto the
+ *  trigger's same-named corner:
+ *   - "top-left" / "top-right": the surface opens DOWNWARD; its top edge
+ *     is flush with the trigger's bottom edge in the final layout.
+ *   - "bottom-left" / "bottom-right": the surface opens UPWARD; its bottom
+ *     edge is flush with the trigger's top edge.
+ *  The string doubles as the CSS transform-origin value. */
+export type MorphAnchorCorner =
+  | "top-left"
+  | "top-right"
+  | "bottom-left"
+  | "bottom-right";
+
+export interface MorphTransform {
+  /** The FLIP start state: the surface box shrunk onto the trigger box. */
+  initial: TargetAndTransition;
+  /** The reverse morph (exit): the same transform, faded out, with
+   *  `pointer-events: none` pinned on its first frame (DEF-087/088/090). */
+  exit: TargetAndTransition;
+  /** CSS transform-origin for the surface — the anchored corner. */
+  transformOrigin: string;
+}
+
+/** Smallest scale a morph may start from. A zero-size trigger would
+ *  otherwise ask for scale 0 (an invisible box) and a clamped rect can
+ *  never produce a negative or NaN scale.
+ *
+ *  DEF-240 — this is a NUMERIC EPSILON, not a motion value: it is the
+ *  floor that keeps the FLIP maths invertible (and `Math.max` of the
+ *  ratio), not a duration/easing/scale/travel from the motion catalog.
+ *  It stays a local literal on purpose; registering it as a token would
+ *  invent a motion concept the catalog does not have. */
+const MORPH_MIN_SCALE = 0.01;
+
+const MORPH_CORNER_CSS: Record<MorphAnchorCorner, string> = {
+  "top-left": "top left",
+  "top-right": "top right",
+  "bottom-left": "bottom left",
+  "bottom-right": "bottom right",
+};
+
+/** Trigger span / surface span, guarded against unmeasurable inputs. */
+function morphScale(triggerSpan: number, surfaceSpan: number): number {
+  if (!Number.isFinite(triggerSpan) || !Number.isFinite(surfaceSpan) || surfaceSpan <= 0) {
+    return 1;
+  }
+  if (triggerSpan <= 0) return MORPH_MIN_SCALE;
+  return Math.max(triggerSpan / surfaceSpan, MORPH_MIN_SCALE);
+}
+
+/**
+ * Phase 20 — the pure FLIP maths for a morphing surface.
+ *
+ * `triggerRect` and `surfaceRect` are viewport rects (getBoundingClientRect
+ * output). `surfaceRect` is the surface's FINAL rect, so the returned
+ * `initial` transform is the first frame and identity is the last one.
+ */
+export function morphFromTrigger(
+  triggerRect: MorphRect,
+  surfaceRect: MorphRect,
+  anchorCorner: MorphAnchorCorner,
+): MorphTransform {
+  const opensDown = anchorCorner.startsWith("top");
+  const pinnedRight = anchorCorner.endsWith("right");
+  // The anchored point: the surface corner that must land on the trigger's
+  // SAME-NAMED corner, so the first frame is exactly the trigger's box.
+  // (The anchored corner is also the seam the surface shares with the
+  // trigger in its final flush layout, which is where the scale pivots.)
+  const surfaceX = pinnedRight ? surfaceRect.right : surfaceRect.left;
+  const surfaceY = opensDown ? surfaceRect.top : surfaceRect.bottom;
+  const triggerX = pinnedRight ? triggerRect.right : triggerRect.left;
+  const triggerY = opensDown ? triggerRect.top : triggerRect.bottom;
+  const dx = triggerX - surfaceX;
+  const dy = triggerY - surfaceY;
+  const initial: TargetAndTransition = {
+    x: Number.isFinite(dx) ? dx : 0,
+    y: Number.isFinite(dy) ? dy : 0,
+    scaleX: morphScale(triggerRect.width, surfaceRect.width),
+    scaleY: morphScale(triggerRect.height, surfaceRect.height),
+    opacity: MOTION_OPACITY.surface,
+  };
+  return {
+    initial,
+    exit: { ...initial, opacity: MOTION_OPACITY.hidden, pointerEvents: "none" },
+    transformOrigin: MORPH_CORNER_CSS[anchorCorner],
+  };
+}
+
+/** Enter tween: the fast band on the enter ease. A morph is ONE
+ *  coordinated move, so it must not overshoot at the trigger seam. */
+export const morphTransitionEnter: Transition = {
+  duration: msToSeconds(MOTION_DURATION.fast),
+  ease: MOTION_EASE.enter,
+};
+
+/** Exit tween: the same band on the exit ease (reverse morph). */
+export const morphTransitionExit: Transition = {
+  duration: msToSeconds(MOTION_DURATION.fast),
+  ease: MOTION_EASE.exit,
+};
+
+export interface TfMorphPreset {
+  initial: TargetAndTransition;
+  animate: TargetAndTransition;
+  exit: TargetAndTransition;
+  transformOrigin: string;
+  transition: Transition;
+}
+
+/** Build the morph preset for one trigger/surface pair (measured live —
+ *  the rects change with the window size, so this is a factory, not a
+ *  constant like the rest of the catalog). */
+export function tfMorph(
+  triggerRect: MorphRect,
+  surfaceRect: MorphRect,
+  anchorCorner: MorphAnchorCorner,
+): TfMorphPreset {
+  const morph = morphFromTrigger(triggerRect, surfaceRect, anchorCorner);
+  return {
+    initial: morph.initial,
+    animate: {
+      x: 0,
+      y: 0,
+      scaleX: 1,
+      scaleY: 1,
+      opacity: MOTION_OPACITY.visible,
+      transition: morphTransitionEnter,
+    },
+    exit: { ...morph.exit, transition: morphTransitionExit },
+    transformOrigin: morph.transformOrigin,
+    transition: morphTransitionEnter,
+  };
+}

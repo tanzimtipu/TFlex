@@ -33,6 +33,14 @@
 // at the action-bar button's screen coords (not just `.click()` which
 // bypasses the pointer-event system).
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+/** Phase 20 — the signature pending surface is a TfBar inside an
+ *  AnimatePresence, so its DOM removal completes after the exit. */
+async function settleMotion(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise((r) => setTimeout(r, 30));
+  });
+}
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -354,7 +362,7 @@ describe("B-sig-pointer — pending action-bar buttons have pointer-events: auto
     expect(onPlace.mock.calls[0]?.[0]).toBe("sig-typed");
   });
 
-  it("Cancel button works the same way and does not call onPlace", () => {
+  it("Cancel button works the same way and does not call onPlace", async () => {
     const { host, onPlace } = mountOverlay({
       signatures: { "sig-typed": TYPED_SIG },
       armedSignatureId: "sig-typed",
@@ -380,6 +388,7 @@ describe("B-sig-pointer — pending action-bar buttons have pointer-events: auto
       cancelBtn.click();
     });
     expect(onPlace).not.toHaveBeenCalled();
+    await settleMotion();
     expect(host.querySelector("[data-sig-pending]")).toBeNull();
   });
 });
