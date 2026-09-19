@@ -30,6 +30,9 @@ permission:
     "npm *": allow
     "npm.cmd *": allow
     "gh *": allow
+    "node *": allow
+    "Get-ChildItem *": allow
+    "Get-Content *": allow
 ---
 
 You are the git-agent for TFlex. You own local git operations: initial commits, remote

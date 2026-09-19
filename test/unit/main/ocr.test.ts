@@ -408,8 +408,14 @@ describe('EngineService.ocrRecognize — integration (tesseract, offline)', () =
     await ocr.terminate();
   }, SLOW);
 
-  it('reports suspects only below the threshold and survives undo', async () => {
-    // "TFLEX" tends to misread as "TELEX" at low confidence — a real suspect.
+  it('reports structurally valid suspects from a real tesseract run and survives undo', async () => {
+    // Environment-independent by design: tesseract's confidence for a given
+    // rasterisation depends on the runner's system font, so this integration
+    // test asserts only STRUCTURAL properties of the suspects result (shape,
+    // the below-threshold invariant, undo). The mapping contract itself — a
+    // below-threshold word becomes a suspect, an above-threshold one does not —
+    // is proven deterministically by the controlled-recogniser tests below,
+    // which do not touch tesseract or any font.
     const png = makeTextPng('TFLEX OCR WORKS');
     const pdfBytes = await makeScannedPdf(png);
     const ocr = new OcrService(TESSDATA);
@@ -424,11 +430,13 @@ describe('EngineService.ocrRecognize — integration (tesseract, offline)', () =
     });
     expect(res.ok).toBe(true);
 
-    // ocrSuspects returns only words below the threshold (0..59).
+    // ocrSuspects returns only words below the threshold (0..59). The COUNT is
+    // not asserted here (font-dependent); every returned suspect must be
+    // well-formed and below the threshold.
     const suspects = await engine.ocrSuspects('d');
     expect(suspects.ok).toBe(true);
     if (suspects.ok) {
-      expect(suspects.value.length).toBeGreaterThan(0);
+      expect(Array.isArray(suspects.value)).toBe(true);
       for (const s of suspects.value) {
         expect(s.confidence).toBeLessThan(SUSPECT_CONFIDENCE_THRESHOLD);
         expect(s.page).toBe(1);
@@ -471,6 +479,130 @@ describe('EngineService.ocrRecognize — integration (tesseract, offline)', () =
     expect(lb.some((w) => /batch|ocr|two/.test(w))).toBe(true);
     await ocr.terminate();
   }, SLOW);
+});
+
+describe('EngineService.ocrSuspects — controlled recognition (deterministic)', () => {
+  // The suspects mapping is engine logic (selectLowConfidence over the words
+  // stored by ocrRecognize), not tesseract logic. Driving it from a fixed
+  // tesseract-shaped word list makes the below/above-threshold contract
+  // deterministic on every machine: no system font, no rasteriser, no
+  // tesseract confidence variance. This is the test that fails if the
+  // suspects path ever stops reporting below-threshold words.
+  /** A stand-in OcrService that always returns the given word list. */
+  function fixedOcr(words: RawOcrWord[]): OcrService {
+    return {
+      recognize(): Promise<RawOcrWord[]> {
+        return Promise.resolve(words);
+      },
+    } as unknown as OcrService;
+  }
+
+  async function onePageDoc(): Promise<Uint8Array> {
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    return doc.save();
+  }
+
+  // dpi 72 keeps the pixel bboxes inside the 612x792 page; the fake recogniser
+  // ignores the bytes, so any non-empty buffer is a valid "page image".
+  const pageImage = {
+    page: 1,
+    pngBytes: new Uint8Array([1, 2, 3, 4]),
+    dpi: 72,
+    widthPx: 612,
+    heightPx: 792,
+  };
+
+  it('reports below-threshold words as suspects and drops the rest', async () => {
+    const ocr = fixedOcr([
+      { text: 'TELEX', confidence: 42, bbox: { x0: 10, y0: 10, x1: 210, y1: 90 } },
+      { text: 'CLEAR', confidence: 59, bbox: { x0: 220, y0: 10, x1: 420, y1: 90 } },
+      { text: 'EXACT', confidence: 60, bbox: { x0: 10, y0: 110, x1: 210, y1: 190 } },
+      { text: 'SHARP', confidence: 95, bbox: { x0: 220, y0: 110, x1: 420, y1: 190 } },
+    ]);
+    const engine = new EngineService(ocr);
+    await engine.loadDocumentBytes('d', await onePageDoc());
+
+    const res = await engine.ocrRecognize('d', {
+      language: 'eng',
+      downsample: 72,
+      pageImages: [pageImage],
+    });
+    expect(res.ok).toBe(true);
+
+    const suspects = await engine.ocrSuspects('d');
+    expect(suspects.ok).toBe(true);
+    if (suspects.ok) {
+      // Non-vacuous: the two words below 60 ARE reported, in order...
+      expect(suspects.value.length).toBe(2);
+      expect(suspects.value.map((s) => s.word)).toEqual(['TELEX', 'CLEAR']);
+      // ...and the boundary word (confidence exactly 60) plus the confident
+      // word are NOT.
+      expect(suspects.value.map((s) => s.word)).not.toContain('EXACT');
+      expect(suspects.value.map((s) => s.word)).not.toContain('SHARP');
+      for (const s of suspects.value) {
+        expect(s.confidence).toBeLessThan(SUSPECT_CONFIDENCE_THRESHOLD);
+        expect(s.page).toBe(1);
+        expect(s.rect.width).toBeGreaterThan(0);
+        expect(s.rect.height).toBeGreaterThan(0);
+        expect(s.word.length).toBeGreaterThan(0);
+      }
+    }
+
+    // The invisible text layer is written for every recognised word regardless
+    // of confidence, so both the suspect and the confident words are present.
+    const out = join(dir, 'mixed-out.pdf');
+    expect(await engine.saveAs('d', out)).toMatchObject({ ok: true });
+    const words = decodeTjWords(new Uint8Array(await readFile(out)));
+    expect(words).toContain('TELEX');
+    expect(words).toContain('SHARP');
+  });
+
+  it('still reports every word as a suspect when all confidences are low', async () => {
+    const ocr = fixedOcr([
+      { text: 'FUZZY', confidence: 0, bbox: { x0: 10, y0: 10, x1: 210, y1: 90 } },
+      { text: 'BLUR', confidence: 30, bbox: { x0: 220, y0: 10, x1: 420, y1: 90 } },
+    ]);
+    const engine = new EngineService(ocr);
+    await engine.loadDocumentBytes('d', await onePageDoc());
+
+    const res = await engine.ocrRecognize('d', {
+      language: 'eng',
+      downsample: 72,
+      pageImages: [pageImage],
+    });
+    expect(res.ok).toBe(true);
+
+    const suspects = await engine.ocrSuspects('d');
+    expect(suspects.ok).toBe(true);
+    if (suspects.ok) expect(suspects.value.map((s) => s.word)).toEqual(['FUZZY', 'BLUR']);
+  });
+
+  it('returns no suspects for confident words and undo removes the text layer', async () => {
+    const ocr = fixedOcr([
+      { text: 'CRISP', confidence: 99, bbox: { x0: 10, y0: 10, x1: 210, y1: 90 } },
+    ]);
+    const engine = new EngineService(ocr);
+    await engine.loadDocumentBytes('d', await onePageDoc());
+
+    const res = await engine.ocrRecognize('d', {
+      language: 'eng',
+      downsample: 72,
+      pageImages: [pageImage],
+    });
+    expect(res.ok).toBe(true);
+
+    const suspects = await engine.ocrSuspects('d');
+    expect(suspects.ok).toBe(true);
+    if (suspects.ok) expect(suspects.value).toEqual([]);
+
+    // Undo reverts the OCR run: the saved output has no Tj words. (saveAs
+    // clears the undo stack, so undo must run before the save.)
+    expect((await engine.undo('d')).ok).toBe(true);
+    const outUndo = join(dir, 'crisp-undo.pdf');
+    expect(await engine.saveAs('d', outUndo)).toMatchObject({ ok: true });
+    expect(decodeTjWords(new Uint8Array(await readFile(outUndo)))).toEqual([]);
+  });
 });
 
 describe('EngineService.ocrRecognize — save-after-OCR round-trip (DEF-052)', () => {
