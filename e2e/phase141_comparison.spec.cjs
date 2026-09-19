@@ -109,7 +109,8 @@ test.describe.serial('phase 14.1 comparison capture', () => {
         radius: getComputedStyle(g).borderRadius,
         border: getComputedStyle(g).borderTopColor,
       }));
-      const openBtn = document.querySelector('.commandbar-open');
+      // Phase 22 - Open moved out of the command bar into the title bar.
+      const openBtn = document.querySelector('[data-toolbar-open]');
       const gaps = [];
       for (let i = 1; i < groups.length; i += 1) {
         gaps.push(groups[i].rect.x - (groups[i - 1].rect.x + groups[i - 1].rect.w));

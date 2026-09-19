@@ -1,7 +1,8 @@
 // RETEST DEF-191 / DEF-192 / DEF-193 / DEF-194 (qa, Phase 14.2 fix round 2).
 // Retests the four defects the Phase-14.2 verification round filed, on the dev
 // build rebuilt after the developer's second fix pass:
-//   DEF-191  frosted Open button ghost capsule (specificity loss vs the film)
+//   DEF-191  frosted Open button ghost capsule (specificity loss vs the film;
+//            Phase-22 repoint: guard becomes one-file-capsule / no legacy Open)
 //   DEF-192  Tools panel never pushes the page view (dead --tf-tools-inset)
 //   DEF-193  panel + page do not animate together (same dead token)
 //   DEF-194  command-bar icons laid out ~14.7px instead of 22px (UA padding)
@@ -93,43 +94,26 @@ async function measureView() {
   });
 }
 
-// DEF-191 measurement: the File group capsule vs the Open button, plus any
-// pseudo-element paint on the group.
+// DEF-191 measurement (Phase 22 repoint 2026-09-19): Open moved out of the
+// command bar into the title bar's .titlebar-file group. DEF-191's intent
+// (no ghost/duplicate layer behind the accent Open control) is preserved by
+// asserting exactly ONE file capsule and no legacy command-bar Open remains.
 async function openButtonMetrics() {
   return win.evaluate(() => {
-    const g = document.querySelector('.toolbar-group.commandbar-group-open');
-    const b = document.querySelector('.commandbar-open');
+    const g = document.querySelector('.titlebar-file');
+    const b = document.querySelector('[data-toolbar-open]');
     if (!g || !b) return null;
-    const gs = getComputedStyle(g);
     const bs = getComputedStyle(b);
     const bb = b.getBoundingClientRect();
-    const gb = g.getBoundingClientRect();
-    const alphaOf = (color) => (color.startsWith('rgba')
-      ? Number(color.split(',')[3].replace(')', ''))
-      : (color === 'transparent' ? 0 : 1));
-    const pseudo = (el, p) => {
-      const cs = getComputedStyle(el, p);
-      return {
-        content: cs.content,
-        bg: cs.backgroundColor,
-        bgAlpha: alphaOf(cs.backgroundColor),
-        shadow: cs.boxShadow,
-      };
-    };
     return {
       dataTheme: document.documentElement.getAttribute('data-theme'),
-      groupBg: gs.backgroundColor,
-      groupBgAlpha: alphaOf(gs.backgroundColor),
-      groupBorderColor: gs.borderColor,
-      groupShadow: gs.boxShadow,
+      groupCount: document.querySelectorAll('.titlebar-file').length,
+      legacyCount: document.querySelectorAll('.commandbar-open').length,
+      inGroup: g.contains(b),
+      groupButtons: g.querySelectorAll('button').length,
       btnBg: bs.backgroundColor,
       btnColor: bs.color,
       btnH: Math.round(bb.height * 100) / 100,
-      groupH: Math.round(gb.height * 100) / 100,
-      btnW: Math.round(bb.width * 100) / 100,
-      groupW: Math.round(gb.width * 100) / 100,
-      groupBefore: pseudo(g, '::before'),
-      groupAfter: pseudo(g, '::after'),
     };
   });
 }
@@ -145,46 +129,39 @@ test.describe('DEF-191..194 retest (phase 14.2 fix round 2)', () => {
   // ------------------------------------------------------------------
   // DEF-191: frosted Open button must be a clean single layer.
   // ------------------------------------------------------------------
-  test('DEF-191: frosted Open button has no ghost capsule behind it', async () => {
+  test('DEF-191: the relocated Open control has no ghost/duplicate layer', async () => {
     test.setTimeout(240000);
     await openReport();
     const m = await openButtonMetrics();
-    console.log('[DEF-191] frosted open button:', JSON.stringify(m));
+    console.log('[DEF-191] title-bar open button:', JSON.stringify(m));
     await win.screenshot({
       path: path.join(SHOTS, 'def-191-retest.png'),
-      clip: { x: 0, y: 44, width: 420, height: 120 },
+      clip: { x: 0, y: 0, width: 420, height: 60 },
     });
     expect(m, 'Open button + File group mounted').not.toBeNull();
     expect(m.dataTheme, 'test runs in the frosted theme').toBe('frosted');
-    expect(m.groupBgAlpha, 'DEF-191: File capsule paints nothing (no translucent ghost film)').toBe(0);
-    expect(m.groupBorderColor, 'DEF-191: File capsule hairline is transparent').toBe('rgba(0, 0, 0, 0)');
-    expect(m.groupShadow, 'DEF-191: File capsule casts no shadow').toBe('none');
+    // Phase 22 - Open now sits in the title bar's intentional grouped
+    // capsule; the DEF-191 guard becomes "exactly one file capsule, no
+    // legacy command-bar ghost".
+    expect(m.groupCount, 'DEF-191: exactly ONE file capsule').toBe(1);
+    expect(m.legacyCount, 'DEF-191: no legacy command-bar Open remains').toBe(0);
+    expect(m.inGroup, 'DEF-191: Open lives inside the file capsule').toBe(true);
+    expect(m.groupButtons, 'DEF-191: Open / Save / Save As').toBe(3);
     expect(m.btnBg, 'Open button keeps its solid blue accent').toBe('rgb(37, 99, 235)');
     expect(m.btnColor, 'Open button text/icon white').toBe('rgb(255, 255, 255)');
-    for (const [name, p] of [['::before', m.groupBefore], ['::after', m.groupAfter]]) {
-      const paints = p.content !== 'none' && (p.bgAlpha !== 0 || p.shadow !== 'none');
-      expect(paints, `DEF-191: group ${name} paints nothing`).toBe(false);
-    }
-    // The group box keeps ~17px of layout padding beyond the button; that is
-    // invisible under the paint contract above. The filing's width mismatch
-    // mattered only because the film PAINTED there - log it, don't fail on it.
-    console.log(`[DEF-191] box sizes (informational): btn ${m.btnW}x${m.btnH} vs group ${m.groupW}x${m.groupH}`);
+    expect(m.btnH, 'Open button is the 28px title-bar ladder').toBe(28);
 
-    // The frosted film also had a hover variant (0-4-0); the fix's hover
-    // override must hold there too - no ghost returning on hover.
-    await win.hover('.commandbar-open');
+    // The hover state must not reintroduce a stray layer either.
+    await win.hover('[data-toolbar-open]');
     await win.waitForTimeout(250);
     const hov = await openButtonMetrics();
-    console.log('[DEF-191] frosted open button (hover):', JSON.stringify({
-      groupBg: hov.groupBg, groupBgAlpha: hov.groupBgAlpha, groupShadow: hov.groupShadow,
-      btnBg: hov.btnBg, groupW: hov.groupW, btnW: hov.btnW,
-    }));
+    console.log('[DEF-191] title-bar open button (hover):', JSON.stringify(hov));
     await win.screenshot({
       path: path.join(SHOTS, 'def-191-retest-hover.png'),
-      clip: { x: 0, y: 44, width: 420, height: 120 },
+      clip: { x: 0, y: 0, width: 420, height: 60 },
     });
-    expect(hov.groupBgAlpha, 'DEF-191 (hover): capsule still paints nothing on hover').toBe(0);
-    expect(hov.groupShadow, 'DEF-191 (hover): capsule casts no shadow on hover').toBe('none');
+    expect(hov.groupCount, 'DEF-191 (hover): still ONE file capsule').toBe(1);
+    expect(hov.legacyCount, 'DEF-191 (hover): no legacy command-bar Open').toBe(0);
   });
 
   // ------------------------------------------------------------------
@@ -208,8 +185,8 @@ test.describe('DEF-191..194 retest (phase 14.2 fix round 2)', () => {
 
       // while here: the DEF-191 clean-button contract must hold in this theme too
       const btn = await openButtonMetrics();
-      expect(btn.groupBgAlpha, `DEF-191 hold-check (${theme}): capsule paints nothing`).toBe(0);
-      expect(btn.groupShadow, `DEF-191 hold-check (${theme}): capsule casts no shadow`).toBe('none');
+      expect(btn.groupCount, `DEF-191 hold-check (${theme}): exactly ONE file capsule`).toBe(1);
+      expect(btn.legacyCount, `DEF-191 hold-check (${theme}): no legacy command-bar Open`).toBe(0);
 
       await openTools();
       const open = await measureView();

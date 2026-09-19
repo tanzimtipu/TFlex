@@ -2183,3 +2183,132 @@ Disposition: ACCEPTED -> DEF-242 (LOW; an empty or unknown-key-only patch must n
 
 **Total Phase-21-gate findings: 2 (0 HIGH, 1 MEDIUM, 1 LOW).**
 
+---
+
+## Phase 22 gate — title-bar Open / Save / Save As relocation
+
+Session label: `phase-22 gate`. Ran against the dev bundle built from the working tree
+(`dist/` includes the Phase-22 relocation plus the uncommitted DEF-243 / DEF-244 fixes;
+verified the bundle carries `titlebar-file-btn`, the Save-As title and the
+`!e.shiftKey` guard). Harness: `test-fixtures/tools/adv059_phase22.cjs` (sections
+`region | accel | state | width | tabs | newtab | menuroute | sendinput | race | stack |
+cleanaccel | persist | a11y | silence`), launched only through the canonical
+`e2e/lib/launch.cjs`. Screenshots: `screenshots/adv059-*.png`.
+
+## ADV-059: Opening a second document at the 640px minimum width leaves its (now active) tab entirely off-screen; the strip never scrolls to it
+
+- Session: phase-22 gate
+- Suggested severity: LOW
+
+What I did:
+1. `node test-fixtures/tools/adv059_phase22.cjs newtab` — opened one writable copy of
+   `report.pdf` through the relocated `[data-toolbar-open]`, reduced the strip to one
+   tab, set the window to 1440 / 900 / 640 (height 800), forced `.tab-list.scrollLeft = 0`,
+   then opened a second copy through the relocated Open control.
+2. Read `.tab-list` (scrollLeft / scrollWidth / clientWidth) and the active tab's rect vs
+   `.tab-area` after the second document loaded.
+3. Repeated with the accumulated 6-tab state (`... tabs` section,
+   `tabs-new-tab-visibility`) to confirm it is not a one-off.
+
+Expected:
+- Phase 22 criterion 4: the relocated controls must not collide with the tab strip and the
+  tab strip scrolls rather than clipping; an Open that succeeds should give the user a
+  visible tab for the document they just opened.
+
+Actual:
+- 1440px: active tab 519.0-746.3 inside strip 285.7-1069.8 — fully visible.
+- 900px: active tab 473.1-700.5, strip 239.8-529.8, `scrollLeft 0`, `scrollWidth 495`,
+  `clientWidth 290` — only ~57px of the new tab is visible.
+- 640px: active tab 473.1-700.5, strip 239.8-353.0 (`clientWidth 113`), `scrollLeft 0`,
+  `scrollWidth 495`, `activeAnyVisible:false` — the newly opened document's tab is
+  **completely invisible** and the strip is not auto-scrolled. With 6 tabs the active tab
+  measured 1390.5-1617.8 against a 239.8-353.0 strip, still `scrollLeft 0`.
+- The strip itself scrolls correctly (setting `scrollLeft` to the end reveals the "+" and
+  the tab; `tabs-scroll-probe` shows `newReachable:false -> true`), so the tab is
+  reachable by manual scroll, but nothing scrolls it into view automatically.
+- Note for triage: this is likely not a regression introduced by the relocation (the
+  2-tab layout at 640 overflows even with the pre-Phase-22 strip width); it is recorded
+  because the dispatch asks whether a tab title is visible at the minimum width and
+  because the narrower strip makes the threshold arrive with fewer tabs.
+
+Screenshot: screenshots/adv059-newtab.png
+
+Disposition: ACCEPTED -> DEF-245 (MEDIUM; the tab strip must scroll the ACTIVE tab into view - at the 640px minimum width a newly opened document's tab was entirely off-screen)
+
+## ADV-060: Ctrl+Shift+S opens Save As on a clean document although the relocated Save As button is disabled ("Nothing to save")
+
+- Session: phase-22 gate
+- Suggested severity: LOW
+
+What I did:
+1. `node test-fixtures/tools/adv059_phase22.cjs cleanaccel` — opened a writable copy of
+   `report.pdf`, rotated a page to dirty it, pressed Ctrl+S to save in place (clean,
+   on-disk path present).
+2. Read the relocated Save As button (`[data-toolbar-save-as]`): `disabled:true`,
+   `title:"Nothing to save"`.
+3. Force-clicked the disabled button (no dialog, as expected), then pressed
+   Ctrl+Shift+S, then sent the menu route `menu:action {action:"saveAs"}`, counting
+   `[data-save-as-dialog]` after each.
+
+Expected:
+- The relocated Save As control's disabled/"Nothing to save" state should be honoured by
+  every route that reaches the same action (REQUIREMENTS.md Phase 22 C3: the control
+  keeps its disabled semantics; the dispatch's state matrix treats a clean document as
+  "Save As disabled").
+
+Actual:
+- Disabled button click: no dialog (`saveAs:0`).
+- Ctrl+Shift+S on the clean document: `saveAs:1` — the Save As dialog opens.
+- Menu File -> Save As on the clean document: `saveAs:1` — the dialog opens.
+- Root cause: the new renderer Ctrl+Shift+S branch (App.tsx ~6270, added by the DEF-243
+  fix) calls `onSaveAs(activeId)` gated only on `tabs.activeId !== null`, with no
+  `saveModified` check; `onSaveAs` (App.tsx:3297) opens the modal unconditionally. The
+  menu route behaves the same (its enable state is `activeId !== null` only), so the
+  button is the odd one out. Harmless in effect (it saves a copy of an unchanged file,
+  no data loss), but it is a keyboard/menu path that bypasses the disabled state the
+  relocated control advertises.
+
+Screenshot: screenshots/adv059-cleanaccel.png
+
+Disposition: ACCEPTED -> DEF-246 (LOW; Save As must be reachable consistently - the button was disabled on a clean document while the menu and Ctrl+Shift+S opened it)
+
+---
+
+## Phase 22 gate — negative results (attacks that did NOT reproduce)
+
+Commands: `node test-fixtures/tools/adv059_phase22.cjs <section>` (all via the canonical
+launcher). The dev bundle was rebuilt/verified to contain the Phase-22 markup and the
+DEF-243 guard before the runs.
+
+| Attack | Result |
+|---|---|
+| DRAG REGION — computed `-webkit-app-region` at 1440/640 x frosted/light/dark | `.titlebar` and `.app-header` = `drag`; `.titlebar-file`, all three buttons, the Open label span, the icon `<svg>`s, the modified dot and `.titlebar-file-sep` = `no-drag` in every combination. No control or 1-2px seam is a drag surface. |
+| DRAG REGION — dynamic press-move-release | Inconclusive by harness limitation, not a pass/fail: CDP synthetic input cannot drive the native window-move loop. A positive control dragging 160x90px from the known-drag `.brand` area also produced `moved:false` (`dx:0, dy:0`). Computed regions above are the evidence. |
+| DRAG REGION — seam points (capsule left padding, Open|sep, sep|Save, Save|SaveAs) | All inside the `no-drag` capsule; drag from each seam left the window at the same bounds (`dx:0, dy:0`) and activated nothing. |
+| ACCELERATOR — Ctrl+Shift+S once / x5 rapid / held ~1.2s | Exactly 1 `[data-save-as-dialog]` every time; the renderer branch fired once per press and reported `defaultPrevented:true`; the native menu accelerator produced 0 `menu:action` events under synthesized input. No double dialog, no double IPC. |
+| ACCELERATOR — both routes together | Sending `menu:action saveAs` via IPC and pressing Ctrl+Shift+S in the same tick still produced exactly 1 dialog (the modal is a single boolean state). |
+| ACCELERATOR — menu route in isolation | `webContents.send('menu:action',{action:'saveAs'|'save'})` drove 1 dialog / 1 save toast; the renderer subscription received `["saveAs"]` / `["save"]` — the menu path is wired and single-shot. |
+| ACCELERATOR — Ctrl+S once / held; Ctrl+O once / held | Ctrl+S once -> 1 "Saved" toast; held ~1.2s -> 2 toasts (OS auto-repeat, the second on an already-clean doc); Ctrl+O -> 1 `showOpenDialog` invocation (mock counter), held -> 1. No runaway duplicate. |
+| STATE — welcome screen (no document) | Ctrl+S / Ctrl+Shift+S / Ctrl+O and force-clicks on Save / Save As: 0 dialogs, 0 toasts, 0 page errors, `openTabs:0`; Save and Save As both disabled. Clean no-ops. |
+| STATE — two tabs, 6 rapid switches | Save disabled/title/tint and the dot followed the ACTIVE tab on every sample (dirty tab: `disabled:false`, warning `rgb(217,164,65)`, dot opacity 1, tab dot 1; clean tab: `disabled:true`, success `rgb(118,166,106)`, dot 0). No background-tab leakage. |
+| STATE — stale click after a switch | mousedown on the other tab then a same-tick click on Save As: the header had already re-rendered (`saDisabledAtClick:true`), no dialog opened, active tab correct. No stale-handler save of the wrong tab. |
+| WIDTH — 640..1440 bands (16 widths) | Open label `display:block` at 901+ and `none` at <=900; theme label `block` at 701 and `none` at <=700; all three relocated controls `resolvesToSelf:true` at every width; group/tab-area gap stayed 8-12px (no overlap); the first tab's title is visible at 640. |
+| WIDTH — resize 901->899 mid-hover, then click | Open still activated (a new tab opened, `activated:true`); the band change neither swallowed the click nor moved the controls out of place. |
+| WIDTH — keyboard reach of the icon-only Open at 640 | `aria-label:"Open PDF document"` retained while `.titlebar-file-label` is `display:none`; the control stays focusable. |
+| TAB STRIP — click each tab at 1440/900/640 | All three tabs activated correctly at every width (`ok:true`); no click-swallow between the file group and the strip. |
+| TAB STRIP — "+" new tab and close | New empty tab opened (3->4 at 640, 4->5 at 1440); close removed a tab (5->4). `.tab-new` and off-screen tabs are reachable once the strip scrolls (`scrollLeft` up to 614). No overlap with the relocated group at any width. |
+| PERSISTENCE — read-only sample | Bytes-loaded sample dirty: Save `disabled:true` with "Read-only document — use Save As to save a copy", Save As `disabled:false`; Save As opened 1 dialog. Correct. |
+| PERSISTENCE — writable ladder | clean: both disabled, dot hidden; dirty: both enabled, warning tint, dot visible, tab dot 1; after Ctrl+S: clean, success tint, dot hidden, file on disk. Matches the pre-Phase-22 CommandBar semantics. |
+| A11Y — names | group `role:"group" aria-label:"File actions"`; Open `aria-label:"Open PDF document"` title "Open PDF (Ctrl+O)"; Save `aria-label:"Save"`; Save As `aria-label:"Save a copy"`. |
+| A11Y — focus order | menu button -> Open -> Save -> Save As -> tab-close -> tab-new -> settings gear -> theme -> minimize/maximize/close; all three relocated controls `canFocus:true, tabIndex:0`; DOM order brand < group < tab strip. |
+| A11Y — Save As dialog keys | Escape closed the dialog; Enter on the reopened dialog confirmed (dialog gone). Both work. |
+| NO DUPLICATES | `.toolbar [data-toolbar-open] / [data-toolbar-save] / [data-toolbar-save-as]` count = 0 in every state; the CommandBar no longer renders File/Save groups. |
+| DEF-243 fix verification | Ctrl+Shift+S produced exactly one Save As dialog (the old in-place-save behaviour is gone) in accel / menuroute / sendinput runs. |
+| DEF-244 fix verification | At 640px `.tab-area` clientWidth = 113 (was 0 in the defect report), `.tab-list` clientWidth 113 / scrollWidth 265, first tab title visible and hittable. |
+| Hostile sequence — Ctrl+Shift+S then Ctrl+W | Two stacked modals (Save As + "Unsaved changes" close prompt), 2 backdrops, but fully recoverable in 2 Escape presses; canvas and the rotate button hittable afterwards. Not a wedge, so not filed. |
+| Hostile sequence — Ctrl+S while the Save As modal is open | Saved in place and left the Save As modal open (global accelerators are not modal-aware). Pre-existing general behaviour, no data loss; not a Phase-22 regression, so not filed. |
+| Hostile sequence — Ctrl+S then immediately Ctrl+W; Ctrl+S then theme switch mid-save | Tab closed after a successful save (`openTabs:0`, save toast present); theme crossfade mid-save left the document clean and the theme applied. No wedge, no lost edit. |
+
+**Total Phase-22-gate findings: 2 (0 HIGH, 0 MEDIUM, 2 LOW).**
+
+

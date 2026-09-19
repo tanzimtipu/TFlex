@@ -90,8 +90,6 @@ function mountToolbar(overrides: Partial<Parameters<typeof Toolbar>[0]> = {}): H
       pageCount={12}
       zoomPercent={120}
       zoomMode={"fit-width" as ZoomMode}
-      modified={false}
-      saveInPlaceEnabled={true}
       onJump={NOOP}
       onZoomIn={NOOP}
       onZoomOut={NOOP}
@@ -99,8 +97,6 @@ function mountToolbar(overrides: Partial<Parameters<typeof Toolbar>[0]> = {}): H
       onFitPage={NOOP}
       searchOpen={false}
       onToggleSearch={NOOP}
-      onSave={NOOP}
-      onSaveAs={NOOP}
       onMerge={NOOP}
       onSplit={NOOP}
       signToolActive={false}
@@ -195,12 +191,15 @@ describe("Phase 13 — Toolbar is icon-only", () => {
     unmount(armed);
   });
 
-  it("Save As is an icon-only button with its own stable attribute", () => {
+  it("Save As left the toolbar (Phase 22: the title bar owns the file actions)", () => {
+    // Phase 22 relocated Open / Save / Save As into the caption strip
+    // (AppHeader's .titlebar-file group). The CommandBar must not render
+    // the Save-As hook any more — the relocated contract lives in
+    // phase22_titlebarFileGroup.test.tsx.
     const host = mountToolbar();
-    const saveAs = host.querySelector<HTMLButtonElement>("[data-toolbar-save-as]");
-    expect(saveAs).not.toBeNull();
-    expect(saveAs?.getAttribute("aria-label")).toBe("Save a copy");
-    expect(saveAs?.textContent ?? "").not.toMatch(/Save/); // icon only
+    expect(host.querySelector("[data-toolbar-save-as]")).toBeNull();
+    expect(host.querySelector("[data-toolbar-open]")).toBeNull();
+    expect(host.querySelector("[data-toolbar-save]")).toBeNull();
     unmount(host);
   });
 });

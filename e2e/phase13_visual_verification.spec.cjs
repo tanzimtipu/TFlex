@@ -33,8 +33,9 @@ async function openReport(electronApp, win) {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [sample] });
   }, p);
   // Welcome-screen hero Open (Welcome.tsx:64). The header-actions Open was
-  // retired in Phase 14.1; the CommandBar ([data-toolbar-open]) is not
-  // mounted until a document tab exists.
+  // retired in Phase 14.1; Phase 22 put Open back in the title bar
+  // ([data-toolbar-open], AppHeader's .titlebar-file group), but it is not
+  // needed to reach the workspace here.
   await win.locator('.welcome .btn-primary').first().click();
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .pdf-page canvas', { timeout: 30000 });
@@ -98,16 +99,28 @@ test('P13-VIS: borderless title bar + toolbar + light/dark design-reference scre
     dataTheme: document.documentElement.getAttribute('data-theme'),
     htmlBg: getComputedStyle(document.documentElement).backgroundColor,
     accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
-    // Workspace state: the accent Open is the CommandBar button
-    // ([data-toolbar-open], CommandBar.tsx:197-211).
+    // Workspace state: the accent Open is the title-bar button
+    // ([data-toolbar-open] inside .titlebar-file; Phase 22 moved it out
+    // of the CommandBar).
     openBg: getComputedStyle(document.querySelector('[data-toolbar-open]')).backgroundColor,
+    titlebarOpen: (() => {
+      const b = document.querySelector('[data-toolbar-open]');
+      if (!b) return null;
+      return {
+        label: b.getAttribute('aria-label'),
+        title: b.getAttribute('title'),
+        innerText: (b.innerText || '').trim(),
+        // Phase 22 - the labelled primary Open action now lives in the
+        // title bar's file group, not the command bar.
+        primary: b.matches('.titlebar-file-open, .btn-primary'),
+        inTitlebar: !!b.closest('.titlebar-file'),
+      };
+    })(),
     iconOnly: (() => {
       const scan = (scope) => Array.from(document.querySelectorAll(`${scope} button`)).map((b) => ({
         label: b.getAttribute('aria-label'),
         title: b.getAttribute('title'),
         innerText: (b.innerText || '').trim(),
-        // The CommandBar's leading Open action is a labelled primary button
-        // (Phase 14.2 FIX 3), unlike the icon-only tool buttons around it.
         primary: b.matches('.btn-primary'),
       }));
       return {
@@ -129,8 +142,10 @@ test('P13-VIS: borderless title bar + toolbar + light/dark design-reference scre
       expect(b.innerText, 'icon-only toolbar: buttons must not render text').toBe('');
     }
   }
-  const primaryOpen = lightProbe.iconOnly.main.find((b) => b.primary);
-  expect(primaryOpen, 'the labelled primary Open action must be in the command bar').toBeTruthy();
+  const primaryOpen = lightProbe.titlebarOpen;
+  expect(primaryOpen, 'the labelled primary Open action must be in the title bar').not.toBeNull();
+  expect(primaryOpen.primary, 'the title-bar Open is the accent primary').toBe(true);
+  expect(primaryOpen.inTitlebar, 'the Open action lives in the title-bar file group').toBe(true);
   expect(primaryOpen.innerText, 'the primary Open action is labelled (Phase 14.2 FIX 3)').toBe('Open');
   expect(lightProbe.iconOnly.labelSpans, 'no text label spans may exist in toolbars').toBe(0);
 

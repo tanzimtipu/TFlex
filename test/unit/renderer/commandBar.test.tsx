@@ -78,12 +78,16 @@ function unmount(host: HTMLElement): void {
 }
 
 describe("CommandBar — glass control groups", () => {
-  it("renders the reference groups in order, each a labelled capsule", () => {
+  it("renders the remaining reference groups in order, each a labelled capsule", () => {
     const host = mountBar({ onRotateClockwise: NOOP, onRotateCounterClockwise: NOOP, onDeletePage: NOOP });
     try {
       const groups = Array.from(host.querySelectorAll<HTMLElement>(".glass-control-group"));
       const labels = groups.map((g) => g.getAttribute("aria-label"));
-      expect(labels).toEqual(["File", "Navigation", "Save", "Zoom", "Tools", "Document actions"]);
+      // Phase 22 — the File (Open) and Save groups left this bar: the
+      // caption strip (AppHeader's .titlebar-file group) owns Open /
+      // Save / Save As now. The working groups keep their reference
+      // order.
+      expect(labels).toEqual(["Navigation", "Zoom", "Tools", "Document actions"]);
       // Every capsule carries BOTH the glass class and the legacy
       // .toolbar-group class (the toolbar overflow contract rides it).
       for (const g of groups) {
@@ -95,32 +99,18 @@ describe("CommandBar — glass control groups", () => {
     }
   });
 
-  it("the File group renders only when onOpenFile is wired (no ghost group)", () => {
-    const host = mountBar({ onOpenFile: undefined });
+  it("renders no File / Save group (Phase 22: no duplicate controls)", () => {
+    const host = mountBar({ onOpenFile: NOOP });
     try {
       const labels = Array.from(host.querySelectorAll<HTMLElement>(".glass-control-group"))
         .map((g) => g.getAttribute("aria-label"));
       expect(labels).not.toContain("File");
-    } finally {
-      unmount(host);
-    }
-  });
-
-  it("the Open button is the accent primary and fires onOpenFile", () => {
-    const onOpenFile = vi.fn();
-    const host = mountBar({ onOpenFile });
-    try {
-      const open = host.querySelector<HTMLButtonElement>("[data-toolbar-open]");
-      expect(open).not.toBeNull();
-      expect(open?.getAttribute("aria-label")).toBe("Open PDF document");
-      expect(open?.getAttribute("title")).toBeTruthy();
-      expect(open?.classList.contains("btn-primary")).toBe(true);
-      // The ONE labelled control in the command bar.
-      expect(open?.textContent).toContain("Open");
-      act((): void => {
-        open?.click();
-      });
-      expect(onOpenFile).toHaveBeenCalledTimes(1);
+      expect(labels).not.toContain("Save");
+      // And no relocated control's hook survives in the command bar.
+      expect(host.querySelector("[data-toolbar-open]")).toBeNull();
+      expect(host.querySelector("[data-toolbar-save]")).toBeNull();
+      expect(host.querySelector("[data-toolbar-save-as]")).toBeNull();
+      expect(host.querySelector(".commandbar-open")).toBeNull();
     } finally {
       unmount(host);
     }
@@ -169,7 +159,7 @@ describe("CommandBar — glass control groups", () => {
     }
   });
 
-  it("keeps the stable control hooks (data-hand-toggle / rotate / save-as); the tools toggle moved to the page-view badge", () => {
+  it("keeps the stable control hooks (data-hand-toggle / rotate); the file actions moved to the title bar", () => {
     const host = mountBar({ onRotateClockwise: NOOP, onRotateCounterClockwise: NOOP, onDeletePage: NOOP });
     try {
       // The Tools palette toggle left the command bar: it is now the
@@ -181,8 +171,9 @@ describe("CommandBar — glass control groups", () => {
       expect(host.querySelector("[data-hand-toggle]")).not.toBeNull();
       expect(host.querySelector("[data-toolbar-rotate-cw]")).not.toBeNull();
       expect(host.querySelector("[data-toolbar-rotate-ccw]")).not.toBeNull();
-      expect(host.querySelector("[data-toolbar-save-as]")).not.toBeNull();
-      expect(host.querySelector("[data-toolbar-open]")).not.toBeNull();
+      // Phase 22 — the file actions are NOT here any more.
+      expect(host.querySelector("[data-toolbar-save-as]")).toBeNull();
+      expect(host.querySelector("[data-toolbar-open]")).toBeNull();
     } finally {
       unmount(host);
     }

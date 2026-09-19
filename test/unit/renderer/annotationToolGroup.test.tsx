@@ -305,13 +305,10 @@ describe("Phase 19 — dropdown behaviour", () => {
 function mountBarWithGroup(annotationTools: ReactElement): Mounted {
   return mount(
     <CommandBar
-      onOpenFile={NOOP}
       page={1}
       pageCount={3}
       zoomPercent={100}
       zoomMode={"fit-width" as ZoomMode}
-      modified={false}
-      saveInPlaceEnabled
       onJump={NOOP}
       onZoomIn={NOOP}
       onZoomOut={NOOP}
@@ -319,8 +316,6 @@ function mountBarWithGroup(annotationTools: ReactElement): Mounted {
       onFitPage={NOOP}
       searchOpen={false}
       onToggleSearch={NOOP}
-      onSave={NOOP}
-      onSaveAs={NOOP}
       onMerge={NOOP}
       onSplit={NOOP}
       signToolActive={false}
@@ -349,7 +344,10 @@ describe("Phase 19 — the group is the CommandBar's last capsule", () => {
       const groups = Array.from(
         toolbar?.querySelectorAll<HTMLElement>(":scope > .toolbar-group") ?? [],
       );
-      expect(groups.length).toBeGreaterThanOrEqual(6);
+      // Phase 22 — the File and Save groups left the bar, so the capsule
+      // count dropped from six to five (Navigation / Zoom / Tools /
+      // Document actions / Annotate); the annotate group is still LAST.
+      expect(groups.length).toBeGreaterThanOrEqual(5);
       const last = groups.at(-1);
       expect(last?.hasAttribute("data-annotation-toolbar")).toBe(true);
       expect(last?.classList.contains("commandbar-group-annotate")).toBe(true);

@@ -80,11 +80,10 @@ async function dragRegionMap(win) {
     for (let x = b.left + 4; x < b.right - 4; x += 8) {
       if (pointIsDrag(x, b.top + b.height / 2)) draggableXs.push(Math.round(x));
     }
-    // Caption-strip controls that must opt out of window drag. Open is no
-    // longer one of them: it left the header-actions cluster in Phase 14.1
-    // (AppHeader.tsx:393-396) and now lives in the CommandBar
-    // ([data-toolbar-open], CommandBar.tsx:197-211) inside .app-main, which
-    // sits outside the draggable .titlebar, so it carries no app-region rule.
+    // Caption-strip controls that must opt out of window drag. Phase 22
+    // put the file actions back in the caption strip ([data-toolbar-open]
+    // inside AppHeader's .titlebar-file group), which opts out of drag via
+    // -webkit-app-region: no-drag; the core controls below stay listed.
     const noDragControls = ['[data-window-minimize]', '[data-window-maximize]', '[data-window-close]', '[data-menu-button]', '.header-gear', '[data-theme-toggle]']
       .filter((s) => {
         const el = document.querySelector(s);

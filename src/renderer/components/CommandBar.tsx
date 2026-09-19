@@ -3,7 +3,7 @@
 // The reference's second top surface: a full-width glass band of
 // control GROUPS in glass capsules, not a field of loose buttons:
 //
-//   [ Open (accent) ]  [ < 1/34 > ]  [ Save ]  [ - 372% + ]  [ tools... ]  [ Merge Split Sign ]
+//   [ < 1/34 > ]  [ - 372% + ]  [ tools... ]  [ Merge Split Sign ]
 //
 // The Tools palette toggle no longer lives in this bar: it is the
 // floating badge on the page view's right edge (DocumentView's
@@ -18,16 +18,17 @@
 // `.toolbar-group` / `.tool-btn` classes stay on the DOM so every
 // toolbar CSS contract and e2e selector keeps resolving.
 //
-// The Open button lives HERE (the reference's command bar), not in the
-// title bar: the caption strip is logo | tabs | app controls | window
-// controls, and the document commands are the command bar's job.
+// Phase 22 — the File (Open) and Save groups LEFT this bar: the
+// operator relocated Open / Save / Save As into the caption strip
+// (AppHeader's .titlebar-file group), immediately right of the TFlex
+// brand. This bar carries the page/zoom/tools/actions controls only,
+// and no duplicate File/Save control exists anywhere in the DOM.
 
 import {
   ChevronLeft,
   ChevronRight,
   Expand,
   FileSignature,
-  FolderOpen,
   GitMerge,
   Hand,
   Layers,
@@ -39,8 +40,6 @@ import {
   Plus,
   RotateCcw,
   RotateCw,
-  Save,
-  SaveAll,
   Scissors,
   Search,
   Trash2,
@@ -51,10 +50,6 @@ import type { ZoomMode } from '../state/zoom';
 import { GlassControlGroup } from './GlassChrome';
 
 export interface CommandBarProps {
-  /** The primary accent action: open a PDF (the reference's blue
-   *  button at the command bar's leading edge). Optional so harnesses
-   *  that predate the command-bar Open can omit it. */
-  onOpenFile?: () => void;
   page: number;
   pageCount: number;
   /** Phase 12 — logical page label for the active page (e.g. "iv", "A1").
@@ -64,11 +59,6 @@ export interface CommandBarProps {
   pageLabel?: string | null;
   zoomPercent: number;
   zoomMode: ZoomMode;
-  /** Whether the active tab has unsaved engine changes (Save is enabled). */
-  modified: boolean;
-  /** Whether Save (in-place) is allowed: false for read-only sources
-   *  (samples). Save-As is still available. */
-  saveInPlaceEnabled: boolean;
   onJump: (input: string) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -76,8 +66,6 @@ export interface CommandBarProps {
   onFitPage: () => void;
   searchOpen: boolean;
   onToggleSearch: () => void;
-  onSave: () => void;
-  onSaveAs: () => void;
   onMerge: () => void;
   onSplit: () => void;
   /** Phase 4 — Sign tool button. When true, the toolbar button shows
@@ -144,14 +132,11 @@ export interface CommandBarProps {
  *  page view's right edge as the floating .tools-badge-tracker. */
 export function CommandBar(props: CommandBarProps) {
   const {
-    onOpenFile,
     page,
     pageCount,
     pageLabel = null,
     zoomPercent,
     zoomMode,
-    modified,
-    saveInPlaceEnabled,
     onJump,
     onZoomIn,
     onZoomOut,
@@ -159,8 +144,6 @@ export function CommandBar(props: CommandBarProps) {
     onFitPage,
     searchOpen,
     onToggleSearch,
-    onSave,
-    onSaveAs,
     onMerge,
     onSplit,
     signToolActive,
@@ -191,24 +174,12 @@ export function CommandBar(props: CommandBarProps) {
 
   return (
     <div className="toolbar">
-      {/* GROUP: File — the primary accent action. Blue is reserved for
-       *  primary actions; this is the command bar's only solid-accent
-       *  control (the reference's leading blue button). */}
-      {onOpenFile !== undefined && (
-        <GlassControlGroup label="File" className="toolbar-group commandbar-group-open">
-          <button
-            type="button"
-            className="btn btn-primary commandbar-open"
-            onClick={onOpenFile}
-            aria-label="Open PDF document"
-            title="Open PDF"
-            data-toolbar-open
-          >
-            <FolderOpen size={20} aria-hidden />
-            Open
-          </button>
-        </GlassControlGroup>
-      )}
+      {/* Phase 22 — the File (Open) and Save groups are GONE: the
+       *  operator relocated Open / Save / Save As into the caption
+       *  strip (AppHeader's .titlebar-file group), immediately right
+       *  of the TFlex brand. This bar keeps only the working
+       *  document controls (navigation / zoom / tools / actions), and
+       *  no duplicate control exists anywhere in the DOM. */}
 
       {/* GROUP: Navigation — [<] [1/34] [>] */}
       <GlassControlGroup label="Navigation" className="toolbar-group">
@@ -256,43 +227,6 @@ export function CommandBar(props: CommandBarProps) {
           title="Next page"
         >
           <ChevronRight size={22} aria-hidden />
-        </button>
-      </GlassControlGroup>
-
-      {/* GROUP: Save */}
-      <GlassControlGroup label="Save" className="toolbar-group">
-        <button
-          type="button"
-          className={
-            !modified
-              ? 'tool-btn tool-btn-save-clean'
-              : saveInPlaceEnabled
-                ? 'tool-btn tool-btn-modified'
-                : 'tool-btn tool-btn-modified tool-btn-save-readonly'
-          }
-          onClick={onSave}
-          disabled={!modified || !saveInPlaceEnabled}
-          title={
-            !modified
-              ? 'Saved — no changes to save'
-              : saveInPlaceEnabled
-                ? 'Unsaved changes — Save now (Ctrl+S)'
-                : 'Read-only document — use Save As to save a copy'
-          }
-          aria-label="Save"
-        >
-          <Save size={22} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="tool-btn"
-          onClick={onSaveAs}
-          disabled={!modified}
-          title={modified ? 'Save a copy (Ctrl+Shift+S)' : 'Nothing to save'}
-          aria-label="Save a copy"
-          data-toolbar-save-as
-        >
-          <SaveAll size={22} aria-hidden />
         </button>
       </GlassControlGroup>
 

@@ -1,14 +1,17 @@
-// PHASE 14.1 CONTROL-INDEX SWEEP (qa, 2026-09-13).
+// PHASE 14.1 CONTROL-INDEX SWEEP (qa, 2026-09-13; Phase-22 repoint 2026-09-19).
 // Phase 14.1 restructures the Phase-13 icon toolbar into the grouped
-// command bar (GlassControlGroup capsules) and MOVES the Open button from
-// the title bar into the command bar. The promised state changes:
-//   1. Six capsules render (File / Navigation / Save / Zoom / Tools /
-//      Document actions), each a role=group with aria-label.
-//   2. The command-bar Open button (the accent) actually OPENS a document
+// command bar (GlassControlGroup capsules). Phase 22 moved the Open and
+// Save/Save-As controls OUT of the command bar into the title bar
+// (AppHeader's .titlebar-file group), so the promised state changes are:
+//   1. Five command-bar capsules render (Navigation / Zoom / Tools /
+//      Document actions / Annotate), each a role=group with aria-label,
+//      plus the title-bar File-actions group (Open / Save / Save As).
+//   2. The title-bar Open button (the accent) actually OPENS a document
 //      through the mocked dialog (moved control keeps its behavior).
 //   3. Navigation capsule: prev/next move the page indicator.
 //   4. Zoom capsule: +/- move the zoom readout.
-//   5. Save capsule: Save + Save-As disabled while unmodified.
+//   5. Save control: Save disabled while unmodified; Save-As enabled
+//      (DEF-246 — a copy is always allowed while a document is open).
 //   6. The "More" capsule toggles the Tools palette (aria-pressed flips).
 //   7. No renderer errors through the sweep.
 // Canonical launcher, dev build. Screenshots -> screenshots/phase141-sweep-*.
@@ -45,7 +48,7 @@ test.describe.serial('phase 14.1 command bar control sweep', () => {
     win = null;
   });
 
-  test('CAPSULES: six role=group capsules with labels in the command bar', async () => {
+  test('CAPSULES: command-bar capsules + the title-bar file group', async () => {
     test.setTimeout(180000);
     await win.locator('button:has-text("Open PDF")').first().click();
     await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
@@ -59,20 +62,35 @@ test.describe.serial('phase 14.1 command bar control sweep', () => {
       })));
     console.log('[sweep] capsules:', JSON.stringify(groups));
     expect(groups.map((g) => g.label)).toEqual([
-      'File', 'Navigation', 'Save', 'Zoom', 'Tools', 'Document actions',
+      'Navigation', 'Zoom', 'Tools', 'Document actions', 'Annotate',
     ]);
     for (const g of groups) {
       expect(g.role, `${g.label} must be role=group`).toBe('group');
     }
+    // Phase 22 - the File group (Open / Save / Save As) now lives in the
+    // title bar, still as ONE role=group capsule.
+    const fileGroup = await win.evaluate(() => {
+      const g = document.querySelector('.titlebar-file');
+      return g ? {
+        role: g.getAttribute('role'),
+        label: g.getAttribute('aria-label'),
+        buttons: g.querySelectorAll('button').length,
+      } : null;
+    });
+    console.log('[sweep] title-bar file group:', JSON.stringify(fileGroup));
+    expect(fileGroup, 'the title-bar file group must render').not.toBeNull();
+    expect(fileGroup.role, 'file group is role=group').toBe('group');
+    expect(fileGroup.label, 'file group accessible name').toBe('File actions');
+    expect(fileGroup.buttons, 'Open / Save / Save As').toBe(3);
     await win.screenshot({ path: path.join(SHOTS, 'phase141-sweep-commandbar.png') });
     expect(rendererErrors).toEqual([]);
   });
 
-  test('OPEN: the command-bar accent button opens a document (moved control keeps behavior)', async () => {
+  test('OPEN: the title-bar accent button opens a document (moved control keeps behavior)', async () => {
     test.setTimeout(180000);
     // The command bar exists only in the document workspace, so first open
     // a document through the welcome hero, then drive the MOVED control:
-    // the command bar's Open button must open a SECOND document as a tab.
+    // the title bar's Open button must open a SECOND document as a tab.
     await win.locator('button:has-text("Open PDF")').first().click();
     await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
     await win.waitForTimeout(1500);
@@ -82,7 +100,7 @@ test.describe.serial('phase 14.1 command bar control sweep', () => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
     }, formPath);
     const before = await win.evaluate(() => document.querySelectorAll('.tab[data-tab-id]').length);
-    await win.locator('.commandbar-open[data-toolbar-open]').click();
+    await win.locator('[data-toolbar-open]').click();
     await win.waitForFunction(
       (n) => document.querySelectorAll('.tab[data-tab-id]').length > n,
       before,
@@ -97,7 +115,7 @@ test.describe.serial('phase 14.1 command bar control sweep', () => {
       return t ? t.textContent : '';
     });
     console.log('[sweep] active tab label:', tabLabel);
-    expect(String(tabLabel), 'the command-bar Open must open the newly picked document').toContain('form.pdf');
+    expect(String(tabLabel), 'the title-bar Open must open the newly picked document').toContain('form.pdf');
     await win.screenshot({ path: path.join(SHOTS, 'phase141-sweep-open-result.png') });
     expect(rendererErrors).toEqual([]);
   });
@@ -128,14 +146,14 @@ test.describe.serial('phase 14.1 command bar control sweep', () => {
     console.log(`[sweep] zoom: ${z0}% -> ${z1}%`);
     expect(z1, 'zoom-in must raise the readout').toBeGreaterThan(z0);
 
-    // Save + Save-As disabled while unmodified
+    // Save disabled while unmodified; Save-As stays enabled (DEF-246).
     const saveState = await win.evaluate(() => ({
-      save: document.querySelector('.toolbar button[aria-label="Save"]').disabled,
+      save: document.querySelector('[data-toolbar-save]').disabled,
       saveAs: document.querySelector('[data-toolbar-save-as]').disabled,
     }));
     console.log('[sweep] save states (unmodified):', JSON.stringify(saveState));
     expect(saveState.save, 'Save must be disabled while unmodified').toBe(true);
-    expect(saveState.saveAs, 'Save-As must be disabled while unmodified').toBe(true);
+    expect(saveState.saveAs, 'Save-As stays enabled while unmodified (DEF-246)').toBe(false);
     expect(rendererErrors).toEqual([]);
   });
 

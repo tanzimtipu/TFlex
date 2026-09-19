@@ -33,8 +33,6 @@ function mountToolbar(args: {
         pageLabel={args.pageLabel ?? null}
         zoomPercent={100}
         zoomMode="fit-width"
-        modified={false}
-        saveInPlaceEnabled={true}
         onJump={noop}
         onZoomIn={noop}
         onZoomOut={noop}
@@ -42,8 +40,6 @@ function mountToolbar(args: {
         onFitPage={noop}
         searchOpen={false}
         onToggleSearch={noop}
-        onSave={noop}
-        onSaveAs={noop}
         onMerge={noop}
         onSplit={noop}
         signToolActive={false}

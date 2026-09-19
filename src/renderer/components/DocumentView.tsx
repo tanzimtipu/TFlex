@@ -145,12 +145,16 @@ interface DocumentViewProps {
    *  which is a pdf-lib ORIGINAL page index and only addresses the
    *  original open bytes. Defaults to false (original proxy). */
   proxyVisibleOrder?: boolean;
-  /** True when the active tab has unsaved engine changes. */
-  modified: boolean;
+  /** True when the active tab has unsaved engine changes. Phase 22 —
+   *  the CommandBar no longer shows a Save control, so this view no
+   *  longer reads it; the title bar (AppHeader) owns Save state. The
+   *  prop is retained (optional) for host/harness compatibility. */
+  modified?: boolean;
   /** Whether undo is currently possible for the active tab. */
   canUndo: boolean;
-  /** False for sample documents (Save is gated to Save-As only). */
-  saveInPlaceEnabled: boolean;
+  /** False for sample documents (Save is gated to Save-As only).
+   *  Phase 22 — no longer read here (Save moved to the title bar). */
+  saveInPlaceEnabled?: boolean;
   /** Rail engine callbacks. Each is optional so the rail can degrade
    *  gracefully (e.g. tests can omit them to render the rail with no
    *  editing capability). */
@@ -160,9 +164,11 @@ interface DocumentViewProps {
   onUndo?: () => void;
   /** Toolbar action callbacks. */
   /** Phase 14.1 — the command bar's accent Open button (the reference
-   *  places Open in the command bar, not the title bar). Only wired
-   *  in the real app; optional so tests/harnesses can omit it (the
-   *  File group then doesn't render). */
+   *  places Open in the command bar, not the title bar). Phase 22 —
+   *  SUPERSEDED: Open / Save / Save As live in the caption strip
+   *  (AppHeader's .titlebar-file group), so these props are no longer
+   *  read here. They stay on the interface for host/harness
+   *  compatibility; the real app wires the title bar directly. */
   onOpenFile?: () => void;
   onSave?: () => void;
   onSaveAs?: () => void;
@@ -457,16 +463,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onToast,
   engineState,
   proxyVisibleOrder = false,
-  modified,
   canUndo,
-  saveInPlaceEnabled,
   onRotate,
   onDelete,
   onReorder,
   onUndo,
-  onOpenFile,
-  onSave,
-  onSaveAs,
   onMerge,
   onSplit,
   onOptimize,
@@ -2187,9 +2188,6 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           pageLabel={resolvePageLabel(currentPage, engineState.pageLabels)}
           zoomPercent={Math.round(effectiveScale * 100)}
           zoomMode={zoom.mode}
-          modified={modified}
-          saveInPlaceEnabled={saveInPlaceEnabled}
-          onOpenFile={onOpenFile}
           onJump={pageJump}
           onZoomIn={(): void => zoomTo(1)}
           onZoomOut={(): void => zoomTo(-1)}
@@ -2197,8 +2195,6 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           onFitPage={(): void => setMode("fit-page")}
           searchOpen={searchOpen}
           onToggleSearch={(): void => setSearchOpen((v) => !v)}
-          onSave={(): void => onSave?.()}
-          onSaveAs={(): void => onSaveAs?.()}
           onMerge={(): void => onMerge?.()}
           onSplit={(): void => onSplit?.()}
           signToolActive={armedSignatureId !== null}

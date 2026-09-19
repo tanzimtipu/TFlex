@@ -5,6 +5,85 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-246: Save As was unreachable from Ctrl+Shift+S / the menu on a clean document while the relocated button said "Nothing to save"
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-060)
+- Phase: 22
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open a writable copy of `report.pdf` (mocked Open dialog).
+2. Rotate a page to dirty the document, then press Ctrl+S to save it in place (back to clean, on-disk path present).
+3. Read the relocated Save As button `[data-toolbar-save-as]`: `disabled:true`, title "Nothing to save"; force-click it (no dialog).
+4. Press Ctrl+Shift+S; then invoke the menu route `menu:action {action:"saveAs"}`; count `[data-save-as-dialog]` after each.
+
+Expected: the disabled/"Nothing to save" semantics agree across the button, the native menu and the Ctrl+Shift+S accelerator (Phase 22 criterion 3: the Save control keeps its disabled semantics).
+Actual: the disabled button click opened no dialog (`saveAs:0`), but Ctrl+Shift+S and the menu route BOTH opened the Save As dialog (`saveAs:1`). Root cause: the new renderer Ctrl+Shift+S branch (App.tsx ~6270, added by the DEF-243 fix) and the menu `saveAs` context were gated on `tabs.activeId !== null` with no `saveModified` check, so the button was the odd one out.
+
+History:
+- qa: opened (2026-09-20; accepted from ADV-060, LOW)
+- qa: CLOSED (2026-09-20 FIX-READY retest; `e2e/retests/def_243_246_retest.spec.cjs` DEF-246a/246b). State matrix, all four routes agree - Save As button / native `menu.saveAs` enabled / Ctrl+Shift+S opens / menu click opens: welcome `disabled,false,no,no`; clean-on-disk `enabled,true,opens,opens`; modified `enabled,true,opens,opens`; read-only clean `enabled,true,opens,opens`; read-only modified `enabled,true,opens,opens`. Save's in-place semantics unchanged (clean disabled "Saved — no changes to save"; modified enabled "Unsaved changes — Save now (Ctrl+S)"; read-only disabled with the readonly tint "Read-only document — use Save As to save a copy").
+
+## DEF-245: Opening a second document at the 640px minimum width left its (now active) tab entirely off-screen; the strip never scrolled to it
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-059)
+- Phase: 22
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open a writable copy of `report.pdf`, then reduce the strip to one tab.
+2. Set the window to 1440 / 900 / 640 (height 800), force `.tab-list.scrollLeft = 0`, then open a second document through the relocated Open control.
+3. Read `.tab-list` (scrollLeft / scrollWidth / clientWidth) and the active tab's rect vs `.tab-area`; repeat with an accumulated 6-tab state.
+
+Expected: Phase 22 criterion 4 - the strip scrolls the ACTIVE tab into view rather than clipping it (an Open that succeeds must give the user a visible tab).
+Actual: 1440px active tab fully visible; 900px only ~57px visible; 640px the newly opened document's active tab was completely invisible (`activeAnyVisible:false`, `scrollLeft 0`, strip clientWidth 113). With 6 tabs the active tab measured 1390.5–1617.8 against a 239.8–353.0 strip, still `scrollLeft 0`.
+
+History:
+- qa: opened (2026-09-20; accepted from ADV-059, MEDIUM)
+- qa: CLOSED (2026-09-20 FIX-READY retest; `e2e/retests/def_243_246_retest.spec.cjs` DEF-245). At 640 the strip clientWidth is 113 and one tab is 227px, so acceptance is start + title visible. With 2 tabs, opening the 2nd: `scrollLeft 233`, active rect 240–467, `startVisible:true`, 101px of the title visible. With 6 tabs, opening the 6th: `scrollLeft 1151`, start+101px title visible. Switching back to the first tab: `scrollLeft 4`, start+title visible. At 900 and 1440 the active tab is fully visible after open, switch and close (visibleActiveW 227/227; 900 `scrollLeft` 171/0/1088, 1440 0/0/594). Screenshot screenshots/def245-active-tab-visible.png (640, 6-tab open: active tab start + title visible). Residual, outside this defect's open/switch scope: at 640, after CLOSING the active tab, `scrollIntoView({inline:'nearest'})` aligns the new active tab by its trailing edge (`scrollLeft 1035`, start clipped, 79px of title visible) because a 227px tab cannot fit a 113px viewport; the tab is still visible. Flagged to the orchestrator as a concern, not reopened.
+
+## DEF-243: Ctrl+Shift+S saves in place instead of opening Save As
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 22
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open a writable PDF (a temp copy of `report.pdf` via the mocked Open dialog).
+2. Modify the document (rotate clockwise) so the title-bar Save control is enabled with the modified dot.
+3. Press Ctrl+Shift+S.
+
+Expected: the Save-As flow opens (SaveAsDialog), so the user chooses a new path and saves a copy (Phase 22 criterion 3: Ctrl+Shift+S still works).
+Actual: no Save As dialog opens. The renderer's global keydown handler (src/renderer/App.tsx:6259-6265) matches `e.key === 's'` with Ctrl but does NOT exclude Shift, so it calls `onSave` and `preventDefault()`; the document is silently saved IN PLACE over the source file (toast "Saved <file>.") and Save returns to the disabled/clean state. The app-menu popover item "Save As... Ctrl+Shift+S" DOES open the dialog, so only the keyboard accelerator is broken. Diagnostic: `[diag|after Ctrl+Shift+S] {"dialog":false,"saveDisabled":true,"saveTitle":"Saved — no changes to save","toast":["Saved 1789824453281-report.pdf."]}` vs `[diag|after menu Save As] {"dialog":true,"saveDisabled":true}`.
+Screenshot: screenshots/phase22-diag-saveas.png
+
+History:
+- qa: opened (2026-09-19, Phase-22 validation). HIGH - breaks Phase 22 criterion 3 and a user asking to save a COPY silently overwrites the original. Minimal fix: add `!e.shiftKey` to the Ctrl+S branch (mirroring the Ctrl+Z branch's guard) so the native menu accelerator handles Ctrl+Shift+S.
+- qa: CLOSED (2026-09-20 FIX-READY retest; `e2e/retests/def_243_246_retest.spec.cjs` DEF-243a/243b, 6/6 suite pass). Ctrl+S on a 33028-byte copy of `report.pdf`: source size 33028 -> 23795, mtime 1789550984915 -> 1789831160308 (in-place write), Save returns disabled with "Saved — no changes to save". Ctrl+Shift+S on a fresh 33028-byte copy: `[data-save-as-dialog]` opened, confirm wrote the copy (23795 bytes) at the mocked path, and the source was byte/mtime-identical (size 33028, mtime 1789550984915 before AND after) - no in-place overwrite. Screenshot screenshots/def243-saveas-dialog.png.
+
+## DEF-244: At the 640px minimum width the title-bar tab strip collapses to 0-8px and no tab is visible
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 22
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf` via the welcome Open.
+2. Resize the window to 640x800 (the configured `minWidth` in src/main/window.ts:94).
+3. Measure `.tab-area` / `.tab-list` and screenshot the title bar.
+
+Expected: the tab strip stays a usable scrollable strip showing at least the active tab (Phase 22 criterion 4 and the feature's "must not collide with the tab strip at the minimum window width; the tab strip scrolls instead").
+Actual: `.tab-area` clientWidth = 0, `.tab-list` clientWidth = 8 (its 4px+4px padding only), scrollWidth = 252; no tab is visible or clickable - the open document's tab is entirely clipped out. At 820 `.tab-area` is 164px and scrolls (max scrollLeft 88); at 1440 it is 784px with no scroll. The relocated controls themselves are reachable at all three widths (`elementFromPoint` resolves to Open/Save/Save As) and the group (right 274) does not overlap the tab area (left 286); the failure is that Phase 22's 157px file group (145px + 12px margin) leaves the strip zero width, so the min-width experience reads broken.
+Screenshot: screenshots/phase22-640-min-width.png
+
+History:
+- qa: opened (2026-09-19, Phase-22 validation). MEDIUM - a supported workflow (seeing/switching the open document) is unusable at the minimum width. Minimal fix: compact the file group at narrow widths (icon-only Open below ~900px, i.e. hide `.titlebar-file-label`), or give `.tab-area` a min-width (~120px) with Save/Save As folded into an overflow menu at min width.
+- qa: CLOSED (2026-09-20 FIX-READY retest; `e2e/retests/def_243_246_retest.spec.cjs` DEF-244). `.tab-area` clientWidth 113 at 640, 210 at 820, 784 at 1440 (was 0/164/784). First tab title (titleW 180): 97px visible at 640 (start + "report-178983..." title visible), 180/180 at 820 and 1440. `elementFromPoint` at the Open / Save / Save As centres resolves to self at all three widths. Screenshot screenshots/def244-640.png (Open icon-only, Save + Save As icons, active tab title visible).
+
 ## DEF-241: At the minimum window width the Tools palette covers the docked text-properties panel (15 enabled controls unreachable)
 
 - Status: CLOSED

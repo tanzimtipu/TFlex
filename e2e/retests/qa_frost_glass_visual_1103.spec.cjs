@@ -189,15 +189,15 @@ test.describe.serial('qa frosted-glass visual verification (light acrylic redesi
       expect(film.b, `${m.selector} film must be neutral (B 255)`).toBe(255);
     }
 
-    // ACCENT-ONLY blue: the command bar's Open button is the ONE solid
-    // accent control in the chrome (the reference's leading blue button);
-    // the films themselves stay neutral.
+    // ACCENT-ONLY blue: the title bar's Open button is the ONE solid
+    // accent control in the chrome (Phase 22 relocated it out of the
+    // command bar); the films themselves stay neutral.
     const openBtnBg = await win.evaluate(() => {
-      const btn = document.querySelector('.commandbar-open');
+      const btn = document.querySelector('[data-toolbar-open]');
       return btn ? getComputedStyle(btn).backgroundColor : null;
     });
-    console.log('[glass] command-bar Open =', openBtnBg);
-    expect(openBtnBg, 'the command bar must render the accent Open button').not.toBeNull();
+    console.log('[glass] title-bar Open =', openBtnBg);
+    expect(openBtnBg, 'the title bar must render the accent Open button').not.toBeNull();
     const openRgb = parseRgba(openBtnBg);
     expect(openRgb.b, 'Open button must be the blue accent (B >> R)').toBeGreaterThan(openRgb.r + 100);
     expect(openRgb.a, 'Open button is a SOLID accent (alpha 1)').toBe(1);

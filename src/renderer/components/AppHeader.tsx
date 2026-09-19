@@ -11,9 +11,12 @@ import {
 import {
   Check,
   ChevronDown,
+  FolderOpen,
   Monitor,
   Moon,
   Plus,
+  Save,
+  SaveAll,
   Settings,
   Sparkles,
   Sun,
@@ -25,6 +28,7 @@ import type { TabInput } from "../state/tabMouseDown";
 import { AnimatedTab } from "./AnimatedTab";
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
+import { useLiveReducedMotion } from "../hooks/useAnimations";
 
 export type AppHeaderTab = TabInput;
 
@@ -49,7 +53,23 @@ interface AppHeaderProps {
   /** Phase 14.1 — REMOVED: the Open button moved to the command bar
    *  (CommandBar's accent File group) per the Liquid Glass reference:
    *  the caption strip is logo | tabs | app controls | window controls,
-   *  and document commands live in the command bar below it. */
+   *  and document commands live in the command bar below it.
+   *
+   *  Phase 22 — SUPERSEDED: the operator moved Open / Save / Save As
+   *  back into the caption strip, immediately right of the brand and
+   *  left of the tab strip, as ONE grouped control. The CommandBar no
+   *  longer renders them. These props carry the relocated actions; the
+   *  host (App.tsx) threads the ACTIVE tab's save state + handlers. */
+  onOpenFile?: () => void;
+  onSave?: () => void;
+  onSaveAs?: () => void;
+  /** True when the active tab has unsaved engine changes. Drives the
+   *  Save control's enabled state + modified dot. */
+  saveModified?: boolean;
+  /** False for read-only sources (samples): in-place Save is gated to
+   *  Save-As only. Defaults to true so a harness that omits it still
+   *  renders the standard behaviour. */
+  saveInPlaceEnabled?: boolean;
   /** Phase 6 — "+ tab" affordance. Spawns a brand-new empty tab that
    *  the user can fill by opening a PDF. The host owns the empty-tab
    *  state (see App.tsx -> tabs.openEmpty). */
@@ -94,7 +114,7 @@ function themeLabel(value: ThemeDefault): string {
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, updateIndicator = null } = props;
+  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   // The picker's selection is the SAVED preference (themeDefault) —
@@ -112,6 +132,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   const themeTriggerRef = useRef<HTMLButtonElement | null>(null);
   const themePopoverRef = useRef<HTMLDivElement | null>(null);
   const themeOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  // DEF-245 — the tab strip's scroll container (.tab-list). The
+  // active-tab visibility effect below reads it to bring a tab that
+  // overflows the caption strip back into view.
+  const tabListRef = useRef<HTMLUListElement | null>(null);
   const themeMorph = useMorphPreset({
     open: themeMenuOpen,
     triggerRef: themeTriggerRef,
@@ -230,6 +254,32 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     [selected, focusThemeOption, onThemeSelect],
   );
 
+  // DEF-245 — keep the ACTIVE tab visible. At the 640px minimum window
+  // width the caption strip is narrower than a couple of tabs, so a
+  // document opened (or switched to) near the end of the strip used to
+  // sit entirely off-screen with `.tab-list` still at scrollLeft 0. On
+  // every active-tab change (open / switch / new tab / close) scroll the
+  // active tab back into view. Native `inline: "nearest"` is a no-op when
+  // the tab is already fully visible, so an ordinary click on a visible
+  // tab never moves the strip. Motion rides the shared Phase-20 system:
+  // a smooth scroll normally, an instant jump under
+  // prefers-reduced-motion (no hardcoded duration).
+  const reducedMotion = useLiveReducedMotion();
+  useEffect(() => {
+    if (activeId === null) return;
+    const list = tabListRef.current;
+    if (list === null) return;
+    const tab = Array.from(list.querySelectorAll<HTMLElement>("[data-tab-id]")).find(
+      (el) => el.dataset.tabId === activeId,
+    );
+    if (tab === undefined || typeof tab.scrollIntoView !== "function") return;
+    tab.scrollIntoView({
+      block: "nearest",
+      inline: "nearest",
+      behavior: reducedMotion ? "auto" : "smooth",
+    });
+  }, [activeId, tabs.length, reducedMotion]);
+
   // Tab strip interaction contract (DEF-034): activation resolves on
   // MOUSEDOWN via the shared resolveTabMouseDown classifier, so padding,
   // gap and inner-title hits all activate and the close button closes.
@@ -250,6 +300,31 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
 
   const currentThemeLabel = themeLabel(selected);
 
+  // Phase 22 — the relocated Save control's state ladder. Identical
+  // semantics to the CommandBar Save button it replaces: warning tint
+  // + dot mark unsaved changes, success marks clean, and a read-only
+  // source keeps the warning tint but stays disabled (Save-As is the
+  // escape hatch). Titles are carried over verbatim so the tooltips
+  // (accelerator hints included) survive the move.
+  //
+  // DEF-246 — Save As is a COPY, not an in-place save: saving a copy of
+  // an unmodified document is a legitimate action, so the relocated
+  // button is enabled whenever a document is open and disabled only on
+  // the welcome screen (no document). That matches the other two routes
+  // exactly: File -> Save As is enabled from `hasActiveDoc` and
+  // Ctrl+Shift+S is gated on `tabs.activeId !== null`. Save's in-place
+  // rules below are untouched.
+  const saveTitle = !saveModified
+    ? "Saved — no changes to save"
+    : saveInPlaceEnabled
+      ? "Unsaved changes — Save now (Ctrl+S)"
+      : "Read-only document — use Save As to save a copy";
+  const saveClass = !saveModified
+    ? "titlebar-file-btn titlebar-file-btn-clean"
+    : saveInPlaceEnabled
+      ? "titlebar-file-btn titlebar-file-btn-modified"
+      : "titlebar-file-btn titlebar-file-btn-modified titlebar-file-btn-readonly";
+
   // Phase 7 — the "+ tab" button lives INSIDE the tab list as the
   // last <li>, so it renders immediately adjacent to the rightmost
   // tab (Phase 7 fix #2). The wrapper <li> keeps the button on the
@@ -261,8 +336,59 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         <span className="brand-mark" aria-hidden>TF</span>
         <span>TFlex</span>
       </div>
+      {/* Phase 22 — the FILE-ACTION group. Open + Save + Save As moved
+       *  out of the CommandBar into the caption strip, immediately to
+       *  the right of the TFlex brand and to the left of the tab strip,
+       *  as ONE grouped capsule sized to the title-bar ladder (28px
+       *  controls). The stable e2e hooks move with the controls:
+       *  [data-toolbar-open] / [data-toolbar-save] /
+       *  [data-toolbar-save-as], so every spec that addressed them keeps
+       *  resolving; only specs asserting the old command-bar PLACEMENT
+       *  need repointing. */}
+      <div className="titlebar-file" role="group" aria-label="File actions">
+        <button
+          type="button"
+          className="titlebar-file-btn titlebar-file-open"
+          onClick={onOpenFile}
+          aria-label="Open PDF document"
+          title="Open PDF (Ctrl+O)"
+          data-toolbar-open
+        >
+          <FolderOpen size={15} aria-hidden />
+          <span className="titlebar-file-label">Open</span>
+        </button>
+        <span className="titlebar-file-sep" aria-hidden />
+        <button
+          type="button"
+          className={saveClass}
+          onClick={onSave}
+          disabled={!saveModified || !saveInPlaceEnabled}
+          title={saveTitle}
+          aria-label="Save"
+          data-toolbar-save
+        >
+          <Save size={15} aria-hidden />
+          {/* The modified dot rides the tab strip's semantics: reserved
+              slot, hidden (not unmounted) when the document is clean. */}
+          <span
+            className={saveModified ? "titlebar-file-dot" : "titlebar-file-dot titlebar-file-dot-hidden"}
+            aria-hidden
+          />
+        </button>
+        <button
+          type="button"
+          className="titlebar-file-btn"
+          onClick={onSaveAs}
+          disabled={activeId === null}
+          title="Save a copy (Ctrl+Shift+S)"
+          aria-label="Save a copy"
+          data-toolbar-save-as
+        >
+          <SaveAll size={15} aria-hidden />
+        </button>
+      </div>
       <div className="tab-area" role="tablist" aria-label="Open documents">
-        <ul className="tab-list">
+        <ul className="tab-list" ref={tabListRef}>
           {/* Cross-theme animation system — one presence boundary owns
               every tab: new tabs play Tab Materialize (opacity in),
               closed tabs play Tab Dissolve (opacity out) before the li

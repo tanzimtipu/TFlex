@@ -5722,24 +5722,6 @@ pushToast(
     };
   }, [openTabs, engineUi, onDelete, onReorder, onRotate, onUndo]);
 
-  const saveHandlers = useMemo(() => {
-    const cache = new Map<string, { save: () => void; saveAs: () => void }>();
-    return (tabId: string) => {
-      const cached = cache.get(tabId);
-      if (cached !== undefined) return cached;
-      const out = {
-        save: (): void => {
-          void onSave(tabId);
-        },
-        saveAs: (): void => {
-          void onSaveAs(tabId);
-        },
-      };
-      cache.set(tabId, out);
-      return out;
-    };
-  }, [onSave, onSaveAs]);
-
   // Per-tab annotation handler wrappers. Stable per tab so the DocumentView's
   // effects don't re-fire just because the parent re-rendered.
   const annotationHandlers = useMemo(() => {
@@ -6275,12 +6257,34 @@ pushToast(
         e.preventDefault();
         closeTab(tabs.activeId);
       } else if (
+        // DEF-243 — `!e.shiftKey` keeps Ctrl/Cmd+Shift+S out of the Save
+        // branch. Without it the Shift variant was swallowed here (it
+        // called `onSave` and preventDefault'd), so the keystroke saved
+        // silently IN PLACE over the source file instead of opening the
+        // Save-As flow. The guard mirrors the Ctrl+Z branch just below.
         (e.ctrlKey || e.metaKey) &&
         e.key.toLowerCase() === "s" &&
+        !e.shiftKey &&
         tabs.activeId !== null
       ) {
         e.preventDefault();
         void onSave(tabs.activeId);
+      } else if (
+        // DEF-243 — Ctrl/Cmd+Shift+S reaches Save As. This is the same
+        // route the menu's `menuContext.saveAs` entry takes (identical
+        // `tabs.activeId !== null` gate, identical `onSaveAs` handler),
+        // mirrored into the renderer for the same reason as the DEF-049
+        // OCR accelerator below: the native menu registers the matching
+        // accelerator (src/main/menu.ts `menu.saveAs`), but Electron's
+        // menu accelerator can race the focused renderer for the
+        // keystroke, so the dialog must not depend on that race.
+        (e.ctrlKey || e.metaKey) &&
+        e.shiftKey &&
+        e.key.toLowerCase() === "s" &&
+        tabs.activeId !== null
+      ) {
+        e.preventDefault();
+        void onSaveAs(tabs.activeId);
       } else if (
         (e.ctrlKey || e.metaKey) &&
         (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y") &&
@@ -6320,7 +6324,7 @@ pushToast(
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onOpenClick, closeTab, onSave, onUndo, onRedo, onOcrClick, tabs.activeId, disarmEditTools]);
+  }, [onOpenClick, closeTab, onSave, onSaveAs, onUndo, onRedo, onOcrClick, tabs.activeId, disarmEditTools]);
 
   useEffect(() => {
     let cancelled = false;
@@ -6502,6 +6506,31 @@ pushToast(
   const activeTab = tabs.activeId !== null ? openTabs[tabs.activeId] : null;
   const activeEngineUi = tabs.activeId !== null ? engineUi[tabs.activeId] : null;
 
+  // Phase 22 — the title bar's relocated File actions (Open / Save /
+  // Save As moved out of the CommandBar). The caption strip is a single
+  // strip, not per-tab, so it reads the ACTIVE tab only. The semantics
+  // are carried over verbatim from the CommandBar props the DocumentView
+  // used to receive: `saveModified` = the tab reducer's flag OR the
+  // engine mirror's flag (DEF-042), `saveInPlaceEnabled` = the source
+  // has an on-disk path (samples are Save-As only). The handlers gate on
+  // the live active id exactly like the menu context does, so a click on
+  // the welcome screen is a clean no-op.
+  const activeTabMeta = tabs.activeId !== null
+    ? tabs.tabs.find((t) => t.id === tabs.activeId) ?? null
+    : null;
+  const activeSaveModified =
+    activeTabMeta?.modified === true || activeEngineUi?.state.modified === true;
+  const activeSaveInPlaceEnabled =
+    activeTab !== null && activeTab !== undefined && activeTab.session.onDiskPath !== null;
+  const onHeaderSave = useCallback((): void => {
+    const activeId = tabs.activeId;
+    if (activeId !== null) void onSave(activeId);
+  }, [tabs.activeId, onSave]);
+  const onHeaderSaveAs = useCallback((): void => {
+    const activeId = tabs.activeId;
+    if (activeId !== null) void onSaveAs(activeId);
+  }, [tabs.activeId, onSaveAs]);
+
   if (!bootDone || settings === null) {
     return (
       <div className={isMaximized ? "app app-maximized" : "app"}>
@@ -6545,6 +6574,13 @@ pushToast(
           // opens the same Preferences sheet the Edit menu and Ctrl+,
           // open. Same single source of truth (`prefsOpen`).
           onOpenPreferences={(): void => setPrefsOpen(true)}
+          // Phase 22 — the relocated Open / Save / Save As. The CommandBar
+          // no longer renders them; the caption strip owns them now.
+          onOpenFile={onOpenClick}
+          onSave={onHeaderSave}
+          onSaveAs={onHeaderSaveAs}
+          saveModified={activeSaveModified}
+          saveInPlaceEnabled={activeSaveInPlaceEnabled}
           // OTA UX — the toolbar update indicator reads its state
           // from the App's shared `onStatusChanged` subscription via
           // `externalState` so the same push that opens the prompt
@@ -6595,23 +6631,9 @@ pushToast(
             tabs.tabs.map((meta) => {
               const open = openTabs[meta.id];
               if (open === undefined) return null;
-              const handlers = saveHandlers(meta.id);
               const engine = engineFor(meta.id);
               const ann = annotationHandlers(meta.id);
               const fs = formsAndSignaturesHandlers(meta.id);
-              const saveInPlaceEnabled = open.session.onDiskPath !== null;
-              // DEF-042 — Save-As enablement. The toolbar's `modified`
-              // prop must reflect EITHER the engine's `modified` flag
-              // (set by rotate / delete / reorder / annotations /
-              // forms / signatures) OR the tabs reducer's `modified`
-              // flag (set explicitly when a brand-new tab is born
-              // unsaved, e.g. the "Reduce and open as new tab" path
-              // of Optimize or Split/Extract). Without the OR, the
-              // tab-dot indicator (which reads tabs.tabs) lights up
-              // but Save-As (which only read engineState.modified)
-              // stayed disabled with the "Nothing to save" tooltip.
-              const saveModified =
-                meta.modified || engine.engineState.modified;
               return (
                 <div
                   className="tab-pane"
@@ -6638,18 +6660,11 @@ pushToast(
                     // proxy-page mapping (original bytes vs a
                     // re-serialized getDocumentBytes proxy).
                     proxyVisibleOrder={open.session.proxyVisibleOrder}
-                    modified={saveModified}
-                    // Phase 14.1 — the command bar's accent Open button
-                    // (moved out of the title bar per the reference).
-                    onOpenFile={onOpenClick}
                     canUndo={engine.canUndo}
-                    saveInPlaceEnabled={saveInPlaceEnabled}
                     onRotate={engine.op}
                     onDelete={engine.deletePages}
                     onReorder={engine.reorder}
                     onUndo={engine.undo}
-                    onSave={handlers.save}
-                    onSaveAs={handlers.saveAs}
                     onMerge={onMergeClick}
                     onSplit={onSplitClick}
                     onOptimize={onOptimizeClick}

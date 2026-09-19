@@ -3,6 +3,8 @@
 //   FIX 1  annotation bar height 52px == command bar, same material
 //   FIX 2  panels (left rail + tools palette) unified in ALL themes
 //   FIX 3  Open button: clean single layer, blue bg + white text/icon
+//          (Phase 22 repoint: the control now lives in the title-bar
+//          .titlebar-file group)
 //   FIX 4  dynamic page-view inset in ALL themes (panel pushes the page)
 //   FIX 5  panel + page animate TOGETHER on one --panel-slide-duration curve
 //   FIX 6  icon sizes: toolbar 24px, command bar 22px, sidebar 22px, hits kept
@@ -117,47 +119,38 @@ test.describe('phase 14.2 fix verification', () => {
   // the ghost capsule was reported). Independent test so its failure
   // cannot block the other fix batteries.
   // ------------------------------------------------------------------
-  test('fix3: Open button is a clean single layer (frosted)', async () => {
+  test('fix3: Open button is a clean single accent layer (Phase-22 title-bar repoint)', async () => {
     test.setTimeout(240000);
     await launchAndOpen();
     const openBtn = await win.evaluate(() => {
-      const g = document.querySelector('.toolbar-group.commandbar-group-open');
-      const b = document.querySelector('.commandbar-open');
+      const g = document.querySelector('.titlebar-file');
+      const b = document.querySelector('[data-toolbar-open]');
       if (!g || !b) return null;
-      const gs = getComputedStyle(g);
       const bs = getComputedStyle(b);
       const bb = b.getBoundingClientRect();
-      const gb = g.getBoundingClientRect();
-      const alpha = gs.backgroundColor.startsWith('rgba')
-        ? Number(gs.backgroundColor.split(',')[3].replace(')', ''))
-        : 1;
       return {
-        groupBg: gs.backgroundColor,
-        groupBorderColor: gs.borderColor,
-        groupShadow: gs.boxShadow,
-        groupBgAlpha: alpha,
+        groupCount: document.querySelectorAll('.titlebar-file').length,
+        legacyCount: document.querySelectorAll('.commandbar-open').length,
+        inGroup: g.contains(b),
+        groupButtons: g.querySelectorAll('button').length,
         btnBg: bs.backgroundColor,
         btnColor: bs.color,
         btnH: bb.height,
-        groupH: gb.height,
-        btnW: bb.width,
-        groupW: gb.width,
       };
     });
-    console.log('[fix3] frosted open button:', JSON.stringify(openBtn));
-    await win.screenshot({ path: path.join(SHOTS, 'fix3-open-button.png'), clip: { x: 0, y: 44, width: 420, height: 120 } });
+    console.log('[fix3] title-bar open button:', JSON.stringify(openBtn));
+    await win.screenshot({ path: path.join(SHOTS, 'fix3-open-button.png'), clip: { x: 0, y: 0, width: 420, height: 60 } });
     expect(openBtn, 'Open button + File group mounted').not.toBeNull();
-    expect(openBtn.groupBgAlpha, 'File capsule must paint nothing (no ghost layer)').toBe(0);
-    expect(openBtn.groupShadow, 'File capsule must cast no shadow').toBe('none');
+    // Phase 22 - the Open control moved into the title bar's grouped capsule.
+    // FIX 3's intent (a clean single-layer accent Open, no ghost behind it)
+    // is preserved: ONE file capsule, no legacy command-bar ghost.
+    expect(openBtn.groupCount, 'ONE file capsule (no ghost/duplicate layer)').toBe(1);
+    expect(openBtn.legacyCount, 'the old command-bar Open is gone').toBe(0);
+    expect(openBtn.inGroup, 'Open lives inside the title-bar capsule').toBe(true);
+    expect(openBtn.groupButtons, 'Open / Save / Save As').toBe(3);
     expect(openBtn.btnBg, 'Open button solid blue accent background').toBe('rgb(37, 99, 235)');
     expect(openBtn.btnColor, 'white text').toBe('rgb(255, 255, 255)');
-    // DEF-191 retest (qa, 2026-09-13): the old box-equality proxy is stale.
-    // The fixed capsule keeps ~17px of layout padding around the button but
-    // PAINTS NOTHING - bg alpha 0, transparent hairline, no shadow (asserted
-    // above), so the box mismatch no longer means a visible ghost layer.
-    // Height still matches exactly; width equality is gone with the fix.
-    expect(openBtn.btnH === openBtn.groupH,
-      'no visible capsule layer extending past the button (heights match)').toBe(true);
+    expect(openBtn.btnH, 'Open button is the 28px title-bar ladder').toBe(28);
   });
 
   // ------------------------------------------------------------------
@@ -174,7 +167,7 @@ test.describe('phase 14.2 fix verification', () => {
       };
       const annSvgs = Array.from(document.querySelectorAll('.ann-toolbar .ann-tool-btn > svg')).map(sizeOf);
       const cmdSvgs = Array.from(document.querySelectorAll('.toolbar .tool-btn > svg')).map(sizeOf);
-      const openSvg = document.querySelector('.commandbar-open > svg');
+      const openSvg = document.querySelector('[data-toolbar-open] > svg');
       const railTabs = Array.from(document.querySelectorAll('.side-rail .rail-tab > svg')).map(sizeOf);
       const railBtns = Array.from(document.querySelectorAll('.side-rail button svg')).map(sizeOf);
       const annBtnHeights = Array.from(document.querySelectorAll('.ann-toolbar .ann-tool-btn'))
@@ -211,6 +204,8 @@ test.describe('phase 14.2 fix verification', () => {
     for (const h of icons.annBtnHeights) expect(h, 'annotation tool hit box').toBeGreaterThanOrEqual(32);
     for (const h of icons.cmdBtnHeights) expect(h, 'command tool hit box').toBeGreaterThanOrEqual(32);
     expect(icons.capsuleH, 'command capsule hit row >= 36px (40px band)').toBeGreaterThanOrEqual(36);
+    // Phase 22 - the relocated Open glyph uses the title-bar 15px ladder.
+    expect(icons.openIconSize, 'title-bar Open glyph is the 15px ladder').toBe('15x15');
   });
 
   // ------------------------------------------------------------------

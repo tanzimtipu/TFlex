@@ -19,7 +19,7 @@
 //           (DocumentView's .tools-badge); the bar must not host it.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
@@ -147,39 +147,24 @@ describe("Phase 14.2 FIX 1 (Phase 19 supersession) — the annotation group is a
   });
 });
 
-describe("Phase 14.2 FIX 3 — the Open control is one clean single-layer button", () => {
-  it("the File group holds exactly one interactive child (the accent button)", () => {
+describe("Phase 14.2 FIX 3 / Phase 22 — the Open control is NOT in the command bar", () => {
+  it("the File group is gone (Phase 22 relocated Open / Save / Save As to the title bar)", () => {
     const host = mountBar({});
     try {
-      const group = host.querySelector<HTMLElement>(".commandbar-group-open");
-      expect(group).not.toBeNull();
-      // The labelled group keeps its a11y contract.
-      expect(group?.getAttribute("role")).toBe("group");
-      expect(group?.getAttribute("aria-label")).toBe("File");
-      const buttons = group?.querySelectorAll("button") ?? [];
-      expect(buttons.length).toBe(1);
-      const open = buttons[0] as HTMLButtonElement;
-      expect(open.classList.contains("btn-primary")).toBe(true);
-      expect(open.classList.contains("commandbar-open")).toBe(true);
-      expect(open.getAttribute("data-toolbar-open")).not.toBeNull();
-      // No ghost/duplicate layers inside the button itself: exactly
-      // one child element (the folder icon) + the "Open" text node.
-      expect(open.children.length).toBe(1);
-      expect(open.textContent).toContain("Open");
-    } finally {
-      unmount(host);
-    }
-  });
-
-  it("the Open button fires onOpenFile", () => {
-    const onOpenFile = vi.fn();
-    const host = mountBar({ onOpenFile });
-    try {
-      const open = host.querySelector<HTMLButtonElement>("[data-toolbar-open]");
-      act((): void => {
-        open?.click();
-      });
-      expect(onOpenFile).toHaveBeenCalledTimes(1);
+      // Phase 22 — the operator moved the file actions into the caption
+      // strip. The command bar must render no File capsule, no accent
+      // Open button and no Save hook; the relocated contract (single
+      // clean accent control, fires onOpenFile) is pinned in
+      // phase22_titlebarFileGroup.test.tsx.
+      expect(host.querySelector(".commandbar-group-open")).toBeNull();
+      expect(host.querySelector(".commandbar-open")).toBeNull();
+      expect(host.querySelector("[data-toolbar-open]")).toBeNull();
+      expect(host.querySelector("[data-toolbar-save]")).toBeNull();
+      expect(host.querySelector("[data-toolbar-save-as]")).toBeNull();
+      const labels = Array.from(host.querySelectorAll<HTMLElement>(".glass-control-group"))
+        .map((g) => g.getAttribute("aria-label"));
+      expect(labels).not.toContain("File");
+      expect(labels).not.toContain("Save");
     } finally {
       unmount(host);
     }
@@ -187,7 +172,7 @@ describe("Phase 14.2 FIX 3 — the Open control is one clean single-layer button
 });
 
 describe("Phase 14.2 FIX 6 — the command-bar icon ladder is 20px minimum", () => {
-  it("every icon button renders its glyph at 22px (Open's inline icon 20px)", () => {
+  it("every icon button renders its glyph at 22px", () => {
     const host = mountBar({
       onRotateClockwise: NOOP,
       onRotateCounterClockwise: NOOP,
@@ -202,8 +187,6 @@ describe("Phase 14.2 FIX 6 — the command-bar icon ladder is 20px minimum", () 
         expect(w, `command bar glyph too small: ${svg.getAttribute("class")}`).toBeGreaterThanOrEqual(22);
         expect(h).toBe(22);
       }
-      const openIcon = host.querySelector<SVGSVGElement>("[data-toolbar-open] svg");
-      expect(Number(openIcon?.getAttribute("width"))).toBe(20);
     } finally {
       unmount(host);
     }

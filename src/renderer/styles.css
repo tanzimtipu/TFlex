@@ -1397,6 +1397,219 @@ input[type="checkbox"] {
   font-weight: 700;
 }
 
+/* ---------------------------------------------------------------------------
+ * Phase 22 — the caption strip's FILE-ACTION group.
+ *
+ * Open / Save / Save As relocated out of the CommandBar into the title
+ * bar, immediately right of the TFlex brand and left of the tab strip,
+ * as ONE grouped capsule. Sized to the TITLE-BAR ladder (28px controls
+ * inside a 32px shell — the same ladder as .header-gear and
+ * .theme-toggle), NOT the CommandBar's 36px capsule / 32px tool-btn, so
+ * it reads as native caption-strip material rather than a transplant.
+ *
+ * The capsule reuses the glass control-group film tokens (the lightest
+ * film of the material hierarchy) at the tighter --radius-3 corner so
+ * it does not echo the command bar's 12px capsules. Motion rides the
+ * shared tokens: hover lift + press compression are registered in the
+ * global hover/press lists further down this file, and every property
+ * transition is --motion-fast / --ease-out (150-250ms band).
+ * ------------------------------------------------------------------------- */
+.titlebar-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  height: 32px;
+  padding: 0 3px;
+  margin-right: var(--sp-3);
+  border-radius: var(--radius-3);
+  background: var(--glass-group-bg);
+  border: 1px solid var(--glass-group-border);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  /* The caption strip defaults to a window-drag surface; the capsule's
+   * own padding is interactive chrome, so it opts out (the buttons
+   * inside already inherit no-drag from the .app-header button rule). */
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-file-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
+}
+
+.titlebar-file-btn:hover:not([disabled]) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.titlebar-file-btn:active:not([disabled]) {
+  background: var(--accent-pressed-soft);
+  color: var(--accent);
+}
+
+.titlebar-file-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.titlebar-file-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The Open action stays the accent primary it was in the command bar —
+ * the ONE solid-accent control in the strip, compacted to the caption
+ * ladder (blue is reserved for primary actions). */
+.titlebar-file-open {
+  padding: 0 9px;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.titlebar-file-open:hover:not([disabled]) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--fg-on-accent);
+}
+
+.titlebar-file-open:active:not([disabled]) {
+  background: var(--accent-pressed);
+  border-color: var(--accent-pressed);
+  color: var(--fg-on-accent);
+}
+
+.titlebar-file-label {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+/* Hairline between the primary Open action and the two save controls. */
+.titlebar-file-sep {
+  width: 1px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0 2px;
+  background: var(--border-subtle);
+}
+
+/* Save state — the SAME semantic ladder the command bar's Save button
+ * used (bug014 / DEF-014): warning owns unsaved, success owns saved.
+ * The read-only variant keeps the warning tint but stays disabled;
+ * Save-As is the escape hatch. */
+.titlebar-file-btn-modified {
+  color: var(--warning);
+}
+
+.titlebar-file-btn-modified:hover:not([disabled]) {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.titlebar-file-btn-modified[disabled] {
+  opacity: 0.85;
+  color: var(--warning);
+  cursor: not-allowed;
+}
+
+.titlebar-file-btn-clean {
+  color: var(--success);
+}
+
+.titlebar-file-btn-clean[disabled] {
+  opacity: 0.8;
+  color: var(--success);
+  cursor: default;
+}
+
+/* The Save control's modified dot — the tab strip's 6px accent-dot
+ * language, parked on the button's top-right so "unsaved" is legible
+ * even where the warning icon tint is subtle. The slot is reserved and
+ * hidden (not unmounted) when the document is clean, so nothing jumps. */
+.titlebar-file-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--warning);
+  box-shadow: 0 0 0 1.5px var(--bg-toolbar);
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.titlebar-file-dot-hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* ---------------------------------------------------------------------------
+ * DEF-244 — the caption strip at the 640px minimum window width.
+ *
+ * The Phase-22 file group (145px + 12px margin) is `flex: 0 0 auto`, so at
+ * the 640px minimum it consumed the tab strip's entire share: `.tab-area`
+ * measured 0px wide (`.tab-list` only its 8px padding) and the open
+ * document's tab was clipped out and unreachable. Two width bands give the
+ * strip its space back without moving any control:
+ *
+ *   <= 900px — Open goes icon-only (the label is hidden, NOT unmounted:
+ *              the button keeps its `aria-label` and its `Open PDF
+ *              (Ctrl+O)` tooltip), its padding tightens and the group's
+ *              trailing margin shrinks. Purely visual; the three controls
+ *              stay exactly where they are, in the same order, with the
+ *              same hooks.
+ *   <= 700px — the theme pill drops its text label the same way (the
+ *              trigger keeps `aria-label="Change theme"` and the
+ *              "Change theme (current: ...)" tooltip, and the chevron
+ *              keeps the "opens a menu" affordance). At 640 the strip is
+ *              the only place this has to happen; above 700 the pill
+ *              keeps its label untouched.
+ *
+ * No new control is introduced (no overflow menu), no handler changes and
+ * no tab-strip scrolling behaviour changes — the strip simply gets a usable
+ * width at the minimum window size.
+ * ------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  .titlebar-file-label {
+    display: none;
+  }
+
+  .titlebar-file-open {
+    padding: 0 6px;
+  }
+
+  .titlebar-file {
+    margin-right: var(--sp-2);
+  }
+}
+
+@media (max-width: 700px) {
+  .theme-toggle-label {
+    display: none;
+  }
+}
+
 .tab-area {
   /* DEF-085 — flex:1 1 0 (basis 0) plus min-width:0 makes the area
    * absorb all remaining horizontal space once the brand and
@@ -8629,6 +8842,7 @@ rect.ann-highlight.ann-preview {
 .modal-close:hover,
 .sheet-close:hover,
 .theme-toggle:hover,
+.titlebar-file-btn:hover:not([disabled]),
 .tab-close:hover,
 .tab-new:hover,
 .titlebar-menu-button:hover,
@@ -8674,6 +8888,7 @@ rect.ann-highlight.ann-preview {
 .modal-close:active,
 .sheet-close:active,
 .theme-toggle:active,
+.titlebar-file-btn:active:not([disabled]),
 .tab-close:active,
 .tab-new:active,
 .titlebar-menu-button:active:not(.titlebar-menu-button-active),
@@ -8755,6 +8970,14 @@ rect.ann-highlight.ann-preview {
   .tools-palette-entry:hover:not(:disabled),
   .tools-palette-entry:active:not(:disabled),
   .tools-palette-entry:focus-visible {
+    transform: none !important;
+  }
+
+  /* Phase 22 — the caption strip's file-action buttons keep their wash
+   * + focus feedback but drop the hover lift / press compression. */
+  .titlebar-file-btn,
+  .titlebar-file-btn:hover:not([disabled]),
+  .titlebar-file-btn:active:not([disabled]) {
     transform: none !important;
   }
 
