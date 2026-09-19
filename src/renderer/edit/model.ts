@@ -15,7 +15,13 @@
 // reducer transitions without mounting React. Components consume the
 // state via a small reducer + a few derived selectors.
 
-import type { EditFont, EditColor } from "../../shared/types";
+import type {
+  EditFont,
+  EditColor,
+  TextAlign,
+  TextBoxStylePatch,
+  TextListStyle,
+} from "../../shared/types";
 
 /** Tools available in Edit mode. The values match the wire-side
  *  payload kinds so the renderer can map directly: an `editTextRun`
@@ -33,6 +39,21 @@ export interface EditTextStyle {
   /** pt. 8..72 covers the practical range; the engine clamps further. */
   size: number;
   color: EditColor;
+  // Phase 21 — optional Word/Adobe-class fields. Absent means the
+  // documented default (left / 1.2 / not-bold / no highlight / no list /
+  // no indent / no baseline shift). Kept optional so every legacy
+  // EditTextStyle literal (tests, older tabs, rasterize callers)
+  // compiles unchanged; the text-properties panel reads through the
+  // `textStyleValuesFromStyle` fallback helper.
+  align?: TextAlign;
+  lineHeight?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  baselineShift?: number;
+  highlight?: EditColor;
+  list?: TextListStyle;
+  indent?: number;
 }
 
 /** Build the default style from a font choice. Size defaults to 12 pt,
@@ -44,6 +65,36 @@ export function defaultEditTextStyle(font: EditFont): EditTextStyle {
     size: 12,
     color: { r: 0, g: 0, b: 0 },
   };
+}
+
+/** Merge a Phase-21 style patch into a local edit style (renderer mirror
+ *  of the engine's preserve-if-valid semantics). Absent fields are kept;
+ *  `highlight: null` REMOVES the band, a colour replaces it. */
+export function mergeTextBoxStyle(
+  style: EditTextStyle,
+  patch: TextBoxStylePatch,
+): EditTextStyle {
+  const next: EditTextStyle = { ...style };
+  if (patch.font !== undefined) next.font = patch.font;
+  if (patch.size !== undefined) next.size = patch.size;
+  if (patch.color !== undefined) next.color = { ...patch.color };
+  if (patch.bold !== undefined) next.bold = patch.bold;
+  if (patch.italic !== undefined) next.italic = patch.italic;
+  if (patch.underline !== undefined) next.underline = patch.underline;
+  if (patch.baselineShift !== undefined) next.baselineShift = patch.baselineShift;
+  // Phase 21 follow-up — `null` is an explicit REMOVAL: the local style
+  // loses its highlight entirely (no white-sentinel band). A colour
+  // replaces it; absent preserves it.
+  if (patch.highlight === null) {
+    delete next.highlight;
+  } else if (patch.highlight !== undefined) {
+    next.highlight = { ...patch.highlight };
+  }
+  if (patch.align !== undefined) next.align = patch.align;
+  if (patch.lineHeight !== undefined) next.lineHeight = patch.lineHeight;
+  if (patch.list !== undefined) next.list = patch.list;
+  if (patch.indent !== undefined) next.indent = patch.indent;
+  return next;
 }
 
 /** Per-tab edit state. Lives in App.tsx's `openTabs[tabId]` so it
@@ -185,6 +236,7 @@ export type EditAction =
   | { type: "upsert-text-box"; placement: TextBoxPlacement }
   | { type: "delete-text-box"; id: string }
   | { type: "replace-text-boxes"; boxes: TextBoxPlacement[] }
+  | { type: "patch-text-box-style"; id: string; patch: TextBoxStylePatch }
   | { type: "set-cropping"; cropping: boolean }
   | { type: "push-text-run-commit"; run: CommittedTextRun }
   | { type: "reset" };
@@ -279,6 +331,19 @@ export function editReducer(state: EditState, action: EditAction): EditState {
           ? state.selectedTextBox
           : null;
       return { ...state, textBoxes: action.boxes, selectedTextBox: stillSelected };
+    }
+    case "patch-text-box-style": {
+      // Phase 21 — merge a text-properties panel patch into the local
+      // mirror so the renderer stays in sync before (and after) the
+      // engine echo. The engine remains the source of truth; the App
+      // mirror effect adopts the echoed TextBoxModel list verbatim.
+      const idx = state.textBoxes.findIndex((b) => b.id === action.id);
+      if (idx === -1) return state;
+      const next = state.textBoxes.slice();
+      const target = next[idx];
+      if (target === undefined) return state;
+      next[idx] = { ...target, style: mergeTextBoxStyle(target.style, action.patch) };
+      return { ...state, textBoxes: next };
     }
     case "set-cropping":
       return { ...state, cropping: action.cropping };
@@ -403,6 +468,18 @@ export function engineTextBoxesToPlacements(
     size?: number;
     color?: string;
     background?: "white" | "none";
+    // Phase 21 — the engine's TextBoxModel carries the optional
+    // Word/Adobe-class fields; the mirror passes them straight through
+    // so the text-properties panel can show the box's ACTUAL values.
+    align?: TextAlign;
+    lineHeight?: number;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+    baselineShift?: number;
+    highlight?: EditColor;
+    list?: TextListStyle;
+    indent?: number;
   }>,
   defaultFont: EditFont,
 ): TextBoxPlacement[] {
@@ -415,6 +492,15 @@ export function engineTextBoxesToPlacements(
       font: b.font ?? defaultFont,
       size: b.size ?? 12,
       color: hexToEditColor(b.color),
+      ...(b.align !== undefined ? { align: b.align } : {}),
+      ...(b.lineHeight !== undefined ? { lineHeight: b.lineHeight } : {}),
+      ...(b.bold !== undefined ? { bold: b.bold } : {}),
+      ...(b.italic !== undefined ? { italic: b.italic } : {}),
+      ...(b.underline !== undefined ? { underline: b.underline } : {}),
+      ...(b.baselineShift !== undefined ? { baselineShift: b.baselineShift } : {}),
+      ...(b.highlight !== undefined ? { highlight: { ...b.highlight } } : {}),
+      ...(b.list !== undefined ? { list: b.list } : {}),
+      ...(b.indent !== undefined ? { indent: b.indent } : {}),
     },
     background: b.background ?? "none",
   }));
@@ -465,6 +551,25 @@ export function sameTextBoxes(
     if (xc.r !== yc.r || xc.g !== yc.g || xc.b !== yc.b) {
       return false;
     }
+    // Phase 21 — the panel-visible style fields. Without these the App
+    // mirror would skip a style-patch echo (same rect/text/colour) and
+    // the panel would keep showing the stale formatting.
+    if ((x.style.bold ?? false) !== (y.style.bold ?? false)) return false;
+    if ((x.style.italic ?? false) !== (y.style.italic ?? false)) return false;
+    if ((x.style.underline ?? false) !== (y.style.underline ?? false)) return false;
+    if ((x.style.align ?? "left") !== (y.style.align ?? "left")) return false;
+    if ((x.style.list ?? "none") !== (y.style.list ?? "none")) return false;
+    if ((x.style.lineHeight ?? 1.2) !== (y.style.lineHeight ?? 1.2)) return false;
+    if ((x.style.baselineShift ?? 0) !== (y.style.baselineShift ?? 0)) return false;
+    if ((x.style.indent ?? 0) !== (y.style.indent ?? 0)) return false;
+    if (!sameOptionalColor(x.style.highlight, y.style.highlight)) return false;
   }
   return true;
+}
+
+/** Colour equality where absent and absent match, and a present colour
+ *  matches component-for-component. */
+function sameOptionalColor(a: EditColor | undefined, b: EditColor | undefined): boolean {
+  if (a === undefined || b === undefined) return a === b;
+  return a.r === b.r && a.g === b.g && a.b === b.b;
 }

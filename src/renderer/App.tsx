@@ -21,6 +21,7 @@ import type {
   SignaturePlacement,
   SpaceAudit,
   StampId,
+  TextBoxStylePatch,
   UpdateState,
   WatermarkInfo,
   WatermarkSettings,
@@ -2707,6 +2708,52 @@ export function App(): ReactElement {
       const refreshFn = refreshDocProxyForRef.current;
       if (refreshFn !== null) {
         void refreshFn(tabId).catch(() => undefined);
+      }
+    },
+    [pushToast, noteOpApplied],
+  );
+
+  /** Phase 21 — apply a text-properties panel patch to a COMMITTED
+   *  text box through the engine's registry (`engine.updateTextBox`).
+   *  The engine is preserve-if-valid per field and rejects an unknown id
+   *  or an unsupported font with a typed engine-error (fail loud, never
+   *  a silent drop). On success the renderer mirror adopts the echoed
+   *  registry list and the local edit state is updated immediately so
+   *  the panel reflects the change without waiting for the echo; the
+   *  pdf.js proxy is rebuilt so the re-baked box renders live (same
+   *  pattern as addTextBox / moveTextBox). */
+  const handleTextBoxStylePatch = useCallback(
+    async (tabId: string, id: string, patch: TextBoxStylePatch): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      const engine = engineRef.current;
+      if (engine.updateTextBox === undefined) {
+        pushToast("error", "Text styling requires the backend text-style update.");
+        return;
+      }
+      const result = await engine.updateTextBox(open.session.engineDocId, id, patch);
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      noteOpApplied(tabId, result.value);
+      // Local mirror — keep the panel's selected values in sync even
+      // before the engine-state echo lands (the App mirror effect then
+      // adopts the authoritative registry list).
+      setOpenTabs((prev) => {
+        const t = prev[tabId];
+        if (t === undefined) return prev;
+        return {
+          ...prev,
+          [tabId]: {
+            ...t,
+            edit: editReducer(t.edit, { type: "patch-text-box-style", id, patch }),
+          },
+        };
+      });
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        await refreshFn(tabId).catch(() => undefined);
       }
     },
     [pushToast, noteOpApplied],
@@ -5917,6 +5964,8 @@ pushToast(
           page: number;
         }) => void | Promise<void>;
         onDeleteTextBox: (id: string) => void;
+        /** Phase 21 — apply a style patch to the selected committed box. */
+        onTextStylePatch: (patch: TextBoxStylePatch) => void;
       }
     >();
     return (tabId: string) => {
@@ -5934,6 +5983,7 @@ pushToast(
           onCommitImageEdit: (): void => undefined,
           onCommitTextBoxMove: (): void => undefined,
           onDeleteTextBox: (): void => undefined,
+          onTextStylePatch: (): void => undefined,
         };
       }
       if (cached !== undefined && cached.state === tab.edit) {
@@ -5997,6 +6047,11 @@ pushToast(
         onDeleteTextBox: (id: string): void => {
           void handleTextBoxDelete(tabId, id);
         },
+        onTextStylePatch: (patch: TextBoxStylePatch): void => {
+          const id = openTabsRef.current[tabId]?.edit.selectedTextBox;
+          if (id === undefined || id === null) return;
+          void handleTextBoxStylePatch(tabId, id, patch);
+        },
       };
       cache.set(tabId, out);
       return out;
@@ -6011,6 +6066,7 @@ pushToast(
     handleEditImage,
     handleTextBoxMove,
     handleTextBoxDelete,
+    handleTextBoxStylePatch,
   ]);
 
   // DEF-065 — push the active-doc snapshot to main on every

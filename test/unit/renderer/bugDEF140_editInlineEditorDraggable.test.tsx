@@ -185,16 +185,14 @@ describe("DEF-140 — the inline editor window is draggable by its toolbar heade
     expect(editor.style.top).toBe("50px");
   });
 
-  it("a drag starting on the Font select does NOT move the window (controls keep their own presses)", () => {
+  it("a drag starting on an action button does NOT move the window (controls keep their own presses)", () => {
     const { host } = mountEditor({ initialText: "Hello", mode: "edit" });
     const editor = stubEditorRect(host);
-    const fontSelect = host.querySelector<HTMLSelectElement>(
-      ".edit-inline-field-font select",
-    );
-    expect(fontSelect).not.toBeNull();
-    if (fontSelect === null) return;
+    const cancelBtn = host.querySelector<HTMLButtonElement>(".edit-inline-btn-cancel");
+    expect(cancelBtn).not.toBeNull();
+    if (cancelBtn === null) return;
     act((): void => {
-      fontSelect.dispatchEvent(
+      cancelBtn.dispatchEvent(
         new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 100, clientY: 100 }),
       );
     });
@@ -249,11 +247,9 @@ describe("DEF-140 — the inline editor window is draggable by its toolbar heade
   it("the drag gesture never closes / commits / cancels, and the inside-press blur guard stays intact", () => {
     const { host, commit, cancel } = mountEditor({ initialText: "Hello", mode: "edit" });
     const editor = stubEditorRect(host);
-    // A label span is drag chrome (not a control): pressing it starts
-    // a move, exactly the DEF-140 reproduction surface.
-    const label = host.querySelector<HTMLElement>(
-      ".edit-inline-field-font .edit-inline-label",
-    );
+    // The "Drag to move" grip is drag chrome (not a control): pressing
+    // it starts a move, exactly the DEF-140 reproduction surface.
+    const label = host.querySelector<HTMLElement>(".content-grip-inline");
     expect(label).not.toBeNull();
     if (label === null) return;
     act((): void => {

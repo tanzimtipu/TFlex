@@ -2065,3 +2065,121 @@ Disposition: ACCEPTED -> DEF-240 (LOW; criterion 7 - the palette width/reduced p
 | Exit pointer-events on the remaining TfBar toolboxes | `[data-sig-pending]`, `[data-sig-action-bar]`, `[data-stamp-type-editor]` all measured `pointerEvents:["none"]` across their exit and ghost frames (the inline `pointerEvents:"auto"` on the sig surfaces does NOT defeat the exit guard); none are `inert`. |
 
 **Total Phase-20-gate findings: 6 (2 HIGH, 1 MEDIUM, 3 LOW).**
+
+## Phase 21 gate — text properties panel
+
+Session label: `phase-21 gate`. Ran against the dev bundle
+(`dist/main/index.js` + `dist/renderer/index.html`, built 2026-09-19 20:27, after the
+Phase-21 sources at 20:14). Harness: `test-fixtures/tools/adv057_phase21.cjs`
+(sections `geom | patch | patchseq | resurrect | panel | layout | annot | persist |
+perf | silence`), launched through the canonical `../../e2e/lib/launch.cjs`. Screenshots
+`adv057-*.png`; perf data `screenshots/adv057-perf.json`.
+
+## ADV-057: At the minimum window width the Tools palette covers the docked text-properties panel (15 enabled controls unreachable)
+
+- Session: phase-21 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. `node test-fixtures/tools/adv057_phase21.cjs layout` — opened `report.pdf`, armed the
+   text-box tool so `[data-text-panel]` is open, then opened the Tools palette and
+   measured at 640x520, 820x640 and 1440x900.
+2. At 640x520 the text panel rect is `[left 220, right 468]` (248px) and the Tools palette
+   rect is `[left 296, right 640]` (344px). Horizontal overlap = `min(468,640) -
+   max(220,296)` = **172px**. The palette's z-order is above the panel.
+3. Occlusion probe: for every ENABLED panel control, `document.elementFromPoint` at its
+   centre resolved outside the panel. **15 enabled controls were covered** by the palette,
+   each resolving to a `.tools-palette-entry*` element: Font Family select (`rect 335,114`),
+   Size input (`335,198`), three font-style buttons (`294/326/358,230`), text Colour
+   (`413,263`), Highlight (`362,295`), the highlight-None button (`402,295`), Clear
+   formatting (`230,326`), two alignment buttons (`294/326,390`), Line-spacing input
+   (`335,422`), a list button (`294,454`) and an indent button (`419,486`).
+4. At 820x640 and 1440x900 the overlap is 0 and `coveredControls` is empty.
+5. `screenshots/adv057-layout-640x520.png` shows the semi-transparent Tools drawer sitting
+   over the panel's Family/Size/Colour/Highlight/Paragraph controls.
+
+Expected:
+- The Phase-21 contract is "the page adjusts, never overlapped" (REQUIREMENTS.md Phase 21
+  C1: the page view reflows without overlap or clipping; the same coexistence contract the
+  Tools panel follows). The text panel is a docked column and must remain reachable when
+  the Tools drawer is also open at the minimum supported window width.
+
+Actual:
+- At 640px the right-anchored 344px Tools drawer extends 172px left of the page column and
+  covers the right half of the 248px text panel. The controls are not merely overlapped in
+  z-order - real hit-tests land on palette rows, so they cannot be clicked. The
+  CommandBar in the remaining 172px column also wraps to `height 316.7` of the 476px
+  viewport, squeezing the page to 50px wide.
+
+Screenshot: screenshots/adv057-layout-640x520.png
+
+Disposition: ACCEPTED -> DEF-241 (MEDIUM; at the minimum window width the Tools palette must not cover the docked text panel - 15 enabled controls were unreachable at 640px)
+
+## ADV-058: `engine.updateTextBox` with an empty (or all-unknown-key) patch returns ok and marks the document modified
+
+- Session: phase-21 gate
+- Suggested severity: LOW
+
+What I did:
+1. `node test-fixtures/tools/adv057_phase21.cjs patch` — created a box through the UI,
+   saved the document (so `modified:false`), then called the exposed engine directly:
+   `await window.tflex.engine.updateTextBox(docId, id, {})` and
+   `await window.tflex.engine.updateTextBox(docId, id, { evil: 1, another: "x" })`.
+2. Result for both: `{"ok":true,"stateModified":true}` with the box unchanged. On the same
+   clean document, a normal valid patch also returns `stateModified:true`.
+
+Expected:
+- The dispatch defines the patch as preserve-if-valid per field. A patch that supplies no
+  valid field changes nothing and should not dirty the document. (`validateTextStyleFields`
+  ignores unknown extra keys, so an all-unknown-key patch validates to the empty set.)
+
+Actual:
+- `_updateTextBoxImpl` (src/main/services/engine.ts:2084-2110) always runs
+  `doc.undoStack.push(snapshot); doc.redoStack = []; doc.modified = true;` even when the
+  validated patch is empty, so a no-op patch returns `ok` with `stateModified:true` and
+  adds a do-nothing undo step. The panel never emits an empty patch, so this is latent
+  (reachable only programmatically today), but any future caller that sends a patch built
+  from a field set that is all-unknown will dirty a clean document and grow its undo stack
+  with no visible change. No data is lost; the change is silent state, not a typed error.
+
+Screenshot: N/A
+
+Disposition: ACCEPTED -> DEF-242 (LOW; an empty or unknown-key-only patch must not dirty the document - ok with no mutation for an empty patch, a typed error for unknown keys)
+
+---
+
+## Phase 21 gate - negative results (attacks that did NOT reproduce)
+
+| Attack | Result |
+|---|---|
+| Geometry shift, panel OPEN + settled (text box) | Page shifts exactly +248 (`main.left 220 -> 468`, `page.left 244 -> 492`, `--tf-text-w:248px`); the created `.edit-box` overlay landed at `dx:0, dy:0` from the drag start and the editor at `dx:0, dy:-2`. No pre-panel x-offset assumption in the hit-tests (`pagePoint` reads `root.getBoundingClientRect()` per event). |
+| Geometry shift, panel OPEN + settled (annotation textbox) | Editor rect matched the drag start exactly (`dx:0, dy:-0.1`); committed annotation rect `x 171.36` consistent with the drawn gesture. |
+| Geometry shift, rail COLLAPSED + panel open | `--tf-rail-w:48px`, page reflowed; editor delta `dx:0, dy:-2`. No stale offset. |
+| Panel CLOSING mid-gesture (Escape during a committed-box move drag) | Panel closed (`[data-text-panel-open="false"]`, panel unmounted), edit mode stayed open, zero editors stranded, box rect unchanged (`214.2,395.8` before and after) - the move was cleanly reverted, not half-committed. |
+| Panel open/close x8 (scroller drift) | `scrollTop 535.3 -> 535.3`, page rect identical, `panels:0` after. No scroll or canvas-offset drift. |
+| Placement started mid panel-open tween | The only offset is the page visibly moving under a stationary pointer: editor/overlay client delta 14.7-98px across runs, because the page slides 248px over 280ms. The anchor is captured against the LIVE page rect at pointerdown (not the pre-panel offset), and the live selection rectangle shows the same geometry, so this is not the DEF-232 stale-offset class and is not silent. |
+| Hostile `updateTextBox` values (size 0/1e9/NaN/Infinity; lineHeight 0.4/5.1/NaN; baselineShift +/-201/NaN; indent -1/201/NaN; align 'bogus'; list 'x'; font 'Arial'; highlight `{r:2}`/`{}`/'red'; `text:null`) | All 20 rejected with a typed `engine-error` naming the field and bounds, e.g. `updateTextBox: size must be a finite number in 1..2000`, `... unsupported font "Arial"; the StandardFont allowlist is Helvetica, Times, Courier`. No partial mutation: every box field was unchanged after the rejection. |
+| Patch on a DELETED box id | `engine-error: updateTextBox: text box <id> not found`. |
+| Patch with another tab's docId / another doc's box id | Both `engine-error: ... not found`; no cross-tab mutation. |
+| patch -> undo -> patch -> redo (deterministic engine sequence) | `updateTextBox{bold}` -> bold true; `undo` -> bold absent; `updateTextBox{italic}` -> italic true, bold absent; `redo` after the new patch -> `ok:false` (redo stack correctly cleared); undo -> italic absent; redo -> italic true. |
+| Patch during an in-flight save (UI patch concurrent with Save As) | The saved file did not contain the concurrent size change, but the document stayed `modified:true` after the save completed, so the unsaved change is visible to the user - no silent loss. |
+| Retired style toolboxes - text box selected / action-bar Edit / edit-text-run | `.edit-inline-field-font/size/color/bg` and `[data-annotation-color-section]` all count 0 in every path; no font/size/colour input mounted outside `.text-props-panel`. |
+| Retired style toolboxes - Tab focus sweep (45 tabs) | Focus never left the panel into an in-canvas style control; `focusSweep:[]`. |
+| Committed-annotation double-click editor | The `.ann-textbox` dblclick did not open `[data-annotation-editor]` in this harness even with the tool armed; not counted as a Phase-21 style-surface resurrection (no retired surface was ever mounted). |
+| Panel state machine - rapid tool/object switching (6x box <-> annotation <-> none) | Every transition correct (`box -> text mounted`, `ann -> annotation mounted`, `none -> unmounted`); settled `panels:0`, `activeTool:null`; no stranded mode. |
+| Panel value leak (box A styled, box B default, reselect A) | A reflected `size 30/bold/red`, B reflected `12/false/black`, A again `30/bold/red`. No leak between objects. |
+| Select an annotation then delete it | Selection works via the armed same-kind tool (panel `mode:annotation`, action bar present); after Delete the annotation count went `1 -> 0`, no stranded editor. The panel stays open only because the creation tool remains armed (correct). |
+| Two tabs, switch mid-transition | Active pane's workspace `data-text-panel-open:"false"`, no panel in the active pane, `tabCount:2`; the inactive tab's panel is its own per-tab state. No wrong-target or stranded mode. |
+| Annotation mode - disabled set | Exactly 22 controls disabled, all carrying the exact reason tooltip; colour is live (`disabled:false`, title "Annotation colour"); the per-family hint is shown. |
+| Annotation mode - dispatch sweep | 22 synthetic `click` events on the disabled controls plus programmatic `change` on the disabled font/size: annotation count and payload unchanged, `modified` unchanged. Nothing dispatched. |
+| Annotation mode -> text box | Panel returns to `mode:"text"` with font/bold/colour all live. |
+| Persistence - box with EVERY style field | All 12 fields (font Courier, size 21, bold/italic/underline, baselineShift 6, align justify, lineHeight 2.1, list bullet, indent 24, color #0000ff, highlight yellow) survived save + reopen. |
+| Patch -> undo -> save -> reopen | UI patch size 5 -> undo -> 12; the reopened file held the UNDONE value 12 (undo value persists, not the discarded patch). |
+| 50 rapid bold toggles then one undo | Model and panel agreed at every sample: after 50 clicks both `bold:false`; after one undo both `bold:true` (undo of the last toggle). No panel/model divergence. |
+| Silence sweep - every enabled panel control | All 19 enabled controls changed the engine model (font, size, bold, italic, underline, super, sub, 3 aligns, 2 lists, indent inc/dec, lineHeight, colour, highlight set/clear, clear-formatting); 0 no-ops, 0 errors. The two spacing buttons are disabled with the exact "no Tc/Tz operator" tooltips and clicking changes nothing (by design). |
+| Perf - 34-page report, all three themes | Panel open, panel close and a real engine bold patch each measured p50 **16.7ms**, p95 <= **16.8ms**, max **16.8ms**, **0** frames >33ms (light/dark/frosted identical). `screenshots/adv057-perf.json`. |
+| Layout at 820x640 / 1440x900 | Panel/palette overlap 0, no clipped panel body, no unreachable enabled control. |
+| Layout grow/shrink recovery | 640 -> 900 -> 640 -> 1440 -> 640 re-fit fit-width correctly each time (page 106/366/106/906/106px); no stuck scale. |
+
+**Total Phase-21-gate findings: 2 (0 HIGH, 1 MEDIUM, 1 LOW).**
+

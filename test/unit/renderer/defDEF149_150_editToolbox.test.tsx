@@ -283,7 +283,7 @@ describe("DEF-149 (b) — the toolbox drag offset moves the committed run", () =
       const editor = stubEditorRect(host);
       // Drag the toolbox chrome +200/+120 (same window-drag math as
       // bugDEF140: pointerdown on a label span, then window moves).
-      const label = host.querySelector<HTMLElement>(".edit-inline-field-font .edit-inline-label");
+      const label = host.querySelector<HTMLElement>(".content-grip-inline");
       if (label === null) throw new Error("label not found");
       pointerdown(label, 100, 100);
       windowMove(300, 220);
@@ -324,7 +324,7 @@ describe("DEF-149 (b) — the toolbox drag offset moves the committed run", () =
       pointerdown(layer, 120, 115);
       textDblClick(120, 115);
       stubEditorRect(host);
-      const label = host.querySelector<HTMLElement>(".edit-inline-field-font .edit-inline-label");
+      const label = host.querySelector<HTMLElement>(".content-grip-inline");
       if (label === null) throw new Error("label not found");
       // Real drag: press chrome, move +200/+120, then RELEASE.
       pointerdown(label, 100, 100);
@@ -431,7 +431,7 @@ describe("DEF-150 — add-box toolbox move + confirm (no duplicate bake)", () =>
       stubEditorRect(host);
       // No drag yet -> the normal Apply label is in place.
       expect(host.querySelector('[data-edit-confirm="true"]')).toBeNull();
-      const label = host.querySelector<HTMLElement>(".edit-inline-field-font .edit-inline-label");
+      const label = host.querySelector<HTMLElement>(".content-grip-inline");
       if (label === null) throw new Error("label not found");
       pointerdown(label, 200, 200);
       windowMove(400, 320);

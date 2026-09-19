@@ -122,6 +122,11 @@ export interface AnnotationOverlayProps {
    *  content and edit EXISTING content. The host (DocumentView)
    *  wires this to its annotation-tool reducer's "select" action. */
   onDisarmTool?: () => void;
+  /** Phase 21 (annotations) — report the overlay's selected committed
+   *  annotation (or null) upward. The docked text-properties panel reads
+   *  it so a selected annotation text object shows its ACTUAL colour
+   *  while the annotation is the active target. */
+  onSelectAnnotation?: (ann: Annotation | null) => void;
   /** DEF-166 — annotation ids whose text this overlay must draw LIVE.
    *  When provided, an annotation whose id is NOT in the set came from
    *  the document currently loaded into the page canvas (parsed from
@@ -234,6 +239,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     onEditAnnotation,
     onDeleteAnnotation,
     onDisarmTool,
+    onSelectAnnotation,
   } = props;
 
   // DEF-166 — the host tracks which annotation ids must keep their
@@ -387,6 +393,14 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     selectedAnnId === null
       ? null
       : (effectiveAnnotations.find((a) => a.id === selectedAnnId) ?? null);
+
+  // Phase 21 (annotations) — report the selected committed annotation
+  // upward. `selectedAnn` keeps a stable object identity while the
+  // underlying annotation is unchanged, so this only fires on a real
+  // selection change (the host passes a stable callback).
+  useEffect(() => {
+    onSelectAnnotation?.(selectedAnn);
+  }, [selectedAnn, onSelectAnnotation]);
 
   const anyEditorOpen =
     textboxEditor !== null ||
@@ -1374,10 +1388,8 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
             kind={editTarget.kind}
             rect={editTarget.rect}
             text={editTarget.text}
-            color={editTarget.color}
             cssScale={cssScale}
             onChange={(text): void => setEditTarget({ ...editTarget, text })}
-            onPickColor={(color): void => setEditTarget({ ...editTarget, color })}
             onCommit={(offset): void => commitEditTarget(offset)}
             onCancel={(): void => {
               revertPendingAnn(editTarget.id);
@@ -3018,14 +3030,8 @@ interface CommittedContentEditorProps {
   kind: "textbox" | "callout";
   rect: PageRect;
   text: string;
-  /** The toolbox's current color choice (seeded from the annotation,
-   *  updated by the embedded swatch row, committed by Confirm). */
-  color: AnnotationColorValue;
   cssScale: number;
   onChange: (text: string) => void;
-  /** DEF-161 (feature) — a swatch pick in the toolbox updates the
-   *  pending color; Confirm commits it together with text/geometry. */
-  onPickColor: (color: AnnotationColorValue) => void;
   /** Commit with the toolbox's current drag offset (CSS px) so a
    *  dragged toolbox commits the CONTENT at the moved rect. */
   onCommit: (offset: { x: number; y: number }) => void;
@@ -3034,7 +3040,7 @@ interface CommittedContentEditorProps {
 }
 
 function CommittedContentEditor(props: CommittedContentEditorProps): ReactElement {
-  const { id, kind, rect, text, color, cssScale, onChange, onPickColor, onCommit, onCancel, onDelete } = props;
+  const { id, kind, rect, text, cssScale, onChange, onCommit, onCancel, onDelete } = props;
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     ref.current?.focus();
@@ -3109,16 +3115,9 @@ function CommittedContentEditor(props: CommittedContentEditorProps): ReactElemen
           position: "static",
         }}
       />
-      {/* DEF-161 (feature) — the committed textbox / callout toolbox
-          carries the SAME color swatch row + hex input as the shape
-          color editor, so text kinds get color options too. Picks
-          update the pending toolbox color; Confirm commits it. */}
-      <div className="committed-color-row" data-annotation-color-section>
-        <span className="committed-color-label" aria-hidden>
-          Color
-        </span>
-        <AnnotationColorPicker active={color} onPick={onPickColor} onEscape={onCancel} />
-      </div>
+      {/* Phase 21 criterion 3 — the floating toolbox no longer carries a
+          style surface (the retired color swatch row). The grip above and
+          the Confirm / Cancel / Delete actions below are all that remain. */}
       <div
         className="ann-textbox-actions"
         data-annotation-action-bar={`edit-${kind}`}

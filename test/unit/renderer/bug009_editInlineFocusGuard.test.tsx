@@ -72,95 +72,53 @@ function dispatchMouseDown(el: Element): boolean {
 }
 
 describe("Bug 9 / B16 — EditInlineEditor toolbar focus guard", () => {
-  it("the Font SELECT does NOT preventDefault on mousedown (native dropdown opens — B16)", () => {
-    // B16 — the old focus guard called e.preventDefault() on the
-    // select's mousedown, which blocked the native dropdown from
-    // opening. The select must let the browser open the list.
-    const { host } = mountEditor();
-    const fontSelect = host.querySelector<HTMLSelectElement>(
-      ".edit-inline-field-font select",
-    );
-    expect(fontSelect).not.toBeNull();
-    if (fontSelect === null) return;
-    expect(dispatchMouseDown(fontSelect)).toBe(false);
-  });
-
-  it("the Background SELECT does NOT preventDefault on mousedown when mode is box (B16)", () => {
+  it("the retired style controls (font / size / colour / background) are gone — Phase 21", () => {
+    // Phase 21 criterion 3 retires the floating style surface; the
+    // editor keeps only the grip + action bar. The Bug-9 / B16 /
+    // DEF-109 focus-guard questions for those controls are moot.
     const { host } = mountEditor({ mode: "box" });
-    const bgSelect = host.querySelector<HTMLSelectElement>(
-      ".edit-inline-field-bg select",
-    );
-    expect(bgSelect).not.toBeNull();
-    if (bgSelect === null) return;
-    expect(dispatchMouseDown(bgSelect)).toBe(false);
+    expect(host.querySelector(".edit-inline-field-font")).toBeNull();
+    expect(host.querySelector(".edit-inline-field-size")).toBeNull();
+    expect(host.querySelector(".edit-inline-field-color")).toBeNull();
+    expect(host.querySelector(".edit-inline-field-bg")).toBeNull();
+    expect(host.querySelector(".edit-inline-toolbar-actions")).not.toBeNull();
   });
 
-  it("the size number input does NOT preventDefault on mousedown (native spinner / arrows work — DEF-109)", () => {
-    // DEF-109 — the old Bug-9 focus guard on the number input
-    // suppressed the native spinner/arrow auto-increment (and
-    // Chromium's arrow-up), making the size control inert. The
-    // guard is REMOVED from the number input; the textarea's onBlur
-    // guard keeps the editor mounted because the number input is
-    // focusable and inside the editor.
+  it("the Cancel / Apply buttons still preventDefault on mousedown", () => {
+    // The focus-lock is kept where it is actually needed: the action
+    // buttons (so the textarea's onBlur cannot commit/cancel before the
+    // click reaches the button).
     const { host } = mountEditor();
-    const sizeInput = host.querySelector<HTMLInputElement>(
-      ".edit-inline-field-size input",
-    );
-    expect(sizeInput).not.toBeNull();
-    if (sizeInput === null) return;
-    expect(dispatchMouseDown(sizeInput)).toBe(false);
-  });
-
-  it("the color input and the Cancel / Apply buttons still preventDefault on mousedown", () => {
-    // The focus-lock is kept where it is actually needed: the color
-    // input (not a native dropdown, and its picker opens on click,
-    // not on the suppressed default action) and the action buttons.
-    const { host } = mountEditor();
-    const colorInput = host.querySelector<HTMLInputElement>(
-      ".edit-inline-field-color input",
-    );
     const cancelBtn = host.querySelector<HTMLButtonElement>(
       ".edit-inline-btn-cancel",
     );
     const commitBtn = host.querySelector<HTMLButtonElement>(
       ".edit-inline-btn-commit",
     );
-    for (const el of [colorInput, cancelBtn, commitBtn]) {
+    for (const el of [cancelBtn, commitBtn]) {
       expect(el).not.toBeNull();
     }
-    if (
-      colorInput === null ||
-      cancelBtn === null ||
-      commitBtn === null
-    ) {
+    if (cancelBtn === null || commitBtn === null) {
       return;
     }
-    for (const el of [colorInput, cancelBtn, commitBtn]) {
+    for (const el of [cancelBtn, commitBtn]) {
       expect(dispatchMouseDown(el)).toBe(true);
     }
   });
 
-  it("clicking the Font select keeps the editor mounted (blur guard — B16)", () => {
-    // With the mousedown guard removed, clicking the select moves
-    // focus off the textarea. The textarea's onBlur must NOT
-    // commit/cancel when the new focus target is inside the
-    // editor — otherwise the dropdown would dismiss the editor
-    // before the user picks a font. We simulate the real focus
-    // transition: blur the textarea with relatedTarget = the
-    // select.
+  it("focus moving to an in-editor button keeps the editor mounted (blur guard)", () => {
+    // With the style controls gone, the remaining focusable targets are
+    // the textarea and the action buttons. A focus-out whose
+    // relatedTarget is inside the editor must NOT commit/cancel.
     const { host, commit, cancel } = mountEditor();
     const textarea = host.querySelector("textarea") as HTMLTextAreaElement | null;
-    const fontSelect = host.querySelector<HTMLSelectElement>(
-      ".edit-inline-field-font select",
-    );
+    const cancelBtn = host.querySelector<HTMLButtonElement>(".edit-inline-btn-cancel");
     expect(textarea).not.toBeNull();
-    expect(fontSelect).not.toBeNull();
-    if (textarea === null || fontSelect === null) return;
+    expect(cancelBtn).not.toBeNull();
+    if (textarea === null || cancelBtn === null) return;
     act((): void => {
-      // React's onBlur is wired to the native `focusout` event
-      // (which bubbles); a bare `blur` event never reaches React.
       textarea.dispatchEvent(
-        new FocusEvent("focusout", { bubbles: true, relatedTarget: fontSelect }),
+        new FocusEvent("focusout", { bubbles: true, relatedTarget: cancelBtn }),
       );
     });
     // Editor still mounted; nothing committed or cancelled.

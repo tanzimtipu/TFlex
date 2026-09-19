@@ -128,6 +128,12 @@ export const IPC = {
   // rect (the root cause of DEF-135).
   engineMoveTextBox: "engine:moveTextBox",
   engineDeleteTextBox: "engine:deleteTextBox",
+  // Phase 21 — apply a Word/Adobe-class style patch (font family/size,
+  // bold/italic/underline, colour, highlight, alignment, line spacing,
+  // super/subscript, list style, text) to a registry text box. Preserve-if-
+  // valid / reject-if-invalid per field; unknown id or an unsupported font
+  // returns a typed engine-error (never a silent fallback).
+  engineUpdateTextBox: "engine:updateTextBox",
   // Phase 11: OCR
   engineOcrRecognize: "engine:ocrRecognize",
   engineOcrSuspects: "engine:ocrSuspects",
@@ -345,6 +351,17 @@ export interface TFlexApiEngine {
   deleteTextBox?(
     docId: string,
     id: string,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 21 — apply a style patch to a registry text box. Every patch field
+   *  is optional and preserve-if-valid; a supplied-but-invalid field (or an
+   *  unsupported font) rejects the whole patch with a typed `engine-error`.
+   *  An unknown id also returns `engine-error`. On success the box is updated
+   *  in the registry, the doc is marked modified, the per-doc undo snapshot is
+   *  pushed, and the new state is returned. */
+  updateTextBox?(
+    docId: string,
+    id: string,
+    patch: import("./types").TextBoxStylePatch,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
   /** Phase 10 — edit an image (move/resize/replace/crop). The engine
    *  masks `oldRect` and draws `imageBytes` at `newRect`; the renderer

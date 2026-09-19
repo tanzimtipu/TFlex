@@ -308,8 +308,13 @@ describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag"
   });
 });
 
-describe("FEATURE — textbox / callout double-click toolbox carries color options like shapes", () => {
-  it("double-clicking a TEXTBOX opens the toolbox with the color section; Confirm commits a picked swatch color", () => {
+describe("Phase 21 — the textbox / callout double-click toolbox has NO floating color section", () => {
+  // Phase 21 criterion 3 supersedes the DEF-161 floating color row: the
+  // panel (and the annotation toolbar palette / annotations panel) is
+  // the only color surface for text-bearing annotations. The double-click
+  // toolbox keeps its grip + Confirm / Cancel / Delete actions.
+
+  it("double-clicking a TEXTBOX opens the toolbox without a color section; Confirm commits a text edit only", () => {
     const { host, onEditAnnotation, cleanup } = mountOverlay({ annotations: [TEXTBOX_ANN] });
     try {
       const tbx = host.querySelector<Element>(".ann-textbox[data-annotation-id='tbx-1']");
@@ -317,33 +322,15 @@ describe("FEATURE — textbox / callout double-click toolbox carries color optio
       doubleClickEl(tbx, 250, 220);
       const editor = host.querySelector("[data-annotation-editor='edit-textbox']");
       expect(editor, "text edit toolbox opens").not.toBeNull();
-      const section = editor?.querySelector("[data-annotation-color-section]");
-      expect(section, "color section inside the toolbox").not.toBeNull();
-      // Swatches match the shape color editor's vocabulary.
-      const red = section?.querySelector<HTMLButtonElement>("[data-ann-color-edit='red']");
-      expect(red).not.toBeNull();
-      if (red === undefined || red === null) return;
-      // The active swatch is the annotation's current color (blue).
-      const active = section?.querySelector(".content-color-swatch-active");
-      expect(active?.getAttribute("data-ann-color-edit")).toBe("blue");
-      clickEl(red);
-      // Nothing is committed yet — the toolbox defers to Confirm.
-      expect(onEditAnnotation).not.toHaveBeenCalled();
-      clickEl(toolboxConfirm(host, "textbox"));
-      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
-      expect(onEditAnnotation.mock.calls[0]).toEqual(["tbx-1", { color: "red" }]);
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("Confirm commits a text edit AND a picked color in one patch", () => {
-    const { host, onEditAnnotation, cleanup } = mountOverlay({ annotations: [TEXTBOX_ANN] });
-    try {
-      const tbx = host.querySelector<Element>(".ann-textbox[data-annotation-id='tbx-1']");
-      if (tbx === null) throw new Error("textbox not found");
-      doubleClickEl(tbx, 250, 220);
-      const ta = host.querySelector<HTMLTextAreaElement>("[data-annotation-editor='edit-textbox'] textarea");
+      expect(
+        editor?.querySelector("[data-annotation-color-section]"),
+        "floating color section is retired",
+      ).toBeNull();
+      // The action affordances stay.
+      expect(toolboxConfirm(host, "textbox")).not.toBeNull();
+      const ta = host.querySelector<HTMLTextAreaElement>(
+        "[data-annotation-editor='edit-textbox'] textarea",
+      );
       if (ta === null) throw new Error("toolbox textarea not found");
       const setter = Object.getOwnPropertyDescriptor(
         window.HTMLTextAreaElement.prototype,
@@ -353,60 +340,24 @@ describe("FEATURE — textbox / callout double-click toolbox carries color optio
         setter?.call(ta, "REVISED BOX");
         ta.dispatchEvent(new Event("input", { bubbles: true }));
       });
-      const green = host.querySelector<HTMLButtonElement>("[data-ann-color-edit='green']");
-      expect(green).not.toBeNull();
-      if (green === null) return;
-      clickEl(green);
       clickEl(toolboxConfirm(host, "textbox"));
       expect(onEditAnnotation).toHaveBeenCalledTimes(1);
-      expect(onEditAnnotation.mock.calls[0]).toEqual(["tbx-1", { text: "REVISED BOX", color: "green" }]);
+      // Text-only patch; the annotation's color is preserved untouched.
+      expect(onEditAnnotation.mock.calls[0]).toEqual(["tbx-1", { text: "REVISED BOX" }]);
     } finally {
       cleanup();
     }
   });
 
-  it("double-clicking a CALLOUT opens the color section too; Confirm commits the color without changing text", () => {
-    const { host, onEditAnnotation, cleanup } = mountOverlay({ annotations: [CALLOUT_ANN] });
+  it("double-clicking a CALLOUT opens the toolbox without a color section", () => {
+    const { host, cleanup } = mountOverlay({ annotations: [CALLOUT_ANN] });
     try {
       const box = boxDiv(host);
       doubleClickEl(box, 140, 120);
       const editor = host.querySelector("[data-annotation-editor='edit-callout']");
       expect(editor).not.toBeNull();
-      expect(editor?.querySelector("[data-annotation-color-section]")).not.toBeNull();
-      const purple = host.querySelector<HTMLButtonElement>("[data-ann-color-edit='purple']");
-      expect(purple).not.toBeNull();
-      if (purple === null) return;
-      clickEl(purple);
-      clickEl(toolboxConfirm(host, "callout"));
-      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
-      expect(onEditAnnotation.mock.calls[0]).toEqual(["callout-1", { color: "purple" }]);
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("the hex input commits a custom color through Confirm (same path as swatches)", () => {
-    const { host, onEditAnnotation, cleanup } = mountOverlay({ annotations: [TEXTBOX_ANN] });
-    try {
-      const tbx = host.querySelector<Element>(".ann-textbox[data-annotation-id='tbx-1']");
-      if (tbx === null) throw new Error("textbox not found");
-      doubleClickEl(tbx, 250, 220);
-      const hex = host.querySelector<HTMLInputElement>("[data-annotation-color-section] [data-ann-color-hex]");
-      if (hex === null) throw new Error("hex input not found");
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype,
-        "value",
-      )?.set;
-      act((): void => {
-        setter?.call(hex, "#ff00aa");
-        hex.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-      act((): void => {
-        hex.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
-      });
-      clickEl(toolboxConfirm(host, "textbox"));
-      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
-      expect(onEditAnnotation.mock.calls[0]).toEqual(["tbx-1", { color: "#ff00aa" }]);
+      expect(editor?.querySelector("[data-annotation-color-section]")).toBeNull();
+      expect(toolboxConfirm(host, "callout")).not.toBeNull();
     } finally {
       cleanup();
     }

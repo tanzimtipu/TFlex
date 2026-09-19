@@ -29,6 +29,7 @@ import type {
   RecentFile,
   SampleDocument,
   SpaceAudit,
+  TextBoxStylePatch,
   TextPage,
   UpdateState,
   WatermarkInfo,
@@ -253,6 +254,16 @@ const engineApi = {
     id: string,
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineDeleteTextBox, docId, id);
+  },
+  // Phase 21 — apply a style patch to a registry text box. Preserve-if-valid
+  // per field; a supplied-but-invalid field, an unsupported font or an
+  // unknown id returns a typed engine-error.
+  updateTextBox(
+    docId: string,
+    id: string,
+    patch: TextBoxStylePatch,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineUpdateTextBox, docId, id, patch);
   },
   // Phase 11: OCR — recognize text + suspects + progress
   ocrRecognize(

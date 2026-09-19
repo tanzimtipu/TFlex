@@ -4248,3 +4248,832 @@ function extractZipEntryText(zip: Uint8Array, name: string): string | null {
   return bytes === null ? null : new TextDecoder().decode(bytes);
 }
 
+// ---------------------------------------------------------------------------
+// Phase 21: updateTextBox + Word/Adobe-class styled text-box drawing
+// ---------------------------------------------------------------------------
+
+/** Parse every `1 0 0 1 <x> <y> Tm` text matrix in a decoded content stream. */
+function textMatrices(content: string): Array<{ x: number; y: number }> {
+  const out: Array<{ x: number; y: number }> = [];
+  const re = /1 0 0 1 (-?[\d.]+) (-?[\d.]+) Tm/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    out.push({ x: Number(m[1]), y: Number(m[2]) });
+  }
+  return out;
+}
+
+/** Count `Tj` show-text operators in a decoded content stream. */
+function countTj(content: string): number {
+  return (content.match(/Tj/g) ?? []).length;
+}
+
+/** Phase 21 — the /BaseFont names of every font in page 0's resource dict.
+ *  Standard fonts are referenced (not embedded), and pdf-lib packs object
+ *  streams, so the names must be read from the reparsed page, not the raw
+ *  file bytes. */
+async function pageFontBaseNames(path: string): Promise<string[]> {
+  const doc = await PDFDocument.load(await readFile(path));
+  const page = doc.getPage(0);
+  const resources = page.node.Resources();
+  const fontRef = resources?.get(PDFName.of('Font'));
+  if (!fontRef) return [];
+  const fontDict = doc.context.lookup(fontRef) as {
+    keys?: () => unknown[];
+    get?: (k: unknown) => unknown;
+  };
+  if (!fontDict || typeof fontDict.keys !== 'function' || typeof fontDict.get !== 'function') {
+    return [];
+  }
+  const names: string[] = [];
+  for (const key of fontDict.keys()) {
+    const f = doc.context.lookup(fontDict.get(key) as never) as {
+      get?: (k: unknown) => unknown;
+    };
+    const base = f?.get?.(PDFName.of('BaseFont')) as { decodeText?: () => string } | undefined;
+    if (base && typeof base.decodeText === 'function') names.push(base.decodeText());
+  }
+  return names;
+}
+
+async function blankOnePagePdf(name: string): Promise<string> {
+  const doc = await PDFDocument.create();
+  doc.addPage([612, 792]);
+  return writeFixture(name, await doc.save());
+}
+
+describe('Phase 21: updateTextBox', () => {
+  it('applies a style patch, marks modified and echoes the new state', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-update.pdf');
+    await engine.loadDocument('p21-update', path);
+
+    const add = await engine.addTextBox('p21-update', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'ORIG',
+    });
+    expect(add.ok).toBe(true);
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+
+    const upd = await engine.updateTextBox('p21-update', id, {
+      text: 'PATCHED',
+      align: 'right',
+      lineHeight: 1.5,
+      bold: true,
+      italic: true,
+      underline: true,
+      baselineShift: 3,
+      highlight: { r: 1, g: 1, b: 0 },
+      list: 'number',
+      indent: 12,
+      size: 16,
+      font: 'Times',
+      color: { r: 1, g: 0, b: 0 },
+    });
+    expect(upd.ok).toBe(true);
+    if (upd.ok) {
+      expect(upd.value.modified).toBe(true);
+      const box = upd.value.textBoxes![0];
+      expect(box.text).toBe('PATCHED');
+      expect(box.align).toBe('right');
+      expect(box.lineHeight).toBe(1.5);
+      expect(box.bold).toBe(true);
+      expect(box.italic).toBe(true);
+      expect(box.underline).toBe(true);
+      expect(box.baselineShift).toBe(3);
+      expect(box.highlight).toEqual({ r: 1, g: 1, b: 0 });
+      expect(box.list).toBe('number');
+      expect(box.indent).toBe(12);
+      expect(box.size).toBe(16);
+      expect(box.font).toBe('Times');
+      expect(box.color).toBe('#ff0000');
+    }
+  });
+
+  it('returns a typed engine-error for an unknown id (never a silent success)', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-unknown.pdf');
+    await engine.loadDocument('p21-unknown', path);
+    const r = await engine.updateTextBox('p21-unknown', 'nope', { bold: true });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('engine-error');
+  });
+
+  it('rejects an invalid patch field with a typed engine-error', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-invalid.pdf');
+    await engine.loadDocument('p21-invalid', path);
+    const add = await engine.addTextBox('p21-invalid', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'X',
+    });
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+
+    const badAlign = await engine.updateTextBox('p21-invalid', id, { align: 'middle' } as never);
+    expect(badAlign.ok).toBe(false);
+    if (!badAlign.ok) expect(badAlign.error.code).toBe('engine-error');
+
+    const badFont = await engine.updateTextBox('p21-invalid', id, { font: 'Arial' } as never);
+    expect(badFont.ok).toBe(false);
+    if (!badFont.ok) {
+      expect(badFont.error.code).toBe('engine-error');
+      expect(badFont.error.message).toContain('StandardFont allowlist');
+    }
+
+    // A rejected patch must not have mutated the box.
+    const state = await engine.getState('p21-invalid');
+    expect(state.ok && state.value.textBoxes![0].align).toBeUndefined();
+  });
+
+  it('undo restores the previous style', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-undo.pdf');
+    await engine.loadDocument('p21-undo', path);
+    const add = await engine.addTextBox('p21-undo', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'U',
+    });
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+
+    await engine.updateTextBox('p21-undo', id, {
+      align: 'right',
+      bold: true,
+      highlight: { r: 0, g: 1, b: 0 },
+    });
+    const undo = await engine.undo('p21-undo');
+    expect(undo.ok).toBe(true);
+    if (undo.ok) {
+      const box = undo.value.textBoxes![0];
+      expect(box.align).toBeUndefined();
+      expect(box.bold).toBeUndefined();
+      expect(box.highlight).toBeUndefined();
+    }
+  });
+  it('highlight: null removes the stored band (a subsequent read shows none)', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-hl-remove.pdf');
+    await engine.loadDocument('p21-hl-remove', path);
+    const add = await engine.addTextBox('p21-hl-remove', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'BAND',
+      highlight: { r: 1, g: 1, b: 0 },
+    });
+    expect(add.ok).toBe(true);
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+    expect(add.ok && add.value.textBoxes![0].highlight).toEqual({ r: 1, g: 1, b: 0 });
+
+    const upd = await engine.updateTextBox('p21-hl-remove', id, { highlight: null });
+    expect(upd.ok).toBe(true);
+    if (upd.ok) expect(upd.value.textBoxes![0].highlight).toBeUndefined();
+
+    const state = await engine.getState('p21-hl-remove');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      expect(state.value.textBoxes![0].highlight).toBeUndefined();
+    }
+  });
+
+  it('an ABSENT highlight in a patch preserves the existing band', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-hl-preserve.pdf');
+    await engine.loadDocument('p21-hl-preserve', path);
+    const add = await engine.addTextBox('p21-hl-preserve', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'KEEP',
+      highlight: { r: 0, g: 0.5, b: 1 },
+    });
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+
+    const upd = await engine.updateTextBox('p21-hl-preserve', id, { bold: true });
+    expect(upd.ok).toBe(true);
+    if (upd.ok) {
+      expect(upd.value.textBoxes![0].bold).toBe(true);
+      expect(upd.value.textBoxes![0].highlight).toEqual({ r: 0, g: 0.5, b: 1 });
+    }
+  });
+
+  it('a malformed highlight still rejects the whole patch (no mutation)', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-hl-bad.pdf');
+    await engine.loadDocument('p21-hl-bad', path);
+    const add = await engine.addTextBox('p21-hl-bad', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'BAD',
+      highlight: { r: 1, g: 1, b: 0 },
+    });
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+
+    const bad = await engine.updateTextBox('p21-hl-bad', id, {
+      highlight: { r: 2, g: 0, b: 0 },
+    } as never);
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.error.code).toBe('engine-error');
+
+const state = await engine.getState('p21-hl-bad');
+    expect(state.ok && state.value.textBoxes![0].highlight).toEqual({ r: 1, g: 1, b: 0 });
+  });
+});
+
+describe('Phase 21 / DEF-242: empty and unknown-key updateTextBox patches', () => {
+  /** Load a one-page PDF, add a box, save it (clean: modified false, empty
+   *  undo/redo stacks), and return the engine + box id + the file path. */
+  async function cleanDocWithBox(docId: string, fixture: string) {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf(fixture);
+    await engine.loadDocument(docId, path);
+    const add = await engine.addTextBox(docId, {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'STABLE',
+    });
+    expect(add.ok).toBe(true);
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+    await engine.save(docId);
+    const clean = await engine.getState(docId);
+    expect(clean.ok && clean.value.modified).toBe(false);
+    return { engine, id };
+  }
+
+  it('an EMPTY patch is a no-op: ok, unchanged state, not modified, no undo entry', async () => {
+    const { engine, id } = await cleanDocWithBox('def242-empty', 'def242-empty.pdf');
+    const before = await engine.getState('def242-empty');
+    expect(before.ok).toBe(true);
+
+    const upd = await engine.updateTextBox('def242-empty', id, {});
+    expect(upd.ok).toBe(true);
+    if (upd.ok) {
+      expect(upd.value.modified).toBe(false);
+      expect(upd.value.textBoxes).toEqual(before.ok ? before.value.textBoxes : []);
+    }
+
+    // No snapshot was pushed: the clean doc still has nothing to undo.
+    const undo = await engine.undo('def242-empty');
+    expect(undo.ok).toBe(false);
+    if (!undo.ok) expect(undo.error.code).toBe('nothing-to-undo');
+    const after = await engine.getState('def242-empty');
+    expect(after.ok && after.value.modified).toBe(false);
+  });
+
+  it('a patch of only undefined-valued keys is also a no-op', async () => {
+    const { engine, id } = await cleanDocWithBox('def242-undef', 'def242-undef.pdf');
+    const upd = await engine.updateTextBox('def242-undef', id, {
+      bold: undefined,
+      size: undefined,
+    } as never);
+    expect(upd.ok).toBe(true);
+    if (upd.ok) expect(upd.value.modified).toBe(false);
+    const undo = await engine.undo('def242-undef');
+    expect(undo.ok).toBe(false);
+    if (!undo.ok) expect(undo.error.code).toBe('nothing-to-undo');
+  });
+
+  it('an all-unknown-key patch is a typed engine-error naming the key(s), with no mutation', async () => {
+    const { engine, id } = await cleanDocWithBox('def242-unknown', 'def242-unknown.pdf');
+
+    const one = await engine.updateTextBox('def242-unknown', id, { evil: 1 } as never);
+    expect(one.ok).toBe(false);
+    if (!one.ok) {
+      expect(one.error.code).toBe('engine-error');
+      expect(one.error.message).toContain('"evil"');
+    }
+
+    const two = await engine.updateTextBox('def242-unknown', id, {
+      evil: 1,
+      another: 'x',
+    } as never);
+    expect(two.ok).toBe(false);
+    if (!two.ok) {
+      expect(two.error.code).toBe('engine-error');
+      expect(two.error.message).toContain('"evil"');
+      expect(two.error.message).toContain('"another"');
+    }
+
+    const after = await engine.getState('def242-unknown');
+    expect(after.ok && after.value.modified).toBe(false);
+    const undo = await engine.undo('def242-unknown');
+    expect(undo.ok).toBe(false);
+    if (!undo.ok) expect(undo.error.code).toBe('nothing-to-undo');
+  });
+
+  it('unknown keys MIXED with a known key are ignored and the known key applies', async () => {
+    const { engine, id } = await cleanDocWithBox('def242-mixed', 'def242-mixed.pdf');
+    const upd = await engine.updateTextBox('def242-mixed', id, {
+      bold: true,
+      evil: 1,
+    } as never);
+    expect(upd.ok).toBe(true);
+    if (upd.ok) {
+      expect(upd.value.modified).toBe(true);
+      expect(upd.value.textBoxes![0].bold).toBe(true);
+    }
+    const undo = await engine.undo('def242-mixed');
+    expect(undo.ok).toBe(true);
+    if (undo.ok) expect(undo.value.textBoxes![0].bold).toBeUndefined();
+  });
+
+  it('an EMPTY patch does not clear the redo stack', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('def242-redo.pdf');
+    await engine.loadDocument('def242-redo', path);
+    const add = await engine.addTextBox('def242-redo', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'R',
+    });
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+    await engine.updateTextBox('def242-redo', id, { bold: true });
+    const undo = await engine.undo('def242-redo');
+    expect(undo.ok).toBe(true);
+
+    // The no-op patch must preserve the redo entry produced by the undo.
+    const noop = await engine.updateTextBox('def242-redo', id, {});
+    expect(noop.ok).toBe(true);
+
+    const redo = await engine.redo('def242-redo');
+    expect(redo.ok).toBe(true);
+    if (redo.ok) expect(redo.value.textBoxes![0].bold).toBe(true);
+  });
+
+  it('a normal known-key patch still dirties, snapshots and undoes', async () => {
+    const { engine, id } = await cleanDocWithBox('def242-normal', 'def242-normal.pdf');
+    const upd = await engine.updateTextBox('def242-normal', id, { italic: true });
+    expect(upd.ok).toBe(true);
+    if (upd.ok) {
+      expect(upd.value.modified).toBe(true);
+      expect(upd.value.textBoxes![0].italic).toBe(true);
+    }
+    const undo = await engine.undo('def242-normal');
+    expect(undo.ok).toBe(true);
+    if (undo.ok) {
+      expect(undo.value.textBoxes![0].italic).toBeUndefined();
+      expect(undo.value.modified).toBe(false);
+    }
+  });
+
+  it('the highlight: null removal path still dirties + undoes', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('def242-hl.pdf');
+    await engine.loadDocument('def242-hl', path);
+    const add = await engine.addTextBox('def242-hl', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'HL',
+      highlight: { r: 1, g: 1, b: 0 },
+    });
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+    await engine.save('def242-hl');
+
+    const upd = await engine.updateTextBox('def242-hl', id, { highlight: null });
+    expect(upd.ok).toBe(true);
+    if (upd.ok) {
+      expect(upd.value.modified).toBe(true);
+      expect(upd.value.textBoxes![0].highlight).toBeUndefined();
+    }
+    const undo = await engine.undo('def242-hl');
+    expect(undo.ok).toBe(true);
+if (undo.ok) expect(undo.value.textBoxes![0].highlight).toEqual({ r: 1, g: 1, b: 0 });
+  });
+});
+
+describe('Phase 21: payload validation on add/edit', () => {
+  it('addTextBox rejects an invalid new style field', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-add-invalid.pdf');
+    await engine.loadDocument('p21-add-invalid', path);
+    const r = await engine.addTextBox('p21-add-invalid', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 200, height: 80 },
+      text: 'x',
+      align: 'middle',
+    } as never);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.code).toBe('engine-error');
+  });
+
+  it('editTextRun rejects an invalid style field and an unsupported font', async () => {
+    const engine = new EngineService();
+    const { path } = await createSinglePagePdfWithText('EDIT ME');
+    await engine.loadDocument('p21-edit-invalid', path);
+
+    const badStyle = await engine.editTextRun('p21-edit-invalid', {
+      page: 1,
+      rect: { x: 72, y: 90, width: 200, height: 16 },
+      newText: 'EDIT ME',
+      lineHeight: 0,
+    });
+    expect(badStyle.ok).toBe(false);
+    if (!badStyle.ok) expect(badStyle.error.code).toBe('engine-error');
+
+    const badFont = await engine.editTextRun('p21-edit-invalid', {
+      page: 1,
+      rect: { x: 72, y: 90, width: 200, height: 16 },
+      newText: 'EDIT ME',
+      font: 'Arial' as never,
+    });
+    expect(badFont.ok).toBe(false);
+    if (!badFont.ok) {
+      expect(badFont.error.code).toBe('engine-error');
+      expect(badFont.error.message).toContain('StandardFont allowlist');
+    }
+  });
+});
+
+describe('Phase 21: styled text-box drawing', () => {
+  it('align positions each line inside the box (left/center/right)', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-align.pdf');
+    await engine.loadDocument('p21-align', path);
+
+    const probe = await PDFDocument.create();
+    const probeFont = await probe.embedFont(StandardFonts.Helvetica);
+    const rectX = 72;
+    const rectW = 300;
+    const wCenter = probeFont.widthOfTextAtSize('CENTERLINE', 12);
+    const wRight = probeFont.widthOfTextAtSize('RIGHTLINE', 12);
+
+    await engine.addTextBox('p21-align', {
+      page: 1, rect: { x: rectX, y: 72, width: rectW, height: 60 }, text: 'LEFTLINE', align: 'left',
+    });
+    await engine.addTextBox('p21-align', {
+      page: 1, rect: { x: rectX, y: 172, width: rectW, height: 60 }, text: 'CENTERLINE', align: 'center',
+    });
+    await engine.addTextBox('p21-align', {
+      page: 1, rect: { x: rectX, y: 272, width: rectW, height: 60 }, text: 'RIGHTLINE', align: 'right',
+    });
+    const sr = await engine.save('p21-align');
+    const matrices = textMatrices(await decodedPage0Content(sr.ok ? sr.value : ''));
+    expect(matrices.length).toBe(3);
+    expect(matrices[0].x).toBeCloseTo(rectX, 3);
+    expect(matrices[1].x).toBeCloseTo(rectX + (rectW - wCenter) / 2, 3);
+    expect(matrices[2].x).toBeCloseTo(rectX + rectW - wRight, 3);
+  });
+
+  it('lineHeight changes the baseline step (default 1.2 vs 2.0)', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-lineheight.pdf');
+    await engine.loadDocument('p21-lineheight', path);
+    await engine.addTextBox('p21-lineheight', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 300 },
+      text: 'AAA\nBBB',
+      lineHeight: 2,
+    });
+    const sr = await engine.save('p21-lineheight');
+    const matrices = textMatrices(await decodedPage0Content(sr.ok ? sr.value : ''));
+    expect(matrices.length).toBe(2);
+    expect(matrices[0].y).toBeCloseTo(792 - 72 - 12, 3);
+    expect(matrices[1].y).toBeCloseTo(792 - 72 - 12 - 24, 3);
+  });
+
+  it('underline draws a rule (and omits it when absent)', async () => {
+    const withRule = new EngineService();
+    const p1 = await blankOnePagePdf('p21-underline.pdf');
+    await withRule.loadDocument('p21-underline', p1);
+    await withRule.addTextBox('p21-underline', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 60 }, text: 'UNDER', underline: true,
+    });
+    const sr1 = await withRule.save('p21-underline');
+    const content1 = await decodedPage0Content(sr1.ok ? sr1.value : '');
+    // pdf-lib draws rectangles as a path (m/l/h) + fill (f), not the `re` op.
+    expect(/\bh\b/.test(content1)).toBe(true);
+    expect(/\bf\b/.test(content1)).toBe(true);
+
+    const withoutRule = new EngineService();
+    const p2 = await blankOnePagePdf('p21-underline-off.pdf');
+    await withoutRule.loadDocument('p21-underline-off', p2);
+    await withoutRule.addTextBox('p21-underline-off', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 60 }, text: 'PLAIN',
+    });
+    const sr2 = await withoutRule.save('p21-underline-off');
+    const content2 = await decodedPage0Content(sr2.ok ? sr2.value : '');
+    expect(/\bh\b/.test(content2)).toBe(false);
+    expect(/\bf\b/.test(content2)).toBe(false);
+  });
+
+  it('baselineShift moves the baseline by the given points (super/subscript)', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-shift.pdf');
+    await engine.loadDocument('p21-shift', path);
+    await engine.addTextBox('p21-shift', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 60 }, text: 'SUPER', baselineShift: 5,
+    });
+    await engine.addTextBox('p21-shift', {
+      page: 1, rect: { x: 72, y: 172, width: 300, height: 60 }, text: 'SUB', baselineShift: -3,
+    });
+    const sr = await engine.save('p21-shift');
+    const matrices = textMatrices(await decodedPage0Content(sr.ok ? sr.value : ''));
+    expect(matrices.length).toBe(2);
+    expect(matrices[0].y).toBeCloseTo(792 - 72 - 12 + 5, 3);
+    expect(matrices[1].y).toBeCloseTo(792 - 172 - 12 - 3, 3);
+  });
+
+  it('highlight draws the band BEFORE the glyphs', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-highlight.pdf');
+    await engine.loadDocument('p21-highlight', path);
+    await engine.addTextBox('p21-highlight', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 60 },
+      text: 'HILITE',
+      highlight: { r: 1, g: 1, b: 0 },
+    });
+    const sr = await engine.save('p21-highlight');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    const bandIdx = content.indexOf('1 1 0 rg');
+    const glyphIdx = content.indexOf(hexOperand('HILITE'));
+    expect(bandIdx).toBeGreaterThanOrEqual(0);
+    expect(glyphIdx).toBeGreaterThanOrEqual(0);
+    expect(bandIdx).toBeLessThan(glyphIdx);
+  });
+
+  it('bullet list prepends a bullet glyph to each line', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-bullet.pdf');
+    await engine.loadDocument('p21-bullet', path);
+    await engine.addTextBox('p21-bullet', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 200 }, text: 'ITEM', list: 'bullet',
+    });
+    const sr = await engine.save('p21-bullet');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    // WinAnsi bullet byte is 0x95, followed by a space (0x20), then "ITEM".
+    expect(content.includes('9520' + hexOperand('ITEM'))).toBe(true);
+  });
+
+  it('number list prepends an incrementing N. prefix per line', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-number.pdf');
+    await engine.loadDocument('p21-number', path);
+    await engine.addTextBox('p21-number', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 200 }, text: 'ONE\nTWO', list: 'number',
+    });
+    const sr = await engine.save('p21-number');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    expect(content.includes(hexOperand('1. ONE'))).toBe(true);
+    expect(content.includes(hexOperand('2. TWO'))).toBe(true);
+  });
+
+  it('justify draws word-by-word on all but the last line', async () => {
+    const justified = new EngineService();
+    const p1 = await blankOnePagePdf('p21-justify.pdf');
+    await justified.loadDocument('p21-justify', p1);
+    await justified.addTextBox('p21-justify', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 200 },
+      text: 'ALPHA BETA GAMMA\nDELTA',
+      align: 'justify',
+    });
+    const srJ = await justified.save('p21-justify');
+    const cJ = await decodedPage0Content(srJ.ok ? srJ.value : '');
+    expect(countTj(cJ)).toBeGreaterThanOrEqual(4);
+    expect(cJ.includes(hexOperand('ALPHA'))).toBe(true);
+    expect(cJ.includes(hexOperand('DELTA'))).toBe(true);
+
+    const left = new EngineService();
+    const p2 = await blankOnePagePdf('p21-left.pdf');
+    await left.loadDocument('p21-left', p2);
+    await left.addTextBox('p21-left', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 200 },
+      text: 'ALPHA BETA GAMMA\nDELTA',
+      align: 'left',
+    });
+    const srL = await left.save('p21-left');
+    expect(countTj(await decodedPage0Content(srL.ok ? srL.value : ''))).toBe(2);
+  });
+
+  it('indent insets every line and shrinks the wrap width', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-indent.pdf');
+    await engine.loadDocument('p21-indent', path);
+
+    const probe = await PDFDocument.create();
+    const probeFont = await probe.embedFont(StandardFonts.Helvetica);
+    const text = 'ALPHA BETA GAMMA DELTA';
+    const fullWidth = probeFont.widthOfTextAtSize(text, 12);
+    const rectX = 72;
+    // The box is wide enough for the whole string unwrapped, but 40pt of
+    // indent no longer fits it -> the indented box must wrap.
+    const rectW = fullWidth + 2;
+    const indent = 40;
+
+    await engine.addTextBox('p21-indent', {
+      page: 1, rect: { x: rectX, y: 72, width: rectW, height: 200 }, text,
+    });
+    await engine.addTextBox('p21-indent', {
+      page: 1, rect: { x: rectX, y: 272, width: rectW, height: 200 }, text, indent,
+    });
+    const sr = await engine.save('p21-indent');
+    const matrices = textMatrices(await decodedPage0Content(sr.ok ? sr.value : ''));
+
+    // Box 1 (no indent): one line at the box's left edge.
+    expect(matrices[0].x).toBeCloseTo(rectX, 3);
+    // Box 2 (indent 40): wrapped, and EVERY line starts at rectX + indent.
+    const indented = matrices.slice(1);
+    expect(indented.length).toBeGreaterThan(1);
+    for (const m of indented) expect(m.x).toBeCloseTo(rectX + indent, 3);
+  });
+
+  it('center alignment with indent centres inside the indented content box', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-indent-center.pdf');
+    await engine.loadDocument('p21-indent-center', path);
+
+    const probe = await PDFDocument.create();
+    const probeFont = await probe.embedFont(StandardFonts.Helvetica);
+    const line = 'CENTERLINE';
+    const lineWidth = probeFont.widthOfTextAtSize(line, 12);
+    const rectX = 72;
+    const rectW = 300;
+    const indent = 50;
+
+    await engine.addTextBox('p21-indent-center', {
+      page: 1,
+      rect: { x: rectX, y: 72, width: rectW, height: 60 },
+      text: line,
+      align: 'center',
+      indent,
+    });
+    const sr = await engine.save('p21-indent-center');
+    const matrices = textMatrices(await decodedPage0Content(sr.ok ? sr.value : ''));
+    expect(matrices.length).toBe(1);
+    // Centre is relative to the indented content box [rectX+indent, rectX+rectW].
+    expect(matrices[0].x).toBeCloseTo(rectX + indent + (rectW - indent - lineWidth) / 2, 3);
+  });
+
+  it('a zero indent draws exactly like an absent indent (legacy bytes)', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-indent-zero.pdf');
+    await engine.loadDocument('p21-indent-zero', path);
+
+    const text = 'ZERO INDENT LINE';
+    await engine.addTextBox('p21-indent-zero', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 60 }, text,
+    });
+    await engine.addTextBox('p21-indent-zero', {
+      page: 1, rect: { x: 72, y: 172, width: 300, height: 60 }, text, indent: 0,
+    });
+    const sr = await engine.save('p21-indent-zero');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    const matrices = textMatrices(content);
+    expect(matrices.length).toBe(2);
+    expect(matrices[0].x).toBeCloseTo(72, 3);
+    expect(matrices[1].x).toBeCloseTo(72, 3);
+    expect(matrices[0].y).toBeCloseTo(matrices[1].y + 100, 3);
+  });
+
+  it('bold/italic select the matching StandardFont variant', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-fonts.pdf');
+    await engine.loadDocument('p21-fonts', path);
+    await engine.addTextBox('p21-fonts', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 60 }, text: 'BOLD', font: 'Helvetica', bold: true,
+    });
+    await engine.addTextBox('p21-fonts', {
+      page: 1, rect: { x: 72, y: 172, width: 300, height: 60 }, text: 'ITAL', font: 'Times', italic: true,
+    });
+    const sr = await engine.save('p21-fonts');
+    const baseFonts = await pageFontBaseNames(sr.ok ? sr.value : '');
+    expect(baseFonts).toContain('Helvetica-Bold');
+    expect(baseFonts).toContain('Times-Italic');
+  });
+});
+
+describe('Phase 21: style round-trip rehydration', () => {
+  it('rehydrates every new field through save + reopen', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-rt.pdf');
+    await engine.loadDocument('p21-rt', path);
+
+    await engine.addTextBox('p21-rt', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 200 },
+      text: 'ROUNDTRIP',
+      font: 'Courier',
+      size: 10,
+      color: { r: 0, g: 1, b: 0 },
+      background: 'white',
+      align: 'center',
+      lineHeight: 1.5,
+      bold: true,
+      italic: false,
+      underline: true,
+      baselineShift: 2,
+      highlight: { r: 0, g: 0.5, b: 1 },
+      list: 'bullet',
+      indent: 22,
+    });
+    const saveAs = await engine.saveAs('p21-rt', join(dir, 'p21-rt-out.pdf'));
+    expect(saveAs.ok).toBe(true);
+
+    const reopened = new EngineService();
+    const load = await reopened.loadDocument('p21-rt-2', saveAs.ok ? saveAs.value : '');
+    expect(load.ok).toBe(true);
+    const state = await reopened.getState('p21-rt-2');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const box = state.value.textBoxes![0];
+      expect(box.text).toBe('ROUNDTRIP');
+      expect(box.font).toBe('Courier');
+      expect(box.size).toBe(10);
+      expect(box.color).toBe('#00ff00');
+      expect(box.background).toBe('white');
+      expect(box.align).toBe('center');
+      expect(box.lineHeight).toBe(1.5);
+      expect(box.bold).toBe(true);
+      expect(box.italic).toBe(false);
+      expect(box.underline).toBe(true);
+      expect(box.baselineShift).toBe(2);
+      expect(box.highlight).toEqual({ r: 0, g: 0.5, b: 1 });
+      expect(box.list).toBe('bullet');
+      expect(box.indent).toBe(22);
+    }
+  });
+
+  it('legacy boxes without style fields keep undefined (byte-compatible draw)', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-legacy.pdf');
+    await engine.loadDocument('p21-legacy', path);
+    await engine.addTextBox('p21-legacy', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 60 }, text: 'LEGACY',
+    });
+    const sr = await engine.save('p21-legacy');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    // Single line at the legacy baseline, no rect / underline operators.
+    expect(textMatrices(content)[0].y).toBeCloseTo(792 - 72 - 12, 3);
+    expect(/\bre\b/.test(content)).toBe(false);
+
+    const state = await engine.getState('p21-legacy');
+    expect(state.ok && state.value.textBoxes![0].align).toBeUndefined();
+    expect(state.ok && state.value.textBoxes![0].indent).toBeUndefined();
+  });
+});
+
+describe('Phase 21 follow-up: highlight removal via patch null', () => {
+  it('highlight: null then save + reparse leaves NO band and no model highlight', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-hl-null-rt.pdf');
+    await engine.loadDocument('p21-hl-null-rt', path);
+    const add = await engine.addTextBox('p21-hl-null-rt', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 60 },
+      text: 'NOBAND',
+      highlight: { r: 1, g: 1, b: 0 },
+    });
+    expect(add.ok).toBe(true);
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+
+    // Baseline: the yellow band IS painted before removal.
+    const before = await engine.save('p21-hl-null-rt');
+    const beforeContent = await decodedPage0Content(before.ok ? before.value : '');
+    expect(beforeContent.includes('1 1 0 rg')).toBe(true);
+
+    const upd = await engine.updateTextBox('p21-hl-null-rt', id, { highlight: null });
+    expect(upd.ok).toBe(true);
+
+    const saveAs = await engine.saveAs('p21-hl-null-rt', join(dir, 'p21-hl-null-out.pdf'));
+    expect(saveAs.ok).toBe(true);
+    const content = await decodedPage0Content(saveAs.ok ? saveAs.value : '');
+    // No band fill anywhere, but the glyphs still draw (only the band went).
+    expect(content.includes('1 1 0 rg')).toBe(false);
+    expect(content.includes(hexOperand('NOBAND'))).toBe(true);
+
+    const reopened = new EngineService();
+    const load = await reopened.loadDocument('p21-hl-null-2', saveAs.ok ? saveAs.value : '');
+    expect(load.ok).toBe(true);
+    const state = await reopened.getState('p21-hl-null-2');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      expect(state.value.textBoxes![0].highlight).toBeUndefined();
+    }
+  });
+
+  it('a white {1,1,1} highlight is still painted as a visible band (not a removal)', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p21-hl-white.pdf');
+    await engine.loadDocument('p21-hl-white', path);
+    const add = await engine.addTextBox('p21-hl-white', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 60 },
+      text: 'WHITE',
+      highlight: { r: 1, g: 0, b: 0 },
+    });
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+
+    const upd = await engine.updateTextBox('p21-hl-white', id, { highlight: { r: 1, g: 1, b: 1 } });
+    expect(upd.ok).toBe(true);
+    if (upd.ok) expect(upd.value.textBoxes![0].highlight).toEqual({ r: 1, g: 1, b: 1 });
+
+    const sr = await engine.save('p21-hl-white');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    expect(content.includes('1 1 1 rg')).toBe(true);
+  });
+});
+
+
+

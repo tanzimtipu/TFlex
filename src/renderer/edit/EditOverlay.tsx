@@ -158,6 +158,13 @@ export interface EditOverlayProps {
    *  button calls this; the host removes the box from the engine
    *  registry and the local mirror adopts the echoed list. */
   onDeleteTextBox?: (id: string) => void;
+  /** Phase 21 — the panel-driven style for the inline editor. It is the
+   *  selected box's actual formatting, or the pending per-tool defaults
+   *  when nothing is selected; the editor renders NO style controls and
+   *  commits this value straight through (criterion 3). Optional so a
+   *  direct-mount host that predates the panel keeps the legacy
+   *  `textTarget.style ?? default` fallback. */
+  textStyle?: EditTextStyle;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +258,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     onCommitImageEdit,
     onCommitTextBoxMove,
     onDeleteTextBox,
+    textStyle,
   } = props;
 
   const [textTarget, setTextTarget] = useState<TextEditTarget | null>(null);
@@ -1532,13 +1540,21 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           rect={textTarget.rect}
           cssScale={cssScale}
           initialText={textTarget.initialText}
+          // Phase 21 — the panel is the ONLY style surface. The editor
+          // mirrors the panel's live values (the selected box's actual
+          // formatting, or the pending defaults) for its preview and its
+          // commit; it renders no font / size / colour / background
+          // controls of its own. A host that predates the panel keeps the
+          // legacy `textTarget.style ?? default` fallback.
           initialStyle={
+            textStyle ??
             textTarget.style ?? {
               font: defaultFont,
               size: Math.round(textTarget.rect.height * 0.8),
               color: { r: 0, g: 0, b: 0 },
             }
           }
+          initialBackground={textTarget.background}
           mode={textTarget.initialText.length > 0 ? "edit" : "box"}
           onDragOffsetChange={setEditorOffset}
           onCommit={(text, style, options, commitOffset): void => {

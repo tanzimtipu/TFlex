@@ -145,7 +145,7 @@ describe("DEF-232 — the text-run commit carries the overlay's page", () => {
         const top = Number.parseFloat(editor.style.top) || 0;
         return { left, top, width: 200, height: 180, right: left + 200, bottom: top + 180, x: left, y: top, toJSON: () => ({}) } as DOMRect;
       };
-      const label = host.querySelector<HTMLElement>(".edit-inline-field-font .edit-inline-label");
+      const label = host.querySelector<HTMLElement>(".content-grip-inline");
       if (label === null) throw new Error("label not found");
       fire(label, "pointerdown", 100, 100);
       act((): void => {

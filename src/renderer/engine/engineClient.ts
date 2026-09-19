@@ -32,6 +32,7 @@ import type {
   SignaturePlacement,
   SpaceAudit,
   TextPage,
+  TextBoxStylePatch,
   WatermarkInfo,
   WatermarkSettings,
 } from "../../shared/types";
@@ -317,6 +318,16 @@ export interface TFlexApiEngine {
   deleteTextBox?(
     docId: string,
     id: string,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 21 — apply a Word/Adobe-class style patch to a REGISTERED
+   *  text box. Preserve-if-valid per field; a supplied-but-invalid
+   *  field, an unsupported font or an unknown id returns a typed
+   *  engine-error. Optional so a pre-Phase-21 backend degrades with a
+   *  friendly engine-error. */
+  updateTextBox?(
+    docId: string,
+    id: string,
+    patch: TextBoxStylePatch,
   ): Promise<Result<SharedEngineState, EngineError>>;
 /** Phase 10 — edit an image (move / resize / replace / crop). The engine
    *  masks the original placement and draws the (renderer-supplied)
@@ -1088,6 +1099,19 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.deleteTextBox === undefined) return missingTextBoxRegistry();
     const r = await this.inner.deleteTextBox(docId, id);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** Phase 21 — apply a style patch to a REGISTERED text box. Same
+   *  parallel-contract degrade as `moveTextBox`: a backend without the
+   *  Phase-21 op surfaces a friendly engine-error. */
+  async updateTextBox(
+    docId: string,
+    id: string,
+    patch: TextBoxStylePatch,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.updateTextBox === undefined) return missingTextBoxRegistry();
+    const r = await this.inner.updateTextBox(docId, id, patch);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 

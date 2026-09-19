@@ -39,8 +39,20 @@ import { SideRail } from "./SideRail";
 import { Toolbar } from "./Toolbar";
 import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
 import { EditToolbar, defaultEditHint } from "../edit/EditToolbar";
+import { TextPropertiesPanel } from "../edit/TextPropertiesPanel";
+import {
+  applyPatchToValues,
+  defaultTextStyleValues,
+  editColorToHex,
+  editTextStyleFromValues,
+  textStyleValuesFromStyle,
+  type TextStyleValues,
+} from "../edit/textStyle";
+import { hexToEditColor } from "../edit/model";
+import type { TextBoxStylePatch } from "../../shared/types";
 import type { EngineState } from "../engine/types";
 import {
+  annotationColorToCss,
   annotationToolReducer,
   initialAnnotationToolState,
   type Annotation,
@@ -342,6 +354,10 @@ interface DocumentViewProps {
      *  registry (engine.deleteTextBox). Wire → DocumentView → PageView
      *  → EditOverlay's box placement toolbar. */
     onDeleteTextBox?: (id: string) => void;
+    /** Phase 21 — apply a style patch to the SELECTED committed box
+     *  (App routes it to `engine.updateTextBox`). Absent when the host
+     *  cannot target a registry box. */
+    onTextStylePatch?: (patch: TextBoxStylePatch) => void;
   } | null;
 }
 
@@ -538,6 +554,108 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const idleCleanupRef = useRef<IdleCleanupCoordinator | null>(null);
 
   const [firstPageSize, setFirstPageSize] = useState<{ w: number; h: number } | null>(null);
+
+  // Phase 3 — annotation tool state. Declared ahead of the Phase-21
+  // text-properties panel block below, which reads the armed annotation
+  // text tool (`textbox` / `callout` / `note`) to decide whether the
+  // panel opens in annotation mode and which colour it reflects.
+  const [annTool, dispatchAnnTool] = useReducer(
+    annotationToolReducer,
+    initialAnnotationToolState,
+  );
+
+  // Phase 21 — text-properties panel state. The panel is selection-aware:
+  // a selected committed box shows its ACTUAL values, otherwise the
+  // per-tool defaults (with any not-yet-committed tweaks kept locally).
+  const [pendingTextStyle, setPendingTextStyle] = useState<TextStyleValues | null>(null);
+  const textPanelDefaults = useMemo(
+    () => defaultTextStyleValues(edit?.defaultFont ?? "Helvetica"),
+    [edit?.defaultFont],
+  );
+  const selectedTextBox = useMemo(() => {
+    if (edit === null || edit.state.selectedTextBox === null) return null;
+    return edit.state.textBoxes.find((b) => b.id === edit.state.selectedTextBox) ?? null;
+  }, [edit?.state.selectedTextBox, edit?.state.textBoxes]);
+  // Phase 21 (annotations) — the committed annotation the page overlay
+  // reports as selected, if any. The overlay owns per-page selection; it
+  // reports upward so the panel can reflect a selected annotation text
+  // object's ACTUAL colour without a second selection model.
+  const [selectedAnnId, setSelectedAnnId] = useState<string | null>(null);
+  const onSelectAnnotation = useCallback((ann: Annotation | null): void => {
+    setSelectedAnnId(ann === null ? null : ann.id);
+  }, []);
+  const selectedAnnotation = useMemo(
+    () =>
+      selectedAnnId === null ? null : annotations.find((a) => a.id === selectedAnnId) ?? null,
+    [selectedAnnId, annotations],
+  );
+  const selectedAnnText =
+    selectedAnnotation !== null &&
+    (selectedAnnotation.kind === "textbox" ||
+      selectedAnnotation.kind === "note" ||
+      selectedAnnotation.kind === "callout");
+  // The annotation text tools (text box, callout, sticky note) open the
+  // SAME panel instance; the annotation colour state it reflects is the
+  // selected annotation's colour when one is selected, else the armed
+  // tool's colour (the existing annotation colour path).
+  const annTextToolArmed =
+    annTool.tool === "textbox" || annTool.tool === "callout" || annTool.tool === "note";
+  // Text-bearing TFlex-owned tools: the edit-text run editor ("text") and
+  // the text box tool ("box"). A selected committed box keeps the panel
+  // open regardless of the tool, per the "selection-aware" contract.
+  const tfTextPanelOpen =
+    edit !== null &&
+    editModeOpen &&
+    (selectedTextBox !== null || edit.state.tool === "text" || edit.state.tool === "box");
+  const textPanelMode: "text" | "annotation" = tfTextPanelOpen ? "text" : "annotation";
+  const textPanelOpen = tfTextPanelOpen || annTextToolArmed || selectedAnnText;
+  // The full control set is live only for TFlex-owned text objects; the
+  // annotation panel values are the per-tool defaults with the colour
+  // swapped for the annotation's actual colour.
+  const textPanelTextValues =
+    selectedTextBox !== null
+      ? textStyleValuesFromStyle(selectedTextBox.style)
+      : pendingTextStyle ?? textPanelDefaults;
+  const annotationPanelColor = hexToEditColor(
+    annotationColorToCss(
+      selectedAnnText && selectedAnnotation !== null ? selectedAnnotation.color : annTool.color,
+    ),
+  );
+  const textPanelValues: TextStyleValues =
+    textPanelMode === "text"
+      ? textPanelTextValues
+      : { ...textPanelDefaults, color: annotationPanelColor };
+  const handleTextPanelPatch = useCallback(
+    (patch: TextBoxStylePatch): void => {
+      if (textPanelMode === "annotation") {
+        // Only the colour control is live in annotation mode; the panel's
+        // own gate already drops every other patch, and this guard keeps
+        // the contract explicit at the host boundary.
+        if (patch.color === undefined) return;
+        const color = editColorToHex(patch.color);
+        if (selectedAnnText && selectedAnnotation !== null) {
+          onEditAnnotation?.(selectedAnnotation.id, { color });
+        } else {
+          dispatchAnnTool({ type: "set-color", color });
+        }
+        return;
+      }
+      if (selectedTextBox !== null) {
+        edit?.onTextStylePatch?.(patch);
+        return;
+      }
+      setPendingTextStyle((prev) => applyPatchToValues(prev ?? textPanelDefaults, patch));
+    },
+    [
+      textPanelMode,
+      selectedAnnText,
+      selectedAnnotation,
+      onEditAnnotation,
+      selectedTextBox,
+      edit?.onTextStylePatch,
+      textPanelDefaults,
+    ],
+  );
   // The page-1 dimensions the fit modes (fit-width / fit-page) anchor
   // their scale to. Deliberately decoupled from the LIVE `firstPageSize`
   // layout reference above: the live size must track the current bytes
@@ -577,13 +695,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     manualScale: initial.manualScale,
   } as ZoomState);
 
-  // Phase 3 — annotation tool state and per-annotation flash highlight.
-  // The reducer lives in annotations/model.ts; we just hold its state here
-  // and pass it down to the toolbar and the per-page overlay.
-  const [annTool, dispatchAnnTool] = useReducer(
-    annotationToolReducer,
-    initialAnnotationToolState,
-  );
+  // Phase 3 — per-annotation flash highlight. The annotation tool state
+  // itself is declared above (the Phase-21 panel block reads it).
   // DEF-211 — imperative handle so the host can disarm the annotation
   // tool before opening a dialog overlaying the workspace.
   useImperativeHandle(ref, () => ({
@@ -1694,10 +1807,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // Phase 10 — pass the edit state through to PageView with a
   // stable callback so child re-renders are isolated. The host
   // (App) owns the reducer + IPC.
+  //
+  // Phase 21 — the panel's CURRENT values (the selected box's actual
+  // formatting, or the pending per-tool defaults when nothing is
+  // selected) ride along as `textStyle`. The inline editor no longer
+  // owns style controls: it reads this prop for its live preview AND
+  // for the creation / run-edit payload, so a panel edit made with no
+  // object selected is what the NEXT created box actually uses.
   const editProp = useMemo(() => {
     if (!editModeOpen || edit === null) return null;
-    return edit;
-  }, [editModeOpen, edit]);
+    return { ...edit, textStyle: editTextStyleFromValues(textPanelTextValues) };
+  }, [editModeOpen, edit, textPanelTextValues]);
 
   // B5 / B14 — when Edit mode opens, force the annotation tool
   // back to "select". The toolbar's `editBlocksTool` gate already
@@ -2013,7 +2133,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   );
 
   return (
-    <div className="workspace">
+    <div className="workspace" data-text-panel-open={textPanelOpen ? "true" : "false"}>
       <SideRail
         doc={doc}
         pageCount={pageCount}
@@ -2048,6 +2168,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         // reports toggles through the callback.
         pagesPanelCollapsed={pagesPanelCollapsed}
         onTogglePagesPanelCollapsed={onTogglePagesPanelCollapsed}
+      />
+      {/* Phase 21 — the docked text-properties panel, to the RIGHT of
+          the thumbnail rail. The .workspace grid resolves its middle
+          column from the registered --tf-text-w token, so the page view
+          reflows with the panel on the Phase-20 panel motion. */}
+      <TextPropertiesPanel
+        open={textPanelOpen}
+        values={textPanelValues}
+        defaults={textPanelDefaults}
+        mode={textPanelMode}
+        onPatch={handleTextPanelPatch}
       />
       <div ref={mainRef} className="workspace-main">
         <Toolbar
@@ -2275,6 +2406,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       // (same AnnotationPatch path as the panel).
                       onEditAnnotation={onEditAnnotation}
                       onDeleteAnnotation={onDeleteAnnotation}
+                      // Phase 21 (annotations) — report the overlay's
+                      // committed-annotation selection upward so the
+                      // text-properties panel can reflect a selected
+                      // annotation text object's actual colour.
+                      onSelectAnnotation={onSelectAnnotation}
                       // Bug 1 — opening an edit toolbox disarms the
                       // annotation creation tool (select). Without
                       // this, an armed sticky-note / ink / shape

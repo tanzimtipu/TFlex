@@ -11,10 +11,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act, createElement, type ReactElement } from "react";
 import { EditInlineEditor, fontFamilyFor } from "../../../src/renderer/edit/EditInlineEditor";
+import type { EditTextStyle } from "../../../src/renderer/edit/model";
 
 function mount(props: {
   initialText: string;
   mode: "edit" | "box";
+  initialStyle?: EditTextStyle;
 }): { host: HTMLElement; commit: ReturnType<typeof vi.fn>; cancel: ReturnType<typeof vi.fn> } {
   const host = document.createElement("div");
   document.body.appendChild(host);
@@ -26,7 +28,8 @@ function mount(props: {
       rect: { x: 50, y: 50, width: 200, height: 30 },
       cssScale: 1,
       initialText: props.initialText,
-      initialStyle: { font: "Helvetica", size: 12, color: { r: 0, g: 0, b: 0 } },
+      initialStyle:
+        props.initialStyle ?? { font: "Helvetica", size: 12, color: { r: 0, g: 0, b: 0 } },
       mode: props.mode,
       onCommit: commit,
       onCancel: cancel,
@@ -39,58 +42,46 @@ function mount(props: {
 }
 
 describe("EditInlineEditor — render", () => {
-  it("renders the font / size / color controls", () => {
+  it("renders NO style controls (Phase 21 criterion 3) and keeps the actions", () => {
     const { host } = mount({ initialText: "Hello", mode: "edit" });
-    expect(host.querySelector(".edit-inline-field-font")).not.toBeNull();
-    expect(host.querySelector(".edit-inline-field-size")).not.toBeNull();
-    expect(host.querySelector(".edit-inline-field-color")).not.toBeNull();
-    // The textbox mode shows the background picker; the edit mode
-    // does not (a text-run replacement always overwrites).
+    // The retired floating style surface: font / size / colour / background.
+    expect(host.querySelector(".edit-inline-field-font")).toBeNull();
+    expect(host.querySelector(".edit-inline-field-size")).toBeNull();
+    expect(host.querySelector(".edit-inline-field-color")).toBeNull();
     expect(host.querySelector(".edit-inline-field-bg")).toBeNull();
+    // The minimal in-canvas affordance stays: grip + Cancel / Apply.
+    expect(host.querySelector("[data-edit-drag-handle]")).not.toBeNull();
+    expect(host.querySelector(".content-grip-inline")).not.toBeNull();
+    expect(host.querySelector(".edit-inline-btn-cancel")).not.toBeNull();
+    expect(host.querySelector(".edit-inline-btn-commit")).not.toBeNull();
   });
 
-  it("the textarea style applies the chosen font live (B5a)", () => {
-    // B5 — the textarea's inline style used to set color + fontSize
-    // but NOT fontFamily, so picking Times/Courier in the Font
-    // select previewed nothing. The preview must reflect the chosen
-    // font immediately.
-    const { host } = mount({ initialText: "Hello", mode: "edit" });
+  it("the textarea preview mirrors the panel-supplied style (no local controls)", () => {
+    // Phase 21 — the panel owns the style; the editor's preview reads
+    // the `initialStyle` prop (font / size / colour) so a panel edit is
+    // visible immediately and is what the commit carries.
+    const { host } = mount({
+      initialText: "Hello",
+      mode: "edit",
+      initialStyle: { font: "Times", size: 20, color: { r: 1, g: 0, b: 0 } },
+    });
     const textarea = host.querySelector("textarea") as HTMLTextAreaElement | null;
-    const select = host.querySelector<HTMLSelectElement>(
-      ".edit-inline-field-font select",
-    );
     expect(textarea).not.toBeNull();
-    expect(select).not.toBeNull();
-    if (textarea === null || select === null) return;
-    // Default: Helvetica stack.
-    expect(textarea.style.fontFamily).toContain("Helvetica");
-    act((): void => {
-      select.value = "Times";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
+    if (textarea === null) return;
     expect(textarea.style.fontFamily).toContain("Times New Roman");
-    act((): void => {
-      select.value = "Courier";
-      select.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    expect(textarea.style.fontFamily).toContain("Courier New");
+    expect(textarea.style.fontSize).toBe("20px");
+    expect(textarea.style.color).toBe("rgb(255, 0, 0)");
   });
 
-  it("renders the background picker when mode is 'box'", () => {
+  it("renders no background picker even in box mode", () => {
     const { host } = mount({ initialText: "", mode: "box" });
-    expect(host.querySelector(".edit-inline-field-bg")).not.toBeNull();
+    expect(host.querySelector(".edit-inline-field-bg")).toBeNull();
   });
 
   it("pre-fills the textarea with the run's text in edit mode", () => {
     const { host } = mount({ initialText: "Original text", mode: "edit" });
     const textarea = host.querySelector("textarea") as HTMLTextAreaElement | null;
     expect(textarea?.value).toBe("Original text");
-  });
-
-  it("the default font is Helvetica (matches settings.editDefaultFont default)", () => {
-    const { host } = mount({ initialText: "x", mode: "edit" });
-    const select = host.querySelector(".edit-inline-field-font select") as HTMLSelectElement | null;
-    expect(select?.value).toBe("Helvetica");
   });
 
   it("renders an editor panel with a white background and black text — DEF-061", () => {

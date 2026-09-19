@@ -27,6 +27,7 @@ import type {
   SignaturePlacement,
   SpaceAudit,
   TextPage,
+  TextBoxStylePatch,
   WatermarkInfo,
   WatermarkSettings,
 } from "../../shared/types";
@@ -410,6 +411,19 @@ export interface EngineApi {
   deleteTextBox?(
     docId: string,
     id: string,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 21 — apply a Word/Adobe-class style patch (font family/size,
+   *  bold/italic/underline, colour, highlight, alignment, line spacing,
+   *  super/subscript, list style, indent, text) to a REGISTERED text box.
+   *  Preserve-if-valid per field; a supplied-but-invalid field, an
+   *  unsupported font or an unknown id fails with a typed engine-error
+   *  (never a silent drop). Optional so a pre-Phase-21 backend degrades
+   *  with a friendly engine-error (same pattern as moveTextBox). */
+  updateTextBox?(
+    docId: string,
+    id: string,
+    patch: TextBoxStylePatch,
   ): Promise<Result<EngineState, EngineError>>;
 
   /** Edit an image's placement (move / resize / replace / crop). The engine

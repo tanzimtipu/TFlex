@@ -23,6 +23,7 @@ import type {
   PageLabelEntry,
   PlaceSignaturePayload,
   RecentFile,
+  TextBoxStylePatch,
   WatermarkInfo,
   WatermarkSettings,
 } from '../shared/types';
@@ -328,6 +329,13 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineDeleteTextBox, (_event, docId: string, id: string) =>
     engine.deleteTextBox(docId, id),
+  );
+  // Phase 21 — apply a Word/Adobe-class style patch to a registry text box
+  // (font family/size, bold/italic/underline, colour, highlight, alignment,
+  // line spacing, super/subscript, list style, text). Preserve-if-valid /
+  // reject-if-invalid; unknown id or unsupported font -> typed engine-error.
+  ipcMain.handle(IPC.engineUpdateTextBox, (_event, docId: string, id: string, patch: TextBoxStylePatch) =>
+    engine.updateTextBox(docId, id, patch),
   );
 
   // Phase 11: OCR — recognize text (build invisible text layer) + suspects.

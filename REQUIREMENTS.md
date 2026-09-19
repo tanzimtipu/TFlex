@@ -1021,6 +1021,13 @@ in-canvas overlay keeps only the selection/drag affordances.
   a text object is selected/created - text box, callout, sticky note, and the edit-text run editor.
   The page view reflows with animation to accommodate it (the same "page adjusts, never overlapped"
   contract the Tools panel follows).
+  **Per-family control scope (settled 2026-09-19):** the FULL control set below applies to the
+  TFlex-owned text objects (text boxes and edited text runs), whose style the engine draws. For
+  ANNOTATION text objects (callout / sticky note / text-box annotation) the engine's annotation
+  payload carries text colour only, so the panel opens for them, routes the colour control live, and
+  renders every other control DISABLED with a tooltip naming the reason ("not supported for
+  annotations - the annotation's text is baked by the annotation engine"). A disabled control must
+  never silently no-op.
 - **Word/Adobe-class controls** (researched from Adobe Acrobat's text-edit UI and Microsoft Word's
   font/paragraph groups): font family, font size, bold / italic / underline, text colour, highlight
   colour, superscript/subscript, character spacing where feasible, line spacing, paragraph alignment
@@ -1042,10 +1049,14 @@ in-canvas overlay keeps only the selection/drag affordances.
 2. The panel exposes the full control list above; each control visibly changes the selected text and
    the change survives save + reopen (round-trip verified for at least: font family, size, bold,
    italic, underline, colour, highlight, alignment, line spacing, list style).
-3. The floating double-click toolbox no longer appears for text-bearing tools; the panel is the only
-   editing surface for them.
-4. The same panel serves every text-bearing tool (text box, callout, note, edit-text run) with the
-   same control set - switching tools keeps the panel open and re-targets it.
+3. The floating double-click STYLE toolbox no longer appears for text-bearing tools; the panel is the
+   only STYLE surface for them. The in-canvas editor keeps what is not styling - the drag grip, the
+   text-content textarea, and the Confirm / Cancel / Delete actions - and no style control remains
+   in-canvas (verified for the text box, callout, note and edit-text-run paths).
+4. The same panel serves every text-bearing tool (text box, callout, note, edit-text run) and
+   re-targets when tools/objects change: the full control set is live for TFlex-owned text objects
+   (text boxes, edited runs) and, for annotation text objects, the colour control is live while every
+   unsupported control is disabled with its reason tooltip (per the per-family scope above).
 5. Undo/redo restores both the text and the panel's reflected state.
 6. Unit tests cover the panel's control -> payload mapping and its selection-aware state; e2e covers
    open/close, the page reflow, and a save/reopen round-trip per control group.

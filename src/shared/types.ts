@@ -514,6 +514,47 @@ export interface EditColor {
   b: number;
 }
 
+/** Phase 21 — paragraph alignment for the text-properties panel. `justify`
+ *  distributes the extra inter-word space on every wrapped line except the
+ *  last. Default (field absent) is `'left'`. */
+export type TextAlign = 'left' | 'center' | 'right' | 'justify';
+
+/** Phase 21 — per-line list prefix. `'bullet'` prepends a bullet glyph plus
+ *  a gap; `'number'` prepends an incrementing `N.` prefix. The prefix is part
+ *  of the line's measured width for alignment. Default (absent) is `'none'`. */
+export type TextListStyle = 'none' | 'bullet' | 'number';
+
+/** Phase 21 — the Word/Adobe-class text style fields shared by the text-box
+ *  model, the edit-text-run payload and the `updateTextBox` patch. Every
+ *  field is optional; an absent field keeps the object's current value (or
+ *  the documented default). */
+export interface TextStyleFields {
+  /** Paragraph alignment. Default `'left'`. */
+  align?: TextAlign;
+  /** Line step as a multiplier of the font size. Default `1.2`. Validated
+   *  to `0.5..5`. */
+  lineHeight?: number;
+  /** Use the bold StandardFont variant. Default `false`. */
+  bold?: boolean;
+  /** Use the italic StandardFont variant. Default `false`. */
+  italic?: boolean;
+  /** Draw a rule under each line's ink. Default `false`. */
+  underline?: boolean;
+  /** Baseline offset in points; positive = superscript, negative =
+   *  subscript. Default `0`. Validated to `-200..200`. */
+  baselineShift?: number;
+  /** Band drawn behind each line's ink, BEFORE the glyphs. Absent = no
+   *  highlight. */
+  highlight?: EditColor;
+  /** Per-line list prefix. Default `'none'`. */
+  list?: TextListStyle;
+  /** Left inset of the paragraph inside the box rect, in points. Every line
+   *  (including the first) starts at `rect.x + indent`, wrapping and
+   *  alignment operate inside the indented content box, and a `list` prefix
+   *  sits AT the indent. Default `0`. Validated to `0..200`. */
+  indent?: number;
+}
+
 /** Phase 10 — payload for `engine.editTextRun`. Replaces the text run
  *  covering `rect` by masking the region with a white rectangle and
  *  drawing `newText` at the rect's top-left baseline. `rect` is in
@@ -528,7 +569,7 @@ export interface EditColor {
  *  absent (a plain in-place edit), the engine keeps the original
  *  behaviour: mask `rect` + draw `newText` at `rect`. `oldRect` uses the
  *  same top-left/PDF-points convention as `rect`. */
-export interface EditTextRunPayload {
+export interface EditTextRunPayload extends TextStyleFields {
   page: number;
   rect: AnnRect;
   newText: string;
@@ -553,7 +594,7 @@ export interface EditTextRunPayload {
  *  engine generates one and returns it in the state. `color` is the legacy
  *  `EditColor` ({r,g,b} in [0,1]); the engine normalises it to a hex string
  *  (`#rrggbb`) for the stored `TextBoxModel.color`. */
-export interface AddTextBoxPayload {
+export interface AddTextBoxPayload extends TextStyleFields {
   id?: string;
   page: number;
   rect: AnnRect;
@@ -572,7 +613,7 @@ export interface AddTextBoxPayload {
  *  origin in PDF points; `color` is a hex string (#rrggbb); `background`
  *  'white' draws an opaque white fill behind the text at save time so it
  *  stays readable over existing content. */
-export interface TextBoxModel {
+export interface TextBoxModel extends TextStyleFields {
   id: string;
   page: number;
   rect: AnnRect;
@@ -580,6 +621,30 @@ export interface TextBoxModel {
   font: EditFont;
   size: number;
   color?: string;
+  background?: 'white' | 'none';
+}
+
+/** Phase 21 — patch for `engine.updateTextBox`. Every field is optional; an
+ *  absent field leaves the box's current value unchanged. `text` replaces the
+ *  box's text. `color`/`highlight` use `EditColor` ({r,g,b} in [0,1]) like the
+ *  other text ops; the engine normalises `color` to the stored hex string.
+ *  A supplied-but-invalid field rejects the WHOLE patch with a typed
+ *  `engine-error` (mirrors the watermark contract).
+ *
+ *  `highlight` is widened on the PATCH ONLY: `null` REMOVES the band (the
+ *  stored model loses its `highlight`, and save draws no band); an ABSENT
+ *  `highlight` PRESERVES the existing band. The model/payload fields
+ *  (`TextBoxModel`, `AddTextBoxPayload`, `EditTextRunPayload`) keep
+ *  `EditColor` — removal is a patch operation, not a drawable state. */
+export interface TextBoxStylePatch extends Omit<TextStyleFields, 'highlight'> {
+  /** Replacement text (may contain explicit newlines). */
+  text?: string;
+  font?: EditFont;
+  size?: number;
+  color?: EditColor;
+  /** Band behind each line's ink. A colour sets/replaces it; `null` removes
+   *  it; absent preserves it. */
+  highlight?: EditColor | null;
   background?: 'white' | 'none';
 }
 

@@ -2,8 +2,13 @@
 //
 // Opened by either the text-run click ("edit") or the text-box drag
 // ("add"). The editor pre-fills the run's text (when editing) or
-// starts empty (when adding a new box) and exposes font, size, and
-// color pickers so the user can override the per-tab default.
+// starts empty (when adding a new box).
+//
+// Phase 21 criterion 3 — the editor carries NO style controls. Font,
+// size, colour and background are edited ONLY in the docked
+// text-properties panel; the editor mirrors the panel's live values
+// (`initialStyle`) for its preview and its commit. The floating bar
+// keeps just the drag grip and the Cancel / Delete / Apply actions.
 //
 // Commit: a Ctrl/Cmd+Enter or a click outside the editor fires
 // `onCommit(text)`. Escape cancels. The text is trimmed before
@@ -44,9 +49,18 @@ export interface EditInlineEditorProps {
   /** Initial text. Pre-filled for text-run edits; empty for new
    *  text boxes. */
   initialText: string;
-  /** Style applied to the committed op. The editor shows the
-   *  current values and lets the user tweak them before commit. */
+  /** Phase 21 — the style applied to the committed op, OWNED BY THE
+   *  TEXT-PROPERTIES PANEL. The editor no longer renders font / size /
+   *  colour / background controls (criterion 3: the floating double-click
+   *  toolbox carries no style surface); it reads this live prop for its
+   *  preview AND passes it straight through to the commit, so a panel
+   *  edit made with no object selected is what the NEXT created box
+   *  actually uses. */
   initialStyle: EditTextStyle;
+  /** Phase 21 — the box's background is no longer a floating control
+   *  either; it is preserved from the re-opened box (or the box-mode
+   *  default) and committed verbatim. */
+  initialBackground?: "white" | "none";
   /** "edit" hides the opacity / background controls (text-run
    *  replacements always overwrite); "box" shows a background-fill
    *  toggle so the user can decide whether the new text is
@@ -86,10 +100,6 @@ export interface EditInlineEditorProps {
   onDragOffsetChange?: (offset: { x: number; y: number }) => void;
 }
 
-const ALLOWED_FONTS: readonly EditFont[] = ["Helvetica", "Times", "Courier"];
-const SIZE_MIN = 6;
-const SIZE_MAX = 72;
-
 /** Convert an `EditColor` to a `#rrggbb` string. Centralised so
  *  both the input + swatch use the same rounding. */
 export function colorToHex(c: { r: number; g: number; b: number }): string {
@@ -97,20 +107,6 @@ export function colorToHex(c: { r: number; g: number; b: number }): string {
   const g = Math.round(Math.min(1, Math.max(0, c.g)) * 255);
   const b = Math.round(Math.min(1, Math.max(0, c.b)) * 255);
   return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
-}
-
-/** Convert a `#rrggbb` string back to an `EditColor`. Returns
- *  black on parse failure so the editor never lands in an
- *  invalid state. */
-export function hexToColor(hex: string): { r: number; g: number; b: number } {
-  if (!/^#[0-9a-fA-F]{6}$/.test(hex)) {
-    return { r: 0, g: 0, b: 0 };
-  }
-  return {
-    r: parseInt(hex.slice(1, 3), 16) / 255,
-    g: parseInt(hex.slice(3, 5), 16) / 255,
-    b: parseInt(hex.slice(5, 7), 16) / 255,
-  };
 }
 
 /** B5 — the CSS font-family that mirrors a PDF standard font so
@@ -132,12 +128,14 @@ export function fontFamilyFor(font: EditFont): string {
 }
 
 export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
-  const { rect, cssScale, initialText, initialStyle, mode, onCommit, onCancel, onDelete, onDragOffsetChange } = props;
+  const { rect, cssScale, initialText, initialStyle, initialBackground, mode, onCommit, onCancel, onDelete, onDragOffsetChange } = props;
   const [text, setText] = useState<string>(initialText);
-  const [style, setStyle] = useState<EditTextStyle>(initialStyle);
-  const [background, setBackground] = useState<"white" | "none">(
-    mode === "box" ? "white" : "none",
-  );
+  // Phase 21 — the text-properties panel OWNS the style. The editor
+  // mirrors the live prop (no local style state) so a panel edit made
+  // while the editor is open is reflected immediately and is what the
+  // commit carries.
+  const style = initialStyle;
+  const background = initialBackground ?? (mode === "box" ? "white" : "none");
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const editorRef = useRef<HTMLDivElement | null>(null);
   // Phase 20 / DEF-235 — while the editor EXITS (AnimatePresence keeps it
@@ -352,92 +350,10 @@ export function EditInlineEditor(props: EditInlineEditorProps): ReactElement {
             chip is NOT a control, so a press here starts the window
             drag exactly like any other toolbar chrome. */}
         <ContentGrip handleName="inline-editor" className="content-grip-inline" />
-        <label className="edit-inline-field edit-inline-field-font">
-          <span className="edit-inline-label">Font</span>
-          <select
-            value={style.font}
-            // B16 — NO preventDefault on mousedown. The old Bug-9
-            // focus guard blocked the native dropdown from opening
-            // (the select never expanded). Focus-lock is now
-            // enforced by the textarea's onBlur guard (see
-            // onTextareaBlur): clicking the select moves focus but
-            // the editor stays mounted because the new focus
-            // target is inside the editor.
-            onChange={(e: ChangeEvent<HTMLSelectElement>): void => {
-              const next = e.target.value;
-              if (ALLOWED_FONTS.includes(next as EditFont)) {
-                setStyle({ ...style, font: next as EditFont });
-              }
-            }}
-            aria-label="Font"
-          >
-            {ALLOWED_FONTS.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="edit-inline-field edit-inline-field-size">
-          <span className="edit-inline-label">Size</span>
-          <input
-            type="number"
-            min={SIZE_MIN}
-            max={SIZE_MAX}
-            step={1}
-            value={style.size}
-            // DEF-109 — NO preventDefault on mousedown. The old
-            // Bug-9 focus guard on this number input suppressed the
-            // native spinner/arrow auto-increment (and Chromium's
-            // arrow-up on a focused number input), so the size
-            // control was inert — only direct typing changed it.
-            // The input is focusable and lives inside the editor, so
-            // the textarea's onBlur guard keeps the editor mounted
-            // when focus moves here.
-            onChange={(e: ChangeEvent<HTMLInputElement>): void => {
-              const n = Number.parseFloat(e.target.value);
-              if (Number.isFinite(n)) {
-                setStyle({ ...style, size: Math.min(SIZE_MAX, Math.max(SIZE_MIN, n)) });
-              }
-            }}
-            aria-label="Font size (pt)"
-          />
-        </label>
-        <label className="edit-inline-field edit-inline-field-color">
-          <span className="edit-inline-label">Color</span>
-          <input
-            type="color"
-            value={colorToHex(style.color)}
-            // Bug 9 — see comment on the font select above.
-            onMouseDown={(e): void => e.preventDefault()}
-            onChange={(e: ChangeEvent<HTMLInputElement>): void => {
-              setStyle({ ...style, color: hexToColor(e.target.value) });
-            }}
-            aria-label="Text color"
-          />
-        </label>
-        {mode === "box" && (
-          <label className="edit-inline-field edit-inline-field-bg">
-            <span className="edit-inline-label">Background</span>
-            <select
-              value={background}
-              // B16 — NO preventDefault on mousedown (same fix as
-              // the Font select: the old focus guard blocked the
-              // native dropdown). The textarea's onBlur guard
-              // keeps the editor mounted while focus is inside.
-              onChange={(e: ChangeEvent<HTMLSelectElement>): void => {
-                const v = e.target.value;
-                if (v === "white" || v === "none") {
-                  setBackground(v);
-                }
-              }}
-              aria-label="Text box background"
-            >
-              <option value="white">White fill</option>
-              <option value="none">Transparent</option>
-            </select>
-          </label>
-        )}
+        {/* Phase 21 criterion 3 — the floating toolbox carries NO style
+            controls (font / size / colour / background). Those live in
+            the docked text-properties panel; this bar keeps only the
+            drag grip and the Cancel / Delete / Apply actions. */}
         <div className="edit-inline-toolbar-actions">
           <button
             type="button"

@@ -92,14 +92,14 @@ function pressInsideThenBlurToBody(
 }
 
 describe("DEF-110 — a press on the editor's own chrome keeps the editor open", () => {
-  it("pointerdown on the 'Font' label span + blur to body does NOT close / commit / cancel", () => {
+  it("pointerdown on the 'Drag to move' grip + blur to body does NOT close / commit / cancel", () => {
     const { host, commit, cancel, unmount } = mountEditor();
     try {
-      const label = host.querySelector<HTMLElement>(".edit-inline-field-font .edit-inline-label");
+      const label = host.querySelector<HTMLElement>(".content-grip-inline");
       expect(label).not.toBeNull();
       if (label === null) return;
       pressInsideThenBlurToBody(host, label);
-      // The editor must stay mounted — the label press was inside
+      // The editor must stay mounted — the grip press was inside
       // the window, not an outside click.
       expect(host.querySelector(".edit-inline-editor")).not.toBeNull();
       expect(commit).not.toHaveBeenCalled();
@@ -151,10 +151,10 @@ describe("DEF-110 — a press on the editor's own chrome keeps the editor open",
     // still commits.
     const { host, commit, cancel, unmount } = mountEditor();
     try {
-      const label = host.querySelector<HTMLElement>(".edit-inline-field-color .edit-inline-label");
+      const label = host.querySelector<HTMLElement>(".content-grip-inline");
       expect(label).not.toBeNull();
       if (label === null) return;
-      // First: an inside press on a label keeps the editor open.
+      // First: an inside press on the grip keeps the editor open.
       pressInsideThenBlurToBody(host, label);
       expect(host.querySelector(".edit-inline-editor")).not.toBeNull();
       expect(commit).not.toHaveBeenCalled();
@@ -177,22 +177,21 @@ describe("DEF-110 — a press on the editor's own chrome keeps the editor open",
     }
   });
 
-  it("a focus-out to a focusable control inside the editor still keeps it open (bar select — regression)", () => {
-    // B16 guard unchanged: focus moving to the font select inside the
-    // editor (relatedTarget non-null, inside the editor) keeps the
-    // editor mounted.
+  it("a focus-out to a focusable control inside the editor still keeps it open (bar button — regression)", () => {
+    // B16 guard unchanged: focus moving to a control inside the editor
+    // (relatedTarget non-null, inside the editor) keeps the editor
+    // mounted. With the style selects retired, the action buttons are
+    // the in-editor focus targets.
     const { host, commit, cancel, unmount } = mountEditor();
     try {
-      const fontSelect = host.querySelector<HTMLSelectElement>(
-        ".edit-inline-field-font select",
-      );
+      const cancelBtn = host.querySelector<HTMLButtonElement>(".edit-inline-btn-cancel");
       const textarea = host.querySelector("textarea") as HTMLTextAreaElement | null;
-      expect(fontSelect).not.toBeNull();
+      expect(cancelBtn).not.toBeNull();
       expect(textarea).not.toBeNull();
-      if (fontSelect === null || textarea === null) return;
+      if (cancelBtn === null || textarea === null) return;
       act((): void => {
         textarea.dispatchEvent(
-          new FocusEvent("focusout", { bubbles: true, relatedTarget: fontSelect }),
+          new FocusEvent("focusout", { bubbles: true, relatedTarget: cancelBtn }),
         );
       });
       expect(host.querySelector(".edit-inline-editor")).not.toBeNull();

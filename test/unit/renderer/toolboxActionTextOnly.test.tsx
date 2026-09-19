@@ -231,8 +231,8 @@ describe("EditInlineEditor action bar — text-only labels, no icons, no overlap
     const { host, commit } = mountEditor({ mode: "edit", initialText: "Drag me" });
     try {
       stubEditorRect(host);
-      const label = host.querySelector<HTMLElement>(".edit-inline-field-font .edit-inline-label");
-      if (label === null) throw new Error("label not found");
+      const label = host.querySelector<HTMLElement>(".content-grip-inline");
+      if (label === null) throw new Error("grip not found");
       expect(host.querySelector('[data-edit-confirm="true"]')).toBeNull();
       pointerdown(label, 100, 100);
       windowMove(300, 220);

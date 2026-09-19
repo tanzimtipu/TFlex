@@ -82,6 +82,10 @@ interface PageViewProps {
    *  toolbox opens. Threaded to the AnnotationOverlay; the host
    *  (DocumentView) resets its annotation-tool reducer to "select". */
   onDisarmAnnTool?: () => void;
+  /** Phase 21 (annotations) — reports the overlay's selected committed
+   *  annotation (or null) upward so the host's text-properties panel can
+   *  reflect a selected annotation text object's actual colour. */
+  onSelectAnnotation?: (ann: Annotation | null) => void;
   /** B10 / DEF-101 — successfully placed stamps for this page
    *  (rect + raster as recorded by the host on `addStamp` success).
    *  Rendered as `.stamp-annotation` DOM surfaces so a placed stamp
@@ -194,6 +198,10 @@ interface PageViewProps {
     /** DEF-135/136 — delete a committed text box through the engine's
      *  registry. Threaded to the EditOverlay's box placement toolbar. */
     onDeleteTextBox?: (id: string) => void;
+    /** Phase 21 — the panel-driven style for the inline editor's live
+     *  preview AND its creation / run-edit payload (the floating editor
+     *  no longer owns style controls). */
+    textStyle: import('../edit/model').EditTextStyle;
   } | null;
 }
 
@@ -282,6 +290,7 @@ export function PageView(props: PageViewProps) {
     onEditAnnotation,
     onDeleteAnnotation,
     onDisarmAnnTool,
+    onSelectAnnotation,
     stampAnnotations = [],
     onMoveStamp,
     onDeleteStamp,
@@ -779,6 +788,7 @@ export function PageView(props: PageViewProps) {
         onEditAnnotation={onEditAnnotation}
         onDeleteAnnotation={onDeleteAnnotation}
         onDisarmTool={onDisarmAnnTool}
+        onSelectAnnotation={onSelectAnnotation}
       />
       {/* B10 / DEF-101 + Bug 6 — placed-stamp DOM surfaces. Painted above
        * the textLayer; selectable / movable / deletable like every
@@ -856,6 +866,7 @@ export function PageView(props: PageViewProps) {
           onCommitImageEdit={edit.onCommitImageEdit}
           onCommitTextBoxMove={edit.onCommitTextBoxMove}
           onDeleteTextBox={edit.onDeleteTextBox}
+          textStyle={edit.textStyle}
         />
       )}
       {!ready && <div className="page-placeholder" aria-hidden />}

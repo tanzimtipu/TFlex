@@ -5,6 +5,45 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-241: At the minimum window width the Tools palette covers the docked text-properties panel (15 enabled controls unreachable)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-057)
+- Phase: 21
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf`.
+2. Arm the text-box tool so `[data-text-panel]` is open, then open the Tools palette (`[data-tools-toggle]`).
+3. Resize the window to 640x520 and measure the text-panel and Tools-palette rects; probe `document.elementFromPoint` at the centre of every ENABLED panel control.
+
+Expected: the Phase-21 C1 contract - the page view reflows without overlap or clipping and the docked text panel stays reachable when the Tools drawer is also open at the minimum supported window width.
+Actual: at 640x520 the text panel rect is `[left 220, right 468]` and the Tools palette `[left 296, right 640]`; horizontal overlap 172px with the palette above the panel. 15 enabled panel controls (font family, size, three font-style buttons, colour, highlight, highlight-None, clear formatting, two alignment buttons, line-spacing input, a list button and an indent button) resolved via `elementFromPoint` to `.tools-palette-entry*` elements, so they could not be clicked. At 820x640 and 1440x900 overlap was 0.
+Screenshot: screenshots/adv057-layout-640x520.png
+
+History:
+- qa: opened (2026-09-19; accepted from ADV-057, MEDIUM)
+- qa: CLOSED (2026-09-19 FIX-READY retest). At 640x520 the panel is [220,44,468,520] and the palette [468,96,640,520] - overlapX 0, palette left flush to the page column. `elementFromPoint` at the enabled bold control resolves inside the panel; at a palette entry it resolves inside the palette; 4/4 visible palette entries reachable. 820x700 and 1440x900 also overlapX 0 (8/8 and 10/10 entries reachable). Panel-open animation: 55 frames, 10 distinct panel widths and 9 distinct `workspace-main` left insets; resize 640<->900 reflows the capped palette 344<->172px with the left edge at the page column at 640. Screenshot screenshots/def241-retest-640.png (panel controls fully visible, palette confined to the page column).
+
+## DEF-242: `engine.updateTextBox` with an empty (or all-unknown-key) patch returns ok and marks the document modified
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-058)
+- Phase: 21
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf`.
+2. Create a text box through the UI, then Save As so `modified:false`.
+3. Call `await window.tflex.engine.updateTextBox(docId, id, {})` and `await window.tflex.engine.updateTextBox(docId, id, { evil: 1, another: "x" })` on the clean document.
+
+Expected: the dispatch defines the patch as preserve-if-valid per field - a patch that supplies no valid field changes nothing and must not dirty the document; an all-unknown-key patch should fail loud.
+Actual: both calls returned `{"ok":true,"stateModified":true}` with the box unchanged, pushing a do-nothing undo step and clearing the redo stack on a clean document.
+
+History:
+- qa: opened (2026-09-19; accepted from ADV-058, LOW)
+- qa: CLOSED (2026-09-19 FIX-READY retest). getState-authoritative responses: empty patch on a CLEAN doc -> `{ok:true, modified:false}`, box unchanged, and `undo` -> `{ok:false, "undo stack is empty"}`. `{evil:1}` -> `{ok:false, code:"engine-error", message:'updateTextBox: unknown field(s): "evil"'}`. `{size:20, evil:1}` -> `{ok:true, modified:true}` with size 20 applied. `{bold:true}` -> `modified:true`, bold applied, undo reverts bold. Redo preserved: italic patch -> undo -> empty patch -> redo restores italic; independent patch -> undo -> redo sanity restores underline.
+
 ## DEF-240: Phase-20 palette width/reduced path and TfMotion/TfPresets used legacy literals instead of motion tokens
 
 - Status: CLOSED

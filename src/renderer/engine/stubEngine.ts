@@ -44,6 +44,7 @@ import type {
   SpaceAudit,
   StampId,
   TextBoxModel,
+  TextBoxStylePatch,
   TextPage,
 } from "../../shared/types";
 import { applyPatch, type Annotation, type AnnotationPatch } from "../annotations/model";
@@ -909,6 +910,48 @@ export class StubRendererEngine implements EngineApi {
     return ok(buildState(t));
   }
 
+  /** Phase 21 — apply a Word/Adobe-class style patch to a REGISTERED text
+   *  box. Preserve-if-valid per field, mirroring the real engine; the
+   *  stub has no PDF bytes to redraw, so it updates the registry entry
+   *  and echoes the fresh state. */
+  async updateTextBox(
+    docId: string,
+    id: string,
+    patch: TextBoxStylePatch,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error", "unknown document");
+    const idx = t.textBoxes.findIndex((b) => b.id === id);
+    if (idx === -1) return err("not-found", `unknown text box: ${id}`);
+    pushUndo(t);
+    recordEdit(t, { kind: "updateTextBox", payload: { id, patch } });
+    const cur = t.textBoxes[idx];
+    const next: TextBoxModel = { ...cur };
+    if (patch.text !== undefined) next.text = patch.text;
+    if (patch.font !== undefined) next.font = patch.font;
+    if (patch.size !== undefined) next.size = patch.size;
+    if (patch.color !== undefined) next.color = colorToHex(patch.color);
+    if (patch.background !== undefined) next.background = patch.background;
+    if (patch.align !== undefined) next.align = patch.align;
+    if (patch.lineHeight !== undefined) next.lineHeight = patch.lineHeight;
+    if (patch.bold !== undefined) next.bold = patch.bold;
+    if (patch.italic !== undefined) next.italic = patch.italic;
+    if (patch.underline !== undefined) next.underline = patch.underline;
+    if (patch.baselineShift !== undefined) next.baselineShift = patch.baselineShift;
+    // Phase 21 follow-up — `null` is an explicit REMOVAL: drop the band
+    // from the stored model. A colour replaces it; absent preserves it.
+    if (patch.highlight === null) {
+      delete next.highlight;
+    } else if (patch.highlight !== undefined) {
+      next.highlight = { ...patch.highlight };
+    }
+    if (patch.list !== undefined) next.list = patch.list;
+    if (patch.indent !== undefined) next.indent = patch.indent;
+    t.textBoxes[idx] = next;
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
   /** Phase 10 — edit an image (move / resize / replace / crop). The
    *  stub doesn't process the bytes; it records the call and echoes
    *  EngineState. */
@@ -1263,6 +1306,7 @@ type EditRecord =
   | { kind: "addTextBox"; payload: AddTextBoxPayload }
   | { kind: "moveTextBox"; payload: { id: string; rect: { x: number; y: number; width: number; height: number } } }
   | { kind: "deleteTextBox"; payload: { id: string } }
+  | { kind: "updateTextBox"; payload: { id: string; patch: TextBoxStylePatch } }
   | {
     kind: "editImage";
     payload: {

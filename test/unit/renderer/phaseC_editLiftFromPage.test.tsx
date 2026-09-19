@@ -325,7 +325,7 @@ describe("Phase C — committed-box edit lifts the original; move holds the eras
       pointerdown(box, 120, 120);
       pointerup(box, 120, 120);
       boxDblClick(box, 120, 120);
-      const label = host.querySelector<HTMLElement>(".edit-inline-field-font .edit-inline-label");
+      const label = host.querySelector<HTMLElement>(".content-grip-inline");
       if (label === null) throw new Error("label not found");
       // Drag the toolbox +40/+30 so the commit rect differs.
       pointerdown(label, 200, 200);

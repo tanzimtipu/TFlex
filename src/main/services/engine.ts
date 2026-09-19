@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFTextField, rectangle, rgb, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, type PDFOperator, type PDFObject, type PDFImage, type PDFFont } from 'pdf-lib';
+import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFTextField, rectangle, rgb, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AddStampPayload,
@@ -32,7 +32,10 @@ import type {
   PlaceSignaturePayload,
   SignaturePlacement,
   SpaceAudit,
+  TextAlign,
   TextBoxModel,
+  TextBoxStylePatch,
+  TextListStyle,
   TextPage,
   WatermarkInfo,
   WatermarkSettings,
@@ -73,6 +76,11 @@ import {
   STAMP_IDS,
   normalizeWatermarkSettings,
 } from './settings';
+import {
+  DEFAULT_TEXT_LINE_HEIGHT,
+  validateTextBoxStylePatch,
+  validateTextStyleFields,
+} from './text-style';
 
 // ---------------------------------------------------------------------------
 // Internal document state
@@ -1757,14 +1765,30 @@ export class EngineService {
     const pageResult = resolveVisiblePage(doc, payload.page);
     if (!pageResult.ok) return pageResult;
 
+    // Phase 21 — validate the new style fields BEFORE touching the document
+    // (a supplied-but-invalid field rejects with a typed engine-error, never a
+    // silent drop). Legacy calls with no style fields take the byte-compatible
+    // single-line path below.
+    const styleResult = validateTextStyleFields(payload);
+    if (!styleResult.ok) {
+      return err('engine-error', `editTextRun: ${styleResult.reason}`);
+    }
+    const style = styleResult.value;
+    const fontName = payload.font ?? 'Helvetica';
+    if (fontName !== 'Helvetica' && fontName !== 'Times' && fontName !== 'Courier') {
+      return err(
+        'engine-error',
+        `editTextRun: unsupported font ${JSON.stringify(fontName)}; the StandardFont allowlist is Helvetica, Times, Courier`,
+      );
+    }
+
     const snapshot = await snapshotDocWithPdf(doc);
     try {
       const page = doc.pdfDoc.getPage(pageResult.value);
       const pageHeight = page.getSize().height;
       const { x, y } = payload.rect;
 
-      const fontName = payload.font ?? 'Helvetica';
-      const font = await doc.pdfDoc.embedFont(standardFontFor(fontName));
+      const font = await doc.pdfDoc.embedFont(selectStandardFont(fontName, !!style.bold, !!style.italic));
       const size = payload.size ?? 12;
       const color = payload.color ?? { r: 0, g: 0, b: 0 };
       const safe = sanitizeForStandardFont(payload.newText);
@@ -1827,13 +1851,40 @@ export class EngineService {
 
       // Draw the new text at the (moved) rect's top-left, baseline
       // dropped by `size` from the top so glyphs sit inside the rect.
-      page.drawText(safe, {
-        x,
-        y: pageHeight - y - size,
-        size,
-        font,
-        color: rgb(color.r, color.g, color.b),
-      });
+      // Phase 21 — when no style field is supplied, keep the exact legacy
+      // single-draw path (byte-compatible). With any style field present,
+      // route through the shared styled-line renderer (alignment, line
+      // spacing, underline, baseline shift, highlight, list prefixes).
+      if (!hasTextStyle(style)) {
+        page.drawText(safe, {
+          x,
+          y: pageHeight - y - size,
+          size,
+          font,
+          color: rgb(color.r, color.g, color.b),
+        });
+      } else {
+        drawStyledTextLines(
+          page,
+          pageHeight,
+          safe.split(/\r\n|\r|\n/),
+          x,
+          y,
+          payload.rect.width,
+          size,
+          font,
+          color,
+          {
+            align: style.align ?? 'left',
+            lineHeight: style.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+            underline: style.underline ?? false,
+            baselineShift: style.baselineShift ?? 0,
+            highlight: style.highlight,
+            list: style.list ?? 'none',
+            indent: style.indent ?? 0,
+          },
+        );
+      }
 
       doc.undoStack.push(snapshot);
       doc.redoStack = [];
@@ -1886,6 +1937,13 @@ export class EngineService {
     if (typeof payload.text !== 'string' || payload.text.length === 0) {
       return err('engine-error', 'addTextBox requires non-empty text');
     }
+    // Phase 21 — validate the new style fields before mutating (reject ->
+    // typed engine-error). Legacy font/size coercion is unchanged.
+    const styleResult = validateTextStyleFields(payload);
+    if (!styleResult.ok) {
+      return err('engine-error', `addTextBox: ${styleResult.reason}`);
+    }
+    const style = styleResult.value;
     // Registry op: no pdfDoc mutation, so a plain snapshot (no pdfBytes)
     // suffices for undo — restoreSnapshot reverts the registry directly.
     const snapshot = snapshotDoc(doc);
@@ -1908,6 +1966,7 @@ export class EngineService {
       size,
       color,
       background: payload.background,
+      ...style,
     };
     doc.textBoxes.push(box);
     doc.undoStack.push(snapshot);
@@ -1980,6 +2039,83 @@ export class EngineService {
     }
     const snapshot = snapshotDoc(doc);
     doc.textBoxes.splice(idx, 1);
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok(buildState(doc));
+  }
+
+  /**
+   * Phase 21 — apply a Word/Adobe-class style patch to a registry text box.
+   * Every patch field is optional and preserve-if-valid; a supplied-but-
+   * invalid field (including a font outside the StandardFont allowlist)
+   * rejects the WHOLE patch with a typed engine-error (mirrors the watermark
+   * contract). An unknown id also returns engine-error — never a silent
+*  success. `highlight: null` is the one explicit-removal field: it drops
+   *  the box's stored band (absent still preserves it). On success the box is
+   *  updated in the registry, the doc is marked modified, the per-doc undo
+   *  snapshot is pushed, and the new state returned.
+   *
+   *  DEF-242 — a patch that supplies NO effective field (an empty object, or
+   *  only keys whose value is `undefined`) is a no-op: return the unchanged
+   *  state without marking the doc modified, without pushing an undo snapshot
+   *  and without clearing the redo stack. A patch whose supplied keys are ALL
+   *  unknown is a caller error and returns a typed engine-error naming them
+   *  (never a silent no-op); unknown keys MIXED with known ones are ignored.
+   */
+  async updateTextBox(
+    docId: string,
+    id: string,
+    patch: TextBoxStylePatch,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._updateTextBoxImpl(docId, id, patch));
+  }
+
+  private async _updateTextBoxImpl(
+    docId: string,
+    id: string,
+    rawPatch: TextBoxStylePatch,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    const idx = doc.textBoxes.findIndex((tb) => tb.id === id);
+    if (idx === -1) {
+      return err('engine-error', `updateTextBox: text box ${id} not found`);
+    }
+    const validated = validateTextBoxStylePatch(rawPatch);
+    if (!validated.ok) {
+      return err('engine-error', `updateTextBox: ${validated.reason}`);
+    }
+    const patch = validated.value;
+    // DEF-242 — no supplied field survived validation: this is a no-op. Return
+    // the unchanged state, leaving modified/undo/redo exactly as they were.
+    if (Object.keys(patch).length === 0) {
+      return ok(buildState(doc));
+    }
+    const snapshot = snapshotDoc(doc);
+    const current = doc.textBoxes[idx];
+    const next: TextBoxModel = { ...current };
+    if (patch.text !== undefined) next.text = patch.text;
+    if (patch.font !== undefined) next.font = patch.font;
+    if (patch.size !== undefined) next.size = patch.size;
+    if (patch.color !== undefined) next.color = editColorToHex(patch.color);
+    if (patch.background !== undefined) next.background = patch.background;
+    if (patch.align !== undefined) next.align = patch.align;
+    if (patch.lineHeight !== undefined) next.lineHeight = patch.lineHeight;
+    if (patch.bold !== undefined) next.bold = patch.bold;
+    if (patch.italic !== undefined) next.italic = patch.italic;
+    if (patch.underline !== undefined) next.underline = patch.underline;
+    if (patch.baselineShift !== undefined) next.baselineShift = patch.baselineShift;
+    if (patch.highlight !== undefined) {
+      // Phase 21 follow-up — `null` is an explicit removal: the stored model
+      // loses its `highlight` (the draw path paints no band). A colour sets it.
+      next.highlight = patch.highlight === null ? undefined : { ...patch.highlight };
+    }
+    if (patch.list !== undefined) next.list = patch.list;
+    if (patch.indent !== undefined) next.indent = patch.indent;
+    doc.textBoxes[idx] = next;
     doc.undoStack.push(snapshot);
     doc.redoStack = [];
     doc.modified = true;
@@ -3218,6 +3354,7 @@ function selectStandardFont(
   bold: boolean,
   italic: boolean,
 ): StandardFonts {
+  if (!bold && !italic) return standardFontFor(family);
   if (family === 'Times') {
     if (bold && italic) return StandardFonts.TimesRomanBoldItalic;
     if (bold) return StandardFonts.TimesRomanBold;
@@ -3427,10 +3564,7 @@ function snapshotDoc(doc: EngineDoc): Snapshot {
       ...sp,
       rect: { ...sp.rect },
     })),
-    textBoxes: doc.textBoxes.map((tb) => ({
-      ...tb,
-      rect: { ...tb.rect },
-    })),
+    textBoxes: doc.textBoxes.map(cloneTextBoxModel),
     formFields: tryGetFormFields(doc),
     // DEF-028: capture rich form snapshot so flatten+undo can rebuild fields
     snapFormFields: trySnapshotAllFormFields(doc),
@@ -3468,12 +3602,10 @@ async function restoreSnapshot(doc: EngineDoc, snap: Snapshot): Promise<void> {
     rect: { ...sp.rect },
   }));
   // Phase 14 / DEF-135 / DEF-136: restore the text-box registry so undo of
-  // addTextBox/moveTextBox/deleteTextBox reverts the registry (a registry
-  // op captures a plain snapshotDoc, so snap.textBoxes is always present).
-  doc.textBoxes = (snap.textBoxes ?? []).map((tb) => ({
-    ...tb,
-    rect: { ...tb.rect },
-  }));
+  // addTextBox/moveTextBox/deleteTextBox/updateTextBox reverts the registry
+  // (a registry op captures a plain snapshotDoc, so snap.textBoxes is always
+  // present).
+  doc.textBoxes = (snap.textBoxes ?? []).map(cloneTextBoxModel);
   // Phase 12: restore page labels (undefined means none were set).
   doc.pageLabels = snap.pageLabels ? snap.pageLabels.map((l) => ({ ...l })) : undefined;
 
@@ -3573,16 +3705,10 @@ function buildState(doc: EngineDoc): EngineState {
   }));
   // Phase 14 / DEF-135 / DEF-136: attach the text-box registry so the
   // renderer can render/move/delete committed boxes from EngineState.
-  state.textBoxes = doc.textBoxes.map((tb) => ({
-    id: tb.id,
-    page: tb.page,
-    rect: { ...tb.rect },
-    text: tb.text,
-    font: tb.font,
-    size: tb.size,
-    color: tb.color,
-    background: tb.background,
-  }));
+  // Phase 21: the clone carries the new style fields (align, lineHeight,
+  // bold, italic, underline, baselineShift, highlight, list) so the panel
+  // can reflect the selected object's actual formatting.
+  state.textBoxes = doc.textBoxes.map(cloneTextBoxModel);
   // Attach form fields with remapped page numbers (DEF-031)
   try {
     const rawFields = getFormFields(doc.pdfDoc);
@@ -4308,6 +4434,192 @@ function parseSigMetaJson(jsonStr: string): SignaturePlacement[] {
  *  blowing up memory on reload. */
 const MAX_TEXTBOX_META_BYTES = 16 * 1024 * 1024;
 
+/** Phase 21 — deep-clone a registry text box. `rect` and `highlight` are the
+ *  only object-valued fields; cloning them keeps snapshots, undo restores and
+ *  the `EngineState` echo from sharing mutable references with the live
+ *  registry. */
+function cloneTextBoxModel(tb: TextBoxModel): TextBoxModel {
+  return {
+    ...tb,
+    rect: { ...tb.rect },
+    highlight: tb.highlight ? { ...tb.highlight } : undefined,
+  };
+}
+
+/** Phase 21 — true when at least one new style field is supplied, so the
+ *  caller can keep the byte-compatible legacy draw path when none is. */
+function hasTextStyle(style: {
+  align?: TextAlign;
+  lineHeight?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  baselineShift?: number;
+  highlight?: { r: number; g: number; b: number };
+  list?: TextListStyle;
+  indent?: number;
+}): boolean {
+  return style.align !== undefined || style.lineHeight !== undefined ||
+    style.bold !== undefined || style.italic !== undefined ||
+    style.underline !== undefined || style.baselineShift !== undefined ||
+    style.highlight !== undefined || style.list !== undefined ||
+    style.indent !== undefined;
+}
+
+/** Phase 21 — width of the per-line list prefix for wrapping. `number` uses
+ *  the widest plausible `999. ` so the first lines never overflow. */
+function listPrefixWidth(
+  font: { widthOfTextAtSize: (t: string, s: number) => number },
+  size: number,
+  list: TextListStyle,
+): number {
+  if (list === 'bullet') return font.widthOfTextAtSize('\u2022 ', size);
+  if (list === 'number') return font.widthOfTextAtSize('999. ', size);
+  return 0;
+}
+
+/** Phase 21 — horizontal start of a line inside the box for the given
+ *  alignment. `justify` starts at the left edge (extra space is distributed
+ *  between words by the caller). */
+function alignedLineX(rectX: number, width: number, lineWidth: number, align: TextAlign): number {
+  if (align === 'center') return rectX + Math.max(0, (width - lineWidth) / 2);
+  if (align === 'right') return rectX + Math.max(0, width - lineWidth);
+  return rectX;
+}
+
+/** Phase 21 — the shared styled-line renderer used by BOTH the save-time text
+ *  box draw and the immediate `editTextRun` draw. `lines` are already wrapped
+ *  (or split on explicit newlines). `rectTop` is the top-left-origin y of the
+ *  block's first line. Draw order: every highlight band first (so bands sit
+ *  BEHIND the glyphs), then per line the underline rule and the glyphs. */
+function drawStyledTextLines(
+  page: PDFPage,
+  pageHeight: number,
+  lines: string[],
+  rectX: number,
+  rectTop: number,
+  width: number,
+  size: number,
+  font: PDFFont,
+  color: { r: number; g: number; b: number },
+  style: {
+    align: TextAlign;
+    lineHeight: number;
+    underline: boolean;
+    baselineShift: number;
+    highlight?: { r: number; g: number; b: number };
+    list: TextListStyle;
+    indent: number;
+  },
+): void {
+  const lineStep = size * style.lineHeight;
+  const pad = 2;
+
+  // Phase 21 — `indent` insets the paragraph inside the box: every line,
+  // including the first, starts at `rectX + indent` and alignment/wrapping
+  // operate inside the indented content box. Absent (0) leaves the content
+  // box identical to the box rect, so the legacy bytes are unchanged.
+  const contentX = rectX + style.indent;
+  const contentWidth = Math.max(0, width - style.indent);
+
+  // The drawn text for each line (list prefix included) and its measured width.
+  const described = lines.map((raw, i) => {
+    const prefix = style.list === 'bullet' ? '\u2022 '
+      : style.list === 'number' ? `${i + 1}. `
+      : '';
+    const text = prefix + sanitizeForStandardFont(raw);
+    return { text, width: font.widthOfTextAtSize(text, size) };
+  });
+
+  // 1) Highlight bands, drawn before any glyph so they sit behind the ink.
+  if (style.highlight !== undefined) {
+    let cursorTop = rectTop;
+    for (const line of described) {
+      const hx = alignedLineX(contentX, contentWidth, line.width, style.align);
+      page.drawRectangle({
+        x: hx - pad,
+        y: pageHeight - cursorTop - size,
+        width: line.width + 2 * pad,
+        height: size,
+        color: rgb(style.highlight.r, style.highlight.g, style.highlight.b),
+      });
+      cursorTop += lineStep;
+    }
+  }
+
+  // 2) Underline + glyphs.
+  let cursorTop = rectTop;
+  for (let i = 0; i < described.length; i++) {
+    const line = described[i];
+    const baseline = pageHeight - cursorTop - size + style.baselineShift;
+    const x = alignedLineX(contentX, contentWidth, line.width, style.align);
+
+    if (style.underline) {
+      page.drawRectangle({
+        x,
+        y: baseline - size * 0.12,
+        width: line.width,
+        height: Math.max(0.5, size * 0.05),
+        color: rgb(color.r, color.g, color.b),
+      });
+    }
+
+    const isLast = i === described.length - 1;
+    if (style.align === 'justify' && !isLast) {
+      drawJustifiedLine(page, line.text, x, baseline, contentWidth, size, font, color);
+    } else {
+      page.drawText(line.text, {
+        x,
+        y: baseline,
+        size,
+        font,
+        color: rgb(color.r, color.g, color.b),
+      });
+    }
+    cursorTop += lineStep;
+  }
+}
+
+/** Phase 21 — draw a line word-by-word, distributing the extra inter-word
+ *  space evenly (justify). Falls back to a normal draw when the line has
+ *  fewer than two words or no space to distribute. */
+function drawJustifiedLine(
+  page: PDFPage,
+  text: string,
+  startX: number,
+  baseline: number,
+  width: number,
+  size: number,
+  font: PDFFont,
+  color: { r: number; g: number; b: number },
+): void {
+  const drawWhole = (): void => {
+    page.drawText(text, { x: startX, y: baseline, size, font, color: rgb(color.r, color.g, color.b) });
+  };
+  const words = text.split(' ');
+  if (words.length < 2) {
+    drawWhole();
+    return;
+  }
+  const natural = font.widthOfTextAtSize(text, size);
+  const extra = width - natural;
+  if (extra <= 0) {
+    drawWhole();
+    return;
+  }
+  const gap = extra / (words.length - 1);
+  const spaceWidth = font.widthOfTextAtSize(' ', size);
+  let cursorX = startX;
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    if (word.length > 0) {
+      page.drawText(word, { x: cursorX, y: baseline, size, font, color: rgb(color.r, color.g, color.b) });
+      cursorX += font.widthOfTextAtSize(word, size);
+    }
+    if (i < words.length - 1) cursorX += spaceWidth + gap;
+  }
+}
+
 /** Draw every registry text box at its FINAL rect on the output document.
  *  No masking of any prior rect — the box is drawn exactly once. Word-wraps
  *  the text, auto-fits the font size so all lines fit the box height, draws
@@ -4316,16 +4628,17 @@ const MAX_TEXTBOX_META_BYTES = 16 * 1024 * 1024;
  *  `_addTextBoxImpl` draw logic but applied to the registry at save time. */
 async function drawTextBoxes(out: PDFDocument, boxes: TextBoxModel[]): Promise<void> {
   if (boxes.length === 0) return;
-  // Cache the embedded StandardFont by font name so a doc with many boxes
+  // Cache the embedded StandardFont by family+style so a doc with many boxes
   // does not re-embed the same base-14 font once per box (mirrors the
   // signatures path's pngCache by id).
   type EmbeddedFont = Awaited<ReturnType<typeof out['embedFont']>>;
-  const fontCache = new Map<EditFont, EmbeddedFont>();
-  const getFont = async (name: EditFont): Promise<EmbeddedFont> => {
-    const cached = fontCache.get(name);
+  const fontCache = new Map<string, EmbeddedFont>();
+  const getFont = async (family: EditFont, bold: boolean, italic: boolean): Promise<EmbeddedFont> => {
+    const key = `${family}|${bold ? 'b' : ''}${italic ? 'i' : ''}`;
+    const cached = fontCache.get(key);
     if (cached !== undefined) return cached;
-    const embedded = await out.embedFont(standardFontFor(name));
-    fontCache.set(name, embedded);
+    const embedded = await out.embedFont(selectStandardFont(family, bold, italic));
+    fontCache.set(key, embedded);
     return embedded;
   };
   for (const box of boxes) {
@@ -4349,36 +4662,37 @@ async function drawTextBoxes(out: PDFDocument, boxes: TextBoxModel[]): Promise<v
       });
     }
 
-    const font = await getFont(box.font);
+    const font = await getFont(box.font, box.bold ?? false, box.italic ?? false);
     const color = box.color ? hexToRgb(box.color) : { r: 0, g: 0, b: 0 };
+    const lineHeight = box.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT;
+    const list = box.list ?? 'none';
+    const indent = box.indent ?? 0;
 
-    // Auto-fit: wrap to width, then shrink the font size so ALL wrapped
-    // lines fit within the box height (DEF-113 — never silently drop text).
+    // Auto-fit: wrap to the indented content width (minus the list prefix),
+    // then shrink the font size so ALL wrapped lines fit within the box height
+    // (DEF-113 — never silently drop text).
     const MIN_FIT_SIZE = 4;
+    const wrap = (s: number): string[] =>
+      wrapTextToWidth(box.text, font, s, Math.max(1, width - indent - listPrefixWidth(font, s, list)));
     let size = box.size;
-    let lines = wrapTextToWidth(box.text, font, size, width);
+    let lines = wrap(size);
     if (height > 0 && lines.length > 0) {
-      const needed = lines.length * size * 1.2;
+      const needed = lines.length * size * lineHeight;
       if (needed > height) {
-        size = Math.max(MIN_FIT_SIZE, height / (lines.length * 1.2));
-        lines = wrapTextToWidth(box.text, font, size, width);
+        size = Math.max(MIN_FIT_SIZE, height / (lines.length * lineHeight));
+        lines = wrap(size);
       }
     }
-    const lineHeight = size * 1.2;
 
-    // Draw every wrapped line (never drop overflow). Top-left -> bottom-left:
-    // the first baseline sits `size` below the rect's top.
-    let cursorY = pageHeight - y - size;
-    for (const line of lines) {
-      page.drawText(sanitizeForStandardFont(line), {
-        x,
-        y: cursorY,
-        size,
-        font,
-        color: rgb(color.r, color.g, color.b),
-      });
-      cursorY -= lineHeight;
-    }
+    drawStyledTextLines(page, pageHeight, lines, x, y, width, size, font, color, {
+      align: box.align ?? 'left',
+      lineHeight,
+      underline: box.underline ?? false,
+      baselineShift: box.baselineShift ?? 0,
+      highlight: box.highlight,
+      list,
+      indent,
+    });
   }
 }
 
@@ -4404,6 +4718,17 @@ function serializeTextBoxMetadata(out: PDFDocument, boxes: TextBoxModel[]): void
       size: tb.size,
       color: tb.color,
       background: tb.background,
+      // Phase 21 — optional style fields. JSON.stringify omits undefined, so a
+      // legacy box's catalog entry is byte-for-byte unchanged.
+      align: tb.align,
+      lineHeight: tb.lineHeight,
+      bold: tb.bold,
+      italic: tb.italic,
+      underline: tb.underline,
+      baselineShift: tb.baselineShift,
+      highlight: tb.highlight,
+      list: tb.list,
+      indent: tb.indent,
     }));
     const jsonStr = JSON.stringify(data);
     if (jsonStr.length > MAX_TEXTBOX_META_BYTES) return;
@@ -4470,6 +4795,11 @@ function parseTextBoxMetaJson(jsonStr: string): TextBoxModel[] {
     const color = typeof entry.color === 'string' ? entry.color : undefined;
     const background: 'white' | 'none' | undefined =
       entry.background === 'white' || entry.background === 'none' ? entry.background : undefined;
+    // Phase 21 — rehydrate the style fields with the same validation used on
+    // the write path. A corrupt/hostile entry drops the style fields (the
+    // legacy box fields are still kept) rather than throwing out of load.
+    const styleResult = validateTextStyleFields(entry);
+    const style = styleResult.ok ? styleResult.value : {};
     result.push({
       id: entry.id,
       page: entry.page,
@@ -4479,6 +4809,7 @@ function parseTextBoxMetaJson(jsonStr: string): TextBoxModel[] {
       size,
       color,
       background,
+      ...style,
     });
   }
   return result;

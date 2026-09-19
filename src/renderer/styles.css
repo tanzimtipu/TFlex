@@ -410,6 +410,27 @@
   initial-value: 220px;
 }
 
+/* Phase 21 — the docked text-properties panel's OPEN width. ONE source
+ * of truth: the workspace grid's middle track resolves from --tf-text-w
+ * below, and the DEF-241 Tools-palette coexistence cap reads the same
+ * value to know where the page column starts. */
+:root {
+  --text-panel-w: 248px;
+}
+
+/* Phase 21 — the animated text-properties panel width. The .workspace
+ * grid resolves its middle column from this REGISTERED custom property,
+ * so the panel's open/close interpolates the track instead of snapping:
+ * .workspace[data-text-panel-open] declares the open value and the
+ * transition below animates it on the Phase-20 panel motion tokens — the
+ * page column (1fr) reflows in lockstep with the docked slide, in every
+ * theme, with no hardcoded duration. */
+@property --tf-text-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 :root[data-theme="dark"] {
   --bg-base: #0b0d0f;
   --bg-sunken: #090b0d;
@@ -2037,8 +2058,10 @@ input[type="checkbox"] {
    * mechanism as --tf-tools-inset, so the rail shrink and the 1fr
    * page-column reflow move together, in every theme, with no
    * hardcoded duration in this rule. */
-  grid-template-columns: var(--tf-rail-w) 1fr;
-  transition: --tf-rail-w var(--motion-duration-panel) var(--motion-ease-layout);
+  grid-template-columns: var(--tf-rail-w) var(--tf-text-w) 1fr;
+  transition:
+    --tf-rail-w var(--motion-duration-panel) var(--motion-ease-layout),
+    --tf-text-w var(--motion-duration-panel) var(--motion-ease-layout);
   /* DEF-229 (ADV-048) — the grid item default `min-width: auto` floors this
    * container at the 1fr column's min-content, so the whole workspace (and
    * the CommandBar inside it) refused to shrink to the 640px window's
@@ -2050,6 +2073,9 @@ input[type="checkbox"] {
 
 .workspace-main {
   display: grid;
+  /* Phase 21 — pinned to the 1fr track (the text-properties column sits
+   * between the rail and the page view). */
+  grid-column: 3;
   /* Positioning context for the chrome rows that float over the
    * scroller (the frosted theme block below declares the same value).
    * The .tools-badge-tracker no longer needs this context — the
@@ -2125,7 +2151,30 @@ input[type="checkbox"] {
   --tf-rail-w: 48px;
 }
 
+/* DEF-241 (ADV-057) — the docked text-properties panel is CHROME, not
+ * page area, so the right-anchored Tools palette must never cover it.
+ * When the panel is open this token is the x at which the PAGE column
+ * starts (rail + panel); the palette and its floating badge cap
+ * themselves to that edge (see the rules beside the Phase-14 tools
+ * block), so at narrow widths they overlay ONLY the page column and
+ * shrink to fit instead of covering the panel's controls. Scoped to the
+ * ACTIVE tab pane: a background tab that happens to have its own panel
+ * open must not narrow the visible palette. */
+.app-main:has(.tab-pane[aria-hidden="false"] .workspace[data-text-panel-open="true"]) {
+  --tf-tools-clear: calc(var(--tf-rail-w) + var(--text-panel-w));
+}
+
+/* Phase 21 — the text-properties panel column. The grid always declares
+ * three tracks (so the width can interpolate); while closed the middle
+ * track resolves to the @property initial 0px and collapses. The three
+ * direct children are pinned explicitly because an auto-placed second
+ * child would otherwise land in the 0px middle track. */
+.workspace[data-text-panel-open="true"] {
+  --tf-text-w: var(--text-panel-w);
+}
+
 .side-rail {
+  grid-column: 1;
   display: grid;
   /* DEF-185 + Phase 14.1 — the rail's header row now carries BOTH the
    * title ("Pages" / "Annotations" / "Bookmarks") and the view-toggle
@@ -2142,6 +2191,223 @@ input[type="checkbox"] {
   background: var(--panel-bg);
   border-right: 1px solid var(--panel-border);
   min-height: 0;
+}
+
+/* Phase 21 — the docked text-properties panel (middle grid track). It
+ * consumes the shared --panel-* surface contract like the rail, with the
+ * hairline on its RIGHT edge (the page view sits to its right). */
+.text-props-panel {
+  grid-column: 2;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--panel-border);
+}
+
+.text-props-body {
+  height: 100%;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 0 10px 14px;
+}
+
+.text-props-header {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 2px 0;
+  position: sticky;
+  top: 0;
+  background: var(--panel-bg);
+  z-index: 1;
+}
+
+.text-props-title {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.text-props-group {
+  margin-top: 10px;
+}
+
+.text-props-group-title {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--fg-soft);
+  padding: 6px 2px 4px;
+}
+
+.text-props-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.text-props-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.text-props-label {
+  font-size: var(--fs-xs);
+  color: var(--fg);
+  white-space: nowrap;
+}
+
+.text-props-select,
+.text-props-input {
+  height: 26px;
+  min-width: 0;
+  width: 112px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
+  color: var(--fg-strong);
+  font-size: var(--fs-xs);
+}
+
+.text-props-input[type="number"] {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.text-props-select:focus-visible,
+.text-props-input:focus-visible,
+.text-props-btn:focus-visible,
+.text-props-wide-btn:focus-visible,
+.text-props-mini-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.text-props-hint {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--fg-faint);
+}
+
+.text-props-btn-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.text-props-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
+  color: var(--fg);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.text-props-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.text-props-btn-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.text-props-btn:disabled,
+.text-props-wide-btn:disabled,
+.text-props-select:disabled,
+.text-props-input:disabled,
+.text-props-color:disabled,
+.text-props-mini-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.text-props-indent-value {
+  min-width: 24px;
+  text-align: center;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-soft);
+}
+
+.text-props-wide-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  width: 100%;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.text-props-wide-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.text-props-color-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.text-props-inline-icon {
+  color: var(--fg-muted);
+}
+
+.text-props-color {
+  width: 34px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-input);
+  cursor: pointer;
+}
+
+.text-props-mini-btn {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-input);
+  color: var(--fg-soft);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.text-props-mini-btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
 }
 
 /* DEF-185 — the rail's title header. Phase 14.1: the header is the
@@ -5820,7 +6086,12 @@ rect.ann-highlight.ann-preview {
    * collapses it via the global media catch-all (0.01ms). */
   transition:
     width var(--panel-slide-duration)
-      var(--panel-slide-ease);
+      var(--panel-slide-ease),
+    /* DEF-241 — the text-panel coexistence cap rides the same
+     * page-reflow tokens the --tf-text-w track uses (see the DEF-241
+     * rules beside the Phase-14 tools block). */
+    max-width var(--motion-duration-panel)
+      var(--motion-ease-layout);
 }
 /* Phase 14 — grid layout is never icon-only: it renders the same
  * icon+title+description triplet as two-column cards, so the panel
@@ -8967,7 +9238,12 @@ rect.ann-highlight.ann-preview {
     backdrop-filter var(--tf-motion-normal) var(--ease-standard),
     -webkit-backdrop-filter var(--tf-motion-normal) var(--ease-standard),
     width var(--panel-slide-duration)
-      var(--panel-slide-ease);
+      var(--panel-slide-ease),
+    /* DEF-241 — keep the text-panel coexistence cap in the frosted
+     * transition group too (this rule REPLACES the base transition in
+     * frosted, so the channel has to be re-stated here). */
+    max-width var(--motion-duration-panel)
+      var(--motion-ease-layout);
 }
 
 :root[data-theme="frosted"] .toolbar::after,
@@ -9360,6 +9636,54 @@ rect.ann-highlight.ann-preview {
 .tools-palette {
   min-width: 320px;
   max-width: calc(100vw - 24px);
+}
+
+/* DEF-241 (ADV-057) — coexistence with the docked text-properties
+ * panel. A right-anchored 344px palette crosses into the 248px panel
+ * below ~812px of window width (ADV-057: 172px of overlap at 640x520,
+ * 15 panel controls unreachable). The cap pins the palette's left edge
+ * at the page-column start (--tf-tools-clear), so it overlays only the
+ * page area and shrinks to the remaining column instead of covering the
+ * panel. The 320px readability floor yields ONLY when a text panel is
+ * open (that floor is what forced the overlap); entries keep wrapping
+ * and stay full-width hit targets. The max-width channel rides the same
+ * page-reflow motion tokens the text track uses, so the cap and the
+ * page column move together. The base/frosted transition declarations
+ * above already carry this channel. */
+.app-main:has(.tab-pane[aria-hidden="false"] .workspace[data-text-panel-open="true"]) .tools-palette {
+  min-width: 0;
+  max-width: calc(100% - var(--tf-tools-clear, 0px));
+}
+
+/* The floating Tools badge rides the back of the open palette; at the
+ * capped widths it must cap identically, or it would drift inside the
+ * text panel (its flat side sits flush with the palette's left edge,
+ * which is now the page-column start). */
+.tools-badge-tracker-open {
+  right: min(
+    var(--tools-panel-w, 344px),
+    calc(100vw - var(--tf-tools-clear, 0px))
+  );
+}
+
+/* DEF-241 — container context so the compact rules below key off the
+ * palette's ACTUAL width (not a window media query that would also fire
+ * when the rail is collapsed and the palette is still full-size). */
+.tools-palette {
+  container-type: inline-size;
+}
+
+/* DEF-241 — when the coexistence cap squeezes the palette below its
+ * 344px list width, the right-aligned shortcut chip (e.g. Ctrl+Shift+O)
+ * would starve the text column to a few characters and the browser
+ * breaks tool descriptions mid-word ("Co m bi ne ..."). Drop the chip
+ * at that width only: it is a passive accelerator HINT, not a control
+ * (the accelerators stay in the native menu), and the descriptions wrap
+ * at word boundaries again. */
+@container (max-width: 343px) {
+  .tools-palette-entry-shortcut {
+    display: none;
+  }
 }
 
 /* Grid cards: two-column rhythm. The base group grid keeps its 64px
