@@ -88,11 +88,12 @@ describe("DEF-175 - color palette popover escapes the frosted .ann-toolbar stack
     expect(popover).not.toBeNull();
     if (popover === null) return;
     // jsdom rects are zeros: anchor.right 0 - offsetWidth 0 -> left 0,
-    // anchor.bottom 0 + 6px gap -> top 6. `position: fixed` in the
-    // ROOT stacking context is what escapes the frosted toolbar trap.
+    // and the Phase-22 (DEF-248) flush join puts the popover's top at
+    // anchor.bottom (0) — no gap. `position: fixed` in the ROOT stacking
+    // context is what escapes the frosted toolbar trap.
     expect(popover.style.position).toBe("fixed");
     expect(popover.style.left).toBe("0px");
-    expect(popover.style.top).toBe("6px");
+    expect(popover.style.top).toBe("0px");
   });
 
   it("the portaled palette stays fully interactive (a built-in swatch click applies the color)", () => {

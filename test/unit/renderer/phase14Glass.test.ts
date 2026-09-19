@@ -123,19 +123,20 @@ describe("Phase 14 — liquid glass tokens and ambient backdrop", () => {
     expect(scroller ?? "").toMatch(/background:\s*transparent/);
   });
 
-  it("the glass panels DOCK with square corners (no floating card radius)", () => {
+  it("the glass panels DOCK with the shared rounded-panel radius (Phase 22)", () => {
     const stripped = stripCssComments(css);
     // No frosted-scoped panel rule may declare a border-radius: the
-    // panels keep the base docked geometry (square corners like
-    // light/dark); only the surface is glass.
+    // panels keep the base docked geometry; only the surface is glass.
+    // Phase 22 (DEF-247) — the base geometry is now the ladder's
+    // --radius-panel on the page-facing corners (was square).
     expect(stripped).not.toMatch(
       /:root\[data-theme="frosted"\]\s+\.tools-palette\s*\{[^}]*border-radius/,
     );
     expect(stripped).not.toMatch(
       /:root\[data-theme="frosted"\]\s+\.side-rail\s*\{[^}]*border-radius/,
     );
-    // The shared panel contract resolves to the docked geometry.
-    expect(stripped).toMatch(/--panel-radius:\s*0px/);
+    // The shared panel contract resolves to the ladder's panel radius.
+    expect(stripped).toMatch(/--panel-radius:\s*var\(--radius-panel\)/);
   });
 });
 

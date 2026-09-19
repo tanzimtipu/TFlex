@@ -1839,3 +1839,176 @@ describe("DEF-234 — reduced-motion travel class", () => {
   });
 });
 
+/* ===========================================================================
+ * Phase 22 — radius ladder + surface-family contract (DEF-247/248/249).
+ *
+ * The operator's visual-consistency audit: (A) the docked toolboxes must
+ * follow the app's rounded style, (B) every dropdown must read as ONE box
+ * with its trigger, (C) a menu's corner must not change size with the
+ * theme. This pins the ladder, the docked-panel corners, the menu-family
+ * radius in all three themes and the unified-join declarations at the
+ * source, so any future drift turns the spec red.
+ * ======================================================================== */
+describe("Phase 22 — radius ladder + surface families", () => {
+  const css = readStyles();
+  const cssClean = css.replace(/\/\*[\s\S]*?\*\//g, "");
+
+  /** Every rule body whose selector LIST contains `selector` exactly
+   *  (grouped selectors included; descendant/theme-scoped variants are
+   *  deliberately excluded). The FIRST match is not enough for menus,
+   *  which have a no-drag rule before the styled one. */
+  const bodiesFor = (selector: string): string[] =>
+    [...cssClean.matchAll(/([^{}]*)\{([^{}]*)\}/g)]
+      .filter((m) =>
+        (m[1] ?? "")
+          .split(",")
+          .some((s) => s.trim() === selector),
+      )
+      .map((m) => m[2] ?? "");
+  const bodyWith = (selector: string, needle: RegExp): string => {
+    const body = bodiesFor(selector).find((b) => needle.test(b));
+    expect(body, `${selector} rule matching ${needle} missing`).toBeDefined();
+    return body ?? "";
+  };
+
+  it("declares the full radius ladder", () => {
+    for (const [token, value] of [
+      ["--radius-1", "3px"],
+      ["--radius-2", "5px"],
+      ["--radius-3", "8px"],
+      ["--radius-dialog", "10px"],
+      ["--radius-group", "12px"],
+      ["--radius-panel", "16px"],
+      ["--radius-window", "20px"],
+    ]) {
+      expect(cssClean, `${token} must be declared`).toMatch(
+        new RegExp(`${token}:\\s*${value}`),
+      );
+    }
+    // The ladder is theme-independent: no [data-theme] block re-declares
+    // a ladder radius (themes only re-map surfaces/colours).
+    for (const theme of ["light", "dark", "frosted"]) {
+      const block = new RegExp(
+        `:root\\[data-theme="${theme}"\\]\\s*\\{([\\s\\S]*?)\\n\\}`,
+      ).exec(cssClean)?.[1] ?? "";
+      expect(block).not.toMatch(/--radius-(1|2|3|dialog|group|panel|window)\s*:/);
+    }
+  });
+
+  it("--radius-panel is actually consumed (no declared-but-unused token)", () => {
+    // DEF-247 — the token existed but resolved nowhere. It now feeds the
+    // shared --panel-radius in :root AND the frosted block, and the
+    // panel rules consume --panel-radius per corner.
+    expect(cssClean).toMatch(/--panel-radius:\s*var\(--radius-panel\)/);
+    const uses = [...cssClean.matchAll(/var\(--radius-panel\)/g)].length;
+    expect(uses).toBeGreaterThanOrEqual(2);
+    expect(cssClean).toMatch(/border-radius:\s*[^;{}]*var\(--panel-radius\)/);
+  });
+
+  it("the docked panels round their page-facing corners only (DEF-247)", () => {
+    // The rail and the text panel face the page on their RIGHT edge; the
+    // palette faces it on its LEFT edge. The window-edge corners stay
+    // flush (the frosted shell clips them to its 20px curvature).
+    expect(bodyWith(".side-rail", /border-radius/)).toMatch(
+      /border-radius:\s*0 var\(--panel-radius\) var\(--panel-radius\) 0/,
+    );
+    expect(bodyWith(".tools-palette", /border-radius/)).toMatch(
+      /border-radius:\s*var\(--panel-radius\) 0 0 var\(--panel-radius\)/,
+    );
+    expect(bodyWith(".text-props-panel", /border-radius/)).toMatch(
+      /border-radius:\s*0 var\(--panel-radius\) var\(--panel-radius\) 0/,
+    );
+    // With the text panel open the rail keeps its rounded page-facing
+    // corners (the corner notch reveals the canvas, not a square seam);
+    // the panel's inner body inherits the frame's corner so the visible
+    // scroll area (and its computed radius) matches the frame.
+    expect(bodyWith(".text-props-body", /border-radius:\s*inherit/)).toMatch(
+      /border-radius:\s*inherit/,
+    );
+  });
+
+  it("the menu family uses ONE corner token in every theme (DEF-249)", () => {
+    for (const sel of [
+      ".titlebar-menu-popover",
+      ".theme-toggle-popover",
+      ".ann-tool-menu",
+      ".color-popover",
+    ]) {
+      expect(
+        bodyWith(sel, /border-radius:\s*var\(--radius-3\)/),
+        `${sel} must resolve its corner from --radius-3 in every theme`,
+      ).toMatch(/border-radius:\s*var\(--radius-3\)/);
+    }
+    // The old cross-theme divergence is gone: no menu rule resolves its
+    // corner from the frosted-only --tf-radius-md, and the light/dark
+    // 5px --radius-2 corner is not used by the menu surfaces.
+    expect(cssClean).not.toMatch(/border-radius:\s*var\(--tf-radius-md\)/);
+    for (const sel of [".titlebar-menu-popover", ".ann-tool-menu"]) {
+      for (const body of bodiesFor(sel)) {
+        expect(body).not.toMatch(/border-radius:\s*var\(--radius-2\)/);
+      }
+    }
+  });
+
+  it("the floating surface families keep their ladder corners", () => {
+    expect(bodyWith(".modal-dialog", /border-radius/)).toMatch(
+      /border-radius:\s*var\(--radius-dialog\)/,
+    );
+    expect(bodyWith(".color-popover", /border-radius/)).toMatch(
+      /border-radius:\s*var\(--radius-3\)/,
+    );
+    expect(bodyWith(".toast", /border-radius/)).toMatch(
+      /border-radius:\s*var\(--radius-2\)/,
+    );
+  });
+
+  it("the unified dropdown join is pinned (DEF-248)", () => {
+    // Surface side: the joined top edge carries no hairline, and the
+    // joined corner is square (the exposed corner keeps the family radius).
+    for (const sel of [
+      ".titlebar-menu-popover",
+      ".theme-toggle-popover",
+      ".ann-tool-menu",
+      ".color-popover",
+    ]) {
+      expect(
+        bodyWith(sel, /border-top-width:\s*0/),
+        `${sel} must drop the joined-edge hairline`,
+      ).toMatch(/border-top-width:\s*0/);
+    }
+    expect(bodyWith(".titlebar-menu-popover", /border-top-left-radius:\s*0/)).toMatch(
+      /border-top-left-radius:\s*0/,
+    );
+    for (const sel of [".theme-toggle-popover", ".ann-tool-menu", ".color-popover"]) {
+      expect(bodyWith(sel, /border-top-right-radius:\s*0/)).toMatch(
+        /border-top-right-radius:\s*0/,
+      );
+    }
+    // Trigger side: joined corners square, material merged, and no hover
+    // lift (the 1px translateY was the last seam).
+    for (const sel of [
+      ".titlebar-menu-button-active",
+      '.theme-toggle-trigger[aria-expanded="true"]',
+      ".ann-dropdown-toggle-open",
+    ]) {
+      const body = bodyWith(sel, /border-bottom-left-radius:\s*0/);
+      expect(body, `${sel} must square its joined corners`).toMatch(
+        /border-bottom-left-radius:\s*0/,
+      );
+      expect(body, `${sel} must not lift off the surface`).toMatch(/transform:\s*none/);
+    }
+    expect(bodyWith(".ann-color-swatch-main-active", /border-bottom-width:\s*0/)).toMatch(
+      /border-bottom-width:\s*0/,
+    );
+    // The colour popover placement is flush with the swatch (the old
+    // +6px offset was the widest seam measured). Match the CODE form,
+    // not the explanatory comment that records the old value.
+    const toolbar = readFileSync(
+      resolve(process.cwd(), "src/renderer/annotations/AnnotationToolbar.tsx"),
+      "utf8",
+    );
+    expect(toolbar).not.toMatch(/anchor\.bottom \+ 6,/);
+    expect(toolbar).toMatch(/Math\.max\(anchor\.bottom, 0\)/);
+  });
+});
+

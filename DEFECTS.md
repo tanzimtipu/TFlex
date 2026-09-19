@@ -5,6 +5,90 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-250: The CI verify workflow fails on every push - `test/unit/main/ocr.test.ts` asserts a font-dependent tesseract outcome
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 22
+
+Steps to reproduce:
+1. Push any commit to origin (or open a PR) - the `verify` workflow runs on `windows-latest`, Node 24, `npm ci`, then one `npm run verify:full` step.
+2. Read the failing job log.
+
+Expected: `verify:full` is green on the runner (the workflow is the release gate; a red run blocks every push and emails the operator).
+Actual: the run fails on exactly one test - `test/unit/main/ocr.test.ts` - with `AssertionError: expected 0 to be greater than 0` at `ocr.test.ts:431` (the old `expect(suspects.value.length).toBeGreaterThan(0)` in the tesseract integration case). git-agent's diagnosis: the failure is byte-identical on 1.15.0 / 1.19.0 / 1.20.0, so it is not a regression from any recent change; the runner's system fonts make tesseract read the synthetic "TFLEX OCR WORKS" raster confidently (zero words below the 60 threshold), while the same test passes locally where the font rasterises differently. The assertion depended on the runner's font, not on TFlex behaviour.
+Evidence: git-agent CI diagnosis (one failing test, identical across three versions, `ocr.test.ts:431`); workflow `.github/workflows/verify.yml` (windows-latest, Node 24, `npm ci`, single `verify:full` step).
+
+History:
+- qa: opened (2026-09-20; CI failure reported by the operator via the workflow email)
+- qa: CLOSED (2026-09-20 FIX-READY retest; `test/unit/main/ocr.test.ts` no longer asserts the font-dependent count). `npm.cmd run test:unit -- test/unit/main/ocr.test.ts` -> 21 tests, 1 file, 21 passed. The old `expect(suspects.value.length).toBeGreaterThan(0)` is replaced by `expect(Array.isArray(...)).toBe(true)` + the per-suspect below-threshold invariant, so the tesseract integration case asserts only structural properties; the mapping contract now runs deterministically in `EngineService.ocrSuspects — controlled recognition (deterministic)` from a stubbed tesseract-shaped word list (42/59 -> suspects; 60/95 -> not; 0/30 all suspects; 99 none) driving the full engine path (ocrRecognize -> ocrSuspects -> undo). Negative control (read, not edited): an inverted comparison would make `expect(suspects.value.length).toBe(2)` + `toEqual(['TELEX','CLEAR'])` + `not.toContain('EXACT'/'SHARP')` fail (the inverted filter yields ['EXACT','SHARP']). CAVEAT: CI green can only be proven by the next push - the operator will see the failure email stop.
+
+## DEF-249: Menu surfaces use two different corner radii across themes (5px light/dark vs 8px frosted)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 22
+
+Steps to reproduce:
+1. Launch TFlex dev build (canonical `launchApp`); open `report.pdf`.
+2. Set each theme via the theme popover (`[data-theme-toggle]` -> `[data-theme-option=...]`).
+3. Open the title-bar menu (`.titlebar-menu-button`) and the annotation tools menu (`[data-ann-dropdown-toggle]`); read `getComputedStyle(...).borderTopLeftRadius`.
+
+Expected: the same menu surface uses one radius in all three themes (Phase 15 rule: "Same motion across themes - only visual properties differ").
+Actual: `.titlebar-menu-popover` and `.ann-tool-menu` compute 5px (`--radius-2`) in light and dark but 8px (`--tf-radius-md`) in frosted (styles.css frosted override ~line 9270). `.theme-toggle-popover` is 8px in all three. So the same menu family changes corner size when the theme changes.
+Screenshot: screenshots/auditB-titlebar-join-light.png vs screenshots/auditB-titlebar-join-frosted.png
+
+History:
+- qa: opened (2026-09-20; operator visual-consistency audit A)
+- qa: CLOSED (2026-09-20 FIX-READY retest; `e2e/retests/def_247_249_retest.spec.cjs` DEF-248/249). Menu exposed-corner radius per theme, measured on the running app: theme popover 8px/8px/8px, title-bar menu 8px/8px/8px, annotation tools menu 8px/8px/8px, colour popover 8px/8px/8px (light/dark/frosted). One radius (`--radius-3`, 8px) across all four menus and all three themes. The 6-test radius contract passes: `test/unit/renderer/designTokensContract.test.ts` 87/87.
+
+## DEF-248: Every morphing dropdown renders as a separate rounded box below its trigger (visible seam), not one unified box
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 22
+
+Steps to reproduce:
+1. Launch TFlex dev build (canonical `launchApp`); open `report.pdf`.
+2. For each theme (light/dark/frosted), set the theme, then open each dropdown: theme popover (`[data-theme-toggle]`), title-bar menu (`.titlebar-menu-button`), annotation tools menu (`[data-ann-dropdown-toggle]`), colour popover (`[data-ann-color]` after arming Highlight).
+3. Measure `surface.top - trigger.bottom`, the trigger/surface joined-edge `border-radius` + `border-top`/`border-bottom`, and both backgrounds; capture the join.
+
+Expected (operator report B): when the dropdown button is pressed, the trigger and the expanded area are engulfed in a single area and read as ONE unified box; no divider between the small box and the expanded box.
+Actual: all four read as a SEPARATE box opening:
+- theme popover: gap 1px; trigger radius 5px + accent wash `rgba(37,99,235,0.1)`; surface radius 8px + 0.67px top hairline (`--menu-border`) + menu background; surface wider than trigger (horizontal overlap 81.9px light/dark, 131.6px frosted).
+- title-bar menu: gap 1px; trigger 28x22 radius 5px + hover wash; surface 260px wide, radius 5px light/dark / 8px frosted, + 0.67px top hairline.
+- annotation tools menu: gap 1px; trigger 28x32 radius 5px; surface 200px wide, radius 5px light/dark / 8px frosted, + 0.67px top hairline.
+- colour popover: gap 5.1px; trigger 23.8px swatch radius 3px; surface 280px wide radius 8px + 0.67px top hairline.
+In every case the trigger keeps its own rounded corners and background at the join (it does not lose radius on the joined edge), the surface's rounded top corners + top hairline draw a divider, and the 1px (5.1px for colour) gap lets the chrome show through.
+Screenshots: screenshots/auditB-{theme,titlebar,annmenu,color}-join-{light,dark,frosted}.png (12); measurements in screenshots/audit-radius-report.json.
+
+History:
+- qa: opened (2026-09-20; operator visual-consistency audit B)
+- qa: CLOSED (2026-09-20 FIX-READY retest; `e2e/retests/def_247_249_retest.spec.cjs` DEF-248/249). All four dropdowns x three themes measured on the running app: gap 0.00px (was 1px, colour 5.1px); surface joined-edge `border-top-width` 0px and joined corner 0px (surface top hairline gone); trigger joined bottom corners 0px (was 5px/3px); background continuity trigger.bg == surface.bg - theme/title-bar `rgb(255,255,255)` light / `rgb(23,27,32)` dark / `rgba(255,255,255,0.86)` frosted, ann menu `rgb(250,250,250)` / `rgb(16,19,24)` / `rgba(255,255,255,0.86)`; colour swatch drops `border-bottom` (0px) and squares its bottom corners (it is a colour indicator, so it joins geometrically, not by material). Visual verdict from the 12 zoomed join screenshots (def247-249-join-{theme,titlebar,annmenu,color}-{light,dark,frosted}.png): each menu reads as ONE unified box - the trigger is a tab merged into the surface, no gap and no divider; theme/title-bar/ann menu/colour all acceptable.
+
+## DEF-247: Docked toolboxes/panels render square corners (0px) while the radius ladder declares a panel radius
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 22
+
+Steps to reproduce:
+1. Launch TFlex dev build (canonical `launchApp`); open `report.pdf`.
+2. Open the Tools palette (`[data-tools-toggle]`); arm the Text box tool so the text-properties panel opens.
+3. Read `getComputedStyle(...).borderTopLeftRadius` etc. for `[data-tools-palette]`, `.side-rail`, `[data-text-panel]`, and compare with the floating surfaces (dialogs 10px, popovers 8px, sample cards 8px, toasts 5px).
+
+Expected (operator report A): every toolbox/window follows the app's rounded-surface style; the Phase-14.1 ladder defines `--radius-panel: 16px` for panels.
+Actual: `[data-tools-palette]` = 0px on all four corners (344x804 docked right); `.side-rail` = 0px (220x856 docked left); `[data-text-panel]` = 0px (247x856 docked). All three "toolbox/window" surfaces are square while every floating surface is rounded. `--radius-panel` (16px) is defined in `styles.css` but referenced nowhere else. Full measurements in screenshots/audit-radius-report-A.json.
+Screenshots: screenshots/auditA-workspace-palette.png, screenshots/auditA-ocr-bar.png (palette + left rail visible), screenshots/auditA-textbox-toolbox.png.
+
+History:
+- qa: opened (2026-09-20; operator visual-consistency audit A)
+- qa: CLOSED (2026-09-20 FIX-READY retest; `e2e/retests/def_247_249_retest.spec.cjs` DEF-247). Computed radii (tl/tr/br/bl), all three themes, text panel closed and open: `.side-rail` 0/16/16/0, `[data-tools-palette]` 16/0/0/16, `.text-props-panel` 0/16/16/0, `[data-text-panel]` body 0/16/16/0 (inherits the frame corner). `--radius-panel` = 16px and `--panel-radius` = 16px in every theme; page-facing corners match the panel token, window-edge corners stay 0px (flush; the frosted `.app` shell clips its 20px curvature, light/dark are square - no double-rounding fight). Panel screenshots def247-249-panels-{light,dark,frosted}-{closed,open}.png read: page-facing corners visibly rounded, window edges flush, no clipping/overlap.
+
 ## DEF-246: Save As was unreachable from Ctrl+Shift+S / the menu on a clean document while the relocated button said "Nothing to save"
 
 - Status: CLOSED

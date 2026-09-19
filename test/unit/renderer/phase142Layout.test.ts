@@ -61,7 +61,9 @@ describe("Phase 14.2 — the ONE panel material contract (FIX 2)", () => {
     const body = extractRuleBody(css, rootIdx);
     expect(body).toMatch(/--panel-bg:\s*var\(--bg-rail\)/);
     expect(body).toMatch(/--panel-border:\s*var\(--border\)/);
-    expect(body).toMatch(/--panel-radius:\s*0px/);
+    // Phase 22 (DEF-247) — the shared panel radius now resolves to the
+    // declared Phase-14.1 ladder token (16px), not the retired 0px.
+    expect(body).toMatch(/--panel-radius:\s*var\(--radius-panel\)/);
     expect(body).toMatch(/--panel-shadow:\s*none/);
   });
 
@@ -84,10 +86,12 @@ describe("Phase 14.2 — the ONE panel material contract (FIX 2)", () => {
     expect(m).not.toBeNull();
     const frosted = m?.[1] ?? "";
     // The glass SURFACE stays (the translucent white film), but the
-    // floating-card geometry is retired: square corners, no floating
-    // elevation — the panels behave exactly like the light theme's.
+    // floating-card geometry is retired: no floating elevation — the
+    // panels behave exactly like the light theme's. Phase 22 (DEF-247)
+    // — the shared radius is the ladder's --radius-panel (16px), the
+    // same in every theme.
     expect(frosted).toMatch(/--panel-bg:\s*var\(--glass-sidebar-bg\)/);
-    expect(frosted).toMatch(/--panel-radius:\s*0px/);
+    expect(frosted).toMatch(/--panel-radius:\s*var\(--radius-panel\)/);
     expect(frosted).toMatch(/--panel-shadow:\s*none/);
     // The docking hairline is a visible neutral slate edge (the
     // translucent white glass border is invisible on the light glass).

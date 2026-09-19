@@ -176,10 +176,14 @@
    * one shadow family and one radius policy — neither panel can
    * drift away from the other or from the docked UI. The :root values
    * are the LIGHT mapping (docked solid panels: hairline edge only,
-   * no shadow, square corners); dark and frosted remap below. */
+   * no shadow); dark and frosted remap below. Phase 22 (DEF-247) —
+   * the docked panels are ROUNDED surfaces now: the shared
+   * --panel-radius resolves to the declared Phase-14.1 --radius-panel
+   * (16px), consumed per corner so only the page/gutter-facing corners
+   * round (the window-edge corners stay flush with the shell). */
   --panel-bg: var(--bg-rail);
   --panel-border: var(--border);
-  --panel-radius: 0px;
+  --panel-radius: var(--radius-panel);
   --panel-shadow: none;
    /* The simultaneous panel/page slide (Phase 14.2 FIX 5): panel and
     * page view animate together on the same duration + easing.
@@ -721,8 +725,10 @@
   --glass-hover-bg: rgba(255, 255, 255, 0.85);
 
   /* Phase 14.2 — the shared panel contract re-maps to the glass
-   * SURFACE but keeps the DOCKED geometry of light/dark: square
-   * corners, the shared docking hairline, no floating elevation.
+   * SURFACE but keeps the DOCKED geometry of light/dark: the shared
+   * docking hairline, no floating elevation. Phase 22 (DEF-247) — the
+   * same --radius-panel corner treatment as light/dark (the panels are
+   * rounded on their page-facing corners, flush to the window edge).
    * The panels read as one glass pane joined to the UI (same layout
    * structure as light/dark), never as floating cards. The docking
    * hairline is a NEUTRAL slate edge — the translucent white
@@ -730,7 +736,7 @@
    * a docked pane needs its docking edge to read. */
   --panel-bg: var(--glass-sidebar-bg);
   --panel-border: rgba(15, 23, 42, 0.12);
-  --panel-radius: 0px;
+  --panel-radius: var(--radius-panel);
   --panel-shadow: none;
 
   color-scheme: light;
@@ -1236,7 +1242,10 @@ input[type="checkbox"] {
 .titlebar-menu-popover {
   position: absolute;
   top: 100%;
-  left: var(--sp-1);
+  /* Phase 22 (DEF-248) — align the surface's left edge with the trigger
+   * button's left edge (the button sits --sp-2 in from the wrapper's
+   * padding box) so the joined corners form one silhouette. */
+  left: var(--sp-2);
   /* Phase 20 — no margin: the popover's top edge is the trigger button's
    * bottom edge, so the morph's first frame is exactly the button box. */
   margin-top: 0;
@@ -1244,10 +1253,12 @@ input[type="checkbox"] {
   max-height: min(560px, calc(100vh - 40px));
   overflow-y: auto;
   /* Phase 4 — professional desktop menu surface: dedicated menu
-   * tokens (dark #171B20 bg / #292F36 border), radius 5px. */
+   * tokens (dark #171B20 bg / #292F36 border). Phase 22 (DEF-249) —
+   * the menu family's ONE corner token is --radius-3 (8px) in every
+   * theme (was --radius-2 5px here, 8px in frosted). */
   background: var(--menu-bg);
   border: 1px solid var(--menu-border);
-  border-radius: var(--radius-2);
+  border-radius: var(--radius-3);
   box-shadow: var(--shadow-popover);
   padding: 6px;
   z-index: 50;
@@ -2403,6 +2414,10 @@ input[type="checkbox"] {
    * translucent glass film. */
   background: var(--panel-bg);
   border-right: 1px solid var(--panel-border);
+  /* Phase 22 (DEF-247) — the rail is a ROUNDED docked surface. Only
+   * the page-facing corners round; the left corners are flush with the
+   * window edge (the frosted shell clips them to its 20px curvature). */
+  border-radius: 0 var(--panel-radius) var(--panel-radius) 0;
   min-height: 0;
 }
 
@@ -2416,6 +2431,10 @@ input[type="checkbox"] {
   overflow: hidden;
   background: var(--panel-bg);
   border-right: 1px solid var(--panel-border);
+  /* Phase 22 (DEF-247) — the text panel is rounded on the same
+   * page-facing (right) corners as the rail; its left edge abuts the
+   * rail so those corners stay square and the dock reads as one pane. */
+  border-radius: 0 var(--panel-radius) var(--panel-radius) 0;
 }
 
 .text-props-body {
@@ -2423,6 +2442,10 @@ input[type="checkbox"] {
   overflow-y: auto;
   scrollbar-width: thin;
   padding: 0 10px 14px;
+  /* Phase 22 (DEF-247) — the visible rounded surface is the panel
+   * frame; the body inherits its corner so the panel's inner scroll
+   * area (and its computed radius) match the frame. */
+  border-radius: inherit;
 }
 
 .text-props-header {
@@ -3736,11 +3759,12 @@ input[type="checkbox"] {
   right: 0;
   min-width: 176px;
   /* Embedded, surface-matched: the SAME menu surface + hairline as
-   * the titlebar menu popover, tight radius, minimal float shadow —
-   * it reads as a continuation of the chrome, not a detached panel. */
+   * the titlebar menu popover. Phase 22 (DEF-249) — the menu family's
+   * ONE corner token is --radius-3 (8px) in every theme (was
+   * --tf-radius-md, which only frosted supplied). */
   background: var(--menu-bg);
   border: 1px solid var(--menu-border);
-  border-radius: var(--tf-radius-md);
+  border-radius: var(--radius-3);
   box-shadow: var(--shadow-popover);
   padding: 4px;
   z-index: 60;
@@ -5131,7 +5155,10 @@ rect.ann-highlight.ann-preview {
   padding: var(--sp-2);
   background: var(--bg-toolbar);
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-2);
+  /* Phase 22 (DEF-249) — the menu family's ONE corner token is
+   * --radius-3 (8px) in every theme (was --radius-2 5px here, 8px in
+   * frosted). */
+  border-radius: var(--radius-3);
   box-shadow: var(--shadow-popover);
   z-index: 50;
 }
@@ -6281,6 +6308,11 @@ rect.ann-highlight.ann-preview {
    * translucent glass film. */
   background: var(--panel-bg);
   border-left: 1px solid var(--panel-border);
+  /* Phase 22 (DEF-247) — the palette is a ROUNDED docked surface. Only
+   * the page-facing (left) corners round; the right/bottom corners are
+   * flush with the window edge (the frosted shell clips them to its
+   * 20px curvature). */
+  border-radius: var(--panel-radius) 0 0 var(--panel-radius);
   box-shadow: var(--panel-shadow);
   display: flex;
   flex-direction: column;
@@ -9273,8 +9305,13 @@ rect.ann-highlight.ann-preview {
 :root[data-theme="frosted"] .color-popover {
   background: var(--tf-surface-menu);
   border: 1px solid var(--glass-border);
-  border-radius: var(--tf-radius-md);
-  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  /* Phase 22 (DEF-249) — the menu family's ONE corner token is
+   * --radius-3 (8px) in every theme (was --tf-radius-md here, 5px in
+   * light/dark). Phase 22 (DEF-248) — the inset top highlight is
+   * dropped: it drew a bright 1px line along the joined top edge,
+   * reading as a divider between the trigger and its menu. */
+  border-radius: var(--radius-3);
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.14);
 }
 
 :root[data-theme="frosted"] .titlebar-menu-popover,
@@ -10345,5 +10382,125 @@ rect.ann-highlight.ann-preview {
  *    inputs flex to the available width instead. */
 [data-watermark-dialog] .modal-position {
   min-width: 0;
+}
+
+/* ===========================================================================
+ * Phase 22 (DEF-248) — the UNIFIED DROPDOWN JOIN.
+ *
+ * Every morphing dropdown (theme popover, title-bar menu, annotation
+ * tools menu, colour popover) must read as ONE box while open, not as a
+ * separate rounded box below its trigger. Four coordinated rules:
+ *
+ *   1. GAP 0 — the surface is flush with the trigger's bottom edge. The
+ *      placement maths already put it there; the trigger's hover LIFT
+ *      was the last 1px of seam (see 4).
+ *   2. The surface's joined-edge hairline is removed and the joined
+ *      corner squares off; the exposed corner keeps the family radius
+ *      (--radius-3, 8px, in every theme).
+ *   3. The trigger's joined-edge corners square off and its background
+ *      merges into the surface material (no accent/hover wash at the
+ *      seam, no double border).
+ *   4. The trigger does NOT lift/press while open: the shared hover
+ *      translateY(-1px) pulled it off the surface, reopening the seam.
+ *      On close the trigger reverts to its normal rounded pill
+ *      (hover/pressed styling intact) and stays clickable.
+ *
+ * The Phase-20 morph is untouched: it measures the trigger and the
+ * surface's FINAL layout rect, so it still animates from the trigger's
+ * box and lands on this joined end state.
+ * ======================================================================== */
+
+/* 2. Surface: no top hairline; the joined corner squares off. */
+.titlebar-menu-popover,
+.theme-toggle-popover,
+.ann-tool-menu,
+.color-popover {
+  border-top-width: 0;
+}
+.titlebar-menu-popover {
+  border-top-left-radius: 0;
+}
+.theme-toggle-popover,
+.ann-tool-menu,
+.color-popover {
+  border-top-right-radius: 0;
+}
+:root[data-theme="frosted"] .titlebar-menu-popover,
+:root[data-theme="frosted"] .theme-toggle-popover,
+:root[data-theme="frosted"] .ann-tool-menu,
+:root[data-theme="frosted"] .color-popover {
+  border-top-width: 0;
+}
+:root[data-theme="frosted"] .titlebar-menu-popover {
+  border-top-left-radius: 0;
+}
+:root[data-theme="frosted"] .theme-toggle-popover,
+:root[data-theme="frosted"] .ann-tool-menu,
+:root[data-theme="frosted"] .color-popover {
+  border-top-right-radius: 0;
+}
+
+/* 3 + 4. Triggers: merge material, square the joined corners, no lift. */
+.titlebar-menu-button-active,
+.titlebar-menu-button-active:hover,
+.titlebar-menu-button-active:active {
+  background: var(--menu-bg);
+  color: var(--fg-strong);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  transform: none;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.theme-toggle-trigger[aria-expanded="true"],
+.theme-toggle-trigger[aria-expanded="true"]:hover,
+.theme-toggle-trigger[aria-expanded="true"]:active {
+  background: var(--menu-bg);
+  color: var(--fg-strong);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  transform: none;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+
+.ann-dropdown-toggle-open,
+.ann-dropdown-toggle-open:hover:not([disabled]),
+.ann-dropdown-toggle-open:active:not([disabled]) {
+  background: var(--bg-toolbar);
+  color: var(--fg-strong);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  transform: none;
+  /* Drop transform from the base .tool-btn transition so the open
+   * trigger snaps flush to the surface (no hover-lift tween to measure
+   * mid-flight) — background/colour keep their motion tokens. */
+  transition-property: background, color;
+}
+:root[data-theme="frosted"] .ann-dropdown-toggle-open,
+:root[data-theme="frosted"] .ann-dropdown-toggle-open:hover:not([disabled]),
+:root[data-theme="frosted"] .ann-dropdown-toggle-open:active:not([disabled]) {
+  background: var(--tf-surface-menu);
+}
+
+/* The colour swatch is a colour INDICATOR, so its material cannot merge
+ * into the menu surface; it joins by dropping its bottom border line and
+ * squaring its bottom corners, and it does not scale while open (the
+ * hover scale(1.08) would lift its edge off the surface). Its accent
+ * ring's bottom 1.5px is painted over by the flush surface above it. */
+.ann-color-swatch-main-active,
+.ann-color-swatch-main-active:hover {
+  border-bottom-width: 0;
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  transform: none;
+  transition: box-shadow var(--motion-fast) var(--ease-out);
 }
 

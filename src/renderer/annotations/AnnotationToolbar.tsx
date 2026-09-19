@@ -375,9 +375,12 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
   // DEF-175 (release blocker) — the color popover must paint and
   // hit-test ABOVE the page in every theme. The popover therefore
   // PORTALS to document.body and is placed here in viewport
-  // coordinates: right-aligned under the swatch, 6px below it,
-  // clamped within the viewport like every other DEF-147 floating
-  // window, and re-placed on window resize while it is open.
+  // coordinates: right-aligned under the swatch, flush to its bottom
+  // edge, clamped within the viewport like every other DEF-147 floating
+  // window, and re-placed on window resize while it is open. Phase 22
+  // (DEF-248) — the old +6px offset left a visible seam between the
+  // swatch and the palette; the joined edge is now gap 0 (the surface's
+  // top hairline is removed in CSS, so the pair reads as one box).
   useLayoutEffect(() => {
     if (!paletteOpen) return;
     const place = (): void => {
@@ -391,7 +394,7 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
       const maxTop = Math.max(0, window.innerHeight - h);
       el.style.position = "fixed";
       el.style.left = `${Math.min(Math.max(anchor.right - w, 0), maxLeft)}px`;
-      el.style.top = `${Math.min(Math.max(anchor.bottom + 6, 0), maxTop)}px`;
+      el.style.top = `${Math.min(Math.max(anchor.bottom, 0), maxTop)}px`;
     };
     place();
     window.addEventListener("resize", place);
