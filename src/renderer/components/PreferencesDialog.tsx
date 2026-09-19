@@ -39,6 +39,11 @@ interface PreferencesDialogProps {
    *  user should never need a Save click for a theme change. */
   onThemeChange: (theme: ThemeDefault) => void;
   onSetRecentsCap: (next: number) => void;
+  /** Phase 23 — the app-wide Animations switch. Reflects the stored
+   *  value and applies immediately when toggled; OFF collapses every
+   *  animation in the app to the instant path. */
+  animationsEnabled: boolean;
+  onSetAnimationsEnabled: (next: boolean) => void;
 }
 
 const FALLBACK_PATHS: AppInfo['storagePaths'] = {
@@ -57,6 +62,8 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     onSetThemeDefault,
     onThemeChange,
     onSetRecentsCap,
+    animationsEnabled,
+    onSetAnimationsEnabled,
   } = props;
   const [capDraft, setCapDraft] = useState(String(recentsCap));
   const [paths, setPaths] = useState<AppInfo['storagePaths']>(FALLBACK_PATHS);
@@ -169,6 +176,20 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
               </select>
             </div>
             <p className="prefs-hint">Applies immediately, and is the theme the app starts in on the next launch.</p>
+            <div className="prefs-row">
+              <label className="prefs-row-label" htmlFor="prefs-animations">Animations</label>
+              <input
+                id="prefs-animations"
+                type="checkbox"
+                className="prefs-check"
+                checked={animationsEnabled}
+                onChange={(e): void => onSetAnimationsEnabled(e.target.checked)}
+                data-prefs-animations
+              />
+            </div>
+            <p className="prefs-hint">
+              Turns off every animation in the app - menus, panels and dialogs appear instantly.
+            </p>
           </section>
 
           <section className="prefs-section">

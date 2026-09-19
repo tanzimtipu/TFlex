@@ -52,6 +52,8 @@ function mountPrefs(
         onSetThemeDefault={onSetThemeDefault}
         onThemeChange={onThemeChange}
         onSetRecentsCap={onSetRecentsCap}
+        animationsEnabled
+        onSetAnimationsEnabled={vi.fn((): void => undefined)}
       />,
     );
   });

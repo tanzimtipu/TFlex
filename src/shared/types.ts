@@ -138,6 +138,8 @@ export interface AppSettings {
   pagesPanelCollapsed?: boolean;
   /** Phase 19 - the annotation tools' most-recently-used order, most recent first (capped, deduped). */
   annotationRecentTools?: string[];
+  /** Phase 23 - when false, every app animation runs the instant path (see Phase 23). Default true. */
+  animationsEnabled?: boolean;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

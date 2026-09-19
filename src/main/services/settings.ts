@@ -438,6 +438,14 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.annotationRecentTools = annotationRecentTools;
   }
 
+  // Phase 23: preserve animationsEnabled if it is a real boolean.
+  // Non-boolean values are rejected; the consumer applies the documented
+  // default `true` (animations ON) when the field is absent. Same convention
+  // as saveAsLinearize / pagesPanelCollapsed.
+  if (typeof rawObj.animationsEnabled === 'boolean') {
+    settings.animationsEnabled = rawObj.animationsEnabled;
+  }
+
   return settings;
 }
 

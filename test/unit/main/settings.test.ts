@@ -1082,3 +1082,96 @@ describe('DEF-230: settings write failures', () => {
     expect(JSON.parse(text).theme).toBe('light');
   });
 });
+
+// Phase 23: animationsEnabled validation
+describe('Phase 23: animationsEnabled validation', () => {
+  it('preserves animationsEnabled: true', () => {
+    expect(normalizeSettings({ animationsEnabled: true }).animationsEnabled).toBe(true);
+  });
+
+  it('preserves animationsEnabled: false (valid false is not the default)', () => {
+    expect(normalizeSettings({ animationsEnabled: false }).animationsEnabled).toBe(false);
+  });
+
+  it('rejects non-boolean animationsEnabled values (left undefined)', () => {
+    for (const bad of ['true', 'false', 'yes', 1, 0, null, undefined, ['true'], { value: true }] as unknown[]) {
+      const result = normalizeSettings({ animationsEnabled: bad });
+      expect(result.animationsEnabled).toBeUndefined();
+      expect('animationsEnabled' in result).toBe(false);
+    }
+  });
+
+  it('does not set animationsEnabled when absent (consumer applies default true)', () => {
+    const result = normalizeSettings({});
+    expect(result.animationsEnabled).toBeUndefined();
+    expect('animationsEnabled' in result).toBe(false);
+  });
+
+  it('save/load round-trips animationsEnabled: false', async () => {
+    const svc = new SettingsService(file);
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), animationsEnabled: false });
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.animationsEnabled).toBe(false);
+    }
+    const text = await readFile(file, 'utf8');
+    expect(JSON.parse(text).animationsEnabled).toBe(false);
+  });
+
+  it('save/load round-trips animationsEnabled: true', async () => {
+    const svc = new SettingsService(file);
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), animationsEnabled: true });
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.animationsEnabled).toBe(true);
+    }
+  });
+
+  it('invalid animationsEnabled on disk is dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      animationsEnabled: 'off',
+      pagesPanelCollapsed: true,
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.animationsEnabled).toBeUndefined();
+      expect('animationsEnabled' in result.value).toBe(false);
+      expect(result.value.theme).toBe('light');
+      expect(result.value.pagesPanelCollapsed).toBe(true);
+    }
+  });
+
+  it('save/load keeps animationsEnabled together with the rest of the settings', async () => {
+    const svc = new SettingsService(file);
+    const settings: AppSettings = {
+      theme: 'dark',
+      geometry: { ...DEFAULT_SETTINGS.geometry, maximized: true },
+      recentFiles: [{ path: join(dir, 'a.pdf'), name: 'a.pdf', openedAt: '2026-09-20T00:00:00.000Z' }],
+      recentsCap: 5,
+      saveAsLinearize: true,
+      pagesPanelCollapsed: false,
+      annotationRecentTools: ['ink', 'highlight'],
+      animationsEnabled: false,
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.animationsEnabled).toBe(false);
+      expect(result.value.theme).toBe('dark');
+      expect(result.value.geometry.maximized).toBe(true);
+      expect(result.value.recentFiles).toHaveLength(1);
+      expect(result.value.recentsCap).toBe(5);
+      expect(result.value.saveAsLinearize).toBe(true);
+      expect(result.value.pagesPanelCollapsed).toBe(false);
+      expect(result.value.annotationRecentTools).toEqual(['ink', 'highlight']);
+    }
+  });
+});

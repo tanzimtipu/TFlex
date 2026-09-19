@@ -22,6 +22,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type TargetAndTransition } from "motion/react";
 import { applyTheme, type Theme } from "../state/theme";
 import {
+  getAnimationsEnabled,
+  resolveMotionMode,
+  subscribeAnimationsEnabled,
+  type MotionMode,
+} from "./motionPolicy";
+import {
   MOTION_DURATION,
   MOTION_EASE,
   MOTION_OPACITY,
@@ -117,8 +123,51 @@ export function useLiveReducedMotion(): boolean {
   return reduced;
 }
 
-/** Opacity-only fallback shared by every hook under reduced motion:
- *  no travel, no scale — just the essential state fade. */
+/* ----------------------------------------------------------------------- */
+/* Phase 23 — effective motion (setting x OS preference)                   */
+/* ----------------------------------------------------------------------- */
+
+/** Live binding over the module-level Animations setting store. The App
+ *  writes `setAnimationsEnabledPreference(...)` whenever the persisted
+ *  value (or its default) changes; every mounted motion hook re-reads it
+ *  through this hook, so a toggle takes effect immediately with no
+ *  remount. Mirrors the `useLiveReducedMotion` subscription shape. */
+export function useAnimationsEnabled(): boolean {
+  const [enabled, setEnabled] = useState<boolean>(() => getAnimationsEnabled());
+  useEffect(() => {
+    // Re-sync in case the setting changed while no hook was mounted
+    // (the App writes the store before any surface mounts).
+    setEnabled(getAnimationsEnabled());
+    return subscribeAnimationsEnabled(setEnabled);
+  }, []);
+  return enabled;
+}
+
+/** The effective-motion policy as a hook (Phase 23): combines the
+ *  persisted setting with the OS preference. Pure resolver lives in
+ *  motionPolicy.ts and is unit-tested across the full matrix.
+ *  `reducedMotion` may be passed by a caller that already read
+ *  `useLiveReducedMotion()` (avoids a second subscription in the
+ *  wrapper components). */
+export function useEffectiveMotion(reducedMotion?: boolean): MotionMode {
+  const reduced = useLiveReducedMotion();
+  const enabled = useAnimationsEnabled();
+  return resolveMotionMode({
+    animationsEnabled: enabled,
+    prefersReduced: reducedMotion ?? reduced,
+  });
+}
+
+/** Convenience boolean for the motion layer: true when every animation
+ *  must collapse to its instant end state. */
+export function useInstantMotion(reducedMotion?: boolean): boolean {
+  return useEffectiveMotion(reducedMotion) === "instant";
+}
+
+/** Opacity-only fallback shared by every hook under reduced motion AND
+ *  every hook on the Phase-23 instant path (the Animations setting off):
+ *  no travel, no scale — the zero-duration tween lands on the exact end
+ *  state the animated path reaches. */
 function reducedVariants(): MotionVariantSet {
   return {
     initial: { opacity: MOTION_OPACITY.hidden },
@@ -151,9 +200,9 @@ export interface BloomOptions {
  *  while the dim stays opacity-only (a moving black sheet reads as
  *  camera wobble). */
 export function useBloomAnimation(options: BloomOptions = {}): MotionVariantSet {
-  const reduced = useLiveReducedMotion();
+  const instant = useInstantMotion();
   return useMemo<MotionVariantSet>(() => {
-    if (reduced) return reducedVariants();
+    if (instant) return reducedVariants();
     const fromScale = options.fromScale ?? MOTION_SCALE.enter;
     const exitScale = options.exitScale ?? MOTION_SCALE.exit;
     return {
@@ -170,15 +219,15 @@ export function useBloomAnimation(options: BloomOptions = {}): MotionVariantSet 
         pointerEvents: "none",
       },
     };
-  }, [reduced, options.fromScale, options.exitScale]);
+  }, [instant, options.fromScale, options.exitScale]);
 }
 
 /** Modal backdrop fade: opacity-only (Backdrop Fade In / Fade Out) at the
  *  fast band. Deliberately does NOT move — the dim layer never travels. */
 export function useBackdropFadeAnimation(): MotionVariantSet {
-  const reduced = useLiveReducedMotion();
+  const instant = useInstantMotion();
   return useMemo<MotionVariantSet>(() => {
-    if (reduced) return reducedVariants();
+    if (instant) return reducedVariants();
     return {
       initial: { opacity: MOTION_OPACITY.hidden },
       animate: {
@@ -191,7 +240,7 @@ export function useBackdropFadeAnimation(): MotionVariantSet {
         pointerEvents: "none",
       },
     };
-  }, [reduced]);
+  }, [instant]);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -213,10 +262,10 @@ export interface SlideOptions {
 /** Panel slide: 280ms ease-out entry over the full overlay travel (or the
  *  docked 24px nudge), 200ms ease-out-exit on close. */
 export function useSlideAnimation(options: SlideOptions): MotionVariantSet {
-  const reduced = useLiveReducedMotion();
+  const instant = useInstantMotion();
   const { side, mode = "docked" } = options;
   return useMemo<MotionVariantSet>(() => {
-    if (reduced) return reducedVariants();
+    if (instant) return reducedVariants();
     const sign = side === "left" ? -1 : 1;
     // Overlay drawers travel their full width (x: -100% / +100% by side);
     // docked rails travel only the --motion-translate-panel distance.
@@ -236,7 +285,7 @@ export function useSlideAnimation(options: SlideOptions): MotionVariantSet {
         pointerEvents: "none",
       },
     };
-  }, [reduced, side, mode]);
+  }, [instant, side, mode]);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -251,9 +300,9 @@ export function useSlideAnimation(options: SlideOptions): MotionVariantSet {
  *  swap layers (.rail-content-swap), so both can be mid-crossfade
  *  without any layout jump. Reduced motion: opacity only, instant. */
 export function useRailSwapAnimation(): MotionVariantSet {
-  const reduced = useLiveReducedMotion();
+  const instant = useInstantMotion();
   return useMemo<MotionVariantSet>(() => {
-    if (reduced) return reducedVariants();
+    if (instant) return reducedVariants();
     return {
       initial: { opacity: MOTION_OPACITY.hidden, scale: MOTION_SCALE.exit },
       animate: {
@@ -268,7 +317,7 @@ export function useRailSwapAnimation(): MotionVariantSet {
         pointerEvents: "none",
       },
     };
-  }, [reduced]);
+  }, [instant]);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -285,10 +334,10 @@ export interface PopOptions {
 /** Popover/dropdown reveal: scale (optional) + a --motion-translate-small
  *  drop + opacity over the FAST band. Exit reverses with the exit ease. */
 export function usePopAnimation(options: PopOptions = {}): MotionVariantSet {
-  const reduced = useLiveReducedMotion();
+  const instant = useInstantMotion();
   const { from = "above", scale = true } = options;
   return useMemo<MotionVariantSet>(() => {
-    if (reduced) return reducedVariants();
+    if (instant) return reducedVariants();
     const dir = from === "above" ? -1 : 1;
     const enterScale = scale ? MOTION_SCALE.enter : undefined;
     const exitScale = scale ? MOTION_SCALE.exit : undefined;
@@ -312,7 +361,7 @@ export function usePopAnimation(options: PopOptions = {}): MotionVariantSet {
         pointerEvents: "none",
       },
     };
-  }, [reduced, from, scale]);
+  }, [instant, from, scale]);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -330,10 +379,10 @@ export interface LiftOptions {
 export function useLiftAnimation(
   options: LiftOptions = {},
 ): { hover: LiftMotionProps } {
-  const reduced = useLiveReducedMotion();
+  const instant = useInstantMotion();
   const { distance = "micro" } = options;
   return useMemo<{ hover: LiftMotionProps }>(() => {
-    if (reduced) return { hover: {} };
+    if (instant) return { hover: {} };
     const px = distance === "small" ? MOTION_TRANSLATE.small : MOTION_TRANSLATE.micro;
     return {
       hover: {
@@ -342,7 +391,7 @@ export function useLiftAnimation(
         transition: { duration: msToSeconds(MOTION_DURATION.micro), ease: MOTION_EASE.standard },
       },
     };
-  }, [reduced, distance]);
+  }, [instant, distance]);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -353,16 +402,16 @@ export function useLiftAnimation(
  *  micro band (the smallest token duration; the spec's 80-100ms press
  *  maps onto it since no token exists below 150ms). */
 export function useScaleAnimation(): { press: LiftMotionProps } {
-  const reduced = useLiveReducedMotion();
+  const instant = useInstantMotion();
   return useMemo<{ press: LiftMotionProps }>(() => {
-    if (reduced) return { press: {} };
+    if (instant) return { press: {} };
     return {
       press: {
         whileTap: { scale: MOTION_SCALE.press },
         transition: { duration: msToSeconds(MOTION_DURATION.micro), ease: MOTION_EASE.standard },
       },
     };
-  }, [reduced]);
+  }, [instant]);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -374,9 +423,9 @@ export function useScaleAnimation(): { press: LiftMotionProps } {
  *  the CSS crossfade on .tab (background/colour tokens); the active-tab
  *  indicator glide stays with its CSS keyframe. */
 export function useTabVariants(): MotionVariantSet {
-  const reduced = useLiveReducedMotion();
+  const instant = useInstantMotion();
   return useMemo<MotionVariantSet>(() => {
-    if (reduced) return reducedVariants();
+    if (instant) return reducedVariants();
     return {
       initial: { opacity: MOTION_OPACITY.hidden },
       animate: {
@@ -389,7 +438,7 @@ export function useTabVariants(): MotionVariantSet {
         pointerEvents: "none",
       },
     };
-  }, [reduced]);
+  }, [instant]);
 }
 
 /* ----------------------------------------------------------------------- */
@@ -397,12 +446,17 @@ export function useTabVariants(): MotionVariantSet {
 
 /** Pure decision helper (unit-testable): should this theme application
  *  run the 400ms crossfade? The very first apply (boot) has no previous
- *  painted theme to crossfade FROM, and reduced motion collapses the
- *  crossfade to an instant flip. */
+ *  painted theme to crossfade FROM, reduced motion collapses the
+ *  crossfade to an instant flip, and the Phase-23 `instant` flag forces
+ *  the same collapse when the Animations setting is OFF. */
 export function shouldAnimateThemeTransition(args: {
   firstApply: boolean;
   reducedMotion: boolean;
+  /** Phase 23 — the effective-motion policy resolved to the instant path
+   *  (setting OFF or OS reduced). */
+  instant?: boolean;
 }): boolean {
+  if (args.instant === true) return false;
   return !args.firstApply && !args.reducedMotion;
 }
 
@@ -423,6 +477,8 @@ export function themeTransitionStrategy(args: {
   hasViewTransitionApi: boolean;
   firstApply: boolean;
   reducedMotion: boolean;
+  /** Phase 23 — see shouldAnimateThemeTransition. */
+  instant?: boolean;
 }): ThemeTransitionStrategy {
   if (!shouldAnimateThemeTransition(args)) return "instant";
   return args.hasViewTransitionApi ? "view-transition" : "class-crossfade";
@@ -448,8 +504,14 @@ export interface ThemeTransitionApi {
  *  timer instead of stacking classes. */
 export function useThemeTransition(): ThemeTransitionApi {
   const reduced = useLiveReducedMotion();
+  const instant = useInstantMotion();
   const reducedRef = useRef(reduced);
   reducedRef.current = reduced;
+  // Phase 23 — the effective-motion gate (setting OFF included). The
+  // crossfade must not run when this is true, exactly like the OS
+  // reduced-motion path.
+  const instantRef = useRef(instant);
+  instantRef.current = instant;
   const firstApplyRef = useRef(true);
   const lastAppliedRef = useRef<Theme | null>(null);
   const activeTransitionRef = useRef<{ finished?: Promise<unknown> } | null>(null);
@@ -487,6 +549,7 @@ export function useThemeTransition(): ThemeTransitionApi {
       hasViewTransitionApi: typeof doc.startViewTransition === "function",
       firstApply,
       reducedMotion: reducedRef.current,
+      instant: instantRef.current,
     });
     if (strategy === "instant") {
       applyTheme(next);

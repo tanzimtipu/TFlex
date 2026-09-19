@@ -43,6 +43,8 @@ function mountPrefs(open: boolean): {
           onSetThemeDefault={(): void => undefined}
           onThemeChange={(): void => undefined}
           onSetRecentsCap={(): void => undefined}
+          animationsEnabled
+          onSetAnimationsEnabled={(): void => undefined}
         />,
       );
     });

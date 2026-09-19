@@ -35,7 +35,7 @@ import { useBackdropClose } from "../components/modalBackdrop";
 import { AnimatePresence, motion, useIsPresent } from "motion/react";
 import { TfBackdrop, TfDialog } from "../components/motion/TfMotion";
 import { TfResize, paneSwapFor } from "../components/motion/TfResize";
-import { useLiveReducedMotion } from "../hooks/useAnimations";
+import { useLiveReducedMotion, useInstantMotion } from "../hooks/useAnimations";
 import type { SavedSignature, SignatureSource } from "../../shared/types";
 import {
   DRAW_CANVAS_H,
@@ -239,8 +239,10 @@ function TabButton({
  */
 function SigTabPane({ children }: { children: React.ReactNode }): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — the pane swap is instant when Animations is OFF too.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  const swap = paneSwapFor(reduced);
+  const swap = paneSwapFor(instant);
   return (
     <motion.div
       className="sig-tab-pane"

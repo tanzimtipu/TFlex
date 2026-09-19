@@ -28,7 +28,7 @@ import type { TabInput } from "../state/tabMouseDown";
 import { AnimatedTab } from "./AnimatedTab";
 import { TfMorph } from "./motion/TfMotion";
 import { useMorphPreset } from "./motion/useMorphPreset";
-import { useLiveReducedMotion } from "../hooks/useAnimations";
+import { useLiveReducedMotion, useInstantMotion } from "../hooks/useAnimations";
 
 export type AppHeaderTab = TabInput;
 
@@ -263,8 +263,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
   // the tab is already fully visible, so an ordinary click on a visible
   // tab never moves the strip. Motion rides the shared Phase-20 system:
   // a smooth scroll normally, an instant jump under
-  // prefers-reduced-motion (no hardcoded duration).
+  // prefers-reduced-motion (no hardcoded duration) or when the Phase-23
+  // Animations setting is OFF (the effective-motion gate).
   const reducedMotion = useLiveReducedMotion();
+  const instantMotion = useInstantMotion(reducedMotion);
   useEffect(() => {
     if (activeId === null) return;
     const list = tabListRef.current;
@@ -276,9 +278,9 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     tab.scrollIntoView({
       block: "nearest",
       inline: "nearest",
-      behavior: reducedMotion ? "auto" : "smooth",
+      behavior: instantMotion ? "auto" : "smooth",
     });
-  }, [activeId, tabs.length, reducedMotion]);
+  }, [activeId, tabs.length, instantMotion]);
 
   // Tab strip interaction contract (DEF-034): activation resolves on
   // MOUSEDOWN via the shared resolveTabMouseDown classifier, so padding,

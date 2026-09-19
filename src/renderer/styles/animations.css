@@ -137,6 +137,28 @@
 }
 
 /* ---------------------------------------------------------------------------
+ * Phase 23 — ANIMATIONS SETTING OFF.
+ *
+ * `data-animations="off"` on <html> is the CSS root hook the App writes
+ * from AppSettings.animationsEnabled (default ON). The JS motion layer
+ * collapses to its instant branch through the effective-motion resolver;
+ * this is the CSS half. Every duration token collapses to the canonical
+ * no-motion value, and styles.css carries the app-wide catch-all with the
+ * same technique the reduced-motion block above uses. Transform end
+ * states are deliberately NOT touched, so every settled geometry/rect is
+ * identical to the animated path — only the motion is removed.
+ * ------------------------------------------------------------------------- */
+:root[data-animations="off"] {
+  --motion-duration-micro: var(--motion-duration-reduced);
+  --motion-duration-fast: var(--motion-duration-reduced);
+  --motion-duration-content: var(--motion-duration-reduced);
+  --motion-duration-standard: var(--motion-duration-reduced);
+  --motion-duration-panel: var(--motion-duration-reduced);
+  --motion-duration-layout: var(--motion-duration-reduced);
+  --motion-theme-crossfade: var(--motion-duration-reduced);
+}
+
+/* ---------------------------------------------------------------------------
  * NAMED ANIMATION UTILITIES
  * One class per named animation from the motion catalog. Every value
  * comes from a token — nothing here is hardcoded.

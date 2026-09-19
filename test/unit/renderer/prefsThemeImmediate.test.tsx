@@ -49,6 +49,8 @@ function mountPrefs(themeDefault: ThemeDefault = "dark"): Mount {
         onSetThemeDefault={onSetThemeDefault}
         onThemeChange={onThemeChange}
         onSetRecentsCap={(): void => undefined}
+        animationsEnabled
+        onSetAnimationsEnabled={(): void => undefined}
       />,
     );
   });

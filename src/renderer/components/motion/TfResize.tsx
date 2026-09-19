@@ -42,7 +42,7 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import { useLiveReducedMotion } from "../../hooks/useAnimations";
+import { useLiveReducedMotion, useInstantMotion } from "../../hooks/useAnimations";
 import {
   MOTION_DURATION,
   MOTION_EASE,
@@ -200,6 +200,9 @@ export interface TfResizeProps {
 export function TfResize(props: TfResizeProps): ReactElement {
   const { children, className, innerClassName, axes = "height" } = props;
   const reduced = useLiveReducedMotion();
+  // Phase 23 — the frame size change is instant when the Animations
+  // setting is OFF, exactly as it already is under OS reduced motion.
+  const instant = useInstantMotion(reduced);
   const controls = useAnimationControls();
   const innerRef = useRef<HTMLDivElement | null>(null);
   const [box, setBox] = useState<ResizeBox | null>(null);
@@ -244,7 +247,7 @@ export function TfResize(props: TfResizeProps): ReactElement {
     target === null ? null : `${target.width ?? ""}x${target.height ?? ""}`;
 
   useLayoutEffect((): void => {
-    const action = resizeActionFor(appliedRef.current, target, signature, reduced);
+    const action = resizeActionFor(appliedRef.current, target, signature, instant);
     if (action === null) return;
     appliedRef.current = signature;
     if (action.kind === "set") {
@@ -252,7 +255,7 @@ export function TfResize(props: TfResizeProps): ReactElement {
       return;
     }
     void controls.start({ ...action.target, transition: action.transition });
-  }, [controls, reduced, signature, target]);
+  }, [controls, instant, signature, target]);
 
   return (
     <motion.div

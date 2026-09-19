@@ -33,7 +33,7 @@ import {
   type VariantLabels,
 } from "motion/react";
 import { useLayoutEffect } from "react";
-import { useLiveReducedMotion } from "../../hooks/useAnimations";
+import { useLiveReducedMotion, useInstantMotion } from "../../hooks/useAnimations";
 import { MOTION_DURATION, msToSeconds } from "../../hooks/motionTokens";
 import type { ReactElement } from "react";
 import {
@@ -170,30 +170,38 @@ function applyPreset(
 /** Right-side overlay panels (Tools palette): 24px travel, 280ms. */
 export function TfPanel(props: TfSurfaceProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  return applyPreset(motion.aside, tfPanel, props, reduced, isPresent);
+  return applyPreset(motion.aside, tfPanel, props, instant, isPresent);
 }
 
 /** Left-side rail panel (thumbnail rail): -18px travel, 280ms. */
 export function TfPanelLeft(props: TfSurfaceProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  return applyPreset(motion.aside, tfPanelLeft, props, reduced, isPresent);
+  return applyPreset(motion.aside, tfPanelLeft, props, instant, isPresent);
 }
 
 /** Modal/sheet BACKDROP layer: opacity-only dim, 180ms. The sheet is
  *  rendered as this element's child so its grid centering survives. */
 export function TfBackdrop(props: TfSurfaceProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  return applyPreset(motion.div, tfBackdrop, props, reduced, isPresent);
+  return applyPreset(motion.div, tfBackdrop, props, instant, isPresent);
 }
 
 /** Modal dialog box (`.modal-dialog`): 10px rise + 0.97 swell, 240ms. */
 export function TfDialog(props: TfSurfaceProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  return applyPreset(motion.div, tfDialog, props, reduced, isPresent);
+  return applyPreset(motion.div, tfDialog, props, instant, isPresent);
 }
 
 /** Sheet dialog box (`.sheet`): identical travel to TfDialog — sheets
@@ -201,23 +209,29 @@ export function TfDialog(props: TfSurfaceProps): ReactElement {
  *  future sheet-only tuning never touches modals. */
 export function TfSheet(props: TfSurfaceProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  return applyPreset(motion.div, tfDialog, props, reduced, isPresent);
+  return applyPreset(motion.div, tfDialog, props, instant, isPresent);
 }
 
 /** Downward-opening menu popover: scale 0.96 + y -4, 180ms. */
 export function TfMenu(props: TfSurfaceProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  return applyPreset(motion.div, tfMenu, props, reduced, isPresent);
+  return applyPreset(motion.div, tfMenu, props, instant, isPresent);
 }
 
 /** Anchored popover (annotation color palette): scale 0.97 + y -3,
  *  180ms. Drag offsets are folded into x/y via `animate`. */
 export function TfPopover(props: TfSurfaceProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  return applyPreset(motion.div, tfPopover, props, reduced, isPresent);
+  return applyPreset(motion.div, tfPopover, props, instant, isPresent);
 }
 
 /** Toast chip: y 8 rise, 180ms; success gets the overshoot spring. */
@@ -225,26 +239,32 @@ export function TfToast(
   props: TfSurfaceProps & { toastKind?: string },
 ): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
   const { toastKind, ...rest } = props;
   const isSuccess = toastKind === "success";
   const preset: TfPresetRef = isSuccess ? tfToastSuccess : tfToast;
-  return applyPreset(motion.div, preset, rest, reduced, isPresent);
+  return applyPreset(motion.div, preset, rest, instant, isPresent);
 }
 
 /** Floating contextual bar (edit toolbar / content action bar /
  *  image placement toolbar): y -2 rise, 180ms. */
 export function TfBar(props: TfSurfaceProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  return applyPreset(motion.div, tfBar, props, reduced, isPresent);
+  return applyPreset(motion.div, tfBar, props, instant, isPresent);
 }
 
 /** Top-of-workspace flow bar (OCR suspects): y -6 drop, 180ms. */
 export function TfBarTop(props: TfSurfaceProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const isPresent = useIsPresent();
-  return applyPreset(motion.aside, tfBarTop, props, reduced, isPresent);
+  return applyPreset(motion.aside, tfBarTop, props, instant, isPresent);
 }
 
 /* ---------------------------------------------------------------------------
@@ -280,6 +300,8 @@ export interface TfMorphProps extends TfSurfaceProps {
  *  motion child below owns the exit completion. */
 export function TfMorph(props: TfMorphProps): ReactElement {
   const reduced = useLiveReducedMotion();
+  // Phase 23 — `instant` = OS reduced motion OR the Animations setting off.
+  const instant = useInstantMotion(reduced);
   const controls = useAnimationControls();
   const isPresent = useIsPresent();
   const { morph, style, ...rest } = props;
@@ -291,12 +313,12 @@ export function TfMorph(props: TfMorphProps): ReactElement {
   // would push one exit/enter frame into the paint and the sampled
   // first `in` frame would already be ~18-96px along, ADV-053).
   useLayoutEffect(() => {
-    if (reduced) return;
+    if (instant) return;
     if (!isPresent) return;
     controls.stop();
-  }, [controls, isPresent, reduced]);
+  }, [controls, isPresent, instant]);
   useLayoutEffect(() => {
-    if (reduced || morph === null) return;
+    if (instant || morph === null) return;
     // Apply the FLIP start state in THIS commit (so the first painted
     // frame is the trigger box), then start the tween on the NEXT frame.
     // A mid-exit re-open leaves motion's frame loop already running: a
@@ -310,7 +332,7 @@ export function TfMorph(props: TfMorphProps): ReactElement {
       void controls.start(morph.animate);
     });
     return () => cancelAnimationFrame(frame);
-  }, [controls, reduced, morph]);
+  }, [controls, instant, morph]);
   const phase = isPresent ? "in" : "out";
   // DEF-239 — the exit's discrete `pointerEvents: none` (morph.exit, and
   // the reduced branch's exit) is applied by motion one frame AFTER the
@@ -325,9 +347,9 @@ export function TfMorph(props: TfMorphProps): ReactElement {
   // window, exactly like the TfBar family: the theme / titlebar / annotation
   // menus are keyboard-bearing, so a held key must not reach a stale row
   // and focus must leave the ghost.
-  if (reduced) {
-    // Reduced motion: the surface still appears/disappears (structure
-    // unchanged) but never travels or scales.
+  if (instant) {
+    // Reduced motion / Animations off: the surface still appears and
+    // disappears (structure unchanged) but never travels or scales.
     return (
       <motion.div
         {...rest}

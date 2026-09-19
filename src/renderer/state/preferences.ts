@@ -41,6 +41,7 @@ export type PreferencesAction =
   | { type: 'set-ocr-downsample'; value: number }
   | { type: 'set-default-stamp-id'; value: StampId }
   | { type: 'set-save-as-linearize'; value: boolean }
+  | { type: 'set-animations-enabled'; value: boolean }
   | { type: 'set-annotation-recent-tools'; value: string[] };
 
 /** Default compression preset used by the Optimize dialog when the
@@ -227,6 +228,14 @@ export function preferencesReducer(
       const current = state.saveAsLinearize ?? false;
       if (current === action.value) return state;
       return { ...state, saveAsLinearize: action.value };
+    }
+    case 'set-animations-enabled': {
+      // Phase 23 — the app-wide Animations switch. `undefined` means the
+      // default (ON), so the equality guard short-circuits a first-time
+      // write that matches the default (same shape as set-save-as-linearize).
+      const current = state.animationsEnabled ?? true;
+      if (current === action.value) return state;
+      return { ...state, animationsEnabled: action.value };
     }
     case 'set-annotation-recent-tools': {
       // Phase 19 — MRU annotation tool order. Sanitise through the

@@ -9073,6 +9073,44 @@ rect.ann-highlight.ann-preview {
 }
 
 /* ---------------------------------------------------------------------------
+ * Phase 23 — Animations setting OFF (Preferences > Appearance).
+ *
+ * The App writes `data-animations="off"` on <html> from
+ * AppSettings.animationsEnabled. Together with the token overrides in
+ * styles/animations.css, this catch-all is the CSS half of the
+ * effective-motion gate: every remaining animation and transition
+ * collapses to the canonical no-motion duration (0.01ms — the same
+ * technique as the reduced-motion block above), iterates once, loses its
+ * delay, and scroll smoothing is dropped. Only durations/delays are
+ * touched: transform/opacity END states are preserved, so every settled
+ * geometry and rect is identical to the animated path.
+ * ------------------------------------------------------------------------- */
+:root[data-animations="off"] *,
+:root[data-animations="off"] *::before,
+:root[data-animations="off"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  animation-delay: 0ms !important;
+  transition-duration: 0.01ms !important;
+  transition-delay: 0ms !important;
+}
+
+:root[data-animations="off"] {
+  scroll-behavior: auto !important;
+}
+
+/* Phase 23 — the Preferences Animations checkbox. A plain native control
+ * on the accent colour, sized to sit at the right edge of the shared
+ * .prefs-row like the select/input controls. */
+.prefs-check {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------------------------
  * Phase B — COLORFUL TOOL ICONS.
  *
  * The semantic 8-hue palette (--icon-*) above, applied per tool. One

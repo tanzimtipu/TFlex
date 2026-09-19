@@ -45,6 +45,7 @@ import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./st
 import { pagesPanelReducer, initialPagesPanelState } from "./state/pagesPanel";
 import { nextTheme, resolveThemeDefault } from "./state/theme";
 import { useThemeTransition } from "./hooks/useAnimations";
+import { setAnimationsEnabledPreference } from "./hooks/motionPolicy";
 import { createAmbientController } from "./state/ambient";
 import { resolveInitialSettings, settingsRecoveryNotice } from "./state/settings";
 import {
@@ -786,6 +787,20 @@ export function App(): ReactElement {
       unsubscribe();
     };
   }, [setTheme]);
+
+  // Phase 23 — the Animations setting drives BOTH motion layers from one
+  // place: the module-level effective-motion store (read by every JS
+  // motion hook through `useInstantMotion`) and the CSS root hook
+  // (`<html data-animations="off">`, which neutralises the CSS
+  // animations/transitions app-wide). A null/absent settings blob means
+  // the default (ON); `!== false` is the read rule the shared contract
+  // documents. Runs whenever the stored value changes, so the Preferences
+  // toggle applies immediately.
+  useEffect(() => {
+    const enabled = settings?.animationsEnabled !== false;
+    setAnimationsEnabledPreference(enabled);
+    document.documentElement.dataset.animations = enabled ? "on" : "off";
+  }, [settings?.animationsEnabled]);
 
   // Phase 14 — Liquid Glass ambient surface. One controller owns the
   // two app-wide ambient behaviors the frosted theme needs: the
@@ -7408,6 +7423,18 @@ pushToast(
           setSettings((prev) => {
             if (prev === null) return prev;
             const updated = preferencesReducer(prev, { type: 'set-recents-cap', value: next });
+            trackAndSave(updated);
+            return updated;
+          });
+        }}
+        animationsEnabled={settings.animationsEnabled !== false}
+        onSetAnimationsEnabled={(next): void => {
+          setSettings((prev) => {
+            if (prev === null) return prev;
+            const updated = preferencesReducer(prev, {
+              type: 'set-animations-enabled',
+              value: next,
+            });
             trackAndSave(updated);
             return updated;
           });
