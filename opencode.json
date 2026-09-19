@@ -16,8 +16,13 @@
           "reasoning": true,
           "interleaved": "reasoning_content",
           "modalities": {
-            "input": ["text", "image"],
-            "output": ["text"]
+            "input": [
+              "text",
+              "image"
+            ],
+            "output": [
+              "text"
+            ]
           },
           "limit": {
             "context": 220000,
@@ -25,6 +30,12 @@
           }
         }
       }
+    }
+  },
+  "permission": {
+    "doom_loop": "allow",
+    "external_directory": {
+      "*": "allow"
     }
   }
 }
