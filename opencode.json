@@ -33,6 +33,13 @@
     }
   },
   "permission": {
+    "*": "allow",
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow"
+    },
     "doom_loop": "allow",
     "external_directory": {
       "*": "allow"
