@@ -211,3 +211,27 @@ Left alone (reference the retired selectors only in negative/guarded checks
 and still pass): `retests/b2_isolation`, `retests/color_note_repros`,
 `retests/def_211_ghost_dialog_retest`, `retests/qa_def_178_179_verify`,
 `retests/qa_pmm_b3_ellipse_arrow_ink_1722`, `retests/sign_repros`.
+
+## Version-frozen installed-release specs (retired 2026-09-21, release gate 1.23.0)
+
+These top-level `release_1_1x_installed.spec.cjs` files were collected by the
+STANDARD suite (root `playwright.config.js` ignores only `e2e/installed/**` and
+`e2e/archived/**`), but every one of them launches the NSIS-installed
+`%LOCALAPPDATA%\Programs\TFlex\TFlex.exe` and pins the version it was written
+for. Once the installed build advances past that version the version gate fails
+on every run, so they were dead weight in the standard suite. Archived here:
+
+- `release_1_18_0_installed.spec.cjs`, `release_1_18_1_installed.spec.cjs`,
+  `release_1_19_0_installed.spec.cjs`, `release_1_20_0_installed.spec.cjs`,
+  `release_1_21_0_installed.spec.cjs` - version gates 1.18.0 / 1.18.1 / 1.19.0 /
+  1.20.0 / 1.21.0; superseded release by release.
+- `release_1_22_0_installed.spec.cjs` - version gate 1.22.0 AND written against
+  the retired Phase-26 in-canvas editor (`[data-annotation-editor="textbox"]` on
+  the placement and click legs). Superseded by
+  `../release_1_23_0_installed.spec.cjs`, which re-covers the same Phase-24/25/
+  26/27/28/29 + DEF-214/watermark surface on the installed build with the
+  panel-field editor model.
+
+The current installed-release gate is `../release_1_23_0_installed.spec.cjs`
+(KEPT at top level, deliberately not archived); it must be repointed/rewritten
+for each new release, as this file's own version gate shows.

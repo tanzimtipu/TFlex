@@ -149,7 +149,31 @@ Retired 2026-09-05. Full rationale per file in `e2e/archived/README.md`:
   `remaining_sweep`, `gt_textbox_toolbox_move_1.7.14`, the zero-assert
   `*_diag` probes, `qa_discover_1722`, `qa_redesign_probe2/3/4_1728`), each
   mapped to its current-model replacement in `e2e/archived/README.md`.
+- Top level (retired 2026-09-21, release gate 1.23.0): the version-frozen
+  installed-release gates `release_1_18_0`, `release_1_18_1`, `release_1_19_0`,
+  `release_1_20_0`, `release_1_21_0`, `release_1_22_0` (the last also drove the
+  retired Phase-26 editor); replaced by the kept top-level
+  `release_1_23_0_installed.spec.cjs`.
 
 ## Support / Library
 - `lib/launch.cjs`: Canonical Electron launcher. No executablePath -> DEV build; an explicit executablePath is used only by the installed-app suite.
 - `lib/helpers.cjs`: `launchDev()` (standard), `launchInstalled()` (installed-app specs ONLY; auto-dismisses the OTA update prompt via `dismissUpdatePrompt`, DEF-172), `dismissUpdatePrompt()` (call after any manual installed-app launch), plus shared driving helpers (`openSample`, `diag`, `shot`, `scrollToPage`, `hardClose`).
+
+## Current phase validation (Phases 25-29, 2026-09-21)
+These run against the DEV build and are the live contracts for the current
+feature set:
+- `phase25_text_panel_float.spec.cjs`: floating header-less text panel, no page
+  reflow (frame-sampled), grip drag + clamp, text-element move integrity.
+- `phase26_panel_text_edit.spec.cjs`: no in-canvas editor; the panel
+  `[data-txt-text]` field is the single live editor; the toolbar dropdown sets
+  the armed tool colour only.
+- `phase27_fonts_spacing.spec.cjs`: char spacing `Tc` baked into the saved
+  stream (text box / annotation / edit-run), six families, bundled DejaVu Serif
+  and Liberation Sans embed a real `/FontFile2` and survive reopen.
+- `phase28_29_verify.spec.cjs`: arrow leader ends at the head base, live
+  move/colour with Cancel revert, action-bar colour box + comment threads;
+  flush canvas (0 padding) and page-jump landing.
+- `release_1_23_0_installed.spec.cjs`: the INSTALLED-build release gate for
+  1.23.0 (version gate + Phases 25-29 + DEF-214/watermark on the packaged exe).
+  Rewrite/repoint it for each new release. The 1.18-1.22 installed gates moved
+  to `archived/` (version-frozen gates + retired Phase-26 editor selectors).

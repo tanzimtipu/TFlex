@@ -5,6 +5,28 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-261: `verify:full` is non-deterministically red — the DEF-098 jump test's wall-clock frame simulation outruns the 1200ms fallback window under suite load
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 29 (release gate 1.23.0)
+
+Steps to reproduce:
+1. From the repo root run `npm.cmd run verify:full` on a loaded machine (this run: vitest reported `setup 289.16s`, `environment 471.64s` for a 33.60s test run).
+2. Read the failure: `test/unit/renderer/bugDEF098_jumpTargetSticky.test.tsx` > "click thumb 10 -> currentPage=10 immediately; stays 10 through the smooth scroll; settles at 10".
+3. Re-run only that file on an idle machine: `npm.cmd run test:unit -- test/unit/renderer/bugDEF098_jumpTargetSticky.test.tsx`.
+
+Expected: `verify:full` is deterministically green — it is the mandatory release gate (`AGENTS.md` PUSH GATE, `.github/workflows/verify.yml`).
+
+Actual: the gate is red. `Test Files 1 failed | 269 passed (270)`; `Tests 1 failed | 3505 passed (3506)`; `AssertionError: expected 7 to be 10 // Object.is equality` at `bugDEF098_jumpTargetSticky.test.tsx:374` (the second `await animate(h.scroller, 6, 900)` block). The isolated re-run is green: `1 passed`, `5 passed` (5.06s), including the failing case verbatim. Root cause (test fragility, not product behaviour): the helper `flushRaf` waits a real `window.setTimeout(resolve, 25)` and `animate` advances 6 frames per call, so the test simulates ~450ms of scroll while the product's DEF-058 jump lock uses a real 1200ms fallback window; under suite CPU contention the simulated frames stretch past 1200ms of wall-clock time, the fallback timer fires mid-flight, and `currentPage` is recomputed from the scroll position (7) instead of staying pinned to the click target (10). No product regression is implied: the same assertion passes in isolation, and the jump path was not touched by Phases 25-29.
+Evidence: `npm.cmd run verify:full` output (1 failed / 3505 passed, 270 files); isolated `npm.cmd run test:unit -- test/unit/renderer/bugDEF098_jumpTargetSticky.test.tsx` -> 5 passed.
+Screenshot: none (unit-run output is the evidence).
+
+History:
+- qa: opened (2026-09-21; 1.23.0 release gate, GATE 0 red. Not marked HIGH because the failure is test-only and does not reproduce in isolation; it blocks the release gate non-deterministically, which is why the gate sequence was stopped here.)
+- qa: CLOSED (2026-09-21; 1.23.0 release-gate retest - fake timers + one virtual clock). Original failure condition (GATE 0 red under suite load) is gone: `npm.cmd run verify:full` green - Test Files 270 passed (270), Tests 3506 passed (3506). Focused retest of `test/unit/renderer/bugDEF098_jumpTargetSticky.test.tsx`: 3 isolated runs -> 1 passed / 5 passed each (2.90-2.97s); 1 run under load (10 concurrent busy CPU workers) -> 1 passed / 5 passed (4.06s; tests 1.71s vs 0.92s idle, so the host was measurably contended). The fragility is removed at the source: `vi.useFakeTimers({ toFake: ["setTimeout","clearTimeout","requestAnimationFrame","cancelAnimationFrame"] })` puts the frame simulation, the component's rAF scroll handling and the product's real 1200ms `JUMP_LOCK_FALLBACK_MS` window on the same virtual clock, so the simulated scroll can no longer outrun the fallback window when the machine is busy. Test-only change; no product code touched. Both the isolated and loaded runs are green, matching the recorded root cause (test fragility, not product behaviour).
+
 ## DEF-260: The colour picker's pink / teal / gray swatches are silently dropped (renderer and engine named-colour sets diverge)
 
 - Status: CLOSED
