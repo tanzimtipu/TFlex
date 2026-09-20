@@ -23,6 +23,8 @@ import { err, ok } from "../../shared/result";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
+  CommentEntry,
+  CommentThread,
   CropEntry,
   DocxImageEntry,
   EditImagePayload,
@@ -107,6 +109,11 @@ interface StubTab {
    *  moveTextBox updates its rect, deleteTextBox removes it, and every
    *  state echo carries the full list. */
   textBoxes: TextBoxModel[];
+  /** Phase 28 — comment threads (one per commented annotation). The stub
+   *  mirrors the backend contract: addComment creates the thread on the
+   *  first call and appends a reply thereafter; deleting an annotation
+   *  drops its thread. */
+  comments: CommentThread[];
 }
 
 interface Snapshot {
@@ -135,6 +142,10 @@ interface Snapshot {
   /** DEF-135/136 — the text-box registry captured by value so undo /
    *  redo restores the boxes that were registered at snapshot time. */
   textBoxes: TextBoxModel[];
+  /** Phase 28 — comment threads captured by value so undo / redo
+   *  restores the threads that existed at snapshot time (the backend
+   *  snapshots the threads too). */
+  comments: CommentThread[];
 }
 
 function snap(t: StubTab): Snapshot {
@@ -153,6 +164,12 @@ function snap(t: StubTab): Snapshot {
     phase12LogLength: t.phase12Log.length,
     // DEF-135/136 — text-box registry by value.
     textBoxes: t.textBoxes.slice(),
+    // Phase 28 — comment threads by value (deep enough: the entries
+    // array is copied so a later append cannot mutate the snapshot).
+    comments: t.comments.map((thread) => ({
+      annotationId: thread.annotationId,
+      entries: thread.entries.slice(),
+    })),
   };
 }
 
@@ -177,6 +194,11 @@ function restore(t: StubTab, s: Snapshot): void {
   t.phase12Log = t.phase12Log.slice(0, s.phase12LogLength);
   // DEF-135/136 — restore the text-box registry.
   t.textBoxes = s.textBoxes.slice();
+  // Phase 28 — restore the comment threads (entries copied).
+  t.comments = s.comments.map((thread) => ({
+    annotationId: thread.annotationId,
+    entries: thread.entries.slice(),
+  }));
 }
 
 function buildState(t: StubTab): EngineState {
@@ -212,6 +234,14 @@ function buildState(t: StubTab): EngineState {
     // mirror that treats `undefined` as "backend has no registry"
     // must not see `[]` and clobber its local list).
     textBoxes: t.textBoxes.length > 0 ? t.textBoxes.slice() : undefined,
+    // Phase 28 — comment threads ride on every state echo (empty array
+    // when the doc has none, matching the backend's always-present
+    // contract, so the renderer's "no comments -> no icon" rule reads a
+    // real value rather than a missing key).
+    comments: t.comments.map((thread) => ({
+      annotationId: thread.annotationId,
+      entries: thread.entries.slice(),
+    })),
   };
 }
 
@@ -246,6 +276,7 @@ export class StubRendererEngine implements EngineApi {
         pageLabels: [],
         phase12Log: [],
         textBoxes: [],
+        comments: [],
       };
       this.tabs.set(docId, t);
     }
@@ -447,6 +478,47 @@ export class StubRendererEngine implements EngineApi {
     if (idx === -1) return err("out-of-range");
     pushUndo(t);
     t.annotations.splice(idx, 1);
+    // Phase 28 — deleting an annotation drops its comment thread
+    // (matches the backend: an orphaned thread has no element to hang
+    // an icon on and must not survive).
+    t.comments = t.comments.filter((thread) => thread.annotationId !== id);
+    t.modified = true;
+    return ok(buildState(t));
+  }
+
+  /** Phase 28 — append a comment entry to an annotation's thread. The
+   *  first call creates the thread, later calls append a reply. Mirrors
+   *  the backend's validation: the annotation must exist and the text
+   *  must be non-empty (trimmed, max 4000 chars); `author` defaults to
+   *  'You'. The mutation is undoable like the annotation ops. */
+  async addComment(
+    docId: string,
+    annotationId: string,
+    text: string,
+    author?: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    const t = this.tabs.get(docId);
+    if (t === undefined) return err("engine-error");
+    if (t.annotations.findIndex((a) => a.id === annotationId) === -1) {
+      return err("engine-error", `unknown annotation: ${annotationId}`);
+    }
+    const trimmed = text.trim();
+    if (trimmed.length === 0) return err("engine-error", "comment text is empty");
+    if (trimmed.length > 4000) return err("engine-error", "comment text is too long");
+    const trimmedAuthor = (author ?? "").trim();
+    pushUndo(t);
+    const entry: CommentEntry = {
+      id: `cmt-${crypto.randomUUID()}`,
+      author: trimmedAuthor.length > 0 ? trimmedAuthor : "You",
+      text: trimmed,
+      createdAt: Date.now(),
+    };
+    const thread = t.comments.find((c) => c.annotationId === annotationId);
+    if (thread !== undefined) {
+      thread.entries.push(entry);
+    } else {
+      t.comments.push({ annotationId, entries: [entry] });
+    }
     t.modified = true;
     return ok(buildState(t));
   }

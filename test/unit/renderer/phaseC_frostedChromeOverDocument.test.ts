@@ -15,9 +15,9 @@
 //     above it (position: relative; z-index: 1) — one comma-joined
 //     rule. Phase 19 retired the separate `.ann-toolbar` row (the
 //     annotation tools now live inside the `.toolbar` capsule).
-//   - .document-content pads its TOP by the measured chrome stack
-//     (--tf-chrome-y) so the first page sits below the floating rows
-//     at rest while still scrolling under them.
+//   - .document-content is flush (Phase 29): zero padding in every
+//     theme, so the first page sits at the scroller's top edge and
+//     scrolls under the floating rows from the very start.
 //
 // The existing Phase-D contract pins the 14-surface blur list and the
 // PDF-safety audit; this test pins the LAYOUT half of the fix (the
@@ -92,12 +92,14 @@ describe("Phase C — frosted chrome over the document (full-bleed scroller)", (
     );
   });
 
-  it("the frosted .document-content keeps the 28px Phase C padding (page scrolls under the chrome)", () => {
+  it("the frosted .document-content is flush (Phase 29 zeroes the Phase C padding)", () => {
     const body = lastRule(":root\\[data-theme=\"frosted\"\\]\\s+\\.document-content");
     expect(body, "frosted .document-content padding override missing").not.toBe("");
-    // Phase C contract: the full-bleed scroller starts the page 28px
-    // from the top so its top sits UNDER the floating chrome rows.
-    expect(body).toMatch(/padding:\s*28px\s+0/);
+    // Phase 29 — the page view is flush with the app chrome in every
+    // theme, so the frosted duplicate rule paints zero padding and the
+    // page scrolls under the floating chrome from the very top.
+    expect(body).toMatch(/padding:\s*0/);
+    expect(body).not.toMatch(/padding:\s*28px/);
   });
 
   it("the base (light / dark) layout is untouched — in-flow chrome, in-flow scroller (no regressions)", () => {

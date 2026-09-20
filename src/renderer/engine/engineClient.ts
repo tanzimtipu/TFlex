@@ -12,6 +12,7 @@ import { err } from "../../shared/result";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
+  CommentThread,
   CropEntry,
   DocxImageEntry,
   EditImagePayload,
@@ -193,6 +194,16 @@ export interface TFlexApiEngine {
   deleteAnnotation?(
     docId: string,
     id: string,
+  ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 28 — append a comment entry to an annotation's thread (creates
+   *  the thread on the first call). Optional like the other annotation
+   *  methods so a pre-Phase-28 preload degrades with a friendly
+   *  engine-error instead of crashing. */
+  addComment?(
+    docId: string,
+    annotationId: string,
+    text: string,
+    author?: string,
   ): Promise<Result<SharedEngineState, EngineError>>;
   save(docId: string): Promise<Result<string, EngineError>>;
   /** Pops an OS save dialog inside the engine; returns the new path or
@@ -526,6 +537,7 @@ function normalizeState(
     formFields?: FormField[];
     signatures?: SignaturePlacement[];
     placedSignatures?: SignaturePlacement[];
+    comments?: CommentThread[];
   };
   const hasIncomingAnnotations = Array.isArray(maybe.annotations);
   const incoming: Annotation[] = hasIncomingAnnotations ? maybe.annotations ?? [] : [];
@@ -588,6 +600,15 @@ function normalizeState(
   const incomingTextBoxes = Array.isArray(maybe.textBoxes)
     ? maybe.textBoxes
     : undefined;
+  // Phase 28 — comment threads. Consume the wire value when it is an
+  // array (incl. the empty array, the legitimate "no comments" signal —
+  // e.g. after deleting the last commented annotation). When the wire
+  // omits the key (a pre-Phase-28 backend, or an op that does not echo
+  // comments), carry the previous list forward so the icon and the
+  // comment box never blank out on an unrelated round-trip.
+  const incomingComments: CommentThread[] | undefined = Array.isArray(maybe.comments)
+    ? maybe.comments
+    : _prev?.comments;
   // Strip wire-shape-only keys (`placedSignatures`) from the spread
   // so the returned renderer state never carries the engine's wire
   // field name. Without this strip, `placedSignatures` leaks through
@@ -604,11 +625,16 @@ function normalizeState(
     formFields: incomingFields,
     signatures: incomingSigs,
     textBoxes: incomingTextBoxes,
+    comments: incomingComments,
   };
 }
 
 function missingAnnotations(): Result<never, EngineError> {
   return err("engine-error", "annotations require a backend engine update");
+}
+
+function missingComments(): Result<never, EngineError> {
+  return err("engine-error", "comments require a backend engine update");
 }
 
 function missingPhase4(): Result<never, EngineError> {
@@ -872,6 +898,22 @@ class RealEngineAdapter implements EngineApi {
   ): Promise<Result<EngineState, EngineError>> {
     if (this.inner.deleteAnnotation === undefined) return missingAnnotations();
     const r = await this.inner.deleteAnnotation(docId, id);
+    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** Phase 28 — append a comment / reply to an annotation's thread. The
+   *  engine creates the thread on the first call for an annotation and
+   *  appends a reply thereafter (one op for both). The echoed state is
+   *  normalized + cached so the renderer mirror picks up the new
+   *  `comments` array and the icon / comment box refresh immediately. */
+  async addComment(
+    docId: string,
+    annotationId: string,
+    text: string,
+    author?: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    if (this.inner.addComment === undefined) return missingComments();
+    const r = await this.inner.addComment(docId, annotationId, text, author);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
   }
 

@@ -62,7 +62,10 @@ async function editorCounts(win) {
     const out = {};
     for (const s of sels) out[s] = document.querySelectorAll(s).length;
     const layer = document.querySelector('.annotation-layer');
-    out['layer-textareas'] = layer ? layer.querySelectorAll('textarea').length : -1;
+    // Phase 28 — the comment box's own textarea (`.ann-comment-input`) is a
+    // legitimate control that lives in the annotation layer; exclude it so
+    // this check still means "no retired in-canvas text editor".
+    out['layer-textareas'] = layer ? layer.querySelectorAll('textarea:not(.ann-comment-input)').length : -1;
     out['edit-textareas'] = document.querySelectorAll('.edit-layer textarea').length;
     return out;
   }, RETIRED_SELECTORS);
@@ -318,9 +321,9 @@ test('C2 panel field live typing, one undo entry, save/reopen', async () => {
 });
 
 // ===========================================================================
-// C3 � shape double-click opens nothing; [data-ann-color] changes the shape.
+// C3 � shape double-click opens nothing; [data-ann-color] sets the armed tool colour only (Phase 28).
 // ===========================================================================
-test('C3 shape double-click inert; toolbar colour changes selected shape', async () => {
+test('C3 shape double-click inert; toolbar colour sets the armed tool only (Phase 28)', async () => {
   test.setTimeout(240000);
   const app = await launchApp();
   const win = await app.firstWindow();
@@ -344,21 +347,28 @@ test('C3 shape double-click inert; toolbar colour changes selected shape', async
       expect(n, `double-click opens nothing (${sel})`).toBe(0);
     }
 
-    // Select the shape, then change its colour through the toolbar dropdown.
+    // Select the shape. Phase 28 supersedes the Phase-26 contract: the
+    // toolbar dropdown sets the ARMED tool colour only — it must NOT patch
+    // the SELECTED annotation (the action bar's colour box owns that).
     await win.mouse.click(sb.x + sb.width / 2, sb.y + sb.height / 2);
     await win.waitForTimeout(500);
     await win.waitForSelector('[data-ann-color]', { timeout: 8000 });
     const before = (await annModels(win)).find((a) => a.kind === 'rect');
-    log('C3-before', before && { color: before.color });
+    const swatchBefore = await win.getAttribute('[data-ann-color]', 'data-color-current');
+    log('C3-before', { color: before && before.color, swatchBefore });
     await win.click('[data-ann-color]');
     await win.waitForSelector('[data-color-popover]', { timeout: 8000 });
     await win.click('[data-palette-built-in="blue"]');
     await win.waitForTimeout(1200);
     const after = (await annModels(win)).find((a) => a.kind === 'rect');
-    log('C3-after', after && { color: after.color });
+    const swatchAfter = await win.getAttribute('[data-ann-color]', 'data-color-current');
+    log('C3-after', { color: after && after.color, swatchAfter });
     await win.screenshot({ path: path.join(SHOTS, 'phase26-verify-shape-color.png') }).catch(() => {});
-    expect(after && after.color, 'engine stores the shape colour chosen via [data-ann-color]').toBe('blue');
-    expect(before && before.color, 'the colour actually changed from the initial value').not.toBe('blue');
+    // Phase 28 — the dropdown updates the armed tool colour...
+    expect(swatchAfter, 'the armed tool colour follows the dropdown pick').not.toBe(swatchBefore);
+    // ...but the selected annotation keeps its colour.
+    expect(after && after.color, 'the dropdown does NOT patch the selected annotation (Phase 28)').toBe(before && before.color);
+    expect(after && after.color, 'the selected shape colour is unchanged by the dropdown').not.toBe('blue');
   } finally {
     await hardClose(app, 'p26-c3');
   }

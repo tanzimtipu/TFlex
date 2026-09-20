@@ -211,6 +211,11 @@ interface DocumentViewProps {
   onCreateAnnotation?: (annotation: Annotation) => void;
   onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
   onDeleteAnnotation?: (id: string) => void;
+  /** Phase 28 — append a comment / reply to an annotation's thread. The
+   *  host (App) routes it to the engine and mirrors the echoed state,
+   *  which refreshes the comment box's list and flips the annotation's
+   *  comment badge on. Threaded to every PageView's overlay. */
+  onAddComment?: (annotationId: string, text: string) => void;
   // -- Phase 4: forms --
   formFields?: FormField[];
   onFormValueChange?: (id: string, value: string | string[]) => void;
@@ -396,13 +401,10 @@ const EMPTY_HITS: SearchHit[] = [];
 // idle GPU memory on the open canvas (DEF-016 exit target).
 const INITIAL_MOUNT_PAGES = 3;
 
-// Phase 14.2 FIX 8 — the frosted content's top/bottom padding BELOW the
-// floating chrome stack (the floating-aesthetic minimum the spec keeps).
-// The frosted .document-content rule paints `chromeY + 16` above the
-// first page and 16px below the last; this constant is the scroll-math
-// half of that same 16px. The in-flow themes keep CONTENT_PADDING_PX
-// (28px) on both sides.
-const FROSTED_CONTENT_PAD_PX = 16;
+// Phase 29 — the canvas is flush. `.document-content` carries no
+// top/bottom padding in ANY theme, so the scroll math's top pad is the
+// (now zero) CONTENT_PADDING_PX everywhere; the frosted theme no longer
+// adds a chrome-stack offset.
 
 /** DEF-232 — compare two reported page-1 sizes by VALUE. A doc-proxy
  *  swap re-publishes an equal-but-new `{ w, h }` object; treating that
@@ -515,6 +517,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onCreateAnnotation,
   onEditAnnotation,
   onDeleteAnnotation,
+  onAddComment,
   /** DEF-166 — annotation ids whose overlay text must be drawn LIVE
    *  (created / edited since the current page-canvas bytes were
    *  loaded). Threaded to every PageView's AnnotationOverlay so a
@@ -1068,37 +1071,22 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // The frosted theme floats the workspace chrome rows (toolbar /
   // annotation toolbar / search bar / edit toolbar) OVER a full-bleed
   // .document-scroller, so the page visibly scrolls under the
-  // translucent frosted sheets. The scroller's content must still
-  // start BELOW that chrome stack at rest (or the first page would be
-  // tucked behind it) — and the stack height is not static: the
+  // translucent frosted sheets. The stack height is not static: the
   // command toolbar wraps when the window is narrow, the search bar
   // adds a row while open, the edit toolbar adds a row in edit mode.
   // This effect measures the rows' real heights and publishes the sum
-  // as `--tf-chrome-y` on .workspace-main; the frosted
-  // .document-content rule reads it for its top padding. Measurement
-  // is theme-agnostic (cheap; the variable is only read by the
-  // frosted rule).
+  // as `--tf-chrome-y` on .workspace-main for the floating text panel
+  // (`top: calc(var(--tf-chrome-y) + 8px)`).
   //
-  // The same height drives the SCROLL MATH via `contentTopPadRef`: the
-  // frosted .document-content's top padding is `chromeY + 16` (Phase
-  // 14.2 FIX 8 — the floating-aesthetic minimum, was chromeY + 28), so
-  // every slot sits that many px lower in the content than the
-  // in-flow layout the mixed geometry helpers assume. The helpers
-  // take the REAL content top padding (28px in the in-flow themes,
-  // `chromeY + 16` in frosted) so jump landings, the current-page
-  // heuristic and the virtualized mount all track the true slot
-  // positions — without it the scroller would read every scroll
-  // position ~one chrome height early (page indicator flips ahead,
-  // jump targets land low, and the mount unmounts a page whose tail
-  // is still on screen behind/under the glass). In the light/dark
-  // themes the chrome stays in-flow and the content padding stays
-  // the 28px CONTENT_PADDING_PX.
-  const chromeYRef = useRef(0);
-  // Phase 14.2 FIX 8 — the REAL top pad the CSS paints: 28px in the
-  // in-flow themes, the measured chrome stack + the 16px floating
-  // minimum in frosted. Every scroll-geometry helper reads this ref
-  // instead of the bare CONTENT_PADDING_PX + chromeY sum, so the
-  // reduced 16px margin and the scroll math can never drift apart.
+  // Phase 29 — the page view is FLUSH: `.document-content` has no
+  // top/bottom padding in any theme, so `contentTopPadRef` is the zero
+  // CONTENT_PADDING_PX everywhere and the scroll geometry helpers track
+  // the flush DOM exactly. `--tf-chrome-y` no longer feeds any content
+  // padding; it survives only for the floating panel placement.
+  //
+  // `contentTopPadRef` stays the single source of the top pad the CSS
+  // paints; every scroll-geometry helper reads this ref so a future
+  // padding change can never drift from the math.
   const contentTopPadRef = useRef(CONTENT_PADDING_PX);
   useEffect(() => {
     const recompute = (): void => {
@@ -1112,11 +1100,9 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       )) {
         chromePx += el.offsetHeight;
       }
-      chromeYRef.current = themeName === "frosted" ? chromePx : 0;
-      contentTopPadRef.current =
-        themeName === "frosted"
-          ? chromePx + FROSTED_CONTENT_PAD_PX
-          : CONTENT_PADDING_PX;
+      // Phase 29 — flush canvas: the content top pad is 0 in every
+      // theme, so the scroll math never adds a chrome offset.
+      contentTopPadRef.current = CONTENT_PADDING_PX;
       if (chromePx > 0) {
         main.style.setProperty("--tf-chrome-y", `${chromePx}px`);
       }
@@ -1401,11 +1387,9 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       pageGeomRef.current,
       pageCount,
       PAGE_BUFFER_PAGES,
-      // Phase C — the frosted content's top padding is the measured
-      // chrome stack + 16 (Phase 14.2 FIX 8), so the mount's "fully
-      // above the viewport" math must subtract the REAL padding
-      // (contentTopPadRef.current is CONTENT_PADDING_PX outside the
-      // frosted theme → the in-flow value).
+      // Phase 29 — flush canvas: the content top pad is 0 in every
+      // theme (CONTENT_PADDING_PX), and the mount's "fully above the
+      // viewport" math subtracts exactly that real padding.
       contentTopPadRef.current,
     );
     const rangeStart = range.start;
@@ -2210,25 +2194,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // Hand the toolbar's actions straight through the reducer. The toolbar is
   // disabled when there is no document (always-disabled prop is false here
   // because a tab is mounted only when a document is open).
-  /** Phase 26 — the toolbar's colour control is the colour path for a
-   *  SELECTED annotation too (the in-canvas palette a double-clicked
-   *  shape used to open is retired). With an annotation selected, a
-   *  colour change patches THAT annotation through the annotation-patch
-   *  route as well as updating the armed tool's colour. The selected
-   *  annotation is read through a ref so this callback keeps a stable
-   *  identity (the toolbar is memo-sensitive). */
-  const selectedAnnotationRef = useRef<Annotation | null>(null);
-  selectedAnnotationRef.current = selectedAnnotation;
+  /** Phase 28 — the toolbar's dropdown colour drives the ARMED tool
+   *  only. The selected annotation's colour is owned by the in-canvas
+   *  action bar's colour box (it patches THAT annotation live), so this
+   *  no longer intercepts `set-color` to patch the selection. */
   const onAnnToolAction = useCallback(
     (a: AnnotationToolAction): void => {
       dispatchAnnTool(a);
-      if (a.type !== "set-color") return;
-      const ann = selectedAnnotationRef.current;
-      if (ann === null) return;
-      if (ann.color === a.color) return;
-      onEditAnnotation?.(ann.id, { color: a.color });
     },
-    [onEditAnnotation],
+    [],
   );
 
   // When the rail's annotations panel jumps to an annotation, scroll to its
@@ -2606,11 +2580,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
               theme={themeName === 'light' ? 'light' : 'dark'}
               annotationRecentTools={annotationRecentTools}
               onAnnotationRecentToolsChange={onAnnotationRecentToolsChange}
-              /* Phase 26 — the toolbar's colour control is the colour
-                 path for a SELECTED annotation (the in-canvas palette a
-                 double-clicked shape used to open is gone), so the row
-                 shows the selected annotation's actual colour. */
-              selectedColor={selectedAnnotation?.color ?? null}
+              /* Phase 28 — the toolbar's dropdown colour drives the
+                 ARMED tool only. It neither patches nor mirrors a
+                 SELECTED annotation's colour: that colour is owned by
+                 the in-canvas action bar's colour box. */
             />
           }
         />
@@ -2771,6 +2744,29 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       // focuses the panel's Text field (the single live
                       // text-editing surface; no in-canvas editor).
                       onTextFocusRequest={onAnnTextFocusRequest}
+                      // Phase 28 — the selection bar's colour box reuses
+                      // the toolbar's picker, so it needs the same
+                      // preset bucket + saved custom presets.
+                      annotationPaletteTheme={themeName === 'light' ? 'light' : 'dark'}
+                      annotationPalette={
+                        annotationPalette === undefined || annotationPalette === null
+                          ? undefined
+                          : {
+                              light: annotationPalette.light ?? [],
+                              dark: annotationPalette.dark ?? [],
+                            }
+                      }
+                      onAnnotationPaletteChange={
+                        onAnnotationPaletteChange === undefined
+                          ? undefined
+                          : (next): void => onAnnotationPaletteChange(next)
+                      }
+                      // Phase 28 — comment threads + the append op. The
+                      // threads ride on the engine state mirror; the
+                      // overlay draws one badge per commented element and
+                      // the comment box for the selected annotation.
+                      comments={engineState.comments}
+                      onAddComment={onAddComment}
                       // Bug 1 — opening an edit toolbox disarms the
                       // annotation creation tool (select). Without
                       // this, an armed sticky-note / ink / shape

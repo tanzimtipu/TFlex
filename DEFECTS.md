@@ -5,6 +5,33 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-260: The colour picker's pink / teal / gray swatches are silently dropped (renderer and engine named-colour sets diverge)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 28
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `assets/samples/report.pdf`.
+2. Arm the Rect tool (`armAnnotationTool(win, 'rect')`) and drag a rectangle on page 1.
+3. Click the rectangle to select it; the action bar shows `Confirm | [colour box] | Cancel | Delete`.
+4. Click `[data-ann-color-box]`, then click the **pink** swatch (`[data-palette-built-in="pink"]`).
+5. Read `window.tflexDiagnostics().engineState.annotations[0].color` and the box's `data-color-current`.
+6. Repeat with `teal` and `gray`, then with `blue` (control).
+7. Second symptom: arm the Rect tool, set the armed tool colour to pink via the toolbar dropdown `[data-ann-color]`, then drag a new rectangle on the page.
+   Reproduced by `e2e/phase28_29_verify.spec.cjs -g C3b` (1 failed; see the `C3b-picks` / `C3b-create-pink` log lines).
+
+Expected: each offered swatch applies to the selected annotation (Phase 28 C3: "picking a colour changes the selected annotation's colour"), and a new annotation drawn with that tool colour is created carrying it.
+
+Actual: pink, teal and gray do nothing. Measured (page-1 rect, initial `#2563eb`): pink -> `engine #2563eb`, `box #2563eb`; teal -> `#2563eb`; gray -> `#2563eb`; blue -> `engine blue`, `box #3b82f6`. The same three colours are dropped in any click order (a 9-colour sweep in both forward and reverse order drops exactly pink/teal/gray; the other six apply). On the create path, arming pink and dragging leaves the annotation count unchanged (1 -> 1) with `activeTool: "rect"` - a silent no-op.
+Root cause: the renderer palette (`src/renderer/annotations/model.ts` `ANNOTATION_COLORS`) offers yellow/orange/red/**pink**/purple/**teal**/green/blue/**gray**, but the engine's named set (`src/main/services/annotations.ts` `ANN_COLOR_RGB` / `ANN_COLORS`, mirrored by `AnnColor` in `src/shared/types.ts`) is yellow/green/blue/red/orange/purple/cyan/magenta/white. `editAnnotation` keeps the old colour when the name is unknown (`ann.color = isValidColorValue(payload.color) ? payload.color : ann.color`, annotations.ts:582) and `normalizeAnnotationPayload` throws on create, so both legs fail silently. The toolbar dropdown path is unaffected (renderer-only tool state), which is why this only surfaces on the engine-backed paths.
+Screenshot: screenshots/phase28-verify-comment-box.png shows the action-bar colour box used by this repro.
+
+History:
+- qa: opened (Phase 28 C3 validation; a 9-colour sweep drops pink/teal/gray in both directions, and a pink-armed create places nothing)
+- qa: CLOSED (2026-09-21 FIX-READY retest; `e2e/retests/def260_retest.spec.cjs`, 2 passed, 46.0s). Action-bar colour box picks: pink -> engine `pink`, box `#ec4899`; teal -> `teal` / `#14b8a6`; gray -> `gray` / `#64748b`. Full canonical 12-swatch sweep (yellow,green,blue,red,orange,purple,cyan,magenta,white,pink,teal,gray) forward AND reverse: 12/12 applied each way, 0 dropped. Create path: arming the rect tool with pink and drawing created a new rect with `color: "pink"` (count 1 -> 2; previously a silent no-op). P28 C3 re-confirmed: bar buttons `[ann-rect-confirm(587.7), colour box(651.5), ann-rect-cancel(673.5), ann-rect-delete(731.3)]`, no Edit text/button; a single click opens the picker; the toolbar dropdown (`data-ann-color`) moved the armed swatch `#2563eb -> #ec4899` while the SELECTED annotation stayed `blue`. Guard: `npm run test:unit -- test/unit/main/annotations.test.ts` 129/129 passed, including the drift guard `expect([...ANN_COLORS]).toEqual([...ANNOTATION_COLOR_NAMES])` which fails if the engine and canonical lists ever diverge. Screenshot `screenshots/def260-retest.png` shows the 12-swatch Built-in picker open over a selected blue rect.
+
 ## DEF-258: Edit-mode text-run commit silently drops character spacing (and every other Phase-21 style field)
 
 - Status: CLOSED

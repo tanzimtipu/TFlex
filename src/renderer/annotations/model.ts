@@ -7,6 +7,7 @@
 // bottom-left coordinate space when serializing /Annots.
 
 import type { AnnTextStyle } from "../../shared/types";
+import { ANNOTATION_COLOR_NAMES } from "../../shared/annotationColors";
 
 // ---------------------------------------------------------------------------
 // Geometry primitives (page points, top-left origin)
@@ -26,20 +27,14 @@ export interface PageRect {
 // ---------------------------------------------------------------------------
 // Colors
 
-/** Built-in annotation colors. The user can also pick any custom hex
- *  through the ColorPalette; that path produces a free-form hex string
- *  instead of one of these literals. The `hexOrBuiltIn` alias is the
- *  union shape used everywhere annotations touch the color channel. */
-export type AnnotationColor =
-  | "yellow"
-  | "red"
-  | "green"
-  | "blue"
-  | "orange"
-  | "pink"
-  | "purple"
-  | "teal"
-  | "gray";
+/** Built-in annotation colors. The canonical name set lives in the shared
+ *  module `src/shared/annotationColors.ts` (DEF-260) and is the same list the
+ *  PDF engine consumes, so the renderer can never drift from the engine's
+ *  accepted named colours. The user can also pick any custom hex through the
+ *  ColorPalette; that path produces a free-form hex string instead of one of
+ *  these literals. The `AnnotationColorValue` alias is the union shape used
+ *  everywhere annotations touch the color channel. */
+export type AnnotationColor = (typeof ANNOTATION_COLOR_NAMES)[number];
 
 /** Any valid color for an annotation: either a built-in name or a
  *  hex string (#rgb / #rrggbb, normalised to lowercase). Custom
@@ -47,23 +42,10 @@ export type AnnotationColor =
  *  overlay at render time. */
 export type AnnotationColorValue = AnnotationColor | string;
 
-/** Built-in palette (Phase 13 — was 4 names, now 9). The original four
- *  names stay at the front so any annotation persisted against an
- *  older renderer keeps resolving to the same hex; the five new names
- *  slot in after for a richer toolbar picker. Order is the visual
- *  reading order in the toolbar's quick swatch row (warm -> cool ->
- *  accent). */
-export const ANNOTATION_COLORS: readonly AnnotationColor[] = [
-  "yellow",
-  "orange",
-  "red",
-  "pink",
-  "purple",
-  "teal",
-  "green",
-  "blue",
-  "gray",
-];
+/** Built-in palette, in the canonical shared order: the nine historic engine
+ *  presets followed by the DEF-260 additions. Order is the toolbar's quick
+ *  swatch row reading order; membership comes from the shared list. */
+export const ANNOTATION_COLORS: readonly AnnotationColor[] = ANNOTATION_COLOR_NAMES;
 
 export const ANNOTATION_COLOR_HEX: Record<AnnotationColor, string> = {
   yellow: "#eab308",
@@ -75,6 +57,9 @@ export const ANNOTATION_COLOR_HEX: Record<AnnotationColor, string> = {
   green: "#22c55e",
   blue: "#3b82f6",
   gray: "#64748b",
+  cyan: "#00ffff",
+  magenta: "#ff00ff",
+  white: "#ffffff",
 };
 
 /** Resolve any annotation color value (built-in name OR raw hex) to a

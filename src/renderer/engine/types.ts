@@ -8,6 +8,7 @@ import type { Result } from "../../shared/result";
 import type {
   AddStampPayload,
   AddTextBoxPayload,
+  CommentThread,
   CropEntry,
   DocxImageEntry,
   EditImagePayload,
@@ -78,6 +79,13 @@ export interface EngineState extends SharedEngineState {
   /** Phase 4 — every signature placement on the active doc. Empty when
    *  the user hasn't placed any. */
   signatures?: SignaturePlacement[];
+  /** Phase 28 — the document's comment threads, inherited from the shared
+   *  `EngineState` (`comments?: CommentThread[]`). The engine emits the
+   *  array on every state (empty when there are none); `normalizeState`
+   *  consumes an array verbatim and carries the previous list forward
+   *  when the wire omits the key. The overlay renders the comment icon
+   *  from this list and the comment box reads its entries. */
+  comments?: CommentThread[];
 }
 
 /** DEF-135/136 — move a registered text box through the engine's
@@ -159,6 +167,20 @@ export interface EngineApi {
   deleteAnnotation(
     docId: string,
     id: string,
+  ): Promise<Result<EngineState, EngineError>>;
+
+  /** Phase 28 — append a comment entry to an annotation's thread.
+   *  Creates the thread on the first call for `annotationId` and appends
+   *  a reply thereafter (one op for both); `author` defaults to 'You'
+   *  engine-side when omitted. The echoed state carries the updated
+   *  `comments` array, so the comment box and the annotation's comment
+   *  icon refresh from the same round-trip. The adapter degrades with a
+   *  friendly engine-error when the preload predates the op. */
+  addComment(
+    docId: string,
+    annotationId: string,
+    text: string,
+    author?: string,
   ): Promise<Result<EngineState, EngineError>>;
 
   save(docId: string): Promise<Result<string, EngineError>>;

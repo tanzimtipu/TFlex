@@ -3,6 +3,7 @@ import {
   PDFArray,
   PDFDict,
   PDFDocument,
+  PDFHexString,
   PDFName,
   PDFNumber,
   PDFRef,
@@ -13,6 +14,7 @@ import {
   type PDFPageLeaf,
 } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
+import { ANN_COLOR_RGB, ANNOTATION_COLOR_NAMES } from '../../shared/annotationColors';
 import { drawStyledTextLines } from './engine';
 import { embedEditFont } from './fonts';
 import {
@@ -39,24 +41,20 @@ import type {
 } from '../../shared/types';
 
 // ---------------------------------------------------------------------------
-// Color constants
+// Color constants (DEF-260 — canonical list lives in src/shared/)
+//
+// The name -> RGB map and the accepted-name list used to be local literals,
+// and they had drifted from the renderer's palette: pink/teal/gray were offered
+// by the renderer but unknown here, so those picks were silently dropped on the
+// engine-backed paths. Both now come from the single shared module, so the
+// engine and the renderer cannot disagree about which names are valid.
 // ---------------------------------------------------------------------------
 
-export const ANN_COLOR_RGB: Record<AnnColor, [number, number, number]> = {
-  yellow:  [1, 1, 0],
-  green:   [0, 1, 0],
-  blue:    [0, 0, 1],
-  red:     [1, 0, 0],
-  orange:  [1, 0.5, 0],
-  purple:  [0.5, 0, 0.5],
-  cyan:    [0, 1, 1],
-  magenta: [1, 0, 1],
-  white:   [1, 1, 1],
-};
+export { ANN_COLOR_RGB };
 
-const ANN_COLORS: AnnColor[] = [
-  'yellow', 'green', 'blue', 'red', 'orange', 'purple', 'cyan', 'magenta', 'white',
-];
+/** The canonical accepted colour names. Exported so the guard test can assert
+ *  the engine's accepted set equals the shared canonical set. */
+export const ANN_COLORS: readonly AnnColor[] = ANNOTATION_COLOR_NAMES;
 
 /**
  * Map an RGB triple to the nearest named annotation color using Euclidean
@@ -122,10 +120,10 @@ export function hexToRgb(hex: string): [number, number, number] | null {
 /** Resolve any stored color (named preset OR hex) to a 0..1 RGB triple for
  *  the PDF /C array. Unknown values degrade to yellow's RGB. */
 export function colorToRgb(color: string): [number, number, number] {
-  if (isAnnColor(color)) return ANN_COLOR_RGB[color];
+  if (isAnnColor(color)) return [...ANN_COLOR_RGB[color]];
   const hex = hexToRgb(color);
   if (hex !== null) return hex;
-  return ANN_COLOR_RGB.yellow;
+  return [...ANN_COLOR_RGB.yellow];
 }
 
 /** Normalize an incoming color string from the wire. A named preset or a hex
@@ -136,6 +134,39 @@ export function colorToRgb(color: string): [number, number, number] {
 export function normalizeColorValue(color: string | undefined): string {
   if (typeof color === 'string' && isValidColorValue(color)) return color;
   throw new Error(`Invalid annotation color: ${color}`);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 28 (criterion 4) — stable annotation ids
+//
+// Every annotation gets a stable id so identity survives save/reopen and
+// id-keyed state (comment threads' `annotationId`) still matches after a
+// reload. The id is persisted in `/NM` — the standard PDF annotation "name"
+// entry, a normal text string that other viewers ignore — and read back on
+// load. A legacy file (no `/NM`) or a malformed/hostile value falls back to a
+// fresh random id, so the load path never throws.
+// ---------------------------------------------------------------------------
+
+/** Ceiling on an id read back from `/NM`. UUIDs are 36 chars; 256 leaves room
+ *  for renderer-generated ids while rejecting a hostile multi-KB name. */
+const MAX_ANNOTATION_ID_LENGTH = 256;
+
+/** Read the stable annotation id from the `/NM` entry. Accepts a plain
+ *  `PDFString` (what `serializeAnnotation` writes) or a `PDFHexString` (a
+ *  foreign viewer may encode a non-ASCII name that way — `PDFHexString` is NOT
+ *  a `PDFString` subclass in pdf-lib). Returns undefined for an absent,
+ *  non-string, empty or oversized value, so the caller falls back to a fresh
+ *  random id. Never throws. */
+function parseAnnotationNameId(val: unknown): string | undefined {
+  if (!(val instanceof PDFString) && !(val instanceof PDFHexString)) return undefined;
+  let id: string;
+  try {
+    id = val.decodeText();
+  } catch {
+    return undefined;
+  }
+  if (id.length === 0 || id.length > MAX_ANNOTATION_ID_LENGTH) return undefined;
+  return id;
 }
 
 // ---------------------------------------------------------------------------
@@ -861,8 +892,14 @@ function parseOneAnnotation(
       ? { x: at.x, y: pdfYToTopLeftY(at.y, pageHeight) }
       : undefined;
 
+  // Phase 28 (criterion 4) — read the stable id back from /NM (written by
+  // `serializeAnnotation`). A legacy file has no /NM, and a hostile value can
+  // be a non-string, empty or oversized entry; both cases fall back to a fresh
+  // random id so the load path never throws.
+  const id = parseAnnotationNameId(dict.get('NM')) ?? randomUUID();
+
   return {
-    id: randomUUID(),
+    id,
     kind,
     page: visiblePage,
     rects: flippedRects.length > 0 ? flippedRects : [{ x: 0, y: 0, width: 0, height: 0 }],
@@ -1514,6 +1551,19 @@ function serializeAnnotation(
   // collapse custom hexes to the nearest named preset on reparse. /TFlexColor
   // is a private, non-standard field ignored by other PDF viewers.
   dictEntries.push(['TFlexColor', PDFString.of(ann.color)]);
+
+  // Phase 28 (criterion 4) — persist the annotation's stable id in /NM (the
+  // standard PDF annotation "name" entry) so identity survives save/reopen and
+  // the comment threads keyed by `annotationId` still match after a reload.
+  // Only a non-empty, bounded string id is written; a malformed one is left
+  // out and the read path assigns a fresh id.
+  if (
+    typeof ann.id === 'string' &&
+    ann.id.length > 0 &&
+    ann.id.length <= MAX_ANNOTATION_ID_LENGTH
+  ) {
+    dictEntries.push(['NM', PDFString.of(ann.id)]);
+  }
 
   // Phase 24 — /Contents may carry the style sentinel as its first line so the
   // text-properties panel can be re-populated on reopen (see

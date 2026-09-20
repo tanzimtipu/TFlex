@@ -281,13 +281,11 @@ test.describe('phase 14.2 fix verification', () => {
       });
     }
 
-    // ---- FIX 8: frosted page margins match the in-flow themes. Phase C
-    // superseded the original 16px floating pair: the frosted scroller is
-    // full-bleed and the page keeps dark/light's 28px top/bottom padding,
-    // scrolling UNDER the floating chrome rows. That is the pinned current
-    // contract (phase142Layout.test.ts "FIX 8, Phase C supersession";
-    // phaseC_frostedChromeOverDocument.test.ts "keeps the 28px Phase C
-    // padding"), and REQUIREMENTS §8's "16px minimum" is still met (28 >= 16).
+    // ---- FIX 8 (Phase 29 supersession): the page view is FLUSH. Phase C's
+    // 28px top/bottom padding was removed, so the page starts at the very top
+    // of the full-bleed frosted scroller in every theme. The pinned current
+    // contract is phase142Layout.test.ts / phaseC_frostedChromeOverDocument.ts
+    // ("flush, padding 0").
     const fix8 = await win.evaluate(() => {
       const wm = document.querySelector('.workspace-main');
       const content = document.querySelector('.document-content');
@@ -311,10 +309,10 @@ test.describe('phase 14.2 fix verification', () => {
     console.log('[fix8] frosted page margins:', JSON.stringify(fix8));
     const chromeYNum = parseFloat(fix8.chromeY.replace('px', '')) || 104;
     expect(fix8.sidePad, 'frosted content side padding must match dark/light (0px)').toBe('0px|0px');
-    expect(fix8.bottomPad, 'frosted bottom margin must be the Phase-C 28px in-flow padding').toBe('28px');
-    expect(Math.abs(fix8.pageTopGap - 28) <= 2,
-      `page 1 must start 28px below the scroller top (Phase C full-bleed; the ${chromeYNum}px chrome floats over it), got ${fix8.pageTopGap}`).toBe(true);
-    expect(Math.abs(fix8.pageLeftGap - 28) <= 6, `frosted page left gap ${fix8.pageLeftGap} must match the dark/light 28px content padding`).toBe(true);
+    expect(fix8.bottomPad, 'frosted bottom padding is 0 (Phase 29 flush canvas)').toBe('0px');
+    expect(Math.abs(fix8.pageTopGap) <= 1,
+      `page 1 must be flush with the scroller top (Phase 29; the ${chromeYNum}px chrome floats over it), got ${fix8.pageTopGap}`).toBe(true);
+    expect(fix8.pageLeftGap >= 0, `frosted page left gap ${fix8.pageLeftGap} must stay inside the scroller`).toBe(true);
     // FIX 8's actual contract is "frosted margins MATCH dark/light". Measure
     // the in-flow reference in the same run and compare, instead of the retired
     // "left gap + scrollbar" proxy the pre-Phase-C layout used (the page's

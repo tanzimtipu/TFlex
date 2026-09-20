@@ -95,6 +95,12 @@ export const IPC = {
   engineCreateAnnotation: "engine:createAnnotation",
   engineEditAnnotation: "engine:editAnnotation",
   engineDeleteAnnotation: "engine:deleteAnnotation",
+  // Phase 28 — comment threads. One op for both the first comment and a
+  // reply: `addComment` creates the thread on the first call for an
+  // annotation and appends a reply entry on every later call. The thread
+  // is persisted in the PDF (catalog `/TFlexComments`) and dropped when
+  // its annotation is deleted.
+  engineAddComment: "engine:addComment",
 // Phase 4: forms
   engineGetFormFields: "engine:getFormFields",
   engineFillFormField: "engine:fillFormField",
@@ -245,6 +251,19 @@ export interface TFlexApiEngine {
   deleteAnnotation?(
     docId: string,
     id: string,
+  ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 28 — append a comment entry to an annotation's thread. Creates
+   *  the thread on the first call and appends a reply thereafter (one op
+   *  for both). `text` must be a non-empty string (trimmed, max 4000
+   *  chars) and `annotationId` must name an annotation in the document;
+   *  otherwise the call rejects with a typed `engine-error`. `author`
+   *  defaults to 'You' when omitted/blank. The returned state carries the
+   *  updated `comments` array. */
+  addComment?(
+    docId: string,
+    annotationId: string,
+    text: string,
+    author?: string,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
   getFormFields?(
     docId: string,

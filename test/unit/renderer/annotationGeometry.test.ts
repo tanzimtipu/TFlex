@@ -4,6 +4,7 @@ import type { Annotation } from "../../../src/renderer/annotations/model";
 import {
   annotationBounds,
   arrowHead,
+  arrowHeadBase,
   clientToPagePoint,
   dragMeetsMinimum,
   inkPathD,
@@ -225,6 +226,34 @@ describe("SVG / bounds helpers", () => {
     expect(d2).toBeCloseTo(10, 5);
     // And mirrored across the shaft (y of 0).
     expect(w1.y).toBeCloseTo(-w2.y, 5);
+  });
+
+  it("Phase 28 — arrowHeadBase is the midpoint of the two wings (the head's base centre)", () => {
+    const from = { x: 0, y: 0 };
+    const to = { x: 100, y: 0 };
+    const [w1, w2] = arrowHead(from, to, 10);
+    const base = arrowHeadBase(from, to, 10);
+    expect(base.x).toBeCloseTo((w1.x + w2.x) / 2, 10);
+    expect(base.y).toBeCloseTo((w1.y + w2.y) / 2, 10);
+    // On the shaft axis for a horizontal arrow, backed off from the tip
+    // by the head's axial length (size * cos 28deg).
+    expect(base.y).toBeCloseTo(0, 10);
+    expect(to.x - base.x).toBeCloseTo(10 * Math.cos((28 * Math.PI) / 180), 10);
+    expect(base.x).toBeLessThan(to.x);
+  });
+
+  it("Phase 28 — arrowHeadBase tracks the shaft direction (diagonal arrow)", () => {
+    const from = { x: 0, y: 0 };
+    const to = { x: 30, y: 40 };
+    const base = arrowHeadBase(from, to, 9);
+    // 5pt back along the unit vector (3/5, 4/5).
+    const back = 9 * Math.cos((28 * Math.PI) / 180);
+    expect(base.x).toBeCloseTo(30 - (3 / 5) * back, 10);
+    expect(base.y).toBeCloseTo(40 - (4 / 5) * back, 10);
+  });
+
+  it("Phase 28 — arrowHeadBase returns the tip for degenerate (zero-length) arrows", () => {
+    expect(arrowHeadBase({ x: 5, y: 5 }, { x: 5, y: 5 }, 10)).toEqual({ x: 5, y: 5 });
   });
 
   it("annotationBounds returns a zero-size rect for empty markup lists", () => {

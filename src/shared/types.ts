@@ -233,6 +233,28 @@ export interface DocxImageEntry {
 
 export type PageOpKind = 'rotate-cw' | 'rotate-ccw' | 'delete' | 'reorder';
 
+// ---- Phase 28: comment threads ----
+
+/** Phase 28 — one entry in an annotation's comment thread. `entries[0]` is
+ *  the original comment; every later entry is a reply. Order is oldest-first
+ *  and is preserved through save/reopen. */
+export interface CommentEntry {
+  id: string;
+  author: string;
+  text: string;
+  /** Epoch milliseconds. */
+  createdAt: number;
+}
+
+/** Phase 28 — one comment thread per annotation (keyed by the annotation id).
+ *  A thread is created by the first `addComment` for an annotation; later
+ *  calls append replies to the same thread. An annotation with no thread has
+ *  no comment icon in the UI. */
+export interface CommentThread {
+  annotationId: string;
+  entries: CommentEntry[];
+}
+
 export interface EngineState {
   pageCount: number;
   modified: boolean;
@@ -262,6 +284,12 @@ export interface EngineState {
    *  under its old rect. `page` is the 1-based VISIBLE page; `rect` is a
    *  top-left origin in PDF points. Absent when the doc has no boxes. */
   textBoxes?: TextBoxModel[];
+  /** Phase 28 — the document's comment threads (one per annotated element
+   *  that has comments). Always present on a state built by the engine
+   *  (empty array when the document has no comments). Persisted in the PDF
+   *  under the private catalog key `/TFlexComments`, so threads survive
+   *  save/reopen. Deleting an annotation drops its thread. */
+  comments?: CommentThread[];
 }
 
 export interface OpEntry {
@@ -306,7 +334,13 @@ export type AnnColor =
   | 'purple'
   | 'cyan'
   | 'magenta'
-  | 'white';
+  | 'white'
+  // DEF-260: the renderer palette's pink/teal/gray, now canonical so both
+  // sides accept the same set. Membership + RGB live in
+  // src/shared/annotationColors.ts; this union must mirror it.
+  | 'pink'
+  | 'teal'
+  | 'gray';
 
 /** An annotation color value: either one of the named presets above, or a
  *  free-form hex string (#rgb / #rrggbb). The engine preserves a custom hex

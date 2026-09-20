@@ -12,7 +12,31 @@
 // The DOM layout must agree with them exactly.
 
 export const PAGE_GAP_PX = 18;
-export const CONTENT_PADDING_PX = 28;
+// Phase 29 — flush canvas. `.document-content` carries NO top/bottom
+// padding in any theme, so the first page's slot starts at content
+// offset 0 and every slot offset / landing / visibility helper below
+// (which defaults to this constant) stays in lockstep with the DOM.
+// The inter-page PAGE_GAP_PX is unchanged.
+export const CONTENT_PADDING_PX = 0;
+
+/**
+ * Phase 29 — sub-pixel tolerance for the "current page" heuristic.
+ *
+ * Before the flush canvas the content carried a 28px top pad, and the
+ * landing comparison (`top + topPad` vs the accumulated slot heights)
+ * had that 28px of slack: the padding is NOT part of the accumulated
+ * heights, so a smooth-scroll landing that settled a fraction of a
+ * pixel short of the computed slot top still satisfied
+ * `acc <= top + topPad` and reported the landed page (the DEF-098
+ * contract). With the pad at 0 that slack is gone, and the DOM's
+ * sub-pixel page heights vs its integer `offsetTop` (plus the
+ * browser's device-pixel snapping) left page 5's jump reading as page
+ * 4 by 0.67px. This 1px tolerance restores the contract: a viewport
+ * top within 1px above a slot's top counts as landed on that slot.
+ * (1px matches the jump-completion tolerance DocumentView already
+ * uses for `scrollTop >= targetTop - 1`.)
+ */
+export const LANDING_TOLERANCE_PX = 1;
 
 /**
  * Height in CSS px occupied by one page slot: page height in CSS px, plus the
@@ -51,8 +75,9 @@ export function slotOffsetTop(
  *
  * DEF-098 — the "current page" boundary must agree with where a page
  * jump LANDS. `jumpToPage` scrolls so the target page's top sits
- * `CONTENT_PADDING_PX` below the viewport top edge (the content's own
- * top padding stays visible above the page). A naive "which page does
+ * `CONTENT_PADDING_PX` below the viewport top edge (0 since Phase 29 —
+ * the page is flush, so the landing puts the page top AT the viewport
+ * top edge). A naive "which page does
  * the top edge touch" test reports the PREVIOUS page at that exact
  * landing position (9 when the user clicked 10), and the old
  * mount-sync effect then re-scrolled the scroller to that previous
@@ -75,7 +100,7 @@ export function pageAtScrollTop(
   if (slotHeight <= 0) {
     return 1;
   }
-  const adjusted = top + CONTENT_PADDING_PX;
+  const adjusted = top + CONTENT_PADDING_PX + LANDING_TOLERANCE_PX;
   const page = Math.floor(adjusted / slotHeight) + 1;
   return Math.max(1, Math.min(pageCount, page));
 }
@@ -95,7 +120,8 @@ export function pageAtScrollTop(
 //
 // The DOM layout contract is identical to the uniform case: the scroller is
 // a flex column with `gap: PAGE_GAP_PX` between slots; slot N's top sits at
-// `CONTENT_PADDING_PX + Σ_{i<N} (heightCss_i + PAGE_GAP_PX)`. When every
+// `topPad + Σ_{i<N} (heightCss_i + PAGE_GAP_PX)`, where `topPad` defaults to
+// CONTENT_PADDING_PX (0 since Phase 29 — the flush canvas). When every
 // page has the same height these helpers reduce to the uniform ones.
 
 export interface MixedPageGeom {
@@ -106,16 +132,13 @@ export interface MixedPageGeom {
   heightCss: number;
 }
 
-/** Phase C — the frosted theme's `.document-content` top padding is
- *  `--tf-chrome-y + CONTENT_PADDING_PX` (the first page must sit BELOW
- *  the floating chrome rows while scrolling UNDER them). The mixed
- *  helpers below take the content's REAL top padding so the scroll
- *  math stays in lockstep with the DOM in BOTH layouts: pass
- *  `topPad = CONTENT_PADDING_PX` in the in-flow themes (the default,
- *  identical to the pre-Phase-C behavior) and
- *  `topPad = CONTENT_PADDING_PX + chromePx` in the frosted theme. All
- *  per-slot DELTAS (`PAGE_GAP_PX`, slot heights) are untouched — the
- *  chrome offset shifts every slot equally. */
+/** Phase C / Phase 29 — the mixed helpers take the content's REAL top
+ *  padding so the scroll math stays in lockstep with the DOM. Since
+ *  Phase 29 (flush canvas) that real padding is 0 in EVERY theme, so
+ *  the default (CONTENT_PADDING_PX = 0) is what DocumentView passes;
+ *  the `topPad` parameter is retained because it is what makes the
+ *  helpers testable against a chrome-shifted layout. All per-slot
+ *  DELTAS (`PAGE_GAP_PX`, slot heights) are untouched. */
 
 /** Top offset of slot N inside a mixed-size scroller, in CSS px.
  *  1-based; slot 1 starts at the container's top padding. */
@@ -138,12 +161,12 @@ export function mixedSlotOffsetTop(
 
 /** 1-based page number the viewport is showing at CSS pixel position `top`,
  *  for a mixed-size scroller. Mirrors `pageAtScrollTop`'s semantics: the
- *  page whose top is at-or-below the landing point (`top + topPad`),
- *  clamped to [1, pageCount]. Reduces to `pageAtScrollTop` when every
- *  page has the same height. Passing the REAL content top padding keeps
- *  the DEF-098 landing contract exact in the frosted theme: a page
- *  jump that lands the page top `CONTENT_PADDING_PX` below the viewport
- *  top edge reports that page as current. */
+ *  page whose top is at-or-below the landing point (`top + topPad`,
+ *  within LANDING_TOLERANCE_PX), clamped to [1, pageCount]. Reduces to
+ *  `pageAtScrollTop` when every page has the same height. The tolerance
+ *  is what keeps the DEF-098 landing contract exact on the flush canvas
+ *  (Phase 29): a page jump that settles a sub-pixel short of the
+ *  computed slot top still reports the landed page as current. */
 export function mixedPageAtScrollTop(
   top: number,
   geom: readonly MixedPageGeom[],
@@ -153,7 +176,7 @@ export function mixedPageAtScrollTop(
   if (pageCount <= 0) {
     return 1;
   }
-  const adjusted = top + topPad;
+  const adjusted = top + topPad + LANDING_TOLERANCE_PX;
   let acc = 0;
   let covered = 0;
   for (let p = 1; p <= pageCount; p += 1) {

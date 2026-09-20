@@ -30,7 +30,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
-import { AnnotationOverlay } from "../../../src/renderer/annotations/AnnotationOverlay";
+import { AnnotationOverlay, ARROW_HEAD_PT } from "../../../src/renderer/annotations/AnnotationOverlay";
+import { arrowHeadBase } from "../../../src/renderer/annotations/geometry";
 import type {
   Annotation,
   AnnotationToolState,
@@ -199,12 +200,6 @@ function dragSurface(layer: HTMLElement, surface: Element, from: [number, number
   releaseOnLayer(layer, to[0], to[1]);
 }
 
-function barConfirm(host: HTMLElement): HTMLButtonElement {
-  const btn = host.querySelector<HTMLButtonElement>("[data-content-action$='-confirm']");
-  if (btn === null) throw new Error("Confirm button not found");
-  return btn;
-}
-
 describe("DEF-153/154 — committed annotation selection model (rect)", () => {
   it("hover-grab surface class + single click SELECTS: bar (Confirm/Delete), corner handles appear; no editor opens", () => {
     const { host, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
@@ -231,31 +226,29 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
     }
   });
 
-  it("dragging the shape parks a PENDING move (no engine call); the bar's Confirm commits delete + re-create with the shifted rect", () => {
+  it("Phase 28 — dragging the shape COMMITS on pointerup (no Confirm): delete + re-create with the shifted rect, and the bar stays for colour picking", () => {
     const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
     try {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
       const layer = layerOf(host);
       if (shape === null) throw new Error("shape not found");
       dragSurface(layer, shape, [120, 120], [160, 140]);
-      // DEF-154 — nothing reached the engine at pointerup.
-      expect(onDeleteAnnotation).not.toHaveBeenCalled();
-      expect(onCreate).not.toHaveBeenCalled();
-      // The white eraser-equivalent is the local draft: the shape's
-      // rendered rect now sits at the MOVED position (visual), and
-      // the bar is up (movable).
-      const moved = host.querySelector<HTMLElement>(".ann-shape[data-annotation-id='rect-1']");
-      expect(moved?.getAttribute("x")).toBe("140");
-      expect(moved?.getAttribute("y")).toBe("120");
-      clickEl(barConfirm(host));
-      // Confirm = delete the ORIGINAL + re-create with the same id at
-      // the moved rect (the contract's only annotation-move path).
+      // Phase 28 — the engine is touched AT POINTERUP: the move applies
+      // immediately, with no Confirm click.
       expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
       expect(onDeleteAnnotation.mock.calls[0]?.[0]).toBe("rect-1");
       expect(onCreate).toHaveBeenCalledTimes(1);
       const created = onCreate.mock.calls[0]?.[0] as Annotation;
       expect(created.id).toBe("rect-1");
       expect((created as { rect: { x: number; y: number; width: number; height: number } }).rect).toEqual({ x: 140, y: 120, width: 150, height: 80 });
+      // The draft keeps the moved geometry visible until the echo lands.
+      const moved = host.querySelector<HTMLElement>(".ann-shape[data-annotation-id='rect-1']");
+      expect(moved?.getAttribute("x")).toBe("140");
+      expect(moved?.getAttribute("y")).toBe("120");
+      // The selection (and therefore the bar + colour box) survives the
+      // commit so a colour can be picked straight after the move.
+      expect(host.querySelector("[data-content-action-bar]"), "bar stays after the commit").not.toBeNull();
+      expect(host.querySelector("[data-ann-color-box]"), "colour box stays").not.toBeNull();
     } finally {
       cleanup();
     }
@@ -305,16 +298,18 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
     }
   });
 
-  it("a click on an empty page spot deselects / reverts a pending move", async () => {
+  it("Phase 28 — a click on an empty page spot deselects but does NOT revert an applied move", async () => {
     const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
     try {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
       const layer = layerOf(host);
       if (shape === null) throw new Error("shape not found");
       dragSurface(layer, shape, [120, 120], [160, 140]);
+      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
+      expect(onCreate).toHaveBeenCalledTimes(1);
       expect(host.querySelector("[data-content-action-bar]")).not.toBeNull();
       // Press the LAYER background (not a surface) in select mode:
-      // reverts the pending move and clears the selection.
+      // clears the selection. The move was committed live, so it stays.
       pressSurface(layer, 20, 500);
       // Phase C — the selection bar exits through AnimatePresence;
       // settle its exit frame before asserting no stale DOM.
@@ -322,12 +317,13 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
         await new Promise((r) => setTimeout(r, 30));
       });
       expect(host.querySelector("[data-content-action-bar]"), "selection cleared").toBeNull();
-      expect(onDeleteAnnotation).not.toHaveBeenCalled();
-      expect(onCreate).not.toHaveBeenCalled();
-      // The shape returned to its ENGINE rect (the draft cleared).
+      // No extra engine op on deselect: the move is not undone.
+      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
+      expect(onCreate).toHaveBeenCalledTimes(1);
+      // The shape keeps the COMMITTED (moved) rect.
       const back = host.querySelector<HTMLElement>(".ann-shape[data-annotation-id='rect-1']");
-      expect(back?.getAttribute("x")).toBe("100");
-      expect(back?.getAttribute("y")).toBe("100");
+      expect(back?.getAttribute("x")).toBe("140");
+      expect(back?.getAttribute("y")).toBe("120");
     } finally {
       cleanup();
     }
@@ -385,14 +381,24 @@ describe("DEF-154 — arrow + ink get the full selection model AND resize handle
         se.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 200, clientY: 120, pointerId: 3 }));
       });
       moveOnLayer(layer, 350, 190);
+      // Phase 28 — the VISIBLE shaft stops at the head's base, so x2/y2
+      // are the base point (the tip is still the head polygon's apex).
+      const base = arrowHeadBase({ x: 50, y: 50 }, { x: 350, y: 190 }, ARROW_HEAD_PT);
       const visual = host.querySelector<SVGLineElement>(
         "g.ann-arrow[data-annotation-id='arrow-1'] line:not(.ann-arrow-hit)",
       );
-      expect(visual?.getAttribute("x2")).toBe("350");
-      expect(visual?.getAttribute("y2")).toBe("190");
-      // The drag is renderer-local: no engine call at pointerup.
+      expect(visual?.getAttribute("x2")).toBe(String(base.x));
+      expect(visual?.getAttribute("y2")).toBe(String(base.y));
+      expect(Number(visual?.getAttribute("x2"))).toBeLessThan(350);
+      // The invisible hit line still spans the full length to the tip.
+      const hit = host.querySelector<SVGLineElement>(
+        "g.ann-arrow[data-annotation-id='arrow-1'] .ann-arrow-hit",
+      );
+      expect(hit?.getAttribute("x2")).toBe("350");
+      expect(hit?.getAttribute("y2")).toBe("190");
+      // The drag COMMITS on pointerup (Phase 28) and the bar stays up.
       releaseOnLayer(layer, 350, 190);
-      expect(host.querySelector("[data-content-action-bar]"), "pending move keeps the bar").not.toBeNull();
+      expect(host.querySelector("[data-content-action-bar]"), "bar stays after the commit").not.toBeNull();
     } finally {
       cleanup();
     }
@@ -446,15 +452,13 @@ describe("DEF-153/154 + Phase 26 — committed textbox: select/move, no in-canva
     }
   });
 
-  it("dragging the textbox parks a pending move committed by the bar Confirm", () => {
+  it("Phase 28 — dragging the textbox commits the move on pointerup (no Confirm)", () => {
     const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [TEXTBOX_ANN] });
     try {
       const tbx = host.querySelector<Element>(".ann-textbox[data-annotation-id='tbx-1']");
       const layer = layerOf(host);
       if (tbx === null) throw new Error("textbox not found");
       dragSurface(layer, tbx, [220, 220], [260, 240]);
-      expect(onDeleteAnnotation).not.toHaveBeenCalled();
-      clickEl(barConfirm(host));
       expect(onDeleteAnnotation).toHaveBeenCalledWith("tbx-1");
       const created = onCreate.mock.calls[0]?.[0] as Annotation;
       expect(created.id).toBe("tbx-1");
@@ -491,7 +495,7 @@ describe("DEF-153/154 / Bug 3 — committed note shares the unified selection mo
     }
   });
 
-  it("dragging the note icon parks a pending move; the bar Confirm commits delete + re-create with the moved anchor", () => {
+  it("Phase 28 — dragging the note icon commits the move on pointerup (no Confirm)", () => {
     const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [NOTE_ANN] });
     try {
       const icon = host.querySelector<Element>("[data-annotation-id='note-1']");
@@ -499,8 +503,6 @@ describe("DEF-153/154 / Bug 3 — committed note shares the unified selection mo
       if (icon === null) throw new Error("note icon not found");
       dragSurface(layer, icon, [65, 305], [95, 335]);
       expect(host.querySelector("[data-content-action-bar]"), "note shows the action bar after a move").not.toBeNull();
-      expect(onDeleteAnnotation).not.toHaveBeenCalled();
-      clickEl(barConfirm(host));
       expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
       expect(onDeleteAnnotation.mock.calls[0]?.[0]).toBe("note-1");
       const created = onCreate.mock.calls[0]?.[0] as Annotation;

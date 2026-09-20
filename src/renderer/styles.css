@@ -3281,11 +3281,11 @@ input[type="checkbox"] {
   scrollbar-width: thin;
   min-height: 0;
   height: 100%;
-  /* Scrollbar inset — pulls the 10px webkit scrollbar off the box edge
-   * so it sits visually inside the content area, clear of the window's
-   * rounded corners in the frosted theme. .document-content carries no
-   * horizontal padding (28px 0 / calc() 0 16px), so no double gap. */
-  padding-right: 8px;
+  /* Phase 29 — flush canvas: the scroller carries NO right padding.
+   * The old 8px scrollbar inset left a visible gutter between the page
+   * column and the window edge; the page area now runs edge-to-edge
+   * (the 10px webkit scrollbar rides the box edge itself). */
+  padding-right: 0;
   /* DEF-178/179 — pinned grid row: the scroller ALWAYS owns the
    * .workspace-main 1fr row (row 5), no matter which conditional
    * chrome rows above it are mounted. */
@@ -3463,7 +3463,12 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 28px 0;
+  /* Phase 29 — flush canvas: no top/bottom padding. The page view
+   * touches the app chrome directly instead of floating inside a 28px
+   * gutter. The inter-page `gap` stays: it separates consecutive
+   * sheets, it is not space AROUND the canvas. The scroll math reads
+   * CONTENT_PADDING_PX (now 0) so jump landings stay exact. */
+  padding: 0;
   gap: 18px;
 }
 
@@ -7016,6 +7021,224 @@ rect.ann-highlight.ann-preview {
   box-shadow: var(--focus-ring);
 }
 
+/* Phase 28 — the action bar's colour box (replaces the old Edit text
+ * button on the annotation selection bar). A compact square swatch
+ * between Confirm and Delete; a single click expands the shared
+ * colour picker. */
+.ann-color-box-anchor {
+  display: inline-flex;
+  align-items: center;
+}
+.ann-color-box {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-1);
+  border: 2px solid var(--bg-toolbar);
+  box-shadow: 0 0 0 1px var(--border-strong);
+  cursor: pointer;
+  padding: 0;
+  background-clip: padding-box;
+  transition: transform var(--motion-fast) var(--ease-in-out),
+    box-shadow var(--motion-fast) var(--ease-out);
+}
+.ann-color-box:hover {
+  transform: scale(1.08);
+}
+.ann-color-box:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.ann-color-box[aria-pressed='true'] {
+  box-shadow: 0 0 0 1.5px var(--accent);
+}
+
+/* Phase 28 — the annotation COMMENT BADGE. A small Adobe-style marker on
+ * the annotated element (top-right corner) shown ONLY when the element
+ * has a comment thread. It is an INDICATOR: pointer-events: none (also
+ * inline in the component) so a press that lands on the badge falls
+ * through to the annotation's own surface and still selects / drags it
+ * (spec "Icon behaviour"). Never a click target. */
+.ann-comment-icon {
+  position: absolute;
+  z-index: 11;
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: var(--radius-1);
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+  user-select: none;
+}
+
+.ann-comment-icon-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Phase 28 — the annotation COMMENT BOX. Mounted for the SELECTED
+ * annotation ("selecting the annotation element will only show this
+ * comment box"); anchored to its rect and clamped to the page view by
+ * `commentBoxPlacement`. The card is a real hit surface (pointer-events:
+ * auto) but is placed clear of the annotation's ring and the action bar,
+ * so neither gesture path is blocked. */
+.ann-comment-box {
+  position: absolute;
+  z-index: 13;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 300px;
+  padding: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  box-shadow: var(--shadow-popover);
+  animation: edit-bar-in var(--motion-fast) var(--ease-out);
+}
+
+.ann-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.ann-comment-count {
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-subtle, var(--bg-toolbar));
+  color: var(--fg-muted);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ann-comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+  min-height: 28px;
+}
+
+.ann-comment-empty {
+  margin: 0;
+  padding: 6px 2px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.ann-comment-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 5px 7px;
+  border-radius: var(--radius-1);
+  background: var(--bg-toolbar);
+}
+
+/* The ORIGINAL comment (entries[0]) reads as the anchor of the thread:
+ * accent-tinted left edge + raised surface, so it is visually distinct
+ * from every reply below it. */
+.ann-comment-entry-original {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+}
+
+.ann-comment-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.ann-comment-author {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.ann-comment-time {
+  color: var(--fg-muted);
+  font-size: 10px;
+}
+
+.ann-comment-text {
+  margin: 0;
+  color: var(--fg);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ann-comment-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.ann-comment-input {
+  flex: 1;
+  resize: none;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-input, var(--bg));
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ann-comment-input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.ann-comment-submit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 9px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-1);
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+
+.ann-comment-submit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ann-comment-submit:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
 .color-popover {
   /* DEF-175 (release blocker) — the palette PORTALS to document.body
    * (see AnnotationToolbar) and is placed in viewport coordinates
@@ -9795,9 +10018,9 @@ rect.ann-highlight.ann-preview {
   z-index: 0;
   background: transparent;
   /* The scroller is full-bleed (inset: 0) here, so restate the base
-   * rule's right inset explicitly: the scrollbar stays off the window
-   * edge instead of riding the rounded-corner window border. */
-  padding-right: 8px;
+   * rule's right inset explicitly. Phase 29 — flush: no right padding,
+   * the page column runs to the window edge like every other theme. */
+  padding-right: 0;
 }
 
 :root[data-theme="frosted"] .toolbar,
@@ -9811,15 +10034,14 @@ rect.ann-highlight.ann-preview {
 }
 
 :root[data-theme="frosted"] .document-content {
-  /* The frosted scroller is full-bleed behind the floating chrome
-   * rows (Phase C block above), so the page keeps the in-flow
-   * light/dark themes' 28px top/bottom padding: page 1 starts 28px
-   * below the window top and its top sits UNDER the frosted chrome
-   * rows, which diffuse it at rest. The scroll math in DocumentView
-   * (contentTopPadRef) must feed the same 28px top pad in frosted so
-   * jump landings, the current-page readout and the mount window
-   * stay in step with this padding. */
-  padding: 28px 0;
+  /* Phase 29 — flush canvas. The frosted scroller is full-bleed behind
+   * the floating chrome rows; the page now starts at the very top of
+   * that scroller (padding 0) instead of 28px down, so it is flush with
+   * the app chrome and scrolls UNDER the frosted glass at rest. The
+   * scroll math in DocumentView (contentTopPadRef) feeds the same 0 top
+   * pad in every theme so jump landings, the current-page readout and
+   * the mount window stay in step with this padding. */
+  padding: 0;
   gap: 18px;
 }
 

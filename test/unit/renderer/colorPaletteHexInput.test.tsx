@@ -215,3 +215,56 @@ describe("ColorPalette — DEF-070 custom hex input", () => {
     cleanup();
   });
 });
+
+/**
+ * DEF-260 — the built-in swatch grid is the canonical 12-colour shared
+ * palette, not the renderer's old 9-name literal. A colour that renders here
+ * is a colour the action bar can apply (and the engine accepts), so the grid
+ * and the shared list must never drift.
+ */
+describe("DEF-260 built-in swatch grid", () => {
+  it("renders all 12 canonical colours in order", () => {
+    const { container, cleanup } = renderPalette({ activeColor: 'yellow' });
+    const labels = [...container.querySelectorAll('[data-palette-built-in]')].map(
+      (b) => b.getAttribute('data-palette-built-in'),
+    );
+    expect(labels).toEqual([
+      'yellow',
+      'green',
+      'blue',
+      'red',
+      'orange',
+      'purple',
+      'cyan',
+      'magenta',
+      'white',
+      'pink',
+      'teal',
+      'gray',
+    ]);
+    cleanup();
+  });
+
+  it("applies each DEF-260 addition (cyan / magenta / white) on click", () => {
+    for (const c of ['cyan', 'magenta', 'white'] as const) {
+      const onApplyBuiltIn = vi.fn();
+      const { container, cleanup } = renderPalette({
+        activeColor: 'yellow',
+        onApplyBuiltIn,
+      });
+      const btn = container.querySelector<HTMLButtonElement>(
+        `[data-palette-built-in="${c}"]`,
+      );
+      expect(btn, `swatch for ${c} exists`).not.toBeNull();
+      if (btn === null) {
+        cleanup();
+        continue;
+      }
+      act((): void => {
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(onApplyBuiltIn).toHaveBeenCalledWith(c);
+      cleanup();
+    }
+  });
+});

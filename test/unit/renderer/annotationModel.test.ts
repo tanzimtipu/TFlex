@@ -16,6 +16,7 @@ import {
   type Annotation,
   type AnnotationPatch,
 } from "../../../src/renderer/annotations/model";
+import { ANNOTATION_COLOR_NAMES } from "../../../src/shared/annotationColors";
 
 const now = "2026-01-01T00:00:00.000Z";
 
@@ -234,22 +235,28 @@ describe("kindLabel", () => {
 });
 
 describe("Annotation colors", () => {
-  it("ANNOTATION_COLORS lists the full built-in palette in visual reading order", () => {
-    // Phase 13 — the picker renders a richer 9-color row. The order
-    // is warm -> cool -> accent (yellow, orange, red, pink, purple,
-    // teal, green, blue, gray). Changing this order is a visual
-    // change, not a wire-compat one — annotations persisted as
-    // {color: 'red'} still resolve to the same hex regardless of
-    // position in this list.
+  it("ANNOTATION_COLORS mirrors the canonical shared palette, in order", () => {
+    // DEF-260 — the renderer palette is the shared canonical list
+    // (src/shared/annotationColors.ts), the same set the PDF engine
+    // accepts. Order is the engine's historic order followed by the
+    // DEF-260 additions (pink/teal/gray); it is the toolbar swatch
+    // reading order, not a wire-compat contract — annotations
+    // persisted as {color: 'red'} resolve to the same hex regardless
+    // of position. Pinning identity with the shared list is the
+    // anti-drift guard: a colour added on one side only fails here.
+    expect(ANNOTATION_COLORS).toBe(ANNOTATION_COLOR_NAMES);
     expect(ANNOTATION_COLORS).toEqual([
       "yellow",
-      "orange",
-      "red",
-      "pink",
-      "purple",
-      "teal",
       "green",
       "blue",
+      "red",
+      "orange",
+      "purple",
+      "cyan",
+      "magenta",
+      "white",
+      "pink",
+      "teal",
       "gray",
     ]);
   });
@@ -262,5 +269,10 @@ describe("Annotation colors", () => {
     for (const name of ANNOTATION_COLORS) {
       expect(ANNOTATION_COLOR_HEX[name]).toMatch(/^#[0-9a-f]{6}$/);
     }
+    // DEF-260 — the three names the shared list added on the renderer
+    // side must have a swatch, or the new picker cells render blank.
+    expect(ANNOTATION_COLOR_HEX.cyan).toBe("#00ffff");
+    expect(ANNOTATION_COLOR_HEX.magenta).toBe("#ff00ff");
+    expect(ANNOTATION_COLOR_HEX.white).toBe("#ffffff");
   });
 });

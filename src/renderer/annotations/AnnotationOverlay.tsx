@@ -44,6 +44,7 @@ import { fitTextBoxFontSizePx, measureTextWidthCss } from "../edit/rasterize";
 import {
   annotationBounds,
   arrowHead,
+  arrowHeadBase,
   calloutBoxFor,
   calloutEntryPoint,
   clientToPagePoint,
@@ -65,6 +66,7 @@ import {
 export type { TextItemGeom };
 import {
   annotationColorToCss,
+  applyPatch,
   type Annotation,
   type AnnotationColorValue,
   type AnnotationPatch,
@@ -72,6 +74,14 @@ import {
   type PagePoint,
   type PageRect,
 } from "./model";
+import AnnColorBox from "./AnnColorBox";
+import AnnCommentIcon from "./AnnCommentIcon";
+import AnnotationCommentBox from "./AnnotationCommentBox";
+import type { CommentEntry, CommentThread } from "../../shared/types";
+import type {
+  AnnotationColors,
+  AnnotationTheme,
+} from "../state/colorPalette";
 import { consumeMenuDismissPointer } from "./menuDismissGuard";
 import { annTextCss, type AnnTextCss } from "./annTextStyle";
 
@@ -90,8 +100,14 @@ const CALLOUT_BORDER_PX = 1.5;
 // this family; the div itself keeps inheriting the page font.
 const ANNOTATION_TEXT_FONT_FAMILY = '"Inter", system-ui, sans-serif';
 const NOTE_ICON_PT = 16;
-const ARROW_HEAD_PT = 9;
+export const ARROW_HEAD_PT = 9;
 const MIN_INK_POINTS = 2;
+/** Phase 28 — stable empty comment-thread list so the overlay's memo
+ *  identity does not churn when the host passes no comments prop. */
+const EMPTY_COMMENT_THREADS: readonly CommentThread[] = [];
+/** Phase 28 — stable empty entry list for a selected annotation whose
+ *  thread does not exist yet (the comment box's empty state). */
+const EMPTY_COMMENT_ENTRIES: readonly CommentEntry[] = [];
 const INK_SAMPLE_PT = 0.75;
 
 export interface AnnotationOverlayProps {
@@ -149,6 +165,25 @@ export interface AnnotationOverlayProps {
    *  prop is absent (unit tests, older consumers) every annotation
    *  draws its text exactly as before. */
   liveAnnTextIds?: ReadonlySet<string>;
+  /** Phase 28 — the selected annotation's action bar owns its colour
+   *  now, so the bar's colour box needs the same picker inputs the
+   *  annotation toolbar's dropdown gets: which preset bucket to edit
+   *  and the saved custom presets. Absent in tests / older consumers:
+   *  the picker falls back to an empty palette. */
+  paletteTheme?: AnnotationTheme;
+  annotationPalette?: AnnotationColors;
+  onAnnotationPaletteChange?: (next: AnnotationColors) => void;
+  /** Phase 28 — the document's comment threads (one per commented
+   *  annotation). The overlay renders the small comment badge on every
+   *  annotation whose id has a thread and feeds the selected
+   *  annotation's entries to the comment box. Absent / empty means
+   *  "no comments anywhere" — no badge is drawn for any annotation. */
+  comments?: readonly CommentThread[];
+  /** Phase 28 — append a comment / reply to an annotation's thread.
+   *  Creates the thread on the first call (the engine owns that rule);
+   *  the echoed state refreshes `comments`, which flips the badge on
+   *  and re-renders the box's list. */
+  onAddComment?: (annotationId: string, text: string) => void;
 }
 
 interface DragState {
@@ -283,10 +318,26 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     onCreate,
     onFinishedOneShot,
     onDeleteAnnotation,
+    onEditAnnotation,
     onDisarmTool,
     onSelectAnnotation,
     onTextFocusRequest,
+    paletteTheme,
+    annotationPalette,
+    onAnnotationPaletteChange,
+    onAddComment,
   } = props;
+
+  // Phase 28 — comment threads for THIS page's annotations. The host
+  // threads the whole document's list; filter per page so the badge
+  // lookup stays cheap and the overlay never re-renders because of an
+  // unrelated page's thread. The lookup map is keyed by annotation id.
+  const commentThreads = props.comments ?? EMPTY_COMMENT_THREADS;
+  const threadByAnnId = useMemo(() => {
+    const map = new Map<string, CommentThread>();
+    for (const thread of commentThreads) map.set(thread.annotationId, thread);
+    return map;
+  }, [commentThreads]);
 
   // DEF-166 — the host tracks which annotation ids must keep their
   // live overlay text (created / edited since the current page-canvas
@@ -319,14 +370,15 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
    *  from the `annotations` list (mid delete-then-recreate echo), so
    *  the render merges it back in. */
   const [annDraft, setAnnDraft] = useState<{ id: string; ann: Annotation } | null>(null);
-  /** A move/resize that happened on the page but was NOT confirmed
-   *  yet. The bar's Confirm commits it (delete + re-create); clicking
-   *  elsewhere reverts it (the draft clears and the annotation returns
-   *  to the engine's position). */
-  const [annPending, setAnnPending] = useState<{
+  /** Phase 28 — LIVE EDITS. The ORIGINAL annotation for the current
+   *  edit session on the selected annotation, snapshotted before the
+   *  first applied move / resize / colour change. Every change applies
+   *  to the engine immediately (a move commits on pointerup, a colour
+   *  change patches right away); the bar's Cancel restores this
+   *  snapshot (undo) and nothing else reverts an applied change. */
+  const [editOriginal, setEditOriginal] = useState<{
     id: string;
-    oldAnn: Annotation;
-    nextAnn: Annotation;
+    ann: Annotation;
   } | null>(null);
   /** Shared move/resize gesture tracker (identical drag math to the
    *  add-box overlay). */
@@ -388,7 +440,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     // in the engine's list yet, so dropping the draft here would blank
     // the annotation (and its selection) until the create echo lands.
     if (keepPlacedId === null) setAnnDraft(null);
-    setAnnPending(null);
+    setEditOriginal(null);
     selDrag.endDrag();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toolKind, cssScale]);
@@ -426,18 +478,15 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     onSelectAnnotation?.(selectedAnn);
   }, [selectedAnn, onSelectAnnotation]);
 
-  /** Revert a pending (unconfirmed) move/resize. The annotation was
-   *  never sent to the engine, so clearing the draft returns it to
-   *  the engine's position. `id` narrows the revert to one item. */
-  const revertPendingAnn = useCallback(
-    (id?: string): void => {
-      if (annPending === null) return;
-      if (id !== undefined && annPending.id !== id) return;
-      setAnnDraft(null);
-      setAnnPending(null);
-    },
-    [annPending],
-  );
+  /** Phase 28 — remember the annotation as it stood BEFORE the first
+   *  live change of this selection session. A second change in the same
+   *  session keeps the first snapshot, so Cancel undoes the whole
+   *  session (the "change" the user made). */
+  const noteEditOriginal = useCallback((ann: Annotation): void => {
+    setEditOriginal((prev) =>
+      prev !== null && prev.id === ann.id ? prev : { id: ann.id, ann },
+    );
+  }, []);
 
   /** Bug 2 — commit a delete+re-create MOVE while keeping the draft
    *  override visible until the recreate-echo lands. The shared
@@ -469,18 +518,40 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     [onDeleteAnnotation, onCreate],
   );
 
-  /** Confirm a pending move/resize: delete the ORIGINAL annotation
-   *  and re-create it with the moved geometry (same id, same
-   *  createdAt). Bug 2 — the draft is NOT cleared here (see
-   *  `issueMoveCommit`); the pending flag goes away so a blank-page
-   *  press can no longer revert the already-issued commit. */
-  const confirmPendingAnn = useCallback((): void => {
-    if (annPending === null) return;
-    const { oldAnn, nextAnn } = annPending;
-    issueMoveCommit(oldAnn, nextAnn);
-    setAnnPending(null);
+  /** Phase 28 — apply a colour to the selected annotation LIVE: the
+   *  engine patch goes out immediately and the local draft shows the
+   *  new colour at once (so the swatch + the shape update before the
+   *  echo). The draft carries the CURRENT geometry, so a colour change
+   *  right after a move keeps the move. */
+  const applyAnnColor = useCallback(
+    (color: AnnotationColorValue): void => {
+      if (selectedAnn === null) return;
+      if (selectedAnn.color === color) return;
+      noteEditOriginal(selectedAnn);
+      onEditAnnotation?.(selectedAnn.id, { color });
+      setAnnDraft({ id: selectedAnn.id, ann: applyPatch(selectedAnn, { color }) });
+    },
+    [selectedAnn, noteEditOriginal, onEditAnnotation],
+  );
+
+  /** Phase 28 — the bar's Cancel: UNDO the session's changes by
+   *  restoring the snapshot taken before the first one, then dismiss
+   *  the selection. A move/resize is undone with the same
+   *  delete+re-create path the move itself used; the restored copy
+   *  carries the original colour too. */
+  const cancelLiveEdit = useCallback((): void => {
+    const original = editOriginal;
+    if (original !== null) {
+      const current = effectiveAnnotations.find((a) => a.id === original.id) ?? null;
+      const changed =
+        current !== null &&
+        (!sameAnnotationGeometry(current, original.ann) ||
+          current.color !== original.ann.color);
+      if (changed) issueMoveCommit(current, original.ann);
+    }
+    setEditOriginal(null);
     setSelectedAnnId(null);
-  }, [annPending, issueMoveCommit]);
+  }, [editOriginal, effectiveAnnotations, issueMoveCommit]);
 
   const pagePoint = (e: React.PointerEvent): PagePoint => {
     const root = rootRef.current;
@@ -645,7 +716,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       // press on them selects / drags the content, it never starts a
       // create-drag on the page behind it.
       const interactive = target.closest(
-        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, .ann-note, .ann-shape, .ann-ink-hit, .ann-arrow-hit, .ann-arrow-head-hit, .ann-callout-arrow-hit, .ann-callout-arrow-head-hit, .ann-textbox, .ann-callout, .content-action-bar, .content-resize-handle, .content-selection-bounds, .content-move-hint, .color-palette, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
+        ".ann-editor, .ann-textbox-actions, .ann-textbox-wrap, .ann-note-editor, .ann-note, .ann-shape, .ann-ink-hit, .ann-arrow-hit, .ann-arrow-head-hit, .ann-callout-arrow-hit, .ann-callout-arrow-head-hit, .ann-textbox, .ann-callout, .content-action-bar, .content-resize-handle, .content-selection-bounds, .content-move-hint, .color-palette, .ann-comment-box, button, input, textarea, select, [role='button'], [role='menuitem'], [role='tab'], [contenteditable='true']",
       );
       if (interactive !== null) {
         // The click is on a UI control / committed surface — let the
@@ -656,13 +727,6 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     }
     const pt = pagePoint(e);
     if (pt.x < 0 || pt.y < 0 || pt.x > widthPt || pt.y > heightPt) return;
-    // A press on the empty page (creation branch) reverts any
-    // unconfirmed move: the annotation was only ever moved locally,
-    // so it returns to the engine's position.
-    if (annPending !== null) {
-      revertPendingAnn();
-      setSelectedAnnId(null);
-    }
     if (isDragTool) {
       if (isMarkupTool) {
         textItemsSnapRef.current = getTextItems();
@@ -706,13 +770,14 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       setDrag({ from: pt, to: pt });
       e.currentTarget.setPointerCapture(e.pointerId);
       e.preventDefault();
-    } else if (toolKind === "select" && (selectedAnnId !== null || annPending !== null)) {
-      // DESELECT / revert on a blank-page press: the click reached
-      // the layer background (not a committed surface / bar), so any
-      // unconfirmed move is reverted and the selection clears. The
-      // textLayer underneath still gets the click (no preventDefault),
-      // so text selection keeps working.
-      revertPendingAnn();
+    } else if (toolKind === "select" && selectedAnnId !== null) {
+      // DESELECT on a blank-page press: the click reached the layer
+      // background (not a committed surface / bar), so the selection
+      // clears. Phase 28 — an already-applied move / colour change is
+      // NOT reverted here: live edits stay applied (only the bar's
+      // Cancel undoes them). The textLayer underneath still gets the
+      // click (no preventDefault), so text selection keeps working.
+      setEditOriginal(null);
       setSelectedAnnId(null);
     }
   };
@@ -758,10 +823,10 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   };
 
   const onPointerUp = (e: React.PointerEvent<HTMLDivElement>): void => {
-    // DEF-154 — end a committed-annotation move/resize drag. A real
-    // movement parks a PENDING move (the bar's Confirm commits it);
-    // a click (no movement) just keeps the selection so the
-    // follow-up click / double-click decides what opens.
+    // Phase 28 — end a committed-annotation move/resize drag. A real
+    // movement COMMITS immediately (see below); a click (no movement)
+    // just keeps the selection so the follow-up click / double-click
+    // decides what opens.
     if (selDrag.drag !== null) {
       const drag = selDrag.drag;
       const orig = annotations.find((a) => a.id === drag.id);
@@ -790,8 +855,14 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           : drag.kind === "anchor"
             ? moveCalloutAnchor(orig, delta.x, delta.y)
             : moveAnnotation(orig, delta.x, delta.y);
-      setAnnDraft({ id: orig.id, ann: next });
-      setAnnPending({ id: orig.id, oldAnn: orig, nextAnn: next });
+      // Phase 28 — the move/resize COMMITS here, on pointerup: the
+      // engine gets the delete + re-create immediately (one undo
+      // entry), no Confirm click is required. The snapshot is taken
+      // before the change so the bar's Cancel can undo it. The
+      // selection STAYS so the bar (and its colour box) remains
+      // available — picking a colour right after a move must work.
+      noteEditOriginal(orig);
+      issueMoveCommit(orig, next);
       return;
     }
     if (drag !== null) {
@@ -899,11 +970,10 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
   const interactive =
     toolKind !== "select" ||
     // DEF-154 — while content is SELECTED (movable) the layer must be a
-    // real hit surface: the blank-page press that deselects / reverts
-    // lands on the layer's pointerdown, and the selection chrome is
-    // hosted inside it.
-    selectedAnnId !== null ||
-    annPending !== null;
+    // real hit surface: the blank-page press that deselects lands on
+    // the layer's pointerdown, and the selection chrome is hosted
+    // inside it.
+    selectedAnnId !== null;
 
   /** Phase 26 — keyboard-activation path for a committed note icon
    *  (Enter / Space). Entering the note is the same gesture as clicking
@@ -1029,33 +1099,69 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         />
       ))}
 
+      {/* Phase 28 — the comment badge. Rendered ONLY for an annotation
+          that has a thread ("if not comment, no icon should be there").
+          It is an indicator: pointer-events: none, no handler, so a
+          press that lands on the badge still selects / drags the
+          annotation underneath (spec "Icon behaviour"). */}
+      {effectiveAnnotations.map((a) => {
+        const thread = threadByAnnId.get(a.id);
+        if (thread === undefined) return null;
+        return (
+          <AnnCommentIcon key={`comment-${a.id}`} ann={a} cssScale={cssScale} count={thread.entries.length} />
+        );
+      })}
+
       {/* DEF-154 — selection chrome for the selected (movable)
           annotation: a bounds ring, corner resize handles for
-          rect-carrying kinds and a Confirm / Delete bar beneath.
-          Phase 26 — no Edit button: text entry lives in the panel's
-          Text field, colour in the annotation toolbar. */}
+          rect-carrying kinds and a Confirm / [colour box] / Cancel /
+          Delete bar beneath. Phase 28 — the Edit text is gone; the
+          colour box is the colour path for a selected annotation. */}
       <AnimatePresence>
         {selectedAnn !== null && (
           <SelectedContentChrome
             ann={selectedAnn}
             cssScale={cssScale}
             widthPt={widthPt}
+            paletteTheme={paletteTheme}
+            annotationPalette={annotationPalette}
+            onAnnotationPaletteChange={onAnnotationPaletteChange}
             onSurfacePointerDown={(e, ann, handle): void => beginAnnSurfaceDrag(e, ann, handle)}
+            onColorChange={applyAnnColor}
             onConfirm={(): void => {
-              if (annPending !== null) {
-                confirmPendingAnn();
-              } else {
-                setSelectedAnnId(null);
-              }
+              // Phase 28 — Confirm is a plain dismiss: the move / colour
+              // change already committed live, so there is nothing left
+              // to apply.
+              setEditOriginal(null);
+              setSelectedAnnId(null);
             }}
+            onCancel={cancelLiveEdit}
             onDelete={(): void => {
-              revertPendingAnn(selectedAnn.id);
+              setEditOriginal(null);
               setSelectedAnnId(null);
               onDeleteAnnotation?.(selectedAnn.id);
             }}
           />
         )}
       </AnimatePresence>
+
+      {/* Phase 28 — the COMMENT BOX. "Selecting the annotation element
+          will only show this comment box": it mounts for the selected
+          annotation and is the single place to read / write the thread.
+          Anchored to the annotation's rect, clamped to the page view
+          (see `commentBoxPlacement`), and placed clear of the
+          annotation surface and the action bar so neither gesture path
+          is blocked. */}
+      {selectedAnn !== null && onAddComment !== undefined && (
+        <AnnotationCommentBox
+          ann={selectedAnn}
+          entries={threadByAnnId.get(selectedAnn.id)?.entries ?? EMPTY_COMMENT_ENTRIES}
+          onAddComment={(text): void => onAddComment(selectedAnn.id, text)}
+          cssScale={cssScale}
+          widthPt={widthPt}
+          heightPt={heightPt}
+        />
+      )}
 
       {flashId !== null &&
         effectiveAnnotations
@@ -1382,6 +1488,11 @@ function ArrowShape({
 }): ReactElement {
   const hex = annotationColorToCss(color);
   const [w1, w2] = arrowHead(from, to, ARROW_HEAD_PT);
+  // Phase 28 — the VISIBLE leader line stops at the head's base, so the
+  // shaft never crosses or pokes past the pointer. The invisible hit
+  // line below still spans the full from -> to length, and the head
+  // polygon is unchanged.
+  const base = arrowHeadBase(from, to, ARROW_HEAD_PT);
   return (
     <g
       className={preview === true ? "ann ann-arrow ann-preview" : "ann ann-arrow"}
@@ -1418,7 +1529,7 @@ function ArrowShape({
           />
         </>
       )}
-      <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke={hex} strokeWidth={2} />
+      <line x1={from.x} y1={from.y} x2={base.x} y2={base.y} stroke={hex} strokeWidth={2} />
       <polygon
         points={`${to.x},${to.y} ${w1.x},${w1.y} ${w2.x},${w2.y}`}
         fill={hex}
@@ -1857,6 +1968,10 @@ function DomAnnotation({
     const arrowScale = cssScale;
     const [w1, w2] = arrowHead(entry, anchor, ARROW_HEAD_PT);
     const headPoints = `${anchorCss.x},${anchorCss.y} ${w1.x * arrowScale},${w1.y * arrowScale} ${w2.x * arrowScale},${w2.y * arrowScale}`;
+    // Phase 28 — the callout's visible leader line also stops at the
+    // head's base (the hit shaft above still spans the full entry ->
+    // anchor length).
+    const base = arrowHeadBase(entry, anchor, ARROW_HEAD_PT);
     return (
       <>
         <svg
@@ -1925,8 +2040,8 @@ function DomAnnotation({
           <line
             x1={entry.x * arrowScale}
             y1={entry.y * arrowScale}
-            x2={anchorCss.x}
-            y2={anchorCss.y}
+            x2={base.x * arrowScale}
+            y2={base.y * arrowScale}
             stroke={hex}
             strokeWidth={1.5}
           />
@@ -1988,9 +2103,14 @@ interface SelectedContentChromeProps {
   ann: Annotation;
   cssScale: number;
   widthPt: number;
+  paletteTheme?: AnnotationTheme;
+  annotationPalette?: AnnotationColors;
+  onAnnotationPaletteChange?: (next: AnnotationColors) => void;
   onSurfacePointerDown: (e: React.PointerEvent, ann: Annotation, handle?: ImageResizeHandle) => void;
   onConfirm: () => void;
+  onCancel: () => void;
   onDelete: () => void;
+  onColorChange: (color: AnnotationColorValue) => void;
 }
 
 const RESIZABLE_KINDS: ReadonlySet<Annotation["kind"]> = new Set([
@@ -2007,7 +2127,19 @@ const RESIZABLE_KINDS: ReadonlySet<Annotation["kind"]> = new Set([
 ]);
 
 function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement {
-  const { ann, cssScale, widthPt, onSurfacePointerDown, onConfirm, onDelete } = props;
+  const {
+    ann,
+    cssScale,
+    widthPt,
+    paletteTheme,
+    annotationPalette,
+    onAnnotationPaletteChange,
+    onSurfacePointerDown,
+    onConfirm,
+    onCancel,
+    onDelete,
+    onColorChange,
+  } = props;
   const bounds = annotationBounds(ann);
   const ring = overlayRectToCss(bounds, cssScale);
   const resizable = RESIZABLE_KINDS.has(ann.kind);
@@ -2056,12 +2188,30 @@ function SelectedContentChrome(props: SelectedContentChromeProps): ReactElement 
         left={leftCss}
         top={topCss}
         onConfirm={onConfirm}
+        onCancel={onCancel}
         onDelete={onDelete}
+        // Phase 28 — the Edit text is replaced by the colour box, which
+        // sits BETWEEN Confirm and Delete. A single click on the swatch
+        // expands the shared ColorPalette; picking a colour applies it
+        // to this annotation live.
+        showEdit={false}
+        middle={
+          <AnnColorBox
+            color={ann.color}
+            theme={paletteTheme ?? "light"}
+            presets={annotationPalette}
+            onPaletteChange={onAnnotationPaletteChange}
+            onApply={onColorChange}
+          />
+        }
         confirmLabel="Confirm"
+        cancelLabel="Cancel"
         deleteLabel="Delete"
-        confirmTitle="Confirm the move"
+        confirmTitle="Done"
+        cancelTitle="Cancel (revert the change)"
         deleteTitle="Delete annotation"
-        confirmAria="Confirm annotation move"
+        confirmAria="Done editing annotation"
+        cancelAria="Cancel annotation changes"
         deleteAria="Delete annotation"
         dataActionPrefix={`ann-${ann.kind}`}
       />

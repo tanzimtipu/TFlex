@@ -256,6 +256,12 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.engineDeleteAnnotation, (_event, docId: string, annId: string) =>
     engine.deleteAnnotation(docId, annId),
   );
+  // Phase 28 — comment threads: creates the thread on the first call and
+  // appends a reply on every later call (one op for both). Persisted in the
+  // PDF catalog and dropped when the annotation is deleted.
+  ipcMain.handle(IPC.engineAddComment, (_event, docId: string, annotationId: string, text: string, author?: string) =>
+    engine.addComment(docId, annotationId, text, author),
+  );
 
   // Phase 4: forms
   ipcMain.handle(IPC.engineGetFormFields, (_event, docId: string) =>

@@ -1294,4 +1294,72 @@ the user can drag anywhere inside the page area.
 extended allow-list; preserve-if-valid / reject-if-invalid so an unknown id falls back to the current
 default); no new AppSettings field.
 
+## Phase 28 — Annotation interaction: arrow geometry, live edits, action-bar colour, comment threads
+
+**Supersession note:** this phase supersedes (a) the confirm-before-apply editing model for annotation
+shape/position/colour changes - edits now apply live and only Cancel reverts - and (b) the Phase-26
+decision to take shape colour from the annotation toolbar dropdown: colour is picked from the
+action-bar colour box, and the annotation dropdown colour is ignored for a selected annotation.
+
+**Features**
+
+- **Arrow geometry**: the arrow's leader line ends at the arrowhead's BASE, not at its tip, so the
+  shaft never extends past or through the pointer. The head keeps its current wings; the shaft's
+  visible line stops where the head begins (the invisible hit line may stay full-length).
+- **Live edits (no Confirm required)**: moving a shape/arrow/text element, resizing it, and changing
+  its colour all apply to the document IMMEDIATELY and stay applied. No Confirm click is required and
+  no unconfirmed state exists. A Cancel action reverts the change (undo). Changing the colour after a
+  move must work - it must never revert the move or be silently dropped.
+- **Action-bar colour box**: in the in-canvas action bar, the "Edit" text button between Confirm and
+  Delete is replaced by a COLOUR BOX (a swatch showing the current colour). A SINGLE click expands the
+  colour picker (double-click is removed app-wide); picking a colour applies it live. The annotation
+  toolbar's dropdown colour is ignored for a selected annotation (the action bar owns the colour).
+- **Comment threads (Adobe-like)**: a comment affordance on annotations. Selecting an annotation shows
+  its comment box (a text area for the comment plus a reply list with an "add reply" field). An
+  annotation that HAS comments shows a small comment icon on the element itself; an annotation with NO
+  comments shows NO icon. Comments and replies persist through save/reopen.
+- **Icon behaviour**: the icon is an indicator only (a small badge on the annotation) - the comment box
+  is the place to read/write; the icon must not intercept the annotation's own selection gestures.
+
+**Success criteria**
+
+1. An arrow's leader line visibly ends at the head's base in all three themes (frame/screenshot
+   inspection) and the line never crosses or extends past the pointer; the hit target still covers the
+   whole arrow.
+2. Dragging a shape/arrow/text element applies the move immediately (no Confirm) and it stays; changing
+   the colour right after a move applies live and does NOT revert or drop the move; Cancel reverts the
+   change (undo). Verified live and after save/reopen.
+3. The action bar shows a colour box in place of the Edit text, between Confirm and Delete; a single
+   click opens the picker; picking a colour changes the selected annotation's colour; the annotation
+   dropdown colour no longer changes a selected annotation's colour.
+4. Selecting an annotation shows its comment box; adding a comment and a reply persists through
+   save/reopen; an annotation with comments shows the small icon and one without shows none.
+5. No regression to the Phase-26 live text field, the Phase-25 panel, or the annotation create/delete
+   flows.
+
+**Settings impact:** none.
+
+## Phase 29 — Flush canvas (remove the empty space around the page view)
+
+**Features**
+
+- **No gutters**: the page view has no empty space around it - the `.document-content` 28px top/bottom
+  padding and the `.document-scroller` right padding are removed (or set to 0) so the page area is
+  flush with the app chrome on every side, in every theme (including the frosted duplicate rule).
+- **Scroll math intact**: removing the padding must not break the page-jump/scroll-position math (the
+  frosted `contentTopPadRef` path) or the page-slot alignment; page jumps still land correctly.
+- **Interaction intact**: annotations, selection, the floating text panel and the tools palette keep
+  working with the page flush (no clipped edges, no offset drift).
+
+**Success criteria**
+
+1. The page view is flush: measured 0 padding/gutter around `.document-content` and
+   `.document-scroller` in all three themes (screenshots).
+2. Page jumps (thumbnail click, page-nav) still land on the correct page and the scroll position is
+   correct after the padding removal.
+3. Placing/selecting/moving an annotation on the flush page maps to the correct page coordinates (no
+   offset drift), and the floating text panel + tools palette still work.
+
+**Settings impact:** none.
+
 

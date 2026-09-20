@@ -146,6 +146,13 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
 
     async function badgeFacts() {
       return win.evaluate(() => {
+        // Inlined (not the Node-scope parseRgba): this runs in the page.
+        const parseRgba = (str) => {
+          const m = /rgba?\(([^)]+)\)/.exec(str || '');
+          if (!m) return null;
+          const p = m[1].split(',').map((s) => parseFloat(s.trim()));
+          return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
+        };
         const badge = document.querySelector('.tools-badge[data-tools-badge], [data-tools-badge]');
         if (!badge) return null;
         const label = badge.querySelector('.tools-badge-label');
@@ -227,19 +234,18 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
     // full-bleed scroller behind floating chrome rows, but in the built
     // app the scroller box starts BELOW the chrome stack in EVERY theme
     // (its inset:0 resolves against a containing block that begins
-    // below the chrome). The observable, user-relevant contract the fix
-    // promises is that page 1 starts at the SAME position in every
-    // theme, so the assertions measure exactly that: the 28px content
-    // pad, the 28px scroller->page offset, and identical page-top Y
-    // across themes.
+    // below the chrome). Phase 29 then removed the 28px content pad
+    // entirely: the observable contract is now "page 1 is FLUSH with
+    // the scroller top (0 pad) and starts at the SAME position in every
+    // theme".
     // ------------------------------------------------------------------
     let g = await pageGeometry();
     console.log(`[spacing:frosted] ${JSON.stringify(g)}`);
     expect(g, 'frosted geometry probe').not.toBeNull();
-    expect(g.padTop, 'frosted .document-content top padding must be 28px').toBe('28px');
+    expect(g.padTop, 'frosted .document-content top padding is 0 (Phase 29 flush)').toBe('0px');
     expect(
-      Math.abs(g.pageTop - (g.scrollerTop + 28)),
-      'frosted page 1 must sit 28px below the scroller top (±2px)',
+      Math.abs(g.pageTop - g.scrollerTop),
+      'frosted page 1 is flush with the scroller top (±2px)',
     ).toBeLessThanOrEqual(2);
     const baselinePageTop = g.pageTop;
     console.log(
@@ -260,10 +266,10 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
       const g2 = await pageGeometry();
       console.log(`[spacing:${t}] ${JSON.stringify(g2)}`);
       expect(g2, `${t} geometry probe`).not.toBeNull();
-      expect(g2.padTop, `${t}: .document-content top padding must be the in-flow 28px`).toBe('28px');
+      expect(g2.padTop, `${t}: .document-content top padding is 0 (Phase 29 flush)`).toBe('0px');
       expect(
-        Math.abs(g2.pageTop - (g2.chromeBottom + 28)),
-        `${t}: page top must be 28px below the chrome stack (±2px) - measured gap ${g2.pageTop - g2.chromeBottom}px`,
+        Math.abs(g2.pageTop - g2.scrollerTop),
+        `${t}: page top is flush with the scroller top (±2px) - measured gap ${g2.pageTop - g2.scrollerTop}px`,
       ).toBeLessThanOrEqual(2);
       expect(
         Math.abs(g2.pageTop - baselinePageTop),

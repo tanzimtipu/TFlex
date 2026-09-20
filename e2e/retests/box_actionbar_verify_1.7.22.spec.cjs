@@ -142,11 +142,13 @@ test('repro: place box -> drag BODY to move -> release -> inspect action bar', a
   await win.mouse.up();
   await win.waitForTimeout(800);
 
-  const ta = win.locator('[data-edit-textarea]').first();
+  // Phase 26 — the inline editor is retired; the panel Text field is the
+  // editor and the session commits on blur.
+  const ta = win.locator('[data-txt-text]').first();
   await ta.waitFor({ timeout: 10000 });
   await ta.fill(BOX_TEXT);
   await win.waitForTimeout(300);
-  await win.click('[aria-label="Apply edit"]');
+  await ta.blur();
   await win.waitForTimeout(1600);
 
   const R0 = await boxSurface('COMMITTED-R0');
@@ -196,7 +198,7 @@ test('repro: place box -> drag BODY to move -> release -> inspect action bar', a
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
   }, savePath);
-  await win.click('[aria-label="Save As"]');
+  await win.click('[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.click('[data-save-as-confirm]');
@@ -205,10 +207,13 @@ test('repro: place box -> drag BODY to move -> release -> inspect action bar', a
   expect(fs.existsSync(savePath), 'the saved file must exist on disk').toBe(true);
 
   // Count VISIBLE box surfaces + text runs in the reopened saved file.
+  // Phase 22+ — Open lives on the welcome screen; close the tab first.
+  await win.locator('.tab-active .tab-close').click();
+  await win.waitForTimeout(1500);
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, savePath);
-  await win.locator('button.btn-primary:has-text("Open")').first().click();
+  await win.locator('button:has-text("Open PDF")').first().click();
   await win.waitForTimeout(2400);
   await scrollToPage1();
   await win.waitForTimeout(1500);

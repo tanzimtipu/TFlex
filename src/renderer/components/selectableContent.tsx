@@ -149,6 +149,13 @@ export interface ContentActionBarProps {
   onConfirm?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Phase 28 — an optional Cancel verb, rendered after the middle slot
+   *  and before Delete. The annotation bar uses it to undo the live
+   *  edit session. */
+  onCancel?: () => void;
+  cancelLabel?: string;
+  cancelTitle?: string;
+  cancelAria?: string;
   /** Modal verbs — Edit is shown only when a real edit toolbox
    *  exists; Delete only when an engine delete path exists. */
   showEdit?: boolean;
@@ -168,6 +175,11 @@ export interface ContentActionBarProps {
    *  the action verb; when present the button carries BOTH
    *  `data-content-action` and this attribute. */
   dataActions?: { confirm?: string; edit?: string; delete?: string };
+  /** Phase 28 — a control rendered BETWEEN the (optional) Edit button
+   *  and the Delete button. The annotation bar uses it for the colour
+   *  box, which replaces the old Edit text: Confirm | [colour box] |
+   *  Delete. */
+  middle?: ReactNode;
   /** Extra content rendered after the buttons (e.g. a label). */
   children?: ReactNode;
 }
@@ -181,6 +193,10 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
     onConfirm,
     onEdit,
     onDelete,
+    onCancel,
+    cancelLabel = "Cancel",
+    cancelTitle = "Cancel",
+    cancelAria,
     showEdit = true,
     showDelete = true,
     confirmLabel = "Confirm",
@@ -194,6 +210,7 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
     deleteAria,
     dataActionPrefix,
     dataActions,
+    middle,
     children,
   } = props;
   const prefix = dataActionPrefix;
@@ -232,6 +249,19 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
           title={editTitle}
         >
           {editLabel}
+        </button>
+      )}
+      {middle}
+      {onCancel !== undefined && (
+        <button
+          type="button"
+          className="toolbox-action-btn toolbox-action-btn--cancel content-action-btn"
+          onClick={onCancel}
+          data-content-action={`${prefix}-cancel`}
+          aria-label={cancelAria ?? cancelLabel}
+          title={cancelTitle}
+        >
+          {cancelLabel}
         </button>
       )}
       {showDelete && onDelete !== undefined && (

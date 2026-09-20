@@ -124,6 +124,17 @@ const engineApi = {
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineDeleteAnnotation, docId, annId);
   },
+  // Phase 28 — comment threads: appends an entry to the annotation's thread
+  // (creating the thread on the first call). `author` is optional and
+  // defaults to 'You' in the engine.
+  addComment(
+    docId: string,
+    annotationId: string,
+    text: string,
+    author?: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineAddComment, docId, annotationId, text, author);
+  },
   // Phase 4: forms
   getFormFields(docId: string): Promise<Result<FormField[], EngineError>> {
     return ipcRenderer.invoke(IPC.engineGetFormFields, docId);

@@ -7,14 +7,26 @@ import {
   PDFArray,
   PDFDict,
   PDFDocument,
+  PDFHexString,
   PDFName,
   PDFRawStream,
   PDFRef,
   PDFStream,
+  PDFString,
 } from 'pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
-import { nearestAnnColor } from '../../../src/main/services/annotations';
-import type { CreateAnnotationPayload, EngineState } from '../../../src/shared/types';
+import {
+  ANN_COLORS,
+  colorToRgb,
+  isValidColorValue,
+  nearestAnnColor,
+  parseAnnotationsFromDoc,
+} from '../../../src/main/services/annotations';
+import {
+  ANN_COLOR_RGB,
+  ANNOTATION_COLOR_NAMES,
+} from '../../../src/shared/annotationColors';
+import type { AnnColor, CreateAnnotationPayload, EngineState } from '../../../src/shared/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -3142,5 +3154,262 @@ describe('Phase 27 - annotation bundled font families', () => {
     expect(info!.apText).toMatch(/(^|\n)\/Helv 12 Tf/);
     expect(info!.apText).not.toContain('//Helv');
     expect(info!.da).toBe('/Helv 12 Tf 0 0 0 rg');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 28 (criterion 4) — stable annotation ids persisted in /NM
+// ---------------------------------------------------------------------------
+
+/** Register one raw annotation dict on page 0, optionally carrying /NM. */
+function addRawAnnot(doc: PDFDocument, nm: unknown): void {
+  const entries: Record<string, unknown> = {
+    Type: 'Annot',
+    Subtype: 'FreeText',
+    Rect: [72, 72, 272, 122],
+    Contents: PDFString.of('raw'),
+  };
+  if (nm !== undefined) entries.NM = nm;
+  const ref = doc.context.register(doc.context.obj(entries as any));
+  (doc.getPage(0).node as any).addAnnot(ref);
+}
+
+/** First raw annotation dict on page 0 of a parsed PDF. */
+function firstRawAnnot(doc: PDFDocument): any {
+  const leaf: any = (doc.getPage(0) as any).node;
+  const ref = leaf.get(PDFName.of('Annots'));
+  const arr = ref instanceof PDFRef ? doc.context.lookup(ref) : ref;
+  const aRef = (arr as PDFArray).get(0);
+  return aRef instanceof PDFRef ? doc.context.lookup(aRef) : aRef;
+}
+
+describe('Phase 28 (criterion 4) — annotation id persists in /NM', () => {
+  it('(a) create -> save -> reparse returns the SAME annotation id', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-nm-a', path);
+    const created = await engine.createAnnotation('doc-nm-a', makePayload({ id: 'stable-id-abc' }));
+    expect(created.ok).toBe(true);
+
+    const savePath = join(dir, 'nm-a.pdf');
+    expect((await engine.saveAs('doc-nm-a', savePath)).ok).toBe(true);
+
+    const buf = await readFile(savePath);
+    const rawDoc = await PDFDocument.load(buf);
+    const nm = firstRawAnnot(rawDoc).get(PDFName.of('NM'));
+    expect(nm).toBeInstanceOf(PDFString);
+    expect((nm as PDFString).decodeText()).toBe('stable-id-abc');
+
+    const reparsed = parseAnnotationsFromDoc(rawDoc);
+    expect(reparsed[0]).toHaveLength(1);
+    expect(reparsed[0][0].id).toBe('stable-id-abc');
+  });
+
+  it('(c) a legacy annotation with no /NM loads with a fresh id and does not throw', async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    addRawAnnot(doc, undefined);
+    const path = await writeFixture('nm-legacy.pdf', await doc.save());
+
+    const rawDoc = await PDFDocument.load(await readFile(path));
+    const reparsed = parseAnnotationsFromDoc(rawDoc);
+    expect(reparsed[0]).toHaveLength(1);
+    const id = reparsed[0][0].id;
+    expect(typeof id).toBe('string');
+    expect(id.length).toBeGreaterThan(0);
+
+    const engine = new EngineService();
+    const load = await engine.loadDocument('doc-nm-c', path);
+    expect(load.ok).toBe(true);
+    const state = await engine.getState('doc-nm-c');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const anns = getAnns(state.value);
+      expect(anns).toHaveLength(1);
+      // A fresh random id is assigned (no /NM to read); each load gets its own.
+      expect(typeof anns[0].id).toBe('string');
+      expect((anns[0].id as string).length).toBeGreaterThan(0);
+      expect(anns[0].id).not.toBe(id);
+    }
+  });
+
+  it('(d) hostile /NM (non-string / empty / oversized) falls back to a fresh id without throwing', async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    addRawAnnot(doc, PDFName.of('NotAString'));
+    addRawAnnot(doc, PDFString.of(''));
+    addRawAnnot(doc, PDFString.of('z'.repeat(1000)));
+    const path = await writeFixture('nm-hostile.pdf', await doc.save());
+
+    const rawDoc = await PDFDocument.load(await readFile(path));
+    const reparsed = parseAnnotationsFromDoc(rawDoc);
+    expect(reparsed[0]).toHaveLength(3);
+    const ids = reparsed[0].map((a) => a.id);
+    for (const id of ids) {
+      expect(typeof id).toBe('string');
+      expect(id.length).toBeGreaterThan(0);
+      expect(id.length).toBeLessThanOrEqual(256);
+    }
+    expect(new Set(ids).size).toBe(3);
+    expect(ids).not.toContain('');
+
+    const engine = new EngineService();
+    expect((await engine.loadDocument('doc-nm-d', path)).ok).toBe(true);
+  });
+
+  it('(d2) a valid hex-string /NM is honoured', async () => {
+    const doc = await PDFDocument.create();
+    doc.addPage([612, 792]);
+    addRawAnnot(doc, PDFHexString.fromText('hex-id-42'));
+    const rawDoc = await PDFDocument.load(await doc.save());
+    const reparsed = parseAnnotationsFromDoc(rawDoc);
+    expect(reparsed[0][0].id).toBe('hex-id-42');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-260 — one canonical annotation colour list (shared by engine + renderer)
+//
+// The renderer palette and the engine's named set had drifted: pink/teal/gray
+// existed only in the renderer, so picking them on an engine-backed path was a
+// silent no-op. The canonical list now lives in src/shared/annotationColors.ts
+// and both sides consume it. These tests pin its membership and prove the
+// three previously-dropped colours are accepted on create AND edit and survive
+// a save/reopen, while unknown names still fail loud.
+// ---------------------------------------------------------------------------
+
+describe('DEF-260 canonical annotation colours', () => {
+  it('the canonical list has exactly 12 members with the expected names', () => {
+    expect(ANNOTATION_COLOR_NAMES).toHaveLength(12);
+    expect(new Set(ANNOTATION_COLOR_NAMES).size).toBe(12);
+    expect([...ANNOTATION_COLOR_NAMES].sort()).toEqual(
+      [
+        'blue', 'cyan', 'gray', 'green', 'magenta', 'orange',
+        'pink', 'purple', 'red', 'teal', 'white', 'yellow',
+      ],
+    );
+  });
+
+  it('the engine accepted set equals the canonical set (drift guard)', () => {
+    // The engine exposes its accepted names; it must be byte-for-byte the
+    // canonical list, and every canonical name must pass isValidColorValue.
+    expect([...ANN_COLORS]).toEqual([...ANNOTATION_COLOR_NAMES]);
+    for (const name of ANNOTATION_COLOR_NAMES) {
+      expect(isValidColorValue(name)).toBe(true);
+    }
+    // The shared RGB record covers exactly the canonical names.
+    expect(Object.keys(ANN_COLOR_RGB).sort()).toEqual([...ANNOTATION_COLOR_NAMES].sort());
+    expect(Object.keys(ANN_COLOR_RGB)).toHaveLength(12);
+  });
+
+  it('pink / teal / gray carry the renderer palette RGB values', () => {
+    expect(ANN_COLOR_RGB.pink[0]).toBeCloseTo(236 / 255, 10);
+    expect(ANN_COLOR_RGB.pink[1]).toBeCloseTo(72 / 255, 10);
+    expect(ANN_COLOR_RGB.pink[2]).toBeCloseTo(153 / 255, 10);
+    expect(ANN_COLOR_RGB.teal[0]).toBeCloseTo(20 / 255, 10);
+    expect(ANN_COLOR_RGB.teal[1]).toBeCloseTo(184 / 255, 10);
+    expect(ANN_COLOR_RGB.teal[2]).toBeCloseTo(166 / 255, 10);
+    expect(ANN_COLOR_RGB.gray[0]).toBeCloseTo(100 / 255, 10);
+    expect(ANN_COLOR_RGB.gray[1]).toBeCloseTo(116 / 255, 10);
+    expect(ANN_COLOR_RGB.gray[2]).toBeCloseTo(139 / 255, 10);
+  });
+
+  it('nearestAnnColor resolves each canonical RGB back to its name', () => {
+    for (const name of ANNOTATION_COLOR_NAMES) {
+      const [r, g, b] = ANN_COLOR_RGB[name];
+      expect(nearestAnnColor(r, g, b)).toBe(name);
+      expect(colorToRgb(name)).toEqual(ANN_COLOR_RGB[name]);
+    }
+  });
+
+  it('create accepts pink / teal / gray (previously silently rejected)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-260-create', path);
+
+    for (const name of ['pink', 'teal', 'gray'] as const) {
+      const r = await engine.createAnnotation('doc-260-create', makePayload({
+        id: `def260-${name}`,
+        kind: 'rect',
+        rects: [{ x: 50, y: 400, width: 120, height: 80 }],
+        color: name,
+      }));
+      expect(r.ok, `create with ${name}`).toBe(true);
+      if (r.ok) {
+        const ann = getAnns(r.value).find((a: any) => a.id === `def260-${name}`);
+        expect(ann?.color).toBe(name);
+      }
+    }
+  });
+
+  it('edit changes the engine colour to pink / teal / gray (not silently kept)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-260-edit', path);
+
+    await engine.createAnnotation('doc-260-edit', makePayload({
+      id: 'def260-edit',
+      kind: 'rect',
+      rects: [{ x: 50, y: 400, width: 120, height: 80 }],
+      color: 'blue',
+    }));
+
+    for (const name of ['pink', 'teal', 'gray'] as const) {
+      const edited = await engine.editAnnotation('doc-260-edit', 'def260-edit', { color: name });
+      expect(edited.ok, `edit to ${name}`).toBe(true);
+      if (edited.ok) {
+        const ann = getAnns(edited.value).find((a: any) => a.id === 'def260-edit');
+        expect(ann?.color).toBe(name);
+      }
+    }
+  });
+
+  it('pink / teal / gray survive save + reopen by name', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-260-save', path);
+
+    for (const name of ['pink', 'teal', 'gray'] as const) {
+      const r = await engine.createAnnotation('doc-260-save', makePayload({
+        id: `def260-save-${name}`,
+        kind: 'rect',
+        rects: [{ x: 40, y: 300, width: 100, height: 60 }],
+        color: name,
+      }));
+      expect(r.ok).toBe(true);
+    }
+
+    const savePath = join(dir, 'def260-colors.pdf');
+    const saved = await engine.saveAs('doc-260-save', savePath);
+    expect(saved.ok).toBe(true);
+    await engine.loadDocument('doc-260-save-reloaded', savePath);
+
+    const state = await engine.getState('doc-260-save-reloaded');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const anns = getAnns(state.value);
+      for (const name of ['pink', 'teal', 'gray'] as const) {
+        const ann = anns.find((a: any) => a.id === `def260-save-${name}`);
+        expect(ann, `reopened ${name}`).toBeDefined();
+        expect(ann?.color).toBe(name);
+      }
+    }
+  });
+
+  it('an unknown colour name still fails loud on create', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-260-unknown', path);
+
+    const r = await engine.createAnnotation('doc-260-unknown', makePayload({
+      kind: 'text-box',
+      color: 'chartreuse' as AnnColor,
+    }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/Invalid annotation color/i);
+    }
+    expect(isValidColorValue('chartreuse')).toBe(false);
   });
 });

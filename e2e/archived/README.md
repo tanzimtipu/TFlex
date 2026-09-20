@@ -149,3 +149,65 @@ below.
   `gt_verify_1711` DEF-135 - PORTED IN PLACE (kept, passing), not retired:
   double-click/Confirm steps added for the DEF-153/152 model. Listed here for
   traceability of the cleanup decisions.
+
+## Phase-26 dead-selector sweep (2026-09-21)
+
+Phase 26 retired the in-canvas editors (`[data-edit-editor]`,
+`[data-edit-textarea]`, `[data-edit-confirm]`, `.edit-inline-editor`,
+`[data-annotation-editor]`, `.shape-color-editor`): text entry now goes
+through the floating text-properties panel field (`[data-txt-text]`, session
+commits on blur) and shape colour through `[data-ann-color]` / the action
+bar. These historical retests drove the retired surfaces and would fail if
+run; their still-live contracts are pinned by the current keepers
+(`phase21_text_panel`, `phase24_annotation_styles`, `phase26_panel_text_edit`,
+`phase28_29_verify`, `regression_b_port` B21/B22, `sweep_*`, `probe_190_triage`).
+
+Archived in the sweep (40):
+
+Inline-editor / add-box records:
+- `b6_probe`, `probe_box_artifact_1.7.14`, `qa_pmm_d_artifact_1722`,
+  `qa_pmm_e_edittext_1722` - zero-assert DOM probes of the retired editor.
+- `edit_repros` (BUG-6/16), `gt_repro1_annot_edit` (Bug 2/5),
+  `gt_sign_edit_title` (GT-02/05/06), `operator_b123_repro` BUG4,
+  `operator_bug3_bug4_1.7.13` BUG4, `operator_text_manip_repro` TOOL1-4 -
+  inline-editor behaviour (stays open, drag grip, font/size controls).
+- `def_108_115_verify` DEF-108/109/110/113, `def_123_131_verify_1.7.9`
+  DEF-124/127, `release_gate_117_verify` B5 - inline-editor legs of mixed
+  batches (surviving DOCX/OCR/crop/blank-page/signature legs covered by
+  `sweep_edit_forms_export`, `sweep_pageops`, `sweep_annotations_sign`).
+- `def_152_159_verify_1.7.23` (+round2-5), `def_160_162_verify_1.7.25`,
+  `qa_unified_1724_repro`, `qa_pmm_a_addbox_1722`,
+  `qa_pmm_b2_note_shapes_1722` - the DEF-152..162 move/confirm matrix driving
+  the retired editor; the live contract is pinned by `phase28_29_verify` C2
+  and `regression_b_port` B22.
+
+Annotation-editor records (`[data-annotation-editor]`):
+- `def_147_verify_1.7.15/16/17`, `gt_movability_1.7.14` - movable-editor
+  contract; the editors no longer exist.
+- `def_251_252_retest`, `def_253_retest`, `def_254_255_retest`,
+  `diag_phase24_failures` - panel-lifecycle retests driving the retired
+  editor; the live contract is pinned by `phase24_annotation_styles` /
+  `phase26_panel_text_edit` and `def256/257/258/260`.
+- `def_154_157_verify_1.7.24`, `def_163_164_verify_1.7.26`,
+  `verify_1712_sweep` DEF-137, `qa_bugfix_verify_1.10.2`,
+  `qa_frost_glass_visual_1103`, `qa_pmm_c_dark_1722`, `gt_verify_1711`,
+  `def_211_probe_place` - callout/note/auto-fit/frosted legs driving the
+  retired editor; live contracts pinned by `phase28_29_verify` C1,
+  `phase27_fonts_spacing`, `sweep_annotations_sign`, `phase13/23`.
+
+Top-level:
+- `def221_222_leftover_thumb_flicker` (DEF-221/222), `def235_240_harness_flows`
+  (DEF-235..240) - drove the retired inline editor; the live leftover-box /
+  harness-flow contracts are pinned by `sweep_pageops` /
+  `class_sweep_def221_222`.
+
+Repointed in place, kept passing (2026-09-21):
+- `retests/def_145_verify_1.7.15`, `retests/def_146_verify_1.7.15`,
+  `retests/box_actionbar_verify_1.7.22` - text entry moved to the panel
+  `[data-txt-text]` field (blur commits) and the title-bar Save As
+  `[data-toolbar-save-as]`; contracts unchanged.
+
+Left alone (reference the retired selectors only in negative/guarded checks
+and still pass): `retests/b2_isolation`, `retests/color_note_repros`,
+`retests/def_211_ghost_dialog_retest`, `retests/qa_def_178_179_verify`,
+`retests/qa_pmm_b3_ellipse_arrow_ink_1722`, `retests/sign_repros`.

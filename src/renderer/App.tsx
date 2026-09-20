@@ -1963,6 +1963,29 @@ export function App(): ReactElement {
     [pushToast, noteOpApplied],
   );
 
+  // Phase 28 — append a comment / reply to an annotation's thread. The
+  // engine creates the thread on the first call and appends a reply
+  // thereafter; the echoed state carries the refreshed `comments` array,
+  // which `noteOpApplied` mirrors so the comment box's list and the
+  // annotation's comment badge update from the same round-trip.
+  const onAddComment = useCallback(
+    async (tabId: string, annotationId: string, text: string): Promise<void> => {
+      const open = openTabsRef.current[tabId];
+      if (open === undefined) return;
+      const result = await engineRef.current.addComment(
+        open.session.engineDocId,
+        annotationId,
+        text,
+      );
+      if (!result.ok) {
+        pushToast("error", describeEngineError(result.error.code, result.error.message));
+        return;
+      }
+      noteOpApplied(tabId, result.value);
+    },
+    [pushToast, noteOpApplied],
+  );
+
   // ---- Phase 4: forms ----
   // Load the form field list on tab open and seed the per-tab `forms`
   // state. The engine returns the canonical list with current values;
@@ -5755,6 +5778,7 @@ pushToast(
         createAnnotation: (a: Annotation) => void;
         editAnnotation: (id: string, patch: AnnotationPatch) => void;
         deleteAnnotation: (id: string) => void;
+        addComment: (annotationId: string, text: string) => void;
       }
     >();
     return (tabId: string) => {
@@ -5781,11 +5805,14 @@ pushToast(
         deleteAnnotation: (id: string): void => {
           void onDeleteAnnotation(tabId, id);
         },
+        addComment: (annotationId: string, text: string): void => {
+          void onAddComment(tabId, annotationId, text);
+        },
       };
       cache.set(tabId, out);
       return out;
     };
-  }, [engineUi, onCreateAnnotation, onEditAnnotation, onDeleteAnnotation, liveAnnTextIdsFor]);
+  }, [engineUi, onCreateAnnotation, onEditAnnotation, onDeleteAnnotation, onAddComment, liveAnnTextIdsFor]);
 
   // Per-tab forms + signatures handlers.
   const formsAndSignaturesHandlers = useMemo(() => {
@@ -6724,6 +6751,7 @@ pushToast(
                     onCreateAnnotation={ann.createAnnotation}
                     onEditAnnotation={ann.editAnnotation}
                     onDeleteAnnotation={ann.deleteAnnotation}
+                    onAddComment={ann.addComment}
                     formFields={fs.formFields}
                     onFormValueChange={fs.onFormValueChange}
                     onFormListboxToggle={fs.onFormListboxToggle}

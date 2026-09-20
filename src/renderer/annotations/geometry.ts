@@ -230,6 +230,11 @@ export function inkPathD(points: readonly PagePoint[]): string {
   return d;
 }
 
+/** Wing angle of the arrowhead off the shaft, in radians. Shared by the
+ *  head itself and the base-centre helper below so the two can never
+ *  disagree about where the head begins. */
+const ARROW_WING_ANGLE_RAD = (28 * Math.PI) / 180;
+
 /** The two wing endpoints of an arrowhead at `to`, pointing away from
  *  `from`. `size` is the wing length in page points. Degenerate
  *  (zero-length) arrows return the tip itself twice. */
@@ -249,8 +254,7 @@ export function arrowHead(
   }
   const ux = dx / len;
   const uy = dy / len;
-  // Wing angle: 28 degrees off the shaft.
-  const angle = (28 * Math.PI) / 180;
+  const angle = ARROW_WING_ANGLE_RAD;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   // Rotate the unit vector pointing back along the shaft by +/- angle.
@@ -262,6 +266,27 @@ export function arrowHead(
     { x: to.x + w1.x * size, y: to.y + w1.y * size },
     { x: to.x + w2.x * size, y: to.y + w2.y * size },
   ];
+}
+
+/** The CENTRE OF AN ARROWHEAD'S BASE — the point where the head begins
+ *  and therefore where the visible shaft must stop. It is the midpoint
+ *  of the two wing points `arrowHead` returns, i.e. the tip backed off
+ *  along the shaft by the head's axial length (`size * cos 28deg`).
+ *  Drawing the leader line `from -> base` keeps it from poking through
+ *  or past the pointer. Degenerate (zero-length) arrows return the tip,
+ *  so a zero-length arrow still draws a dot rather than a negative
+ *  segment. */
+export function arrowHeadBase(
+  from: PagePoint,
+  to: PagePoint,
+  size: number,
+): PagePoint {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len <= 0.0001) return { x: to.x, y: to.y };
+  const axial = (size * Math.cos(ARROW_WING_ANGLE_RAD)) / len;
+  return { x: to.x - dx * axial, y: to.y - dy * axial };
 }
 
 // ---------------------------------------------------------------------------

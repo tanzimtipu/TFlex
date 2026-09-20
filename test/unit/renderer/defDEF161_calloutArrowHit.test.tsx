@@ -154,12 +154,6 @@ function dragSurface(layer: HTMLElement, surface: Element, from: [number, number
   releaseOnLayer(layer, to[0], to[1]);
 }
 
-function barConfirm(host: HTMLElement): HTMLButtonElement {
-  const btn = host.querySelector<HTMLButtonElement>("[data-content-action$='-confirm']");
-  if (btn === null) throw new Error("Confirm button not found");
-  return btn;
-}
-
 /** The Confirm button INSIDE a committed textbox / callout edit
  *  toolbox (data-annotation-action, not the selection bar's
  *  data-content-action). */
@@ -187,7 +181,7 @@ describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag"
     }
   });
 
-  it("dragging the ARROW parks a pending move; Confirm commits delete + re-create with the moved `at` and an untouched box rect", () => {
+  it("Phase 28 — dragging the ARROW commits the anchor move on pointerup (no Confirm), box rect untouched", () => {
     const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [CALLOUT_ANN] });
     try {
       const layer = layerOf(host);
@@ -195,8 +189,9 @@ describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag"
       if (shaft === null) throw new Error("shaft hit not found");
       // Press mid-shaft (75,80), drag +20/+20 to (95,100).
       dragSurface(layer, shaft, [75, 80], [95, 100]);
-      expect(onDeleteAnnotation).not.toHaveBeenCalled();
-      expect(onCreate).not.toHaveBeenCalled();
+      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
+      expect(onDeleteAnnotation.mock.calls[0]?.[0]).toBe("callout-1");
+      expect(onCreate).toHaveBeenCalledTimes(1);
       // The arrow re-aims live: the draft moves `at` to (70,80) while
       // the box rect stays put.
       const shaftAfter = arrowSvg(host).querySelector(".ann-callout-arrow-hit");
@@ -204,10 +199,6 @@ describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag"
       expect(shaftAfter?.getAttribute("y2")).toBe("80");
       expect(boxDiv(host).style.left).toBe("100px");
       expect(boxDiv(host).style.top).toBe("100px");
-      clickEl(barConfirm(host));
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
-      expect(onDeleteAnnotation.mock.calls[0]?.[0]).toBe("callout-1");
-      expect(onCreate).toHaveBeenCalledTimes(1);
       const created = onCreate.mock.calls[0]?.[0] as Annotation;
       expect(created.id).toBe("callout-1");
       expect(created.kind).toBe("callout");
@@ -224,7 +215,6 @@ describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag"
     try {
       const layer = layerOf(host);
       dragSurface(layer, boxDiv(host), [120, 120], [150, 140]);
-      clickEl(barConfirm(host));
       const created = onCreate.mock.calls[0]?.[0] as Annotation;
       const c = created as { rect: { x: number; y: number; width: number; height: number }; at: { x: number; y: number } };
       // Delta (30,20) applied to the rect only.

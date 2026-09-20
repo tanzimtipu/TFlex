@@ -107,11 +107,13 @@ test('DEF-146: committing a textbox with long text -> full text visible, not tru
   await win.mouse.up();
   await win.waitForTimeout(800);
 
-  const ta = win.locator('[data-edit-textarea]').first();
+  // Phase 26 — the inline editor is retired; the panel Text field is the
+  // editor and the session commits on blur.
+  const ta = win.locator('[data-txt-text]').first();
   await ta.waitFor({ timeout: 10000 });
   await ta.fill(FULL_TEXT);
   await win.waitForTimeout(300);
-  await win.click('[aria-label="Apply edit"]');
+  await ta.blur();
   await win.waitForTimeout(900);
 
   const committed = await boxSnapshot('COMMITTED');

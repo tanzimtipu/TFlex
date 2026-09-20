@@ -88,11 +88,13 @@ test('DEF-145: dragging a committed textbox -> box + text travel together, no st
   await win.mouse.up();
   await win.waitForTimeout(800);
 
-  const ta = win.locator('[data-edit-textarea]').first();
+  // Phase 26 — the inline editor is retired; the panel Text field is the
+  // editor and the session commits on blur.
+  const ta = win.locator('[data-txt-text]').first();
   await ta.waitFor({ timeout: 10000 });
   await ta.fill('STALE CHECK BOX');
   await win.waitForTimeout(300);
-  await win.keyboard.press('Control+Enter');
+  await ta.blur();
   await win.waitForTimeout(800);
 
   const committed = await boxSnapshot('COMMITTED');

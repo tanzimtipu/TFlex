@@ -10,6 +10,7 @@ import { SignaturesOverlay } from '../signatures/SignaturesOverlay';
 import { EditOverlay } from '../edit/EditOverlay';
 import { StampOverlay } from '../annotations/StampOverlay';
 import type {
+  CommentThread,
   FormField,
   SavedSignature,
   SignaturePlacement,
@@ -19,6 +20,10 @@ import type {
   AnnotationPatch,
   AnnotationToolState,
 } from '../annotations/model';
+import type {
+  AnnotationColors,
+  AnnotationTheme,
+} from '../state/colorPalette';
 
 interface PageViewProps {
   doc: PDFDocumentProxy;
@@ -92,6 +97,21 @@ interface PageViewProps {
   /** Phase 26 — the overlay placed or clicked a text element; the host
    *  focuses the panel's Text field (the single text-editing surface). */
   onTextFocusRequest?: (id: string) => void;
+  /** Phase 28 — the selection bar's colour box reuses the annotation
+   *  toolbar's picker: same preset bucket, same saved custom presets. */
+  annotationPaletteTheme?: AnnotationTheme;
+  annotationPalette?: AnnotationColors;
+  onAnnotationPaletteChange?: (next: AnnotationColors) => void;
+  /** Phase 28 — the document's comment threads. Threaded straight to the
+   *  AnnotationOverlay, which draws the small comment badge on every
+   *  annotated element that has a thread and feeds the selected
+   *  annotation's entries to the comment box. Empty / absent means no
+   *  badges anywhere. */
+  comments?: readonly CommentThread[];
+  /** Phase 28 — append a comment / reply to an annotation's thread.
+   *  Threaded to the AnnotationOverlay's comment box; the host's engine
+   *  call echoes the refreshed `comments`, which flips the badge on. */
+  onAddComment?: (annotationId: string, text: string) => void;
   /** B10 / DEF-101 — successfully placed stamps for this page
    *  (rect + raster as recorded by the host on `addStamp` success).
    *  Rendered as `.stamp-annotation` DOM surfaces so a placed stamp
@@ -311,6 +331,11 @@ export function PageView(props: PageViewProps) {
     onDisarmAnnTool,
     onSelectAnnotation,
     onTextFocusRequest,
+    annotationPaletteTheme,
+    annotationPalette,
+    onAnnotationPaletteChange,
+    comments,
+    onAddComment,
     stampAnnotations = [],
     onMoveStamp,
     onDeleteStamp,
@@ -820,6 +845,11 @@ export function PageView(props: PageViewProps) {
         onDisarmTool={onDisarmAnnTool}
         onSelectAnnotation={reportAnnSelection}
         onTextFocusRequest={onTextFocusRequest}
+        paletteTheme={annotationPaletteTheme}
+        annotationPalette={annotationPalette}
+        onAnnotationPaletteChange={onAnnotationPaletteChange}
+        comments={comments}
+        onAddComment={onAddComment}
       />
       {/* B10 / DEF-101 + Bug 6 — placed-stamp DOM surfaces. Painted above
        * the textLayer; selectable / movable / deletable like every

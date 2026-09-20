@@ -227,16 +227,18 @@ describe("Phase 14.2 — state-driven page view in every theme (FIX 4/5)", () =>
   });
 });
 
-describe("Phase 14.2 — frosted floating margins are the 16px minimum (FIX 8, Phase C supersession)", () => {
+describe("Phase 14.2 FIX 8 (Phase 29 supersession) — the frosted content padding is flush", () => {
   const css = stripCssComments(readStyles());
 
-  it("the frosted content padding follows the Phase C contract (28px, page scrolls under the chrome)", () => {
-    // Phase C superseded FIX 8's measured-chrome pad: the frosted
-    // scroller is full-bleed and the page intentionally starts 28px
-    // from the top, scrolling UNDER the floating chrome rows. This
-    // test pins that current contract so a revert is caught.
+  it("the frosted content padding is 0 (Phase 29 flush canvas superseded the 28px Phase C pad)", () => {
+    // Phase C gave the frosted page a 28px top pad so it started below
+    // the floating chrome. Phase 29 removed the gutter entirely: the
+    // page is flush with the app chrome in every theme, so the frosted
+    // duplicate rule must also paint zero padding. This test pins the
+    // current contract so a revert is caught.
     const bodies = [...css.matchAll(/:root\[data-theme="frosted"\]\s+\.document-content\s*\{([^}]*)\}/g)];
     const body = bodies.at(-1)?.[1] ?? "";
-    expect(body).toMatch(/padding:\s*28px\s+0/);
+    expect(body).toMatch(/padding:\s*0/);
+    expect(body).not.toMatch(/padding:\s*28px/);
   });
 });

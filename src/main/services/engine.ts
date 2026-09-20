@@ -8,6 +8,8 @@ import type {
   AddTextBoxPayload,
   AnnModel,
   AnnRect,
+  CommentEntry,
+  CommentThread,
   CreateAnnotationPayload,
   CropEntry,
   DocxImageEntry,
@@ -110,6 +112,9 @@ interface Snapshot {
   pdfBytes?: Uint8Array;
   /** Phase 12 — logical page labels captured for undo of renumberPages. */
   pageLabels?: PageLabelEntry[];
+  /** Phase 28 — comment threads captured for undo of addComment /
+   *  deleteAnnotation (which drops the deleted annotation's thread). */
+  comments?: CommentThread[];
 }
 
 interface EngineDoc {
@@ -136,6 +141,10 @@ interface EngineDoc {
    *  order. Applied to the serialized document's /PageLabels number tree so
    *  a viewer shows the custom labels instead of raw page numbers. */
   pageLabels?: PageLabelEntry[];
+  /** Phase 28 — one comment thread per annotated element that has comments.
+   *  Persisted into the output PDF's catalog (`/TFlexComments`) at save time
+   *  and re-parsed on load, so threads survive save/reopen. */
+  comments: CommentThread[];
 }
 
 /** Phase 11 — a recognised word persisted on the doc for suspects. `page`
@@ -272,6 +281,7 @@ export class EngineService {
       const annotations = parseAnnotationsFromDoc(pdfDoc);
       const placedSignatures = parseSignaturesFromDoc(pdfDoc);
       const textBoxes = parseTextBoxesFromDoc(pdfDoc);
+      const comments = parseCommentsFromDoc(pdfDoc);
       const rotations = parseRotationsFromDoc(pdfDoc, count);
       const doc: EngineDoc = {
         pdfDoc,
@@ -285,6 +295,7 @@ export class EngineService {
         modified: false,
         placedSignatures,
         textBoxes,
+        comments,
       };
       this.docs.set(docId, doc);
       return ok(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer);
@@ -322,6 +333,7 @@ export class EngineService {
       const annotations = parseAnnotationsFromDoc(pdfDoc);
       const placedSignatures = parseSignaturesFromDoc(pdfDoc);
       const textBoxes = parseTextBoxesFromDoc(pdfDoc);
+      const comments = parseCommentsFromDoc(pdfDoc);
       const rotations = parseRotationsFromDoc(pdfDoc, count);
       const doc: EngineDoc = {
         pdfDoc,
@@ -335,6 +347,7 @@ export class EngineService {
         modified: false,
         placedSignatures,
         textBoxes,
+        comments,
       };
       this.docs.set(docId, doc);
       // Return the original bytes so the renderer can feed them to PDF.js.
@@ -927,6 +940,61 @@ export class EngineService {
     if (!result.ok) {
       return result;
     }
+    // Phase 28 — deleting an annotation drops its comment thread. The
+    // snapshot above still carries the thread, so undo restores both.
+    doc.comments = doc.comments.filter((t) => t.annotationId !== annId);
+    doc.undoStack.push(snapshot);
+    doc.redoStack = [];
+    doc.modified = true;
+    return ok(buildState(doc));
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 28 — comment threads: one op for the first comment and replies
+  // -----------------------------------------------------------------------
+
+  async addComment(
+    docId: string,
+    annotationId: string,
+    text: string,
+    author?: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    return this._enqueue(docId, () => this._addCommentImpl(docId, annotationId, text, author));
+  }
+
+  private async _addCommentImpl(
+    docId: string,
+    annotationId: string,
+    text: string,
+    author?: string,
+  ): Promise<Result<EngineState, EngineError>> {
+    const doc = this.docs.get(docId);
+    if (doc === undefined) {
+      return err('engine-error', `unknown document: ${docId}`);
+    }
+    // A comment on a missing annotation fails loud (typed engine-error).
+    if (!hasAnnotation(doc, annotationId)) {
+      return err('engine-error', `unknown annotation: ${annotationId}`);
+    }
+    const validated = validateCommentText(text);
+    if (!validated.ok) {
+      return err('engine-error', validated.reason);
+    }
+    const snapshot = snapshotDoc(doc);
+    const entry: CommentEntry = {
+      id: `cmt-${randomUUID()}`,
+      author: normalizeCommentAuthor(author),
+      text: validated.text,
+      createdAt: Date.now(),
+    };
+    // First call for an annotation creates the thread; every later call
+    // appends a reply entry (oldest-first order preserved).
+    const thread = doc.comments.find((t) => t.annotationId === annotationId);
+    if (thread !== undefined) {
+      thread.entries.push(entry);
+    } else {
+      doc.comments.push({ annotationId, entries: [entry] });
+    }
     doc.undoStack.push(snapshot);
     doc.redoStack = [];
     doc.modified = true;
@@ -1215,6 +1283,7 @@ export class EngineService {
         modified: true,
         placedSignatures: [],
         textBoxes: [],
+        comments: [],
       };
       this.docs.set(docId, newDoc);
 
@@ -1284,6 +1353,7 @@ export class EngineService {
         modified: true,
         placedSignatures: [],
         textBoxes: [],
+        comments: [],
       };
       this.docs.set(docId, newDoc);
 
@@ -3538,6 +3608,7 @@ function snapshotDoc(doc: EngineDoc): Snapshot {
       rect: { ...sp.rect },
     })),
     textBoxes: doc.textBoxes.map(cloneTextBoxModel),
+    comments: doc.comments.map(cloneCommentThread),
     formFields: tryGetFormFields(doc),
     // DEF-028: capture rich form snapshot so flatten+undo can rebuild fields
     snapFormFields: trySnapshotAllFormFields(doc),
@@ -3579,6 +3650,9 @@ async function restoreSnapshot(doc: EngineDoc, snap: Snapshot): Promise<void> {
   // (a registry op captures a plain snapshotDoc, so snap.textBoxes is always
   // present).
   doc.textBoxes = (snap.textBoxes ?? []).map(cloneTextBoxModel);
+  // Phase 28: restore the comment threads so undo of addComment reverts the
+  // entry, and undo of deleteAnnotation restores the dropped thread.
+  doc.comments = (snap.comments ?? []).map(cloneCommentThread);
   // Phase 12: restore page labels (undefined means none were set).
   doc.pageLabels = snap.pageLabels ? snap.pageLabels.map((l) => ({ ...l })) : undefined;
 
@@ -3682,6 +3756,10 @@ function buildState(doc: EngineDoc): EngineState {
   // bold, italic, underline, baselineShift, highlight, list) so the panel
   // can reflect the selected object's actual formatting.
   state.textBoxes = doc.textBoxes.map(cloneTextBoxModel);
+  // Phase 28 — attach the comment threads (one per annotated element with
+  // comments). Always present (empty array when none) so the renderer can
+  // decide the comment-icon visibility without a separate call.
+  state.comments = doc.comments.map(cloneCommentThread);
   // Attach form fields with remapped page numbers (DEF-031)
   try {
     const rawFields = getFormFields(doc.pdfDoc);
@@ -3981,6 +4059,9 @@ async function serializeDoc(doc: EngineDoc): Promise<Uint8Array> {
   // deleted after a reopen (mirrors signature placements).
   await drawTextBoxes(out, doc.textBoxes);
   serializeTextBoxMetadata(out, doc.textBoxes);
+  // Phase 28 — persist the comment threads in the catalog so they survive
+  // save/reopen (both the normal and the optimized save paths).
+  serializeCommentMetadata(out, doc.comments);
 
   // Phase 12 — carry the document outline (bookmarks) onto the output doc
   // with a page-ref remap, so bookmarks survive a save. pageRefMap maps the
@@ -4160,6 +4241,9 @@ async function serializeDocOptimized(
   // preserves boxes the same way).
   await drawTextBoxes(out, doc.textBoxes);
   serializeTextBoxMetadata(out, doc.textBoxes);
+  // Phase 28 — persist the comment threads in the catalog so they survive
+  // save/reopen (both the normal and the optimized save paths).
+  serializeCommentMetadata(out, doc.comments);
 
   // Copy document-level metadata unless max preset strips it
   if (preset !== 'max') {
@@ -4907,6 +4991,149 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
     g: ((num >> 8) & 0xff) / 255,
     b: (num & 0xff) / 255,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Phase 28: comment threads (Adobe-like comments on annotations)
+// ---------------------------------------------------------------------------
+
+/** Phase 28 — the trimmed text length cap for one comment/reply entry. */
+const MAX_COMMENT_TEXT_LENGTH = 4000;
+/** Phase 28 — the author shown when the caller supplies none (or a blank
+ *  string). The renderer may pass a real author later. */
+const DEFAULT_COMMENT_AUTHOR = 'You';
+/** Phase 28 — ceiling on the `/TFlexComments` catalog payload parsed on load.
+ *  Realistic threads are a few KB; 4 MiB stops a hostile/huge entry from
+ *  blowing up JSON.parse on reopen. */
+const MAX_COMMENT_META_BYTES = 4 * 1024 * 1024;
+
+/** Phase 28 — deep-clone a thread (entries are the only nested objects) so
+ *  snapshots, undo restores and the `EngineState` echo never share mutable
+ *  references with the live registry. */
+function cloneCommentThread(thread: CommentThread): CommentThread {
+  return {
+    annotationId: thread.annotationId,
+    entries: thread.entries.map((e) => ({ ...e })),
+  };
+}
+
+/** Phase 28 — normalize the optional author: a blank/absent value falls back
+ *  to the default. Never throws. */
+function normalizeCommentAuthor(author: unknown): string {
+  if (typeof author !== 'string') return DEFAULT_COMMENT_AUTHOR;
+  const trimmed = author.trim();
+  return trimmed.length > 0 ? trimmed : DEFAULT_COMMENT_AUTHOR;
+}
+
+/** Phase 28 — validate and normalize one comment/reply body. Returns the
+ *  trimmed text, or a reason string when the text is not a non-empty string
+ *  within the length cap (the op turns that into a typed engine-error). */
+function validateCommentText(text: unknown): { ok: true; text: string } | { ok: false; reason: string } {
+  if (typeof text !== 'string') return { ok: false, reason: 'comment text must be a string' };
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return { ok: false, reason: 'comment text must not be empty' };
+  if (trimmed.length > MAX_COMMENT_TEXT_LENGTH) {
+    return { ok: false, reason: `comment text exceeds ${MAX_COMMENT_TEXT_LENGTH} characters` };
+  }
+  return { ok: true, text: trimmed };
+}
+
+/** Phase 28 — true when the document holds an annotation with this id (any
+ *  page, visible or not). A comment on a missing annotation fails loud. */
+function hasAnnotation(doc: EngineDoc, annId: string): boolean {
+  for (const pageAnns of doc.annotations) {
+    if (pageAnns.some((a) => a.id === annId)) return true;
+  }
+  return false;
+}
+
+/** Phase 28 — serialize the comment threads into the output PDF's CATALOG
+ *  under a private `/TFlexComments` key (a hex string of the threads JSON),
+ *  mirroring `/TFlexBox` and `/TFlexSig`. The catalog root is not touched by
+ *  Info-dict edits and a private hex string survives every re-encode, so the
+ *  threads round-trip through save/reopen. Best-effort: a failure or an
+ *  oversized payload drops the entry rather than blocking the save. */
+function serializeCommentMetadata(out: PDFDocument, threads: CommentThread[]): void {
+  if (threads.length === 0) return;
+  try {
+    const data = threads.map((t) => ({
+      annotationId: t.annotationId,
+      entries: t.entries.map((e) => ({
+        id: e.id,
+        author: e.author,
+        text: e.text,
+        createdAt: e.createdAt,
+      })),
+    }));
+    const jsonStr = JSON.stringify(data);
+    if (jsonStr.length > MAX_COMMENT_META_BYTES) return;
+    out.catalog.set(PDFName.of('TFlexComments'), PDFHexString.of(jsonStr));
+  } catch {
+    // Best-effort: the save still succeeds without the comment metadata.
+  }
+}
+
+/** Phase 28 — parse the comment threads from a loaded PDFDocument. Returns an
+ *  empty array when the doc has no `/TFlexComments` catalog entry or the
+ *  entry is malformed/hostile — never throws out of the load path. */
+function parseCommentsFromDoc(pdfDoc: PDFDocument): CommentThread[] {
+  try {
+    const entry = pdfDoc.catalog.get(PDFName.of('TFlexComments'));
+    if (entry === undefined) return [];
+    if (typeof (entry as { asString?: unknown })?.asString !== 'function') return [];
+    let jsonStr: string;
+    try {
+      // ONLY `asString()` — `decodeText()` applies text-encoding heuristics
+      // that corrupt raw JSON bytes (same rule as /TFlexBox and /TFlexSig).
+      jsonStr = (entry as unknown as { asString(): string }).asString();
+    } catch {
+      return [];
+    }
+    if (typeof jsonStr !== 'string' || jsonStr.length > MAX_COMMENT_META_BYTES) return [];
+    return parseCommentMetaJson(jsonStr);
+  } catch {
+    return [];
+  }
+}
+
+/** Phase 28 — parse the threads JSON with structural validation. Returns an
+ *  empty array for any malformed shape (or an unparseable string) so a
+ *  corrupt/hostile entry never throws out of the load path. An entry that
+ *  fails validation is dropped; a thread with no valid entries is dropped. */
+function parseCommentMetaJson(jsonStr: string): CommentThread[] {
+  let data: unknown;
+  try {
+    data = JSON.parse(jsonStr);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(data)) return [];
+  const result: CommentThread[] = [];
+  for (const raw of data) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const thread = raw as Record<string, unknown>;
+    if (typeof thread.annotationId !== 'string' || thread.annotationId.length === 0) continue;
+    if (!Array.isArray(thread.entries)) continue;
+    const entries: CommentEntry[] = [];
+    for (const rawEntry of thread.entries) {
+      if (typeof rawEntry !== 'object' || rawEntry === null) continue;
+      const entry = rawEntry as Record<string, unknown>;
+      if (typeof entry.id !== 'string' || entry.id.length === 0) continue;
+      if (typeof entry.text !== 'string') continue;
+      entries.push({
+        id: entry.id,
+        author: normalizeCommentAuthor(entry.author),
+        text: entry.text,
+        createdAt: typeof entry.createdAt === 'number' && Number.isFinite(entry.createdAt)
+          ? entry.createdAt
+          : 0,
+      });
+    }
+    if (entries.length > 0) {
+      result.push({ annotationId: thread.annotationId, entries });
+    }
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
