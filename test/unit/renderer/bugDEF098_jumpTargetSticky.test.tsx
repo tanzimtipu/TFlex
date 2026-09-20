@@ -43,8 +43,20 @@
 // DocumentView relies on. scrollTo calls are spied so the test can
 // assert the mount-sync effect never issues an instant re-scroll
 // after the click.
+//
+// DEF-261 — the whole file runs on VIRTUAL time (`vi.useFakeTimers`).
+// The frame simulation, the component's `requestAnimationFrame`
+// scroll handling and its real-time `JUMP_LOCK_FALLBACK_MS` window
+// all advance on the fake clock the test controls, so the simulated
+// scroll can never outrun the fallback window because the host
+// machine is busy. Previously the simulation burned a real 25ms per
+// frame (18 frames per `animate` call, three calls) and a contended
+// `verify:full` run stretched that past the product's real 1200ms
+// fallback, releasing the DEF-058 lock mid-flight; the next scroll
+// event then recomputed `currentPage` from the passing page (7) and
+// the test failed `expected 7 to be 10`.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
@@ -162,13 +174,16 @@ function advanceSmooth(el: Element, dt: number): void {
   if (next === target) smoothTargets.delete(el);
 }
 
-/** Flush one jsdom rAF tick (the component schedules its scroll
- *  handling on requestAnimationFrame). */
+/** One virtual animation frame. The component schedules its scroll
+ *  handling on `requestAnimationFrame`; with the fake clock installed
+ *  (DEF-261) that callback — and any timer due within the frame —
+ *  fires on `advanceTimersByTime`, and NO wall-clock time passes, so
+ *  the product's 1200ms fallback window can only elapse when a test
+ *  advances to it deliberately. */
+const FRAME_MS = 25;
 async function flushRaf(): Promise<void> {
   await act(async () => {
-    await new Promise<void>((resolve) => {
-      window.setTimeout(resolve, 25);
-    });
+    vi.advanceTimersByTime(FRAME_MS);
   });
 }
 
@@ -343,6 +358,20 @@ function pageTop(page: number): number {
 }
 
 describe("DEF-098 — thumbnail jump target is sticky", () => {
+  // DEF-261 — determinism: the simulation, the component's rAF scroll
+  // handling and its JUMP_LOCK_FALLBACK_MS window all run on this
+  // virtual clock, so the test's outcome cannot depend on how loaded
+  // the host machine is. `Date`/intervals stay real — the component
+  // uses neither.
+  beforeEach(() => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame"],
+    });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("click thumb 10 -> currentPage=10 immediately; stays 10 through the smooth scroll; settles at 10", async () => {
     const h = await mountView();
     try {
@@ -402,10 +431,11 @@ describe("DEF-098 — thumbnail jump target is sticky", () => {
       // here (dragging it to the page the view was passing) and the
       // mount-sync effect then snapped the scroller back to it — the
       // "briefly 8/9, then snaps back" failure. The target must hold.
+      // DEF-261 — elapse the window on the virtual clock (the product
+      // armed it with the faked `setTimeout`), so this is a real
+      // expiry of the fallback, not a wall-clock sleep.
       await act(async () => {
-        await new Promise<void>((resolve) => {
-          window.setTimeout(resolve, 1400);
-        });
+        vi.advanceTimersByTime(1400);
       });
       expect(h.currentPage()).toBe(10);
 
