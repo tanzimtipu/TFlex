@@ -370,12 +370,20 @@ test('P28 C3 action-bar colour box + dropdown ignored for selection', async () =
     log('C3-single-click', { openAfterOne });
     expect(openAfterOne, 'a single click opens the colour picker').toBeGreaterThan(0);
     const beforeColor = (await waitForAnn(win, 'rect', null)).color;
-    // Use a colour the engine also knows (DEF-260: pink/teal/gray are
-    // renderer-only names and are silently dropped by the engine).
+    // Operator requirement: picking a colour applies it AND disengages the
+    // picker; the action bar itself stays mounted.
     await win.click('[data-palette-built-in="blue"]');
     await win.waitForTimeout(1300);
+    const closedAfterPick = await win.locator('[data-color-popover]').count();
+    const barAfterPick = await win.locator('[data-content-action-bar="ann-rect"]').count();
+    log('C3-pick-dismiss', { closedAfterPick, barAfterPick });
+    expect(closedAfterPick, 'picking a colour detaches the popover').toBe(0);
+    expect(barAfterPick, 'the action bar stays mounted after the pick').toBeGreaterThan(0);
     const firstClickColor = (await waitForAnn(win, 'rect', null)).color;
     if (firstClickColor === beforeColor) {
+      // Retry once: the picker closed on the first pick, so re-open it.
+      await win.click('[data-ann-color-box]');
+      await win.waitForSelector('[data-color-popover]', { timeout: 6000 });
       await win.click('[data-palette-built-in="blue"]');
       await win.waitForTimeout(1300);
     }
@@ -440,17 +448,24 @@ test('P28 C3b DEF-260 pink/teal/gray picks are silently dropped', async () => {
     const before = (await annModels(win)).find((a) => a.kind === 'rect').color;
     const colorOf = async () => (await annModels(win)).find((a) => a.kind === 'rect').color;
 
-    await win.click('[data-ann-color-box]');
-    await win.waitForSelector('[data-color-popover]', { timeout: 6000 });
-    await win.waitForTimeout(600);
     const results = {};
     for (const c of ['pink', 'teal', 'gray', 'blue']) {
+      // The picker disengages after each pick, so re-open it every time.
+      await win.click('[data-ann-color-box]');
+      await win.waitForSelector('[data-color-popover]', { timeout: 6000 });
+      await win.waitForTimeout(300);
       await win.locator(`[data-palette-built-in="${c}"]`).click();
       await win.waitForTimeout(1300);
       results[c] = { engine: await colorOf(),
-        box: await win.getAttribute('[data-ann-color-box]', 'data-color-current') };
+        box: await win.getAttribute('[data-ann-color-box]', 'data-color-current'),
+        closed: await win.locator('[data-color-popover]').count(),
+        bar: await win.locator('[data-content-action-bar="ann-rect"]').count() };
     }
     log('C3b-picks', { before, results });
+    for (const c of ['pink', 'teal', 'gray', 'blue']) {
+      expect(results[c].closed, `picking ${c} detaches the popover`).toBe(0);
+      expect(results[c].bar, `the action bar stays mounted after picking ${c}`).toBeGreaterThan(0);
+    }
     // Same divergence on the CREATE path: arm a renderer-only colour and place.
     await win.keyboard.press('Escape');
     await win.waitForTimeout(300);
@@ -474,6 +489,92 @@ test('P28 C3b DEF-260 pink/teal/gray picks are silently dropped', async () => {
     expect(results.blue.engine, 'blue applies (engine-shared name)').toBe('blue');
   } finally {
     await hardClose(app, 'p28-c3b');
+  }
+});
+
+// ===========================================================================
+// P28 C3c - colour picker dismissal contract (operator requirement): a pick
+// detaches the popover while the action bar stays mounted; an outside click
+// and Escape close it; an inside interaction (hue slider) does NOT.
+// ===========================================================================
+test('P28 C3c colour picker dismissal contract', async () => {
+  test.setTimeout(240000);
+  const app = await launchApp();
+  const win = await app.firstWindow();
+  try {
+    await win.waitForSelector('.sample-card', { timeout: 30000 });
+    await openSample(app, win, 'report.pdf');
+    await armAnnotationTool(win, 'rect');
+    await dragOnPage(win, 0.3, 0.3, 170, 90);
+    await win.waitForSelector('.ann-shape[data-kind="rect"]', { timeout: 10000 });
+    const selectRect = async () => {
+      const bb = await win.locator('.ann-shape[data-kind="rect"]').first().boundingBox();
+      await win.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
+      await win.waitForSelector('[data-content-action-bar="ann-rect"]', { timeout: 8000 });
+      await win.waitForTimeout(400);
+    };
+    await selectRect();
+
+    const openPicker = async () => {
+      await win.click('[data-ann-color-box]');
+      await win.waitForSelector('[data-color-popover]', { timeout: 6000 });
+      await win.waitForTimeout(300);
+    };
+    const popoverCount = () => win.locator('[data-color-popover]').count();
+    const barCount = () => win.locator('[data-content-action-bar="ann-rect"]').count();
+
+    // (a) An inside interaction (hue slider) does NOT close the picker.
+    await openPicker();
+    const hue = await win.locator('.color-hue-slider').boundingBox();
+    await win.mouse.click(hue.x + hue.width * 0.7, hue.y + hue.height / 2);
+    await win.waitForTimeout(500);
+    const afterHue = await popoverCount();
+    log('C3c-hue', { afterHue });
+    expect(afterHue, 'an inside interaction (hue slider) keeps the picker open').toBeGreaterThan(0);
+
+    // (b) Escape closes it.
+    await win.keyboard.press('Escape');
+    await win.waitForTimeout(600);
+    const afterEsc = await popoverCount();
+    log('C3c-escape', { afterEsc });
+    expect(afterEsc, 'Escape detaches the picker').toBe(0);
+
+    // (c) An outside click closes it. Escape disarmed the tool and cleared
+    // the selection, so re-select the rect first.
+    await selectRect();
+    await openPicker();
+    const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
+    await win.mouse.click(pg.x + pg.width - 20, pg.y + pg.height - 20);
+    await win.waitForTimeout(600);
+    const afterOutside = await popoverCount();
+    log('C3c-outside', { afterOutside });
+    expect(afterOutside, 'an outside click detaches the picker').toBe(0);
+
+    // (d) A built-in pick applies, detaches the popover, keeps the bar.
+    await selectRect();
+    await openPicker();
+    await win.click('[data-palette-built-in="green"]');
+    await win.waitForTimeout(1300);
+    const afterBuiltIn = { popover: await popoverCount(), bar: await barCount(),
+      color: (await waitForAnn(win, 'rect', null)).color };
+    log('C3c-built-in', afterBuiltIn);
+    expect(afterBuiltIn.popover, 'a built-in pick detaches the popover').toBe(0);
+    expect(afterBuiltIn.bar, 'the action bar stays mounted after a built-in pick').toBeGreaterThan(0);
+    expect(afterBuiltIn.color, 'the built-in pick applied').toBe('green');
+
+    // (e) A custom hex pick applies, detaches the popover, keeps the bar.
+    await openPicker();
+    await win.locator('[data-palette-hex-input]').fill('#0000ff');
+    await win.locator('[data-palette-hex-input]').press('Enter');
+    await win.waitForTimeout(1300);
+    const afterCustom = { popover: await popoverCount(), bar: await barCount(),
+      color: (await waitForAnn(win, 'rect', null)).color };
+    log('C3c-custom', afterCustom);
+    expect(afterCustom.popover, 'a custom hex pick detaches the popover').toBe(0);
+    expect(afterCustom.bar, 'the action bar stays mounted after a custom pick').toBeGreaterThan(0);
+    expect(afterCustom.color, 'the custom hex pick applied').toBe('#0000ff');
+  } finally {
+    await hardClose(app, 'p28-c3c');
   }
 });
 

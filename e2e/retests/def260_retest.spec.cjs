@@ -49,6 +49,18 @@ const anns = (win) => win.evaluate(() =>
 const colorOf = async (win) => (await anns(win)).find((a) => a.kind === 'rect').color;
 const boxHex = (win) => win.getAttribute('[data-ann-color-box]', 'data-color-current');
 
+// The action-bar picker now DISENGAGES after each pick (operator
+// requirement), so every pick must re-open it first.
+async function pickBuiltIn(win, c) {
+  if ((await win.locator('[data-color-popover]').count()) === 0) {
+    await win.click('[data-ann-color-box]');
+    await win.waitForSelector('[data-color-popover]', { timeout: 6000 });
+    await win.waitForTimeout(300);
+  }
+  await win.locator(`[data-palette-built-in="${c}"]`).click();
+  await win.waitForTimeout(1100);
+}
+
 async function dragOnPage(win, fx, fy, dxPx, dyPx) {
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
@@ -95,10 +107,9 @@ test('DEF-260 retest: pink/teal/gray apply + 12-swatch sweep both directions', a
     // Evidence: the 12-swatch picker open on a selected annotation.
     await win.screenshot({ path: path.join(SHOTS, 'def260-retest.png') });
 
-    const picks = {};
+const picks = {};
     for (const c of ['pink', 'teal', 'gray']) {
-      await win.locator(`[data-palette-built-in="${c}"]`).click();
-      await win.waitForTimeout(1100);
+      await pickBuiltIn(win, c);
       picks[c] = { engine: await colorOf(win), box: await boxHex(win) };
     }
     log('picks', picks);
@@ -111,9 +122,8 @@ test('DEF-260 retest: pink/teal/gray apply + 12-swatch sweep both directions', a
     for (const order of ['forward', 'reverse']) {
       const list = order === 'forward' ? CANON : [...CANON].reverse();
       const dropped = [];
-      for (const c of list) {
-        await win.locator(`[data-palette-built-in="${c}"]`).click();
-        await win.waitForTimeout(950);
+for (const c of list) {
+        await pickBuiltIn(win, c);
         const engine = await colorOf(win);
         const box = await boxHex(win);
         if (engine !== c || box !== HEX[c]) dropped.push({ c, engine, box });

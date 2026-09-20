@@ -141,8 +141,18 @@ export default function AnnColorBox(props: AnnColorBoxProps): ReactElement {
                 onChange={(next): void => {
                   if (!paletteEqual(palette, next)) onPaletteChange?.(next);
                 }}
-                onApplyBuiltIn={(c): void => onApply(c)}
-                onApplyCustom={(hex): void => onApply(hex)}
+                // Operator requirement: the picker DISENGAGES as soon as
+                // a colour is chosen. Apply first (live colour change on
+                // the selected annotation), then close the popover — the
+                // same dismissal the swatch toggle / outside click do.
+                onApplyBuiltIn={(c): void => {
+                  onApply(c);
+                  setOpen(false);
+                }}
+                onApplyCustom={(hex): void => {
+                  onApply(hex);
+                  setOpen(false);
+                }}
               />
             </TfPopover>
           )}

@@ -535,8 +535,20 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
                         onPaletteChange?.(next);
                       }
                     }}
-                    onApplyBuiltIn={setColor}
-                    onApplyCustom={setColor}
+                    // Operator requirement: the picker DISENGAGES as
+                    // soon as a colour is chosen — the same dismissal
+                    // the action-bar box (AnnColorBox) now uses. Apply
+                    // the colour, then close the popover. Preset edits
+                    // route through `onChange` (above) and deliberately
+                    // keep the popover open.
+                    onApplyBuiltIn={(c): void => {
+                      setColor(c);
+                      setPaletteOpen(false);
+                    }}
+                    onApplyCustom={(hex): void => {
+                      setColor(hex);
+                      setPaletteOpen(false);
+                    }}
                   />
                 </TfPopover>
               )}

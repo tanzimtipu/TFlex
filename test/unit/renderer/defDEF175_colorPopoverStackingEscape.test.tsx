@@ -18,7 +18,7 @@
 // stacking context) fails here instead of at QA time.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
@@ -128,5 +128,145 @@ describe("DEF-175 - color palette popover escapes the frosted .ann-toolbar stack
       await new Promise((r) => setTimeout(r, 30));
     });
     expect(document.body.querySelector(".color-popover")).toBeNull();
+  });
+});
+
+// Operator requirement (same rule the action-bar AnnColorBox now
+// follows): the annotation TOOLBAR's colour popover must DISENGAGE as
+// soon as a colour is APPLIED — built-in swatch or committed custom
+// hex — while preset add / remove edits (which route through
+// `onChange`) keep it open, and click-outside / Escape still dismiss.
+describe("annotation toolbar colour popover — disengages on selection", () => {
+  function mountPalette(opts?: {
+    onPaletteChange?: (next: AnnotationColors) => void;
+    palette?: AnnotationColors;
+  }): { host: HTMLElement; popover: HTMLElement | null } {
+    const host = mount(
+      createElement(AnnotationToolbar, {
+        state: { tool: "ink", color: "yellow", penWidth: 3 },
+        onAction: (): void => {},
+        theme: "dark",
+        palette: opts?.palette ?? ({ light: [], dark: [] } as AnnotationColors),
+        onPaletteChange: opts?.onPaletteChange,
+      }),
+    );
+    const swatch = host.querySelector<HTMLElement>(".ann-color-swatch-main");
+    if (swatch === null) return { host, popover: null };
+    act((): void => {
+      swatch.click();
+    });
+    return { host, popover: document.body.querySelector<HTMLElement>(".color-popover") };
+  }
+
+  async function settle(): Promise<void> {
+    await act(async (): Promise<void> => {
+      await new Promise((r) => setTimeout(r, 30));
+    });
+  }
+
+  function currentPopover(): HTMLElement | null {
+    return document.body.querySelector<HTMLElement>(".color-popover");
+  }
+
+  function firePointerDown(target: EventTarget): void {
+    act((): void => {
+      target.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+  }
+
+  function setInputValue(input: HTMLInputElement, value: string): void {
+    const setter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    act((): void => {
+      setter?.call(input, value);
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  }
+
+  it("(a) applying a built-in swatch closes the popover", async () => {
+    const { popover } = mountPalette();
+    expect(popover).not.toBeNull();
+    if (popover === null) return;
+    const btn = popover.querySelector<HTMLButtonElement>('[data-palette-built-in="green"]');
+    expect(btn).not.toBeNull();
+    if (btn === null) return;
+    act((): void => {
+      btn.click();
+    });
+    await settle();
+    expect(currentPopover()).toBeNull();
+  });
+
+  it("(b) committing a custom hex closes the popover", async () => {
+    const { popover } = mountPalette();
+    expect(popover).not.toBeNull();
+    if (popover === null) return;
+    const input = popover.querySelector<HTMLInputElement>('input[aria-label="Custom color hex"]');
+    expect(input).not.toBeNull();
+    if (input === null) return;
+    setInputValue(input, "#0000ff");
+    act((): void => {
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }),
+      );
+    });
+    await settle();
+    expect(currentPopover()).toBeNull();
+  });
+
+  it("(c) adding a preset (Add) does NOT close the popover", async () => {
+    const onPaletteChange = vi.fn();
+    const { popover } = mountPalette({ onPaletteChange });
+    expect(popover).not.toBeNull();
+    if (popover === null) return;
+    const add = popover.querySelector<HTMLButtonElement>("[data-palette-add]");
+    expect(add).not.toBeNull();
+    if (add === null) return;
+    act((): void => {
+      add.click();
+    });
+    expect(onPaletteChange).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(currentPopover()).not.toBeNull();
+  });
+
+  it("(d) removing a saved preset does NOT close the popover", async () => {
+    const onPaletteChange = vi.fn();
+    const preset = { id: "p1", hex: "#112233" };
+    const { popover } = mountPalette({
+      onPaletteChange,
+      palette: { light: [], dark: [preset] } as AnnotationColors,
+    });
+    expect(popover).not.toBeNull();
+    if (popover === null) return;
+    const remove = popover.querySelector<HTMLButtonElement>(".color-swatch-remove");
+    expect(remove).not.toBeNull();
+    if (remove === null) return;
+    act((): void => {
+      remove.click();
+    });
+    expect(onPaletteChange).toHaveBeenCalledTimes(1);
+    await settle();
+    expect(currentPopover()).not.toBeNull();
+  });
+
+  it("(e) an outside pointerdown still closes the popover", async () => {
+    const { host } = mountPalette();
+    expect(currentPopover()).not.toBeNull();
+    firePointerDown(host);
+    await settle();
+    expect(currentPopover()).toBeNull();
+  });
+
+  it("(f) Escape still closes the popover", async () => {
+    mountPalette();
+    expect(currentPopover()).not.toBeNull();
+    act((): void => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(currentPopover()).toBeNull();
   });
 });
