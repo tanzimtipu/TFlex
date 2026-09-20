@@ -120,11 +120,6 @@ function clickEl(el: Element): void {
   });
 }
 
-function dblClick(el: Element): void {
-  act((): void => {
-    el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true }));
-  });
-}
 
 function press(el: Element, x: number, y: number): void {
   act((): void => {
@@ -156,8 +151,8 @@ function barConfirm(host: HTMLElement): HTMLButtonElement {
   return btn;
 }
 
-describe("Bug 1 — opening an edit toolbox disarms the armed creation tool", () => {
-  it("double-clicking a committed textbox while the NOTE tool is armed calls onDisarmTool", () => {
+describe("Bug 1 / Phase 26 — clicking a text element disarms the armed creation tool", () => {
+  it("clicking a committed textbox while the NOTE tool is armed calls onDisarmTool and opens NO in-canvas editor", () => {
     const { host, onDisarmTool, cleanup } = mountOverlay({
       annotations: [TEXTBOX_ANN],
       tool: NOTE_TOOL,
@@ -165,9 +160,10 @@ describe("Bug 1 — opening an edit toolbox disarms the armed creation tool", ()
     try {
       const tbx = host.querySelector<HTMLElement>("[data-annotation-id='tbx-1']");
       if (tbx === null) throw new Error("textbox not found");
-      dblClick(tbx);
-      // The text edit toolbox opens.
-      expect(host.querySelector("[data-annotation-editor='edit-textbox']")).not.toBeNull();
+      clickEl(tbx);
+      // Phase 26 — no in-canvas editor exists; the click selects the
+      // annotation and asks the host to focus the panel Text field.
+      expect(host.querySelector("[data-annotation-editor]")).toBeNull();
       expect(onDisarmTool).toHaveBeenCalledTimes(1);
     } finally {
       cleanup();
@@ -234,37 +230,31 @@ describe("Bug 2 — confirming a move does not snap the content back to the orig
   });
 });
 
-describe("Bug 3 — dragging the note-edit toolbox moves the note with it", () => {
-  it("Confirm after dragging the editor commits the note at the shifted anchor", () => {
+describe("Bug 3 — dragging the note moves it with the selection chrome", () => {
+  it("Confirm after dragging the note icon commits it at the shifted anchor", () => {
     const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({
       annotations: [NOTE_ANN],
     });
     try {
       const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
-      if (icon === null) throw new Error("note icon not found");
-      dblClick(icon);
-      const editor = host.querySelector<HTMLElement>("[data-annotation-editor='note']");
-      if (editor === null) throw new Error("note editor not found");
-      // Drag the editor WINDOW by its chrome (the grip is the first
-      // child; a press on it starts the useDragWindow move) by
-      // (+20, +10) client px.
-      const grip = editor.querySelector<HTMLElement>("[data-drag-grip='note']");
-      if (grip === null) throw new Error("note grip not found");
-      press(grip, 200, 320);
+      const layer = host.querySelector<HTMLElement>("[data-annotation-layer='1']");
+      if (icon === null || layer === null) throw new Error("note / layer not found");
+      // Drag the icon by (+30, +30) client px (cssScale 1) — the same
+      // page move the old toolbox drag performed, now driven from the
+      // icon's own surface.
+      press(icon, 65, 305);
+      moveOn(layer, 95, 335);
       act((): void => {
-        window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 220, clientY: 330 }));
+        layer.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 95, clientY: 335 }));
       });
-      act((): void => {
-        window.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
-      });
-      const confirm = host.querySelector<HTMLButtonElement>("[data-annotation-action='note-confirm']");
+      const confirm = host.querySelector<HTMLButtonElement>("[data-content-action='ann-note-confirm']");
       if (confirm === null) throw new Error("note confirm not found");
       clickEl(confirm);
       // Commit = delete + re-create at the shifted anchor.
       expect(onDeleteAnnotation).toHaveBeenCalledWith("note-1");
       const created = onCreate.mock.calls[0]?.[0] as Annotation & { at: { x: number; y: number } };
       expect(created.kind).toBe("note");
-      expect(created.at).toEqual({ x: 80, y: 310 });
+      expect(created.at).toEqual({ x: 90, y: 330 });
     } finally {
       cleanup();
     }

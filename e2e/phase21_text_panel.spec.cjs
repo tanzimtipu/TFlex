@@ -3,7 +3,8 @@
 //
 // Measures the running Electron app (canonical launcher only) against the
 // phase's seven success criteria:
-//   C1 open/close + page reflow in lockstep, all three themes
+//   C1 open/close of the floating card: the page never reflows, three themes
+//      (Phase 25 retirement of the Phase-21 docked-column reflow contract)
 //   C2 full control list, per-control live change + save/reopen round-trip
 //      (font / character style / colour+highlight / paragraph groups)
 //   C3 no floating style toolbox on any text-bearing path
@@ -27,9 +28,11 @@ const THEMES = ['light', 'dark', 'frosted'];
 // Contract text — REQUIREMENTS.md Phase 21, per-family scope.
 const ANNOT_DISABLED_REASON =
   "not supported for annotations - the annotation's text is baked by the annotation engine";
-// The 22 controls that must be disabled (colour is the only live one) in
+// The 21 controls that must be disabled (colour is the only live one) in
 // annotation mode: font(2) + character style(5) + highlight(2) + clear(1) +
-// align(4) + line-height(1) + list(3) + indent(2) + spacing(2).
+// align(4) + line-height(1) + list(3) + indent(2) + spacing(1).
+// Phase 27 — the character-spacing control is now LIVE (the engine emits
+// `Tc`); only horizontal scaling stays engine-disabled.
 const ANNOT_DISABLED_SELECTORS = [
   '[data-txt-font]', '[data-txt-size]',
   '[data-txt-bold]', '[data-txt-italic]', '[data-txt-underline]',
@@ -40,7 +43,7 @@ const ANNOT_DISABLED_SELECTORS = [
   '[data-txt-line-height]',
   '[data-txt-list-none]', '[data-txt-list-bullet]', '[data-txt-list-number]',
   '[data-txt-indent-dec]', '[data-txt-indent-inc]',
-  '[data-txt-character-spacing]', '[data-txt-horizontal-scaling]',
+  '[data-txt-horizontal-scaling]',
 ];
 
 async function openReport(app, win) {
@@ -81,16 +84,26 @@ async function installProbe(win) {
         const panel = document.querySelector('.text-props-panel');
         const main = document.querySelector('.workspace-main');
         const rail = document.querySelector('.side-rail');
+        const pane = document.querySelector('.tab-pane[aria-hidden="false"]') || document;
+        const canvas = pane.querySelector('.pdf-page[data-page="1"] canvas');
+        const sc = document.querySelector('.document-scroller');
         const pr = panel ? panel.getBoundingClientRect() : null;
         const mr = main ? main.getBoundingClientRect() : null;
         const rr = rail ? rail.getBoundingClientRect() : null;
+        const cb = canvas ? canvas.getBoundingClientRect() : null;
         window.__p21.rows.push({
           t,
           panelW: pr ? +pr.width.toFixed(2) : 0,
           panelRight: pr ? +pr.right.toFixed(2) : null,
           panelLeft: pr ? +pr.left.toFixed(2) : null,
           mainLeft: mr ? +mr.left.toFixed(2) : null,
+          mainRight: mr ? +mr.right.toFixed(2) : null,
           railRight: rr ? +rr.right.toFixed(2) : null,
+          // Phase 25 — the page geometry the floating card must never move.
+          canvasLeft: cb ? +cb.left.toFixed(2) : null,
+          canvasTop: cb ? +cb.top.toFixed(2) : null,
+          canvasW: cb ? +cb.width.toFixed(2) : null,
+          scrollTop: sc ? +sc.scrollTop.toFixed(2) : null,
           tr: panel ? getComputedStyle(panel).transform : null,
           op: panel ? +getComputedStyle(panel).opacity : null,
         });
@@ -153,9 +166,15 @@ async function createTextBox(win, text, fx = 0.22, fy = 0.18) {
   await win.mouse.down();
   await win.mouse.move(x + 200, y + 70, { steps: 6 });
   await win.mouse.up();
-  await win.waitForSelector('[data-edit-editor]', { timeout: 8000 });
-  await win.locator('[data-edit-textarea]').fill(text);
-  await win.click('[data-edit-confirm]');
+  // Phase 26 — the inline editor is retired: the box is placed empty and the
+  // panel's Text field takes the text; the session commits on blur.
+  await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+  await win.waitForFunction(() => {
+    const ta = document.querySelector('[data-txt-text]');
+    return ta !== null && ta.disabled === false;
+  }, null, { timeout: 8000 });
+  await win.locator('[data-txt-text]').fill(text);
+  await win.locator('[data-txt-text]').blur();
   await win.waitForSelector('.edit-box', { timeout: 8000 });
   await win.waitForTimeout(400);
   await win.locator('.edit-box').first().click({ position: { x: 8, y: 8 } });
@@ -174,7 +193,7 @@ async function closeEditMode(win) {
 // ===========================================================================
 // C1 — open/close + page reflow in lockstep, all three themes.
 // ===========================================================================
-test('C1 open/close reflow lockstep in all three themes', async () => {
+test('C1 open/close: floating card, page does not reflow, three themes', async () => {
   test.setTimeout(200000);
   const app = await launchApp();
   const win = await app.firstWindow();
@@ -198,9 +217,6 @@ test('C1 open/close reflow lockstep in all three themes', async () => {
       const openRows = await readProbe(win);
       const openLive = openRows.filter((r) => r.panelW > 0);
       const openWidths = [...new Set(openLive.map((r) => Math.round(r.panelW)))];
-      const lockDelta = Math.max(0, ...openLive.map((r) =>
-        Math.abs((r.mainLeft - r.railRight) - r.panelW)));
-      const overlap = openLive.filter((r) => r.panelRight > r.mainLeft + 1).length;
       const settled = openLive.length ? openLive[openLive.length - 1] : null;
       const clip = await win.evaluate(() => {
         const p = document.querySelector('.text-props-panel');
@@ -225,23 +241,45 @@ test('C1 open/close reflow lockstep in all three themes', async () => {
         mainLeft: +document.querySelector('.workspace-main').getBoundingClientRect().left.toFixed(2),
       }));
 
+      // Phase 25 retirement — the panel is a FLOATING card, not a docked
+      // column. The Phase-21 "panel width == page inset / never overlaps the
+      // page view / width interpolates" contract is superseded: the page must
+      // stay exactly where it was across open AND close (frame-sampled canvas
+      // rect + scroller scrollTop), and the card floats inside .workspace-main.
+      const allRows = [...openRows, ...closeRows];
+      const spanOf = (key) => {
+        const vals = allRows.map((x) => x[key]).filter((v) => v !== null);
+        return vals.length ? +(Math.max(...vals) - Math.min(...vals)).toFixed(2) : null;
+      };
+      const canvasLeftSpan = spanOf('canvasLeft');
+      const canvasTopSpan = spanOf('canvasTop');
+      const canvasWSpan = spanOf('canvasW');
+      const scrollTopSpan = spanOf('scrollTop');
+      const mainLeftSpan = spanOf('mainLeft');
+      const panelInsideMain = settled !== null && settled.mainLeft !== null && settled.mainRight !== null
+        && settled.panelLeft >= settled.mainLeft - 2
+        && settled.panelRight <= settled.mainRight + 2;
+
       const r = {
         theme, closed, settled, openDistinctWidths: openWidths,
-        lockstepMaxDelta: +lockDelta.toFixed(2), overlapFrames: overlap,
-        clip, closeDistinctWidths: closeWidths, after,
+        canvasLeftSpan, canvasTopSpan, canvasWSpan, scrollTopSpan, mainLeftSpan,
+        panelInsideMain, clip, closeDistinctWidths: closeWidths, after,
       };
       results.push(r);
       log('C1', r);
 
       expect(settled, `${theme}: panel must reach an open width`).not.toBeNull();
       expect(settled.panelW, `${theme}: open panel width ~248px`).toBeGreaterThan(240);
-      expect(openWidths.length, `${theme}: panel width interpolates (>=3 distinct widths)`).toBeGreaterThanOrEqual(3);
-      expect(lockDelta, `${theme}: panel width and page inset move in lockstep`).toBeLessThanOrEqual(2);
-      expect(overlap, `${theme}: panel never overlaps the page view`).toBe(0);
+      expect(openWidths.length, `${theme}: floating width is constant (no docked interpolation)`).toBeLessThanOrEqual(2);
+      expect(canvasLeftSpan, `${theme}: page canvas left unchanged (span ${canvasLeftSpan})`).toBeLessThanOrEqual(0.5);
+      expect(canvasTopSpan, `${theme}: page canvas top unchanged (span ${canvasTopSpan})`).toBeLessThanOrEqual(0.5);
+      expect(canvasWSpan, `${theme}: page canvas width unchanged (span ${canvasWSpan})`).toBeLessThanOrEqual(0.5);
+      expect(scrollTopSpan, `${theme}: scroller scrollTop unchanged (span ${scrollTopSpan})`).toBeLessThanOrEqual(0.5);
+      expect(mainLeftSpan, `${theme}: page-view left unchanged (span ${mainLeftSpan})`).toBeLessThanOrEqual(0.5);
+      expect(panelInsideMain, `${theme}: floating card renders inside .workspace-main`).toBe(true);
       expect(clip.panelClipped, `${theme}: open panel content not clipped`).toBe(false);
       expect(clip.bodyClipped, `${theme}: open panel body not clipped`).toBe(false);
       expect(clip.controls, `${theme}: panel controls are mounted`).toBeGreaterThan(0);
-      expect(closeWidths.length, `${theme}: close interpolates (>=3 distinct widths)`).toBeGreaterThanOrEqual(3);
       expect(after.panels, `${theme}: panel unmounts on deselect`).toBe(0);
       expect(Math.abs(after.mainLeft - closed.mainLeft), `${theme}: page inset returns to the closed value`).toBeLessThanOrEqual(2);
     }
@@ -385,9 +423,14 @@ test('C2 per-control live change + save/reopen round-trip', async () => {
     await win.mouse.down();
     await win.mouse.move(x + 200, y + 70, { steps: 6 });
     await win.mouse.up();
-    await win.waitForSelector('[data-edit-editor]', { timeout: 8000 });
-    await win.locator('[data-edit-textarea]').fill('P21-B');
-    await win.click('[data-edit-confirm]');
+    // Phase 26 — panel Text field is the editor (session commits on blur).
+    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+    await win.waitForFunction(() => {
+      const ta = document.querySelector('[data-txt-text]');
+      return ta !== null && ta.disabled === false;
+    }, null, { timeout: 8000 });
+    await win.locator('[data-txt-text]').fill('P21-B');
+    await win.locator('[data-txt-text]').blur();
     await win.waitForSelector('.edit-box', { timeout: 8000 });
     await win.waitForTimeout(400);
     await win.locator('.edit-box').nth(1).click({ position: { x: 8, y: 8 } });
@@ -474,7 +517,7 @@ async function dragOnPage(win, fx, fy) {
   await win.mouse.up();
 }
 
-test('C3 no floating style toolbox; grip + Confirm/Cancel/Delete remain', async () => {
+test('C3 no floating style toolbox; panel Text field + Confirm/Delete remain', async () => {
   test.setTimeout(240000);
   const app = await launchApp();
   const win = await app.firstWindow();
@@ -482,81 +525,101 @@ test('C3 no floating style toolbox; grip + Confirm/Cancel/Delete remain', async 
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openReport(app, win);
     const out = {};
+    const waitField = () => win.waitForFunction(() => {
+      const ta = document.querySelector('[data-txt-text]');
+      return ta !== null && ta.disabled === false;
+    }, null, { timeout: 8000 });
 
     // -- text box path ------------------------------------------------------
     await win.click('button[aria-label="Edit content"]');
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.click('[data-edit-tool="box"]');
     await dragOnPage(win, 0.25, 0.2);
-    await win.waitForSelector('[data-edit-editor]', { timeout: 8000 });
+    // Phase 26 — the panel Text field is the editor; no in-canvas editor.
+    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+    await waitField();
     out.textBox = await win.evaluate((ret) => ({
       retired: document.querySelectorAll(ret).length,
-      grip: !!document.querySelector('[data-edit-drag-handle]'),
-      confirm: !!document.querySelector('[data-edit-confirm]'),
-      cancel: !!document.querySelector('[aria-label="Cancel edit"]'),
-      del: !!document.querySelector('[data-edit-action="delete"]'),
+      editor: document.querySelectorAll('[data-edit-editor], .edit-inline-editor').length,
+      panelField: !!document.querySelector('[data-txt-text]'),
+      panelEnabled: document.querySelector('[data-txt-text]')?.disabled === false,
     }), RETIRED_STYLE);
-    await win.locator('[data-edit-textarea]').fill('P21-C3');
-    await win.click('[data-edit-confirm]');
+    await win.locator('[data-txt-text]').fill('P21-C3');
+    await win.locator('[data-txt-text]').blur();
+    await win.waitForSelector('.edit-box', { timeout: 8000 });
     await win.waitForTimeout(400);
-    // Reopen the COMMITTED box's editor through the selection bar's Edit
-    // action — that is the path that carries the Delete action.
+    // The committed box's toolbar keeps Confirm / Edit / Delete; Edit now
+    // targets the panel field (the inline editor is retired).
     await win.locator('.edit-box').first().click({ position: { x: 8, y: 8 } });
     await win.waitForSelector('[data-edit-box-toolbar]', { timeout: 8000 });
-    await win.click('[data-edit-box-action="edit"]');
-    await win.waitForSelector('[data-edit-editor]', { timeout: 8000 });
     out.textBoxCommitted = await win.evaluate((ret) => ({
       retired: document.querySelectorAll(ret).length,
-      grip: !!document.querySelector('[data-edit-drag-handle]'),
-      confirm: !!document.querySelector('[data-edit-confirm]'),
-      cancel: !!document.querySelector('[aria-label="Cancel edit"]'),
-      del: !!document.querySelector('[data-edit-action="delete"]'),
+      confirm: !!document.querySelector('[data-edit-box-action="confirm"]'),
+      edit: !!document.querySelector('[data-edit-box-action="edit"]'),
+      del: !!document.querySelector('[data-edit-box-action="delete"]'),
+      editor: document.querySelectorAll('[data-edit-editor], .edit-inline-editor').length,
     }), RETIRED_STYLE);
-    await win.keyboard.press('Escape');
-    await win.waitForTimeout(300);
+    await win.click('[data-edit-box-action="edit"]');
+    await win.waitForTimeout(400);
+    out.textBoxEditTarget = await win.evaluate((ret) => ({
+      retired: document.querySelectorAll(ret).length,
+      editor: document.querySelectorAll('[data-edit-editor], .edit-inline-editor').length,
+      panelField: !!document.querySelector('[data-txt-text]'),
+      panelEnabled: document.querySelector('[data-txt-text]')?.disabled === false,
+    }), RETIRED_STYLE);
 
     // -- annotation textbox path -------------------------------------------
     await closeEditMode(win);
     await armAnnotationTool(win, 'textbox');
     await dragOnPage(win, 0.3, 0.3);
-    await win.waitForSelector('[data-annotation-editor="textbox"]', { timeout: 8000 });
+    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
     out.annTextbox = await win.evaluate((ret) => ({
       retired: document.querySelectorAll(ret).length,
-      grip: !!document.querySelector('[data-annotation-editor-handle="textbox"]'),
-      confirm: !!document.querySelector('[data-annotation-action="textbox-confirm"]'),
-      cancel: !!document.querySelector('[data-annotation-action="textbox-cancel"]'),
-      del: !!document.querySelector('[data-annotation-action="textbox-delete"]'),
+      editor: document.querySelectorAll('[data-annotation-editor], .edit-inline-editor').length,
+      panelField: !!document.querySelector('[data-txt-text]'),
+      confirm: !!document.querySelector('[data-content-action="ann-textbox-confirm"]'),
+      del: !!document.querySelector('[data-content-action="ann-textbox-delete"]'),
+      editBtn: !!document.querySelector('[data-content-action$="-edit"]'),
     }), RETIRED_STYLE);
-    await win.click('[data-annotation-action="textbox-cancel"]');
+    await waitField();
+    await win.locator('[data-txt-text]').fill('P21-AN');
+    await win.locator('[data-txt-text]').blur();
     await win.waitForTimeout(400);
 
     // -- callout path -------------------------------------------------------
     await armAnnotationTool(win, 'callout');
     await dragOnPage(win, 0.3, 0.45);
-    await win.waitForSelector('[data-annotation-editor="callout"]', { timeout: 8000 });
+    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
     out.callout = await win.evaluate((ret) => ({
       retired: document.querySelectorAll(ret).length,
-      grip: !!document.querySelector('[data-annotation-editor-handle="callout"]'),
-      confirm: !!document.querySelector('[data-annotation-action="callout-confirm"]'),
-      cancel: !!document.querySelector('[data-annotation-action="callout-cancel"]'),
-      del: !!document.querySelector('[data-annotation-action="callout-delete"]'),
+      editor: document.querySelectorAll('[data-annotation-editor], .edit-inline-editor').length,
+      panelField: !!document.querySelector('[data-txt-text]'),
+      confirm: !!document.querySelector('[data-content-action="ann-callout-confirm"]'),
+      del: !!document.querySelector('[data-content-action="ann-callout-delete"]'),
     }), RETIRED_STYLE);
-    await win.click('[data-annotation-action="callout-cancel"]');
+    await waitField();
+    await win.locator('[data-txt-text]').fill('P21-CO');
+    await win.locator('[data-txt-text]').blur();
     await win.waitForTimeout(400);
 
     // -- note path ----------------------------------------------------------
     await armAnnotationTool(win, 'note');
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
-    await win.mouse.click(pg.x + pg.width * 0.5, pg.y + pg.height * 0.5);
-    await win.waitForSelector('[data-annotation-editor="note"]', { timeout: 8000 });
+    const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+    const nx = Math.max(40, Math.min(pg.x + pg.width * 0.5, vp.w - 40));
+    const ny = Math.max(40, Math.min(pg.y + pg.height * 0.5, vp.h - 110));
+    await win.mouse.click(nx, ny);
+    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
     out.note = await win.evaluate((ret) => ({
       retired: document.querySelectorAll(ret).length,
-      grip: !!document.querySelector('[data-drag-grip="note"]'),
-      confirm: !!document.querySelector('[data-annotation-action="note-confirm"]'),
-      cancel: !!document.querySelector('[data-annotation-action="note-cancel"]'),
-      del: !!document.querySelector('[data-annotation-action="note-delete"]'),
+      editor: document.querySelectorAll('[data-annotation-editor], .edit-inline-editor').length,
+      panelField: !!document.querySelector('[data-txt-text]'),
+      confirm: !!document.querySelector('[data-content-action="ann-note-confirm"]'),
+      del: !!document.querySelector('[data-content-action="ann-note-delete"]'),
     }), RETIRED_STYLE);
-    await win.click('[data-annotation-action="note-cancel"]');
+    await waitField();
+    await win.locator('[data-txt-text]').fill('P21-NT');
+    await win.locator('[data-txt-text]').blur();
     await win.waitForTimeout(400);
 
     // -- edit-text-run path -------------------------------------------------
@@ -567,38 +630,35 @@ test('C3 no floating style toolbox; grip + Confirm/Cancel/Delete remain', async 
     const span = win.locator('.pdf-page[data-page="1"] .textLayer span').filter({ hasText: /[A-Za-z]/ }).first();
     const sb = (await span.count()) ? await span.boundingBox() : null;
     if (sb) {
-      await win.mouse.dblclick(sb.x + sb.width / 2, sb.y + sb.height / 2);
+      await win.mouse.click(sb.x + sb.width / 2, sb.y + sb.height / 2);
     } else {
       await dragOnPage(win, 0.3, 0.7);
-      await win.mouse.dblclick(pg.x + pg.width * 0.3, pg.y + pg.height * 0.7);
     }
-    const runEditor = await win.waitForSelector('[data-edit-editor]', { timeout: 8000 }).catch(() => null);
+    await win.waitForTimeout(600);
     out.editRun = await win.evaluate((ret) => ({
-      opened: !!document.querySelector('[data-edit-editor]'),
-      mode: document.querySelector('[data-edit-editor]')?.getAttribute('data-edit-editor') ?? null,
-      panelMode: document.querySelector('[data-text-panel]')?.getAttribute('data-text-panel-mode') ?? null,
       retired: document.querySelectorAll(ret).length,
-      grip: !!document.querySelector('[data-edit-drag-handle]'),
-      confirm: !!document.querySelector('[data-edit-confirm]'),
-      cancel: !!document.querySelector('[aria-label="Cancel edit"]'),
+      editor: document.querySelectorAll('[data-edit-editor], .edit-inline-editor').length,
+      panelMode: document.querySelector('[data-text-panel]')?.getAttribute('data-text-panel-mode') ?? null,
+      panelField: !!document.querySelector('[data-txt-text]'),
     }), RETIRED_STYLE);
-    if (runEditor) await win.keyboard.press('Escape');
 
     log('C3', out);
     await win.screenshot({ path: path.join(SHOTS, 'phase21-c3-no-style-toolbox.png') }).catch(() => {});
     for (const [name, v] of Object.entries(out)) {
       expect(v.retired, `${name}: no floating style control mounts`).toBe(0);
-      expect(v.grip, `${name}: drag grip present`).toBe(true);
-      expect(v.confirm, `${name}: Confirm present`).toBe(true);
-      expect(v.cancel, `${name}: Cancel present`).toBe(true);
+      if (v.editor !== undefined) expect(v.editor, `${name}: no in-canvas editor mounts`).toBe(0);
+      if (v.panelField !== undefined) expect(v.panelField, `${name}: panel Text field is the editor`).toBe(true);
     }
-    expect(out.textBoxCommitted.del, 'text box (committed editor): Delete present').toBe(true);
-    expect(out.textBoxCommitted.retired, 'text box (committed editor): no style control').toBe(0);
+    expect(out.textBox.panelEnabled, 'text box: panel Text field live on placement').toBe(true);
+    expect(out.textBoxEditTarget.panelEnabled, 'text box: Edit targets the panel Text field').toBe(true);
+    expect(out.textBoxCommitted.confirm, 'text box (committed): Confirm present').toBe(true);
+    expect(out.textBoxCommitted.edit, 'text box (committed): Edit present').toBe(true);
+    expect(out.textBoxCommitted.del, 'text box (committed): Delete present').toBe(true);
+    expect(out.annTextbox.confirm, 'annotation textbox: Confirm present').toBe(true);
     expect(out.annTextbox.del, 'annotation textbox: Delete present').toBe(true);
+    expect(out.annTextbox.editBtn, 'annotation textbox: no retired Edit button').toBe(false);
     expect(out.callout.del, 'callout: Delete present').toBe(true);
     expect(out.note.del, 'note: Delete present').toBe(true);
-    expect(out.editRun.opened, 'edit-text-run editor opened').toBe(true);
-    expect(out.editRun.mode, 'edit-text-run editor is the edit mode').toBe('edit');
     expect(out.editRun.panelMode, 'edit-text-run: panel serves it in text mode').toBe('text');
   } finally {
     await hardClose(app, 'p21-c3');
@@ -608,7 +668,7 @@ test('C3 no floating style toolbox; grip + Confirm/Cancel/Delete remain', async 
 // ===========================================================================
 // C4 — one panel serves every text-bearing tool; re-targets without closing;
 // annotation mode: colour live, per-family disabled set retired (Phase 24) —
-// only the engine-disabled Tc/Tz pair and the value-disabled indent-decrement
+// only the engine-disabled Tz control (Phase 27 made Tc live) and the value-disabled indent-decrement
 // stay disabled, and no control carries the retired per-family reason.
 //
 // Process gap (recorded, not a DEF): this C4 section only ever tested from a
@@ -673,10 +733,15 @@ test('C4 panel re-target matrix + annotation per-family scope', async () => {
     expect(annot.noteRetired, 'annotation textbox: retired per-family hint is gone').toBe(true);
     expect(annot.colourDisabled, 'annotation textbox: colour is LIVE').toBe(false);
     expect(annot.missing, 'annotation textbox: every control is present').toEqual([]);
-    // Phase 24 — the per-family disabled set is retired. Only the engine-disabled
-    // Tc/Tz pair and the value-disabled indent-decrement stay disabled.
+    // Phase 24 — the per-family disabled set is retired. Phase 27 — character
+    // spacing is now LIVE (the engine emits `Tc`); only the engine-disabled Tz
+    // (horizontal scaling) and the value-disabled indent-decrement stay disabled.
     expect(annot.disabled, 'annotation textbox: only engine/value-disabled controls are disabled')
-      .toEqual(['[data-txt-indent-dec]', '[data-txt-character-spacing]', '[data-txt-horizontal-scaling]']);
+      .toEqual(['[data-txt-indent-dec]', '[data-txt-horizontal-scaling]']);
+    expect(await win.evaluate(() => {
+      const el = document.querySelector('.text-props-panel [data-txt-character-spacing]');
+      return el ? el.disabled : 'MISSING';
+    }), 'annotation textbox: character spacing is LIVE (enabled)').toBe(false);
     expect(annot.retiredReasonCount, 'annotation textbox: no control carries the retired per-family reason').toBe(0);
 
     // re-target between annotation tools WITHOUT the panel closing.
@@ -717,14 +782,27 @@ test('C4 panel re-target matrix + annotation per-family scope', async () => {
     expect(after.ann, 'disabled controls dispatch nothing (annotation payload)').toBe(before.ann);
 
     // back to a TFlex text object: panel returns to text mode with live controls.
+    // (DEF-257: a box committed earlier loses its `.edit-box` surface across an
+    // Edit-mode close/reopen, so this step places a fresh box to re-target.)
     await armAnnotationTool(win, 'select');
     await win.waitForTimeout(300);
     await win.click('button[aria-label="Edit content"]');
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.click('[data-edit-tool="box"]');
-    await win.waitForTimeout(400);
-    await win.locator('.edit-box').first().click({ position: { x: 8, y: 8 } });
-    await win.waitForTimeout(400);
+    const pgB = await win.locator('.pdf-page[data-page="1"]').boundingBox();
+    const vpB = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+    const bx = Math.max(40, Math.min(pgB.x + pgB.width * 0.55, vpB.w - 260));
+    const by = Math.max(40, Math.min(pgB.y + pgB.height * 0.55, vpB.h - 120));
+    await win.mouse.move(bx, by);
+    await win.mouse.down();
+    await win.mouse.move(bx + 180, by + 60, { steps: 6 });
+    await win.mouse.up();
+    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+    await win.waitForFunction(() => {
+      const ta = document.querySelector('[data-txt-text]');
+      return ta !== null && ta.disabled === false;
+    }, null, { timeout: 8000 });
+    await win.waitForTimeout(300);
     const back = await win.evaluate(() => ({
       mode: document.querySelector('[data-text-panel]')?.getAttribute('data-text-panel-mode'),
       fontDisabled: document.querySelector('[data-txt-font]')?.disabled ?? null,

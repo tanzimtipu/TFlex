@@ -14,12 +14,15 @@
 // the neutral swatch value the colour input shows while no band is set.
 
 import type {
+  AnnRect,
   AnnTextStyle,
   EditColor,
   EditFont,
+  EditTextRunPayload,
   TextAlign,
   TextBoxStylePatch,
   TextListStyle,
+  TextStyleFields,
 } from "../../shared/types";
 import { clamp, type EditTextStyle } from "./model";
 
@@ -32,6 +35,11 @@ export const TEXT_BASELINE_MAX = 200;
 export const TEXT_INDENT_MIN = 0;
 export const TEXT_INDENT_MAX = 200;
 export const TEXT_INDENT_STEP = 12;
+/** Phase 27 — character-spacing (tracking) bounds in points. Mirrors the
+ *  engine's `charSpacing` validation (`-5..20`); the control steps by 0.5. */
+export const TEXT_CHAR_SPACING_MIN = -5;
+export const TEXT_CHAR_SPACING_MAX = 20;
+export const TEXT_CHAR_SPACING_STEP = 0.5;
 export const TEXT_DEFAULT_LINE_HEIGHT = 1.2;
 export const TEXT_DEFAULT_SIZE = 12;
 /** Baseline offsets the super/sub buttons apply (points). */
@@ -55,6 +63,8 @@ export interface TextStyleValues {
   lineHeight: number;
   list: TextListStyle;
   indent: number;
+  /** Phase 27 — character spacing in points; 0 is the default. */
+  charSpacing: number;
 }
 
 /** Per-tool defaults: size 12, black, left, 1.2 line step, no list/indent. */
@@ -72,6 +82,7 @@ export function defaultTextStyleValues(font: EditFont): TextStyleValues {
     lineHeight: TEXT_DEFAULT_LINE_HEIGHT,
     list: "none",
     indent: 0,
+    charSpacing: 0,
   };
 }
 
@@ -97,6 +108,7 @@ export function textStyleValuesFromStyle(style: EditTextStyle): TextStyleValues 
     lineHeight: style.lineHeight ?? TEXT_DEFAULT_LINE_HEIGHT,
     list: style.list ?? "none",
     indent: style.indent ?? 0,
+    charSpacing: style.charSpacing ?? 0,
   };
 }
 
@@ -125,6 +137,7 @@ export function applyPatchToValues(
   if (patch.lineHeight !== undefined) next.lineHeight = clampLineHeight(patch.lineHeight);
   if (patch.list !== undefined) next.list = patch.list;
   if (patch.indent !== undefined) next.indent = clampIndent(patch.indent);
+  if (patch.charSpacing !== undefined) next.charSpacing = clampCharSpacing(patch.charSpacing);
   return next;
 }
 
@@ -145,6 +158,7 @@ export function valuesToPatch(values: TextStyleValues): TextBoxStylePatch {
     lineHeight: clampLineHeight(values.lineHeight),
     list: values.list,
     indent: clampIndent(values.indent),
+    charSpacing: clampCharSpacing(values.charSpacing),
   };
 }
 
@@ -167,6 +181,69 @@ export function editTextStyleFromValues(values: TextStyleValues): EditTextStyle 
     ...(values.highlight !== null ? { highlight: { ...values.highlight } } : {}),
     list: values.list,
     indent: clampIndent(values.indent),
+    ...(values.charSpacing !== 0 ? { charSpacing: clampCharSpacing(values.charSpacing) } : {}),
+  };
+}
+
+/** Phase 21/27 — the `TextStyleFields` an `editTextRun` payload carries for
+ *  a given `EditTextStyle`. This is the RUN-COMMIT companion to
+ *  `editTextStyleFromValues`: the latter returns the panel's full style
+ *  (every Phase-21 field materialised with its default), while the engine
+ *  only routes through the styled draw path when a field is actually
+ *  PRESENT (`hasTextStyle` checks `!== undefined`). So the convention here
+ *  is: forward a field only when it is meaningful, i.e. omit absent fields
+ *  AND fields still at their documented default — align `'left'`,
+ *  lineHeight `1.2`, `bold`/`italic`/`underline` false, baselineShift `0`,
+ *  list `'none'`, indent `0`, charSpacing `0`, and a null/white-sentinel
+ *  highlight. A default-style run therefore keeps the legacy minimal
+ *  payload (font/size/color only) and the engine's byte-compatible
+ *  single-draw path; any set field rides through so the engine bakes it
+ *  (DEF-258: the run commit previously dropped every one of these). */
+export function textStyleFieldsFromStyle(style: EditTextStyle): TextStyleFields {
+  return {
+    ...(style.align !== undefined && style.align !== "left" ? { align: style.align } : {}),
+    ...(style.lineHeight !== undefined && style.lineHeight !== TEXT_DEFAULT_LINE_HEIGHT
+      ? { lineHeight: clampLineHeight(style.lineHeight) }
+      : {}),
+    ...(style.bold === true ? { bold: true } : {}),
+    ...(style.italic === true ? { italic: true } : {}),
+    ...(style.underline === true ? { underline: true } : {}),
+    ...(style.baselineShift !== undefined && style.baselineShift !== 0
+      ? { baselineShift: clampBaselineShift(style.baselineShift) }
+      : {}),
+    ...(style.highlight !== undefined && !isNoHighlight(style.highlight)
+      ? { highlight: { ...style.highlight } }
+      : {}),
+    ...(style.list !== undefined && style.list !== "none" ? { list: style.list } : {}),
+    ...(style.indent !== undefined && style.indent !== 0
+      ? { indent: clampIndent(style.indent) }
+      : {}),
+    ...(style.charSpacing !== undefined && style.charSpacing !== 0
+      ? { charSpacing: clampCharSpacing(style.charSpacing) }
+      : {}),
+  };
+}
+
+/** Phase 21/27 — the full `EditTextRunPayload` the run commit sends to
+ *  `engine.editTextRun`. The host (App) passes this object straight to the
+ *  engine, so a unit test asserting it is asserting the exact wire payload.
+ *  `oldRect` rides only when the commit is a MOVE (DEF-151). */
+export function buildEditTextRunPayload(args: {
+  rect: AnnRect;
+  newText: string;
+  style: EditTextStyle;
+  page: number;
+  oldRect?: AnnRect;
+}): EditTextRunPayload {
+  return {
+    page: args.page,
+    rect: args.rect,
+    newText: args.newText,
+    font: args.style.font,
+    size: args.style.size,
+    color: args.style.color,
+    ...textStyleFieldsFromStyle(args.style),
+    ...(args.oldRect !== undefined ? { oldRect: args.oldRect } : {}),
   };
 }
 
@@ -184,6 +261,11 @@ export function clampBaselineShift(v: number): number {
 
 export function clampIndent(v: number): number {
   return clamp(v, TEXT_INDENT_MIN, TEXT_INDENT_MAX);
+}
+
+/** Phase 27 — clamp a character-spacing value to the engine's `-5..20`. */
+export function clampCharSpacing(v: number): number {
+  return clamp(v, TEXT_CHAR_SPACING_MIN, TEXT_CHAR_SPACING_MAX);
 }
 
 /** Serialise an `EditColor` (0..1 components) to `#rrggbb` for the native
@@ -223,5 +305,6 @@ export function annotationStyleFromPanelPatch(patch: TextBoxStylePatch): AnnText
   if (patch.lineHeight !== undefined) style.lineHeight = clampLineHeight(patch.lineHeight);
   if (patch.list !== undefined) style.list = patch.list;
   if (patch.indent !== undefined) style.indent = clampIndent(patch.indent);
+  if (patch.charSpacing !== undefined) style.charSpacing = clampCharSpacing(patch.charSpacing);
   return style;
 }

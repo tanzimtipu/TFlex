@@ -48,7 +48,7 @@ import type {
   TextPage,
 } from "../../shared/types";
 import { applyPatch, type Annotation, type AnnotationPatch } from "../annotations/model";
-import { colorToHex } from "../edit/EditInlineEditor";
+import { colorToHex } from "../edit/editColor";
 import type {
   EngineApi,
   EngineOp,

@@ -1185,4 +1185,113 @@ the annotation model, honoured by the baked appearance stream, and surviving sav
 **Settings impact:** none (the style fields ride the existing annotation IPC; no new AppSettings
 field).
 
+## Phase 25 — Floating, movable text-properties panel (no header, no page reflow)
+
+**Supersession note:** this phase supersedes the Phase-21/24 docked-column design. The panel is no
+longer a grid column with a header and a page reflow; it is a floating card over the page view that
+the user can drag anywhere inside the page area.
+
+**Features**
+
+- **No header**: the panel's distinct header bar and its "Text" title are removed. The controls are
+  the whole panel; a small drag affordance (the existing `ContentGrip` pattern) is the only chrome.
+- **Floats over the page view**: the panel is positioned inside the page-view area (`.workspace-main`)
+  as an overlay, not a grid column. It never takes top-bar space and never sits outside the page
+  window.
+- **The page does NOT reflow**: opening/closing the panel must not change the page geometry, the
+  scroll position, or the fit scale. The `--tf-text-w` grid column and the `data-text-panel-open`
+  reflow are retired (or pinned to 0) so the page stays exactly where it was.
+- **User-movable**: the panel can be dragged anywhere within the page view (the existing
+  `useDragWindow` hook, the same pattern the stamp/watermark dialogs and the edit overlays use),
+  clamped so it cannot be dragged fully out of view. Its position persists for the session (and is
+  remembered per tab like the other floating surfaces).
+- **Text-element move integrity**: moving a text element (drag) with the panel open must produce no
+  artifacts - no ghost, no offset drift, no stale copy - because the panel no longer shifts the page
+  geometry. This is explicitly verified (the DEF-232 class).
+- **Motion + themes**: opening/closing uses the Phase-20 token motion (no un-animated appearance),
+  honours the Phase-23 animation switch, and looks correct in all three themes.
+
+**Success criteria**
+
+1. The panel has no header/title bar; opening it does not move the page (frame-sampled: the page
+   canvas rect and the scroller's scrollTop are unchanged across open/close), and it renders inside
+   the page-view area only.
+2. The panel can be dragged by its grip to any position inside the page view and stays where it is
+   put; it cannot be dragged fully out of the visible page area.
+3. With the panel open, dragging a text element (annotation textbox/callout/note and Edit-mode text
+   box) moves it correctly with no ghost, offset drift or stale duplicate (verified live and after
+   save/reopen).
+4. No regression to the Phase-24 annotation text controls (all live) or the Phase-20/23 motion
+   contracts; reduced motion and the animations-off setting behave as standard.
+
+**Settings impact:** none.
+
+## Phase 26 — Panel-driven text editing (double-click editors removed) + shape colour from the dropdown
+
+**Features**
+
+- **Double-click-to-edit is removed everywhere.** No text element opens an in-canvas editor on
+  double-click, and no in-canvas text box appears when a text element is placed or clicked. The
+  in-canvas editors for annotation textbox / callout / note (and the Edit-mode text-run editor's
+  double-click path) are retired.
+- **The panel gains a Text field** as the single text-editing surface for text-bearing tools. When a
+  text element is PLACED or an existing one is CLICKED, the panel's text field becomes active and
+  focused automatically, ready for typing. Editing the field updates the text element on the page
+  LIVE (as the user types), with the per-doc undo stack intact.
+- **Shape colour comes from the annotation dropdown**: the in-canvas colour palette that double-
+  clicking a shape opened is removed. Shape (and text) colour is changed through the annotation
+  toolbar's colour control (the existing `[data-ann-color]` swatch + picker popover).
+- **Selection affordances stay**: clicking a text element still selects it (handles/selection chrome),
+  the action bar keeps Confirm / Delete (Cancel where applicable), and the panel reflects the
+  selected element's values.
+
+**Success criteria**
+
+1. Double-clicking any text element (annotation textbox/callout/note, Edit-mode text box/run) opens
+   NO in-canvas editor; no in-canvas text box ever mounts for placing or clicking text (verified by
+   DOM probe + screenshots).
+2. Placing a text element or clicking an existing one focuses the panel's Text field automatically;
+   typing there updates the page text live (verified mid-typing, not only on blur), and the change
+   survives save/reopen.
+3. Double-clicking a shape (rect/ellipse/arrow) opens no in-canvas colour palette; the annotation
+   toolbar's colour control changes the selected shape's colour.
+4. Existing actions still work: Confirm, Delete, undo/redo, and the panel's full style control set.
+5. The Phase-24 annotation style contract and the Phase-21 text-box style contract are unchanged.
+
+**Settings impact:** none.
+
+## Phase 27 — Engine character spacing + a wider font set
+
+**Features**
+
+- **Character spacing (tracking)**: the `Tc` text-state operator is integrated into the engine's
+  styled-text renderer, so the panel's character-spacing control is LIVE for TFlex-owned text boxes,
+  edited text runs and annotation text objects (the control that has shipped disabled-with-tooltip
+  since Phase 21/24 becomes functional). The value is validated (a bounded point range), baked into
+  the appearance/content streams, and survives save/reopen.
+- **More fonts**: the font set grows beyond the three StandardFont families. Bundled, offline,
+  licence-clean font families ship in `assets/fonts/` and are embedded on demand (subset where the
+  library allows), exposed through the panel's family dropdown and accepted by the engine's font
+  validation. A font that cannot be embedded fails loud with a typed error (never a silent
+  substitution).
+- **Round-trip**: the chosen family (bundled or standard) is persisted with the text style and
+  restored on reopen; a reopen in another viewer shows the embedded font's glyphs.
+
+**Success criteria**
+
+1. The character-spacing control is live for text boxes, edited runs and annotation text objects;
+   changing it visibly changes the glyph spacing on the page and survives save/reopen (round-trip
+   asserted in the baked stream by the `Tc` operator).
+2. The font dropdown lists the bundled families in addition to the three standard families; each
+   selected family renders on the page and survives save/reopen.
+3. An unsupported/missing font file produces a typed `engine-error` naming the font (fail loud).
+4. Character spacing and the new fonts compose with the existing style fields (bold/italic/size/
+   colour/highlight/align/line-height/list/indent) with no regression.
+5. Unit tests for the spacing validation + the `Tc` emission, the font allowlist/embedding, and the
+   round-trip; e2e for a spacing change and a bundled-font change through the panel.
+
+**Settings impact:** `editDefaultFont` widens to accept the new bundled family ids (existing field,
+extended allow-list; preserve-if-valid / reject-if-invalid so an unknown id falls back to the current
+default); no new AppSettings field.
+
 

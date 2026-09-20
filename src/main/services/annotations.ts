@@ -8,15 +8,19 @@ import {
   PDFRef,
   PDFString,
   type PDFFont,
+  type PDFOperator,
   type PDFPage,
   type PDFPageLeaf,
 } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
-import { drawStyledTextLines, selectStandardFont } from './engine';
+import { drawStyledTextLines } from './engine';
+import { embedEditFont } from './fonts';
 import {
   EDIT_FONTS,
   MAX_TEXT_SIZE,
   MIN_TEXT_SIZE,
+  isBundledEditFont,
+  isEditFont,
   validateTextStyleFields,
 } from './text-style';
 import type {
@@ -30,7 +34,6 @@ import type {
   AnnTextStyle,
   CreateAnnotationPayload,
   EditAnnotationPayload,
-  EditFont,
   EngineError,
   TextStyleFields,
 } from '../../shared/types';
@@ -183,13 +186,13 @@ function validateAnnTextStyle(raw: unknown): AnnStyleValidation {
   if (removesHighlight) out.highlight = null;
   const r = raw as Record<string, unknown>;
   if (r.font !== undefined) {
-    if (typeof r.font !== 'string' || !(EDIT_FONTS as readonly string[]).includes(r.font)) {
+    if (!isEditFont(r.font)) {
       return {
         ok: false,
-        reason: `unsupported font ${JSON.stringify(r.font)}; the StandardFont allowlist is Helvetica, Times, Courier`,
+        reason: `unsupported font ${JSON.stringify(r.font)}; supported families are ${EDIT_FONTS.join(', ')}`,
       };
     }
-    out.font = r.font as EditFont;
+    out.font = r.font;
   }
   if (r.size !== undefined) {
     if (
@@ -1208,13 +1211,14 @@ function wrapTextForFreeText(
   text: string,
   size: number,
   maxWidth: number,
+  charSpacing = 0,
 ): string[] {
   const words = text.split(/\s+/).filter((w) => w.length > 0);
   const lines: string[] = [];
   let line = '';
   for (const word of words) {
     const candidate = line.length === 0 ? word : `${line} ${word}`;
-    if (line.length > 0 && font.widthOfTextAtSize(candidate, size) > maxWidth) {
+    if (line.length > 0 && freeTextStyledWidth(font, candidate, size, charSpacing) > maxWidth) {
       lines.push(line);
       line = word;
     } else {
@@ -1234,6 +1238,28 @@ function wrapTextForFreeText(
  *  prefixes, indent) instead of a hand-rolled text loop. */
 class ApStreamOps {
   readonly ops: string[] = [];
+  /** Phase 27 — the resource name the /AP Resources dict declares for the
+   *  embedded font. `Helv` for a StandardFont (unchanged legacy bytes);
+   *  the embedded font's own name for a bundled family. The shared renderer
+   *  reads this when it hand-emits a `Tf` for a spaced run. */
+  readonly fontKey: PDFName;
+
+  constructor(fontKey: PDFName = PDFName.of('Helv')) {
+    this.fontKey = fontKey;
+  }
+
+  /** Phase 27 — no-op: the /AP stream declares its single font in the Form
+   *  XObject Resources. Present so the shared renderer can uniformly register
+   *  a font before emitting a spaced run. */
+  setFont(_font: PDFFont): void {
+    // Intentionally empty — the AP resource dict is built by the caller.
+  }
+
+  /** Phase 27 — the shared renderer hand-emits a text object when a style
+   *  carries character spacing. Serialise the operators to the stream. */
+  pushOperators(...operators: PDFOperator[]): void {
+    for (const op of operators) this.ops.push(op.toString());
+  }
 
   drawText(
     text: string,
@@ -1247,7 +1273,9 @@ class ApStreamOps {
   ): void {
     const { x, y, size, font, color } = options;
     this.ops.push('BT');
-    this.ops.push(`/Helv ${round3(size)} Tf`);
+    // `PDFName.asString()` carries the leading slash (`/Helv`), so it is the
+    // full operator operand.
+    this.ops.push(`${this.fontKey.asString()} ${round3(size)} Tf`);
     this.ops.push(`${round3(color.red)} ${round3(color.green)} ${round3(color.blue)} rg`);
     this.ops.push(`1 0 0 1 ${round3(x)} ${round3(y)} Tm`);
     this.ops.push(`${font.encodeText(text).toString()} Tj`);
@@ -1268,32 +1296,49 @@ class ApStreamOps {
   }
 }
 
+/** Phase 27 — drawn width of `text` including character spacing. Mirrors
+ *  engine.ts `styledTextWidth`: `Tc` adds `spacing` after each glyph, and
+ *  layout counts the inter-glyph gaps (`glyphCount - 1`). Zero/absent
+ *  spacing returns the plain glyph width exactly. */
+function freeTextStyledWidth(font: PDFFont, text: string, size: number, charSpacing: number): number {
+  const base = font.widthOfTextAtSize(text, size);
+  if (charSpacing === 0) return base;
+  return base + charSpacing * Math.max(0, Array.from(text).length - 1);
+}
+
 /** Phase 24 — width reserved for a per-line list prefix during wrapping.
- *  Mirrors engine.ts `listPrefixWidth` (bullet glyph + gap / widest `999. `). */
+ *  Mirrors engine.ts `listPrefixWidth` (bullet glyph + gap / widest `999. `).
+ *  Phase 27 — character spacing is included. */
 function freeTextListPrefixWidth(
   font: PDFFont,
   size: number,
   list: TextStyleFields['list'],
+  charSpacing = 0,
 ): number {
-  if (list === 'bullet') return font.widthOfTextAtSize('\u2022 ', size);
-  if (list === 'number') return font.widthOfTextAtSize('999. ', size);
+  if (list === 'bullet') return freeTextStyledWidth(font, '\u2022 ', size, charSpacing);
+  if (list === 'number') return freeTextStyledWidth(font, '999. ', size, charSpacing);
   return 0;
 }
 
 /** Build a Form XObject appearance stream for a FreeText (textbox or callout)
- *  annotation that draws the wrapped text with a StandardFont at the /DA size
- *  and color, applying the same auto-fit the renderer uses. The stream paints
- *  ONLY the text (no border, no background, no leader line): the renderer
- *  overlay keeps the box chrome + callout arrow, and pdf.js paints this /AP
- *  for the glyphs — so there is exactly one copy of the text on reopen instead
- *  of TFlex's draw plus pdf.js's generated appearance (DEF-166). The /BBox is
- *  the flipped /Rect; coordinates use the page's bottom-left user space.
+ *  annotation that draws the wrapped text with the annotation's font at the
+ *  /DA size and color, applying the same auto-fit the renderer uses. The
+ *  stream paints ONLY the text (no border, no background, no leader line): the
+ *  renderer overlay keeps the box chrome + callout arrow, and pdf.js paints
+ *  this /AP for the glyphs — so there is exactly one copy of the text on
+ *  reopen instead of TFlex's draw plus pdf.js's generated appearance
+ *  (DEF-166). The /BBox is the flipped /Rect; coordinates use the page's
+ *  bottom-left user space.
  *
  *  Phase 24 — the styled layout is delegated to the shared
  *  `drawStyledTextLines` (the same renderer the Phase-21 text-box bake uses)
  *  via the `ApStreamOps` collector. The caller passes the font selected for
  *  the stored bold/italic variant; colour keeps its per-kind value (black for
- *  a plain text box, the annotation colour for a callout). */
+ *  a plain text box, the annotation colour for a callout).
+ *
+ *  Phase 27 — `fontName` is the resource name the stream declares (no leading
+ *  slash): `Helv` for a StandardFont, or the embedded font's own name for a
+ *  bundled family, so the `Tf` operator and the Resources dict always agree. */
 function buildFreeTextAPStream(
   doc: PDFDocument,
   ann: AnnModel,
@@ -1301,6 +1346,7 @@ function buildFreeTextAPStream(
   font: PDFFont,
   textColor: [number, number, number],
   borderPt: number,
+  fontName: string,
 ): PDFRef {
   const bbox = ann.rects[0] ?? { x: 0, y: 0, width: 0, height: 0 };
   const [llx, lly, urx, ury] = topLeftRectToPdfRect(bbox, pageHeight);
@@ -1321,6 +1367,9 @@ function buildFreeTextAPStream(
   const lineHeight = style.lineHeight ?? FREETEXT_LINE_HEIGHT;
   const list = style.list ?? 'none';
   const indent = style.indent ?? 0;
+  // Phase 27 — character spacing (tracking) is measured with the wrap/auto-fit
+  // and emitted by the shared renderer as `Tc`.
+  const charSpacing = style.charSpacing ?? 0;
 
   // Auto-fit: wrap at the base size (the stored style's `size` when one is
   // carried, otherwise the legacy 12pt), reserving the indent + list-prefix
@@ -1332,7 +1381,8 @@ function buildFreeTextAPStream(
       font,
       safe,
       s,
-      Math.max(1, contentWidth - indent - freeTextListPrefixWidth(font, s, list)),
+      Math.max(1, contentWidth - indent - freeTextListPrefixWidth(font, s, list, charSpacing)),
+      charSpacing,
     );
   let size = baseSize;
   let lines = wrapAt(size);
@@ -1349,7 +1399,7 @@ function buildFreeTextAPStream(
   // content box's top in top-left space, so the renderer's
   // `pageHeight - cursorTop - size` baseline is identical to the old
   // first-baseline maths (`ury - inset - size`).
-  const collector = new ApStreamOps();
+  const collector = new ApStreamOps(PDFName.of(fontName));
   drawStyledTextLines(
     collector as unknown as PDFPage,
     pageHeight,
@@ -1370,6 +1420,7 @@ function buildFreeTextAPStream(
       highlight: style.highlight ?? undefined,
       list,
       indent,
+      charSpacing,
     },
   );
   const ops: string[] = ['q', ...collector.ops, 'Q'];
@@ -1382,7 +1433,7 @@ function buildFreeTextAPStream(
       Subtype: 'Form',
       FormType: 1,
       BBox: [llx, lly, urx, ury],
-      Resources: doc.context.obj({ Font: { Helv: font.ref } }),
+      Resources: doc.context.obj({ Font: { [fontName]: font.ref } }),
     }) as any,
   );
   return doc.context.register(stream);
@@ -1484,6 +1535,13 @@ function serializeAnnotation(
     dictEntries.push(['BS', doc.context.obj({ W: ann.width })]);
   }
 
+  // Phase 27 — the /AP resource name for this annotation's font (no leading
+  // slash): `Helv` for a StandardFont (legacy bytes unchanged), the embedded
+  // font's own name for a bundled family. The /DA string and the appearance
+  // stream's Resources dict must name the same resource, so both derive from
+  // this one value.
+  const apFontName = isBundledEditFont(ann.style?.font ?? 'Helvetica') ? font.name : 'Helv';
+
   switch (ann.kind) {
     case 'text-box': {
       // DEF-166: bake a real /AP /N appearance stream drawing the wrapped
@@ -1492,9 +1550,9 @@ function serializeAnnotation(
       // instead of generating its own from /Contents + /DA, so there is
       // exactly one copy of the glyphs on reopen — the renderer overlay
       // suppresses its text for parsed annotations via `liveAnnTextIds`.
-      dictEntries.push(['DA', PDFString.of('/Helv 12 Tf 0 0 0 rg')]);
+      dictEntries.push(['DA', PDFString.of(`/${apFontName} 12 Tf 0 0 0 rg`)]);
       const apRef = buildFreeTextAPStream(
-        doc, ann, pageHeight, font, [0, 0, 0], FREETEXT_BORDER_PT,
+        doc, ann, pageHeight, font, [0, 0, 0], FREETEXT_BORDER_PT, apFontName,
       );
       dictEntries.push(['AP', doc.context.obj({ N: apRef })]);
       break;
@@ -1547,7 +1605,7 @@ function serializeAnnotation(
       }
       const w = ann.width ?? 1;
       dictEntries.push(['BS', doc.context.obj({ W: w, S: 'S' })]);
-      dictEntries.push(['DA', PDFString.of(`/Helv 12 Tf ${r} ${g} ${b} rg`)]);
+      dictEntries.push(['DA', PDFString.of(`/${apFontName} 12 Tf ${r} ${g} ${b} rg`)]);
       // DEF-166: bake a real /AP /N appearance stream drawing the wrapped text
       // at the /DA size (12pt) and the annotation color. The leader line is
       // NOT drawn here — pdf.js uses the /AP for the whole callout
@@ -1556,7 +1614,7 @@ function serializeAnnotation(
       // arrow survives. /AP present means pdf.js will not generate its own
       // FreeText appearance from /Contents + /DA.
       const apRef = buildFreeTextAPStream(
-        doc, ann, pageHeight, font, [r, g, b], CALLOUT_BORDER_PT,
+        doc, ann, pageHeight, font, [r, g, b], CALLOUT_BORDER_PT, apFontName,
       );
       dictEntries.push(['AP', doc.context.obj({ N: apRef })]);
       break;
@@ -1681,21 +1739,13 @@ export async function serializeAnnotations(
   annotations: AnnModel[][],
   order: number[],
 ): Promise<void> {
-  // Phase 24 — the font is selected per annotation from its stored family +
-  // bold/italic style (defaulting to Helvetica for a legacy annotation), so
-  // cache the embedded StandardFont by (family|bold|italic). A legacy
-  // annotation with no style resolves to plain Helvetica, exactly as before.
-  type EmbeddedFont = Awaited<ReturnType<typeof outDoc['embedFont']>>;
-  const fontCache = new Map<string, EmbeddedFont>();
-  const getFont = async (family: EditFont, bold: boolean, italic: boolean): Promise<EmbeddedFont> => {
-    const key = `${family}|${bold ? 'b' : ''}${italic ? 'i' : ''}`;
-    const cached = fontCache.get(key);
-    if (cached !== undefined) return cached;
-    const embedded = await outDoc.embedFont(selectStandardFont(family, bold, italic));
-    fontCache.set(key, embedded);
-    return embedded;
-  };
-
+  // Phase 24 / Phase 27 — the font is selected per annotation from its stored
+  // family + bold/italic style (defaulting to Helvetica for a legacy
+  // annotation). `embedEditFont` caches the result per (document, family,
+  // bold, italic): a StandardFont for the three base-14 families, a subset of
+  // the bundled TTF for a Phase-27 family. A missing/unreadable bundled font
+  // file throws a FontEmbedError naming the family, which the save path maps
+  // to a typed engine-error (never a silent substitution).
   const pageCount = outDoc.getPageCount();
   for (let vi = 0; vi < order.length && vi < pageCount; vi++) {
     const origIdx = order[vi];
@@ -1713,7 +1763,7 @@ export async function serializeAnnotations(
     for (const ann of pageAnns) {
       // Only the FreeText kinds bake a text /AP; the font is unused otherwise.
       const style = ann.style ?? {};
-      const font = await getFont(style.font ?? 'Helvetica', style.bold ?? false, style.italic ?? false);
+      const font = await embedEditFont(outDoc, style.font ?? 'Helvetica', style.bold ?? false, style.italic ?? false);
       serializeAnnotation(outDoc, pageLeaf, ann, pageHeight, font);
     }
   }

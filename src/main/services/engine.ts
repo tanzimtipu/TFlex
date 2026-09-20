@@ -1,7 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { inflateSync } from 'node:zlib';
-import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFTextField, rectangle, rgb, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from 'pdf-lib';
+import { beginText, concatTransformationMatrix, degrees, drawObject, endText, fill, PDFArray, PDFCheckBox, PDFDict, PDFDocument, PDFDropdown, PDFHexString, PDFName, PDFOptionList, PDFRadioGroup, PDFRef, PDFStream, PDFTextField, rectangle, rgb, setCharacterSpacing, setFillingRgbColor, setFontAndSize, setGraphicsState, setTextMatrix, showText, StandardFonts, TextRenderingMode, setTextRenderingMode, pushGraphicsState, popGraphicsState, type PDFOperator, type PDFObject, type PDFImage, type PDFFont, type PDFPage } from 'pdf-lib';
 import { err, ok, type Result } from '../../shared/result';
 import type {
   AddStampPayload,
@@ -50,6 +50,7 @@ import {
   serializeAnnotations,
 } from './annotations';
 import { exportFdf as exportFdfBytes, parseFdf } from './fdf';
+import { embedEditFont } from './fonts';
 import {
   applyPageLabels,
   carryOutlines,
@@ -78,6 +79,8 @@ import {
 } from './settings';
 import {
   DEFAULT_TEXT_LINE_HEIGHT,
+  EDIT_FONTS,
+  isEditFont,
   validateTextBoxStylePatch,
   validateTextStyleFields,
 } from './text-style';
@@ -1775,10 +1778,10 @@ export class EngineService {
     }
     const style = styleResult.value;
     const fontName = payload.font ?? 'Helvetica';
-    if (fontName !== 'Helvetica' && fontName !== 'Times' && fontName !== 'Courier') {
+    if (!isEditFont(fontName)) {
       return err(
         'engine-error',
-        `editTextRun: unsupported font ${JSON.stringify(fontName)}; the StandardFont allowlist is Helvetica, Times, Courier`,
+        `editTextRun: unsupported font ${JSON.stringify(fontName)}; supported families are ${EDIT_FONTS.join(', ')}`,
       );
     }
 
@@ -1788,7 +1791,7 @@ export class EngineService {
       const pageHeight = page.getSize().height;
       const { x, y } = payload.rect;
 
-      const font = await doc.pdfDoc.embedFont(selectStandardFont(fontName, !!style.bold, !!style.italic));
+      const font = await embedEditFont(doc.pdfDoc, fontName, !!style.bold, !!style.italic);
       const size = payload.size ?? 12;
       const color = payload.color ?? { r: 0, g: 0, b: 0 };
       const safe = sanitizeForStandardFont(payload.newText);
@@ -1882,6 +1885,7 @@ export class EngineService {
             highlight: style.highlight,
             list: style.list ?? 'none',
             indent: style.indent ?? 0,
+            charSpacing: style.charSpacing ?? 0,
           },
         );
       }
@@ -1944,12 +1948,18 @@ export class EngineService {
       return err('engine-error', `addTextBox: ${styleResult.reason}`);
     }
     const style = styleResult.value;
+    // Phase 27 — a supplied-but-invalid family fails loud (never a silent
+    // substitution to Helvetica); an absent family keeps the legacy default.
+    if (payload.font !== undefined && !isEditFont(payload.font)) {
+      return err(
+        'engine-error',
+        `addTextBox: unsupported font ${JSON.stringify(payload.font)}; supported families are ${EDIT_FONTS.join(', ')}`,
+      );
+    }
     // Registry op: no pdfDoc mutation, so a plain snapshot (no pdfBytes)
     // suffices for undo — restoreSnapshot reverts the registry directly.
     const snapshot = snapshotDoc(doc);
-    const font: EditFont = payload.font === 'Times' || payload.font === 'Courier'
-      ? payload.font
-      : 'Helvetica';
+    const font: EditFont = payload.font ?? 'Helvetica';
     const size = typeof payload.size === 'number' && payload.size > 0 ? payload.size : 12;
     const color = payload.color ? editColorToHex(payload.color) : undefined;
     const box: TextBoxModel = {
@@ -2115,6 +2125,7 @@ export class EngineService {
     }
     if (patch.list !== undefined) next.list = patch.list;
     if (patch.indent !== undefined) next.indent = patch.indent;
+    if (patch.charSpacing !== undefined) next.charSpacing = patch.charSpacing;
     doc.textBoxes[idx] = next;
     doc.undoStack.push(snapshot);
     doc.redoStack = [];
@@ -2789,8 +2800,8 @@ export class EngineService {
       try {
         const probe = await PDFDocument.create();
         if (isText) {
-          const probeFont = await probe.embedFont(
-            selectStandardFont(settings.font ?? 'Helvetica', !!settings.bold, !!settings.italic),
+          const probeFont = await embedEditFont(
+            probe, settings.font ?? 'Helvetica', !!settings.bold, !!settings.italic,
           );
           const tileSize = settings.size ?? DEFAULT_WATERMARK_TEXT_SIZE;
           probeW = probeFont.widthOfTextAtSize(text, tileSize);
@@ -2844,8 +2855,8 @@ export class EngineService {
       let font: PDFFont | null = null;
       let image: PDFImage | null = null;
       if (isText) {
-        font = await doc.pdfDoc.embedFont(
-          selectStandardFont(settings.font ?? 'Helvetica', !!settings.bold, !!settings.italic),
+        font = await embedEditFont(
+          doc.pdfDoc, settings.font ?? 'Helvetica', !!settings.bold, !!settings.italic,
         );
       } else {
         const imageBytes = settings.imageBytes as Uint8Array;
@@ -3330,50 +3341,6 @@ function resolveVisiblePage(
 }
 
 /**
- * Map an EditFont allowlist value to the matching pdf-lib StandardFonts
- * enum entry. All three use WinAnsiEncoding so Latin text round-trips.
- */
-function standardFontFor(font: EditFont): StandardFonts {
-  switch (font) {
-    case 'Times': return StandardFonts.TimesRoman;
-    case 'Courier': return StandardFonts.Courier;
-    case 'Helvetica':
-    default:
-      return StandardFonts.Helvetica;
-  }
-}
-
-/**
- * Phase 18 — map a (family, bold, italic) style triple to the matching
- * pdf-lib StandardFonts entry for watermark text. All nine combinations
- * exist among the bundled standard fonts (WinAnsiEncoding, so Latin text
- * round-trips like the Phase 10 edit tools).
- */
-export function selectStandardFont(
-  family: EditFont,
-  bold: boolean,
-  italic: boolean,
-): StandardFonts {
-  if (!bold && !italic) return standardFontFor(family);
-  if (family === 'Times') {
-    if (bold && italic) return StandardFonts.TimesRomanBoldItalic;
-    if (bold) return StandardFonts.TimesRomanBold;
-    if (italic) return StandardFonts.TimesRomanItalic;
-    return StandardFonts.TimesRoman;
-  }
-  if (family === 'Courier') {
-    if (bold && italic) return StandardFonts.CourierBoldOblique;
-    if (bold) return StandardFonts.CourierBold;
-    if (italic) return StandardFonts.CourierOblique;
-    return StandardFonts.Courier;
-  }
-  if (bold && italic) return StandardFonts.HelveticaBoldOblique;
-  if (bold) return StandardFonts.HelveticaBold;
-  if (italic) return StandardFonts.HelveticaOblique;
-  return StandardFonts.Helvetica;
-}
-
-/**
  * Strip characters that pdf-lib's StandardFonts (WinAnsiEncoding) cannot
  * encode. Code points > 0xFFFF and most > 0xFF are dropped; controls are
  * replaced with a space. This is the documented Phase 10 limitation —
@@ -3406,13 +3373,19 @@ function sanitizeForStandardFont(text: string): string {
  * Wrap text to fit a max width, breaking on word boundaries. Long words
  * that exceed the width are hard-broken across lines. Newlines in the
  * input are honoured as explicit line breaks.
+ *
+ * Phase 27 — `charSpacing` (points) is included in every width measurement
+ * (see `styledTextWidth`), so a tracked line wraps early enough not to
+ * overflow its box. Absent/0 leaves the legacy wrap byte-identical.
  */
 function wrapTextToWidth(
   text: string,
   font: { widthOfTextAtSize: (t: string, s: number) => number },
   size: number,
   maxWidth: number,
+  charSpacing = 0,
 ): string[] {
+  const measure = (t: string): number => styledTextWidth(font, t, size, charSpacing);
   const out: string[] = [];
   const paragraphs = text.split('\n');
   for (const para of paragraphs) {
@@ -3425,7 +3398,7 @@ function wrapTextToWidth(
     for (const word of words) {
       if (word.length === 0) continue;
       const candidate = line.length === 0 ? word : line + ' ' + word;
-      if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+      if (measure(candidate) <= maxWidth) {
         line = candidate;
       } else {
         // If the single word itself is too long, hard-break it.
@@ -3433,12 +3406,12 @@ function wrapTextToWidth(
           out.push(line);
           line = '';
         }
-        if (font.widthOfTextAtSize(word, size) <= maxWidth) {
+        if (measure(word) <= maxWidth) {
           line = word;
         } else {
           let chunk = '';
           for (const ch of word) {
-            if (font.widthOfTextAtSize(chunk + ch, size) <= maxWidth) {
+            if (measure(chunk + ch) <= maxWidth) {
               chunk += ch;
             } else {
               if (chunk.length > 0) out.push(chunk);
@@ -4446,6 +4419,24 @@ function cloneTextBoxModel(tb: TextBoxModel): TextBoxModel {
   };
 }
 
+/** Phase 27 — the drawn width of `text` at `size` INCLUDING character
+ *  spacing. The `Tc` operator adds `spacing` after every glyph; for layout
+ *  (wrapping, alignment, underline length) we count the inter-glyph gaps
+ *  (`glyphCount - 1`), so a trailing gap does not affect alignment or
+ *  overflow. A zero/absent spacing returns the plain glyph width, keeping
+ *  the legacy measurement exact. */
+function styledTextWidth(
+  font: { widthOfTextAtSize: (t: string, s: number) => number },
+  text: string,
+  size: number,
+  charSpacing: number,
+): number {
+  const base = font.widthOfTextAtSize(text, size);
+  if (charSpacing === 0) return base;
+  const glyphs = Array.from(text).length;
+  return base + charSpacing * Math.max(0, glyphs - 1);
+}
+
 /** Phase 21 — true when at least one new style field is supplied, so the
  *  caller can keep the byte-compatible legacy draw path when none is. */
 function hasTextStyle(style: {
@@ -4458,23 +4449,27 @@ function hasTextStyle(style: {
   highlight?: { r: number; g: number; b: number };
   list?: TextListStyle;
   indent?: number;
+  charSpacing?: number;
 }): boolean {
   return style.align !== undefined || style.lineHeight !== undefined ||
     style.bold !== undefined || style.italic !== undefined ||
     style.underline !== undefined || style.baselineShift !== undefined ||
     style.highlight !== undefined || style.list !== undefined ||
-    style.indent !== undefined;
+    style.indent !== undefined || style.charSpacing !== undefined;
 }
 
 /** Phase 21 — width of the per-line list prefix for wrapping. `number` uses
- *  the widest plausible `999. ` so the first lines never overflow. */
+ *  the widest plausible `999. ` so the first lines never overflow. Phase 27 —
+ *  `charSpacing` is included so a tracked prefix is reserved at its real
+ *  width. */
 function listPrefixWidth(
   font: { widthOfTextAtSize: (t: string, s: number) => number },
   size: number,
   list: TextListStyle,
+  charSpacing = 0,
 ): number {
-  if (list === 'bullet') return font.widthOfTextAtSize('\u2022 ', size);
-  if (list === 'number') return font.widthOfTextAtSize('999. ', size);
+  if (list === 'bullet') return styledTextWidth(font, '\u2022 ', size, charSpacing);
+  if (list === 'number') return styledTextWidth(font, '999. ', size, charSpacing);
   return 0;
 }
 
@@ -4491,7 +4486,14 @@ function alignedLineX(rectX: number, width: number, lineWidth: number, align: Te
  *  box draw and the immediate `editTextRun` draw. `lines` are already wrapped
  *  (or split on explicit newlines). `rectTop` is the top-left-origin y of the
  *  block's first line. Draw order: every highlight band first (so bands sit
- *  BEHIND the glyphs), then per line the underline rule and the glyphs. */
+ *  BEHIND the glyphs), then per line the underline rule and the glyphs.
+ *
+ *  Phase 27 — `charSpacing` (points) is emitted as the `Tc` text-state
+ *  operator INSIDE each text object (after `BT`, before the show operator)
+ *  when non-zero. Absent/0 keeps the exact `page.drawText` operator stream,
+ *  so legacy output is byte-identical; every width used for layout is
+ *  measured with `styledTextWidth` so tracked lines wrap and align at their
+ *  real width. */
 export function drawStyledTextLines(
   page: PDFPage,
   pageHeight: number,
@@ -4510,10 +4512,12 @@ export function drawStyledTextLines(
     highlight?: { r: number; g: number; b: number };
     list: TextListStyle;
     indent: number;
+    charSpacing: number;
   },
 ): void {
   const lineStep = size * style.lineHeight;
   const pad = 2;
+  const charSpacing = style.charSpacing;
 
   // Phase 21 — `indent` insets the paragraph inside the box: every line,
   // including the first, starts at `rectX + indent` and alignment/wrapping
@@ -4528,8 +4532,13 @@ export function drawStyledTextLines(
       : style.list === 'number' ? `${i + 1}. `
       : '';
     const text = prefix + sanitizeForStandardFont(raw);
-    return { text, width: font.widthOfTextAtSize(text, size) };
+    return { text, width: styledTextWidth(font, text, size, charSpacing) };
   });
+
+  // Phase 27 — a non-zero spacing needs a hand-built text object with `Tc`.
+  // Register the font once so the emitted `Tf` names a resource the page
+  // carries; a zero spacing never touches the page (legacy path).
+  const fontKey = charSpacing !== 0 ? ensureTextFontKey(page, font) : undefined;
 
   // 1) Highlight bands, drawn before any glyph so they sit behind the ink.
   if (style.highlight !== undefined) {
@@ -4566,7 +4575,9 @@ export function drawStyledTextLines(
 
     const isLast = i === described.length - 1;
     if (style.align === 'justify' && !isLast) {
-      drawJustifiedLine(page, line.text, x, baseline, contentWidth, size, font, color);
+      drawJustifiedLine(page, line.text, x, baseline, contentWidth, size, font, color, charSpacing, fontKey);
+    } else if (charSpacing !== 0 && fontKey !== undefined) {
+      drawSpacedText(page, line.text, x, baseline, size, font, color, charSpacing, fontKey);
     } else {
       page.drawText(line.text, {
         x,
@@ -4580,9 +4591,48 @@ export function drawStyledTextLines(
   }
 }
 
+/** Phase 27 — register `font` in the page's resource dict and return the
+ *  resource key, so a hand-emitted `Tf` names the same font the resource dict
+ *  carries. On the annotation /AP collector (`ApStreamOps`) `setFont` is a
+ *  no-op and `fontKey` is the fixed `Helv` resource the collector declares. */
+function ensureTextFontKey(page: PDFPage, font: PDFFont): PDFName {
+  const target = page as unknown as { setFont?: (f: PDFFont) => void; fontKey?: PDFName };
+  if (typeof target.setFont === 'function') target.setFont(font);
+  return target.fontKey ?? PDFName.of(font.name);
+}
+
+/** Phase 27 — emit a single text run whose glyphs carry character spacing.
+ *  The operator stream is `q BT <color> <Tf> Tc <Tm> Tj ET Q`, so `Tc` lands
+ *  inside the text object, after `BT` and before the show operator. Only
+ *  used for a non-zero spacing; the zero case keeps `page.drawText` exactly. */
+function drawSpacedText(
+  page: PDFPage,
+  text: string,
+  x: number,
+  baseline: number,
+  size: number,
+  font: PDFFont,
+  color: { r: number; g: number; b: number },
+  charSpacing: number,
+  fontKey: PDFName,
+): void {
+  page.pushOperators(
+    pushGraphicsState(),
+    beginText(),
+    setFillingRgbColor(color.r, color.g, color.b),
+    setFontAndSize(fontKey, size),
+    setCharacterSpacing(charSpacing),
+    setTextMatrix(1, 0, 0, 1, x, baseline),
+    showText(font.encodeText(text)),
+    endText(),
+    popGraphicsState(),
+  );
+}
+
 /** Phase 21 — draw a line word-by-word, distributing the extra inter-word
  *  space evenly (justify). Falls back to a normal draw when the line has
- *  fewer than two words or no space to distribute. */
+ *  fewer than two words or no space to distribute. Phase 27 — `charSpacing`
+ *  is applied to each drawn word and included in the width bookkeeping. */
 function drawJustifiedLine(
   page: PDFPage,
   text: string,
@@ -4592,29 +4642,39 @@ function drawJustifiedLine(
   size: number,
   font: PDFFont,
   color: { r: number; g: number; b: number },
+  charSpacing = 0,
+  fontKey?: PDFName,
 ): void {
   const drawWhole = (): void => {
-    page.drawText(text, { x: startX, y: baseline, size, font, color: rgb(color.r, color.g, color.b) });
+    if (charSpacing !== 0 && fontKey !== undefined) {
+      drawSpacedText(page, text, startX, baseline, size, font, color, charSpacing, fontKey);
+    } else {
+      page.drawText(text, { x: startX, y: baseline, size, font, color: rgb(color.r, color.g, color.b) });
+    }
   };
   const words = text.split(' ');
   if (words.length < 2) {
     drawWhole();
     return;
   }
-  const natural = font.widthOfTextAtSize(text, size);
+  const natural = styledTextWidth(font, text, size, charSpacing);
   const extra = width - natural;
   if (extra <= 0) {
     drawWhole();
     return;
   }
   const gap = extra / (words.length - 1);
-  const spaceWidth = font.widthOfTextAtSize(' ', size);
+  const spaceWidth = styledTextWidth(font, ' ', size, charSpacing);
   let cursorX = startX;
   for (let i = 0; i < words.length; i++) {
     const word = words[i];
     if (word.length > 0) {
-      page.drawText(word, { x: cursorX, y: baseline, size, font, color: rgb(color.r, color.g, color.b) });
-      cursorX += font.widthOfTextAtSize(word, size);
+      if (charSpacing !== 0 && fontKey !== undefined) {
+        drawSpacedText(page, word, cursorX, baseline, size, font, color, charSpacing, fontKey);
+      } else {
+        page.drawText(word, { x: cursorX, y: baseline, size, font, color: rgb(color.r, color.g, color.b) });
+      }
+      cursorX += styledTextWidth(font, word, size, charSpacing);
     }
     if (i < words.length - 1) cursorX += spaceWidth + gap;
   }
@@ -4628,19 +4688,11 @@ function drawJustifiedLine(
  *  `_addTextBoxImpl` draw logic but applied to the registry at save time. */
 async function drawTextBoxes(out: PDFDocument, boxes: TextBoxModel[]): Promise<void> {
   if (boxes.length === 0) return;
-  // Cache the embedded StandardFont by family+style so a doc with many boxes
-  // does not re-embed the same base-14 font once per box (mirrors the
-  // signatures path's pngCache by id).
-  type EmbeddedFont = Awaited<ReturnType<typeof out['embedFont']>>;
-  const fontCache = new Map<string, EmbeddedFont>();
-  const getFont = async (family: EditFont, bold: boolean, italic: boolean): Promise<EmbeddedFont> => {
-    const key = `${family}|${bold ? 'b' : ''}${italic ? 'i' : ''}`;
-    const cached = fontCache.get(key);
-    if (cached !== undefined) return cached;
-    const embedded = await out.embedFont(selectStandardFont(family, bold, italic));
-    fontCache.set(key, embedded);
-    return embedded;
-  };
+  // Phase 27 — `embedEditFont` caches the embedded font per (document,
+  // family, bold, italic), so a doc with many boxes does not re-embed the
+  // same font once per box. A bundled family is embedded as a subset; a
+  // missing/unreadable font file throws a FontEmbedError naming the family,
+  // which the save path maps to a typed engine-error.
   for (const box of boxes) {
     // `box.page` is the 1-based VISIBLE page; the output doc's pages are
     // built in visible order (serializeDoc iterates doc.order), so the
@@ -4662,18 +4714,27 @@ async function drawTextBoxes(out: PDFDocument, boxes: TextBoxModel[]): Promise<v
       });
     }
 
-    const font = await getFont(box.font, box.bold ?? false, box.italic ?? false);
+    const font = await embedEditFont(out, box.font, box.bold ?? false, box.italic ?? false);
     const color = box.color ? hexToRgb(box.color) : { r: 0, g: 0, b: 0 };
     const lineHeight = box.lineHeight ?? DEFAULT_TEXT_LINE_HEIGHT;
     const list = box.list ?? 'none';
     const indent = box.indent ?? 0;
+    const charSpacing = box.charSpacing ?? 0;
 
     // Auto-fit: wrap to the indented content width (minus the list prefix),
     // then shrink the font size so ALL wrapped lines fit within the box height
-    // (DEF-113 — never silently drop text).
+    // (DEF-113 — never silently drop text). Phase 27 — the wrap width is
+    // measured with character spacing included, so a tracked line wraps
+    // before it overflows the box.
     const MIN_FIT_SIZE = 4;
     const wrap = (s: number): string[] =>
-      wrapTextToWidth(box.text, font, s, Math.max(1, width - indent - listPrefixWidth(font, s, list)));
+      wrapTextToWidth(
+        box.text,
+        font,
+        s,
+        Math.max(1, width - indent - listPrefixWidth(font, s, list, charSpacing)),
+        charSpacing,
+      );
     let size = box.size;
     let lines = wrap(size);
     if (height > 0 && lines.length > 0) {
@@ -4692,6 +4753,7 @@ async function drawTextBoxes(out: PDFDocument, boxes: TextBoxModel[]): Promise<v
       highlight: box.highlight,
       list,
       indent,
+      charSpacing,
     });
   }
 }
@@ -4729,6 +4791,9 @@ function serializeTextBoxMetadata(out: PDFDocument, boxes: TextBoxModel[]): void
       highlight: tb.highlight,
       list: tb.list,
       indent: tb.indent,
+      // Phase 27 — character spacing (tracking). Omitted when undefined, so a
+      // legacy box's catalog entry is byte-for-byte unchanged.
+      charSpacing: tb.charSpacing,
     }));
     const jsonStr = JSON.stringify(data);
     if (jsonStr.length > MAX_TEXTBOX_META_BYTES) return;
@@ -4789,8 +4854,7 @@ function parseTextBoxMetaJson(jsonStr: string): TextBoxModel[] {
     if (typeof rect !== 'object' || rect === null) continue;
     if (typeof rect.x !== 'number' || typeof rect.y !== 'number'
       || typeof rect.width !== 'number' || typeof rect.height !== 'number') continue;
-    const font: EditFont =
-      entry.font === 'Times' || entry.font === 'Courier' ? entry.font : 'Helvetica';
+    const font: EditFont = isEditFont(entry.font) ? entry.font : 'Helvetica';
     const size = typeof entry.size === 'number' && entry.size > 0 ? entry.size : 12;
     const color = typeof entry.color === 'string' ? entry.color : undefined;
     const background: 'white' | 'none' | undefined =

@@ -25,6 +25,9 @@ export const ANN_TEXT_FONT_CSS: Record<EditFont, string> = {
   Helvetica: '"Inter", system-ui, sans-serif',
   Times: 'Times, "Times New Roman", serif',
   Courier: '"Courier New", Courier, monospace',
+  "Liberation Sans": '"Liberation Sans", Arial, sans-serif',
+  "DejaVu Serif": '"DejaVu Serif", Georgia, serif',
+  "DejaVu Sans Mono": '"DejaVu Sans Mono", Consolas, monospace',
 };
 
 /** The stored style's CSS-relevant fields. Absent means "keep the overlay's
@@ -42,6 +45,9 @@ export interface AnnTextCss {
   highlight?: string;
   /** Left inset in points (the panel's indent). */
   indentPt?: number;
+  /** Phase 27 — character spacing in points (the panel's tracking). The
+   *  overlay scales it by `cssScale` to a CSS `letter-spacing`. */
+  charSpacingPt?: number;
 }
 
 /** `#rrggbb` for a 0..1 `EditColor`, clamped like `editColorToHex`. */
@@ -65,5 +71,8 @@ export function annTextCss(style: AnnTextStyle | undefined): AnnTextCss {
   if (style.lineHeight !== undefined) css.lineHeight = style.lineHeight;
   if (style.highlight != null) css.highlight = colorHex(style.highlight);
   if (style.indent !== undefined && style.indent > 0) css.indentPt = style.indent;
+  if (style.charSpacing !== undefined && style.charSpacing !== 0) {
+    css.charSpacingPt = style.charSpacing;
+  }
   return css;
 }

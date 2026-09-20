@@ -89,6 +89,9 @@ interface PageViewProps {
    *  genuine deselect (this page reporting null for the page that HOLDS the
    *  selection) from a neighbouring page mounting and reporting null. */
   onSelectAnnotation?: (ann: Annotation | null, page: number) => void;
+  /** Phase 26 — the overlay placed or clicked a text element; the host
+   *  focuses the panel's Text field (the single text-editing surface). */
+  onTextFocusRequest?: (id: string) => void;
   /** B10 / DEF-101 — successfully placed stamps for this page
    *  (rect + raster as recorded by the host on `addStamp` success).
    *  Rendered as `.stamp-annotation` DOM surfaces so a placed stamp
@@ -168,6 +171,7 @@ interface PageViewProps {
       page: number;
     }) => void;
     onCommitTextBox: (args: {
+      id?: string;
       rect: { x: number; y: number; width: number; height: number };
       text: string;
       style: import('../edit/model').EditTextStyle;
@@ -205,6 +209,18 @@ interface PageViewProps {
      *  preview AND its creation / run-edit payload (the floating editor
      *  no longer owns style controls). */
     textStyle: import('../edit/model').EditTextStyle;
+    /** Phase 26 — apply a patch to a SPECIFIC committed box (the panel
+     *  Text field's session commit). */
+    onTextPatch?: (id: string, patch: import('../../shared/types').TextBoxStylePatch) => void;
+    /** Phase 26 — the Edit overlay reports its selected text target up
+     *  (box or run) so the panel's Text field can edit it. */
+    onTextTargetChange?: (target: import('./DocumentView').EditTextTarget | null) => void;
+    /** Phase 26 — the panel's live text for the selected run's on-page
+     *  preview. */
+    textLive?: string | null;
+    /** Phase 26 — flips when the panel's edit session commits; the
+     *  overlay then commits the run it owns (rect + mask cover). */
+    textCommitToken?: number;
   } | null;
 }
 
@@ -294,6 +310,7 @@ export function PageView(props: PageViewProps) {
     onDeleteAnnotation,
     onDisarmAnnTool,
     onSelectAnnotation,
+    onTextFocusRequest,
     stampAnnotations = [],
     onMoveStamp,
     onDeleteStamp,
@@ -802,6 +819,7 @@ export function PageView(props: PageViewProps) {
         onDeleteAnnotation={onDeleteAnnotation}
         onDisarmTool={onDisarmAnnTool}
         onSelectAnnotation={reportAnnSelection}
+        onTextFocusRequest={onTextFocusRequest}
       />
       {/* B10 / DEF-101 + Bug 6 — placed-stamp DOM surfaces. Painted above
        * the textLayer; selectable / movable / deletable like every
@@ -880,6 +898,9 @@ export function PageView(props: PageViewProps) {
           onCommitTextBoxMove={edit.onCommitTextBoxMove}
           onDeleteTextBox={edit.onDeleteTextBox}
           textStyle={edit.textStyle}
+          onTextTargetChange={edit.onTextTargetChange}
+          textLive={edit.textLive ?? null}
+          textCommitToken={edit.textCommitToken ?? 0}
         />
       )}
       {!ready && <div className="page-placeholder" aria-hidden />}

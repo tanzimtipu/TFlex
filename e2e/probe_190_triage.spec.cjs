@@ -88,21 +88,20 @@ test('T1: edit-text editor open (def_108 replica, instrumented)', async () => {
   expect(after.runSelection, 'DEF-153: single click must SELECT the run (selection surface appears)').toBe(true);
   expect(after.anyEditorEl, 'DEF-153: single click must NOT open the inline editor').toBe(false);
 
-  // DEF-153 model: DOUBLE click on the run opens the inline editor.
+  // Phase 26 — the in-canvas run editor is retired: a double click opens
+  // nothing; the panel Text field is the single editor.
   await win.mouse.dblclick(s.x + s.w / 2, s.y + s.h / 2, { delay: 60 });
   await win.waitForTimeout(700);
   const afterDbl = await win.evaluate(() => ({
     editors: Array.from(document.querySelectorAll('[data-edit-editor]')).map((e) => e.getAttribute('data-edit-editor')),
     anyEditorEl: !!document.querySelector('.edit-inline-editor'),
-    textareaValue: (document.querySelector('.edit-inline-editor textarea') || {}).value ?? null,
+    panelField: !!document.querySelector('[data-txt-text]'),
   }));
   console.log('[T1] after double click: ' + JSON.stringify(afterDbl));
   await win.screenshot({ path: 'screenshots/probe190_t1_edittext.png' });
-  expect(
-    afterDbl.anyEditorEl && afterDbl.editors.includes('edit'),
-    'DEF-153: double click must open the inline editor pre-filled with the run text',
-  ).toBe(true);
-  expect(afterDbl.textareaValue, 'editor must be pre-filled with the clicked run text').toContain('TFlex Technical Report');
+  expect(afterDbl.anyEditorEl, 'Phase 26: double click must NOT open the retired inline editor').toBe(false);
+  expect(afterDbl.editors.length, 'Phase 26: no in-canvas editor mounts').toBe(0);
+  expect(afterDbl.panelField, 'Phase 26: the panel Text field is the editor').toBe(true);
 });
 
 // ---------------------------------------------------------------------------
@@ -230,18 +229,18 @@ test('T6: note editor action buttons (B4 premise check)', async () => {
     return { x: r.x, y: r.y, w: r.width, h: r.height };
   });
   if (!page) throw new Error('no page canvas');
-  await win.mouse.click(page.x + 150, page.y + 150);
-  await win.waitForTimeout(600);
-  const editor = await win.evaluate(() => {
-    const ed = document.querySelector('[data-annotation-editor="note"]');
-    if (!ed) return { open: false };
-    return {
-      open: true,
-      buttons: Array.from(ed.querySelectorAll('button')).map((b) => ({ text: (b.textContent || '').trim(), action: b.getAttribute('data-annotation-action') })),
-    };
-  });
-  console.log('[T6] note editor: ' + JSON.stringify(editor));
+  // Clear of the floating text panel (Phase 25) which covers the page's left edge.
+  await win.mouse.click(page.x + page.w * 0.6, page.y + 150);
+  await win.waitForTimeout(700);
+  const editor = await win.evaluate(() => ({
+    inCanvasEditor: document.querySelectorAll('[data-annotation-editor]').length,
+    panelField: !!document.querySelector('[data-txt-text]'),
+    panelEnabled: document.querySelector('[data-txt-text]')?.disabled === false,
+  }));
+  console.log('[T6] note placement (Phase 26): ' + JSON.stringify(editor));
   await win.screenshot({ path: 'screenshots/probe190_t6_note.png' });
+  expect(editor.inCanvasEditor, 'Phase 26: no in-canvas note editor mounts').toBe(0);
+  expect(editor.panelEnabled, 'Phase 26: the panel Text field is the note editor').toBe(true);
 });
 
 // ---------------------------------------------------------------------------

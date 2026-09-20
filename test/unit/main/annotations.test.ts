@@ -2985,3 +2985,162 @@ describe('Phase 24 — annotation text style fields', () => {
     expect(finalAp!.apText).not.toMatch(RED_BAND);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 27 — character spacing on annotation text objects. The FreeText /AP
+// stream is built by the SAME shared renderer as the text-box bake, so a
+// non-zero `charSpacing` inherits automatically as a `Tc` operator; the value
+// also round-trips through the `TFLEX-STYLE` /Contents sentinel.
+// ---------------------------------------------------------------------------
+
+describe('Phase 27 — annotation character spacing', () => {
+  it('an annotation style with charSpacing bakes Tc into the /AP stream and survives reparse', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p27a', path);
+
+    const created = await engine.createAnnotation('doc-p27a', styledPayload({
+      id: 'style-charspacing-1',
+      content: 'Spaced out',
+      style: { charSpacing: 5 },
+    }));
+    expect(created.ok).toBe(true);
+    if (created.ok) {
+      const ann = getAnns(created.value).find((a: any) => a.id === 'style-charspacing-1');
+      expect(ann?.style).toEqual({ charSpacing: 5 });
+    }
+
+    const savePath = join(dir, 'p27-ann-spacing.pdf');
+    const save = await engine.saveAs('doc-p27a', savePath);
+    expect(save.ok).toBe(true);
+
+    const info = await readFreeTextAppearance(savePath);
+    expect(info).toBeDefined();
+    // The shared renderer emitted Tc inside the /AP text object.
+    expect(info!.apText).toMatch(/(?:^|\s)5 Tc(?:\s|$)/);
+    expect(info!.apText).toMatch(/BT/);
+    expect(info!.apText).toMatch(/Tj/);
+
+    // The sentinel carries the field.
+    const firstLine = (info!.contents ?? '').split('\n')[0];
+    expect(firstLine).toMatch(/^TFLEX-STYLE /);
+    const decoded = JSON.parse(
+      Buffer.from(firstLine.slice('TFLEX-STYLE '.length), 'base64url').toString('utf8'),
+    );
+    expect(decoded).toMatchObject({ charSpacing: 5 });
+
+    // Reopen restores it.
+    const engine2 = new EngineService();
+    await engine2.loadDocument('doc-p27a-reopen', savePath);
+    const st = await engine2.getState('doc-p27a-reopen');
+    expect(st.ok).toBe(true);
+    if (st.ok) {
+      const ann = (st.value as any).annotations.find((a: any) => a.kind === 'text-box');
+      expect(ann?.style).toMatchObject({ charSpacing: 5 });
+    }
+  });
+
+  it('a default annotation appearance emits no Tc', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p27b', path);
+    await engine.createAnnotation('doc-p27b', styledPayload({
+      id: 'style-charspacing-default',
+      content: 'Plain text',
+      style: { bold: true },
+    }));
+    const savePath = join(dir, 'p27-ann-default.pdf');
+    await engine.saveAs('doc-p27b', savePath);
+    const info = await readFreeTextAppearance(savePath);
+    expect(info).toBeDefined();
+    expect(info!.apText).not.toMatch(/(?:^|\s)[\d.-]+ Tc(?:\s|$)/);
+  });
+
+  it('rejects an out-of-range annotation charSpacing with a typed engine-error', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p27c', path);
+    const bad = await engine.createAnnotation('doc-p27c', styledPayload({
+      style: { charSpacing: 21 } as any,
+    }));
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.error.message).toContain('charSpacing must be a finite number in -5..20');
+  });
+});
+// ---------------------------------------------------------------------------
+// Phase 27 — a bundled font family round-trips for a FreeText annotation and
+// drives its baked /AP appearance (resource name + BaseFont).
+// ---------------------------------------------------------------------------
+
+describe('Phase 27 - annotation bundled font families', () => {
+  it('round-trips a bundled family through the sentinel and the /AP', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p27ann', path);
+
+    const created = await engine.createAnnotation('doc-p27ann', styledPayload({
+      id: 'p27-font-ann',
+      content: 'Bundled serif',
+      style: { font: 'DejaVu Serif', size: 14 },
+    }));
+    expect(created.ok).toBe(true);
+    if (created.ok) {
+      const ann = getAnns(created.value).find((a: any) => a.id === 'p27-font-ann');
+      expect(ann?.style).toEqual({ font: 'DejaVu Serif', size: 14 });
+    }
+
+    const savePath = join(dir, 'p27-ann-font.pdf');
+    const save = await engine.saveAs('doc-p27ann', savePath);
+    expect(save.ok).toBe(true);
+
+    const info = await readFreeTextAppearance(savePath);
+    expect(info).toBeDefined();
+
+    // The /Contents sentinel JSON carries the bundled family verbatim.
+    const firstLine = (info!.contents ?? '').split('\n')[0];
+    expect(firstLine).toMatch(/^TFLEX-STYLE /);
+    const decoded = JSON.parse(
+      Buffer.from(firstLine.slice('TFLEX-STYLE '.length), 'base64url').toString('utf8'),
+    );
+    expect(decoded).toMatchObject({ font: 'DejaVu Serif', size: 14 });
+
+    // The /AP declares the embedded font (resource key = the font's own name)
+    // and names the same resource in its `Tf` operator; the /DA agrees.
+    expect(info!.baseFonts).toContain('TFlexDejaVuSerif');
+    expect(info!.apText).toMatch(/(^|\n)\/DejaVuSerif 14 Tf/);
+    expect(info!.apText).not.toContain('//DejaVuSerif');
+    expect(info!.da).toBe('/DejaVuSerif 12 Tf 0 0 0 rg');
+
+    // Reopen restores the family through the sentinel.
+    const engine2 = new EngineService();
+    await engine2.loadDocument('doc-p27ann-2', savePath);
+    const st = await engine2.getState('doc-p27ann-2');
+    expect(st.ok).toBe(true);
+    if (st.ok) {
+      const ann = (st.value as any).annotations.find((a: any) => a.kind === 'text-box');
+      expect(ann?.style).toMatchObject({ font: 'DejaVu Serif', size: 14 });
+    }
+  });
+
+  it('a standard family keeps the legacy /Helv appearance resource', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-p27std', path);
+    const created = await engine.createAnnotation('doc-p27std', styledPayload({
+      content: 'Standard family',
+      style: { font: 'Courier' },
+    }));
+    expect(created.ok).toBe(true);
+
+    const savePath = join(dir, 'p27-ann-std.pdf');
+    const save = await engine.saveAs('doc-p27std', savePath);
+    expect(save.ok).toBe(true);
+
+    const info = await readFreeTextAppearance(savePath);
+    expect(info).toBeDefined();
+    expect(info!.baseFonts).toContain('Courier');
+    expect(info!.apText).toMatch(/(^|\n)\/Helv 12 Tf/);
+    expect(info!.apText).not.toContain('//Helv');
+    expect(info!.da).toBe('/Helv 12 Tf 0 0 0 rg');
+  });
+});

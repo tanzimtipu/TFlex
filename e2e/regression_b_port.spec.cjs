@@ -22,8 +22,8 @@
 //     `[data-ann-tools-visible]`, the rest in the portaled
 //     `[data-ann-dropdown-menu]` (use `armAnnotationTool`); pending
 //     bars commit/cancel through `[data-annotation-action*]`,
-//   - the note editor is `[data-annotation-editor="note"]`, the committed
-//     note surface is `.ann-note`,
+//   - Phase 26 — the in-canvas note editor is retired: text entry is the
+//     panel's `[data-txt-text]` field; the committed note surface is `.ann-note`,
 //   - Edit mode is `[data-toolbar-edit-toggle]`; while it is open every
 //     `.ann-toolbar` button is disabled (mutual exclusion),
 //   - flatten lives in the document toolbar (aria-label="Flatten form
@@ -99,37 +99,50 @@ test('B1-port: Sign pending-bar Cancel disarms the Sign tool', async () => {
 
 // B2-port (bug_sweep B2 / comprehensive B2 / final_b_sweep B2): committing the
 // pending textbox must unmount its floating action bar.
-test('B2-port: Textbox pending-bar Confirm unmounts the bar', async () => {
+test('B2-port: textbox placement commits immediately (no retired pending bar)', async () => {
   await openSample('report.pdf');
   await armAnnotationTool(window, 'textbox');
   const box = await firstPageBox();
-  await window.mouse.click(box.x + 300, box.y + 300);
-  await window.waitForSelector('[data-annotation-action-bar="textbox"]', { timeout: 8000 });
-  await window.click('[data-annotation-action="textbox-confirm"]', { force: true });
-  await window.waitForSelector('[data-annotation-action-bar="textbox"]', { state: 'hidden', timeout: 5000 });
+  // Clear of the floating text panel (Phase 25) which covers the page's left edge.
+  await window.mouse.click(box.x + box.width * 0.62, box.y + 220);
+  // Phase 26 — placement creates the textbox immediately and hands text to the
+  // panel field; the retired in-canvas editor + its pending bar never mount.
+  const field = window.locator('[data-txt-text]');
+  await expect(field).toBeEnabled({ timeout: 10000 });
+  const state = await window.evaluate(() => ({
+    editor: document.querySelectorAll('[data-annotation-editor]').length,
+    pendingBar: document.querySelectorAll('[data-annotation-action-bar="textbox"]').length,
+    anns: (window.tflexDiagnostics().engineState?.annotations ?? []).filter((a) => a.kind === 'textbox').length,
+  }));
+  expect(state.editor, 'no in-canvas editor mounts').toBe(0);
+  expect(state.pendingBar, 'the retired pending bar never mounts').toBe(0);
+  expect(state.anns, 'the textbox is created immediately').toBe(1);
 });
 
 // B4-port (bug_sweep B4 / comprehensive B4 / final_b_sweep B4): the committed
-// sticky note keeps its content - clicking the committed note reopens the
-// editor pre-filled with the exact text that was confirmed.
+// sticky note keeps its content - clicking the committed note focuses the
+// panel's Text field pre-filled with the exact text that was committed.
+// (Phase 26 — the in-canvas note editor is retired; the panel field is the
+// single editor.)
 test('B4-port: Sticky note content round-trips through the committed icon', async () => {
   await openSample('report.pdf');
   await armAnnotationTool(window, 'note');
   const box = await firstPageBox();
-  await window.mouse.click(box.x + 150, box.y + 150);
-  const editor = window.locator('[data-annotation-editor="note"]');
-  await expect(editor).toBeVisible({ timeout: 10000 });
-  await editor.locator('textarea').fill('PORT B4 CONTENT');
-  await window.click('[data-annotation-action="note-confirm"]', { force: true });
+  // Clear of the floating text panel (Phase 25) which covers the page's left edge.
+  await window.mouse.click(box.x + box.width * 0.62, box.y + 180);
+  const field = window.locator('[data-txt-text]');
+  await expect(field).toBeEnabled({ timeout: 10000 });
+  await field.fill('PORT B4 CONTENT');
+  await field.blur();
   await window.waitForTimeout(800);
   const noteIcon = window.locator('.ann-note').first();
   await expect(noteIcon, 'the committed note surface must exist').toBeVisible();
-  // Bug 3 (qa 2026-09-06): single click SELECTS; double click opens the
-  // editor toolbox (the old single-click-open behavior is gone by design).
-  await noteIcon.dblclick();
-  await expect(editor).toBeVisible({ timeout: 8000 });
-  const content = await editor.locator('textarea').inputValue();
-  expect(content, 'the reopened editor must show the committed content').toBe('PORT B4 CONTENT');
+  // Phase 26 — clicking the committed note focuses the panel Text field with
+  // its content (the retired in-canvas editor is gone).
+  await noteIcon.click();
+  await expect(field).toBeEnabled({ timeout: 8000 });
+  const content = await field.inputValue();
+  expect(content, 'the panel field must show the committed content').toBe('PORT B4 CONTENT');
 });
 
 // B5-port (comprehensive B5/B14 / final_b_sweep B5/B14): with Edit mode open,
@@ -313,11 +326,14 @@ test('B22-port: Textbox move + Confirm relocates text exactly once (view + saved
 
   // Create a committed textbox with a distinctive marker.
   await armAnnotationTool(window, 'textbox');
-  await window.mouse.click(box.x + 200, box.y + 200);
-  const editor = window.locator('[data-annotation-editor="textbox"] textarea');
-  await editor.waitFor({ timeout: 8000 });
-  await editor.fill('PORT RESIDUE 4242');
-  await window.click('[data-annotation-action="textbox-confirm"]', { force: true });
+  // Clear of the floating text panel (Phase 25) which covers the page's left edge.
+  await window.mouse.click(box.x + box.width * 0.55, box.y + 220);
+  // Phase 26 — the panel Text field is the editor (commits on blur).
+  const field = window.locator('[data-txt-text]');
+  await field.waitFor({ timeout: 8000 });
+  await expect(field).toBeEnabled({ timeout: 8000 });
+  await field.fill('PORT RESIDUE 4242');
+  await field.blur();
   await window.waitForTimeout(900);
 
   const firstRect = await window.evaluate(() => {

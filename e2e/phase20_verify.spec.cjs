@@ -491,7 +491,7 @@ test('C3a stamp action bar <-> stamp type editor swap', async () => {
   }
 });
 
-test('C3b edit box toolbar <-> inline editor swap', async () => {
+test('C3b edit box toolbar -> panel Text field (inline editor retired)', async () => {
   test.setTimeout(180000);
   const app = await launchApp();
   const win = await app.firstWindow();
@@ -508,25 +508,36 @@ test('C3b edit box toolbar <-> inline editor swap', async () => {
     await win.mouse.down();
     await win.mouse.move(x + 180, y + 60, { steps: 6 });
     await win.mouse.up();
-    await win.waitForSelector('[data-edit-editor]', { timeout: 8000 });
-    await win.locator('[data-edit-textarea]').fill('QA SWAP');
-    await win.click('[data-edit-confirm]');
+    // Phase 26 — panel Text field is the editor; the inline editor is retired.
+    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+    await win.waitForFunction(() => {
+      const ta = document.querySelector('[data-txt-text]');
+      return ta !== null && ta.disabled === false;
+    }, null, { timeout: 8000 });
+    await win.locator('[data-txt-text]').fill('QA SWAP');
+    await win.locator('[data-txt-text]').blur();
     await win.waitForTimeout(900);
     // select the committed box -> box toolbar
     if (await win.locator('[data-edit-box-toolbar]').count() === 0) {
       await win.locator('.edit-box').first().click();
     }
     await win.waitForSelector('[data-edit-box-toolbar]', { timeout: 8000 });
-    await installMultiProbe(win);
 
-    await mpStart(win, ['[data-edit-box-toolbar]', '[data-edit-editor]'], 800);
     await win.click('[data-edit-box-action="edit"]');
-    const rows = await mpRead(win);
-    const v = swapVerdict(rows, '[data-edit-box-toolbar]', '[data-edit-editor]');
-    log('C3b toolbar->editor', v);
-    expect(v.bothAbsent, 'edit swap: no both-absent frame').toBe(0);
-    expect(v.bothRest, 'edit swap: no both-at-rest frame').toBe(0);
+    await win.waitForTimeout(600);
+    const state = await win.evaluate(() => ({
+      editor: document.querySelectorAll('.edit-inline-editor, [data-edit-editor]').length,
+      toolbar: !!document.querySelector('[data-edit-box-toolbar]'),
+      panelField: !!document.querySelector('[data-txt-text]'),
+      panelEnabled: document.querySelector('[data-txt-text]')?.disabled === false,
+      panelValue: document.querySelector('[data-txt-text]')?.value ?? null,
+    }));
+    log('C3b toolbar->panel field (Phase 26)', state);
     await win.screenshot({ path: path.join(SHOTS, 'phase20-verify-swap-edit.png') });
+    expect(state.editor, 'Phase 26: Edit opens NO in-canvas editor').toBe(0);
+    expect(state.panelField, 'Phase 26: the panel Text field is the editor').toBe(true);
+    expect(state.panelEnabled, 'Phase 26: the panel Text field is the target').toBe(true);
+    expect(state.panelValue, 'Phase 26: the field shows the box text').toBe('QA SWAP');
   } finally {
     await hardClose(app, 'p20-c3b');
   }
@@ -669,7 +680,9 @@ test('C4 surface inventory sweep (runtime appearance probe)', async () => {
     await win.keyboard.press('Escape');
     await win.waitForTimeout(400);
 
-    // annotation textbox toolbox (TfBar)
+    // Phase 26 — the in-canvas annotation textbox toolbox is retired. The
+    // surface-inventory row is retired to the Phase-26 contract: placing a
+    // textbox mounts NO editor and the panel's Text field is the editor.
     await win.click('[data-ann-dropdown-toggle]');
     await win.waitForSelector('[data-ann-dropdown-menu]', { timeout: 6000 });
     await win.click('[data-ann-dropdown-menu] [data-tool="textbox"]');
@@ -677,11 +690,27 @@ test('C4 surface inventory sweep (runtime appearance probe)', async () => {
     const armed = await win.evaluate(() => document.querySelector('.annotation-layer')?.getAttribute('data-tool'));
     log('C4 textbox armed', { armed });
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
-    add('annotation textbox toolbox', await appearanceProbe(win, '[data-annotation-editor="textbox"]', async () => {
-      await win.mouse.click(pg.x + 200, pg.y + 200);
-    }, 1400));
-    const editorNow = await win.evaluate(() => document.querySelector('[data-annotation-editor]')?.getAttribute('data-annotation-editor') ?? null);
-    log('C4 textbox after click', { editorNow });
+    const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+    const ax = Math.max(40, Math.min(pg.x + pg.width * 0.3, vp.w - 240));
+    const ay = Math.max(40, Math.min(pg.y + pg.height * 0.3, vp.h - 110));
+    await win.mouse.move(ax, ay);
+    await win.mouse.down();
+    await win.mouse.move(ax + 160, ay + 50, { steps: 5 });
+    await win.mouse.up();
+    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+    await win.waitForFunction(() => {
+      const ta = document.querySelector('[data-txt-text]');
+      return ta !== null && ta.disabled === false;
+    }, null, { timeout: 8000 });
+    const phase26 = await win.evaluate(() => ({
+      inCanvasEditors: document.querySelectorAll('[data-annotation-editor], .edit-inline-editor').length,
+      panelField: !!document.querySelector('[data-txt-text]'),
+      panelEnabled: document.querySelector('[data-txt-text]')?.disabled === false,
+    }));
+    table.push({ family: 'annotation textbox (Phase 26: panel field, no editor)', ...phase26 });
+    log('C4 annotation textbox (Phase 26)', phase26);
+    expect(phase26.inCanvasEditors, 'Phase 26: placing a textbox mounts no in-canvas editor').toBe(0);
+    expect(phase26.panelEnabled, 'Phase 26: the panel Text field is the textbox editor').toBe(true);
     await win.keyboard.press('Escape');
     await win.waitForTimeout(400);
 
@@ -867,30 +896,31 @@ test('C6 reduced motion collapses morph/tabs/swap/resize, structure intact', asy
     expect(widths, 'reduced: palette reaches the new width').toContain(380);
     expect(widths.length, 'reduced: palette width change is instant').toBeLessThanOrEqual(2);
 
-    // swap: edit toolbar still opens; inline editor still mounts on create
+    // Phase 26 — the inline editor is retired. Reduced motion: placing a box
+    // targets the panel Text field with no in-canvas editor and no animation.
     await win.click('[data-tools-toggle]');
     await win.waitForTimeout(300);
     await win.click('button[aria-label="Edit content"]');
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     await win.click('[data-edit-tool="box"]');
-    await mpStart(win, ['[data-edit-editor]'], 800);
     await win.mouse.move(pg.x + pg.width * 0.3, pg.y + pg.height * 0.3);
     await win.mouse.down();
     await win.mouse.move(pg.x + pg.width * 0.3 + 160, pg.y + pg.height * 0.3 + 50, { steps: 5 });
     await win.mouse.up();
-    const swapRows = await mpRead(win);
-    const editorFrames = swapRows.map((f) => f.states[0]).filter((s) => s && s.n > 0);
-    const editorTransforms = [...new Set(editorFrames.map((s) => s.tr))];
-    log('C6 swap reduced', {
-      mounted: editorFrames.length, distinctTransforms: editorTransforms,
-      head: swapRows.slice(0, 6).map((f) => `${f.t}:${f.states[0]?.n ?? 0}/${f.states[0]?.tr ?? '-'}`),
-      mountedSeq: swapRows.filter((f) => (f.states[0]?.n ?? 0) > 0).map((f) => `${f.t}:${f.states[0].tr}`),
-    });
-    expect(editorFrames.length, 'reduced: inline editor still mounts').toBeGreaterThan(0);
-    // The only acceptable transform is a single static one (no animation).
-    const nonReducedFrames = editorFrames.filter((s) => s.tr !== 'none');
-    expect(nonReducedFrames.length, 'reduced: inline editor transform never animates').toBeLessThanOrEqual(1);
+    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+    await win.waitForFunction(() => {
+      const ta = document.querySelector('[data-txt-text]');
+      return ta !== null && ta.disabled === false;
+    }, null, { timeout: 8000 });
+    const reducedPlace = await win.evaluate(() => ({
+      editor: document.querySelectorAll('.edit-inline-editor, [data-edit-editor]').length,
+      panelField: !!document.querySelector('[data-txt-text]'),
+      panelEnabled: document.querySelector('[data-txt-text]')?.disabled === false,
+    }));
+    log('C6 placement reduced (Phase 26)', reducedPlace);
+    expect(reducedPlace.editor, 'reduced: no in-canvas editor mounts').toBe(0);
+    expect(reducedPlace.panelEnabled, 'reduced: the panel Text field is the editor').toBe(true);
   } finally {
     await hardClose(app, 'p20-c6');
   }
@@ -983,36 +1013,48 @@ test('C-ghost exiting surface is non-interactive and locator-safe', async () => 
     expect(settled.searchBars, 'search bar is gone after the exit').toBe(0);
     expect(settled.activeInSearch, 'focus is not left inside the removed bar').toBe(false);
 
-    // The annotation toolbox is the inert-bearing family: confirm its exit
-    // frames are pointer-events:none AND inert, and hit-test-free.
-    await win.click('[data-ann-dropdown-toggle]');
-    await win.waitForSelector('[data-ann-dropdown-menu]', { timeout: 6000 });
-    await win.click('[data-ann-dropdown-menu] [data-tool="textbox"]');
-    await win.waitForTimeout(450);
+    // Phase 26 — the annotation toolbox is retired. The stamp-type editor is
+    // the remaining inert-bearing in-canvas family: confirm its exit frames
+    // are pointer-events:none AND inert, and hit-test-free.
+    await win.click('[data-tools-toggle]');
+    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
+    await win.click('[data-tool-id="stamp"]');
+    await win.waitForSelector('[data-stamp-dialog]', { timeout: 8000 });
+    await win.click('[data-stamp-confirm]');
+    await win.waitForTimeout(500);
+    if (await win.locator('[data-tools-palette]').count()) {
+      await win.click('[data-tools-toggle]');
+      await win.waitForTimeout(350);
+    }
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
-    await win.mouse.click(pg.x + 200, pg.y + 200);
-    await win.waitForSelector('[data-annotation-editor="textbox"]', { timeout: 8000 });
+    await win.mouse.click(pg.x + pg.width * 0.5, pg.y + pg.height * 0.5);
+    await win.waitForSelector('.stamp-annotation', { timeout: 10000 });
+    await win.waitForTimeout(1000);
+    await win.locator('.stamp-annotation').first().click();
+    await win.waitForSelector('[data-content-action-bar="stamp"]', { timeout: 8000 });
+    await win.click('[data-content-action="stamp-edit"]');
+    await win.waitForSelector('[data-stamp-type-editor]', { timeout: 8000 });
     await win.waitForTimeout(300);
-    const editorBox = await win.locator('[data-annotation-editor="textbox"]').boundingBox();
-    await startProbe(win, '[data-annotation-editor="textbox"]', 800);
-    await win.keyboard.press('Escape');
+    const editorBox = await win.locator('[data-stamp-type-editor]').boundingBox();
+    await startProbe(win, '[data-stamp-type-editor]', 800);
+    await win.click('[data-stamp-type-cancel]');
     const edRows = await readProbe(win);
     const edExiting = edRows.filter((r) => !r.gone && r.op < 0.99);
-    log('ghost annotation toolbox', {
+    log('ghost stamp-type editor', {
       exitingFrames: edExiting.length,
       pointerEvents: [...new Set(edExiting.map((r) => r.pe))],
       inert: [...new Set(edExiting.map((r) => r.inert))],
       unmounted: edRows.some((r) => r.gone),
     });
-    expect(edRows.some((r) => r.gone), 'annotation toolbox unmounts after exit').toBe(true);
-    expect([...new Set(edExiting.map((r) => r.pe))], 'toolbox exit frames pin pointer-events:none').toEqual(['none']);
-    expect([...new Set(edExiting.map((r) => r.inert))], 'toolbox exit frames are inert (keyboard-safe)').toEqual([true]);
+    expect(edRows.some((r) => r.gone), 'stamp-type editor unmounts after exit').toBe(true);
+    expect([...new Set(edExiting.map((r) => r.pe))], 'editor exit frames pin pointer-events:none').toEqual(['none']);
+    expect([...new Set(edExiting.map((r) => r.inert))], 'editor exit frames are inert (keyboard-safe)').toEqual([true]);
     const edHit = await win.evaluate(([x, y]) => {
       const el = document.elementFromPoint(x, y);
-      return { tag: el?.tagName, inEditor: !!el?.closest('[data-annotation-editor="textbox"]') };
+      return { tag: el?.tagName, inEditor: !!el?.closest('[data-stamp-type-editor]') };
     }, [editorBox.x + editorBox.width / 2, editorBox.y + editorBox.height / 2]);
-    log('ghost annotation hit-test', edHit);
-    expect(edHit.inEditor, 'a click during the toolbox exit does not hit the ghost').toBe(false);
+    log('ghost stamp-type hit-test', edHit);
+    expect(edHit.inEditor, 'a click during the editor exit does not hit the ghost').toBe(false);
   } finally {
     await hardClose(app, 'p20-ghost');
   }

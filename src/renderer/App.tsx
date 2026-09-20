@@ -141,6 +141,7 @@ import {
   rasterizeTextBoxToPng,
   detectImageFormat,
 } from "./edit/rasterize";
+import { buildEditTextRunPayload } from "./edit/textStyle";
 import {
   ZERO_COUNTERS,
   countersAfterApply,
@@ -2370,15 +2371,16 @@ export function App(): ReactElement {
     }): Promise<void> => {
       const open = openTabsRef.current[tabId];
       if (open === undefined) return;
-      const result = await engineRef.current.editTextRun(open.session.engineDocId, {
-        page: args.page,
-        rect: args.rect,
-        newText: args.newText,
-        font: args.style.font,
-        size: args.style.size,
-        color: args.style.color,
-        ...(args.oldRect !== undefined ? { oldRect: args.oldRect } : {}),
-      });
+      // DEF-258 — the run commit must forward the panel's full style,
+      // not just font/size/color: `EditTextRunPayload extends
+      // TextStyleFields` (Phase 21) plus `charSpacing` (Phase 27), and
+      // dropping them silently discarded every set field (bold, italic,
+      // underline, align, lineHeight, highlight, baselineShift, list,
+      // indent, charSpacing) on this path. `buildEditTextRunPayload`
+      // forwards each set field and omits documented defaults, so a
+      // default-style run keeps the legacy minimal payload.
+      const payload = buildEditTextRunPayload(args);
+      const result = await engineRef.current.editTextRun(open.session.engineDocId, payload);
       if (!result.ok) {
         pushToast("error", describeEngineError(result.error.code, result.error.message));
         return;
@@ -2413,6 +2415,11 @@ export function App(): ReactElement {
   /** Commit a new text box. */
   const handleAddTextBox = useCallback(
     async (tabId: string, args: {
+      /** Phase 26 — the id the renderer already minted for a freshly
+       *  dragged box (the panel Text field's session commit). The engine
+       *  registers the box under THIS id so the local mirror and the
+       *  registry agree; absent for the legacy editor flow. */
+      id?: string;
       rect: { x: number; y: number; width: number; height: number };
       text: string;
       style: EditTextStyle;
@@ -2433,7 +2440,7 @@ export function App(): ReactElement {
       // engine-state mirror effect (below) replaces the local entry
       // with the echoed TextBoxModel carrying the same id, keeping the
       // selection / drag handle on the right box.
-      const boxId = crypto.randomUUID();
+      const boxId = args.id ?? crypto.randomUUID();
       const page = args.page;
       const result = await engineRef.current.addTextBox(open.session.engineDocId, {
         id: boxId,
@@ -5933,6 +5940,7 @@ pushToast(
           page: number;
         }) => void | Promise<void>;
         onCommitTextBox: (args: {
+          id?: string;
           rect: { x: number; y: number; width: number; height: number };
           text: string;
           style: EditTextStyle;
@@ -5963,6 +5971,9 @@ pushToast(
         onDeleteTextBox: (id: string) => void;
         /** Phase 21 — apply a style patch to the selected committed box. */
         onTextStylePatch: (patch: TextBoxStylePatch) => void;
+        /** Phase 26 — apply a patch (the panel Text field's session
+         *  commit) to a specific committed box, by id. */
+        onTextPatch: (id: string, patch: TextBoxStylePatch) => void;
       }
     >();
     return (tabId: string) => {
@@ -5981,6 +5992,7 @@ pushToast(
           onCommitTextBoxMove: (): void => undefined,
           onDeleteTextBox: (): void => undefined,
           onTextStylePatch: (): void => undefined,
+          onTextPatch: (): void => undefined,
         };
       }
       if (cached !== undefined && cached.state === tab.edit) {
@@ -6010,6 +6022,7 @@ pushToast(
           page: number;
         }): void | Promise<void> => handleEditTextRun(tabId, args),
         onCommitTextBox: (args: {
+          id?: string;
           rect: { x: number; y: number; width: number; height: number };
           text: string;
           style: EditTextStyle;
@@ -6047,6 +6060,9 @@ pushToast(
         onTextStylePatch: (patch: TextBoxStylePatch): void => {
           const id = openTabsRef.current[tabId]?.edit.selectedTextBox;
           if (id === undefined || id === null) return;
+          void handleTextBoxStylePatch(tabId, id, patch);
+        },
+        onTextPatch: (id: string, patch: TextBoxStylePatch): void => {
           void handleTextBoxStylePatch(tabId, id, patch);
         },
       };

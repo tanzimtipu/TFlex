@@ -38,11 +38,6 @@ import type {
 
 /** Phase 20 — the note editor is a TfBar inside an AnimatePresence, so
  *  its DOM removal completes after the exit animation. */
-async function settleMotion(): Promise<void> {
-  await act(async (): Promise<void> => {
-    await new Promise((r) => setTimeout(r, 30));
-  });
-}
 
 const COMMITTED_NOTE: Annotation = {
   id: "note-1",
@@ -66,6 +61,7 @@ function mountOverlay(args: {
   onEditAnnotation: ReturnType<typeof vi.fn>;
   onDeleteAnnotation: ReturnType<typeof vi.fn>;
   onCreate: ReturnType<typeof vi.fn>;
+  onTextFocusRequest: ReturnType<typeof vi.fn>;
   cleanup: () => void;
 } {
   const host = document.createElement("div");
@@ -85,6 +81,7 @@ function mountOverlay(args: {
   const onEditAnnotation = vi.fn(args.onEditAnnotation ?? ((): void => undefined));
   const onDeleteAnnotation = vi.fn(args.onDeleteAnnotation ?? ((): void => undefined));
   const onCreate = vi.fn(args.onCreate ?? ((): void => undefined));
+  const onTextFocusRequest = vi.fn();
   const tool: AnnotationToolState = args.tool ?? {
     tool: "select",
     color: "yellow",
@@ -105,6 +102,7 @@ function mountOverlay(args: {
         onFinishedOneShot={undefined}
         onEditAnnotation={onEditAnnotation}
         onDeleteAnnotation={onDeleteAnnotation}
+        onTextFocusRequest={onTextFocusRequest}
       />,
     );
   });
@@ -114,6 +112,7 @@ function mountOverlay(args: {
     onEditAnnotation,
     onDeleteAnnotation,
     onCreate,
+    onTextFocusRequest,
     cleanup: (): void => {
       act((): void => {
         root.unmount();
@@ -133,9 +132,9 @@ function dblClick(el: Element): void {
   });
 }
 
-describe("DEF-096 / Bug 3 — committed note icon interaction", () => {
-  it("a single click SELECTS the note (bar shows, no editor opens)", () => {
-    const { host, onCreate, onEditAnnotation, cleanup } = mountOverlay({
+describe("DEF-096 / Bug 3 / Phase 26 — committed note icon interaction", () => {
+  it("a single click SELECTS the note (bar shows, no editor opens) and requests the panel text focus", () => {
+    const { host, onCreate, onEditAnnotation, onTextFocusRequest, cleanup } = mountOverlay({
       annotations: [COMMITTED_NOTE],
     });
     try {
@@ -149,12 +148,15 @@ describe("DEF-096 / Bug 3 — committed note icon interaction", () => {
       act((): void => {
         icon.click();
       });
-      // Bug 3 — single click must NOT open the edit toolbox.
-      expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
-      // It selects instead: the Confirm / Edit / Delete bar renders.
+      // Phase 26 — no in-canvas editor exists at all.
+      expect(host.querySelector("[data-annotation-editor]")).toBeNull();
+      // It selects instead: the Confirm / Delete bar renders.
       expect(
         host.querySelector("[data-content-action-bar='ann-note']"),
       ).not.toBeNull();
+      // The host is asked to focus the panel's Text field (the single
+      // text-editing surface).
+      expect(onTextFocusRequest).toHaveBeenCalledWith("note-1");
       expect(onCreate).not.toHaveBeenCalled();
       expect(onEditAnnotation).not.toHaveBeenCalled();
     } finally {
@@ -162,114 +164,15 @@ describe("DEF-096 / Bug 3 — committed note icon interaction", () => {
     }
   });
 
-  it("double-click opens ONE editor pre-filled with the note's text", () => {
-    const { host, onCreate, cleanup } = mountOverlay({
-      annotations: [COMMITTED_NOTE],
-    });
-    try {
-      const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
-      if (icon === null) throw new Error("note icon not found");
-      // Real pointer sequence: pointerdown (the layer's catch-all must
-      // bail out — no blank create editor) then the double-click burst.
-      act((): void => {
-        icon.dispatchEvent(
-          new PointerEvent("pointerdown", { bubbles: true, clientX: 105, clientY: 125 }),
-        );
-      });
-      dblClick(icon);
-      // Exactly ONE note editor, and it carries the committed text.
-      const editors = host.querySelectorAll("[data-annotation-editor='note']");
-      expect(editors.length).toBe(1);
-      const textarea = editors[0]?.querySelector("textarea");
-      if (textarea === null) throw new Error("note textarea not found");
-      expect((textarea as HTMLTextAreaElement).value).toBe("original note text");
-      // The pre-fill must not have gone through the create flow.
-      expect(onCreate).not.toHaveBeenCalled();
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("Confirm applies the edited text via onEditAnnotation(id, { text }) and closes the editor", async () => {
-    const { host, onEditAnnotation, cleanup } = mountOverlay({
-      annotations: [COMMITTED_NOTE],
-    });
+  it("double-clicking the note opens NO editor (a double-click is just a click)", () => {
+    const { host, cleanup } = mountOverlay({ annotations: [COMMITTED_NOTE] });
     try {
       const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
       if (icon === null) throw new Error("note icon not found");
       dblClick(icon);
-      const textarea = host.querySelector<HTMLTextAreaElement>(
-        "[data-annotation-editor='note'] textarea",
-      );
-      if (textarea === null) throw new Error("note textarea not found");
-      act((): void => {
-        const setter = Object.getOwnPropertyDescriptor(
-          window.HTMLTextAreaElement.prototype,
-          "value",
-        )?.set;
-        setter?.call(textarea, "revised text");
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-      const confirmBtn = host.querySelector<HTMLButtonElement>(
-        "[data-annotation-action='note-confirm']",
-      );
-      if (confirmBtn === null) throw new Error("Confirm not found");
-      act((): void => {
-        confirmBtn.click();
-      });
-      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
-      expect(onEditAnnotation).toHaveBeenCalledWith("note-1", { text: "revised text" });
-      // Editor closed after commit.
-      await settleMotion();
-      expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("Delete removes the note via onDeleteAnnotation(id) and closes the editor", async () => {
-    const { host, onDeleteAnnotation, cleanup } = mountOverlay({
-      annotations: [COMMITTED_NOTE],
-    });
-    try {
-      const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
-      if (icon === null) throw new Error("note icon not found");
-      dblClick(icon);
-      const delBtn = host.querySelector<HTMLButtonElement>(
-        "[data-annotation-action='note-delete']",
-      );
-      if (delBtn === null) throw new Error("Delete not found");
-      act((): void => {
-        delBtn.click();
-      });
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
-      expect(onDeleteAnnotation).toHaveBeenCalledWith("note-1");
-      await settleMotion();
-      expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("Cancel closes the editor without editing or deleting", async () => {
-    const { host, onEditAnnotation, onDeleteAnnotation, cleanup } = mountOverlay({
-      annotations: [COMMITTED_NOTE],
-    });
-    try {
-      const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
-      if (icon === null) throw new Error("note icon not found");
-      dblClick(icon);
-      const cancelBtn = host.querySelector<HTMLButtonElement>(
-        "[data-annotation-action='note-cancel']",
-      );
-      if (cancelBtn === null) throw new Error("Cancel not found");
-      act((): void => {
-        cancelBtn.click();
-      });
-      expect(onEditAnnotation).not.toHaveBeenCalled();
-      expect(onDeleteAnnotation).not.toHaveBeenCalled();
-      await settleMotion();
-      expect(host.querySelector("[data-annotation-editor='note']")).toBeNull();
+      expect(host.querySelector("[data-annotation-editor]")).toBeNull();
+      expect(host.querySelector("textarea")).toBeNull();
+      expect(host.querySelector("[data-content-action-bar='ann-note']")).not.toBeNull();
     } finally {
       cleanup();
     }

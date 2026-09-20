@@ -32,6 +32,7 @@ import { openPdfDialog } from './services/dialog';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
 import { loadPdfFile, loadFdfFile } from './services/pdf-file';
+import { setBundledFontDir } from './services/fonts';
 import { SamplesService } from './services/samples';
 import { DEFAULT_SETTINGS, SettingsService } from './services/settings';
 import { SignatureService } from './services/signature-service';
@@ -115,6 +116,11 @@ export async function start(): Promise<void> {
   // The directory is resolved from the app root (`assets/tessdata`) in both
   // dev and packaged builds (electron-builder ships `assets/**`).
   const ocr = new OcrService(join(app.getAppPath(), 'assets', 'tessdata'));
+  // Phase 27 — the bundled OFL font families are read from `assets/fonts`
+  // (electron-builder ships `assets/**`) and embedded on demand. Resolved
+  // from the app root in both dev and packaged builds, like the samples and
+  // tessdata directories above.
+  setBundledFontDir(join(app.getAppPath(), 'assets', 'fonts'));
   const engine = new EngineService(ocr);
   const signatures = new SignatureService(join(app.getPath('userData'), 'signatures.json'));
 

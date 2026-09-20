@@ -27,11 +27,42 @@ export const MAX_TEXT_SIZE = 2000;
 export const MIN_TEXT_INDENT = 0;
 export const MAX_TEXT_INDENT = 200;
 
+/** Phase 27 — character-spacing (tracking) bounds, in points added between
+ *  glyphs. Positive loosens, negative tightens; 0 = no extra tracking (the
+ *  `Tc` operator is not emitted). */
+export const MIN_TEXT_CHAR_SPACING = -5;
+export const MAX_TEXT_CHAR_SPACING = 20;
+
 export const TEXT_ALIGNS: readonly TextAlign[] = ['left', 'center', 'right', 'justify'];
 export const TEXT_LIST_STYLES: readonly TextListStyle[] = ['none', 'bullet', 'number'];
-/** Phase 21 — the StandardFont allowlist. A font outside this list cannot be
- *  represented with the bundled base-14 fonts, so it is rejected loudly. */
-export const EDIT_FONTS: readonly EditFont[] = ['Helvetica', 'Times', 'Courier'];
+
+/** Phase 21 — the three pdf-lib StandardFont families. Phase 27 keeps them
+ *  working exactly as before (WinAnsiEncoding, no embedding). */
+export const STANDARD_EDIT_FONTS = ['Helvetica', 'Times', 'Courier'] as const;
+
+/** Phase 27 — the OFL families bundled under `assets/fonts/` and embedded as
+ *  subsets on demand (see `fonts.ts` for the file map and licence texts). */
+export const BUNDLED_EDIT_FONTS = [
+  'Liberation Sans',
+  'DejaVu Serif',
+  'DejaVu Sans Mono',
+] as const;
+
+export type BundledEditFont = (typeof BUNDLED_EDIT_FONTS)[number];
+
+/** Phase 27 — the full EditFont allowlist (standard + bundled). A font outside
+ *  this list cannot be represented, so it is rejected loudly. */
+export const EDIT_FONTS: readonly EditFont[] = [...STANDARD_EDIT_FONTS, ...BUNDLED_EDIT_FONTS];
+
+/** True when `v` is a member of the EditFont allowlist. */
+export function isEditFont(v: unknown): v is EditFont {
+  return typeof v === 'string' && (EDIT_FONTS as readonly string[]).includes(v);
+}
+
+/** True when `v` is a bundled (embedded) family rather than a StandardFont. */
+export function isBundledEditFont(v: unknown): v is BundledEditFont {
+  return typeof v === 'string' && (BUNDLED_EDIT_FONTS as readonly string[]).includes(v);
+}
 
 export type TextStyleValidation =
   | { ok: true; value: TextStyleFields }
@@ -95,6 +126,15 @@ export function validateTextStyleFields(raw: unknown): TextStyleValidation {
     }
     out.indent = r.indent;
   }
+  if (r.charSpacing !== undefined) {
+    if (
+      typeof r.charSpacing !== 'number' || !Number.isFinite(r.charSpacing) ||
+      r.charSpacing < MIN_TEXT_CHAR_SPACING || r.charSpacing > MAX_TEXT_CHAR_SPACING
+    ) {
+      return { ok: false, reason: `charSpacing must be a finite number in ${MIN_TEXT_CHAR_SPACING}..${MAX_TEXT_CHAR_SPACING}` };
+    }
+    out.charSpacing = r.charSpacing;
+  }
   return { ok: true, value: out };
 }
 
@@ -121,6 +161,7 @@ export const TEXT_BOX_PATCH_KEYS: readonly string[] = [
   'baselineShift',
   'list',
   'indent',
+  'charSpacing',
 ];
 
 /** Validate a full `updateTextBox` patch: the nine style fields plus
@@ -166,10 +207,10 @@ export function validateTextBoxStylePatch(raw: unknown): TextBoxPatchValidation 
     out.text = r.text;
   }
   if (r.font !== undefined) {
-    if (typeof r.font !== 'string' || !(EDIT_FONTS as readonly string[]).includes(r.font)) {
-      return { ok: false, reason: `unsupported font ${JSON.stringify(r.font)}; the StandardFont allowlist is Helvetica, Times, Courier` };
+    if (!isEditFont(r.font)) {
+      return { ok: false, reason: `unsupported font ${JSON.stringify(r.font)}; supported families are ${EDIT_FONTS.join(', ')}` };
     }
-    out.font = r.font as EditFont;
+    out.font = r.font;
   }
   if (r.size !== undefined) {
     if (

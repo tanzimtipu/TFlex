@@ -414,25 +414,25 @@
   initial-value: 220px;
 }
 
-/* Phase 21 — the docked text-properties panel's OPEN width. ONE source
- * of truth: the workspace grid's middle track resolves from --tf-text-w
- * below, and the DEF-241 Tools-palette coexistence cap reads the same
- * value to know where the page column starts. */
+/* Phase 25 — the text-properties card's WIDTH. The card floats over the
+ * page view (see .text-props-float below); this token is its fixed width
+ * only. It is NO LONGER a grid track: the old --tf-text-w column and the
+ * page reflow it drove are retired, so opening/closing the panel never
+ * moves the page. */
 :root {
   --text-panel-w: 248px;
-}
-
-/* Phase 21 — the animated text-properties panel width. The .workspace
- * grid resolves its middle column from this REGISTERED custom property,
- * so the panel's open/close interpolates the track instead of snapping:
- * .workspace[data-text-panel-open] declares the open value and the
- * transition below animates it on the Phase-20 panel motion tokens — the
- * page column (1fr) reflows in lockstep with the docked slide, in every
- * theme, with no hardcoded duration. */
-@property --tf-text-w {
-  syntax: "<length>";
-  inherits: true;
-  initial-value: 0px;
+  /* DEF-256 — the floating card's left inset inside .workspace-main
+   * (consumed by .text-props-float `left`) and the gutter kept between
+   * its right edge and the open Tools palette's left edge (TEXT_PANEL_
+   * PALETTE_GAP in TextPropertiesPanel). The palette's coexistence cap
+   * below is derived from all three, so the reserved slot and the card's
+   * actual geometry can never drift apart. */
+  --text-panel-left: 12px;
+  --text-panel-gap: 8px;
+  /* DEF-256 — the floating Tools badge tab rides the palette's left
+   * edge; its width is a shared token so the arrow's overhang is one
+   * number, not a magic value duplicated in the badge rule. */
+  --tools-badge-w: 36px;
 }
 
 :root[data-theme="dark"] {
@@ -2281,11 +2281,14 @@ input[type="checkbox"] {
    * (280ms, --motion-ease-layout) — the same registered-property
    * mechanism as --tf-tools-inset, so the rail shrink and the 1fr
    * page-column reflow move together, in every theme, with no
-   * hardcoded duration in this rule. */
-  grid-template-columns: var(--tf-rail-w) var(--tf-text-w) 1fr;
-  transition:
-    --tf-rail-w var(--motion-duration-panel) var(--motion-ease-layout),
-    --tf-text-w var(--motion-duration-panel) var(--motion-ease-layout);
+   * hardcoded duration in this rule.
+   *
+   * Phase 25 — the middle text-properties track (--tf-text-w) is gone:
+   * the panel is a floating card inside .workspace-main, so the grid is
+   * back to two tracks (rail + page) and the page geometry is identical
+   * whether the panel is open or closed. */
+  grid-template-columns: var(--tf-rail-w) 1fr;
+  transition: --tf-rail-w var(--motion-duration-panel) var(--motion-ease-layout);
   /* DEF-229 (ADV-048) — the grid item default `min-width: auto` floors this
    * container at the 1fr column's min-content, so the whole workspace (and
    * the CommandBar inside it) refused to shrink to the 640px window's
@@ -2297,9 +2300,9 @@ input[type="checkbox"] {
 
 .workspace-main {
   display: grid;
-  /* Phase 21 — pinned to the 1fr track (the text-properties column sits
-   * between the rail and the page view). */
-  grid-column: 3;
+  /* Phase 25 — the page column is the 1fr track now that the
+   * text-properties panel no longer takes a grid column. */
+  grid-column: 2;
   /* Positioning context for the chrome rows that float over the
    * scroller (the frosted theme block below declares the same value).
    * The .tools-badge-tracker no longer needs this context — the
@@ -2375,27 +2378,11 @@ input[type="checkbox"] {
   --tf-rail-w: 48px;
 }
 
-/* DEF-241 (ADV-057) — the docked text-properties panel is CHROME, not
- * page area, so the right-anchored Tools palette must never cover it.
- * When the panel is open this token is the x at which the PAGE column
- * starts (rail + panel); the palette and its floating badge cap
- * themselves to that edge (see the rules beside the Phase-14 tools
- * block), so at narrow widths they overlay ONLY the page column and
- * shrink to fit instead of covering the panel's controls. Scoped to the
- * ACTIVE tab pane: a background tab that happens to have its own panel
- * open must not narrow the visible palette. */
-.app-main:has(.tab-pane[aria-hidden="false"] .workspace[data-text-panel-open="true"]) {
-  --tf-tools-clear: calc(var(--tf-rail-w) + var(--text-panel-w));
-}
-
-/* Phase 21 — the text-properties panel column. The grid always declares
- * three tracks (so the width can interpolate); while closed the middle
- * track resolves to the @property initial 0px and collapses. The three
- * direct children are pinned explicitly because an auto-placed second
- * child would otherwise land in the 0px middle track. */
-.workspace[data-text-panel-open="true"] {
-  --tf-text-w: var(--text-panel-w);
-}
+/* DEF-241 (ADV-057) — RETIRED by Phase 25. The docked text-properties
+ * column no longer exists (the panel is a floating card over the page
+ * view), so there is no chrome for the right-anchored Tools palette to
+ * cover and no --tf-tools-clear cap to apply. The palette keeps its
+ * Phase-14 320px readability floor unconditionally. */
 
 .side-rail {
   grid-column: 1;
@@ -2421,50 +2408,62 @@ input[type="checkbox"] {
   min-height: 0;
 }
 
-/* Phase 21 — the docked text-properties panel (middle grid track). It
- * consumes the shared --panel-* surface contract like the rail, with the
- * hairline on its RIGHT edge (the page view sits to its right). */
+/* Phase 25 — the text-properties FLOATING CARD. It is an absolutely
+ * positioned overlay inside .workspace-main (the page-view area), not a
+ * grid column: opening/closing it never reflows the page, and it never
+ * takes top-bar space. The wrapper carries the session drag offset (a
+ * transform written inline by the panel) and is pointer-transparent so
+ * only the card itself takes presses. Default placement: top-left of the
+ * page view, just below the measured chrome rows. */
+.text-props-float {
+  position: absolute;
+  top: calc(var(--tf-chrome-y, 92px) + 8px);
+  left: var(--text-panel-left, 12px);
+  z-index: 25;
+  pointer-events: none;
+}
+
+/* The card itself: the shared --panel-* surface, now a floating rounded
+ * surface on all corners (it no longer abuts the rail) with the popover
+ * shadow so it reads as a card over the page. It is a flex column so the
+ * grip strip stays pinned while the control body scrolls. */
 .text-props-panel {
-  grid-column: 2;
-  min-width: 0;
-  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: var(--text-panel-w);
+  max-height: calc(100% - 16px);
   overflow: hidden;
   background: var(--panel-bg);
-  border-right: 1px solid var(--panel-border);
-  /* Phase 22 (DEF-247) — the text panel is rounded on the same
-   * page-facing (right) corners as the rail; its left edge abuts the
-   * rail so those corners stay square and the dock reads as one pane. */
-  border-radius: 0 var(--panel-radius) var(--panel-radius) 0;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius);
+  box-shadow: var(--shadow-popover);
+  /* The wrapper is pointer-transparent; the card is the interactive
+   * surface (motion's exit variant overrides this to none inline). */
+  pointer-events: auto;
+}
+
+/* Phase 25 — the only chrome: the shared ContentGrip strip. No header,
+ * no title. It is the drag handle (useDragWindow.handleProps). */
+.text-props-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--panel-border);
+  cursor: grab;
+  flex: 0 0 auto;
+  user-select: none;
 }
 
 .text-props-body {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
-  padding: 0 10px 14px;
-  /* Phase 22 (DEF-247) — the visible rounded surface is the panel
-   * frame; the body inherits its corner so the panel's inner scroll
-   * area (and its computed radius) match the frame. */
+  padding: 10px 10px 14px;
+  /* The visible rounded surface is the panel frame; the body inherits
+   * its corner so the panel's inner scroll area matches the frame. */
   border-radius: inherit;
-}
-
-.text-props-header {
-  display: flex;
-  align-items: center;
-  min-height: 34px;
-  padding: 4px 2px 0;
-  position: sticky;
-  top: 0;
-  background: var(--panel-bg);
-  z-index: 1;
-}
-
-.text-props-title {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--fg-muted);
 }
 
 .text-props-group {
@@ -2516,6 +2515,35 @@ input[type="checkbox"] {
   font-variant-numeric: tabular-nums;
 }
 
+/* Phase 26 — the panel's Text field: the single text-editing surface for
+ * annotation text and Edit-mode text. Sits at the top of the panel, above
+ * the Font group; a normal multi-line input that scrolls its own content
+ * so a long note never grows the card. */
+.text-props-text {
+  width: 100%;
+  min-height: 64px;
+  max-height: 160px;
+  resize: vertical;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
+  color: var(--fg-strong);
+  font-family: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+
+.text-props-text:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.text-props-text:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .text-props-select:focus-visible,
 .text-props-input:focus-visible,
 .text-props-btn:focus-visible,
@@ -2530,6 +2558,23 @@ input[type="checkbox"] {
   font-size: var(--fs-xs);
   line-height: 1.4;
   color: var(--fg-faint);
+}
+
+/* Phase 27 — the panel's one-line style preview. Family / size / weight /
+ * decoration / character spacing render here live, so a spacing change is
+ * visible in the panel before the engine bakes it. */
+.text-props-preview {
+  display: block;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-input);
+  color: var(--fg-strong);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .text-props-btn-row {
@@ -3294,7 +3339,10 @@ input[type="checkbox"] {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  width: 36px;
+  /* DEF-256 — the badge's width is a shared token: its overhang rides
+   * the open palette's left edge and is reserved with the palette in
+   * the coexistence block below. */
+  width: var(--tools-badge-w, 36px);
   height: 100px;
   padding: 0;
   border: none;
@@ -6332,9 +6380,9 @@ rect.ann-highlight.ann-preview {
   transition:
     width var(--panel-slide-duration)
       var(--panel-slide-ease),
-    /* DEF-241 — the text-panel coexistence cap rides the same
-     * page-reflow tokens the --tf-text-w track uses (see the DEF-241
-     * rules beside the Phase-14 tools block). */
+    /* Phase 25 — the retired DEF-241 coexistence cap used to ride this
+     * channel; max-width still transitions (the base rule caps at
+     * 100vw - 24px) so a window resize stays smooth. */
     max-width var(--motion-duration-panel)
       var(--motion-ease-layout);
 }
@@ -8092,6 +8140,18 @@ rect.ann-highlight.ann-preview {
 .edit-inline-textarea::placeholder {
   color: var(--fg-muted);
   font-style: italic;
+}
+
+/* Phase 26 — the live preview of the selected text RUN while the panel's
+ * Text field is the editor. Painted at the run's rect (the white eraser
+ * covers the original glyphs), never interactive. */
+.edit-run-live-preview {
+  position: absolute;
+  z-index: 3;
+  background: transparent;
+  pointer-events: none;
+  white-space: pre-wrap;
+  overflow: hidden;
 }
 
 /* ---------------------------------------------------------------------------
@@ -9936,31 +9996,51 @@ rect.ann-highlight.ann-preview {
   max-width: calc(100vw - 24px);
 }
 
-/* DEF-241 (ADV-057) — coexistence with the docked text-properties
- * panel. A right-anchored 344px palette crosses into the 248px panel
- * below ~812px of window width (ADV-057: 172px of overlap at 640x520,
- * 15 panel controls unreachable). The cap pins the palette's left edge
- * at the page-column start (--tf-tools-clear), so it overlays only the
- * page area and shrinks to the remaining column instead of covering the
- * panel. The 320px readability floor yields ONLY when a text panel is
- * open (that floor is what forced the overlap); entries keep wrapping
- * and stay full-width hit targets. The max-width channel rides the same
- * page-reflow motion tokens the text track uses, so the cap and the
- * page column move together. The base/frosted transition declarations
- * above already carry this channel. */
-.app-main:has(.tab-pane[aria-hidden="false"] .workspace[data-text-panel-open="true"]) .tools-palette {
+/* DEF-256 — coexistence with the PHASE-25 FLOATING card.
+ *
+ * The retired DEF-241 cap existed because the text-properties panel was
+ * a docked column; the card now floats over the page view at the page
+ * column's left, so a right-anchored 344px palette crosses it below
+ * ~812px of window width (DEF-256: 108449px2 of the card covered at
+ * 640x800, `[data-txt-font]` / `[data-txt-color]` unreachable, and the
+ * floating badge landed on the colour swatch at 820).
+ *
+ * Mechanism: while the card is open in the ACTIVE tab it RESERVES a left
+ * slot — its own width + its left inset + the 8px gutter — and the
+ * palette (with its badge riding its left edge, exactly as DEF-241 had
+ * it) caps its left edge at that slot's right edge. Both surfaces stay
+ * fully usable at every width: the palette overlays only the page column
+ * and shrinks to it (its 320px readability floor yields ONLY in this
+ * coexistence case — entries keep wrapping at word boundaries and stay
+ * full-width hit targets, and the @container rule above drops the
+ * passive shortcut chip), while the card keeps its own area. The badge
+ * tab's arrow then overhangs the card's right edge by at most its 9px
+ * clipped taper, as it already did over the docked column in DEF-241;
+ * no control in either surface is affected (the gutter is what keeps the
+ * card's controls clear). The card's own drag clamp mirrors the same
+ * edge (useDragWindow `avoidSelector`), so it cannot be dragged into the
+ * palette either. The driver is the mounted panel node, NOT
+ * `data-text-panel-open`: the card's PRESENCE is the live signal, and a
+ * background tab's own panel can never narrow the visible palette. */
+.app-main:has(.tab-pane[aria-hidden="false"] .text-props-panel) {
+  --tf-text-slot: calc(
+    var(--text-panel-w, 248px) + var(--text-panel-left, 12px) +
+      var(--text-panel-gap, 8px)
+  );
+}
+
+.app-main:has(.tab-pane[aria-hidden="false"] .text-props-panel) .tools-palette {
   min-width: 0;
-  max-width: calc(100% - var(--tf-tools-clear, 0px));
+  max-width: calc(100% - var(--tf-rail-w, 220px) - var(--tf-text-slot, 268px));
 }
 
 /* The floating Tools badge rides the back of the open palette; at the
  * capped widths it must cap identically, or it would drift inside the
- * text panel (its flat side sits flush with the palette's left edge,
- * which is now the page-column start). */
-.tools-badge-tracker-open {
+ * card (its flat side sits flush with the palette's left edge). */
+.app-main:has(.tab-pane[aria-hidden="false"] .text-props-panel) .tools-badge-tracker-open {
   right: min(
     var(--tools-panel-w, 344px),
-    calc(100vw - var(--tf-tools-clear, 0px))
+    calc(100% - var(--tf-rail-w, 220px) - var(--tf-text-slot, 268px))
   );
 }
 
@@ -9971,13 +10051,12 @@ rect.ann-highlight.ann-preview {
   container-type: inline-size;
 }
 
-/* DEF-241 — when the coexistence cap squeezes the palette below its
- * 344px list width, the right-aligned shortcut chip (e.g. Ctrl+Shift+O)
- * would starve the text column to a few characters and the browser
- * breaks tool descriptions mid-word ("Co m bi ne ..."). Drop the chip
- * at that width only: it is a passive accelerator HINT, not a control
- * (the accelerators stay in the native menu), and the descriptions wrap
- * at word boundaries again. */
+/* DEF-241 — at a genuinely narrow palette width the right-aligned
+ * shortcut chip (e.g. Ctrl+Shift+O) would starve the text column to a
+ * few characters and the browser breaks tool descriptions mid-word
+ * ("Co m bi ne ..."). Drop the chip at that width only: it is a passive
+ * accelerator HINT, not a control (the accelerators stay in the native
+ * menu), and the descriptions wrap at word boundaries again. */
 @container (max-width: 343px) {
   .tools-palette-entry-shortcut {
     display: none;

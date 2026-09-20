@@ -6,7 +6,6 @@ import type {
   AppSettings,
   AppTheme,
   EditColor,
-  EditFont,
   LoadSettingsResult,
   RecentFile,
   WatermarkPosition,
@@ -14,6 +13,7 @@ import type {
   WatermarkType,
   WindowGeometry,
 } from '../../shared/types';
+import { isEditFont } from './text-style';
 
 const RECENT_FILES_CAP = 10;
 const MIN_WINDOW_WIDTH = 640;
@@ -167,8 +167,8 @@ export function normalizeWatermarkSettings(raw: unknown): WatermarkSettings | nu
     out.imageBytes = bytes;
   }
   if (r.font !== undefined) {
-    if (r.font !== 'Helvetica' && r.font !== 'Times' && r.font !== 'Courier') return null;
-    out.font = r.font as EditFont;
+    if (!isEditFont(r.font)) return null;
+    out.font = r.font;
   }
   if (r.bold !== undefined) {
     if (typeof r.bold !== 'boolean') return null;
@@ -395,8 +395,9 @@ export function normalizeSettings(raw: unknown): AppSettings {
     settings.createImageQuality = rawObj.createImageQuality;
   }
 
-  // Phase 10: preserve editDefaultFont if it is a valid EditFont allowlist value
-  if (typeof rawObj.editDefaultFont === 'string' && (rawObj.editDefaultFont === 'Helvetica' || rawObj.editDefaultFont === 'Times' || rawObj.editDefaultFont === 'Courier')) {
+  // Phase 10 / Phase 27: preserve editDefaultFont if it is a valid EditFont
+  // allowlist value (the three StandardFont families plus the bundled ones).
+  if (isEditFont(rawObj.editDefaultFont)) {
     settings.editDefaultFont = rawObj.editDefaultFont;
   }
 

@@ -83,13 +83,15 @@ test('R1: callout drag on scrolled page 4 opens editor?', async () => {
   await win.mouse.up();
   await win.waitForTimeout(800);
   const editor = await win.evaluate(() => ({
-    calloutEditor: !!document.querySelector('[data-annotation-editor="callout"]'),
-    anyAnnEditor: Array.from(document.querySelectorAll('[data-annotation-editor]')).map((e) => e.getAttribute('data-annotation-editor')),
+    inCanvasEditor: document.querySelectorAll('[data-annotation-editor]').length,
+    panelField: !!document.querySelector('[data-txt-text]'),
+    panelEnabled: document.querySelector('[data-txt-text]')?.disabled === false,
     activeTool: (window.tflexDiagnostics() || {}).activeTool,
   }));
   console.log('[R1] after drag: ' + JSON.stringify(editor));
   await win.screenshot({ path: 'screenshots/probe190_r1_callout.png' });
-  expect(editor.calloutEditor, 'callout editor must open after an in-viewport drag on a scrolled page').toBe(true);
+  expect(editor.inCanvasEditor, 'Phase 26: no in-canvas callout editor mounts').toBe(0);
+  expect(editor.panelEnabled, 'Phase 26: the panel Text field is the callout editor').toBe(true);
 });
 
 // ---------------------------------------------------------------------------

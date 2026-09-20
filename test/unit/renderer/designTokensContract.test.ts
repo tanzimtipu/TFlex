@@ -1356,20 +1356,6 @@ describe("Phase 20 — surface motion contract", () => {
       preset: "tfBar",
     },
     {
-      surface: "edit inline editor",
-      wrapperFile: "src/renderer/edit/EditInlineEditor.tsx",
-      primitive: "TfBar",
-      presenceFiles: ["src/renderer/edit/EditOverlay.tsx"],
-      preset: "tfBar",
-    },
-    {
-      surface: "annotation toolboxes (textbox / callout / note / committed)",
-      wrapperFile: "src/renderer/annotations/AnnotationOverlay.tsx",
-      primitive: "TfBar",
-      presenceFiles: ["src/renderer/annotations/AnnotationOverlay.tsx"],
-      preset: "tfBar",
-    },
-    {
       surface: "stamp type editor",
       wrapperFile: "src/renderer/annotations/StampAnnotations.tsx",
       primitive: "TfBar",
@@ -1906,9 +1892,11 @@ describe("Phase 22 — radius ladder + surface families", () => {
   });
 
   it("the docked panels round their page-facing corners only (DEF-247)", () => {
-    // The rail and the text panel face the page on their RIGHT edge; the
-    // palette faces it on its LEFT edge. The window-edge corners stay
-    // flush (the frosted shell clips them to its 20px curvature).
+    // The rail faces the page on its RIGHT edge; the palette faces it on
+    // its LEFT edge. The window-edge corners stay flush (the frosted
+    // shell clips them to its 20px curvature). Phase 25 — the
+    // text-properties panel is no longer a docked panel: it is a
+    // floating card over the page view, rounded on ALL corners.
     expect(bodyWith(".side-rail", /border-radius/)).toMatch(
       /border-radius:\s*0 var\(--panel-radius\) var\(--panel-radius\) 0/,
     );
@@ -1916,11 +1904,12 @@ describe("Phase 22 — radius ladder + surface families", () => {
       /border-radius:\s*var\(--panel-radius\) 0 0 var\(--panel-radius\)/,
     );
     expect(bodyWith(".text-props-panel", /border-radius/)).toMatch(
-      /border-radius:\s*0 var\(--panel-radius\) var\(--panel-radius\) 0/,
+      /border-radius:\s*var\(--panel-radius\)/,
     );
-    // With the text panel open the rail keeps its rounded page-facing
-    // corners (the corner notch reveals the canvas, not a square seam);
-    // the panel's inner body inherits the frame's corner so the visible
+    expect(bodyWith(".text-props-panel", /border-radius/)).not.toMatch(
+      /border-radius:\s*0 var\(--panel-radius\)/,
+    );
+    // The panel's inner body inherits the frame's corner so the visible
     // scroll area (and its computed radius) matches the frame.
     expect(bodyWith(".text-props-body", /border-radius:\s*inherit/)).toMatch(
       /border-radius:\s*inherit/,

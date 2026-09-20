@@ -16,7 +16,6 @@ import {
   TextPropertiesPanel,
   clearFormattingPatch,
 } from "../../../src/renderer/edit/TextPropertiesPanel";
-import { EditInlineEditor } from "../../../src/renderer/edit/EditInlineEditor";
 import { AnnotationOverlay } from "../../../src/renderer/annotations/AnnotationOverlay";
 import { DocumentView } from "../../../src/renderer/components/DocumentView";
 import type { EngineState } from "../../../src/renderer/engine/types";
@@ -253,83 +252,33 @@ describe("TextPropertiesPanel — bounds and disabled controls", () => {
     cleanup();
   });
 
-  it("ships character spacing and horizontal scaling disabled with tooltips", () => {
+  it("ships horizontal scaling disabled; character spacing is live (Phase 27)", () => {
     const { host, cleanup } = mount(base(), base(), (): void => undefined);
-    const cs = host.querySelector<HTMLButtonElement>("[data-txt-character-spacing]");
+    const cs = host.querySelector<HTMLInputElement>("[data-txt-character-spacing]");
     const hs = host.querySelector<HTMLButtonElement>("[data-txt-horizontal-scaling]");
-    expect(cs?.disabled).toBe(true);
+    expect(cs?.disabled).toBe(false);
     expect(hs?.disabled).toBe(true);
-    expect(cs?.getAttribute("title")).toMatch(/Tc|character spacing/i);
+    // Phase 27 — the Tc engine limit is gone: the tooltip no longer
+    // claims the control is unavailable.
+    expect(cs?.getAttribute("title") ?? "").not.toMatch(/not available|not supported/i);
     expect(hs?.getAttribute("title")).toMatch(/Tz|horizontal scaling/i);
     cleanup();
   });
 });
 
-describe("Phase 21 — retired floating text toolboxes (criterion 3)", () => {
-  function mountInlineEditor(): { host: HTMLElement; cleanup: () => void } {
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const root = createRoot(container);
-    act((): void => {
-      root.render(
-        createElement(EditInlineEditor, {
-          rect: { x: 10, y: 10, width: 200, height: 40 },
-          cssScale: 1,
-          initialText: "Hello",
-          initialStyle: { font: "Helvetica", size: 12, color: { r: 0, g: 0, b: 0 } },
-          mode: "edit",
-          onCommit: (): void => undefined,
-          onCancel: (): void => undefined,
-        }),
-      );
-    });
-    return {
-      host: container,
-      cleanup: (): void => {
-        act((): void => root.unmount());
-        container.remove();
-      },
-    };
-  }
-
-  it("the inline text editor mounts no style controls but keeps grip + actions", () => {
-    const { host, cleanup } = mountInlineEditor();
-    // Retired style surface.
-    expect(host.querySelector(".edit-inline-field-font")).toBeNull();
-    expect(host.querySelector(".edit-inline-field-size")).toBeNull();
-    expect(host.querySelector(".edit-inline-field-color")).toBeNull();
-    expect(host.querySelector(".edit-inline-field-bg")).toBeNull();
-    // Minimal in-canvas affordance stays reachable.
-    expect(host.querySelector("[data-edit-drag-handle]")).not.toBeNull();
-    expect(host.querySelector(".edit-inline-btn-cancel")).not.toBeNull();
-    expect(host.querySelector(".edit-inline-btn-commit")).not.toBeNull();
-    cleanup();
-  });
-
-  it("the panel is the editing surface: it mounts while the editor shows no style row", () => {
-    const { host: panelHost, cleanup: cleanupPanel } = mount(base(), base(), (): void => undefined);
-    const { host: editorHost, cleanup: cleanupEditor } = mountInlineEditor();
-    expect(panelHost.querySelector("[data-text-panel]")).not.toBeNull();
-    expect(editorHost.querySelector("[data-text-panel]")).toBeNull();
-    cleanupEditor();
-    cleanupPanel();
-  });
-});
 
 // ---------------------------------------------------------------------------
 // Phase 24 — the panel is FULLY LIVE for annotation text objects.
 //
 // Phase 21's per-family scope (annotation mode = colour-only, every other
 // control disabled with a "not supported" tooltip) is retired. The control
-// matrix is now identical in both modes. Only the two Tc/Tz controls stay
-// disabled — and they are disabled in BOTH modes for an engine reason
-// (pdf-lib exposes no Tc / Tz operator), never a per-family one.
+// matrix is now identical in both modes. Phase 27 retired the Tc control
+// from the disabled set (the engine now emits Tc); only the Tz control
+// stays disabled, for an engine reason (pdf-lib exposes no Tz operator),
+// never a per-family one.
 
 /** Hooks that stay disabled in both modes, for the engine reason. */
-const ALWAYS_DISABLED_HOOKS = [
-  "[data-txt-character-spacing]",
-  "[data-txt-horizontal-scaling]",
-];
+const ALWAYS_DISABLED_HOOKS = ["[data-txt-horizontal-scaling]"];
 
 /** Hooks whose disabled state is a VALUE condition, not a mode gate: the
  *  indent-decrement button sits disabled at indent 0 in the base values. */
@@ -366,13 +315,12 @@ describe("Phase 24 — annotation mode control matrix", () => {
     cleanup();
   });
 
-  it("the two Tc/Tz controls stay disabled with the engine reason in annotation mode", () => {
+  it("the Tz control stays disabled with the engine reason in annotation mode", () => {
     const { host, cleanup } = mount(base(), base(), (): void => undefined, "annotation");
-    const cs = host.querySelector<HTMLButtonElement>("[data-txt-character-spacing]");
+    const cs = host.querySelector<HTMLInputElement>("[data-txt-character-spacing]");
     const hs = host.querySelector<HTMLButtonElement>("[data-txt-horizontal-scaling]");
-    expect(cs?.disabled).toBe(true);
+    expect(cs?.disabled).toBe(false);
     expect(hs?.disabled).toBe(true);
-    expect(cs?.getAttribute("title")).toMatch(/Tc|character spacing/i);
     expect(hs?.getAttribute("title")).toMatch(/Tz|horizontal scaling/i);
     cleanup();
   });
@@ -559,18 +507,6 @@ describe("Phase 21 chunk 3b — annotation selection reporting", () => {
 const TEXTBOX_TOOL: AnnotationToolState = { tool: "textbox", color: "blue", penWidth: 2 };
 const RECT_TOOL: AnnotationToolState = { tool: "rect", color: "blue", penWidth: 2 };
 
-function fireTextareaChange(el: Element | null, value: string): void {
-  const area = el as HTMLTextAreaElement;
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLTextAreaElement.prototype,
-    "value",
-  )?.set;
-  act((): void => {
-    setter?.call(area, value);
-    area.dispatchEvent(new Event("input", { bubbles: true }));
-    area.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-}
 
 function firePointer(
   el: Element,
@@ -653,18 +589,16 @@ function mountPlacement(args: {
   };
 }
 
-/** Place a textbox through the real editor flow: press the page with the
- *  textbox tool armed, type, Confirm. */
+/** Phase 26 — place a textbox: pressing the page with the textbox tool
+ *  armed creates the annotation immediately (empty text) and hands the
+ *  text entry to the panel's Text field. No in-canvas editor mounts. */
 function placeTextbox(h: PlacementHarness): void {
   const layer = h.host.querySelector("[data-annotation-layer='1']");
   if (layer === null) throw new Error("annotation layer not found");
   firePointer(layer, "pointerdown", 120, 160);
-  const editor = h.host.querySelector("[data-annotation-editor='textbox']");
-  if (editor === null) throw new Error("textbox editor did not open");
-  fireTextareaChange(editor.querySelector(".ann-textbox-editor"), "PLACED TEXT");
-  const confirm = h.host.querySelector("[data-annotation-action='textbox-confirm']");
-  if (confirm === null) throw new Error("textbox confirm not found");
-  click(confirm);
+  if (h.host.querySelector("[data-annotation-editor]") !== null) {
+    throw new Error("an in-canvas editor mounted on placement");
+  }
 }
 
 describe("Phase 21 regression — a placed annotation text object is auto-selected", () => {
@@ -1053,16 +987,16 @@ describe("Phase 21 regression — the text-properties panel across a placement",
       // Arm the annotation text tool: the panel opens.
       armTextboxTool(host);
       expect(workspacePanelOpen(host)).toBe("true");
-      // Place: press the page, type, Confirm.
+      // Place: a page press creates the annotation immediately (Phase 26
+      // — the text is typed in the panel's Text field, no editor mounts).
       firePointer(layer, "pointerdown", 10, 10);
-      const editor = host.querySelector("[data-annotation-editor='textbox']");
-      if (editor === null) throw new Error("textbox editor did not open");
-      fireTextareaChange(editor.querySelector(".ann-textbox-editor"), "PLACED TEXT");
-      const confirm = host.querySelector("[data-annotation-action='textbox-confirm']");
-      if (confirm === null) throw new Error("textbox confirm not found");
-      click(confirm);
+      expect(host.querySelector("[data-annotation-editor]")).toBeNull();
       expect(onCreateAnnotation).toHaveBeenCalledTimes(1);
       expect((onCreateAnnotation.mock.calls[0]?.[0] as Annotation).kind).toBe("textbox");
+      // The panel's Text field is the live editor and is enabled.
+      const field = host.querySelector<HTMLTextAreaElement>("[data-txt-text]");
+      expect(field, "the panel Text field is mounted").not.toBeNull();
+      expect(field?.disabled).toBe(false);
       // THE REGRESSION: the one-shot disarm must not close the panel. The
       // engine's create echo has not landed either (annotations is still
       // []), so this also pins the host's retention of the reported
@@ -1075,6 +1009,31 @@ describe("Phase 21 regression — the text-properties panel across a placement",
       // deselects and the panel closes (the reflow runs only here).
       firePointer(layer, "pointerdown", 2, 2);
       expect(workspacePanelOpen(host)).toBe("false");
+    } finally {
+      unmount();
+    }
+  });
+
+  // Phase 25 — the panel floats INSIDE the page-view area. It is no
+  // longer a direct child of the .workspace grid, so opening it cannot
+  // take a column or move the page.
+  it("mounts the panel inside .workspace-main, not as a workspace grid column", async () => {
+    const { host, unmount } = await mountDocView({
+      onCreateAnnotation: (): void => undefined,
+    });
+    try {
+      expect(host.querySelector(".workspace-main [data-text-panel]")).toBeNull();
+      armTextboxTool(host);
+      const panel = host.querySelector(".workspace-main [data-text-panel]");
+      expect(panel).not.toBeNull();
+      expect(panel?.getAttribute("data-text-panel-mode")).toBe("annotation");
+      // The floating wrapper lives in the page-view area only, never as a
+      // direct .workspace child (the retired docked column slot).
+      expect(host.querySelector(".workspace-main [data-text-panel-float]")).not.toBeNull();
+      expect(host.querySelector(".workspace > [data-text-panel-float]")).toBeNull();
+      // Header-less: the grip strip is the only chrome.
+      expect(host.querySelector(".workspace-main .text-props-header")).toBeNull();
+      expect(host.querySelector("[data-drag-grip='text-props']")).not.toBeNull();
     } finally {
       unmount();
     }

@@ -33,11 +33,6 @@ import {
 
 /** Phase 20 — the inline editor is a TfBar inside an AnimatePresence, so
  *  its DOM removal completes after the exit animation. */
-async function settleMotion(): Promise<void> {
-  await act(async (): Promise<void> => {
-    await new Promise((r) => setTimeout(r, 30));
-  });
-}
 
 const stubCapture = function (this: Element): void {
   void this;
@@ -148,14 +143,6 @@ function releaseOnLayer(host: HTMLElement, x: number, y: number): void {
 
 /** DEF-153 — a committed box's edit toolbox opens on DOUBLE click
  *  (single click selects it + shows the Confirm/Edit/Delete bar). */
-function dblClickBox(host: HTMLElement, x: number, y: number): void {
-  const box = host.querySelector<HTMLElement>(".edit-box");
-  expect(box).not.toBeNull();
-  if (box === null) return;
-  act((): void => {
-    box.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: x, clientY: y }));
-  });
-}
 
 describe("DEF-127 — committed text box surfaces mirror their baked content", () => {
   it("renders the white fill + the text mirror inside the .edit-box surface", () => {
@@ -184,67 +171,6 @@ describe("DEF-127 — committed text box surfaces mirror their baked content", (
     try {
       expect(host.querySelector(".edit-box-fill")).toBeNull();
       expect(host.querySelector("[data-edit-box-text-mirror]")?.textContent).toBe("Committed box");
-    } finally {
-      unmount();
-    }
-  });
-});
-
-describe("DEF-127 — selecting a committed box reopens the inline editor", () => {
-  it("a click (no drag) SELECTS the box (Confirm/Edit/Delete bar); double-click opens the editor pre-filled with the box's text", () => {
-    const { host, unmount } = mountBoxTool({
-      ...initialEditState,
-      tool: "box",
-      textBoxes: [makeTextBox()],
-    });
-    try {
-      pressBox(host, 120, 120);
-      releaseOnLayer(host, 120, 120);
-      // DEF-153 — the single click selects + makes movable; the edit
-      // toolbox opens on double click.
-      expect(host.querySelector("[data-edit-box-toolbar]"), "single click shows the action bar").not.toBeNull();
-      expect(host.querySelector("[data-edit-editor='edit']"), "single click must NOT open the editor").toBeNull();
-      dblClickBox(host, 120, 120);
-      expect(host.querySelector("[data-edit-editor='edit']")).not.toBeNull();
-      const textarea = host.querySelector<HTMLTextAreaElement>("[data-edit-textarea]");
-      expect(textarea?.value).toBe("Committed box");
-    } finally {
-      unmount();
-    }
-  });
-
-  it("committing the reopened editor round-trips the new text into the registry", async () => {
-    const { host, state, unmount } = mountBoxTool({
-      ...initialEditState,
-      tool: "box",
-      textBoxes: [makeTextBox()],
-    });
-    try {
-      pressBox(host, 120, 120);
-      releaseOnLayer(host, 120, 120);
-      dblClickBox(host, 120, 120);
-      const textarea = host.querySelector<HTMLTextAreaElement>("[data-edit-textarea]");
-      expect(textarea).not.toBeNull();
-      if (textarea === null) return;
-      // Native-setter + input event to drive the controlled textarea.
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        "value",
-      )?.set;
-      act((): void => {
-        setter?.call(textarea, "Edited text");
-        textarea.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-      const commitBtn = host.querySelector<HTMLButtonElement>(".edit-inline-btn-commit");
-      expect(commitBtn).not.toBeNull();
-      if (commitBtn === null) return;
-      act((): void => {
-        commitBtn.click();
-      });
-      expect(state().textBoxes[0]?.text).toBe("Edited text");
-      // The editor closed after commit (its TfBar exit runs first).
-      await settleMotion();
-      expect(host.querySelector("[data-edit-textarea]")).toBeNull();
     } finally {
       unmount();
     }

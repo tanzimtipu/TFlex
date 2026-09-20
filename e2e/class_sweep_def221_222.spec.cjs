@@ -335,15 +335,28 @@ async function dragMouse(from, to, steps = 14) {  await win.mouse.move(from.x, f
 // Create a text box just below the chosen ink rect. Returns its viewport point
 // and the canvas-px rect it should occupy.
 async function createTextBoxBelow(scale, runPx, label) {
-  const px = { x: runPx.x, y: runPx.y + runPx.h + Math.round(34 * scale.ky), w: runPx.w, h: Math.round(30 * scale.ky) };
-  const a = toViewport(scale, { x: px.x, y: px.y });
-  const b = toViewport(scale, { x: px.x + px.w, y: px.y + px.h });
+  let px = { x: runPx.x, y: runPx.y + runPx.h + Math.round(34 * scale.ky), w: runPx.w, h: Math.round(30 * scale.ky) };
+  let a = toViewport(scale, { x: px.x, y: px.y });
+  let b = toViewport(scale, { x: px.x + px.w, y: px.y + px.h });
+  // Phase 25/26 — the floating text panel covers the page's left edge, so a
+  // left-side drag is intercepted by the panel. Shift the drag clear of it and
+  // recompute the canvas-px rect from the actual viewport point.
+  const MIN_X = 500;
+  if (a.x < MIN_X) {
+    const shift = MIN_X - a.x;
+    a = { x: a.x + shift, y: a.y };
+    b = { x: b.x + shift, y: b.y };
+    px = { ...px, x: Math.round((a.x - scale.cx) * scale.kx) };
+  }
   await dragMouse(a, b, 14);
-  await win.waitForSelector('.edit-inline-editor', { timeout: 8000 });
-  await win.waitForTimeout(300);
-  await win.fill('.edit-inline-editor [data-edit-textarea]', label);
-  await win.waitForTimeout(200);
-  await win.click('.edit-inline-editor [data-edit-confirm]');
+  // Phase 26 — the panel Text field is the editor (commits on blur).
+  await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+  await win.waitForFunction(() => {
+    const ta = document.querySelector('[data-txt-text]');
+    return ta !== null && ta.disabled === false;
+  }, null, { timeout: 8000 });
+  await win.fill('[data-txt-text]', label);
+  await win.locator('[data-txt-text]').blur();
   await win.waitForTimeout(1600);
   return px;
 }
@@ -405,36 +418,19 @@ test('A1a text run move: old rect masked, band above stable, no leftover, save/r
 
   const cx = dense.rect.x + dense.rect.w / 2;
   const cy = dense.rect.y + dense.rect.h / 2;
-  await win.mouse.dblclick(cx, cy);
-  await win.waitForTimeout(700);
-  let editorOpen = await win.locator('.edit-inline-editor').count();
-  if (!editorOpen) {
-    await win.mouse.click(cx, cy);
-    await win.waitForTimeout(300);
-    const editBtn = win.locator('[aria-label="Edit text run"]').first();
-    if (await editBtn.count()) { await editBtn.click(); await win.waitForTimeout(700); }
-    editorOpen = await win.locator('.edit-inline-editor').count();
-  }
-  expect(editorOpen, 'inline editor must open on the dense run').toBeGreaterThan(0);
+  // Phase 26 — the inline editor is retired: select the run, drag its body
+  // +150/+120 to park a pending move, then Confirm on the run bar.
+  await win.mouse.click(cx, cy);
+  await win.waitForTimeout(450);
+  expect(await win.locator('[data-content-action-bar="textrun"]').count(), 'the run bar must appear on a single click').toBeGreaterThan(0);
+  expect(await win.locator('.edit-inline-editor').count(), 'Phase 26: no in-canvas editor mounts').toBe(0);
 
-  const handle = await win.evaluate(() => {
-    const h = document.querySelector('.edit-inline-editor [data-edit-drag-handle]');
-    if (!h) return null;
-    const r = h.getBoundingClientRect();
-    return { x: r.x, y: r.y };
-  });
-  expect(handle, 'drag handle exists').toBeTruthy();
-  await dragMouse({ x: handle.x + 5, y: handle.y + 5 }, { x: handle.x + 5 + 150, y: handle.y + 5 + 120 }, 14);
-  await win.waitForTimeout(400);
-  const confirmAttr = await win.evaluate(() => {
-    const b = document.querySelector('.edit-inline-editor [data-edit-confirm]');
-    return b ? b.getAttribute('data-edit-confirm') : null;
-  });
-  console.log(`[A1a|CONFIRM-ATTR] ${confirmAttr}`);
-  expect(confirmAttr, 'data-edit-confirm must flip true after the grip drag').toBe('true');
+  await dragMouse({ x: cx, y: cy }, { x: cx + 150, y: cy + 120 }, 14);
+  await win.waitForTimeout(450);
+  expect(await win.locator('[data-content-action="textrun-confirm"]').count(), 'run Confirm present after the move drag').toBeGreaterThan(0);
 
   const flash = await aroundFlash(async () => {
-    await win.locator('.edit-inline-editor [data-edit-confirm="true"]').first().click();
+    await win.locator('[data-content-action="textrun-confirm"]').first().click();
   }, 3000, 2);
   console.log(`[A1a|FLASH] ${JSON.stringify(flash)}`);
 

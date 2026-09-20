@@ -41,15 +41,6 @@ const CALLOUT_ANN: Annotation = {
   text: "CALL NOTE",
 };
 
-const TEXTBOX_ANN: Annotation = {
-  id: "tbx-1",
-  kind: "textbox",
-  page: 1,
-  color: "blue",
-  createdAt: "2026-01-01T00:00:00.000Z",
-  rect: { x: 200, y: 200, width: 160, height: 60 },
-  text: "SOME BOX TEXT",
-};
 
 const SELECT_TOOL: AnnotationToolState = { tool: "select", color: "blue", penWidth: 2 };
 
@@ -156,11 +147,6 @@ function clickEl(el: Element): void {
   });
 }
 
-function doubleClickEl(el: Element, x: number, y: number): void {
-  act((): void => {
-    el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: x, clientY: y }));
-  });
-}
 
 function dragSurface(layer: HTMLElement, surface: Element, from: [number, number], to: [number, number]): void {
   pressSurface(surface, from[0], from[1]);
@@ -177,13 +163,6 @@ function barConfirm(host: HTMLElement): HTMLButtonElement {
 /** The Confirm button INSIDE a committed textbox / callout edit
  *  toolbox (data-annotation-action, not the selection bar's
  *  data-content-action). */
-function toolboxConfirm(host: HTMLElement, kind: "textbox" | "callout"): HTMLButtonElement {
-  const btn = host.querySelector<HTMLButtonElement>(
-    `[data-annotation-action='edit-${kind}-confirm']`,
-  );
-  if (btn === null) throw new Error("toolbox Confirm button not found");
-  return btn;
-}
 
 describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag", () => {
   it("renders the transparent shaft line + head polygon hit targets inside the callout arrow svg", () => {
@@ -273,20 +252,6 @@ describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag"
     }
   });
 
-  it("double click on the arrow opens the callout text toolbox (same as the box)", () => {
-    const { host, cleanup } = mountOverlay({ annotations: [CALLOUT_ANN] });
-    try {
-      const shaft = arrowSvg(host).querySelector(".ann-callout-arrow-hit");
-      if (shaft === null) throw new Error("shaft hit not found");
-      doubleClickEl(shaft, 75, 80);
-      const editor = host.querySelector("[data-annotation-editor='edit-callout']");
-      expect(editor, "callout edit toolbox opens on arrow double click").not.toBeNull();
-      const ta = editor?.querySelector<HTMLTextAreaElement>("textarea");
-      expect(ta?.value).toBe("CALL NOTE");
-    } finally {
-      cleanup();
-    }
-  });
 
   it("a press on the arrow never starts a page create-drag (the interactivity bail-out covers the hit classes)", () => {
     const { host, onCreate, cleanup } = mountOverlay({
@@ -308,58 +273,3 @@ describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag"
   });
 });
 
-describe("Phase 21 — the textbox / callout double-click toolbox has NO floating color section", () => {
-  // Phase 21 criterion 3 supersedes the DEF-161 floating color row: the
-  // panel (and the annotation toolbar palette / annotations panel) is
-  // the only color surface for text-bearing annotations. The double-click
-  // toolbox keeps its grip + Confirm / Cancel / Delete actions.
-
-  it("double-clicking a TEXTBOX opens the toolbox without a color section; Confirm commits a text edit only", () => {
-    const { host, onEditAnnotation, cleanup } = mountOverlay({ annotations: [TEXTBOX_ANN] });
-    try {
-      const tbx = host.querySelector<Element>(".ann-textbox[data-annotation-id='tbx-1']");
-      if (tbx === null) throw new Error("textbox not found");
-      doubleClickEl(tbx, 250, 220);
-      const editor = host.querySelector("[data-annotation-editor='edit-textbox']");
-      expect(editor, "text edit toolbox opens").not.toBeNull();
-      expect(
-        editor?.querySelector("[data-annotation-color-section]"),
-        "floating color section is retired",
-      ).toBeNull();
-      // The action affordances stay.
-      expect(toolboxConfirm(host, "textbox")).not.toBeNull();
-      const ta = host.querySelector<HTMLTextAreaElement>(
-        "[data-annotation-editor='edit-textbox'] textarea",
-      );
-      if (ta === null) throw new Error("toolbox textarea not found");
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        "value",
-      )?.set;
-      act((): void => {
-        setter?.call(ta, "REVISED BOX");
-        ta.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-      clickEl(toolboxConfirm(host, "textbox"));
-      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
-      // Text-only patch; the annotation's color is preserved untouched.
-      expect(onEditAnnotation.mock.calls[0]).toEqual(["tbx-1", { text: "REVISED BOX" }]);
-    } finally {
-      cleanup();
-    }
-  });
-
-  it("double-clicking a CALLOUT opens the toolbox without a color section", () => {
-    const { host, cleanup } = mountOverlay({ annotations: [CALLOUT_ANN] });
-    try {
-      const box = boxDiv(host);
-      doubleClickEl(box, 140, 120);
-      const editor = host.querySelector("[data-annotation-editor='edit-callout']");
-      expect(editor).not.toBeNull();
-      expect(editor?.querySelector("[data-annotation-color-section]")).toBeNull();
-      expect(toolboxConfirm(host, "callout")).not.toBeNull();
-    } finally {
-      cleanup();
-    }
-  });
-});

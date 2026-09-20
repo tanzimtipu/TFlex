@@ -115,54 +115,8 @@ function clickCommit(host: HTMLElement, selector: string): void {
 
 /** Type into the inline editor's controlled textarea (React's native
  *  value setter + input event — jsdom has no real typing). */
-function typeInto(host: HTMLElement, text: string): void {
-  const ta = host.querySelector<HTMLTextAreaElement>("[data-edit-textarea]");
-  if (ta === null) throw new Error("textarea not found");
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLTextAreaElement.prototype,
-    "value",
-  )?.set;
-  act((): void => {
-    setter?.call(ta, text);
-    ta.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
 
 describe("DEF-232 — the text-run commit carries the overlay's page", () => {
-  it("inline-editor move commit on page 2 reports page 2 (not the viewer's current page)", () => {
-    const { host, onCommitTextEdit, unmount } = mountOverlay(2);
-    try {
-      const layer = host.querySelector<HTMLElement>('[data-tool="text"]');
-      if (layer === null) throw new Error("layer not found");
-      fire(layer, "pointerdown", 120, 115);
-      act((): void => {
-        window.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: 120, clientY: 115 }));
-      });
-      const editor = host.querySelector<HTMLElement>(".edit-inline-editor");
-      if (editor === null) throw new Error("editor not found");
-      editor.getBoundingClientRect = (): DOMRect => {
-        const left = Number.parseFloat(editor.style.left) || 0;
-        const top = Number.parseFloat(editor.style.top) || 0;
-        return { left, top, width: 200, height: 180, right: left + 200, bottom: top + 180, x: left, y: top, toJSON: () => ({}) } as DOMRect;
-      };
-      const label = host.querySelector<HTMLElement>(".content-grip-inline");
-      if (label === null) throw new Error("label not found");
-      fire(label, "pointerdown", 100, 100);
-      act((): void => {
-        window.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 300, clientY: 220, pointerId: 1 }));
-      });
-      expect(host.querySelector('[data-edit-confirm="true"]')).not.toBeNull();
-      clickCommit(host, '[data-edit-confirm="true"]');
-      expect(onCommitTextEdit).toHaveBeenCalledTimes(1);
-      const call = onCommitTextEdit.mock.calls[0]?.[0];
-      // The moved rect + the original rect (DEF-151) AND the page.
-      expect(call.rect).toEqual({ x: 300, y: 220, width: 200, height: 30 });
-      expect(call.oldRect).toEqual({ x: 100, y: 100, width: 200, height: 30 });
-      expect(call.page).toBe(2);
-    } finally {
-      unmount();
-    }
-  });
 
   it("run-selection-bar Confirm on page 2 reports page 2", () => {
     const { host, onCommitTextEdit, unmount } = mountOverlay(2);
@@ -190,29 +144,6 @@ describe("DEF-232 — the text-run commit carries the overlay's page", () => {
   // image commit paths. Both used to read `currentPageOfTab`; both now
   // carry the committing overlay's page.
 
-  it("new text-box commit on page 2 reports page 2", () => {
-    const { host, onCommitTextBox, unmount } = mountOverlay(2, "box");
-    try {
-      const layer = host.querySelector<HTMLElement>('[data-tool="box"]');
-      if (layer === null) throw new Error("layer not found");
-      // Drag-create a box larger than the 16x16 click threshold, which
-      // opens the inline editor for a fresh box.
-      fire(layer, "pointerdown", 100, 100);
-      fire(layer, "pointermove", 300, 260);
-      fire(layer, "pointerup", 300, 260);
-      const editor = host.querySelector<HTMLElement>(".edit-inline-editor");
-      if (editor === null) throw new Error("editor not found");
-      // commit() cancels on empty text, so type a value first.
-      typeInto(host, "Box on page 2");
-      clickCommit(host, ".edit-inline-btn-commit");
-      expect(onCommitTextBox).toHaveBeenCalledTimes(1);
-      const call = onCommitTextBox.mock.calls[0]?.[0];
-      expect(call.page).toBe(2);
-      expect(call.text).toBe("Box on page 2");
-    } finally {
-      unmount();
-    }
-  });
 
   it("image create commit on page 2 reports page 2", async () => {
     const { host, onCommitImageEdit, unmount } = mountOverlay(2, "image", PICKED_PNG);

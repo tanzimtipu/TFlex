@@ -49,7 +49,7 @@ import {
   textStyleValuesFromStyle,
   type TextStyleValues,
 } from "../edit/textStyle";
-import { hexToEditColor } from "../edit/model";
+import { engineTextBoxesToPlacements, hexToEditColor, sameTextBoxes } from "../edit/model";
 import type { TextBoxStylePatch } from "../../shared/types";
 import type { EngineState } from "../engine/types";
 import {
@@ -327,6 +327,9 @@ interface DocumentViewProps {
       page: number;
     }) => void;
     onCommitTextBox: (args: {
+      /** Phase 26 - the id the renderer already minted for a freshly
+       *  dragged box (so the engine registers under the same id). */
+      id?: string;
       rect: { x: number; y: number; width: number; height: number };
       text: string;
       style: import("../edit/model").EditTextStyle;
@@ -365,6 +368,11 @@ interface DocumentViewProps {
      *  (App routes it to `engine.updateTextBox`). Absent when the host
      *  cannot target a registry box. */
     onTextStylePatch?: (patch: TextBoxStylePatch) => void;
+    /** Phase 26 — apply a patch (the panel Text field's session commit)
+     *  to a SPECIFIC committed box, by id. App routes it to
+     *  `engine.updateTextBox`; absent when the host cannot target the
+     *  registry. */
+    onTextPatch?: (id: string, patch: TextBoxStylePatch) => void;
   } | null;
 }
 
@@ -620,18 +628,230 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const onSelectAnnotation = useCallback((ann: Annotation | null, fromPage: number): void => {
     setSelectedAnn((prev) => applyAnnSelectionReport(prev, ann, fromPage));
   }, []);
+
+  // ---- Phase 26: the panel Text field ---------------------------------
+  // The panel's Text field is the single text-editing surface for
+  // annotation text and Edit-mode text. A session starts on the first
+  // keystroke and is committed as ONE engine op when it ends (field blur
+  // / Escape / target change), so one edit session is exactly one undo
+  // entry. Mid-typing the page is painted from the renderer-local draft
+  // (`renderedAnnotations`) or the box registry — never an op per
+  // keystroke.
+  const [textEdit, setTextEdit] = useState<{
+    target: TextTarget;
+    text: string;
+    original: string;
+    /** A just-placed annotation: an empty session drops it again. */
+    justPlaced: boolean;
+  } | null>(null);
+  const textEditRef = useRef<typeof textEdit>(null);
+  textEditRef.current = textEdit;
+  const [textFocusToken, setTextFocusToken] = useState(0);
+  const [textCommitToken, setTextCommitToken] = useState(0);
+  /** Phase 26 — the Edit overlay's selected text target (box or run). */
+  const [editTextTarget, setEditTextTarget] = useState<EditTextTarget | null>(null);
+  /** The id of a text annotation placed this gesture with empty text. */
+  const justPlacedTextRef = useRef<string | null>(null);
+  /** Phase 26 — paint the session's live text over the engine list so
+   *  the page follows every keystroke (the annotation overlay renders
+   *  exactly what the host hands it). */
+  const renderedAnnotations = useMemo((): Annotation[] => {
+    if (textEdit === null || textEdit.target.kind !== "annotation") return annotations;
+    const id = textEdit.target.id;
+    const next = textEdit.text;
+    return annotations.map((a) => (a.id === id ? { ...a, text: next } : a));
+  }, [annotations, textEdit]);
   const selectedAnnotation = useMemo(
     () =>
       selectedAnn === null
         ? null
-        : (annotations.find((a) => a.id === selectedAnn.id) ?? selectedAnn),
-    [selectedAnn, annotations],
+        : (renderedAnnotations.find((a) => a.id === selectedAnn.id) ?? selectedAnn),
+    [selectedAnn, renderedAnnotations],
   );
   const selectedAnnText =
     selectedAnnotation !== null &&
     (selectedAnnotation.kind === "textbox" ||
       selectedAnnotation.kind === "note" ||
       selectedAnnotation.kind === "callout");
+  /** The text target the panel currently edits. An annotation selection
+   *  wins (Edit mode and the annotation tools are mutually exclusive). */
+  const textTarget = useMemo<TextTarget | null>(() => {
+    if (selectedAnnText && selectedAnnotation !== null) {
+      return { kind: "annotation", id: selectedAnnotation.id };
+    }
+    return editTextTarget;
+  }, [selectedAnnText, selectedAnnotation, editTextTarget]);
+  const textTargetKeyNow = textTargetKey(textTarget);
+  /** The target's committed text (the session draft overrides it while
+   *  one is open). */
+  const textTargetBase =
+    textTarget === null
+      ? ""
+      : textTarget.kind === "annotation"
+        ? selectedAnnotation !== null && "text" in selectedAnnotation
+          ? selectedAnnotation.text
+          : ""
+        : textTarget.kind === "box"
+          ? (selectedTextBox?.text ?? "")
+          : textTarget.text;
+  const textEditKey = textEdit === null ? null : textTargetKey(textEdit.target);
+  const panelText =
+    textTarget === null
+      ? null
+      : textEdit !== null && textEditKey === textTargetKeyNow
+        ? textEdit.text
+        : textTargetBase;
+  // Phase 26 — the Edit overlay reported its selected text target (a
+  // committed box or a text run). The report arrives through the editProp
+  // memo below; it focuses the panel field so clicking a text element in
+  // Edit mode starts typing immediately.
+  const onEditTextTargetChange = useCallback((target: EditTextTarget | null): void => {
+    setEditTextTarget(target);
+    if (target !== null) setTextFocusToken((n) => n + 1);
+  }, []);
+  /** Phase 26 — the annotation overlay placed or clicked a text element:
+   *  focus the panel's Text field with its content selected. */
+  const onAnnTextFocusRequest = useCallback((): void => {
+    setTextFocusToken((n) => n + 1);
+  }, []);
+  // The previous text target (and its key) the target-change effect below
+  // compares against. Declared here so `commitTextSession` can clear a
+  // committed box's `isNew` flag on the ref the cleanup reads (DEF-257).
+  const prevTextTargetKeyRef = useRef<string | null>(null);
+  const prevTextTargetRef = useRef<TextTarget | null>(null);
+  /** Phase 26 — end the edit session and commit it as ONE engine op. */
+  const commitTextSession = useCallback((): void => {
+    const session = textEditRef.current;
+    textEditRef.current = null;
+    setTextEdit(null);
+    if (session === null) return;
+    // A session means the placement was USED — it is no longer an
+    // abandoned empty placement (so the stray-placement cleanup below
+    // must not delete it).
+    justPlacedTextRef.current = null;
+    const { target } = session;
+    if (target.kind === "annotation") {
+      if (session.text.trim() === "") {
+        // An empty text annotation carries no content — a fresh
+        // placement is dropped again (the old empty-text guard).
+        onDeleteAnnotation?.(target.id);
+        return;
+      }
+      if (session.text === session.original) return;
+      onEditAnnotation?.(target.id, { text: session.text });
+      return;
+    }
+    if (target.kind === "box") {
+      if (session.text === session.original) return;
+      const editApi = editRef.current;
+      if (editApi === null) return;
+      if (target.isNew === true) {
+        // A freshly dragged box lives only in the renderer registry: the
+        // commit IS its first engine op (addTextBox), registered under
+        // the same id so the local mirror and the engine agree.
+        const box = textBoxesRef.current.find((b) => b.id === target.id);
+        if (box === undefined) return;
+        editApi.onCommitTextBox({
+          id: box.id,
+          rect: { ...box.rect },
+          text: session.text,
+          style: box.style,
+          background: box.background,
+          page: box.page,
+        });
+        // DEF-257 — the box is in the engine registry now, so it is no
+        // longer a renderer-only placement. Clear `isNew` on the live
+        // target (state + the ref the target-change cleanup reads), else
+        // that cleanup treats the committed box as an abandoned empty
+        // placement and drops it from the mirror when the target clears
+        // (Edit mode close/reopen), leaving the engine's box with no
+        // `.edit-box` surface.
+        const committed: TextTarget = { ...target, isNew: false };
+        prevTextTargetRef.current = committed;
+        setEditTextTarget((prev) =>
+          prev !== null && prev.kind === "box" && prev.id === target.id ? committed : prev,
+        );
+        return;
+      }
+      editApi.onTextPatch?.(target.id, { text: session.text });
+      return;
+    }
+    // A text run: the Edit overlay owns the run's rect AND the white
+    // mask cover, so it performs the commit when the token flips.
+    setTextCommitToken((n) => n + 1);
+  }, [onEditAnnotation, onDeleteAnnotation]);
+  /** Phase 26 — a keystroke in the panel's Text field. The page follows
+   *  immediately (annotation draft / box registry); the engine is
+   *  untouched until the session commits. */
+  const handlePanelTextChange = useCallback(
+    (next: string): void => {
+      const target = textTargetRef.current;
+      if (target === null) return;
+      const key = textTargetKey(target);
+      const current = textEditRef.current;
+      const base = textBaseRef.current;
+      const justPlaced =
+        target.kind === "annotation" && justPlacedTextRef.current === target.id;
+      if (current !== null && textTargetKey(current.target) === key) {
+        textEditRef.current = { ...current, text: next };
+        setTextEdit(textEditRef.current);
+      } else {
+        textEditRef.current = { target, text: next, original: base, justPlaced };
+        setTextEdit(textEditRef.current);
+      }
+      if (target.kind === "box") {
+        // Live registry update: the box mirror on the page repaints on
+        // every keystroke (no engine op until the session commits).
+        const box = textBoxesRef.current.find((b) => b.id === target.id);
+        if (box !== undefined) {
+          editRef.current?.onAction({
+            type: "upsert-text-box",
+            placement: { ...box, text: next },
+          });
+        }
+      }
+    },
+    [],
+  );
+  // The panel's Text field value / target, mirrored into refs so the
+  // stable session callbacks always read the latest values.
+  const textTargetRef = useRef<TextTarget | null>(null);
+  const textBaseRef = useRef<string>("");
+  const textBoxesRef = useRef<readonly import("../edit/model").TextBoxPlacement[]>([]);
+  const editRef = useRef(edit);
+  textTargetRef.current = textTarget;
+  textBaseRef.current = textTargetBase;
+  textBoxesRef.current = edit?.state.textBoxes ?? [];
+  editRef.current = edit;
+  // Commit when the target changes (another element selected) or clears
+  // (tool change / panel close) so no edit is lost and each session stays
+  // one undo entry. The two refs live above `commitTextSession` so the
+  // commit can clear a new box's `isNew` flag on the ref the cleanup
+  // below reads (DEF-257).
+  useEffect(() => {
+    if (prevTextTargetKeyRef.current === textTargetKeyNow) return;
+    prevTextTargetKeyRef.current = textTargetKeyNow;
+    const previous = prevTextTargetRef.current;
+    prevTextTargetRef.current = textTarget;
+    const hadSession = textEditRef.current !== null;
+    commitTextSession();
+    if (hadSession) return;
+    // A placement that was never typed into leaves no session behind —
+    // drop the stray empty surface when the target moves away.
+    const abandoned = justPlacedTextRef.current;
+    if (abandoned !== null) {
+      if (textTargetKeyNow !== `annotation:${abandoned}`) {
+        justPlacedTextRef.current = null;
+        onDeleteAnnotation?.(abandoned);
+      }
+      return;
+    }
+    // Phase 26 — a freshly dragged Edit-mode box that never received text
+    // is dropped from the renderer registry (it never reached the engine).
+    if (previous !== null && previous.kind === "box" && previous.isNew === true) {
+      editRef.current?.onAction({ type: "delete-text-box", id: previous.id });
+    }
+  }, [textTargetKeyNow, textTarget, commitTextSession, onDeleteAnnotation]);
   // The annotation text tools (text box, callout, sticky note) open the
   // SAME panel instance; the annotation colour state it reflects is the
   // selected annotation's colour when one is selected, else the armed
@@ -1879,8 +2099,26 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // object selected is what the NEXT created box actually uses.
   const editProp = useMemo(() => {
     if (!editModeOpen || edit === null) return null;
-    return { ...edit, textStyle: editTextStyleFromValues(textPanelTextValues) };
-  }, [editModeOpen, edit, textPanelTextValues]);
+    return {
+      ...edit,
+      textStyle: editTextStyleFromValues(textPanelTextValues),
+      // Phase 26 — the panel's Text field drives Edit-mode text too: the
+      // overlay reports its selected text target up, receives the live
+      // session text for its run preview, and commits a run when the
+      // session's token flips.
+      onTextTargetChange: onEditTextTargetChange,
+      textLive:
+        textEdit !== null && textEdit.target.kind === "run" ? textEdit.text : null,
+      textCommitToken,
+    };
+  }, [
+    editModeOpen,
+    edit,
+    textPanelTextValues,
+    onEditTextTargetChange,
+    textEdit,
+    textCommitToken,
+  ]);
 
   // B5 / B14 — when Edit mode opens, force the annotation tool
   // back to "select". The toolbar's `editBlocksTool` gate already
@@ -1899,6 +2137,28 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     }
     prevEditModeOpenRef.current = editModeOpen;
   }, [editModeOpen]);
+
+  // DEF-257 — opening Edit mode (and any later engine registry echo)
+  // rehydrates the renderer's text-box mirror from the engine registry.
+  // The mirror (`edit.state.textBoxes`) is what every page's EditOverlay
+  // draws its `.edit-box` surfaces from; App adopts the engine list on
+  // every state echo, but a re-open with no new echo left a committed box
+  // in the engine and absent from the mirror — so it had no surface and
+  // could not be selected or moved.
+  //
+  // `sameTextBoxes` keeps it idempotent — an unchanged registry
+  // dispatches nothing, so no duplicate surfaces and no openTabs churn —
+  // and an ABSENT or EMPTY `textBoxes` list (the engine reports `[]` for
+  // a document with no boxes) leaves a renderer-local draft untouched.
+  useEffect(() => {
+    if (!editModeOpen || edit === null) return;
+    const fromEngine = engineState.textBoxes;
+    if (fromEngine === undefined || fromEngine.length === 0) return;
+    const placements = engineTextBoxesToPlacements(fromEngine, edit.defaultFont);
+    if (sameTextBoxes(edit.state.textBoxes, placements)) return;
+    edit.onAction({ type: "replace-text-boxes", boxes: placements });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editModeOpen, engineState.textBoxes]);
 
   const editToolbarHint = edit !== null ? defaultEditHint(edit.state.tool) : defaultEditHint("off");
 
@@ -1950,9 +2210,26 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // Hand the toolbar's actions straight through the reducer. The toolbar is
   // disabled when there is no document (always-disabled prop is false here
   // because a tab is mounted only when a document is open).
-  const onAnnToolAction = useCallback((a: AnnotationToolAction): void => {
-    dispatchAnnTool(a);
-  }, []);
+  /** Phase 26 — the toolbar's colour control is the colour path for a
+   *  SELECTED annotation too (the in-canvas palette a double-clicked
+   *  shape used to open is retired). With an annotation selected, a
+   *  colour change patches THAT annotation through the annotation-patch
+   *  route as well as updating the armed tool's colour. The selected
+   *  annotation is read through a ref so this callback keeps a stable
+   *  identity (the toolbar is memo-sensitive). */
+  const selectedAnnotationRef = useRef<Annotation | null>(null);
+  selectedAnnotationRef.current = selectedAnnotation;
+  const onAnnToolAction = useCallback(
+    (a: AnnotationToolAction): void => {
+      dispatchAnnTool(a);
+      if (a.type !== "set-color") return;
+      const ann = selectedAnnotationRef.current;
+      if (ann === null) return;
+      if (ann.color === a.color) return;
+      onEditAnnotation?.(ann.id, { color: a.color });
+    },
+    [onEditAnnotation],
+  );
 
   // When the rail's annotations panel jumps to an annotation, scroll to its
   // page and pulse a flash highlight on the matching overlay. The flash is
@@ -1989,7 +2266,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // re-rendering every page on every annotation create/edit).
   const annotationsByPage = useMemo(() => {
     const map = new Map<number, Annotation[]>();
-    for (const a of annotations) {
+    for (const a of renderedAnnotations) {
       const list = map.get(a.page);
       if (list === undefined) {
         map.set(a.page, [a]);
@@ -1998,7 +2275,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       }
     }
     return map;
-  }, [annotations]);
+  }, [renderedAnnotations]);
 
   // After a one-shot tool (textbox, note) commits, return to plain select so
   // the next page click doesn't accidentally open another editor.
@@ -2019,6 +2296,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     (ann: Annotation): void => {
       if (ann.kind === "textbox" || ann.kind === "note" || ann.kind === "callout") {
         setSelectedAnn(ann);
+        // Phase 26 — a text element is placed EMPTY and its text is typed
+        // in the panel's Text field. Remember it so an untouched
+        // placement is dropped again when the session ends empty.
+        if (ann.text === "") justPlacedTextRef.current = ann.id;
       }
       onCreateAnnotation?.(ann);
     },
@@ -2215,6 +2496,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   );
 
   return (
+    // Phase 25 — `data-text-panel-open` is now a PURE STATE MARKER (the
+    // panel's open/close truth for tests and e2e); it no longer drives any
+    // layout. The old --tf-text-w grid column and its page reflow are gone:
+    // the panel floats inside .workspace-main, so the page never moves.
     <div className="workspace" data-text-panel-open={textPanelOpen ? "true" : "false"}>
       <SideRail
         doc={doc}
@@ -2250,17 +2535,6 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         // reports toggles through the callback.
         pagesPanelCollapsed={pagesPanelCollapsed}
         onTogglePagesPanelCollapsed={onTogglePagesPanelCollapsed}
-      />
-      {/* Phase 21 — the docked text-properties panel, to the RIGHT of
-          the thumbnail rail. The .workspace grid resolves its middle
-          column from the registered --tf-text-w token, so the page view
-          reflows with the panel on the Phase-20 panel motion. */}
-      <TextPropertiesPanel
-        open={textPanelOpen}
-        values={textPanelValues}
-        defaults={textPanelDefaults}
-        mode={textPanelMode}
-        onPatch={handleTextPanelPatch}
       />
       <div ref={mainRef} className="workspace-main">
         <Toolbar
@@ -2332,6 +2606,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
               theme={themeName === 'light' ? 'light' : 'dark'}
               annotationRecentTools={annotationRecentTools}
               onAnnotationRecentToolsChange={onAnnotationRecentToolsChange}
+              /* Phase 26 — the toolbar's colour control is the colour
+                 path for a SELECTED annotation (the in-canvas palette a
+                 double-clicked shape used to open is gone), so the row
+                 shows the selected annotation's actual colour. */
+              selectedColor={selectedAnnotation?.color ?? null}
             />
           }
         />
@@ -2488,6 +2767,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       // text-properties panel can reflect a selected
                       // annotation text object's actual colour.
                       onSelectAnnotation={onSelectAnnotation}
+                      // Phase 26 — placing or clicking a text element
+                      // focuses the panel's Text field (the single live
+                      // text-editing surface; no in-canvas editor).
+                      onTextFocusRequest={onAnnTextFocusRequest}
                       // Bug 1 — opening an edit toolbox disarms the
                       // annotation creation tool (select). Without
                       // this, an armed sticky-note / ink / shape
@@ -2577,6 +2860,21 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             <span className="tools-badge-label">All Tools</span>
           </button>
         )}
+        {/* Phase 25 — the text-properties panel is a FLOATING card over
+            the page view (absolutely positioned inside .workspace-main),
+            NOT a workspace grid column. It has no header, is draggable by
+            its grip, and opening/closing it never reflows the page. */}
+        <TextPropertiesPanel
+          open={textPanelOpen}
+          values={textPanelValues}
+          defaults={textPanelDefaults}
+          mode={textPanelMode}
+          onPatch={handleTextPanelPatch}
+          text={panelText}
+          onTextChange={handlePanelTextChange}
+          onTextCommit={commitTextSession}
+          focusToken={textFocusToken}
+        />
       </div>
     </div>
   );
@@ -2590,5 +2888,31 @@ const NOOP_REGISTER = (): void => undefined;
 // Stable empty annotations array — passed to PageView when a page has no
 // annotations, so the prop's reference doesn't change between renders.
 const EMPTY_ANNOTATIONS: Annotation[] = [];
+
+// ---- Phase 26 — the panel Text field's target model -----------------------
+/** A text target reported up by the Edit overlay (Phase 26 — the inline
+ *  editor is retired, so Edit-mode text is edited in the panel's Text
+ *  field). */
+export type EditTextTarget =
+  | { kind: "box"; id: string; isNew?: boolean }
+  | {
+      kind: "run";
+      page: number;
+      rect: { x: number; y: number; width: number; height: number };
+      text: string;
+    };
+
+/** Everything the panel's Text field can edit. */
+type TextTarget = EditTextTarget | { kind: "annotation"; id: string };
+
+/** Stable identity for a text target — used to tell "same target, next
+ *  keystroke" (same session) from "new target" (commit the old session). */
+function textTargetKey(t: TextTarget | null): string | null {
+  if (t === null) return null;
+  if (t.kind === "run") {
+    return `run:${t.page}:${t.rect.x}:${t.rect.y}:${t.rect.width}:${t.rect.height}`;
+  }
+  return `${t.kind}:${t.id}`;
+}
 const EMPTY_FIELDS: FormField[] = [];
 const EMPTY_PLACEMENTS: SignaturePlacement[] = [];

@@ -206,7 +206,7 @@ function barConfirm(host: HTMLElement): HTMLButtonElement {
 }
 
 describe("DEF-153/154 — committed annotation selection model (rect)", () => {
-  it("hover-grab surface class + single click SELECTS: bar (Confirm/Edit/Delete), corner handles and the move hint appear; no editor opens", () => {
+  it("hover-grab surface class + single click SELECTS: bar (Confirm/Delete), corner handles appear; no editor opens", () => {
     const { host, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
     try {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
@@ -216,17 +216,13 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
       // carries the grab-cursor class (the CSS rule owns the cursor).
       expect(shape.classList.contains("ann-content")).toBe(true);
       clickEl(shape);
-      // The hint is cursor-attached: it follows the pointer while the
-      // content is selected (the layer's pointermove tracks it).
-      act((): void => {
-        layerOf(host).dispatchEvent(
-          new PointerEvent("pointermove", { bubbles: true, clientX: 130, clientY: 130, pointerId: 1 }),
-        );
-      });
       expect(host.querySelector("[data-content-action-bar]"), "bar appears").not.toBeNull();
       expect(host.querySelector("[data-content-action$='-confirm']"), "Confirm on the bar").not.toBeNull();
       expect(host.querySelector("[data-annotation-resize-handle]"), "corner handles appear").not.toBeNull();
-      expect(host.querySelector("[data-move-hint]"), "Double click to edit hint appears").not.toBeNull();
+      // Phase 26 — no Edit button (the panel Text field / the annotation
+      // toolbar own editing) and no cursor hint.
+      expect(host.querySelector("[data-content-action$='-edit']")).toBeNull();
+      expect(host.querySelector("[data-move-hint]")).toBeNull();
       // Single click must NOT open any editor toolbox.
       expect(host.querySelector("[data-annotation-editor]")).toBeNull();
       expect(host.querySelector("[data-annotation-color-editor]")).toBeNull();
@@ -288,24 +284,22 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
     }
   });
 
-  it("the bar's Edit opens the color toolbox for a shape; picking a swatch patches the color", () => {
+  it("Phase 26 — a shape has no in-canvas colour palette: no Edit button, and double-clicking the shape opens nothing", () => {
     const { host, onEditAnnotation, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
     try {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
       if (shape === null) throw new Error("shape not found");
       clickEl(shape);
-      const edit = host.querySelector<HTMLButtonElement>("[data-content-action$='-edit']");
-      expect(edit).not.toBeNull();
-      if (edit === null) return;
-      clickEl(edit);
-      const editor = host.querySelector("[data-annotation-color-editor]");
-      expect(editor, "color toolbox opens on Edit/double-click").not.toBeNull();
-      const red = host.querySelector<HTMLButtonElement>("[data-ann-color-edit='red']");
-      expect(red).not.toBeNull();
-      if (red === null) return;
-      clickEl(red);
-      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
-      expect(onEditAnnotation.mock.calls[0]).toEqual(["rect-1", { color: "red" }]);
+      // No Edit affordance on the selection bar any more.
+      expect(host.querySelector("[data-content-action$='-edit']")).toBeNull();
+      // Double-click opens nothing at all (no colour editor, no editor).
+      doubleClickEl(shape, 120, 120);
+      expect(host.querySelector("[data-annotation-color-editor]")).toBeNull();
+      expect(host.querySelector("[data-annotation-editor]")).toBeNull();
+      expect(host.querySelector("[data-ann-color-edit]")).toBeNull();
+      // The selection survives the double-click (it is just a click).
+      expect(host.querySelector("[data-content-action-bar]")).not.toBeNull();
+      expect(onEditAnnotation).not.toHaveBeenCalled();
     } finally {
       cleanup();
     }
@@ -434,32 +428,19 @@ describe("DEF-154 — arrow + ink get the full selection model AND resize handle
   });
 });
 
-describe("DEF-153/154 — committed textbox: select/move + double-click text toolbox", () => {
-  it("double-click opens the text edit toolbox; Confirm patches the text through onEditAnnotation", () => {
+describe("DEF-153/154 + Phase 26 — committed textbox: select/move, no in-canvas editor", () => {
+  it("double-clicking a committed textbox opens NO editor and does not patch anything", () => {
     const { host, onEditAnnotation, cleanup } = mountOverlay({ annotations: [TEXTBOX_ANN] });
     try {
       const tbx = host.querySelector<Element>(".ann-textbox[data-annotation-id='tbx-1']");
       if (tbx === null) throw new Error("textbox not found");
       doubleClickEl(tbx, 250, 220);
-      const editor = host.querySelector("[data-annotation-editor='edit-textbox']");
-      expect(editor, "committed textbox edit toolbox opens on double click").not.toBeNull();
-      const ta = editor?.querySelector<HTMLTextAreaElement>("textarea");
-      expect(ta?.value).toBe("SOME BOX TEXT");
-      if (ta === undefined || ta === null) return;
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        "value",
-      )?.set;
-      act((): void => {
-        setter?.call(ta, "REVISED BOX");
-        ta.dispatchEvent(new Event("input", { bubbles: true }));
-      });
-      const confirmBtn = host.querySelector<HTMLButtonElement>("[data-annotation-action='edit-textbox-confirm']");
-      expect(confirmBtn).not.toBeNull();
-      if (confirmBtn === null) return;
-      clickEl(confirmBtn);
-      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
-      expect(onEditAnnotation).toHaveBeenCalledWith("tbx-1", { text: "REVISED BOX" });
+      expect(host.querySelector("[data-annotation-editor]")).toBeNull();
+      expect(host.querySelector("[data-annotation-editor-wrap]")).toBeNull();
+      expect(host.querySelector("textarea")).toBeNull();
+      expect(onEditAnnotation).not.toHaveBeenCalled();
+      // A double-click is inert (no editor, no colour palette, no patch).
+      expect(host.querySelector("[data-annotation-color-editor]")).toBeNull();
     } finally {
       cleanup();
     }
@@ -486,26 +467,25 @@ describe("DEF-153/154 — committed textbox: select/move + double-click text too
 });
 
 describe("DEF-153/154 / Bug 3 — committed note shares the unified selection model", () => {
-  it("single click SELECTS the note (bar + handles, NO editor); double click opens the note editor", () => {
+  it("single click SELECTS the note (bar + handles, NO editor); double click also opens NOTHING", () => {
     const { host, cleanup } = mountOverlay({ annotations: [NOTE_ANN] });
     try {
       const icon = host.querySelector<Element>("[data-annotation-id='note-1']");
       if (icon === null) throw new Error("note icon not found");
       pressSurface(icon, 65, 305);
       clickEl(icon);
-      // Bug 3 — single click must not enter the edit toolbox.
-      expect(host.querySelectorAll("[data-annotation-editor='note']").length).toBe(0);
-      // It selects instead: the Confirm / Edit / Delete bar renders.
+      // Bug 3 — single click must not enter an edit toolbox.
+      expect(host.querySelectorAll("[data-annotation-editor]").length).toBe(0);
+      // It selects instead: the Confirm / Delete bar renders.
       expect(
         host.querySelector("[data-content-action-bar='ann-note']"),
         "note shows the action bar on single click",
       ).not.toBeNull();
-      // The full edit toolbox opens on double click, pre-filled.
+      // Phase 26 — the double-click is just another click: still no editor.
       doubleClickEl(icon, 65, 305);
-      const editors = host.querySelectorAll("[data-annotation-editor='note']");
-      expect(editors.length).toBe(1);
-      const ta = editors[0]?.querySelector("textarea");
-      expect((ta as HTMLTextAreaElement | null)?.value).toBe("note text");
+      expect(host.querySelectorAll("[data-annotation-editor]").length).toBe(0);
+      expect(host.querySelector("[data-annotation-editor-wrap]")).toBeNull();
+      expect(host.querySelector("[data-content-action-bar='ann-note']")).not.toBeNull();
     } finally {
       cleanup();
     }

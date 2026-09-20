@@ -1,4 +1,4 @@
-// Phase 21 — the docked left text-properties panel.
+// Phase 21 — the text-properties panel.
 //
 // A Word/Adobe-class control set for the selected text object (or the
 // per-tool defaults when nothing is selected yet). The panel is a pure,
@@ -6,10 +6,13 @@
 // this component only renders the current state and reports the smallest
 // possible `TextBoxStylePatch` per gesture.
 //
-// Geometry: docked to the RIGHT of the thumbnail rail via the canonical
-// AnimatedPanel (Phase 20 motion tokens only). The host adds the
-// `--tf-text-w` grid column so the page view reflows with the panel — the
-// same "page adjusts, never overlapped" contract the Tools panel follows.
+// Geometry (Phase 25 — supersedes the Phase-21/24 docked column): the
+// panel is a FLOATING card over the page view, not a grid column. It
+// renders inside `.workspace-main` (positioned by `.text-props-float`),
+// has NO header bar, and its only chrome is the shared `ContentGrip`
+// strip at the top. Opening/closing it never reflows the page. The
+// Phase-20 AnimatedPanel still owns the enter/exit motion (token
+// durations, reduced-motion and animations-off paths unchanged).
 //
 // Phase 24 — the Phase-21 per-family scope is retired. `mode: "annotation"`
 // is now IDENTICAL to `"text"` for control gating: every control is live for
@@ -19,7 +22,7 @@
 // (`data-text-panel-mode`) and to label the colour control — it must never
 // gate a control again.
 
-import { useCallback, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, type ReactElement } from "react";
 import {
   AlignCenter,
   AlignJustify,
@@ -40,8 +43,14 @@ import {
 } from "lucide-react";
 import type { EditFont, TextBoxStylePatch, TextAlign, TextListStyle } from "../../shared/types";
 import { AnimatedPanel } from "../components/AnimatedPanel";
+import { ContentGrip } from "../components/selectableContent";
+import { useDragWindow } from "../components/useDragWindow";
+import { fontFamilyFor } from "./editColor";
 import { hexToEditColor } from "./model";
 import {
+  TEXT_CHAR_SPACING_MAX,
+  TEXT_CHAR_SPACING_MIN,
+  TEXT_CHAR_SPACING_STEP,
   TEXT_INDENT_STEP,
   TEXT_LINE_HEIGHT_MAX,
   TEXT_LINE_HEIGHT_MIN,
@@ -50,6 +59,7 @@ import {
   TEXT_SUB_SHIFT,
   TEXT_SUPER_SHIFT,
   TEXT_NO_HIGHLIGHT,
+  clampCharSpacing,
   clampFontSize,
   clampIndent,
   clampLineHeight,
@@ -72,9 +82,35 @@ export interface TextPropertiesPanelProps {
    *  gating: every control is live in both. The tag survives only for
    *  the panel surface attribute and the colour-control label. */
   mode?: "text" | "annotation";
+  /** Phase 26 — the Text field, the single text-editing surface. `text`
+   *  is the selected text element's current text, or `null` when
+   *  nothing text-bearing is selected (the field renders disabled and
+   *  empty). `onTextChange` reports EVERY keystroke — the host renders
+   *  the new text on the page immediately (the field is live mid-typing,
+   *  not only on blur) — and `onTextCommit` ends the edit session
+   *  (blur / Escape) so the host sends exactly ONE engine op for the
+   *  session (one undo entry). `focusToken` increments whenever the host
+   *  wants the field focused with its content selected: a text element
+   *  was placed or clicked. */
+  text?: string | null;
+  onTextChange?: (text: string) => void;
+  onTextCommit?: () => void;
+  focusToken?: number;
 }
 
-const FONT_OPTIONS: readonly EditFont[] = ["Helvetica", "Times", "Courier"];
+/** Phase 27 — the font dropdown. The three base-14 families sit in the
+ *  "Standard" group; the three OFL families bundled under `assets/fonts/`
+ *  sit in "Bundled" and embed a real subset on save. */
+const FONT_OPTIONS: readonly { group: string; fonts: readonly EditFont[] }[] = [
+  { group: "Standard", fonts: ["Helvetica", "Times", "Courier"] },
+  { group: "Bundled", fonts: ["Liberation Sans", "DejaVu Serif", "DejaVu Sans Mono"] },
+];
+
+/** DEF-256 — the gutter (CSS px) kept between the floating card's right
+ *  edge and the open Tools palette's left edge. The same value drives the
+ *  palette's coexistence cap through `--text-panel-gap` in styles.css
+ *  (keep the two in lockstep). */
+export const TEXT_PANEL_PALETTE_GAP = 8;
 
 /** Parse a numeric input; null when the field is empty / not finite. */
 function numberOrNull(raw: string): number | null {
@@ -96,6 +132,44 @@ function Group(props: { title: string; children: ReactElement | ReactElement[] }
 export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactElement {
   const { open, values, defaults } = props;
   const annotationMode = props.mode === "annotation";
+  const text = props.text ?? null;
+
+  // Phase 26 — focus + select-on-demand for the Text field. The token
+  // is consumed ONLY once the field actually has a value to show: a
+  // placement request arrives before the selection report resolves (the
+  // overlay calls it during the gesture, the selection report runs in an
+  // effect afterwards), so the effect waits for `text` and then takes
+  // focus. `el.select()` selects the whole content so the user can type
+  // over it immediately.
+  const textRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastFocusTokenRef = useRef<number>(props.focusToken ?? 0);
+  const focusToken = props.focusToken ?? 0;
+  useEffect(() => {
+    if (focusToken === lastFocusTokenRef.current) return;
+    const el = textRef.current;
+    if (el === null || text === null) return;
+    lastFocusTokenRef.current = focusToken;
+    el.focus();
+    el.select();
+  }, [focusToken, text]);
+
+  // Phase 25 — the panel is a floating card over the page view. The
+  // grip strip is the drag handle (the shared useDragWindow semantics:
+  // a press on a control never starts a move); the clamp is the
+  // page-view area itself, so the card can never be dragged out of
+  // `.workspace-main`. The offset lives in this component's state, so
+  // the position persists for the session (and per tab, like every
+  // other floating surface). DEF-256 — the open Tools palette is a
+  // no-go area as well: the card's right edge stops at the palette's
+  // left edge plus the shared gutter, so a drag can never bury the
+  // palette's entries under the card. When the palette is closed the
+  // constraint is inert and the card keeps its full existing range.
+  const drag = useDragWindow({
+    controlsSelector: "button, input, select, textarea, [role='button']",
+    clampSelector: ".workspace-main",
+    avoidSelector: "[data-tools-palette]",
+    avoidGap: TEXT_PANEL_PALETTE_GAP,
+  });
 
   // Phase 24 — no dispatch gate. The panel forwards the control's patch
   // verbatim; the host decides the route (text-object patch vs annotation
@@ -110,23 +184,71 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
   );
 
   return (
-    <AnimatedPanel
-      open={open}
-      side="left"
-      mode="docked"
-      className="text-props-panel"
-      testId="text-properties"
+    <div
+      className="text-props-float"
+      data-text-panel-float
+      ref={drag.windowRef}
+      style={{ transform: `translate3d(${drag.offset.x}px, ${drag.offset.y}px, 0)` }}
     >
-      <div
-        className="text-props-body"
-        data-text-panel
-        data-text-panel-mode={annotationMode ? "annotation" : "text"}
+      <AnimatedPanel
+        open={open}
+        side="left"
+        mode="docked"
+        className="text-props-panel"
+        testId="text-properties"
       >
-        <div className="text-props-header">
-          <span className="text-props-title">Text</span>
+        {/* Phase 25 — the ONLY chrome: the shared ContentGrip drag
+            affordance. No header, no title. */}
+        <div className="text-props-grip" data-text-panel-grip {...drag.handleProps}>
+          <ContentGrip handleName="text-props" className="content-grip-inline" />
         </div>
-
+        <div
+          className="text-props-body"
+          data-text-panel
+          data-text-panel-mode={annotationMode ? "annotation" : "text"}
+        >
+        {/* Phase 26 — the Text field: the single text-editing surface.
+            Placement / click focus it through `focusToken`; every
+            keystroke is reported live (the host paints it on the page
+            immediately) and the session commits ONE engine op on blur. */}
+        <Group title="Text">
+          <textarea
+            ref={textRef}
+            className="text-props-text"
+            data-txt-text
+            rows={3}
+            spellCheck={false}
+            value={text ?? ""}
+            disabled={text === null}
+            placeholder={
+              text === null ? "Select a text element to edit" : "Type text..."
+            }
+            aria-label="Element text"
+            onChange={(e): void => props.onTextChange?.(e.target.value)}
+            onBlur={(): void => props.onTextCommit?.()}
+          />
+        </Group>
         <Group title="Font">
+          {/* Phase 27 — a one-line live preview. It mirrors the chosen
+              family / size / weight / decoration AND the character
+              spacing, so a spacing change is visible in the panel before
+              the engine bakes it. The spacing is drawn 1:1 (points as CSS
+              px) because the card is not page-scaled. */}
+          <div
+            className="text-props-preview"
+            data-txt-preview
+            aria-hidden
+            style={{
+              fontFamily: fontFamilyFor(values.font),
+              fontSize: `${Math.min(Math.max(values.size, 8), 28)}px`,
+              fontWeight: values.bold ? 700 : 400,
+              fontStyle: values.italic ? "italic" : "normal",
+              textDecoration: values.underline ? "underline" : "none",
+              letterSpacing: `${values.charSpacing}px`,
+            }}
+          >
+            {text !== null && text.trim() !== "" ? text : "Preview"}
+          </div>
           <label className="text-props-row">
             <span className="text-props-label">Family</span>
             <select
@@ -135,16 +257,20 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
               value={values.font}
               onChange={(e): void => onPatch({ font: e.target.value as EditFont })}
             >
-              {FONT_OPTIONS.map((f) => (
-                <option key={f} value={f}>
-                  {f}
-                </option>
+              {FONT_OPTIONS.map((g) => (
+                <optgroup key={g.group} label={g.group}>
+                  {g.fonts.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>
           <p className="text-props-hint">
-            Standard fonts only: non-base-14 faces are substituted with the closest of
-            Helvetica / Times / Courier on save.
+            Standard faces use the base-14 fonts; bundled faces embed a real subset on
+            save.
           </p>
           <label className="text-props-row">
             <span className="text-props-label">Size</span>
@@ -375,21 +501,29 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
           </div>
         </Group>
 
-        {/* Two controls the PDF engine cannot represent: pdf-lib exposes no
-            Tc / Tz operators, so they ship disabled-with-tooltip per the
-            FEA-011 research decision. This is a PDF-engine limit, not a
-            per-family scope — they stay disabled for text objects and
-            annotation text objects alike. */}
+        {/* Phase 27 — character spacing is LIVE: the engine now emits the
+            `Tc` text-state operator, so the control writes `charSpacing`
+            into the style patch. Horizontal scaling stays disabled — the
+            engine still exposes no `Tz` operator. */}
         <Group title="Spacing">
-          <button
-            type="button"
-            data-txt-character-spacing
-            className="text-props-wide-btn"
-            disabled
-            title="Character spacing is not available: the PDF engine has no Tc operator."
-          >
-            <span>Character spacing</span>
-          </button>
+          <label className="text-props-row">
+            <span className="text-props-label">Character spacing</span>
+            <input
+              className="text-props-input"
+              data-txt-character-spacing
+              type="number"
+              min={TEXT_CHAR_SPACING_MIN}
+              max={TEXT_CHAR_SPACING_MAX}
+              step={TEXT_CHAR_SPACING_STEP}
+              value={values.charSpacing}
+              title="Extra space between glyphs, in points (PDF Tc). 0 = default."
+              onChange={(e): void => {
+                const n = numberOrNull(e.target.value);
+                if (n === null) return;
+                onPatch({ charSpacing: clampCharSpacing(n) });
+              }}
+            />
+          </label>
           <button
             type="button"
             data-txt-horizontal-scaling
@@ -400,8 +534,9 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             <span>Horizontal scaling</span>
           </button>
         </Group>
-      </div>
-    </AnimatedPanel>
+        </div>
+      </AnimatedPanel>
+    </div>
   );
 }
 
@@ -420,5 +555,6 @@ export function clearFormattingPatch(defaults: TextStyleValues): TextBoxStylePat
     lineHeight: clampLineHeight(defaults.lineHeight),
     list: defaults.list,
     indent: clampIndent(defaults.indent),
+    charSpacing: clampCharSpacing(defaults.charSpacing),
   };
 }

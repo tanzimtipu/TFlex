@@ -141,29 +141,27 @@ test('A1: every annotation tool places a correctly-paged annotation (page 1)', a
 
   // textbox
   await armTool('textbox');
-  await win.mouse.click(box.x + 200, box.y + 200);
-  await win.waitForSelector('[data-annotation-editor], textarea, [contenteditable="true"]', { timeout: 6000 }).catch(() => {});
-  const tbEditor = win.locator('[data-annotation-editor] textarea, [data-annotation-editor] input, textarea').first();
-  if (await tbEditor.count()) {
-    await tbEditor.fill('SWEEP TEXT BOX');
-    await win.keyboard.press('Control+Enter').catch(() => {});
-    await win.waitForTimeout(600);
-    const tbConfirm = win.locator('[data-annotation-action*="confirm"]').first();
-    if (await tbConfirm.count()) await tbConfirm.click({ force: true });
+  // Clear of the floating text panel (Phase 25) which covers the page's left edge.
+  await win.mouse.click(box.x + box.width * 0.62, box.y + 200);
+  // Phase 26 — the panel Text field is the single text editor (commits on blur).
+  await win.waitForSelector('[data-txt-text]', { timeout: 6000 }).catch(() => {});
+  const tbField = win.locator('[data-txt-text]').first();
+  if (await tbField.count()) {
+    await expect(tbField).toBeEnabled({ timeout: 6000 }).catch(() => {});
+    await tbField.fill('SWEEP TEXT BOX');
+    await tbField.blur();
     await win.waitForTimeout(600);
   }
 
   // note
   await armTool('note');
-  await win.mouse.click(box.x + 300, box.y + 420);
-  await win.waitForSelector('[data-annotation-editor="note"], [data-annotation-editor] textarea', { timeout: 6000 }).catch(() => {});
-  const noteEditor = win.locator('[data-annotation-editor="note"] textarea, [data-annotation-editor] textarea').first();
-  if (await noteEditor.count()) {
-    await noteEditor.fill('SWEEP STICKY NOTE CONTENT');
-    await win.waitForTimeout(300);
-    const noteConfirm = win.locator('[data-annotation-action="note-confirm"]').first();
-    if (await noteConfirm.count()) await noteConfirm.click({ force: true });
-    else { await win.keyboard.press('Control+Enter').catch(() => {}); }
+  await win.mouse.click(box.x + box.width * 0.62, box.y + 420);
+  await win.waitForSelector('[data-txt-text]', { timeout: 6000 }).catch(() => {});
+  const noteField = win.locator('[data-txt-text]').first();
+  if (await noteField.count()) {
+    await expect(noteField).toBeEnabled({ timeout: 6000 }).catch(() => {});
+    await noteField.fill('SWEEP STICKY NOTE CONTENT');
+    await noteField.blur();
     await win.waitForTimeout(600);
   }
 
@@ -263,14 +261,14 @@ test('A3: annotations panel lists, note edit round-trips, delete works', async (
 
   // Add a note.
   await armTool('note');
-  await win.mouse.click(box.x + 260, box.y + 300);
-  await win.waitForSelector('[data-annotation-editor="note"], [data-annotation-editor] textarea', { timeout: 6000 }).catch(() => {});
-  const noteEditor = win.locator('[data-annotation-editor="note"] textarea, [data-annotation-editor] textarea').first();
-  if (await noteEditor.count()) {
-    await noteEditor.fill('PANEL NOTE ORIGINAL');
-    const noteConfirm = win.locator('[data-annotation-action="note-confirm"]').first();
-    if (await noteConfirm.count()) await noteConfirm.click({ force: true });
-    else await win.keyboard.press('Control+Enter').catch(() => {});
+  await win.mouse.click(box.x + box.width * 0.62, box.y + 300);
+  // Phase 26 — panel Text field is the editor (commits on blur).
+  await win.waitForSelector('[data-txt-text]', { timeout: 6000 }).catch(() => {});
+  const noteField = win.locator('[data-txt-text]').first();
+  if (await noteField.count()) {
+    await expect(noteField).toBeEnabled({ timeout: 6000 }).catch(() => {});
+    await noteField.fill('PANEL NOTE ORIGINAL');
+    await noteField.blur();
     await win.waitForTimeout(600);
   }
 
@@ -284,7 +282,8 @@ test('A3: annotations panel lists, note edit round-trips, delete works', async (
   console.log(`[A3] annotation panel rows=${panelRows}`);
   await shot('sweep-a3-annotations-panel.png');
 
-  // Note edit round-trip: click the committed note icon.
+  // Note edit round-trip: click the committed note icon; the panel Text field
+  // shows the committed content (Phase 26 — no in-canvas editor).
   const icon = win.locator('.ann[data-kind="note"]').first();
   let noteEditValue = null;
   if (await icon.count()) {
@@ -292,10 +291,10 @@ test('A3: annotations panel lists, note edit round-trips, delete works', async (
     if (ib) {
       await win.mouse.click(ib.x + ib.width / 2, ib.y + ib.height / 2);
       await win.waitForTimeout(600);
-      const ed = win.locator('[data-annotation-editor="note"] textarea, [data-annotation-editor] textarea').first();
+      const ed = win.locator('[data-txt-text]').first();
       if (await ed.count()) {
         noteEditValue = await ed.inputValue().catch(() => null);
-        console.log(`[A3] note editor pre-filled value="${noteEditValue}"`);
+        console.log(`[A3] note panel field pre-filled value="${noteEditValue}"`);
       }
     }
   }

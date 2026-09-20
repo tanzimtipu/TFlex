@@ -28,9 +28,10 @@ const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
 const log = (label, obj) => console.log(`[P24] ${label} ${JSON.stringify(obj)}`);
 
-// The two controls the PDF engine cannot represent (no Tc / Tz operator).
-// They are disabled for EVERY text surface, annotation included.
-const ENGINE_DISABLED = ['[data-txt-character-spacing]', '[data-txt-horizontal-scaling]'];
+// Phase 27 — the only control the PDF engine cannot represent is horizontal
+// scaling (no Tz operator); it is disabled for EVERY text surface. Character
+// spacing (Tc) is now live and is NOT in this list.
+const ENGINE_DISABLED = ['[data-txt-horizontal-scaling]'];
 const ALL_CONTROLS = [
   '[data-txt-font]', '[data-txt-size]',
   '[data-txt-bold]', '[data-txt-italic]', '[data-txt-underline]',
@@ -160,12 +161,24 @@ async function overlayCss(win, sel = '.ann-textbox[data-kind="textbox"]') {
 
 // ---- placement --------------------------------------------------------------
 
+// Phase 26 — the in-canvas textbox/callout/note editors are retired. Text is
+// entered through the panel's `[data-txt-text]` field: placement selects the
+// new (empty) annotation and focuses the field; typing is live and the session
+// commits ONE engine op on blur.
+async function fillPanelText(win, text) {
+  await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+  await win.waitForFunction(() => {
+    const ta = document.querySelector('[data-txt-text]');
+    return ta !== null && ta.disabled === false;
+  }, null, { timeout: 8000 });
+  await win.locator('[data-txt-text]').fill(text);
+  await win.locator('[data-txt-text]').blur();
+}
+
 async function placeTextbox(win, text, fx = 0.3, fy = 0.22) {
   await armAnnotationTool(win, 'textbox');
   await dragOnPage(win, fx, fy);
-  await win.waitForSelector('[data-annotation-editor="textbox"]', { timeout: 8000 });
-  await win.locator('[data-annotation-editor="textbox"] textarea').fill(text);
-  await win.click('[data-annotation-action="textbox-confirm"]');
+  await fillPanelText(win, text);
   await win.waitForSelector('.ann-textbox[data-kind="textbox"]', { timeout: 8000 });
   await waitForAnn(win, text, null, 12000);
   await win.waitForSelector('.text-props-panel', { timeout: 8000 });
@@ -175,9 +188,7 @@ async function placeTextbox(win, text, fx = 0.3, fy = 0.22) {
 async function placeCallout(win, text, fx = 0.3, fy = 0.45) {
   await armAnnotationTool(win, 'callout');
   await dragOnPage(win, fx, fy, 190, 60);
-  await win.waitForSelector('[data-annotation-editor="callout"]', { timeout: 8000 });
-  await win.locator('[data-annotation-editor="callout"] textarea').fill(text);
-  await win.click('[data-annotation-action="callout-confirm"]');
+  await fillPanelText(win, text);
   await win.waitForSelector('.ann-callout[data-kind="callout"]', { timeout: 8000 });
   await waitForAnn(win, text, null, 12000);
   await win.waitForTimeout(300);
@@ -186,10 +197,11 @@ async function placeCallout(win, text, fx = 0.3, fy = 0.45) {
 async function placeNote(win, text, fx = 0.5, fy = 0.5) {
   await armAnnotationTool(win, 'note');
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
-  await win.mouse.click(pg.x + pg.width * fx, pg.y + pg.height * fy);
-  await win.waitForSelector('[data-annotation-editor="note"]', { timeout: 8000 });
-  await win.locator('[data-annotation-editor="note"] textarea').fill(text);
-  await win.click('[data-annotation-action="note-confirm"]');
+  const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  const x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 40));
+  const y = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 110));
+  await win.mouse.click(x, y);
+  await fillPanelText(win, text);
   await win.waitForSelector('.ann-note[data-kind="note"]', { timeout: 8000 });
   await waitForAnn(win, text, null, 12000);
   await win.waitForTimeout(300);
@@ -235,10 +247,11 @@ test('C1 annotation panel fully live + immediate live apply', async () => {
     const disabled = Object.entries(dis).filter(([, v]) => v !== 'MISSING' && v.disabled).map(([k]) => k);
     log('C1-controls', { missing, disabled });
     expect(missing, 'every text control is mounted for an annotation').toEqual([]);
-    // Only the two engine-unsupported controls are permanently disabled;
+    // Phase 27 — char spacing is live; only Tz stays engine-disabled and
     // indent-decrement is value-disabled at indent 0 (and only there).
-    expect(disabled.filter((s) => !ENGINE_DISABLED.includes(s)), 'only value-disabled controls besides Tc/Tz')
+    expect(disabled.filter((s) => !ENGINE_DISABLED.includes(s)), 'only value-disabled controls besides Tz')
       .toEqual(['[data-txt-indent-dec]']);
+    expect(dis['[data-txt-character-spacing]'].disabled, 'char spacing live').toBe(false);
     expect(dis['[data-txt-font]'].disabled, 'font live').toBe(false);
     expect(dis['[data-txt-size]'].disabled, 'size live').toBe(false);
     expect(dis['[data-txt-bold]'].disabled, 'bold live').toBe(false);

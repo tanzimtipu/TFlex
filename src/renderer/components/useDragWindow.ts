@@ -31,6 +31,26 @@ export interface UseDragWindowArgs {
    *  to that control and never starts a window move (buttons /
    *  inputs / selects / textareas / the color pad / etc.). */
   controlsSelector: string;
+  /** Phase 25 — optional ancestor selector for the drag CLAMP. When
+   *  set, the window is confined to that ancestor's viewport rect
+   *  instead of the whole window, so a surface that floats inside a
+   *  panel (the text-properties card over .workspace-main) can never
+   *  be dragged out of its area. Unset keeps the original
+   *  whole-viewport clamp for every existing caller. */
+  clampSelector?: string;
+  /** DEF-256 — optional selector of a sibling surface this window must
+   *  never be dragged ON TOP OF (the docked Tools palette, which floats
+   *  above the page view on the right). At drag start the avoid
+   *  element's LIVE viewport rect is read; when it is visible the
+   *  window's right edge is capped at that element's left edge minus
+   *  `avoidGap`, so the window can still be moved freely anywhere in
+   *  the remaining area. A hidden / unmounted avoid element is a no-op,
+   *  so the window's behaviour (and its stored offset) is unchanged
+   *  whenever the other surface is closed. */
+  avoidSelector?: string;
+  /** DEF-256 — gutter (CSS px) kept between the window's right edge and
+   *  the avoided surface's left edge. Defaults to 0. */
+  avoidGap?: number;
 }
 
 export interface DragWindowController {
@@ -61,7 +81,7 @@ export interface DragWindowController {
 /** Build a drag controller for a floating window. One window per
  *  hook instance — call it once per floating surface. */
 export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
-  const { controlsSelector } = args;
+  const { controlsSelector, clampSelector, avoidSelector, avoidGap = 0 } = args;
   const windowElRef = useRef<HTMLElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -82,6 +102,12 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
     viewTop: number;
     width: number;
     height: number;
+    /** Phase 25 — the resolved clamp box in viewport px. Defaults to
+     *  the whole viewport; a `clampSelector` ancestor narrows it. */
+    minLeft: number;
+    minTop: number;
+    maxLeft: number;
+    maxTop: number;
   } | null>(null);
 
   const windowRef = useCallback((el: HTMLElement | null): void => {
@@ -105,6 +131,42 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
       const el = windowElRef.current;
       if (el === null) return;
       const rect = el.getBoundingClientRect();
+      // Phase 25 — resolve the clamp box ONCE at drag start. Default:
+      // the whole viewport (the original behaviour). With a
+      // `clampSelector` ancestor, the box is that ancestor's viewport
+      // rect, so the window stays inside its containing area (pinned
+      // to the top/left edge if it is larger than the area).
+      let minLeft = 0;
+      let minTop = 0;
+      let maxLeft = Math.max(0, window.innerWidth - rect.width);
+      let maxTop = Math.max(0, window.innerHeight - rect.height);
+      if (clampSelector !== undefined && typeof el.closest === "function") {
+        const host = el.closest(clampSelector);
+        if (host !== null) {
+          const b = host.getBoundingClientRect();
+          minLeft = b.left;
+          minTop = b.top;
+          maxLeft = Math.max(minLeft, b.right - rect.width);
+          maxTop = Math.max(minTop, b.bottom - rect.height);
+        }
+      }
+      // DEF-256 — never let this window be dragged over the avoided
+      // sibling surface (the open Tools palette): its right edge is
+      // capped at that surface's left edge minus the gutter. The live
+      // rect is read here, at drag start, so a palette created / closed
+      // / resized between drags is always honoured. `Math.max(minLeft,
+      // ...)` keeps the range non-inverted at widths where the free
+      // area is narrower than the window (the window then simply pins
+      // to the left edge of its clamp box instead of jumping).
+      if (avoidSelector !== undefined) {
+        const avoid = document.querySelector(avoidSelector);
+        if (avoid !== null) {
+          const a = avoid.getBoundingClientRect();
+          if (a.width > 0 && a.height > 0) {
+            maxLeft = Math.max(minLeft, Math.min(maxLeft, a.left - rect.width - avoidGap));
+          }
+        }
+      }
       // DEF-151 — anchor the drag from the SYNCHRONOUS ref, not the
       // render-closure `offset`: a second drag in the same session
       // must continue from the LIVE position even if the visual
@@ -118,6 +180,10 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
         viewTop: rect.top,
         width: rect.width,
         height: rect.height,
+        minLeft,
+        minTop,
+        maxLeft,
+        maxTop,
       };
       setDragging(true);
       // Prevent the browser's text-selection / native drag-ghost while
@@ -127,7 +193,7 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
       // dismissal / backdrop close logic still sees where it started.
       e.preventDefault();
     },
-    [controlsSelector],
+    [controlsSelector, clampSelector, avoidSelector, avoidGap],
   );
 
   // While a drag is in flight the window follows the cursor via
@@ -140,10 +206,8 @@ export function useDragWindow(args: UseDragWindowArgs): DragWindowController {
       if (d === null) return;
       const propLeft = d.viewLeft + (e.clientX - d.startClientX);
       const propTop = d.viewTop + (e.clientY - d.startClientY);
-      const maxLeft = Math.max(0, window.innerWidth - d.width);
-      const maxTop = Math.max(0, window.innerHeight - d.height);
-      const clampedLeft = clamp(propLeft, 0, maxLeft);
-      const clampedTop = clamp(propTop, 0, maxTop);
+      const clampedLeft = clamp(propLeft, d.minLeft, d.maxLeft);
+      const clampedTop = clamp(propTop, d.minTop, d.maxTop);
       const next = {
         x: d.startOffsetX + (clampedLeft - d.viewLeft),
         y: d.startOffsetY + (clampedTop - d.viewTop),

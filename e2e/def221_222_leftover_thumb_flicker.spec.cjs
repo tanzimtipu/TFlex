@@ -11,7 +11,7 @@
 //   B. thumb flicker  - 5-shot burst of .thumb-scroller at ~100ms, plus DOM
 //                       identity of .thumb-canvas nodes before vs after (same vs
 //                       replaced) and .thumb-placeholder presence.
-//   C. positive ctrl  - plain in-place edit (no drag, data-edit-confirm="false")
+//   C. positive ctrl  - plain in-place selection + Confirm (no move)
 //                       must leave no leftover box at the old rect.
 //
 // No assertions that would mask the measurement: this spec REPORTS raw values and
@@ -184,6 +184,32 @@ async function readEditor() {
       confirmAttr: btn ? btn.getAttribute('data-edit-confirm') : null,
     };
   });
+}
+
+// Phase 26 — the in-canvas inline editor is retired. The run is selected with
+// the text tool (single click) and MOVED by dragging the run body; the run
+// bar's Confirm commits the relocation through the same engine op.
+async function readRunSelection() {
+  return win.evaluate(() => ({
+    present: !!document.querySelector('[data-content-action-bar="textrun"]'),
+    selection: !!document.querySelector('[data-textrun-selection], .edit-textrun-selection'),
+    editor: document.querySelectorAll('.edit-inline-editor').length,
+  }));
+}
+
+async function selectRun(cx, cy) {
+  await win.mouse.click(cx, cy);
+  await win.waitForTimeout(450);
+  return readRunSelection();
+}
+
+async function dragRun(cx, cy, dx, dy) {
+  await win.mouse.move(cx, cy);
+  await win.mouse.down();
+  await win.mouse.move(cx + dx, cy + dy, { steps: 12 });
+  await win.mouse.up();
+  await win.waitForTimeout(450);
+  return readRunSelection();
 }
 
 // Canvas pixel stats over a VIEWPORT rect on page 1: mean RGB + near-white count.
@@ -525,42 +551,18 @@ test('DEF-221/222: move a body text run + Confirm - leftover box at old rect + t
   const tagsBefore = await tagThumbs();
   console.log(`[THUMBS|BEFORE] count=${tagsBefore.count} placeholders=${tagsBefore.placeholders}`);
 
-  // Open the inline editor on the run: double click (the current UI affordance),
-  // with a single-click + Edit-button fallback.
+  // Phase 26 — the inline editor is retired: select the run, then drag its
+  // body +150/+120 to park a pending move (the bar's Confirm commits it).
   const cx = run.rect.x + run.rect.w / 2;
   const cy = run.rect.y + run.rect.h / 2;
-  await win.mouse.dblclick(cx, cy);
-  await win.waitForTimeout(700);
-  let editor = await readEditor();
-  if (!editor.present) {
-    await win.mouse.click(cx, cy);
-    await win.waitForTimeout(300);
-    const editBtn = win.locator('[aria-label="Edit text run"]').first();
-    if (await editBtn.count()) { await editBtn.click(); await win.waitForTimeout(700); }
-    editor = await readEditor();
-  }
-  console.log(`[EDITOR|OPEN] ${JSON.stringify(editor)}`);
-  expect(editor.present, 'inline editor must open over the body run').toBe(true);
+  let editor = await selectRun(cx, cy);
+  console.log(`[RUN|SELECT] ${JSON.stringify(editor)}`);
+  expect(editor.present, 'the run bar must appear on a single click').toBe(true);
+  expect(editor.editor, 'Phase 26: no in-canvas editor mounts').toBe(0);
 
-  // Drag the editor grip +150/+120 so data-edit-confirm flips to "true".
-  const handle = await win.evaluate(() => {
-    const h = document.querySelector('.edit-inline-editor [data-edit-drag-handle]');
-    if (!h) return null;
-    const r = h.getBoundingClientRect();
-    return { x: r.x, y: r.y, w: r.width, h: r.height };
-  });
-  console.log(`[DRAG-HANDLE] ${JSON.stringify(handle)}`);
-  expect(handle, 'editor drag handle must exist').toBeTruthy();
-  const gx = handle.x + 5;
-  const gy = handle.y + 5;
-  await win.mouse.move(gx, gy);
-  await win.mouse.down();
-  await win.mouse.move(gx + 150, gy + 120, { steps: 14 });
-  await win.mouse.up();
-  await win.waitForTimeout(500);
-  editor = await readEditor();
-  console.log(`[EDITOR|MOVED] ${JSON.stringify(editor)}`);
-  expect(editor.confirmAttr, 'data-edit-confirm must flip to true after the grip drag').toBe('true');
+  editor = await dragRun(cx, cy, 150, 120);
+  console.log(`[RUN|MOVED] ${JSON.stringify(editor)}`);
+  expect(editor.present, 'the run bar must stay after the move drag').toBe(true);
 
   const domPre = await domProbe();
   console.log(`[DOM|PRE-CONFIRM] ${JSON.stringify(domPre)}`);
@@ -582,7 +584,7 @@ test('DEF-221/222: move a body text run + Confirm - leftover box at old rect + t
   await installThumbProbe(2500);
   const mutNodes = await installThumbMutationProbe(4000);
   console.log(`[THUMB-MUT-PROBE] observing ${mutNodes} canvases`);
-  await win.locator('.edit-inline-editor [data-edit-confirm="true"]').first().click();
+  await win.locator('[data-content-action="textrun-confirm"]').first().click();
   const tConfirm = Date.now();
   console.log('[CONFIRM] clicked');
 
@@ -799,24 +801,17 @@ test('DEF-221 control C: PLAIN in-place edit (no drag, confirm=false) leaves no 
 
   const cx = run.rect.x + run.rect.w / 2;
   const cy = run.rect.y + run.rect.h / 2;
-  await win.mouse.dblclick(cx, cy);
-  await win.waitForTimeout(700);
-  let editor = await readEditor();
-  if (!editor.present) {
-    await win.mouse.click(cx, cy);
-    await win.waitForTimeout(300);
-    const editBtn = win.locator('[aria-label="Edit text run"]').first();
-    if (await editBtn.count()) { await editBtn.click(); await win.waitForTimeout(700); }
-    editor = await readEditor();
-  }
-  console.log(`[CONTROL|EDITOR] ${JSON.stringify(editor)}`);
-  expect(editor.present, 'inline editor must open over the body run').toBe(true);
-  expect(editor.confirmAttr, 'no drag -> data-edit-confirm must stay false').toBe('false');
+  // Phase 26 — the inline editor is retired. The positive control is now a
+  // plain selection + Confirm with NO move: no engine op, no mask, no artifact.
+  let editor = await selectRun(cx, cy);
+  console.log(`[CONTROL|RUN] ${JSON.stringify(editor)}`);
+  expect(editor.present, 'the run bar must appear on a single click').toBe(true);
+  expect(editor.editor, 'Phase 26: no in-canvas editor mounts').toBe(0);
 
   const domPre = await domProbe();
   console.log(`[CONTROL|DOM|PRE] ${JSON.stringify(domPre)}`);
 
-  await win.locator('.edit-inline-editor [data-edit-confirm="false"]').first().click();
+  await win.locator('[data-content-action="textrun-confirm"]').first().click();
   await win.waitForTimeout(1400);
 
   const domAfter = await domProbe();
@@ -895,32 +890,14 @@ test('DEF-221 mechanism: on a dense paragraph the white mask erases the run AND 
   const cy = run.rect.y + run.rect.h / 2;
   await win.mouse.dblclick(cx, cy);
   await win.waitForTimeout(700);
-  let editor = await readEditor();
-  if (!editor.present) {
-    await win.mouse.click(cx, cy);
-    await win.waitForTimeout(300);
-    const editBtn = win.locator('[aria-label="Edit text run"]').first();
-    if (await editBtn.count()) { await editBtn.click(); await win.waitForTimeout(700); }
-    editor = await readEditor();
-  }
-  console.log(`[DENSE|EDITOR] ${JSON.stringify(editor)}`);
-  expect(editor.present, 'inline editor must open on the dense run').toBe(true);
-
-  const handle = await win.evaluate(() => {
-    const h = document.querySelector('.edit-inline-editor [data-edit-drag-handle]');
-    if (!h) return null;
-    const r = h.getBoundingClientRect();
-    return { x: r.x, y: r.y };
-  });
-  await win.mouse.move(handle.x + 5, handle.y + 5);
-  await win.mouse.down();
-  await win.mouse.move(handle.x + 5 + 90, handle.y + 5 + 50, { steps: 12 });
-  await win.mouse.up();
-  await win.waitForTimeout(400);
-  editor = await readEditor();
-  console.log(`[DENSE|EDITOR|MOVED] ${JSON.stringify(editor)}`);
-  expect(editor.confirmAttr, 'data-edit-confirm must flip true on the dense run').toBe('true');
-  await win.locator('.edit-inline-editor [data-edit-confirm="true"]').first().click();
+  let editor = await selectRun(cx, cy);
+  console.log(`[DENSE|RUN] ${JSON.stringify(editor)}`);
+  expect(editor.present, 'the run bar must appear on the dense run').toBe(true);
+  expect(editor.editor, 'Phase 26: no in-canvas editor mounts').toBe(0);
+  editor = await dragRun(cx, cy, 90, 50);
+  console.log(`[DENSE|RUN|MOVED] ${JSON.stringify(editor)}`);
+  expect(editor.present, 'the run bar must stay after the dense move drag').toBe(true);
+  await win.locator('[data-content-action="textrun-confirm"]').first().click();
   await win.waitForTimeout(1600);
 
   const after = {};

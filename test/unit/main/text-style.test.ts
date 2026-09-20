@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BUNDLED_EDIT_FONTS,
+  EDIT_FONTS,
+  STANDARD_EDIT_FONTS,
+  isBundledEditFont,
+  isEditFont,
   validateTextBoxStylePatch,
   validateTextStyleFields,
 } from '../../../src/main/services/text-style';
@@ -148,10 +153,10 @@ describe('Phase 21: validateTextBoxStylePatch', () => {
     if (r.ok) expect(r.value).toEqual({});
   });
 
-  it('rejects a font outside the StandardFont allowlist, naming the limitation', () => {
+  it('rejects a font outside the EditFont allowlist, naming the limitation', () => {
     const r = validateTextBoxStylePatch({ font: 'Arial' });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.reason).toContain('StandardFont allowlist');
+    if (!r.ok) expect(r.reason).toContain('supported families');
   });
 
   it('rejects an out-of-range / non-finite size', () => {
@@ -234,5 +239,124 @@ describe('Phase 21: validateTextBoxStylePatch', () => {
       expect(r.value).toEqual({ bold: true });
       expect('evil' in r.value).toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 27 — character spacing (tracking, the `Tc` operator). Contract:
+// finite and bounded to -5..20 pt; absent = 0 (no extra tracking); a
+// present-but-invalid value rejects the payload (preserve-if-valid /
+// reject-if-invalid, same shape as every other style field).
+// ---------------------------------------------------------------------------
+
+describe('Phase 27: charSpacing validation', () => {
+  it('accepts a valid charSpacing and carries it', () => {
+    const r = validateTextStyleFields({ charSpacing: 2.5 });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.charSpacing).toBe(2.5);
+  });
+
+  it('accepts the exact bounds (-5 and 20)', () => {
+    expect(validateTextStyleFields({ charSpacing: -5 }).ok).toBe(true);
+    expect(validateTextStyleFields({ charSpacing: 20 }).ok).toBe(true);
+    const r = validateTextStyleFields({ charSpacing: 0 });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.charSpacing).toBe(0);
+  });
+
+  it('rejects out-of-range / non-finite / non-number, naming the bounds', () => {
+    expect(validateTextStyleFields({ charSpacing: -5.01 }).ok).toBe(false);
+    expect(validateTextStyleFields({ charSpacing: 20.01 }).ok).toBe(false);
+    expect(validateTextStyleFields({ charSpacing: Number.NaN }).ok).toBe(false);
+    expect(validateTextStyleFields({ charSpacing: Number.POSITIVE_INFINITY }).ok).toBe(false);
+    expect(validateTextStyleFields({ charSpacing: '3' }).ok).toBe(false);
+    const r = validateTextStyleFields({ charSpacing: 1e9 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toContain('charSpacing must be a finite number in -5..20');
+  });
+
+  it('ignores an absent charSpacing (no key in the validated subset)', () => {
+    const r = validateTextStyleFields({ bold: true });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect('charSpacing' in r.value).toBe(false);
+      expect(r.value.charSpacing).toBeUndefined();
+    }
+  });
+
+  it('the patch validator treats charSpacing as a known, mergeable key', () => {
+    const r = validateTextBoxStylePatch({ charSpacing: 3 });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.charSpacing).toBe(3);
+  });
+
+  it('a charSpacing-only patch is not an all-unknown caller error', () => {
+    const r = validateTextBoxStylePatch({ charSpacing: 4 });
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a malformed charSpacing on the patch path too', () => {
+    expect(validateTextBoxStylePatch({ charSpacing: 21 }).ok).toBe(false);
+    expect(validateTextBoxStylePatch({ charSpacing: -6 }).ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 27 — the EditFont allowlist grows with the bundled OFL families.
+// Contract: every bundled id validates; an unknown id rejects with a reason
+// naming the font and the supported list (fail loud, never a silent
+// substitution).
+// ---------------------------------------------------------------------------
+
+describe('Phase 27: EditFont allowlist', () => {
+  it('keeps the three standard families and adds the bundled ones', () => {
+    expect(EDIT_FONTS).toContain('Helvetica');
+    expect(EDIT_FONTS).toContain('Times');
+    expect(EDIT_FONTS).toContain('Courier');
+    expect(EDIT_FONTS).toContain('Liberation Sans');
+    expect(EDIT_FONTS).toContain('DejaVu Serif');
+    expect(EDIT_FONTS).toContain('DejaVu Sans Mono');
+    expect(EDIT_FONTS).toHaveLength(6);
+  });
+
+  it('accepts every bundled family id on the text-box patch path', () => {
+    for (const font of BUNDLED_EDIT_FONTS) {
+      const r = validateTextBoxStylePatch({ font });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.font).toBe(font);
+    }
+  });
+
+  it('keeps the three standard families valid', () => {
+    for (const font of STANDARD_EDIT_FONTS) {
+      const r = validateTextBoxStylePatch({ font });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.value.font).toBe(font);
+    }
+  });
+
+  it('rejects an unknown family, naming the font and the supported list', () => {
+    const r = validateTextBoxStylePatch({ font: 'Arial' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toContain('"Arial"');
+      expect(r.reason).toContain('Liberation Sans');
+    }
+  });
+
+  it('rejects a non-string font and a near-miss id', () => {
+    expect(validateTextBoxStylePatch({ font: 3 }).ok).toBe(false);
+    expect(validateTextBoxStylePatch({ font: 'liberation sans' }).ok).toBe(false);
+    expect(validateTextBoxStylePatch({ font: 'LiberationSans' }).ok).toBe(false);
+  });
+
+  it('isEditFont / isBundledEditFont agree with the allowlist', () => {
+    expect(isEditFont('Helvetica')).toBe(true);
+    expect(isEditFont('DejaVu Serif')).toBe(true);
+    expect(isEditFont('Arial')).toBe(false);
+    expect(isEditFont(undefined)).toBe(false);
+    expect(isBundledEditFont('DejaVu Serif')).toBe(true);
+    expect(isBundledEditFont('Helvetica')).toBe(false);
+    expect(isBundledEditFont('Arial')).toBe(false);
   });
 });

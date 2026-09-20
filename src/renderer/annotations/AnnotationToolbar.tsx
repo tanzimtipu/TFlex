@@ -98,6 +98,13 @@ export interface AnnotationToolbarProps {
   /** Phase 19 — reports a new MRU order after the user arms a tool, so
    *  the host can persist it. */
   onAnnotationRecentToolsChange?: (ids: string[]) => void;
+  /** Phase 26 — the SELECTED committed annotation's colour (or null when
+   *  nothing is selected). The in-canvas colour palette that a
+   *  double-clicked shape used to open is gone: this toolbar's colour
+   *  control is the shape / text colour path, so it stays visible (and
+   *  reflects the annotation's actual colour) while an annotation is
+   *  selected, even though the active tool is plain "select". */
+  selectedColor?: AnnotationColorValue | null;
 }
 
 const MARKUP_TOOLS: AnnotationTool[] = ["highlight", "underline", "strikeout"];
@@ -414,9 +421,9 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
     state.tool === "textbox" ||
     state.tool === "callout" ||
     state.tool === "note";
-  const showColorRow = isColorTool && !disabled;
+  const showColorRow = (isColorTool || (props.selectedColor ?? null) !== null) && !disabled;
 
-  const activeCssColor = annotationColorToCss(state.color);
+  const activeCssColor = annotationColorToCss(props.selectedColor ?? state.color);
   const isBuiltInActive = isAnnotationColor(state.color);
 
   const toolTitle = (tool: AnnotationTool, isBlocked: boolean, isHandBlocked: boolean): string =>

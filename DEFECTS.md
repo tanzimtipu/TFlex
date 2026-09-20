@@ -5,6 +5,79 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-258: Edit-mode text-run commit silently drops character spacing (and every other Phase-21 style field)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 27
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `assets/samples/report.pdf`.
+2. Click `button[aria-label="Edit content"]`, then `[data-edit-tool="text"]`.
+3. Click a text run (e.g. the page-1 title `TFlex Technical Report`); the panel opens in text mode with `[data-txt-text]` showing the run's text.
+4. Set `[data-txt-character-spacing]` to `6`.
+5. Type into `[data-txt-text]` (append ` X`) so the Phase-26 session renders `[data-edit-run-preview]`, then blur the field to commit.
+6. `Save As` and decode the saved page content stream.
+   Reproduced by `e2e/phase27_fonts_spacing.spec.cjs -g C1d`.
+
+Expected: the run preview loosens (it does: computed `letter-spacing: 11.3137px` = 6 pt x page scale) and the committed run bakes `6 Tc` into the page content stream, per Phase 27 criterion 1 ("live for ... edited text runs; ... survives save/reopen (round-trip asserted in the baked stream by the `Tc` operator)").
+
+Actual: the run text IS committed (saved stream contains `<54466C657820546563686E6963616C205265706F72742058> Tj` = "TFlex Technical Report X") but the saved file contains NO `Tc` operator. The panel's spacing is silently discarded on commit. Root cause: `src/renderer/App.tsx` `handleEditTextRun` (lines ~2373-2381) forwards only `page`/`rect`/`newText`/`font`/`size`/`color`/`oldRect` to `engine.editTextRun`, even though `EditTextRunPayload extends TextStyleFields` and the engine emits `Tc` whenever `charSpacing` is present (proven by `e2e/phase27_fonts_spacing.spec.cjs -g C1c` and `test/unit/main/engine.test.ts` "Phase 27: character spacing (Tc)"). The same drop affects `bold`/`italic`/`underline`/`align`/`lineHeight`/`baselineShift`/`highlight`/`list`/`indent` on this path.
+Screenshot: screenshots/phase27-c4-compose.png (spacing works for text boxes); the C1d run leg has no persisted artifact because the operator is dropped.
+
+History:
+- qa: opened (Phase 27 validation, C1d; preview shows 6 pt tracking but the baked stream has no `Tc`)
+- qa: CLOSED (2026-09-21 Phase-27 close-out retest; `e2e/retests/def258_retest.spec.cjs`, 2 passed, 18.0s). Non-default leg: select the page-1 run `TFlex Technical Report` through the text tool, set char spacing 6 + bold + align right, append ` X`, blur -> the captured wire payload (recorded at the main-process `engine:editTextRun` IPC handler) is `{"page":1,"rect":{"x":183.288,"y":65.232,"width":244.224,"height":24},"newText":"TFlex Technical Report X","font":"Helvetica","size":12,"color":{"r":0,"g":0,"b":0},"align":"right","bold":true,"charSpacing":6}`; the saved page content stream carries exactly one `6 Tc` inside a BT/Tj text object and embeds `Helvetica-Bold`; after Save As + reopen the text layer shows the edited run and the file still decodes `6 Tc`. Default leg: an unstyled run commit sends the legacy minimal payload `{page,rect,newText,font,size,color}` (no style keys) and the saved streams contain 0 `Tc` operators. Phase 27 C1d now passes (8/8).
+
+## DEF-257: A committed Edit-mode text box loses its `.edit-box` surface after Edit-mode close/reopen (unmovable)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 26
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `assets/samples/report.pdf`.
+2. Click `button[aria-label="Edit content"]` (Edit mode), then `[data-edit-tool="box"]`.
+3. Drag a box on page 1. The panel's `[data-txt-text]` field focuses (Phase 26).
+4. Type `DEF257 BOX` into `[data-txt-text]` and blur the field to commit the session.
+5. Probe `document.querySelectorAll('.edit-box').length` and `window.tflexDiagnostics().engineState.textBoxes.length` -> both 1.
+6. Click `button[aria-label="Edit content"]` to close Edit mode, then click it again to re-open it; wait for `[data-edit-toolbar]`.
+7. Probe the same two counts.
+   Reproduced by `e2e/retests/def257_repro.spec.cjs`.
+
+Expected: the committed box stays selectable/movable in Edit mode after the close/reopen, i.e. `.edit-box` is still rendered from the per-tab edit registry (the engine keeps the box).
+Actual: `[DEF257|AFTER-REOPEN] {"editBoxes":0,"engineTextBoxes":1,"engineText":["DEF257 BOX"]}`. The engine still owns the box (visible and saved), but the renderer registry was emptied, so no `.edit-box` surface exists. Clicking the box in Edit mode hits nothing (`hitTextBox` misses) and starts a NEW drag-to-create instead of selecting/moving the existing box. Root cause: `DocumentView`'s text-target-change effect runs `delete-text-box` for a target with `isNew === true`; the Phase-26 `isNew` flag is never cleared when the session commits a new box (`commitTextSession` -> `onCommitTextBox`), so closing Edit mode drops the committed box from `edit.textBoxes`.
+Evidence: `[DEF257|BEFORE] {"editBoxes":1,"engineTextBoxes":1}` -> `[DEF257|AFTER-REOPEN] {"editBoxes":0,"engineTextBoxes":1}`. Content is not lost (engine + save intact), hence MEDIUM not HIGH.
+Screenshot: none (DOM/engine counts are the evidence; `npx playwright test e2e/retests/def257_repro.spec.cjs`).
+
+History:
+- qa: opened (2026-09-20; Phase-26 validation, repointed phase21 C4 back-to-text step surfaced it)
+- qa: CLOSED (2026-09-20 retest; `e2e/retests/def257_repro.spec.cjs`, 1 passed, 12.3s). Place/type/commit -> `[DEF257|BEFORE] {"editBoxes":1,"engineTextBoxes":1,"id":"d543dbe6-...","left":590.2}`. Isolation probe (tool off/on while Edit stays open, so the reopen rehydration cannot mask a dropped mirror): `[DEF257|AFTER-TOGGLE] {"editBoxes":1,"engineTextBoxes":1}` — the committed box is no longer treated as an abandoned placement. Close/reopen: `[DEF257|AFTER-REOPEN] {"editBoxes":0,"engineTextBoxes":1,"boxToolPressed":"false"}` (tool reset to "off" by design). Re-arm `[data-edit-tool="box"]`: `[DEF257|AFTER-ARM] {"editBoxes":1,"ids":["d543dbe6-..."],"engineIds":["d543dbe6-..."]}` — exactly one surface, same id. Select: `[DEF257|AFTER-SELECT] {"editBoxes":1,"toolbar":1,"selected":1}` — click selects, no new box. Move: `[DEF257|AFTER-MOVE] left 590.2 -> 650.2px (+60), engineRect.x 183.6 -> 215.4pt (+31.8)`. Save As -> reopen: `[DEF257|REOPENED] {"engineTextBoxes":1,"texts":["DEF257 BOX"]}`. `[DEF257|CONSOLE-DELETE-LINES] []` — no `delete-text-box`/abandoned log. Design nuance: reopening Edit mode resets the per-tab tool to "off" intentionally (a stray text tool must not leak into the next session), so the box needs a re-arm before its `.edit-box` surface renders.
+
+## DEF-256: At 640px the Tools palette covers the floating text-properties panel (font + colour controls unreachable)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 25
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `report.pdf`.
+2. Arm the text-box tool so `.text-props-panel` (`.text-props-float`, z-index 25) is open.
+3. Open the Tools palette (`[data-tools-toggle]`).
+4. Resize the window to 640x800, then 820x800, then 1440x800 (`BrowserWindow.setSize`).
+5. Measure both rects and probe `document.elementFromPoint` at the centre of the enabled `[data-txt-font]`, `[data-txt-bold]`, `[data-txt-color]`, `[data-txt-align-left]` controls (also run `e2e/phase25_text_panel_float.spec.cjs` C4(d), which records this in screenshots/phase25-c4-palette.json).
+
+Expected: as at 1440 (overlap 0), the floating card's controls stay clickable while the Tools palette is open at the minimum supported width (the DEF-241 coexistence contract).
+Actual: at 640x800 the panel is [232,193,480,782.4] and the palette [296,96,640,800] - 108449.6px2 overlap (74% of the card), palette z-index 30 above the panel's 25. `elementFromPoint` at the `[data-txt-font]` and `[data-txt-color]` centres resolves to `.tools-palette-entry tools-palette-entry-list`, so both are unclickable. At 820x800 the `[data-txt-color]` centre resolves to `.tools-badge-tracker tools-badge-tracker-open` (2357.6px2 overlap). At 1440x800 overlap is 0 and all four controls resolve inside the panel. At 640 the card cannot be dragged clear: the clamp box `.workspace-main` is [220,44,640,800] and the card is 248px wide, so its right edge is always >= 468 while the palette starts at 296 (minimum 172px overlap). The Phase-25 retirement removed the DEF-241 `--tf-tools-clear` cap that had kept the palette flush to the page column at 640 (DEF-241 retest recorded overlapX 0).
+Screenshot: screenshots/phase25-c4-palette-640.png, screenshots/phase25-c4-palette-820.png, screenshots/phase25-c4-palette.json
+
+History:
+- qa: opened (2026-09-20; Phase-25 validation C4(d))
+- qa: CLOSED (2026-09-20 retest; `e2e/retests/def256_retest.spec.cjs`, 2 passed). Both surfaces open, overlap 0 and `elementFromPoint` inside each surface at all three sizes — 640x800 panel [232,193,480,782.4] palette [488,96,640,800] (font/colour/palette-entry all `inside:true`); 820x700 panel [232,193,480,782.4] palette [488,96,820,700]; 1440x900 panel [232,105,480,694.4] palette [1096,96,1440,900]. Drag toward the palette at 640 stops with gap 8px (panel pinned [232,193,480,782.4], palette left 488), controls still hittable. Palette closed: close does not move the panel, a far drag reaches the page-view right edge (panel right 640 = `.workspace-main` right 640) and a -60px drag moves exactly -60 (no jump). Phase-25 no-reflow holds: 153 rAF frames, canvas left/top/width and scrollTop spans all 0. Badge [452,350,488,450] over panel right edge; 0 panel-control hit points covered (its 9px content overhang clears every centre). Screenshot screenshots/def256-retest-640.png shows both surfaces fully usable.
+
 ## DEF-254: Selecting an annotation on a page other than 1 closes the text-properties panel when a neighbouring page mounts
 
 - Status: CLOSED

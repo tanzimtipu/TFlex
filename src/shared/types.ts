@@ -540,8 +540,19 @@ export interface MoveSignaturePayload {
  *  the three pdf-lib StandardFonts families whose WinAnsiEncoding maps
  *  cleanly to Latin text, so round-trip extraction is reliable. Embedded
  *  subset fonts in the source document cannot be matched exactly — see
- *  the Phase 10 report for the feasibility limit. */
-export type EditFont = 'Helvetica' | 'Times' | 'Courier';
+ *  the Phase 10 report for the feasibility limit.
+ *
+ *  Phase 27 — the allowlist grows with the OFL font families bundled under
+ *  `assets/fonts/` (see `src/main/services/fonts.ts`). A bundled family is
+ *  embedded as a subset on demand; an unreadable font file fails loud with
+ *  a typed engine-error (never a silent substitution). */
+export type EditFont =
+  | 'Helvetica'
+  | 'Times'
+  | 'Courier'
+  | 'Liberation Sans'
+  | 'DejaVu Serif'
+  | 'DejaVu Sans Mono';
 
 /** Phase 10 — RGB color for drawn text, components in [0,1]. Matches
  *  pdf-lib's `rgb()` helper range. */
@@ -590,6 +601,12 @@ export interface TextStyleFields {
    *  alignment operate inside the indented content box, and a `list` prefix
    *  sits AT the indent. Default `0`. Validated to `0..200`. */
   indent?: number;
+  /** Phase 27 — character spacing (tracking): extra space inserted between
+   *  glyphs, in points, emitted as the `Tc` text-state operator inside the
+   *  text object. Default `0` = no extra tracking (the operator is not
+   *  emitted, so legacy streams stay byte-identical). Positive loosens,
+   *  negative tightens. Validated to `-5..20`. */
+  charSpacing?: number;
 }
 
 /** Phase 10 — payload for `engine.editTextRun`. Replaces the text run

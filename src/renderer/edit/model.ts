@@ -54,6 +54,9 @@ export interface EditTextStyle {
   highlight?: EditColor;
   list?: TextListStyle;
   indent?: number;
+  /** Phase 27 — character spacing (tracking) in points, emitted as `Tc`.
+   *  Absent / 0 is the documented default (no extra tracking). */
+  charSpacing?: number;
 }
 
 /** Build the default style from a font choice. Size defaults to 12 pt,
@@ -94,6 +97,7 @@ export function mergeTextBoxStyle(
   if (patch.lineHeight !== undefined) next.lineHeight = patch.lineHeight;
   if (patch.list !== undefined) next.list = patch.list;
   if (patch.indent !== undefined) next.indent = patch.indent;
+  if (patch.charSpacing !== undefined) next.charSpacing = patch.charSpacing;
   return next;
 }
 

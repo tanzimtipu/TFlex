@@ -586,6 +586,16 @@ describe('Phase 10: editDefaultFont validation', () => {
     expect(normalizeSettings({ editDefaultFont: 'helvetica' }).editDefaultFont).toBeUndefined();
   });
 
+  // Phase 27 — the allowlist widens with the bundled OFL families; an unknown
+  // id is still rejected (preserve-if-valid / reject-if-invalid).
+  it('preserves the Phase-27 bundled family ids and still rejects near-misses', () => {
+    expect(normalizeSettings({ editDefaultFont: 'Liberation Sans' }).editDefaultFont).toBe('Liberation Sans');
+    expect(normalizeSettings({ editDefaultFont: 'DejaVu Serif' }).editDefaultFont).toBe('DejaVu Serif');
+    expect(normalizeSettings({ editDefaultFont: 'DejaVu Sans Mono' }).editDefaultFont).toBe('DejaVu Sans Mono');
+    expect(normalizeSettings({ editDefaultFont: 'LiberationSans' }).editDefaultFont).toBeUndefined();
+    expect(normalizeSettings({ editDefaultFont: 'dejavu serif' }).editDefaultFont).toBeUndefined();
+  });
+
   it('rejects non-string editDefaultFont values', () => {
     expect(normalizeSettings({ editDefaultFont: 123 }).editDefaultFont).toBeUndefined();
     expect(normalizeSettings({ editDefaultFont: true }).editDefaultFont).toBeUndefined();

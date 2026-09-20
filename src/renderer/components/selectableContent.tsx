@@ -28,8 +28,8 @@
 // clicks on the bar's buttons complete normally.
 
 import { useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
-import { GripVertical, MousePointer2 } from "lucide-react";
+import type { PointerEvent as ReactPointerEvent, ReactElement, ReactNode } from "react";
+import { GripVertical } from "lucide-react";
 import { TfBar } from "./motion/TfMotion";
 import {
   moveImageRect,
@@ -124,30 +124,6 @@ export function ContentGrip(props: {
       <span className="content-grip-label" data-drag-grip-label={label}>
         {label}
       </span>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// MoveHint — the "Double click to edit" cursor hint (DEF-153(c))
-//
-// Positioned next to the cursor while content is selected / movable.
-// Pointer-transparent so it never blocks the page or the action bar.
-
-export function MoveHint(props: {
-  /** Viewport-CSS position of the hint chip (left/top). */
-  at: { x: number; y: number } | null;
-}): ReactElement | null {
-  const { at } = props;
-  if (at === null) return null;
-  const style: CSSProperties = {
-    left: at.x + 14,
-    top: at.y + 20,
-  };
-  return (
-    <div className="content-move-hint" data-move-hint role="status" style={style}>
-      <MousePointer2 size={16} aria-hidden />
-      <span>Double click to edit</span>
     </div>
   );
 }

@@ -60,6 +60,9 @@ const FONT_CSS: Record<EditFont, string> = {
   Helvetica: "'Inter', 'Helvetica Neue', Arial, sans-serif",
   Times: "Georgia, 'Times New Roman', serif",
   Courier: "'Courier New', Courier, monospace",
+  "Liberation Sans": "'Liberation Sans', Arial, sans-serif",
+  "DejaVu Serif": "'DejaVu Serif', Georgia, serif",
+  "DejaVu Sans Mono": "'DejaVu Sans Mono', Consolas, monospace",
 };
 
 const DEFAULT_COLOR: EditColor = { r: 0.635, g: 0.635, b: 0.667 }; // zinc-400

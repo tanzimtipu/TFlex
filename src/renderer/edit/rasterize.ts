@@ -31,7 +31,7 @@
 // without a real GPU.
 
 import type { ImageRect } from "./geometry";
-import { colorToHex, fontFamilyFor } from "./EditInlineEditor";
+import { colorToHex, fontFamilyFor } from "./editColor";
 import type { EditFont } from "../../shared/types";
 
 /** Detect the image format from magic bytes. Mirrors the engine's

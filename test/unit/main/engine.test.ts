@@ -5,6 +5,7 @@ import { inflateSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { PDFDocument, PDFName, PDFRawStream, StandardFonts } from 'pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
+import { embedEditFont, getBundledFontDir, setBundledFontDir } from '../../../src/main/services/fonts';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -4379,7 +4380,7 @@ describe('Phase 21: updateTextBox', () => {
     expect(badFont.ok).toBe(false);
     if (!badFont.ok) {
       expect(badFont.error.code).toBe('engine-error');
-      expect(badFont.error.message).toContain('StandardFont allowlist');
+      expect(badFont.error.message).toContain('supported families');
     }
 
     // A rejected patch must not have mutated the box.
@@ -4679,7 +4680,7 @@ describe('Phase 21: payload validation on add/edit', () => {
     expect(badFont.ok).toBe(false);
     if (!badFont.ok) {
       expect(badFont.error.code).toBe('engine-error');
-      expect(badFont.error.message).toContain('StandardFont allowlist');
+      expect(badFont.error.message).toContain('supported families');
     }
   });
 });
@@ -5075,5 +5076,285 @@ describe('Phase 21 follow-up: highlight removal via patch null', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Phase 27 — character spacing (the `Tc` text-state operator). Emission rule:
+// a non-zero `charSpacing` is emitted inside the text object (after BT,
+// before the show operator); absent/0 emits no `Tc`.
+// ---------------------------------------------------------------------------
+
+describe('Phase 27: character spacing (Tc)', () => {
+  it('emits Tc at the value inside the text object for a spaced run, omits it for default', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p27-tc.pdf');
+    await engine.loadDocument('p27-tc', path);
+    await engine.addTextBox('p27-tc', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 60 }, text: 'SPACED', charSpacing: 3,
+    });
+    await engine.addTextBox('p27-tc', {
+      page: 1, rect: { x: 72, y: 172, width: 300, height: 60 }, text: 'PLAIN',
+    });
+    const sr = await engine.save('p27-tc');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+
+    // Exactly one Tc operator in the whole page, at the supplied value.
+    const tcOps = content.match(/(?:^|\s)(-?[\d.]+) Tc(?:\s|$)/g) ?? [];
+    expect(tcOps.length).toBe(1);
+    expect(tcOps[0]).toContain('3 Tc');
+
+    // It lands INSIDE the text object: BT ... Tc ... Tj ... ET.
+    const bt = content.indexOf('BT');
+    const tc = content.indexOf('3 Tc');
+    const glyph = content.indexOf(hexOperand('SPACED'));
+    const et = content.indexOf('ET', tc);
+    expect(bt).toBeGreaterThanOrEqual(0);
+    expect(bt).toBeLessThan(tc);
+    expect(tc).toBeLessThan(glyph);
+    expect(glyph).toBeLessThan(et);
+
+    // The default box still draws its glyphs, with no extra Tc.
+    expect(content.includes(hexOperand('PLAIN'))).toBe(true);
+  });
+
+  it('emits a negative Tc for tightening', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p27-tc-neg.pdf');
+    await engine.loadDocument('p27-tc-neg', path);
+    await engine.addTextBox('p27-tc-neg', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 60 }, text: 'TIGHT', charSpacing: -2,
+    });
+    const sr = await engine.save('p27-tc-neg');
+    const content = await decodedPage0Content(sr.ok ? sr.value : '');
+    expect(content).toMatch(/(?:^|\s)-2 Tc(?:\s|$)/);
+  });
+
+  it('wrap/auto-fit accounts for the spacing so a tracked line wraps instead of overflowing', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p27-wrap.pdf');
+    await engine.loadDocument('p27-wrap', path);
+
+    const probe = await PDFDocument.create();
+    const probeFont = await probe.embedFont(StandardFonts.Helvetica);
+    const text = 'ALPHA BETA GAMMA DELTA';
+    const naturalWidth = probeFont.widthOfTextAtSize(text, 12);
+    const rectX = 72;
+    // The box is exactly wide enough for the whole text at the default 0
+    // spacing, but 8pt of tracking per inter-glyph gap pushes it over.
+    const rectW = naturalWidth + 1;
+
+    await engine.addTextBox('p27-wrap', {
+      page: 1, rect: { x: rectX, y: 72, width: rectW, height: 300 }, text,
+    });
+    await engine.addTextBox('p27-wrap', {
+      page: 1, rect: { x: rectX, y: 372, width: rectW, height: 300 }, text, charSpacing: 8,
+    });
+    const sr = await engine.save('p27-wrap');
+    const matrices = textMatrices(await decodedPage0Content(sr.ok ? sr.value : ''));
+
+    // Box 1 (no spacing): one line at the legacy baseline.
+    const box1 = matrices.filter((m) => m.y > 700);
+    expect(box1.length).toBe(1);
+    expect(box1[0].x).toBeCloseTo(rectX, 3);
+
+    // Box 2 (8pt tracking): the SAME text must wrap into at least two lines
+    // rather than overflow the box on one line.
+    const box2 = matrices.filter((m) => m.y < 420);
+    expect(box2.length).toBeGreaterThanOrEqual(2);
+    for (const m of box2) expect(m.x).toBeCloseTo(rectX, 3);
+  });
+
+  it('charSpacing survives save + reopen through the /TFlexBox registry', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p27-rt.pdf');
+    await engine.loadDocument('p27-rt', path);
+    await engine.addTextBox('p27-rt', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 200 }, text: 'ROUNDTRIP', charSpacing: 4,
+    });
+    await engine.addTextBox('p27-rt', {
+      page: 1, rect: { x: 72, y: 372, width: 300, height: 200 }, text: 'LEGACY',
+    });
+    const saveAs = await engine.saveAs('p27-rt', join(dir, 'p27-rt-out.pdf'));
+    expect(saveAs.ok).toBe(true);
+
+    const reopened = new EngineService();
+    await reopened.loadDocument('p27-rt-2', saveAs.ok ? saveAs.value : '');
+    const state = await reopened.getState('p27-rt-2');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      expect(state.value.textBoxes![0].charSpacing).toBe(4);
+      // A box that never carried spacing keeps it absent (legacy bytes).
+      expect(state.value.textBoxes![1].charSpacing).toBeUndefined();
+    }
+  });
+
+  it('updateTextBox applies charSpacing and rejects an out-of-range value', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p27-patch.pdf');
+    await engine.loadDocument('p27-patch', path);
+    const add = await engine.addTextBox('p27-patch', {
+      page: 1, rect: { x: 72, y: 72, width: 300, height: 60 }, text: 'PATCHME',
+    });
+    const id = add.ok ? add.value.textBoxes![0].id : '';
+
+    const good = await engine.updateTextBox('p27-patch', id, { charSpacing: 6 });
+    expect(good.ok).toBe(true);
+    if (good.ok) expect(good.value.textBoxes![0].charSpacing).toBe(6);
+
+    const bad = await engine.updateTextBox('p27-patch', id, { charSpacing: 21 });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.error.message).toContain('charSpacing must be a finite number in -5..20');
+  });
+});
 
 
+
+
+// ---------------------------------------------------------------------------
+// Phase 27 — bundled font families: the embedding path, the family metrics,
+// the allowlist rejection and the fail-loud missing-file path.
+// ---------------------------------------------------------------------------
+
+/** Walk every indirect object of a saved PDF and report the embedded-font
+ *  evidence: the number of /FontFile2 (the embedded TrueType program) entries
+ *  and every /BaseFont name seen. Object streams are normalised by
+ *  `PDFDocument.load`, so this works on the default (object-stream) save. */
+async function embeddedFontEvidence(path: string): Promise<{ fontFile2: number; baseFonts: string[] }> {
+  const doc = await PDFDocument.load(await readFile(path), { updateMetadata: false });
+  let fontFile2 = 0;
+  const baseFonts: string[] = [];
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    const s = obj.toString();
+    if (s.includes('FontFile2')) fontFile2 += 1;
+    const m = /\/BaseFont\s*\/([^\s/]+)/.exec(s);
+    if (m) baseFonts.push(m[1]);
+  }
+  return { fontFile2, baseFonts };
+}
+
+describe('Phase 27: bundled font embedding', () => {
+  it('embeds every bundled family as a subset with a /FontFile2 program', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p27-embed.pdf');
+    await engine.loadDocument('p27-embed', path);
+
+    const families = ['Liberation Sans', 'DejaVu Serif', 'DejaVu Sans Mono'] as const;
+    let y = 72;
+    for (const font of families) {
+      const add = await engine.addTextBox('p27-embed', {
+        page: 1, rect: { x: 72, y, width: 400, height: 40 }, text: `${font} sample`, font,
+      });
+      expect(add.ok).toBe(true);
+      y += 60;
+    }
+
+    const sr = await engine.save('p27-embed');
+    expect(sr.ok).toBe(true);
+    const ev = await embeddedFontEvidence(sr.ok ? sr.value : '');
+    // One embedded program per family (the helper caches per document+style).
+    expect(ev.fontFile2).toBeGreaterThanOrEqual(3);
+    expect(ev.baseFonts).toContain('TFlexLiberationSans');
+    expect(ev.baseFonts).toContain('TFlexDejaVuSerif');
+    expect(ev.baseFonts).toContain('TFlexDejaVuSansMono');
+  });
+
+  it('uses the bundled font metrics (monospace advance), not the standard-font metrics', async () => {
+    const doc = await PDFDocument.create();
+    const mono = await embedEditFont(doc, 'DejaVu Sans Mono', false, false);
+    const serif = await embedEditFont(doc, 'DejaVu Serif', false, false);
+    const helv = await embedEditFont(doc, 'Helvetica', false, false);
+
+    // Monospace: the narrow 'i' and the wide 'W' have the same advance.
+    expect(mono.widthOfTextAtSize('i', 12)).toBeCloseTo(mono.widthOfTextAtSize('W', 12), 6);
+    // ...and that advance is NOT Helvetica's narrow 'i'.
+    expect(mono.widthOfTextAtSize('i', 12)).not.toBeCloseTo(helv.widthOfTextAtSize('i', 12), 3);
+    expect(serif.widthOfTextAtSize('i', 12)).not.toBeCloseTo(helv.widthOfTextAtSize('i', 12), 3);
+  });
+
+  it('preserves a bundled family for a text box through save + reopen', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p27-rt.pdf');
+    await engine.loadDocument('p27-rt', path);
+
+    const add = await engine.addTextBox('p27-rt', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 60 },
+      text: 'ROUNDTRIP FONT',
+      font: 'DejaVu Serif',
+      bold: true,
+    });
+    expect(add.ok).toBe(true);
+
+    const saveAs = await engine.saveAs('p27-rt', join(dir, 'p27-rt-out.pdf'));
+    expect(saveAs.ok).toBe(true);
+
+    const reopened = new EngineService();
+    await reopened.loadDocument('p27-rt-2', saveAs.ok ? saveAs.value : '');
+    const st = await reopened.getState('p27-rt-2');
+    expect(st.ok).toBe(true);
+    if (st.ok) {
+      const box = st.value.textBoxes![0];
+      expect(box.font).toBe('DejaVu Serif');
+      expect(box.bold).toBe(true);
+    }
+  });
+
+  it('rejects an unsupported family with a typed engine-error naming the font', async () => {
+    const engine = new EngineService();
+    const path = await blankOnePagePdf('p27-badfont.pdf');
+    await engine.loadDocument('p27-badfont', path);
+
+    const bad = await engine.addTextBox('p27-badfont', {
+      page: 1,
+      rect: { x: 72, y: 72, width: 300, height: 60 },
+      text: 'NOPE',
+      font: 'Comic Sans' as never,
+    });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) {
+      expect(bad.error.code).toBe('engine-error');
+      expect(bad.error.message).toContain('"Comic Sans"');
+      expect(bad.error.message).toContain('Liberation Sans');
+    }
+  });
+
+  it('fails loud with a typed engine-error when the bundled font file is missing', async () => {
+    const emptyDir = await mkdtemp(join(tmpdir(), 'tflex-nofonts-'));
+    const originalDir = getBundledFontDir();
+    setBundledFontDir(emptyDir);
+    try {
+      const engine = new EngineService();
+      const path = await blankOnePagePdf('p27-missing-font.pdf');
+      await engine.loadDocument('p27-missing-font', path);
+      const add = await engine.addTextBox('p27-missing-font', {
+        page: 1,
+        rect: { x: 72, y: 72, width: 300, height: 60 },
+        text: 'MISSING FILE',
+        font: 'Liberation Sans',
+      });
+      expect(add.ok).toBe(true);
+
+      const sr = await engine.save('p27-missing-font');
+      expect(sr.ok).toBe(false);
+      if (!sr.ok) {
+        expect(sr.error.code).toBe('engine-error');
+        expect(sr.error.message).toContain('Liberation Sans');
+        expect(sr.error.message).toContain('LiberationSans-Regular.ttf');
+      }
+
+      // The same failure on the immediate edit path (shared embedding helper).
+      const edit = await engine.editTextRun('p27-missing-font', {
+        page: 1,
+        rect: { x: 72, y: 200, width: 200, height: 16 },
+        newText: 'EDIT',
+        font: 'DejaVu Serif',
+      });
+      expect(edit.ok).toBe(false);
+      if (!edit.ok) {
+        expect(edit.error.code).toBe('engine-error');
+        expect(edit.error.message).toContain('DejaVu Serif');
+      }
+    } finally {
+      setBundledFontDir(originalDir);
+      await rm(emptyDir, { recursive: true, force: true });
+    }
+  });
+});
