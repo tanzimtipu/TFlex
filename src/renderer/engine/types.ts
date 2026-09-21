@@ -104,6 +104,16 @@ export interface EngineState extends SharedEngineState {
  *  standard open-from-bytes flow. */
 export type ExtractResult = Result<ArrayBuffer, EngineError>;
 
+/** Phase 32 — both documents' renderer-normalized states from one
+ *  cross-document page move/copy round-trip. Mirrors the shared
+ *  `MovePagesBetweenDocsResult` (src/shared/types.ts) but carries the
+ *  renderer's `EngineState` — annotations / form fields / signatures
+ *  normalized — rather than the raw wire state. */
+export interface MovePagesBetweenDocsOutcome {
+  from: EngineState;
+  to: EngineState;
+}
+
 /** Engine API consumed by the renderer. Wraps the IPC surface (when
  *  preload exposes it) or the in-memory stub. */
 export interface EngineApi {
@@ -148,6 +158,24 @@ export interface EngineApi {
   /** Extract an explicit list of pages (visible 1-based) into a new
    *  document. Returns the new document's bytes. */
   extract(docId: string, pages: number[]): Promise<Result<ArrayBuffer, EngineError>>;
+
+  /** Phase 32 (Multi Mode) — atomically move or copy pages from one open
+   *  document to another. The renderer-facing convention is 1-BASED, the
+   *  same as `extract` / `insertFromPdf`: `pages` are 1-based visible page
+   *  numbers in `fromDocId`, and `atIndex` is the 1-based insertion point
+   *  in `toDocId`. `atIndex === -1` is the "append" sentinel (it passes
+   *  through unchanged; the adapter maps every other value to the IPC's
+   *  0-based index). `mode: 'move'` removes the pages from the source,
+   *  `'copy'` leaves the source untouched. Both documents' post-op states
+   *  come back from the single round-trip and are normalized + cached by
+   *  the adapter. Fails with `'same-document'` when the two ids are equal. */
+  movePagesBetweenDocs(
+    fromDocId: string,
+    pages: number[],
+    toDocId: string,
+    atIndex: number,
+    mode: "move" | "copy",
+  ): Promise<Result<MovePagesBetweenDocsOutcome, EngineError>>;
 
   /** Add an annotation. The renderer generates the id and timestamps; the
    *  engine stores it and returns the new state (annotation ops are
@@ -627,6 +655,8 @@ export function describeEngineError(code: EngineError, context?: string): string
       return `Could not write file${tail}`;
     case "not-found":
       return "Item not found.";
+    case "same-document":
+      return "Source and target must be different documents.";
   }
 }
 

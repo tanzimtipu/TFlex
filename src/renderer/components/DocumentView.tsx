@@ -1,6 +1,6 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { AnimatePresence } from "motion/react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
 import {
   forwardRef,
   useCallback,
@@ -36,6 +36,16 @@ import type { OutlineNode } from "../pdf/pdfjs";
 import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
 import { SideRail } from "./SideRail";
+import { usePageDragOptional } from "../state/PageDragContext";
+import {
+  buildDragSource,
+  canvasDropIsAfter,
+  canvasInsertIndex,
+  dropEffectFor,
+  dropModeFromEvent,
+  resolveDrop,
+  type PageDropOp,
+} from "../state/pageDrag";
 import { Toolbar } from "./Toolbar";
 import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
 import { EditToolbar, defaultEditHint } from "../edit/EditToolbar";
@@ -319,6 +329,39 @@ interface DocumentViewProps {
    *  state. Threaded to the SideRail, whose expand/collapse button
    *  calls it; the rail never owns the value itself. */
   onTogglePagesPanelCollapsed?: () => void;
+  /** Phase 32 — Multi Mode. When `false`, this view does NOT render its
+   *  own SideRail: the two-pane workspace suppresses both panes' rails
+   *  (the phase's ONE shared rail with a section per document is a later
+   *  chunk) and the workspace grid collapses to the page column alone.
+   *  Defaults to `true`, so single-document behaviour is unchanged. */
+  showRail?: boolean;
+  /** Phase 32 — Multi Mode state for the CommandBar control. The host
+   *  (App) owns the mode; this view only threads it to the toolbar. */
+  multiModeEnabled?: boolean;
+  onMultiModeToggle?: () => void;
+  /** Phase 32 (chunk 2b) — an external page jump: the shared Multi Mode
+   *  rail navigates the pane it belongs to. `seq` makes each request
+   *  unique, so clicking the same thumbnail twice both land and a
+   *  re-render never replays a stale request. `null` (the single-mode
+   *  default) means this view is never driven from outside. */
+  jumpRequest?: { page: number; seq: number } | null;
+  /** Phase 32 (chunk 2b) — reports this view's per-visible-page sizes
+   *  (the same map the in-pane SideRail consumes) so the shared rail can
+   *  size each section's thumbnail wraps from the pages' real aspect
+   *  ratios. Optional: single mode never needs it. */
+  onPageSizesChange?: (sizes: Map<number, { w: number; h: number }>) => void;
+  /** Phase 32 (chunk 2d) — canvas page drag and drop. Present only in Multi
+   *  Mode: each page grows a hover-revealed grip (`data-page-drag-handle`)
+   *  that starts a document-aware drag, and every page slot accepts a drop
+   *  from the other document with an insertion indicator. Absent (the
+   *  single-mode default) means this view renders exactly as before - no
+   *  grip, no drop handlers. */
+  pageDrag?: {
+    /** This view's document (the tab id). */
+    tabId: string;
+    /** Apply a resolved drop; App owns the engine + refresh sequence. */
+    onDrop: (op: PageDropOp) => void;
+  } | null;
   /** Per-tab Edit state. DocumentView only forwards it to
    *  PageView; App owns the reducer. */
   edit?: {
@@ -558,6 +601,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onEditModeToggle,
   pagesPanelCollapsed,
   onTogglePagesPanelCollapsed,
+  showRail = true,
+  multiModeEnabled,
+  onMultiModeToggle,
+  jumpRequest = null,
+  onPageSizesChange,
+  pageDrag = null,
 }: DocumentViewProps,
   ref,
 ) {
@@ -1063,6 +1112,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // DEF-262 — the commit path reads the latest page sizes through this ref
   // (declared above `commitTextSession`, which must stay stable).
   pageSizesRef.current = pageSizes;
+
+  // Phase 32 (chunk 2b) — report the per-page sizes to the host so the
+  // shared Multi Mode rail can size its sections' thumbnail wraps from
+  // each page's own aspect ratio. Identity-guarded: the callback fires
+  // once per NEW map (a page reporting a size), never per render.
+  const reportedPageSizesRef = useRef<Map<number, { w: number; h: number }> | null>(null);
+  useEffect(() => {
+    if (reportedPageSizesRef.current === pageSizes) return;
+    reportedPageSizesRef.current = pageSizes;
+    onPageSizesChange?.(pageSizes);
+  }, [pageSizes, onPageSizesChange]);
 
   const [zoom, dispatchZoom] = useReducer(zoomReducer, {
     mode: initial.zoomMode,
@@ -1864,6 +1924,20 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     return () => window.clearTimeout(timer);
   }, [jumpToPage, initial.currentPage]);
 
+  // ---- external jump (Phase 32: the shared Multi Mode rail) ------------------
+  //
+  // The rail lives outside this view, so it cannot call `jumpToPage`
+  // directly. A new `seq` is the only trigger: re-renders (a focus move, a
+  // sibling section re-rendering) must never replay the last request.
+  const lastJumpSeqRef = useRef(0);
+  useEffect(() => {
+    const request = jumpRequest;
+    if (request === null || request === undefined) return;
+    if (request.seq === lastJumpSeqRef.current) return;
+    lastJumpSeqRef.current = request.seq;
+    jumpToPage(request.page, true);
+  }, [jumpRequest, jumpToPage]);
+
   // ---- zoom controls -----------------------------------------------------------------
   const zoomTo = useCallback((direction: 1 | -1) => {
     const next = stepTowards(effectiveScaleRef.current, direction);
@@ -2471,6 +2545,77 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     }
   }, []);
 
+  // ---- Phase 32 (chunk 2d): canvas page drag and drop ---------------------
+  //
+  // The rail path and this path share ONE document-aware drag model (the
+  // PageDragContext). Here the drag SOURCE is a hover-revealed grip on the
+  // page (`data-page-drag-handle`) - a dedicated affordance that never
+  // collides with text selection or the annotation overlays - and the drop
+  // TARGET is the whole page slot, with an insertion indicator between
+  // pages (`data-drop-indicator`). Present only in Multi Mode: `pageDrag`
+  // is null in single mode, so nothing here renders or fires.
+  const drag = usePageDragOptional();
+  const canvasDragOn = pageDrag !== null && drag !== null;
+  const canvasTarget = canvasDragOn ? drag.target : null;
+  // The hovered insertion slot in THIS document, or null when the drag is
+  // not over this view.
+  const canvasTargetHere =
+    canvasDragOn && canvasTarget !== null && pageDrag !== null && canvasTarget.tabId === pageDrag.tabId
+      ? canvasTarget
+      : null;
+
+  const onGripDragStart = (visiblePage: number) => (e: React.DragEvent<HTMLButtonElement>): void => {
+    if (drag === null || pageDrag === null) return;
+    e.dataTransfer.effectAllowed = 'copyMove';
+    e.dataTransfer.setData('text/plain', String(visiblePage));
+    drag.begin(buildDragSource(pageDrag.tabId, visiblePage, null));
+  };
+  const onGripDragEnd = (): void => {
+    drag?.end();
+  };
+  const onCanvasDragOver = (visiblePage: number) => (e: React.DragEvent<HTMLDivElement>): void => {
+    if (drag === null || pageDrag === null) return;
+    if (drag.source === null) return;
+    // The page slot is a drop target for any active drag (a same-document
+    // drop resolves to the EXISTING reorder path; a cross-document drop to
+    // the atomic engine call). preventDefault here only enables the drop -
+    // it never swallows a pointer/click gesture.
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const after = canvasDropIsAfter(e.clientY, rect.top, rect.height);
+    const mode = dropModeFromEvent(e);
+    e.dataTransfer.dropEffect = dropEffectFor(mode);
+    drag.hover({
+      tabId: pageDrag.tabId,
+      atIndex: canvasInsertIndex(visiblePage, pageCount, after),
+      mode,
+    });
+  };
+  const onCanvasDrop = (visiblePage: number) => (e: React.DragEvent<HTMLDivElement>): void => {
+    if (drag === null || pageDrag === null) return;
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const after = canvasDropIsAfter(e.clientY, rect.top, rect.height);
+    const op = resolveDrop(
+      drag.source,
+      {
+        tabId: pageDrag.tabId,
+        atIndex: canvasInsertIndex(visiblePage, pageCount, after),
+      },
+      dropModeFromEvent(e),
+      pageCount,
+    );
+    drag.end();
+    if (op !== null) pageDrag.onDrop(op);
+  };
+  const onCanvasDragLeave = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (drag === null) return;
+    const related = e.relatedTarget as Node | null;
+    const scroller = scrollerRef.current;
+    if (related !== null && scroller !== null && scroller.contains(related)) return;
+    drag.hover(null);
+  };
+
   // ---- keyboard: Ctrl+F opens search, Escape closes / disarms -------------
   // Bug 4 — Escape disarms ANY armed annotation tool first, then closes
   // search. Previously Escape only closed the search bar, so an armed
@@ -2562,7 +2707,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     // panel's open/close truth for tests and e2e); it no longer drives any
     // layout. The old --tf-text-w grid column and its page reflow are gone:
     // the panel floats inside .workspace-main, so the page never moves.
-    <div className="workspace" data-text-panel-open={textPanelOpen ? "true" : "false"}>
+    <div
+      className="workspace"
+      data-text-panel-open={textPanelOpen ? "true" : "false"}
+      // Phase 32 — Multi Mode suppresses the per-pane rail (one shared rail
+      // lands in the next chunk). `data-rail="none"` collapses the grid to
+      // the page column so the suppressed rail leaves no empty gutter.
+      data-rail={showRail ? undefined : "none"}
+    >
+      {showRail && (
       <SideRail
         doc={doc}
         pageCount={pageCount}
@@ -2598,6 +2751,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         pagesPanelCollapsed={pagesPanelCollapsed}
         onTogglePagesPanelCollapsed={onTogglePagesPanelCollapsed}
       />
+      )}
       <div ref={mainRef} className="workspace-main">
         <Toolbar
           page={currentPage}
@@ -2639,6 +2793,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           onHandToggle={toggleHand}
           onDeletePage={onDeletePage}
           canDeletePage={canDeletePage}
+          // Phase 32 — the CommandBar's Multi Mode toggle. App owns the
+          // mode; this view only forwards it (the same state drives the
+          // All-tools entry, so both entry points always agree).
+          multiModeEnabled={multiModeEnabled}
+          onMultiModeToggle={onMultiModeToggle}
           /* Phase 19 — the annotation tools are the CommandBar's LAST
              capsule. The group element is built here (DocumentView is
              the prop conduit for the annotation state) and handed to
@@ -2709,11 +2868,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           ref={scrollerRef}
           className={handActive ? "document-scroller document-scroller-hand" : "document-scroller"}
           data-hand={handActive ? "true" : "false"}
+          data-page-drop-pane={canvasTargetHere !== null ? "true" : undefined}
           onScroll={onScroll}
           onPointerDown={onScrollerPointerDown}
           onPointerMove={onScrollerPointerMove}
           onPointerUp={onScrollerPointerUp}
           onPointerCancel={onScrollerPointerUp}
+          onDragLeave={canvasDragOn ? onCanvasDragLeave : undefined}
         >
           <div className="document-content">
             {Array.from({ length: pageCount }, (_, i) => i + 1).map((visiblePage) => {
@@ -2775,6 +2936,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                   className="page-slot"
                   data-page={visiblePage}
                   data-source-page={sourcePage}
+                  onDragOver={canvasDragOn ? onCanvasDragOver(visiblePage) : undefined}
+                  onDrop={canvasDragOn ? onCanvasDrop(visiblePage) : undefined}
                   style={{
                     height:
                       slotGeom !== undefined && slotGeom.heightCss > 0
@@ -2900,6 +3063,46 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       edit={editProp}
                     />
                   )}
+                  {canvasDragOn && isMounted && (
+                    <button
+                      type="button"
+                      className="page-drag-handle"
+                      data-page-drag-handle={visiblePage}
+                      draggable
+                      onDragStart={onGripDragStart(visiblePage)}
+                      onDragEnd={onGripDragEnd}
+                      aria-label={`Drag page ${visiblePage} to another document`}
+                      title="Drag this page to another document (Ctrl to copy)"
+                    >
+                      <GripVertical size={14} aria-hidden />
+                    </button>
+                  )}
+                  {canvasTargetHere !== null && canvasTargetHere.atIndex === visiblePage && (
+                    <div
+                      className="page-drop-indicator page-drop-indicator-before"
+                      data-drop-indicator="before"
+                      data-drop-page={visiblePage}
+                      data-drop-copy={canvasTargetHere.mode === "copy" ? "true" : undefined}
+                    >
+                      {canvasTargetHere.mode === "copy" && (
+                        <span className="page-drop-copy-hint">Copy</span>
+                      )}
+                    </div>
+                  )}
+                  {canvasTargetHere !== null &&
+                    (canvasTargetHere.atIndex === visiblePage + 1 ||
+                      (canvasTargetHere.atIndex === -1 && visiblePage === pageCount)) && (
+                      <div
+                        className="page-drop-indicator page-drop-indicator-after"
+                        data-drop-indicator="after"
+                        data-drop-page={visiblePage}
+                        data-drop-copy={canvasTargetHere.mode === "copy" ? "true" : undefined}
+                      >
+                        {canvasTargetHere.mode === "copy" && (
+                          <span className="page-drop-copy-hint">Copy</span>
+                        )}
+                      </div>
+                    )}
                 </div>
               );
             })}

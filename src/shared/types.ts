@@ -308,7 +308,36 @@ export type EngineError =
   | 'empty-range'
   | 'no-op'
   | 'write-error'
-  | 'not-found';
+  | 'not-found'
+  /** Phase 32 — the source and target of a cross-document move are the
+   *  same document id (a document must never occupy both panes). */
+  | 'same-document';
+
+/**
+ * Phase 32 (Multi Mode) — payload for one atomic cross-document page move
+ * or copy. `pages` are 0-based VISIBLE-order indices in the SOURCE
+ * document (`fromDocId`), i.e. indices into `EngineState.pageOrder`.
+ * `atIndex` is the insertion index in the TARGET's visible order, with
+ * `-1` meaning "append" (the same convention as `insertFromPdf`).
+ * `mode` is `'move'` (source loses the pages) or `'copy'` (source is left
+ * untouched). Multiple pages keep their relative order.
+ */
+export interface MovePagesBetweenDocsPayload {
+  fromDocId: string;
+  pages: number[];
+  toDocId: string;
+  atIndex: number;
+  mode: 'move' | 'copy';
+}
+
+/**
+ * Phase 32 — both documents' post-operation states from one round-trip so
+ * the renderer can refresh both panes/proxies without a second call.
+ */
+export interface MovePagesBetweenDocsResult {
+  from: EngineState;
+  to: EngineState;
+}
 
 // ---- Phase 3: Annotations ----
 

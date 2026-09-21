@@ -11214,3 +11214,525 @@ rect.ann-highlight.ann-preview {
   transition: box-shadow var(--motion-fast) var(--ease-out);
 }
 
+
+/* ==========================================================================
+   Phase 32 — Multi Mode: two documents in one workspace
+   --------------------------------------------------------------------------
+   Multi Mode is a VIEW over the tab store: the two panes are the SAME
+   `.tab-pane` elements the single-document layout uses, re-positioned side
+   by side. Only the pane geometry, the divider, the per-pane header and the
+   empty-pane body are new; no document surface is repainted by this block.
+
+   The split lives in ONE inherited custom property (--tf-split) that the
+   divider drag writes inline on .tab-stage. Both panes read it, so a resize
+   re-lays-out without re-rendering either DocumentView (no canvas work, no
+   flash). No transition is declared on the geometry: the divider must track
+   the pointer 1:1, and animating it would lag the drag.
+   ========================================================================== */
+
+.tab-stage[data-multi-mode="true"] {
+  --tf-divider-w: 8px;
+  /* No shared rail: the two panes own the whole stage. */
+  --tf-shared-rail-w: 0px;
+}
+
+/* Phase 32 (chunk 2b) — the ONE shared rail reserves a real column at the
+   left of the stage. The panes and the divider measure the split against
+   the space that is left of it, so the divider still tracks the pointer
+   1:1 and neither pane is ever covered by the rail. The stage writes the
+   column width inline (the same 220px column the single-mode rail occupies
+   at rest — see SHARED_RAIL_WIDTH_PX); the 0px base below is the
+   rail-less two-pane case. */
+
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {
+  top: 0;
+  bottom: 0;
+  left: auto;
+  right: auto;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* The panes are already mounted tab-panes: toggling the mode must not
+     replay the single-mode tab fade. */
+  animation: none;
+}
+
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane="A"] {
+  left: var(--tf-shared-rail-w);
+  width: calc(
+    (100% - var(--tf-shared-rail-w)) * var(--tf-split-frac, 0.5) - (var(--tf-divider-w) / 2)
+  );
+}
+
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane="B"] {
+  right: 0;
+  width: calc(
+    (100% - var(--tf-shared-rail-w)) * (1 - var(--tf-split-frac, 0.5)) - (var(--tf-divider-w) / 2)
+  );
+}
+
+/* The focused pane's accent affordance: a full-perimeter hairline ring (never
+   a one-sided accent border) that fades in on the shared fast motion token. */
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {
+  box-shadow: inset 0 0 0 1px transparent;
+  transition: box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane][data-pane-focused="true"] {
+  box-shadow: inset 0 0 0 1px var(--accent-soft);
+}
+
+/* ---- per-pane header ---------------------------------------------------- */
+
+.multi-pane-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  min-width: 0;
+  padding: 0 6px 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-toolbar);
+  font-size: 12px;
+  color: var(--fg-muted);
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tab-pane[data-pane-focused="true"] .multi-pane-header {
+  background: var(--accent-selected);
+}
+
+.multi-pane-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  background: var(--bg-sunken);
+  color: var(--fg-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.tab-pane[data-pane-focused="true"] .multi-pane-badge {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.multi-pane-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-strong);
+  font-weight: 500;
+}
+
+.multi-pane-count {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.multi-pane-clear {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.multi-pane-clear:hover {
+  background: var(--accent-hover-bg);
+  color: var(--fg-strong);
+}
+
+/* ---- divider ----------------------------------------------------------- */
+
+.multi-divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Sits at the split, measured across the pane region (right of the
+     shared rail when one is present). */
+  left: calc(
+    var(--tf-shared-rail-w, 0px) + (100% - var(--tf-shared-rail-w, 0px)) *
+      var(--tf-split-frac, 0.5) - (var(--tf-divider-w) / 2)
+  );
+  width: var(--tf-divider-w);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  background: var(--border);
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.multi-divider:hover,
+.multi-divider:active {
+  background: var(--accent-soft);
+}
+
+.multi-divider-grip {
+  display: inline-flex;
+  color: var(--fg-faint);
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.multi-divider:hover .multi-divider-grip,
+.multi-divider:active .multi-divider-grip {
+  opacity: 1;
+}
+
+/* ---- empty pane -------------------------------------------------------- */
+
+.multi-pane-empty {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.multi-pane-empty-inner {
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.multi-pane-empty-icon {
+  color: var(--fg-faint);
+}
+
+.multi-pane-empty-title {
+  margin: 2px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.multi-pane-empty-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.multi-pane-pick-list {
+  width: 100%;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.multi-pane-pick {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: var(--bg-base);
+  color: var(--fg);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.multi-pane-pick:hover {
+  background: var(--accent-hover-bg);
+  border-color: var(--accent);
+}
+
+.multi-pane-pick-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.multi-pane-pick-count {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.multi-pane-open {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.multi-pane-open:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Phase 32 — the suppressed per-pane rail must leave no empty gutter: with
+   data-rail="none" the workspace grid is the page column alone. */
+.workspace[data-rail="none"] {
+  grid-template-columns: 1fr;
+}
+
+.workspace[data-rail="none"] .workspace-main {
+  grid-column: 1;
+}
+
+/* ---- the shared thumbnail rail (Phase 32 chunk 2b) ---------------------- */
+
+/* One rail for both panes: a section per loaded document. It consumes the
+   same --panel-* material contract as the single-mode rail, so the two
+   surfaces read as one family in every theme. */
+.multi-rail {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: var(--tf-shared-rail-w, 220px);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--panel-border);
+}
+
+.multi-rail-section {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.multi-rail-section + .multi-rail-section {
+  border-top: 1px solid var(--border);
+}
+
+/* The section header identifies the pane it belongs to (the same A/B badge
+   material the pane headers use) and is the click target that focuses it. */
+.multi-rail-section-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.multi-rail-section-header:hover {
+  background: var(--bg-hover);
+}
+
+.multi-rail-section[data-rail-section-active="true"] .multi-rail-section-header {
+  background: var(--accent-selected);
+}
+
+.multi-rail-section[data-rail-section-active="true"] .multi-rail-badge {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+}
+
+.multi-rail-section-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-strong);
+  font-weight: 500;
+}
+
+.multi-rail-section[data-rail-section-active="false"] .multi-rail-section-title {
+  color: var(--fg-muted);
+  font-weight: 400;
+}
+
+.multi-rail-section-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Each section body is the positioning context for its own ThumbnailRail
+   (whose `.thumb-scroller` is `position: absolute; inset: 0`), so the two
+   sections scroll independently. */
+.multi-rail-section-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---- Phase 32 (chunk 2d): cross-document page drag and drop ----
+ *
+ * The landing pane's rail section highlights while a cross-document drag
+ * hovers it (the per-thumb slot affordance rides on top of it), and the
+ * landing thumb reads "copy" when Ctrl / Alt is held. The canvas adds a
+ * hover-revealed page grip (the drag source) and an insertion indicator
+ * between pages (the drop position). Motion tokens only. */
+.multi-rail-section[data-rail-section-drop-target="true"] {
+  background: var(--accent-selected);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.multi-rail-section[data-rail-section-drop-target="true"] .multi-rail-section-header {
+  background: var(--accent-selected);
+}
+
+/* Ctrl / Alt makes the drop a copy: the landing slot reads as a copy. */
+.thumb-drop-target.thumb-drop-copy {
+  border-style: dashed;
+}
+
+/* The canvas drag source: a hover-revealed grip on the page. It is a
+ * dedicated affordance, so it never competes with text selection or the
+ * annotation overlays (which own their own layers inside .pdf-page). */
+.page-drag-handle {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--fg-muted);
+  cursor: grab;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity var(--motion-duration-fast) var(--motion-ease-standard),
+    transform var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.page-slot:hover .page-drag-handle,
+.page-drag-handle:focus-visible {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.page-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* The insertion indicator: a slim accent bar in the gap before or after a
+ * page (and after the last page, the append slot). Pointer-transparent so
+ * it never blocks the drop. */
+.page-drop-indicator {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 40;
+  display: flex;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.page-drop-indicator-before {
+  top: -9px;
+}
+
+.page-drop-indicator-after {
+  bottom: -9px;
+}
+
+/* The landing PANE highlights while a page drag hovers it (the insertion
+ * indicator rides on top). A soft inset ring, never a layout change. */
+.document-scroller[data-page-drop-pane="true"] {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.page-drop-copy-hint {
+  position: absolute;
+  top: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .multi-pane-header,
+  .multi-pane-badge,
+  .multi-pane-clear,
+  .multi-divider,
+  .multi-divider-grip,
+  .multi-pane-pick,
+  .multi-pane-open,
+  .multi-rail-section-header,
+  .page-drag-handle,
+  .tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {
+    transition: none;
+  }
+}

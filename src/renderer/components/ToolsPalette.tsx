@@ -19,6 +19,7 @@ import type { ReactElement } from 'react';
 import {
   ArrowDownToLine,
   ArrowLeftRight,
+  Columns2,
   Crop,
   FileImage,
   FilePlus2,
@@ -114,6 +115,11 @@ interface ToolsPaletteProps {
   /** Whether the active document has form fields. The Forms entry is
    *  disabled when false (Flatten would no-op). */
   hasFormFields: boolean;
+  /** Phase 32 — Multi Mode toggle. When wired, the Document section
+   *  carries the entry; `multiModeEnabled` drives its pressed state so it
+   *  always agrees with the CommandBar control. */
+  onMultiMode?: () => void;
+  multiModeEnabled?: boolean;
   /** Phase 14.2 FIX 5 — the layout mode the panel will EXIT with.
    *  TfPanel pins the exit transform to the mode's travel; App passes
    *  the persisted setting so the exit reads the mode the panel is
@@ -129,6 +135,8 @@ interface ToolEntry {
   icon: ReactElement;
   shortcut: string;
   action: () => void;
+  /** Present only for toggle entries: the entry's pressed state. */
+  pressed?: boolean;
 }
 
 /** The palette's section headers. Entries are grouped into four
@@ -147,7 +155,7 @@ const TOOL_GROUPS: ReadonlyArray<{ id: string; label: string; entryIds: readonly
   {
     id: 'document',
     label: 'Document',
-    entryIds: ['sign', 'forms', 'flatten', 'optimize', 'audit', 'stamp', 'watermark', 'createFromImages'],
+    entryIds: ['sign', 'forms', 'flatten', 'optimize', 'audit', 'stamp', 'watermark', 'createFromImages', 'multi-mode'],
   },
   {
     id: 'recognition',
@@ -194,6 +202,8 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     hasOcrSuspects,
     documentRequired,
     hasFormFields,
+    onMultiMode,
+    multiModeEnabled = false,
     exitLayout = 'list',
   } = props;
 
@@ -370,6 +380,17 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
           icon: <FileImage size={22} aria-hidden />,
           shortcut: '',
           action: onCreateFromImages,
+        }]
+      : []),
+    ...(onMultiMode !== undefined
+      ? [{
+          id: 'multi-mode' as const,
+          label: 'Multi Mode',
+          description: 'View two documents side by side in one workspace.',
+          icon: <Columns2 size={22} aria-hidden />,
+          shortcut: '',
+          action: onMultiMode,
+          pressed: multiModeEnabled,
         }]
       : []),
     ...(onExportPages !== undefined
@@ -601,6 +622,9 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                     aria-label={entry.label}
                     title={entry.description}
                     data-tool-id={entry.id}
+                    {...(entry.pressed === undefined
+                      ? {}
+                      : { 'aria-pressed': entry.pressed })}
                   >
                     <span className="tools-palette-entry-icon">{entry.icon}</span>
                     <span className="tools-palette-entry-text">

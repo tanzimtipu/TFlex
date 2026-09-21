@@ -17,6 +17,8 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  MovePagesBetweenDocsPayload,
+  MovePagesBetweenDocsResult,
   MoveSignaturePayload,
   OpenFileDialogKind,
   OcrProgress,
@@ -209,6 +211,13 @@ const engineApi = {
     position: number,
   ): Promise<Result<EngineState, EngineError>> {
     return ipcRenderer.invoke(IPC.engineInsertFromPdf, docId, otherBytes, position);
+  },
+  // Phase 32 (Multi Mode) — atomic cross-document page move/copy. The
+  // payload is forwarded as-is; the engine returns both documents' states.
+  movePagesBetweenDocs(
+    payload: MovePagesBetweenDocsPayload,
+  ): Promise<Result<MovePagesBetweenDocsResult, EngineError>> {
+    return ipcRenderer.invoke(IPC.engineMovePagesBetween, payload);
   },
   exportPages(
     docId: string,

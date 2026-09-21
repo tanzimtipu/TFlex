@@ -27,6 +27,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  Columns2,
   Expand,
   FileSignature,
   GitMerge,
@@ -110,6 +111,12 @@ export interface CommandBarProps {
    *  Disabled when there's only one page left. */
   onDeletePage?: () => void;
   canDeletePage?: boolean;
+  /** Phase 32 — Multi Mode. When wired, the Tools capsule carries the
+   *  toggle: pressed while the two-pane workspace is on, and clicking it
+   *  turns the mode on/off. The host (App) owns the mode, so this button
+   *  and the All-tools entry always read the same value. */
+  multiModeEnabled?: boolean;
+  onMultiModeToggle?: () => void;
   /** Phase 19 — the annotation tool GROUP, rendered as the bar's LAST
    *  capsule (after Document actions). The host passes the
    *  AnnotationToolbar group element; the CommandBar only places it,
@@ -160,6 +167,8 @@ export function CommandBar(props: CommandBarProps) {
     onEditModeToggle,
     onDeletePage,
     canDeletePage = true,
+    multiModeEnabled = false,
+    onMultiModeToggle,
     annotationTools,
   } = props;
 
@@ -315,6 +324,25 @@ export function CommandBar(props: CommandBarProps) {
         >
           <Hand size={22} aria-hidden />
         </button>
+        {onMultiModeToggle !== undefined && (
+          <button
+            type="button"
+            className={multiModeEnabled ? 'tool-btn tool-btn-active' : 'tool-btn'}
+            onClick={onMultiModeToggle}
+            aria-pressed={multiModeEnabled}
+            title={
+              multiModeEnabled
+                ? 'Multi Mode on — two documents side by side. Click to return to one document.'
+                : 'Multi Mode: view two documents side by side in one workspace'
+            }
+            aria-label="Multi Mode"
+            data-toolbar-multi-mode
+            data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}
+            data-icon="multi-mode"
+          >
+            <Columns2 size={22} aria-hidden />
+          </button>
+        )}
         {onEditModeToggle !== undefined && (
           <button
             type="button"

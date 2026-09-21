@@ -1,3 +1,5 @@
+import { pathComparisonKey } from './pathIdentity';
+
 export type DocKind = 'file' | 'sample' | 'empty';
 
 /** A tab whose `kind` is `'empty'` is a placeholder — it does not yet have
@@ -39,6 +41,12 @@ export type TabsAction =
     }
   | { type: 'close'; id: string }
   | { type: 'activate'; id: string }
+  /** Phase 32 — clear the active id WITHOUT closing any tab. Multi Mode
+   *  uses this when the focused pane is emptied: an empty focused pane has
+   *  no document, so the app must have no active tab and a document-scoped
+   *  operation becomes a clean no-op instead of hitting the previously
+   *  active tab. Single mode never dispatches this. */
+  | { type: 'deactivate' }
   | { type: 'set-modified'; id: string; modified: boolean }
   | { type: 'rename'; id: string; title: string }
   /** Phase 6 — promote an empty tab to a real document. The renderer
@@ -135,7 +143,13 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
         return { tabs, activeId: action.tab.id };
       }
       if (action.tab.filePath !== '' && action.dedupePath !== false) {
-        const existing = state.tabs.find((t) => t.filePath === action.tab.filePath);
+        // DEF-279 — same-file dedupe by canonical path key, so a
+        // case-variant or separator-variant spelling of an already-open
+        // document collapses onto its tab instead of minting a second one.
+        const incomingKey = pathComparisonKey(action.tab.filePath);
+        const existing = state.tabs.find(
+          (t) => pathComparisonKey(t.filePath) === incomingKey,
+        );
         if (existing !== undefined) {
           return { ...state, activeId: existing.id };
         }
@@ -159,6 +173,10 @@ export function tabsReducer(state: TabsState, action: TabsAction): TabsState {
         return state;
       }
       return { ...state, activeId: action.id };
+    }
+    case 'deactivate': {
+      if (state.activeId === null) return state;
+      return { ...state, activeId: null };
     }
     case 'set-modified': {
       let changed = false;

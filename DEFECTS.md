@@ -5,6 +5,83 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-279: Multi Mode: a Windows case-variant path defeats the same-file pane guard and the open dedupe, and a later save silently discards the other pane's saved edit
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-068)
+- Phase: 32
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`) and launch through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Copy `test-fixtures/report.pdf` (34 pages) into a temp directory as `...-p32-samefile.pdf`. The case-variant path `...-P32-SAMEFILE.PDF` names the same file on Windows (`fs.existsSync` = true). Temp copies only - never a `test-fixtures/` file.
+3. Open the exact-case path through the real title-bar Open control (mocked OS dialog). Tab count 1.
+4. Open the SAME file with the case-variant path.
+5. Activate the first tab, click `[data-toolbar-multi-mode]` (pane A = the exact-case tab), then pick the case-variant tab into pane B from the empty pane's pick list (`[data-pane-pick]`).
+6. Data-loss half: focus pane A, select page 1 in its rail section, click "Delete this page" (A 34 -> 33), Save A (Ctrl+S; file on disk = 33 pages), then Save B (Ctrl+S; file on disk = 34 pages).
+
+Expected: Phase 32's fixed design decisions: opening a file that is already open dedupes to the existing tab, and assigning/opening the document already shown in the other pane is REFUSED with a clear message ("That file is already shown in the other pane." / "That document is already shown in the other pane."). The same document must never occupy both panes, and any path Windows treats as the same file must not bypass either rule.
+Actual: both comparisons are raw string equality - the open dedupe is `t.filePath === source.path` (`src/renderer/App.tsx:1301`) and the pane guard is `otherPath !== filePath` (`paneAssignPathError`, `src/renderer/state/multiMode.ts:129`). A case-variant path bypasses both:
+- The case-variant open created a SECOND tab (tabs 1 -> 2, `.toast-text` count 0), and pane B's pick list offered and accepted that tab. Both pane headers then name the same file (`...-p32-samefile.pdf` / `...-P32-SAMEFILE.PDF`, both 34 pages), pane B is not empty, and the shared rail shows two DISTINCT engine doc ids for the one on-disk file (`a9dde8ec-b95b-40b2-972b-b34c470a2b98` / `2f0017bb-30cc-4399-87a8-9d5fbfa0d516`), with no message.
+- Data loss: pane A deleted page 1 and saved 33 pages to the file; pane B then saved its 34-page copy over the same path, silently discarding pane A's saved edit. On-disk page count observed: 34 -> 33 (Save A) -> 34 (Save B). The user is never warned that two panes write to one file.
+Severity justification: the same document in both panes breaks a Phase 32 invariant and the save half silently discards a saved edit; no corruption of unrelated content and no crash, so MEDIUM per the orchestrator's ADV-068 disposition.
+
+Screenshot: screenshots/adv-p32-samefile-save.png, screenshots/adv-p32-samefile-casevariantfilename.png
+Harness: e2e/retests/def279_repro.spec.cjs (asserts the correct Phase 32 behaviour, so it is RED while the defect is present; temp copies only)
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying frontend-dev - one pure `pathComparisonKey(filePath)` / `isSamePath(a, b)` helper in `src/renderer/state/pathIdentity.ts` now canonicalises both comparisons: it trims whitespace, drops the `\\?\` / `//?/` extended-length prefix (folding `\\?\UNC\` back to `\\`), treats `\` and `/` identically, strips trailing separators (keeping a lone root) and case-folds, with the Windows/macOS case-insensitivity stated as the platform assumption and case-sensitive platforms a documented non-goal. It is wired into BOTH halves of the open dedupe - the `tabsReducer` `open` case (`src/renderer/state/tabs.ts`, which is what actually collapses a duplicate open) and App's `dedupeTarget` lookup - AND into the pane guard (`paneAssignPathError`). The same-TAB guard still runs first, `dedupePath:false` (DEF-170) is still exempt, the refusal message is unchanged, and genuinely different paths behave exactly as before. Evidence: new `pathIdentity.test.ts` 17 tests + `def279_caseVariantPath.test.ts` 12 tests (29 passed), plus 72 passed across `tabs`/`multiMode`/`multiModeOpenAssignment`/`defDEF143_savedTabDedup`; `npm run verify` exit 0; `build:renderer` exit 0. qa's `e2e/retests/def279_repro.spec.cjs` should now flip green - qa confirms in the retest.)
+- qa: CLOSED (retested in the current build. Command: `npx playwright test e2e/retests/def279_repro.spec.cjs` -> 1 passed. Observed output: `tabs after case-variant open = 1` (the case-variant open DEDUPES to one tab); `headerA="A ...p32-samefile.pdf 34 pages" headerB="" paneBEmpty=1` (pane B's pick list is empty - no second tab to assign); pane B's own Open action on the same file is REFUSED with `toasts=["That file is already shown in the other pane."]`, tabs stayed 1 and pane B stayed empty; `guard held - data-loss half not reachable` (the save-overwrite data-loss path cannot be reached because the same file can no longer occupy both panes). Re-confirmed independently by `e2e/retests/def279_p32_runclose.spec.cjs` test 1 (4 passed overall): case-variant open = 1 tab, then focus pane B + open the same file -> refusal message, tabs=1, paneBEmpty=1. Unit coverage green: `pathIdentity.test.ts` 17 + `def279_caseVariantPath.test.ts` 12 + `multiMode.test.ts` 27. NOTE - test-harness correction (no product code touched): the shipped `def279_repro.spec.cjs` asserted a refusal toast from a pick-list action the dedupe fix makes unreachable (its `if (picks.count() > 0)` branch never runs, so no assign is ever attempted and the toast could not appear); qa corrected the harness to exercise the guard through its reachable path (pane B `[data-pane-open]`) and to capture the transient toast at the moment it is on screen. The product fix itself is verified.)
+
+## DEF-277: Multi Mode: opening a third document adds a hidden tab with no refusal message
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 32
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`) and launch through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Open `test-fixtures/report.pdf` (34 pages) via the title-bar Open control (mocked OS dialog).
+3. Click `[data-toolbar-multi-mode]` to enable Multi Mode (pane A = report.pdf, pane B empty).
+4. Open `test-fixtures/long.pdf` and put it in pane B through the pane's pick list (`[data-pane-pick]`). Both panes are now full.
+5. With both panes full, open a THIRD PDF via the title-bar Open control.
+
+Expected: the third document is refused with a clear user-visible message. Phase 32 design (REQUIREMENTS.md 1502-1504): "A third document cannot be added: attempting it must fail LOUD with a clear message, never a silent no-op."
+Actual: the third PDF opens as a third tab (`.tab[data-tab-id]` count 2 -> 3) and NO message appears (`.toast-text` count 0). The workspace does not change - both panes keep their documents, `data-multi-panes` stays "2" - and the new document is visible nowhere in the workspace (only in the tab strip). The user gets no explanation and no visible result.
+Severity justification: it breaks the criterion-2 "fail loud" clause and leaves an invisible open document, but there is no data loss and the document is reachable (its tab can be assigned to the focused pane, or it shows in single mode). MEDIUM, not HIGH, on that basis.
+
+Evidence: `e2e/phase32_multi_mode.spec.cjs` test `C2b` -> `[P32] third-document attempt: tabs 2->3 toasts=[] paneCanvasCount=4` / `stage multiPanes=2`; assertion `third document was added silently` fails.
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying frontend-dev - the Phase 32 contract was first refined to make the intended semantics explicit (opening a document while the mode is on ASSIGNS it to the focused pane; a document must never land in a hidden tab with no visible effect), then every generic open path was routed through the existing assign+focus+activate path: `onOpenClick` (title-bar Open / File > Open / Ctrl+O), `onSampleClick` (sample cards), `onRecentClick` (recent files) and `[data-pane-open]` (which assigns to THAT pane). The routing is gated on the mode being enabled, so single-mode open is unchanged; `openFromBytes` now returns the EFFECTIVE tab id the reducer activates (dedupe-safe), so an assignment can never target an orphan id. Evidence: new `multiModeOpenAssignment.test.ts` 18 tests + `multiMode.test.ts` 27 + `multiModeRouting.test.ts` 26 = 71 passed; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED (retested on the amended Phase 32 contract - opening a document while Multi Mode is on ASSIGNS it to the focused pane. Command: `npm.cmd run build` (exit 0) then `npx playwright test e2e/phase32_multi_mode.spec.cjs` -> 8 passed. C2b: focus A + title-bar Open of p32-gamma -> pane A header "p32-gamma 34 pages", pane B unchanged "p32-beta 520 pages", p32-alpha still a tab, gamma canvas visible, data-multi-panes=2 / .tab-pane count 2; focus B + Open of p32-delta -> pane B "p32-delta 520 pages", pane A unchanged "p32-gamma 34 pages", p32-beta still a tab; single-mode Open of p32-epsilon -> tabs 4->5 with p32-epsilon the active tab. No hidden-tab-with-no-effect state remains.)
+
+## DEF-278: Multi Mode: the same file can occupy both panes via the pane Open action, with no refusal
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 32
+
+Steps to reproduce:
+1. Enable Multi Mode with `report.pdf` in pane A (pane B empty).
+2. Clear pane B with `[data-pane-clear]` so its empty state (and `[data-pane-open]`) is reachable.
+3. Click pane B's `[data-pane-open]` and pick the SAME `report.pdf` file.
+
+Expected: per the Phase 32 design ("The same document must never occupy both panes (attempting it is refused with a message)"), putting the pane-A document into pane B is refused with a user-visible message.
+Actual: pane B loads a second tab of the same file; both panes now display the same document (`paneA` and `paneB` headers both name `p32-alpha.pdf`, 34 pages) and no message is shown. NOTE: the two panes hold distinct tab sessions (different tab ids / engine doc ids), so this may be judged by design. The model-level duplicate guard (`paneAssignError`) is unreachable from the shipped UI: the pick list excludes the other pane's tab id and the tab-strip rules (`resolveTabStripActivation`) intercept the other pane's document with a focus move, so no user action ever reaches the refusal path.
+Severity justification: cosmetic/UX only - no data loss, no corruption, and the state is a legitimate "same file open twice" state.
+
+Evidence: `e2e/phase32_multi_mode.spec.cjs` test `C2b` -> `[P32] same-file-into-pane-B attempt: A="A ...p32-alpha.pdf 34 pages" B="B ...p32-alpha.pdf 34 pages"` and `toasts=[]`.
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying frontend-dev - a new pure `paneAssignPathError(state, pane, filePath, filePathForTab)` compares the incoming document's `TabMeta.filePath` with the OTHER pane's document path (tab-id equality alone cannot see it, since opening one file twice mints two tab ids) and returns "That file is already shown in the other pane." It runs inside `assignPaneDocument` - so the pane pick list AND the tab-strip rules honour it - and on the pane Open path BEFORE the open (`refuseOpenIntoPane`), so a refused open creates no stray tab. The existing tab-identity rule is still checked first and the reducer's `assign` invariant is untouched; `PaneId` stays `'A' | 'B'`, so no third pane is reachable. The refusal is now reachable from the shipped UI, which is what qa marked INCONCLUSIVE. Evidence: `multiMode.test.ts` 27 passed (incl. 5 direct `paneAssignPathError` cases) + `multiModeOpenAssignment.test.ts` 18 (incl. the same-file-path refusal with distinct ids and "a refused open creates no tab"); `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED (retested - C2c: cleared pane B, clicked `[data-pane-open]` and picked the SAME on-disk file pane A shows -> toast "That file is already shown in the other pane.", pane B stayed empty, tab count unchanged 2->2, and the pane B pick list did not offer pane A's document. Command: `npx playwright test e2e/phase32_multi_mode.spec.cjs` -> 8 passed.)
+
 ## DEF-275: A malformed `update:statusChanged` payload blanks the entire renderer and cannot be recovered without a relaunch
 
 - Status: CLOSED

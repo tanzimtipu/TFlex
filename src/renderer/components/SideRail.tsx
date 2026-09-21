@@ -5,13 +5,22 @@ import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveOutlinePage, isInvalidPageRequest, type OutlineNode } from '../pdf/pdfjs';
 import { useLiftAnimation, useRailSwapAnimation } from '../hooks/useAnimations';
-import { computeThumbGeometry } from './thumbGeometry';
+import { computeThumbGeometry, THUMB_WIDTH } from './thumbGeometry';
 import type { EngineState } from '../engine/types';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
 import { buildPageLabelMap } from './pageGeometry';
 import { AnimatedPanel } from './AnimatedPanel';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
+import { usePageDragOptional } from '../state/PageDragContext';
+import {
+  buildDragSource,
+  dropEffectFor,
+  dropModeFromEvent,
+  railInsertIndex,
+  resolveDrop,
+  type PageDropOp,
+} from '../state/pageDrag';
 
 interface SideRailProps {
   doc: PDFDocumentProxy;
@@ -277,7 +286,10 @@ export function SideRail(props: SideRailProps) {
 // ---------------------------------------------------------------------------
 // Thumbnails
 
-const THUMB_WIDTH = 126;
+// THUMB_WIDTH (126, today's single-mode thumbnail width) now lives in
+// `thumbGeometry.ts` beside `computeThumbWidth`, the Phase-32 dynamic
+// sizing rule: the two must share one definition so the multi-section
+// rail's smaller width and the single-mode width can never drift.
 
 // Geometry math for the thumbnail rail. Each thumbnail's bounding box height
 // = (THUMB_WIDTH * aspectRatio, the wrap height) + the thumb's padding
@@ -306,16 +318,23 @@ const THUMB_BUFFER = 1;
 /** DEF-148 — the CSS wrap height for a single thumb. A page whose
  *  size is known (`pageSize`, un-rotated pt) gets the height its OWN
  *  aspect ratio implies — the canvas is rendered by
- *  `computeThumbGeometry` at exactly `floor(THUMB_WIDTH * h / w)`, so
+ *  `computeThumbGeometry` at exactly `floor(thumbWidth * h / w)`, so
  *  the wrap must match that (floor, not round, so a full-page canvas
  *  is never clipped into a crop-square wrap). Pages with no reported
  *  size yet fall back to the `defaultAspect` (the largest known page
- *  or the doc's page-1 default). */
-function thumbWrapHeightFor(pageSize: { w: number; h: number } | null, defaultAspect: number): number {
+ *  or the doc's page-1 default). Phase 32: `thumbWidth` is the rail's
+ *  computed width (126 in single mode, smaller for a multi-document
+ *  shared rail) — it defaults to THUMB_WIDTH so every existing caller
+ *  keeps today's geometry exactly. */
+function thumbWrapHeightFor(
+  pageSize: { w: number; h: number } | null,
+  defaultAspect: number,
+  thumbWidth: number = THUMB_WIDTH,
+): number {
   if (pageSize !== null && pageSize.w > 0) {
-    return Math.floor((THUMB_WIDTH * pageSize.h) / pageSize.w);
+    return Math.floor((thumbWidth * pageSize.h) / pageSize.w);
   }
-  return Math.round(THUMB_WIDTH * defaultAspect);
+  return Math.round(thumbWidth * defaultAspect);
 }
 
 /** Each thumb's bounding box height = wrap-height + padding-top +
@@ -324,8 +343,9 @@ function thumbWrapHeightFor(pageSize: { w: number; h: number } | null, defaultAs
 function thumbSlotHeightFor(
   pageSize: { w: number; h: number } | null,
   defaultAspect: number,
+  thumbWidth: number = THUMB_WIDTH,
 ): number {
-  const wrapHeight = thumbWrapHeightFor(pageSize, defaultAspect);
+  const wrapHeight = thumbWrapHeightFor(pageSize, defaultAspect, thumbWidth);
   return (
     wrapHeight +
     THUMB_PADDING_PX * 2 +
@@ -345,13 +365,14 @@ function thumbSlotTops(
   pageCount: number,
   sizeForPage: (p: number) => { w: number; h: number } | null,
   defaultAspect: number,
+  thumbWidth: number = THUMB_WIDTH,
 ): number[] {
   const tops: number[] = [0, THUMB_OUTER_PADDING];
   for (let p = 1; p <= pageCount; p += 1) {
     // tops[p] is the top of page p; append page p's bottom (= page
     // p+1's top). Final length = pageCount + 2: [0, pad, top1..topN,
     // scrollerContentBottom].
-    tops.push(tops[tops.length - 1] + thumbSlotHeightFor(sizeForPage(p), defaultAspect));
+    tops.push(tops[tops.length - 1] + thumbSlotHeightFor(sizeForPage(p), defaultAspect, thumbWidth));
   }
   return tops;
 }
@@ -395,7 +416,7 @@ function visibleThumbRangeFromTops(
   };
 }
 
-interface ThumbnailRailProps {
+export interface ThumbnailRailProps {
   doc: PDFDocumentProxy;
   pageCount: number;
   currentPage: number;
@@ -431,9 +452,29 @@ interface ThumbnailRailProps {
   onReorder?: (fromIndex: number, toIndex: number) => void;
   onUndo?: () => void;
   onJump: (page: number) => void;
+  /** Phase 32 — the computed thumbnail width for THIS rail instance.
+   *  Defaults to THUMB_WIDTH (126) so the single-mode rail is byte-for-
+   *  byte today's rail; the Multi Mode shared rail passes
+   *  `computeThumbWidth(...)`, a smaller value with two documents loaded.
+   *  Only the width changes: the Thumb render/cleanup/virtualization
+   *  rules are the same code path either way. */
+  thumbWidth?: number;
+  /** Phase 32 (chunk 2d) — the document-aware drag wiring. Present only in
+   *  the Multi Mode shared rail (one instance per section); absent in single
+   *  mode, where the rail keeps its pre-Phase-32 local drag state and its
+   *  existing intra-document reorder semantics byte-for-byte. */
+  crossDoc?: {
+    /** This section's document (the tab id). */
+    tabId: string;
+    /** Apply a resolved drop; App owns the engine + refresh sequence. */
+    onDrop: (op: PageDropOp) => void;
+  } | null;
 }
 
-function ThumbnailRail({
+/** Phase 32 — exported so the Multi Mode shared rail can render one
+ *  instance per loaded document (each with its own scroll container and
+ *  its own visible+buffered window). */
+export function ThumbnailRail({
   doc,
   pageCount,
   currentPage,
@@ -449,6 +490,8 @@ function ThumbnailRail({
   onReorder,
   onUndo,
   onJump,
+  thumbWidth = THUMB_WIDTH,
+  crossDoc = null,
 }: ThumbnailRailProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const thumbElsRef = useRef(new Map<number, HTMLElement>());
@@ -467,9 +510,33 @@ function ThumbnailRail({
   // paints it as the drag source, dropping it on another thumb inserts it
   // before that target. The reorder index is the visible 1-based index,
   // which is what the engine consumes.
+  //
+  // Phase 32 (chunk 2d): in the Multi Mode shared rail (`crossDoc` present)
+  // the SAME model is document-aware — the source/target carry tab ids and
+  // live in the shared drag context so a drag can cross sections. Single
+  // mode (`crossDoc` absent) keeps these local page-only states untouched.
   const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  const railRootRef = useRef<HTMLDivElement | null>(null);
+  const drag = usePageDragOptional();
+  const docAware = crossDoc !== null && drag !== null;
+  const dragSource = docAware ? drag.source : null;
+  const dragTarget = docAware ? drag.target : null;
+  // The page painted as the drag source: only when the active drag started
+  // in THIS section.
+  const draggingPage = !docAware
+    ? dragFromIndex
+    : dragSource !== null && crossDoc !== null && dragSource.tabId === crossDoc.tabId
+      ? dragSource.anchorPage
+      : null;
+  // The landing slot in THIS section (1-based insert-before index).
+  const dropPage = !docAware
+    ? dropTarget
+    : dragTarget !== null && crossDoc !== null && dragTarget.tabId === crossDoc.tabId
+      ? dragTarget.atIndex
+      : null;
+  const dragActive = docAware ? dragSource !== null : dragFromIndex !== null;
 
   // DEF-148 — per-VISIBLE-page sizes. `sizeForPage(p)` returns the
   // page's own reported size (`pageSizes`, keyed by visible 1-based
@@ -497,8 +564,8 @@ function ThumbnailRail({
   );
 
   const slotTops = useMemo(
-    () => thumbSlotTops(pageCount, sizeForPage, fallbackAspect),
-    [pageCount, sizeForPage, fallbackAspect],
+    () => thumbSlotTops(pageCount, sizeForPage, fallbackAspect, thumbWidth),
+    [pageCount, sizeForPage, fallbackAspect, thumbWidth],
   );
 
   const computeGeometryMountRef = useRef<() => void>(() => undefined);
@@ -653,21 +720,62 @@ function ThumbnailRail({
   }, [selected, pageCount]);
 
 const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void => {
+    // Phase 32 (chunk 2d): a drag started here carries this section's
+    // document id into the shared context so the other section (and the
+    // canvas) can recognise it as a cross-document drag. Single mode keeps
+    // the page-only local state and its 'move' effect exactly as today.
+    if (docAware && crossDoc !== null && drag !== null) {
+      e.dataTransfer.effectAllowed = 'copyMove';
+      e.dataTransfer.setData('text/plain', String(page));
+      drag.begin(
+        buildDragSource(crossDoc.tabId, page, selected === null ? null : [selected]),
+      );
+      return;
+    }
     setDragFromIndex(page);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', String(page));
   };
   const onDragOver = (page: number) => (e: React.DragEvent<HTMLElement>): void => {
+    if (docAware && crossDoc !== null && drag !== null) {
+      if (drag.source === null) return;
+      e.preventDefault();
+      const mode = dropModeFromEvent(e);
+      e.dataTransfer.dropEffect = dropEffectFor(mode);
+      drag.hover({ tabId: crossDoc.tabId, atIndex: railInsertIndex(page), mode });
+      return;
+    }
     if (dragFromIndex === null) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     if (dropTarget !== page) setDropTarget(page);
   };
-  const onDragLeave = (): void => {
+  const onDragLeave = (e: React.DragEvent<HTMLElement>): void => {
+    if (docAware && drag !== null) {
+      // Only clear when the pointer actually left the section; moving
+      // between two thumbs fires leave then enter, and clearing there
+      // would flicker the affordance.
+      const related = e.relatedTarget as Node | null;
+      if (related !== null && railRootRef.current?.contains(related) === true) return;
+      drag.hover(null);
+      return;
+    }
     setDropTarget(null);
   };
   const onDrop = (page: number) => (e: React.DragEvent<HTMLElement>): void => {
     e.preventDefault();
+    if (docAware && crossDoc !== null && drag !== null) {
+      const mode = dropModeFromEvent(e);
+      const op = resolveDrop(
+        drag.source,
+        { tabId: crossDoc.tabId, atIndex: railInsertIndex(page) },
+        mode,
+        pageCount,
+      );
+      drag.end();
+      if (op !== null) crossDoc.onDrop(op);
+      return;
+    }
     const from = dragFromIndex;
     setDragFromIndex(null);
     setDropTarget(null);
@@ -679,12 +787,55 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
     onReorder(from, toIndex);
   };
   const onDragEnd = (): void => {
+    if (docAware && drag !== null) {
+      drag.end();
+      return;
+    }
     setDragFromIndex(null);
     setDropTarget(null);
   };
 
+  // Phase 32 (chunk 2d) — the section's empty space below the last thumb is
+  // an APPEND drop target (-1) for a cross-document drag. The per-thumb
+  // handlers bubble into these, so they bail when the event originated on a
+  // thumb (which already resolved its own slot).
+  const onScrollerDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!docAware || crossDoc === null || drag === null) return;
+    if (drag.source === null) return;
+    if ((e.target as HTMLElement).closest('.thumb') !== null) return;
+    e.preventDefault();
+    const mode = dropModeFromEvent(e);
+    e.dataTransfer.dropEffect = dropEffectFor(mode);
+    drag.hover({ tabId: crossDoc.tabId, atIndex: -1, mode });
+  };
+  const onScrollerDrop = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!docAware || crossDoc === null || drag === null) return;
+    if ((e.target as HTMLElement).closest('.thumb') !== null) return;
+    e.preventDefault();
+    const op = resolveDrop(
+      drag.source,
+      { tabId: crossDoc.tabId, atIndex: -1 },
+      dropModeFromEvent(e),
+      pageCount,
+    );
+    drag.end();
+    if (op !== null) crossDoc.onDrop(op);
+  };
+  const onScrollerDragLeave = (e: React.DragEvent<HTMLDivElement>): void => {
+    if (!docAware || drag === null) return;
+    const related = e.relatedTarget as Node | null;
+    if (related !== null && railRootRef.current?.contains(related) === true) return;
+    drag.hover(null);
+  };
+
   return (
-    <div className="thumb-scroller">
+    <div
+      className="thumb-scroller"
+      ref={railRootRef}
+      onDragOver={docAware ? onScrollerDragOver : undefined}
+      onDrop={docAware ? onScrollerDrop : undefined}
+      onDragLeave={docAware ? onScrollerDragLeave : undefined}
+    >
       {pageCount > 0 && (
         <div className="rail-actions">
           <button
@@ -748,10 +899,12 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
               shouldRender={visibleThumbs.has(page)}
               isCurrent={page === currentPage}
               isSelected={isSel}
-              isDragging={dragFromIndex === page}
-              isDropTarget={dropTarget === page && dragFromIndex !== null && dragFromIndex !== page}
+              isDragging={draggingPage === page}
+              isDropTarget={dropPage === page && dragActive && draggingPage !== page}
+              isDropCopy={dragTarget?.mode === 'copy'}
               rotation={rot}
               label={page}
+              thumbWidth={thumbWidth}
               pageLabel={pageLabelMap === null ? null : pageLabelMap.get(page) ?? null}
               onJump={onJump}
               onSelect={setSelected}
@@ -853,9 +1006,18 @@ interface ThumbProps {
   isSelected: boolean;
   isDragging: boolean;
   isDropTarget: boolean;
+  /** Phase 32 (chunk 2d) — the pending drop is a COPY (Ctrl / Alt held).
+   *  Purely the affordance; the applied mode comes from the drop event. */
+  isDropCopy?: boolean;
   /** Quarter-turn rotation, 0-3 (the engine's rotation unit). */
   rotation: number;
   label: number;
+  /** Phase 32 — this rail's computed thumbnail width (126 in single mode,
+   *  smaller in the Multi Mode shared rail). The render/cleanup/
+   *  virtualization logic below is unchanged: the width is the only input
+   *  that differs, and it already participates in the render effect's
+   *  deps. */
+  thumbWidth?: number;
   /** Phase 12 — logical page label for this visible slot (e.g. "iv").
    *  When set, the thumb label renders the override instead of the raw
    *  page number so the user can see their renumberPages choice without
@@ -865,7 +1027,7 @@ interface ThumbProps {
   onSelect: (page: number) => void;
   onDragStart: (e: React.DragEvent<HTMLElement>) => void;
   onDragOver: (e: React.DragEvent<HTMLElement>) => void;
-  onDragLeave: () => void;
+  onDragLeave: (e: React.DragEvent<HTMLElement>) => void;
   onDrop: (e: React.DragEvent<HTMLElement>) => void;
   onDragEnd: () => void;
   registerThumb: (page: number, el: HTMLElement | null) => void;
@@ -887,8 +1049,10 @@ function Thumb({
   isSelected,
   isDragging,
   isDropTarget,
+  isDropCopy = false,
   rotation,
   label,
+  thumbWidth = THUMB_WIDTH,
   pageLabel = null,
   onJump,
   onSelect,
@@ -907,13 +1071,13 @@ function Thumb({
   // same-slot dependency change (doc proxy swap, page/width change).
   const mountedRef = useRef(true);
   const [rendered, setRendered] = useState(false);
-  const width = THUMB_WIDTH;
+  const width = thumbWidth;
   // DEF-148 — the wrap height comes from THIS page's own aspect
   // ratio when known (floor, matching the rendered canvas's cssHeight
   // exactly) and only falls back to the uniform page-1-derived ratio
   // for pages with no reported size. This is what keeps uncropped
   // pages full-size in the rail after page 1 is cropped.
-  const height = thumbWrapHeightFor(pageSize, aspectRatio);
+  const height = thumbWrapHeightFor(pageSize, aspectRatio, thumbWidth);
 
   // DEF-222 — declared BEFORE the render effect so that on a true
   // unmount its cleanup runs first and flips `mountedRef` to false,
@@ -1088,6 +1252,7 @@ function Thumb({
     isSelected ? 'thumb-selected' : '',
     isDragging ? 'thumb-dragging' : '',
     isDropTarget ? 'thumb-drop-target' : '',
+    isDropTarget && isDropCopy ? 'thumb-drop-copy' : '',
     rotDeg !== 0 ? `thumb-rot-${rotDeg}` : '',
   ]
     .filter((s) => s.length > 0)

@@ -23,6 +23,8 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  MovePagesBetweenDocsPayload,
+  MovePagesBetweenDocsResult,
   MoveSignaturePayload,
   OcrProgress,
   OcrRecognizeOptions,
@@ -1580,6 +1582,217 @@ export class EngineService {
       // DEF-130: revert the pdfDoc on failure so a retry starts clean.
       await tryRestorePdfBytes(doc, snapshot.pdfBytes);
       return err('engine-error', `insertFromPdf failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Phase 32 — cross-document page move/copy (Multi Mode)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Move or copy pages between two OPEN documents as ONE atomic operation.
+   *
+   * QUEUE ORDERING: a cross-document op serialises against TWO per-document
+   * queues. The pair is always acquired in a DETERMINISTIC order —
+   * lexicographically by docId — so two opposite-direction moves (A->B and
+   * B->A issued concurrently) both take the same first queue and cannot
+   * deadlock by each holding one queue and waiting for the other. The
+   * second queue is then acquired inside the first, so the two docs are
+   * locked for the whole operation.
+   *
+   * `pages` are 0-based VISIBLE-order indices in the source (indices into
+   * the source's `pageOrder`); `atIndex` is the insertion index in the
+   * target's visible order, with `-1` = append (the `insertFromPdf`
+   * convention). Annotations on the moved pages travel with them, and the
+   * moved page keeps its current rotation. Returns BOTH documents' states.
+   */
+  async movePagesBetweenDocs(
+    payload: MovePagesBetweenDocsPayload,
+  ): Promise<Result<MovePagesBetweenDocsResult, EngineError>> {
+    const { fromDocId, toDocId } = payload;
+    // Validate the same-document case BEFORE acquiring any queue: enqueuing
+    // the same docId twice would chain the inner task on the outer one and
+    // deadlock (the outer task never resolves until the inner does, and the
+    // inner waits on the outer). Returning early also keeps an invalid
+    // request off both queues.
+    if (fromDocId === toDocId) {
+      return err('same-document', 'source and target document are the same');
+    }
+    const [first, second] = fromDocId < toDocId
+      ? [fromDocId, toDocId]
+      : [toDocId, fromDocId];
+    return this._enqueue(first, () =>
+      this._enqueue(second, () => this._movePagesBetweenDocsImpl(payload)),
+    );
+  }
+
+  private async _movePagesBetweenDocsImpl(
+    payload: MovePagesBetweenDocsPayload,
+  ): Promise<Result<MovePagesBetweenDocsResult, EngineError>> {
+    const { fromDocId, toDocId, pages, atIndex, mode } = payload;
+
+    // ---- validation, before ANY mutation ----
+    // (fromDocId === toDocId is rejected in movePagesBetweenDocs, before the
+    // queues are acquired — see the deadlock note there.)
+    const fromDoc = this.docs.get(fromDocId);
+    if (fromDoc === undefined) {
+      return err('not-found', `unknown document: ${fromDocId}`);
+    }
+    const toDoc = this.docs.get(toDocId);
+    if (toDoc === undefined) {
+      return err('not-found', `unknown document: ${toDocId}`);
+    }
+    if (mode !== 'move' && mode !== 'copy') {
+      return err('engine-error', `mode must be 'move' or 'copy', got ${String(mode)}`);
+    }
+    if (!Array.isArray(pages) || pages.length === 0) {
+      return err('empty-range', 'pages must be a non-empty array');
+    }
+    const fromCount = fromDoc.order.length;
+    for (const p of pages) {
+      if (!Number.isInteger(p) || p < 0 || p >= fromCount) {
+        return err('out-of-range', `page ${p} out of range [0,${fromCount - 1}]`);
+      }
+    }
+    if (mode === 'move' && pages.length >= fromCount) {
+      // Mirror applyOpToDoc's "cannot delete the last remaining page": a
+      // move must leave the source with at least one page.
+      return err(
+        'empty-range',
+        `cannot move every page: source must keep at least one of ${fromCount}`,
+      );
+    }
+    if (
+      atIndex !== -1 &&
+      (!Number.isInteger(atIndex) || atIndex < 0 || atIndex > toDoc.order.length)
+    ) {
+      return err('out-of-range', `atIndex ${atIndex} out of range [-1,${toDoc.order.length}]`);
+    }
+
+    // ---- snapshot BOTH docs (visible-order arrays + pdfDoc bytes) ----
+    // The rollback below reloads each pdfDoc from its captured bytes, so the
+    // byte snapshot is mandatory: snapshotDocWithPdf swallows a serialization
+    // failure, so refuse up front rather than risk a half-applied move.
+    const fromSnap = await snapshotDocWithPdf(fromDoc);
+    const toSnap = await snapshotDocWithPdf(toDoc);
+    if (fromSnap.pdfBytes === undefined || toSnap.pdfBytes === undefined) {
+      return err('engine-error', 'movePagesBetweenDocs: could not snapshot document bytes');
+    }
+    // undoStack/redoStack/modified are not part of Snapshot — copy them so a
+    // failed move restores each doc state-for-state (copies, not references:
+    // the try block pushes onto the live stacks).
+    const fromStacks = {
+      undo: [...fromDoc.undoStack],
+      redo: [...fromDoc.redoStack],
+      modified: fromDoc.modified,
+    };
+    const toStacks = {
+      undo: [...toDoc.undoStack],
+      redo: [...toDoc.redoStack],
+      modified: toDoc.modified,
+    };
+
+    // Original (pdfDoc) indices of the pages to transfer, in source order.
+    const origIdxs = pages.map((vi) => fromDoc.order[vi]);
+
+    try {
+      const insertAt = atIndex < 0 ? toDoc.order.length : atIndex;
+      // 1) insert into the target (copies pages + carries rotation and
+      //    annotations). Extracted as a protected seam so tests can inject a
+      //    failure AFTER the target is partially mutated.
+      await this._insertMovedPagesInto(toDoc, fromDoc, origIdxs, insertAt);
+
+      // 2) for a move, remove the pages from the source. Delete from the
+      //    HIGHEST visible index first so the remaining indices stay valid;
+      //    dedupe so a repeated index cannot drop an unintended page.
+      if (mode === 'move') {
+        const visibleToDelete = [...new Set(pages)].sort((a, b) => b - a);
+        for (const vi of visibleToDelete) {
+          const del = applyOpToDoc(fromDoc, { kind: 'delete', page: vi });
+          if (!del.ok) {
+            throw new Error(`source delete failed: ${del.error.message}`);
+          }
+        }
+      }
+
+      // Success: record a per-doc undo snapshot (each doc's undo reverts its
+      // own side) and mark each modified. A COPY leaves the source untouched,
+      // so it gets no snapshot and stays unmodified (no spurious unsaved
+      // prompt on a document whose content did not change).
+      if (mode === 'move') {
+        fromDoc.undoStack.push(fromSnap);
+        fromDoc.redoStack = [];
+        fromDoc.modified = true;
+      }
+      toDoc.undoStack.push(toSnap);
+      toDoc.redoStack = [];
+      toDoc.modified = true;
+      return ok({ from: buildState(fromDoc), to: buildState(toDoc) });
+    } catch (e) {
+      // Atomic rollback: restore BOTH docs (arrays + pdfDoc bytes) and their
+      // stacks/flags so a failed move is indistinguishable from no move.
+      await restoreSnapshot(fromDoc, fromSnap);
+      await restoreSnapshot(toDoc, toSnap);
+      fromDoc.undoStack = fromStacks.undo;
+      fromDoc.redoStack = fromStacks.redo;
+      fromDoc.modified = fromStacks.modified;
+      toDoc.undoStack = toStacks.undo;
+      toDoc.redoStack = toStacks.redo;
+      toDoc.modified = toStacks.modified;
+      return err(
+        'engine-error',
+        `movePagesBetweenDocs failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
+
+  /**
+   * Phase 32 — copy `origIdxs` (pdfDoc indices in `fromDoc`) into `toDoc`
+   * at visible index `insertAt`, carrying each page's rotation and its
+   * annotations. Protected so a unit test can override it to throw AFTER
+   * the target has been partially mutated, proving the cross-document move
+   * rolls back atomically.
+   */
+  protected async _insertMovedPagesInto(
+    toDoc: EngineDoc,
+    fromDoc: EngineDoc,
+    origIdxs: number[],
+    insertAt: number,
+  ): Promise<void> {
+    const copied = await toDoc.pdfDoc.copyPages(fromDoc.pdfDoc, origIdxs);
+    const newOrigIdxs: number[] = [];
+    for (let i = 0; i < copied.length; i++) {
+      const page = copied[i];
+      const srcOrigIdx = origIdxs[i];
+      // Bake the source page's CURRENT visible rotation onto the copy.
+      // copyPages also pulls the source leaf's raw /Rotate down, so set the
+      // tracked value unconditionally (including 0) to override it; the
+      // target's own rotations slot stays 0 so serializeDoc does not apply
+      // it a second time.
+      const rawRot = fromDoc.rotations[srcOrigIdx];
+      const norm = Number.isFinite(rawRot)
+        ? ((Math.round(rawRot) % 4) + 4) % 4
+        : 0;
+      page.setRotation(degrees(norm * 90));
+      toDoc.pdfDoc.addPage(page);
+      const newOrigIdx = toDoc.pdfDoc.getPageCount() - 1;
+      newOrigIdxs.push(newOrigIdx);
+      toDoc.deleted.push(false);
+      toDoc.rotations.push(0);
+      toDoc.annotations.push([]);
+    }
+    // Insert into the target's visible order at the requested position.
+    toDoc.order.splice(insertAt, 0, ...newOrigIdxs);
+    // Carry annotations with their page: clone from the source registry and
+    // re-target each model's 1-based visible `page` to its new position.
+    for (let i = 0; i < newOrigIdxs.length; i++) {
+      const srcAnns = fromDoc.annotations[origIdxs[i]];
+      if (srcAnns === undefined || srcAnns.length === 0) continue;
+      const newVisible = insertAt + i + 1; // 1-based
+      toDoc.annotations[newOrigIdxs[i]] = cloneAnnotations([srcAnns])[0].map((a) => ({
+        ...a,
+        page: newVisible,
+      }));
     }
   }
 

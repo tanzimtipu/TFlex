@@ -2843,3 +2843,66 @@ is not kept: qa folded the version-agnostic part of its 1.24.0 About probe into
 `package.json` version - never a hardcoded string - and at least one non-empty What's New highlight)
 and deleted the per-version file. The canonical spec now has 9 tests and reads the expected version
 from `package.json`.
+
+## 2026-09-22: Phase 32 (Multi Mode) - the architecture, the open semantics, and path identity
+
+Phase 32 shipped Multi Mode: two documents side by side in one workspace, every document-scoped
+operation acting on the focused pane, one shared thumbnail rail with a labelled section per document
+and dynamically sized thumbs (126px single / 89px dual / 84px minimum), and cross-document page drag
+and drop from BOTH the rail and the canvas (default MOVE, Ctrl/Alt = COPY), backed by one atomic
+engine operation. 10/10 success criteria verified; three defects found and closed (DEF-277/278 by qa's
+gate, DEF-279 by the adversary); 240 unit tests + 31 e2e tests green.
+
+**Architecture (the pattern for any future multi-view feature):**
+- A pane's document IS a TAB ID. Multi Mode is a VIEW over the existing tab/document store - no new
+  document model, no new engine session. Tabs, the tab strip and single-document behaviour are
+  untouched when the mode is off.
+- **The focused pane drives the app's effective active tab** (`activateTab` + `activeTabIdRefLocal`).
+  That single invariant is what makes every existing document-scoped path route correctly with ZERO
+  changes to those paths - dozens of handlers read `activeTabIdRefLocal.current`. Do not sprinkle pane
+  awareness through operation handlers; move the invariant instead.
+- The panes are the SAME mounted `.tab-pane` elements with a visibility flip (`MultiPane.tsx`), keyed by
+  tab id - so a focus change or a mode toggle cannot remount a DocumentView or re-raster a canvas. This
+  is how the "no visible refresh or flicker" criterion was met (16ms sampling: 0 blank frames across
+  toggle, focus switch, divider drag and drag-and-drop; the unfocused pane's bitmap is never touched).
+- The rail is ONE shared component with a section per loaded document, each section its own scroller and
+  its own visible+buffered thumbnail window (520-page document: 520 thumb nodes mounted, ~4 canvases
+  rastered, heap flat).
+- `movePagesBetweenDocs` is ATOMIC: it snapshots both docs (including serialized bytes) before mutating
+  and rolls both back on any failure, so a failed move cannot lose a page. It serialises against the two
+  per-document queues in a DETERMINISTIC order (sorted doc ids) - a same-doc pair must be rejected BEFORE
+  queue acquisition or it self-deadlocks.
+- Undo after a cross-document move is per-side (each doc pushes its own snapshot): undoing one side
+  shows the page in BOTH documents until the other side is undone. The adversary probed it and judged it
+  coherent, not data loss - documented here so nobody re-litigates it.
+
+**Rule 1 - when a new mode changes what an EXISTING flow does, define that in the contract.** The first
+Phase 32 wording only said "a third document cannot be added ... fail loud" (DEF-277). The implemented
+reading left the opened document in a HIDDEN TAB with no visible effect. The contract was refined to the
+better semantics: while the mode is on, opening a document ASSIGNS it to the focused pane (the previous
+document stays a tab); an assignment that cannot be honoured (the file is already in the other pane) is
+refused with a message. Lesson: specify the new mode's effect on every existing entry point (Open, pane
+Open, sample cards, recent files), not only what the mode refuses.
+
+**Rule 2 - compare CANONICAL paths for any "same file" logic.** DEF-279 (MEDIUM, found by the adversary):
+the open dedupe and the pane guard compared raw path strings, so on Windows a case-variant path
+(`...-p32-samefile.pdf` vs `...-P32-SAMEFILE.PDF`, or `c:\` vs `C:\`) produced TWO tabs for ONE file,
+both accepted into the two panes - and then a save in pane B silently overwrote pane A's saved page
+deletion (on disk 34 -> 33 -> 34). Fix: one pure `pathComparisonKey` / `isSamePath`
+(`src/renderer/state/pathIdentity.ts`) that trims, drops the `\\?\` / `//?/` extended-length prefix
+(folding `\\?\UNC\` to `\\`), treats `\` and `/` alike, strips trailing separators and case-folds
+(Windows/macOS are case-insensitive; case-sensitive platforms are a documented non-goal). It is wired
+into BOTH halves of the open dedupe - the `tabsReducer` open case is what actually collapses a duplicate
+open - and into the pane guard.
+
+**Rule 3 - a contract refinement invalidates test SETUPS, not just assertions.** Refining the open
+semantics broke 18 e2e tests across four Phase 32 specs whose shared `twoPaneSetup` opened the second
+file while the mode was on (it now lands in the focused pane). No assertion was wrong; the precondition
+was. Keep a phase's setup in ONE helper, and after any semantic change re-run every spec of that phase
+rather than only the spec that covers the changed behaviour. Also: `[data-pane]` matches pane HEADERS as
+well as panes - scope selectors as `.tab-pane[data-pane]`.
+
+**Known observation, deliberately not filed (no user-facing effect):** in Multi Mode the All Tools badge
+renders twice at the same viewport position (one per mounted pane toolbar). A real pointer click opens
+the palette correctly, so only an automated strict `.first()` click can be intercepted. A future polish
+pass could hide the inactive pane's chrome entirely.

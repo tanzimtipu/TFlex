@@ -81,15 +81,33 @@ describe("DEF-142 — the renderer subscribes to window close requests", () => {
 
 describe("DEF-142 — the close-request callback applies the closeTab modified check", () => {
   it("reads BOTH the tabs reducer modified flag and the engineUi mirror", () => {
+    // Phase 32 — the check moved into the shared close-gate helper (so both
+    // Multi Mode panes are provably covered); App calls it with the same two
+    // sources. The helper still applies the closeTab modified rule verbatim.
     expect(appSource).toMatch(
-      /t\.modified \|\| engineUiRef\.current\[t\.id\]\?\.state\.modified === true/,
+      /collectModifiedTabIds\(\s*tabsRef\.current\.tabs,\s*engineUiRef\.current,?\s*\)/,
+    );
+    const helperSource = fs.readFileSync(
+      path.join(
+        __dirname,
+        "..",
+        "..",
+        "..",
+        "src",
+        "renderer",
+        "state",
+        "closeGate.ts",
+      ),
+      "utf8",
+    );
+    expect(helperSource).toMatch(
+      /t\.modified \|\| engineUi\[t\.id\]\?\.state\.modified === true/,
     );
   });
 
   it("iterates all open tabs via the tabs reducer list", () => {
     const cb = closeRequestCallback();
-    expect(cb).toMatch(/tabsRef\.current\.tabs/);
-    expect(cb).toMatch(/\.map\(\(t\) => t\.id\)/);
+    expect(cb).toMatch(/collectModifiedTabIds\(\s*tabsRef\.current\.tabs,/);
   });
 });
 
@@ -123,7 +141,9 @@ describe("DEF-142 — modified tabs show the existing close prompt instead of co
   it("keeps an already-showing per-tab close prompt first in the queue", () => {
     const cb = closeRequestCallback();
     expect(cb).toMatch(/pendingCloseTabIdRef\.current/);
-    expect(cb).toMatch(/pending !== null && modifiedIds\.includes\(pending\)/);
+    // Phase 32 — the ordering rule lives in `orderWindowCloseQueue`; App
+    // passes the same pending id and modified ids to it.
+    expect(cb).toMatch(/orderWindowCloseQueue\(\s*modifiedIds,\s*pendingCloseTabIdRef\.current,?\s*\)/);
   });
 });
 

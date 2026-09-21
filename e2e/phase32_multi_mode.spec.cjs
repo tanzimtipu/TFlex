@@ -1,0 +1,441 @@
+// Phase 32 — Multi Mode e2e (spec 1 of 4).
+//
+// Covers success criteria 1 and 2: the mode round-trip through BOTH entry
+// points (CommandBar icon + All tools entry, states agree, clean return to
+// the single-pane layout), the two-pane layout with two different documents,
+// the per-pane headers (name + page count), the focus affordance, pane B's
+// empty state + pick list (excluding the other pane's document),
+// [data-pane-open] opening a PDF straight into a pane, the amended
+// assignment semantics (a generic open lands in the FOCUSED pane, replacing
+// its document; the previous document stays a tab), and the same-file
+// refusal.
+//
+// Launches only through the canonical launchApp helper.
+const { test, expect } = require('@playwright/test');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+const { launchApp } = require('./lib/launch.cjs');
+const { hardClose } = require('./lib/helpers.cjs');
+
+const FIX = path.resolve(__dirname, '..', 'test-fixtures');
+const ALPHA_SRC = path.join(FIX, 'report.pdf'); // 34 pages
+const BETA_SRC = path.join(FIX, 'long.pdf'); // 520 pages
+const TMP = path.join(os.tmpdir(), 'tflex-p32');
+
+let electronApp = null;
+let win = null;
+// The exact on-disk paths the two-pane setup opened, so the DEF-278 guard
+// (which compares file PATHS) can be exercised with the SAME file.
+let alphaPath = null;
+let betaPath = null;
+
+function tmpCopy(src, name) {
+  fs.mkdirSync(TMP, { recursive: true });
+  const dst = path.join(TMP, `${Date.now()}-${Math.random().toString(36).slice(2)}-${name}`);
+  fs.copyFileSync(src, dst);
+  return dst;
+}
+
+async function mockOpen(p) {
+  await electronApp.evaluate(async ({ dialog }, fp) => {
+    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });
+  }, p);
+}
+
+// Open a PDF through the real title-bar Open control with a mocked OS dialog.
+async function openFile(p) {
+  await mockOpen(p);
+  await win.locator('[data-toolbar-open]').first().click();
+  await win.waitForTimeout(900);
+}
+
+async function waitTabCount(n) {
+  await expect(win.locator('.tab[data-tab-id]')).toHaveCount(n, { timeout: 30000 });
+}
+
+function headerLoc(pane) {
+  return win.locator(`[data-pane="${pane}"] [data-pane-header]`);
+}
+
+async function paneHeader(pane) {
+  const raw = await headerLoc(pane).innerText();
+  const text = raw.replace(/\s+/g, ' ').trim();
+  const m = text.match(/(\d+)\s+pages?/);
+  return { text, pageCount: m ? Number(m[1]) : null };
+}
+
+// Two different documents, both panes filled (alpha in A, beta in B).
+//
+// Amended Phase 32 semantics: a title-bar Open while the mode is on ASSIGNS
+// the document to the FOCUSED pane, so the second document is opened in
+// single mode first, alpha is made active, and only then is the mode turned
+// on (pane A = alpha) and beta picked into pane B.
+async function twoPaneSetup() {
+  alphaPath = tmpCopy(ALPHA_SRC, 'p32-alpha.pdf');
+  betaPath = tmpCopy(BETA_SRC, 'p32-beta.pdf');
+  await openFile(alphaPath);
+  await waitTabCount(1);
+  await openFile(betaPath);
+  await waitTabCount(2);
+  await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
+  await win.waitForTimeout(300);
+  await win.locator('[data-toolbar-multi-mode]').first().click();
+  await win.waitForTimeout(400);
+  await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
+  await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p32-beta' }).first().click();
+  await win.waitForTimeout(1200);
+  await expect(win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').first()).toBeVisible({ timeout: 30000 });
+}
+
+test.beforeEach(async () => {
+  electronApp = await launchApp();
+  win = await electronApp.firstWindow();
+  await win.waitForSelector('.sample-card', { timeout: 30000 });
+  await win.waitForTimeout(300);
+});
+test.afterEach(async () => {
+  if (electronApp) await hardClose(electronApp);
+  electronApp = null;
+  win = null;
+});
+test.setTimeout(180000);
+
+test('C1 mode round-trip: CommandBar and All tools agree, off returns to single-pane', async () => {
+  await openFile(tmpCopy(ALPHA_SRC, 'p32-alpha.pdf'));
+  await waitTabCount(1);
+  const stage = win.locator('.tab-stage');
+
+  expect(await stage.getAttribute('data-multi-mode')).toBe('false');
+  expect(await win.locator('[data-pane]').count()).toBe(0);
+  expect(await win.locator('[data-toolbar-multi-mode]').count()).toBe(1);
+
+  // --- ON via the CommandBar control ---
+  await win.locator('[data-toolbar-multi-mode]').first().click();
+  await win.waitForTimeout(500);
+  expect(await stage.getAttribute('data-multi-mode')).toBe('true');
+  expect(await win.locator('.tab-pane[data-pane="A"]').count()).toBe(1);
+  expect(await win.locator('.tab-pane[data-pane="B"]').count()).toBe(1);
+  const cmdPressed = await win.locator('[data-toolbar-multi-mode]').first().getAttribute('aria-pressed');
+  console.log(`[P32] after CommandBar ON: stage=${await stage.getAttribute('data-multi-mode')} cmdPressed=${cmdPressed} panes=${await win.locator('[data-pane]').count()} multiPanes=${await stage.getAttribute('data-multi-panes')}`);
+  expect(cmdPressed).toBe('true');
+
+  // All tools entry agrees.
+  await win.locator('[data-tools-badge]').first().click();
+  await win.waitForSelector('[data-tool-id="multi-mode"]', { timeout: 10000 });
+  const allPressed = await win.locator('[data-tool-id="multi-mode"]').getAttribute('aria-pressed');
+  console.log(`[P32] All tools entry aria-pressed after CommandBar ON = ${allPressed}`);
+  expect(allPressed).toBe('true');
+
+  // --- OFF via the All tools entry ---
+  await win.locator('[data-tool-id="multi-mode"]').click();
+  await win.waitForTimeout(500);
+  console.log(`[P32] after All tools OFF: stage=${await stage.getAttribute('data-multi-mode')} panes=${await win.locator('[data-pane]').count()}`);
+  expect(await stage.getAttribute('data-multi-mode')).toBe('false');
+  expect(await win.locator('[data-pane]').count()).toBe(0);
+  expect(await win.locator('[data-pane-header]').count()).toBe(0);
+  expect(await win.locator('[data-multi-divider]').count()).toBe(0);
+  expect(await win.locator('[data-tool-id="multi-mode"]').getAttribute('aria-pressed')).toBe('false');
+  expect(await win.locator('[data-toolbar-multi-mode]').first().getAttribute('aria-pressed')).toBe('false');
+
+  // --- ON again via All tools, OFF via CommandBar (the reverse pair) ---
+  await win.locator('[data-tool-id="multi-mode"]').click();
+  await win.waitForTimeout(500);
+  expect(await stage.getAttribute('data-multi-mode')).toBe('true');
+  expect(await win.locator('[data-tool-id="multi-mode"]').getAttribute('aria-pressed')).toBe('true');
+  await win.locator('.tab-pane[data-pane="A"] [data-toolbar-multi-mode]').first().click();
+  await win.waitForTimeout(500);
+  expect(await stage.getAttribute('data-multi-mode')).toBe('false');
+  expect(await win.locator('[data-pane]').count()).toBe(0);
+});
+
+test('C2 two-pane layout with two different documents, headers, rail sections', async () => {
+  await twoPaneSetup();
+  const stage = win.locator('.tab-stage');
+  expect(await stage.getAttribute('data-multi-mode')).toBe('true');
+  expect(await stage.getAttribute('data-multi-panes')).toBe('2');
+
+  const a = await paneHeader('A');
+  const b = await paneHeader('B');
+  console.log(`[P32] headerA="${a.text}" (${a.pageCount}p) headerB="${b.text}" (${b.pageCount}p)`);
+  expect(a.text).toContain('p32-alpha');
+  expect(b.text).toContain('p32-beta');
+  expect(a.pageCount).toBe(34);
+  expect(b.pageCount).toBe(520);
+
+  // Both panes show a real page canvas (interactive), not a placeholder.
+  await expect(win.locator('.tab-pane[data-pane="A"] canvas.pdf-page-canvas').first()).toBeVisible();
+  await expect(win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').first()).toBeVisible();
+
+  // Shared rail: exactly one labelled section per loaded document.
+  const sections = win.locator('[data-multi-rail] [data-rail-section]');
+  expect(await sections.count()).toBe(2);
+  const titles = [];
+  const counts = [];
+  for (const pane of ['A', 'B']) {
+    const sec = win.locator(`[data-rail-section-pane="${pane}"]`);
+    titles.push((await sec.locator('[data-rail-section-header]').innerText()).replace(/\s+/g, ' ').trim());
+    counts.push(await sec.locator('.thumb-item').count());
+  }
+  console.log(`[P32] rail sections: A="${titles[0]}" B="${titles[1]}" thumbItems(A,B)=${counts[0]},${counts[1]}`);
+  expect(titles[0]).toContain('p32-alpha');
+  expect(titles[0]).toContain('34');
+  expect(titles[1]).toContain('p32-beta');
+  expect(titles[1]).toContain('520');
+  // Two documents -> thumbnails shrink below the single-mode 126px.
+  const thumbW = await win.evaluate(() => {
+    const wrap = document.querySelector('[data-rail-section-pane="A"] .thumb-canvas-wrap');
+    const canvas = document.querySelector('[data-rail-section-pane="A"] canvas.thumb-canvas');
+    return {
+      wrap: wrap ? Math.round(wrap.getBoundingClientRect().width) : null,
+      canvas: canvas ? Math.round(canvas.getBoundingClientRect().width) : null,
+    };
+  });
+  console.log(`[P32] dual-mode thumb wrap/canvas width = ${JSON.stringify(thumbW)} (single-mode is 126px)`);
+  expect(thumbW.wrap).not.toBeNull();
+  expect(thumbW.wrap).toBeLessThan(126);
+  expect(thumbW.wrap).toBeGreaterThanOrEqual(84);
+
+  // A thumbnail click navigates that pane's document (rail onJump wiring).
+  const secBPage3 = win.locator('[data-rail-section-pane="B"] .thumb-item[data-page="3"]');
+  if ((await secBPage3.count()) > 0) {
+    await secBPage3.first().scrollIntoViewIfNeeded();
+    await secBPage3.first().click();
+    await win.waitForTimeout(700);
+    const cur = await win.evaluate(() => window.tflexDiagnostics().currentPage);
+    console.log(`[P32] after clicking B rail page 3: diagnostics currentPage=${cur}`);
+    expect(cur).toBe(3);
+  } else {
+    console.log('[P32] B rail page-3 thumb not mounted (virtualization) - skipping jump assertion');
+  }
+});
+
+test('C3 focus affordance moves on a pane click (and rail active follows)', async () => {
+  await twoPaneSetup();
+  // Assigning pane B's document focused it, so B starts focused.
+  expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
+  expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('false');
+
+  await win.locator('.multi-pane-header[data-pane="A"]').click();
+  await win.waitForTimeout(400);
+  console.log(`[P32] after pane A click: A=${await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')} B=${await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')}`);
+  expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('true');
+  expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('false');
+  expect(await win.locator('[data-rail-section-pane="A"]').getAttribute('data-rail-section-active')).toBe('true');
+  expect(await win.locator('[data-rail-section-pane="B"]').getAttribute('data-rail-section-active')).toBe('false');
+  const activeIsAlpha = await win.evaluate(() => window.tflexDiagnostics().pageCount);
+  console.log(`[P32] focused pane A -> diagnostics active doc pageCount=${activeIsAlpha}`);
+  expect(activeIsAlpha).toBe(34);
+
+  await win.locator('.multi-pane-header[data-pane="B"]').click();
+  await win.waitForTimeout(400);
+  console.log(`[P32] after pane B click: A=${await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')} B=${await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')}`);
+  expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
+  expect(await win.locator('[data-rail-section-pane="B"]').getAttribute('data-rail-section-active')).toBe('true');
+  const activeIsBeta = await win.evaluate(() => window.tflexDiagnostics().pageCount);
+  console.log(`[P32] focused pane B -> diagnostics active doc pageCount=${activeIsBeta}`);
+  expect(activeIsBeta).toBe(520);
+});
+
+test('C4 pane B empty state + pick list excludes the other pane document', async () => {
+  await openFile(tmpCopy(ALPHA_SRC, 'p32-alpha.pdf'));
+  await waitTabCount(1);
+  await openFile(tmpCopy(BETA_SRC, 'p32-beta.pdf'));
+  await waitTabCount(2);
+  // Amended semantics: make alpha active BEFORE enabling the mode so pane A
+  // holds alpha and beta stays an open tab the pick list can offer.
+  await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
+  await win.waitForTimeout(300);
+  await win.locator('[data-toolbar-multi-mode]').first().click();
+  await win.waitForTimeout(400);
+
+  const empty = win.locator('.tab-pane[data-pane="B"][data-pane-empty]');
+  await expect(empty).toBeVisible({ timeout: 15000 });
+  expect(await win.locator('.tab-pane[data-pane="B"] [data-pane-open]').count()).toBe(1);
+  const picks = win.locator('.tab-pane[data-pane="B"] [data-pane-pick]');
+  const titles = await picks.allInnerTexts();
+  console.log(`[P32] pane B pick list (${await picks.count()}): ${JSON.stringify(titles)}`);
+  expect(await picks.filter({ hasText: 'p32-alpha' }).count()).toBe(0);
+  expect(await picks.filter({ hasText: 'p32-beta' }).count()).toBe(1);
+
+  // Picking fills the pane.
+  await picks.filter({ hasText: 'p32-beta' }).first().click();
+  await win.waitForTimeout(1200);
+  expect(await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count()).toBe(0);
+  await expect(headerLoc('B')).toBeVisible({ timeout: 15000 });
+  const b = await paneHeader('B');
+  console.log(`[P32] pane B after pick: "${b.text}"`);
+  expect(b.text).toContain('p32-beta');
+});
+
+test('C5 [data-pane-open] opens a PDF directly into the empty pane', async () => {
+  await openFile(tmpCopy(ALPHA_SRC, 'p32-alpha.pdf'));
+  await waitTabCount(1);
+  await win.locator('[data-toolbar-multi-mode]').first().click();
+  await win.waitForTimeout(400);
+  await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
+
+  await mockOpen(tmpCopy(BETA_SRC, 'p32-beta.pdf'));
+  await win.locator('.tab-pane[data-pane="B"] [data-pane-open]').click();
+  await waitTabCount(2);
+  await win.waitForTimeout(1200);
+
+  expect(await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count()).toBe(0);
+  await expect(headerLoc('B')).toBeVisible({ timeout: 15000 });
+  const b = await paneHeader('B');
+  console.log(`[P32] pane B after data-pane-open: "${b.text}" tabs=${await win.locator('.tab[data-tab-id]').count()}`);
+  expect(b.text).toContain('p32-beta');
+  expect(b.pageCount).toBe(520);
+  await expect(win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').first()).toBeVisible({ timeout: 30000 });
+});
+
+test('C2b opening a document while Multi Mode is on assigns it to the focused pane (DEF-277)', async () => {
+  await twoPaneSetup(); // A=p32-alpha (34), B=p32-beta (520), focused B
+  const stage = win.locator('.tab-stage');
+  const tabsBefore = await win.locator('.tab[data-tab-id]').count();
+  expect(tabsBefore).toBe(2);
+
+  // --- Case 1: focused pane A ---
+  await win.locator('.multi-pane-header[data-pane="A"]').click();
+  await win.waitForTimeout(300);
+  expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('true');
+
+  await openFile(tmpCopy(ALPHA_SRC, 'p32-gamma.pdf')); // 34 pages
+  await waitTabCount(3);
+  await win.waitForTimeout(800);
+
+  const a1 = await paneHeader('A');
+  const b1 = await paneHeader('B');
+  const titles1 = await win.locator('.tab[data-tab-id] .tab-title').allInnerTexts();
+  console.log(`[P32] DEF-277 focus A: headerA="${a1.text}" (${a1.pageCount}p) headerB="${b1.text}" (${b1.pageCount}p) tabs=${JSON.stringify(titles1)}`);
+  // The focused pane's document CHANGED to the newly opened file.
+  expect(a1.text).toContain('p32-gamma');
+  expect(a1.pageCount).toBe(34);
+  // The other pane is untouched.
+  expect(b1.text).toContain('p32-beta');
+  expect(b1.pageCount).toBe(520);
+  // The previously shown document is still open as a tab.
+  expect(titles1.some((t) => t.includes('p32-alpha'))).toBe(true);
+  // No hidden-tab-with-no-effect: the new document is visible in a pane.
+  await expect(win.locator('.tab-pane[data-pane="A"] canvas.pdf-page-canvas').first()).toBeVisible();
+  // No third pane.
+  expect(await stage.getAttribute('data-multi-panes')).toBe('2');
+  expect(await win.locator('.tab-pane[data-pane]').count()).toBe(2);
+
+  // --- Case 2: focused pane B (the assignment must follow focus) ---
+  await win.locator('.multi-pane-header[data-pane="B"]').click();
+  await win.waitForTimeout(300);
+  expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
+
+  await openFile(tmpCopy(BETA_SRC, 'p32-delta.pdf')); // 520 pages
+  await waitTabCount(4);
+  await win.waitForTimeout(800);
+
+  const a2 = await paneHeader('A');
+  const b2 = await paneHeader('B');
+  const titles2 = await win.locator('.tab[data-tab-id] .tab-title').allInnerTexts();
+  console.log(`[P32] DEF-277 focus B: headerA="${a2.text}" (${a2.pageCount}p) headerB="${b2.text}" (${b2.pageCount}p) tabs=${JSON.stringify(titles2)}`);
+  expect(b2.text).toContain('p32-delta');
+  expect(b2.pageCount).toBe(520);
+  expect(a2.text).toContain('p32-gamma');
+  expect(a2.pageCount).toBe(34);
+  expect(titles2.some((t) => t.includes('p32-beta'))).toBe(true);
+  await expect(win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').first()).toBeVisible();
+  expect(await stage.getAttribute('data-multi-panes')).toBe('2');
+
+  // --- Single mode is unchanged: the open lands as a normal active tab ---
+  await win.locator('.tab-pane[data-pane="A"] [data-toolbar-multi-mode]').first().click();
+  await win.waitForTimeout(500);
+  expect(await stage.getAttribute('data-multi-mode')).toBe('false');
+  const tabsBeforeSingle = await win.locator('.tab[data-tab-id]').count();
+  await openFile(tmpCopy(ALPHA_SRC, 'p32-epsilon.pdf'));
+  await waitTabCount(tabsBeforeSingle + 1);
+  await win.waitForTimeout(500);
+  const activeTitle = await win.locator('.tab[data-tab-id][aria-selected="true"] .tab-title').innerText();
+  console.log(`[P32] single-mode open: tabs ${tabsBeforeSingle}->${await win.locator('.tab[data-tab-id]').count()} active="${activeTitle}"`);
+  expect(activeTitle).toContain('p32-epsilon');
+});
+
+test('C2c the same file cannot be assigned to the other pane (DEF-278)', async () => {
+  await twoPaneSetup(); // A=p32-alpha, B=p32-beta
+  // Clear pane B so its empty-state Open action is reachable.
+  await win.locator('.tab-pane[data-pane="B"] [data-pane-clear]').click();
+  await win.waitForTimeout(500);
+  await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 10000 });
+  const tabsBefore = await win.locator('.tab[data-tab-id]').count();
+  expect(tabsBefore).toBe(2);
+
+  // Pick the SAME file pane A shows (same on-disk path).
+  await mockOpen(alphaPath);
+  await win.locator('.tab-pane[data-pane="B"] [data-pane-open]').click();
+  await win.waitForTimeout(1400);
+
+  const toasts = await win.locator('.toast-text').allInnerTexts();
+  const tabsAfter = await win.locator('.tab[data-tab-id]').count();
+  const bEmpty = await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count();
+  console.log(`[P32] DEF-278 same-file-into-pane-B: toasts=${JSON.stringify(toasts)} tabs ${tabsBefore}->${tabsAfter} paneBEmpty=${bEmpty}`);
+  // A user-visible message appears.
+  expect(toasts.some((t) => t.includes('already shown in the other pane'))).toBe(true);
+  // Pane B is NOT assigned.
+  expect(bEmpty).toBe(1);
+  // No stray tab.
+  expect(tabsAfter).toBe(tabsBefore);
+
+  // The guard is reachable from the pick list too: the other pane's document
+  // cannot be picked.
+  const picks = win.locator('.tab-pane[data-pane="B"] [data-pane-pick]');
+  const titles = await picks.allInnerTexts();
+  console.log(`[P32] DEF-278 pane B pick list (${await picks.count()}): ${JSON.stringify(titles)}`);
+  expect(await picks.filter({ hasText: 'p32-alpha' }).count()).toBe(0);
+});
+
+test('C6 each pane keeps its own page position and zoom', async () => {
+  await twoPaneSetup(); // A=alpha (34), B=beta (520)
+  const pageInput = (pane) => win.locator(`.tab-pane[data-pane="${pane}"] .page-input`);
+  const zoomText = (pane) => win.locator(`.tab-pane[data-pane="${pane}"] .zoom-percent`);
+
+  await win.locator('.multi-pane-header[data-pane="A"]').click();
+  await win.waitForTimeout(350);
+  const zoomA0 = (await zoomText('A').innerText()).trim();
+  const zoomB0 = (await zoomText('B').innerText()).trim();
+
+  // Pane A's own Zoom in control changes only pane A's zoom.
+  await win.locator('.tab-pane[data-pane="A"] [aria-label="Zoom in"]').click();
+  await win.waitForTimeout(700);
+  const zoomA1 = (await zoomText('A').innerText()).trim();
+  const zoomB1 = (await zoomText('B').innerText()).trim();
+  console.log(`[P32] zoom: A ${zoomA0}->${zoomA1}, B ${zoomB0}->${zoomB1}`);
+  expect(zoomA1).not.toBe(zoomA0);
+  expect(zoomB1).toBe(zoomB0);
+
+  // Navigating pane A via its rail section thumbnail moves only pane A.
+  const thumbA5 = win.locator('[data-rail-section-pane="A"] .thumb-item[data-page="5"]');
+  await thumbA5.first().scrollIntoViewIfNeeded();
+  await thumbA5.first().click();
+  await win.waitForTimeout(900);
+  const aPage = await pageInput('A').inputValue();
+  const bPage = await pageInput('B').inputValue();
+  console.log(`[P32] page inputs after A rail -> page 5: A=${aPage} B=${bPage}`);
+  expect(Number(aPage)).toBe(5);
+  expect(Number(bPage)).toBe(1);
+
+  // Each pane keeps its own scroll position: scrolling pane A leaves pane B
+  // exactly where it was.
+  const scrollerA = win.locator('.tab-pane[data-pane="A"] .document-scroller');
+  const scrollerB = win.locator('.tab-pane[data-pane="B"] .document-scroller');
+  const scrollA0 = await scrollerA.evaluate((el) => el.scrollTop);
+  const scrollB0 = await scrollerB.evaluate((el) => el.scrollTop);
+  const boxA = await scrollerA.boundingBox();
+  await win.mouse.move(boxA.x + boxA.width / 2, boxA.y + boxA.height / 2);
+  await win.mouse.wheel(0, 700);
+  await win.waitForTimeout(700);
+  const scrollA1 = await scrollerA.evaluate((el) => el.scrollTop);
+  const scrollB1 = await scrollerB.evaluate((el) => el.scrollTop);
+  console.log(`[P32] scroll: A ${scrollA0}->${scrollA1}, B ${scrollB0}->${scrollB1}`);
+  expect(scrollA1).toBeGreaterThan(scrollA0);
+  expect(scrollB1).toBe(scrollB0);
+
+  // No path creates a third pane.
+  expect(await win.locator('.tab-pane[data-pane]').count()).toBe(2);
+  expect(await win.locator('.tab-stage').getAttribute('data-multi-panes')).toBe('2');
+});

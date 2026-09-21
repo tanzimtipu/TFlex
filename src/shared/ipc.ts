@@ -13,6 +13,8 @@ import type {
   ExportPagesPayload,
   FdfOpenError,
   LoadSettingsResult,
+  MovePagesBetweenDocsPayload,
+  MovePagesBetweenDocsResult,
   OpenFileDialogKind,
   OcrProgress,
   OcrRecognizeOptions,
@@ -120,6 +122,12 @@ export const IPC = {
   engineCreateFromClipboard: "engine:createFromClipboard",
   engineInsertBlankPage: "engine:insertBlankPage",
   engineInsertFromPdf: "engine:insertFromPdf",
+  // Phase 32 (Multi Mode) — one atomic cross-document page move/copy. The
+  // engine extracts the pages from the source, inserts them into the target
+  // at the drop position and (for a move) removes them from the source as a
+  // single unit; a failure leaves BOTH documents unchanged. Returns both
+  // documents' states so the renderer can refresh both panes in one trip.
+  engineMovePagesBetween: "engine:movePagesBetween",
   engineExportPages: "engine:exportPages",
   engineExportText: "engine:exportText",
   engineCreateDocxFromImages: "engine:createDocxFromImages",
@@ -330,6 +338,14 @@ export interface TFlexApiEngine {
     otherBytes: Uint8Array,
     position: number,
   ): Promise<Result<EngineState, import("./types").EngineError>>;
+  /** Phase 32 (Multi Mode) — move/copy pages between two open documents as
+   *  ONE atomic operation. `pages` are 0-based visible indices in the
+   *  source; `atIndex` is the target's visible insertion index (-1 =
+   *  append). Returns both documents' states. Optional so a pre-Phase-32
+   *  backend degrades with a friendly engine-error instead of crashing. */
+  movePagesBetweenDocs?(
+    payload: MovePagesBetweenDocsPayload,
+  ): Promise<Result<MovePagesBetweenDocsResult, import("./types").EngineError>>;
   exportPages?(
     docId: string,
     payload: ExportPagesPayload,

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { AnimatePresence } from "motion/react";
 import type {
   AppSettings,
@@ -46,7 +46,40 @@ import {
 } from "./components/updatePromptMachine";
 import { normalizeUpdateState } from "./components/updateStateNormalize";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
+import { isSamePath } from "./state/pathIdentity";
 import { pagesPanelReducer, initialPagesPanelState } from "./state/pagesPanel";
+// Phase 32 — Multi Mode: the two-pane view state (pure reducer) plus the
+// workspace stage that renders the panes.
+import {
+  multiModeReducer,
+  initialMultiModeState,
+  paneAssignError,
+  paneAssignPathError,
+  paneTabId,
+  type PaneId,
+} from "./state/multiMode";
+// Phase 32 — the focus -> active-tab routing rules and the close/quit gate
+// selection, both pure so the App wiring is a one-liner each.
+import {
+  resolvePaneClear,
+  resolvePaneFocus,
+  resolveTabStripActivation,
+} from "./state/multiModeRouting";
+import { collectModifiedTabIds, orderWindowCloseQueue } from "./state/closeGate";
+import { DocumentStage, type StageTab } from "./components/MultiPane";
+// Phase 32 (chunk 2b) — the ONE shared Multi Mode thumbnail rail (a
+// labelled section per loaded document) and the rail body it renders per
+// section (the existing ThumbnailRail, unchanged but for its width).
+import {
+  MultiRail,
+  type MultiRailSection,
+  type MultiRailSectionRender,
+} from "./components/MultiRail";
+import { ThumbnailRail } from "./components/SideRail";
+import { buildPageLabelMap } from "./components/pageGeometry";
+import { PageDragProvider } from "./state/PageDragContext";
+import { applyPageDrop, type PageDropDeps } from "./state/pageDragApply";
+import type { PageDropOp } from "./state/pageDrag";
 import { nextTheme, resolveThemeDefault } from "./state/theme";
 import { useThemeTransition } from "./hooks/useAnimations";
 import { setAnimationsEnabledPreference } from "./hooks/motionPolicy";
@@ -247,12 +280,28 @@ interface OpenTab {
   edit: EditState;
 }
 
+/** Phase 32 (chunk 2b) — everything one shared-rail section needs to render
+ *  a real `ThumbnailRail` for its document. Mirrors the per-tab data
+ *  `DocumentView` threads to the single-mode rail. */
+interface RailSectionData {
+  pane: PaneId;
+  tabId: string;
+  title: string;
+  pageCount: number;
+  currentPage: number;
+  doc: import("pdfjs-dist").PDFDocumentProxy;
+  pageSizes: Map<number, { w: number; h: number }> | null;
+  rotations: EngineState["rotations"];
+  visibleToSource: Map<number, number>;
+  proxyVisibleOrder: boolean;
+  pageLabelMap: Map<number, string> | null;
+  canUndo: boolean;
+}
+
 interface AppErrorState {
   toasts: Toast[];
   nextId: number;
-}
-
-type ErrorAction =
+}type ErrorAction =
   | { type: "push"; toast: Omit<Toast, "id"> }
   | { type: "dismiss"; id: number };
 
@@ -369,6 +418,14 @@ export function App(): ReactElement {
     initialPagesPanelState,
   );
   const pagesPanelCollapsed = pagesPanel.collapsed;
+  // Phase 32 — Multi Mode. The mode + the two pane slots live in App
+  // (session-only, per the phase's Settings-impact line); the split is a
+  // pure view value the divider drag writes.
+  const [multiMode, dispatchMultiMode] = useReducer(
+    multiModeReducer,
+    initialMultiModeState,
+  );
+  const [splitFraction, setSplitFraction] = useState(0.5);
   const [tabs, dispatchTabs] = useReducer(tabsReducer, initialTabsState);
   const [openTabs, setOpenTabs] = useState<Record<string, OpenTab>>({});
   const [errorState, dispatchError] = useReducer(errorReducer, { toasts: [], nextId: 1 });
@@ -647,6 +704,22 @@ export function App(): ReactElement {
   // identity changes. Same forward-declared-ref pattern as
   // `activeTabIdRefLocal` above (DEF-062).
   const refreshDocProxyForRef = useRef<((tabId: string) => Promise<boolean>) | null>(null);
+  // Phase 32 (DEF-277/DEF-278) — the generic open handlers (`onOpenClick`,
+  // `onSampleClick`, `onRecentClick`) are declared BEFORE the Multi Mode
+  // handlers, so they reach the open routing through this forward-declared
+  // ref instead of a useCallback dependency on a later const (which would
+  // be a TDZ reference in the dep array). Same pattern as
+  // `refreshDocProxyForRef` above. The ref is filled in every render next to
+  // `assignPaneDocument`, so its closure always sees the current focused
+  // pane.
+  const routeOpenedTabRef = useRef<{
+    /** Refuse the open when the file is already the other pane's document
+     *  (shows the message itself). Returns true when the open must stop. */
+    refuseFocused: (filePath: string | null) => boolean;
+    /** Assign a freshly opened tab to the FOCUSED pane (Multi Mode only;
+     *  single mode is a no-op and the open's own activation stands). */
+    show: (tabId: string) => void;
+  } | null>(null);
   // B8 — mirror ref for the close-tab prompt state. The
   // `onCloseTabPromptChoose` handler is a stable callback the
   // dialog consumes; reading the latest pending tab id through
@@ -855,10 +928,14 @@ export function App(): ReactElement {
       // Same modified check closeTab uses: the tabs reducer's
       // `meta.modified` OR the engineUi mirror's `state.modified`
       // (the mirror catches the batched-dispatch window right after
-      // an engine op, when `meta.modified` can still read false).
-      const modifiedIds = tabsRef.current.tabs
-        .filter((t) => t.modified || engineUiRef.current[t.id]?.state.modified === true)
-        .map((t) => t.id);
+      // an engine op). Phase 32 — this iterates EVERY tab, so it
+      // already covers the unsaved changes of BOTH Multi Mode panes
+      // (a pane's document is a tab); it never looks at the focused
+      // pane or the active tab alone.
+      const modifiedIds = collectModifiedTabIds(
+        tabsRef.current.tabs,
+        engineUiRef.current,
+      );
       if (modifiedIds.length === 0) {
         // Nothing to save anywhere — the close may proceed.
         void window.tflex.confirmClose?.(true);
@@ -867,11 +944,10 @@ export function App(): ReactElement {
       // If a per-tab close prompt is already showing, keep that tab
       // first so the open dialog continues to own the flow; the rest
       // of the modified tabs follow.
-      const pending = pendingCloseTabIdRef.current;
-      const queue =
-        pending !== null && modifiedIds.includes(pending)
-          ? [pending, ...modifiedIds.filter((id) => id !== pending)]
-          : modifiedIds;
+      const queue = orderWindowCloseQueue(
+        modifiedIds,
+        pendingCloseTabIdRef.current,
+      );
       setWindowCloseQueue(queue);
       setPendingCloseTabId(queue[0] ?? null);
       setPendingCloseError(null);
@@ -1210,10 +1286,22 @@ export function App(): ReactElement {
       // reducer are identical. resolveOpenId reuses the active empty
       // tab's id when one is active ("+ tab" affordance fills in
       // place), and mints a fresh UUID otherwise.
-      const { id } = resolveOpenId(
+      const { id, fillsEmptyId } = resolveOpenId(
         tabsRef.current,
         { kind: source.kind, filePath: source.path },
       );
+      // DEF-277 — the id the reducer will actually ACTIVATE. When the same
+      // path is already open, `tabsReducer.open` collapses the incoming
+      // meta onto the existing tab (path dedupe) and activates THAT tab, so
+      // the freshly minted `id` would name no live tab. Multi Mode assigns
+      // the returned id to a pane, so the return must be the live id.
+      // Mirrors the reducer's own rule: dedupe is skipped when the open
+      // fills an empty tab (`fillsEmptyId`) or when the caller opts out.
+      const dedupeTarget =
+        fillsEmptyId === null && source.dedupePath !== false && source.path !== ""
+          ? tabsRef.current.tabs.find((t) => isSamePath(t.filePath, source.path))
+          : undefined;
+      const effectiveId = dedupeTarget?.id ?? id;
       const meta: TabMeta = {
         id,
         title: source.displayName,
@@ -1365,13 +1453,16 @@ export function App(): ReactElement {
           });
         })
         .catch(() => undefined);
-      return { tabId: id };
+      return { tabId: effectiveId };
     },
     [pushToast, toastForPdfError],
   );
 
   const openPdfFromPath = useCallback(
-    async (path: string): Promise<void> => {
+    // Phase 32 — returns the opened tab's id (or null when the open
+    // failed / was cancelled) so the empty pane's Open action can put the
+    // new document straight into that pane. Existing callers ignore it.
+    async (path: string): Promise<string | null> => {
       const result = await window.tflex.loadPdf(path);
       if (!result.ok) {
         pushToast("error", toastForPdfError(result.error.code, path));
@@ -1383,10 +1474,10 @@ export function App(): ReactElement {
             trackAndSave(next);
           }
         }
-        return;
+        return null;
       }
       const displayName = splitRecentPath(path).name;
-      await openFromBytes(toArrayBuffer(result.value), {
+      const opened = await openFromBytes(toArrayBuffer(result.value), {
         kind: "file",
         path,
         displayName,
@@ -1400,6 +1491,7 @@ export function App(): ReactElement {
         };
         await window.tflex.addRecentFile(recent);
       }
+      return opened?.tabId ?? null;
     },
     [openFromBytes, pushToast, settings, toastForPdfError, trackAndSave],
   );
@@ -1407,24 +1499,37 @@ export function App(): ReactElement {
   const onOpenClick = useCallback(async (): Promise<void> => {
     const picked = await window.tflex.openFileDialog();
     if (picked === null) return;
-    await openPdfFromPath(picked);
+    // Phase 32 (DEF-277/DEF-278) — in Multi Mode this generic open lands in
+    // the focused pane; a file that is already the OTHER pane's document is
+    // refused up front so no tab is created for a document that would never
+    // become visible. Single mode: the ref's methods are no-ops/false.
+    const routing = routeOpenedTabRef.current;
+    if (routing !== null && routing.refuseFocused(picked)) return;
+    const tabId = await openPdfFromPath(picked);
+    if (tabId !== null && routing !== null) routing.show(tabId);
   }, [openPdfFromPath]);
 
   const onSampleClick = useCallback(
     async (sample: SampleDocument): Promise<void> => {
       const samplePath = `samples/${sample.name}`;
+      // Phase 32 (DEF-277/DEF-278) — a sample card open in Multi Mode lands
+      // in the focused pane; it is refused when it is already the other
+      // pane's document (same path identity the pane Open guard uses).
+      const routing = routeOpenedTabRef.current;
+      if (routing !== null && routing.refuseFocused(samplePath)) return;
       const bytesRes = await window.tflex.readSample(sample.name);
       if (!bytesRes.ok) {
         pushToast("error", `Sample file unavailable: ${sample.name}.`);
         return;
       }
       try {
-        await openFromBytes(toArrayBuffer(bytesRes.value), {
+        const opened = await openFromBytes(toArrayBuffer(bytesRes.value), {
           kind: "sample",
           path: samplePath,
           displayName: sample.name,
           onDiskPath: null,
         });
+        if (opened !== null && routing !== null) routing.show(opened.tabId);
         if (settings !== null) {
           const recent: RecentFile = {
             path: samplePath,
@@ -1443,7 +1548,13 @@ export function App(): ReactElement {
 
   const onRecentClick = useCallback(
     async (entry: RecentFile): Promise<void> => {
-      await openPdfFromPath(entry.path);
+      // Phase 32 (DEF-277/DEF-278) — a recent-file open is a generic open:
+      // it lands in the focused pane, or is refused when it is already the
+      // other pane's document.
+      const routing = routeOpenedTabRef.current;
+      if (routing !== null && routing.refuseFocused(entry.path)) return;
+      const tabId = await openPdfFromPath(entry.path);
+      if (tabId !== null && routing !== null) routing.show(tabId);
     },
     [openPdfFromPath],
   );
@@ -1552,6 +1663,15 @@ export function App(): ReactElement {
     // so a freshly-opened tab never inherits stale live-text marks.
     liveAnnTextIdsRef.current.delete(id);
     dispatchTabs({ type: "close", id });
+    // Phase 32 — reconcile the Multi Mode panes in the SAME commit as the
+    // close so a pane whose document just closed falls back to its empty
+    // state without a frame that renders the stale pane (the tab list is
+    // already short one entry). The effect below is the safety net for any
+    // other removal path.
+    dispatchMultiMode({
+      type: "reconcile",
+      tabIds: tabsRef.current.tabs.filter((t) => t.id !== id).map((t) => t.id),
+    });
     // B7 — tool / arm state cleanup. The user armed the Sign tool
     // and the "armed" pill stays on the toolbar after the active
     // tab is closed (because the App-level state outlives the
@@ -6611,7 +6731,384 @@ pushToast(
   const activeTab = tabs.activeId !== null ? openTabs[tabs.activeId] : null;
   const activeEngineUi = tabs.activeId !== null ? engineUi[tabs.activeId] : null;
 
-  // Phase 22 — the title bar's relocated File actions (Open / Save /
+  // ---- Phase 32 — Multi Mode ----------------------------------------
+  // The mode is a VIEW over the tab store: a pane holds a tab id and the
+  // stage renders that tab's existing DocumentView. App owns the state;
+  // the CommandBar control and the All-tools entry both read it, so the
+  // two entry points can never disagree.
+
+  /** The tabs that can fill a pane: real documents with a name/page count. */
+  const stageTabs = useMemo<StageTab[]>(
+    () =>
+      tabs.tabs.flatMap((meta) => {
+        const open = openTabs[meta.id];
+        if (open === undefined) return [];
+        return [
+          {
+            id: meta.id,
+            title: open.displayName,
+            pageCount:
+              engineUi[meta.id]?.state.pageCount ?? open.session.doc.numPages,
+          },
+        ];
+      }),
+    [tabs.tabs, openTabs, engineUi],
+  );
+
+  /** Toggle the mode. Enabling seeds pane A from the tab that is active
+   *  now; disabling returns to the single-pane layout and touches no tab. */
+  const onMultiModeToggle = useCallback((): void => {
+    if (multiMode.enabled) {
+      // Leaving the mode: the focused pane's document must become the
+      // single-mode active tab again. If the focused pane was empty the
+      // active id was cleared (a document-scoped op must not have fallen
+      // back to the previously active tab), so restore a real document —
+      // pane A's, else the first tab — because single mode renders no
+      // visible pane when the active id is null.
+      const fallback = multiMode.paneA ?? multiMode.paneB;
+      dispatchMultiMode({ type: "disable" });
+      if (tabs.activeId === null) {
+        const restore =
+          fallback !== null && tabs.tabs.some((t) => t.id === fallback)
+            ? fallback
+            : tabs.tabs[0]?.id ?? null;
+        if (restore !== null) activateTab(restore);
+      }
+      return;
+    }
+    const activeId = tabs.activeId;
+    if (activeId === null) {
+      pushToast("error", "Open a document before turning on Multi Mode.");
+      return;
+    }
+    dispatchMultiMode({ type: "enable", activeTabId: activeId });
+  }, [multiMode, tabs.activeId, tabs.tabs, activateTab, pushToast]);
+
+  /** Focus a pane. The focused pane drives the app's effective active tab,
+   *  so every existing document-scoped operation path (which reads the
+   *  active tab id) targets this pane with no handler changes. An empty
+   *  pane has no document: the active tab is cleared so an operation is a
+   *  clean no-op rather than hitting the previously active tab. */
+  const onFocusPane = useCallback(
+    (pane: PaneId): void => {
+      if (!multiMode.enabled) return;
+      const decision = resolvePaneFocus(multiMode, pane);
+      dispatchMultiMode({ type: "focus", pane: decision.focus });
+      if (decision.activate !== null) {
+        if (decision.activate !== tabs.activeId) activateTab(decision.activate);
+      } else if (tabs.activeId !== null) {
+        dispatchTabs({ type: "deactivate" });
+      }
+    },
+    [multiMode, tabs.activeId, activateTab],
+  );
+
+  /** The `filePath` a tab id maps to, or null when the tab is unknown. The
+   *  DEF-278 path guard needs the OTHER pane's document path; the mode
+   *  state knows only tab ids, so the caller resolves it here. */
+  const tabFilePath = useCallback(
+    (tabId: string): string | null =>
+      tabs.tabs.find((t) => t.id === tabId)?.filePath ?? null,
+    [tabs.tabs],
+  );
+
+  /** Put a document in a pane. BOTH identity rules are enforced: the other
+   *  pane's TAB (`paneAssignError`) and the other pane's FILE PATH
+   *  (`paneAssignPathError`, DEF-278) — opening one file twice mints two
+   *  tab ids, so the tab rule alone cannot see "the same file is already
+   *  there". Either conflict is REFUSED with a user-visible message (never
+   *  a silent no-op); the reducer applies the tab rule as the last line of
+   *  defence. The assignment focuses the pane and makes its document the
+   *  active tab (same invariant as a focus move). */
+  const assignPaneDocument = useCallback(
+    (pane: PaneId, tabId: string): void => {
+      const error =
+        paneAssignError(multiMode, pane, tabId) ??
+        paneAssignPathError(multiMode, pane, tabFilePath(tabId), tabFilePath);
+      if (error !== null) {
+        pushToast("error", error);
+        return;
+      }
+      dispatchMultiMode({ type: "assign", pane, tabId });
+      dispatchMultiMode({ type: "focus", pane });
+      if (tabs.activeId !== tabId) activateTab(tabId);
+    },
+    [multiMode, tabs.activeId, activateTab, pushToast, tabFilePath],
+  );
+
+  /** DEF-278 — refuse an OPEN whose file is already the other pane's
+   *  document, before a tab is created for it (a document must never end
+   *  up as a hidden tab with no visible effect). The comparison is
+   *  `TabMeta.filePath` equality — the user's intent is "that file is
+   *  already in the other pane"; the message matches the assign guard. */
+  const refuseOpenIntoPane = useCallback(
+    (pane: PaneId, filePath: string | null): boolean => {
+      const error = paneAssignPathError(multiMode, pane, filePath, tabFilePath);
+      if (error === null) return false;
+      pushToast("error", error);
+      return true;
+    },
+    [multiMode, tabFilePath, pushToast],
+  );
+
+  /** DEF-277 — after a generic open, Multi Mode puts the new document in
+   *  the FOCUSED pane (so it is immediately visible and replaces that
+   *  pane's document; the previous document stays open as a tab), through
+   *  the SAME assign+focus+activate path the tab strip uses. Single mode
+   *  is untouched: the open's own activation already stands. */
+  const showOpenedTab = useCallback(
+    (tabId: string): void => {
+      if (!multiMode.enabled) return;
+      assignPaneDocument(multiMode.focused, tabId);
+    },
+    [multiMode, assignPaneDocument],
+  );
+
+  // Fill the forward-declared ref the early open handlers read. Re-assigned
+  // every render so `refuseFocused` sees the CURRENT focused pane.
+  routeOpenedTabRef.current = {
+    refuseFocused: (filePath: string | null): boolean =>
+      refuseOpenIntoPane(multiMode.focused, filePath),
+    show: showOpenedTab,
+  };
+
+  const onPickPane = useCallback(
+    (pane: PaneId, tabId: string): void => {
+      assignPaneDocument(pane, tabId);
+    },
+    [assignPaneDocument],
+  );
+
+  /** Clear a pane's document. When the cleared document was the app's
+   *  active tab the active id is cleared with it, so the empty pane cannot
+   *  leave a document-scoped operation pointing at the closed pane. */
+  const onClearPane = useCallback(
+    (pane: PaneId): void => {
+      const nextActive = resolvePaneClear(multiMode, pane, tabs.activeId);
+      dispatchMultiMode({ type: "clear", pane });
+      if (nextActive === null && tabs.activeId !== null) {
+        dispatchTabs({ type: "deactivate" });
+      }
+    },
+    [multiMode, tabs.activeId],
+  );
+
+  /** The tab strip's activation in Multi Mode:
+   *  1. a tab that IS in a pane focuses that pane;
+   *  2. a tab that is NOT in a pane is assigned to the focused pane
+   *     (replacing its document) — and a tab that is the other pane's
+   *     document focuses that pane instead (rule 1).
+   *  Single mode is the untouched `activateTab`. */
+  const onTabStripActivate = useCallback(
+    (id: string): void => {
+      const decision = resolveTabStripActivation(multiMode, id);
+      if (decision.assign !== null) {
+        assignPaneDocument(decision.assign, id);
+        return;
+      }
+      if (decision.focus !== null) {
+        dispatchMultiMode({ type: "focus", pane: decision.focus });
+      }
+      activateTab(decision.activate);
+    },
+    [multiMode, assignPaneDocument, activateTab],
+  );
+
+  /** The empty pane's Open action: pick a file, then put it in that pane.
+   *  DEF-278 — the same-file guard runs on this path too, BEFORE the open,
+   *  so picking the other pane's document is refused with a message and
+   *  creates no stray tab. */
+  const onOpenIntoPane = useCallback(
+    (pane: PaneId): void => {
+      void (async (): Promise<void> => {
+        const picked = await window.tflex.openFileDialog();
+        if (picked === null) return;
+        if (refuseOpenIntoPane(pane, picked)) return;
+        const tabId = await openPdfFromPath(picked);
+        if (tabId !== null) assignPaneDocument(pane, tabId);
+      })();
+    },
+    [openPdfFromPath, assignPaneDocument, refuseOpenIntoPane],
+  );
+
+  // ---- Phase 32 (chunk 2b): the shared Multi Mode thumbnail rail ---------
+  //
+  // ONE rail for both panes: a labelled section per loaded document (pane
+  // A's first), each with its own scroll container. A thumbnail click
+  // focuses that section's pane through the SAME routing helpers the pane
+  // headers use (so the effective active tab follows) and jumps that
+  // pane's document to the clicked page. Every section renders a real
+  // ThumbnailRail, so the existing render/cleanup/virtualization rules
+  // apply unchanged — only the computed thumb width differs.
+
+  // Per-tab per-page sizes reported by each pane's DocumentView (the same
+  // map the in-pane rail consumes), so a section's thumbnail wraps match
+  // its pages' real aspect ratios.
+  const [railPageSizes, setRailPageSizes] = useState<
+    Record<string, Map<number, { w: number; h: number }>>
+  >({});
+  const reportPageSizes = useCallback(
+    (tabId: string, sizes: Map<number, { w: number; h: number }>): void => {
+      setRailPageSizes((prev) => (prev[tabId] === sizes ? prev : { ...prev, [tabId]: sizes }));
+    },
+    [],
+  );
+
+  // The rail's jump request. `seq` is what makes two clicks on the same
+  // page both land (DocumentView's external-jump effect ignores a repeat).
+  const railJumpSeqRef = useRef(0);
+  const [railJump, setRailJump] = useState<{ tabId: string; page: number; seq: number } | null>(
+    null,
+  );
+  const onRailJump = useCallback(
+    (pane: PaneId, page: number): void => {
+      const tabId = paneTabId(multiMode, pane);
+      if (tabId === null) return;
+      railJumpSeqRef.current += 1;
+      setRailJump({ tabId, page, seq: railJumpSeqRef.current });
+    },
+    [multiMode],
+  );
+
+  // Phase 32 (chunk 2d) — apply a resolved cross-document (or same-document)
+  // page drop. Both drag paths (rail and canvas) funnel here through the
+  // shared drag model: one engine call, BOTH echoed states recorded, BOTH
+  // pdf.js proxies refreshed through the existing render-to-refresh hook, and
+  // the target pane revealed at the inserted page. A same-document drop takes
+  // the EXISTING reorder path and never calls the engine. A failure toasts
+  // the typed engine error and leaves both panes untouched.
+  const onPageDrop = useCallback(
+    (op: PageDropOp): void => {
+      const deps: PageDropDeps = {
+        engine: {
+          movePagesBetweenDocs: (fromDocId, pages, toDocId, atIndex, mode) =>
+            engineRef.current.movePagesBetweenDocs(fromDocId, pages, toDocId, atIndex, mode),
+        },
+        docIdFor: (tabId) => openTabsRef.current[tabId]?.session.engineDocId ?? null,
+        onReorder: (tabId, fromIndex, toIndex) => onReorder(tabId, fromIndex, toIndex),
+        onStates: (fromTabId, toTabId, from, to, mode) => {
+          // A move changed BOTH documents (both grew an undo entry); a copy
+          // left the source untouched, so only the target is noted.
+          if (mode === "move") noteOpApplied(fromTabId, from);
+          noteOpApplied(toTabId, to);
+        },
+        refresh: (tabId) => {
+          const fn = refreshDocProxyForRef.current;
+          if (fn !== null) void fn(tabId).catch(() => undefined);
+        },
+        reveal: (tabId, page) => {
+          railJumpSeqRef.current += 1;
+          setRailJump({ tabId, page, seq: railJumpSeqRef.current });
+        },
+        toast: (error) => pushToast("error", describeEngineError(error.code, error.message)),
+      };
+      void applyPageDrop(op, deps);
+    },
+    [noteOpApplied, onReorder, pushToast],
+  );
+
+  const railSectionData = useMemo<RailSectionData[]>(() => {
+    const out: RailSectionData[] = [];
+    const panes: PaneId[] = ["A", "B"];
+    for (const pane of panes) {
+      const tabId = paneTabId(multiMode, pane);
+      if (tabId === null) continue;
+      const open = openTabs[tabId];
+      const meta = tabs.tabs.find((t) => t.id === tabId);
+      if (open === undefined || meta === undefined) continue;
+      const engine = engineFor(tabId);
+      const visibleToSource = new Map<number, number>();
+      const order = engine.engineState.pageOrder;
+      for (let i = 0; i < order.length; i += 1) {
+        visibleToSource.set(i + 1, order[i] + 1);
+      }
+      out.push({
+        pane,
+        tabId,
+        title: meta.title,
+        pageCount: engine.engineState.pageCount,
+        // The same value the in-pane rail highlights; DocumentView
+        // persists it on every page change.
+        currentPage: open.persisted.currentPage > 0 ? open.persisted.currentPage : 1,
+        doc: open.session.doc,
+        pageSizes: railPageSizes[tabId] ?? null,
+        rotations: engine.engineState.rotations,
+        visibleToSource,
+        proxyVisibleOrder: open.session.proxyVisibleOrder,
+        pageLabelMap: buildPageLabelMap(engine.engineState.pageLabels),
+        canUndo: engine.canUndo,
+      });
+    }
+    return out;
+  }, [multiMode, openTabs, tabs.tabs, engineFor, railPageSizes]);
+
+  const railSections = useMemo<MultiRailSection[]>(
+    () =>
+      railSectionData.map((s) => ({
+        pane: s.pane,
+        tabId: s.tabId,
+        title: s.title,
+        pageCount: s.pageCount,
+      })),
+    [railSectionData],
+  );
+
+  const renderRailSection = useCallback(
+    ({ pane, tabId, thumbWidth, onJump }: MultiRailSectionRender): ReactNode => {
+      const section = railSectionData.find((s) => s.pane === pane);
+      if (section === undefined) return null;
+      const engine = engineFor(section.tabId);
+      return (
+        <ThumbnailRail
+          doc={section.doc}
+          pageCount={section.pageCount}
+          currentPage={section.currentPage}
+          // Only used before the first page reports its size; the rail
+          // then derives the fallback from the largest known page.
+          aspectRatio={792 / 612}
+          pageSizes={section.pageSizes}
+          rotations={section.rotations}
+          visibleToSource={section.visibleToSource}
+          proxyVisibleOrder={section.proxyVisibleOrder}
+          pageLabelMap={section.pageLabelMap}
+          canUndo={section.canUndo}
+          onOp={engine.op}
+          onDelete={engine.deletePages}
+          onReorder={engine.reorder}
+          onUndo={engine.undo}
+          // MultiRail already focused this section's pane; `onJump` here
+          // is the pane-scoped navigation.
+          onJump={onJump}
+          thumbWidth={thumbWidth}
+          // Phase 32 (chunk 2d) — document-aware drag: the section's drag
+          // source carries `tabId`, and a cross-section drop funnels through
+          // the one apply path above.
+          crossDoc={{ tabId, onDrop: onPageDrop }}
+        />
+      );
+    },
+    [railSectionData, engineFor, onPageDrop],
+  );
+
+  const sharedRail =
+    multiMode.enabled && railSections.length > 0 ? (
+      <MultiRail
+        sections={railSections}
+        activePane={multiMode.focused}
+        onFocusPane={onFocusPane}
+        onJump={onRailJump}
+        renderSection={renderRailSection}
+      />
+    ) : null;
+
+  // A closed tab must never leave a stale pane: reconcile the pane slots
+  // against the live tab ids whenever the tab list changes.
+  const liveTabIds = useMemo(() => tabs.tabs.map((t) => t.id), [tabs.tabs]);
+  useEffect(() => {
+    dispatchMultiMode({ type: "reconcile", tabIds: liveTabIds });
+  }, [liveTabIds]);
+
+  // ---- Phase 22 — the title bar's relocated File actions (Open / Save /
   // Save As moved out of the CommandBar). The caption strip is a single
   // strip, not per-tab, so it reads the ACTIVE tab only. The semantics
   // are carried over verbatim from the CommandBar props the DocumentView
@@ -6665,7 +7162,11 @@ pushToast(
           // AppHeader reads `modified` from this list (mirrored by the
           // tabs reducer on every successful engine op).
           tabs={headerTabs}
-          onActivate={activateTab}
+          // Phase 32 — the strip click is the Multi Mode routing seam:
+          // a tab in a pane focuses that pane, a tab outside the panes is
+          // assigned to the focused pane. Single mode is unchanged
+          // (`resolveTabStripActivation` short-circuits to plain activation).
+          onActivate={onTabStripActivate}
           onClose={closeTab}
           theme={settings.theme}
           // The picker's selection state: the persisted preference
@@ -6720,36 +7221,49 @@ pushToast(
         data-tools-mode={settings.toolsPaletteLayout ?? 'list'}
         data-rail-collapsed={pagesPanelCollapsed ? "true" : "false"}
       >
-        <div className="tab-stage">
-          {tabs.tabs.length === 0 || activeIsEmpty ? (
-            <div className="tab-pane" key={tabs.activeId ?? 'welcome'}>
-              <Welcome
-                recentFiles={recentDisplays}
-                onOpenRecent={onRecentClick}
-                onRemoveRecent={onRemoveRecent}
-                onOpenFile={onOpenClick}
-                onSampleClick={onSampleClick}
-                onMergeClick={onMergeClick}
-                onCreateFromImages={onCreateClick}
-                samplesResolver={samplesResolver}
-              />
-            </div>
-          ) : (
-            tabs.tabs.map((meta) => {
-              const open = openTabs[meta.id];
-              if (open === undefined) return null;
-              const engine = engineFor(meta.id);
-              const ann = annotationHandlers(meta.id);
-              const fs = formsAndSignaturesHandlers(meta.id);
-              return (
-                <div
-                  className="tab-pane"
-                  key={meta.id}
-                  style={{
-                    visibility: meta.id === tabs.activeId ? "visible" : "hidden",
-                  }}
-                  aria-hidden={meta.id !== tabs.activeId}
-                >
+        <PageDragProvider>
+        <DocumentStage
+          tabs={stageTabs}
+          activeId={tabs.activeId}
+          // Phase 32 — in Multi Mode the stage always renders the panes
+          // (even if the tab strip's active tab happens to be an empty
+          // placeholder), so toggling the mode can never remount a
+          // DocumentView. With the mode off this is the pre-Phase-32
+          // condition exactly.
+          showWelcome={tabs.tabs.length === 0 || (activeIsEmpty && !multiMode.enabled)}
+          welcomeKey={tabs.activeId ?? 'welcome'}
+          welcome={
+            <Welcome
+              recentFiles={recentDisplays}
+              onOpenRecent={onRecentClick}
+              onRemoveRecent={onRemoveRecent}
+              onOpenFile={onOpenClick}
+              onSampleClick={onSampleClick}
+              onMergeClick={onMergeClick}
+              onCreateFromImages={onCreateClick}
+              samplesResolver={samplesResolver}
+            />
+          }
+          multiMode={multiMode}
+          splitFraction={splitFraction}
+          onSplitChange={setSplitFraction}
+          onFocusPane={onFocusPane}
+          onClearPane={onClearPane}
+          onPickPane={onPickPane}
+          onOpenIntoPane={onOpenIntoPane}
+          // Phase 32 (chunk 2b) — the ONE shared rail with a labelled
+          // section per loaded document. Null keeps single mode (and a
+          // rail-less two-pane layout with nothing loaded) exactly as it
+          // was; the stage then reserves no rail column.
+          sharedRail={sharedRail}
+          renderDocument={(tabId) => {
+            const meta = tabs.tabs.find((t) => t.id === tabId);
+            const open = openTabs[tabId];
+            if (meta === undefined || open === undefined) return null;
+            const engine = engineFor(tabId);
+            const ann = annotationHandlers(tabId);
+            const fs = formsAndSignaturesHandlers(tabId);
+            return (
                   <DocumentView
                     doc={open.session.doc}
                     pageCount={engine.engineState.pageCount}
@@ -6902,12 +7416,33 @@ pushToast(
                     // the SideRail (the rail never owns the state).
                     pagesPanelCollapsed={pagesPanelCollapsed}
                     onTogglePagesPanelCollapsed={togglePagesPanelCollapsed}
+                    // Phase 32 — Multi Mode suppresses each pane's OWN rail
+                    // (the shared two-section rail is the next chunk); the
+                    // CommandBar control reads the same App-owned state as
+                    // the All-tools entry, so both always agree.
+                    showRail={!multiMode.enabled}
+                    // Phase 32 (chunk 2b) — the shared rail's navigation
+                    // seams: a section's thumbnail click routes to this
+                    // pane's document, and this view reports the per-page
+                    // sizes the shared rail sizes its wraps with.
+                    jumpRequest={railJump !== null && railJump.tabId === meta.id ? railJump : null}
+                    onPageSizesChange={(sizes): void => reportPageSizes(meta.id, sizes)}
+                    multiModeEnabled={multiMode.enabled}
+                    onMultiModeToggle={onMultiModeToggle}
+                    // Phase 32 (chunk 2d) — canvas page drag and drop is a
+                    // Multi Mode feature: the hover grip and the page drop
+                    // targets exist only while the mode is on. Single mode
+                    // passes null, so the canvas renders exactly as before.
+                    pageDrag={
+                      multiMode.enabled
+                        ? { tabId: meta.id, onDrop: onPageDrop }
+                        : null
+                    }
                   />
-                </div>
-              );
-            })
-          )}
-        </div>
+            );
+          }}
+        />
+        </PageDragProvider>
         <AnimatePresence>
           {toolsPaletteOpen && (
             <ToolsPalette
@@ -7010,6 +7545,10 @@ pushToast(
               // disabled on the welcome screen and on empty tabs.
               documentRequired={tabs.activeId !== null && !activeIsEmpty}
               hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
+              // Phase 32 — the All-tools entry and the CommandBar control
+              // toggle the same App-owned mode state.
+              onMultiMode={onMultiModeToggle}
+              multiModeEnabled={multiMode.enabled}
             />
           )}
         </AnimatePresence>

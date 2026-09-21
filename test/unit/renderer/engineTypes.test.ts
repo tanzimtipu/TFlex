@@ -105,6 +105,7 @@ describe("describeEngineError", () => {
       "out-of-range",
       "empty-range",
       "no-op",
+      "same-document",
     ];
     for (const code of codes) {
       const text = describeEngineError(code);
@@ -115,5 +116,10 @@ describe("describeEngineError", () => {
   it("interpolates the context when provided", () => {
     const text = describeEngineError("engine-error", "report.pdf");
     expect(text).toContain("report.pdf");
+  });
+
+  it("describes the Phase 32 same-document error", () => {
+    const text = describeEngineError("same-document");
+    expect(text).toBe("Source and target must be different documents.");
   });
 });

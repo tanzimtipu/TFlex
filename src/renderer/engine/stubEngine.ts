@@ -56,6 +56,7 @@ import type {
   EngineOp,
   EngineState,
   MergePosition,
+  MovePagesBetweenDocsOutcome,
 } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -819,6 +820,19 @@ export class StubRendererEngine implements EngineApi {
     return err(
       "engine-error",
       "insertFromPdf requires backend engine update",
+    );
+  }
+
+  async movePagesBetweenDocs(
+    _fromDocId: string,
+    _pages: number[],
+    _toDocId: string,
+    _atIndex: number,
+    _mode: "move" | "copy",
+  ): Promise<Result<MovePagesBetweenDocsOutcome, EngineError>> {
+    return err(
+      "engine-error",
+      "movePagesBetweenDocs requires backend engine update",
     );
   }
 

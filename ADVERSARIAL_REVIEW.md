@@ -2551,4 +2551,111 @@ filed - real version strings come from `latest.yml` semver. My harness's update-
 did not always close the phase-13 "Restart to update" sheet (unrelated to Phase 31), which is
 why `screenshots/adv-p31-many-lines-640.png` shows it layered over the contained About sheet.
 
+---
+
+## Phase 32 gate - Multi Mode (two documents in one workspace)
+
+Session label: `phase-32 gate`. Model: `openrouter/deepseek/deepseek-v4.1-flash`. All runs
+against the dev build through the canonical launcher `e2e/lib/launch.cjs` `launchApp`, real
+interactions (native Playwright `dragTo` first, synthetic `DataTransfer` only when a native
+drag could not be driven). Repro harnesses live in `test-fixtures/adv-p32/`
+(`harness.cjs`, `smoke.cjs`, `undo.cjs`, `drag.cjs`, `sequences1.cjs`, `sequences2.cjs`,
+`divider.cjs`, `datasafety.cjs`, `perf.cjs`, `rail.cjs`, `flicker.cjs`, `final.cjs`,
+`tools*.cjs`, `misc.cjs`, `position.cjs`, `casepath.cjs`, `samefile-save.cjs`, `append.cjs`,
+`lastprobe.cjs`). Fixtures: copies of `report.pdf` (34pp) and `long.pdf` (520pp) in `%TEMP%`.
+
+## ADV-068: The same-file pane guard and the open dedupe compare raw path strings, so a Windows path variant puts the same file in BOTH panes and a later save silently overwrites the other pane's saved edits
+
+- Session: phase-32 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Copied `test-fixtures/report.pdf` (34 pages) to
+   `%TEMP%\tflex-adv-p32\<ts>-p32-samefile.pdf`.
+2. Launched the dev build and opened the file with the real title-bar Open control (mocked OS
+   dialog), then opened the SAME file again with a path differing only in case:
+   `...\...-P32-SAMEFILE.PDF` (`fs.existsSync` = true on Windows; same file).
+   `test-fixtures/adv-p32/casepath.cjs`.
+3. With the two tabs open, activated the first, turned Multi Mode on (pane A = the exact-case
+   tab), then picked the case-variant tab into pane B from the empty pane's pick list.
+4. `test-fixtures/adv-p32/samefile-save.cjs` - with the same file in both panes, selected page 1
+   in pane A's rail, clicked "Delete this page" (A 34 -> 33), saved pane A (Ctrl+S; file on disk
+   = 33 pages), then saved pane B (Ctrl+S; file on disk = 34 pages).
+
+Expected: Phase 32's fixed design decisions: opening a file that is already open must dedupe to
+the existing tab, and assigning/opening the document already shown in the other pane must be
+REFUSED with a clear message ("That file is already shown in the other pane." /
+"That document is already shown in the other pane."). The same document must never occupy both
+panes.
+
+Actual: both guards are raw string comparisons - the open dedupe is
+`t.filePath === source.path` (App.tsx:1301) and the pane guard is
+`otherPath !== filePath` (multiMode.ts:129, `paneAssignPathError`). Any path variant Windows
+treats as the same file bypasses both:
+- `...-P32-SAMEFILE.PDF` created a SECOND tab (tabs 1 -> 2, no toast) and was accepted into
+  pane B. The rail then showed the same file twice (headers differ only in case) and
+  `SAME FILE IN BOTH PANES = true` - two independent engine docs loaded from one on-disk file.
+  `screenshots/adv-p32-samefile-casevariantfilename.png`.
+- Drive-letter case (`c:\...` vs `C:\...`) reproduces identically (2 tabs, same file in both
+  panes). `screenshots/adv-p32-samefile-drivelettercase.png`.
+- Data loss consequence: pane A deleted page 1 and saved 33 pages to the file; pane B then
+  saved its 34-page copy over the same path, silently discarding pane A's saved edit. On-disk
+  page count: 34 -> 33 (Save A) -> 34 (Save B). The user is never warned that two panes write
+  to one file. `screenshots/adv-p32-samefile-save.png`.
+- The forward-slash variant (`C:/Users/...`) did NOT produce a second tab in my run.
+
+Suggested fix: compare canonical/normalized paths (e.g. `path.resolve` + case-fold on Windows,
+or `fs.realpathSync.native`) for BOTH the open dedupe and `paneAssignPathError`.
+
+Screenshot: screenshots/adv-p32-samefile-save.png,
+screenshots/adv-p32-samefile-casevariantfilename.png.
+
+Disposition: ACCEPTED -> DEF-279 (MEDIUM; both path comparisons must be canonical - normalise the path (separators, drive-letter/filename case) before the open dedupe and before the pane guard, so a Windows path variant cannot open the same file twice and a save cannot overwrite the other pane's saved edits)
+
+## Phase 32 gate - negative results (attacks that did NOT reproduce)
+
+| Attack | Result |
+|---|---|
+| Undo/redo after a cross-document move (nobody had probed this) | Coherent per-side. Move A page1 -> B before page2: A 34->33, B 34->35. Undo A: A 33->34 (B stays 35 - the page is transiently in BOTH, "each document's undo restores its own side"). Undo B: B 35->34 -> original 34/34. Redo A: 33/34; redo B: 33/35. Same result with the reverse undo order. No page is LOST at the end of a pair; intermediate single-undo duplication is the documented per-side model. Exact counts in `test-fixtures/adv-p32/undo.cjs`. |
+| Drag ALL pages / last remaining page | A 1-page source (form.pdf) dragged to a 34-page target: engine `empty-range` refused, counts unchanged (1/34), user-visible toast "Specify at least one page in the range." Defended. (The rail selection model is single-page, so a multi-page selection drag is not reachable through the UI.) |
+| Drop on divider / rail header / other pane's header / outside any pane | No drop target advertises itself (no indicator, `defaultPrevented:false`), counts unchanged, no error. Standard HTML5 drag-cancel; nothing is promised for those zones. Defended. |
+| Drop on its own source page (same slot) | Resolves to a no-op; counts unchanged, no crash, no duplicate. Defended. |
+| Intra-document reorder still works (rail) | A page 3 -> before page 1: engine `pageOrder` changed, thumbnails swapped, counts unchanged. Defended. |
+| Ctrl-copy then move the copy back | A 34/B 34 -> Ctrl-copy A->B: 34/35 -> move B's copy back to A: 35/34. Correct. Defended. |
+| Same page dropped twice quickly / two moves back-to-back (refresh in flight) | Double drop moved exactly one page (the second drop has no source after `drag.end()` -> no-op); two back-to-back moves moved exactly two pages (32/36). No corruption. Defended. |
+| Drop position vs indicator | Rail drop on thumb page 2 lands at visible position 2; canvas lower-half drop lands at position 3; the engine adapter converts 1-based -> 0-based correctly (engineClient.ts:1148). No off-by-one. Defended. |
+| Append drop on the section's empty space below the last thumb | A page 1 -> B section scroller: B 34->35, the new page landed at the last visible position (index 34). Defended. |
+| Enable Multi Mode with 0 tabs (welcome) | No `[data-toolbar-multi-mode]` control is rendered on the welcome screen (count 0). No-op, no crash. |
+| Enable with exactly 1 tab, then toggle off | Pane A seeded, pane B explicit empty state; off returns to single mode, 0 `[data-pane]`. Defended. |
+| 12 rapid toggles; 20 rapid focus switches on two 34-page docs | Final state consistent (mode/panes correct, diagnostics `pageCount` matched the last-clicked pane). No crash, no stranded layout. Defended. |
+| Divider dragged to both extremes and past them | Clamps to the sensible minimum (A 316px / B 316px, both canvases visible); no overflow, no negative pane, split fraction stable. Defended. |
+| Clear pane B while a drag is in flight | Pane B empties, its rail section unmounts, the pending drop finds no target (`no-tgt`), no error, no page moved. Defended. |
+| Close the SOURCE tab mid-drag | Pane A empties; the drop fires but `docIdFor(sourceTab)` is null so it is a clean no-op; no engine call, no data loss, no crash. Defended. |
+| Close a pane's (unmodified) tab | Pane empties cleanly (no stale header), rail section removed, other pane untouched. Defended. |
+| Assign/clear/pick/tab-strip sequence integrity | Across clear -> pick -> strip-beta -> strip-gamma -> strip-alpha the two panes never held the same document; the rail always listed pane A's document first. Defended. |
+| Focused-pane routing (rotate) | Rotating on focused pane A changed A's `rotations[0]` to 1 and marked A modified; pane B's rotations stayed 0 and B stayed unmodified. Defended. |
+| Data safety - modify BOTH panes then window-close | The close gate prompted for pane A's document first, then pane B's (queue covers both). Cancel aborted the whole close (window stayed alive, both `modified:true`). Discarding both closed the window. Defended. |
+| Data safety - close a MODIFIED pane's tab | Prompt named THAT document; Cancel kept the tab; Don't save closed it and the pane emptied cleanly. Defended. |
+| Data safety - save the focused pane | Ctrl+S on A wrote A (toast "Saved ..."), A `modified:false`, B `modified:true`; the subsequent window-close prompt was for B only. Defended. |
+| Absurd window sizes | The OS floors the window at 640px; at 640x480 the rail (220) + two 206px panes fit with no horizontal scroll and both canvases visible. Defended. |
+| Flicker - per-frame 32x32 whole-canvas downscale, darkest-pixel, both panes | Toggle, focus switch, divider drag, cross-doc drop and pane-fill: 0 blank frames in either pane (darkest never reached the white threshold); the unfocused pane's signature did not churn on a focus switch; raster sizes change only when a pane is genuinely resized by the divider. Defended. |
+| Perf/memory - 34pp + 520pp | Rail mounts 520 `.thumb-item` nodes for the 520-page doc but rasters only ~4 canvases (0.09 MP); heap ~12 MB, rss ~138 MB, stable across focus/scroll/divider stress; a cross-doc move on the big pair is correct (33/521). No leak, no stall. Defended. |
+| Canvas-path Ctrl-copy | Native `dragTo` from the pane A grip to a pane B page slot with Ctrl held: A 34/B 35. Defended. |
+| Toggle Multi Mode OFF mid-drag, then drop | Mode off, panes unmounted, drop finds no target, no page moved, no toast; re-enabling restores A/B with the correct counts. Defended. |
+| Closing the LAST tab while Multi Mode is on | Auto-disables, returns to the welcome screen (4 sample cards), 0 `[data-pane]`. Defended. |
+
+**Total Phase-32-gate findings: 1 (0 HIGH, 1 MEDIUM, 0 LOW).**
+
+Unreproduced / minor (not filed):
+- With both panes filled, `[data-tools-badge]` is rendered twice (one per pane's chrome) at the
+  exact same viewport position. A real pointer click at that point opens the All Tools palette
+  (verified), so the user-visible behaviour is correct; only Playwright's strict
+  `locator('[data-tools-badge]').first()` click is intercepted by the topmost duplicate. Cosmetic
+  DOM duplication, not a functional no-op.
+- The shared rail mounts one `.thumb-item` node per page (520 for `long.pdf`) while rasterising
+  only the visible window (~4 canvases). Raster virtualisation holds and memory stays flat, so
+  this is a DOM-node observation, not a leak.
+- `[data-pane-open]`/generic open of a case-variant path bypasses the same-file guard exactly
+  like the pick-list path in ADV-068 (same root cause).
+
 

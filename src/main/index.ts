@@ -14,6 +14,7 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   MenuEnabledState,
+  MovePagesBetweenDocsPayload,
   MoveSignaturePayload,
   OpenFileDialogKind,
   OcrProgress,
@@ -322,6 +323,12 @@ export async function start(): Promise<void> {
   );
   ipcMain.handle(IPC.engineInsertFromPdf, (_event, docId: string, otherBytes: Uint8Array, position: number) =>
     engine.insertFromPdf(docId, otherBytes, position),
+  );
+  // Phase 32 (Multi Mode) — one atomic cross-document page move/copy. The
+  // payload carries both doc ids, the source pages and the target position;
+  // the engine returns both documents' states.
+  ipcMain.handle(IPC.engineMovePagesBetween, (_event, payload: MovePagesBetweenDocsPayload) =>
+    engine.movePagesBetweenDocs(payload),
   );
   ipcMain.handle(IPC.engineExportPages, (_event, docId: string, payload: ExportPagesPayload) =>
     engine.exportPages(docId, payload),

@@ -23,6 +23,8 @@ import type {
   ExportPagesPayload,
   FillFormFieldPayload,
   FormField,
+  MovePagesBetweenDocsPayload,
+  MovePagesBetweenDocsResult,
   MoveSignaturePayload,
   OcrProgress,
   OcrRecognizeOptions,
@@ -45,6 +47,7 @@ import type {
   EngineOp,
   EngineState,
   MergeConfirm,
+  MovePagesBetweenDocsOutcome,
   SplitConfirm,
 } from "./types";
 
@@ -285,6 +288,14 @@ export interface TFlexApiEngine {
     otherBytes: Uint8Array,
     position: number,
   ): Promise<Result<SharedEngineState, EngineError>>;
+  /** Phase 32 (Multi Mode) — atomic cross-document page move/copy. The
+   *  payload is forwarded as-is; the engine returns both documents'
+   *  states from one round-trip. Optional like the other post-Phase-9
+   *  methods so a preload without the channel degrades with a friendly
+   *  engine-error. */
+  movePagesBetweenDocs?(
+    payload: MovePagesBetweenDocsPayload,
+  ): Promise<Result<MovePagesBetweenDocsResult, EngineError>>;
   exportPages?(
     docId: string,
     payload: ExportPagesPayload,
@@ -698,6 +709,13 @@ function missingPhase18(): Result<never, EngineError> {
   );
 }
 
+function missingPhase32(): Result<never, EngineError> {
+  return err(
+    "engine-error",
+    "cross-document page move/copy requires the Phase 32 backend update",
+  );
+}
+
 /** Map a renderer-level `EngineOp` into the IPC-shaped `OpEntry`. The
  *  IPC op index convention is 0-based against the engine's current order,
  *  matching the rest of the renderer. */
@@ -1104,6 +1122,40 @@ class RealEngineAdapter implements EngineApi {
     if (this.inner.insertFromPdf === undefined) return missingPhase9Extended();
     const r = await this.inner.insertFromPdf(docId, otherBytes, position);
     return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+  }
+
+  /** Phase 32 (Multi Mode) — atomically move or copy pages between two
+   *  open documents. The renderer-facing API is 1-BASED for both `pages`
+   *  (source visible page numbers, same as `extract`) and `atIndex` (the
+   *  target insertion point); the IPC payload is 0-based, so translate
+   *  here exactly like the sibling methods. `atIndex === -1` is the
+   *  "append" sentinel and passes through unchanged. On success BOTH
+   *  documents' echoed states are normalized + cached from the single
+   *  round-trip so each pane's mirror refreshes without a follow-up
+   *  `getState`. On failure the error is passed through unchanged. */
+  async movePagesBetweenDocs(
+    fromDocId: string,
+    pages: number[],
+    toDocId: string,
+    atIndex: number,
+    mode: "move" | "copy",
+  ): Promise<Result<MovePagesBetweenDocsOutcome, EngineError>> {
+    if (this.inner.movePagesBetweenDocs === undefined) return missingPhase32();
+    const r = await this.inner.movePagesBetweenDocs({
+      fromDocId,
+      pages: pages.map((p) => p - 1),
+      toDocId,
+      atIndex: atIndex === -1 ? -1 : atIndex - 1,
+      mode,
+    });
+    if (!r.ok) return r;
+    return {
+      ok: true,
+      value: {
+        from: this.normalizeAndCache(fromDocId, r.value.from),
+        to: this.normalizeAndCache(toDocId, r.value.to),
+      },
+    };
   }
 
   // -- Phase 10: edit content --

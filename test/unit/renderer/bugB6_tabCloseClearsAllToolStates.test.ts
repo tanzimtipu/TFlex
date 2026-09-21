@@ -54,6 +54,20 @@ const documentViewPath = path.join(
   "components",
   "DocumentView.tsx",
 );
+// Phase 32 — the tab-pane markup moved into the workspace stage
+// (`DocumentStage`), which renders one `.tab-pane` per tab keyed on the
+// tab id. The key contract this test pins is unchanged; only the file that
+// owns the markup moved.
+const multiPanePath = path.join(
+  __dirname,
+  "..",
+  "..",
+  "..",
+  "src",
+  "renderer",
+  "components",
+  "MultiPane.tsx",
+);
 const pageViewPath = path.join(
   __dirname,
   "..",
@@ -119,14 +133,18 @@ describe("B6 — tab close clears ALL tool states (App + per-tab)", () => {
   });
 
   it("DocumentView's tab-pane is keyed on meta.id so the instance unmounts on close", () => {
-    // App renders <div className="tab-pane" key={meta.id} ...
-    // > <DocumentView ... />. React's keyed unmount fires when
-    // meta.id disappears from the tabs list (closeTab
-    // dispatches a 'close' tab action), so DocumentView's
-    // useReducer state (annotation tool) can't leak into the
-    // next open tab.
-    const tabPane = appSource.match(/<div\s+className="tab-pane"\s+key=\{meta\.id\}/);
+    // The stage renders <div className="tab-pane" key={tab.id} ...
+    // > <DocumentView ... /> (Phase 32 moved the markup out of App into
+    // MultiPane's `DocumentStage`). React's keyed unmount fires when the
+    // tab id disappears from the tabs list (closeTab dispatches a 'close'
+    // tab action), so DocumentView's useReducer state (annotation tool)
+    // can't leak into the next open tab.
+    const multiPaneSource = fs.readFileSync(multiPanePath, "utf8");
+    const tabPane = multiPaneSource.match(
+      /key=\{tab\.id\}\s+className="tab-pane"/,
+    );
     expect(tabPane).not.toBeNull();
+    expect(multiPaneSource).toMatch(/renderDocument\(tab\.id\)/);
   });
 
   it("AnnotationOverlay (per-page tool state) lives inside PageView, so it unmounts with its parent", () => {
