@@ -23,6 +23,17 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.24.0',
+    date: '2026-09-21',
+    highlights: [
+      'Print your documents: a full print dialog with a live preview - printer, copies and collation, page range, fit/actual/shrink/custom scaling, orientation, duplex and colour.',
+      'Print layouts: up to 16 pages per sheet with page order, odd/even pages only, reverse order, and an option to include or leave out annotations.',
+      'Start printing from the new title-bar button, File > Print, or Ctrl+P.',
+      'Rotating a page is now instant and smooth - the thumbnail no longer flashes blank, and rotated thumbnails render correctly.',
+      "About now shows What's New: the highlights of the version you are running, earlier releases, and the notes of an available update.",
+    ],
+  },
+  {
     version: '1.23.1',
     date: '2026-09-21',
     highlights: [

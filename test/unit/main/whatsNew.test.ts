@@ -112,7 +112,18 @@ describe('whatsNewHistory', () => {
   });
 
   it('returns the full older list for a huge limit', () => {
-    expect(whatsNewHistory('1.23.1', 100000)).toEqual(WHATS_NEW.slice(1));
+    const index = WHATS_NEW.findIndex((e) => e.version === '1.23.1');
+    expect(index).toBeGreaterThan(0);
+    const history = whatsNewHistory('1.23.1', 100000);
+    expect(history).toEqual(WHATS_NEW.slice(index + 1));
+    // Newest-first order preserved, and every entry strictly older than the version.
+    for (let i = 1; i < history.length; i += 1) {
+      expect(compareVersions(history[i - 1].version, history[i].version)).toBeGreaterThan(0);
+    }
+    for (const entry of history) {
+      expect(compareVersions(entry.version, '1.23.1')).toBeLessThan(0);
+    }
+    expect(history.some((e) => compareVersions(e.version, '1.23.1') >= 0)).toBe(false);
   });
 });
 
