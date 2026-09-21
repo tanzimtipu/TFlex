@@ -26,6 +26,9 @@ import type {
   OptimizePreset,
   PageLabelEntry,
   PlaceSignaturePayload,
+  PrintJobPayload,
+  PrintJobResult,
+  PrinterInfo,
   RecentFile,
   SampleDocument,
   SpaceAudit,
@@ -451,6 +454,22 @@ const api = {
     setEnabled(state: import("../shared/types").MenuEnabledState): void {
       void ipcRenderer.send(IPC.menuSetEnabled, state);
     },
+  },
+  // Phase 30: print. listPrinters -> OS printer list; printJob -> composed
+  // page images + settings to the hidden-window print pipeline;
+  // onPrintRequest -> File > Print / Ctrl+P event from main.
+  listPrinters(): Promise<PrinterInfo[]> {
+    return ipcRenderer.invoke(IPC.printListPrinters);
+  },
+  printJob(payload: PrintJobPayload): Promise<PrintJobResult> {
+    return ipcRenderer.invoke(IPC.printJob, payload);
+  },
+  onPrintRequest(cb: () => void): () => void {
+    const listener = (): void => cb();
+    ipcRenderer.on(IPC.printRequestEvent, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC.printRequestEvent, listener);
+    };
   },
   engine: engineApi,
   signatures: {

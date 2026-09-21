@@ -2696,3 +2696,53 @@ that exercises the full lifecycle - arm -> USE THE TOOL (place/interact) -> obse
 after - verifying that the geometry/coordinates are correct after the transition, not just in the
 settled state. A panel open precondition hides lifecycle gaps; the test must start from the
 panel closed initial state and go through the full flow.**
+
+## 2026-09-21: Phase 30 (print with advanced options) - the architecture, the platform limits, and two harness lessons
+
+Phase 30 shipped the industry-standard print dialog (preview-first; printer picker, copies/collate,
+page range, the scaling quartet, orientation, duplex, colour, annotations toggle, N-up + page
+order, odd/even, reverse, session-level presets) behind a title-bar Print icon, File > Print and
+Ctrl+P. Six defects were found and closed (DEF-268..273), five of them by the adversary.
+
+**Architecture (the norm for an Electron PDF app, now the project's convention):** the RENDERER
+rasterises the selected pages offscreen through the existing pdf.js pipeline (one PNG data URL per
+page, 200 DPI, bounded to 12M pixels, sequential, cancellable) and hands the ordered images to
+MAIN, which composes the sheets itself (one sheet per `pagesPerSheet`, page-break separated, N-up
+grid, scaling) in a HIDDEN window and calls `webContents.print(options)`. The visible window is
+never the print source (it is virtualized), and the renderer never blocks (measured 91 frames /
+1500 ms during a 34-page raster). Never try to print a PDF by loading it into a hidden window -
+that path gives no control over the options.
+
+**Platform limits, verified rather than assumed (do not re-litigate):**
+- `webContents.print({ silent: true, deviceName: 'Microsoft Print to PDF' })` FAILS
+  (`failureReason: 'Print job canceled'`): that driver needs an output filename and Electron's
+  print options have NO output-path key. Hence the shipped rule: a device name containing "pdf"
+  gets `silent: false` so the OS dialog can collect the path; real printers print silently with the
+  full option set.
+- `getPrintersAsync()` returns only `name/displayName/description/options` - no `isDefault`, no
+  `status`. The default is resolved best-effort from `HKCU\...\CurrentVersion\Windows\Device`.
+- There is NO Electron option for paper source / tray, so the dialog omits that control instead of
+  shipping a no-op (recorded as FEA-016, DEFERRED).
+- A driver that never invokes the print callback hangs the promise AND leaks the hidden window -
+  which also keeps the app alive after the visible window closes (`window-all-closed` cannot fire).
+  Every print job is therefore bounded (120 s timeout) and destroys its window on EVERY path via a
+  single `destroyOnce()` in a `finally`. Any future hidden-window work must copy that pattern.
+
+**Harness lesson 1 - Electron menu accelerators cannot be driven from CDP.**
+`page.keyboard.press('Control+P')` reaches the renderer (`keydown` fires, `defaultPrevented=false`)
+but NEVER fires the application menu. Use `webContents.sendInputEvent` for the native input path,
+or click the menu item directly. This cost a diagnostic cycle in qa's first print spec.
+
+**Harness lesson 2 - the print-output verification seam.** The real print hand-off cannot be
+automated (see the virtual-PDF limit above), but the app's REAL composition can be inspected:
+override `WebContents.prototype.print` in `app.evaluate` so it captures the options object it was
+called with and calls `printToPDF(options)` on the same webContents, then inspect the produced PDF.
+That is how Phase 30's criteria 2/3/5/7 were verified: a custom range of 3 pages produced exactly a
+3-page portrait PDF, 4 images at 2-up produced exactly a 2-page landscape PDF (792x612), and the
+captured options object proved `copies: 3, collate: true` reaches the real print call. Use this seam
+for any future print/export verification.
+
+**Also confirmed this run:** `window.tflex.*` is a contextBridge object and is IMMUTABLE, so a test
+cannot stub `printJob` from the renderer - intercept the main-process IPC handler instead. And a
+stale `dist/` will silently invalidate an e2e run: qa's first print run launched pre-print code and
+had to rebuild. Build before any e2e that must exercise new main-process code.

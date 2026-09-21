@@ -8,6 +8,7 @@ import type { MenuEnabledState, MenuItemId } from '../shared/types';
 export const TOGGLEABLE_MENU_IDS: readonly MenuItemId[] = [
   'menu.save',
   'menu.saveAs',
+  'menu.print',
   'menu.closeTab',
   'menu.undo',
   'menu.redo',
@@ -16,6 +17,11 @@ export const TOGGLEABLE_MENU_IDS: readonly MenuItemId[] = [
 interface MenuDeps {
   /** Called when a menu action needs the active window to send an IPC event. */
   sendToFocused(action: string, ...args: unknown[]): void;
+  /** Phase 30 — File > Print / Ctrl+P. Fired on the dedicated
+   *  `print:request` channel so the renderer opens its print dialog (the
+   *  same one the title-bar Print icon opens). Separate from
+   *  `sendToFocused` because it is not a `menu:action` payload. */
+  sendPrintRequest(): void;
 }
 
 /**
@@ -60,6 +66,17 @@ export function buildAppMenu(deps: MenuDeps): void {
           label: 'Save As...',
           accelerator: 'CmdOrCtrl+Shift+S',
           click: () => send('saveAs'),
+        },
+        // Phase 30 — industry convention: Print sits between Save As and
+        // Close (Ctrl+P). Fires the dedicated print:request event so the
+        // renderer opens the same dialog as the title-bar Print icon.
+        // DEF-271 — the id lets the renderer disable it via menu:setEnabled
+        // when no document is open.
+        {
+          id: 'menu.print',
+          label: 'Print...',
+          accelerator: 'CmdOrCtrl+P',
+          click: () => deps.sendPrintRequest(),
         },
         { type: 'separator' },
         {

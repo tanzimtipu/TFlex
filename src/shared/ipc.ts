@@ -19,6 +19,9 @@ import type {
   OcrSuspect,
   PageLabelEntry,
   PdfOpenError,
+  PrintJobPayload,
+  PrintJobResult,
+  PrinterInfo,
   RecentFile,
   SampleDocument,
   SavedSignature,
@@ -174,6 +177,15 @@ export const IPC = {
   // and the result lands via `update:statusChanged` exactly
   // like the launch-time auto-check.
   updateCheck: "update:check",
+  // Phase 30 — print. The renderer asks for the OS printer list
+  // (`print:listPrinters`), then hands the composed page images plus the
+  // chosen settings to `print:job`; main mounts them in a hidden window and
+  // calls `webContents.print`. `print:request` is the main -> renderer event
+  // fired by File > Print / Ctrl+P so the renderer opens its print dialog
+  // (the same one the title-bar Print icon opens).
+  printListPrinters: "print:listPrinters",
+  printJob: "print:job",
+  printRequestEvent: "print:request",
 } as const;
 
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
@@ -545,8 +557,17 @@ export interface TFlexApi {
      *  match the renderer's doc-open / undo-stack state. Fire-and-forget:
      *  the renderer does not await a reply; main flips `.enabled` on the
      *  matching `MenuItem`. Omitted ids keep their current state. */
-    setEnabled(state: import("./types").MenuEnabledState): void;
+setEnabled(state: import("./types").MenuEnabledState): void;
   };
+  /** Phase 30 — print surface. `listPrinters` returns the OS printer list
+   *  (system device names, with the default flagged). `printJob` sends the
+   *  composed page images (data URLs) plus the chosen settings to the
+   *  hidden-window print pipeline; a failure resolves with a reason the
+   *  dialog surfaces. `onPrintRequest` subscribes to the main -> renderer
+   *  event fired by File > Print / Ctrl+P (returns an unsubscribe). */
+  listPrinters(): Promise<PrinterInfo[]>;
+  printJob(payload: PrintJobPayload): Promise<PrintJobResult>;
+  onPrintRequest(cb: () => void): () => void;
   /** Phase 6 — About + preferences. Backend fills `AppInfo` from
    *  `app.getVersion()` and the user-data path so the About dialog
    *  can show a version badge and the preferences sheet can show

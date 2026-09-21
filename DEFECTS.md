@@ -5,6 +5,146 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-273: A 50 000-digit page range reports "Page Infinity is out of range" (parseInt overflow in the range parser)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-065)
+- Phase: 30
+
+Steps to reproduce:
+1. Build the dev app (`npm.cmd run build`) and launch it through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen.
+2. Open `test-fixtures/report.pdf` (34 pages) via the Open PDF button (dialog stubbed by `openSamplePath`).
+3. Click the title-bar Print icon `[data-print]` and wait for the dialog (`[data-print-printer]`).
+4. Select Custom (`[data-print-range-custom]`) and type 50 000 nines into `[data-print-range-input]`.
+5. Read `[data-print-range-error]`.
+
+Expected: a clear out-of-range message naming a sane number, or the generic "not a valid page or range".
+
+Actual: after ~434 ms the error text is exactly `Page Infinity is out of range (1-34).` The over-long numeric token overflows through `Number.parseInt` to `Infinity`, and the message renders the artifact. The control case `1-1000000000` correctly reports `Page 1000000000 is out of range (1-34).`, and Print stays disabled (`role=alert`), so the failure is still loud — cosmetic only, but it leaks an implementation artifact.
+Screenshot: none. Harness: `test-fixtures/adv-p30-dialog.cjs` (section C).
+
+History:
+- qa: opened (reproduced independently on the dev build; `node test-fixtures/adv-p30-dialog.cjs` -> `C 50k-digit range ms=434 err="Page Infinity is out of range (1-34)."`)
+- orchestrator: FIX-READY (relaying frontend-dev - `parseSafePageNumber()` added in `src/renderer/pdf/printSelection.ts`; a token that is not a safe integer now yields the generic "not a valid page or range", and `999` on a 34-page document still names the real number. No validation loosened. Evidence: `printSelection.test.ts` 24 passed incl. the 50 000-digit case; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED (2026-09-21 FIX-READY retest on a fresh build, `npm.cmd run build` exit 0). `node test-fixtures/adv-p30-dialog.cjs` -> `C 50k-digit range ms=434 err="That entry is not a valid page or range. Use numbers and ranges like 1-5, 8."` (no "Infinity"); control `C huge-range err="Page 1000000000 is out of range (1-34)."` unchanged. `npm.cmd run test:unit -- test/unit/renderer/printSelection.test.ts` -> 24 passed incl. the 50 000-digit case and `parsePageRanges("999", 34)` -> `Page 999 is out of range (1-34)`. No leaked windows.)
+
+## DEF-272: Two Print activations dispatched in the same task run two print jobs (in-flight guard is render state only)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-064)
+- Phase: 30
+
+Steps to reproduce:
+1. Build the dev app (`npm.cmd run build`) and launch it through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen.
+2. Open `test-fixtures/squiggly-native.pdf` (1 page) via `openSamplePath`; wait for `.pdf-page canvas`.
+3. Stub the app's printer list to a non-existent device: `app.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].webContents.getPrintersAsync = async () => ([{ name: '__adv_no_such_printer__', displayName: 'ADV Fake', isDefault: true }]); })`.
+4. Open the dialog (`[data-print]`), select `__adv_no_such_printer__`, wait for `[data-print-preview] img`.
+5. Real pointer double-click on `[data-print-confirm]` (`locator.dblclick()`); count hidden-window creations via `app.on('window')`.
+6. Then, inside ONE `page.evaluate` task, run `document.querySelector('[data-print-confirm]').click()` twice; count hidden-window creations again.
+
+Expected: the confirm action is idempotent behind a synchronous in-flight guard, so a second activation in the same task cannot start a second job.
+
+Actual: real pointer double-click -> `hiddenWindowEvents=1` (React commits `running:true` between the two click events, so this path is defended). Same-task dual activation -> `windowEventsDelta=2` — two `printJob` calls / two jobs. `valid` is derived from render state (`running`), which React has not re-rendered within the same task, so both invocations pass the guard. On a physical printer this queues the job twice. LOW because normal pointer and keyboard input do not reproduce it.
+Screenshot: screenshots/adv-p30-print-error.png (dialog after the fake-device job). Harness: `test-fixtures/adv-p30-dialog.cjs` (sections F and G).
+
+History:
+- qa: opened (reproduced independently on the dev build; `node test-fixtures/adv-p30-dialog.cjs` -> `F dblclick: err="Invalid deviceName provided" hiddenWindowEvents=1`; `G same-tick-dblclick: windowEventsDelta=2`)
+- orchestrator: FIX-READY (relaying frontend-dev - a synchronous `inFlightRef` guard in `PrintDialog.tsx` is set at the top of `onConfirmPrint` before any await and cleared in the existing `finally`, so a second same-task activation returns immediately; the render-state disabled UI is unchanged. Evidence: `printDialog.test.tsx` 11 passed incl. "same-task double click -> exactly one raster and one printJob"; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED (2026-09-21 FIX-READY retest on a fresh build, `npm.cmd run build` exit 0). `node test-fixtures/adv-p30-dialog.cjs` -> `F dblclick: err="Invalid deviceName provided" hiddenWindowEvents=1` (unchanged); `G same-tick-dblclick: windowEventsDelta=1` (was 2), `errorPresent=1`, `confirmLabel="Print"`. The synchronous in-flight ref guard makes the second same-task activation a no-op. No leaked windows.)
+
+## DEF-271: Print affordances are enabled and silently no-op when no document is open
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-063)
+- Phase: 30
+
+Steps to reproduce:
+1. Build the dev app (`npm.cmd run build`) and launch it through the canonical `e2e/lib/launch.cjs` `launchApp`; stay on the welcome screen (0 tabs).
+2. Read the title-bar Print button `[data-print]`: count, `isVisible()`, `isDisabled()`.
+3. Click it, wait 800 ms, count the print dialog `[data-print-printer]`.
+4. Send the real Ctrl+P accelerator through `webContents.sendInputEvent` (the native menu path), wait 900 ms, count the dialog again. Check page errors and any toast/feedback.
+
+Expected: a control that cannot act must be disabled (like Save/Save As on the welcome screen) or must say why. AGENTS.md: "Every control introduced in a phase must implement its promised behavior; a click that does nothing is a defect, not polish."
+
+Actual: `[data-print]` is present, `visible:true`, `disabled:false` at `tabs=0`. After the header click `dialogCount=0`; after Ctrl+P `dialogCount=0`; no toast, no error, no state change, `pageErrors=[]`. The File > Print menu item has no `id`, so `applyMenuEnabledState` never disables it and Ctrl+P is always live; both `onPrintClick` and the `onPrintRequest` subscription return early when there is no active tab. The user gets no feedback that Print is unavailable.
+Screenshot: screenshots/adv-p30-nodoc-welcome.png (header Print glyph enabled, immediately left of the gear). Harness: `test-fixtures/adv-p30-nodoc.cjs`.
+
+History:
+- qa: opened (reproduced independently on the dev build; `node test-fixtures/adv-p30-nodoc.cjs` -> `NO_DOC headerPrint: count=1 visible=true disabled=false tabs=0`; `NO_DOC after header-click dialogCount=0`; `NO_DOC after Ctrl+P dialogCount=0`; `NO_DOC pageErrors=[]`. Screenshot inspected: Print glyph rendered enabled on the welcome screen.)
+- orchestrator: FIX-READY (relaying both developers - renderer: `disabled={activeId === null}` on the `[data-print]` button, mirroring the Save As control, plus a `[disabled]` style block; main: the File > Print item now carries `id: 'menu.print'`, `'menu.print'` added to `MenuItemId` and the toggleable set, and `snapshotMenuEnabled(hasActiveDoc)` now returns `"menu.print": hasActiveDoc` so Ctrl+P is disabled with no document. Evidence: `printHeaderButton.test.tsx` 4 passed, `menuActions.test.ts` 34 passed, `menuEnabledWiring.test.ts` 5 passed, `test/unit/main/menu.test.ts` 15 passed; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED (2026-09-21 FIX-READY retest on a fresh build, `npm.cmd run build` exit 0). `node test-fixtures/adv-p30-def271.cjs` -> `NO_DOC tabs=0 headerDisabled=true menuEnabled=false`; `NO_DOC afterHeaderClick dialog=0 afterCtrlP dialog=0`; `WITH_DOC headerDisabled=false menuEnabled=true`; `WITH_DOC afterCtrlP dialog=1`. The menu state was read directly in the main process via `app.evaluate(({ Menu }) => Menu.getApplicationMenu().getMenuItemById('menu.print').enabled)`. No leaked windows.)
+
+## DEF-270: The print payload validator accepts any non-empty string as a page image, so broken/blank content is dispatched as a print job
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-062)
+- Phase: 30
+
+Steps to reproduce:
+1. Build the dev app (`npm.cmd run build`) and launch it through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen.
+2. Call `window.tflex.printJob({ images: ['not-a-data-url'], settings: { deviceName: '__adv_no_such_printer_92__' } })` and race it against a 20 s timeout. The device name is deliberately non-existent, so nothing reaches a real printer.
+3. Observe the settled result and whether the engine was reached (a hidden window created and `webContents.print` called).
+
+Expected: `validatePrintPayload` rejects a non-data-URL / non-decodable image with the typed reason `bad-image` (which exists) before the engine is reached.
+
+Actual: the case settled after 135 ms with `{"ok":false,"reason":"Invalid deviceName provided"}` — it PASSED validation, created the hidden window and called `webContents.print`, and only failed at the bogus device. The `bad-image` check only tests `typeof !== 'string'` or `''` (so `images:[null]`, `images:['']` and `images:[42]` are rejected in <=1 ms, but any non-empty string passes). The print document then contains a broken `<img>`, so the job fails at the driver or prints blank pages, and the only signal (`success`) is not tied to the image being valid.
+Screenshot: none. Harness: `test-fixtures/adv-p30-matrix.cjs`.
+
+History:
+- qa: opened (reproduced independently on the dev build; `node test-fixtures/adv-p30-matrix.cjs` -> `CASE {"name":"image non-data-URL string",...,"settled":true,"result":{"ok":false,"reason":"Invalid deviceName provided"},"ms":135}`, versus the sub-millisecond `bad-image` rejections for `[null]`/`['']`/`[42]`.)
+- orchestrator: FIX-READY (relaying backend-dev - `bad-image` now calls a new `isValidPageImage` that requires a `data:image/(png|jpeg|jpg|webp);base64,` URL whose payload base64-decodes AND carries a known image signature (PNG/JPEG/WEBP magic bytes). `'not-a-data-url'`, the undecodable `'data:image/png;base64,AAAA'`, wrong MIME, a missing `;base64,` and an empty payload are all rejected before any window is created. Evidence: `test/unit/main/print.test.ts` 58 passed incl. the accept/reject matrix; `npm run verify` exit 0.)
+- qa: CLOSED (2026-09-21 FIX-READY retest on a fresh build, `npm.cmd run build` exit 0). `node test-fixtures/adv-p30-def270.cjs` -> `not-a-data-url ms=17 -> {"ok":false,"reason":"bad-image"}`; `data:image/png;base64,AAAA ms=2 -> {"ok":false,"reason":"bad-image"}`; `real 1x1 png ms=203 -> {"ok":false,"reason":"Invalid deviceName provided"}` (passed validation, then failed at the deliberately bogus device - correct). `node test-fixtures/adv-p30-matrix.cjs` -> `image non-data-URL string` -> `bad-image` (1 ms), `images:[null]/[""]/[42]` -> `bad-image` (0 ms), `valid IMG baseline -> bogus device` -> `Invalid deviceName provided` (131 ms). `test/unit/main/print.test.ts` 58 passed. No leaked windows.)
+
+## DEF-269: `printJob` with an empty, omitted or non-string deviceName never settles, leaks one hidden BrowserWindow per call, and keeps the app alive after the visible window closes
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-061)
+- Phase: 30
+
+Steps to reproduce:
+1. Build the dev app (`npm.cmd run build`) and launch it through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. From the renderer call `window.tflex.printJob({ images: [<1x1 PNG data URL>], settings: { deviceName: '' } })` and race it against an 8 s timeout.
+3. Repeat with the `settings` key omitted entirely, with `settings: null`, and with `settings: { deviceName: 12345 }`.
+4. Count `BrowserWindow.getAllWindows()` in the main process before, after each call, and 3 s later; inspect each window's `isDestroyed()`, `isVisible()` and `webContents.getURL()`.
+5. Leak one hidden window, close the visible window with `win.close()`, wait 5 s and query the main process again.
+No physical printer is targeted: the empty/omitted device resolves to the system default, which on this box is the virtual "Microsoft Print to PDF".
+
+Expected: an empty, absent or non-string `deviceName` is rejected up front with a typed reason (`bad-device`) before any window is created, or `printJob` is bounded (timeout plus window destruction on EVERY path) so a driver that never calls back cannot leak a hidden window or keep the app alive. AGENTS.md fail-loud: no silent default-device print.
+
+Actual: every call hangs — `{"settled":false,"result":"TIMEOUT"}` at 8 s — and each leaks one hidden window. `BrowserWindow.getAllWindows()` grew 1 -> 2 -> 3 -> 4 -> 5 -> 6 across five calls, every leaked window `destroyed:false, visible:false` with the temp print HTML loaded (`file:///C:/Users/.../tflex-print-*.html`), and none was ever destroyed. The quit consequence is real: after one leak, closing the visible window left `appAlive=true, windows=1` — the app never quits because `window-all-closed` cannot fire while the hidden window exists. A non-string `deviceName` (12345) takes the same hanging path.
+Screenshot: none (non-visual). Harnesses: `test-fixtures/adv-p30-leak.cjs`, `test-fixtures/adv-p30-quit.cjs`.
+
+History:
+- qa: opened (reproduced independently on the dev build; `node test-fixtures/adv-p30-leak.cjs` -> five TIMEOUTs, `FINAL windows 6`, all leaked windows `destroyed:false, visible:false`; `node test-fixtures/adv-p30-quit.cjs` -> `AFTER_LEAK windows 2`, `AFTER_VISIBLE_CLOSE appAlive=true windows=1`. 8 s bounded observation window; leaked windows cleaned up via `hardClose`, which destroyed all six and closed normally in 248 ms.)
+- orchestrator: FIX-READY (relaying backend-dev - two parts: (1) `validatePrintPayload` now rejects a missing/empty/whitespace-only/non-string `deviceName` with the new typed reason `bad-device-name`, so no window is created for that class at all; (2) `printJob` is bounded - `PRINT_TIMEOUT_MS = 120_000` resolves `{ ok: false, reason: 'print-timeout' }` when the driver never calls back, and a single `finally` with a `destroyOnce()` guard destroys the window exactly once on success, driver failure, timeout and thrown error, so no hidden window can outlive a job. Evidence: `test/unit/main/print.test.ts` 58 passed incl. the never-callback timeout and the destroy-exactly-once assertions; `npm run verify` exit 0.)
+- qa: CLOSED (2026-09-21 FIX-READY retest on a fresh build, `npm.cmd run build` exit 0). `node test-fixtures/adv-p30-leak.cjs` -> all five calls settle in 1-14 ms with `{"ok":false,"reason":"bad-device-name"}` (`deviceName:""` 14 ms, no-settings 2 ms, `deviceName:12345` 1 ms, repeats 2 ms), `FINAL windows 1 events 1` (no hidden window created; `BrowserWindow.getAllWindows()` unchanged across calls), `closed normally in 153ms`. `node test-fixtures/adv-p30-quit.cjs` -> `AFTER_LEAK windows 1`, `AFTER_VISIBLE_CLOSE appAlive=false windows=-1` (app quit cleanly, no stray window). `node test-fixtures/adv-p30-matrix.cjs` -> `settings:null` 4 ms and `settings omitted` 0 ms both `bad-device-name`, `WINDOWS_AFTER 1`, `closed normally in 133ms`. The 120 s timeout path was not waited out; it is covered by `test/unit/main/print.test.ts` (58 passed incl. "resolves print-timeout and destroys the window exactly once when the driver never calls back"). No leaked windows or running app left behind.)
+
+## DEF-268: Print dialog body refuses to shrink, so the dialog scrolls as a whole and carries the Close/Print footer below the viewport
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 30
+
+Steps to reproduce:
+1. Launch TFlex through the canonical `launchApp` (default window geometry 1440x900, `src/main/services/settings.ts:248`); open `test-fixtures/report.pdf` (34 pages).
+2. Click the title-bar Print icon `[data-print]` (or press Ctrl+P) and leave the dialog's scroll position at the top.
+3. Inspect the dialog box without scrolling: the footer with Close (`[data-print-cancel]`) and Print (`[data-print-confirm]`) is not in the viewport.
+
+Expected: the footer stays inside the dialog and the 900 px viewport, and the option list scrolls within the dialog body (the `.modal-dialog` `grid-template-rows: auto 1fr auto` pinned-footer intent, `src/renderer/styles.css:4338`).
+
+Actual: `.print-body` is a fixed 856.2 px tall and does not shrink (grid item with default `min-height: auto`), so `.modal-dialog` (`max-height: 836px`, `overflow: auto`) scrolls as a whole instead of the body scrolling. Measured at vw=1440 / vh=900: dialog top 32 / bottom 868; `.modal-body` top 85.3 / bottom 941.5; `.modal-footer` top 941.5 / bottom 1002.2; `[data-print-cancel]` and `[data-print-confirm]` occupy y 954.2-990.2, all below the 900 px viewport (`elementFromPoint` at both button centres returns null; dialog `scrollHeight` 970 > `clientHeight` 835). The primary Print action is therefore off-screen on first open at the app's default window size and requires scrolling the whole dialog (title included) to reach. This is the same signature documented and fixed for the watermark dialog under DEF-219 ("body refuses to shrink ... carrying the footer below the viewport"); the scoped fix there (`[data-watermark-dialog] .modal-dialog { grid-template-rows: auto minmax(0, 1fr) auto }` + `.modal-body { min-height: 0; overflow-y: auto }`, `src/renderer/styles.css:10870-10878`) was never applied to `.print-dialog` / `.print-body`.
+Screenshot: screenshots/phase30-print-dialog.png (dialog clipped at its bottom edge at the "Pages" row; no Close/Print footer visible)
+
+History:
+- qa: opened (Phase 30 chunk 1+2 focused verification. The functional spec `e2e/phase30_print_dialog.spec.cjs` passes - title-bar icon, real system printer list, 1-2 custom-range preview, Ctrl+P re-open - but the task's mandated screenshot check "the controls must not overlap or overflow" fails.)
+- qa: CLOSED (2026-09-21 FIX-READY retest of the scoped CSS containment fix, `src/renderer/styles.css:8739-8783`, rebuilt into `dist/renderer/assets/index-CecAEDMN.css`). `npm.cmd run test:e2e -- e2e/phase30_print_dialog.spec.cjs` -> 1 passed / 0 failed. Measured at vw=1440 / vh=900 (default geometry `settings.ts:248`): dialog `scrollHeight` 835 <= `clientHeight` 835 (+1 tolerance) -> no dialog-level scroll; body `scrollWidth` 703 <= `clientWidth` 703 -> no hidden horizontal overflow; `.modal-footer` top 806.7 / bottom 867.3 (was 941.5 / 1002.2) -> inside the 900 px viewport; `[data-print-confirm]` visible and y 819.3-855.3 -> bottom 855.3 <= 900, clickable without scrolling. The body now owns the vertical scroll (its own scrollbar) and the footer is pinned. Functional sequence still green (icon opens dialog, 3 real printers incl. "Microsoft Print to PDF", preview 34 -> 2 pages on custom 1-2, Cancel closes, Ctrl+P re-opens). Fresh screenshot `screenshots/phase30-print-dialog.png` shows the Close/Print footer fully on screen. No console/page errors.
+
 ## DEF-267: Non-box annotation moves still use delete + re-create; a sub-millisecond style burst after the move can drop a field
 
 - Status: CLOSED

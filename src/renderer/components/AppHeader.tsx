@@ -15,6 +15,7 @@ import {
   Monitor,
   Moon,
   Plus,
+  Printer,
   Save,
   SaveAll,
   Settings,
@@ -80,6 +81,10 @@ interface AppHeaderProps {
    *  title bar its always-visible settings entry point; the popover
    *  menu keeps the discoverable text path. */
   onOpenPreferences: () => void;
+  /** Phase 30 — the Print affordance, placed immediately left of the
+   *  preferences gear. Opens the print dialog (same surface as File >
+   *  Print and Ctrl+P). */
+  onPrint?: () => void;
   /** DEF-077 — optional slot for the OTA update indicator. Renders
    *  inside `.header-actions`, just before the theme toggle. The host
    *  passes a fully-constructed `<UpdateIndicator />` (or null) so
@@ -114,7 +119,7 @@ function themeLabel(value: ThemeDefault): string {
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true } = props;
+  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   // The picker's selection is the SAVED preference (themeDefault) —
@@ -450,6 +455,22 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             settings affordance sits with the other app-level controls
             at the trailing edge of the title bar. */}
         {updateIndicator}
+        {/* Phase 30 — Print, immediately left of the settings gear. Same
+            surface as File > Print and Ctrl+P. Icon-only chrome control
+            (aria-label + title tooltip), matching the shared header
+            a11y contract. */}
+        <button
+          type="button"
+          className="header-print"
+          onClick={onPrint}
+          disabled={activeId === null}
+          aria-haspopup="dialog"
+          aria-label="Print"
+          title="Print (Ctrl+P)"
+          data-print
+        >
+          <Printer size={16} aria-hidden />
+        </button>
         {/* Phase 13 — Settings gear. Icon-only chrome control (the
             shared header a11y contract: aria-label + title tooltip);
             opens the Preferences sheet. */}

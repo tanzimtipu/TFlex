@@ -50,10 +50,11 @@ describe('DEF-065: menu.ts', () => {
   });
 
   describe('TOGGLEABLE_MENU_IDS', () => {
-    it('lists exactly the five contract ids', () => {
+    it('lists exactly the six contract ids', () => {
       expect(TOGGLEABLE_MENU_IDS).toEqual([
         'menu.save',
         'menu.saveAs',
+        'menu.print',
         'menu.closeTab',
         'menu.undo',
         'menu.redo',
@@ -64,7 +65,7 @@ describe('DEF-065: menu.ts', () => {
   describe('buildAppMenu', () => {
     it('assigns stable ids to the Save / Save As / Close Tab / Undo / Redo items', () => {
       const send = vi.fn();
-      buildAppMenu({ sendToFocused: send });
+      buildAppMenu({ sendToFocused: send, sendPrintRequest: vi.fn() });
 
       // buildFromTemplate received the template; walk it to collect ids.
       const template = _buildFromTemplate.mock.calls[0][0] as Array<{
@@ -78,13 +79,14 @@ describe('DEF-065: menu.ts', () => {
       }
       expect(allIds).toContain('menu.save');
       expect(allIds).toContain('menu.saveAs');
+      expect(allIds).toContain('menu.print');
       expect(allIds).toContain('menu.closeTab');
       expect(allIds).toContain('menu.undo');
       expect(allIds).toContain('menu.redo');
     });
 
     it('setApplicationMenu is called with the built menu', () => {
-      buildAppMenu({ sendToFocused: vi.fn() });
+      buildAppMenu({ sendToFocused: vi.fn(), sendPrintRequest: vi.fn() });
       expect(_setApplicationMenu).toHaveBeenCalledTimes(1);
     });
   });
@@ -151,6 +153,33 @@ describe('DEF-065: menu.ts', () => {
   });
 
   // -------------------------------------------------------------------------
+  // DEF-271 — File > Print carries a toggle-able id
+  // -------------------------------------------------------------------------
+
+  describe('DEF-271: File > Print id', () => {
+    it('assigns id menu.print to the File > Print item', () => {
+      buildAppMenu({ sendToFocused: vi.fn(), sendPrintRequest: vi.fn() });
+
+      const template = _buildFromTemplate.mock.calls[0][0] as Array<{
+        label?: string;
+        submenu?: Array<{ id?: string; label?: string }>;
+      }>;
+      const file = template.find((t) => t.label === 'File');
+      const printItem = file!.submenu!.find((i) => i.label === 'Print...');
+      expect(printItem!.id).toBe('menu.print');
+    });
+
+    it('disables and re-enables menu.print via applyMenuEnabledState', () => {
+      _menu.items.set('menu.print', { enabled: true });
+      _lastMenu.current = _menu;
+      applyMenuEnabledState({ 'menu.print': false });
+      expect(_menu.items.get('menu.print')!.enabled).toBe(false);
+      applyMenuEnabledState({ 'menu.print': true });
+      expect(_menu.items.get('menu.print')!.enabled).toBe(true);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // DEF-080 — Help -> Check for Update menu item
   // -------------------------------------------------------------------------
 
@@ -164,7 +193,7 @@ describe('DEF-065: menu.ts', () => {
     });
 
     it('adds a Help -> Check for Update item with the CmdOrCtrl+Shift+U accelerator', () => {
-      buildAppMenu({ sendToFocused: vi.fn() });
+      buildAppMenu({ sendToFocused: vi.fn(), sendPrintRequest: vi.fn() });
 
       const template = _buildFromTemplate.mock.calls[0][0] as Array<{
         label?: string;
@@ -185,7 +214,7 @@ describe('DEF-065: menu.ts', () => {
 
     it('emits the update.check action when clicked', () => {
       const send = vi.fn();
-      buildAppMenu({ sendToFocused: send });
+      buildAppMenu({ sendToFocused: send, sendPrintRequest: vi.fn() });
 
       const template = _buildFromTemplate.mock.calls[0][0] as Array<{
         label?: string;
@@ -204,7 +233,7 @@ describe('DEF-065: menu.ts', () => {
     });
 
     it('keeps the About TFlex item in the Help menu', () => {
-      buildAppMenu({ sendToFocused: vi.fn() });
+      buildAppMenu({ sendToFocused: vi.fn(), sendPrintRequest: vi.fn() });
 
       const template = _buildFromTemplate.mock.calls[0][0] as Array<{
         label?: string;
@@ -216,7 +245,7 @@ describe('DEF-065: menu.ts', () => {
     });
 
     it('uses an accelerator that is free of collisions with the rest of the menu', () => {
-      buildAppMenu({ sendToFocused: vi.fn() });
+      buildAppMenu({ sendToFocused: vi.fn(), sendPrintRequest: vi.fn() });
 
       const template = _buildFromTemplate.mock.calls[0][0] as Array<{
         submenu?: Array<{ accelerator?: string; type?: string }>;

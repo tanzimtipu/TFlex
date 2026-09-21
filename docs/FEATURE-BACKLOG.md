@@ -257,3 +257,66 @@ bundled dictionary without any network call, which keeps it inside the v1 offlin
 
 History:
 - orchestrator: recorded from feature-scout research dispatch (deferred candidate after Phase 21)
+
+## FEA-014: Booklet and poster printing (imposition layouts)
+
+- Status: PROPOSED
+- Source: https://helpx.adobe.com/acrobat/using/printing-pdfs.html (Adobe Acrobat print dialog: Booklet / Poster / Multiple pages per sheet)
+- Category: Print
+- Effort: L
+- Likely new settings: yes (a saved booklet/poster preset)
+- Batch: print research for Phase 30 (2026-09-21)
+
+What it does: Impose pages for folding (booklet: 2-up, reordered for saddle stitch, with gutter/creep and
+booklet subset options) and scale one page across multiple sheets (poster: tile with overlap marks and
+cut marks). Acrobat ships both as first-class print layouts next to N-up.
+
+Why it matters: Phase 30 shipped N-up, page order and odd/even/reverse, which is the tile/ordering
+substrate these two layouts are built on - the remaining work is the imposition math and the preview
+render, so the phase left the cheapest possible seam for it.
+
+History:
+- orchestrator: recorded from the feature-scout print research that produced Phase 30 (booklet/poster were
+  named in the research but deliberately left out of the Phase 30 feature list as the L-effort tier)
+
+## FEA-015: Named print presets persisted across sessions
+
+- Status: PROPOSED
+- Source: https://helpx.adobe.com/acrobat/using/printing-pdfs.html (Acrobat: print presets you can save and reuse)
+- Category: Print
+- Effort: S
+- Likely new settings: yes (a `printPresets` list: name + PrintSettings snapshot, validated in
+  `src/main/services/settings.ts`)
+- Batch: print research for Phase 30 (2026-09-21)
+
+What it does: Save the current print dialog settings under a name and re-apply them later, across app
+restarts.
+
+Why it matters: Phase 30 shipped session-level presets only (per its Settings impact: none). Users who
+print the same way repeatedly (duplex + greyscale + fit) re-enter the same six controls every time; this is
+the smallest follow-on with a real daily benefit and it is the only print item that needs a settings field.
+
+History:
+- orchestrator: recorded from the feature-scout print research that produced Phase 30
+
+## FEA-016: Paper source / tray selection by page size
+
+- Status: DEFERRED - no Electron print option exposes the paper source or tray, so the app cannot honour
+  it; the Phase 30 dialog omits the control rather than shipping a no-op. Revisit only if a native or
+  driver-level print path replaces `webContents.print`.
+- Source: https://helpx.adobe.com/acrobat/using/printing-pdfs.html (Acrobat: Choose paper source by PDF
+  page size)
+- Category: Print
+- Effort: L
+- Likely new settings: no
+- Batch: print research for Phase 30 (2026-09-21)
+
+What it does: Pick the input tray per page size (e.g. letter pages from tray 1, legal from tray 2).
+
+Why it matters: it is the one industry print option TFlex provably cannot deliver on the current engine;
+the research flagged it as driver-dependent, and Electron's `print(options)` has no key for it
+(verified in Phase 30: `getPrintersAsync()` returns no tray/status data either).
+
+History:
+- orchestrator: recorded from the feature-scout print research; DEFERRED with the engine limitation as the
+  reason (Phase 30 verified the limitation rather than guessing it)

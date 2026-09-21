@@ -22,6 +22,7 @@ import type {
   OptimizePreset,
   PageLabelEntry,
   PlaceSignaturePayload,
+  PrintJobPayload,
   RecentFile,
   TextBoxStylePatch,
   WatermarkInfo,
@@ -32,6 +33,7 @@ import { openPdfDialog } from './services/dialog';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
 import { loadPdfFile, loadFdfFile } from './services/pdf-file';
+import { listPrinters, printJob } from './services/print';
 import { setBundledFontDir } from './services/fonts';
 import { SamplesService } from './services/samples';
 import { DEFAULT_SETTINGS, SettingsService } from './services/settings';
@@ -80,6 +82,14 @@ export async function start(): Promise<void> {
         win.webContents.send(IPC.menuActionEvent, ...args);
       }
     },
+    // Phase 30 — File > Print / Ctrl+P pushes the dedicated print:request
+    // event (not a menu:action) so the renderer opens its print dialog.
+    sendPrintRequest(): void {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      if (win !== undefined && !win.isDestroyed()) {
+        win.webContents.send(IPC.printRequestEvent);
+      }
+    },
   });
 
   // DEF-065 — renderer -> main: toggle named menu items' enabled state so
@@ -90,6 +100,13 @@ export async function start(): Promise<void> {
   ipcMain.on(IPC.menuSetEnabled, (_event, state: MenuEnabledState) => {
     applyMenuEnabledState(state);
   });
+
+  // Phase 30 — print. The renderer asks for the OS printer list (via the
+  // invoking webContents, since getPrintersAsync lives on it), then hands the
+  // composed page images + settings to the hidden-window print pipeline.
+  // printJob never rejects: a failure resolves with a reason for the dialog.
+  ipcMain.handle(IPC.printListPrinters, (event) => listPrinters(event.sender));
+  ipcMain.handle(IPC.printJob, (_event, payload: PrintJobPayload) => printJob(payload));
 
   const broadcast = (settings: AppSettings): void => {
     for (const win of BrowserWindow.getAllWindows()) {

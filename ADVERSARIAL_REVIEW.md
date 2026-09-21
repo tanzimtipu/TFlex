@@ -2311,4 +2311,133 @@ DEF-243 guard before the runs.
 
 **Total Phase-22-gate findings: 2 (0 HIGH, 0 MEDIUM, 2 LOW).**
 
+---
+
+## Phase 30 gate — print with advanced options
+
+Session: `phase-30 gate`. Model: `openrouter/deepseek/deepseek-v4.1-flash`. All runs via the
+canonical launcher `e2e/lib/launch.cjs` `launchApp`; every passing-payload print used an
+explicitly non-existent device name, and the only default-device job used this box's virtual
+default ("Microsoft Print to PDF"). No physical printer was ever targeted. Repro harnesses
+live in `test-fixtures/adv-p30-*.cjs`; specimens in `test-fixtures/adv-*.pdf`.
+
+## ADV-061: `printJob` with no valid deviceName never resolves and leaks a hidden BrowserWindow per call; the app then refuses to quit
+
+- Session: phase-30 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Launched the dev app and ran `node test-fixtures/adv-p30-leak.cjs` (also `adv-p30-matrix.cjs`).
+2. From the renderer called `window.tflex.printJob({ images: ['data:image/png;base64,iVBORw0KGgo...'], settings: { deviceName: '' } })`, then the same with the `settings` key omitted entirely, then with `deviceName: 12345`.
+3. Raced each call against an 8 s timeout and counted `BrowserWindow.getAllWindows()` in the main process before, immediately after, and 3 s later.
+4. Repeated the call five times, then closed the visible window with `win.close()` and waited 5 s before querying the main process again.
+
+Expected: an empty, absent or non-string `deviceName` should be rejected with a typed reason (`bad-device`) before any window is created, or the print call must be bounded (timeout + destroy) so a driver that never calls back cannot leak. AGENTS.md fail-loud: no silent default-device print.
+
+Actual:
+- Every call hung: `{"settled":false,"result":"TIMEOUT"}` at 8 s. Window count grew 1 -> 2 -> 3 -> 4 -> 5 -> 6; every leaked window was still `destroyed:false, visible:false` with the temp print HTML loaded (`file:///C:/Users/.../tflex-print-*.html`), and none was ever destroyed. A single call observed for 90 s (`test-fixtures/adv-p30-confirm.cjs`) never settled and its window was still alive at T+90 s.
+- Root cause: `validatePrintPayload` (src/main/services/print.ts:80-132) never validates `deviceName`; `mapPrintSettings` (src/main/services/print.ts:164-177) omits `deviceName` when it is `''`/absent and sets `silent: true`, so Electron prints to the system default. With a virtual default driver ("Microsoft Print to PDF" on this box) `webContents.print` never invokes its callback, and `printJob` (src/main/services/print.ts:413-424) only resolves and destroys the window inside that callback, so the promise never settles and the `finally` is never reached. A non-string `deviceName` (12345) takes the same path because Electron ignores the bad value and uses the default - the missing type check is directly implicated.
+- Consequence 2 (zombie process): with one leaked hidden window alive, closing the only visible window left the app running (`appAlive=true, windows=1`); it never quits because `window-all-closed` cannot fire while the hidden window exists.
+
+Screenshot: none (non-visual). Harness: `test-fixtures/adv-p30-leak.cjs`.
+
+Disposition: ACCEPTED -> DEF-269 (HIGH; `deviceName` must be validated as a non-empty string with a typed reason, and `printJob` must be bounded - a timeout plus window destruction on EVERY path - so a driver that never calls back cannot leak a hidden window or keep the app alive)
+
+## ADV-062: The print payload validator accepts any non-empty string as a page image, so broken/blank content is dispatched as a print job
+
+- Session: phase-30 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Ran `node test-fixtures/adv-p30-matrix.cjs`.
+2. Called `window.tflex.printJob({ images: ['not-a-data-url'], settings: { deviceName: '__adv_no_such_printer_92__' } })`, then `{ images: ['data:image/png;base64,AAAA'] }` (valid-looking URL, undecodable PNG bytes).
+
+Expected: `validatePrintPayload` should reject a non-data-URL / non-decodable image with `bad-image` (the typed reason exists), so a caller that hands over garbage cannot reach the engine.
+
+Actual: both pass validation (`bad-image` only checks `typeof !== 'string'` or `''` at src/main/services/print.ts:87-91), reach `composePrintHtml`, mount in the hidden window and call `webContents.print`. The print document then contains a broken `<img>`, so the job fails at the driver or prints blank pages; the only signal is the driver callback's `success`, which is not tied to the image being valid. The renderer's own path always sends real PNG data URLs, so this is an IPC-surface robustness gap, but it is exactly the fail-loud guarantee the phase promises.
+
+Screenshot: none. Harness: `test-fixtures/adv-p30-matrix.cjs`.
+
+Disposition: ACCEPTED -> DEF-270 (MEDIUM; `bad-image` must actually check the data-URL shape so garbage cannot reach the engine's print document)
+
+## ADV-063: Print affordances are enabled and silently no-op when no document is open
+
+- Session: phase-30 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Launched the app to the welcome screen (0 tabs) and ran `node test-fixtures/adv-p30-nodoc.cjs`.
+2. Read the title-bar Print button `[data-print]`: present, `visible:true`, `disabled:false`.
+3. Clicked it, waited 800 ms, counted the dialog `[data-print-printer]` -> 0.
+4. Sent the real Ctrl+P accelerator through `webContents.sendInputEvent` (the native menu path) and counted the dialog -> 0. No toast, no error, no state change.
+
+Expected: a control that cannot act must be disabled (like Save/Save As on the welcome screen) or must say why. AGENTS.md: "Every control introduced in a phase must implement its promised behavior; a click that does nothing is a defect, not polish."
+
+Actual: the header Print button renders enabled on the welcome screen; the File > Print menu item (src/main/menu.ts:72-76) has no `id`, so it is never disabled by `applyMenuEnabledState`; Ctrl+P is always live. All three silently do nothing because `onPrintClick` / the `onPrintRequest` subscription return early when there is no active tab (src/renderer/App.tsx:5044-5047 and 887-890). The user gets no feedback that Print is unavailable.
+
+Screenshot: screenshots/adv-p30-nodoc-welcome.png (Print glyph enabled in the header, immediately left of the gear).
+
+Disposition: ACCEPTED -> DEF-271 (MEDIUM; with no document open the title-bar Print button must be disabled and the File > Print menu item must be disabled by `applyMenuEnabledState` - give it an `id` like the other document-scoped items - so Ctrl+P cannot silently do nothing)
+
+## ADV-064: Two Print activations dispatched in the same task run two print jobs (in-flight guard is render state only)
+
+- Session: phase-30 gate
+- Suggested severity: LOW
+
+What I did:
+1. Ran `node test-fixtures/adv-p30-dialog.cjs` (sections F and G). Stubbed the app's `getPrintersAsync` to a non-existent device (`__adv_no_such_printer__`) so nothing reached a real printer, opened the dialog on a 1-page fixture, and counted hidden-window creations with `app.on('window')`.
+2. Real pointer double-click on `[data-print-confirm]` (`locator.dblclick()`): 1 hidden window, 1 error banner.
+3. Same-task activation (`document.querySelector('[data-print-confirm]').click(); ...click();` inside one `page.evaluate`): 2 hidden windows - two `printJob` calls.
+
+Expected: `onConfirmPrint`'s `if (!valid || !selection.ok) return` should be backed by a synchronous in-flight guard (a ref) so a second activation in the same task cannot start a second job.
+
+Actual: `valid` is derived from render state (`running`), which React has not re-rendered within the same task, so both invocations pass the guard; each rasterises and calls `printJob`. Real pointer double-click is defended (React commits `running:true` between the two click events), so this is only reachable via a same-task dual activation; on a physical printer it would queue the job twice. Filed LOW because normal pointer and keyboard input do not reproduce it.
+
+Screenshot: screenshots/adv-p30-print-error.png (dialog after the fake-device job; the banner text "Invalid deviceName provided" is in the run log).
+
+Disposition: ACCEPTED -> DEF-272 (LOW; a synchronous in-flight ref guard must make the print confirmation idempotent so a same-task dual activation cannot start two jobs)
+
+## ADV-065: A 50 000-digit page range reports "Page Infinity is out of range" (parseInt overflow in the range parser)
+
+- Session: phase-30 gate
+- Suggested severity: LOW
+
+What I did: opened report.pdf (34 pages), selected Custom and typed 50 000 nines into `[data-print-range-input]` (`node test-fixtures/adv-p30-dialog.cjs`, section C).
+
+Expected: a clear out-of-range message naming a sane number, or the generic "not a valid page or range".
+
+Actual: `parsePageRanges` (src/renderer/pdf/printSelection.ts:65-70) runs `Number.parseInt` on the token, which overflows to `Infinity`, and the message becomes "Page Infinity is out of range (1-34)." It still fails loud (Print disabled, `role=alert`), so this is cosmetic, but the message leaks an implementation artifact.
+
+Screenshot: none.
+
+Disposition: ACCEPTED -> DEF-273 (LOW; an over-long numeric token must not render "Infinity" in the out-of-range message - clamp or fall back to the generic "not a valid page or range")
+
+## Phase 30 gate — negative results (attacks that did NOT reproduce)
+
+All via the canonical launcher. Harnesses: `test-fixtures/adv-p30-matrix.cjs`,
+`adv-p30-leak.cjs`, `adv-p30-dialog.cjs`, `adv-p30-size.cjs`, `adv-p30-raster.cjs`,
+`adv-p30-raw.cjs`, `adv-p30-nodoc.cjs`, `adv-p30-quit.cjs`.
+
+| Attack | Result |
+|---|---|
+| Hostile IPC payloads — empty/non-array/null/''/number image; copies 0 / -1 / 1e9 / NaN / '3' / 1.5; pagesPerSheet 0 / 3 / 5 / 17 / '4'; scalePercent 0 / 9999 / NaN; pageRanges [-5..1e9] / reversed / 'x' / [null]; null payload; string payload | All rejected with the matching typed reason (`empty-images`, `bad-image`, `bad-copies`, `bad-pages-per-sheet`, `bad-scale-percent`, `bad-page-range`) in <= 1 ms, no hidden window created. Defended. |
+| Runtime-cast union values — oddEven 'banana', duplex 'diagonal', scaling 'wat', landscape 'yes', pageOrder 'weird' | Pass validation (not validated) but with a bogus device settle loudly with "Invalid deviceName provided"; no crash, no hang. |
+| Payload size — 500 images, 5000 images, one 10 MB and one 40 MB data-URL image | Settle in 0.2-1.8 s with the bogus-device failure; no leak, no hang, temp files cleaned up. |
+| Raster bound — 6000x6000 pt page (pdf-lib) | Preview raster 3464x3464 = 11 999 296 px, just under `MAX_PRINT_PIXELS` 12 000 000; honest and bounded. Screenshot `screenshots/adv-p30-giant-preview.png`. |
+| Raster bound — raw 200000x200000 pt MediaBox, negative MediaBox, zero MediaBox | 3464x3464 bound; negative box renders (66x66 preview); zero box normalised by pdf.js to Letter. No crash, no hang. Screenshots `adv-p30-raw-*` not taken; see `adv-p30-zero-preview.png`. |
+| Preview honesty — huge-images.pdf (3 pages, 2.2 MB) and a /Rotate 90 page | 408x528 preview; the rotated page previews 333x200 with `data-landscape=true` (rotation honoured). Screenshots `adv-p30-hugeimages-preview.png`, `adv-p30-rotated-preview.png`. |
+| Dialog — rapid annotation / N-up / orientation / scale toggles during a 16-page raster | 16 preview images rendered, dialog alive, 0 page errors, 0 console errors. Defended. |
+| Dialog — Cancel mid-raster, then reopen | State reseeded (copies 1, N-up 1, annotations on, no stale success/error) and the preview re-rasters. Defended. |
+| Dialog — close the active tab behind the open dialog (real Ctrl+W accelerator) | Dialog stays open showing "This document has no pages." with Print disabled; it then closes normally. Recoverable, no crash - not filed. Screenshot `adv-p30-dialog-notab.png`. |
+| Dialog — 1-page doc odd/even | Odd only -> "1 page - 1 sheet", Print enabled; even only -> "No even pages in the selected range.", Print disabled. Defended. |
+| Print result surface — failing job | Error banner `role=alert` shows the driver reason "Invalid deviceName provided"; Print re-enables. Defended (cancel-quiet path not exercised - it requires opening the real OS print dialog, which was avoided). |
+| Fail-loud — any other route to a silent "printed" | None found beyond ADV-061/062/063. |
+| Temp hygiene | No `tflex-print-*.html` leftovers in `%TEMP%`; completing jobs destroy their hidden window. |
+
+**Total Phase-30-gate findings: 5 (1 HIGH, 2 MEDIUM, 2 LOW).**
+
+Unreproduced / not exercised: a paused or offline physical printer is the likely real-user route to
+the ADV-061 hang (same missing callback), but creating one needs driver manipulation and was not
+done. The virtual-PDF "cancel" quiet path was not exercised because it opens a real OS dialog.
+
 

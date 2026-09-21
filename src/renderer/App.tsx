@@ -15,6 +15,9 @@ import type {
   OptimizePreset,
   PageLabelEntry,
   PdfOpenError,
+  PrintJobPayload,
+  PrintJobResult,
+  PrinterInfo,
   RecentFile,
   SampleDocument,
   SavedSignature,
@@ -110,6 +113,7 @@ import {
   type OcrScope,
 } from "./components/OcrDialog";
 import { OcrSuspectsPanel } from "./components/OcrSuspectsPanel";
+import { PrintDialog } from "./components/PrintDialog";
 import { rasterizePagesForOcr } from "./pdf/ocrRasterize";
 import type { EngineApi, EngineOp, EngineState } from "./engine/types";
 import type { PlacedStamp } from "./annotations/StampAnnotations";
@@ -516,6 +520,10 @@ export function App(): ReactElement {
   // that pops up after a successful OCR run so the user can browse
   // low-confidence words without leaving the document.
   const [ocrOpen, setOcrOpen] = useState(false);
+  // Phase 30 — print dialog visibility. Opened from the title-bar Print
+  // icon, File > Print and Ctrl+P (all funnel through `onPrintClick` /
+  // the `onPrintRequest` subscription below).
+  const [printOpen, setPrintOpen] = useState(false);
   const [ocrSuspectsOpen, setOcrSuspectsOpen] = useState(false);
   /** Per-tab OCR suspect list. The engine.ocrSuspects call returns
    *  a fresh list each time; we cache it on the active tab so the
@@ -869,6 +877,18 @@ export function App(): ReactElement {
       setPendingCloseSaving(false);
     });
     return unsubscribeCloseRequest;
+  }, []);
+
+  // Phase 30 — File > Print / Ctrl+P (pushed from the main-process menu)
+  // opens the same PrintDialog as the title-bar Print icon. Guard on an
+  // active tab: with no document open there is nothing to print. The
+  // subscription is stable and unsubscribes on unmount.
+  useEffect(() => {
+    if (typeof window.tflex.onPrintRequest !== "function") return;
+    const unsubscribePrintRequest = window.tflex.onPrintRequest(() => {
+      if (activeTabIdRefLocal.current !== null) setPrintOpen(true);
+    });
+    return unsubscribePrintRequest;
   }, []);
 
   // OTA UX — one shared subscription to `tflex.update.onStatusChanged`
@@ -5017,6 +5037,32 @@ pushToast(
     setOcrOpen(false);
   }, []);
 
+  // ---- Phase 30: print ----
+
+  /** Open the print dialog against the active tab. The title-bar Print
+   *  icon, File > Print and Ctrl+P all funnel through this. */
+  const onPrintClick = useCallback((): void => {
+    if (activeTabIdRefLocal.current === null) return;
+    setPrintOpen(true);
+  }, []);
+
+  const onClosePrint = useCallback((): void => {
+    setPrintOpen(false);
+  }, []);
+
+  /** Stable wrappers around the preload print surface so the dialog's
+   *  printer-list effect does not re-run on every App re-render. */
+  const printListPrinters = useCallback((): Promise<PrinterInfo[]> => {
+    return window.tflex.listPrinters();
+  }, []);
+
+  const runPrintJob = useCallback(
+    (payload: PrintJobPayload): Promise<PrintJobResult> => {
+      return window.tflex.printJob(payload);
+    },
+    [],
+  );
+
   // DEF-050 — per-tab search-index invalidator. DocumentView registers
   // a callback that clears its cached per-page `PageTextIndex` map and
   // bumps a state tick so the search effect re-runs even when `query`,
@@ -6632,6 +6678,8 @@ pushToast(
           // opens the same Preferences sheet the Edit menu and Ctrl+,
           // open. Same single source of truth (`prefsOpen`).
           onOpenPreferences={(): void => setPrefsOpen(true)}
+          // Phase 30 — the Print icon sits immediately left of the gear.
+          onPrint={onPrintClick}
           // Phase 22 — the relocated Open / Save / Save As. The CommandBar
           // no longer renders them; the caption strip owns them now.
           onOpenFile={onOpenClick}
@@ -7179,6 +7227,20 @@ pushToast(
           onOcrConfirm(result);
         }}
         onClose={onCancelOcr}
+      />
+      <PrintDialog
+        open={printOpen}
+        totalPages={activeTab?.session.doc.numPages ?? 0}
+        currentPage={(() => {
+          const id = activeTabIdRefLocal.current;
+          if (id === null) return 1;
+          const tab = openTabsRef.current[id];
+          return tab ? Math.max(1, Math.floor(tab.persisted.currentPage)) : 1;
+        })()}
+        resolveActiveDoc={resolveActiveDocForOcr}
+        listPrinters={printListPrinters}
+        printJob={runPrintJob}
+        onClose={onClosePrint}
       />
       <SaveAsDialog
         open={saveAsOpen}

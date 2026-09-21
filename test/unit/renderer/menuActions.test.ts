@@ -443,6 +443,8 @@ describe("DEF-065 — active-doc menu gating (renderer-side safety)", () => {
     expect(snap["menu.closeTab"]).toBe(false);
     expect(snap["menu.undo"]).toBe(false);
     expect(snap["menu.redo"]).toBe(false);
+    // DEF-271 — Print follows the active-document gate too.
+    expect(snap["menu.print"]).toBe(false);
   });
 
   it("snapshotMenuEnabled reports true for every active-doc action when a doc is open", () => {
@@ -452,6 +454,7 @@ describe("DEF-065 — active-doc menu gating (renderer-side safety)", () => {
     expect(snap["menu.closeTab"]).toBe(true);
     expect(snap["menu.undo"]).toBe(true);
     expect(snap["menu.redo"]).toBe(true);
+    expect(snap["menu.print"]).toBe(true);
   });
 
   // DEF-065 — the snapshot's keys must match the shared MenuItemId
@@ -468,6 +471,7 @@ describe("DEF-065 — active-doc menu gating (renderer-side safety)", () => {
       "menu.closeTab",
       "menu.undo",
       "menu.redo",
+      "menu.print",
     ];
     for (const key of expectedKeys) {
       expect(snap).toHaveProperty(key);

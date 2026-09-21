@@ -895,6 +895,7 @@ export interface OcrProgress {
 export type MenuItemId =
   | 'menu.save'
   | 'menu.saveAs'
+  | 'menu.print'
   | 'menu.closeTab'
   | 'menu.undo'
   | 'menu.redo';
@@ -1028,3 +1029,69 @@ export interface WatermarkInfo {
   text: string;
   pages: number[];
 }
+
+// ---- Phase 30: print ----
+
+/** Phase 30 — one OS printer as reported to the print dialog. `name` is the
+ *  SYSTEM device name (what `webContents.print({ deviceName })` expects);
+ *  `displayName` is the friendly name shown in the picker. `status` is the
+ *  raw Electron/OS status code, present only when the platform reports one. */
+export interface PrinterInfo {
+  name: string;
+  displayName: string;
+  isDefault: boolean;
+  status?: number;
+}
+
+/** Phase 30 — page scaling mode: 'fit' scales the page to the paper (up or
+ *  down), 'actual' prints at 100%, 'shrink' only downscales oversized pages,
+ *  'custom' applies `scalePercent`. */
+export type PrintScaling = 'fit' | 'actual' | 'shrink' | 'custom';
+
+/** Phase 30 — duplex mode mapped to Electron's `duplexMode`. */
+export type PrintDuplex = 'simplex' | 'shortEdge' | 'longEdge';
+
+/** Phase 30 — N-up page order within a sheet. */
+export type PrintPageOrder =
+  | 'horizontal'
+  | 'horizontalReversed'
+  | 'vertical'
+  | 'verticalReversed';
+
+/** Phase 30 — per-print settings chosen in the print dialog (never persisted;
+ *  presets are session-level). `pageRanges` are 0-based inclusive, matching
+ *  Electron's `pageRanges`. `oddEven` / `reverse` / `printAnnotations` /
+ *  `pageOrder` are applied by the RENDERER when it composes the ordered image
+ *  list; `paperSource` is carried for the driver but has no Electron print
+ *  option (see print.ts). */
+export interface PrintSettings {
+  deviceName?: string;
+  copies?: number;
+  collate?: boolean;
+  pageRanges?: { from: number; to: number }[];
+  scaling?: PrintScaling;
+  scalePercent?: number;
+  landscape?: boolean;
+  duplex?: PrintDuplex;
+  color?: boolean;
+  pagesPerSheet?: number;
+  pageOrder?: PrintPageOrder;
+  oddEven?: 'all' | 'odd' | 'even';
+  reverse?: boolean;
+  printAnnotations?: boolean;
+  paperSource?: string;
+}
+
+/** Phase 30 — one print request. `images` are data URLs (one per composed
+ *  page), already ordered/selected by the renderer (page range, odd/even,
+ *  reverse and N-up order applied there). Main composes them into a print
+ *  document and sends it to the chosen device. */
+export interface PrintJobPayload {
+  images: string[];
+  settings: PrintSettings;
+}
+
+/** Phase 30 — result of a print request. A failure always carries a reason
+ *  (a typed `PrintErrorReason` literal or the OS `failureReason` string) so
+ *  the dialog can surface it — never a silent no-op. */
+export type PrintJobResult = { ok: true } | { ok: false; reason: string };

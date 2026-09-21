@@ -228,6 +228,7 @@ export function snapshotMenuEnabled(
   "menu.closeTab": boolean;
   "menu.undo": boolean;
   "menu.redo": boolean;
+  "menu.print": boolean;
 } {
   return {
     "menu.save": hasActiveDoc,
@@ -235,5 +236,9 @@ export function snapshotMenuEnabled(
     "menu.closeTab": hasActiveDoc,
     "menu.undo": hasActiveDoc,
     "menu.redo": hasActiveDoc,
+    // DEF-271 — Print shares the active-document gate: with no document
+    // open the File > Print item (and its Ctrl+P accelerator) must be
+    // disabled rather than silently doing nothing.
+    "menu.print": hasActiveDoc,
   };
 }

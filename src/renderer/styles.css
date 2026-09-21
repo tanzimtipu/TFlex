@@ -1865,6 +1865,51 @@ input[type="checkbox"] {
   box-shadow: var(--focus-ring);
 }
 
+/* Phase 30 — the Print chrome control sits immediately left of the gear
+ * and shares its sizing / hover / focus treatment so the trailing cluster
+ * reads as one group. */
+.header-print {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
+}
+
+.header-print:hover:not([disabled]) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.header-print:active:not([disabled]) {
+  background: var(--accent-pressed-soft);
+  color: var(--accent);
+}
+
+.header-print:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* DEF-271 — the same disabled affordance as .titlebar-file-btn so the
+ * Print control reads as unavailable on the welcome screen. */
+.header-print[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .tab-stage {
   flex: 1 1 auto;
   position: relative;
@@ -8557,6 +8602,191 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-strong);
   cursor: pointer;
   padding: 4px 0;
+}
+
+/* Phase 30 — print dialog: controls column beside a live preview sheet. */
+.print-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: var(--sp-4);
+  align-items: start;
+}
+
+.print-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.print-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-3);
+}
+
+.print-row-selects > .modal-field {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.print-copies {
+  max-width: 96px;
+}
+
+.print-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  cursor: pointer;
+  padding-bottom: 7px;
+}
+
+.print-radio-group {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.print-radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  color: var(--fg-strong);
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.print-range-error {
+  color: var(--danger, #dc2626);
+}
+
+.print-empty {
+  color: var(--fg-muted);
+}
+
+.print-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: sticky;
+  top: 0;
+}
+
+.print-preview-title {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.print-preview-sheet {
+  display: grid;
+  width: 100%;
+  aspect-ratio: 1 / 1.414;
+  gap: 4px;
+  padding: 6px;
+  box-sizing: border-box;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-1);
+  box-shadow: var(--shadow-1, 0 1px 2px rgba(0, 0, 0, 0.08));
+  overflow: hidden;
+}
+
+.print-preview-sheet[data-landscape="true"] {
+  aspect-ratio: 1.414 / 1;
+}
+
+.print-preview-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  min-width: 0;
+  min-height: 0;
+}
+
+.print-preview-cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.print-preview-blank {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--bg-base),
+    var(--bg-base) 6px,
+    var(--bg-hover) 6px,
+    var(--bg-hover) 12px
+  );
+}
+
+.print-preview-placeholder {
+  width: 60%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.print-preview-meta {
+  font-size: var(--fs-xs, 11px);
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+/* DEF-268 — print dialog containment. Mirrors the DEF-219 (residual)
+ * pattern used for the watermark dialog above; that dialog scopes its
+ * rules via a `[data-watermark-dialog]` backdrop hook, but the print
+ * backdrop carries none, so every rule here is scoped by the dialog's
+ * own `.print-dialog` class instead. No other dialog's layout changes.
+ *
+ * 1. Cause A (DEF-219 #1): `.modal-body` is a grid item in the dialog's
+ *    `1fr` row. With the default `min-height: auto` it refuses to shrink
+ *    below its content height, so `.print-dialog` overflows its own
+ *    `max-height` (calc(100vh - 64px)) and its `overflow: auto` scrolls
+ *    the dialog as a whole — carrying the Close/Print footer below the
+ *    viewport at 1440x900 (footer measured y 941.5-1002.2 before).
+ *    `minmax(0, 1fr)` on the row plus `min-height: 0` on the body lets
+ *    the body own the vertical scroll and keeps the footer pinned to the
+ *    dialog's bottom edge. */
+.print-dialog {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.print-dialog .modal-body,
+.print-dialog .print-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* 2. Cause B (DEF-219 #3): a `<fieldset>` defaults to
+ *    `min-inline-size: min-content` and refuses to shrink below its
+ *    content, so its right border sits under the body's vertical
+ *    scrollbar. All three print fieldsets (Page range, Scaling,
+ *    Orientation) are `.modal-position`; letting them shrink removes
+ *    the hidden horizontal overflow (body scrollWidth == clientWidth). */
+.print-dialog .modal-position {
+  min-width: 0;
+  min-inline-size: 0;
+}
+
+/* 3. Cause C (DEF-219 #2): if a row's min-content exceeds the controls
+ *    column, let that row wrap rather than clip. At the default
+ *    1440x900 / 720 px dialog width the controls column is ~450 px and
+ *    every row fits on one line, so this only engages once the window
+ *    (and therefore the dialog) is narrower. */
+.print-dialog .print-row {
+  flex-wrap: wrap;
 }
 
 /* Suspects panel (top bar over the workspace) */

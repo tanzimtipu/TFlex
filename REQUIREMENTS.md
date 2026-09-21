@@ -1362,4 +1362,69 @@ action-bar colour box, and the annotation dropdown colour is ignored for a selec
 
 **Settings impact:** none.
 
+## Phase 30 — Print with advanced options (industry-standard)
+
+**Research basis:** the option set and architecture below come from the print-dialog research (Adobe
+Acrobat's print docs, Apple Preview, Chrome, Microsoft Learn's print stacks) and Electron's documented
+print API (`webContents.print`, `getPrintersAsync`). Industry baseline = printer picker, copies +
+collate, page range (all / current / custom syntax), the scaling quartet, duplex, colour mode, an
+annotations toggle and a preview-first flow; the advanced tier = paper source by page size, N-up with
+page order, odd/even/reverse, auto orientation, booklet/poster and presets.
+
+**Features**
+
+- **Print dialog (preview-first)**: opens from a Print icon in the title bar placed immediately LEFT of
+  the preferences gear, from File > Print in the application menu, and from Ctrl+P. It shows a live
+  PREVIEW of the selected page(s) with the current settings applied, and re-renders the preview as
+  settings change.
+- **Baseline options** (all wired to real print behaviour, never a silent no-op):
+  - **Printer** picker populated from the OS printer list (`getPrintersAsync`), with the system default
+    preselected; the value passed to Electron is the SYSTEM device name (not the friendly name).
+  - **Copies** (1..99) + **Collate**.
+  - **Page range**: All pages / Current page / Custom - accepting the industry syntax
+    (`1-5, 8, 11-13`), validated with a clear in-dialog error for a malformed or out-of-range entry.
+  - **Scaling**: Fit to page / Actual size / Shrink oversized pages / Custom % (1..500).
+  - **Orientation**: Portrait / Landscape (plus Auto where the page aspect decides).
+  - **Duplex**: Simplex / Long edge / Short edge.
+  - **Colour**: Colour / Greyscale.
+  - **Print annotations**: Document only / Document with annotations - the renderer produces the page
+    images WITHOUT or WITH the annotation overlay layers accordingly.
+- **Advanced options**:
+  - **Pages per sheet (N-up)**: 1 / 2 / 4 / 6 / 9 / 16 with the page ORDER (horizontal / vertical and
+    the reversed variants) applied to the preview and the composed print document.
+  - **Odd/Even pages only** and **Reverse page order**.
+  - **Paper source by page size** (tray selection) where the driver reports it.
+  - **Print presets**: save the current dialog settings under a name and re-apply them (session-level).
+- **Rendering architecture (the industry norm for Electron)**: the renderer renders each page in the
+  selected range offscreen through the existing pdf.js pipeline at a print scale and hands the images to
+  the main process, which composes a print document (one page per image, page-break separated) in a
+  HIDDEN window and calls `webContents.print(options)` with the chosen options - page ranges, scale,
+  N-up, orientation, duplex, colour and copies map onto Electron's documented keys. `printBackground` is
+  enabled. The visible app window is never the print source (it is virtualized), and the renderer must
+  not block while pages render for print.
+- **Fail loud**: an option the platform/driver does not support (e.g. duplex on a driver that ignores it)
+  must be REPORTED to the user - never silently dropped. A failed OS print call surfaces its
+  `failureReason` in the dialog.
+
+**Success criteria**
+
+1. The Print icon renders immediately left of the preferences gear; clicking it, File > Print and Ctrl+P
+   all open the same dialog.
+2. The printer picker lists the OS printers with the default preselected; printing to "Microsoft Print to
+   PDF" (or a real printer) with a custom page range produces a document containing exactly those pages
+   (verified by inspecting the produced file).
+3. Scaling, orientation, N-up and page order change the PREVIEW and the printed output accordingly
+   (verified on at least: Fit vs Actual size, Portrait vs Landscape, 1-up vs 2-up, forward vs reverse).
+4. The annotations toggle changes the printed output: "document only" prints without the annotation
+   overlay, "with annotations" prints with it.
+5. Copies/collate reach the print call; a malformed page range is rejected in-dialog with a clear error
+   and nothing is sent to the printer.
+6. An unavailable printer or a failed print surfaces the failure reason in the dialog (no silent no-op);
+   the app stays responsive while pages render for print (no UI freeze on a 34-page document).
+7. Unit tests cover the option model + the page-range parser + the option->Electron mapping; e2e covers
+   opening the dialog from all three entry points, the preview reacting to the settings, the range
+   validation error, and a print run against a PDF-capable destination.
+
+**Settings impact:** none (print options are per-print; presets are session-level).
+
 

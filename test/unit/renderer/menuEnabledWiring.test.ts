@@ -60,6 +60,7 @@ describe("App → menu.setEnabled wiring (DEF-065)", () => {
       "menu.closeTab": false,
       "menu.undo": false,
       "menu.redo": false,
+      "menu.print": false,
     });
   });
 
@@ -74,6 +75,7 @@ describe("App → menu.setEnabled wiring (DEF-065)", () => {
       "menu.closeTab": true,
       "menu.undo": true,
       "menu.redo": true,
+      "menu.print": true,
     });
   });
 
@@ -89,6 +91,7 @@ describe("App → menu.setEnabled wiring (DEF-065)", () => {
       "menu.closeTab",
       "menu.undo",
       "menu.redo",
+      "menu.print",
     ] as const;
     const snap = snapshotMenuEnabled(true);
     expect(Object.keys(snap).sort()).toEqual([...expected].sort());
@@ -126,6 +129,7 @@ describe("App → menu.setEnabled wiring (DEF-065)", () => {
       "menu.closeTab": true,
       "menu.undo": true,
       "menu.redo": true,
+      "menu.print": true,
     });
     // Simulate the inverse: all tabs closed, no active doc.
     window.tflex.menu.setEnabled(snapshotMenuEnabled(false));
@@ -136,6 +140,7 @@ describe("App → menu.setEnabled wiring (DEF-065)", () => {
       "menu.closeTab": false,
       "menu.undo": false,
       "menu.redo": false,
+      "menu.print": false,
     });
   });
 
