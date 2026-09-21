@@ -3413,3 +3413,151 @@ describe('DEF-260 canonical annotation colours', () => {
     expect(isValidColorValue('chartreuse')).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 28 — editAnnotation rect: a geometry change is ONE op, not
+// delete + re-create (the auto-grow / move path). One op, one undo snapshot.
+// ---------------------------------------------------------------------------
+
+describe('Phase 28 — editAnnotation rect (one-op geometry patch)', () => {
+  const A = { x: 100, y: 500, width: 200, height: 50 };
+  const B = { x: 300, y: 400, width: 250, height: 60 };
+
+  it('(a) a supplied rect moves rects[0], the engine state reflects it, and ONE undo restores the old rect', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-rect-a', path);
+
+    await engine.createAnnotation('doc-rect-a', makePayload({ id: 'rect-a', rect: A }));
+
+    const moved = await engine.editAnnotation('doc-rect-a', 'rect-a', { rect: B });
+    expect(moved.ok).toBe(true);
+    if (moved.ok) {
+      const ann = getAnns(moved.value).find((a: any) => a.id === 'rect-a');
+      expect(ann?.rects).toEqual([B]);
+    }
+
+    // The edit added exactly ONE undo entry: the first undo restores the
+    // previous geometry, the second removes the create.
+    const u1 = await engine.undo('doc-rect-a');
+    expect(u1.ok).toBe(true);
+    if (u1.ok) {
+      const ann = getAnns(u1.value).find((a: any) => a.id === 'rect-a');
+      expect(ann?.rects).toEqual([A]);
+    }
+    const u2 = await engine.undo('doc-rect-a');
+    expect(u2.ok).toBe(true);
+    if (u2.ok) {
+      expect(getAnns(u2.value).find((a: any) => a.id === 'rect-a')).toBeUndefined();
+    }
+  });
+
+  it('(a2) extra rects beyond [0] are kept for a multi-rect kind', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-rect-a2', path);
+
+    const second = { x: 100, y: 300, width: 120, height: 20 };
+    await engine.createAnnotation('doc-rect-a2', {
+      id: 'rect-a2',
+      kind: 'highlight',
+      page: 1,
+      color: 'yellow',
+      rects: [A, second],
+    });
+
+    const moved = await engine.editAnnotation('doc-rect-a2', 'rect-a2', { rect: B });
+    expect(moved.ok).toBe(true);
+    if (moved.ok) {
+      const ann = getAnns(moved.value).find((a: any) => a.id === 'rect-a2');
+      expect(ann?.rects).toEqual([B, second]);
+    }
+  });
+
+  it('(b) a malformed rect rejects with a typed engine-error and mutates nothing', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-rect-b', path);
+
+    await engine.createAnnotation('doc-rect-b', makePayload({ id: 'rect-b', color: 'yellow', rect: A }));
+
+    const badRects: unknown[] = [
+      { x: 10, y: 10, width: 0, height: 50 }, // zero width
+      { x: 10, y: 10, width: 50, height: -5 }, // negative height
+      { x: Number.NaN, y: 10, width: 50, height: 50 }, // NaN coordinate
+      null, // explicitly null, not absent
+    ];
+    for (const bad of badRects) {
+      // `color` rides along so a pass-through would be observable: rect is
+      // validated first, so nothing at all may change.
+      const r = await engine.editAnnotation('doc-rect-b', 'rect-b', {
+        rect: bad as any,
+        color: 'red',
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('engine-error');
+    }
+
+    const state = await engine.getState('doc-rect-b');
+    expect(state.ok).toBe(true);
+    if (state.ok) {
+      const ann = getAnns(state.value).find((a: any) => a.id === 'rect-b');
+      expect(ann?.rects).toEqual([A]);
+      expect(ann?.color).toBe('yellow');
+    }
+
+    // Rejected edits leave no undo entries: one undo removes the create.
+    const u = await engine.undo('doc-rect-b');
+    expect(u.ok).toBe(true);
+    if (u.ok) {
+      expect(getAnns(u.value).find((a: any) => a.id === 'rect-b')).toBeUndefined();
+    }
+  });
+
+  it('(c) absent rect preserves the stored geometry', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-rect-c', path);
+
+    await engine.createAnnotation('doc-rect-c', makePayload({ id: 'rect-c', color: 'yellow', rect: A }));
+
+    const edited = await engine.editAnnotation('doc-rect-c', 'rect-c', { color: 'red' });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'rect-c');
+      expect(ann?.color).toBe('red');
+      expect(ann?.rects).toEqual([A]);
+    }
+  });
+
+  it('(d) a rect + style patch apply atomically (one undo reverts both)', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-rect-d', path);
+
+    await engine.createAnnotation('doc-rect-d', makePayload({
+      id: 'rect-d',
+      rect: A,
+      style: { size: 12 },
+    }));
+
+    const edited = await engine.editAnnotation('doc-rect-d', 'rect-d', {
+      rect: B,
+      style: { size: 18 },
+    });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'rect-d');
+      expect(ann?.rects).toEqual([B]);
+      expect((ann?.style as any)?.size).toBe(18);
+    }
+
+    const u = await engine.undo('doc-rect-d');
+    expect(u.ok).toBe(true);
+    if (u.ok) {
+      const ann = getAnns(u.value).find((a: any) => a.id === 'rect-d');
+      expect(ann?.rects).toEqual([A]);
+      expect((ann?.style as any)?.size).toBe(12);
+    }
+  });
+});

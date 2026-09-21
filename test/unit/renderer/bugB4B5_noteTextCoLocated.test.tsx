@@ -106,12 +106,15 @@ describe("B4/B5 — note text co-located with the icon + Sign-like selection", (
       const text = host.querySelector<HTMLElement>("[data-ann-note-text]");
       expect(text).not.toBeNull();
       if (text === null) return;
-      // DEF-104 — the width must be EXPLICIT (max-content) so the
-      // absolutely-positioned text is not shrink-fit into the
-      // ~48px icon box's leftover width (iconWidth - left offset),
-      // which is what produced the 48x431 vertical column. The old
-      // inline style left `width: auto` and only set maxWidth.
-      expect(text.style.width).toBe("max-content");
+      // DEF-104 (updated for DEF-264) — the width must be EXPLICIT so the
+      // absolutely-positioned text is not shrink-fit into the ~48px icon
+      // box's leftover width (iconWidth - left offset), which is what
+      // produced the 48x431 vertical column. DEF-264 replaced the
+      // `max-content` keyword with the measured natural width in px (so
+      // alignment is visible on a multi-line note); the point of the
+      // assertion is unchanged: a real horizontal width, not auto.
+      expect(text.style.width).toMatch(/^\d+(\.\d+)?px$/);
+      expect(Number.parseFloat(text.style.width)).toBeGreaterThan(60);
       expect(text.style.maxWidth).not.toBe("");
       // white-space normal lets multi-word phrases lay out on one
       // line up to the maxWidth cap (pre-wrap's preferred width is

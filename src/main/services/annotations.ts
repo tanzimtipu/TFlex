@@ -575,6 +575,26 @@ export function editAnnotation(
   const [origIdx, i] = found;
   const ann = annotations[origIdx][i];
 
+  // Phase 28 — geometry patch. Validated FIRST so a malformed rect rejects the
+  // whole edit with nothing mutated (the create path does the same via
+  // normalizeAnnotationPayload). Regenerate rects[0] from the supplied rect and
+  // keep any extra rects beyond [0] for multi-rect kinds, mirroring the create
+  // path exactly (DEF-160/161/162 semantics). This makes a move / auto-grow a
+  // single op with one undo snapshot instead of delete + re-create, so a burst
+  // of style clicks cannot race a fresh selection event.
+  if (payload.rect !== undefined) {
+    let primary: AnnRect;
+    try {
+      primary = validateRect(payload.rect);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return err('engine-error', msg);
+    }
+    ann.rects = ann.rects.length > 1
+      ? [primary, ...ann.rects.slice(1)]
+      : [primary];
+  }
+
   if (payload.color !== undefined) {
     ann.color = isValidColorValue(payload.color) ? payload.color : ann.color;
   }

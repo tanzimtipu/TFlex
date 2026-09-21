@@ -440,6 +440,14 @@ export interface EditAnnotationPayload {
   color?: string;
   text?: string;
   content?: string;
+  /** Phase 28 — geometry patch. When supplied, the engine regenerates
+   *  `rects[0]` from it (exactly like `CreateAnnotationPayload.rect` does on
+   *  the create path, preserving any extra rects beyond [0] for multi-rect
+   *  kinds) so a move / auto-grow is ONE op with ONE undo snapshot instead of
+   *  delete + re-create. Validated with the same positive-size rule as create;
+   *  a malformed rect rejects the whole edit with a typed `engine-error`.
+   *  Absent preserves the stored geometry. */
+  rect?: AnnRect;
   /** Phase 24 — partial text-style patch. Every supplied field is validated
    *  (reject-if-invalid) and merged onto the stored `AnnModel.style`; absent
    *  fields preserve the stored value (same semantics as the Phase-21

@@ -49,15 +49,20 @@ import {
   resizeImageRect,
   type ImageResizeHandle,
 } from "./geometry";
-import { colorToHex, fontFamilyFor } from "./editColor";
+import { fontFamilyFor } from "./editColor";
 import { TfBar } from "../components/motion/TfMotion";
 import {
   ContentActionBar,
 } from "../components/selectableContent";
+import { measureTextWidthCss } from "./rasterize";
 import {
-  fitTextBoxFontSizePx,
-  measureTextWidthCss,
-} from "./rasterize";
+  LIVE_TEXT_DEFAULT_LINE_HEIGHT,
+  layoutEditTextBox,
+  layoutEditTextRun,
+  liveTextBandStyle,
+  liveTextBlockStyle,
+  liveTextLineStyle,
+} from "./liveText";
 
 export interface EditOverlayProps {
   page: number;
@@ -1501,24 +1506,12 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           position on every keystroke. No in-canvas editor exists. */}
       {tool === "text" && textTarget !== null && textTarget.kind === "run" &&
         textLive !== undefined && textLive !== null && textLive.length > 0 && (
-          <div
-            className="edit-run-live-preview"
-            data-edit-run-preview
-            aria-hidden
-            style={{
-              ...overlayRectToCss(textTarget.rect, cssScale),
-              color: colorToHex((textStyle ?? defaultEditTextStyle(defaultFont)).color),
-              fontSize: (textStyle ?? defaultEditTextStyle(defaultFont)).size * cssScale,
-              fontFamily: fontFamilyFor((textStyle ?? defaultEditTextStyle(defaultFont)).font),
-              letterSpacing: `${((textStyle ?? defaultEditTextStyle(defaultFont)).charSpacing ?? 0) * cssScale}px`,
-              lineHeight: 1.2,
-              whiteSpace: "pre-wrap",
-              overflow: "hidden",
-              pointerEvents: "none",
-            }}
-          >
-            {textLive}
-          </div>
+          <RunLivePreview
+            rect={textTarget.rect}
+            text={textLive}
+            style={textStyle ?? defaultEditTextStyle(defaultFont)}
+            cssScale={cssScale}
+          />
         )}
     </div>
   );
@@ -1622,6 +1615,73 @@ function PlacementView(props: PlacementViewProps): ReactElement {
   );
 }
 
+/** Phase 26 / DEF-266 — the selected text RUN's live preview. The panel's
+ *  Text field is the editor, so the run's rect is masked (the eraser in the
+ *  parent) and the session text is painted at the run's position on every
+ *  keystroke. DEF-263/266 — it renders the SAME full style set as the box
+ *  mirror (bold, italic, underline, super/sub, highlight, alignment, the
+ *  STORED line step, list prefixes and indent), per line, so a style control
+ *  composed on the run is visible live, not only after save+reopen. The
+ *  engine draws a run's explicit lines unchanged (no word-wrap, no auto-fit),
+ *  so the preview splits on explicit newlines and keeps the run's size. */
+interface RunLivePreviewProps {
+  rect: { x: number; y: number; width: number; height: number };
+  text: string;
+  style: EditTextStyle;
+  cssScale: number;
+}
+
+function RunLivePreview(props: RunLivePreviewProps): ReactElement {
+  const { rect, text, style, cssScale } = props;
+  const layout = useMemo(
+    () =>
+      layoutEditTextRun({
+        text,
+        widthPx: Math.max(1, rect.width * cssScale),
+        userSizePx: style.size * cssScale,
+        indentPx: (style.indent ?? 0) * cssScale,
+        list: style.list ?? "none",
+      }),
+    [text, rect.width, style.size, style.indent, style.list, cssScale],
+  );
+  return (
+    <div
+      className="edit-run-live-preview"
+      data-edit-run-preview
+      aria-hidden
+      style={{
+        ...overlayRectToCss(rect, cssScale),
+        paddingLeft: `${layout.indentPx}px`,
+        overflow: "hidden",
+        pointerEvents: "none",
+        ...liveTextBlockStyle({ style, cssScale, fontSizePx: layout.fontSizePx }),
+      }}
+    >
+      {layout.lines.map((line) => (
+        <div
+          key={line.key}
+          className="edit-run-line"
+          data-edit-run-line={String(line.index)}
+          style={{
+            whiteSpace: "nowrap",
+            ...liveTextLineStyle({ style, layout, isLast: line.isLast }),
+          }}
+        >
+          <span
+            className="edit-run-line-band"
+            style={liveTextBandStyle({ style, cssScale })}
+          >
+            {line.prefix !== "" && (
+              <span className="edit-run-line-prefix">{line.prefix}</span>
+            )}
+            {line.text}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 interface TextBoxViewProps {
   box: TextBoxPlacement;
   cssScale: number;
@@ -1658,29 +1718,40 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
   };
   // DEF-146 — the mirror font auto-fits the box (engine/rasterizer
   // parity): wrap at the box width, shrink so every line fits the box
-  // height. The previous `box.style.size * cssScale` rendered a large
-  // default font inside a small box with overflow:hidden, clipping the
-  // committed text to the first couple of characters while the full
-  // string stayed intact in the textLayer.
-  const fittedFontSizePx = useMemo(() => {
-    const boxWidthCss = box.rect.width * cssScale;
-    const boxHeightCss = box.rect.height * cssScale;
-    const fontFamily = fontFamilyFor(box.style.font);
-    const charSpacingPx = (box.style.charSpacing ?? 0) * cssScale;
-    return fitTextBoxFontSizePx({
-      text: box.text,
-      userSizePx: box.style.size * cssScale,
-      // The mirror's padding is "2px 3px" (2 vertical, 3 horizontal).
-      boxWidthPx: Math.max(1, boxWidthCss - 6),
-      boxHeightPx: Math.max(1, boxHeightCss - 4),
-      lineHeight: 1.2,
-      // Phase 27 — tracking counts toward the wrap/fit width, mirroring
-      // the engine's charSpacing-aware measurement.
-      measure: (t, s): number =>
-        measureTextWidthCss(t, fontFamily, s) +
-        charSpacingPx * Math.max(0, Array.from(t).length - 1),
-    });
-  }, [box.text, box.style.font, box.style.size, box.style.charSpacing, box.rect.width, box.rect.height, cssScale]);
+  // height. DEF-263 — the layout now also reads the STORED line-height,
+  // indent, list prefix and tracking, exactly like the engine's
+  // `drawTextBoxes`, so the fitted size and the wrapped lines match what
+  // save bakes.
+  const fontFamily = fontFamilyFor(box.style.font);
+  const charSpacingPx = (box.style.charSpacing ?? 0) * cssScale;
+  const layout = useMemo(
+    () =>
+      layoutEditTextBox({
+        text: box.text,
+        // The mirror's padding is "2px 3px" (2 vertical, 3 horizontal).
+        widthPx: Math.max(1, box.rect.width * cssScale - 6),
+        heightPx: Math.max(1, box.rect.height * cssScale - 4),
+        userSizePx: box.style.size * cssScale,
+        indentPx: (box.style.indent ?? 0) * cssScale,
+        lineHeight: box.style.lineHeight ?? LIVE_TEXT_DEFAULT_LINE_HEIGHT,
+        list: box.style.list ?? "none",
+        charSpacingPx,
+        measure: (t, s): number => measureTextWidthCss(t, fontFamily, s),
+      }),
+    [
+      box.text,
+      box.style.font,
+      box.style.size,
+      box.style.indent,
+      box.style.lineHeight,
+      box.style.list,
+      box.rect.width,
+      box.rect.height,
+      cssScale,
+      fontFamily,
+      charSpacingPx,
+    ],
+  );
   return (
     <div
       className={
@@ -1690,7 +1761,7 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
       }
       data-edit-box-id={box.id}
       data-edit-box-text={box.text}
-      data-edit-box-font-size={String(Math.round(fittedFontSizePx * 100) / 100)}
+      data-edit-box-font-size={String(Math.round(layout.fontSizePx * 100) / 100)}
       style={style}
     >
       {box.background === "white" && (
@@ -1707,19 +1778,40 @@ function TextBoxView(props: TextBoxViewProps): ReactElement {
           position: "absolute",
           inset: 0,
           padding: "2px 3px",
-          color: colorToHex(box.style.color),
-          fontFamily: fontFamilyFor(box.style.font),
-          fontSize: `${fittedFontSizePx}px`,
-          letterSpacing: `${(box.style.charSpacing ?? 0) * cssScale}px`,
-          lineHeight: 1.2,
+          // DEF-263 — the stored indent insets the content box: every line
+          // starts at the indented edge (the engine's `contentX`).
+          paddingLeft: `${3 + layout.indentPx}px`,
           overflow: "hidden",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
           pointerEvents: "none",
+          ...liveTextBlockStyle({
+            style: box.style,
+            cssScale,
+            fontSizePx: layout.fontSizePx,
+          }),
         }}
         aria-hidden
       >
-        {box.text}
+        {layout.lines.map((line) => (
+          <div
+            key={line.key}
+            className="edit-box-line"
+            data-edit-box-line={String(line.index)}
+            style={{
+              whiteSpace: "nowrap",
+              ...liveTextLineStyle({ style: box.style, layout, isLast: line.isLast }),
+            }}
+          >
+            <span
+              className="edit-box-line-band"
+              style={liveTextBandStyle({ style: box.style, cssScale })}
+            >
+              {line.prefix !== "" && (
+                <span className="edit-box-line-prefix">{line.prefix}</span>
+              )}
+              {line.text}
+            </span>
+          </div>
+        ))}
       </div>
       {selected &&
         (["nw", "ne", "sw", "se"] as const).map((h) => (

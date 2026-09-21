@@ -228,10 +228,32 @@ on every run, so they were dead weight in the standard suite. Archived here:
 - `release_1_22_0_installed.spec.cjs` - version gate 1.22.0 AND written against
   the retired Phase-26 in-canvas editor (`[data-annotation-editor="textbox"]` on
   the placement and click legs). Superseded by
-  `../release_1_23_0_installed.spec.cjs`, which re-covers the same Phase-24/25/
-  26/27/28/29 + DEF-214/watermark surface on the installed build with the
-  panel-field editor model.
+  `../installed/canonical_installed_build.spec.cjs`.
 
-The current installed-release gate is `../release_1_23_0_installed.spec.cjs`
-(KEPT at top level, deliberately not archived); it must be repointed/rewritten
-for each new release, as this file's own version gate shows.
+Also retired here on 2026-09-21, under the canonical-installed-build convention:
+
+- `release_1_23_0_installed.spec.cjs` - the 1.23.0 release gate. Hardcoded
+  `app.getVersion() === '1.23.0'` and the full Phase-25..29 + DEF-214/watermark
+  surface; it had to be rewritten for every release. Superseded by the ONE
+  canonical spec below.
+- `installed_verification.spec.cjs` (moved from `e2e/installed/`) - the
+  behaviour-first DEF-era installed spec (DEF-095..100, B10/B11) with a
+  hardcoded exe path and the retired Phase-26 in-canvas editor selectors
+  (`[data-annotation-editor]`, `[data-annotation-editor-wrap]`) plus the removed
+  Forms dialog (`[data-tool-id="forms"]`); it was stale and superseded in
+  purpose by the canonical spec.
+
+## Canonical installed-build convention (2026-09-21)
+
+ONE canonical installed-build spec, repointed never - it reads the expected
+version from `package.json` (`require('../../package.json').version`), so it
+needs no edit per release. Per-version `release_1_1x_installed.spec.cjs` gates
+are archived here.
+
+The canonical spec is `../installed/canonical_installed_build.spec.cjs` (under
+`e2e/installed/`, excluded from the standard suite). It runs a serial version
+gate first (installed exe FileVersion + `app.getVersion()`), then the CORE
+feature set that must never regress: annotation toolbar + edit toggle guard,
+the text panel's live field, the annotation colour picker (open/Escape-dismiss/
+apply), watermark apply/delete, the title-bar file group, the animations
+toggle, and the flush canvas.

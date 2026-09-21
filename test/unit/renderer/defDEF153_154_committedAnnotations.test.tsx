@@ -226,21 +226,24 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
     }
   });
 
-  it("Phase 28 — dragging the shape COMMITS on pointerup (no Confirm): delete + re-create with the shifted rect, and the bar stays for colour picking", () => {
-    const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
+  it("Phase 28/30 — dragging the shape COMMITS on pointerup (no Confirm): ONE in-place rect edit (no delete + re-create), and the bar stays for colour picking", () => {
+    const { host, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
     try {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
       const layer = layerOf(host);
       if (shape === null) throw new Error("shape not found");
       dragSurface(layer, shape, [120, 120], [160, 140]);
       // Phase 28 — the engine is touched AT POINTERUP: the move applies
-      // immediately, with no Confirm click.
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
-      expect(onDeleteAnnotation.mock.calls[0]?.[0]).toBe("rect-1");
-      expect(onCreate).toHaveBeenCalledTimes(1);
-      const created = onCreate.mock.calls[0]?.[0] as Annotation;
-      expect(created.id).toBe("rect-1");
-      expect((created as { rect: { x: number; y: number; width: number; height: number } }).rect).toEqual({ x: 140, y: 120, width: 150, height: 80 });
+      // immediately, with no Confirm click. Phase 30 — it is ONE
+      // `editAnnotation({ rect })` op: the annotation keeps its id, so
+      // no fresh selection event can race a follow-up style click.
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation.mock.calls[0]?.[0]).toBe("rect-1");
+      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({
+        rect: { x: 140, y: 120, width: 150, height: 80 },
+      });
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
       // The draft keeps the moved geometry visible until the echo lands.
       const moved = host.querySelector<HTMLElement>(".ann-shape[data-annotation-id='rect-1']");
       expect(moved?.getAttribute("x")).toBe("140");
@@ -299,14 +302,13 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
   });
 
   it("Phase 28 — a click on an empty page spot deselects but does NOT revert an applied move", async () => {
-    const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
+    const { host, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
     try {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
       const layer = layerOf(host);
       if (shape === null) throw new Error("shape not found");
       dragSurface(layer, shape, [120, 120], [160, 140]);
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
-      expect(onCreate).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
       expect(host.querySelector("[data-content-action-bar]")).not.toBeNull();
       // Press the LAYER background (not a surface) in select mode:
       // clears the selection. The move was committed live, so it stays.
@@ -318,8 +320,9 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
       });
       expect(host.querySelector("[data-content-action-bar]"), "selection cleared").toBeNull();
       // No extra engine op on deselect: the move is not undone.
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
-      expect(onCreate).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
       // The shape keeps the COMMITTED (moved) rect.
       const back = host.querySelector<HTMLElement>(".ann-shape[data-annotation-id='rect-1']");
       expect(back?.getAttribute("x")).toBe("140");
@@ -452,18 +455,21 @@ describe("DEF-153/154 + Phase 26 — committed textbox: select/move, no in-canva
     }
   });
 
-  it("Phase 28 — dragging the textbox commits the move on pointerup (no Confirm)", () => {
-    const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [TEXTBOX_ANN] });
+  it("Phase 28/30 — dragging the textbox commits the move on pointerup as ONE in-place rect edit (no Confirm)", () => {
+    const { host, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [TEXTBOX_ANN] });
     try {
       const tbx = host.querySelector<Element>(".ann-textbox[data-annotation-id='tbx-1']");
       const layer = layerOf(host);
       if (tbx === null) throw new Error("textbox not found");
       dragSurface(layer, tbx, [220, 220], [260, 240]);
-      expect(onDeleteAnnotation).toHaveBeenCalledWith("tbx-1");
-      const created = onCreate.mock.calls[0]?.[0] as Annotation;
-      expect(created.id).toBe("tbx-1");
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation.mock.calls[0]?.[0]).toBe("tbx-1");
       // Moved by the pointer delta (+40,+20) from the engine rect.
-      expect((created as { rect: { x: number; y: number; width: number; height: number } }).rect).toEqual({ x: 240, y: 220, width: 160, height: 60 });
+      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({
+        rect: { x: 240, y: 220, width: 160, height: 60 },
+      });
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
     } finally {
       cleanup();
     }
@@ -495,14 +501,15 @@ describe("DEF-153/154 / Bug 3 — committed note shares the unified selection mo
     }
   });
 
-  it("Phase 28 — dragging the note icon commits the move on pointerup (no Confirm)", () => {
-    const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [NOTE_ANN] });
+  it("Phase 28 — dragging the note icon commits the move on pointerup (delete + re-create: a note's geometry is its `at` anchor, which the edit payload has no patch for)", () => {
+    const { host, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [NOTE_ANN] });
     try {
       const icon = host.querySelector<Element>("[data-annotation-id='note-1']");
       const layer = layerOf(host);
       if (icon === null) throw new Error("note icon not found");
       dragSurface(layer, icon, [65, 305], [95, 335]);
       expect(host.querySelector("[data-content-action-bar]"), "note shows the action bar after a move").not.toBeNull();
+      expect(onEditAnnotation).not.toHaveBeenCalled();
       expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
       expect(onDeleteAnnotation.mock.calls[0]?.[0]).toBe("note-1");
       const created = onCreate.mock.calls[0]?.[0] as Annotation;

@@ -109,11 +109,20 @@ The following kept specs had individual tests updated to the CURRENT model
   1..3 per-stop with virtualization-aware scrolling (as sweep_pageops P3).
 
 ## Installed-App Suite (excluded from the standard suite)
+- `installed/canonical_installed_build.spec.cjs`: THE installed-build
+  verification. ONE canonical spec, repointed never - it reads the expected
+  version from `package.json` and runs a serial version gate (installed exe
+  FileVersion + `app.getVersion()`) before the CORE feature set that must never
+  regress (annotation toolbar + edit toggle guard, text panel live field,
+  annotation colour picker open/Escape-dismiss/apply, watermark apply/delete,
+  title-bar file group, animations toggle, flush canvas). Per-version
+  `release_1_1x_installed.spec.cjs` gates are archived (see below).
 - `installed/installed-app-test.spec.cjs`: Verification of features on the packaged/installed app.
-- `installed/installed_verification.spec.cjs`: Behavior-first fixes verified on the installed app.
 - `installed/diag_installed_sheet_190.spec.cjs`: Diagnoses the installed 1.8.0 app's update-prompt sheet.
 - `installed/ota_bug9_live.spec.cjs`: Live OTA update flow against the installed app + real GitHub release.
 - `installed/def_079_080.spec.cjs`: OTA update flow on the packaged (win-unpacked) build.
+- `installed/def_172_update_prompt_dismiss.spec.cjs`: OTA update-prompt dismissal on the installed app.
+- `installed/installed_textbug_repro.spec.cjs`: installed-build text-defect repro.
 - `installed/playwright.installed.config.js`: Runner config for the above.
 
 ## Other kept retest suites (passing, DEV build)
@@ -152,8 +161,13 @@ Retired 2026-09-05. Full rationale per file in `e2e/archived/README.md`:
 - Top level (retired 2026-09-21, release gate 1.23.0): the version-frozen
   installed-release gates `release_1_18_0`, `release_1_18_1`, `release_1_19_0`,
   `release_1_20_0`, `release_1_21_0`, `release_1_22_0` (the last also drove the
-  retired Phase-26 editor); replaced by the kept top-level
-  `release_1_23_0_installed.spec.cjs`.
+  retired Phase-26 editor). All replaced by the canonical
+  `installed/canonical_installed_build.spec.cjs`.
+- Top level (retired 2026-09-21, canonical installed-build convention):
+  `release_1_23_0_installed.spec.cjs` (hardcoded 1.23.0 gate + full Phase-25..29
+  surface) and the moved `installed_verification.spec.cjs` (stale DEF-era
+  behaviour spec driving the retired Phase-26 editor); both superseded by the
+  canonical spec.
 
 ## Support / Library
 - `lib/launch.cjs`: Canonical Electron launcher. No executablePath -> DEV build; an explicit executablePath is used only by the installed-app suite.
@@ -173,7 +187,12 @@ feature set:
 - `phase28_29_verify.spec.cjs`: arrow leader ends at the head base, live
   move/colour with Cancel revert, action-bar colour box + comment threads;
   flush canvas (0 padding) and page-jump landing.
-- `release_1_23_0_installed.spec.cjs`: the INSTALLED-build release gate for
-  1.23.0 (version gate + Phases 25-29 + DEF-214/watermark on the packaged exe).
-  Rewrite/repoint it for each new release. The 1.18-1.22 installed gates moved
-  to `archived/` (version-frozen gates + retired Phase-26 editor selectors).
+- `installed/canonical_installed_build.spec.cjs`: THE installed-build
+  verification (see the Installed-App Suite section). ONE canonical spec,
+  repointed never - it reads the expected version from `package.json`; the
+  per-version 1.18-1.23 installed gates moved to `archived/` (version-frozen
+  gates + retired Phase-26 editor selectors).
+- `phase30_rect_geometry_switch.spec.cjs`: the Phase-30 rect-op switch - a
+  multi-line grow then a zero-gap bold/align/list/indent burst on one id; a
+  rect move is one `editAnnotation({rect})` op, one undo restores it, and it
+  survives save+reopen.

@@ -5,6 +5,136 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-267: Non-box annotation moves still use delete + re-create; a sub-millisecond style burst after the move can drop a field
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa
+- Phase: 30 (rect-op switch verification)
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `assets/samples/report.pdf`.
+2. Arm the Note tool and click page 1 to place it; type `DEF267-A` in the panel Text field and blur.
+3. Drag the note icon to move it; read the engine `annotations[].at` (it changes).
+4. Click the side-rail `button[aria-label="Undo last change"]` ONCE.
+5. Burst attempt: place a FRESH note, drag it, then dispatch clicks on `[data-txt-bold]`, `[data-txt-align-center]`, `[data-txt-list-bullet]`, `[data-txt-indent-inc]` with no settle (immediately after the awaited pointerup, and in the same in-page task as a synthetic drag).
+
+Expected: a non-box move should be one in-place op like the Phase-30 rect move — ONE undo restores the original `at`, and a zero-gap style burst composes every field on the same annotation.
+
+Actual: the note move is a delete + re-create pair. After one undo the note is GONE (`notes=0`, `restored=false`) instead of returning to its original anchor — the exact 2-op signature. Root cause: `EditAnnotationPayload` has no `points`/`at`/`from`/`to` patch (`src/shared/types.ts:439-456`), so `rectGeometryPatch` returns null for ink/arrow/note (and a callout anchor drag) and `issueMoveCommit` falls back to `onDeleteAnnotation` + `onCreate` (`src/renderer/annotations/AnnotationOverlay.tsx:551-588`). Pinned by `test/unit/renderer/defDEF153_154_committedAnnotations.test.tsx:504` and `phase30_annGeometryEdit.test.tsx:486-492`. The residual race (a style click landing between the delete echo and the create echo, routed to a stale id -> field dropped) is INCONCLUSIVE at achievable e2e timing: both the post-pointerup burst and the same-task synthetic drag+burst left all four fields applied (`bold/align/list/indent`, `missing=[]`). Severity LOW — the impact needs a burst of clicks within ~1ms immediately after a move; at normal speed the style applies (`realisticBoldStuck=true`).
+Screenshot: n/a (engine-state evidence; `e2e/retests/def267_nonbox_move_race.spec.cjs`)
+
+History:
+- qa: opened (Phase 30 rect-op switch verification. `npm.cmd run test:e2e -- e2e/retests/def267_nonbox_move_race.spec.cjs`: `[DEF267] undo1 notes=0 restored=false -> DELETE+CREATE (2 ops)`; `realisticBoldStuck=true`; `tightBurstMissing 3a=[] 3b=[]` -> `NO-DROP (INCONCLUSIVE for the sub-ms race)`. The exposed `window.tflex.engine` API is frozen, so op counting was done via the undo stack.)
+
+## DEF-262: Annotation textbox / callout multi-line text is shrunk to the 4pt floor instead of wrapping, and the Size control has no visible effect
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 29 (operator text-manipulation audit)
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `assets/samples/report.pdf`.
+2. Arm the annotation Textbox tool (`armAnnotationTool(win, 'textbox')`) and click once on page 1 to place it; in the panel Text field type `The quick brown fox jumps over the lazy dog and keeps running far away` and blur.
+3. Read the on-page `.ann-textbox .ann-text-content` computed style and the engine `annotations[].rect`.
+4. Repeat with the Callout tool (drag to place) and with the Edit-mode box.
+5. Now change the panel Size to `18` on the single-line annotation textbox and read the rendered `fontSize`.
+
+Expected: a multi-line string wraps to 2+ lines at a readable size (the box grows or wraps at the chosen size); the Size control changes the rendered size.
+
+Actual: the annotation textbox is created one line tall — engine rect `90 x 26.2 pt` (`textBoxRectFor(pt, "", widthPt)` with empty text at placement, `AnnotationOverlay.tsx:214-230`, `:750`) — and never grows. The auto-fit (`fitTextBoxFontSizePx`, `rasterize.ts:90-123`; engine `buildFreeTextAPStream`, `annotations.ts:1411-1433`) wraps at the base size to count lines, then shrinks to fit the one-line box: the rendered `fontSize` is the `4px` floor (line count 1; with tracking/indent it becomes 7 lines at 4px). Measured: `textbox/multi/font` -> `fontSize 4px`, `lines 1`, container `177.9 x 51.8 px`; `callout/multi` identical. The baked `/AP` stream uses the same fixed rect and the same 4pt floor, so the saved page is equally illegible — live and baked are both wrong (root cause is the fixed one-line rect, not the overlay). Single-line: Size `18` stores on the engine but the rendered `fontSize` stays `22.244px` (the 12pt fit) — a visible no-op. The Edit-mode box shows the same class at 5-11px because its dragged box is small.
+Screenshot: screenshots/text-manip-textbox-multi.png, screenshots/text-manip-roundtrip.json
+
+History:
+- qa: opened (Phase 29 operator audit; matrix `screenshots/text-manip-audit.json`; 5 targets x 2 shapes x 23 controls driven live via `e2e/text_manip_audit.spec.cjs`)
+- qa: CLOSED (2026-09-21 FIX-READY retest; `e2e/retests/def262_266_retest.spec.cjs` 8/8 + audit re-run 11/11). A multi-line textbox at panel Size 18 renders 9 wrapped `.ann-text-line` rows at `fontSize 35.5882px` = **18.004pt** (cssScale 1.9767), not the old 4px floor; the engine rect grows `90 x 26.2pt` -> `90 x 230.7pt` and the reopened rect is **identical** (`90 x 230.7pt`). The reopened baked page canvas paints **7020** dark glyphs inside the grown box. The audit's composed multi-line roundtrip now survives with `align:"center"` + `indent:12` (previously dropped under a zero-gap click burst). Screenshots `screenshots/def262-266-retest.png`, `screenshots/def262-266-editbox.png`.
+
+## DEF-263: Edit-mode text box live mirror ignores bold, italic, underline, super/subscript, highlight, alignment, line-height, list and indent
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 29 (operator text-manipulation audit)
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `assets/samples/report.pdf`; open Edit mode and place a text box (`[data-edit-tool="box"]`), type `Sgl`, select it.
+2. Click `[data-txt-bold]`, `[data-txt-italic]`, `[data-txt-underline]`, `[data-txt-super]`, `[data-txt-highlight]`, `[data-txt-align-center]`, `[data-txt-line-height]` = 2, `[data-txt-list-bullet]`, `[data-txt-indent-inc]`, one at a time.
+3. After each, read the engine box (`textBoxes[]`) and the on-page `.edit-box-text` computed style.
+4. Save As -> reopen and read the engine box again.
+
+Expected: each control changes the on-page box text live.
+
+Actual: the engine stores every field (and they all survive save+reopen), but the live mirror `TextBoxView` (`EditOverlay.tsx:1650-1735`) applies only `fontFamily`, `fontSize`, `color`, `letterSpacing` and a hard-coded `lineHeight: 1.2`. Measured `span[...]` diffs are `none` for bold, italic, underline, super, sub, highlight, all four alignments, line-height, all three lists, indent-inc/dec. Only font (`fontFamily`), size (`fontSize`), colour (`color`) and character-spacing (`letterSpacing`) render live. So nine-plus controls are visible no-ops on the Edit-mode box until save+reopen.
+Screenshot: screenshots/text-manip-editbox-single.png, screenshots/text-manip-audit.json
+
+History:
+- qa: opened (Phase 29 operator audit; live matrix + save/reopen spot-check)
+- qa: CLOSED (2026-09-21 FIX-READY retest; `e2e/retests/def262_266_retest.spec.cjs` DEF-263 + audit re-run). All 13 controls change the Edit-mode box's LIVE computed style: font (`fontFamily` Helvetica->Times, `fontSize 11->13.75px`), size, bold (`400->700`), italic, underline (`textDecorationLine none->underline`), super/sub (band `verticalAlign baseline->+11.86/-11.86px`), highlight (band `rgba(0,0,0,0)->rgb(255,255,0)`), align-center (line `textAlign left->center`), line-height (root `lineHeight` ratio 2), list-bullet (`prefix ""->"• "`), indent-inc (`paddingLeft 3->26.7px`), character-spacing (`letterSpacing normal->11.86px`). Audit matrix editbox/single and editbox/multi: every cell **L** except the inherently idempotent `align-left` (already left).
+
+## DEF-264: Sticky-note text ignores every text-style control
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 29 (operator text-manipulation audit)
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `assets/samples/report.pdf`; arm the Note tool and click to place a sticky note; in the panel Text field type a long string and blur.
+2. Apply `[data-txt-font]` Times, `[data-txt-size]` 18, `[data-txt-bold]`, `[data-txt-italic]`, `[data-txt-underline]`, `[data-txt-highlight]` yellow, `[data-txt-align-center]`, `[data-txt-line-height]` 2, `[data-txt-list-bullet]`, `[data-txt-indent-inc]`, `[data-txt-character-spacing]` 6.
+3. After each, read the engine note `style` and the on-page `.ann-note-text` computed style.
+
+Expected: the note's visible text follows the panel controls.
+
+Actual: every field reaches the engine `style`, but the rendered note label (`.ann-note-text`, `AnnotationOverlay.tsx:1812-1837`) is a fixed `fontSize: 11 * cssScale + 2`, `lineHeight: 1.4`, no `fontFamily`, `fontWeight`, `textDecoration`, `textAlign`, `letterSpacing` or list/indent. Measured `container[none]` and `span[none]` for all thirteen controls across single and multi; only the colour control changes the note tint. On reopen the note serializes as a `Text` annotation with `/Contents` and no `/AP`, so the stored style never becomes visible.
+Screenshot: screenshots/text-manip-note-multi.png, screenshots/text-manip-audit.json
+
+History:
+- qa: opened (Phase 29 operator audit; live matrix)
+- qa: CLOSED (2026-09-21 FIX-READY retest; `e2e/retests/def262_266_retest.spec.cjs` DEF-264 + audit re-run). The note label's computed style follows all 13 controls: `fontFamily` Inter->Times, `fontSize 23.75->35.59px`, bold `400->700`, italic, underline, super/sub band `verticalAlign +11.86/-11.86px`, highlight band `rgb(255,255,0)`, align-center line `textAlign start->center`, line-height `49.82->71.18px`, list-bullet `prefix "• "`, indent-inc `paddingLeft 15.8->39.5px`, character-spacing `11.86px`. Audit matrix note/single and note/multi: every cell **L**. Documented limitation confirmed: a PDF `Text` annotation has no baked text appearance, so the style is stored/persisted only (the `/Contents` popup is viewer-styled).
+
+## DEF-265: Annotation textbox / callout render no list prefixes or super/subscript live (baked-only, so the page changes on reopen)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 29 (operator text-manipulation audit)
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `assets/samples/report.pdf`; place an annotation textbox and type `The quick brown fox jumps over the lazy dog and keeps running far away`.
+2. Click `[data-txt-list-bullet]` then `[data-txt-list-number]`; then `[data-txt-super]` / `[data-txt-sub]`.
+3. Read the engine `style` and the on-page `.ann-text-content`; then Save As -> reopen and inspect the baked page.
+
+Expected: per the operator's audit, list prefixes appear per line (number increments) and super/subscript shifts the baseline live.
+
+Actual: the engine stores `list` and `baselineShift`, and the baked `/AP` (`buildFreeTextAPStream` -> `drawStyledTextLines`) draws the bullet/number prefixes and the baseline shift; the LIVE overlay never does (`annTextStyle.ts:16-19` documents them as baked-only; `AnnTextBoxText` only applies the highlight band). Measured: `textbox/single/list-bullet` and `list-number` -> engine `list` changes, `container[none]`; `super`/`sub` -> engine `baselineShift` +6/-6, `container[none]`. So the control looks like a no-op live and the appearance changes only after save+reopen.
+Screenshot: screenshots/text-manip-textbox-single.png, screenshots/text-manip-roundtrip.json
+
+History:
+- qa: opened (Phase 29 operator audit; live matrix + composed save/reopen spot-check)
+- qa: CLOSED (2026-09-21 FIX-READY retest; `e2e/retests/def262_266_retest.spec.cjs` DEF-265 + audit re-run). Live `list-number` renders a prefix on **every** wrapped line: `["1. ","2. ",...,"9. "]` for the 9 wrapped rows, matching the engine's numbering; super/sub band `verticalAlign +11.8627/-11.8627px` live. The baked `/AP` stream (hex-decoded) carries the same prefixes (`"1. The quick"` ... `"9. far away"`), and save+reopen keeps `style.list:"number"` + `baselineShift:-6`. Audit matrix textbox/callout/note `list-bullet`/`list-number`/`list-none` and `super`/`sub`: now **L**.
+
+## DEF-266: Edited text run preview reflects only font/size/colour/character-spacing; a style control after typing commits and deselects the run
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 29 (operator text-manipulation audit)
+
+Steps to reproduce:
+1. Launch TFlex (canonical `launchApp`); open `assets/samples/report.pdf`; open Edit mode, arm the Text tool, click a text-layer run.
+2. Apply `[data-txt-bold]`, `[data-txt-align-center]`, `[data-txt-line-height]` = 2, `[data-txt-list-bullet]`, `[data-txt-indent-inc]` BEFORE typing, then type into the panel Text field and read `[data-edit-run-preview]`.
+3. Alternatively type first (opening the session) and then click any style control.
+
+Expected: the live run preview shows every applied control, and controls compose on the run.
+
+Actual: the preview (`EditOverlay.tsx:1502-1521`) applies only `color`, `fontSize`, `fontFamily`, `letterSpacing` and a fixed `lineHeight: 1.2`; bold/italic/underline/align/line-height/list/indent/super/sub/highlight have no preview. Separately, clicking any style control after typing blurs the panel Text field, which commits the session (`commitTextSession` -> `textCommitToken`), and the commit effect runs `setRunSelection(null); setTextTarget(null)` (`EditOverlay.tsx:487-488`) — so the run is deselected and further controls cannot be composed. Measured in `run/single` and `run/multi`: the preview is present for the first control and `null` from the second onward.
+Screenshot: screenshots/text-manip-run-single.png, screenshots/text-manip-audit.json
+
+History:
+- qa: opened (Phase 29 operator audit; live matrix)
+- qa: CLOSED (2026-09-21 FIX-READY retest; `e2e/retests/def262_266_retest.spec.cjs` DEF-266 + audit re-run). Faithful workflow (type FIRST, then click a control without blurring): the preview stayed mounted for all 8 checks and showed bold `700`, line `textAlign center`, `lineHeight 47.451px` (2x), prefix `"• "`, `paddingLeft 23.7px`, band `verticalAlign +11.86px`, band `rgb(255,255,0)`, `letterSpacing 11.86px`; the panel Text field kept the run text throughout (run still active, no commit/deselect). Save+reopen baked `Tc` x2 and an embedded `Helvetica-Bold`. Audit matrix run/single and run/multi: every cell **L** except the inherently idempotent `align-left`.
+
 ## DEF-261: `verify:full` is non-deterministically red — the DEF-098 jump test's wall-clock frame simulation outruns the 1200ms fallback window under suite load
 
 - Status: CLOSED

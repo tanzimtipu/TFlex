@@ -40,7 +40,13 @@ import {
   useSelectableDrag,
 } from "../components/selectableContent";
 import { rectsClose, type ImageResizeHandle } from "../edit/geometry";
-import { fitTextBoxFontSizePx, measureTextWidthCss } from "../edit/rasterize";
+import { measureTextWidthCss } from "../edit/rasterize";
+import {
+  liveTextBandStyle,
+  liveTextLineStyle,
+  styledTextWidthPx,
+  type LiveTextLayout,
+} from "../edit/liveText";
 import {
   annotationBounds,
   arrowHead,
@@ -67,6 +73,7 @@ export type { TextItemGeom };
 import {
   annotationColorToCss,
   applyPatch,
+  rectGeometryPatch,
   type Annotation,
   type AnnotationColorValue,
   type AnnotationPatch,
@@ -77,13 +84,19 @@ import {
 import AnnColorBox from "./AnnColorBox";
 import AnnCommentIcon from "./AnnCommentIcon";
 import AnnotationCommentBox from "./AnnotationCommentBox";
-import type { CommentEntry, CommentThread } from "../../shared/types";
+import type { AnnTextStyle, CommentEntry, CommentThread } from "../../shared/types";
 import type {
   AnnotationColors,
   AnnotationTheme,
 } from "../state/colorPalette";
 import { consumeMenuDismissPointer } from "./menuDismissGuard";
-import { annTextCss, type AnnTextCss } from "./annTextStyle";
+import { annTextCss, ANN_TEXT_FONT_CSS, type AnnTextCss } from "./annTextStyle";
+import {
+  annTextEditStyle,
+  annTextInsetPt,
+  annTextMaxHeightPt,
+  layoutAnnTextBox,
+} from "./annTextLayout";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -93,11 +106,9 @@ const TEXTBOX_LINE_HEIGHT = 1.35;
 const TEXTBOX_PAD_PT = 5;
 const TEXTBOX_MIN_WIDTH_PT = 90;
 const TEXTBOX_MAX_WIDTH_PT = 320;
-const TEXTBOX_BORDER_PX = 1;
-const CALLOUT_BORDER_PX = 1.5;
 // The committed annotation text renders with the app's UI font (the
-// `--font-sans` stack). Only the committed-text auto-fit measure uses
-// this family; the div itself keeps inheriting the page font.
+// `--font-sans` stack). The live layout measures with this family when the
+// annotation stores no font; the div itself inherits the page font.
 const ANNOTATION_TEXT_FONT_FAMILY = '"Inter", system-ui, sans-serif';
 const NOTE_ICON_PT = 16;
 export const ARROW_HEAD_PT = 9;
@@ -229,50 +240,12 @@ export function textBoxRectFor(
   return { x: at.x, y: at.y, width, height };
 }
 
-/** DEF-163 — auto-fit a COMMITTED text-box / callout's text to its
- *  fixed box, matching the add-box auto-fit (the engine's DEF-113 fit
- *  and the DEF-146 committed-box mirror fit): wrap at the box's
- *  CONTENT width, then shrink the font so every wrapped line fits the
- *  content height. The committed div keeps the creation rect (the
- *  engine geometry), so without the fit long wrapped text overflows a
- *  short fixed-height box and paints over the page content beneath it
- *  (the DEF-163 callout spill). The box's border + padding
- *  (`sideInsetPx`) is subtracted so the fit measures only the space
- *  the text actually flows in. Pure apart from the injected `measure`
- *  callback, so it unit-tests without a DOM. Returns the fitted font
- *  size in CSS px — never larger than `userSizePx`, never below the
- *  4px readable floor. */
-export function fitAnnotationTextSizePx(args: {
-  text: string;
-  /** Default font for the annotation in CSS px
-   *  (TEXTBOX_FONT_PT * cssScale). */
-  userSizePx: number;
-  /** The box's CSS-px width (border-box, as rendered). */
-  boxWidthPx: number;
-  /** The box's CSS-px height (border-box, as rendered). */
-  boxHeightPx: number;
-  lineHeight: number;
-  /** One side's CSS-px inset (padding + border); doubled for both
-   *  sides when computing the content box. */
-  sideInsetPx: number;
-  measure: (text: string, fontSizePx: number) => number;
-}): number {
-  const inset = Math.max(0, args.sideInsetPx) * 2;
-  return fitTextBoxFontSizePx({
-    text: args.text,
-    userSizePx: args.userSizePx,
-    boxWidthPx: Math.max(1, args.boxWidthPx - inset),
-    boxHeightPx: Math.max(1, args.boxHeightPx - inset),
-    lineHeight: args.lineHeight,
-    measure: args.measure,
-  });
-}
-
 /** Phase 24 — the live committed-text style, derived from the annotation's
  *  stored `AnnTextStyle`. Only the fields the annotation actually stores are
  *  applied, so an unstyled annotation keeps the pre-Phase-24 rendering
- *  exactly. `list` prefixes and `baselineShift` are baked-only (see
- *  `annTextStyle.ts`). */
+ *  exactly. The per-line fields (`list` prefixes, `baselineShift`) are not a
+ *  flat CSS property — they are emitted per wrapped line by
+ *  `AnnStyledLines` via `annTextLayout` / `liveText`. */
 function annTextBoxCss(css: AnnTextCss, cssScale: number): CSSProperties {
   return {
     ...(css.fontFamily !== undefined ? { fontFamily: css.fontFamily } : {}),
@@ -292,16 +265,103 @@ function annTextBoxCss(css: AnnTextCss, cssScale: number): CSSProperties {
   };
 }
 
-/** The text node of a committed textbox / callout, wrapped so a stored
- *  highlight band hugs the glyphs instead of tinting the whole box. */
-function AnnTextBoxText(props: { text: string; css: AnnTextCss }): ReactElement {
+/** DEF-262 — the live layout for a committed textbox / callout. Wraps at the
+ *  stored size and GROWS the box height (unless the wrapped block would exceed
+ *  the page bound / cap, where it falls back to the engine's shrink-to-fit).
+ *  The returned `layout` is in CSS px for the shared per-line helpers; the
+ *  height is in page points so the commit path can persist the same value. */
+function annLiveTextLayout(args: {
+  kind: "textbox" | "callout";
+  text: string;
+  style: AnnTextStyle | undefined;
+  rectPt: PageRect;
+  cssScale: number;
+  pageHeightPt: number;
+  live: boolean;
+}): { layout: LiveTextLayout; fontSizePx: number; heightPt: number } {
+  const style = args.style;
+  const sizePt = style?.size ?? TEXTBOX_FONT_PT;
+  const indentPt = style?.indent ?? 0;
+  const fontFamily =
+    style?.font !== undefined
+      ? ANN_TEXT_FONT_CSS[style.font]
+      : ANNOTATION_TEXT_FONT_FAMILY;
+  const measure = (t: string, s: number): number =>
+    measureTextWidthCss(t, fontFamily, s);
+  const indentPx = indentPt * args.cssScale;
+  if (!args.live) {
+    // A parsed annotation's glyphs are painted by pdf.js on the canvas; only
+    // the box chrome is ours, so keep the stored rect exactly.
+    return {
+      fontSizePx: sizePt * args.cssScale,
+      heightPt: args.rectPt.height,
+      layout: {
+        fontSizePx: sizePt * args.cssScale,
+        lines: [],
+        indentPx,
+        contentWidthPx: Math.max(1, args.rectPt.width * args.cssScale),
+      },
+    };
+  }
+  const result = layoutAnnTextBox({
+    text: args.text,
+    style,
+    boxWidthPt: args.rectPt.width,
+    boxHeightPt: args.rectPt.height,
+    insetPt: annTextInsetPt(args.kind),
+    maxHeightPt: annTextMaxHeightPt(args.pageHeightPt, args.rectPt.y),
+    measure,
+  });
+  return {
+    fontSizePx: result.fontSizePt * args.cssScale,
+    heightPt: result.heightPt,
+    layout: {
+      fontSizePx: result.fontSizePt * args.cssScale,
+      lines: result.lines,
+      indentPx,
+      contentWidthPx: Math.max(1, (result.contentWidthPt - indentPt) * args.cssScale),
+    },
+  };
+}
+
+/** DEF-265 — the per-line text of a committed textbox / callout. Every
+ *  wrapped line is its own row so the shared `liveText` emission can give it
+ *  a list prefix (with the counter), the stored alignment, a highlight band,
+ *  a per-line underline and the super/subscript baseline shift — matching the
+ *  baked /AP stream (`drawStyledTextLines`). Before this the overlay rendered
+ *  one flat text node, so `list` / `super` / `sub` were invisible live and the
+ *  page changed only after save+reopen. */
+function AnnStyledLines(props: {
+  layout: LiveTextLayout;
+  style: AnnTextStyle | undefined;
+  cssScale: number;
+}): ReactElement {
+  const { layout, style, cssScale } = props;
+  const editStyle = annTextEditStyle(style);
   return (
-    <span
-      className="ann-text-content"
-      style={props.css.highlight !== undefined ? { background: props.css.highlight } : undefined}
-    >
-      {props.text}
-    </span>
+    <div className="ann-text-lines">
+      {layout.lines.map((line) => (
+        <div
+          key={line.key}
+          className="ann-text-line"
+          data-ann-text-line={String(line.index)}
+          style={{
+            whiteSpace: "nowrap",
+            ...liveTextLineStyle({ style: editStyle, layout, isLast: line.isLast }),
+          }}
+        >
+          <span
+            className="ann-text-content"
+            style={liveTextBandStyle({ style: editStyle, cssScale })}
+          >
+            {line.prefix !== "" && (
+              <span className="ann-text-prefix">{line.prefix}</span>
+            )}
+            {line.text}
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -488,24 +548,33 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     );
   }, []);
 
-  /** Bug 2 — commit a delete+re-create MOVE while keeping the draft
-   *  override visible until the recreate-echo lands. The shared
-   *  contract has no annotation-move op, so every move is
-   *  delete(original) + create(moved). Clearing the draft
-   *  synchronously would revert the overlay to the engine list,
-   *  which still holds the OLD annotation at its ORIGINAL position
-   *  until BOTH round-trips echo back — the "content snaps back
-   *  before landing at the new spot" artifact. This pins the draft
-   *  to the COMMITTED geometry (it may currently hold an
-   *  intermediate parked rect from a page drag) and leaves it up
-   *  until the echo effect (same id + geometry in the list) drops
-   *  it. A safety timer force-clears the draft if the engine ops
-   *  fail — gated on the geometry so a fresh drag of the same
-   *  annotation within the grace window is never reverted. */
+  /** Commit a MOVE / RESIZE while keeping the draft override visible until
+   *  the echo lands. Phase 30 — a single-rect kind (textbox / rect / ellipse
+   *  / callout) commits IN PLACE through `editAnnotation({ rect })`: the
+   *  engine regenerates `rects[0]` and the annotation keeps its id, so no
+   *  fresh selection event fires and a zero-gap burst of style clicks after
+   *  the move cannot read a stale selection. Ink / arrow / note carry their
+   *  geometry in `points` / `from`+`to` / `at`, which the shared edit payload
+   *  has no patch for, so those keep the delete + re-create round-trip (as
+   *  does a callout ANCHOR drag, whose rect is unchanged).
+   *
+   *  Clearing the draft synchronously would revert the overlay to the engine
+   *  list, which still holds the OLD geometry until the round-trip echoes
+   *  back — the "content snaps back before landing at the new spot"
+   *  artifact. This pins the draft to the COMMITTED geometry and leaves it up
+   *  until the echo effect (same id + geometry in the list) drops it. A
+   *  safety timer force-clears the draft if the engine op fails — gated on
+   *  the geometry so a fresh drag of the same annotation within the grace
+   *  window is never reverted. */
   const issueMoveCommit = useCallback(
     (oldAnn: Annotation, nextAnn: Annotation): void => {
-      onDeleteAnnotation?.(oldAnn.id);
-      onCreate({ ...nextAnn });
+      const rect = rectGeometryPatch(oldAnn, nextAnn);
+      if (rect !== null && onEditAnnotation !== undefined) {
+        onEditAnnotation(oldAnn.id, { rect });
+      } else {
+        onDeleteAnnotation?.(oldAnn.id);
+        onCreate({ ...nextAnn });
+      }
       setAnnDraft({ id: oldAnn.id, ann: nextAnn });
       window.setTimeout(() => {
         setAnnDraft((prev) => {
@@ -515,7 +584,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
         });
       }, 500);
     },
-    [onDeleteAnnotation, onCreate],
+    [onDeleteAnnotation, onCreate, onEditAnnotation],
   );
 
   /** Phase 28 — apply a colour to the selected annotation LIVE: the
@@ -536,9 +605,10 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
 
   /** Phase 28 — the bar's Cancel: UNDO the session's changes by
    *  restoring the snapshot taken before the first one, then dismiss
-   *  the selection. A move/resize is undone with the same
-   *  delete+re-create path the move itself used; the restored copy
-   *  carries the original colour too. */
+   *  the selection. A move/resize is undone through the same geometry
+   *  path the move itself used (an in-place `rect` patch for the
+   *  single-rect kinds, delete + re-create otherwise); the restored
+   *  copy carries the original colour too. */
   const cancelLiveEdit = useCallback((): void => {
     const original = editOriginal;
     if (original !== null) {
@@ -856,11 +926,11 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
             ? moveCalloutAnchor(orig, delta.x, delta.y)
             : moveAnnotation(orig, delta.x, delta.y);
       // Phase 28 — the move/resize COMMITS here, on pointerup: the
-      // engine gets the delete + re-create immediately (one undo
-      // entry), no Confirm click is required. The snapshot is taken
-      // before the change so the bar's Cancel can undo it. The
-      // selection STAYS so the bar (and its colour box) remains
-      // available — picking a colour right after a move must work.
+      // engine gets the geometry op immediately (one undo entry), no
+      // Confirm click is required. The snapshot is taken before the
+      // change so the bar's Cancel can undo it. The selection STAYS so
+      // the bar (and its colour box) remains available — picking a
+      // colour right after a move must work.
       noteEditOriginal(orig);
       issueMoveCommit(orig, next);
       return;
@@ -1071,6 +1141,7 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           key={a.id}
           ann={a}
           cssScale={cssScale}
+          pageHeightPt={heightPt}
           liveAnnTextIds={liveAnnTextIds}
           // B4/B5 — the committed note reads as "selected" while it is
           // SELECTED via a single click (accent ring around the icon,
@@ -1647,6 +1718,9 @@ function ShapePreview({
 interface DomAnnotationProps extends AnnotationSurfaceHandlers {
   ann: Annotation;
   cssScale: number;
+  /** DEF-262 — the page height in points, so the live textbox / callout
+   *  growth can be clamped to the page bottom. */
+  pageHeightPt: number;
   /** DEF-166 — null or Set<id>. Null: draw every annotation's text
    *  (historic behavior). Set<id>: draw text only for ids IN the set;
    *  a textbox/callout id missing from the set is a parsed-from-file
@@ -1686,6 +1760,7 @@ interface DomAnnotationProps extends AnnotationSurfaceHandlers {
 function DomAnnotation({
   ann,
   cssScale,
+  pageHeightPt,
   liveAnnTextIds = null,
   onEditNote,
   selected = false,
@@ -1701,44 +1776,37 @@ function DomAnnotation({
     if (r === undefined) return null;
     const box = overlayRectToCss(r, cssScale);
     const hex = annotationColorToCss(ann.color);
-    // DEF-166 — the overlay text node renders only for LIVE
-    // annotations (created/edited in this session). A parsed-from-file
-    // textbox has its baked FreeText appearance painted by pdf.js on
-    // the page canvas, so the text is suppressed here to avoid the
-    // doubled ghost copy on reopen. The box chrome stays.
+    // DEF-166 — the overlay text node renders only for LIVE annotations
+    // (created/edited in this session). A parsed-from-file textbox has its
+    // baked FreeText appearance painted by pdf.js on the page canvas, so the
+    // text is suppressed here to avoid the doubled ghost copy on reopen. The
+    // box chrome stays.
     const showOverlayText = liveAnnTextIds === null || liveAnnTextIds.has(ann.id);
-    // DEF-163 — the committed text auto-fits its fixed box (the
-    // add-box auto-fit): wrap at the content width, then shrink the
-    // font so every line fits the content height. The div keeps the
-    // creation rect (the engine geometry); without the fit a long
-    // wrapped line got clipped by `.ann-textbox`'s overflow guard,
-    // and a callout's text spilled below the box. Matches the
-    // engine's save-time fit and the DEF-146 box-mirror fit.
-    // Phase 24 — the fit is measured at the STORED size / line step /
-    // font family when the annotation carries a style, so a panel
-    // change is reflected by the live overlay immediately.
+    // DEF-262 — the committed text no longer shrinks to a fixed one-line box
+    // (the old auto-fit collapsed multi-line text to the 4pt floor and made
+    // the Size control a no-op). The box GROWS its height to the wrapped block
+    // at the requested size, computed by the shared `layoutAnnTextBox`; only
+    // when the block would exceed the page bound / sane cap does it fall back
+    // to the engine's shrink-to-fit. Phase 24 — the layout reads the STORED
+    // size / line step / font / list / indent / tracking, so a panel change is
+    // live immediately.
     const annCss = annTextCss(ann.style);
     const lineHeight = annCss.lineHeight ?? TEXTBOX_LINE_HEIGHT;
-    const userSizePx = (annCss.sizePt ?? TEXTBOX_FONT_PT) * cssScale;
-    const fontSize = showOverlayText
-      ? fitAnnotationTextSizePx({
-          text: ann.text,
-          userSizePx,
-          boxWidthPx: box.width,
-          boxHeightPx: box.height,
-          lineHeight,
-          sideInsetPx: TEXTBOX_PAD_PT * cssScale + TEXTBOX_BORDER_PX,
-          measure: (t, s): number =>
-            measureTextWidthCss(t, annCss.fontFamily ?? ANNOTATION_TEXT_FONT_FAMILY, s) +
-            (annCss.charSpacingPt ?? 0) * cssScale * Math.max(0, Array.from(t).length - 1),
-        })
-      : userSizePx;
+    const live = annLiveTextLayout({
+      kind: "textbox",
+      text: ann.text,
+      style: ann.style,
+      rectPt: r,
+      cssScale,
+      pageHeightPt,
+      live: showOverlayText,
+    });
     const style: CSSProperties = {
       left: box.left,
       top: box.top,
       width: box.width,
-      height: box.height,
-      fontSize,
+      height: live.heightPt * cssScale,
+      fontSize: live.fontSizePx,
       lineHeight,
       padding: TEXTBOX_PAD_PT * cssScale,
       borderColor: hex,
@@ -1763,7 +1831,9 @@ function DomAnnotation({
         }
         onPointerUp={onSurfacePointerUp}
       >
-        {showOverlayText && <AnnTextBoxText text={ann.text} css={annCss} />}
+        {showOverlayText && (
+          <AnnStyledLines layout={live.layout} style={ann.style} cssScale={cssScale} />
+        )}
       </div>
     );
   }
@@ -1809,18 +1879,62 @@ function DomAnnotation({
     // right — `.ann-note` has no `overflow: hidden`, and the
     // note label is a floating annotation surface, so that is the
     // intended "text visible inside / alongside the marker" look.
+    // DEF-264 — the note label now reflects the FULL stored style set live
+    // (font, size, bold, italic, underline, align, line-height, list,
+    // indent, character spacing, super/subscript, highlight), through the
+    // same shared per-line emission as the textbox / callout. The note's
+    // colour stays its tint (the icon + label background/border), the
+    // stored style is persisted by the panel's `editAnnotation({style})`
+    // path. LIMITATION: a PDF `Text` annotation has no baked text
+    // appearance, so nothing here is baked — the /Contents is shown by each
+    // viewer's own popup, whose styling is viewer-controlled.
+    const noteCss = annTextCss(ann.style);
+    const fontPx =
+      ann.style?.size !== undefined ? ann.style.size * cssScale : 11 * cssScale + 2;
+    const noteCapPx = Math.max(140 * cssScale, 160);
+    const notePadX = 8 * cssScale;
+    const noteIndentPx = (ann.style?.indent ?? 0) * cssScale;
+    const noteFamily =
+      ann.style?.font !== undefined
+        ? ANN_TEXT_FONT_CSS[ann.style.font]
+        : ANNOTATION_TEXT_FONT_FAMILY;
+    const noteMeasure = (t: string, s: number): number =>
+      measureTextWidthCss(t, noteFamily, s);
+    // Wrap at the size / indent, then take the widest line as the label's
+    // natural width so a short note stays compact and alignment is visible
+    // on a multi-line one.
+    const noteLayout = layoutAnnTextBox({
+      text: ann.text,
+      style: { ...ann.style, size: fontPx },
+      boxWidthPt: Math.max(1, noteCapPx - noteIndentPx),
+      boxHeightPt: 0,
+      insetPt: 0,
+      maxHeightPt: 1_000_000,
+      measure: noteMeasure,
+    });
+    const noteCharSpacingPx = (ann.style?.charSpacing ?? 0) * cssScale;
+    const noteNaturalPx = Math.min(
+      Math.max(1, noteCapPx - noteIndentPx),
+      Math.max(
+        1,
+        ...noteLayout.lines.map((l) =>
+          styledTextWidthPx(noteMeasure, l.prefix + l.text, fontPx, noteCharSpacingPx),
+        ),
+      ),
+    );
     const noteTextStyle: CSSProperties = {
       position: "absolute",
       left: NOTE_ICON_PT * cssScale + 4,
       top: 0,
-      width: "max-content",
-      maxWidth: Math.max(140 * cssScale, 160),
+      width: noteNaturalPx + notePadX * 2 + noteIndentPx,
+      maxWidth: noteCapPx,
       whiteSpace: "normal",
       // DEF-104 — long tokens (URLs etc.) still need to wrap
       // inside the maxWidth cap rather than pushing the label past
       // the page edge.
       overflowWrap: "break-word",
-      padding: `${4 * cssScale}px ${8 * cssScale}px`,
+      padding: `${4 * cssScale}px ${notePadX}px`,
+      paddingLeft: notePadX + noteIndentPx,
       borderRadius: "var(--radius-1)",
       background: hexWithAlpha(hex, 0.18),
       border: `1px solid ${hexWithAlpha(hex, 0.55)}`,
@@ -1830,8 +1944,18 @@ function DomAnnotation({
       // `--fg-strong` flips to near-white in dark mode and made the
       // text invisible against the page + tint.
       color: "var(--fg-on-page)",
-      fontSize: 11 * cssScale + 2,
-      lineHeight: 1.4,
+      fontSize: fontPx,
+      lineHeight: noteCss.lineHeight ?? 1.4,
+      ...(noteCss.fontFamily !== undefined ? { fontFamily: noteCss.fontFamily } : {}),
+      ...(noteCss.fontWeight !== undefined ? { fontWeight: noteCss.fontWeight } : {}),
+      ...(noteCss.fontStyle !== undefined ? { fontStyle: noteCss.fontStyle } : {}),
+      ...(noteCss.textDecoration !== undefined
+        ? { textDecoration: noteCss.textDecoration }
+        : {}),
+      ...(noteCss.textAlign !== undefined ? { textAlign: noteCss.textAlign } : {}),
+      ...(noteCss.charSpacingPt !== undefined
+        ? { letterSpacing: `${noteCss.charSpacingPt * cssScale}px` }
+        : {}),
       pointerEvents: "none",
       boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)",
     };
@@ -1889,7 +2013,16 @@ function DomAnnotation({
         <MessageSquare size={size} strokeWidth={2} aria-hidden />
         {hasText && (
           <div className="ann-note-text" data-ann-note-text style={noteTextStyle}>
-            {ann.text}
+            <AnnStyledLines
+              layout={{
+                fontSizePx: fontPx,
+                lines: noteLayout.lines,
+                indentPx: noteIndentPx,
+                contentWidthPx: noteNaturalPx,
+              }}
+              style={ann.style}
+              cssScale={cssScale}
+            />
           </div>
         )}
       </div>
@@ -1917,39 +2050,26 @@ function DomAnnotation({
     // so the overlay text node is suppressed on reopen; the box
     // chrome and the arrow (never canvas-painted) stay.
     const showOverlayText = liveAnnTextIds === null || liveAnnTextIds.has(ann.id);
-    // DEF-163 — the committed callout text auto-fits its fixed box
-    // (the add-box auto-fit): wrap at the content width, then shrink
-    // the font so every line fits the content height. The box keeps
-    // its creation rect (the engine geometry), so without the fit
-    // long wrapped text overflowed the box (overflow was visible) and
-    // painted over the page content below it. `overflow: "hidden"`
-    // is the final guard so a measurement drift can never paint
-    // outside the box.
-    // Phase 24 — the fit is measured at the STORED size / line step /
-    // font family when the annotation carries a style (see the textbox
-    // branch above).
+    // DEF-262 — the callout text GROWS its box height to the wrapped block
+    // at the requested size, the same rule as the textbox branch above; the
+    // `overflow: "hidden"` guard only bites on the clamped fallback.
     const annCss = annTextCss(ann.style);
     const lineHeight = annCss.lineHeight ?? TEXTBOX_LINE_HEIGHT;
-    const userSizePx = (annCss.sizePt ?? TEXTBOX_FONT_PT) * cssScale;
-    const fontSize = showOverlayText
-      ? fitAnnotationTextSizePx({
-          text: ann.text,
-          userSizePx,
-          boxWidthPx: box.width,
-          boxHeightPx: box.height,
-          lineHeight,
-          sideInsetPx: TEXTBOX_PAD_PT * cssScale + CALLOUT_BORDER_PX,
-          measure: (t, s): number =>
-            measureTextWidthCss(t, annCss.fontFamily ?? ANNOTATION_TEXT_FONT_FAMILY, s) +
-            (annCss.charSpacingPt ?? 0) * cssScale * Math.max(0, Array.from(t).length - 1),
-        })
-      : userSizePx;
+    const live = annLiveTextLayout({
+      kind: "callout",
+      text: ann.text,
+      style: ann.style,
+      rectPt: r,
+      cssScale,
+      pageHeightPt,
+      live: showOverlayText,
+    });
     const style: CSSProperties = {
       left: box.left,
       top: box.top,
       width: box.width,
-      height: box.height,
-      fontSize,
+      height: live.heightPt * cssScale,
+      fontSize: live.fontSizePx,
       lineHeight,
       padding: TEXTBOX_PAD_PT * cssScale,
       borderColor: hex,
@@ -1963,8 +2083,13 @@ function DomAnnotation({
     };
     // Arrow from the nearest box edge to the anchor. Compute the
     // entry point as the closest corner of the box to the anchor,
-    // then draw a stroked line + small arrowhead.
-    const entry = calloutEntryPoint(r, anchor);
+    // then draw a stroked line + small arrowhead. The entry uses the
+    // GROWN rect so the leader still touches the visible box edge
+    // (DEF-262) instead of the pre-growth one-line rect.
+    const entryRect: PageRect = showOverlayText
+      ? { ...r, height: live.heightPt }
+      : r;
+    const entry = calloutEntryPoint(entryRect, anchor);
     const arrowScale = cssScale;
     const [w1, w2] = arrowHead(entry, anchor, ARROW_HEAD_PT);
     const headPoints = `${anchorCss.x},${anchorCss.y} ${w1.x * arrowScale},${w1.y * arrowScale} ${w2.x * arrowScale},${w2.y * arrowScale}`;
@@ -2064,7 +2189,9 @@ function DomAnnotation({
           }
           onPointerUp={onSurfacePointerUp}
         >
-          {showOverlayText && <AnnTextBoxText text={ann.text} css={annCss} />}
+          {showOverlayText && (
+            <AnnStyledLines layout={live.layout} style={ann.style} cssScale={cssScale} />
+          )}
         </div>
       </>
     );

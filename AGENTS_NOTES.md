@@ -2495,6 +2495,54 @@ pass silently.**
 **Harness note:** `playwright test -- a.spec b.spec c.spec` only ran the FIRST positional file in this
 environment; run specs individually or via a glob when you need all of them.
 
+## 2026-09-21: Text-manipulation live audit + the canonical installed-build spec
+
+**The audit (operator ask: "check every text manipulation tool ... on single and multi line texts
+live").** qa drove a matrix of every `data-txt-*` control x single-line/multi-line x five targets
+(Edit-mode text box, annotation textbox, callout, sticky note, edited text run) and measured each cell
+LIVE, not on blur. Result: round-trip persistence was already correct everywhere; **all the gaps were
+LIVE-render gaps** - five defects, all closed:
+- DEF-262 (HIGH): a multi-line annotation collapsed to the 4 pt floor because the box was created one
+  line tall and the auto-fit shrank into it. Fixed with **auto-grow** (height = lines x size x
+  lineHeight + padding, floor = the stored height, max = min(1200 pt, page - y - 6 pt), then the
+  engine's shrink-to-fit).
+- DEF-263 (HIGH): the Edit-mode box's LIVE mirror applied only 4 fields (and hardcoded `lineHeight:
+  1.2`); bold/italic/underline/super-sub/highlight/align/line-height/list/indent were no-ops until a
+  save+reopen.
+- DEF-264 (MEDIUM): the sticky-note label ignored every style control. The label now renders the full
+  style live; **the baked note has no text appearance** (a PDF `Text` annotation's `/Contents` is shown
+  by each viewer in its own popup with viewer-controlled styling), so the style is stored/persisted
+  only - a documented limitation, not faked.
+- DEF-265 (MEDIUM): annotation lists + super/subscript were deliberately not applied live ("the DOM
+  text node cannot express per-wrapped-line layout"). Now rendered live per line.
+- DEF-266 (MEDIUM): the edited-run preview had the same 4-field limit, and a style click after typing
+  committed + deselected the run (so styles could not compose). Fixed with two focus guards.
+
+**Rule - a live overlay mirror must reproduce the ENGINE's baked layout, not approximate it.** The
+fixes all landed on one new shared module (`src/renderer/edit/liveText.ts`: wrap, list-prefix width
+reservation, auto-fit, per-line emission) that BOTH the box mirror and the annotation mirror consume,
+so live == baked. When you add a style field, update the engine's draw path and the shared live-layout
+module together; a hand-rolled CSS approximation will drift (the audit caught exactly that).
+
+**Rule - persist geometry with the geometry op, never by re-creating.** The auto-grow first persisted
+by delete + re-create (no `rect` on the edit payload), which re-selects asynchronously and let a
+zero-gap burst of style clicks read a stale selection and drop a field. The orchestrator approved
+`EditAnnotationPayload.rect` (validated first, applied in place, one undo entry); the grow, the
+style-patch-with-grow and the committed move now use it. Residual (DEF-267, LOW): ink/arrow/note
+geometry (`points`/`at`/`from`/`to`) still has no patch field, so a sub-millisecond burst right after
+moving a NON-BOX annotation can still drop a field - a contract extension for those geometry keys is
+the clean fix if it is ever worth it.
+
+**Canonical installed-build spec (operator ask: "keep one canonical installed build").** There is now
+ONE installed-build verification spec - `e2e/installed/canonical_installed_build.spec.cjs` - and it is
+**repointed never**: it reads the expected version from `package.json`, runs the version gate first
+(installed `FileVersion` + `app.getVersion()`), then the core feature set that must never regress
+(annotation toolbar + edit toggle, the text panel's live field, the colour picker's dismissal, the
+watermark flow, the title-bar file group, the animations toggle, the flush canvas). Per-version specs
+(`release_1_1x_installed`) are archived as each release lands; the old `installed_verification.spec.cjs`
+(a stale DEF-era spec) is archived too. `e2e/DIRECTORY.md` lists the canonical spec as THE
+installed-build verification.
+
 ## 2026-09-19: Phase 21 (text panel) + Phase 22 (title-bar Open/Save) + release 1.20.0
 
 **Phase 21 shipped**: a docked LEFT text-properties panel (right of the thumbnail rail) with

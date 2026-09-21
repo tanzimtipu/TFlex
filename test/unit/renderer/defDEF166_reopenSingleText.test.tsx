@@ -1,6 +1,6 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 //
-// DEF-166 — reopening a saved file must not render annotation text
+// DEF-166 â€” reopening a saved file must not render annotation text
 // DOUBLED. When the saved file's /Annots carry the committed
 // textbox/callout (FreeText /Contents + /DA, no /AP), pdf.js
 // GENERATES the appearance and paints the glyphs into the page
@@ -12,10 +12,10 @@
 // loaded). The AnnotationOverlay receives that set via
 // `liveAnnTextIds`; an annotation whose id is NOT in the set is a
 // parsed-from-file annotation whose baked appearance pdf.js already
-// paints — the overlay drops ONLY the text node (the box border +
+// paints â€” the overlay drops ONLY the text node (the box border +
 // tint stay so the committed annotation keeps its box identity).
 // When the prop is absent the overlay draws every annotation's text
-// (the historic behavior — unit-test and older-consumer compat).
+// (the historic behavior â€” unit-test and older-consumer compat).
 //
 // Coverage:
 //   - textbox: live id -> text rendered; parsed id (missing from the
@@ -111,13 +111,21 @@ function mount(
   };
 }
 
-describe("DEF-166 — reopen-of-saved-file overlay text suppression", () => {
+describe("DEF-166 â€” reopen-of-saved-file overlay text suppression", () => {
+  /** DEF-265 â€” the overlay text is emitted PER WRAPPED LINE, so a raw
+   *  `textContent` loses the space at a wrap boundary ("VERIFY CALLOUT166").
+   *  Join the line nodes back with a space to read the logical text. */
+  const textOf = (el: HTMLElement): string =>
+    Array.from(el.querySelectorAll(".ann-text-content"))
+      .map((n) => n.textContent ?? "")
+      .join(" ");
+
   it("textbox: a LIVE id (created this session) keeps its overlay text", () => {
     const { host, cleanup } = mount([textboxAnn("HELLO 166")], new Set(["tbx-1"]));
     try {
       const box = host.querySelector<HTMLElement>(".ann-textbox[data-annotation-id='tbx-1']");
       if (box === null) throw new Error("textbox box not found");
-      expect(box.textContent).toContain("HELLO 166");
+      expect(textOf(box)).toContain("HELLO 166");
     } finally {
       cleanup();
     }
@@ -135,7 +143,7 @@ describe("DEF-166 — reopen-of-saved-file overlay text suppression", () => {
       // The box itself is still the annotation's hit surface + chrome.
       expect(box.getAttribute("data-kind")).toBe("textbox");
       // ... but the duplicated overlay TEXT is gone.
-      expect(box.textContent).toBe("");
+      expect(textOf(box)).toBe("");
     } finally {
       cleanup();
     }
@@ -146,7 +154,7 @@ describe("DEF-166 — reopen-of-saved-file overlay text suppression", () => {
     try {
       const box = host.querySelector<HTMLElement>(".ann-textbox[data-annotation-id='tbx-1']");
       if (box === null) throw new Error("textbox box not found");
-      expect(box.textContent).toContain("HELLO 166");
+      expect(textOf(box)).toContain("HELLO 166");
     } finally {
       cleanup();
     }
@@ -157,7 +165,7 @@ describe("DEF-166 — reopen-of-saved-file overlay text suppression", () => {
     try {
       const box = host.querySelector<HTMLElement>(".ann-callout[data-annotation-id='callout-1']");
       if (box === null) throw new Error("callout box not found");
-      expect(box.textContent).toContain("VERIFY CALLOUT 166");
+      expect(textOf(box)).toContain("VERIFY CALLOUT 166");
       expect(host.querySelector(".ann-callout-arrow")).not.toBeNull();
     } finally {
       cleanup();
@@ -169,7 +177,7 @@ describe("DEF-166 — reopen-of-saved-file overlay text suppression", () => {
     try {
       const box = host.querySelector<HTMLElement>(".ann-callout[data-annotation-id='callout-1']");
       if (box === null) throw new Error("callout box not found");
-      expect(box.textContent).toBe("");
+      expect(textOf(box)).toBe("");
       // The leader + arrowhead are never painted by the generated
       // FreeText appearance, so they must stay with the overlay.
       expect(host.querySelector(".ann-callout-arrow")).not.toBeNull();
@@ -183,7 +191,7 @@ describe("DEF-166 — reopen-of-saved-file overlay text suppression", () => {
     try {
       const box = host.querySelector<HTMLElement>(".ann-callout[data-annotation-id='callout-1']");
       if (box === null) throw new Error("callout box not found");
-      expect(box.textContent).toContain("VERIFY CALLOUT 166");
+      expect(textOf(box)).toContain("VERIFY CALLOUT 166");
     } finally {
       cleanup();
     }
@@ -200,7 +208,7 @@ describe("DEF-166 — reopen-of-saved-file overlay text suppression", () => {
       if (icon === null) throw new Error("note icon not found");
       const label = icon.querySelector<HTMLElement>(".ann-note-text");
       if (label === null) throw new Error("note label not found");
-      expect(label.textContent).toContain("READ ME 166");
+      expect(textOf(label)).toContain("READ ME 166");
     } finally {
       cleanup();
     }
@@ -209,7 +217,7 @@ describe("DEF-166 — reopen-of-saved-file overlay text suppression", () => {
   it("a textbox id that IS live wins even when other parsed ids are suppressed", () => {
     // Reopened file: the parsed textbox is suppressed (empty set is
     // provided by the host), but the host adds the id the moment the
-    // user edits / re-creates it — the live id must render again.
+    // user edits / re-creates it â€” the live id must render again.
     const parsedTbx = textboxAnn("PARSED");
     const liveTbx = { ...textboxAnn("LIVE"), id: "tbx-live-2" };
     const { host, cleanup } = mount([parsedTbx, liveTbx], new Set(["tbx-live-2"]));
@@ -217,8 +225,8 @@ describe("DEF-166 — reopen-of-saved-file overlay text suppression", () => {
       const parsed = host.querySelector<HTMLElement>(".ann-textbox[data-annotation-id='tbx-1']");
       const live = host.querySelector<HTMLElement>(".ann-textbox[data-annotation-id='tbx-live-2']");
       if (parsed === null || live === null) throw new Error("boxes not found");
-      expect(parsed.textContent).toBe("");
-      expect(live.textContent).toContain("LIVE");
+      expect(textOf(parsed)).toBe("");
+      expect(textOf(live)).toContain("LIVE");
     } finally {
       cleanup();
     }

@@ -13,10 +13,12 @@
 // constants. An annotation with no style therefore renders exactly as it did
 // before this phase.
 //
-// Fields this module deliberately does NOT apply live (the baked /AP stream
-// is the only faithful renderer for them — they need per-wrapped-line layout
-// the DOM text node cannot express): `list` prefixes and `baselineShift`
-// (super/subscript). They still reach the engine and are baked on save.
+// DEF-265 — `list` prefixes and `baselineShift` (super/subscript) are NOT
+// expressible on a single CSS text node, so they are not part of this
+// module's flat `AnnTextCss`. They ARE applied live now, per wrapped line,
+// by `annTextLayout.ts` + the shared `liveText.ts` per-line emission (prefix
+// span, counter, `vertical-align` baseline shift), matching the baked /AP
+// exactly. See `AnnotationOverlay`'s committed-text renderer.
 
 import type { AnnTextStyle, EditFont, TextAlign } from "../../shared/types";
 

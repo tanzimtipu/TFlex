@@ -65,11 +65,18 @@ import type {
  *  to Annotation because TFlexApiEngine.createAnnotation declares that
  *  parameter type — the underlying IPC contract is the wider
  *  CreateAnnotationPayload, which the renderer doesn't import. */
-function annotationToWire(a: Annotation): Annotation {
+export function annotationToWire(a: Annotation): Annotation {
+  // The engine's create path prefers `content` over `text`
+  // (`normalizeAnnotationPayload`). A renderer annotation that came back
+  // through an IPC echo carries the wire's `content` field, which would then
+  // shadow a NEWER `text` on the next create (DEF-262: a grown textbox
+  // re-created with new text stored the stale empty content). Strip it so
+  // `text` is always authoritative on the way out.
+  const { content: _dropContent, ...rest } = a as Annotation & { content?: unknown };
   if (a.kind === "textbox") {
-    return { ...a, kind: "text-box" } as unknown as Annotation;
+    return { ...rest, kind: "text-box" } as unknown as Annotation;
   }
-  return a;
+  return rest as Annotation;
 }
 
 /** Translate a wire-shaped annotation back into the renderer's in-memory

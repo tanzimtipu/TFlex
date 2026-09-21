@@ -164,10 +164,6 @@ function dragSurface(layer: HTMLElement, surface: Element, from: [number, number
   releaseOnLayer(layer, to[0], to[1]);
 }
 
-function rectOf(ann: unknown): { x: number; y: number; width: number; height: number } {
-  return (ann as { rect: { x: number; y: number; width: number; height: number } }).rect;
-}
-
 describe("Phase 28 (a) — the arrow's leader line ends at the head's BASE", () => {
   it("the visible shaft's x2/y2 is the head-base point, not the tip; the hit line still reaches the tip", () => {
     const { host, cleanup } = mountOverlay({ annotations: [ARROW_ANN] });
@@ -198,19 +194,22 @@ describe("Phase 28 (a) — the arrow's leader line ends at the head's BASE", () 
 });
 
 describe("Phase 28 (b) — a move drag COMMITS on pointerup (no Confirm)", () => {
-  it("the engine gets delete + re-create with the moved rect without any Confirm click", () => {
-    const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
+  it("the engine gets ONE in-place `rect` edit with the moved rect, and no delete + re-create", () => {
+    const { host, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
     try {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
       if (shape === null) throw new Error("shape not found");
       dragSurface(layerOf(host), shape, [120, 120], [160, 140]);
-      // Committed at pointerup, with no Confirm click anywhere.
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
-      expect(onDeleteAnnotation.mock.calls[0]?.[0]).toBe("rect-1");
-      expect(onCreate).toHaveBeenCalledTimes(1);
-      const created = onCreate.mock.calls[0]?.[0] as Annotation;
-      expect(created.id).toBe("rect-1");
-      expect(rectOf(created)).toEqual({ x: 140, y: 120, width: 150, height: 80 });
+      // Committed at pointerup, with no Confirm click anywhere. Phase 30 —
+      // ONE geometry op that keeps the annotation's id (no re-create, so
+      // no fresh selection event races a follow-up style click).
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation.mock.calls[0]?.[0]).toBe("rect-1");
+      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({
+        rect: { x: 140, y: 120, width: 150, height: 80 },
+      });
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
       // The selection survives so the bar (and the colour box) stays up.
       expect(host.querySelector("[data-content-action-bar]")).not.toBeNull();
     } finally {
@@ -219,19 +218,21 @@ describe("Phase 28 (b) — a move drag COMMITS on pointerup (no Confirm)", () =>
   });
 
   it("Cancel reverts the committed move (undo): the engine gets the ORIGINAL rect back", () => {
-    const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
+    const { host, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [RECT_ANN] });
     try {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
       if (shape === null) throw new Error("shape not found");
       dragSurface(layerOf(host), shape, [120, 120], [160, 140]);
-      expect(onCreate).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
       clickEl(host.querySelector("[data-content-action$='-cancel']"));
-      // Cancel = delete the moved copy + re-create the snapshot.
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(2);
-      expect(onCreate).toHaveBeenCalledTimes(2);
-      const reverted = onCreate.mock.calls[1]?.[0] as Annotation;
-      expect(reverted.id).toBe("rect-1");
-      expect(rectOf(reverted)).toEqual({ x: 100, y: 100, width: 150, height: 80 });
+      // Cancel = one more geometry edit restoring the snapshot's rect.
+      expect(onEditAnnotation).toHaveBeenCalledTimes(2);
+      expect(onEditAnnotation.mock.calls[1]?.[0]).toBe("rect-1");
+      expect(onEditAnnotation.mock.calls[1]?.[1]).toEqual({
+        rect: { x: 100, y: 100, width: 150, height: 80 },
+      });
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
     } finally {
       cleanup();
     }
@@ -247,8 +248,10 @@ describe("Phase 28 (c) — a colour change right after a move applies live and k
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
       if (shape === null) throw new Error("shape not found");
       dragSurface(layerOf(host), shape, [120, 120], [160, 140]);
-      expect(onCreate).toHaveBeenCalledTimes(1);
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({
+        rect: { x: 140, y: 120, width: 150, height: 80 },
+      });
 
       // Open the bar's picker and pick a built-in colour.
       clickEl(host.querySelector("[data-ann-color-box]"));
@@ -260,13 +263,13 @@ describe("Phase 28 (c) — a colour change right after a move applies live and k
       clickEl(swatch);
 
       // The colour patch went out for THIS annotation...
-      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
-      expect(onEditAnnotation.mock.calls[0]?.[0]).toBe("rect-1");
-      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({ color: "red" });
+      expect(onEditAnnotation).toHaveBeenCalledTimes(2);
+      expect(onEditAnnotation.mock.calls[1]?.[0]).toBe("rect-1");
+      expect(onEditAnnotation.mock.calls[1]?.[1]).toEqual({ color: "red" });
       // ...and the move was NOT reverted or dropped: no extra engine
       // ops, the draft still carries the moved rect + the new colour.
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
-      expect(onCreate).toHaveBeenCalledTimes(1);
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
       const moved = host.querySelector<SVGElement>(".ann-shape[data-annotation-id='rect-1']");
       expect(moved?.getAttribute("x")).toBe("140");
       expect(moved?.getAttribute("y")).toBe("120");

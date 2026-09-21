@@ -94,7 +94,14 @@ export interface TextPropertiesPanelProps {
    *  was placed or clicked. */
   text?: string | null;
   onTextChange?: (text: string) => void;
-  onTextCommit?: () => void;
+  /** Phase 26 — end the edit session (blur / target change) so the host
+   *  sends exactly ONE engine op for the session. Phase 29 (DEF-266) — a
+   *  style-control click moves focus into this card; the host receives the
+   *  new focus target and must NOT commit then, so the run stays active and
+   *  the controls compose. `relatedTarget` is the `focusout` target (the
+   *  element receiving focus), or null/undefined when the session really
+   *  ended. */
+  onTextCommit?: (relatedTarget?: EventTarget | null) => void;
   focusToken?: number;
 }
 
@@ -117,6 +124,20 @@ function numberOrNull(raw: string): number | null {
   if (raw.trim() === "") return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
+}
+
+/** Phase 29 (DEF-266) — true when a focus target lives inside the floating
+ *  text-properties card. When a style control (a number / colour input or a
+ *  select) takes focus, the host must keep the text session alive: committing
+ *  on that blur deselected the run and the remaining controls could no longer
+ *  compose. Exported so the host's `commitTextSession` and its unit tests use
+ *  the exact predicate. */
+export function isTextPanelFocusTarget(target: EventTarget | null | undefined): boolean {
+  return (
+    typeof Element !== "undefined" &&
+    target instanceof Element &&
+    target.closest("[data-text-panel-float]") !== null
+  );
 }
 
 /** A titled control group. */
@@ -206,6 +227,13 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
           className="text-props-body"
           data-text-panel
           data-text-panel-mode={annotationMode ? "annotation" : "text"}
+          onMouseDown={(e): void => {
+            // Phase 29 (DEF-266) — a style-button press must not blur the
+            // Text field: the blur committed the session and deselected the
+            // run, so the controls could not compose. Keeping focus leaves
+            // the still-active run session in place while the patch applies.
+            if ((e.target as Element).closest("button") !== null) e.preventDefault();
+          }}
         >
         {/* Phase 26 — the Text field: the single text-editing surface.
             Placement / click focus it through `focusToken`; every
@@ -225,7 +253,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
             }
             aria-label="Element text"
             onChange={(e): void => props.onTextChange?.(e.target.value)}
-            onBlur={(): void => props.onTextCommit?.()}
+            onBlur={(e): void => props.onTextCommit?.(e.relatedTarget)}
           />
         </Group>
         <Group title="Font">

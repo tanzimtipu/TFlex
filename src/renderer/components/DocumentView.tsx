@@ -39,7 +39,7 @@ import { SideRail } from "./SideRail";
 import { Toolbar } from "./Toolbar";
 import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
 import { EditToolbar, defaultEditHint } from "../edit/EditToolbar";
-import { TextPropertiesPanel } from "../edit/TextPropertiesPanel";
+import { TextPropertiesPanel, isTextPanelFocusTarget } from "../edit/TextPropertiesPanel";
 import {
   annotationStyleFromPanelPatch,
   applyPatchToValues,
@@ -56,11 +56,15 @@ import {
   annotationColorToCss,
   annotationToolReducer,
   initialAnnotationToolState,
+  rectGeometryPatch,
   type Annotation,
   type AnnotationPatch,
   type AnnotationTool,
   type AnnotationToolAction,
 } from "../annotations/model";
+import { ANN_TEXT_FONT_CSS } from "../annotations/annTextStyle";
+import { annTextMaxHeightPt, grownAnnTextRect } from "../annotations/annTextLayout";
+import { measureTextWidthCss } from "../edit/rasterize";
 import {
   CONTENT_PADDING_PX,
   mixedPageAtScrollTop,
@@ -722,9 +726,63 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // committed box's `isNew` flag on the ref the cleanup reads (DEF-257).
   const prevTextTargetKeyRef = useRef<string | null>(null);
   const prevTextTargetRef = useRef<TextTarget | null>(null);
-  /** Phase 26 — end the edit session and commit it as ONE engine op. */
-  const commitTextSession = useCallback((): void => {
-    const session = textEditRef.current;
+  // DEF-262 — mirrors so the stable commit / style callbacks read the latest
+  // annotation list and per-page sizes without becoming unstable.
+  const annotationsRef = useRef(annotations);
+  annotationsRef.current = annotations;
+  const pageSizesRef = useRef<Map<number, { w: number; h: number }>>(new Map());
+  /** DEF-262 — the rect a textbox / callout must be persisted at to hold its
+   *  current text + (optionally merged) style legibly. Null when the stored
+   *  rect already fits. This is the SAME growth rule the live overlay renders,
+   *  so the persisted rect and the on-screen height agree. */
+  const annGrownRect = useCallback(
+    (
+      ann: Annotation,
+      text: string,
+      style: import("../../shared/types").AnnTextStyle | undefined,
+    ): import("../annotations/model").PageRect | null => {
+      if (ann.kind !== "textbox" && ann.kind !== "callout") return null;
+      const rect = ann.rect;
+      if (rect === undefined) return null;
+      const font = style?.font ?? ann.style?.font ?? "Helvetica";
+      const measure = (t: string, s: number): number =>
+        measureTextWidthCss(t, ANN_TEXT_FONT_CSS[font], s);
+      const pageHeightPt = pageSizesRef.current.get(ann.page)?.h ?? 792;
+      return grownAnnTextRect({
+        kind: ann.kind,
+        rect,
+        text,
+        style,
+        maxHeightPt: annTextMaxHeightPt(pageHeightPt, rect.y),
+        measure,
+      });
+    },
+    [],
+  );
+  /** DEF-262 / Phase 30 — persist a text commit. When the text needs a taller
+   *  box the new rect rides `editAnnotation`'s in-place `rect` patch, so the
+   *  annotation keeps its id and the panel's selection survives the commit
+   *  (the old delete + re-create re-created it and fired a fresh selection
+   *  event asynchronously, which a zero-gap burst of style clicks could read
+   *  as a stale selection). Otherwise the plain text patch is enough. */
+  const persistAnnText = useCallback(
+    (ann: Annotation, text: string): void => {
+      const grown = annGrownRect(ann, text, ann.style);
+      const rect =
+        grown === null ? null : rectGeometryPatch(ann, { ...ann, rect: grown } as Annotation);
+      onEditAnnotation?.(ann.id, rect === null ? { text } : { text, rect });
+    },
+    [annGrownRect, onEditAnnotation],
+  );
+  /** Phase 26 — end the edit session and commit it as ONE engine op.
+   *  Phase 29 (DEF-266) — `relatedTarget` is the focus target the panel's
+   *  Text field reported on blur. When it is a control INSIDE the panel the
+   *  session must stay open (the user is composing styles on the still-active
+   *  run), so no commit happens and the run is not deselected. */
+  const commitTextSession = useCallback(
+    (relatedTarget?: EventTarget | null): void => {
+      if (isTextPanelFocusTarget(relatedTarget)) return;
+      const session = textEditRef.current;
     textEditRef.current = null;
     setTextEdit(null);
     if (session === null) return;
@@ -741,6 +799,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         return;
       }
       if (session.text === session.original) return;
+      const ann = annotationsRef.current.find((a) => a.id === target.id);
+      if (ann !== undefined) {
+        persistAnnText(ann, session.text);
+        return;
+      }
       onEditAnnotation?.(target.id, { text: session.text });
       return;
     }
@@ -782,7 +845,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     // A text run: the Edit overlay owns the run's rect AND the white
     // mask cover, so it performs the commit when the token flips.
     setTextCommitToken((n) => n + 1);
-  }, [onEditAnnotation, onDeleteAnnotation]);
+  }, [onEditAnnotation, onDeleteAnnotation, persistAnnText]);
   /** Phase 26 — a keystroke in the panel's Text field. The page follows
    *  immediately (annotation draft / box registry); the engine is
    *  untouched until the session commits. */
@@ -913,7 +976,28 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         const hasColor = patchColor !== undefined;
         if (selectedAnnText && selectedAnnotation !== null) {
           if (!hasStyle && !hasColor) return;
+          // DEF-262 / Phase 30 — a style control that needs a TALLER box (a
+          // bigger size, a list prefix, more indent, a longer line-height)
+          // must persist the grown rect too, else save + reopen shrinks the
+          // text back into the old one-line box. The grown rect and the new
+          // style ride ONE `editAnnotation` op (the engine applies the rect
+          // IN PLACE and merges the style), so the panel change is one undo
+          // step, the annotation keeps its id, and the selection the next
+          // control in a burst reads cannot go stale.
+          let grownRect: import("../../shared/types").AnnRect | null = null;
+          if (hasStyle) {
+            const mergedStyle = { ...selectedAnnotation.style, ...style };
+            const grown = annGrownRect(selectedAnnotation, selectedAnnotation.text, mergedStyle);
+            grownRect =
+              grown === null
+                ? null
+                : rectGeometryPatch(selectedAnnotation, {
+                    ...selectedAnnotation,
+                    rect: grown,
+                  } as Annotation);
+          }
           onEditAnnotation?.(selectedAnnotation.id, {
+            ...(grownRect === null ? {} : { rect: grownRect }),
             ...(hasStyle ? { style } : {}),
             ...(hasColor ? { color: editColorToHex(patchColor) } : {}),
           });
@@ -937,6 +1021,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       selectedAnnText,
       selectedAnnotation,
       onEditAnnotation,
+      annGrownRect,
       selectedTextBox,
       edit?.onTextStylePatch,
       textPanelDefaults,
@@ -975,6 +1060,9 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // slot re-reports its size when it re-renders, correcting any page
   // whose size actually changed (the cropped page itself).
   const [pageSizes, setPageSizes] = useState<Map<number, { w: number; h: number }>>(new Map());
+  // DEF-262 — the commit path reads the latest page sizes through this ref
+  // (declared above `commitTextSession`, which must stay stable).
+  pageSizesRef.current = pageSizes;
 
   const [zoom, dispatchZoom] = useReducer(zoomReducer, {
     mode: initial.zoomMode,

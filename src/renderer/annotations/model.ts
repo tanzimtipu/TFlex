@@ -6,7 +6,7 @@
 // stay aligned at every zoom level. The backend converts to the PDF's
 // bottom-left coordinate space when serializing /Annots.
 
-import type { AnnTextStyle } from "../../shared/types";
+import type { AnnRect, AnnTextStyle } from "../../shared/types";
 import { ANNOTATION_COLOR_NAMES } from "../../shared/annotationColors";
 
 // ---------------------------------------------------------------------------
@@ -239,21 +239,84 @@ export function firstPageOverAnnotationLimit(
  *  hex strings so the picker can apply custom colors. Phase 24 — `style` is
  *  the partial text-style patch for the text-bearing kinds; it is merged
  *  onto the stored style (absent fields preserve) and forwarded verbatim as
- *  `EditAnnotationPayload.style`. */
+ *  `EditAnnotationPayload.style`. Phase 30 — `rect` is the geometry patch the
+ *  engine applies IN PLACE (it regenerates `rects[0]`, keeping any extra
+ *  rects), so a move / auto-grow is ONE op with ONE undo snapshot instead of
+ *  delete + re-create. */
 export interface AnnotationPatch {
   color?: AnnotationColorValue;
   text?: string;
   style?: AnnTextStyle;
+  rect?: AnnRect;
+}
+
+/** True when a geometry patch is safe to send: every field finite and the
+ *  size strictly positive. The engine hard-rejects anything else with a
+ *  typed `engine-error` and mutates nothing, so the renderer must never
+ *  forward a degenerate rect (a zero-width resize, a NaN from an unresolved
+ *  page size). */
+export function isPositiveAnnRect(r: AnnRect): boolean {
+  return (
+    Number.isFinite(r.x) &&
+    Number.isFinite(r.y) &&
+    Number.isFinite(r.width) &&
+    Number.isFinite(r.height) &&
+    r.width > 0 &&
+    r.height > 0
+  );
+}
+
+/** The single-rect geometry patch that carries `next`'s new geometry over
+ *  `editAnnotation`, or null when the change is not expressible as one rect:
+ *  ink (`points`), arrow (`from`/`to`) and note (`at`) moves have no patch in
+ *  the shared edit payload, and an unchanged / degenerate rect is never sent.
+ *  Only the kinds whose wire geometry IS `rects[0]` qualify. */
+export function rectGeometryPatch(orig: Annotation, next: Annotation): AnnRect | null {
+  if (
+    next.kind !== "textbox" &&
+    next.kind !== "rect" &&
+    next.kind !== "ellipse" &&
+    next.kind !== "callout"
+  ) {
+    return null;
+  }
+  const r = next.rect;
+  if (r === undefined || !isPositiveAnnRect(r)) return null;
+  const before = (orig as { rect?: AnnRect }).rect;
+  if (
+    before !== undefined &&
+    before.x === r.x &&
+    before.y === r.y &&
+    before.width === r.width &&
+    before.height === r.height
+  ) {
+    return null;
+  }
+  return { x: r.x, y: r.y, width: r.width, height: r.height };
 }
 
 /** Apply a patch to an annotation. Returns the same object when the patch
  *  is empty or inapplicable (color applies to all kinds; text applies to
  *  markup snapshots, text boxes, notes and callouts; style applies to the
- *  text-bearing kinds). */
+ *  text-bearing kinds; rect applies to the single-rect kinds). */
 export function applyPatch(ann: Annotation, patch: AnnotationPatch): Annotation {
   let next = ann;
   if (patch.color !== undefined && patch.color !== ann.color) {
     next = { ...next, color: patch.color };
+  }
+  // Phase 30 — the in-place geometry patch. Mirrors the engine's own rule:
+  // only the single-rect kinds take it, and a degenerate rect is ignored
+  // (the engine would reject the whole op, so the local mirror must not
+  // pretend it landed).
+  if (
+    patch.rect !== undefined &&
+    (next.kind === "textbox" ||
+      next.kind === "rect" ||
+      next.kind === "ellipse" ||
+      next.kind === "callout") &&
+    isPositiveAnnRect(patch.rect)
+  ) {
+    next = { ...next, rect: { ...patch.rect } };
   }
   if (
     patch.text !== undefined &&
