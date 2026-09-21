@@ -13,6 +13,7 @@
 //
 // Test order (serial): the VERSION GATE runs first; a mismatch aborts the
 // remaining tests. Then the CORE feature set that must never regress:
+//   0. Help > About: package.json version + a non-empty What's New highlight
 //   1. annotation toolbar + edit toggle guard (DEF-214)
 //   2. text panel's live field
 //   3. annotation colour picker dismissal
@@ -125,6 +126,30 @@ test('VERSION GATE: installed FileVersion and app.getVersion() match package.jso
     expect(mm(fv), 'installed exe FileVersion (from package.json expected)').toBe(mm(EXPECTED));
     expect(av, 'installed app.getVersion()').toBe(EXPECTED);
   }, 'canonical-version');
+});
+
+// ===========================================================================
+// ABOUT: Help > About reports the package.json version and What's New
+// ===========================================================================
+test("ABOUT: Help > About reports the package.json version and a non-empty What's New highlight", async () => {
+  await withApp(async (win, pageErrors) => {
+    // Help > About TFlex via the title-bar application menu (real user action).
+    await win.click('[data-menu-button]');
+    await win.waitForSelector('[data-menu-popover]', { timeout: 10000 });
+    await win.click('[data-menu-action="about"]');
+    await win.waitForSelector('[data-about-dialog]:visible', { timeout: 15000 });
+
+    const version = (await win.locator('[data-about-version]').innerText()).trim();
+    const highlights = win.locator('[data-whats-new-highlight]');
+    const count = await highlights.count();
+    const texts = (await highlights.allInnerTexts()).map((t) => t.trim());
+    log('about', { version, highlightCount: count, firstHighlight: texts[0] ?? '' });
+
+    expect(version, '[data-about-version] equals the package.json version').toBe(EXPECTED);
+    expect(count, "at least one What's New highlight line").toBeGreaterThan(0);
+    for (const t of texts) expect(t.length, "What's New highlight has non-empty text").toBeGreaterThan(0);
+    expect(pageErrors, 'zero uncaught renderer page errors').toEqual([]);
+  }, 'canonical-about');
 });
 
 // ===========================================================================

@@ -2801,3 +2801,45 @@ rendering, the empty-state probe, the changelog module probe, the crash probes).
 suppress screenshots deliberately so the recorded failure images
 (`screenshots/adv-p31-crash-*.png`) survive as "before" evidence - keep that convention when re-running
 a crash probe.
+
+## 2026-09-21: Release 1.24.0 published - the release procedure lessons (read before the next release)
+
+Release 1.24.0 (Phase 30 print + Phase 31 What's New + DEF-274/275/276) is published:
+https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.24.0 with all four assets, and the public
+feed verifies (`latest.yml` -> `version: 1.24.0`, sha512 `i1Eksa8H...`). Commits `88ec1a1` (Phase 30),
+`47984e6` (Phase 31 + fixes), `9783570` (bump), `5fcc7ba` (release notes + the test fix), tag `v1.24.0`.
+
+**`npm.cmd run dist` ALREADY ends in `--publish never`.** Appending `--publish never` to it produces
+`electron-builder --publish never never`, which aborts with `Unknown argument: never` and builds
+NOTHING. The correct release command is plain `npm.cmd run dist`. (The orchestrator's dispatch said
+`npm run dist --publish never`; git-agent caught it and re-ran correctly. Do not repeat it.)
+
+**`verify:full` BEFORE the push caught a real blocker.** The 1.24.0 push gate failed on one stale unit
+test - `whatsNew.test.ts` asserted `whatsNewHistory('1.23.1', 100000) === WHATS_NEW.slice(1)`, an
+expectation valid only while `1.23.1` was the changelog HEAD. Adding the `1.24.0` entry (correctly, at
+the top) broke it. This is exactly the failure that used to reach CI and mail the operator after every
+release: run `verify:full` locally, fix the red test, then push. Class of bug to avoid: any test that
+asserts against a fixed slice of an append-at-the-top list must derive the expected window from the
+named element's INDEX (`WHATS_NEW.findIndex(e => e.version === v) + 1`), never `slice(1)`.
+
+**The release sequence that worked (1.24.0):**
+1. A developer adds the new version's `WHATS_NEW` entry (the release gate is RED until the bump lands -
+   that is expected; do not let the dev "fix" it by touching `package.json`).
+2. git-agent bumps both manifests (`npm.cmd version X.Y.Z --no-git-tag-version` +
+   `npm.cmd install --package-lock-only`), cleans `dist/` and `release/win-unpacked/`, runs
+   `npm.cmd run build` and `npm.cmd run dist`, and commits the bump - no push, no tag.
+3. qa runs the gates: `verify:full` green (286 files / 3791 tests), the silent install gate
+   (`release\TFlex-Setup-X.Y.Z.exe /S`, then verify the INSTALLED version), the canonical installed
+   spec, and a probe that the installed build's About shows the new version and its highlights.
+4. git-agent commits any remaining release-prep files, tags `vX.Y.Z`, pushes branch + tag, and creates
+   the GitHub Release in `tanzimtipu/tflex-releases` with the four assets and a body generated from the
+   version's highlights (plain text - it becomes the About dialog's incoming-update notes).
+5. The orchestrator verifies the public feed with `webfetch` on
+   `.../releases/download/vX.Y.Z/latest.yml` (version + sha512 must match the local build).
+
+**Canonical installed-build spec - the per-version rule, applied.** A release-specific installed spec
+is not kept: qa folded the version-agnostic part of its 1.24.0 About probe into
+`e2e/installed/canonical_installed_build.spec.cjs` (assert `[data-about-version]` equals the
+`package.json` version - never a hardcoded string - and at least one non-empty What's New highlight)
+and deleted the per-version file. The canonical spec now has 9 tests and reads the expected version
+from `package.json`.
