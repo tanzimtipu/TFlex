@@ -181,17 +181,22 @@ describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag"
     }
   });
 
-  it("Phase 28 — dragging the ARROW commits the anchor move on pointerup (no Confirm), box rect untouched", () => {
-    const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [CALLOUT_ANN] });
+  it("Phase 28/DEF-267 — dragging the ARROW commits the anchor move on pointerup (no Confirm) as ONE `at` edit, box rect untouched", () => {
+    const { host, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [CALLOUT_ANN] });
     try {
       const layer = layerOf(host);
       const shaft = arrowSvg(host).querySelector(".ann-callout-arrow-hit");
       if (shaft === null) throw new Error("shaft hit not found");
       // Press mid-shaft (75,80), drag +20/+20 to (95,100).
       dragSurface(layer, shaft, [75, 80], [95, 100]);
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
-      expect(onDeleteAnnotation.mock.calls[0]?.[0]).toBe("callout-1");
-      expect(onCreate).toHaveBeenCalledTimes(1);
+      // DEF-267 — the anchor-only drag is ONE in-place `at` edit on the same
+      // id (the old delete + re-create is gone), and it carries NO rect: the
+      // box never moves.
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation.mock.calls[0]?.[0]).toBe("callout-1");
+      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({ at: { x: 70, y: 80 } });
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
       // The arrow re-aims live: the draft moves `at` to (70,80) while
       // the box rect stays put.
       const shaftAfter = arrowSvg(host).querySelector(".ann-callout-arrow-hit");
@@ -199,27 +204,27 @@ describe("DEF-161 — callout arrow gets its own hit surface + anchor-only drag"
       expect(shaftAfter?.getAttribute("y2")).toBe("80");
       expect(boxDiv(host).style.left).toBe("100px");
       expect(boxDiv(host).style.top).toBe("100px");
-      const created = onCreate.mock.calls[0]?.[0] as Annotation;
-      expect(created.id).toBe("callout-1");
-      expect(created.kind).toBe("callout");
-      const c = created as { rect: { x: number; y: number; width: number; height: number }; at: { x: number; y: number } };
-      expect(c.at).toEqual({ x: 70, y: 80 });
-      expect(c.rect).toEqual({ x: 100, y: 100, width: 120, height: 36 });
     } finally {
       cleanup();
     }
   });
 
   it("dragging the BOX moves ONLY the rect — the arrow anchor stays fixed (independent move)", () => {
-    const { host, onCreate, cleanup } = mountOverlay({ annotations: [CALLOUT_ANN] });
+    const { host, onEditAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [CALLOUT_ANN] });
     try {
       const layer = layerOf(host);
       dragSurface(layer, boxDiv(host), [120, 120], [150, 140]);
-      const created = onCreate.mock.calls[0]?.[0] as Annotation;
-      const c = created as { rect: { x: number; y: number; width: number; height: number }; at: { x: number; y: number } };
-      // Delta (30,20) applied to the rect only.
-      expect(c.rect).toEqual({ x: 130, y: 120, width: 120, height: 36 });
-      expect(c.at).toEqual({ x: 50, y: 60 });
+      // Delta (30,20) applied to the rect only; the patch carries no `at`.
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation.mock.calls[0]?.[0]).toBe("callout-1");
+      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({
+        rect: { x: 130, y: 120, width: 120, height: 36 },
+      });
+      expect(onCreate).not.toHaveBeenCalled();
+      // The anchor is untouched in the rendered draft.
+      const shaft = arrowSvg(host).querySelector(".ann-callout-arrow-hit");
+      expect(shaft?.getAttribute("x2")).toBe("50");
+      expect(shaft?.getAttribute("y2")).toBe("60");
     } finally {
       cleanup();
     }

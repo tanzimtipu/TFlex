@@ -242,12 +242,27 @@ export function firstPageOverAnnotationLimit(
  *  `EditAnnotationPayload.style`. Phase 30 — `rect` is the geometry patch the
  *  engine applies IN PLACE (it regenerates `rects[0]`, keeping any extra
  *  rects), so a move / auto-grow is ONE op with ONE undo snapshot instead of
- *  delete + re-create. */
+ *  delete + re-create.
+ *
+ *  DEF-267 — the payload grew the remaining per-kind geometry keys, so a move
+ *  of EVERY movable kind is now expressible in one op: `points` for an ink
+ *  stroke, `from`/`to` for an arrow, `at` for a note icon anchor or a callout
+ *  leader anchor. The engine validates each key against the annotation's kind
+ *  first (kind-mismatch / non-finite / degenerate rejects the whole edit with
+ *  a typed error and mutates nothing), so `geometryPatchFor` below only ever
+ *  produces the keys the target kind accepts. */
 export interface AnnotationPatch {
   color?: AnnotationColorValue;
   text?: string;
   style?: AnnTextStyle;
   rect?: AnnRect;
+  /** Ink-only — the replacement stroke points. */
+  points?: PagePoint[];
+  /** Arrow-only — the replacement endpoints (must be sent together). */
+  from?: PagePoint;
+  to?: PagePoint;
+  /** Note / callout only — the replacement icon / leader anchor. */
+  at?: PagePoint;
 }
 
 /** True when a geometry patch is safe to send: every field finite and the
@@ -295,6 +310,110 @@ export function rectGeometryPatch(orig: Annotation, next: Annotation): AnnRect |
   return { x: r.x, y: r.y, width: r.width, height: r.height };
 }
 
+/** True when a point is safe to forward: both coordinates finite. The engine
+ *  additionally requires non-negative coordinates; the renderer's own move
+ *  math can land a shape off-page, and the engine's typed rejection is the
+ *  loud failure for that case. The renderer never sends NaN / Infinity. */
+export function isFiniteAnnPoint(p: PagePoint | undefined): p is PagePoint {
+  return p !== undefined && Number.isFinite(p.x) && Number.isFinite(p.y);
+}
+
+function samePoints(a: readonly PagePoint[], b: readonly PagePoint[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    const p = a[i];
+    const q = b[i];
+    if (p === undefined || q === undefined) return false;
+    if (p.x !== q.x || p.y !== q.y) return false;
+  }
+  return true;
+}
+
+/** Resolve an arrow's endpoints, falling back to the wire `points` pair for
+ *  a round-tripped arrow whose renderer blob did not survive IPC. */
+function resolveArrowEnds(a: ArrowAnnotation): { from: PagePoint; to: PagePoint } | null {
+  const wire = a as ArrowAnnotation & { points?: PagePoint[] | undefined };
+  const from = a.from ?? wire.points?.[0];
+  const to = a.to ?? wire.points?.[1];
+  if (from === undefined || to === undefined) return null;
+  return { from, to };
+}
+
+/** DEF-267 — the single geometry patch that persists a move / resize of
+ *  `next` over `orig` as ONE `editAnnotation` op, or null when nothing
+ *  changed or the change is not expressible:
+ *
+ *    textbox / rect / ellipse -> `{ rect }` when the box actually changed;
+ *    callout                  -> `{ rect }`, `{ at }`, or `{ rect, at }`
+ *                                when both the box and the leader anchor
+ *                                moved (the DEF-161 anchor-only drag sends
+ *                                `at` alone);
+ *    ink                      -> `{ points }` when the stroke changed;
+ *    arrow                    -> `{ from, to }` when either endpoint changed;
+ *    note                     -> `{ at }` when the anchor changed.
+ *
+ *  Every value is validated before it is returned: a degenerate / non-finite
+ *  point or a non-positive rect yields null (no op) rather than a payload the
+ *  engine would hard-reject — and because the caller then sends nothing, a
+ *  rejected edit is never attempted twice. Markup kinds (highlight /
+ *  underline / strikeout) carry multi-rect geometry with no page move surface,
+ *  so they are not expressible here and never reach this builder. */
+export function geometryPatchFor(orig: Annotation, next: Annotation): AnnotationPatch | null {
+  if (next.kind !== orig.kind) return null;
+  switch (next.kind) {
+    case "ink": {
+      if (orig.kind !== "ink") return null;
+      if (samePoints(orig.points, next.points)) return null;
+      if (next.points.length < 2) return null;
+      if (!next.points.every(isFiniteAnnPoint)) return null;
+      return { points: next.points.map((p) => ({ x: p.x, y: p.y })) };
+    }
+    case "arrow": {
+      if (orig.kind !== "arrow") return null;
+      const before = resolveArrowEnds(orig);
+      const after = resolveArrowEnds(next);
+      if (before === null || after === null) return null;
+      if (
+        before.from.x === after.from.x &&
+        before.from.y === after.from.y &&
+        before.to.x === after.to.x &&
+        before.to.y === after.to.y
+      ) {
+        return null;
+      }
+      if (!isFiniteAnnPoint(after.from) || !isFiniteAnnPoint(after.to)) return null;
+      return { from: { x: after.from.x, y: after.from.y }, to: { x: after.to.x, y: after.to.y } };
+    }
+    case "note": {
+      if (orig.kind !== "note") return null;
+      if (!isFiniteAnnPoint(next.at)) return null;
+      if (orig.at.x === next.at.x && orig.at.y === next.at.y) return null;
+      return { at: { x: next.at.x, y: next.at.y } };
+    }
+    case "textbox":
+    case "rect":
+    case "ellipse": {
+      const rect = rectGeometryPatch(orig, next);
+      return rect === null ? null : { rect };
+    }
+    case "callout": {
+      if (orig.kind !== "callout") return null;
+      const patch: AnnotationPatch = {};
+      const rect = rectGeometryPatch(orig, next);
+      if (rect !== null) patch.rect = rect;
+      if (
+        isFiniteAnnPoint(next.at) &&
+        (orig.at === undefined || orig.at.x !== next.at.x || orig.at.y !== next.at.y)
+      ) {
+        patch.at = { x: next.at.x, y: next.at.y };
+      }
+      return patch.rect === undefined && patch.at === undefined ? null : patch;
+    }
+    default:
+      return null;
+  }
+}
+
 /** Apply a patch to an annotation. Returns the same object when the patch
  *  is empty or inapplicable (color applies to all kinds; text applies to
  *  markup snapshots, text boxes, notes and callouts; style applies to the
@@ -317,6 +436,40 @@ export function applyPatch(ann: Annotation, patch: AnnotationPatch): Annotation 
     isPositiveAnnRect(patch.rect)
   ) {
     next = { ...next, rect: { ...patch.rect } };
+  }
+  // DEF-267 — the per-kind geometry keys the engine applies IN PLACE,
+  // mirrored with the engine's own kind rules: `points` is ink-only,
+  // `from`/`to` are arrow-only (and must arrive together), `at` is
+  // note / callout-only. A malformed value is ignored here for the same
+  // reason as a degenerate rect: the engine would reject the whole edit, so
+  // the local mirror must not pretend it landed.
+  if (
+    patch.points !== undefined &&
+    next.kind === "ink" &&
+    patch.points.length >= 2 &&
+    patch.points.every(isFiniteAnnPoint)
+  ) {
+    next = { ...next, points: patch.points.map((p) => ({ x: p.x, y: p.y })) };
+  }
+  if (
+    patch.from !== undefined &&
+    patch.to !== undefined &&
+    next.kind === "arrow" &&
+    isFiniteAnnPoint(patch.from) &&
+    isFiniteAnnPoint(patch.to)
+  ) {
+    next = {
+      ...next,
+      from: { x: patch.from.x, y: patch.from.y },
+      to: { x: patch.to.x, y: patch.to.y },
+    };
+  }
+  if (
+    patch.at !== undefined &&
+    (next.kind === "note" || next.kind === "callout") &&
+    isFiniteAnnPoint(patch.at)
+  ) {
+    next = { ...next, at: { x: patch.at.x, y: patch.at.y } };
   }
   if (
     patch.text !== undefined &&

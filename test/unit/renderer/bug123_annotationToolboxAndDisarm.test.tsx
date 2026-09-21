@@ -4,19 +4,21 @@
 //   - Bug 1: opening an edit toolbox (double-click / bar Edit)
 //     disarms the annotation CREATION tool (onDisarmTool).
 //   - Bug 2: confirming a move does NOT snap the content back to the
-//     engine's original position while the delete+recreate echo
-//     round-trips — the draft stays until the recreated annotation
-//     (same id + geometry) lands in the list.
+//     engine's original position while the edit echo round-trips — the draft
+//     stays until the edited annotation (same id + geometry) lands in the
+//     list.
 //   - Bug 3: dragging the NOTE EDITOR toolbox moves the note WITH it
 //     — Confirm commits the anchor shifted by the toolbox's drag
-//     offset (delete + re-create at the moved position).
+//     offset (one in-place `at` edit, DEF-267).
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
 import { AnnotationOverlay } from "../../../src/renderer/annotations/AnnotationOverlay";
-import type {
-  Annotation,
-  AnnotationToolState,
+import {
+  applyPatch,
+  type Annotation,
+  type AnnotationPatch,
+  type AnnotationToolState,
 } from "../../../src/renderer/annotations/model";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -172,36 +174,41 @@ describe("Bug 1 / Phase 26 — clicking a text element disarms the armed creatio
 });
 
 describe("Bug 2 — confirming a move does not snap the content back to the original position", () => {
-  it("after Confirm the note stays at the MOVED position while the recreate echo is pending, then the echo clears the draft", () => {
-    const { host, root, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({
+  it("after Confirm the note stays at the MOVED position while the edit echo is pending, then the echo clears the draft", () => {
+    const { host, root, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({
       annotations: [NOTE_ANN],
     });
     try {
       const icon = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
       const layer = host.querySelector<HTMLElement>("[data-annotation-layer='1']");
       if (icon === null || layer === null) throw new Error("note / layer not found");
-      // Drag the note by (+30, +30) client px (cssScale 1). This parks
-      // a PENDING move; the engine list still has the ORIGINAL note.
+      // Drag the note by (+30, +30) client px (cssScale 1). The move
+      // commits on pointerup; the engine list still has the ORIGINAL note.
       press(icon, 65, 305);
       moveOn(layer, 95, 335);
       releaseOn(layer, 95, 335);
       clickEl(barConfirm(host));
-      // The delete + recreate were issued.
-      expect(onDeleteAnnotation).toHaveBeenCalledWith("note-1");
-      expect(onCreate).toHaveBeenCalledTimes(1);
-      const created = onCreate.mock.calls[0]?.[0] as Annotation & { at: { x: number; y: number } };
-      expect(created.at).toEqual({ x: 90, y: 330 });
-      // Bug 2 — the draft must KEEP the moved geometry until the
-      // recreate-echo lands: the rendered note reads the draft
-      // override, so it shows the MOVED position even though the
-      // annotations prop still holds the original note.
+      // DEF-267 — the move is ONE in-place edit of the note's `at` anchor.
+      // The old delete + re-create (and the fresh selection event it fired)
+      // is gone.
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation.mock.calls[0]?.[0]).toBe("note-1");
+      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({ at: { x: 90, y: 330 } });
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
+      // Bug 2 — the draft must KEEP the moved geometry until the edit
+      // echo lands: the rendered note reads the draft override, so it shows
+      // the MOVED position even though the annotations prop still holds the
+      // original note.
       const rendered = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
       if (rendered === null) throw new Error("note not rendered after confirm");
       expect(rendered.style.left).toBe("90px");
       expect(rendered.style.top).toBe("330px");
-      // Simulate the engine echo: the recreated annotation (same id +
-      // moved geometry) arrives in the list. The draft clears and the
-      // note is STILL at the moved position — no visual snap-back.
+      // Simulate the engine echo: the in-place edit returns the SAME id with
+      // the moved anchor. The draft clears and the note is STILL at the moved
+      // position — no visual snap-back.
+      const patch = onEditAnnotation.mock.calls[0]?.[1] as AnnotationPatch;
+      const echoed = applyPatch(NOTE_ANN, patch);
       act((): void => {
         root.render(
           <AnnotationOverlay
@@ -209,7 +216,7 @@ describe("Bug 2 — confirming a move does not snap the content back to the orig
             widthPt={612}
             heightPt={792}
             cssScale={1}
-            annotations={[created]}
+            annotations={[echoed]}
             tool={SELECT_TOOL}
             flashId={null}
             getTextItems={(): never[] => []}
@@ -232,7 +239,7 @@ describe("Bug 2 — confirming a move does not snap the content back to the orig
 
 describe("Bug 3 — dragging the note moves it with the selection chrome", () => {
   it("Confirm after dragging the note icon commits it at the shifted anchor", () => {
-    const { host, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({
+    const { host, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({
       annotations: [NOTE_ANN],
     });
     try {
@@ -250,11 +257,12 @@ describe("Bug 3 — dragging the note moves it with the selection chrome", () =>
       const confirm = host.querySelector<HTMLButtonElement>("[data-content-action='ann-note-confirm']");
       if (confirm === null) throw new Error("note confirm not found");
       clickEl(confirm);
-      // Commit = delete + re-create at the shifted anchor.
-      expect(onDeleteAnnotation).toHaveBeenCalledWith("note-1");
-      const created = onCreate.mock.calls[0]?.[0] as Annotation & { at: { x: number; y: number } };
-      expect(created.kind).toBe("note");
-      expect(created.at).toEqual({ x: 90, y: 330 });
+      // DEF-267 — commit = ONE in-place `at` edit at the shifted anchor.
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation.mock.calls[0]?.[0]).toBe("note-1");
+      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({ at: { x: 90, y: 330 } });
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
     } finally {
       cleanup();
     }

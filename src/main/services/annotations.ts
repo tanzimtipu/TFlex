@@ -319,6 +319,56 @@ function validatePoint(p: unknown): AnnPoint {
   return { x, y };
 }
 
+/** DEF-267 — ceiling on an ink stroke's point count on the EDIT path. The
+ *  create path enforces only the `MIN_INK_POINTS = 2` minimum (the renderer
+ *  commits a bounded pointer-captured stroke). A hostile edit payload could
+ *  otherwise carry an unbounded `points` array and inflate an annotation dict
+ *  without limit, so the in-place `points` patch is bounded here. Chosen
+ *  well above any real freehand stroke (a full-page drag samples a few
+ *  hundred points) while still rejecting a multi-megabyte payload. */
+export const MAX_EDIT_INK_POINTS = 10000;
+
+/** Validate an ink stroke point array off the wire: a non-empty array of at
+ *  least two finite points, bounded by `MAX_EDIT_INK_POINTS` (DEF-267). Reuses
+ *  the create path's per-point `validatePoint` rule. Returns a clean copy. */
+function validateInkPoints(raw: unknown): AnnPoint[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new Error('Ink points must be a non-empty array of { x, y }');
+  }
+  if (raw.length > MAX_EDIT_INK_POINTS) {
+    throw new Error(`Ink stroke exceeds the maximum of ${MAX_EDIT_INK_POINTS} points`);
+  }
+  const pts = raw.map((p) => validatePoint(p));
+  if (pts.length < 2) {
+    throw new Error('Ink annotation requires at least two points');
+  }
+  return pts;
+}
+
+/** DEF-267 — replace `rects[0]` with `primary`, preserving any extra rects
+ *  beyond [0] for multi-rect kinds (the same rule the Phase-28 `rect` patch
+ *  and the create path use). */
+function replacePrimaryRect(ann: AnnModel, primary: AnnRect): void {
+  ann.rects = ann.rects.length > 1 ? [primary, ...ann.rects.slice(1)] : [primary];
+}
+
+/** Bounding box of a point list (min/max extent), exactly like the create
+ *  path's ink and arrow branches. A zero-area bbox is acceptable for those
+ *  kinds: their real geometry lives in /InkList or /L. */
+function pointsBBox(pts: AnnPoint[]): AnnRect {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of pts) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
 /**
  * Normalize the renderer's Annotation shape (which uses different key names
  * per kind — `rect`, `from`/`to`, `at`, 'textbox' kind, etc.) into our
@@ -575,24 +625,77 @@ export function editAnnotation(
   const [origIdx, i] = found;
   const ann = annotations[origIdx][i];
 
-  // Phase 28 — geometry patch. Validated FIRST so a malformed rect rejects the
-  // whole edit with nothing mutated (the create path does the same via
-  // normalizeAnnotationPayload). Regenerate rects[0] from the supplied rect and
-  // keep any extra rects beyond [0] for multi-rect kinds, mirroring the create
-  // path exactly (DEF-160/161/162 semantics). This makes a move / auto-grow a
-  // single op with one undo snapshot instead of delete + re-create, so a burst
-  // of style clicks cannot race a fresh selection event.
-  if (payload.rect !== undefined) {
-    let primary: AnnRect;
-    try {
-      primary = validateRect(payload.rect);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return err('engine-error', msg);
+  // Phase 28 / DEF-267 — geometry patch. EVERY geometry key is validated
+  // FIRST, into a plan, so a malformed or kind-mismatched value rejects the
+  // whole edit with a typed engine-error and MUTATES NOTHING (not even a
+  // valid `rect` that rode along). The plan is then applied in place, in one
+  // shot, so a move is ONE op with ONE undo snapshot instead of delete +
+  // re-create. Derivation mirrors `normalizeAnnotationPayload`'s per-kind
+  // branches exactly (DEF-160/161/162 semantics: the primary geometry key is
+  // authoritative for single-rect kinds and any extra rects beyond [0] are
+  // preserved for multi-rect kinds).
+  let rectPrimary: AnnRect | undefined;
+  let inkPoints: AnnPoint[] | undefined;
+  let anchor: AnnPoint | undefined;
+  let arrowPoints: AnnPoint[] | undefined;
+
+  try {
+    // `rect` keeps its existing permissive behaviour (valid on any kind).
+    if (payload.rect !== undefined) {
+      rectPrimary = validateRect(payload.rect);
     }
-    ann.rects = ann.rects.length > 1
-      ? [primary, ...ann.rects.slice(1)]
-      : [primary];
+    if (payload.points !== undefined) {
+      if (ann.kind !== 'ink') {
+        throw new Error(`points is not valid for annotation kind "${ann.kind}" (ink only)`);
+      }
+      inkPoints = validateInkPoints(payload.points);
+    }
+    if (payload.from !== undefined || payload.to !== undefined) {
+      if (ann.kind !== 'arrow') {
+        throw new Error(`from/to are not valid for annotation kind "${ann.kind}" (arrow only)`);
+      }
+      if (payload.from === undefined || payload.to === undefined) {
+        throw new Error('from and to must be supplied together');
+      }
+      arrowPoints = [validatePoint(payload.from), validatePoint(payload.to)];
+    }
+    if (payload.at !== undefined) {
+      if (ann.kind !== 'note' && ann.kind !== 'callout') {
+        throw new Error(`at is not valid for annotation kind "${ann.kind}" (note/callout only)`);
+      }
+      anchor = validatePoint(payload.at);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return err('engine-error', msg);
+  }
+
+  // --- apply the validated plan (no further failure paths below) ---
+  if (rectPrimary !== undefined) {
+    replacePrimaryRect(ann, rectPrimary);
+  }
+  if (inkPoints !== undefined) {
+    ann.points = inkPoints;
+    replacePrimaryRect(ann, pointsBBox(inkPoints));
+  }
+  if (arrowPoints !== undefined) {
+    ann.points = arrowPoints;
+    replacePrimaryRect(ann, pointsBBox(arrowPoints));
+  }
+  if (anchor !== undefined) {
+    ann.at = anchor;
+    if (ann.kind === 'note') {
+      // note: the icon is anchored at `at` — derive the 24x24 icon rect
+      // exactly like the create path's `at` branch does.
+      replacePrimaryRect(ann, { x: anchor.x, y: anchor.y, width: 24, height: 24 });
+    } else if (ann.points !== undefined && ann.points.length >= 2) {
+      // callout with an explicit leader: `at` IS the leader's last point
+      // (parse reads it back that way), so re-aim the leader at the new
+      // anchor while keeping the start/knee. A callout without explicit
+      // points derives its leader from the box centre to `at` at serialize
+      // time, so storing `at` alone is enough.
+      ann.points = [...ann.points.slice(0, -1), anchor];
+    }
   }
 
   if (payload.color !== undefined) {
@@ -623,6 +726,7 @@ export function editAnnotation(
     ...ann,
     rects: ann.rects.map((r) => ({ ...r })),
     points: ann.points?.map((p) => ({ ...p })),
+    at: ann.at !== undefined ? { ...ann.at } : undefined,
     lineEnds: ann.lineEnds?.slice(),
     style: ann.style !== undefined
       ? { ...ann.style, highlight: ann.style.highlight ? { ...ann.style.highlight } : undefined }

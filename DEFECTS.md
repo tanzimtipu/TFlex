@@ -7,7 +7,7 @@
 
 ## DEF-267: Non-box annotation moves still use delete + re-create; a sub-millisecond style burst after the move can drop a field
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: LOW
 - Found by: qa
 - Phase: 30 (rect-op switch verification)
@@ -26,6 +26,7 @@ Screenshot: n/a (engine-state evidence; `e2e/retests/def267_nonbox_move_race.spe
 
 History:
 - qa: opened (Phase 30 rect-op switch verification. `npm.cmd run test:e2e -- e2e/retests/def267_nonbox_move_race.spec.cjs`: `[DEF267] undo1 notes=0 restored=false -> DELETE+CREATE (2 ops)`; `realisticBoldStuck=true`; `tightBurstMissing 3a=[] 3b=[]` -> `NO-DROP (INCONCLUSIVE for the sub-ms race)`. The exposed `window.tflex.engine` API is frozen, so op counting was done via the undo stack.)
+- qa: CLOSED (2026-09-21 FIX-READY retest; `e2e/retests/def267_nonbox_move_race.spec.cjs` 5/5, `npm.cmd run verify` exit 0). The one-op property is now asserted directly per kind: the annotation id is unchanged AND ONE undo restores the previous geometry with no duplicate. INK: id unchanged, one undo restored the original stroke (`count=1`), every point shifted by the drag delta `(35.41, 22.76)`, zero-gap action-bar colour burst `green->blue` stuck on the same id and kept the moved stroke, save+reopen identical. ARROW: id unchanged, one undo restored both endpoints, `from`/`to` shifted by `(40.46, 25.29)`, colour burst kept both moved endpoints, reopen identical. NOTE: id unchanged, one undo restored the anchor, `at` shifted by `(30.35, 20.23)`, zero-gap panel burst `bold/align-center/list-bullet/indent-inc` all stuck on the same id and kept the moved anchor, reopen identical. CALLOUT ANCHOR: id unchanged, one undo restored the anchor, `at` shifted by `(27.82, 17.70)` with the box `rect` untouched, colour burst kept the moved anchor, reopen identical. KIND-MISMATCH fail-loud via the engine API: `points` on a note -> `engine-error` `points is not valid for annotation kind "note" (ink only)`; `from`/`to` on a rect -> `engine-error` `from/to are not valid for annotation kind "rect" (arrow only)`; both left the geometry unchanged and added no undo entry (one undo removed the last real op, the rect create). Touched unit specs: `test/unit/main/annotations.test.ts` 154, `def267_annMoveAllKinds.test.tsx` 16, `defDEF153_154_committedAnnotations.test.tsx` 12, `defDEF161_calloutArrowHit.test.tsx` 5 -> 187 passed.)
 
 ## DEF-262: Annotation textbox / callout multi-line text is shrunk to the 4pt floor instead of wrapping, and the Size control has no visible effect
 

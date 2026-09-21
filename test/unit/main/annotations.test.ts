@@ -17,6 +17,7 @@ import {
 import { EngineService } from '../../../src/main/services/engine';
 import {
   ANN_COLORS,
+  MAX_EDIT_INK_POINTS,
   colorToRgb,
   isValidColorValue,
   nearestAnnColor,
@@ -3558,6 +3559,446 @@ describe('Phase 28 — editAnnotation rect (one-op geometry patch)', () => {
       const ann = getAnns(u.value).find((a: any) => a.id === 'rect-d');
       expect(ann?.rects).toEqual([A]);
       expect((ann?.style as any)?.size).toBe(12);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-267 — editAnnotation geometry patches for the non-box kinds: ink
+// `points`, arrow `from`+`to`, note/callout `at`. Each move is ONE in-place op
+// with ONE undo snapshot; malformed and kind-mismatched values reject with a
+// typed engine-error and mutate nothing.
+// ---------------------------------------------------------------------------
+
+describe('DEF-267 — editAnnotation ink points (one-op geometry patch)', () => {
+  const ptsA = [{ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 20, y: 0 }];
+  const ptsB = [{ x: 5, y: 50 }, { x: 15, y: 60 }, { x: 25, y: 50 }];
+  const bboxA = { x: 0, y: 0, width: 20, height: 10 };
+  const bboxB = { x: 5, y: 50, width: 20, height: 10 };
+
+  async function inkDoc(docId: string, id = 'ink-1') {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument(docId, path);
+    await engine.createAnnotation(docId, {
+      id,
+      kind: 'ink',
+      page: 1,
+      color: 'blue',
+      points: ptsA,
+      width: 2,
+    });
+    return engine;
+  }
+
+  it('(a) points move the stroke + rects[0] and ONE undo restores both', async () => {
+    const engine = await inkDoc('doc-ink-a');
+    const moved = await engine.editAnnotation('doc-ink-a', 'ink-1', { points: ptsB });
+    expect(moved.ok).toBe(true);
+    if (moved.ok) {
+      const ann = getAnns(moved.value).find((a: any) => a.id === 'ink-1');
+      expect(ann?.points).toEqual(ptsB);
+      expect(ann?.rects).toEqual([bboxB]);
+    }
+    const u1 = await engine.undo('doc-ink-a');
+    expect(u1.ok).toBe(true);
+    if (u1.ok) {
+      const ann = getAnns(u1.value).find((a: any) => a.id === 'ink-1');
+      expect(ann?.points).toEqual(ptsA);
+      expect(ann?.rects).toEqual([bboxA]);
+    }
+    const u2 = await engine.undo('doc-ink-a');
+    expect(u2.ok).toBe(true);
+    if (u2.ok) {
+      expect(getAnns(u2.value).find((a: any) => a.id === 'ink-1')).toBeUndefined();
+    }
+  });
+
+  it('(b) a malformed points value rejects engine-error, mutates nothing, adds no undo', async () => {
+    const engine = await inkDoc('doc-ink-b');
+    const bad: unknown[] = [
+      [{ x: Number.NaN, y: 5 }], // NaN coordinate
+      [{ x: 1, y: 1 }], // fewer than two points
+      [], // empty
+      'not-an-array',
+      null,
+    ];
+    for (const points of bad) {
+      const r = await engine.editAnnotation('doc-ink-b', 'ink-1', {
+        points: points as any,
+        color: 'red',
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('engine-error');
+    }
+    const state = await engine.getState('doc-ink-b');
+    if (state.ok) {
+      const ann = getAnns(state.value).find((a: any) => a.id === 'ink-1');
+      expect(ann?.points).toEqual(ptsA);
+      expect(ann?.rects).toEqual([bboxA]);
+      expect(ann?.color).toBe('blue');
+    }
+    const u = await engine.undo('doc-ink-b');
+    expect(u.ok).toBe(true);
+    if (u.ok) expect(getAnns(u.value).find((a: any) => a.id === 'ink-1')).toBeUndefined();
+  });
+
+  it('(b2) a points array over MAX_EDIT_INK_POINTS rejects engine-error', async () => {
+    const engine = await inkDoc('doc-ink-b2');
+    const tooMany = Array.from({ length: MAX_EDIT_INK_POINTS + 1 }, (_, i) => ({ x: i, y: i }));
+    const r = await engine.editAnnotation('doc-ink-b2', 'ink-1', { points: tooMany });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/maximum/i);
+    }
+  });
+
+  it('(c) absent points preserves the stored geometry', async () => {
+    const engine = await inkDoc('doc-ink-c');
+    const edited = await engine.editAnnotation('doc-ink-c', 'ink-1', { color: 'red' });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'ink-1');
+      expect(ann?.color).toBe('red');
+      expect(ann?.points).toEqual(ptsA);
+      expect(ann?.rects).toEqual([bboxA]);
+    }
+  });
+
+  it('(d) points on a non-ink kind rejects naming the kind and mutates nothing', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-ink-d', path);
+    await engine.createAnnotation('doc-ink-d', {
+      id: 'note-d', kind: 'note', page: 1, color: 'yellow', at: { x: 40, y: 40 },
+    });
+    const r = await engine.editAnnotation('doc-ink-d', 'note-d', { points: ptsB, color: 'red' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toContain('note');
+      expect(r.error.message).toContain('points');
+    }
+    const state = await engine.getState('doc-ink-d');
+    if (state.ok) {
+      const ann = getAnns(state.value).find((a: any) => a.id === 'note-d');
+      expect(ann?.at).toEqual({ x: 40, y: 40 });
+      expect(ann?.color).toBe('yellow');
+    }
+  });
+});
+
+describe('DEF-267 — editAnnotation arrow from/to (one-op geometry patch)', () => {
+  const fromA = { x: 100, y: 100 };
+  const toA = { x: 200, y: 150 };
+  const fromB = { x: 300, y: 300 };
+  const toB = { x: 350, y: 400 };
+  const bboxA = { x: 100, y: 100, width: 100, height: 50 };
+  const bboxB = { x: 300, y: 300, width: 50, height: 100 };
+
+  async function arrowDoc(docId: string, id = 'arrow-1') {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument(docId, path);
+    await engine.createAnnotation(docId, {
+      id, kind: 'arrow', page: 1, color: 'red', from: fromA, to: toA,
+    });
+    return engine;
+  }
+
+  it('(a) from+to move the endpoints + rects[0] and ONE undo restores them', async () => {
+    const engine = await arrowDoc('doc-arrow-a');
+    const moved = await engine.editAnnotation('doc-arrow-a', 'arrow-1', { from: fromB, to: toB });
+    expect(moved.ok).toBe(true);
+    if (moved.ok) {
+      const ann = getAnns(moved.value).find((a: any) => a.id === 'arrow-1');
+      expect(ann?.points).toEqual([fromB, toB]);
+      expect(ann?.rects).toEqual([bboxB]);
+    }
+    const u1 = await engine.undo('doc-arrow-a');
+    expect(u1.ok).toBe(true);
+    if (u1.ok) {
+      const ann = getAnns(u1.value).find((a: any) => a.id === 'arrow-1');
+      expect(ann?.points).toEqual([fromA, toA]);
+      expect(ann?.rects).toEqual([bboxA]);
+    }
+  });
+
+  it('(b) a malformed endpoint rejects engine-error and mutates nothing', async () => {
+    const engine = await arrowDoc('doc-arrow-b');
+    const badPairs: Array<[unknown, unknown]> = [
+      [{ x: Number.NaN, y: 1 }, toB],
+      [fromB, { y: 5 }],
+      [null, toB],
+    ];
+    for (const [from, to] of badPairs) {
+      const r = await engine.editAnnotation('doc-arrow-b', 'arrow-1', {
+        from: from as any, to: to as any, color: 'blue',
+      });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('engine-error');
+    }
+    const state = await engine.getState('doc-arrow-b');
+    if (state.ok) {
+      const ann = getAnns(state.value).find((a: any) => a.id === 'arrow-1');
+      expect(ann?.points).toEqual([fromA, toA]);
+      expect(ann?.color).toBe('red');
+    }
+    const u = await engine.undo('doc-arrow-b');
+    if (u.ok) expect(getAnns(u.value).find((a: any) => a.id === 'arrow-1')).toBeUndefined();
+  });
+
+  it('(b2) a lone from (or to) rejects: they must be supplied together', async () => {
+    const engine = await arrowDoc('doc-arrow-b2');
+    for (const patch of [{ from: fromB }, { to: toB }]) {
+      const r = await engine.editAnnotation('doc-arrow-b2', 'arrow-1', patch as any);
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.error.code).toBe('engine-error');
+        expect(r.error.message).toMatch(/together/i);
+      }
+    }
+    const state = await engine.getState('doc-arrow-b2');
+    if (state.ok) {
+      const ann = getAnns(state.value).find((a: any) => a.id === 'arrow-1');
+      expect(ann?.points).toEqual([fromA, toA]);
+    }
+  });
+
+  it('(c) absent from/to preserves the stored geometry', async () => {
+    const engine = await arrowDoc('doc-arrow-c');
+    const edited = await engine.editAnnotation('doc-arrow-c', 'arrow-1', { color: 'blue' });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'arrow-1');
+      expect(ann?.color).toBe('blue');
+      expect(ann?.points).toEqual([fromA, toA]);
+      expect(ann?.rects).toEqual([bboxA]);
+    }
+  });
+
+  it('(d) from/to on a non-arrow kind rejects naming the kind', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-arrow-d', path);
+    await engine.createAnnotation('doc-arrow-d', {
+      id: 'rect-d2', kind: 'rect', page: 1, color: 'yellow',
+      rect: { x: 10, y: 10, width: 50, height: 50 },
+    });
+    const r = await engine.editAnnotation('doc-arrow-d', 'rect-d2', { from: fromB, to: toB });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toContain('rect');
+      expect(r.error.message).toMatch(/from\/to/);
+    }
+    const state = await engine.getState('doc-arrow-d');
+    if (state.ok) {
+      const ann = getAnns(state.value).find((a: any) => a.id === 'rect-d2');
+      expect(ann?.rects).toEqual([{ x: 10, y: 10, width: 50, height: 50 }]);
+    }
+  });
+});
+
+describe('DEF-267 — editAnnotation note at (one-op anchor patch)', () => {
+  const atA = { x: 100, y: 100 };
+  const atB = { x: 300, y: 400 };
+  const rectA = { x: 100, y: 100, width: 24, height: 24 };
+  const rectB = { x: 300, y: 400, width: 24, height: 24 };
+
+  async function noteDoc(docId: string, id = 'note-1') {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument(docId, path);
+    await engine.createAnnotation(docId, { id, kind: 'note', page: 1, color: 'yellow', at: atA });
+    return engine;
+  }
+
+  it('(a) at moves the anchor + icon rect and ONE undo restores both', async () => {
+    const engine = await noteDoc('doc-note-a');
+    const moved = await engine.editAnnotation('doc-note-a', 'note-1', { at: atB });
+    expect(moved.ok).toBe(true);
+    if (moved.ok) {
+      const ann = getAnns(moved.value).find((a: any) => a.id === 'note-1');
+      expect(ann?.at).toEqual(atB);
+      expect(ann?.rects).toEqual([rectB]);
+    }
+    const u1 = await engine.undo('doc-note-a');
+    expect(u1.ok).toBe(true);
+    if (u1.ok) {
+      const ann = getAnns(u1.value).find((a: any) => a.id === 'note-1');
+      expect(ann?.at).toEqual(atA);
+      expect(ann?.rects).toEqual([rectA]);
+    }
+    const u2 = await engine.undo('doc-note-a');
+    if (u2.ok) expect(getAnns(u2.value).find((a: any) => a.id === 'note-1')).toBeUndefined();
+  });
+
+  it('(b) a malformed at rejects engine-error and mutates nothing', async () => {
+    const engine = await noteDoc('doc-note-b');
+    const bad: unknown[] = [{ x: Number.NaN, y: 5 }, { x: -1, y: 5 }, 'nope', null];
+    for (const at of bad) {
+      const r = await engine.editAnnotation('doc-note-b', 'note-1', { at: at as any, color: 'red' });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('engine-error');
+    }
+    const state = await engine.getState('doc-note-b');
+    if (state.ok) {
+      const ann = getAnns(state.value).find((a: any) => a.id === 'note-1');
+      expect(ann?.at).toEqual(atA);
+      expect(ann?.rects).toEqual([rectA]);
+      expect(ann?.color).toBe('yellow');
+    }
+  });
+
+  it('(c) absent at preserves the stored anchor', async () => {
+    const engine = await noteDoc('doc-note-c');
+    const edited = await engine.editAnnotation('doc-note-c', 'note-1', { color: 'red' });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'note-1');
+      expect(ann?.color).toBe('red');
+      expect(ann?.at).toEqual(atA);
+      expect(ann?.rects).toEqual([rectA]);
+    }
+  });
+
+  it('(d) at on a non-note/callout kind rejects naming the kind', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-note-d', path);
+    await engine.createAnnotation('doc-note-d', {
+      id: 'ink-d2', kind: 'ink', page: 1, color: 'blue',
+      points: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
+    });
+    const r = await engine.editAnnotation('doc-note-d', 'ink-d2', { at: atB });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toContain('ink');
+      expect(r.error.message).toContain('at');
+    }
+    const state = await engine.getState('doc-note-d');
+    if (state.ok) {
+      expect(getAnns(state.value).find((a: any) => a.id === 'ink-d2')?.at).toBeUndefined();
+    }
+  });
+});
+
+describe('DEF-267 — editAnnotation callout at (one-op anchor patch)', () => {
+  const box = { x: 100, y: 500, width: 200, height: 50 };
+  const atA = { x: 400, y: 400 };
+  const atB = { x: 350, y: 350 };
+
+  async function calloutDoc(docId: string, id = 'co-1', extra: Record<string, unknown> = {}) {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument(docId, path);
+    await engine.createAnnotation(docId, {
+      id, kind: 'callout', page: 1, color: 'yellow', rect: box, at: atA, ...extra,
+    } as any);
+    return engine;
+  }
+
+  it('(a) at moves the stored anchor and ONE undo restores it (leader-free callout)', async () => {
+    const engine = await calloutDoc('doc-co-a');
+    const moved = await engine.editAnnotation('doc-co-a', 'co-1', { at: atB });
+    expect(moved.ok).toBe(true);
+    if (moved.ok) {
+      const ann = getAnns(moved.value).find((a: any) => a.id === 'co-1');
+      expect(ann?.at).toEqual(atB);
+      expect(ann?.rects).toEqual([box]);
+    }
+    const u1 = await engine.undo('doc-co-a');
+    expect(u1.ok).toBe(true);
+    if (u1.ok) {
+      expect(getAnns(u1.value).find((a: any) => a.id === 'co-1')?.at).toEqual(atA);
+    }
+  });
+
+  it('(a2) at re-aims an explicit leader last point, keeping start/knee', async () => {
+    const leader = [{ x: 100, y: 500 }, { x: 200, y: 450 }, atA];
+    const engine = await calloutDoc('doc-co-a2', 'co-2', { points: leader });
+    const moved = await engine.editAnnotation('doc-co-a2', 'co-2', { at: atB });
+    expect(moved.ok).toBe(true);
+    if (moved.ok) {
+      const ann = getAnns(moved.value).find((a: any) => a.id === 'co-2');
+      expect(ann?.at).toEqual(atB);
+      expect(ann?.points).toEqual([leader[0], leader[1], atB]);
+    }
+  });
+
+  it('(b) a malformed at rejects engine-error and mutates nothing', async () => {
+    const engine = await calloutDoc('doc-co-b');
+    const bad: unknown[] = [{ x: Number.NaN, y: 5 }, { y: 5 }, null];
+    for (const at of bad) {
+      const r = await engine.editAnnotation('doc-co-b', 'co-1', { at: at as any, color: 'red' });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.error.code).toBe('engine-error');
+    }
+    const state = await engine.getState('doc-co-b');
+    if (state.ok) {
+      const ann = getAnns(state.value).find((a: any) => a.id === 'co-1');
+      expect(ann?.at).toEqual(atA);
+      expect(ann?.rects).toEqual([box]);
+      expect(ann?.color).toBe('yellow');
+    }
+  });
+
+  it('(c) absent at preserves the stored anchor', async () => {
+    const engine = await calloutDoc('doc-co-c');
+    const edited = await engine.editAnnotation('doc-co-c', 'co-1', { color: 'red' });
+    expect(edited.ok).toBe(true);
+    if (edited.ok) {
+      const ann = getAnns(edited.value).find((a: any) => a.id === 'co-1');
+      expect(ann?.color).toBe('red');
+      expect(ann?.at).toEqual(atA);
+      expect(ann?.rects).toEqual([box]);
+    }
+  });
+
+  it('(d) a kind-mismatched key on a callout rejects naming the kind (points is ink-only)', async () => {
+    const engine = await calloutDoc('doc-co-d');
+    const r = await engine.editAnnotation('doc-co-d', 'co-1', {
+      points: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.code).toBe('engine-error');
+      expect(r.error.message).toMatch(/callout/);
+      expect(r.error.message).toMatch(/points/);
+    }
+    const state = await engine.getState('doc-co-d');
+    if (state.ok) {
+      const ann = getAnns(state.value).find((a: any) => a.id === 'co-1');
+      expect(ann?.points).toBeUndefined();
+      expect(ann?.at).toEqual(atA);
+    }
+  });
+});
+
+describe('DEF-267 — extra rects beyond [0] are preserved by non-box geometry patches', () => {
+  it('a points patch replaces rects[0] and keeps a trailing rect', async () => {
+    const engine = new EngineService();
+    const { path } = await createNPagePdf(1);
+    await engine.loadDocument('doc-extra', path);
+    const second = { x: 500, y: 500, width: 30, height: 30 };
+    await engine.createAnnotation('doc-extra', {
+      id: 'ink-extra',
+      kind: 'ink',
+      page: 1,
+      color: 'blue',
+      points: [{ x: 0, y: 0 }, { x: 10, y: 10 }],
+      rects: [{ x: 0, y: 0, width: 10, height: 10 }, second],
+    });
+    const moved = await engine.editAnnotation('doc-extra', 'ink-extra', {
+      points: [{ x: 20, y: 20 }, { x: 40, y: 30 }],
+    });
+    expect(moved.ok).toBe(true);
+    if (moved.ok) {
+      const ann = getAnns(moved.value).find((a: any) => a.id === 'ink-extra');
+      expect(ann?.rects).toEqual([{ x: 20, y: 20, width: 20, height: 10 }, second]);
     }
   });
 });

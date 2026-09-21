@@ -73,7 +73,7 @@ export type { TextItemGeom };
 import {
   annotationColorToCss,
   applyPatch,
-  rectGeometryPatch,
+  geometryPatchFor,
   type Annotation,
   type AnnotationColorValue,
   type AnnotationPatch,
@@ -548,43 +548,50 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
     );
   }, []);
 
-  /** Commit a MOVE / RESIZE while keeping the draft override visible until
-   *  the echo lands. Phase 30 — a single-rect kind (textbox / rect / ellipse
-   *  / callout) commits IN PLACE through `editAnnotation({ rect })`: the
-   *  engine regenerates `rects[0]` and the annotation keeps its id, so no
-   *  fresh selection event fires and a zero-gap burst of style clicks after
-   *  the move cannot read a stale selection. Ink / arrow / note carry their
-   *  geometry in `points` / `from`+`to` / `at`, which the shared edit payload
-   *  has no patch for, so those keep the delete + re-create round-trip (as
-   *  does a callout ANCHOR drag, whose rect is unchanged).
-   *
-   *  Clearing the draft synchronously would revert the overlay to the engine
-   *  list, which still holds the OLD geometry until the round-trip echoes
-   *  back — the "content snaps back before landing at the new spot"
-   *  artifact. This pins the draft to the COMMITTED geometry and leaves it up
-   *  until the echo effect (same id + geometry in the list) drops it. A
-   *  safety timer force-clears the draft if the engine op fails — gated on
-   *  the geometry so a fresh drag of the same annotation within the grace
-   *  window is never reverted. */
-  const issueMoveCommit = useCallback(
-    (oldAnn: Annotation, nextAnn: Annotation): void => {
-      const rect = rectGeometryPatch(oldAnn, nextAnn);
-      if (rect !== null && onEditAnnotation !== undefined) {
-        onEditAnnotation(oldAnn.id, { rect });
-      } else {
-        onDeleteAnnotation?.(oldAnn.id);
-        onCreate({ ...nextAnn });
-      }
-      setAnnDraft({ id: oldAnn.id, ann: nextAnn });
+  /** Pin the optimistic draft to a just-committed patch and leave it up until
+   *  the engine echo (same id + geometry in the list) drops it. Clearing the
+   *  draft synchronously would revert the overlay to the engine list, which
+   *  still holds the OLD geometry until the round-trip echoes back — the
+   *  "content snaps back before landing at the new spot" artifact. A safety
+   *  timer force-clears the draft if the engine op fails — gated on the
+   *  geometry so a fresh drag of the same annotation within the grace window
+   *  is never reverted. */
+  const commitAnnPatch = useCallback(
+    (id: string, nextAnn: Annotation, patch: AnnotationPatch): void => {
+      onEditAnnotation?.(id, patch);
+      setAnnDraft({ id, ann: nextAnn });
       window.setTimeout(() => {
         setAnnDraft((prev) => {
-          if (prev?.id !== oldAnn.id) return prev;
+          if (prev?.id !== id) return prev;
           if (!sameAnnotationGeometry(prev.ann, nextAnn)) return prev;
           return null;
         });
       }, 500);
     },
-    [onDeleteAnnotation, onCreate, onEditAnnotation],
+    [onEditAnnotation],
+  );
+
+  /** Commit a MOVE / RESIZE while keeping the draft override visible until
+   *  the echo lands. DEF-267 — EVERY movable kind now commits IN PLACE
+   *  through ONE `editAnnotation` geometry patch built by `geometryPatchFor`
+   *  (`rect` for textbox / rect / ellipse / callout, `points` for ink,
+   *  `from`+`to` for arrow, `at` for a note or a callout anchor-only drag).
+   *  The annotation keeps its id, so no fresh selection event fires and a
+   *  zero-gap burst of style clicks after the move cannot read a stale
+   *  selection. The old delete + re-create fallback is gone: it was the
+   *  DEF-267 race. When the builder returns null (nothing changed, or a
+   *  degenerate / non-finite geometry the engine would reject) the local
+   *  draft is dropped and NO op is sent — a rejected edit is never retried. */
+  const issueMoveCommit = useCallback(
+    (oldAnn: Annotation, nextAnn: Annotation): void => {
+      const patch = geometryPatchFor(oldAnn, nextAnn);
+      if (patch === null || onEditAnnotation === undefined) {
+        setAnnDraft((prev) => (prev?.id === oldAnn.id ? null : prev));
+        return;
+      }
+      commitAnnPatch(oldAnn.id, nextAnn, patch);
+    },
+    [commitAnnPatch, onEditAnnotation],
   );
 
   /** Phase 28 — apply a colour to the selected annotation LIVE: the
@@ -605,23 +612,28 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
 
   /** Phase 28 — the bar's Cancel: UNDO the session's changes by
    *  restoring the snapshot taken before the first one, then dismiss
-   *  the selection. A move/resize is undone through the same geometry
-   *  path the move itself used (an in-place `rect` patch for the
-   *  single-rect kinds, delete + re-create otherwise); the restored
-   *  copy carries the original colour too. */
+   *  the selection. DEF-267 — the revert is ONE in-place `editAnnotation`
+   *  patch: the geometry patch for the moved kind plus the original colour
+   *  when the colour changed too (the old delete + re-create that used to
+   *  carry a colour-only revert is gone). */
   const cancelLiveEdit = useCallback((): void => {
     const original = editOriginal;
     if (original !== null) {
       const current = effectiveAnnotations.find((a) => a.id === original.id) ?? null;
-      const changed =
-        current !== null &&
-        (!sameAnnotationGeometry(current, original.ann) ||
-          current.color !== original.ann.color);
-      if (changed) issueMoveCommit(current, original.ann);
+      if (current !== null) {
+        const geometry = geometryPatchFor(current, original.ann);
+        const patch: AnnotationPatch = {
+          ...(geometry ?? {}),
+          ...(current.color !== original.ann.color ? { color: original.ann.color } : {}),
+        };
+        if (Object.keys(patch).length > 0) {
+          commitAnnPatch(original.id, applyPatch(current, patch), patch);
+        }
+      }
     }
     setEditOriginal(null);
     setSelectedAnnId(null);
-  }, [editOriginal, effectiveAnnotations, issueMoveCommit]);
+  }, [editOriginal, effectiveAnnotations, commitAnnPatch]);
 
   const pagePoint = (e: React.PointerEvent): PagePoint => {
     const root = rootRef.current;

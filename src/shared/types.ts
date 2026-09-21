@@ -448,6 +448,34 @@ export interface EditAnnotationPayload {
    *  a malformed rect rejects the whole edit with a typed `engine-error`.
    *  Absent preserves the stored geometry. */
   rect?: AnnRect;
+  /** DEF-267 — ink stroke geometry patch. When supplied, the engine replaces
+   *  the stored `points` and regenerates `rects[0]` from the points' min/max
+   *  extent (exactly like `normalizeAnnotationPayload`'s ink branch on the
+   *  create path, preserving any extra rects beyond [0]) so an ink move is
+   *  ONE op with ONE undo snapshot instead of delete + re-create. Only valid
+   *  for `kind === 'ink'`: a `points` patch on any other kind rejects the
+   *  whole edit with a typed `engine-error`. Validated like the create path
+   *  (every point finite non-negative, at least two points) plus a bounded
+   *  length of `MAX_EDIT_INK_POINTS`. Absent preserves the stored geometry. */
+  points?: AnnPoint[];
+  /** DEF-267 — the note icon anchor AND the callout leader anchor patch.
+   *  For a note the engine also regenerates `rects[0]` as the 24x24 icon rect
+   *  at `at` (exactly like the create path's `at` branch, preserving any
+   *  extra rects beyond [0]); for a callout it updates the stored `at` and,
+   *  when the annotation carries an explicit leader, re-aims its last point.
+   *  Only valid for `kind === 'note'` or `kind === 'callout'`; on any other
+   *  kind it rejects the whole edit with a typed `engine-error`. A finite
+   *  `{ x, y }` point. Absent preserves the stored anchor. */
+  at?: AnnPoint;
+  /** DEF-267 — arrow start endpoint. Must be supplied together with `to`,
+   *  and only on `kind === 'arrow'`; the engine replaces the stored `points`
+   *  with `[from, to]` and regenerates `rects[0]` from the endpoints' bbox
+   *  (mirroring the create path's arrow branch). A lone `from`/`to`, or
+   *  either on a non-arrow kind, rejects the whole edit with a typed
+   *  `engine-error`. Absent preserves the stored geometry. */
+  from?: AnnPoint;
+  /** DEF-267 — arrow end endpoint. See `from`. */
+  to?: AnnPoint;
   /** Phase 24 — partial text-style patch. Every supplied field is validated
    *  (reject-if-invalid) and merged onto the stored `AnnModel.style`; absent
    *  fields preserve the stored value (same semantics as the Phase-21

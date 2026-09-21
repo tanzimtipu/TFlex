@@ -6,8 +6,9 @@
 // makes the content MOVABLE (Confirm/Edit/Delete bar + resize
 // handles); double click opens the full edit toolbox; while selected
 // a "Double click to edit" hint shows; moved content persists through
-// the bar's Confirm (delete + re-create with the same id — the shared
-// contract has no annotation move op).
+// the bar's Confirm (ONE in-place `editAnnotation` geometry patch that
+// keeps the same id — Phase 30 for the box kinds, DEF-267 for every
+// other movable kind).
 //
 // Coverage (behavior):
 //   1. Committed shapes render with the grab-cursor surface class and
@@ -15,9 +16,8 @@
 //   2. Single click on a shape selects it: action bar (Confirm / Edit
 //      / Delete) + corner handles + the move hint appear; no editor
 //      opens.
-//   3. Dragging the shape parks a PENDING move (no engine call), and
-//      the bar's Confirm commits it: onDeleteAnnotation(oldId) +
-//      onCreate(movedAnnotation with the same id / shifted rect).
+//   3. Dragging the shape COMMITS on pointerup as one in-place geometry
+//      edit; the bar's Confirm is a plain dismiss.
 //   4. The bar's Delete removes the annotation; its Edit opens the
 //      color toolbox for shapes; the buttons stay clickable (a press
 //      on the bar never starts a page drag, the click completes).
@@ -26,7 +26,7 @@
 //   6. The note icon follows the SAME model as every other kind now
 //      (Bug 3): single click SELECTS it (bar + handles), double click
 //      opens its editor; dragging the icon moves the note and the
-//      bar's Confirm commits delete + re-create.
+//      commit is ONE in-place `at` edit (DEF-267).
 import { describe, expect, it, vi } from "vitest";
 import { createRoot } from "react-dom/client";
 import { act } from "react";
@@ -501,7 +501,7 @@ describe("DEF-153/154 / Bug 3 — committed note shares the unified selection mo
     }
   });
 
-  it("Phase 28 — dragging the note icon commits the move on pointerup (delete + re-create: a note's geometry is its `at` anchor, which the edit payload has no patch for)", () => {
+  it("Phase 28/30/DEF-267 — dragging the note icon commits the move on pointerup as ONE in-place `at` edit (no re-create)", () => {
     const { host, onEditAnnotation, onDeleteAnnotation, onCreate, cleanup } = mountOverlay({ annotations: [NOTE_ANN] });
     try {
       const icon = host.querySelector<Element>("[data-annotation-id='note-1']");
@@ -509,13 +509,17 @@ describe("DEF-153/154 / Bug 3 — committed note shares the unified selection mo
       if (icon === null) throw new Error("note icon not found");
       dragSurface(layer, icon, [65, 305], [95, 335]);
       expect(host.querySelector("[data-content-action-bar]"), "note shows the action bar after a move").not.toBeNull();
-      expect(onEditAnnotation).not.toHaveBeenCalled();
-      expect(onDeleteAnnotation).toHaveBeenCalledTimes(1);
-      expect(onDeleteAnnotation.mock.calls[0]?.[0]).toBe("note-1");
-      const created = onCreate.mock.calls[0]?.[0] as Annotation;
-      expect(created.id).toBe("note-1");
-      expect(created.kind).toBe("note");
-      expect((created as { at: { x: number; y: number } }).at).toEqual({ x: 90, y: 330 });
+      // DEF-267 — the note's geometry IS its `at` anchor, now expressible in
+      // the shared edit payload: ONE op, the same id, no delete + create.
+      expect(onEditAnnotation).toHaveBeenCalledTimes(1);
+      expect(onEditAnnotation.mock.calls[0]?.[0]).toBe("note-1");
+      expect(onEditAnnotation.mock.calls[0]?.[1]).toEqual({ at: { x: 90, y: 330 } });
+      expect(onDeleteAnnotation).not.toHaveBeenCalled();
+      expect(onCreate).not.toHaveBeenCalled();
+      // The draft keeps the moved anchor rendered.
+      const moved = host.querySelector<HTMLElement>("[data-annotation-id='note-1']");
+      expect(moved?.style.left).toBe("90px");
+      expect(moved?.style.top).toBe("330px");
     } finally {
       cleanup();
     }
