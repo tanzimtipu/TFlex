@@ -85,7 +85,7 @@ vi.mock('electron-updater', () => ({
 // Imports
 // ---------------------------------------------------------------------------
 
-import { isPortableBuild, UpdateService } from '../../../src/main/services/update-service';
+import { isPortableBuild, normalizeReleaseNotes, UpdateService } from '../../../src/main/services/update-service';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -831,5 +831,127 @@ describe('UpdateService — OTA fallback', () => {
         expect(result.message).toBe('network down');
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 31 — incoming release notes (releaseNotes -> string[] lines)
+// ---------------------------------------------------------------------------
+
+describe('normalizeReleaseNotes', () => {
+  it('splits a plain string into trimmed lines', () => {
+    expect(normalizeReleaseNotes('Line one\nLine two')).toEqual(['Line one', 'Line two']);
+  });
+
+  it('takes the notes from an array of { version, note } entries', () => {
+    expect(normalizeReleaseNotes([
+      { version: '1.24.0', note: 'First\nSecond' },
+      { version: '1.23.0', note: null },
+      { version: '1.22.0', note: 'Third' },
+    ])).toEqual(['First', 'Second', 'Third']);
+  });
+
+  it('drops blank lines and trims each line', () => {
+    expect(normalizeReleaseNotes('\n\n  First  \n\n   \nSecond\n')).toEqual(['First', 'Second']);
+  });
+
+  it('returns undefined for null, undefined and unexpected shapes', () => {
+    expect(normalizeReleaseNotes(null)).toBeUndefined();
+    expect(normalizeReleaseNotes(undefined)).toBeUndefined();
+    expect(normalizeReleaseNotes(42)).toBeUndefined();
+  });
+
+  it('distinguishes empty notes ([]) from missing notes (undefined)', () => {
+    expect(normalizeReleaseNotes('')).toEqual([]);
+    expect(normalizeReleaseNotes([])).toEqual([]);
+    expect(normalizeReleaseNotes('   \n  ')).toEqual([]);
+  });
+});
+
+describe('UpdateService — incoming release notes', () => {
+  beforeEach(() => {
+    clearEnv();
+    setupInstalledEnv();
+    _autoUpdaterRemoveAll();
+    _autoUpdaterOn.mockClear();
+    _checkForUpdates.mockClear();
+    _checkForUpdates.mockResolvedValue(undefined);
+    _setFeedURL.mockClear();
+  });
+
+  function getHandler(event: string): (...args: unknown[]) => void {
+    const calls = _autoUpdaterOn.mock.calls.filter((c: unknown[]) => c[0] === event);
+    return calls.length > 0
+      ? calls[calls.length - 1][1] as (...args: unknown[]) => void
+      : vi.fn();
+  }
+
+  it('carries normalised notes on update-available without touching version/releaseDate', () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({
+      version: '1.24.0',
+      releaseDate: '2026-09-22T00:00:00Z',
+      releaseNotes: 'Added print options\nFixed a colour bug',
+    });
+    const status = svc.getStatus();
+    expect(status.kind).toBe('available');
+    if (status.kind === 'available') {
+      expect(status.version).toBe('1.24.0');
+      expect(status.releaseDate).toBe('2026-09-22T00:00:00Z');
+      expect(status.notes).toEqual(['Added print options', 'Fixed a colour bug']);
+    }
+  });
+
+  it('normalises the array form of releaseNotes on update-available', () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({
+      version: '1.24.0',
+      releaseNotes: [{ version: '1.24.0', note: 'One\nTwo' }],
+    });
+    const status = svc.getStatus();
+    expect(status.kind).toBe('available');
+    if (status.kind === 'available') {
+      expect(status.notes).toEqual(['One', 'Two']);
+    }
+  });
+
+  it('omits notes on update-available when releaseNotes is missing', () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '1.24.0' });
+    const status = svc.getStatus();
+    expect(status.kind).toBe('available');
+    if (status.kind === 'available') {
+      expect(status.notes).toBeUndefined();
+      expect('notes' in status).toBe(false);
+    }
+  });
+
+  it('carries notes on update-downloaded', () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '1.24.0' });
+    getHandler('update-downloaded')({ version: '1.24.0', releaseNotes: 'Ready to install' });
+    const status = svc.getStatus();
+    expect(status.kind).toBe('downloaded');
+    if (status.kind === 'downloaded') {
+      expect(status.version).toBe('1.24.0');
+      expect(status.notes).toEqual(['Ready to install']);
+    }
+  });
+
+  it('omits notes on update-downloaded when releaseNotes is missing', () => {
+    const svc = new UpdateService();
+    svc.init();
+    getHandler('update-available')({ version: '1.24.0' });
+    getHandler('update-downloaded')({ version: '1.24.0' });
+    const status = svc.getStatus();
+    expect(status.kind).toBe('downloaded');
+    if (status.kind === 'downloaded') {
+      expect(status.notes).toBeUndefined();
+      expect('notes' in status).toBe(false);
+    }
   });
 });

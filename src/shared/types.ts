@@ -168,9 +168,9 @@ export type UpdateState =
   | { kind: 'unsupported'; reason: string }
   | { kind: 'checking' }
   | { kind: 'up-to-date'; version: string }
-  | { kind: 'available'; version: string; releaseDate?: string }
+  | { kind: 'available'; version: string; releaseDate?: string; notes?: string[] }
   | { kind: 'downloading'; progress: number }
-  | { kind: 'downloaded'; version: string }
+  | { kind: 'downloaded'; version: string; notes?: string[] }
   | { kind: 'error'; message: string };
 
 // ---- Phase 8: Optimize ----

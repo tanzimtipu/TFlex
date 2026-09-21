@@ -2746,3 +2746,58 @@ for any future print/export verification.
 cannot stub `printJob` from the renderer - intercept the main-process IPC handler instead. And a
 stale `dist/` will silently invalidate an e2e run: qa's first print run launched pre-print code and
 had to rebuild. Build before any e2e that must exercise new main-process code.
+
+## 2026-09-21: Phase 31 (What's New in About) + the rotate-flicker fix - three durable rules
+
+Phase 31 answered the operator's standing request: "add a What's New section in every OTA release and
+show them in the About section."
+
+**The What's New contract (how releases carry their notes from now on):**
+- `src/shared/whatsNew.ts` is the SINGLE source of truth, bundled into the app, so the running
+  version's notes render with no network call. Entries are `{ version, date?, highlights[] }`, newest
+  first, and `whatsNewFor(version)` is an EXACT match (null when absent).
+- `whatsNewHistory(version, limit?)` is VERSION-RELATIVE: it returns only entries strictly older than
+  the running version, `[]` when the running version has no entry. A positional `slice(1)` is wrong -
+  it lists NEWER releases as "Earlier releases" (DEF-276).
+- The test suite is the RELEASE GATE: it fails when `WHATS_NEW` has no entry for `package.json`'s
+  version, and it pins `WHATS_NEW[0].version` to that version. So the release procedure is: write the
+  changelog entry FIRST (package.json still on the old version is a red gate until the bump lands in
+  the same commit window), then bump, then `verify:full`.
+- The GitHub Release body for a version is generated from that version's highlights, so the OTA feed's
+  `releaseNotes` carries the same content the About dialog shows for the installed version. electron-updater
+  hands the body over as `updateInfo.releaseNotes`; `normalizeReleaseNotes` turns it (a plain string, or an
+  array of `{version, note}`) into a `string[]` of trimmed non-empty lines.
+- Notes are rendered as PLAIN TEXT lines, never HTML. The adversary threw `<script>`, `<img onerror>` and
+  `<style>` bodies at the real IPC path: all rendered literally, no element created.
+
+**Rule 1 - normalise untrusted IPC state ONCE, at the renderer boundary.** DEF-275: a malformed
+`update:statusChanged` payload (`version:{a:1}`, `notes:[null,123,{a:1}]`, `notes:'a string'`) threw
+during render and React unmounted the ENTIRE root - a blank white window that only a relaunch could
+recover. The project ships no error boundary, so one malformed message is fatal to the whole UI. The
+fix is `normalizeUpdateState` (`src/renderer/components/updateStateNormalize.ts`) applied at the single
+place update state enters the renderer - all three `setUpdateState` call sites in the App subscription
+AND `UpdateIndicator`'s own fallback listener (which mounts before App's effect and reads raw IPC at
+launch, so it can receive the same payload). It coerces `version`/`error.message`/`unsupported.reason`
+to strings, normalises `notes` to `string[] | undefined`, and clamps `downloading.progress` to a finite
+0..100. Do NOT guard per-component: the first attempt hardened only the About helper and the crash simply
+moved to `UpdatePromptDialog`/`UpdateIndicator`. When you add a renderer state channel, add its
+normaliser at the boundary in the same change.
+
+**Rule 2 - never resize a visible canvas before its replacement frame is ready.** DEF-274 (operator:
+"rotate page makes the thumbnail pageview refresh and flicker"): the thumb render effect assigned
+`canvas.width = geom.bufferWidth` UNCONDITIONALLY, and assigning a canvas's `width` clears its backing
+store EVEN WHEN THE VALUE IS UNCHANGED - so the thumbnail went solid white for 0.1 s to >3 s while
+pdf.js repainted asynchronously. The fix: render into a per-run OFFSCREEN canvas and only on the
+render's resolution assign width/height/CSS size and blit, in one task. The same defect had a second
+half: the old code double-rotated (pdf.js applied `/Rotate` AND the wrap applied `.thumb-rot-N`), so
+rotated thumbs were also clipped - ONE rotation owner only, either the PDF's own rotation or a CSS
+transform. The page view now keeps its last bitmap and applies a translate+rotate transform that maps
+onto the new slot box, dropping it in the same task as the blit (reduced motion skips the transform).
+This is the same class as DEF-222 (which fixed the cleanup path) - the lesson generalises: any canvas
+that can be re-rendered must keep its previous frame on screen until the new one is painted.
+
+**Harness note:** the adversary's and qa's probes live under `test-fixtures/adv-p31/` (hostile payload
+rendering, the empty-state probe, the changelog module probe, the crash probes). qa's crash probes
+suppress screenshots deliberately so the recorded failure images
+(`screenshots/adv-p31-crash-*.png`) survive as "before" evidence - keep that convention when re-running
+a crash probe.

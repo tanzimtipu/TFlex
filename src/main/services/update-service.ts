@@ -99,6 +99,35 @@ function isNoReleasesError(message: string): boolean {
 
 export type StatusCallback = (state: UpdateState) => void;
 
+/**
+ * Normalises electron-updater's `releaseNotes` into plain text lines for the
+ * renderer. The feed gives either a plain string (the GitHub release body) or
+ * an array of `{ version, note }` entries; a note may be null.
+ *
+ * Returns `undefined` when there are no notes at all (missing, null or an
+ * unexpected shape) so the UI can tell "no notes" apart from "empty notes"
+ * (an empty array). Lines are trimmed and blank lines are dropped. No markup
+ * is stripped or injected: the renderer shows these lines as PLAIN TEXT.
+ */
+export function normalizeReleaseNotes(releaseNotes: unknown): string[] | undefined {
+  let text: string | null = null;
+  if (typeof releaseNotes === 'string') {
+    text = releaseNotes;
+  } else if (Array.isArray(releaseNotes)) {
+    const notes = releaseNotes
+      .map((entry) => (entry && typeof entry === 'object'
+        ? (entry as { note?: unknown }).note
+        : undefined))
+      .filter((note): note is string => typeof note === 'string');
+    text = notes.join('\n');
+  }
+  if (text === null) return undefined;
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
 export class UpdateService {
   private _callbacks: StatusCallback[] = [];
   private _state: UpdateState;
@@ -206,12 +235,14 @@ export class UpdateService {
       this._setState({ kind: 'checking' });
     });
 
-    autoUpdater.on('update-available', (info: { version?: unknown; releaseDate?: unknown }) => {
+    autoUpdater.on('update-available', (info: { version?: unknown; releaseDate?: unknown; releaseNotes?: unknown }) => {
       const version = typeof info.version === 'string' ? info.version : String(info.version ?? '');
+      const notes = normalizeReleaseNotes(info.releaseNotes);
       this._setState({
         kind: 'available',
         version,
         releaseDate: typeof info.releaseDate === 'string' ? info.releaseDate : undefined,
+        ...(notes !== undefined ? { notes } : {}),
       });
     });
 
@@ -226,9 +257,14 @@ export class UpdateService {
       });
     });
 
-    autoUpdater.on('update-downloaded', (info: { version?: unknown }) => {
+    autoUpdater.on('update-downloaded', (info: { version?: unknown; releaseNotes?: unknown }) => {
       const version = typeof info.version === 'string' ? info.version : String(info.version ?? '');
-      this._setState({ kind: 'downloaded', version });
+      const notes = normalizeReleaseNotes(info.releaseNotes);
+      this._setState({
+        kind: 'downloaded',
+        version,
+        ...(notes !== undefined ? { notes } : {}),
+      });
     });
 
     autoUpdater.on('error', (err: Error) => {

@@ -5,6 +5,104 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-275: A malformed `update:statusChanged` payload blanks the entire renderer and cannot be recovered without a relaunch
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-066)
+- Phase: 31
+
+Steps to reproduce:
+1. Build the dev app (`npm.cmd run build`) and launch it through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Open Help -> About by sending the real main->renderer menu payload `menu:action {action:'about'}` from the main process; wait for `[data-about-dialog]:visible`.
+3. Push a malformed state over the real main->renderer channel `update:statusChanged` with `{kind:'available', version:'99.0.0', notes:[null, 123, {a:1}, 'kept string']}`.
+4. Measure the blast radius: `#root` child count, `.sample-card` presence, `body.innerText`.
+5. Attempt recovery: send `{kind:'checking'}` and then the About `menu:action` again.
+
+Expected: the renderer treats the payload as untrusted at the IPC boundary - a non-string element, a non-array `notes`, or a non-primitive `version` renders as text or is ignored, and the About dialog stays mounted; at worst the incoming block shows its empty state.
+
+Actual: all three lethal shapes throw during render and React unmounts the whole root - `#root` child count 0, `.sample-card` gone, `body.innerText` empty; the window is a blank white page. Re-sending the About action does NOT bring anything back; only a relaunch recovers.
+- `notes:[null, 123, {a:1}, 'kept string']` -> React error #31 (objects are not valid as a React child); `rootKids=0`, `reopensAbout=false`.
+- `notes:'just a string'` -> `n.notes.map is not a function` (AboutDialog.tsx:273); `rootKids=0`, `reopensAbout=false`.
+- `version:{a:1}` -> React error #31 (AboutDialog.tsx:268); `rootKids=0`, `reopensAbout=false`.
+Shapes that do NOT reproduce (controls): `notes:{note:'x'}` (no `length`) shows the incoming empty state and the dialog survives (`rootKids=1`, `reopensAbout=true`); `version:123` renders as text and the dialog survives.
+Reachability (why MEDIUM): the shipped feed path cannot currently produce these shapes (`normalizeReleaseNotes` filters array entries to strings and `String(info.version ?? '')` guarantees a string version), so this is IPC-boundary hardening - a future main-side bug, a new event source or a preload change would take the whole UI down. The renderer has no error boundary.
+
+Screenshot: screenshots/adv-p31-crash-mixed.png (blank window after the mixed payload), screenshots/adv-p31-crash-string.png.
+Harness: test-fixtures/adv-p31/crash-probe.cjs (each payload gets a fresh launch).
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying frontend-dev - the three lethal shapes are now normalised in the single helper that already shapes this payload (`incomingNotesState`): the version is coerced with `typeof === 'string' ? ... : String(...)`, `notes` is guarded with `Array.isArray` before any iteration (a non-array becomes the existing incoming empty state), and each line is filtered with `typeof line === 'string'` so `[null,123,{a:1},'kept string']` renders only the surviving line. The render path and the selectors are untouched; the two control shapes still behave as before. Evidence: `aboutDialogWhatsNew.test.tsx` 16 passed (+7, incl. all three lethal shapes and both controls) and `aboutDialog.test.tsx` 35 passed (+5 normalisation tests); `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: retest after `npm.cmd run build` (renderer + node built). Ran `node test-fixtures/adv-p31/def275-crash-probe.cjs` (fresh launch per payload; copy of crash-probe.cjs with screenshot capture removed so the recorded failure images are not clobbered). 2 of 3 lethal shapes fixed: `notes:[null,123,{a:1},'kept string']` -> rootKids=1, sampleCard=true, about=true, reopensAbout=true, pageErrors=[], incoming shows only "kept string"; `notes:'just a string'` -> rootKids=1, pageErrors=[], incoming empty state shown. FAIL on `version:{a:1}`: `CASE lethal-version-as-object: about=false sampleCard=false rootKids=0 reopensAbout=false pageErrors=["Minified React error #31 ... object with keys {a}"]`; body empty. Isolation (`node test-fixtures/adv-p31/def275-isolate.cjs`, About never opened) shows the same blank (rootKids=0, sampleCard=false, React #31) while the `version:123` control survives (rootKids=1, prompt present, indicator "Update v123"), so the remaining crash is in the always-mounted update surface, not AboutDialog: `UpdatePromptDialog.tsx:298` renders `<strong>v{version}</strong>` from raw `state.version` and `UpdateIndicator.tsx:215` renders `{view.version}` raw (view.version set from `state.version` at lines 58/72) - the `incomingNotesState` normalisation does not cover these. DEF-275 left OPEN; the About-side shapes and both controls pass.
+- orchestrator: FIX-READY (relaying frontend-dev - the fix moved to the real boundary: a new pure `normalizeUpdateState` in `src/renderer/components/updateStateNormalize.ts`, applied at the single place update state enters the renderer - all three `setUpdateState` call sites in the App subscription (`App.tsx:921`, `:924`, `:929`) plus `UpdateIndicator`'s own fallback listener, which mounts before App's effect and reads raw IPC at launch. It coerces `version` to a string on every variant that carries it, normalises `notes` to `string[] | undefined`, and now also coerces `error.message` and `unsupported.reason` to strings and clamps `downloading.progress` to a finite 0..100 (so `{kind:'error', message:{a:1}}` and a `NaN`/`Infinity` progress cannot throw or render `NaN%` - the same defect class the developer flagged, closed in the same helper). Unusable payloads return null and clear the state instead of reaching a consumer; valid payloads still pass through by reference. Evidence: new `test/unit/renderer/updateStateNormalize.test.tsx` 22 passed, plus updateIndicator 26 / updatePromptDialog 23 / bug009 15 / bug016 5 - 86 passed across 5 files; the developer also re-ran qa's own `def275-isolate.cjs` and the previously lethal `version:{a:1}` now survives (`rootKids=1 sampleCard=true promptPresent=true pageErrors=[]`). `npm run verify` exit 0; `build` exit 0.)
+- qa: CLOSED. Rebuilt first (`npm.cmd run build`, renderer + node, exit 0), then ran `node test-fixtures/adv-p31/def275-round2-probe.cjs` (fresh launch per payload, real main->renderer channels, screenshot-suppressed so the recorded failure images are untouched). All 10 shapes pass: every case `rootKids=1`, `sampleCard=true`, `about=true`, `reopensAbout=true`, `pageErrors=[]`. Original lethal shapes: `notes:[null,123,{a:1},'kept string']` -> incoming shows only "kept string"; `notes:'just a string'` -> incoming empty state; `version:{a:1}` -> indicator "Update v[object Object]", incoming "What's new in v[object Object]" (coerced text label, no crash). Newly hardened shapes: `{kind:'error',message:{a:1}}` -> indicator kind=error text "Retry"; `{kind:'unsupported',reason:{a:1}}` -> no indicator, no crash; `{kind:'downloading',progress:NaN|Infinity|-5}` -> indicator kind=downloading progressAttr="0" text "0%" (clamped finite 0..100). Controls unchanged: `notes:{note:'x'}` -> incoming empty state; `version:123` -> "Update v123" / "What's new in v123". Focused regression `npm run test:unit -- test/unit/renderer/updateStateNormalize.test.tsx` -> 22 passed. No blank root, no unrecoverable state, no page error on any shape; the renderer is recoverable (About reopens after every payload).
+
+## DEF-276: "Earlier releases" history is positional, not relative to the running version, so the explicit empty state lists NEWER releases as "Earlier releases"
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-067)
+- Phase: 31
+
+Steps to reproduce:
+1. Build the dev app (`npm.cmd run build`) and launch it through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. BEFORE opening About, override `app:getInfo` in the main process to return `version:'1.2'`.
+3. Open Help -> About by sending the real `menu:action {action:'about'}` payload; wait for `[data-about-dialog]:visible` and `[data-whats-new]`.
+4. Read the What's New section DOM: `[data-about-version]`, `[data-whats-new-empty]`, `.about-whats-new-history-head`, `.about-whats-new-history-version`.
+5. Probe `whatsNewHistory` directly against the bundled `src/shared/whatsNew.ts` module.
+
+Expected: the empty state is shown for a version with no changelog entry (criterion 3), and "Earlier releases" lists only releases OLDER than the running version.
+
+Actual: with running version `1.2`, the section shows "No release notes for this version." and then "Earlier releases: v1.23.0, v1.22.0, v1.21.0" - all three are NEWER than 1.2. DOM read: `{"versionShown":"1.2","emptyShown":true,"historyVersions":["v1.23.0","v1.22.0","v1.21.0"]}`. Same for `1.23.1 ` (trailing space) and `9.9.9`.
+`whatsNewHistory` (whatsNew.ts:93) ignores the running version entirely: it returns `WHATS_NEW.slice(1)`, i.e. array positions 2..N - positional, correct only while the running version happens to be the newest entry. The module probe confirms there is no version parameter: `whatsNewHistory(3) -> [1.23.0, 1.22.0, 1.21.0]`.
+Related release-gate gap: `test/unit/main/whatsNew.test.ts` does not assert `WHATS_NEW[0].version === package.json version`, so a changelog whose top entry is newer than the running version would also duplicate the running version's own entry under "Earlier releases".
+
+Screenshot: screenshots/adv-p31-empty-1_2.png (About shows Version 1.2, the empty state, and "Earlier releases" starting at v1.23.0).
+Harness: test-fixtures/adv-p31/empty-state-probe.cjs; module probe test-fixtures/adv-p31/module-probe.cjs.
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying backend-dev + frontend-dev - the contract is now `whatsNewHistory(version, limit?)`: it finds the entry matching the running version EXACTLY and returns only the entries positioned after it (strictly older), newest first; a running version with no entry returns `[]` with no positional fallback, so a newer release can never be labelled "Earlier releases". The release gate additionally asserts `WHATS_NEW[0].version === package.json`'s version (with a constructed failure path for a newer top entry). The renderer passes `info.version` at both call sites (the typecheck break that change created is fixed). Evidence: `test/unit/main/whatsNew.test.ts` 17 passed (6 history cases incl. a mid-list running version and no-entry -> []), `aboutDialogWhatsNew.test.tsx` 16 passed, `aboutDialog.test.tsx` 35 passed; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: retest after `npm.cmd run build` (renderer + node built). `node test-fixtures/adv-p31/def276-probe.cjs` (empty-state-probe.cjs style, fresh launch, `app:getInfo` overridden before About opens): running `1.2` -> `{"versionShown":"1.2","emptyShown":true,"currentItems":0,"historyHead":null,"historyVersions":[]}` (no history, nothing newer); running `1.22.0` -> `{"versionShown":"1.22.0","emptyShown":false,"currentItems":3,"historyVersions":["v1.21.0","v1.20.0"]}` (only older, newest first); real running version `1.23.1` -> `{"versionShown":"1.23.1","emptyShown":false,"currentItems":4,"historyVersions":["v1.23.0","v1.22.0","v1.21.0"]}` (entries below it only, never repeats the running version). Module probe `node test-fixtures/adv-p31/def276-module-probe.cjs`: `whatsNewHistory('1.2') -> []`, `whatsNewHistory('1.22.0', 2) -> [1.21.0, 1.20.0]`, `whatsNewHistory('9.9.9') -> []`, `whatsNewHistory('1.23.1', 3) -> [1.23.0, 1.22.0, 1.21.0]`. Unit: `npm.cmd run test:unit -- test/unit/main/whatsNew.test.ts` -> Test Files 1 passed (1), Tests 17 passed (17). CLOSED.
+
+## DEF-274: Rotating a page blanks that page's thumbnail to white (canvas clear -> async repaint), ~0.1 s to >3 s
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: operator (2026-09-21, reported to the orchestrator)
+- Phase: 2
+
+Steps to reproduce:
+1. Build the dev app (`npm.cmd run build`) and launch it through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen.
+2. Open `test-fixtures/report.pdf` (34 pages) via the Open PDF button (dialog stubbed by `openSamplePath`); wait for `.page-slot[data-page="1"] canvas.pdf-page-canvas` and `.thumb-item[data-page="1"] canvas.thumb-canvas`; settle ~1.8 s.
+3. Click the toolbar rotate-clockwise control `[data-toolbar-rotate-cw]` once and watch page 1's thumbnail in the left rail (and the page view).
+
+Expected: The rotated page and its thumbnail update smoothly; the thumbnail keeps its previous frame until the new one is painted, with no blank/placeholder flash.
+
+Actual: The page-1 thumbnail canvas is cleared to blank white and only repainted asynchronously. Measured on the dev build (2026-09-21) with a 16 ms in-page sampler (`e2e/def_rotate_flicker.spec.cjs`, log `e2e/def_rotate_flicker_final.log`), clicking `[data-toolbar-rotate-cw]` five times:
+- Rotate 1 (0->90): thumb painted (ink=99) at t=16 ms; cleared to white at t=101 ms; still white at the last sample t=1637 ms.
+- Rotate 2 (90->180): thumb white t=16..105 ms, repainted by t=154 ms.
+- Rotate 3 (180->270): no blank captured at 16 ms cadence.
+- Rotate 4 (270->0): thumb white t=83..110 ms, repainted by t=155 ms.
+- Rotate 5 (0->90): the thumb canvas was still all-white 3.0 s after the click (settle read: canvas 189x244, all four sampled pixels `[255,255,255,255]`).
+So it reproduces on most rotates, and the blank lasts from ~90-150 ms up to >3 s; the page's own thumbnail is the one affected (thumbs 2-4 stay painted).
+
+Answers to the sampled questions:
+(a) Page view: it does NOT go through `.page-placeholder` (constant 0) and the page canvas never read white-blank in the 16 ms sampler; instead it keeps the PRE-rotate frame for ~150 ms then swaps to the rotated frame (screenshot -2 at 146 ms still upright, -3 at 266 ms rotated). One earlier frame showed the page area fully white at ~169 ms, but that was not reproduced under the corrected probe, so the page view reads as a delayed swap rather than a page blank.
+(b) Thumbnail: no `.thumb-placeholder` is shown (constant 0) - the canvas is cleared to opaque white, i.e. a blank canvas, not a placeholder.
+(c) Thumbnail strip: no re-layout and no scroll - `.thumb-item[data-page="1"]` rect stayed 193x196@120 and `.thumb-scroller` scrollTop stayed 0 across every sample.
+(d) Settle time: ~90-150 ms on 90->180 / 270->0, but >3 s on 0->90.
+(e) Every rotate or only the first: most rotates; the 0->90 case is the longest-lived.
+
+Selectors observed changing: `.thumb-item[data-page="1"]` gains/loses `thumb-rot-90|180|270`; `canvas.thumb-canvas` inside it is cleared to white (width/height stay 189x244); `.page-slot[data-page="1"] canvas.pdf-page-canvas` is resized (1210x1565 <-> 1565x1210) and `.page-slot[data-page="1"]` swaps size. `.thumb-placeholder` and `.page-placeholder` never appear. This is the same clear->async-repaint class as DEF-222 (Phase 18), but on the rotate path: the engine op calls `refreshDocProxyFor` which swaps the pdf.js `doc` proxy, the thumb render effect re-runs and sets `canvas.width = geom.bufferWidth` (clearing the canvas) before the async `pdfPage.render` completes.
+Screenshots: screenshots/def-rotate-flicker-1.png (baseline, upright page + painted thumb 1), -2.png (146 ms: page still pre-rotate/upright), -3.png (266 ms: page rotated, thumb 1 blank white landscape), -4.png (2984 ms, no further click: thumb 1 STILL blank white). Harness: e2e/def_rotate_flicker.spec.cjs.
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying frontend-dev - root cause corrected: for thumbs the geometry does NOT change on rotate, so the white came from `canvas.width = geom.bufferWidth` being assigned UNCONDITIONALLY (assigning `width` clears the backing store even when the value is unchanged) while pdf.js repainted asynchronously; the old code ALSO double-rotated the thumb (pdf.js applied `/Rotate` and the wrap applied `.thumb-rot-N`), so rotated thumbs were clipped. Fix: the frame now renders into a per-run OFFSCREEN scratch canvas and only on `task.promise` resolution are the visible canvas's width/height/CSS size assigned and the frame blitted - in one task, so no paint can land on a cleared canvas; the thumb now requests `rotation: 0` and the wrap's existing `.thumb-rot-N` transform is the single rotation owner; the page view keeps its last bitmap and applies a translate+rotate transform that maps onto the new slot box, dropping it in the same task as the blit (reduced-motion / Animations-off skips the transform). The DEF-222 cleanup rule and the offscreen-slot eager release are untouched. Evidence: new `test/unit/renderer/def274_rotateSmoothSwap.test.tsx` (5 tests) plus the existing pageView/rotation/sideRail suites - 26 passed / 5 files; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED (2026-09-21 FIX-READY retest on a fresh build, `npm.cmd run build` exit 0). Re-ran `e2e/def_rotate_flicker.spec.cjs` (same 16 ms in-page sampler, 5 consecutive rotates of `test-fixtures/report.pdf` page 1 via `[data-toolbar-rotate-cw]`, enhanced with the five required assertions) -> `npm.cmd run test:e2e -- e2e/def_rotate_flicker.spec.cjs` 1 passed / 0 failed (18.9 s). (1) NO blank frame: 0 blank/white thumb samples across all five rotates (101/86/99/100/101 post-click samples; thumb ink held at 99 on every sample, never 0), vs the original white at t=101 ms and still white at t=1637 ms on rotate 1 and still white at +3.0 s on rotate 5; late +2.9 s read thumb ink=124, painted. (2) Settle to correctly-oriented thumb + page: R1 34 ms, R2 40 ms, R3 32 ms, R4 35 ms, R5 34 ms, all stable to the end of sampling. (3) No double rotation / no clipping: the thumb bitmap's normalised ink box is identical on every rotate ([0.265,0.098,0.471,0.111]) and matches the un-rotated page view's box ([0.263,0.091,0.474,0.122]); aspect spread 1.0; the wrap class is the single rotation owner (`thumb-rot-90/180/270`/none/90) and agrees with the page view orientation at every step (page canvas 1565x1210 landscape at 90/270, 1210x1565 portrait at 0/180). (4) Page view: the pre-rotate frame no longer sits ~150 ms - a translate+rotate turn transform is applied at t=15-24 ms on all five rotates and the new frame is blitted (canvas dims flip) at 32-40 ms; the page canvas is painted throughout (ink 30-40, pageWhiteBlank=0) with no placeholder. (5) Screenshots `screenshots/def-rotate-flicker-fixed-1..4.png` inspected: -1 baseline upright page + painted upright thumb; -2 at rotate 90 both the page view and the thumb show the page turned (content vertical at the right), thumb painted (no white); -3 at rotate 180 the thumb shows the title upside down at the bottom of the thumb while the page content sits below the fold (correct for 180); -4 at rotate 90 after five rotates both page and thumb are correctly turned and the thumb is painted. Thumb and page view agree at every orientation. No stray processes after the run.)
+
 ## DEF-273: A 50 000-digit page range reports "Page Infinity is out of range" (parseInt overflow in the range parser)
 
 - Status: CLOSED

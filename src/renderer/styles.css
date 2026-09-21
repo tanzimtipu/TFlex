@@ -6838,6 +6838,147 @@ rect.ann-highlight.ann-preview {
   font-size: var(--fs-xs);
 }
 
+/* ----- What's New section (Phase 31) -----
+   Rendered inside the About sheet body. The running version's bundled
+   entry sits on top; the compact history is its own scroller; an
+   incoming update's feed notes sit in a filled, bordered block so they
+   read as a distinct block from the installed version's notes. Tokens
+   only - no new colours, no hardcoded motion. */
+
+.about-whats-new {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--sp-3);
+  margin-top: var(--sp-3);
+  min-width: 0;
+}
+.about-whats-new-title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+.about-whats-new-version {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+.about-whats-new-list {
+  list-style: none;
+  margin: var(--sp-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.about-whats-new-item,
+.about-whats-new-incoming-item {
+  position: relative;
+  padding-left: var(--sp-4);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.about-whats-new-item::before,
+.about-whats-new-incoming-item::before {
+  content: '';
+  position: absolute;
+  left: var(--sp-1);
+  top: 0.62em;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+}
+
+/* Incoming update notes - filled block, so it is visually distinct
+   from the running version's flat list above it. */
+.about-whats-new-incoming {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+}
+.about-whats-new-incoming-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.about-whats-new-badge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-1);
+  background: var(--accent);
+  color: var(--fg-on-accent);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+
+/* Compact history - one scroller of its own so a growing changelog
+   never turns the About sheet into an endless column. */
+.about-whats-new-history {
+  margin-top: var(--sp-3);
+}
+.about-whats-new-history-head {
+  margin-bottom: var(--sp-1);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+.about-whats-new-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.about-whats-new-history-item {
+  min-width: 0;
+}
+.about-whats-new-history-version {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+.about-whats-new-history-highlights {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.about-whats-new-history-highlights li {
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+  color: var(--fg-muted);
+  overflow-wrap: anywhere;
+}
+
+/* Explicit empty states - never a blank block. */
+.about-whats-new-empty,
+.about-whats-new-incoming-empty {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+/* Containment for the taller section (DEF-268 pattern, mirroring the
+   DEF-219 residual fix). `.sheet-body` is a flex item of the column
+   `.sheet`; pin `min-height: 0` so it can shrink below its content and
+   own the vertical scroll, keeping the header and the dialog itself
+   inside the clamped `max-height: min(640px, calc(100vh - 64px))`. */
+.sheet-about .sheet-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* ----- Update prompt dialog (OTA UX) -----
    Sheet styled to match About / Preferences. The body is a
    short paragraph + a row of action buttons (primary Update /

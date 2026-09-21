@@ -21,7 +21,43 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { X } from 'lucide-react';
 import type { AppInfo, UpdateState } from '../../shared/types';
+import { whatsNewFor, whatsNewHistory } from '../../shared/whatsNew';
 import { TfBackdrop, TfSheet } from './motion/TfMotion';
+
+/** Phase 31 — how many older changelog entries the compact history
+ *  list shows. The changelog is bundled (offline) and grows by one
+ *  entry per release, so we cap the list rather than rendering an
+ *  unbounded column; the running version's own entry is always
+ *  shown above it in full. */
+const WHATS_NEW_HISTORY_LIMIT = 3;
+
+/** Phase 31 — the INCOMING-version notes carried by the OTA feed.
+ *  Only `available` and `downloaded` carry notes; every other kind
+ *  returns null so the incoming block (and its empty state) is not
+ *  rendered at all. Kept as a small pure helper so the narrowing is
+ *  in one place and stays exhaustive-safe.
+ *
+ *  DEF-275 — the payload crosses the IPC boundary, so it is treated
+ *  as untrusted even though the contract types it as `string` /
+ *  `string[]`. A non-primitive `version` and a non-array `notes` (or
+ *  non-string lines inside it) previously threw during render and
+ *  unmounted the whole app. Normalising here keeps the render path
+ *  clean: the version is coerced to a string, and notes become a
+ *  `string[]` (or `undefined`) so the existing empty states handle
+ *  every malformed shape. */
+export function incomingNotesState(
+  state: UpdateState | null | undefined,
+): { version: string; notes: string[] | undefined } | null {
+  if (state === null || state === undefined) return null;
+  if (state.kind === 'available' || state.kind === 'downloaded') {
+    const version = typeof state.version === 'string' ? state.version : String(state.version);
+    const notes = Array.isArray(state.notes)
+      ? state.notes.filter((line): line is string => typeof line === 'string')
+      : undefined;
+    return { version, notes };
+  }
+  return null;
+}
 
 interface AboutDialogProps {
   open: boolean;
@@ -196,6 +232,91 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
     void tflex.app.openPath(path).catch(() => undefined);
   };
 
+  // Phase 31 — "What's New" section.
+  //
+  // Three independent blocks, all plain text:
+  //   1. the RUNNING version's bundled entry (offline: `whatsNewFor`
+  //      reads the module that ships in the bundle), with an explicit
+  //      empty state when the version has no entry;
+  //   2. the compact history of older bundled entries, newest first;
+  //   3. the INCOMING update's notes from the OTA feed, when the
+  //      state is `available`/`downloaded`, labelled with the incoming
+  //      version and visually separated from the installed notes.
+  //
+  // Plain-text guarantee: every note line is rendered as a React
+  // child string, so markup like `<b>bold</b>` appears literally and
+  // no element is ever created from feed content. There is no
+  // dangerouslySetInnerHTML anywhere in this component.
+  const renderWhatsNew = (): ReactElement => {
+    const installed = whatsNewFor(info.version);
+    const history = whatsNewHistory(info.version, WHATS_NEW_HISTORY_LIMIT);
+    const incoming = incomingNotesState(updateState);
+    return (
+      <section className="about-whats-new" data-whats-new aria-label="What's New">
+        <h3 className="about-whats-new-title">What's New</h3>
+        {installed !== null ? (
+          <div className="about-whats-new-current">
+            <div className="about-whats-new-version" data-whats-new-version>
+              v{installed.version}
+              {installed.date !== undefined ? ` — ${installed.date}` : ''}
+            </div>
+            <ul className="about-whats-new-list">
+              {installed.highlights.map((line, i) => (
+                <li className="about-whats-new-item" data-whats-new-highlight key={`installed-${i}`}>
+                  {line}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="about-whats-new-empty" data-whats-new-empty>
+            No release notes for this version.
+          </p>
+        )}
+        {incoming !== null && (
+          <div className="about-whats-new-incoming" data-whats-new-incoming>
+            <div className="about-whats-new-incoming-head">
+              <span className="about-whats-new-badge">Update</span>
+              <span className="about-whats-new-version" data-whats-new-incoming-version>
+                What's new in v{incoming.version}
+              </span>
+            </div>
+            {incoming.notes !== undefined && incoming.notes.length > 0 ? (
+              <ul className="about-whats-new-list">
+                {incoming.notes.map((line, i) => (
+                  <li className="about-whats-new-incoming-item" data-whats-new-incoming-highlight key={`incoming-${i}`}>
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="about-whats-new-incoming-empty" data-whats-new-incoming-empty>
+                No release notes available for this update.
+              </p>
+            )}
+          </div>
+        )}
+        {history.length > 0 && (
+          <div className="about-whats-new-history" data-whats-new-history>
+            <div className="about-whats-new-history-head">Earlier releases</div>
+            <ul className="about-whats-new-history-list">
+              {history.map((entry) => (
+                <li className="about-whats-new-history-item" data-whats-new-history-item key={entry.version}>
+                  <span className="about-whats-new-history-version">v{entry.version}</span>
+                  <ul className="about-whats-new-history-highlights">
+                    {entry.highlights.map((line, i) => (
+                      <li key={`${entry.version}-${i}`}>{line}</li>
+                    ))}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </section>
+    );
+  };
+
   // Render the update row when we have a state. The
   // three-way updateState (undefined | null | UpdateState)
   // distinguishes "haven't asked yet" (no row yet),
@@ -266,6 +387,7 @@ export function AboutDialog(props: AboutDialogProps): ReactElement | null {
                 </div>
                 {renderUpdateRow()}
               </div>
+              {renderWhatsNew()}
               {onCheckForUpdate !== undefined && (
                 <div className="about-actions">
                   <button

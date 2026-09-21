@@ -44,6 +44,7 @@ import {
   isUpdatePromptActionable,
   updateActionableKey,
 } from "./components/updatePromptMachine";
+import { normalizeUpdateState } from "./components/updateStateNormalize";
 import { tabsReducer, initialTabsState, resolveOpenId, type TabMeta } from "./state/tabs";
 import { pagesPanelReducer, initialPagesPanelState } from "./state/pagesPanel";
 import { nextTheme, resolveThemeDefault } from "./state/theme";
@@ -918,15 +919,15 @@ export function App(): ReactElement {
     if (typeof updateApi.getStatus === "function") {
       void updateApi.getStatus()
         .then((next) => {
-          if (!cancelled) setUpdateState(next);
+          if (!cancelled) setUpdateState(normalizeUpdateState(next));
         })
         .catch(() => {
-          if (!cancelled) setUpdateState(null);
+          if (!cancelled) setUpdateState(normalizeUpdateState(null));
         });
     }
     if (typeof updateApi.onStatusChanged !== "function") return;
     const unsubscribe = updateApi.onStatusChanged((next) => {
-      if (!cancelled) setUpdateState(next);
+      if (!cancelled) setUpdateState(normalizeUpdateState(next));
     });
     return (): void => {
       cancelled = true;

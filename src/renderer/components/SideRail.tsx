@@ -960,20 +960,51 @@ function Thumb({
         thumbWidth: width,
         dpr: window.devicePixelRatio || 1,
       });
-      const renderViewport = pdfPage.getViewport({ scale: geom.renderScale });
+      // DEF-274 — the bitmap is deliberately UN-rotated (`rotation: 0`):
+      // the geometry above is computed from `pdfPage.view`, the page's
+      // raw (un-rotated) CropBox, and the wrap owns the turn via the
+      // `.thumb-rot-N` CSS class ("rotate the canvas wrap, leaving the
+      // page label upright"). Letting pdf.js apply the engine's /Rotate
+      // as well double-rotated the bitmap AND made the rotated viewport
+      // (landscape) mismatch the portrait buffer this geometry sizes —
+      // the rotated thumb rendered clipped. One rotation, one owner.
+      const renderViewport = pdfPage.getViewport({ scale: geom.renderScale, rotation: 0 });
       const canvas = canvasRef.current;
       if (canvas === null) {
         return;
       }
-      canvas.width = geom.bufferWidth;
-      canvas.height = geom.bufferHeight;
-      canvas.style.width = `${geom.cssWidth}px`;
-      canvas.style.height = `${geom.cssHeight}px`;
-      const ctx = canvas.getContext('2d');
-      if (ctx === null) {
+      if (geom.bufferWidth <= 0 || geom.bufferHeight <= 0) {
+        // Degenerate page (zero-width CropBox): there is nothing to
+        // paint. Keep the paper-white wrap, release the backing store and
+        // drop the shimmer — the same visible result as before, without
+        // handing pdf.js a zero-scale viewport.
+        canvas.width = 0;
+        canvas.height = 0;
+        canvas.style.width = '0px';
+        canvas.style.height = '0px';
+        if (!disposed) {
+          setRendered(true);
+        }
         return;
       }
-      const task = pdfPage.render({ canvasContext: ctx, viewport: renderViewport });
+      // DEF-274 — render the new frame into an OFFSCREEN scratch canvas
+      // and only touch the visible one once it is fully painted. The
+      // rotate path swaps in a fresh doc proxy (`refreshDocProxyFor`),
+      // which re-runs this effect; assigning `canvas.width` (even to the
+      // value it already has) RESETS the backing store to transparent, so
+      // the old code blanked the painted thumbnail the instant the
+      // refresh landed and the user saw opaque white until pdf.js
+      // repainted asynchronously — measured at 0.1 s to >3 s (DEF-274,
+      // the rotate-path sibling of DEF-222). The scratch is per-run, so
+      // concurrent runs never share a canvas (pdf.js rejects that).
+      const scratch = document.createElement('canvas');
+      scratch.width = geom.bufferWidth;
+      scratch.height = geom.bufferHeight;
+      const scratchCtx = scratch.getContext('2d');
+      if (scratchCtx === null) {
+        return;
+      }
+      const task = pdfPage.render({ canvasContext: scratchCtx, viewport: renderViewport });
       renderTask = task;
       try {
         await task.promise;
@@ -983,9 +1014,23 @@ function Thumb({
         }
         return;
       }
-      if (!disposed) {
-        setRendered(true);
+      if (disposed) {
+        return;
       }
+      // Atomic swap: resize the visible canvas and blit the finished
+      // frame in the SAME task, so the browser never paints a cleared
+      // canvas between the two statements. The previous frame stays on
+      // screen continuously until this point.
+      canvas.width = geom.bufferWidth;
+      canvas.height = geom.bufferHeight;
+      canvas.style.width = `${geom.cssWidth}px`;
+      canvas.style.height = `${geom.cssHeight}px`;
+      const ctx = canvas.getContext('2d');
+      if (ctx === null) {
+        return;
+      }
+      ctx.drawImage(scratch, 0, 0);
+      setRendered(true);
     })();
     return () => {
       disposed = true;

@@ -2440,4 +2440,115 @@ Unreproduced / not exercised: a paused or offline physical printer is the likely
 the ADV-061 hang (same missing callback), but creating one needs driver manipulation and was not
 done. The virtual-PDF "cancel" quiet path was not exercised because it opens a real OS dialog.
 
+## Phase 31 gate - What's New in About
+
+Session label: `phase-31 gate`. Ran against the dev build through the canonical launcher
+(`e2e/lib/launch.cjs` `launchApp`, DNS-blocked with `--host-resolver-rules=MAP * 127.0.0.1`).
+About was opened with the real main-process `menu:action {action:'about'}` payload and update
+state was driven over the real `update:statusChanged` channel. Harnesses live in
+`test-fixtures/adv-p31/` (`module-probe.cjs`, `hostile-render.cjs`, `crash-probe.cjs`,
+`empty-state-probe.cjs`). Targeted unit files `test/unit/main/whatsNew.test.ts` and
+`test/unit/renderer/aboutDialogWhatsNew.test.tsx` pass (20 tests).
+
+## ADV-066: A malformed `update:statusChanged` payload blanks the entire renderer and cannot be recovered without a relaunch
+
+- Session: phase-31 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Launched the dev build through `launchApp`, opened Help -> About via the real
+   `menu:action {action:'about'}` payload, then sent a state over the real main->renderer
+   channel `update:statusChanged` with `{kind:'available', version:'99.0.0',
+   notes:[null, 123, {a:1}, 'kept string']}` (`test-fixtures/adv-p31/crash-probe.cjs`).
+2. Repeated in fresh launches with `notes:'just a string'` and `version:{a:1}`.
+3. Measured the blast radius (`#root` child count, `.sample-card` presence, `body.innerText`),
+   then attempted recovery by sending `{kind:'checking'}` and the About `menu:action` again.
+
+Expected: the renderer treats the payload as untrusted at the IPC boundary - a non-string
+`notes` element, a non-array `notes`, or a non-primitive `version` renders as text or is
+ignored, and the About dialog stays mounted (criterion 6: notes content must never crash). At
+worst the incoming block shows its empty state.
+
+Actual: all three shapes throw during render and React unmounts the whole root - `#root` child
+count 0, `.sample-card` gone, `body.innerText` empty, the window is a blank white page
+(`screenshots/adv-p31-crash-mixed.png`). Re-sending the About action does NOT bring the dialog
+(or anything) back; the renderer stays blank until the app is relaunched.
+`notes:[null,123,{a:1}]` -> React error #31 (objects are not valid as a React child);
+`notes:'just a string'` -> `notes.map is not a function` (AboutDialog.tsx:273);
+`version:{a:1}` -> React error #31 (AboutDialog.tsx:268). Control shapes are fine:
+`notes:{note:'x'}` (no `length`) shows the incoming empty state, and `version:123` renders as
+text - so exactly the non-string element, non-array `notes` and non-primitive `version` shapes
+are lethal. The renderer has no error boundary, so one bad message is fatal to the whole UI.
+
+Reachability (why MEDIUM, not HIGH): the shipped feed path cannot produce these shapes -
+`normalizeReleaseNotes` (update-service.ts:112) filters array entries to strings and
+`String(info.version ?? '')` guarantees a string version, and those are the only producers of
+`notes`/`version`. This is IPC-boundary hardening: a future main-side bug, a new event source
+or a preload change would take the whole UI down. Guard `Array.isArray(notes)`,
+`typeof line === 'string'` and `typeof state.version === 'string'` before rendering.
+
+Screenshot: screenshots/adv-p31-crash-mixed.png (blank window after the payload),
+screenshots/adv-p31-crash-string.png.
+
+Disposition: ACCEPTED -> DEF-275 (MEDIUM; a malformed update payload must not be able to blank the whole renderer - guard the three lethal shapes (`Array.isArray(notes)`, a string per line, a string `version`) at the render boundary, as the adversary specified)
+
+## ADV-067: "Earlier releases" history is positional, not relative to the running version, so the explicit empty state lists NEWER releases as "Earlier releases"
+
+- Session: phase-31 gate
+- Suggested severity: LOW
+
+What I did:
+1. Fresh launch; overrode `app:getInfo` to return version `1.2` BEFORE opening About, then
+   opened Help -> About (`test-fixtures/adv-p31/empty-state-probe.cjs`).
+2. Read the What's New section DOM (empty state, history head, history versions).
+3. Probed `whatsNewHistory` directly against the real bundled module
+   (`test-fixtures/adv-p31/module-probe.cjs`).
+
+Expected: the empty state is shown for a version with no entry (criterion 3), and the "Earlier
+releases" history lists only releases OLDER than the running version - the doc comment says it
+is "the entries AFTER the running version's".
+
+Actual: with running version `1.2`, the section shows "No release notes for this version." and
+then "Earlier releases: v1.23.0, v1.22.0, v1.21.0" - all three are NEWER than 1.2
+(`screenshots/adv-p31-empty-1_2.png`). `whatsNewHistory` (whatsNew.ts:93) ignores the running
+version entirely: it returns `WHATS_NEW.slice(1)`, i.e. array positions 2..N. It is correct
+only while the running version happens to be the newest entry. Same for `1.23.1 ` (trailing
+space) and `9.9.9`.
+
+Related release-gate gap: `test/unit/main/whatsNew.test.ts` checks that the package.json
+version HAS an entry, ordering, uniqueness and non-empty highlights, but does NOT assert
+`WHATS_NEW[0].version === package.json version`. So nothing prevents a changelog whose top
+entry is newer than the running version; in that case the running version's own entry is also
+duplicated under "Earlier releases" (it sits at array index 1 and is returned by the slice).
+Fix: make the history version-relative (filter to entries older than the running version)
+and/or add the top-entry assertion to the gate.
+
+Screenshot: screenshots/adv-p31-empty-1_2.png.
+
+Disposition: ACCEPTED -> DEF-276 (LOW; `whatsNewHistory` must be relative to the running version - entries OLDER than it only - and the release gate must pin `WHATS_NEW[0]` to the `package.json` version so a newer-than-running top entry cannot mislabel the history)
+
+## Phase 31 gate - negative results (attacks that did NOT reproduce)
+
+| Attack | Result |
+|---|---|
+| Hostile string notes over the real IPC channel: `<script>`, `<img onerror=...>`, `<b>`, `<style>body{display:none}</style>`, HTML entities, `javascript:`/`data:` URLs, RTL Arabic+Hebrew, astral/emoji, NUL/bell/ESC/backspace/zero-width, whitespace-only lines | Rendered as literal text; no element created from the content (no script/img/style/b inside the incoming block); `window.__adv_p31_xss1/2` markers never set; body style unchanged; 0 page errors. Defended. |
+| 100 000-character single line | One `<li>`; wraps via `overflow-wrap:anywhere`; incoming block `scrollWidth == clientWidth` (510/510); sheet stays clamped (clientHeight 639, bottom 770 < 900); rendered in ~0.44 s. Defended. |
+| 5 000-line notes array | 5000 `<li>` rendered in ~1.7 s; body owns the scroll (bodyScroll 107 907 / bodyClient 586, overflow-y auto); sheet stays clamped at 1440x900 and at 640x700; document has no horizontal scroll. Defended. |
+| Containment + reachability with 5000 lines + incoming block + history, at default size and at the 640px minimum width | Sheet scrollHeight == clientHeight (639/635); bottom inside the viewport; doc scrollWidth == innerWidth; after scrolling the body, `[data-about-check-update]` is fully visible (640x700: top 489 / bottom 519) and the User data / Settings / Signatures rows are reachable. DEF-268 class not reproduced. |
+| `notes: []` and `notes` omitted | Explicit "No release notes available for this update." empty state; never a blank block. Defended. |
+| `whatsNewFor` exact match: `1.23`, `1.2` (prefix), `1.23.0.1`, `v1.23.0`, leading/trailing whitespace, `''`, null, undefined | All return null; no prefix collision (`1.2` does not return `1.23.1`). Defended. |
+| `whatsNewHistory`: 0, -1, -0.5, NaN, -Infinity, 1e9, Infinity, 1.9, 0.5, `'2'`, `'x'`, null, `{}` | 0 / negative / NaN / -Infinity / 0.5 -> []; 1e9 / Infinity -> all 4; `'2'` -> 2 (numeric coercion, unreachable through typed callers). No crash. Defended. |
+| `normalizeReleaseNotes`: undefined, null, number, `{}`, array of strings, `[{version,note:null}]`, `[{note:123}]`, `[{note:{}}]`, nested array, `[{version}]` | All -> undefined or [] - never `[undefined]`, never the literal string "undefined", never a non-string element reaching the UI. Defended. |
+| `normalizeReleaseNotes`: `''`, whitespace-only, blank lines, CRLF, lone CR, 100k line, 5000 lines | `''`/whitespace -> []; blank lines dropped; CRLF split; a lone `\r` is NOT split (one line `a\rb`) - cosmetic, GitHub bodies use LF/CRLF, not filed. Defended. |
+| Release gate | Read and exercised via the module probe; it passes for 1.23.1 and fails when the entry is absent. Its only gap (top entry not pinned to the running version) is recorded in ADV-067. |
+
+**Total Phase-31-gate findings: 2 (0 HIGH, 1 MEDIUM, 1 LOW).**
+
+Unreproduced / minor: a 4000-character incoming `version` string overflows the incoming header
+(`scrollWidth` 25 858 vs `clientWidth` 510), but the sheet body's `overflow-x:hidden` clips it
+and the document does not scroll horizontally, so it is a clipped-text hardening note, not
+filed - real version strings come from `latest.yml` semver. My harness's update-prompt dismissal
+did not always close the phase-13 "Restart to update" sheet (unrelated to Phase 31), which is
+why `screenshots/adv-p31-many-lines-640.png` shows it layered over the contained About sheet.
+
 

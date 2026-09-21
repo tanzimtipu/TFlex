@@ -26,6 +26,7 @@
 import { type ReactElement, useEffect, useState, useCallback } from "react";
 import { Check, Download, RefreshCw, RotateCw, X } from "lucide-react";
 import type { UpdateState } from "../../shared/types";
+import { normalizeUpdateState } from "./updateStateNormalize";
 
 /** The visual presentation of the indicator for a given `UpdateState`.
  *  Pure: given the same state, returns the same view. Exported for
@@ -147,15 +148,18 @@ export function UpdateIndicator(props: UpdateIndicatorProps): ReactElement | nul
     if (typeof api.getStatus === "function") {
       void api.getStatus()
         .then((next) => {
-          if (!cancelled) setState(next);
+          // DEF-275 — this fallback subscription is live until App
+          // supplies `externalState` (effects run child-first), so the
+          // same untrusted-payload hardening applies here.
+          if (!cancelled) setState(normalizeUpdateState(next));
         })
         .catch(() => {
-          if (!cancelled) setState(null);
+          if (!cancelled) setState(normalizeUpdateState(null));
         });
     }
     const unsubscribe = typeof api.onStatusChanged === "function"
       ? api.onStatusChanged((next) => {
-        if (!cancelled) setState(next);
+        if (!cancelled) setState(normalizeUpdateState(next));
       })
       : (): void => undefined;
     return (): void => {

@@ -8,6 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import {
   AboutDialog,
   describeUpdateState,
+  incomingNotesState,
   updateStateIsWarning,
 } from "../../../src/renderer/components/AboutDialog";
 import type { AppInfo, UpdateState } from "../../../src/shared/types";
@@ -317,6 +318,58 @@ describe("describeUpdateState / updateStateIsWarning (DEF-074)", () => {
     expect(updateStateIsWarning({ kind: "up-to-date", version: "x" })).toBe(false);
     expect(updateStateIsWarning({ kind: "available", version: "x" })).toBe(false);
     expect(updateStateIsWarning({ kind: "downloading", progress: 1 })).toBe(false);
+  });
+});
+
+// DEF-275 — the incoming-notes helper is the one place that shapes the
+// untrusted OTA payload, so its normalisation is pinned directly: a
+// non-array `notes` becomes undefined, non-string lines are filtered
+// out, and a non-primitive `version` is coerced to a string.
+describe("incomingNotesState normalisation (DEF-275)", () => {
+  it("returns null for null / undefined / non-note states", () => {
+    expect(incomingNotesState(null)).toBeNull();
+    expect(incomingNotesState(undefined)).toBeNull();
+    expect(incomingNotesState({ kind: "checking" })).toBeNull();
+    expect(incomingNotesState({ kind: "up-to-date", version: "1.0.0" })).toBeNull();
+  });
+
+  it("passes a well-formed available state through unchanged", () => {
+    expect(
+      incomingNotesState({ kind: "available", version: "9.9.9", notes: ["a", "b"] }),
+    ).toEqual({ version: "9.9.9", notes: ["a", "b"] });
+  });
+
+  it("drops non-string lines from a mixed notes array", () => {
+    const state = {
+      kind: "available",
+      version: "9.9.9",
+      notes: [null, 123, { a: 1 }, "kept string"],
+    } as unknown as UpdateState;
+    expect(incomingNotesState(state)).toEqual({
+      version: "9.9.9",
+      notes: ["kept string"],
+    });
+  });
+
+  it("maps a non-array notes value to undefined (incoming empty state)", () => {
+    const state = {
+      kind: "available",
+      version: "9.9.9",
+      notes: "just a string",
+    } as unknown as UpdateState;
+    expect(incomingNotesState(state)).toEqual({ version: "9.9.9", notes: undefined });
+  });
+
+  it("coerces a non-primitive version to a string", () => {
+    const state = {
+      kind: "available",
+      version: { a: 1 },
+      notes: ["line"],
+    } as unknown as UpdateState;
+    expect(incomingNotesState(state)).toEqual({
+      version: "[object Object]",
+      notes: ["line"],
+    });
   });
 });
 

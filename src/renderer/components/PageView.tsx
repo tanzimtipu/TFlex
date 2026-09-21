@@ -1,5 +1,6 @@
 import { TextLayer, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useInstantMotion } from '../hooks/useAnimations';
 import { measureHitRects, type HitRect } from '../pdf/highlight';
 import { isInvalidPageRequest } from '../pdf/pdfjs';
 import type { SearchHit } from '../search/searchIndex';
@@ -382,6 +383,19 @@ export function PageView(props: PageViewProps) {
   // previous frame" signal — only a completed blit counts. Drives the
   // double-buffer (keep/stretch the previous frame vs. B15 white fill).
   const paintedFrameRef = useRef(false);
+  // DEF-274 — the quarter-turn the frame currently ON the visible canvas
+  // was painted at. When the `rotation` prop moves away from this, the
+  // page turns immediately (a transform on the existing bitmap, below)
+  // and the fresh render swaps in when it is ready. Kept in a ref so the
+  // turn does not itself trigger a re-render; mirrored into the effect.
+  const paintedRotationRef = useRef(rotation);
+  // Phase 23 policy (OS reduced motion / the Animations setting): when
+  // motion must be instant, skip the turn transform and rely on the
+  // atomic offscreen swap alone. Read through a ref so the render effect
+  // does not re-run every time the preference is read.
+  const instantMotion = useInstantMotion();
+  const instantMotionRef = useRef(instantMotion);
+  instantMotionRef.current = instantMotion;
 
   const ready = renderedScale !== null;
 
@@ -547,7 +561,36 @@ export function PageView(props: PageViewProps) {
       const prevW = canvas.width;
       const prevH = canvas.height;
       const hasPreviousFrame = paintedFrameRef.current;
-      if (!hasPreviousFrame || prevW !== renderW || prevH !== renderH) {
+      // DEF-274 — the page TURNS IMMEDIATELY. A rotate op moves the
+      // `rotation` prop (and swaps this page's wrapper dims) at the React
+      // commit, but the fresh pdf.js frame only arrives ~150 ms later, so
+      // without this the user watched the pre-rotate frame sit there
+      // upright before snapping. When the painted frame's rotation no
+      // longer matches the prop, keep the last painted bitmap AND its CSS
+      // size untouched and transform it onto the NEW slot box: rotate by
+      // the quarter-turn delta about the canvas centre, translated so the
+      // rotated bitmap is centred in the new wrapper. The blit below
+      // resizes the canvas and drops this transform in the same task, so
+      // the approximation is never seen as a double-rotated frame.
+      const turnQuarters = (((rotation - paintedRotationRef.current) % 4) + 4) % 4;
+      const turning =
+        turnQuarters !== 0 &&
+        !instantMotionRef.current &&
+        hasPreviousFrame &&
+        prevW > 0 &&
+        prevH > 0;
+      if (turning) {
+        canvas.style.transformOrigin = "50% 50%";
+        canvas.style.transform =
+          `translate(${(renderW - prevW) / 2}px, ${(renderH - prevH) / 2}px) ` +
+          `rotate(${turnQuarters * 90}deg)`;
+      } else if (canvas.style.transform !== "") {
+        // No turn in flight (a zoom refresh, a fresh mount, or a turn
+        // that already landed): make sure no stale approximation is left.
+        canvas.style.transform = "";
+        canvas.style.transformOrigin = "";
+      }
+      if (!turning && (!hasPreviousFrame || prevW !== renderW || prevH !== renderH)) {
         let previousFrame: HTMLCanvasElement | null = null;
         if (hasPreviousFrame && prevW > 0 && prevH > 0) {
           // Snapshot the current frame before the resize wipes it, so it
@@ -678,13 +721,31 @@ export function PageView(props: PageViewProps) {
       // frame stayed on screen until this instant (rendered above), so
       // the engine commit / zoom refresh is never visible as a blank or
       // half-painted page.
+      if (turning) {
+        // DEF-274 — the turn kept the old backing store and CSS size, so
+        // resize the visible canvas HERE, immediately before the blit.
+        // Both statements run in one task: no paint can land between the
+        // resize (which clears the bitmap) and the drawImage.
+        canvas.width = renderW;
+        canvas.height = renderH;
+        canvas.style.width = `${renderW}px`;
+        canvas.style.height = `${renderH}px`;
+      }
       if (canvas.width === renderW && canvas.height === renderH) {
         const visibleCtx = canvas.getContext("2d", { alpha: false });
         if (visibleCtx !== null) {
           visibleCtx.drawImage(scratch, 0, 0);
           // The visible canvas now holds a real painted frame.
           paintedFrameRef.current = true;
+          paintedRotationRef.current = rotation;
         }
+      }
+      if (turning) {
+        // Drop the turn approximation in the SAME task as the blit, so
+        // the crisp, correctly-laid-out frame replaces it in one visual
+        // frame — never a flash of a double-rotated page.
+        canvas.style.transform = "";
+        canvas.style.transformOrigin = "";
       }
       setRenderedScale(cssScale);
       endRender();
