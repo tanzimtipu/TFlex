@@ -11,7 +11,14 @@ const { pathToFileURL } = require('node:url');
 
 async function launchApp(extraArgs = [], userDataDir = null, executablePath = null) {
   const projectRoot = path.resolve(__dirname, '../..');
-  
+
+  // Additive override: when no explicit executablePath is passed, an installed
+  // build can be targeted via TFLEX_E2E_EXE (used by release-gate retests that
+  // must run against the packaged app). Default behaviour is unchanged.
+  if (!executablePath && process.env.TFLEX_E2E_EXE) {
+    executablePath = process.env.TFLEX_E2E_EXE;
+  }
+
   // If no executablePath is provided, we launch the development build (main index.js)
   // using Playwright's default Electron.
   const isDev = !executablePath;
