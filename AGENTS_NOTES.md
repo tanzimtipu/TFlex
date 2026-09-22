@@ -3047,3 +3047,26 @@ insertion line is positioned in the gap above a slot (`top: -9px`), so for the F
 the scroller's top edge and was clipped away entirely - the rail already had a first-slot special case, the
 canvas did not. Rule: whenever an indicator is anchored in the space BETWEEN items, test the first and last
 items explicitly (the rail's `.thumb-drop-line-first` / `-after` are the model to mirror).
+
+## 2026-09-22: Release 1.26.0 published (Multi Mode round 2) - a clean run, one operational note
+
+Release 1.26.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.26.0 with all four
+assets, and the public feed verifies (`latest.yml` -> `version: 1.26.0`, sha512 `pfwU5VXo...`, size
+163276252). Commits: `72e31f2` (1.25.0 docs), `2f61231` (Phase 34), `bbfc492` (the 1.26.0 notes), `f7d86d5`
+(bump), `3e96dd4` (the installed headline spec, tagged `v1.26.0`). Gates: `verify:full` 315 files / 4162
+tests green FIRST TRY, the install gate upgraded 1.25.0 -> 1.26.0, the canonical installed spec 9/9, and the
+installed build showed one composite Multi Mode tab naming both documents, equal panel deltas (172/172), a
+visible divider with its grip, and About reporting 1.26.0 with its five highlights.
+
+**Operational note for future release gates:** the NSIS silent install (`TFlex-Setup-X.Y.Z.exe /S`) auto-launches
+the app once (`runAfterFinish`) under the DEFAULT `%APPDATA%\tflex` profile, parented by `explorer.exe`. That is
+not a spec leak (all spec launches reported `closed normally`), but the gate must terminate that process tree
+afterwards or a TFlex instance is left running on the operator's desktop. qa did this at 1.26.0 - keep doing it.
+
+**Process confirmation:** the sequence that has now worked twice in a row is: a developer adds the version's
+`WHATS_NEW` entry (gate red until the bump - expected) -> git-agent commits the entry, bumps both manifests,
+cleans `dist/`+`release/win-unpacked/`, runs `npm run build` then plain `npm run dist` (never appending
+`--publish never`) -> qa runs `verify:full` + the install gate + the canonical spec + a headline check on the
+INSTALLED build -> git-agent commits any evidence specs, tags, pushes branch+tag, and creates the GitHub
+Release in `tanzimtipu/tflex-releases` with the four assets and a body generated from the highlights -> the
+orchestrator verifies the public feed with `webfetch`.
