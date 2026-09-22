@@ -11367,6 +11367,21 @@ rect.ann-highlight.ann-preview {
   background: var(--tf-canvas-opaque);
 }
 
+/* Phase 33 / DEF-285 — SINGLE mode uses the SAME opaque canvas. In frosted
+   the app frame, .workspace-main and the full-bleed scroller all step aside
+   so the wallpaper reads through the chrome (DEF-181); the document canvas
+   must not, or the gutter beside a zoomed-out page shows the desktop through
+   the app. These single-mode selectors mirror the Multi Mode pane rule above
+   (same --tf-canvas-opaque token, per theme), so the canvas is opaque in ALL
+   three themes. Only the surface the pages sit on is targeted: the chrome
+   (toolbar, rail, panels, badge) keeps its glass in frosted, the welcome
+   screen (no .workspace-main) is untouched, and the PDF content colour is
+   unchanged (DEF-099). */
+.tab-stage[data-multi-mode="false"] .workspace-main,
+.tab-stage[data-multi-mode="false"] .document-scroller {
+  background: var(--tf-canvas-opaque);
+}
+
 /* The focused pane's accent affordance: a full-perimeter hairline ring (never
    a one-sided accent border) that fades in on the shared fast motion token. */
 .tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {

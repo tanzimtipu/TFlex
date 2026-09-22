@@ -59,6 +59,11 @@ export interface DocumentStageProps {
    *  the stage above both panes while Multi Mode is on. `null`/absent in
    *  single mode (each view keeps its own toolbar, unchanged). */
   sharedToolbar?: ReactNode;
+  /** Phase 33 / DEF-284 — the workspace's SINGLE All Tools badge, rendered
+   *  once here while Multi Mode is on. The per-pane views suppress their own
+   *  copy, so exactly one affordance exists (criterion 4b); single mode keeps
+   *  the badge inside its `DocumentView`, unchanged. */
+  toolsBadge?: ReactNode;
 }
 
 /** The per-pane header: document name, page count, and the clear control. */
@@ -198,6 +203,7 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     onOpenIntoPane,
     renderDocument,
     sharedToolbar,
+    toolsBadge,
   } = props;
 
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -387,6 +393,12 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
               onPointerUp={onDividerUp}
             />
           ) : null}
+          {/* Phase 33 / DEF-284 — ONE All Tools badge for the whole
+              workspace. It is `position: fixed` (window right edge), so it
+              keeps a stable position as focus moves between panes; rendering
+              it here (not per pane) is what makes Multi Mode satisfy
+              criterion 4b. */}
+          {multiOn && toolsBadge !== undefined && toolsBadge !== null ? toolsBadge : null}
         </>
       )}
     </div>

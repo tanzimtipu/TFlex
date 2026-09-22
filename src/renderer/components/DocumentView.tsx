@@ -1,6 +1,6 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { AnimatePresence } from "motion/react";
-import { ChevronLeft, ChevronRight, GripVertical } from "lucide-react";
+import { GripVertical } from "lucide-react";
 import {
   forwardRef,
   useCallback,
@@ -37,6 +37,7 @@ import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
 import { SideRail } from "./SideRail";
 import { PaneThumbStrip } from "./PaneThumbStrip";
+import { ToolsBadge } from "./ToolsBadge";
 import { usePageDragOptional } from "../state/PageDragContext";
 import {
   buildDragSource,
@@ -3250,44 +3251,19 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             })}
           </div>
         </div>
-        {/* Tools palette badge — the arrow-shaped tab on the page
-            view's right edge (moved out of the command bar). The
-            Tools palette is conditionally mounted (AnimatePresence),
-            so the badge is a SEPARATE element that tracks it via
-            CSS: a `position: fixed` arrow tab pinned to the window's
-            right edge while closed, whose `right` property
-            transitions to the open panel's width (--tools-panel-w,
-            the same token the page-view inset consumes) on the same
-            150ms curve — badge, panel and page move together. The
-            chevron glyph flips with the state (ChevronLeft closed,
-            ChevronRight open) via the icon swap itself. Kept below modal
-            sheets in styles.css. data-tools-toggle is kept alongside
-            data-tools-badge so the long-standing e2e selector still
-            resolves on the moved control. */}
-        {onToolsPaletteToggle !== undefined && (
-          <button
-            type="button"
-            className={`tools-badge-tracker ${toolsPaletteOpen ? "tools-badge-tracker-open" : ""}`}
-            onClick={onToolsPaletteToggle}
-            aria-pressed={toolsPaletteOpen}
-            aria-label={toolsPaletteOpen ? "Close tools palette" : "Open tools palette"}
-            title={
-              toolsPaletteOpen
-                ? "Close tools palette (Ctrl+Shift+P)"
-                : "Open tools palette (Ctrl+Shift+P)"
-            }
-            data-tools-badge
-            data-tools-toggle
-          >
-            <span className="tools-badge-chevron" aria-hidden="true">
-              {toolsPaletteOpen ? (
-                <ChevronRight size={12} aria-hidden />
-              ) : (
-                <ChevronLeft size={12} aria-hidden />
-              )}
-            </span>
-            <span className="tools-badge-label">All Tools</span>
-          </button>
+        {/* Phase 33 / DEF-284 — the floating All Tools badge. The badge is a
+            WORKSPACE control, not a per-document one: while Multi Mode is on
+            (`multiModeEnabled === true`, which covers EVERY mounted view —
+            both panes AND any extra unpaned tab) it is suppressed here and
+            the stage renders the ONE workspace badge instead, so Multi Mode
+            can never mount a duplicate (criterion 4b). In single mode this
+            view renders it exactly as before. The ToolsBadge component keeps
+            the badge's position, selector and aria contract: a `position:
+            fixed` arrow tab on the window's right edge whose `right`
+            transitions to the open panel's width (--tools-panel-w) on the
+            same 150ms curve, with the chevron flipping by state. */}
+        {onToolsPaletteToggle !== undefined && multiModeEnabled !== true && (
+          <ToolsBadge open={toolsPaletteOpen} onToggle={onToolsPaletteToggle} />
         )}
         {/* Phase 25 — the text-properties panel is a FLOATING card over
             the page view (absolutely positioned inside .workspace-main),

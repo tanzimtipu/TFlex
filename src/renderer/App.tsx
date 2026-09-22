@@ -109,6 +109,7 @@ import {
   type PersistedViewer,
   type SearchIndexProgress,
 } from "./components/DocumentView";
+import { ToolsBadge } from "./components/ToolsBadge";
 import { splitRecentPath } from "./utils/recentPath";
 import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
@@ -7275,6 +7276,20 @@ pushToast(
                 editDefaultFont={settings.editDefaultFont ?? "Helvetica"}
                 onEditSelect={(tool): void => broadcastEditAction({ type: "set-tool", tool })}
                 onEditDefaultFontChange={setEditDefaultFont}
+              />
+            ) : null
+          }
+          // Phase 33 / DEF-284 — the workspace's ONE All Tools badge. It is a
+          // single `position: fixed` element (window right edge) owned by the
+          // stage in Multi Mode; every mounted DocumentView suppresses its own
+          // copy while `multiModeEnabled` is true, so no per-pane duplicate
+          // mounts (criterion 4b). In single mode this prop is null and each
+          // DocumentView keeps its own badge, unchanged.
+          toolsBadge={
+            multiMode.enabled ? (
+              <ToolsBadge
+                open={toolsPaletteOpen}
+                onToggle={(): void => setToolsPaletteOpen((v) => !v)}
               />
             ) : null
           }

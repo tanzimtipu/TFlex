@@ -23,6 +23,17 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.25.0',
+    date: '2026-09-22',
+    highlights: [
+      'Multi Mode: view and work on two PDFs side by side in one workspace, with a single toolbar that applies to whichever document you are using.',
+      'Drag and drop pages between the two documents - from the thumbnail strip or straight from the page - and hold Ctrl to copy rather than move.',
+      'Each document gets its own thumbnail strip in the middle of the workspace, so you always know which pages belong to which file.',
+      'Print: the print window can be dragged out of the way, and Vertical page order genuinely stacks the pages while Horizontal prints them side by side.',
+      'The page background is now solid in every theme, and Multi Mode shows a single All Tools badge.',
+    ],
+  },
+  {
     version: '1.24.0',
     date: '2026-09-21',
     highlights: [

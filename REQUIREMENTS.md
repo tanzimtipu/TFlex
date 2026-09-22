@@ -1639,8 +1639,13 @@ section per document" layout (item 3 below replaces it) and Phase 30's fixed, no
   tools apply to whichever pane the user works in: arming a tool in the shared bar and then using it in a
   pane applies it to THAT pane (the interaction focuses that pane first). The per-pane toolbars are gone
   in Multi Mode; single mode keeps its existing toolbar unchanged.
-- **Opaque canvas background in Multi Mode.** The pane canvas background must be an opaque surface colour
-  of the active theme (light or dark) - never see-through/transparent, in every theme including frosted.
+- **Opaque canvas background in EVERY mode (operator follow-up: "Don't keep see-through for single
+  mode").** The PDF canvas area - the pane surface and its scroller - must be an opaque surface colour of
+  the active theme (light or dark) in BOTH single mode and Multi Mode, in every theme including frosted.
+  Translucent chrome may stay glassy; the surface the pages sit on may not.
+- **One All Tools badge in Multi Mode (operator follow-up: "All Tools badge shouldn't render twice").**
+  The All Tools affordance must appear exactly ONCE in Multi Mode; an inactive pane must not render a
+  duplicate of the workspace chrome (see the AGENTS_NOTES observation from the Phase 32 run).
 - **Centred side-by-side thumbnail strips in Multi Mode.** When two documents are loaded, each pane's
   thumbnail strip sits at that pane's INNER edge, so the two strips meet in the MIDDLE of the workspace,
   side by side: pane A's strip immediately to the RIGHT of pane A's pages, pane B's strip immediately to
@@ -1663,15 +1668,18 @@ section per document" layout (item 3 below replaces it) and Phase 30's fixed, no
 3. In Multi Mode there is exactly ONE toolbar in the workspace (`[data-toolbar-*]` controls appear once,
    not once per pane); arming a tool in it and using it in pane A applies to A, and the same in pane B
    applies to B (verified by an actual operation on each side).
-4. In Multi Mode the canvas background is opaque in every theme (light / dark / frosted): pixel sampling
-   of the pane background returns an opaque colour, never the app background showing through, plus a
-   screenshot for the visual record.
+4. The canvas background is opaque in every theme (light / dark / frosted) in BOTH single mode and Multi
+   Mode: pixel sampling of the canvas area returns an opaque colour, never the app background showing
+   through, plus a screenshot for the visual record.
+4b. The All Tools affordance renders EXACTLY ONCE in Multi Mode (a single badge in the workspace chrome,
+   not one per mounted pane), while remaining reachable and functional.
 5. With two documents loaded, pane A's thumbnail strip is to the RIGHT of pane A's pages and pane B's
    strip is to the LEFT of pane B's pages (assert the strips' horizontal positions relative to their own
    pane and to each other - both in the middle of the workspace, side by side); each strip shows its own
    document's thumbnails at a dynamically sized width; a thumbnail click navigates its own pane; and a
    cross-document drag from either strip still moves the page.
-6. Single mode is unchanged (one toolbar, the rail at its existing position, the existing suites green),
+6. Single mode is unchanged apart from the now-required opaque canvas (one toolbar, the rail at its
+   existing position and width, the existing suites green),
    and the previously verified Multi Mode behaviours still hold: focused-pane routing, the close/quit
    gate over both panes, and no visible refresh/flicker on mode toggle, focus switch, divider drag and
    drag-and-drop.

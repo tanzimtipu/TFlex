@@ -5,6 +5,61 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-285: Single mode: the frosted-theme canvas area is see-through (transparent workspace/scroller background)
+
+- Status: FIX-READY
+- Severity: MEDIUM
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 33
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`, exit 0) and launch through the canonical `e2e/lib/launch.cjs` `launchApp` (the default theme is frosted); wait for the welcome screen (`.sample-card`).
+2. Open ONE document (`test-fixtures/report.pdf`, 34 pages) through the title-bar Open control (mocked OS dialog); wait for `.document-scroller` and `.pdf-page canvas`. Confirm single mode: `.tab-stage[data-multi-mode]` is `"false"`, 1 tab, 0 `.tab-pane[data-pane]`.
+3. Click `button[aria-label="Zoom out"]` 20 times so the page is narrower than the scroller and the canvas gutters beside the page are exposed (zoom reads 25%).
+4. Read the computed `background-color` of `html`, `body`, `.tf-ambient`, `.app`, `.tab-stage`, `.tab-pane`, `.workspace-main`, `.document-scroller`.
+5. Sample an alpha-preserving 1x1 clip (Playwright `screenshot({ omitBackground: true, clip })`) at a real gutter point inside the scroller that is not over a page (scanned via `elementFromPoint`), in frosted.
+6. Repeat steps 4-5 after `[data-theme-toggle]` -> `[data-theme-option="light"|"dark"]`.
+
+Expected: Phase 33 criterion 4 - "The canvas background is opaque in every theme (light / dark / frosted) in BOTH single mode and Multi Mode: pixel sampling of the canvas area returns an opaque colour, never the app background showing through". Single mode's canvas in frosted must be an opaque surface colour.
+
+Actual: In frosted (the default theme) the single-mode canvas is transparent. Computed `background-color` is `rgba(0, 0, 0, 0)` for EVERY layer: `html`, `body`, `.tf-ambient`, `.app`, `.tab-stage`, `.tab-pane`, `.workspace-main` AND `.document-scroller`. The alpha-preserving gutter pixel at `(x=226, y=127)`, hit `div.document-content`, is `rgba(143, 159, 191, a=16)` - alpha 16/255, i.e. the app background/desktop shows through (the same class as DEF-281, which fixed only the Multi Mode pane surface). For contrast, in light `.workspace-main`/`.document-scroller` = `rgb(241, 245, 249)` with gutter pixel alpha 255; in dark both = `rgb(11, 13, 15)` with gutter pixel alpha 255. So the defect is frosted-only, in single mode.
+
+Screenshot: screenshots/def-single-bg.png - frosted single mode, 25% zoom, one document; the wide gutter to the left of the page column and the whole canvas surface render as the translucent app background (near-white, not a defined frosted surface colour), with the page column at the right and the `All Tools` badge on the right edge.
+
+Harness: e2e/retests/def284_285_operator_repro.spec.cjs (test "DEFECT A - single-mode canvas background"); log e2e/def284_285_repro.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npx.cmd playwright test e2e/retests/def284_285_operator_repro.spec.cjs` -> 2 passed). Raw: `singleMode={"multi":"false","tabs":1,"panes":0}`; frosted colors all `rgba(0, 0, 0, 0)`, gutter pixel `{r:143,g:159,b:191,a:16}`; light `.document-scroller rgb(241, 245, 249)` pixel `a:255`; dark `.document-scroller rgb(11, 13, 15)` pixel `a:255`.
+- orchestrator: FIX-READY (relaying frontend-dev - a single-mode rule now paints the canvas surfaces with the SAME per-theme token the Multi Mode pane rule uses: `.tab-stage[data-multi-mode="false"] .workspace-main, .tab-stage[data-multi-mode="false"] .document-scroller { background: var(--tf-canvas-opaque); }` (`styles.css:11370-11383`). Its (0,3,0) specificity ties the frosted transparent rule and wins on source order; the light/dark values equal the existing `--bg-canvas` so those themes are visually unchanged. Only the surface the pages sit on is targeted, so the frosted chrome (toolbar, rail, panels, badge) stays glassy and the welcome screen (no `.workspace-main`) keeps its DEF-181 glass. Expected re-measure: single-mode frosted `.workspace-main`/`.document-scroller` compute `rgb(238,241,245)` with a gutter pixel alpha 255; light/dark unchanged at alpha 255. Evidence: new `def285_singleModeCanvasOpaque.test.tsx` 5 tests (the static CSS rule + the token in all three themes + the frosted transparency rule preserved + a render check); `npm run verify` exit 0; `build:renderer` exit 0.)
+
+## DEF-284: Multi Mode: the All Tools badge renders twice at the same viewport position (criterion 4b)
+
+- Status: FIX-READY
+- Severity: MEDIUM
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 33
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`, exit 0) and launch through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Open two documents (`test-fixtures/report.pdf` 34 pages, `test-fixtures/long.pdf` 520 pages), click `[data-toolbar-multi-mode]`, then pick the second document into pane B (`[data-pane-pick]`) so both panes are filled.
+3. Count `[data-tools-badge]` elements (the real selector - confirmed in `src/renderer/components/DocumentView.tsx:3279`) and read each one's `getBoundingClientRect()` plus its closest `.tab-pane[data-pane]`.
+4. At the badge centre, read `document.elementsFromPoint(x, y)` to see the pointer stack.
+5. Real-click the badge the pointer actually reaches (topmost), then read `[data-tools-palette]` presence and each badge's `aria-pressed`.
+6. Try a strict (unforced) `locator(...).nth(covered).click()` on the other duplicate.
+7. Hit-test the centre of the pane controls (`[data-pane-strip-header]` in each pane, `[data-pane-clear]` in each pane, a `[data-shared-toolbar] button`) and report whether a `[data-tools-badge]` is in each pointer stack.
+
+Expected: Phase 33 criterion 4b - "The All Tools affordance renders EXACTLY ONCE in Multi Mode (a single badge in the workspace chrome, not one per mounted pane), while remaining reachable and functional."
+
+Actual: `[data-tools-badge]` count is 2. One is in pane A, one in pane B, at IDENTICAL viewport rects `{left: 1404, top: 400, right: 1440, bottom: 500}` (36 x 100 px) - both pinned to the window's right edge, one per mounted pane. `elementsFromPoint` at the shared centre returns `[data-tools-badge#1]` (pane B) on top, then `[data-tools-badge#0]` (pane A), then pane B's `textLayer`/`canvas.pdf-page-canvas`/`pdf-page`/`page-slot`. A real pointer click on the topmost badge still works: it opens `[data-tools-palette]` (present) and both badges report `aria-pressed="true"`. A strict click on the covered pane-A duplicate is INTERCEPTED and times out (4000 ms): "<span class=\"tools-badge-label\">All Tools</span> from <div data-pane=\"B\" class=\"tab-pane\" ...> subtree intercepts pointer events" - so pane B's badge swallows the click meant for pane A's duplicate, which is unreachable by pointer. The duplicate does NOT shadow any other pane control: hit-testing the pane-strip headers, the pane Clear controls and the shared-toolbar buttons found no badge in the pointer stack. User impact: the operator sees one visible badge (the two overlap exactly), so the duplicate is only detectable from the DOM; the functional effect is that the pane-A affordance is dead and always routes to pane B's badge. Filed as MEDIUM rather than LOW because criterion 4b is explicit, the defect is operator-reported, and the covered duplicate intercepts a control click (the interception class AGENTS.md flags).
+
+Screenshot: screenshots/def-badge-twice.png - Multi Mode, both panes filled (A `p33-alpha.pdf` 34 pages, B `p33-beta.pdf` 520 pages), the centred side-by-side thumbnail strips between the panes and a single visible `All Tools` badge on the right edge; the second badge is stacked exactly underneath it (invisible in the composited screenshot, proven by the DOM count and identical rects).
+
+Harness: e2e/retests/def284_285_operator_repro.spec.cjs (test "DEFECT B - All Tools badge count and rects in Multi Mode"); log e2e/def284_285_badge.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npx.cmd playwright test e2e/retests/def284_285_operator_repro.spec.cjs -g "DEFECT B"` -> 1 passed). Raw: `count=2`, badges #0 pane A / #1 pane B, both rect `{1404,400,1440,500}`, `identicalRects=true`, topmost at centre = #1, topmost click opens the palette, covered #0 strict click intercepted by pane B's badge.
+- orchestrator: FIX-READY (relaying frontend-dev - root cause: the badge was rendered by `DocumentView` (`DocumentView.tsx:3272-3279`), so Multi Mode mounted one per pane. Fix: the badge was extracted into `ToolsBadge.tsx` with the same DOM/selectors/aria contract (`data-tools-badge` + `data-tools-toggle`, the chevron flip, the palette-slide tracking via `--tools-panel-w`); `DocumentView` now renders it only when `onToolsPaletteToggle !== undefined && multiModeEnabled !== true` (the flag reaches EVERY mounted view, including an unpaned third tab, so no duplicate can survive); `DocumentStage` gained a `toolsBadge?: ReactNode` prop and renders exactly one at the workspace level when the mode is on, `position: fixed` on the window's right edge so it does not jump with focus; single mode's badge is byte-identical. Expected re-measure: Multi Mode `[data-tools-badge]` count 1, `elementsFromPoint` returns no second badge, no badge covers a pane control, and clicking it toggles `[data-tools-palette]`. Evidence: new `def284_workspaceToolsBadge.test.tsx` 5 tests (Multi Mode A+B count 1 with the badge outside the panes; an unpaned third tab still 1; single mode view-owned; the single badge toggles; a static gate guard on the suppression condition); `npm run verify` exit 0; `build:renderer` exit 0.)
+
 ## DEF-283: Print: the movable dialog is not re-clamped when the window shrinks, leaving Print/Close off-screen and unclickable
 
 - Status: CLOSED
