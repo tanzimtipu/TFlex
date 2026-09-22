@@ -3143,3 +3143,30 @@ real drop need the operator's hands.
 **Orchestrator note (ledger editing):** twice this session a ledger edit whose `oldString` ended at the
 next entry's `## DEF-...`/`## ADV-...` heading deleted that heading. When appending a History/Disposition
 line, anchor on the LAST line of the entry alone - never include the following heading in the match.
+
+## 2026-09-22: Release 1.27.0 published (Phase 35) - and the PDF handler verified on a real install
+
+Release 1.27.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.27.0 with all four
+assets, and the public feed verifies (`latest.yml` -> `version: 1.27.0`, sha512 `YN93uPk7...`, size
+163285083). Commits: `07e2faa` (Phase 35 + DEF-291..301), `262ccd8` (the 1.27.0 notes), `5e0dcf6` (bump),
+`123d9be` (the installed verification specs, tagged `v1.27.0`). Gates: `verify:full` 339 files / 4378 tests
+green, the install gate upgraded 1.26.0 -> 1.27.0, the canonical installed spec 9/9 (version + 6
+highlights), and the installed headline checks passed.
+
+**The installed-build gate finally closed Phase 35 criterion 2 (the PDF handler).** After the silent install:
+`HKCU\Software\Classes\TFlex.pdf` exists with `shell\open\command = ...\TFlex.exe "%1"`, `.pdf`'s
+OpenWithProgids lists `TFlex.pdf` (HKCR mirrors both), launching the exe WITH a PDF path opens that document,
+and a second launch exits in ~260 ms while the RUNNING instance gains the tab (one window throughout).
+Expected and correct: electron-builder's NSIS macro writes the association, but Windows `UserChoice`
+(`MSEdgePDF`) still wins - changing the default handler is a user action in Windows Settings, and TFlex is
+now selectable there. Never claim the app IS the default; only that it is registered and selectable.
+
+**Remember when packaging after a cumulative `release/`:** `release/` accumulates every version's artifacts,
+so the upload step must name the version's four files EXPLICITLY - a `TFlex-Setup-*.exe` glob would upload
+the previous version's installer too. git-agent caught this and selected the 1.27.0 set by name.
+
+**Also verified on the installed build (headline checks):** the standalone print window opens titled
+`Print - TFlex`, is top-level and was moved to x=1743 (beyond the app's right edge 1543) and printed from
+there; with "Microsoft Print to PDF" selected the PDF was produced INSIDE the app (34 pages, matching the
+preview) with ZERO visible Windows/Chromium print windows; and Multi View showed one composite tab labelled
+`...alpha.pdf | ...beta.pdf` with the names flanking the divider and no strip header.
