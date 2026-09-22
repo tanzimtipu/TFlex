@@ -7,7 +7,7 @@
 
 ## DEF-285: Single mode: the frosted-theme canvas area is see-through (transparent workspace/scroller background)
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: operator (2026-09-22, reported to the orchestrator)
 - Phase: 33
@@ -31,10 +31,11 @@ Harness: e2e/retests/def284_285_operator_repro.spec.cjs (test "DEFECT A - single
 History:
 - qa: opened. Reproduced on the rebuilt dev build (`npx.cmd playwright test e2e/retests/def284_285_operator_repro.spec.cjs` -> 2 passed). Raw: `singleMode={"multi":"false","tabs":1,"panes":0}`; frosted colors all `rgba(0, 0, 0, 0)`, gutter pixel `{r:143,g:159,b:191,a:16}`; light `.document-scroller rgb(241, 245, 249)` pixel `a:255`; dark `.document-scroller rgb(11, 13, 15)` pixel `a:255`.
 - orchestrator: FIX-READY (relaying frontend-dev - a single-mode rule now paints the canvas surfaces with the SAME per-theme token the Multi Mode pane rule uses: `.tab-stage[data-multi-mode="false"] .workspace-main, .tab-stage[data-multi-mode="false"] .document-scroller { background: var(--tf-canvas-opaque); }` (`styles.css:11370-11383`). Its (0,3,0) specificity ties the frosted transparent rule and wins on source order; the light/dark values equal the existing `--bg-canvas` so those themes are visually unchanged. Only the surface the pages sit on is targeted, so the frosted chrome (toolbar, rail, panels, badge) stays glassy and the welcome screen (no `.workspace-main`) keeps its DEF-181 glass. Expected re-measure: single-mode frosted `.workspace-main`/`.document-scroller` compute `rgb(238,241,245)` with a gutter pixel alpha 255; light/dark unchanged at alpha 255. Evidence: new `def285_singleModeCanvasOpaque.test.tsx` 5 tests (the static CSS rule + the token in all three themes + the frosted transparency rule preserved + a render check); `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and CLOSED on the 1.25.0 build (dev `dist/main/index.js` built 2026-09-22 14:57, after fix e9e7242). Command: `npx.cmd playwright test e2e/retests/def284_285_retest_1250.spec.cjs` -> 3 passed. Raw DEF-285: single mode `{"multi":"false","tabs":1,"panes":0}`, zoom 25%; frosted `.workspace-main`/`.document-scroller` = `rgb(238, 241, 245)` (opaque, alpha 1) and gutter pixel `{r:238,g:241,b:245,a:255}` at (226,127); light = `rgb(241, 245, 249)` pixel a:255; dark = `rgb(11, 13, 15)` pixel a:255; frosted chrome still glassy (toolbar/rail `backdrop-filter: blur(20px) saturate(1.2)`). Screenshot: screenshots/def285-retest-frosted.png. Log: e2e/release_1250_def284_285_retest.log
 
 ## DEF-284: Multi Mode: the All Tools badge renders twice at the same viewport position (criterion 4b)
 
-- Status: FIX-READY
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: operator (2026-09-22, reported to the orchestrator)
 - Phase: 33
@@ -59,6 +60,7 @@ Harness: e2e/retests/def284_285_operator_repro.spec.cjs (test "DEFECT B - All To
 History:
 - qa: opened. Reproduced on the rebuilt dev build (`npx.cmd playwright test e2e/retests/def284_285_operator_repro.spec.cjs -g "DEFECT B"` -> 1 passed). Raw: `count=2`, badges #0 pane A / #1 pane B, both rect `{1404,400,1440,500}`, `identicalRects=true`, topmost at centre = #1, topmost click opens the palette, covered #0 strict click intercepted by pane B's badge.
 - orchestrator: FIX-READY (relaying frontend-dev - root cause: the badge was rendered by `DocumentView` (`DocumentView.tsx:3272-3279`), so Multi Mode mounted one per pane. Fix: the badge was extracted into `ToolsBadge.tsx` with the same DOM/selectors/aria contract (`data-tools-badge` + `data-tools-toggle`, the chevron flip, the palette-slide tracking via `--tools-panel-w`); `DocumentView` now renders it only when `onToolsPaletteToggle !== undefined && multiModeEnabled !== true` (the flag reaches EVERY mounted view, including an unpaned third tab, so no duplicate can survive); `DocumentStage` gained a `toolsBadge?: ReactNode` prop and renders exactly one at the workspace level when the mode is on, `position: fixed` on the window's right edge so it does not jump with focus; single mode's badge is byte-identical. Expected re-measure: Multi Mode `[data-tools-badge]` count 1, `elementsFromPoint` returns no second badge, no badge covers a pane control, and clicking it toggles `[data-tools-palette]`. Evidence: new `def284_workspaceToolsBadge.test.tsx` 5 tests (Multi Mode A+B count 1 with the badge outside the panes; an unpaned third tab still 1; single mode view-owned; the single badge toggles; a static gate guard on the suppression condition); `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and CLOSED on the 1.25.0 build (dev `dist/main/index.js` built 2026-09-22 14:57, after fix e9e7242). Command: `npx.cmd playwright test e2e/retests/def284_285_retest_1250.spec.cjs` -> 3 passed. Raw DEF-284: Multi Mode `[data-tools-badge]` count=1, badge `pane:null` (workspace chrome), `elementsFromPoint` at its centre returns exactly 1 distinct badge; no badge in the pointer stack of any pane control (`[data-pane-strip-header]` A/B, `[data-pane-clear]` A/B, `[data-shared-toolbar] button` all false); click toggles `[data-tools-palette]` open (aria-pressed true) then closed (false); single mode count=1. Screenshot: screenshots/def284-retest-multi.png. Log: e2e/release_1250_def284_285_retest.log
 
 ## DEF-283: Print: the movable dialog is not re-clamped when the window shrinks, leaving Print/Close off-screen and unclickable
 
