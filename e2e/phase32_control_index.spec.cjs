@@ -214,7 +214,9 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
 
   // --- [data-pane-clear] empties pane B, rail section goes, width back to 126 ---
   await win.locator('.tab-pane[data-pane="B"] [data-pane-clear]').click();
-  await win.waitForTimeout(700);
+  // Wait for the settled promise (one filled pane) rather than a fixed delay:
+  // under load the React transition can be sampled mid-flight.
+  await expect(win.locator('.tab-stage')).toHaveAttribute('data-multi-panes', '1', { timeout: 10000 });
   const s4 = await state();
   console.log(`[P32-ci] after clear pane B: ${JSON.stringify(s4)}`);
   expect(s4.paneBEmpty).toBe(true);
@@ -226,8 +228,13 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   // --- [data-pane-open] loads a PDF straight into the empty pane ---
   await mockOpen(tmpCopy(BETA_SRC, 'p32-beta2.pdf'));
   await win.locator('.tab-pane[data-pane="B"] [data-pane-open]').click();
-  await waitTabCount(3);
+  // Phase 34 — Multi Mode shows ONE composite tab, not one per document. The
+  // observable effect is pane B filling; assert that AND that the strip stays
+  // a single composite tab (the tab count no longer grows per open).
+  await expect(win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').first()).toBeVisible({ timeout: 30000 });
+  await expect(win.locator('.tab-stage')).toHaveAttribute('data-multi-panes', '2', { timeout: 10000 });
   await win.waitForTimeout(1300);
+  expect(await win.locator('.tab[data-tab-id]').count()).toBe(1);
   const s5 = await state();
   console.log(`[P32-ci] after pane-open: ${JSON.stringify(s5)}`);
   expect(s5.paneBEmpty).toBe(false);

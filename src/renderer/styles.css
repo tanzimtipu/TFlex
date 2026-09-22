@@ -2838,6 +2838,9 @@ input[type="checkbox"] {
   align-items: stretch;
   width: 100%;
   padding: 6px;
+  /* Phase 34 (chunk 1) — positioning context for the rail's insertion line
+     (.thumb-drop-line), which is anchored to the landing thumb's top gap. */
+  position: relative;
   background: transparent;
   border: 1px solid transparent;
   /* Phase 14.1 — thumbnails round at the control-group radius band
@@ -4246,6 +4249,40 @@ input[type="checkbox"] {
 .thumb-drop-target {
   border-color: var(--accent);
   background: var(--accent-soft);
+}
+
+/* Phase 34 (chunk 1) — the rail's insertion LINE. The drop target is the
+   insert-BEFORE slot, so the line sits in the 6px gap ABOVE that thumb (the
+   previous thumb's margin-bottom) at the page-column width, with the same
+   accent + glow treatment as the canvas indicator. The existing
+   outline/background stays as a secondary cue. The first slot has no gap
+   above it, so it anchors flush to the scroller's top edge (never clipped). */
+.thumb-drop-line {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: -5px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent-soft),
+    0 0 6px 1px rgba(37, 99, 235, 0.45);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.thumb-drop-line-first {
+  top: 0;
+}
+
+/* Phase 34 (chunk 2) — the APPEND slot (a page dropped below the last
+   thumbnail). The landing slot is the after-target on the LAST thumb, so the
+   line renders in the gap BELOW it (the thumb's own 6px margin-bottom),
+   mirroring the canvas's after-line. Same accent + glow treatment. */
+.thumb-drop-line-after {
+  top: auto;
+  bottom: -5px;
 }
 
 /* Rotated thumbnails: rotate the canvas wrap, leaving the page label upright. */
@@ -6385,6 +6422,19 @@ rect.ann-highlight.ann-preview {
   background: var(--bg-hover);
   color: var(--fg-strong);
   border-color: var(--border-strong);
+}
+
+/* DEF-288 — the "+" is visibly disabled while Multi Mode is on (the strip
+   shows ONE composite workspace tab, so a new empty tab could not be seen).
+   Neutralise the hover/press affordances so it reads as inert, not broken. */
+.tab-new:disabled,
+.tab-new:disabled:hover,
+.tab-new:disabled:active {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--fg-muted);
+  border-color: transparent;
 }
 
 .tab-new:focus-visible {
@@ -11288,6 +11338,19 @@ rect.ann-highlight.ann-preview {
      included) and writes this variable inline. With no shared bar the
      variable stays 0 and the panes own the whole stage, exactly as chunk 3. */
   --tf-multi-toolbar-h: 0px;
+  /* Phase 34 (chunk 1, refined in chunk 3) — the All Tools inset is consumed
+     ONCE at the stage level. Each pane's width and the divider's left
+     subtract HALF the inset (`--tf-pane-inset`, the requested
+     --tf-tools-inset capped so the panes keep their minimum page area —
+     DEF-287), so both panes shrink by the same amount at every split. A
+     transition must be declared at THIS level too (single mode declared it on
+     .workspace-main, which is a DESCENDANT of the stage) so the panes and the
+     divider interpolate on the same panel-slide curve as the panel and the
+     single-mode scroller instead of snapping. Registered @property, so the
+     length interpolates; nothing here touches a document surface. */
+  transition:
+    --tf-tools-inset var(--panel-slide-duration)
+    var(--panel-slide-ease);
 }
 
 /* The workspace's single toolbar: full-width above the two panes. It reuses
@@ -11338,16 +11401,50 @@ rect.ann-highlight.ann-preview {
   /* The panes are already mounted tab-panes: toggling the mode must not
      replay the single-mode tab fade. */
   animation: none;
+  /* Phase 34 (chunk 3) — the inset the PANES actually consume. It is the
+     requested All Tools inset (`--tf-tools-inset`, still the registered token
+     that rides the panel slide) capped by `--tf-multi-inset-cap`: the stage
+     width minus the panes' minimum budget, measured by MultiPane and written
+     inline (DEF-287). With the panel closed, or the window wide enough, the
+     cap is inactive and this resolves to the requested inset exactly — so the
+     DEF-286 equal-shrink arithmetic and the 1:1 drag are unchanged. */
+  --tf-pane-inset: min(
+    var(--tf-tools-inset, 0px),
+    var(--tf-multi-inset-cap, 99999px)
+  );
 }
 
 .tab-stage[data-multi-mode="true"] .tab-pane[data-pane="A"] {
   left: 0;
-  width: calc(100% * var(--tf-split-frac, 0.5) - (var(--tf-divider-w) / 2));
+  /* Phase 34 (chunk 3) — DEF-286: the reserved width comes out of the
+     WORKSPACE as a whole. Each pane gives up HALF the inset, so both panes
+     shrink by the SAME number of pixels at every split (the old
+     `(100% - inset) * frac` starved the narrower pane pro-rata). With the
+     inset 0px this is the pre-Phase-34 geometry exactly. */
+  width: calc(
+    100% * var(--tf-split-frac, 0.5) - (var(--tf-pane-inset, 0px) / 2) -
+      (var(--tf-divider-w) / 2)
+  );
 }
 
 .tab-stage[data-multi-mode="true"] .tab-pane[data-pane="B"] {
-  right: 0;
-  width: calc(100% * (1 - var(--tf-split-frac, 0.5)) - (var(--tf-divider-w) / 2));
+  /* Pane B's right edge stops at the (capped) inset boundary — the reserved
+     strip stays at the workspace's right. Its width is the complement
+     fraction of the stage minus the SAME half-inset pane A gives up. */
+  right: var(--tf-pane-inset, 0px);
+  width: calc(
+    100% * (1 - var(--tf-split-frac, 0.5)) - (var(--tf-pane-inset, 0px) / 2) -
+      (var(--tf-divider-w) / 2)
+  );
+}
+
+/* Phase 34 (chunk 1) — in Multi Mode the inset is consumed ONCE, by the pane
+   widths above. The per-pane scroller must NOT reserve it a second time as a
+   right margin (that was the operator's blank strip inside pane A, which the
+   floating panel does not even cover). Single mode's scroller margin is
+   untouched. */
+.tab-stage[data-multi-mode="true"] .document-scroller {
+  margin-right: 0;
 }
 
 /* Phase 33 — OPAQUE CANVAS. A pane's document area must never show the app
@@ -11414,6 +11511,32 @@ rect.ann-highlight.ann-preview {
   background: var(--accent-selected);
 }
 
+/* Phase 34 (chunk 2) — the document names flank the DIVIDER, not the pane's
+   outer edge: pane A's header packs to its inner (right) edge so its
+   name + page count sit immediately LEFT of the divider, and pane B's packs
+   to its inner (left) edge so its name + page count sit immediately RIGHT of
+   it. The two headers then read as the two sides of one split workspace. The
+   clear affordance moves to the OUTER side on both (away from the drag
+   handle); the row itself stays a normal flow child above the document, so
+   nothing overlaps the shared toolbar, the strips or the page areas. */
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane="A"] .multi-pane-header {
+  justify-content: flex-end;
+  padding: 0 10px 0 6px;
+}
+
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane="B"] .multi-pane-header {
+  justify-content: flex-start;
+  padding: 0 6px 0 10px;
+}
+
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane="A"] .multi-pane-clear {
+  order: -1;
+}
+
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane="B"] .multi-pane-clear {
+  order: 1;
+}
+
 .multi-pane-badge {
   flex: 0 0 auto;
   display: inline-flex;
@@ -11440,7 +11563,11 @@ rect.ann-highlight.ann-preview {
 }
 
 .multi-pane-title {
-  flex: 1 1 auto;
+  /* Phase 34 (chunk 2) — the title must NOT grow to fill the row, or it
+     would push the name/count away from the divider the header is aligned
+     to. It keeps its content width and only shrinks (with the ellipsis) when
+     the row runs out of room at the 320px minimum pane width. */
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -11484,9 +11611,22 @@ rect.ann-highlight.ann-preview {
   position: absolute;
   top: var(--tf-multi-toolbar-h, 0px);
   bottom: 0;
-  /* Sits at the split, between the two panes' inner-edge strips. */
+  /* Phase 34 (chunk 3) — the divider consumes the SAME capped inset as the
+     pane widths (see the pane rule), so its centre stays exactly between
+     them when the All Tools panel is open. */
+  --tf-pane-inset: min(
+    var(--tf-tools-inset, 0px),
+    var(--tf-multi-inset-cap, 99999px)
+  );
+  /* Sits at the split, between the two panes' inner-edge strips. Phase 34
+     (chunk 3) — the divider's CENTRE is `100% * frac - inset/2` with the
+     SAME (capped) `--tf-pane-inset` the pane widths consume, so it stays
+     exactly between them at every split and the handle tracks the pointer
+     1:1 with the All Tools panel open (with inset 0px this is the
+     pre-change expression). */
   left: calc(
-    100% * var(--tf-split-frac, 0.5) - (var(--tf-divider-w) / 2)
+    100% * var(--tf-split-frac, 0.5) - (var(--tf-pane-inset, 0px) / 2) -
+      (var(--tf-divider-w) / 2)
   );
   width: var(--tf-divider-w);
   z-index: 3;
@@ -11496,25 +11636,51 @@ rect.ann-highlight.ann-preview {
   cursor: col-resize;
   touch-action: none;
   user-select: none;
-  background: var(--border);
+  /* Phase 34 (chunk 1) — a clearly visible neutral surface band with real
+     contrast against the neighbouring pane strips in every theme
+     (--border-strong is the theme's strong hairline: #cbd5e1 light,
+     #2e353d dark, rgba(15,23,42,0.18) frosted). The grip pill rides centred
+     on top. `background` (not geometry) is the only transitioned channel. */
+  background: var(--border-strong);
   transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .multi-divider:hover,
 .multi-divider:active {
-  background: var(--accent-soft);
+  /* Grab state: the surface takes the single accent so the affordance is
+     unmistakable while the pointer is on it. */
+  background: var(--accent);
 }
 
 .multi-divider-grip {
   display: inline-flex;
-  color: var(--fg-faint);
-  opacity: 0;
-  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+  align-items: center;
+  justify-content: center;
+  /* Never shrink below the capsule width inside the 8px band (a flex item
+     would otherwise compress to the container's width). */
+  flex: 0 0 auto;
+  /* The handle: a raised capsule wider than the 8px band, so the grip reads
+     as a physical affordance rather than a hairline. Centred by the divider's
+     flex; it overflows the band symmetrically. */
+  width: 20px;
+  height: 44px;
+  border-radius: 999px;
+  background: var(--bg-raised);
+  color: var(--fg-muted);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.22);
+  /* Always visible — the old opacity: 0 hid the only affordance until hover. */
+  opacity: 1;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    box-shadow var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 .multi-divider:hover .multi-divider-grip,
 .multi-divider:active .multi-divider-grip {
-  opacity: 1;
+  background: var(--fg-on-accent);
+  color: var(--accent);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28);
 }
 
 /* ---- empty pane -------------------------------------------------------- */
@@ -11646,14 +11812,22 @@ rect.ann-highlight.ann-preview {
    the single-mode rail, so the two surfaces read as one family in every
    theme. */
 
-/* Multi Mode: a pane carrying its OWN strip reserves a fixed thumbnail
-   column (the single-mode rail's rest width) regardless of the single-mode
-   pages-panel collapse state — a strip is a thumbnail strip, never the 48px
-   ruler. `:has` keeps this scoped to the strip; single mode's rail column
-   (`--tf-rail-w`, which still shrinks to the ruler) is untouched. */
+/* Multi Mode: a pane carrying its OWN strip reserves a thumbnail column at
+   the single-mode rail's rest width, but that column now SHRINKS toward its
+   own floor when the pane is narrow (DEF-287) instead of forcing the page
+   area to zero. `--tf-strip-min` is the thumb floor (`THUMB_MIN_WIDTH` +
+   `THUMB_RAIL_INSET_PX` in thumbGeometry.ts, so the strip's own thumb width
+   keeps fitting) and `--tf-page-min` is the pane's guaranteed page area
+   (`MIN_PAGE_WIDTH_PX` in multiPaneLayout.ts). `:has` keeps this scoped to
+   the strip; single mode's rail column (`--tf-rail-w`, which still shrinks
+   to the ruler) is untouched. */
 .workspace:has(> .pane-thumb-strip) {
   --tf-strip-w: 220px;
-  grid-template-columns: var(--tf-strip-w) 1fr;
+  --tf-strip-min: 100px;
+  --tf-page-min: 44px;
+  grid-template-columns:
+    minmax(var(--tf-strip-min), var(--tf-strip-w))
+    minmax(var(--tf-page-min), 1fr);
 }
 
 .workspace:has(> .pane-thumb-strip) .workspace-main {
@@ -11663,7 +11837,9 @@ rect.ann-highlight.ann-preview {
 /* Pane A's strip sits at the pane's RIGHT edge: the column flips and the
    page area is the first track. */
 .workspace[data-rail-side="right"]:has(> .pane-thumb-strip) {
-  grid-template-columns: 1fr var(--tf-strip-w);
+  grid-template-columns:
+    minmax(var(--tf-page-min), 1fr)
+    minmax(var(--tf-strip-min), var(--tf-strip-w));
 }
 
 .workspace[data-rail-side="right"] .workspace-main {
@@ -11812,19 +11988,26 @@ rect.ann-highlight.ann-preview {
   cursor: grabbing;
 }
 
-/* The insertion indicator: a slim accent bar in the gap before or after a
- * page (and after the last page, the append slot). Pointer-transparent so
- * it never blocks the drop. */
+/* The insertion indicator: a prominent accent placement LINE in the gap
+ * before or after a page (and after the last page, the append slot). Pointer-
+ * transparent so it never blocks the drop. Phase 34 (chunk 1): thicker (5px,
+ * up from 3px) with a soft accent glow and fully rounded end caps so it reads
+ * as "the page lands HERE" rather than a border. It still spans the page
+ * column and sits in the 18px inter-page gap (see .document-content `gap`),
+ * never overlaying a page's content. */
 .page-drop-indicator {
   position: absolute;
   left: 0;
   right: 0;
-  height: 3px;
+  height: 5px;
   z-index: 40;
   display: flex;
   justify-content: center;
   border-radius: 999px;
   background: var(--accent);
+  box-shadow:
+    0 0 0 1px var(--accent-soft),
+    0 0 8px 1px rgba(37, 99, 235, 0.45);
   pointer-events: none;
 }
 
@@ -11834,6 +12017,16 @@ rect.ann-highlight.ann-preview {
 
 .page-drop-indicator-after {
   bottom: -9px;
+}
+
+/* DEF-290 — the FIRST page slot has no gap above it: the scroller's visible
+   top edge IS the slot's top edge, so the between-pages `-9px` offset put
+   the line entirely above the scroller (clipped by `overflow: hidden auto`)
+   and the "insert before page 1" affordance was invisible. Mirroring the
+   rail's first-slot handling (`.thumb-drop-line-first`), the line anchors
+   flush at the slot's top edge, INSIDE the visible area. */
+.page-drop-indicator-first {
+  top: 0;
 }
 
 /* The landing PANE highlights while a page drag hovers it (the insertion

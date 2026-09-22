@@ -3001,3 +3001,49 @@ contract when that phase is still unreleased), then amend the contract text BEFO
 contradicts the operator. Phase 33 exists because items 1-2 of the print feedback and 1-3 of the Multi
 View feedback were design changes; the two follow-ups in this round were bugs (DEF-284/285) and were filed
 as such.
+
+## 2026-09-22: Phase 34 (Multi Mode round 2) - reserved space, one tab, and five gate defects
+
+Phase 34 answered the operator's second round of Multi Mode feedback: the All Tools panel resizes both panes
+equally, Multi Mode presents ONE composite tab with both file names flanking a prominent divider, and a page
+drag shows a clear insertion line. The gate found five defects, all fixed and closed (DEF-286..290). Final:
+116 unit tests in the affected files, 14 Phase 34 + 26 Phase 32 + 5 Phase 33 e2e tests green.
+
+**Rule 1 - reserved space belongs to the WORKSPACE, and "equally" means equal deltas.** The All Tools palette
+reserves width via `--tf-tools-inset`, which each pane's `.document-scroller` consumed as its own
+`margin-right` - so in Multi Mode pane A reserved a 344px blank strip for a panel that is not even over it
+(and the operator saw exactly that). Fix: the inset is consumed ONCE, at the stage's split arithmetic. And
+when the operator says "resize both window equally", implement EQUAL deltas (`inset/2` per pane), not
+proportional to the split - the first implementation multiplied each pane's fraction by the inset, which is
+equal only at 50/50 (DEF-286: A lost 120px, B lost 224px at a 0.35 split). Pin the deltas at several splits
+in a test.
+
+**Rule 2 - a layout with collapsible parts needs explicit `minmax()` floors and a stated yield order.**
+DEF-287: at the 640px minimum window with the panel open, both pane page areas collapsed to 0px (each pane
+148px, narrower than its own 220px strip) - the document simply disappeared. Fix: the per-pane grid is
+`minmax(var(--tf-strip-min), 220px) minmax(var(--tf-page-min), 1fr)` (strip floor 100px, page floor 44px), so
+the STRIP yields before the PAGE, and the panel's reserved width is capped from the measured stage width.
+State the floors as named constants and assert the invariant at the worst supported size.
+
+**Rule 3 - the DEF-283 lesson again: a stored geometry must be re-clamped when the available space changes.**
+The page-floor fix was incomplete: a split fraction set at a wide window carried to 640px with the panel open
+could still under-run the minimum until the user dragged. Fix: one shared pure `clampSplitFraction` in
+`multiPaneLayout.ts` called by BOTH the drag path and a re-clamp effect (window resize + panel open/close),
+idempotent, writing state only when the value changes, pinning to 0.5 when even that cannot satisfy the
+minimum. Same shape as DEF-283's dialog re-clamp: extract the clamp, then call it from every path that
+changes the available space.
+
+**Rule 4 - a presentation layer over a model needs an audit of EVERY control that creates or consumes model
+entries.** Multi Mode's single composite tab is a projection over two sessions, and two controls broke on it:
+the "+" created a HIDDEN tab that only appeared after leaving the mode (DEF-288 - now visibly disabled with a
+reason, the project's standing fail-loud rule) and the composite close first no-op'd (DEF-289) and then, once
+fixed, left a BLANK workspace because it disabled the mode without restoring an active tab. Fix: one shared
+`leaveMultiMode` helper used by BOTH the toolbar toggle and the composite close, restoring the pane's document
+or the first remaining tab. When you add such a projection, walk every affordance that adds or removes a model
+entry and make each either act visibly or be disabled with a reason.
+
+**Rule 5 - a gap-anchored visual affordance needs first/last-item special cases.** DEF-290: the canvas
+insertion line is positioned in the gap above a slot (`top: -9px`), so for the FIRST page it rendered above
+the scroller's top edge and was clipped away entirely - the rail already had a first-slot special case, the
+canvas did not. Rule: whenever an indicator is anchored in the space BETWEEN items, test the first and last
+items explicitly (the rail's `.thumb-drop-line-first` / `-after` are the model to mirror).

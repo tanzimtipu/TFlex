@@ -615,20 +615,27 @@ test('CQ2 window close queue walks BOTH modified panes in turn', async () => {
   expect(b).toBe(34);
 });
 
-test('CQ3 closing a pane tab falls back to the empty state; last tab returns to single-pane', async () => {
+test('CQ3 clearing a pane falls back to the empty state; closing the composite tab closes both', async () => {
   await twoPaneSetup();
-  await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-beta' }).locator('.tab-close').click();
-  await win.waitForTimeout(1200);
+  // Phase 34 — Multi Mode shows ONE composite tab. Clearing pane B (its
+  // document's close path) still updates the pane cleanly to the empty state.
+  await win.locator('.tab-pane[data-pane="B"] [data-pane-clear]').click();
+  await win.waitForTimeout(1000);
 
   expect(await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count()).toBe(1);
   expect(await win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').count()).toBe(0);
   expect(await win.locator('[data-pane-strip-pane="B"]').count()).toBe(0);
-  console.log(`[P32-close] CQ3 after closing pane B's tab: paneB empty=${await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count()} paneA=${await paneCount('A')}`);
+  console.log(`[P32-close] CQ3 after clearing pane B: paneB empty=${await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count()} paneA=${await paneCount('A')}`);
   expect(await paneCount('A')).toBe(34);
 
-  await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).locator('.tab-close').click();
-  await win.waitForTimeout(1400);
-  console.log(`[P32-close] CQ3 after closing the last tab: tabs=${await win.locator('.tab[data-tab-id]').count()} panes=${await win.locator('[data-pane]').count()} multi=${await win.locator('.tab-stage').getAttribute('data-multi-mode')}`);
+  // Re-fill pane B, then close the ONE composite tab: both documents close and
+  // the app returns to the single-pane welcome screen.
+  await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').first().click();
+  await win.waitForTimeout(1200);
+  expect(await win.locator('.tab[data-tab-id]').count()).toBe(1);
+  await win.locator('.tab[data-tab-id] .tab-close').click();
+  await win.waitForTimeout(1600);
+  console.log(`[P32-close] CQ3 after composite close: tabs=${await win.locator('.tab[data-tab-id]').count()} panes=${await win.locator('[data-pane]').count()} multi=${await win.locator('.tab-stage').getAttribute('data-multi-mode')}`);
   expect(await win.locator('.tab[data-tab-id]').count()).toBe(0);
   expect(await win.locator('[data-pane]').count()).toBe(0);
   expect(await win.locator('.tab-stage').getAttribute('data-multi-mode')).toBe('false');

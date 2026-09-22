@@ -309,9 +309,13 @@ describe("App wiring — focus and the strip route through the pure decisions", 
   });
 
   it("leaving Multi Mode restores a real active tab (single mode never hides every pane)", () => {
+    // The toggle delegates to the shared leave helper (also used by the
+    // composite tab close), and the helper owns the restore.
     const body = handlerBody("onMultiModeToggle");
-    expect(body).toMatch(/multiMode\.paneA \?\? multiMode\.paneB/);
-    expect(body).toMatch(/activateTab\(restore\)/);
+    expect(body).toMatch(/leaveMultiMode\(\)/);
+    const helper = handlerBody("leaveMultiMode");
+    expect(helper).toMatch(/multiMode\.paneA \?\? multiMode\.paneB/);
+    expect(helper).toMatch(/activateTab\(restore\)/);
   });
 });
 

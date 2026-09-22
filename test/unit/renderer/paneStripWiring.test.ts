@@ -87,8 +87,14 @@ describe("the stage no longer hosts a shared rail", () => {
 
   it("keeps the divider 1:1 across the whole stage (the panes own it)", () => {
     expect(stage).toMatch(/"--tf-split-frac": String\(splitFraction\)/);
-    expect(stage).toMatch(/const usable = rect\.width;/);
-    expect(stage).toMatch(/const raw = \(clientX - rect\.left\) \/ usable;/);
+    // Phase 34 (chunk 3) — DEF-286/287: each pane gives up HALF the (capped)
+    // All Tools inset, so the divider's centre is `W * frac - inset/2` and
+    // the pointer fraction inverts to `(x + inset/2) / W`.
+    expect(stage).toMatch(/getPropertyValue\("--tf-tools-inset"\)/);
+    expect(stage).toMatch(
+      /effectiveToolsInset\(rect\.width, requestedInset\)/,
+    );
+    expect(stage).toMatch(/const raw = \(clientX - rect\.left \+ inset \/ 2\) \/ rect\.width;/);
   });
 });
 

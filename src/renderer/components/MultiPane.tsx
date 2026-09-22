@@ -21,6 +21,12 @@ import type {
 } from "react";
 import { Columns2, FileText, FolderOpen, GripVertical, X } from "lucide-react";
 import { paneTabId, type MultiModeState, type PaneId } from "../state/multiMode";
+import {
+  MIN_PANE_WIDTH_PX,
+  clampSplitFraction,
+  effectiveToolsInset,
+  insetCapFor,
+} from "./multiPaneLayout";
 
 /** A tab that can fill a pane: a real document with a name and page count. */
 export interface StageTab {
@@ -29,8 +35,9 @@ export interface StageTab {
   pageCount: number;
 }
 
-/** The smallest comfortable pane width the divider can produce. */
-export const MIN_PANE_WIDTH_PX = 320;
+/** The smallest comfortable pane width the divider can produce. Re-exported
+ *  from the pure layout module so the single rule has a single home. */
+export { MIN_PANE_WIDTH_PX };
 
 export interface DocumentStageProps {
   /** Every tab that owns a live document session. */
@@ -64,6 +71,11 @@ export interface DocumentStageProps {
    *  copy, so exactly one affordance exists (criterion 4b); single mode keeps
    *  the badge inside its `DocumentView`, unchanged. */
   toolsBadge?: ReactNode;
+  /** DEF-287 (residual) — the All Tools panel's requested inset TARGET in px
+   *  (0 with the panel closed, 344 list / 380 grid with it open). A change
+   *  here is a geometry change: the stored split fraction is re-clamped so
+   *  both panes keep their minimum without requiring a drag. */
+  toolsInsetTarget?: number;
 }
 
 /** The per-pane header: document name, page count, and the clear control. */
@@ -204,6 +216,7 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     renderDocument,
     sharedToolbar,
     toolsBadge,
+    toolsInsetTarget,
   } = props;
 
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -213,6 +226,11 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
   // when the bar wraps at a narrow window.
   const toolbarRowRef = useRef<HTMLDivElement | null>(null);
   const [toolbarHeight, setToolbarHeight] = useState(0);
+  // DEF-287 — the stage's measured inline width. The panes' minimum budget
+  // (strip floor + page minimum, both panes + the divider) caps the All
+  // Tools inset so the page areas can never collapse; the cap is derived
+  // from this measurement and written inline as `--tf-multi-inset-cap`.
+  const [stageWidth, setStageWidth] = useState(0);
 
   const multiOn = multiMode.enabled;
   const stageStyle = {
@@ -225,7 +243,36 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     "--tf-split-frac": String(splitFraction),
     // Phase 33 (chunk 4) — the panes' top offset under the shared toolbar.
     "--tf-multi-toolbar-h": multiOn ? `${toolbarHeight}px` : "0px",
+    // DEF-287 — the largest inset the two panes may consume at this width.
+    // Omitted until measured (jsdom reports 0): the stylesheet's fallback
+    // then leaves the inset uncapped, exactly the pre-change geometry.
+    "--tf-multi-inset-cap":
+      multiOn && stageWidth > 0 ? `${insetCapFor(stageWidth)}px` : undefined,
   } as CSSProperties;
+
+  // DEF-287 — measure the stage's own width (layout effect: the cap is
+  // applied before the first paint, so a minimum-window open never shows a
+  // collapsed page area for even one frame). jsdom has no layout
+  // (clientWidth 0) and may not implement ResizeObserver — both fall back
+  // to the uncapped inset, which is what the unit harness pins.
+  useLayoutEffect((): (() => void) | undefined => {
+    const el = stageRef.current;
+    if (el === null) {
+      setStageWidth(0);
+      return undefined;
+    }
+    const update = (): void => {
+      const width = el.clientWidth;
+      setStageWidth((prev) => (prev === width ? prev : width));
+    };
+    update();
+    const RO = (globalThis as { ResizeObserver?: new (cb: () => void) => ResizeObserver })
+      .ResizeObserver;
+    if (RO === undefined) return undefined;
+    const observer = new RO(update);
+    observer.observe(el);
+    return (): void => observer.disconnect();
+  }, [multiOn]);
 
   // Measure the shared toolbar row so the panes (headers and strips
   // included) start below it. The measured height is written to
@@ -253,6 +300,25 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     return (): void => observer.disconnect();
   }, [multiOn, sharedToolbar]);
 
+  // DEF-287 (residual) — a STORED split fraction must keep both panes at
+  // their minimum at every supported width with the panel open, without
+  // requiring a drag. Whenever the available geometry changes while Multi
+  // Mode is on — the stage resizes, or the All Tools panel opens/closes (its
+  // `--tf-tools-inset` TARGET changes) — re-clamp the stored fraction with
+  // the SAME pure rule the drag uses. The drag path stays untouched: while a
+  // pointer drag is in flight this effect is inert (`draggingRef`), and a
+  // fraction already inside the bounds is written back unchanged, so a normal
+  // layout never churns. When even 0.5 cannot satisfy the minimum (a window
+  // below the supported minimum) the rule pins to 0.5 and the DEF-287 inset
+  // cap keeps the page areas usable; the clamp is idempotent, so no
+  // oscillation.
+  useLayoutEffect((): void => {
+    if (!multiOn || draggingRef.current) return;
+    if (stageWidth <= 0) return;
+    const clamped = clampSplitFraction(stageWidth, toolsInsetTarget ?? 0, splitFraction);
+    if (clamped !== splitFraction) onSplitChange(clamped);
+  }, [multiOn, stageWidth, toolsInsetTarget, splitFraction, onSplitChange]);
+
   /** Clamp a pointer x to a fraction that keeps both panes usable. */
   const fractionFor = useCallback(
     (clientX: number): number => {
@@ -260,15 +326,23 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
       if (el === null) return 0.5;
       const rect = el.getBoundingClientRect();
       if (rect.width <= 0) return 0.5;
-      // Phase 33 — the panes own the whole stage; the split is measured
-      // across it directly.
-      const usable = rect.width;
-      if (usable <= 0) return 0.5;
-      const min = MIN_PANE_WIDTH_PX / usable;
-      // Below two minimum panes the split is meaningless: park it centred.
-      if (min >= 0.5) return 0.5;
-      const raw = (clientX - rect.left) / usable;
-      return Math.min(1 - min, Math.max(min, raw));
+      // Phase 34 (chunk 3) — DEF-286/287: the divider's CENTRE sits at
+      // `100% * frac - inset / 2` (both panes give up half the inset, so the
+      // handle no longer drifts off the pointer). The inset used here is the
+      // SAME capped one the stylesheet consumes, derived from the stage
+      // width, so the drag stays 1:1 with the panel open at any width.
+      // An unset/0px token (or a jsdom computed style that cannot resolve
+      // it) leaves the pre-change geometry untouched.
+      const insetRaw = getComputedStyle(el).getPropertyValue("--tf-tools-inset").trim();
+      const requested = Number.parseFloat(insetRaw);
+      const requestedInset = Number.isFinite(requested) ? requested : 0;
+      const inset = effectiveToolsInset(rect.width, requestedInset);
+      // Pane A's left edge is 0 and its width is `W * f - inset/2 - divider/2`,
+      // so the handle must keep that width at or above MIN_PANE_WIDTH_PX.
+      // The shared `clampSplitFraction` owns that rule — the drag only adds
+      // the pointer->fraction projection on top of it.
+      const raw = (clientX - rect.left + inset / 2) / rect.width;
+      return clampSplitFraction(rect.width, requestedInset, raw);
     },
     [],
   );

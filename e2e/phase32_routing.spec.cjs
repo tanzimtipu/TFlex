@@ -275,36 +275,47 @@ test('R3 Save targets the focused pane', async () => {
   expect(aAfterSave.modified).toBe(false);
 });
 
-test('R4 tab-strip rules: in-a-pane tab focuses its pane; no-pane tab assigns to the focused pane', async () => {
-  await twoPaneSetup(); // A=alpha, B=beta; B focused after assignment
-  expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
+test('R4 tab-strip activation rules apply with Multi Mode OFF; ON shows ONE composite tab', async () => {
+  // Phase 34 supersession: while Multi Mode is ON the strip is ONE composite
+  // tab for the whole workspace, so the Phase 32 per-document tab-strip
+  // activation rules (click a tab -> focus its pane; a no-pane tab assigns to
+  // the focused pane) no longer apply there. They are asserted here with the
+  // mode OFF, where the individual tabs and their activation still exist; the
+  // composite tab's own contract is asserted by phase34_tab.spec.cjs.
+  await openFile(tmpCopy(ALPHA_SRC, 'p32-alpha.pdf')); // 34 pages
+  await waitTabCount(1);
+  await openFile(tmpCopy(BETA_SRC, 'p32-beta.pdf')); // 520 pages
+  await waitTabCount(2);
+  const stage = win.locator('.tab-stage');
+  expect(await stage.getAttribute('data-multi-mode')).toBe('false');
 
-  // Rule 1: clicking the tab whose document lives in pane A focuses pane A.
+  // Clicking a tab activates THAT document (visible + aria-selected).
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
   await win.waitForTimeout(400);
-  console.log(`[P32-routing] rule1 after alpha-tab click: A.focused=${await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')} B.focused=${await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')}`);
-  expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('true');
-  expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('false');
+  let activeTitle = await win.locator('.tab[data-tab-id][aria-selected="true"] .tab-title').innerText();
+  let activePages = await win.evaluate(() => window.tflexDiagnostics().pageCount);
+  console.log(`[P32-routing] rule (mode OFF) after alpha-tab click: active="${activeTitle}" pageCount=${activePages}`);
+  expect(activeTitle).toContain('p32-alpha');
+  expect(activePages).toBe(34);
 
-  // Rule 2: a tab that is in NO pane is assigned to the focused pane.
-  await openFile(tmpCopy(ALPHA_SRC, 'p32-gamma.pdf'));
-  await waitTabCount(3);
-  // Deterministic focus: clicking the in-pane alpha tab focuses pane A
-  // (rule 1, already proven) and makes alpha the active tab, so the gamma
-  // tab is inactive and its click reaches the routing seam.
-  await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
+  await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-beta' }).first().click();
   await win.waitForTimeout(400);
-  const preActive = await win.evaluate(() => window.tflexDiagnostics().activeTabId);
-  const preFocused = await win.locator('.tab-pane[data-pane-focused="true"]').getAttribute('data-pane');
-  const aHeaderBefore = (await headerLoc('A').innerText()).replace(/\s+/g, ' ');
-  console.log(`[P32-routing] rule2 pre-click activeTab=${preActive} focused=${preFocused} A.header="${aHeaderBefore}"`);
-  await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-gamma' }).first().click();
-  await win.waitForTimeout(1200);
-  const aHeaderAfter = (await headerLoc('A').innerText()).replace(/\s+/g, ' ');
-  const bHeader = (await headerLoc('B').innerText()).replace(/\s+/g, ' ');
-  const postActive = await win.evaluate(() => window.tflexDiagnostics().activeTabId);
-  console.log(`[P32-routing] rule2 pane A header "${aHeaderBefore}" -> "${aHeaderAfter}"; pane B "${bHeader}"; activeTab=${postActive}`);
-  expect(aHeaderAfter).toContain('p32-gamma');
-  expect(bHeader).toContain('p32-beta');
-  expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('true');
+  activeTitle = await win.locator('.tab[data-tab-id][aria-selected="true"] .tab-title').innerText();
+  activePages = await win.evaluate(() => window.tflexDiagnostics().pageCount);
+  console.log(`[P32-routing] rule (mode OFF) after beta-tab click: active="${activeTitle}" pageCount=${activePages}`);
+  expect(activeTitle).toContain('p32-beta');
+  expect(activePages).toBe(520);
+
+  // Turning the mode ON collapses the strip to EXACTLY ONE composite tab that
+  // names the pane document(s); the per-document activation rules are gone.
+  // Click the VISIBLE control (two tabs are mounted, the hidden one has its
+  // own toolbar copy).
+  await win.locator('[data-toolbar-multi-mode]:visible').first().click();
+  await win.waitForTimeout(600);
+  expect(await stage.getAttribute('data-multi-mode')).toBe('true');
+  const tabsOn = win.locator('.tab[data-tab-id]');
+  expect(await tabsOn.count()).toBe(1);
+  const label = (await tabsOn.first().locator('.tab-title').innerText()).replace(/\s+/g, ' ').trim();
+  console.log(`[P32-routing] rule (mode ON) composite tab label="${label}"`);
+  expect(label).toContain('p32-beta');
 });

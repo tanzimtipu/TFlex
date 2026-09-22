@@ -66,7 +66,19 @@ import {
   resolveTabStripActivation,
 } from "./state/multiModeRouting";
 import { collectModifiedTabIds, orderWindowCloseQueue } from "./state/closeGate";
+import {
+  COMPOSITE_TAB_ID,
+  advanceCompositeQueue,
+  compositeDocIds,
+  compositeDocRefs,
+  compositeHeaderTab,
+  planCompositeClose,
+} from "./state/compositeTab";
 import { DocumentStage, type StageTab } from "./components/MultiPane";
+import {
+  TOOLS_PANEL_W_GRID_PX,
+  TOOLS_PANEL_W_LIST_PX,
+} from "./components/multiPaneLayout";
 import { MultiToolbar } from "./components/MultiToolbar";
 import { SharedToolController } from "./components/multiToolController";
 // Phase 33 — the per-pane thumbnail strips are rendered by each pane's own
@@ -718,6 +730,16 @@ export function App(): ReactElement {
   // when the queue changes.
   const windowCloseQueueRef = useRef<string[] | null>(null);
   windowCloseQueueRef.current = windowCloseQueue;
+
+  // Phase 34 (chunk 2) — the composite tab's close flow. Like the DEF-142
+  // window-close queue, but it DEFERS every close until the whole queue
+  // resolves: the composite tab owns BOTH pane documents, so Cancel must
+  // abort the close and leave both alive (a per-step `performCloseTab`
+  // would strand a half-empty workspace). `compositeCloseIdsRef` is both
+  // documents to close at the end; `compositeCloseQueueRef` is the modified
+  // subset still to prompt. Both null outside a composite close.
+  const compositeCloseIdsRef = useRef<string[] | null>(null);
+  const compositeCloseQueueRef = useRef<string[] | null>(null);
 
   /** Persist the latest settings to main immediately. Bumps the
    *  echo-filter seq and snapshots the object that went out so the
@@ -1779,6 +1801,11 @@ export function App(): ReactElement {
    *  toolbar / Welcome screen) fills this tab in place instead of
    *  stacking a new one — see `tabsReducer.open`. */
   const onNewEmptyTab = useCallback((): void => {
+    // DEF-288 — while Multi Mode is on the tab strip shows ONE composite
+    // workspace tab, so a new empty tab would be a hidden state mutation
+    // that only appears after leaving the mode. The header's "+" is
+    // disabled; this guard keeps any other caller honest too.
+    if (multiMode.enabled) return;
     const id = crypto.randomUUID();
     const meta: TabMeta = {
       id,
@@ -1800,7 +1827,7 @@ export function App(): ReactElement {
     setArmedStamp(null);
     setEditModeOpen(false);
     setOcrSuspectsOpen(false);
-  }, []);
+  }, [multiMode.enabled]);
 
   const onPersist = useCallback((tabId: string, viewer: PersistedViewer): void => {
     setOpenTabs((prev) => {
@@ -3305,6 +3332,37 @@ export function App(): ReactElement {
     setPendingCloseSaving(false);
   }, []);
 
+  // Phase 34 (chunk 2) — advance the composite tab's close queue. The
+  // resolved document is NOT closed here: the flow waits until every
+  // modified pane document has been answered, then closes BOTH and leaves
+  // Multi Mode (the composite tab IS the workspace). This is what makes
+  // Cancel abort the whole close instead of stranding one pane.
+  const advanceCompositeClose = useCallback((): void => {
+    const queue = compositeCloseQueueRef.current;
+    if (queue === null) return;
+    const { next, done } = advanceCompositeQueue(queue);
+    if (done) {
+      const ids = compositeCloseIdsRef.current ?? [];
+      compositeCloseQueueRef.current = null;
+      compositeCloseIdsRef.current = null;
+      setPendingCloseTabId(null);
+      setPendingCloseError(null);
+      setPendingCloseSaving(false);
+      for (const closeId of ids) performCloseTab(closeId);
+      // Both pane documents are gone: the single workspace tab no longer
+      // exists, so leave the mode. Any other open tab becomes the active
+      // single-mode tab (the tabs reducer picked the neighbour); with none
+      // the welcome screen shows.
+      dispatchMultiMode({ type: "disable" });
+      return;
+    }
+    // More modified pane documents to walk through: show the next prompt.
+    compositeCloseQueueRef.current = next;
+    setPendingCloseTabId(next[0] ?? null);
+    setPendingCloseError(null);
+    setPendingCloseSaving(false);
+  }, []);
+
   // B8 — close-tab prompt handler. The user picked one of
   // Save / Don't save / Cancel from the CloseTabPromptDialog.
   // We orchestrate the save flow here (the dialog stays
@@ -3323,6 +3381,10 @@ export function App(): ReactElement {
         // DEF-142 — abort any in-flight window-close flow. No
         // confirmClose call: the window stays open.
         setWindowCloseQueue(null);
+        // Phase 34 (chunk 2) — cancel also aborts a composite close: both
+        // pane documents survive and neither is closed.
+        compositeCloseQueueRef.current = null;
+        compositeCloseIdsRef.current = null;
         return;
       }
       if (choice === "discard") {
@@ -3330,6 +3392,13 @@ export function App(): ReactElement {
         // Close the tab; performCloseTab handles the rest.
         setPendingCloseTabId(null);
         setPendingCloseError(null);
+        // Phase 34 (chunk 2) — in a composite close the discard is
+        // recorded and the queue advances; BOTH documents close only once
+        // every prompt has resolved.
+        if (compositeCloseQueueRef.current !== null) {
+          advanceCompositeClose();
+          return;
+        }
         performCloseTab(id);
         // DEF-142 — this tab resolved; advance the window-close
         // queue (confirmClose(true) fires when the queue empties).
@@ -3383,6 +3452,12 @@ export function App(): ReactElement {
           setPendingCloseSaving(false);
           setPendingCloseTabId(null);
           setPendingCloseError(null);
+          // Phase 34 (chunk 2) — composite close: record the save and
+          // advance; the pair closes when every prompt has resolved.
+          if (compositeCloseQueueRef.current !== null) {
+            advanceCompositeClose();
+            return;
+          }
           performCloseTab(id);
           // DEF-142 — Save-As succeeded; advance the window-close
           // queue (confirmClose(true) fires when the queue empties).
@@ -3409,6 +3484,11 @@ export function App(): ReactElement {
         setPendingCloseSaving(false);
         setPendingCloseTabId(null);
         setPendingCloseError(null);
+        // Phase 34 (chunk 2) — composite close: record the save and advance.
+        if (compositeCloseQueueRef.current !== null) {
+          advanceCompositeClose();
+          return;
+        }
         performCloseTab(id);
         // DEF-142 — the save resolved; advance the window-close queue
         // (confirmClose(true) fires when the queue empties).
@@ -6636,6 +6716,31 @@ pushToast(
     [tabs.tabs],
   );
 
+  // Phase 34 (chunk 2) — while Multi Mode is on the strip shows ONE tab for
+  // the combined workspace (the operator's rule), not one per pane document.
+  // This is a PRESENTATION projection over the unchanged two-session model:
+  // the pane documents resolve through the same `meta` shape the individual
+  // tabs used, the label joins both names, and `modified` is true when
+  // EITHER document is dirty. Single mode (and the mode-off restore) keep
+  // `headerTabs` untouched, so the focused pane's document is active again.
+  const multiHeaderDocRefs = useMemo(
+    () =>
+      compositeDocRefs(multiMode.paneA, multiMode.paneB, (id) => {
+        const meta = tabs.tabs.find((t) => t.id === id);
+        return meta === undefined
+          ? null
+          : { id: meta.id, title: meta.title, modified: meta.modified };
+      }),
+    [multiMode.paneA, multiMode.paneB, tabs.tabs],
+  );
+  const stripTabs = useMemo(
+    () => (multiMode.enabled ? [compositeHeaderTab(multiHeaderDocRefs)] : headerTabs),
+    [multiMode.enabled, multiHeaderDocRefs, headerTabs],
+  );
+  // The single composite tab is the only visible tab, so it must read as
+  // active; single mode keeps the tab-store active id.
+  const stripActiveId = multiMode.enabled ? COMPOSITE_TAB_ID : tabs.activeId;
+
   // Phase 13 / DEF-202 — maximize / restore icon for the custom title
   // bar. This reads the dedicated `windowMaximized` mirror, NOT
   // `settings.geometry.maximized`: the echo filter (DEF-037) discards
@@ -6739,25 +6844,29 @@ pushToast(
     [tabs.tabs, openTabs, engineUi],
   );
 
+  /** Leave the Multi Mode workspace and guarantee a real active tab when
+   *  the active id was cleared (an empty focused pane). Single mode renders
+   *  no visible pane when the active id is null, so restore a real document
+   *  — pane A's, else the first tab — or fall through to the welcome screen
+   *  when no tabs remain. Shared by the toolbar toggle and the composite
+   *  tab's close so the leave path is one piece of logic. */
+  const leaveMultiMode = useCallback((): void => {
+    const fallback = multiMode.paneA ?? multiMode.paneB;
+    dispatchMultiMode({ type: "disable" });
+    if (tabs.activeId === null) {
+      const restore =
+        fallback !== null && tabs.tabs.some((t) => t.id === fallback)
+          ? fallback
+          : tabs.tabs[0]?.id ?? null;
+      if (restore !== null) activateTab(restore);
+    }
+  }, [multiMode, tabs.activeId, tabs.tabs, activateTab]);
+
   /** Toggle the mode. Enabling seeds pane A from the tab that is active
    *  now; disabling returns to the single-pane layout and touches no tab. */
   const onMultiModeToggle = useCallback((): void => {
     if (multiMode.enabled) {
-      // Leaving the mode: the focused pane's document must become the
-      // single-mode active tab again. If the focused pane was empty the
-      // active id was cleared (a document-scoped op must not have fallen
-      // back to the previously active tab), so restore a real document —
-      // pane A's, else the first tab — because single mode renders no
-      // visible pane when the active id is null.
-      const fallback = multiMode.paneA ?? multiMode.paneB;
-      dispatchMultiMode({ type: "disable" });
-      if (tabs.activeId === null) {
-        const restore =
-          fallback !== null && tabs.tabs.some((t) => t.id === fallback)
-            ? fallback
-            : tabs.tabs[0]?.id ?? null;
-        if (restore !== null) activateTab(restore);
-      }
+      leaveMultiMode();
       return;
     }
     const activeId = tabs.activeId;
@@ -6766,7 +6875,7 @@ pushToast(
       return;
     }
     dispatchMultiMode({ type: "enable", activeTabId: activeId });
-  }, [multiMode, tabs.activeId, tabs.tabs, activateTab, pushToast]);
+  }, [multiMode, leaveMultiMode, tabs.activeId, pushToast]);
 
   /** Focus a pane. The focused pane drives the app's effective active tab,
    *  so every existing document-scoped operation path (which reads the
@@ -6885,6 +6994,12 @@ pushToast(
    *  Single mode is the untouched `activateTab`. */
   const onTabStripActivate = useCallback(
     (id: string): void => {
+      // Phase 34 (chunk 2) — while the single composite tab is shown the
+      // Phase-32 strip rules have no target (there is one tab, not the
+      // per-document entries), so a click is a no-op beyond the focus the
+      // pane itself already holds. The rules apply again the moment the
+      // mode is off and `headerTabs` restores the individual tabs.
+      if (multiMode.enabled) return;
       const decision = resolveTabStripActivation(multiMode, id);
       if (decision.assign !== null) {
         assignPaneDocument(decision.assign, id);
@@ -6896,6 +7011,58 @@ pushToast(
       activateTab(decision.activate);
     },
     [multiMode, assignPaneDocument, activateTab],
+  );
+
+  /** Phase 34 (chunk 2) — close the ONE composite tab: run the existing
+   *  per-document modified prompt for EACH dirty pane document (Cancel
+   *  aborts the whole close), then close BOTH and leave Multi Mode so the
+   *  app returns to the remaining tab or the welcome screen. */
+  const onCloseCompositeTab = useCallback((): void => {
+    const ids = compositeDocIds(multiMode.paneA, multiMode.paneB);
+    if (ids.length === 0) {
+      // DEF-289 — with no document in either pane there is nothing to close
+      // or prompt for, but the close control must still ACT: leave the
+      // Multi Mode workspace and return to the remaining tabs (or the
+      // welcome screen when none remain) with a real active tab, exactly
+      // like the toolbar toggle. A rendered close that silently no-ops is
+      // a fail-loud defect (AGENTS.md).
+      leaveMultiMode();
+      return;
+    }
+    // Reuse the EXACT modified selection the window-close gate uses
+    // (`meta.modified` OR the engineUi mirror) so a dirty document cannot
+    // slip through the batched-dispatch window.
+    const modified = collectModifiedTabIds(
+      ids.map((id) => ({
+        id,
+        modified: tabsRef.current.tabs.find((t) => t.id === id)?.modified === true,
+      })),
+      engineUiRef.current,
+    );
+    const plan = planCompositeClose(multiMode.paneA, multiMode.paneB, modified);
+    if (plan.promptIds.length === 0) {
+      for (const closeId of plan.ids) performCloseTab(closeId);
+      dispatchMultiMode({ type: "disable" });
+      return;
+    }
+    compositeCloseIdsRef.current = plan.ids;
+    compositeCloseQueueRef.current = [...plan.promptIds];
+    setPendingCloseTabId(plan.promptIds[0] ?? null);
+    setPendingCloseError(null);
+    setPendingCloseSaving(false);
+  }, [multiMode, performCloseTab, leaveMultiMode]);
+
+  /** The header's close handler: the composite tab owns the workspace close
+   *  flow; every real tab keeps the unchanged `closeTab`. */
+  const onHeaderClose = useCallback(
+    (id: string): void => {
+      if (id === COMPOSITE_TAB_ID) {
+        onCloseCompositeTab();
+        return;
+      }
+      closeTab(id);
+    },
+    [onCloseCompositeTab, closeTab],
   );
 
   /** The empty pane's Open action: pick a file, then put it in that pane.
@@ -7136,18 +7303,24 @@ pushToast(
         maximized={isMaximized}
       >
         <AppHeader
-          activeId={tabs.activeId}
-          // `headerTabs` is memoised above so its reference is stable
+          activeId={stripActiveId}
+          // `stripTabs` is memoised above so its reference is stable
           // across App re-renders that don't actually change tab state.
           // AppHeader reads `modified` from this list (mirrored by the
-          // tabs reducer on every successful engine op).
-          tabs={headerTabs}
+          // tabs reducer on every successful engine op). Phase 34 (chunk 2):
+          // in Multi Mode `stripTabs` is the ONE composite workspace tab;
+          // single mode is the unchanged per-document projection.
+          tabs={stripTabs}
           // Phase 32 — the strip click is the Multi Mode routing seam:
           // a tab in a pane focuses that pane, a tab outside the panes is
-          // assigned to the focused pane. Single mode is unchanged
-          // (`resolveTabStripActivation` short-circuits to plain activation).
+          // assigned to the focused pane. Phase 34 (chunk 2) — while the
+          // composite tab is shown the handler is a no-op; the rules apply
+          // again when the mode is off.
           onActivate={onTabStripActivate}
-          onClose={closeTab}
+          // Phase 34 (chunk 2) — the composite tab's close runs the
+          // per-document modified queue over BOTH pane documents; every
+          // real tab keeps the unchanged `closeTab`.
+          onClose={onHeaderClose}
           theme={settings.theme}
           // The picker's selection state: the persisted preference
           // ('light' | 'dark' | 'frosted' | 'system'). Absent on
@@ -7156,6 +7329,10 @@ pushToast(
           themeDefault={settings.themeDefault}
           onThemeChange={onThemeChange}
           onNewEmptyTab={onNewEmptyTab}
+          // DEF-288 — while Multi Mode is on the strip shows ONE composite
+          // workspace tab, so the "+" is disabled with a reason instead of
+          // silently creating a tab the user cannot see.
+          multiModeEnabled={multiMode.enabled}
           // Phase 13 — the Settings (gear) affordance in the title bar
           // opens the same Preferences sheet the Edit menu and Ctrl+,
           // open. Same single source of truth (`prefsOpen`).
@@ -7227,6 +7404,16 @@ pushToast(
           multiMode={multiMode}
           splitFraction={splitFraction}
           onSplitChange={setSplitFraction}
+          // DEF-287 (residual) — the All Tools panel's requested inset target:
+          // 0 closed, 344 list / 380 grid open. A change re-clamps the stored
+          // split fraction so both panes keep their minimum without a drag.
+          toolsInsetTarget={
+            toolsPaletteOpen
+              ? settings.toolsPaletteLayout === "grid"
+                ? TOOLS_PANEL_W_GRID_PX
+                : TOOLS_PANEL_W_LIST_PX
+              : 0
+          }
           onFocusPane={onFocusPane}
           onClearPane={onClearPane}
           onPickPane={onPickPane}

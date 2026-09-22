@@ -901,6 +901,12 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
               isSelected={isSel}
               isDragging={draggingPage === page}
               isDropTarget={dropPage === page && dragActive && draggingPage !== page}
+              isDropAfter={
+                dropPage === -1 &&
+                dragActive &&
+                page === pageCount &&
+                draggingPage !== page
+              }
               isDropCopy={dragTarget?.mode === 'copy'}
               rotation={rot}
               label={page}
@@ -1006,6 +1012,11 @@ interface ThumbProps {
   isSelected: boolean;
   isDragging: boolean;
   isDropTarget: boolean;
+  /** Phase 34 (chunk 2) — this is the APPEND landing slot: the drag hovers
+   *  the empty space below the last thumb (atIndex -1), so the insertion
+   *  line renders after the LAST thumb (the canvas already shows its
+   *  after-line for the same case). */
+  isDropAfter?: boolean;
   /** Phase 32 (chunk 2d) — the pending drop is a COPY (Ctrl / Alt held).
    *  Purely the affordance; the applied mode comes from the drop event. */
   isDropCopy?: boolean;
@@ -1049,6 +1060,7 @@ function Thumb({
   isSelected,
   isDragging,
   isDropTarget,
+  isDropAfter = false,
   isDropCopy = false,
   rotation,
   label,
@@ -1305,6 +1317,27 @@ function Thumb({
       data-source-page={page}
       title={pageLabel !== null ? `Page ${label} (label: ${pageLabel})` : `Page ${label}`}
     >
+      {/* Phase 34 (chunk 1) — the rail's insertion LINE: the landing slot is
+          the insert-BEFORE target, so the line renders in the gap above it
+          (the first slot anchors flush to the scroller top). The existing
+          drop-target outline stays as the secondary cue. */}
+      {isDropTarget && (
+        <span
+          className={
+            label === 1 ? "thumb-drop-line thumb-drop-line-first" : "thumb-drop-line"
+          }
+          data-thumb-drop-line
+          aria-hidden="true"
+        />
+      )}
+      {/* Phase 34 (chunk 2) — the APPEND slot's line, after the last thumb. */}
+      {isDropAfter && (
+        <span
+          className="thumb-drop-line thumb-drop-line-after"
+          data-thumb-drop-line
+          aria-hidden="true"
+        />
+      )}
       <span className="thumb-canvas-wrap" style={{ width, height }}>
         <canvas ref={canvasRef} className="thumb-canvas" />
         {!rendered && <span className="thumb-placeholder" aria-hidden />}

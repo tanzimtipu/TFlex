@@ -315,8 +315,11 @@ test('C5 [data-pane-open] opens a PDF directly into the empty pane', async () =>
 
   await mockOpen(tmpCopy(BETA_SRC, 'p32-beta.pdf'));
   await win.locator('.tab-pane[data-pane="B"] [data-pane-open]').click();
-  await waitTabCount(2);
+  // Phase 34 — Multi Mode shows ONE composite tab. The observable effect of
+  // the open is pane B filling; assert that and the single composite tab.
+  await expect(win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').first()).toBeVisible({ timeout: 30000 });
   await win.waitForTimeout(1200);
+  expect(await win.locator('.tab[data-tab-id]').count()).toBe(1);
 
   expect(await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count()).toBe(0);
   await expect(headerLoc('B')).toBeVisible({ timeout: 15000 });
@@ -331,14 +334,16 @@ test('C2b opening a document while Multi Mode is on assigns it to the focused pa
   await twoPaneSetup(); // A=p32-alpha (34), B=p32-beta (520), focused B
   const stage = win.locator('.tab-stage');
   const tabsBefore = await win.locator('.tab[data-tab-id]').count();
-  expect(tabsBefore).toBe(2);
+  // Phase 34 — Multi Mode collapses the strip to ONE composite tab.
+  expect(tabsBefore).toBe(1);
 
   // --- Case 1: focused pane A ---
   await focusPaneByPage('A');
   expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('true');
 
   await openFile(tmpCopy(ALPHA_SRC, 'p32-gamma.pdf')); // 34 pages
-  await waitTabCount(3);
+  // The composite tab stays ONE; the observable effect is pane A's header.
+  await expect(headerLoc('A')).toContainText('p32-gamma', { timeout: 30000 });
   await win.waitForTimeout(800);
 
   const a1 = await paneHeader('A');
@@ -351,8 +356,12 @@ test('C2b opening a document while Multi Mode is on assigns it to the focused pa
   // The other pane is untouched.
   expect(b1.text).toContain('p32-beta');
   expect(b1.pageCount).toBe(520);
-  // The previously shown document is still open as a tab.
-  expect(titles1.some((t) => t.includes('p32-alpha'))).toBe(true);
+  // The composite label names the two PANE documents (gamma + beta). The
+  // replaced document (alpha) stays OPEN in the session — asserted after the
+  // mode is switched off at the end of this test.
+  expect(titles1.length).toBe(1);
+  expect(titles1[0]).toContain('p32-gamma');
+  expect(titles1[0]).toContain('p32-beta');
   // No hidden-tab-with-no-effect: the new document is visible in a pane.
   await expect(win.locator('.tab-pane[data-pane="A"] canvas.pdf-page-canvas').first()).toBeVisible();
   // No third pane.
@@ -364,7 +373,7 @@ test('C2b opening a document while Multi Mode is on assigns it to the focused pa
   expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
 
   await openFile(tmpCopy(BETA_SRC, 'p32-delta.pdf')); // 520 pages
-  await waitTabCount(4);
+  await expect(headerLoc('B')).toContainText('p32-delta', { timeout: 30000 });
   await win.waitForTimeout(800);
 
   const a2 = await paneHeader('A');
@@ -375,7 +384,11 @@ test('C2b opening a document while Multi Mode is on assigns it to the focused pa
   expect(b2.pageCount).toBe(520);
   expect(a2.text).toContain('p32-gamma');
   expect(a2.pageCount).toBe(34);
-  expect(titles2.some((t) => t.includes('p32-beta'))).toBe(true);
+  // The composite label now names gamma + delta; beta stays open (asserted
+  // after the mode is switched off below).
+  expect(titles2.length).toBe(1);
+  expect(titles2[0]).toContain('p32-gamma');
+  expect(titles2[0]).toContain('p32-delta');
   await expect(win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').first()).toBeVisible();
   expect(await stage.getAttribute('data-multi-panes')).toBe('2');
 
@@ -383,6 +396,13 @@ test('C2b opening a document while Multi Mode is on assigns it to the focused pa
   await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('false');
+  // Switching the mode off restores the individual tabs. The two documents
+  // that were REPLACED in the panes (alpha, beta) are still open — the DEF-277
+  // "previous document stays open" contract holds under the composite tab.
+  const restoredTitles = await win.locator('.tab[data-tab-id] .tab-title').allInnerTexts();
+  console.log(`[P32] DEF-277 after mode OFF, individual tabs=${JSON.stringify(restoredTitles)}`);
+  expect(restoredTitles.some((t) => t.includes('p32-alpha'))).toBe(true);
+  expect(restoredTitles.some((t) => t.includes('p32-beta'))).toBe(true);
   const tabsBeforeSingle = await win.locator('.tab[data-tab-id]').count();
   await openFile(tmpCopy(ALPHA_SRC, 'p32-epsilon.pdf'));
   await waitTabCount(tabsBeforeSingle + 1);
@@ -399,7 +419,8 @@ test('C2c the same file cannot be assigned to the other pane (DEF-278)', async (
   await win.waitForTimeout(500);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 10000 });
   const tabsBefore = await win.locator('.tab[data-tab-id]').count();
-  expect(tabsBefore).toBe(2);
+  // Phase 34 — one composite tab while the mode is on.
+  expect(tabsBefore).toBe(1);
 
   // Pick the SAME file pane A shows (same on-disk path).
   await mockOpen(alphaPath);

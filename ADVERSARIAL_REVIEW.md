@@ -2747,4 +2747,207 @@ Unreproduced / not verified (not filed):
   re-test (`test-fixtures/adv-p33/rapid.cjs`, `cleanprobe.cjs`) showed it was a harness artifact
   (the helper trusted a momentarily stale `aria-pressed`), not a product bug.
 
+---
+
+## Phase 34 gate — Multi Mode round 2
+
+Session label: `phase-34 gate`. Ran against the real dev build via the canonical
+`e2e/lib/launch.cjs` `launchApp` helper (dist rebuilt from the current `src` with
+`npm.cmd run build:renderer`). Adversary harnesses live in `test-fixtures/adv-p34/`
+(`composite_close.cjs`, `gi.cjs`, `geom.cjs`, `headers.cjs`, `drop.cjs`, `drop2.cjs`,
+`stress.cjs`, `final_check.cjs`, `clip.cjs`, `shot.cjs`; fixtures `one-page.pdf`,
+`two-page.pdf`). Harness logs in `%TEMP%\adv-p34\`. No printer was ever involved.
+
+## ADV-070: The All Tools panel shrinks the two Multi Mode panes by UNEQUAL amounts at any split other than 50/50
+
+- Session: phase-34 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Launched the dev build; opened `report.pdf` (34 pages, copy `adv34-b1-alpha.pdf`)
+   and `long.pdf` (520 pages, copy `adv34-b1-beta.pdf`); clicked the alpha tab; turned
+   Multi Mode on; picked beta into pane B (`test-fixtures/adv-p34/geom.cjs`).
+2. With the panel closed, dragged the divider to a 0.35 split (the stage's
+   `--tf-split-frac` read back `0.35`).
+3. Measured both panes' page-area widths (`.tab-pane[data-pane=A/B] .workspace-main`):
+   A = 280 px, B = 712 px.
+4. Opened All Tools (`[data-tools-badge]`, inset `--tf-tools-inset` -> `344px`) and
+   measured again: A = 160 px, B = 488 px.
+5. Repeated at 0.5 (A/B both 496 -> 324, delta 172 each) and at 0.65 (A 712 -> 488,
+   B 280 -> 160).
+
+Expected: REQUIREMENTS Phase 34 item 1: the reserved width "must come out of the
+WORKSPACE as a whole (consumed once at the stage level), so both panes lose half of it";
+success criterion 1: "the two panes shrink by the SAME amount (equal deltas within a
+pixel)". That is 172 px each at every split.
+
+Actual: the inset is subtracted from the shared base and then MULTIPLIED by each pane's
+fraction, so the loss is pro-rata, not halved:
+- 0.35 split: A lost 120 px, B lost 224 px (|difference| 104 px);
+- 0.65 split: A lost 224 px, B lost 120 px (|difference| 104 px);
+- only at 0.50 are the deltas equal (172/172), which is the single case qa's
+  `phase34_panel_inset.spec.cjs` measures.
+Root cause: `styles.css` pane A `width: calc((100% - var(--tf-tools-inset,0px)) *
+var(--tf-split-frac) - divider/2)` and pane B's complement, plus the divider's matching
+`left` (`styles.css` ~11393-11413, ~11588-11598). The requirement's "lose half of it"
+needs the inset split per pane (`width: calc(100%*frac - inset/2 - divider/2)` with the
+divider shifted left by `inset/2`), not applied to the base before the fraction.
+
+Screenshot: screenshots/adv-p34-uneven-panel.png (panel open at a 0.35 split).
+
+Disposition: ACCEPTED -> DEF-286 (MEDIUM; the operator asked for the panel to resize both panes EQUALLY - the shrink must be `inset/2` per pane at every split, not proportional to the split, so the deltas stay equal and the divider stays centred between them)
+
+## ADV-071: At the 640 px minimum window with the All Tools panel open, Multi Mode's page areas collapse to 0 px
+
+- Session: phase-34 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Launched the dev build; opened two documents in Multi Mode (34-page and 520-page
+   copies) (`test-fixtures/adv-p34/geom.cjs`).
+2. Resized the window to the app minimum 640x520 (`BrowserWindow.setSize`).
+3. Measured: pane page areas (`.workspace-main`) were 96 px each (each pane 316 px wide,
+   carrying its own 220 px thumbnail rail).
+4. Opened All Tools (`--tf-tools-inset` -> `344px`) and measured again.
+
+Expected: Phase 34 item 1 / criterion 1 - opening the panel shrinks both panes and leaves
+them usable; the phase's whole point is that neither pane carries a dead strip.
+
+Actual: both pane page areas collapse to **0 px** (`.workspace-main` width 0 for A and B;
+the divider sits at x=144, the panel's left edge at x=296; the stage base is 640-344=296,
+so each pane is 148 px - narrower than its own 220 px rail). The document content is
+completely gone at a supported window size with a supported panel open. Single mode at
+the same size keeps a 76 px page scroller (verified, `final_check.cjs`), so the
+stage-level inset introduced by this phase is what drives Multi Mode's page area to zero.
+The `MIN_PANE_WIDTH_PX = 320` clamp cannot help: `fractionFor` computes
+`min = 320/usable = 320/296 > 0.5` and parks the split at 0.5.
+
+Screenshot: screenshots/adv-p34-minwidth-panel.png (both panes collapsed, panel open).
+
+Disposition: ACCEPTED -> DEF-287 (MEDIUM; a supported window width with a supported panel open must never collapse a pane's page area to 0 px - the page area needs a usable minimum, so the strips (and the panel's reserved width) must yield before the pages do)
+
+## ADV-072: "+ tab" in Multi Mode silently creates a hidden tab that only appears after leaving the mode
+
+- Session: phase-34 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Launched the dev build; opened two documents in Multi Mode (one composite tab shown)
+   (`test-fixtures/adv-p34/composite_close.cjs`, case J).
+2. Clicked the tab strip's "+" (New empty tab) button (`[data-new-tab]`).
+3. Read the strip before and after: still exactly ONE tab (`tf-multi-workspace`); the
+   label is unchanged; nothing visible happened.
+4. Turned Multi Mode off (the shared toolbar's toggle).
+
+Expected: a control that adds a tab must give visible feedback. In Multi Mode it should
+either be hidden/disabled, or route the new tab into the focused pane (Phase 33 open
+semantics); a click that appears to do nothing is a defect (AGENTS.md fail-loud rule).
+
+Actual: `onNewEmptyTab` unconditionally dispatches `tabs.open-empty`; the Phase-34
+`stripTabs` projection renders only the composite tab, so the new empty tab is created
+HIDDEN (visibility hidden, no pane) and becomes `tabs.activeId`. After leaving the mode
+the strip shows three tabs and the "Empty tab" is the ACTIVE one, with the welcome screen
+shown - a delayed, surprising state change the user never asked for and could not see.
+
+Screenshot: none (state-only; see the case-J log in `%TEMP%\adv-p34\composite_close.log`).
+
+Disposition: ACCEPTED -> DEF-288 (MEDIUM; with one composite tab the "+" must never create a hidden tab - while the mode is on it must put the new empty document into the FOCUSED pane, consistent with the Phase 33 open semantics, or be visibly disabled)
+
+## ADV-073: The composite tab's close X silently no-ops when both panes are empty
+
+- Session: phase-34 gate
+- Suggested severity: LOW
+
+What I did:
+1. Launched the dev build; opened two documents in Multi Mode
+   (`test-fixtures/adv-p34/composite_close.cjs`, case K).
+2. Cleared pane B, then pane A (both panes show their empty state; the composite tab's
+   label becomes "Multi Mode").
+3. Clicked the composite tab's close X (`.tab[data-tab-id="tf-multi-workspace"] .tab-close`).
+
+Expected: closing the workspace tab should do something - leave Multi Mode, close the two
+(now unpaned) documents, or at minimum the X should be disabled/hidden. A rendered close
+control that does nothing is a fail-loud defect.
+
+Actual: nothing happens at all: tab count stays 1, `data-multi-mode` stays `true`, both
+panes stay empty. `onCloseCompositeTab` returns early because `compositeDocIds(paneA,
+paneB)` is empty (App.tsx ~7008-7009).
+
+Screenshot: none (state-only; see the case-K log).
+
+Disposition: ACCEPTED -> DEF-289 (LOW; the composite tab's close must never silently no-op - with both panes empty it must still leave the workspace (or the control must be visibly disabled with a reason))
+
+## ADV-074: The canvas insertion line for the FIRST page is clipped and invisible
+
+- Session: phase-34 gate
+- Suggested severity: LOW
+
+What I did:
+1. Launched the dev build; opened two documents in Multi Mode; scrolled pane B to the top
+   (`test-fixtures/adv-p34/clip.cjs`, `drop2.cjs`).
+2. Started a page drag from pane A's rail and hovered the TOP HALF of pane B's first page
+   (insert-before page 1).
+3. Read the rendered `[data-drop-indicator]` rect and the `.document-scroller` rect.
+
+Expected: Phase 34 item 5: "While a page is dragged, a clearly visible line spanning the
+page column is shown in the GAP where the page will land ... for the FIRST page" (the
+attack brief explicitly lists the first page). The rail already special-cases it
+(`.thumb-drop-line-first { top: 0 }`).
+
+Actual: the line is rendered at `top: -9px` relative to the first page slot
+(rect `{top:122, bottom:127}`) while the scroller's top edge is `y=131` with
+`overflow: hidden auto`; the indicator is entirely above the scroller and is clipped
+(`indicatorClipped: true`). The screenshot shows no line above page 1 - only the page
+slot's blue drop outline. There is no first-page special case for
+`.page-drop-indicator-before` (the base `top:-9px` is unchanged from before this phase;
+the phase's taller 5 px line with a glow is still invisible here).
+
+Disposition: ACCEPTED -> DEF-290 (LOW; the canvas insertion line must be visible for the FIRST page too - mirror the rail's first-slot handling so the line for "insert before page 1" is inside the scroller's visible area rather than clipped above it)
+
+Screenshot: screenshots/adv-p34-firstline-confirm.png,
+screenshots/adv-p34-firstline-clip.png.
+
+## Phase 34 gate — attacks that did NOT reproduce (defended)
+
+| Attack | Result |
+|---|---|
+| **Composite close, both clean** | Defended. Both documents closed, `data-multi-mode=false`, tab count 0, welcome shown. |
+| **Composite close, A dirty only / B dirty only** | Defended. Exactly the dirty document was prompted (by name), discard closed BOTH and left the mode. |
+| **Composite close, both dirty, Save on one + Don't-save on the other** | Defended. The saved file's mtime advanced; the pair closed; welcome shown. |
+| **Composite close, both dirty, Cancel on the SECOND prompt** | Defended. Both documents survived, the composite tab stayed (with its modified dot), Multi Mode stayed on, pane counts 34/520 intact. |
+| **Composite close, both dirty, Save each; disk content** | Defended. Both temp copies' mtimes advanced and reopening the saved alpha read `rotations[0]=1` - the rotation was actually persisted, not just marked clean. |
+| **Composite close with an extra background tab** | Defended. After the close the background gamma tab remained, was active, and the mode was off (`openTabs=1`). |
+| **Close prompt interrupted by a Multi Mode toggle** | Not reachable by pointer: the modal backdrop blocks the shared toolbar's toggle (`trial` click timed out). No state corruption. |
+| **Tab-strip integrity across 5+ on/off toggles** | Defended. Multi: exactly one tab, id `tf-multi-workspace`, `aria-selected=true`. Single: exactly two real tabs, exactly one active, every tab activatable, all close buttons present. No duplicates/lost/orphaned tabs. |
+| **Clicking the composite tab / focusing a pane then clicking it** | Defended. No state change (the deliberate no-op); pane focus is unchanged. |
+| **Opening a document while the mode is on** | Defended (unchanged Phase-33 semantics): it replaces the focused pane's document, never a hidden tab. |
+| **Headers flanking the divider** | Defended at the default split, both extremes, and with 90-char names: A's name+count end at/left of the divider, B's badge+name start at/right of it; the clear control is on the OUTER side on both. Names update when a pane's document is replaced. |
+| **Empty pane header** | Defended. No `[data-pane-clear]` is rendered for an empty pane; the pane A header still flanks the divider. |
+| **`[data-pane-clear]` clickability** | Defended at both near-min splits and at the 640 px minimum with the panel open (trial clicks actionable). |
+| **Divider tracks the pointer 1:1** | Defended. At requested 0.30/0.50/0.70 the divider's left matched the stage fraction within 0 px (no transition on the geometry). |
+| **Divider at both extremes with the panel open** | Defended. Pane widths stayed >= ~316 px (the 320 px clamp minus the divider half), the divider stayed between the panes, pane B never overlapped the panel. |
+| **Divider visibility in every theme** | Defended. Computed background `rgb(46,53,61)` dark / `rgb(203,213,225)` light / `rgba(15,23,42,0.18)` frosted, 8 px band, grip 20x44 px `opacity:1` in all three; pane B stayed flush with the panel after each theme change. |
+| **Panel/pane lockstep at rest** | Defended. Pane B's right edge minus the panel's left edge = 0 px (no gap, no overlap) with the panel open. |
+| **Rapid panel open/close (10x)** | Defended. Inset returned to `0px`, panel detached, pane widths restored exactly (496/496). |
+| **Panel opened mid page-drag** | Defended. The inset applied (`344px`), the insertion indicators stayed correct, and they cleared on drag end. |
+| **Drop line boundaries** | Defended. Canvas before-line for page 1 renders (clipped, ADV-074), before/after lines for internal pages, the append line for the last page's lower half, the 1-page document, and the empty pane (no line). |
+| **Rail insertion line + append** | Defended. First-thumb line uses the `-first` variant; after a real scroll to the end of the 520-page rail the append line sits directly below the last thumb and inside the viewport; lines clear on drag end. |
+| **Hover that leaves the pane** | Defended once a real `dragleave` is dispatched: `drag.hover(null)` clears the canvas line. (The earlier apparent "stale line" was a harness artifact - synthetic `dragover` on a non-slot element never fires `dragleave`.) |
+| **Panel open at the 640 px minimum, single mode** | Single mode keeps a 76 px page scroller (unchanged behaviour); only Multi Mode collapses (ADV-071). |
+
+**Total Phase-34-gate findings: 5 (0 HIGH, 3 MEDIUM, 2 LOW).**
+
+Unreproduced / not verified (not filed):
+- "Toggle Multi Mode while a close prompt is open" could not be reached by a pointer: the
+  modal backdrop swallows the click. The composite-queue refs are also cleared on any
+  Cancel, so the interruption path is closed by construction.
+- "Panel toggle while a thumbnail raster is in flight" was only exercised as part of the
+  rapid-cycle and mid-drag runs (no blank frames observed); a dedicated 16 ms frame
+  sampler was not re-run for this phase because qa's `phase34_panel_inset.spec.cjs`
+  already covers the open/close frame sampling at the default split.
+- The composite tab at the 640 px minimum overflows the 77 px-wide `.tab-list`
+  (`listScrollWidth 265`), but a normal single-document tab overflows the same way at
+  that width, so it is the pre-existing narrow-strip behaviour, not a Phase-34 change.
+- "Divider drag while the panel is open" was not a no-op (it re-splits correctly), so no
+  silence finding there.
 

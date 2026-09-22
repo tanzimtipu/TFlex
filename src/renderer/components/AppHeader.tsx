@@ -33,6 +33,9 @@ import { useLiveReducedMotion, useInstantMotion } from "../hooks/useAnimations";
 
 export type AppHeaderTab = TabInput;
 
+/** DEF-288 — the reason shown on the disabled "+" while Multi Mode is on. */
+export const NEW_TAB_MULTI_MODE_REASON = "Turn off Multi Mode to create a new document";
+
 interface AppHeaderProps {
   activeId: string | null;
   tabs: AppHeaderTab[];
@@ -75,6 +78,12 @@ interface AppHeaderProps {
    *  the user can fill by opening a PDF. The host owns the empty-tab
    *  state (see App.tsx -> tabs.openEmpty). */
   onNewEmptyTab: () => void;
+  /** DEF-288 — true while Multi Mode is on. The strip then shows ONE
+   *  composite workspace tab, so a new empty tab would be a hidden state
+   *  mutation that only surfaces after leaving the mode. The "+" is
+   *  therefore visibly disabled with this reason (fail-loud rule: a control
+   *  that cannot act is disabled and explains why). */
+  multiModeEnabled?: boolean;
   /** Phase 13 — the Settings (gear) affordance. Opens the Preferences
    *  sheet (the same surface the Edit menu's "Preferences..." row and
    *  the Ctrl+, accelerator open). The gear gives the borderless
@@ -119,7 +128,7 @@ function themeLabel(value: ThemeDefault): string {
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true } = props;
+  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true, multiModeEnabled = false } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   // The picker's selection is the SAVED preference (themeDefault) —
@@ -432,14 +441,22 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
               tab is open, so the strip stays visually clean when the
               user is on the welcome pane. */}
           {tabs.length >= 1 && (
-            <li className="tab-list-new">
+            <li
+              className="tab-list-new"
+              title={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : undefined}
+            >
               <button
                 type="button"
                 className="tab-new"
                 onMouseDown={onNewTabMouseDown}
                 onClick={onNewEmptyTab}
-                aria-label="New empty tab"
-                title="New empty tab"
+                // DEF-288 — while Multi Mode is on the strip shows ONE
+                // composite workspace tab; a new empty tab could not be
+                // seen until the mode was left, so the control is disabled
+                // and carries the reason instead of mutating hidden state.
+                disabled={multiModeEnabled}
+                aria-label={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : "New empty tab"}
+                title={multiModeEnabled ? NEW_TAB_MULTI_MODE_REASON : "New empty tab"}
                 data-new-tab
               >
                 <Plus size={16} aria-hidden />

@@ -3222,7 +3222,16 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                   )}
                   {canvasTargetHere !== null && canvasTargetHere.atIndex === visiblePage && (
                     <div
-                      className="page-drop-indicator page-drop-indicator-before"
+                      // DEF-290 — the first slot's line anchors flush inside
+                      // the slot's top edge (mirrors the rail's first-slot
+                      // handling) instead of the between-pages -9px offset,
+                      // which fell above the scroller's visible top and was
+                      // clipped.
+                      className={
+                        visiblePage === 1
+                          ? "page-drop-indicator page-drop-indicator-before page-drop-indicator-first"
+                          : "page-drop-indicator page-drop-indicator-before"
+                      }
                       data-drop-indicator="before"
                       data-drop-page={visiblePage}
                       data-drop-copy={canvasTargetHere.mode === "copy" ? "true" : undefined}

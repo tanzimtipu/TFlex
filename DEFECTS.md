@@ -5,6 +5,145 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-290: Multi Mode: the canvas insertion line for the FIRST page is clipped and invisible
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-074)
+- Phase: 34
+
+Steps to reproduce:
+1. Launch the dev build through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Open `test-fixtures/report.pdf` (34 pages) and `test-fixtures/long.pdf` (520 pages) through the mocked title-bar Open control; click the report tab; click `[data-toolbar-multi-mode]`; pick `long.pdf` into pane B (`[data-pane-pick]`) so both panes are filled.
+3. In pane B set the `.document-scroller` `scrollTop = 0` (page 1 at the top).
+4. Dispatch a `dragstart` from pane A's rail (`[data-pane-strip-pane="A"] .thumb-item[data-page="1"]`), then `dragover` the TOP HALF of pane B's `.page-slot[data-page="1"]` (insert-before page 1).
+5. Read the rendered `[data-drop-indicator]` rect and pane B's `.document-scroller` rect.
+
+Expected: Phase 34 item 5 - "While a page is dragged, a clearly visible line spanning the page column is shown in the GAP where the page will land ... for the FIRST page" (the attack brief explicitly lists the first page). The rail already special-cases it (`.thumb-drop-line-first { top: 0 }`).
+
+Actual: the line is rendered at `top: -9px` relative to the first page slot - indicator rect `{top:122, bottom:127, h:5}` - while pane B's `.document-scroller` top edge is `y=131` with computed `overflow: hidden auto`; the indicator is entirely above the scroller and clipped (`indicatorClipped: true`). Only the page slot's blue drop outline is visible; there is no line above page 1. There is no first-page special case for `.page-drop-indicator-before`.
+
+Screenshot: screenshots/def290-firstline.png - pane B page 1 outlined blue for the drop, no insertion line above it.
+
+Harness: test-fixtures/adv-p34/qa_repro_p34.cjs (`ADV-074-firstline`); adversary reference test-fixtures/adv-p34/clip.cjs. Log: %TEMP%\adv-p34\qa_repro_p34.log
+
+History:
+- qa: opened. Independently reproduced on the dev build. Raw: `{"scrollerTop":131,"overflow":"hidden auto","indicator":{"top":122,"bottom":127,"h":5},"indicatorClipped":true,"slot1Top":131}`.
+- orchestrator: FIX-READY (relaying frontend-dev - the canvas now carries a `page-drop-indicator-first` variant when the landing slot is page 1, positioning the line at the top INSIDE the scroller's visible area (mirroring the rail's `.thumb-drop-line-first`); the non-first slots keep the between-pages gap positioning, and the line still spans the page column and clears on drop/end. Evidence: `phase34_multi_layout.test.tsx` incl. the first-slot class and rect-inside-visible-top assertions; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and CLOSED on the rebuilt dev build (`npm.cmd run build`, exit 0). Command: `npx.cmd playwright test e2e/retests/def286_290_retest.spec.cjs -g DEF-290` -> 1 passed. Raw (pane B scrolled to top, drag from pane A rail page 1, dragover the top half of pane B page 1): indicator `{top:131,bottom:136,h:5}` class `page-drop-indicator page-drop-indicator-before page-drop-indicator-first`, scroller `{top:131,bottom:900}`, slot 1 `{top:131,bottom:760,w:486}`. The line's top 131 >= the scroller's top 131 (INSIDE the visible box, not clipped above it) and its width 486 equals the page column width 486. Non-first slot (page 3): class WITHOUT `-first`, indicator `{top:1416,bottom:1421}` sits between the previous slot's bottom 1407 and the slot's top 1425 (the between-pages gap). Indicator cleared on drag end (count 0).
+
+## DEF-289: Multi Mode: the composite tab's close X silently no-ops when both panes are empty
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-073)
+- Phase: 34
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf` and `test-fixtures/long.pdf`; click the report tab; click `[data-toolbar-multi-mode]`; pick `long.pdf` into pane B so both panes are filled.
+3. Click pane B's `[data-pane-clear]`, then pane A's `[data-pane-clear]` (both panes show their empty state; the composite tab's label becomes "Multi Mode").
+4. Click the composite tab's close X (`.tab[data-tab-id="tf-multi-workspace"] .tab-close`).
+
+Expected: closing the workspace tab should do something - leave Multi Mode, close the two (now unpaned) documents, or at minimum the X should be disabled/hidden. A rendered close control that does nothing is a fail-loud defect (AGENTS.md).
+
+Actual: nothing happens at all: the tab count stays 1, `data-multi-mode` stays `true`, both panes stay empty, no close prompt appears and the welcome screen is not shown. `onCloseCompositeTab` returns early because `compositeDocIds(paneA, paneB)` is empty.
+
+Screenshot: none (state-only).
+
+Harness: test-fixtures/adv-p34/qa_repro_073.cjs; adversary reference case K in test-fixtures/adv-p34/composite_close.cjs. Log: %TEMP%\adv-p34\qa_repro_073.log
+
+History:
+- qa: opened. Independently reproduced on the dev build. Raw: before `tabs=1 label=["Multi Mode"] multi=true panes=[{A empty},{B empty}]`; after X `exists=1 tabs=1 multi=true panes=[{A empty},{B empty}] welcome=false`.
+- orchestrator: FIX-READY (relaying frontend-dev - the empty-pane branch disabled the mode but never restored an active tab, leaving `activeId=null` (a blank workspace). Fix: the leave-the-workspace logic was extracted into ONE shared `leaveMultiMode` callback used by BOTH the toolbar toggle and the composite close's empty branch - it disables the mode and, when the active id is null, restores the pane's document if it is still open, else the first remaining tab, else leaves the welcome screen. The no-prompt and dirty-prompt close branches are deliberately untouched (the tab reducer already re-picks a remaining active tab after `performCloseTab`). The stale source-contract assertions were corrected to follow the shared helper (`paneStripWiring.test.ts:94` now matches `effectiveToolsInset(rect.width, requestedInset)`; `phase34_chunk2` and `multiModeRouting` assert the delegation and the helper's restore) - no assertion weakened. Evidence: `paneStripWiring` 13 + `phase34_chunk2` 33 + `multiModeRouting` 26 passed; `npm run verify` exit 0; `build:renderer` exit 0.)
+- orchestrator: FIX-READY (relaying frontend-dev - with both panes empty the composite close no longer returns early: it disables Multi Mode and returns to the remaining tabs (or the welcome screen when there are none), so the control always acts; the dirty-document queue is untouched. Evidence: `phase34_chunk2.test.tsx` source-contract tests + the existing close-plan/queue tests; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: retested - NOT CLOSED, left OPEN. The composite close no longer no-ops (Multi Mode off, the remaining tabs are returned), but with both panes empty it leaves the workspace BLANK. Command: `npx.cmd playwright test e2e/retests/def286_290_retest.spec.cjs -g DEF-289` -> 1 failed (the paired control test passes). Raw: before X `tabs=1 multi=true panes=[{A empty},{B empty}]`; after X `tabs=2 multi=false active=null domActive=null welcome=false visiblePanes=0 hiddenPanes=2` - the user sees a tab strip with two tabs and NO document. Control: the shared toolbar's Multi Mode toggle in the same state DOES restore an active tab (`App.tsx:6850-6866` restores pane A's / the first tab when `activeId===null`, because "single mode renders no visible pane when the active id is null"); the composite close path (`App.tsx:7016-7026`) only dispatches `disable` and omits that restore. The task's acceptance ("Multi Mode off, remaining tabs active, or the welcome screen when there are none") is therefore not met.
+- qa: retested and CLOSED on the rebuilt dev build (`npm.cmd run build`, exit 0). Command: `npx.cmd playwright test e2e/retests/def286_290_retest.spec.cjs -g DEF-289` -> 4 passed. Raw (both panes cleared, composite X): before X `tabs=1 multi=true panes=[{A empty},{B empty}] welcome=false`; after X `tabs=2 multi=false active=48b42467-993a-4f03-a63a-a64b7c070cff domActive=48b42467-993a-4f03-a63a-a64b7c070cff welcome=false`, `visiblePanes=1 hiddenPanes=1 visibleScrollers=2 stageChildren=2` - the workspace is left and a remaining tab is active AND visible (the blank-workspace failure is gone). Control (toolbar toggle, same state): `domActive=911a1405-... multi=false visiblePanes=1 tabs=2`. No-tabs-left case (close the underlying document first via Ctrl+W while it is pane A's active tab): `tabs=0 multi=false active=null welcome=true composite=false` - the tabs reducer's `reconcile` auto-disables Multi Mode when the last tab closes (`multiMode.ts:188-193`), so the welcome screen shows and the composite X is no longer present. No-tabs-left via the composite close (the only document in pane A): before X `tabs=1 multi=true`; after X `tabs=0 multi=false active=null welcome=true` - the composite close closes the only document and lands on the welcome screen. The shared `leaveMultiMode` helper (`App.tsx:6853-6863`) is used by both the toolbar toggle and the composite close's empty branch.
+
+## DEF-288: Multi Mode: "+ tab" silently creates a hidden tab that only appears after leaving the mode
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-072)
+- Phase: 34
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf` and `test-fixtures/long.pdf`; click the report tab; click `[data-toolbar-multi-mode]`; pick `long.pdf` into pane B so both panes are filled (one composite tab shown).
+3. Read the strip: exactly ONE tab (`tf-multi-workspace`), `window.tflexDiagnostics().activeTabId` = the alpha document id.
+4. Click the tab strip's "+" (New empty tab) button (`[data-new-tab]`).
+5. Read the strip again, then turn Multi Mode off (the shared toolbar's toggle) and read the strip again.
+
+Expected: a control that adds a tab must give visible feedback. In Multi Mode it should either be hidden/disabled, or route the new tab into the focused pane (Phase 33 open semantics); a click that appears to do nothing is a defect (AGENTS.md fail-loud rule).
+
+Actual: the click is a silent no-op in the strip - still exactly ONE tab (`tf-multi-workspace`), label unchanged, nothing visible happens - but it mutates hidden state: `activeTabId` changes to a new document id (the hidden empty tab) with no pane. After leaving the mode the strip shows THREE tabs and the "Empty tab" is the ACTIVE one, with the welcome screen shown - a delayed, surprising state change the user never asked for and could not see. `onNewEmptyTab` unconditionally dispatches `tabs.open-empty`; the Phase-34 `stripTabs` projection renders only the composite tab.
+
+Screenshot: none (state-only).
+
+Harness: test-fixtures/adv-p34/qa_repro_p34.cjs (`ADV-072-073-tabs`); adversary reference case J in test-fixtures/adv-p34/composite_close.cjs. Log: %TEMP%\adv-p34\qa_repro_p34.log
+
+History:
+- qa: opened. Independently reproduced on the dev build. Raw: before `tabs=1 ids=["tf-multi-workspace"] diagOpenTabs=2 active=5afe4156-...`; after `+tab` `tabs=1 diagOpenTabs=2 active=83f97020-...` (active changed to the hidden tab); mode off `tabs=3 labels=["...-qa34-a72-alpha.pdf","...-qa34-a72-beta.pdf","Empty tab"] active=83f97020-... welcome=true`.
+- orchestrator: FIX-READY (relaying frontend-dev - while Multi Mode is on the "+" control is now VISIBLY DISABLED with the reason "Turn off Multi Mode to create a new document" (title on both the button and its list item, since disabled buttons tooltip unreliably, plus a `.tab-new:disabled` style), and `onNewEmptyTab` is guarded so no hidden tab can be created; single mode's behaviour is unchanged. Evidence: `phase34_chunk2.test.tsx` (enabled in single mode / disabled with its reason in Multi Mode) + the App source guard; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and CLOSED on the rebuilt dev build (`npm.cmd run build`, exit 0). Command: `npx.cmd playwright test e2e/retests/def286_290_retest.spec.cjs -g DEF-288` -> 1 passed. Raw: Multi Mode `[data-new-tab]` `disabled=true`, `title` and `aria-label` both "Turn off Multi Mode to create a new document"; a dispatched click left `tabs 1->1`, `diagOpenTabs 2->2`, `activeTabId` unchanged (no hidden tab). Single mode: `disabled=false`, a real click added a tab (`2->3`) and the new "Empty tab" became the active tab.
+
+## DEF-287: At the 640px minimum window with the All Tools panel open, Multi Mode's page areas collapse to 0px
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-071)
+- Phase: 34
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf` (34 pages) and `test-fixtures/long.pdf` (520 pages); click the report tab; click `[data-toolbar-multi-mode]`; pick `long.pdf` into pane B so both panes are filled.
+3. Resize the window to the app minimum 640x520 (`BrowserWindow.setSize`).
+4. Measure both panes' page areas (`.tab-pane[data-pane=A/B] .workspace-main`).
+5. Open All Tools (`[data-tools-badge]`) and measure again.
+
+Expected: Phase 34 item 1 / criterion 1 - opening the panel shrinks both panes and leaves them usable; the phase's whole point is that neither pane carries a dead strip.
+
+Actual: both pane page areas collapse to **0px** (`.workspace-main` A=0, B=0; both `.document-scroller` 0). The divider sits at `{left:144, right:152}` and the panel's left edge at `x=296`; the stage base is 640-344=296, so each pane is 148px - narrower than its own 220px thumbnail rail. The document content is completely gone at a supported window size with a supported panel open. Before opening the panel each pane's page area is a usable 96px; single mode at the same size keeps a 76px page scroller (adversary's `final_check.cjs`), so the stage-level inset introduced by this phase is what drives Multi Mode's page area to zero.
+
+Screenshot: screenshots/def287-minwidth-panel.png - 640x520, panel open, both panes' page areas empty (headers and empty blue pane body only, no page canvas).
+
+Harness: test-fixtures/adv-p34/qa_repro_p34.cjs (`ADV-071-minwidth`); adversary reference test-fixtures/adv-p34/geom.cjs (`B2-minwidth`). Log: %TEMP%\adv-p34\qa_repro_p34.log
+
+History:
+- qa: opened. Independently reproduced on the dev build. Raw: before `A=96 B=96 scA=96 scB=96 inset=0px`; after panel `A=0 B=0 scA=0 scB=0 inset=344px`; divider `{left:144,right:152,top:185,bottom:520,w:8,h:335}`; panel `{left:296,right:640,top:96,bottom:520,w:344,h:424}`.
+- orchestrator: FIX-READY (relaying frontend-dev, two parts - (1) the per-pane grid is now `minmax(var(--tf-strip-min), 220px) minmax(var(--tf-page-min), 1fr)` with `--tf-strip-min: 100px` and `--tf-page-min: 44px`, so the strip column yields before the page area and the page area can never reach 0; the panel's reserved width is capped by `min(var(--tf-tools-inset), --tf-multi-inset-cap)` measured from the stage width, and at the 640px minimum with the 344px list panel the cap is exactly inactive (2*(100+44)+8 = 296 = 640-344), so both strips shrink to 100px, both page areas are a visible 44px and the panel does not overlap; when the requested panel exceeds the pane budget (grid mode 380px at 640) the panel overlaps the right pane by the excess while the page area still meets its minimum. Single mode never reads these variables, so its 76px at 640 is untouched. (2) The stored split fraction is now RE-CLAMPED whenever the geometry changes (window resize or panel open/close) via one shared pure rule (`clampSplitFraction` in `multiPaneLayout.ts`) that the drag path also calls - the same lesson as DEF-283 - so a fraction carried from a wide window cannot under-run the minimum until a drag; it is idempotent, writes only when the value changes, never fights the 1:1 drag, and pins to 0.5 without oscillating when even that cannot satisfy the minimum. Evidence: `phase34_multi_layout.test.tsx` (the 640 invariant, the cap, strip-before-page) + new `def287_fractionReclamp.test.tsx` 10 tests (carried-fraction re-clamp, panel open, no churn when valid, below-minimum pinning); 117 passed across the 9 existing multi-mode files; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and CLOSED on the rebuilt dev build (`npm.cmd run build`, exit 0). Command: `npx.cmd playwright test e2e/retests/def286_290_retest.spec.cjs -g DEF-287` -> 1 passed. Raw (640x520, panel open, inset 344px, frac 0.5): paneA=144 paneB=144, page areas mainA=44 mainB=44 (both >= 44), strips stripA=100 stripB=100 (both at the 100px minimum), scrollers 44/44; divider `{left:144,right:152}`, panel `{left:296,right:640}`. Carried-fraction case: 0.35 set at 1440 with the panel open, then narrowed to 640 -> the stored fraction RE-CLAMPED to 0.5 WITHOUT a drag, mainA=44 mainB=44, strips 100/100.
+
+## DEF-286: The All Tools panel shrinks the two Multi Mode panes by UNEQUAL amounts at any split other than 50/50
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-070)
+- Phase: 34
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf` (34 pages) and `test-fixtures/long.pdf` (520 pages); click the report tab; click `[data-toolbar-multi-mode]`; pick `long.pdf` into pane B so both panes are filled.
+3. With the panel closed, drag the divider (`[data-multi-divider]`) to a 0.35 split (the stage's `--tf-split-frac` reads back `0.35`).
+4. Measure both panes' page areas (`.tab-pane[data-pane=A/B] .workspace-main`).
+5. Open All Tools (`[data-tools-badge]`, inset `--tf-tools-inset` -> `344px`) and measure again; repeat steps 3-5 at 0.5 and 0.65.
+
+Expected: Phase 34 item 1 - the reserved width "must come out of the WORKSPACE as a whole (consumed once at the stage level), so both panes lose half of it"; success criterion 1 - "the two panes shrink by the SAME amount (equal deltas within a pixel)". That is 172px each at every split.
+
+Actual: the inset is subtracted from the shared base and then multiplied by each pane's fraction, so the loss is pro-rata, not halved:
+- 0.35 split: A lost 120px (280->160), B lost 224px (712->488) - |difference| 104px;
+- 0.65 split: A lost 224px (712->488), B lost 120px (280->160) - |difference| 104px;
+- only at 0.50 are the deltas equal (172/172), which is the single case the existing `phase34_panel_inset` spec measures.
+
+Screenshot: none (measurement-only; adversary's screenshots/adv-p34-uneven-panel.png shows the 0.35 case).
+
+Harness: test-fixtures/adv-p34/qa_repro_p34.cjs (`ADV-070-uneven`); adversary reference test-fixtures/adv-p34/geom.cjs (`B1-uneven`). Log: %TEMP%\adv-p34\qa_repro_p34.log
+
+History:
+- qa: opened. Independently reproduced on the dev build. Raw: `frac 0.35 -> A 280->160 (delta 120), B 712->488 (delta 224), |dA-dB|=104`; `frac 0.5 -> A 496->324 (172), B 496->324 (172), |dA-dB|=0`; `frac 0.65 -> A 712->488 (224), B 280->160 (120), |dA-dB|=104` (inset 344px throughout).
+- orchestrator: FIX-READY (relaying frontend-dev - the inset is now split evenly: each pane subtracts `var(--tf-pane-inset)/2` (a single variable both panes and the divider consume), so the deltas are 172/172 at every split (0.35, 0.5, 0.65) and the divider stays centred between them; with no inset the geometry is bit-identical to the pre-Phase-34 values (pinned by a test). The drag maths was moved into a shared pure module (`multiPaneLayout.ts`) and `MultiPane.fractionFor` inverts the new arithmetic so the handle still tracks 1:1. Evidence: `phase34_multi_layout.test.tsx` 34 tests (the three splits, the inset-0 pin, the divider-between-panes check) + `paneStripWiring` 13 (the 1:1 guard updated to the new formula); `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: retested and CLOSED on the rebuilt dev build (`npm.cmd run build`, exit 0). Command: `npx.cmd playwright test e2e/retests/def286_290_retest.spec.cjs -g DEF-286` -> 1 passed. Raw (1440x900, 344px list panel, inset 344px): frac 0.35 paneA 500->328 (delta 172), paneB 932->760 (delta 172), |dA-dB|=0; page areas mainA 280->108 (172), mainB 712->540 (172), |dA-dB|=0; divider `{left:328,right:336}` = paneA.right 328 / paneB.left 336 (centred). frac 0.5: paneA/B 716->544 (172/172), main 496->324 (172/172), divider `{544,552}`. frac 0.65: paneA 932->760 (172), paneB 500->328 (172), main 712->540 / 280->108, divider `{760,768}`. Panel closed at 0.35: stageW 1440, paneA 500 (=1440*0.35-4), paneB 932 (=1440*0.65-4), inset 0px - the pre-Phase-34 geometry.
+
 ## DEF-285: Single mode: the frosted-theme canvas area is see-through (transparent workspace/scroller background)
 
 - Status: CLOSED
