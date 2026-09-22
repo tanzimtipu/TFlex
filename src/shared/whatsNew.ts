@@ -23,6 +23,17 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.26.0',
+    date: '2026-09-22',
+    highlights: [
+      'Multi Mode: the All Tools panel now resizes both documents equally, and the page area stays usable even at the smallest window size.',
+      'Multi Mode shows a single workspace tab instead of two, with both file names on either side of the divider.',
+      'The divider between the two documents is now clearly visible and easy to grab.',
+      'Dragging a page between documents shows a clear line exactly where the page will land.',
+      'The new-document button is disabled while Multi Mode is on (turn the mode off to create one), and closing the workspace always returns you to a real document.',
+    ],
+  },
+  {
     version: '1.25.0',
     date: '2026-09-22',
     highlights: [
