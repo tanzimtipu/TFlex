@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement } from "react";
 import { AnimatePresence } from "motion/react";
 import type {
   AppSettings,
@@ -67,16 +67,11 @@ import {
 } from "./state/multiModeRouting";
 import { collectModifiedTabIds, orderWindowCloseQueue } from "./state/closeGate";
 import { DocumentStage, type StageTab } from "./components/MultiPane";
-// Phase 32 (chunk 2b) — the ONE shared Multi Mode thumbnail rail (a
-// labelled section per loaded document) and the rail body it renders per
-// section (the existing ThumbnailRail, unchanged but for its width).
-import {
-  MultiRail,
-  type MultiRailSection,
-  type MultiRailSectionRender,
-} from "./components/MultiRail";
-import { ThumbnailRail } from "./components/SideRail";
-import { buildPageLabelMap } from "./components/pageGeometry";
+import { MultiToolbar } from "./components/MultiToolbar";
+import { SharedToolController } from "./components/multiToolController";
+// Phase 33 — the per-pane thumbnail strips are rendered by each pane's own
+// DocumentView (`multiRail` + `railSide`), so App no longer composes a
+// stage-level shared rail.
 import { PageDragProvider } from "./state/PageDragContext";
 import { applyPageDrop, type PageDropDeps } from "./state/pageDragApply";
 import type { PageDropOp } from "./state/pageDrag";
@@ -99,6 +94,7 @@ import {
   type ThemeDefault,
 } from "./state/preferences";
 import { applyAnnotationPaletteChange } from "./state/colorPalette";
+import type { AnnotationColors } from "./state/colorPalette";
 import {
   dispatchMenuAction,
   gateOnActiveDoc,
@@ -170,6 +166,7 @@ import {
   type EditAction,
   type EditState,
   type EditTextStyle,
+  type EditTool,
 } from "./edit/model";
 import {
   defaultImageDecoder,
@@ -280,24 +277,10 @@ interface OpenTab {
   edit: EditState;
 }
 
-/** Phase 32 (chunk 2b) — everything one shared-rail section needs to render
- *  a real `ThumbnailRail` for its document. Mirrors the per-tab data
- *  `DocumentView` threads to the single-mode rail. */
-interface RailSectionData {
-  pane: PaneId;
-  tabId: string;
-  title: string;
-  pageCount: number;
-  currentPage: number;
-  doc: import("pdfjs-dist").PDFDocumentProxy;
-  pageSizes: Map<number, { w: number; h: number }> | null;
-  rotations: EngineState["rotations"];
-  visibleToSource: Map<number, number>;
-  proxyVisibleOrder: boolean;
-  pageLabelMap: Map<number, string> | null;
-  canUndo: boolean;
-}
-
+/** Phase 33 — Multi Mode's rail is no longer a stage-level shared rail:
+ *  each pane's `DocumentView` renders its OWN thumbnail strip at that
+ *  pane's inner edge (see `DocumentView`'s `multiRail` prop), so the
+ *  per-section data mirror that lived here is retired. */
 interface AppErrorState {
   toasts: Toast[];
   nextId: number;
@@ -6931,27 +6914,126 @@ pushToast(
     [openPdfFromPath, assignPaneDocument, refuseOpenIntoPane],
   );
 
-  // ---- Phase 32 (chunk 2b): the shared Multi Mode thumbnail rail ---------
+  // ---- Phase 33: Multi Mode's per-pane thumbnail strips -----------------
   //
-  // ONE rail for both panes: a labelled section per loaded document (pane
-  // A's first), each with its own scroll container. A thumbnail click
-  // focuses that section's pane through the SAME routing helpers the pane
-  // headers use (so the effective active tab follows) and jumps that
-  // pane's document to the clicked page. Every section renders a real
-  // ThumbnailRail, so the existing render/cleanup/virtualization rules
-  // apply unchanged — only the computed thumb width differs.
+  // The phase-32 shared rail is retired: each pane's DocumentView renders
+  // its OWN strip at that pane's inner edge (`multiRail` + `railSide`), so
+  // pane A's strip sits to the RIGHT of A's pages and pane B's to the LEFT
+  // of B's, meeting side by side in the middle. A thumbnail click navigates
+  // its own pane through the view's own `jumpToPage`; the cross-document
+  // drag seam is the SAME `onPageDrop` App already owns. The only rail
+  // state App still holds is the reveal jump a completed page drop issues
+  // (see `onPageDrop` -> `reveal`).
 
-  // Per-tab per-page sizes reported by each pane's DocumentView (the same
-  // map the in-pane rail consumes), so a section's thumbnail wraps match
-  // its pages' real aspect ratios.
-  const [railPageSizes, setRailPageSizes] = useState<
-    Record<string, Map<number, { w: number; h: number }>>
-  >({});
-  const reportPageSizes = useCallback(
-    (tabId: string, sizes: Map<number, { w: number; h: number }>): void => {
-      setRailPageSizes((prev) => (prev[tabId] === sizes ? prev : { ...prev, [tabId]: sizes }));
+  // How many documents are loaded across the strips (1 or 2): the strips
+  // share the middle region, so each keeps the Phase-32 area-preserving
+  // thumb width for that count.
+  const loadedDocumentCount = multiMode.enabled
+    ? (multiMode.paneA !== null ? 1 : 0) + (multiMode.paneB !== null ? 1 : 0)
+    : 0;
+
+  // ---- Phase 33 (chunk 4): ONE shared toolbar in Multi Mode --------------
+  //
+  // App owns the bridge that lets the single stage-level toolbar drive both
+  // panes. Each pane's DocumentView publishes its toolbar model and its
+  // annotation-tool reducer to this controller; the shared bar reads the
+  // FOCUSED pane's model (page / zoom / search / hand) and fans every
+  // annotation action out to BOTH panes' reducers, so a tool armed in the
+  // bar applies to whichever pane the user then works in. Single mode hands
+  // `null`, so nothing about its internals changes.
+  const sharedToolController = useMemo(() => new SharedToolController(), []);
+  useEffect((): void => {
+    if (!multiMode.enabled) sharedToolController.reset();
+  }, [multiMode.enabled, sharedToolController]);
+
+  const sharedToolsCache = useRef(
+    new Map<PaneId, { pane: PaneId; controller: SharedToolController }>(),
+  );
+  const sharedToolsFor = useCallback(
+    (pane: PaneId): { pane: PaneId; controller: SharedToolController } => {
+      const cached = sharedToolsCache.current.get(pane);
+      if (cached !== undefined) return cached;
+      const entry = { pane, controller: sharedToolController };
+      sharedToolsCache.current.set(pane, entry);
+      return entry;
     },
-    [],
+    [sharedToolController],
+  );
+
+  // The shared EditToolbar arms its tool for BOTH pane tabs (their edit state
+  // lives on `openTabs`), so the next interaction in either pane uses it.
+  const broadcastEditAction = useCallback(
+    (action: EditAction): void => {
+      const ids: string[] = [];
+      if (multiMode.paneA !== null) ids.push(multiMode.paneA);
+      if (multiMode.paneB !== null) ids.push(multiMode.paneB);
+      if (ids.length === 0) return;
+      setOpenTabs((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of ids) {
+          const tab = prev[id];
+          if (tab === undefined) continue;
+          const edited = editReducer(tab.edit, action);
+          if (edited !== tab.edit) {
+            next[id] = { ...tab, edit: edited };
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    },
+    [multiMode.paneA, multiMode.paneB],
+  );
+
+  // The tab the workspace is effectively working on: the focused pane's
+  // document in Multi Mode (the Phase-32 routing invariant), the active tab
+  // in single mode.
+  const focusedPaneTabId = multiMode.enabled
+    ? paneTabId(multiMode, multiMode.focused)
+    : tabs.activeId;
+  const focusedPaneOpen = focusedPaneTabId !== null ? openTabs[focusedPaneTabId] : undefined;
+  const focusedEditTool: EditTool =
+    editModeOpen && focusedPaneOpen !== undefined ? focusedPaneOpen.edit.tool : "off";
+  const focusedPageCount =
+    focusedPaneTabId !== null ? engineUi[focusedPaneTabId]?.state.pageCount ?? 0 : 0;
+  const focusedHasFormFields = (focusedPaneOpen?.forms.fields.length ?? 0) > 0;
+
+  const annotationPaletteForBar: AnnotationColors | null =
+    settings === null || settings.annotationColors === undefined
+      ? null
+      : {
+          light: (settings.annotationColors.light ?? []).map((p) =>
+            typeof p === "string" ? { id: `legacy-${p}`, hex: p } : p,
+          ),
+          dark: (settings.annotationColors.dark ?? []).map((p) =>
+            typeof p === "string" ? { id: `legacy-${p}`, hex: p } : p,
+          ),
+        };
+  const onAnnotationPaletteChangeBar = useCallback(
+    (next: AnnotationColors): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const updated = applyAnnotationPaletteChange(prev, next);
+        if (updated !== prev) trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
+  const onAnnotationRecentToolsChangeBar = useCallback(
+    (ids: string[]): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const updated = preferencesReducer(prev, {
+          type: "set-annotation-recent-tools",
+          value: ids,
+        });
+        if (updated !== prev) trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
   );
 
   // The rail's jump request. `seq` is what makes two clicks on the same
@@ -6959,15 +7041,6 @@ pushToast(
   const railJumpSeqRef = useRef(0);
   const [railJump, setRailJump] = useState<{ tabId: string; page: number; seq: number } | null>(
     null,
-  );
-  const onRailJump = useCallback(
-    (pane: PaneId, page: number): void => {
-      const tabId = paneTabId(multiMode, pane);
-      if (tabId === null) return;
-      railJumpSeqRef.current += 1;
-      setRailJump({ tabId, page, seq: railJumpSeqRef.current });
-    },
-    [multiMode],
   );
 
   // Phase 32 (chunk 2d) — apply a resolved cross-document (or same-document)
@@ -7006,100 +7079,6 @@ pushToast(
     },
     [noteOpApplied, onReorder, pushToast],
   );
-
-  const railSectionData = useMemo<RailSectionData[]>(() => {
-    const out: RailSectionData[] = [];
-    const panes: PaneId[] = ["A", "B"];
-    for (const pane of panes) {
-      const tabId = paneTabId(multiMode, pane);
-      if (tabId === null) continue;
-      const open = openTabs[tabId];
-      const meta = tabs.tabs.find((t) => t.id === tabId);
-      if (open === undefined || meta === undefined) continue;
-      const engine = engineFor(tabId);
-      const visibleToSource = new Map<number, number>();
-      const order = engine.engineState.pageOrder;
-      for (let i = 0; i < order.length; i += 1) {
-        visibleToSource.set(i + 1, order[i] + 1);
-      }
-      out.push({
-        pane,
-        tabId,
-        title: meta.title,
-        pageCount: engine.engineState.pageCount,
-        // The same value the in-pane rail highlights; DocumentView
-        // persists it on every page change.
-        currentPage: open.persisted.currentPage > 0 ? open.persisted.currentPage : 1,
-        doc: open.session.doc,
-        pageSizes: railPageSizes[tabId] ?? null,
-        rotations: engine.engineState.rotations,
-        visibleToSource,
-        proxyVisibleOrder: open.session.proxyVisibleOrder,
-        pageLabelMap: buildPageLabelMap(engine.engineState.pageLabels),
-        canUndo: engine.canUndo,
-      });
-    }
-    return out;
-  }, [multiMode, openTabs, tabs.tabs, engineFor, railPageSizes]);
-
-  const railSections = useMemo<MultiRailSection[]>(
-    () =>
-      railSectionData.map((s) => ({
-        pane: s.pane,
-        tabId: s.tabId,
-        title: s.title,
-        pageCount: s.pageCount,
-      })),
-    [railSectionData],
-  );
-
-  const renderRailSection = useCallback(
-    ({ pane, tabId, thumbWidth, onJump }: MultiRailSectionRender): ReactNode => {
-      const section = railSectionData.find((s) => s.pane === pane);
-      if (section === undefined) return null;
-      const engine = engineFor(section.tabId);
-      return (
-        <ThumbnailRail
-          doc={section.doc}
-          pageCount={section.pageCount}
-          currentPage={section.currentPage}
-          // Only used before the first page reports its size; the rail
-          // then derives the fallback from the largest known page.
-          aspectRatio={792 / 612}
-          pageSizes={section.pageSizes}
-          rotations={section.rotations}
-          visibleToSource={section.visibleToSource}
-          proxyVisibleOrder={section.proxyVisibleOrder}
-          pageLabelMap={section.pageLabelMap}
-          canUndo={section.canUndo}
-          onOp={engine.op}
-          onDelete={engine.deletePages}
-          onReorder={engine.reorder}
-          onUndo={engine.undo}
-          // MultiRail already focused this section's pane; `onJump` here
-          // is the pane-scoped navigation.
-          onJump={onJump}
-          thumbWidth={thumbWidth}
-          // Phase 32 (chunk 2d) — document-aware drag: the section's drag
-          // source carries `tabId`, and a cross-section drop funnels through
-          // the one apply path above.
-          crossDoc={{ tabId, onDrop: onPageDrop }}
-        />
-      );
-    },
-    [railSectionData, engineFor, onPageDrop],
-  );
-
-  const sharedRail =
-    multiMode.enabled && railSections.length > 0 ? (
-      <MultiRail
-        sections={railSections}
-        activePane={multiMode.focused}
-        onFocusPane={onFocusPane}
-        onJump={onRailJump}
-        renderSection={renderRailSection}
-      />
-    ) : null;
 
   // A closed tab must never leave a stale pane: reconcile the pane slots
   // against the live tab ids whenever the tab list changes.
@@ -7251,12 +7230,58 @@ pushToast(
           onClearPane={onClearPane}
           onPickPane={onPickPane}
           onOpenIntoPane={onOpenIntoPane}
-          // Phase 32 (chunk 2b) — the ONE shared rail with a labelled
-          // section per loaded document. Null keeps single mode (and a
-          // rail-less two-pane layout with nothing loaded) exactly as it
-          // was; the stage then reserves no rail column.
-          sharedRail={sharedRail}
-          renderDocument={(tabId) => {
+          // Phase 33 (chunk 4) — the workspace's ONE toolbar: rendered once
+          // in the stage above both panes while Multi Mode is on. It reads
+          // the focused pane's model and arms BOTH panes.
+          sharedToolbar={
+            multiMode.enabled ? (
+              <MultiToolbar
+                controller={sharedToolController}
+                pane={multiMode.focused}
+                theme={settings.theme === "light" ? "light" : "dark"}
+                annotationPalette={annotationPaletteForBar}
+                onAnnotationPaletteChange={onAnnotationPaletteChangeBar}
+                annotationRecentTools={settings.annotationRecentTools ?? []}
+                onAnnotationRecentToolsChange={onAnnotationRecentToolsChangeBar}
+                editModeOpen={editModeOpen}
+                onEditModeToggle={(): void => setEditMode(!editModeOpen)}
+                multiModeEnabled={multiMode.enabled}
+                onMultiModeToggle={onMultiModeToggle}
+                signToolActive={armedSignatureId !== null}
+                onSignClick={(): void => {
+                  window.dispatchEvent(new CustomEvent("tflex:sign-button"));
+                }}
+                hasFormFields={focusedHasFormFields}
+                onFlattenClick={(): void => {
+                  window.dispatchEvent(new CustomEvent("tflex:flatten-button"));
+                }}
+                onMerge={onMergeClick}
+                onSplit={onSplitClick}
+                onOptimize={onOptimizeClick}
+                onAuditSpace={onAuditClick}
+                onRotateClockwise={
+                  focusedPaneTabId === null
+                    ? undefined
+                    : (): void => onRotateClockwise(focusedPaneTabId)
+                }
+                onRotateCounterClockwise={
+                  focusedPaneTabId === null
+                    ? undefined
+                    : (): void => onRotateCounterClockwise(focusedPaneTabId)
+                }
+                onDeletePage={onDeletePageClick}
+                canDeletePage={focusedPageCount > 1}
+                editTool={focusedEditTool}
+                editDefaultFont={settings.editDefaultFont ?? "Helvetica"}
+                onEditSelect={(tool): void => broadcastEditAction({ type: "set-tool", tool })}
+                onEditDefaultFontChange={setEditDefaultFont}
+              />
+            ) : null
+          }
+          // Phase 33 — each pane's own DocumentView renders its own
+          // thumbnail strip (pane A on the right, pane B on the left), so
+          // the stage no longer hosts a shared rail.
+          renderDocument={(tabId, pane) => {
             const meta = tabs.tabs.find((t) => t.id === tabId);
             const open = openTabs[tabId];
             if (meta === undefined || open === undefined) return null;
@@ -7420,15 +7445,35 @@ pushToast(
                     // (the shared two-section rail is the next chunk); the
                     // CommandBar control reads the same App-owned state as
                     // the All-tools entry, so both always agree.
-                    showRail={!multiMode.enabled}
-                    // Phase 32 (chunk 2b) — the shared rail's navigation
-                    // seams: a section's thumbnail click routes to this
-                    // pane's document, and this view reports the per-page
-                    // sizes the shared rail sizes its wraps with.
+                    // Phase 33 — Multi Mode: this pane's OWN thumbnail strip on the
+                    // correct side (A right, B left) so the two strips meet
+                    // side by side in the middle of the workspace. Single
+                    // mode keeps the unchanged left-side SideRail.
+                    railSide={pane === "A" ? "right" : "left"}
+                    multiRail={
+                      pane === null
+                        ? null
+                        : {
+                            pane,
+                            tabId: meta.id,
+                            title: meta.title,
+                            documentCount: loadedDocumentCount,
+                            onFocusPane: (): void => onFocusPane(pane),
+                            onDrop: onPageDrop,
+                          }
+                    }
+                    // Phase 32 (chunk 2b) — a completed page drop reveals
+                    // the landing page in the target pane.
                     jumpRequest={railJump !== null && railJump.tabId === meta.id ? railJump : null}
-                    onPageSizesChange={(sizes): void => reportPageSizes(meta.id, sizes)}
                     multiModeEnabled={multiMode.enabled}
                     onMultiModeToggle={onMultiModeToggle}
+                    // Phase 33 (chunk 4) — in Multi Mode this pane suppresses
+                    // its own toolbar rows and publishes its model + arm
+                    // state to the shared controller instead. Single mode
+                    // passes null: the existing toolbar is untouched.
+                    sharedTools={
+                      multiMode.enabled && pane !== null ? sharedToolsFor(pane) : null
+                    }
                     // Phase 32 (chunk 2d) — canvas page drag and drop is a
                     // Multi Mode feature: the hover grip and the page drop
                     // targets exist only while the mode is on. Single mode

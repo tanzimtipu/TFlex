@@ -19,7 +19,7 @@ import { createRoot } from "react-dom/client";
 import { act, type ReactElement } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ThumbnailRail } from "../../../src/renderer/components/SideRail";
-import { MultiRail } from "../../../src/renderer/components/MultiRail";
+import { PaneThumbStrip } from "../../../src/renderer/components/PaneThumbStrip";
 import { DocumentView, type PersistedViewer } from "../../../src/renderer/components/DocumentView";
 import type { DocDiagnostics } from "../../../src/renderer/components/DocumentView";
 import { PageDragProvider, usePageDrag } from "../../../src/renderer/state/PageDragContext";
@@ -281,10 +281,11 @@ describe("the rail's cross-document drag", () => {
 });
 
 // ---------------------------------------------------------------------------
-// MultiRail: the landing section highlights for a cross-document drag.
+// The strips (Phase 33): the landing pane's strip highlights for a
+// cross-document drag, and a strip's own document identity drives the op.
 // ---------------------------------------------------------------------------
 
-function RailSectionHarness(): ReactElement {
+function StripHarness(): ReactElement {
   const d = usePageDrag();
   return (
     <div>
@@ -302,25 +303,40 @@ function RailSectionHarness(): ReactElement {
       >
         hover b
       </button>
-      <MultiRail
-        sections={[
-          { pane: "A", tabId: "a", title: "a.pdf", pageCount: 3 },
-          { pane: "B", tabId: "b", title: "b.pdf", pageCount: 4 },
-        ]}
-        activePane="A"
-        onFocusPane={(): void => undefined}
-        onJump={(): void => undefined}
-        renderSection={({ tabId }): ReactElement => <div data-body={tabId} />}
-      />
+      {(["A", "B"] as const).map((pane) => {
+        const tabId = pane === "A" ? "a" : "b";
+        const pageCount = pane === "A" ? 3 : 4;
+        return (
+          <PaneThumbStrip
+            key={pane}
+            pane={pane}
+            tabId={tabId}
+            title={`${tabId}.pdf`}
+            doc={makeDocStub(pageCount)}
+            pageCount={pageCount}
+            currentPage={1}
+            defaultWidthPt={612}
+            defaultHeightPt={792}
+            pageSizes={null}
+            engineState={engineState(pageCount)}
+            proxyVisibleOrder={false}
+            canUndo={false}
+            onJump={(): void => undefined}
+            onFocusPane={(): void => undefined}
+            documentCount={2}
+            crossDoc={{ tabId, onDrop: (): void => undefined }}
+          />
+        );
+      })}
     </div>
   );
 }
 
-describe("the shared rail highlights the landing section", () => {
-  it("marks only the other section as a cross-document drop target", () => {
+describe("the landing pane's strip highlights for a cross-document drag", () => {
+  it("marks only the other document's strip as a drop target", () => {
     const { host, unmount } = mount(
       <PageDragProvider>
-        <RailSectionHarness />
+        <StripHarness />
       </PageDragProvider>,
     );
     try {
@@ -328,10 +344,10 @@ describe("the shared rail highlights the landing section", () => {
         host.querySelector<HTMLButtonElement>("[data-begin-from-a]")?.click();
         host.querySelector<HTMLButtonElement>("[data-hover-b]")?.click();
       });
-      const sectionA = host.querySelector('[data-rail-section-doc="a"]');
-      const sectionB = host.querySelector('[data-rail-section-doc="b"]');
-      expect(sectionA?.getAttribute("data-rail-section-drop-target")).toBeNull();
-      expect(sectionB?.getAttribute("data-rail-section-drop-target")).toBe("true");
+      const stripA = host.querySelector('[data-pane-strip-doc="a"]');
+      const stripB = host.querySelector('[data-pane-strip-doc="b"]');
+      expect(stripA?.getAttribute("data-pane-strip-drop-target")).toBeNull();
+      expect(stripB?.getAttribute("data-pane-strip-drop-target")).toBe("true");
     } finally {
       unmount();
     }

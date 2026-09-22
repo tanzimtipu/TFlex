@@ -36,6 +36,7 @@ import type { OutlineNode } from "../pdf/pdfjs";
 import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
 import { SideRail } from "./SideRail";
+import { PaneThumbStrip } from "./PaneThumbStrip";
 import { usePageDragOptional } from "../state/PageDragContext";
 import {
   buildDragSource,
@@ -94,6 +95,12 @@ import type {
   SavedSignature,
   SignaturePlacement,
 } from "../../shared/types";
+import type { PaneId } from "../state/multiMode";
+import type {
+  PaneToolbarCommands,
+  PaneToolbarValues,
+  SharedToolController,
+} from "./multiToolController";
 
 export interface PersistedViewer {
   zoomMode: ZoomMode;
@@ -329,27 +336,59 @@ interface DocumentViewProps {
    *  state. Threaded to the SideRail, whose expand/collapse button
    *  calls it; the rail never owns the value itself. */
   onTogglePagesPanelCollapsed?: () => void;
-  /** Phase 32 — Multi Mode. When `false`, this view does NOT render its
-   *  own SideRail: the two-pane workspace suppresses both panes' rails
-   *  (the phase's ONE shared rail with a section per document is a later
-   *  chunk) and the workspace grid collapses to the page column alone.
-   *  Defaults to `true`, so single-document behaviour is unchanged. */
+  /** Phase 32 — the rail master switch. `false` suppresses the rail
+   *  entirely and collapses the workspace grid to the page column
+   *  (`data-rail="none"`), leaving no empty gutter. Defaults to `true`.
+   *  Phase 33 — Multi Mode no longer suppresses it: each pane renders its
+   *  own strip (see `multiRail`) instead of the full SideRail. */
   showRail?: boolean;
+  /** Phase 33 — which side of the page area this view's rail occupies.
+   *  Single mode keeps the default `'left'` (unchanged). Multi Mode renders
+   *  pane A's strip on its RIGHT and pane B's on its LEFT, so the two
+   *  strips meet side by side in the MIDDLE of the workspace:
+   *  `[A pages | A thumbs || B thumbs | B pages]`. */
+  railSide?: "left" | "right";
+  /** Phase 33 — Multi Mode's per-pane thumbnail strip. When present the
+   *  rail slot renders this pane's OWN strip (document header + the
+   *  existing ThumbnailRail) at `railSide`, instead of the full SideRail.
+   *  `null` (the single-mode default) renders the unchanged SideRail. */
+  multiRail?: {
+    /** Which pane this view fills (drives the strip's badge). */
+    pane: "A" | "B";
+    /** This view's document (the tab id) — the strip's drag identity. */
+    tabId: string;
+    /** The document name shown in the strip header. */
+    title: string;
+    /** How many documents are loaded across both strips (1 or 2). */
+    documentCount: number;
+    /** Focus this view's pane (the strip header's click target). */
+    onFocusPane: () => void;
+    /** Apply a resolved page drop (the cross-document drag seam). */
+    onDrop: (op: PageDropOp) => void;
+  } | null;
   /** Phase 32 — Multi Mode state for the CommandBar control. The host
    *  (App) owns the mode; this view only threads it to the toolbar. */
   multiModeEnabled?: boolean;
   onMultiModeToggle?: () => void;
-  /** Phase 32 (chunk 2b) — an external page jump: the shared Multi Mode
-   *  rail navigates the pane it belongs to. `seq` makes each request
-   *  unique, so clicking the same thumbnail twice both land and a
-   *  re-render never replays a stale request. `null` (the single-mode
-   *  default) means this view is never driven from outside. */
+  /** Phase 32 (chunk 2b) — an external page jump: a page drop reveals the
+   *  landing page in the target pane. `seq` makes each request unique, so
+   *  clicking the same thumbnail twice both land and a re-render never
+   *  replays a stale request. `null` (the single-mode default) means this
+   *  view is never driven from outside. */
   jumpRequest?: { page: number; seq: number } | null;
-  /** Phase 32 (chunk 2b) — reports this view's per-visible-page sizes
-   *  (the same map the in-pane SideRail consumes) so the shared rail can
-   *  size each section's thumbnail wraps from the pages' real aspect
-   *  ratios. Optional: single mode never needs it. */
-  onPageSizesChange?: (sizes: Map<number, { w: number; h: number }>) => void;
+  /** Phase 33 (chunk 4) — Multi Mode's SHARED toolbar wiring. When supplied,
+   *  this view suppresses its OWN toolbar rows (the shared bar in the stage
+   *  renders the one toolbar) and instead:
+   *    - publishes its toolbar model (page / zoom / search / hand values +
+   *      commands) to the controller so the shared bar can drive it;
+   *    - routes its annotation-tool reducer through the controller's
+   *      fan-out, so arming / disarming from the bar or in either pane keeps
+   *      BOTH panes coherent.
+   *  `null` (the single-mode default) is the pre-Phase-33 behaviour exactly. */
+  sharedTools?: {
+    pane: PaneId;
+    controller: SharedToolController;
+  } | null;
   /** Phase 32 (chunk 2d) — canvas page drag and drop. Present only in Multi
    *  Mode: each page grows a hover-revealed grip (`data-page-drag-handle`)
    *  that starts a document-aware drag, and every page slot accepts a drop
@@ -602,11 +641,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   pagesPanelCollapsed,
   onTogglePagesPanelCollapsed,
   showRail = true,
+  railSide = "left",
+  multiRail = null,
   multiModeEnabled,
   onMultiModeToggle,
   jumpRequest = null,
-  onPageSizesChange,
   pageDrag = null,
+  sharedTools = null,
 }: DocumentViewProps,
   ref,
 ) {
@@ -651,9 +692,26 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // text-properties panel block below, which reads the armed annotation
   // text tool (`textbox` / `callout` / `note`) to decide whether the
   // panel opens in annotation mode and which colour it reflects.
-  const [annTool, dispatchAnnTool] = useReducer(
+  const [annTool, rawDispatchAnnTool] = useReducer(
     annotationToolReducer,
     initialAnnotationToolState,
+  );
+
+  // Phase 33 (chunk 4) — when the SHARED Multi Mode toolbar is wired, an
+  // annotation action from this pane is fanned out to every pane's reducer
+  // through the controller, so both panes arm / disarm together. `self` is
+  // passed so this pane's own reducer runs exactly once. Single mode keeps
+  // the raw per-view reducer untouched.
+  const dispatchAnnTool = useCallback(
+    (action: AnnotationToolAction): void => {
+      const shared = sharedTools;
+      if (shared === null) {
+        rawDispatchAnnTool(action);
+        return;
+      }
+      shared.controller.annToolAction(action, rawDispatchAnnTool);
+    },
+    [sharedTools, rawDispatchAnnTool],
   );
 
   // Phase 21 — text-properties panel state. The panel is selection-aware:
@@ -1112,17 +1170,6 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // DEF-262 — the commit path reads the latest page sizes through this ref
   // (declared above `commitTextSession`, which must stay stable).
   pageSizesRef.current = pageSizes;
-
-  // Phase 32 (chunk 2b) — report the per-page sizes to the host so the
-  // shared Multi Mode rail can size its sections' thumbnail wraps from
-  // each page's own aspect ratio. Identity-guarded: the callback fires
-  // once per NEW map (a page reporting a size), never per render.
-  const reportedPageSizesRef = useRef<Map<number, { w: number; h: number }> | null>(null);
-  useEffect(() => {
-    if (reportedPageSizesRef.current === pageSizes) return;
-    reportedPageSizesRef.current = pageSizes;
-    onPageSizesChange?.(pageSizes);
-  }, [pageSizes, onPageSizesChange]);
 
   const [zoom, dispatchZoom] = useReducer(zoomReducer, {
     mode: initial.zoomMode,
@@ -2702,6 +2749,131 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     [onToast],
   );
 
+  // Phase 33 — the rail slot's content. Single mode keeps the unchanged
+  // SideRail; Multi Mode renders this pane's OWN thumbnail strip, which the
+  // workspace places at `railSide` (pane A right, pane B left) so the two
+  // strips meet side by side in the middle of the workspace.
+  const railNode = multiRail === null ? (
+    <SideRail
+      doc={doc}
+      pageCount={pageCount}
+      outline={outline}
+      currentPage={currentPage}
+      defaultWidthPt={firstPageSize?.w ?? 612}
+      defaultHeightPt={firstPageSize?.h ?? 792}
+      // DEF-148 — the per-VISIBLE-page sizes the mounted PageViews
+      // report. The rail sizes each thumb wrap from ITS OWN page's
+      // aspect ratio (never a single page-1-derived ratio), so a
+      // per-page crop of page 1 no longer collapses pages 2..N into
+      // the crop square.
+      pageSizes={pageSizes}
+      engineState={engineState}
+      // DEF-139 — the thumb bitmap source must follow the same
+      // slot -> proxy-page rule as the main view (visible order
+      // when the proxy was rebuilt from getDocumentBytes).
+      proxyVisibleOrder={proxyVisibleOrder}
+      canUndo={canUndo}
+      onOp={onRotate}
+      onDelete={onDelete}
+      onReorder={onReorder}
+      onUndo={onUndo}
+      onJump={(p): void => jumpToPage(p)}
+      onError={railError}
+      annotations={annotations}
+      onEditAnnotation={onEditAnnotation}
+      onDeleteAnnotation={onDeleteAnnotation}
+      onJumpToAnnotation={onAnnJump}
+      // Phase 16 — pages-panel collapsed state is App-owned
+      // (persisted in settings); the rail only renders it and
+      // reports toggles through the callback.
+      pagesPanelCollapsed={pagesPanelCollapsed}
+      onTogglePagesPanelCollapsed={onTogglePagesPanelCollapsed}
+    />
+  ) : (
+    <PaneThumbStrip
+      pane={multiRail.pane}
+      tabId={multiRail.tabId}
+      title={multiRail.title}
+      documentCount={multiRail.documentCount}
+      onFocusPane={multiRail.onFocusPane}
+      crossDoc={{ tabId: multiRail.tabId, onDrop: multiRail.onDrop }}
+      doc={doc}
+      pageCount={pageCount}
+      currentPage={currentPage}
+      defaultWidthPt={firstPageSize?.w ?? 612}
+      defaultHeightPt={firstPageSize?.h ?? 792}
+      pageSizes={pageSizes}
+      engineState={engineState}
+      proxyVisibleOrder={proxyVisibleOrder}
+      canUndo={canUndo}
+      onOp={onRotate}
+      onDelete={onDelete}
+      onReorder={onReorder}
+      onUndo={onUndo}
+      onJump={(p): void => jumpToPage(p)}
+    />
+  );
+
+  // ---- Phase 33 (chunk 4): the shared Multi Mode toolbar wiring ----------
+  //
+  // Values and commands live in refs so the controller registration is
+  // stable (one per pane per mode session) while every read returns the
+  // CURRENT state. In single mode `sharedTools` is null: no registration,
+  // no effects, no change.
+  const sharedValuesRef = useRef<PaneToolbarValues | null>(null);
+  const sharedCommandsRef = useRef<PaneToolbarCommands | null>(null);
+  sharedValuesRef.current = {
+    page: currentPage,
+    pageCount,
+    pageLabel: resolvePageLabel(currentPage, engineState.pageLabels),
+    zoomPercent: Math.round(effectiveScale * 100),
+    zoomMode: zoom.mode,
+    searchOpen,
+    handActive,
+  };
+  sharedCommandsRef.current = {
+    onJump: pageJump,
+    onZoomIn: (): void => zoomTo(1),
+    onZoomOut: (): void => zoomTo(-1),
+    onFitWidth: (): void => setMode("fit-width"),
+    onFitPage: (): void => setMode("fit-page"),
+    onToggleSearch: (): void => setSearchOpen((v) => !v),
+    onHandToggle: toggleHand,
+  };
+
+  useEffect((): (() => void) | undefined => {
+    const shared = sharedTools;
+    if (shared === null) return undefined;
+    const offToolbar = shared.controller.registerToolbar(shared.pane, {
+      values: (): PaneToolbarValues | null => sharedValuesRef.current,
+      commands: (): PaneToolbarCommands | null => sharedCommandsRef.current,
+    });
+    const offSink = shared.controller.registerAnnSink(shared.pane, rawDispatchAnnTool);
+    return (): void => {
+      offToolbar();
+      offSink();
+    };
+  }, [sharedTools, rawDispatchAnnTool]);
+
+  // Publish this pane's armed annotation tool so the shared bar can show the
+  // FOCUSED pane's state (both panes converge through the fan-out above).
+  useEffect((): void => {
+    const shared = sharedTools;
+    if (shared === null) return;
+    shared.controller.publishAnn(shared.pane, annTool);
+  }, [sharedTools, annTool]);
+
+  // The bar re-reads this pane's values on every value change.
+  useEffect((): void => {
+    const shared = sharedTools;
+    if (shared === null) return;
+    shared.controller.notifyToolbar();
+  }, [sharedTools, currentPage, pageCount, effectiveScale, zoom.mode, searchOpen, handActive]);
+
+  // Multi Mode suppresses this pane's own toolbar rows (the stage renders
+  // the single shared bar instead).
+  const suppressToolbar = sharedTools !== null;
+
   return (
     // Phase 25 — `data-text-panel-open` is now a PURE STATE MARKER (the
     // panel's open/close truth for tests and e2e); it no longer drives any
@@ -2710,49 +2882,18 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     <div
       className="workspace"
       data-text-panel-open={textPanelOpen ? "true" : "false"}
-      // Phase 32 — Multi Mode suppresses the per-pane rail (one shared rail
-      // lands in the next chunk). `data-rail="none"` collapses the grid to
-      // the page column so the suppressed rail leaves no empty gutter.
       data-rail={showRail ? undefined : "none"}
+      // Phase 33 — the rail side. The rail node is placed BEFORE the page
+      // area on the left (single mode, unchanged) and AFTER it on the right
+      // (Multi Mode's pane A), so the DOM order matches the geometry.
+      data-rail-side={showRail ? railSide : undefined}
     >
-      {showRail && (
-      <SideRail
-        doc={doc}
-        pageCount={pageCount}
-        outline={outline}
-        currentPage={currentPage}
-        defaultWidthPt={firstPageSize?.w ?? 612}
-        defaultHeightPt={firstPageSize?.h ?? 792}
-        // DEF-148 — the per-VISIBLE-page sizes the mounted PageViews
-        // report. The rail sizes each thumb wrap from ITS OWN page's
-        // aspect ratio (never a single page-1-derived ratio), so a
-        // per-page crop of page 1 no longer collapses pages 2..N into
-        // the crop square.
-        pageSizes={pageSizes}
-        engineState={engineState}
-        // DEF-139 — the thumb bitmap source must follow the same
-        // slot -> proxy-page rule as the main view (visible order
-        // when the proxy was rebuilt from getDocumentBytes).
-        proxyVisibleOrder={proxyVisibleOrder}
-        canUndo={canUndo}
-        onOp={onRotate}
-        onDelete={onDelete}
-        onReorder={onReorder}
-        onUndo={onUndo}
-        onJump={(p): void => jumpToPage(p)}
-        onError={railError}
-        annotations={annotations}
-        onEditAnnotation={onEditAnnotation}
-        onDeleteAnnotation={onDeleteAnnotation}
-        onJumpToAnnotation={onAnnJump}
-        // Phase 16 — pages-panel collapsed state is App-owned
-        // (persisted in settings); the rail only renders it and
-        // reports toggles through the callback.
-        pagesPanelCollapsed={pagesPanelCollapsed}
-        onTogglePagesPanelCollapsed={onTogglePagesPanelCollapsed}
-      />
-      )}
+      {showRail && railSide === "left" ? railNode : null}
       <div ref={mainRef} className="workspace-main">
+        {/* Phase 33 (chunk 4) — in Multi Mode the ONE toolbar lives in the
+            stage (the shared bar); this pane suppresses its own rows so the
+            workspace never shows two toolbars. */}
+        {suppressToolbar ? null : (
         <Toolbar
           page={currentPage}
           pageCount={pageCount}
@@ -2834,8 +2975,9 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             />
           }
         />
+        )}
         <AnimatePresence>
-          {editModeOpen && edit !== null && (
+          {!suppressToolbar && editModeOpen && edit !== null && (
             <EditToolbar
               tool={edit.state.tool}
               onSelect={(t): void => edit.onAction({ type: "set-tool", tool: t })}
@@ -3163,6 +3305,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           focusToken={textFocusToken}
         />
       </div>
+      {/* Phase 33 — the rail's RIGHT-side slot (Multi Mode's pane A): the
+          strip sits immediately after the page area, so A's strip and B's
+          (on the left of its own page area) meet in the middle. */}
+      {showRail && railSide === "right" ? railNode : null}
     </div>
   );
 });

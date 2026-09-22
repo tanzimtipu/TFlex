@@ -12,7 +12,7 @@
 // the stage; the panes' widths read it, so resizing re-lays-out without
 // re-rendering either DocumentView.
 
-import { useCallback, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type {
   CSSProperties,
   PointerEvent as ReactPointerEvent,
@@ -21,7 +21,6 @@ import type {
 } from "react";
 import { Columns2, FileText, FolderOpen, GripVertical, X } from "lucide-react";
 import { paneTabId, type MultiModeState, type PaneId } from "../state/multiMode";
-import { SHARED_RAIL_WIDTH_PX } from "./MultiRail";
 
 /** A tab that can fill a pane: a real document with a name and page count. */
 export interface StageTab {
@@ -51,13 +50,15 @@ export interface DocumentStageProps {
   onClearPane: (pane: PaneId) => void;
   onPickPane: (pane: PaneId, tabId: string) => void;
   onOpenIntoPane: (pane: PaneId) => void;
-  /** Builds the `DocumentView` element for a tab id (App owns the props). */
-  renderDocument: (tabId: string) => ReactNode;
-  /** Phase 32 (chunk 2b) — the ONE shared rail holding a section per
-   *  loaded document. Rendered only in Multi Mode; `null` (or omitted)
-   *  keeps single mode exactly as it was, and also keeps the two-pane
-   *  layout rail-less when nothing is loaded. */
-  sharedRail?: ReactNode | null;
+  /** Builds the `DocumentView` element for a tab id (App owns the props).
+   *  Phase 33 — the pane the tab currently fills (`null` in single mode) is
+   *  handed back too, so App can give each pane its OWN thumbnail strip on
+   *  the correct rail side. */
+  renderDocument: (tabId: string, pane: PaneId | null) => ReactNode;
+  /** Phase 33 (chunk 4) — the workspace's SINGLE toolbar, rendered once in
+   *  the stage above both panes while Multi Mode is on. `null`/absent in
+   *  single mode (each view keeps its own toolbar, unchanged). */
+  sharedToolbar?: ReactNode;
 }
 
 /** The per-pane header: document name, page count, and the clear control. */
@@ -196,18 +197,18 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     onPickPane,
     onOpenIntoPane,
     renderDocument,
-    sharedRail = null,
+    sharedToolbar,
   } = props;
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
+  // Phase 33 (chunk 4) — the shared toolbar row's measured height. The panes
+  // start below it; measuring (rather than assuming) keeps the geometry right
+  // when the bar wraps at a narrow window.
+  const toolbarRowRef = useRef<HTMLDivElement | null>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(0);
 
   const multiOn = multiMode.enabled;
-  // The shared rail reserves a real column on the left of the stage: the
-  // panes and the divider measure the split against the space that is
-  // actually left, so the divider still tracks the pointer 1:1.
-  const railOn = multiOn && sharedRail !== null;
-  const railWidth = railOn ? SHARED_RAIL_WIDTH_PX : 0;
   const stageStyle = {
     // Kept for the existing e2e/unit contract (`--tf-split` is the
     // divider's position as a percentage of the stage).
@@ -216,12 +217,35 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     // multiply it by a length-percentage (calc cannot multiply by a
     // percentage value).
     "--tf-split-frac": String(splitFraction),
-    // The shared rail's column width: the SAME constant MultiRail measures
-    // its thumbnails against and the drag math below subtracts, so the
-    // three can never drift. Absent when there is no rail (the CSS base
-    // value of 0px applies).
-    ...(railOn ? { "--tf-shared-rail-w": `${SHARED_RAIL_WIDTH_PX}px` } : {}),
+    // Phase 33 (chunk 4) — the panes' top offset under the shared toolbar.
+    "--tf-multi-toolbar-h": multiOn ? `${toolbarHeight}px` : "0px",
   } as CSSProperties;
+
+  // Measure the shared toolbar row so the panes (headers and strips
+  // included) start below it. The measured height is written to
+  // `--tf-multi-toolbar-h`, which BOTH the panes' `top` and the divider's
+  // `top` read — so no part of the workspace can drift out from under the
+  // bar (DEF-282). Measuring (rather than hardcoding) keeps the geometry
+  // right when the bar wraps at a narrow window. Layout effect: the offset
+  // is applied before the first paint, so the bar never overlays the headers
+  // for even one frame. jsdom has no layout (offsetHeight 0) and may not
+  // implement ResizeObserver — both fall back cleanly to the 0 offset the
+  // pre-chunk-4 stage had.
+  useLayoutEffect((): (() => void) | undefined => {
+    const el = toolbarRowRef.current;
+    if (el === null) {
+      setToolbarHeight(0);
+      return undefined;
+    }
+    const update = (): void => setToolbarHeight(el.offsetHeight);
+    update();
+    const RO = (globalThis as { ResizeObserver?: new (cb: () => void) => ResizeObserver })
+      .ResizeObserver;
+    if (RO === undefined) return undefined;
+    const observer = new RO(update);
+    observer.observe(el);
+    return (): void => observer.disconnect();
+  }, [multiOn, sharedToolbar]);
 
   /** Clamp a pointer x to a fraction that keeps both panes usable. */
   const fractionFor = useCallback(
@@ -230,17 +254,17 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
       if (el === null) return 0.5;
       const rect = el.getBoundingClientRect();
       if (rect.width <= 0) return 0.5;
-      // The shared rail is not part of the split: measure the drag across
-      // the pane region only, so the divider stays under the pointer.
-      const usable = rect.width - railWidth;
+      // Phase 33 — the panes own the whole stage; the split is measured
+      // across it directly.
+      const usable = rect.width;
       if (usable <= 0) return 0.5;
       const min = MIN_PANE_WIDTH_PX / usable;
       // Below two minimum panes the split is meaningless: park it centred.
       if (min >= 0.5) return 0.5;
-      const raw = (clientX - rect.left - railWidth) / usable;
+      const raw = (clientX - rect.left) / usable;
       return Math.min(1 - min, Math.max(min, raw));
     },
-    [railWidth],
+    [],
   );
 
   const onDividerDown = useCallback(
@@ -284,9 +308,6 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
       ref={stageRef}
       data-multi-mode={multiOn ? "true" : "false"}
       data-multi-panes={multiOn ? String(2 - emptyPanes.length) : undefined}
-      // Phase 32 (chunk 2b) — the stage reserves the shared rail's column
-      // (CSS reads this attribute to offset pane A and the divider).
-      data-shared-rail={railOn ? "true" : undefined}
       style={stageStyle}
     >
       {showWelcome ? (
@@ -295,7 +316,11 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
         </div>
       ) : (
         <>
-          {railOn ? sharedRail : null}
+          {multiOn && sharedToolbar !== undefined && sharedToolbar !== null ? (
+            <div className="multi-toolbar-row" data-shared-toolbar ref={toolbarRowRef}>
+              {sharedToolbar}
+            </div>
+          ) : null}
           {tabs.map((tab) => {
             const pane: PaneId | null = !multiOn
               ? null
@@ -331,7 +356,7 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
                     onClear={(): void => onClearPane(pane)}
                   />
                 ) : null}
-                {renderDocument(tab.id)}
+                {renderDocument(tab.id, pane)}
               </div>
             );
           })}

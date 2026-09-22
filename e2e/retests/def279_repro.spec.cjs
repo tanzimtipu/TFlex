@@ -112,8 +112,8 @@ test('DEF-279 case-variant path bypasses the same-file guard and a save overwrit
   const paneBEmpty = await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count();
   const headerA = await paneHeader('A');
   const headerB = await paneHeader('B');
-  const rail = await win.locator('[data-multi-rail] [data-rail-section]').evaluateAll((els) =>
-    els.map((e) => ({ pane: e.getAttribute('data-rail-section-pane'), doc: e.getAttribute('data-rail-section-doc') })));
+  const rail = await win.locator('[data-pane-strip]').evaluateAll((els) =>
+    els.map((e) => ({ pane: e.getAttribute('data-pane-strip-pane'), doc: e.getAttribute('data-pane-strip-doc') })));
   const toastsAfterAssign = refusalText === '' ? [] : [refusalText];
   console.log(`[DEF279] headerA="${headerA}" headerB="${headerB}" paneBEmpty=${paneBEmpty} rail=${JSON.stringify(rail)} toasts=${JSON.stringify(toastsAfterAssign)}`);
 
@@ -125,11 +125,11 @@ test('DEF-279 case-variant path bypasses the same-file guard and a save overwrit
   if (bypassed) {
     await win.locator('.multi-pane-header[data-pane="A"]').click();
     await win.waitForTimeout(400);
-    const thumb = win.locator('[data-rail-section-pane="A"] .thumb-item[data-page="1"]').first();
+    const thumb = win.locator('[data-pane-strip-pane="A"] .thumb-item[data-page="1"]').first();
     await thumb.scrollIntoViewIfNeeded().catch(() => {});
     await thumb.click({ modifiers: ['Shift'] });
     await win.waitForTimeout(500);
-    const del = win.locator('[data-rail-section-pane="A"] [aria-label="Delete this page"]');
+    const del = win.locator('[data-pane-strip-pane="A"] [aria-label="Delete this page"]');
     console.log(`[DEF279] pane A delete control count=${await del.count()}`);
     await del.first().click();
     await win.waitForTimeout(1600);

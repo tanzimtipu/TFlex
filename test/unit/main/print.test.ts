@@ -423,16 +423,82 @@ describe('Phase 30: composePrintHtml', () => {
     expect(composePrintHtml(payload([IMG], { landscape: false }))).toContain('@page { size: portrait;');
   });
 
-  it('reflects the N-up page order in the grid flow', () => {
-    expect(composePrintHtml(payload([IMG], { pagesPerSheet: 4 }))).toContain('grid-auto-flow: row;');
+  it('swaps the sheet grid for the vertical order at 2-up (2x1 vs 1x2)', () => {
+    const horizontal = composePrintHtml(payload([IMG, IMG], { pagesPerSheet: 2 }));
+    expect(horizontal).toContain('grid-template-columns: repeat(2, 1fr)');
+    expect(horizontal).toContain('grid-template-rows: repeat(1, 1fr)');
+
+    const vertical = composePrintHtml(
+      payload([IMG, IMG], { pagesPerSheet: 2, pageOrder: 'vertical' }),
+    );
+    expect(vertical).toContain('grid-template-columns: repeat(1, 1fr)');
+    expect(vertical).toContain('grid-template-rows: repeat(2, 1fr)');
+  });
+
+  it('swaps the sheet grid for the vertical order at 6-up (3x2 vs 2x3)', () => {
+    const horizontal = composePrintHtml(
+      payload(Array(6).fill(IMG), { pagesPerSheet: 6 }),
+    );
+    expect(horizontal).toContain('grid-template-columns: repeat(3, 1fr)');
+    expect(horizontal).toContain('grid-template-rows: repeat(2, 1fr)');
+
+    const vertical = composePrintHtml(
+      payload(Array(6).fill(IMG), { pagesPerSheet: 6, pageOrder: 'vertical' }),
+    );
+    expect(vertical).toContain('grid-template-columns: repeat(2, 1fr)');
+    expect(vertical).toContain('grid-template-rows: repeat(3, 1fr)');
+  });
+
+  it('places the images in the page-order slots (2-up)', () => {
+    const imgs = ['A', 'B'];
+    // Horizontal: image 0 in cell 0, image 1 in cell 1.
+    expect(orderOf(composePrintHtml(payload(imgs, { pagesPerSheet: 2 })))).toEqual(['A', 'B']);
+    // Vertical 1x2: same visual reading order for two images.
     expect(
-      composePrintHtml(payload([IMG], { pagesPerSheet: 4, pageOrder: 'vertical' })),
-    ).toContain('grid-auto-flow: column;');
+      orderOf(composePrintHtml(payload(imgs, { pagesPerSheet: 2, pageOrder: 'vertical' }))),
+    ).toEqual(['A', 'B']);
+    // Horizontal Reversed: this row is filled right to left -> [1, 0].
     expect(
-      composePrintHtml(payload([IMG], { pagesPerSheet: 4, pageOrder: 'horizontalReversed' })),
-    ).toContain('direction: rtl;');
+      orderOf(
+        composePrintHtml(payload(imgs, { pagesPerSheet: 2, pageOrder: 'horizontalReversed' })),
+      ),
+    ).toEqual(['B', 'A']);
+  });
+
+  it('places the images in the page-order slots (4-up, 2x2)', () => {
+    const imgs = ['A', 'B', 'C', 'D'];
+    expect(orderOf(composePrintHtml(payload(imgs, { pagesPerSheet: 4 })))).toEqual([
+      'A', 'B', 'C', 'D',
+    ]);
+    expect(
+      orderOf(composePrintHtml(payload(imgs, { pagesPerSheet: 4, pageOrder: 'vertical' }))),
+    ).toEqual(['A', 'C', 'B', 'D']);
+    expect(
+      orderOf(
+        composePrintHtml(payload(imgs, { pagesPerSheet: 4, pageOrder: 'horizontalReversed' })),
+      ),
+    ).toEqual(['B', 'A', 'D', 'C']);
+    expect(
+      orderOf(
+        composePrintHtml(payload(imgs, { pagesPerSheet: 4, pageOrder: 'verticalReversed' })),
+      ),
+    ).toEqual(['B', 'D', 'A', 'C']);
+  });
+
+  it('keeps empty cells on a partially filled sheet without moving earlier images', () => {
+    // 3 images at 4-up vertical: slots [0,2,1,3] -> A, C, B, then an empty cell.
+    const html = composePrintHtml(
+      payload(['A', 'B', 'C'], { pagesPerSheet: 4, pageOrder: 'vertical' }),
+    );
+    expect(orderOf(html)).toEqual(['A', 'C', 'B']);
+    expect(html.split('<div class="page"></div>').length - 1).toBe(1);
   });
 });
+
+/** Extract per-cell images in DOM order; empty cells are omitted. */
+function orderOf(html: string): string[] {
+  return [...html.matchAll(/<img src="([^"]*)"/g)].map((m) => m[1]);
+}
 
 // ---------------------------------------------------------------------------
 // printJob orchestration (with an injected fake hidden window)

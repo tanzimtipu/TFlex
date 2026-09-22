@@ -144,7 +144,7 @@ describe("B6 — tab close clears ALL tool states (App + per-tab)", () => {
       /key=\{tab\.id\}\s+className="tab-pane"/,
     );
     expect(tabPane).not.toBeNull();
-    expect(multiPaneSource).toMatch(/renderDocument\(tab\.id\)/);
+    expect(multiPaneSource).toMatch(/renderDocument\(tab\.id, pane\)/);
   });
 
   it("AnnotationOverlay (per-page tool state) lives inside PageView, so it unmounts with its parent", () => {

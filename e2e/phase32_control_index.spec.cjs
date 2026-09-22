@@ -10,7 +10,7 @@
 //   [data-pane] / [data-pane-focused] / [data-pane-header] / [data-pane-clear]
 //   [data-pane-empty] / [data-pane-pick] / [data-pane-open]
 //   [data-multi-divider] / [data-multi-panes]
-//   [data-rail-section] + -doc/-pane/-active/-body/-header/-drop-target
+//   [data-pane-strip] + -doc/-pane/-header/-drop-target (Phase 33 per-pane strips)
 //   dynamic thumb width (126 single, 89 dual)
 //   [data-page-drag-handle] / [data-drop-indicator] / [data-drop-copy]
 //   .document-scroller[data-page-drop-pane] / .thumb-drop-target/-dragging/-copy
@@ -71,16 +71,25 @@ async function state() {
         : null,
       headers: document.querySelectorAll('[data-pane-header]').length,
       divider: !!document.querySelector('[data-multi-divider]'),
-      multiRail: !!document.querySelector('[data-multi-rail]'),
-      railSections: document.querySelectorAll('[data-rail-section]').length,
+      // Phase 33 — the shared rail is retired: each pane now renders its own
+      // thumbnail strip ([data-pane-strip]). The focused pane's strip header
+      // carries the accent tint, so "active" is read from the computed
+      // background (the retired [data-rail-section-active] attribute is gone).
+      paneStrips: document.querySelectorAll('[data-pane-strip]').length,
       railActivePane: (() => {
-        const s = document.querySelector('[data-rail-section-active="true"]');
-        return s ? s.getAttribute('data-rail-section-pane') : null;
+        const strips = Array.from(document.querySelectorAll('[data-pane-strip-pane]'));
+        const active = strips.find((s) => {
+          const h = s.querySelector('[data-pane-strip-header]');
+          if (h === null) return false;
+          const bg = getComputedStyle(h).backgroundColor;
+          return bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+        });
+        return active ? active.getAttribute('data-pane-strip-pane') : null;
       })(),
       paneAWidth: widthOf('.tab-pane[data-pane="A"]'),
       paneBWidth: widthOf('.tab-pane[data-pane="B"]'),
       singleRailThumbW: thumbW('.side-rail'),
-      multiThumbA: thumbW('[data-rail-section-pane="A"]'),
+      multiThumbA: thumbW('[data-pane-strip-pane="A"]'),
       dragHandles: document.querySelectorAll('[data-page-drag-handle]').length,
       cmdPressed: document.querySelector('[data-toolbar-multi-mode]')
         ? document.querySelector('[data-toolbar-multi-mode]').getAttribute('aria-pressed')
@@ -125,7 +134,7 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s0.multi).toBe('false');
   expect(s0.paneCount).toBe(0);
   expect(s0.divider).toBe(false);
-  expect(s0.multiRail).toBe(false);
+  expect(s0.paneStrips).toBe(0);
   expect(s0.singleRailThumbW).toBe(126); // single-mode thumb width
   expect(s0.dragHandles).toBe(0); // canvas drag is Multi-Mode-only
 
@@ -140,8 +149,7 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s1.paneBEmpty).toBe(true);
   expect(s1.headers).toBe(1);
   expect(s1.divider).toBe(true);
-  expect(s1.multiRail).toBe(true);
-  expect(s1.railSections).toBe(1);
+  expect(s1.paneStrips).toBe(1);
   expect(s1.multiThumbA).toBe(126); // one document in Multi Mode -> 126
   expect(s1.focused).toBe('A');
   expect(s1.railActivePane).toBe('A');
@@ -163,14 +171,14 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s2.multiPanes).toBe('2');
   expect(s2.paneBEmpty).toBe(false);
   expect(s2.headers).toBe(2);
-  expect(s2.railSections).toBe(2);
+  expect(s2.paneStrips).toBe(2);
   expect(s2.multiThumbA).toBe(89); // two documents -> 89 (dynamic width)
 
-  // --- [data-rail-section-header] focuses its pane ---
+  // --- [data-pane-strip-header] focuses its pane ---
   await win.locator('.multi-pane-header[data-pane="A"]').click();
   await win.waitForTimeout(350);
   expect((await state()).focused).toBe('A');
-  await win.locator('[data-rail-section-pane="B"] [data-rail-section-header]').click();
+  await win.locator('[data-pane-strip-pane="B"] [data-pane-strip-header]').click();
   await win.waitForTimeout(350);
   const s3 = await state();
   console.log(`[P32-ci] after rail-section-B header click: focused=${s3.focused} railActive=${s3.railActivePane}`);
@@ -195,9 +203,14 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
     const st = document.querySelector('.tab-stage');
     return st ? Math.round(st.getBoundingClientRect().width) : 0;
   });
-  console.log(`[P32-ci] pane widths sum=${gap} stage=${stageW} (rail 220 + divider 8)`);
-  expect(stageW - gap).toBeGreaterThanOrEqual(220);
-  expect(stageW - gap).toBeLessThanOrEqual(240);
+  console.log(`[P32-ci] pane widths sum=${gap} stage=${stageW} (divider only - Phase 33 retired the shared rail)`);
+  // Phase 33 supersession: the shared 220px rail column is retired (each pane
+  // now carries its own strip INSIDE its DocumentView), so in Multi Mode the
+  // panes are adjacent with ONLY the 8px divider between them. Assert the stage
+  // is exactly filled by the two panes plus the divider (allowing +/-1px
+  // rounding on each pane width) - a reserved rail gap would now be the bug.
+  expect(stageW - gap).toBeGreaterThanOrEqual(6);
+  expect(stageW - gap).toBeLessThanOrEqual(10);
 
   // --- [data-pane-clear] empties pane B, rail section goes, width back to 126 ---
   await win.locator('.tab-pane[data-pane="B"] [data-pane-clear]').click();
@@ -206,7 +219,7 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   console.log(`[P32-ci] after clear pane B: ${JSON.stringify(s4)}`);
   expect(s4.paneBEmpty).toBe(true);
   expect(s4.multiPanes).toBe('1');
-  expect(s4.railSections).toBe(1);
+  expect(s4.paneStrips).toBe(1);
   expect(s4.multiThumbA).toBe(126);
   expect(await win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').count()).toBe(0);
 
@@ -219,7 +232,7 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   console.log(`[P32-ci] after pane-open: ${JSON.stringify(s5)}`);
   expect(s5.paneBEmpty).toBe(false);
   expect(s5.multiPanes).toBe('2');
-  expect(s5.railSections).toBe(2);
+  expect(s5.paneStrips).toBe(2);
 
   // --- [data-tool-id="multi-mode"]: OFF (All tools) ---
   await win.locator('[data-tools-badge]').last().click({ force: true });
@@ -233,7 +246,7 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s6.paneCount).toBe(0);
   expect(s6.headers).toBe(0);
   expect(s6.divider).toBe(false);
-  expect(s6.multiRail).toBe(false);
+  expect(s6.paneStrips).toBe(0);
   expect(s6.dragHandles).toBe(0);
   expect(s6.singleRailThumbW).toBe(126);
 });

@@ -19,12 +19,27 @@
 // tray option, so offering it would be a silent no-op (the limitation is
 // recorded in the print service).
 
-import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
-import { X } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+} from "react";
+import { GripHorizontal, X } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { TfBackdrop, TfDialog } from "./motion/TfMotion";
 import { useBackdropClose } from "./modalBackdrop";
+import {
+  clampDragOffset,
+  nextDragOffset,
+  type DragAnchor,
+  type DragOffset,
+} from "./printDialogDrag";
+import { printSheetLayout } from "../../shared/printLayout";
 import { rasterizePagesForPrint, type PrintPageImage } from "../pdf/printRaster";
 import {
   resolveSelectedPages,
@@ -33,7 +48,6 @@ import {
 } from "../pdf/printSelection";
 import {
   PRINT_ALLOWED_NUP,
-  PRINT_NUP_GRID,
   buildPrintSettings,
   clampCopies,
   clampScalePercent,
@@ -53,6 +67,10 @@ import type {
 /** Preview raster resolution — deliberately low; the preview is a live
  *  layout sketch, not a proof print. */
 const PREVIEW_DPI = 48;
+
+/** Interactive elements that own their own press — a pointerdown on one of
+ *  these never starts a header drag (mirrors the shared useDragWindow hook). */
+const DRAG_CONTROL_SELECTOR = "button, input, select, textarea, a, [role='button']";
 
 export interface PrintDialogProps {
   open: boolean;
@@ -133,6 +151,66 @@ const dialogRef = useRef<HTMLDivElement | null>(null);
   // immediately.
   const inFlightRef = useRef<boolean>(false);
 
+  // ---- movable dialog (Phase 33 item 1) ---------------------------------
+  // The dialog panel is repositioned by dragging its header. The move is a
+  // `translate3d` on the `.modal-drag-shell` wrapper (its own transform, so
+  // the dialog surface's enter/exit motion transform is untouched and no
+  // layout property changes). `dragOffsetRef` mirrors the state so a press
+  // that lands before React commits still anchors from the live position.
+  const [dragOffset, setDragOffset] = useState<DragOffset>({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
+  const dragOffsetRef = useRef<DragOffset>({ x: 0, y: 0 });
+  const dragAnchorRef = useRef<DragAnchor | null>(null);
+
+  const applyDragOffset = useCallback((next: DragOffset): void => {
+    dragOffsetRef.current = next;
+    setDragOffset(next);
+  }, []);
+
+  // A press that lands on a control (the close button, a select, …) belongs
+  // to that control and never starts a move — the same control-selector rule
+  // as the shared window drag hook. The handler is attached to the HEADER
+  // only (not the whole dialog), so it is never a catch-all: it never calls
+  // `stopPropagation`, and `preventDefault` only suppresses the text
+  // selection the drag would otherwise start.
+  const onHeaderPointerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (e.button !== 0) return;
+    const target = e.target as Element | null;
+    if (
+      target !== null &&
+      typeof target.closest === "function" &&
+      target.closest(DRAG_CONTROL_SELECTOR) !== null
+    ) {
+      return;
+    }
+    const el = dialogRef.current;
+    if (el === null) return;
+    const rect = el.getBoundingClientRect();
+    dragAnchorRef.current = {
+      offset: dragOffsetRef.current,
+      rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+      pointer: { x: e.clientX, y: e.clientY },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+    };
+    setDragging(true);
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  };
+
+  const onHeaderPointerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    const anchor = dragAnchorRef.current;
+    if (anchor === null) return;
+    applyDragOffset(nextDragOffset(anchor, e.clientX, e.clientY));
+  };
+
+  const onHeaderPointerUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (dragAnchorRef.current === null) return;
+    dragAnchorRef.current = null;
+    setDragging(false);
+    const el = e.currentTarget as HTMLElement;
+    if (el.hasPointerCapture?.(e.pointerId)) el.releasePointerCapture(e.pointerId);
+  };
+
   // ---- derived selection -------------------------------------------------
   const selection = useMemo(
     () =>
@@ -194,11 +272,41 @@ const dialogRef = useRef<HTMLDivElement | null>(null);
     setProgress({ total: 0, done: 0, currentPage: null });
     setError(null);
     setSuccess(null);
-    previewImagesRef.current = {};
+previewImagesRef.current = {};
     setPreviewImages({});
     abortRef.current?.abort();
     abortRef.current = null;
+    // The dialog position is session-only: a freshly opened dialog returns
+    // to its default centred position (the wrapper transform is cleared).
+    dragAnchorRef.current = null;
+    applyDragOffset({ x: 0, y: 0 });
+    setDragging(false);
   }, [open]);
+
+// ---- DEF-283: re-clamp on window resize --------------------------------
+  // The drag clamp only runs while the pointer moves, anchored at drag start,
+  // so a stored `translate3d` offset survives a WINDOW shrink and pushes the
+  // panel (and its Print/Close controls) off-screen. Re-apply the same clamp
+  // to the CURRENT offset against the LIVE viewport whenever the window
+  // resizes. A frameless Electron window still fires `window.resize`, so that
+  // is the robust hook here.
+  useEffect(() => {
+    if (!open) return;
+    const reclamp = (): void => {
+      const el = dialogRef.current;
+      if (el === null) return;
+      const rect = el.getBoundingClientRect();
+      applyDragOffset(
+        clampDragOffset(
+          dragOffsetRef.current,
+          { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+          { width: window.innerWidth, height: window.innerHeight },
+        ),
+      );
+    };
+    window.addEventListener("resize", reclamp);
+    return () => window.removeEventListener("resize", reclamp);
+  }, [open, applyDragOffset]);
 
   // Load the printer list on open.
   useEffect(() => {
@@ -388,7 +496,14 @@ const dialogRef = useRef<HTMLDivElement | null>(null);
     onClose();
   };
 
-  const grid = PRINT_NUP_GRID[pagesPerSheet] ?? PRINT_NUP_GRID[1];
+  // Phase 33 / DEF-280 — the preview grid comes from the SHARED
+  // `printSheetLayout` rule the main process composes the printed sheets
+  // with, so preview and print can never disagree. `layout.slots[cellIndex]`
+  // is the IMAGE index that belongs in that row-major DOM cell; the order
+  // now changes BOTH the grid dimensions (2-up Horizontal 2x1 vs Vertical
+  // 1x2; 6-up 3x2 vs 2x3) and the fill flow, instead of a CSS direction /
+  // grid-auto-flow trick that left the dimensions fixed.
+  const layout = printSheetLayout(pagesPerSheet, pageOrder);
   const effectiveLandscape =
     orientation === "landscape" || (orientation === "auto" && autoLandscape);
   const sheetCount =
@@ -396,15 +511,8 @@ const dialogRef = useRef<HTMLDivElement | null>(null);
       ? Math.ceil(selectionPages.length / pagesPerSheet)
       : 0;
   const gridStyle = {
-    gridTemplateColumns: `repeat(${grid.cols}, 1fr)`,
-    gridTemplateRows: `repeat(${grid.rows}, 1fr)`,
-    direction:
-      pageOrder === "horizontalReversed" || pageOrder === "verticalReversed"
-        ? ("rtl" as const)
-        : ("ltr" as const),
-    gridAutoFlow: pageOrder === "vertical" || pageOrder === "verticalReversed"
-      ? ("column" as const)
-      : ("row" as const),
+    gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
+    gridTemplateRows: `repeat(${layout.rows}, 1fr)`,
   };
   const progressPercent =
     progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
@@ -413,6 +521,15 @@ const dialogRef = useRef<HTMLDivElement | null>(null);
     <AnimatePresence>
       {open && (
         <TfBackdrop className="modal-backdrop" {...backdrop}>
+          <div
+            className="modal-drag-shell"
+            data-print-dialog-shell
+            data-drag-x={dragOffset.x}
+            data-drag-y={dragOffset.y}
+            style={{
+              transform: `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0)`,
+            }}
+          >
           <TfDialog
             className="modal-dialog modal-dialog-wide dialog print-dialog"
             ref={dialogRef}
@@ -421,10 +538,26 @@ const dialogRef = useRef<HTMLDivElement | null>(null);
             aria-modal="true"
             aria-labelledby="print-dialog-title"
           >
-            <div className="modal-header">
-              <h2 id="print-dialog-title" className="modal-title">
-                Print
-              </h2>
+            <div
+              className={
+                dragging
+                  ? "modal-header modal-header-draggable print-dialog-dragging"
+                  : "modal-header modal-header-draggable"
+              }
+              data-print-drag-handle
+              onPointerDown={onHeaderPointerDown}
+              onPointerMove={onHeaderPointerMove}
+              onPointerUp={onHeaderPointerUp}
+              onPointerCancel={onHeaderPointerUp}
+            >
+              <div className="modal-header-title">
+                <span className="print-drag-grip" aria-hidden>
+                  <GripHorizontal size={16} />
+                </span>
+                <h2 id="print-dialog-title" className="modal-title">
+                  Print
+                </h2>
+              </div>
               <button
                 type="button"
                 className="modal-close"
@@ -762,14 +895,25 @@ const dialogRef = useRef<HTMLDivElement | null>(null);
                   data-landscape={effectiveLandscape}
                   style={gridStyle}
                 >
-                  {Array.from({ length: pagesPerSheet }, (_, i) => {
-                    const page = previewPages[i];
+                  {layout.slots.map((imageIndex, cellIndex) => {
+                    const page = previewPages[imageIndex];
                     if (page === undefined) {
-                      return <div key={i} className="print-preview-cell print-preview-blank" />;
+                      return (
+                        <div
+                          key={cellIndex}
+                          className="print-preview-cell print-preview-blank"
+                          data-print-preview-cell={cellIndex}
+                        />
+                      );
                     }
                     const src = previewFor(previewImages, page);
                     return (
-                      <div key={i} className="print-preview-cell">
+                      <div
+                        key={cellIndex}
+                        className="print-preview-cell"
+                        data-print-preview-cell={cellIndex}
+                        data-print-preview-page={page}
+                      >
                         {src !== null ? (
                           <img src={src} alt={`Page ${page}`} />
                         ) : (
@@ -808,6 +952,7 @@ const dialogRef = useRef<HTMLDivElement | null>(null);
               </button>
             </div>
           </TfDialog>
+          </div>
         </TfBackdrop>
       )}
     </AnimatePresence>

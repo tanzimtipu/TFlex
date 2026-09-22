@@ -5,6 +5,119 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-283: Print: the movable dialog is not re-clamped when the window shrinks, leaving Print/Close off-screen and unclickable
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-069)
+- Phase: 33
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`) and launch through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Open `test-fixtures/report.pdf` (34 pages) through the title-bar Open control (mocked OS dialog); wait for `.pdf-page canvas`.
+3. Click `[data-print]` to open the Print dialog; wait for `[data-print-printer]` and for `[data-print-confirm]` to be enabled.
+4. Drag the dialog by its header `[data-print-drag-handle]` hard toward the bottom-right (e.g. +6000,+6000 px). At 1440x900 the drag clamp holds it fully inside: `.print-dialog` rect right 1440 / bottom 900, offRight 0.
+5. WITHOUT reopening the dialog, shrink the WINDOW (not the dialog) via `BrowserWindow.setSize` to 1100x760, then 900x620, then 700x560, waiting ~900 ms each.
+6. After each shrink, read the `.print-dialog` rect and `[data-print-confirm]` rect against `window.innerWidth`/`innerHeight`, and attempt a `trial: true` click on `[data-print-confirm]` (never a real print).
+7. Drag the header back to the left to test recovery.
+
+Expected: Phase 33 requires the dialog to be "clamped so it always stays fully inside the window" and "the controls keep working after a move". After a window resize the panel should still be fully inside the viewport (re-clamped), so Print/Close remain reachable.
+
+Actual: The clamp is evaluated only during a drag (`onHeaderPointerMove` -> `nextDragOffset` with the anchor captured at drag start, `src/renderer/components/printDialogDrag.ts`; `src/renderer/components/PrintDialog.tsx:199-203`). There is no `resize` listener and `applyDragOffset` never re-clamps, so the stored `translate3d` offset survives while the viewport shrinks. Measured in this retest (drag at 1440x900, then successive shrinks without reopening):
+- 1100x760: `.print-dialog` `{left:550, top:64, right:1270, bottom:760}` vs viewport 1100x760 - offRight 170; `[data-print-confirm]` `{left:1191, right:1253}`; `trial: true` click times out (not actionable).
+- 900x620: rect `{left:450, top:64, right:1170, bottom:620}` vs 900x620 - offRight 270; Print not actionable.
+- 700x560: rect `{left:376, top:64, right:1044, bottom:560}` vs 700x560 - offRight 344; Print not actionable.
+Baseline at 1440x900 after the same drag is clean (offRight 0, Print actionable). `isVisible()` stays true at every size (Playwright visibility ignores viewport clipping), so only the trial click reveals the unreachability.
+
+Recoverability: YES - grabbing a visible part of the header and dragging left recovers the panel (at 700x560 it moved to `{left:0, top:0, right:668, bottom:496}`, Print actionable again). Note the header's own centre can be off-screen once clipped (at 700x560 the header spans 376..1044, centre 710 > viewport 700), so the user must grab the visible left part - the panel is recoverable, but the footer controls are dead until they do, which is why this is MEDIUM rather than HIGH.
+
+Screenshot: screenshots/def283-clipped-1100x760.png, screenshots/def283-clipped-900x620.png, screenshots/def283-clipped-700x560.png
+Harness: e2e/retests/def283_repro.spec.cjs (1 passed, asserting the defect); log e2e/def283_repro.log
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying frontend-dev - a `window` `resize` listener registered only while the dialog is open re-applies the clamp to the stored offset against the live viewport and the dialog's live rect, so a shrink can no longer leave the panel outside; the clamp maths was extracted as `clampDragOffset(offset, dialogRect, viewport)` in `src/renderer/components/printDialogDrag.ts` so the resize path and the drag path share the same rule (including the inverted-range case where the panel is larger than the viewport, which pins to the min edge); `nextDragOffset` and the drag path are untouched; the listener is cleaned up on close/unmount. Evidence: new `def283_dialogResizeClamp.test.tsx` 6 tests (shrink re-clamps a previously valid offset; each edge; a sub-panel viewport pins to the min edge; a viewport grow is a no-op; the component re-clamps on a resize event; the listener is added once and removed on unmount); `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED. Rebuilt (`npm.cmd run build`, exit 0) and retested the FIXED behaviour through the canonical `launchApp`: opened `test-fixtures/report.pdf`, opened the Print dialog at 1440x900, dragged the header hard to the bottom-right (drag offset 360,32), then shrank the WINDOW without reopening. Measured `.print-dialog` rects vs the live viewport: 1100x760 -> `{left:380, top:64, right:1100, bottom:760}` offRight 0 / offBottom 0; 900x620 -> `{left:180, top:64, right:900, bottom:620}` offRight 0 / offBottom 0; 700x560 -> `{left:32, top:64, right:700, bottom:560}` offRight 0 / offBottom 0. `[data-print-confirm]` was actionable (trial click) at the baseline and at all three sizes; a recovery drag left the panel at `{left:0, top:0, right:668, bottom:496}` and still actionable. The panel is re-clamped fully inside the viewport at every shrink, so Print/Close stay reachable. Command: `npx.cmd playwright test e2e/retests/def283_repro.spec.cjs` -> 1 passed. The spec was INVERTED (not retired) into a regression guard asserting the fixed behaviour - it keeps the proven drag/shrink harness and now fails if the re-clamp regresses; the old defect-asserting form failed by design (`clippedSizes=0/3`, assertion "dialog pushed past the viewport" failed), confirming the fix. Unit guard `def283_dialogResizeClamp.test.tsx` 6 passed.
+
+## DEF-282: Multi Mode: the shared toolbar overlaps the pane headers, making them unclickable
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 33
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`) and launch through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Open two different documents (`test-fixtures/report.pdf` 34 pages and `test-fixtures/long.pdf` 520 pages) through the title-bar Open control (mocked OS dialog), make the first active, click `[data-toolbar-multi-mode]`, then pick the second into pane B (`[data-pane-pick]`).
+3. Measure the viewport rects of `[data-shared-toolbar]` and `.tab-pane[data-pane="A"] [data-pane-header]` / `[data-pane="B"] [data-pane-header]`.
+4. Click `.multi-pane-header[data-pane="A"]` (the pane focus / clear header).
+
+Expected: the shared toolbar sits ABOVE both panes (Phase 33 item: "the workspace has exactly ONE toolbar ... above both panes"); each pane header (document name, page count, Clear control) stays visible and clickable, and clicking a pane header focuses that pane (Phase 32 focus model).
+
+Actual: both panes start at `top: 0` of the stage (`.tab-stage[data-multi-mode="true"] .tab-pane[data-pane] { top: 0 }`, `src/renderer/styles.css:11324-11326`) and the shared toolbar row is `position: absolute; top: 0` (`src/renderer/styles.css:11296-11301`); `--tf-multi-toolbar-h` is applied only to the divider (`styles.css:11464`), never to the panes. Measured: toolbar rect `top=44 bottom=97`; pane A header `top=44 bottom=78`; pane B header `top=44 bottom=78` - the toolbar covers the entire pane-header row. Playwright cannot click the header: "`<div class="toolbar">` ... from `<div class="multi-toolbar-row" data-shared-toolbar="true">` subtree intercepts pointer events". The pane header is also visually occluded (clipped header text is visible directly under the bar in the screenshot). All 14 failing Phase 32 e2e tests fail on this one cause (every failing action is a `.multi-pane-header[data-pane=...]` or `[data-pane-clear]` click).
+
+Impact: the pane header's Clear/replace control is unreachable by pointer; clicking a pane header to focus it (a Phase 32 focus-model behaviour) fails; the pane strip header (a documented focus target) is also partially occluded (its click centre is covered); Phase 33's criterion-3 geometry ("above both panes") and criterion-6 "focused-pane routing still holds" are violated. Focus still works via a page-area click, so this is not data loss.
+
+Screenshot: screenshots/phase33-multi-layout.png (the shared toolbar occludes the pane headers)
+Evidence: `e2e/phase33_multi_toolbar.spec.cjs` fails at "shared toolbar overlaps pane A header (toolbar bottom 97 > header top 44)" - log `e2e/p33_spec3.log`. Phase 32 suite after the selector repair: 23 passed / 3 failed; the 3 failures are exactly the tests whose SUBJECT is a pane-header/pane-header-control click - `phase32_control_index` (`.multi-pane-header`), `phase32_multi_mode` C3 (`.multi-pane-header`) and C2c (`[data-pane-clear]`, inside the header) - log `e2e/p33_phase32_final.log`. All the specs whose focus gesture is incidental were adapted to the page-area focus path (the other documented focus route) so their real subjects (flicker, responsiveness, close/quit, focused-pane routing, per-pane zoom/scroll, assignment) are verified green.
+
+History:
+- qa: opened
+- orchestrator: FIX-READY (relaying frontend-dev - root cause confirmed: MultiPane measured the shared toolbar and wrote `--tf-multi-toolbar-h` on the stage, the divider consumed it, but the panes still hard-coded `top: 0`. Fix: `.tab-stage[data-multi-mode="true"] .tab-pane[data-pane]` now uses `top: var(--tf-multi-toolbar-h, 0px)` (bottom unchanged), so ONE measured value drives the panes and the divider and they cannot drift; the measuring effect moved from `useEffect` to `useLayoutEffect` so the offset lands before first paint (no one-frame overlap); because the value is the row's own offsetHeight, a wrapping bar at narrow widths (including the 640px minimum) pushes both panes down automatically. No toolbar content, controller-bridge or divider-math change. Expected geometry for the retest: shared toolbar top 44 / bottom 97; pane A and B header top 97 / bottom 131; toolbar bottom 97 <= header top 97 (adjacent, zero overlap); strip header starts at 131, so `[data-pane-clear]` and the strip-header click centre are clear of the bar. Evidence: new `def282_paneToolbarOffset.test.tsx` 8 tests (incl. a static CSS guard that fails if the pane rule reverts to `top: 0`, the offset following a wrap 53->105px, and single mode staying 0px with no row) plus 45 passed across the five stage suites; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED. Rebuilt (`npm.cmd run build`, exit 0) and retested through the canonical `launchApp`. Geometry now matches the fix exactly at the default size: toolbar `top 44 / bottom 97`, pane A and B header `top 97 / bottom 131`, panes `top 97`, divider `top 97 / bottom 900` - toolbar bottom 97 <= header top 97 for BOTH panes (adjacent, zero overlap). At the 640px minimum width the bar wraps (`--tf-multi-toolbar-h` 53px -> 141px): toolbar `top 44 / bottom 185`, headers `top 185 / bottom 219`, panes `top 185`, divider `top 185 / bottom 800` - still zero overlap, and the divider's vertical span matches the panes' at both widths. Reachability: `.multi-pane-header[data-pane="A"]` click focuses A, `[data-pane-strip-pane="B"] [data-pane-strip-header]` click focuses B, and `[data-pane-clear]` in each pane header clicks and empties that pane - all three gestures now pass (retest `e2e/retests/def282_retest.spec.cjs`, 1 passed). Phase 33 specs: `phase33_multi_toolbar.spec.cjs` C3 passed (counts: sharedToolbar=1, toolbars=1, annToolbars=1, paneToolbars=0, paneAnnToolbars=0; ink applies to A then B; rotate acts on the focused pane only; toolbar bottom 97 <= header top 97) and `phase33_multi_layout.spec.cjs` C4+C5 passed - 3 passed / 0 failed total. Criterion 3 (one toolbar, tools apply to either pane) and criterion 6 (single mode unchanged + Phase 32 behaviours) both now PASS. Phase 32 suite: 26 passed / 0 failed - `phase32_control_index` 1, `phase32_drag_drop` 4, `phase32_flicker` 9, `phase32_multi_mode` 8, `phase32_routing` 4. Note: the previous 3 failures are fixed; the first rerun exposed one further stale assertion in `phase32_control_index.spec.cjs:207` (it still expected the 220px shared multi-mode rail that Phase 33 retired - `stageW - gap` was 8, the divider only). That spec had already been adapted to Phase 33 everywhere else; this spot was masked because the test previously aborted earlier at the DEF-282 pane-header click. Corrected the stale assertion to the Phase 33 architecture (panes fill the stage minus the 8px divider, same intent as its own "no gap beyond the 8px divider" comment) - not a product change, no assertion weakened. Fresh screenshot `screenshots/phase33-multi-layout.png` inspected: both pane headers fully visible below the shared toolbar, the two strips meet in the middle, nothing clipped or overlapping.
+
+## DEF-281: Multi Mode: the pane canvas is see-through in the frosted theme (transparent scroller background)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 32
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`) and launch through the canonical `e2e/lib/launch.cjs` `launchApp` (the default theme is frosted); wait for the welcome screen (`.sample-card`).
+2. Open two different documents (the 34-page and 520-page fixtures) through the title-bar Open control (mocked OS dialog), make the first active, click `[data-toolbar-multi-mode]`, then pick the second document into pane B (`[data-pane-pick]`).
+3. Zoom pane A out (click `[aria-label="Zoom out"]` inside pane A) so the page is narrower than the pane and the canvas gutters beside the page are exposed.
+4. Read the computed `background-color` of `.tab-pane[data-pane="A"]`, its `.document-scroller`, `.workspace-main`, `body`, `html` and `.tf-ambient`.
+5. Sample the alpha-preserving pixel (Playwright `screenshot({ omitBackground: true, clip: 1x1 })`) at a point in pane A's canvas gutter outside the page, and at the app frame (10,10). DPR on this machine is 1.5, so 1x1 clips are used for CSS-pixel-exact sampling.
+6. Repeat in light and dark via `[data-theme-toggle]` -> `[data-theme-option="light"|"dark"]`.
+
+Expected: Phase 33 - the pane canvas background is an opaque surface colour of the active theme (light or dark), never see-through/transparent, in every theme including frosted.
+
+Actual: In frosted (the default theme) the pane canvas is transparent. The computed `background-color` is `rgba(0, 0, 0, 0)` for `.tab-pane[data-pane="A"]`, `.document-scroller`, `.workspace-main`, `body`, `html` AND `.tf-ambient`; the canvas-gutter pixel is `rgba(128,170,170, a=6)` (alpha 6/255 - effectively the desktop wallpaper showing through, carrying only the faint ambient aurora tint). In light the scroller is `rgb(241, 245, 249)` with pixel alpha 255; in dark `rgb(11, 13, 15)` with alpha 255. Cause: `:root[data-theme="frosted"] .document-scroller { background: transparent; }` (`src/renderer/styles.css:10390`, Phase 14 - "let the ambient wallpaper show behind the pages") plus the transparent `.app`/`.workspace-main`/`body`/`.tf-ambient` frosted rules (`styles.css:10505-10527, 10538-10544`), so the frosted pane paints no opaque surface. The composited screenshot shows the checkerboard through pane A's canvas gutters while the pages themselves stay white.
+
+Screenshot: screenshots/def-multi-bg.png (regenerated by the CLOSED retest: frosted, alpha-preserving, composited over a checkerboard - the pane canvas gutters are now opaque so no checkerboard shows through; the original RED screenshot showed the checkerboard through the gutters and is superseded)
+Harness: e2e/retests/def_p33_print_order_multi_bg.spec.cjs (test "DEFECT B"; asserts the Phase 33 opaque-canvas behaviour, so it is RED while the defect is present); log e2e/p33_defects_final.log
+
+History:
+- qa: opened
+- qa: CLOSED (retested on the rebuilt dev build: `npm.cmd run build` exit 0, then `npx.cmd playwright test e2e/retests/def_p33_print_order_multi_bg.spec.cjs` -> 2 passed. DEFECT B observed output: computed backgrounds are opaque in every theme - frosted `.tab-pane[data-pane="A"]` / `.document-scroller` / `.workspace-main` = `rgb(238, 241, 245)` (was transparent), light = `rgb(241, 245, 249)`, dark = `rgb(11, 13, 15)`; alpha-preserving 1x1-clip pixel samples in pane A's canvas gutter return alpha 255 in all three (frosted `{r:225,g:228,b:232,a:255}`, light `{230,233,238,255}`, dark `{10,12,14,255}`), so the app background no longer shows through. Independently re-verified by `e2e/phase33_multi_layout.spec.cjs` test C4 (2 passed; same alpha-255 result in frosted/light/dark). Test-harness correction, no product code touched: the DEFECT B zoom step addressed the retired per-pane `[aria-label="Zoom out"]`; Multi Mode now has ONE shared toolbar, so the harness focuses pane A by clicking its page and zooms through `[data-shared-toolbar] [aria-label="Zoom out"]`.)
+
+## DEF-280: Print: "Vertical" page order renders the same 2x1 sheet as "Horizontal" - the sheet grid dimensions never follow the order
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 30
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`) and launch through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Open `test-fixtures/report.pdf` (34 pages) through the title-bar Open control (mocked OS dialog).
+3. Click `[data-print]` to open the Print dialog; wait for `[data-print-printer]`.
+4. Set `[data-print-nup]` = 2 and `[data-print-page-order]` = Horizontal; read the preview sheet's computed `grid-template-columns`/`rows` and every `.print-preview-cell` `getBoundingClientRect()`.
+5. Switch `[data-print-page-order]` = Vertical and read the same values. Repeat at 4-up and 6-up.
+6. Printed-output half (Phase 30 seam): capture the dialog payloads for 2-up/4-up Horizontal and Vertical, then run the app's real `printJob` with `WebContents.prototype.print` overridden in `app.evaluate` to `printToPDF` on the same webContents; inspect each produced PDF (page count + page-1 `cm`/`Do` image placements).
+
+Expected: Phase 33 - "Vertical" and "Horizontal" page order produce visibly DIFFERENT sheet layouts; the effective sheet GRID and the fill flow both follow the order. At 2 pages per sheet Horizontal is 2 columns x 1 row and Vertical is 1 column x 2 rows; at 6 per sheet the 3x2 grid becomes 2x3. The preview and the composed print document must agree.
+
+Actual: At 2-up the preview is IDENTICAL for both orders - `cols="101.333px 101.333px" rows="297.74px"` for BOTH Horizontal and Vertical, and both cells sit side by side at the same geometry (H: cells (835,133,101,298) and (940,133,101,298); V: byte-identical values). Only `grid-auto-flow` differs (row vs column); the grid dimensions never change. `PRINT_NUP_GRID` fixes 2 -> 2x1 and 6 -> 3x2 (`src/renderer/pdf/printSettings.ts:57-64`), and BOTH the preview `gridStyle` (`src/renderer/components/PrintDialog.tsx:398-408`) and the main-process `composePrintHtml` grid (`src/main/services/print.ts:296-300`, `gridFlowCss`) set `grid-template-columns`/`rows` explicitly. At 6-up both orders render the SAME 3x2 grid (`cols="66.2188px 66.2188px 66.2292px" rows="146.865px 146.875px"`) and only the cell fill order differs; Phase 33 requires 3x2 vs 2x3. At 4-up only the fill flow differs (2x2 is symmetric). The produced PDFs agree with the broken preview: at 2-up both orders place the pages identically (`cms=[[0.24,0,0,-0.24,0,792],[1275,0,0,-1650,0,2475],[1275,0,0,-1650,1275,2475]] dos=["X4","X6"]`, 2 pages of 612x792) - the second image is at x=1275 for BOTH; at 4-up the placements DO differ (the 3rd/4th `cm` y-values interleave 1650,3300 vs 1650,3300).
+
+Screenshot: screenshots/def-p33-print-order.png (regenerated by the CLOSED retest: dialog at Pages per sheet 2 / Page order Vertical - the preview now shows the two pages STACKED; the original RED screenshot showed them side by side and is superseded)
+Harness: e2e/retests/def_p33_print_order_multi_bg.spec.cjs (test "DEFECT A"; asserts the Phase 33 behaviour, so it is RED while the defect is present); log e2e/p33_defects_final.log
+
+History:
+- qa: opened
+- qa: CLOSED (retested on the rebuilt dev build: `npm.cmd run build` exit 0, then `npx.cmd playwright test e2e/retests/def_p33_print_order_multi_bg.spec.cjs` -> 2 passed. Preview geometry: 2-up Horizontal `cols="101.333px 101.333px" rows="297.74px"` (2x1; cells side by side at (835,133)/(940,133)), 2-up Vertical `cols="206.667px" rows="146.865px 146.875px"` (1x2; cells stacked at (835,133)/(835,284)); 6-up H 3 cols x 2 rows vs 6-up V 2 cols x 3 rows; 4-up both 2x2 with H cell pages [1,2,3,4] vs V [1,3,2,4]. Produced PDFs through the printToPDF seam: 2-up H places the two images at (0,2475) and (1275,2475) (same y, different x = side by side), 2-up V at (637.5,1650) and (637.5,3300) (same x, different y = stacked); 4-up H vs V differ by which page image lands in cells 1/2 (swapped), cells 0/3 identical. Independently re-verified by `e2e/phase33_print_order.spec.cjs` (1 passed; all four orders at 2/4/6-up plus produced 2-up PDFs). Test-harness correction, no product code touched: the DEFECT A harness asserted the OLD distinguishing mechanism - `grid-auto-flow: column` for 4-up Vertical, and identical cm positions for the 4-up PDFs. Phase 33 realises the flow through the shared `printSheetLayout` slot assignment, so the harness now asserts the cell -> page mapping and the per-cell image identity.)
+
 ## DEF-279: Multi Mode: a Windows case-variant path defeats the same-file pane guard and the open dedupe, and a later save silently discards the other pane's saved edit
 
 - Status: CLOSED

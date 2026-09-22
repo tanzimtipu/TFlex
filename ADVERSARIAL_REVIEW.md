@@ -2658,4 +2658,93 @@ Unreproduced / minor (not filed):
 - `[data-pane-open]`/generic open of a case-variant path bypasses the same-file guard exactly
   like the pick-list path in ADV-068 (same root cause).
 
+---
+
+## Phase 33 gate — print + Multi Mode refinements
+
+Session label: `phase-33 gate`. Ran against the real dev build via the canonical
+`e2e/lib/launch.cjs` `launchApp` helper (dist built from the current `src`). All print output was
+produced through the Phase-30 `printToPDF` seam (`e2e/lib/p33_print.cjs`) with a bogus device name
+(`TFlex QA Bogus Printer`) - never a physical printer. Adversary harnesses live in
+`test-fixtures/adv-p33/` (`parity.cjs`, `dialog.cjs`, `resize.cjs`, `multi.cjs`, `fanout.cjs`,
+`rapid.cjs`, `extra.cjs`, `focusdraw.cjs`, `cleanprobe.cjs`, `strips.cjs`, `gen_pages16.cjs`).
+Fixture `test-fixtures/adv-p33/pages16.pdf` (16 pages, each visually unique) was crafted so a
+produced sheet's embedded page images are distinguishable by hash.
+
+## ADV-069: The movable print dialog is not re-clamped when the window is resized, leaving the Print/Close controls off-screen and unclickable
+
+- Session: phase-33 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Launched the dev build, opened `report.pdf`, clicked the title-bar Print icon.
+2. Dragged the dialog by its header (`[data-print-drag-handle]`) hard to the bottom-right; the
+   drag clamp held it fully inside the window at 1440x900 (rect right 1440 / bottom 900).
+3. Without reopening, shrank the window (`BrowserWindow.setSize`) to 1100x760, then 900x620,
+   then 700x560, waiting ~800 ms each. `test-fixtures/adv-p33/resize.cjs`.
+4. Read the dialog's `.print-dialog` rect and the `[data-print-confirm]` rect, and attempted a
+   `trial: true` click on `[data-print-confirm]`.
+
+Expected: Phase 33 requires the dialog to be "clamped so it always stays fully inside the
+window" and that "the controls keep working after a move". After a window resize the panel
+should still be fully inside the viewport (or be re-clamped), so Print/Close remain reachable.
+
+Actual: the clamp is only evaluated during a drag (`printDialogDrag.ts` / `onHeaderPointerMove`);
+nothing re-clamps on resize, so the dialog keeps its translate offset while the viewport shrinks:
+- 1100x760: dialog rect `{left:550, top:64, right:1270, bottom:760}` vs viewport 1100x760 -
+  **170 px past the right edge**; the Print button rect is `{left:1191, right:1253}` and
+  `trial: true` click reports **not actionable**. Screenshot:
+  `screenshots/adv-p33-dialog-clipped-1100x760.png` (Preview column and the whole footer with
+  Close/Print are clipped off the window's right edge).
+- 900x620: rect right 1000 vs 900 - **100 px past**; Print not actionable.
+- 700x560: rect right 774 vs 700 - **74 px past** (the dialog shrinks its own width but its left
+  origin does not move).
+- The header itself stays on-screen at these sizes, so the panel can still be dragged back
+  (dragging the header left brought it back to `left:0`), which is why this is MEDIUM rather than
+  HIGH - but the footer controls are dead until the user realises they must drag the panel first.
+- Same-size resize (1440x900 -> 1440x900) is clean (offRight 0), so it is the shrink that breaks it.
+
+Suggested fix: re-run the clamp on window resize (a `resize` listener that re-clamps the stored
+offset against the current viewport, or clamp in `applyDragOffset` against live geometry) so the
+panel can never end up outside the viewport after the window shrinks.
+
+Screenshot: screenshots/adv-p33-dialog-clipped-1100x760.png,
+screenshots/adv-p33-dialog-resize.png.
+
+Disposition: ACCEPTED -> DEF-283 (MEDIUM; the dialog's stored offset must be re-clamped whenever the window resizes, so a moved panel can never end up outside the viewport with Print/Close unclickable)
+
+## Phase 33 gate — attacks that did NOT reproduce (defended)
+
+| Attack | Result |
+|---|---|
+| **Preview vs printed output parity, FULL matrix** | Defended. For every pages-per-sheet (1/2/4/6/9/16) x every order (H/HR/V/VR) the dialog preview's cell sequence and grid dimensions matched an independent oracle of the shared rule, and the produced print PDF (printToPDF seam) matched too: 20/20 preview combos and 24/24 produced combos + 2 partial-last-sheet cases with **0 mismatches**. The arrangement was verified by mapping each produced sheet's embedded image hashes back to source pages (unique fixture `pages16.pdf`). `test-fixtures/adv-p33/parity.cjs`. |
+| **Partially filled last sheet** | Defended. 5 pages at 4-up Vertical: sheet 2 holds only page 5 in the first filled slot with the empty cells blank (no earlier image shifts). 8 pages at 6-up HorizontalReversed: sheet 2 holds pages 8 then 7 in the expected cells. |
+| **Movable dialog at every drag extreme (repeated)** | Defended. 8 directions x 3 repeats of +/-4000 px drags all left the dialog fully inside the viewport (e.g. 720x836 panel at 1440x900 clamps to left 0 / right 1440 / top 0 / bottom 900). `screenshots/adv-p33-drag-extreme-*.png`. |
+| **Drag starting on the close button / on a control** | Defended. Pointerdown on `.modal-close` or `[data-print-copies]` then a 200+ px move produced drag offset (0,0): the panel never moved and the control's own press was not swallowed. |
+| **Drag with a control focused; drag while a preview raster is in flight; rapid drag-release-drag (12x)** | Defended. Each moved the panel and left it inside the viewport. |
+| **Controls after a move** | Defended. After dragging the panel, switching pages-per-sheet to 4 re-laid the preview to 2x2 (controls live). Screenshot `screenshots/adv-p33-dialog-moved.png`. |
+| **Reopen re-centres** | Defended. After a move + close + reopen, `data-drag-x/y` were (0,0) and the rect was the default centred one. |
+| **Shared-toolbar fan-out: exactly one annotation per stroke** | Defended. Armed ink in the shared bar, drew in A (A gained exactly 1, B 0), then in B (B gained exactly 1, A unchanged). No double-placement, no cross-pane leak. `test-fixtures/adv-p33/cleanprobe.cjs` (0 findings). |
+| **Focusing gesture does not swallow the armed tool** | Defended. With B focused and ink armed, a stroke whose pointerdown also focused A still placed exactly one annotation (counts read with the same pane focused). An earlier apparent failure was a harness artifact - `tflexDiagnostics()` follows the focused pane, so reading a count while the other pane is focused reports that pane. |
+| **Disarm convergence (Escape) + consecutive strokes + clearing the other pane** | Defended. Escape disarmed the shared tool (aria-pressed false) and a following stroke placed nothing; consecutive strokes in an already-focused pane each placed one; clearing pane B did not break placement in A. |
+| **One shared toolbar / no per-pane rows** | Defended. Counts: shared=1, `.toolbar`=1, annotation toolbar=1, per-pane `.toolbar`=0. |
+| **Opaque canvas in every theme** | Defended. Computed `background-color` alpha = 1 for the pane, `.document-scroller` and `.workspace-main` in light (`rgb(241,245,249)`), dark (`rgb(11,13,15)`) and frosted (`rgb(238,241,245)`); a real gutter pixel sampled at 25% zoom (166 px gutter) was alpha 255 in all three themes. Screenshots `screenshots/adv-p33-gutter3-*.png`. |
+| **Strips at the 640px minimum with two documents** | Defended. At 640x520 the shared toolbar wraps to 141 px and its bottom equals the pane-header top (no overlap); both 220 px strips fit with the divider between them; pane A's strip is at A's right edge, pane B's at B's left edge, meeting in the middle. `screenshots/adv-p33-strips-wrapped.png`. |
+| **Cross-strip drag at the wrapped toolbar height** | Defended. Native drag from pane A's strip to pane B's strip moved exactly one page (A 34->33, B 520->521). |
+| **Divider hard drag at both extremes after wrap** | Defended. Panes stayed >= 96 px wide; nothing collapsed to zero. |
+| **Single mode unchanged after leaving Multi Mode** | Defended. Toggling Multi Mode off left 0 `[data-shared-toolbar]` and 0 `[data-pane]`. |
+
+**Total Phase-33-gate findings: 1 (0 HIGH, 1 MEDIUM, 0 LOW).**
+
+Unreproduced / not verified (not filed):
+- "Drag with the OS printer dropdown open" was not exercised: a native `<select>` opens an OS
+  popup that Playwright cannot drive, so I could not hold the dropdown open while dragging. The
+  header handler excludes `select` from drag-start, so the control is protected by construction.
+- "Drag then immediately start a print" was only verified as far as configuration (N-up changed
+  the preview after a move); the actual `printJob` after a move was not re-run because the
+  parity harness prints from a freshly opened dialog.
+- An early `multi.cjs` run reported a swallowed stroke after rapid arm/disarm; a controlled
+  re-test (`test-fixtures/adv-p33/rapid.cjs`, `cleanprobe.cjs`) showed it was a harness artifact
+  (the helper trusted a momentarily stale `aria-pressed`), not a product bug.
+
 

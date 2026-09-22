@@ -322,6 +322,13 @@
   --bg-toolbar: #fafafa;
   --bg-rail: #f4f4f5;
   --bg-canvas: #f1f5f9;
+  /* Phase 33 — the Multi Mode pane canvas. Unlike the app chrome (which
+   * steps aside in frosted so the wallpaper/glass reads), the PDF canvas
+   * area is ALWAYS an opaque surface: a pane is a document workspace, and
+   * a see-through gutter behind the page reads as a rendering bug. Each
+   * theme sets its own solid value; the frosted override below keeps the
+   * translucent glass on the chrome only. */
+  --tf-canvas-opaque: #f1f5f9;
   --bg-hover: rgba(15, 23, 42, 0.04);
   --bg-active: rgba(15, 23, 42, 0.08);
   --bg-input: #ffffff;
@@ -447,6 +454,9 @@
    * workspace. (The rail/toolbar panels stay the slightly-lighter
    * #101419 family so chrome still separates from the canvas.) */
   --bg-canvas: #0b0d0f;
+  /* Phase 33 — opaque Multi Mode pane canvas (dark: the same deepest
+   * surface the single-mode canvas uses). */
+  --tf-canvas-opaque: #0b0d0f;
   --bg-hover: rgba(255, 255, 255, 0.04);
   --bg-active: rgba(255, 255, 255, 0.08);
   --bg-input: #111419;
@@ -627,6 +637,13 @@
   --bg-toolbar: var(--tf-surface-toolbar);
   --bg-rail: var(--tf-surface-rail);
   --bg-canvas: var(--tf-bg);
+  /* Phase 33 — the frosted theme's CANVAS is deliberately opaque. The
+   * --tf-bg base (#eef1f5) is the light neutral this theme already uses
+   * as its workspace tone; the CHROME surfaces stay translucent glass
+   * via --panel-bg / --bg-toolbar, so the frosted look is untouched
+   * while the pane's page gutters stop showing the wallpaper through
+   * the document. */
+  --tf-canvas-opaque: var(--tf-bg);
   --bg-hover: rgba(15, 23, 42, 0.05);
   --bg-active: rgba(15, 23, 42, 0.09);
   --bg-input: rgba(255, 255, 255, 0.92);
@@ -8930,6 +8947,40 @@ rect.ann-highlight.ann-preview {
   flex-wrap: wrap;
 }
 
+/* Phase 33 item 1 — movable print dialog. `.modal-drag-shell` is the one
+ * element that carries the user's drag offset (a translate3d set inline by
+ * React); the `.modal-dialog` motion surface inside it keeps its own
+ * enter/exit transform, so the two never fight and no layout property
+ * changes during the move. `place-items: center` on the backdrop still
+ * centres the dialog because the shell is sized by its content. */
+.modal-drag-shell {
+  will-change: transform;
+}
+
+.modal-header-draggable {
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.print-dialog-dragging,
+.print-dialog-dragging .modal-header-draggable {
+  cursor: grabbing;
+}
+
+.modal-header-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.print-drag-grip {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-muted);
+}
+
 /* Suspects panel (top bar over the workspace) */
 .ocr-suspects-panel {
   display: flex;
@@ -11232,20 +11283,52 @@ rect.ann-highlight.ann-preview {
 
 .tab-stage[data-multi-mode="true"] {
   --tf-divider-w: 8px;
-  /* No shared rail: the two panes own the whole stage. */
-  --tf-shared-rail-w: 0px;
+  /* Phase 33 (chunk 4) — the ONE shared toolbar row's height. Both panes
+     start below it; MultiPane measures the real row height (wrapping
+     included) and writes this variable inline. With no shared bar the
+     variable stays 0 and the panes own the whole stage, exactly as chunk 3. */
+  --tf-multi-toolbar-h: 0px;
 }
 
-/* Phase 32 (chunk 2b) — the ONE shared rail reserves a real column at the
-   left of the stage. The panes and the divider measure the split against
-   the space that is left of it, so the divider still tracks the pointer
-   1:1 and neither pane is ever covered by the rail. The stage writes the
-   column width inline (the same 220px column the single-mode rail occupies
-   at rest — see SHARED_RAIL_WIDTH_PX); the 0px base below is the
-   rail-less two-pane case. */
+/* The workspace's single toolbar: full-width above the two panes. It reuses
+   the exact .toolbar / .edit-toolbar chrome, so it reads as the app's one
+   command bar, not a third column. */
+.multi-toolbar-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  min-width: 0;
+  /* Layout only: the enter/exit motion is the existing chrome's; PDF content
+     is never touched. */
+  will-change: auto;
+}
+
+.multi-toolbar-row > .multi-toolbar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.multi-toolbar-row .edit-toolbar {
+  /* In the shared row there is no .workspace-main grid to pin to. */
+  grid-row: auto;
+  min-width: 0;
+}
+
+/* Phase 33 — the two panes own the whole stage. (Phase 32's shared rail
+   column is retired: each pane now carries its own strip INSIDE its own
+   DocumentView, so the stage has no rail column to reserve.) */
 
 .tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {
-  top: 0;
+  /* DEF-282 — the panes (and therefore their headers and strips) start BELOW
+     the ONE shared toolbar row. The offset is the row's measured height
+     (MultiPane writes it inline, wrapping included); `top: 0` here let the
+     absolutely-positioned toolbar cover the pane-header row and made
+     `[data-pane-clear]` and the header/strip focus clicks unreachable.
+     The divider reads the same variable, so all three stay consistent. */
+  top: var(--tf-multi-toolbar-h, 0px);
   bottom: 0;
   left: auto;
   right: auto;
@@ -11258,17 +11341,30 @@ rect.ann-highlight.ann-preview {
 }
 
 .tab-stage[data-multi-mode="true"] .tab-pane[data-pane="A"] {
-  left: var(--tf-shared-rail-w);
-  width: calc(
-    (100% - var(--tf-shared-rail-w)) * var(--tf-split-frac, 0.5) - (var(--tf-divider-w) / 2)
-  );
+  left: 0;
+  width: calc(100% * var(--tf-split-frac, 0.5) - (var(--tf-divider-w) / 2));
 }
 
 .tab-stage[data-multi-mode="true"] .tab-pane[data-pane="B"] {
   right: 0;
-  width: calc(
-    (100% - var(--tf-shared-rail-w)) * (1 - var(--tf-split-frac, 0.5)) - (var(--tf-divider-w) / 2)
-  );
+  width: calc(100% * (1 - var(--tf-split-frac, 0.5)) - (var(--tf-divider-w) / 2));
+}
+
+/* Phase 33 — OPAQUE CANVAS. A pane's document area must never show the app
+   background / wallpaper through it: in EVERY theme (frosted included) the
+   pane surface and its scroller paint the theme's opaque canvas colour.
+   The frosted theme makes the scroller transparent for its full-bleed
+   glass effect (see the Phase-C block below); this more specific Multi Mode
+   rule wins there, so the two panes stay opaque while the chrome around
+   them keeps its glass. PDF content is untouched (DEF-099: the pages stay
+   paper-white). */
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {
+  background: var(--tf-canvas-opaque);
+}
+
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane] .document-scroller,
+.tab-stage[data-multi-mode="true"] .tab-pane[data-pane] .workspace-main {
+  background: var(--tf-canvas-opaque);
 }
 
 /* The focused pane's accent affordance: a full-perimeter hairline ring (never
@@ -11371,13 +11467,11 @@ rect.ann-highlight.ann-preview {
 
 .multi-divider {
   position: absolute;
-  top: 0;
+  top: var(--tf-multi-toolbar-h, 0px);
   bottom: 0;
-  /* Sits at the split, measured across the pane region (right of the
-     shared rail when one is present). */
+  /* Sits at the split, between the two panes' inner-edge strips. */
   left: calc(
-    var(--tf-shared-rail-w, 0px) + (100% - var(--tf-shared-rail-w, 0px)) *
-      var(--tf-split-frac, 0.5) - (var(--tf-divider-w) / 2)
+    100% * var(--tf-split-frac, 0.5) - (var(--tf-divider-w) / 2)
   );
   width: var(--tf-divider-w);
   z-index: 3;
@@ -11527,41 +11621,69 @@ rect.ann-highlight.ann-preview {
   grid-column: 1;
 }
 
-/* ---- the shared thumbnail rail (Phase 32 chunk 2b) ---------------------- */
+/* ---- the per-pane thumbnail strip (Phase 33 chunk 3) -------------------- */
 
-/* One rail for both panes: a section per loaded document. It consumes the
-   same --panel-* material contract as the single-mode rail, so the two
-   surfaces read as one family in every theme. */
-.multi-rail {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: var(--tf-shared-rail-w, 220px);
-  z-index: 2;
-  display: flex;
-  flex-direction: column;
+/* Supersedes Phase 32's ONE shared rail. Each pane's DocumentView renders
+   its own strip at that pane's INNER edge (`railSide`): pane A's strip
+   immediately right of A's pages, pane B's immediately left of B's, so the
+   two strips meet side by side in the MIDDLE of the workspace, flanking
+   the divider. The strip consumes the same --panel-* material contract as
+   the single-mode rail, so the two surfaces read as one family in every
+   theme. */
+
+/* Multi Mode: a pane carrying its OWN strip reserves a fixed thumbnail
+   column (the single-mode rail's rest width) regardless of the single-mode
+   pages-panel collapse state — a strip is a thumbnail strip, never the 48px
+   ruler. `:has` keeps this scoped to the strip; single mode's rail column
+   (`--tf-rail-w`, which still shrinks to the ruler) is untouched. */
+.workspace:has(> .pane-thumb-strip) {
+  --tf-strip-w: 220px;
+  grid-template-columns: var(--tf-strip-w) 1fr;
+}
+
+.workspace:has(> .pane-thumb-strip) .workspace-main {
+  grid-column: 2;
+}
+
+/* Pane A's strip sits at the pane's RIGHT edge: the column flips and the
+   page area is the first track. */
+.workspace[data-rail-side="right"]:has(> .pane-thumb-strip) {
+  grid-template-columns: 1fr var(--tf-strip-w);
+}
+
+.workspace[data-rail-side="right"] .workspace-main {
+  grid-column: 1;
+}
+
+.pane-thumb-strip {
+  grid-column: 1;
+  display: grid;
+  /* Header row + the rail body (the ThumbnailRail's own scroller), the
+     same two-row shape the single-mode rail uses. */
+  grid-template-rows: auto 1fr;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
   background: var(--panel-bg);
+  /* Pane B's strip sits at the pane's LEFT edge, so this is its default
+     orientation: the docking hairline and the rounded corners face the
+     page on its right. Never a one-sided accent border — this is the
+     panel's own docking hairline. */
   border-right: 1px solid var(--panel-border);
+  border-radius: 0 var(--panel-radius) var(--panel-radius) 0;
 }
 
-.multi-rail-section {
-  flex: 1 1 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+/* Pane A's strip is mirrored: hairline and corners face left. */
+.workspace[data-rail-side="right"] .pane-thumb-strip {
+  grid-column: 2;
+  border-right: 0;
+  border-left: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius) 0 0 var(--panel-radius);
 }
 
-.multi-rail-section + .multi-rail-section {
-  border-top: 1px solid var(--border);
-}
-
-/* The section header identifies the pane it belongs to (the same A/B badge
+/* The strip header identifies the pane it belongs to (the same A/B badge
    material the pane headers use) and is the click target that focuses it. */
-.multi-rail-section-header {
+.pane-thumb-strip-header {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -11578,21 +11700,21 @@ rect.ann-highlight.ann-preview {
   transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
-.multi-rail-section-header:hover {
+.pane-thumb-strip-header:hover {
   background: var(--bg-hover);
 }
 
-.multi-rail-section[data-rail-section-active="true"] .multi-rail-section-header {
+.tab-pane[data-pane-focused="true"] .pane-thumb-strip-header {
   background: var(--accent-selected);
 }
 
-.multi-rail-section[data-rail-section-active="true"] .multi-rail-badge {
+.tab-pane[data-pane-focused="true"] .pane-thumb-strip-badge {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--fg-on-accent);
 }
 
-.multi-rail-section-title {
+.pane-thumb-strip-title {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -11602,40 +11724,35 @@ rect.ann-highlight.ann-preview {
   font-weight: 500;
 }
 
-.multi-rail-section[data-rail-section-active="false"] .multi-rail-section-title {
-  color: var(--fg-muted);
-  font-weight: 400;
-}
-
-.multi-rail-section-count {
+.pane-thumb-strip-count {
   flex: 0 0 auto;
   font-variant-numeric: tabular-nums;
 }
 
-/* Each section body is the positioning context for its own ThumbnailRail
-   (whose `.thumb-scroller` is `position: absolute; inset: 0`), so the two
-   sections scroll independently. */
-.multi-rail-section-body {
+/* The strip body is the positioning context for its own ThumbnailRail
+   (whose `.thumb-scroller` is `position: absolute; inset: 0`), so each
+   strip keeps its own scroll state and its own visible+buffered window. */
+.pane-thumb-strip-body {
   position: relative;
-  flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
 /* ---- Phase 32 (chunk 2d): cross-document page drag and drop ----
  *
- * The landing pane's rail section highlights while a cross-document drag
- * hovers it (the per-thumb slot affordance rides on top of it), and the
- * landing thumb reads "copy" when Ctrl / Alt is held. The canvas adds a
+ * The landing pane's strip highlights while a cross-document drag hovers
+ * it (the per-thumb slot affordance rides on top of it), and the landing
+ * thumb reads "copy" when Ctrl / Alt is held. The canvas adds a
  * hover-revealed page grip (the drag source) and an insertion indicator
  * between pages (the drop position). Motion tokens only. */
-.multi-rail-section[data-rail-section-drop-target="true"] {
+.pane-thumb-strip[data-pane-strip-drop-target="true"] {
   background: var(--accent-selected);
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-.multi-rail-section[data-rail-section-drop-target="true"] .multi-rail-section-header {
+.pane-thumb-strip[data-pane-strip-drop-target="true"] .pane-thumb-strip-header {
   background: var(--accent-selected);
 }
 
@@ -11730,7 +11847,7 @@ rect.ann-highlight.ann-preview {
   .multi-divider-grip,
   .multi-pane-pick,
   .multi-pane-open,
-  .multi-rail-section-header,
+  .pane-thumb-strip-header,
   .page-drag-handle,
   .tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {
     transition: none;

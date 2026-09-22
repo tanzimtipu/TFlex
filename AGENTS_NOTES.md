@@ -2906,3 +2906,61 @@ well as panes - scope selectors as `.tab-pane[data-pane]`.
 renders twice at the same viewport position (one per mounted pane toolbar). A real pointer click opens
 the palette correctly, so only an automated strict `.first()` click can be intercepted. A future polish
 pass could hide the inactive pane's chrome entirely.
+
+## 2026-09-22: Phase 33 (print + Multi Mode refinements) - operator feedback, four defects, one shared rule
+
+Phase 33 answered the operator's feedback on the 1.24.0 features: the print dialog is now movable and its
+page order is real, and Multi Mode has one shared toolbar, an opaque canvas and per-pane thumbnail strips
+flanking the divider. Four defects were found and closed on the way (DEF-280 print order, DEF-281
+see-through canvas in the frosted theme, DEF-282 shared toolbar overlapping the pane headers, DEF-283 the
+moved dialog not re-clamped on window resize). Final: 301 unit tests and 39 e2e tests green.
+
+**Rule 1 - a preview must share the rule that produces the real thing, not approximate it.** DEF-280: the
+sheet's page order was expressed as CSS (`grid-auto-flow` + `direction`) in BOTH the dialog preview and
+the composed print document, but both axes of the grid were explicitly sized, so `grid-auto-flow` was
+inert and "Vertical" rendered identically to "Horizontal" (at 2-up literally the same 2x1 geometry, and
+the produced PDFs were placement-identical). The fix is the pattern to reuse: ONE pure shared rule
+(`src/shared/printLayout.ts` `printSheetLayout(pps, order) -> { cols, rows, slots }`, where
+`slots[cellIndex]` is the image index for that row-major DOM cell) consumed by the preview AND the
+main-process composition, so they agree by construction. The adversary then verified all 24
+pages-per-sheet x order combinations against an independent oracle with 0 mismatches. Never let two
+implementations of a layout rule drift; if a preview exists, it must call the same function.
+
+**Rule 2 - a stored offset must be re-clamped when the VIEWPORT changes, not only on drag.** DEF-283: the
+print dialog's position is a stored `translate3d` offset clamped inside the header's `pointermove`
+handler, so shrinking the window after a move left the panel 170-344 px past the right edge with Print
+and Close unclickable (recoverable only by dragging the visible part of the header back). Fix: a `window`
+`resize` listener registered only while the dialog is open re-applies the clamp against the live
+viewport, and the clamp maths was extracted (`clampDragOffset(offset, dialogRect, viewport)`) so the drag
+path and the resize path share one rule - including the inverted-range case where the panel is larger
+than the viewport (pin to the min edge).
+
+**Rule 3 - a measured CSS variable must reach EVERY surface that depends on it, before the first paint.**
+DEF-282: Multi Mode's shared toolbar height was measured and written to `--tf-multi-toolbar-h`, and the
+divider consumed it while the panes still hard-coded `top: 0` - so the toolbar overlapped the pane
+headers and their Clear control was unclickable (three Phase 32 specs failed on it). Fix: one variable
+drives the panes AND the divider (`.tab-stage[data-multi-mode="true"] .tab-pane[data-pane] { top:
+var(--tf-multi-toolbar-h, 0px) }`), and the measurement runs in `useLayoutEffect` so the offset lands
+before paint (no one-frame overlap). A unit test now guards the CSS rule itself.
+
+**Rule 4 - fan out the ARM state, never the ACTION.** The one shared toolbar needed to control both
+panes. The bridge (`multiToolController.ts`) publishes each pane's live toolbar model and registers its
+annotation reducer as a sink; only `set-tool` / `set-color` / `set-pen-width` fan out to all sinks, while
+PLACEMENT stays per-pane. That is why arming in the bar and drawing in pane A yields exactly one
+annotation in A and none in B (the adversary tried hard for double-placement and found none). If the
+placement action had been fanned out too, every stroke would have landed in both documents.
+
+**Layout change superseding Phase 32's shared rail (operator's explicit request):** in Multi Mode each
+pane now renders ITS OWN thumbnail strip at its INNER edge (`railSide: 'left' | 'right'` on
+`DocumentView`), so the two strips meet side by side in the middle: `[A pages | A strip ‖ B strip | B
+pages]`. `MultiRail.tsx` was deleted. Cost to remember: retiring a component invalidates every e2e spec
+that queried its selectors - those specs had to be repaired (and one stale assertion stayed masked until
+another failure stopped aborting the spec early, so re-run a suite where an earlier test was failing).
+
+**Also fixed here (frosted theme):** the pane canvas was see-through in the frosted theme (computed
+`rgba(0,0,0,0)` on the pane/scroller, a gutter pixel with alpha 6/255) because the frosted translucent
+tokens were inherited by the PDF canvas area. The canvas area now has its own opaque token
+(`--tf-canvas-opaque`: light `#f1f5f9`, dark `#0b0d0f`, frosted `#eef1f5`) while the surrounding chrome
+keeps its glass. NOTE, reported not fixed: SINGLE mode in the frosted theme is also see-through (the
+operator only reported Multi Mode, and criterion 6 required single mode unchanged) - a candidate for a
+future polish pass.

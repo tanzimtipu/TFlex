@@ -200,8 +200,8 @@ test('criterion 5: rail drag moves a page across documents (both counts change)'
   const b0 = await paneCount('B');
   expect(a0).toBe(34);
   expect(b0).toBe(520);
-  const srcSel = '[data-rail-section-pane="A"] .thumb-item[data-page="1"]';
-  const tgtSel = '[data-rail-section-pane="B"] .thumb-item[data-page="2"]';
+  const srcSel = '[data-pane-strip-pane="A"] .thumb-item[data-page="1"]';
+  const tgtSel = '[data-pane-strip-pane="B"] .thumb-item[data-page="2"]';
   const native = await nativeDrag(win.locator(srcSel).first(), win.locator(tgtSel).first(), false);
   await win.waitForTimeout(2200);
   let a1 = await paneCount('A');

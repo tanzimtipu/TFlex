@@ -51,18 +51,6 @@ export const PRINT_MIN_SCALE_PERCENT = 1;
 export const PRINT_MAX_SCALE_PERCENT = 500;
 export const PRINT_ALLOWED_NUP = [1, 2, 4, 6, 9, 16] as const;
 
-/** Columns/rows per N-up value, for the PREVIEW grid only. The main
- *  process owns the actual sheet composition; this mirrors its grid so the
- *  dialog preview matches the printed output. */
-export const PRINT_NUP_GRID: Record<number, { cols: number; rows: number }> = {
-  1: { cols: 1, rows: 1 },
-  2: { cols: 2, rows: 1 },
-  4: { cols: 2, rows: 2 },
-  6: { cols: 3, rows: 2 },
-  9: { cols: 3, rows: 3 },
-  16: { cols: 4, rows: 4 },
-};
-
 /** Clamp a copies count to the dialog's 1..99 band. */
 export function clampCopies(value: number): number {
   if (!Number.isFinite(value)) return PRINT_MIN_COPIES;

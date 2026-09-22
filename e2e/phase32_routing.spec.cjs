@@ -50,8 +50,20 @@ async function paneCount(pane) {
   const m = raw.match(/(\d+)\s+pages?/);
   return m ? Number(m[1]) : null;
 }
+// Focus a pane through its PAGE AREA (the pane's own pointerdown-capture
+// focus). The pane HEADER is the other documented focus path, but the Phase 33
+// shared toolbar currently overlays it (DEF-282); that path is asserted by
+// phase33_multi_toolbar.spec.cjs, so this spec uses the page path and keeps
+// its actual subject - focused-pane routing - testable.
 async function focusPane(pane) {
-  await headerLoc(pane).click();
+  const page = win.locator(`.tab-pane[data-pane="${pane}"] .pdf-page`).first();
+  await page.scrollIntoViewIfNeeded().catch(() => {});
+  const box = await page.boundingBox();
+  if (box === null) throw new Error(`focusPane: no page in pane ${pane}`);
+  const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  const x = Math.max(30, Math.min(box.x + box.width / 2, vp.w - 30));
+  const y = Math.max(70, Math.min(box.y + box.height / 2, vp.h - 30));
+  await win.mouse.click(x, y);
   await win.waitForTimeout(350);
 }
 // Amended Phase 32 semantics (DEF-277): a title-bar Open while the mode is on
@@ -73,8 +85,10 @@ async function twoPaneSetup() {
   await expect(win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').first()).toBeVisible({ timeout: 30000 });
 }
 // Confirm the Delete pages dialog's default "current page" choice.
-async function deleteCurrentPage(pane) {
-  await win.locator(`.tab-pane[data-pane="${pane}"] [data-toolbar-delete-pages]`).first().click();
+// Phase 33 — Multi Mode has ONE shared toolbar; the page-op controls live
+// there and act on the FOCUSED pane, so the caller sets focus first.
+async function deleteCurrentPage() {
+  await win.locator('[data-shared-toolbar] [data-toolbar-delete-pages]').first().click();
   await win.waitForSelector('[data-delete-pages-dialog]', { timeout: 10000 });
   await win.locator('[data-delete-confirm]').click();
   await win.waitForTimeout(1200);
@@ -114,10 +128,10 @@ test('R1 toolbar page operations act on the focused pane only', async () => {
   expect(a0).toBe(34);
   expect(b0).toBe(520);
 
-  // --- focus B, rotate via B's own toolbar control ---
+  // --- focus B, rotate via the SHARED toolbar (acts on the focused pane) ---
   await focusPane('B');
   let before = await diag();
-  await win.locator('.tab-pane[data-pane="B"] [data-toolbar-rotate-cw]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1200);
   let after = await diag();
   console.log(`[P32-routing] B rotate: B rot ${JSON.stringify(before.rotations)} -> ${JSON.stringify(after.rotations)}`);
@@ -127,8 +141,8 @@ test('R1 toolbar page operations act on the focused pane only', async () => {
   console.log(`[P32-routing] A rotations after B rotate = ${JSON.stringify(aRot)}`);
   expect(aRot[0]).toBe(0);
 
-  // --- focus A, rotate via A's own toolbar control ---
-  await win.locator('.tab-pane[data-pane="A"] [data-toolbar-rotate-cw]').first().click();
+  // --- focus A, rotate via the shared toolbar ---
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1200);
   const aRot2 = (await diag()).rotations;
   console.log(`[P32-routing] A rotations after A rotate = ${JSON.stringify(aRot2)}`);
@@ -138,11 +152,11 @@ test('R1 toolbar page operations act on the focused pane only', async () => {
   console.log(`[P32-routing] B rotations unchanged by A rotate = ${JSON.stringify(bRot2)}`);
   expect(bRot2[0]).toBe(1);
 
-  // --- delete pages through the toolbar control of the focused pane ---
+  // --- delete pages through the shared toolbar (focused pane B) ---
   await focusPane('B');
   let aBeforeDel = await paneCount('A');
   let bBeforeDel = await paneCount('B');
-  await deleteCurrentPage('B');
+  await deleteCurrentPage();
   let aAfterDel = await paneCount('A');
   let bAfterDel = await paneCount('B');
   console.log(`[P32-routing] delete on focused B: A ${aBeforeDel}->${aAfterDel}, B ${bBeforeDel}->${bAfterDel}`);
@@ -150,7 +164,7 @@ test('R1 toolbar page operations act on the focused pane only', async () => {
   expect(bAfterDel).toBe(bBeforeDel - 1);
 
   await focusPane('A');
-  await deleteCurrentPage('A');
+  await deleteCurrentPage();
   const aAfterDel2 = await paneCount('A');
   const bAfterDel2 = await paneCount('B');
   console.log(`[P32-routing] delete on focused A: A ${aAfterDel}->${aAfterDel2}, B ${bAfterDel}->${bAfterDel2}`);
@@ -180,10 +194,10 @@ test('R2 undo/redo target the focused pane', async () => {
   await twoPaneSetup();
   // Rotate both documents so both have an undo entry.
   await focusPane('A');
-  await win.locator('.tab-pane[data-pane="A"] [data-toolbar-rotate-cw]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1100);
   await focusPane('B');
-  await win.locator('.tab-pane[data-pane="B"] [data-toolbar-rotate-cw]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1100);
   const aRot = await (async () => { await focusPane('A'); return (await diag()).rotations[0]; })();
   const bRot = await (async () => { await focusPane('B'); return (await diag()).rotations[0]; })();
@@ -227,10 +241,10 @@ test('R2 undo/redo target the focused pane', async () => {
 test('R3 Save targets the focused pane', async () => {
   await twoPaneSetup();
   await focusPane('A');
-  await win.locator('.tab-pane[data-pane="A"] [data-toolbar-rotate-cw]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1100);
   await focusPane('B');
-  await win.locator('.tab-pane[data-pane="B"] [data-toolbar-rotate-cw]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1100);
 
   const aMod = await (async () => { await focusPane('A'); return (await diag()).modified; })();

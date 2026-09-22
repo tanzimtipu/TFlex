@@ -55,8 +55,21 @@ async function paneCount(pane) {
   const m = raw.match(/(\d+)\s+pages?/);
   return m ? Number(m[1]) : null;
 }
+// Focus a pane through its PAGE AREA (the pane's own pointerdown-capture
+// focus). The pane HEADER is the other documented focus path, but the Phase 33
+// shared toolbar currently overlays it (DEF-282); the header path is asserted
+// by phase33_multi_toolbar.spec.cjs, so this spec uses the page path and keeps
+// its actual subject - flicker, responsiveness and the close/quit gate -
+// testable.
 async function focusPane(pane) {
-  await headerLoc(pane).click();
+  const page = win.locator(`.tab-pane[data-pane="${pane}"] .pdf-page`).first();
+  await page.scrollIntoViewIfNeeded().catch(() => {});
+  const box = await page.boundingBox();
+  if (box === null) throw new Error(`focusPane: no page in pane ${pane}`);
+  const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  const x = Math.max(30, Math.min(box.x + box.width / 2, vp.w - 30));
+  const y = Math.max(70, Math.min(box.y + box.height / 2, vp.h - 30));
+  await win.mouse.click(x, y);
   await win.waitForTimeout(300);
 }
 
@@ -259,7 +272,7 @@ test('F1 no flicker: toggling Multi Mode on and off', async () => {
   // OFF
   let p = sampleTimeline(1600, 16, [PROBE_VISIBLE]);
   await win.waitForTimeout(80);
-  await win.locator('.tab-pane[data-pane-focused="true"] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
   let s = await p;
   let a = analyse(s, 'V');
   logAnalyse('F1 toggle OFF', 'V', a);
@@ -284,11 +297,11 @@ test('F2 no flicker / no re-raster of the unfocused pane: switching focus', asyn
   await win.waitForTimeout(700);
   const p = sampleTimeline(2200, 16, [PROBE_A, PROBE_B]);
   await win.waitForTimeout(80);
-  await headerLoc('B').click();
+  await focusPane('B');
   await win.waitForTimeout(450);
-  await headerLoc('A').click();
+  await focusPane('A');
   await win.waitForTimeout(450);
-  await headerLoc('B').click();
+  await focusPane('B');
   const s = await p;
   const aA = analyse(s, 'A');
   const aB = analyse(s, 'B');
@@ -338,9 +351,9 @@ test('F4 no flicker: starting, hovering and completing a cross-document drag', a
   // (a) hover-only: the SOURCE pane A is unaffected, so it must not re-raster.
   let p = sampleTimeline(1800, 16, [PROBE_A, PROBE_B]);
   await win.waitForTimeout(80);
-  await synthStep('start', { src: '[data-rail-section-pane="A"] .thumb-item[data-page="1"]' });
+  await synthStep('start', { src: '[data-pane-strip-pane="A"] .thumb-item[data-page="1"]' });
   await win.waitForTimeout(200);
-  await synthStep('over', { tgt: '[data-rail-section-pane="B"] .thumb-item[data-page="3"]' });
+  await synthStep('over', { tgt: '[data-pane-strip-pane="B"] .thumb-item[data-page="3"]' });
   await win.waitForTimeout(600);
   let s = await p;
   let aA = analyse(s, 'A');
@@ -352,14 +365,14 @@ test('F4 no flicker: starting, hovering and completing a cross-document drag', a
   expect(aA.placeholders.length).toBe(0);
   expect(aB.placeholders.length).toBe(0);
   expect(aA.distinctHashes, `source pane A re-rastered while hovering the target (${aA.distinctHashes})`).toBe(1);
-  await synthStep('end', { src: '[data-rail-section-pane="A"] .thumb-item[data-page="1"]' });
+  await synthStep('end', { src: '[data-pane-strip-pane="A"] .thumb-item[data-page="1"]' });
   await win.waitForTimeout(300);
 
   // (b) complete a MOVE (both documents change legitimately): no blank frame.
   p = sampleTimeline(2200, 16, [PROBE_A, PROBE_B]);
   await win.waitForTimeout(80);
-  await win.locator('[data-rail-section-pane="A"] .thumb-item[data-page="1"]').first()
-    .dragTo(win.locator('[data-rail-section-pane="B"] .thumb-item[data-page="2"]').first(), { timeout: 8000 });
+  await win.locator('[data-pane-strip-pane="A"] .thumb-item[data-page="1"]').first()
+    .dragTo(win.locator('[data-pane-strip-pane="B"] .thumb-item[data-page="2"]').first(), { timeout: 8000 });
   s = await p;
   aA = analyse(s, 'A');
   aB = analyse(s, 'B');
@@ -389,7 +402,7 @@ test('F5 visual captures: two-pane, mid-drag, single-mode', async () => {
   // Scroll pane B so the page-1/page-2 boundary sits mid-viewport, then
   // hover the upper half of page 2: the "before page 2" indicator lands in
   // the visible gap between the two pages.
-  await synthStep('start', { src: '[data-rail-section-pane="A"] .thumb-item[data-page="2"]' });
+  await synthStep('start', { src: '[data-pane-strip-pane="A"] .thumb-item[data-page="2"]' });
   await win.waitForTimeout(200);
   await win.evaluate(() => {
     const sc = document.querySelector('.tab-pane[data-pane="B"] .document-scroller');
@@ -414,19 +427,19 @@ test('F5 visual captures: two-pane, mid-drag, single-mode', async () => {
       indicatorVisible: !!(r && sr && r.top >= sr.top && r.bottom <= sr.bottom),
       thumbDragging: !!document.querySelector('.thumb-dragging'),
       thumbDropTarget: !!document.querySelector('.thumb-drop-target'),
-      sectionDropTarget: !!document.querySelector('[data-rail-section-drop-target="true"]'),
+      sectionDropTarget: !!document.querySelector('[data-pane-strip-drop-target="true"]'),
       dropPane: !!document.querySelector('.document-scroller[data-page-drop-pane="true"]'),
     };
   });
   console.log(`[P32-flicker] drag screenshot state: ${JSON.stringify(dragAff)}`);
   await win.screenshot({ path: path.join(SHOTS, 'phase32-drag.png') });
   console.log('[P32-flicker] captured screenshots/phase32-drag.png');
-  await synthStep('end', { src: '[data-rail-section-pane="A"] .thumb-item[data-page="2"]' });
+  await synthStep('end', { src: '[data-pane-strip-pane="A"] .thumb-item[data-page="2"]' });
   await win.waitForTimeout(300);
 
   // Mode off: unchanged single-pane layout.
   await focusPane('A');
-  await win.locator('.tab-pane[data-pane-focused="true"] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
   await win.waitForTimeout(900);
   await win.screenshot({ path: path.join(SHOTS, 'phase32-single-mode.png') });
   console.log('[P32-flicker] captured screenshots/phase32-single-mode.png');
@@ -489,8 +502,8 @@ test('B1 responsiveness: two 34-page docs - scroll, focus, drag (rAF + liveness)
     const sc = document.querySelector('.tab-pane[data-pane="A"] .document-scroller');
     if (sc) for (let i = 0; i < 60; i += 1) sc.scrollTop += 40;
   });
-  await headerLoc('B').click();
-  await headerLoc('A').click();
+  await focusPane('B');
+  await focusPane('A');
   const r1 = await raf;
   const l1 = await live;
   console.log(`[P32-resp] scroll+focus: rAF ${JSON.stringify(r1)} liveness ${JSON.stringify(l1)}`);
@@ -513,21 +526,21 @@ test('B1 responsiveness: two 34-page docs - scroll, focus, drag (rAF + liveness)
   // --- cross-document drag ---
   raf = rafProbe(3000);
   live = livenessProbe(3000);
-  await win.locator('[data-rail-section-pane="A"] .thumb-item[data-page="1"]').first()
-    .dragTo(win.locator('[data-rail-section-pane="B"] .thumb-item[data-page="3"]').first(), { timeout: 8000 });
+  await win.locator('[data-pane-strip-pane="A"] .thumb-item[data-page="1"]').first()
+    .dragTo(win.locator('[data-pane-strip-pane="B"] .thumb-item[data-page="3"]').first(), { timeout: 8000 });
   const r3 = await raf;
   const l3 = await live;
   console.log(`[P32-resp] cross-doc drag: rAF ${JSON.stringify(r3)} liveness ${JSON.stringify(l3)}`);
 
   // --- mode-toggle and pane-focus settle timings ---
-  const offMs = await clickSettleMs('.tab-pane[data-pane="A"] [data-toolbar-multi-mode]');
+  const offMs = await clickSettleMs('[data-shared-toolbar] [data-toolbar-multi-mode]');
   await win.waitForTimeout(600);
   const onMs = await clickSettleMs('[data-toolbar-multi-mode]');
   await win.waitForTimeout(900);
   // Pane B starts empty again after the re-enable: fill it so a header exists.
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').first().click();
   await win.waitForTimeout(1000);
-  const focusMs = await clickSettleMs('.multi-pane-header[data-pane="B"]');
+  const focusMs = await clickSettleMs('.tab-pane[data-pane="B"] .pdf-page');
   console.log(`[P32-resp] settle ms: multiOFF=${offMs} multiON=${onMs} paneFocus=${focusMs}`);
 
   // No main-thread stall: the liveness cadence never gaps beyond 250ms.
@@ -542,10 +555,10 @@ test('B1 responsiveness: two 34-page docs - scroll, focus, drag (rAF + liveness)
 test('CQ1 window close with BOTH panes modified: prompt covers both, Cancel aborts', async () => {
   await twoPaneSetup();
   await focusPane('A');
-  await win.locator('.tab-pane[data-pane="A"] [data-toolbar-rotate-cw]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1100);
   await focusPane('B');
-  await win.locator('.tab-pane[data-pane="B"] [data-toolbar-rotate-cw]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1100);
 
   await electronApp.evaluate(({ BrowserWindow }) => {
@@ -571,10 +584,10 @@ test('CQ1 window close with BOTH panes modified: prompt covers both, Cancel abor
 test('CQ2 window close queue walks BOTH modified panes in turn', async () => {
   await twoPaneSetup();
   await focusPane('A');
-  await win.locator('.tab-pane[data-pane="A"] [data-toolbar-rotate-cw]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1100);
   await focusPane('B');
-  await win.locator('.tab-pane[data-pane="B"] [data-toolbar-rotate-cw]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
   await win.waitForTimeout(1100);
 
   await electronApp.evaluate(({ BrowserWindow }) => {
@@ -609,7 +622,7 @@ test('CQ3 closing a pane tab falls back to the empty state; last tab returns to 
 
   expect(await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count()).toBe(1);
   expect(await win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').count()).toBe(0);
-  expect(await win.locator('[data-rail-section-pane="B"]').count()).toBe(0);
+  expect(await win.locator('[data-pane-strip-pane="B"]').count()).toBe(0);
   console.log(`[P32-close] CQ3 after closing pane B's tab: paneB empty=${await win.locator('.tab-pane[data-pane="B"][data-pane-empty]').count()} paneA=${await paneCount('A')}`);
   expect(await paneCount('A')).toBe(34);
 

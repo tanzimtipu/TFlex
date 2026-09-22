@@ -58,11 +58,39 @@ function headerLoc(pane) {
   return win.locator(`[data-pane="${pane}"] [data-pane-header]`);
 }
 
+// Phase 33 — the shared rail is retired in favour of one strip per pane.
+// The retired [data-rail-section-active] attribute is gone; the focused
+// pane's strip header carries the accent tint, so read the COMPUTED
+// background to keep asserting the visual active affordance.
+async function stripActive(pane) {
+  return win.evaluate((p) => {
+    const el = document.querySelector(`[data-pane-strip-pane="${p}"] [data-pane-strip-header]`);
+    if (!el) return null;
+    const bg = getComputedStyle(el).backgroundColor;
+    return bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+  }, pane);
+}
+
 async function paneHeader(pane) {
   const raw = await headerLoc(pane).innerText();
   const text = raw.replace(/\s+/g, ' ').trim();
   const m = text.match(/(\d+)\s+pages?/);
   return { text, pageCount: m ? Number(m[1]) : null };
+}
+
+// Focus a pane through its PAGE AREA. The pane HEADER is the other documented
+// focus path, but the Phase 33 shared toolbar currently overlays it (DEF-282);
+// that path is asserted by phase33_multi_toolbar.spec.cjs.
+async function focusPaneByPage(pane) {
+  const page = win.locator(`.tab-pane[data-pane="${pane}"] .pdf-page`).first();
+  await page.scrollIntoViewIfNeeded().catch(() => {});
+  const box = await page.boundingBox();
+  if (box === null) throw new Error(`focusPaneByPage: no page in pane ${pane}`);
+  const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  const x = Math.max(30, Math.min(box.x + box.width / 2, vp.w - 30));
+  const y = Math.max(70, Math.min(box.y + box.height / 2, vp.h - 30));
+  await win.mouse.click(x, y);
+  await win.waitForTimeout(350);
 }
 
 // Two different documents, both panes filled (alpha in A, beta in B).
@@ -143,7 +171,7 @@ test('C1 mode round-trip: CommandBar and All tools agree, off returns to single-
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('true');
   expect(await win.locator('[data-tool-id="multi-mode"]').getAttribute('aria-pressed')).toBe('true');
-  await win.locator('.tab-pane[data-pane="A"] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('false');
   expect(await win.locator('[data-pane]').count()).toBe(0);
@@ -167,25 +195,35 @@ test('C2 two-pane layout with two different documents, headers, rail sections', 
   await expect(win.locator('.tab-pane[data-pane="A"] canvas.pdf-page-canvas').first()).toBeVisible();
   await expect(win.locator('.tab-pane[data-pane="B"] canvas.pdf-page-canvas').first()).toBeVisible();
 
-  // Shared rail: exactly one labelled section per loaded document.
-  const sections = win.locator('[data-multi-rail] [data-rail-section]');
-  expect(await sections.count()).toBe(2);
+  // Phase 33 — each pane owns its OWN thumbnail strip (the Phase-32 shared
+  // rail is retired). One labelled strip per loaded document, each showing
+  // its own pane's document.
+  const strips = win.locator('[data-pane-strip]');
+  expect(await strips.count()).toBe(2);
   const titles = [];
   const counts = [];
+  const stripDocs = [];
   for (const pane of ['A', 'B']) {
-    const sec = win.locator(`[data-rail-section-pane="${pane}"]`);
-    titles.push((await sec.locator('[data-rail-section-header]').innerText()).replace(/\s+/g, ' ').trim());
-    counts.push(await sec.locator('.thumb-item').count());
+    const strip = win.locator(`[data-pane-strip-pane="${pane}"]`);
+    titles.push((await strip.locator('[data-pane-strip-header]').innerText()).replace(/\s+/g, ' ').trim());
+    counts.push(await strip.locator('.thumb-item').count());
+    stripDocs.push(await strip.getAttribute('data-pane-strip-doc'));
   }
-  console.log(`[P32] rail sections: A="${titles[0]}" B="${titles[1]}" thumbItems(A,B)=${counts[0]},${counts[1]}`);
+  console.log(`[P32] pane strips: A="${titles[0]}" B="${titles[1]}" thumbItems(A,B)=${counts[0]},${counts[1]} docs=${JSON.stringify(stripDocs)}`);
   expect(titles[0]).toContain('p32-alpha');
   expect(titles[0]).toContain('34');
   expect(titles[1]).toContain('p32-beta');
   expect(titles[1]).toContain('520');
+  // Each strip lives inside its own pane and names a distinct document.
+  expect(stripDocs[0]).not.toBe(stripDocs[1]);
+  expect(await win.locator('.tab-pane[data-pane="A"] [data-pane-strip]').count()).toBe(1);
+  expect(await win.locator('.tab-pane[data-pane="B"] [data-pane-strip]').count()).toBe(1);
+  expect(counts[0]).toBeGreaterThan(0);
+  expect(counts[1]).toBeGreaterThan(0);
   // Two documents -> thumbnails shrink below the single-mode 126px.
   const thumbW = await win.evaluate(() => {
-    const wrap = document.querySelector('[data-rail-section-pane="A"] .thumb-canvas-wrap');
-    const canvas = document.querySelector('[data-rail-section-pane="A"] canvas.thumb-canvas');
+    const wrap = document.querySelector('[data-pane-strip-pane="A"] .thumb-canvas-wrap');
+    const canvas = document.querySelector('[data-pane-strip-pane="A"] canvas.thumb-canvas');
     return {
       wrap: wrap ? Math.round(wrap.getBoundingClientRect().width) : null,
       canvas: canvas ? Math.round(canvas.getBoundingClientRect().width) : null,
@@ -196,8 +234,8 @@ test('C2 two-pane layout with two different documents, headers, rail sections', 
   expect(thumbW.wrap).toBeLessThan(126);
   expect(thumbW.wrap).toBeGreaterThanOrEqual(84);
 
-  // A thumbnail click navigates that pane's document (rail onJump wiring).
-  const secBPage3 = win.locator('[data-rail-section-pane="B"] .thumb-item[data-page="3"]');
+  // A thumbnail click navigates that pane's document (strip onJump wiring).
+  const secBPage3 = win.locator('[data-pane-strip-pane="B"] .thumb-item[data-page="3"]');
   if ((await secBPage3.count()) > 0) {
     await secBPage3.first().scrollIntoViewIfNeeded();
     await secBPage3.first().click();
@@ -221,8 +259,8 @@ test('C3 focus affordance moves on a pane click (and rail active follows)', asyn
   console.log(`[P32] after pane A click: A=${await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')} B=${await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')}`);
   expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('true');
   expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('false');
-  expect(await win.locator('[data-rail-section-pane="A"]').getAttribute('data-rail-section-active')).toBe('true');
-  expect(await win.locator('[data-rail-section-pane="B"]').getAttribute('data-rail-section-active')).toBe('false');
+  expect(await stripActive('A')).toBe(true);
+  expect(await stripActive('B')).toBe(false);
   const activeIsAlpha = await win.evaluate(() => window.tflexDiagnostics().pageCount);
   console.log(`[P32] focused pane A -> diagnostics active doc pageCount=${activeIsAlpha}`);
   expect(activeIsAlpha).toBe(34);
@@ -231,7 +269,7 @@ test('C3 focus affordance moves on a pane click (and rail active follows)', asyn
   await win.waitForTimeout(400);
   console.log(`[P32] after pane B click: A=${await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')} B=${await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')}`);
   expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
-  expect(await win.locator('[data-rail-section-pane="B"]').getAttribute('data-rail-section-active')).toBe('true');
+  expect(await stripActive('B')).toBe(true);
   const activeIsBeta = await win.evaluate(() => window.tflexDiagnostics().pageCount);
   console.log(`[P32] focused pane B -> diagnostics active doc pageCount=${activeIsBeta}`);
   expect(activeIsBeta).toBe(520);
@@ -296,8 +334,7 @@ test('C2b opening a document while Multi Mode is on assigns it to the focused pa
   expect(tabsBefore).toBe(2);
 
   // --- Case 1: focused pane A ---
-  await win.locator('.multi-pane-header[data-pane="A"]').click();
-  await win.waitForTimeout(300);
+  await focusPaneByPage('A');
   expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('true');
 
   await openFile(tmpCopy(ALPHA_SRC, 'p32-gamma.pdf')); // 34 pages
@@ -323,8 +360,7 @@ test('C2b opening a document while Multi Mode is on assigns it to the focused pa
   expect(await win.locator('.tab-pane[data-pane]').count()).toBe(2);
 
   // --- Case 2: focused pane B (the assignment must follow focus) ---
-  await win.locator('.multi-pane-header[data-pane="B"]').click();
-  await win.waitForTimeout(300);
+  await focusPaneByPage('B');
   expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
 
   await openFile(tmpCopy(BETA_SRC, 'p32-delta.pdf')); // 520 pages
@@ -344,7 +380,7 @@ test('C2b opening a document while Multi Mode is on assigns it to the focused pa
   expect(await stage.getAttribute('data-multi-panes')).toBe('2');
 
   // --- Single mode is unchanged: the open lands as a normal active tab ---
-  await win.locator('.tab-pane[data-pane="A"] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('false');
   const tabsBeforeSingle = await win.locator('.tab[data-tab-id]').count();
@@ -391,31 +427,39 @@ test('C2c the same file cannot be assigned to the other pane (DEF-278)', async (
 
 test('C6 each pane keeps its own page position and zoom', async () => {
   await twoPaneSetup(); // A=alpha (34), B=beta (520)
-  const pageInput = (pane) => win.locator(`.tab-pane[data-pane="${pane}"] .page-input`);
-  const zoomText = (pane) => win.locator(`.tab-pane[data-pane="${pane}"] .zoom-percent`);
+  // Phase 33 — Multi Mode has ONE shared toolbar whose page/zoom readout
+  // reflects the FOCUSED pane, so read it after focusing each pane. Focus
+  // through the page area (the header is currently overlaid by the shared
+  // toolbar - DEF-282).
+  const sharedPageInput = () => win.locator('[data-shared-toolbar] .page-input');
+  const sharedZoomText = () => win.locator('[data-shared-toolbar] .zoom-percent');
 
-  await win.locator('.multi-pane-header[data-pane="A"]').click();
-  await win.waitForTimeout(350);
-  const zoomA0 = (await zoomText('A').innerText()).trim();
-  const zoomB0 = (await zoomText('B').innerText()).trim();
+  await focusPaneByPage('A');
+  const zoomA0 = (await sharedZoomText().innerText()).trim();
+  await focusPaneByPage('B');
+  const zoomB0 = (await sharedZoomText().innerText()).trim();
 
-  // Pane A's own Zoom in control changes only pane A's zoom.
-  await win.locator('.tab-pane[data-pane="A"] [aria-label="Zoom in"]').click();
+  // Zoom in with pane A focused changes only pane A's zoom.
+  await focusPaneByPage('A');
+  await win.locator('[data-shared-toolbar] [aria-label="Zoom in"]').click();
   await win.waitForTimeout(700);
-  const zoomA1 = (await zoomText('A').innerText()).trim();
-  const zoomB1 = (await zoomText('B').innerText()).trim();
+  const zoomA1 = (await sharedZoomText().innerText()).trim();
+  await focusPaneByPage('B');
+  const zoomB1 = (await sharedZoomText().innerText()).trim();
   console.log(`[P32] zoom: A ${zoomA0}->${zoomA1}, B ${zoomB0}->${zoomB1}`);
   expect(zoomA1).not.toBe(zoomA0);
   expect(zoomB1).toBe(zoomB0);
 
-  // Navigating pane A via its rail section thumbnail moves only pane A.
-  const thumbA5 = win.locator('[data-rail-section-pane="A"] .thumb-item[data-page="5"]');
+  // Navigating pane A via its own strip thumbnail moves only pane A.
+  const thumbA5 = win.locator('[data-pane-strip-pane="A"] .thumb-item[data-page="5"]');
   await thumbA5.first().scrollIntoViewIfNeeded();
   await thumbA5.first().click();
   await win.waitForTimeout(900);
-  const aPage = await pageInput('A').inputValue();
-  const bPage = await pageInput('B').inputValue();
-  console.log(`[P32] page inputs after A rail -> page 5: A=${aPage} B=${bPage}`);
+  await focusPaneByPage('A');
+  const aPage = await sharedPageInput().inputValue();
+  await focusPaneByPage('B');
+  const bPage = await sharedPageInput().inputValue();
+  console.log(`[P32] page inputs after A strip -> page 5: A=${aPage} B=${bPage}`);
   expect(Number(aPage)).toBe(5);
   expect(Number(bPage)).toBe(1);
 

@@ -1,17 +1,21 @@
 // @vitest-environment jsdom
 //
-// Phase 32 (chunk 2b) — the shared rail inside the App-shaped stage.
+// Phase 33 (chunk 3) — the stage hands each pane's DocumentView its context.
 //
-// This harness wires the REAL `DocumentStage`, the REAL reducers, the REAL
-// pure routing decisions and the REAL `MultiRail`, exactly as App does.
-// It proves what a user sees:
+// The phase-32 shared rail is retired: the stage no longer renders a rail
+// (the strips live INSIDE each pane's DocumentView, at the pane's inner
+// edge). This harness wires the REAL DocumentStage, the REAL reducers and
+// the REAL pure routing decisions, exactly as App does, and proves:
 //
-//   - Multi Mode renders ONE rail inside the stage, with a section per
-//     loaded document and the focused pane's section active;
-//   - a thumbnail click in a section focuses that section's pane (the tab
-//     strip's active tab follows) and navigates that pane to the page;
-//   - neither pane's document is remounted by any of it;
-//   - single mode is unchanged: no rail, no rail column, the same split.
+//   - the stage passes the pane (A / B, or null in single mode) to
+//     `renderDocument`, so App can give each pane its own strip on the
+//     correct side and its own document;
+//   - no rail node / rail column exists in the stage any more;
+//   - the divider clamps against the whole stage width (the panes own it);
+//   - pane focus and thumbnail-driven navigation still route to the right
+//     pane, with neither document remounted;
+//   - single mode is unchanged: three panes, no pane attributes, the same
+//     split value.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { describe, expect, it, vi } from "vitest";
@@ -19,7 +23,6 @@ import { createRoot } from "react-dom/client";
 import { act, useCallback, useReducer, useState } from "react";
 import type { ReactElement } from "react";
 import { DocumentStage, type StageTab } from "../../../src/renderer/components/MultiPane";
-import { MultiRail } from "../../../src/renderer/components/MultiRail";
 import {
   multiModeReducer,
   paneTabId,
@@ -49,7 +52,7 @@ function mount(element: ReactElement): HTMLElement {
   return host;
 }
 
-/** The App-shaped harness: routing helpers + the shared rail. */
+/** The App-shaped harness: routing helpers + a pane-aware document stub. */
 function StageHarness(props: { initial: MultiModeState }): ReactElement {
   const { initial } = props;
   const [tabs, dispatchTabs] = useReducer(tabsReducer, { tabs: THREE, activeId: "a" });
@@ -73,9 +76,9 @@ function StageHarness(props: { initial: MultiModeState }): ReactElement {
     [multi, tabs.activeId, activateTab],
   );
 
-  // The App seam: a rail jump targets the pane's tab id; DocumentView's
+  // The App seam: a strip click targets the pane's tab id; DocumentView's
   // `jumpRequest` prop is what lands it (rendered here as the stub's page).
-  const onRailJump = useCallback(
+  const onStripJump = useCallback(
     (pane: PaneId, page: number): void => {
       const tabId = paneTabId(multi, pane);
       if (tabId === null) return;
@@ -83,14 +86,6 @@ function StageHarness(props: { initial: MultiModeState }): ReactElement {
     },
     [multi],
   );
-
-  const sections = (["A", "B"] as const).flatMap((pane) => {
-    const tabId = paneTabId(multi, pane);
-    if (tabId === null) return [];
-    const meta = tabs.tabs.find((t) => t.id === tabId);
-    if (meta === undefined) return [];
-    return [{ pane, tabId, title: meta.title, pageCount: tabId === "a" ? 3 : 5 }];
-  });
 
   const stageTabs: StageTab[] = tabs.tabs.map((t) => ({
     id: t.id,
@@ -130,31 +125,32 @@ function StageHarness(props: { initial: MultiModeState }): ReactElement {
         onClearPane={(): void => undefined}
         onPickPane={(): void => undefined}
         onOpenIntoPane={(): void => undefined}
-        renderDocument={(tabId): ReactElement => (
+        // App builds a DocumentView per tab; the STAGE supplies the pane,
+        // which is what selects this pane's strip side and document.
+        renderDocument={(tabId, pane): ReactElement => (
           <div
             data-doc-stub={tabId}
+            data-doc-pane={pane ?? "single"}
+            data-rail-side={pane === "A" ? "right" : "left"}
             data-doc-page={jump !== null && jump.tabId === tabId ? jump.page : 1}
           >
             {tabId}
+            {pane !== null && (
+              // Stands in for this pane's strip: the real strip focuses its
+              // pane and then jumps it (proven in paneThumbStrip.test /
+              // documentViewRailSide.test); the stage test pins the routing
+              // that click produces.
+              <button
+                type="button"
+                data-thumb-stub={pane}
+                onClick={(): void => {
+                  onFocusPane(pane);
+                  onStripJump(pane, 3);
+                }}
+              >{`page 3 of ${pane}`}</button>
+            )}
           </div>
         )}
-        sharedRail={
-          sections.length > 0 ? (
-            <MultiRail
-              sections={sections}
-              activePane={multi.focused}
-              onFocusPane={onFocusPane}
-              onJump={onRailJump}
-              renderSection={({ pane, onJump }): ReactElement => (
-                <button
-                  type="button"
-                  data-thumb-stub={pane}
-                  onClick={(): void => onJump(3)}
-                >{`page 3 of ${pane}`}</button>
-              )}
-            />
-          ) : null
-        }
       />
     </div>
   );
@@ -167,42 +163,29 @@ const paneOf = (host: HTMLElement, id: string): HTMLElement => {
 };
 const stripActive = (host: HTMLElement, id: string): string | null =>
   host.querySelector(`[data-test-tab="${id}"]`)?.getAttribute("data-active") ?? null;
-const sectionActive = (host: HTMLElement, pane: string): string | null =>
-  host
-    .querySelector(`[data-rail-section-pane="${pane}"]`)
-    ?.getAttribute("data-rail-section-active") ?? null;
 
-describe("the shared rail in the Multi Mode stage", () => {
-  it("renders one section per loaded document inside the stage, A first", () => {
+describe("DocumentStage — the pane context handed to each view", () => {
+  it("gives pane A and pane B their own view context (and no shared rail)", () => {
     const host = mount(<StageHarness initial={BOTH} />);
     const stage = host.querySelector(".tab-stage");
     expect(stage?.getAttribute("data-multi-mode")).toBe("true");
-    expect(stage?.getAttribute("data-shared-rail")).toBe("true");
-    expect(stage?.querySelector("[data-multi-rail]")).not.toBeNull();
+    expect(stage?.getAttribute("data-multi-panes")).toBe("2");
+    // The phase-32 shared rail is retired: no rail node, no rail column.
+    expect(host.querySelector("[data-multi-rail]")).toBeNull();
+    expect(host.querySelector("[data-rail-section]")).toBeNull();
+    expect(stage?.getAttribute("data-shared-rail")).toBeNull();
 
-    const docs = Array.from(host.querySelectorAll("[data-rail-section]")).map((el) =>
-      el.getAttribute("data-rail-section-doc"),
-    );
-    expect(docs).toEqual(["a", "b"]);
-    // The rail is a child of the stage, not of a pane.
-    expect(stage?.querySelectorAll("[data-rail-section]")).toHaveLength(2);
-    expect(paneOf(host, "A").querySelector("[data-rail-section]")).toBeNull();
-    expect(paneOf(host, "B").querySelector("[data-rail-section]")).toBeNull();
+    // Each pane's document stub was told which pane it fills, and therefore
+    // which rail side its strip uses (A right, B left).
+    const docA = paneOf(host, "A").querySelector('[data-doc-stub="a"]');
+    const docB = paneOf(host, "B").querySelector('[data-doc-stub="b"]');
+    expect(docA?.getAttribute("data-doc-pane")).toBe("A");
+    expect(docA?.getAttribute("data-rail-side")).toBe("right");
+    expect(docB?.getAttribute("data-doc-pane")).toBe("B");
+    expect(docB?.getAttribute("data-rail-side")).toBe("left");
   });
 
-  it("marks the focused pane's section active, and follows a focus move", () => {
-    const host = mount(<StageHarness initial={BOTH} />);
-    expect(sectionActive(host, "A")).toBe("true");
-    expect(sectionActive(host, "B")).toBe("false");
-
-    act((): void => {
-      paneOf(host, "B").dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    });
-    expect(sectionActive(host, "A")).toBe("false");
-    expect(sectionActive(host, "B")).toBe("true");
-  });
-
-  it("routes a thumbnail click to that section's pane and page", () => {
+  it("routes a strip click to that pane and page without remounting either document", () => {
     const host = mount(<StageHarness initial={BOTH} />);
     const stubA = paneOf(host, "A").querySelector('[data-doc-stub="a"]');
     const stubB = paneOf(host, "B").querySelector('[data-doc-stub="b"]');
@@ -213,11 +196,8 @@ describe("the shared rail in the Multi Mode stage", () => {
       host.querySelector<HTMLButtonElement>('[data-thumb-stub="B"]')?.click();
     });
 
-    // Pane B is focused, so the strip's active tab is b, and only B's
-    // document moved to the clicked page.
     expect(paneOf(host, "B").getAttribute("data-pane-focused")).toBe("true");
     expect(stripActive(host, "b")).toBe("true");
-    expect(stripActive(host, "a")).toBe("false");
     expect(paneOf(host, "B").querySelector('[data-doc-stub="b"]')?.getAttribute("data-doc-page")).toBe(
       "3",
     );
@@ -229,35 +209,18 @@ describe("the shared rail in the Multi Mode stage", () => {
     expect(paneOf(host, "B").querySelector('[data-doc-stub="b"]')).toBe(stubB);
   });
 
-  it("routes a thumbnail click in the focused pane's own section the same way", () => {
-    const host = mount(<StageHarness initial={BOTH} />);
-    act((): void => {
-      host.querySelector<HTMLButtonElement>('[data-thumb-stub="A"]')?.click();
-    });
-    expect(paneOf(host, "A").getAttribute("data-pane-focused")).toBe("true");
-    expect(stripActive(host, "a")).toBe("true");
-    expect(paneOf(host, "A").querySelector('[data-doc-stub="a"]')?.getAttribute("data-doc-page")).toBe(
-      "3",
-    );
-    expect(paneOf(host, "B").querySelector('[data-doc-stub="b"]')?.getAttribute("data-doc-page")).toBe(
-      "1",
-    );
-  });
-
-  it("shows a single section while the other pane is empty", () => {
+  it("gives an empty pane no document context at all", () => {
     const host = mount(
       <StageHarness initial={{ enabled: true, paneA: "a", paneB: null, focused: "A" }} />,
     );
-    expect(host.querySelectorAll("[data-rail-section]")).toHaveLength(1);
-    expect(host.querySelector("[data-rail-section]")?.getAttribute("data-rail-section-doc")).toBe(
-      "a",
-    );
+    expect(host.querySelector('[data-pane="B"][data-pane-empty]')).not.toBeNull();
+    expect(paneOf(host, "A").querySelector('[data-doc-pane="A"]')).not.toBeNull();
+    expect(host.querySelector('[data-doc-pane="B"]')).toBeNull();
   });
 });
 
-describe("the divider still tracks the pointer with the rail present", () => {
-  it("measures the split across the pane region, not the whole stage", () => {
-    // jsdom has no layout: give the stage a real box so the drag math runs.
+describe("the divider measures the whole stage (the panes own it)", () => {
+  it("clamps the split against the stage width, with no rail offset", () => {
     const spy = vi.spyOn(Element.prototype, "getBoundingClientRect").mockReturnValue({
       left: 0,
       top: 0,
@@ -272,7 +235,6 @@ describe("the divider still tracks the pointer with the rail present", () => {
     try {
       const host = mount(<StageHarness initial={BOTH} />);
       const stage = host.querySelector<HTMLElement>(".tab-stage");
-      expect(stage?.style.getPropertyValue("--tf-shared-rail-w")).toBe("220px");
       const divider = host.querySelector<HTMLElement>("[data-multi-divider]");
       const pointer = (type: string, clientX: number): void => {
         const event = new Event(type, { bubbles: true });
@@ -282,37 +244,35 @@ describe("the divider still tracks the pointer with the rail present", () => {
           divider?.dispatchEvent(event);
         });
       };
-      // (571 - 220 rail) / 780 usable = 0.45. Without the rail subtraction
-      // the same pointer would report 57.1%.
+      // 571 / 1000 = 57.1%: no rail column is subtracted any more.
       pointer("pointerdown", 571);
-      expect(stage?.style.getPropertyValue("--tf-split")).toBe("45.000%");
-      expect(stage?.style.getPropertyValue("--tf-split-frac")).toBe("0.45");
-      // Near the rail edge the 320px pane minimum clamps: 320 / 780 =
-      // 0.4103 (with no rail the floor would be 0.32 and the raw value
-      // 0.359 would have been used instead).
-      pointer("pointermove", 500);
-      expect(stage?.style.getPropertyValue("--tf-split")).toBe("41.026%");
+      expect(stage?.style.getPropertyValue("--tf-split")).toBe("57.100%");
+      expect(stage?.style.getPropertyValue("--tf-split-frac")).toBe("0.571");
+      // The 320px pane minimum clamps: 320 / 1000 = 0.32.
+      pointer("pointermove", 100);
+      expect(stage?.style.getPropertyValue("--tf-split")).toBe("32.000%");
     } finally {
       spy.mockRestore();
     }
   });
 });
 
-describe("single mode is unchanged by the shared rail", () => {
-  it("renders no rail, no rail column and the same split value", () => {
+describe("single mode is unchanged by the per-pane strips", () => {
+  it("renders no pane attributes, no divider and the same split value", () => {
     const host = mount(
       <StageHarness initial={{ enabled: false, paneA: null, paneB: null, focused: "A" }} />,
     );
     const stage = host.querySelector<HTMLElement>(".tab-stage");
     expect(stage?.getAttribute("data-multi-mode")).toBe("false");
-    expect(stage?.getAttribute("data-shared-rail")).toBeNull();
     expect(stage?.getAttribute("data-multi-panes")).toBeNull();
-    expect(host.querySelector("[data-multi-rail]")).toBeNull();
-    expect(host.querySelectorAll("[data-rail-section]")).toHaveLength(0);
     expect(host.querySelectorAll(".tab-pane")).toHaveLength(3);
     // The pre-Phase-32 inline split contract is untouched.
     expect(stage?.style.getPropertyValue("--tf-split")).toBe("50.000%");
     expect(host.querySelector("[data-pane]")).toBeNull();
     expect(host.querySelector("[data-multi-divider]")).toBeNull();
+    expect(host.querySelector("[data-multi-rail]")).toBeNull();
+    // Single mode hands `null` as the pane: no strip context.
+    expect(host.querySelector('[data-doc-pane="single"]')).not.toBeNull();
+    expect(host.querySelector("[data-thumb-stub]")).toBeNull();
   });
 });

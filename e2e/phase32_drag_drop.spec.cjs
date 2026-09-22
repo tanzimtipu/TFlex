@@ -84,7 +84,7 @@ async function twoPaneSetup() {
 async function thumbSig(pane, page) {
   return win.evaluate(({ p, pg }) => {
     const canvas = document.querySelector(
-      `[data-rail-section-pane="${p}"] .thumb-item[data-page="${pg}"] canvas.thumb-canvas`,
+      `[data-pane-strip-pane="${p}"] .thumb-item[data-page="${pg}"] canvas.thumb-canvas`,
     );
     if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
     const W = 24;
@@ -176,7 +176,7 @@ async function synthStep(step, arg) {
         copy: ind ? ind.getAttribute('data-drop-copy') : null,
         dropPane: !!document.querySelector('.document-scroller[data-page-drop-pane="true"]'),
         thumbDropTarget: !!document.querySelector('.thumb-drop-target'),
-        sectionDropTarget: !!document.querySelector('[data-rail-section-drop-target="true"]'),
+        sectionDropTarget: !!document.querySelector('[data-pane-strip-drop-target="true"]'),
       };
     }
     if (s === 'end') {
@@ -210,8 +210,8 @@ test('D1 rail drag: page moves from section A to section B at the drop position'
   expect(a0).toBe(34);
   expect(b0).toBe(520);
 
-  const srcSel = '[data-rail-section-pane="A"] .thumb-item[data-page="1"]';
-  const tgtSel = '[data-rail-section-pane="B"] .thumb-item[data-page="2"]';
+  const srcSel = '[data-pane-strip-pane="A"] .thumb-item[data-page="1"]';
+  const tgtSel = '[data-pane-strip-pane="B"] .thumb-item[data-page="2"]';
   const native = await nativeDrag(win.locator(srcSel).first(), win.locator(tgtSel).first(), false);
   await win.waitForTimeout(2200);
   let a1 = await paneCount('A');
@@ -305,8 +305,8 @@ test('D3 Ctrl-held drop COPIES: B gains the page, A keeps it', async () => {
   expect(a0).toBe(34);
   expect(b0).toBe(520);
 
-  const srcSel = '[data-rail-section-pane="A"] .thumb-item[data-page="1"]';
-  const tgtSel = '[data-rail-section-pane="B"] .thumb-item[data-page="2"]';
+  const srcSel = '[data-pane-strip-pane="A"] .thumb-item[data-page="1"]';
+  const tgtSel = '[data-pane-strip-pane="B"] .thumb-item[data-page="2"]';
   const native = await nativeDrag(win.locator(srcSel).first(), win.locator(tgtSel).first(), true);
   await win.waitForTimeout(2200);
   let a1 = await paneCount('A');
@@ -350,7 +350,7 @@ async function readAffordances() {
       dropPane: !!document.querySelector('.document-scroller[data-page-drop-pane="true"]'),
       thumbDropTarget: !!document.querySelector('.thumb-drop-target'),
       thumbDropCopy: !!document.querySelector('.thumb-drop-copy'),
-      sectionDropTarget: !!document.querySelector('[data-rail-section-drop-target="true"]'),
+      sectionDropTarget: !!document.querySelector('[data-pane-strip-drop-target="true"]'),
     };
   });
 }
@@ -365,22 +365,22 @@ test('D4 drop affordances: indicator side, thumb drop target, drop-pane highligh
   const b0 = await paneCount('B');
 
   // (a) RAIL hover: the landing thumb + section highlight, no drop yet.
-  const railStart = await synthStep('start', { src: '[data-rail-section-pane="A"] .thumb-item[data-page="1"]' });
+  const railStart = await synthStep('start', { src: '[data-pane-strip-pane="A"] .thumb-item[data-page="1"]' });
   expect(railStart.ok).toBe(true);
   await win.waitForTimeout(150);
-  const railOver = await synthStep('over', { tgt: '[data-rail-section-pane="B"] .thumb-item[data-page="3"]' });
+  const railOver = await synthStep('over', { tgt: '[data-pane-strip-pane="B"] .thumb-item[data-page="3"]' });
   await win.waitForTimeout(300);
   const railAff = await readAffordances();
   console.log(`[P32-dnd] D4 rail hover: prevented=${railOver.defaultPrevented} ${JSON.stringify(railAff)}`);
   expect(railAff.thumbDropTarget).toBe(true);
   expect(railAff.sectionDropTarget).toBe(true);
-  await synthStep('end', { src: '[data-rail-section-pane="A"] .thumb-item[data-page="1"]' });
+  await synthStep('end', { src: '[data-pane-strip-pane="A"] .thumb-item[data-page="1"]' });
   await win.waitForTimeout(300);
   expect(await win.locator('.thumb-drop-target').count()).toBe(0);
-  expect(await win.locator('[data-rail-section-drop-target="true"]').count()).toBe(0);
+  expect(await win.locator('[data-pane-strip-drop-target="true"]').count()).toBe(0);
 
   // (b) CANVAS hover, upper half of B page 2 -> indicator BEFORE page 2.
-  await synthStep('start', { src: '[data-rail-section-pane="A"] .thumb-item[data-page="1"]' });
+  await synthStep('start', { src: '[data-pane-strip-pane="A"] .thumb-item[data-page="1"]' });
   await win.waitForTimeout(150);
   const upHalf = await synthStep('over', { tgt: '.tab-pane[data-pane="B"] .page-slot[data-page="2"]', after: false });
   await win.waitForTimeout(300);
@@ -403,7 +403,7 @@ test('D4 drop affordances: indicator side, thumb drop target, drop-pane highligh
   console.log(`[P32-dnd] D4 Ctrl hover: prevented=${copyHover.defaultPrevented} ${JSON.stringify(copyAff)}`);
   expect(copyAff.indicators.some((i) => i.copy === 'true')).toBe(true);
 
-  await synthStep('end', { src: '[data-rail-section-pane="A"] .thumb-item[data-page="1"]' });
+  await synthStep('end', { src: '[data-pane-strip-pane="A"] .thumb-item[data-page="1"]' });
   await win.waitForTimeout(400);
   expect(await win.locator('[data-drop-indicator]').count()).toBe(0);
   expect(await win.locator('.document-scroller[data-page-drop-pane="true"]').count()).toBe(0);

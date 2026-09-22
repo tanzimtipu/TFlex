@@ -10,9 +10,9 @@ import type {
   PrintDuplex,
   PrintJobPayload,
   PrintJobResult,
-  PrintPageOrder,
   PrintSettings,
 } from '../../shared/types';
+import { printSheetLayout } from '../../shared/printLayout';
 
 /**
  * Phase 30 — print service.
@@ -24,28 +24,19 @@ import type {
  * printed page and calls `webContents.print` with the mapped Electron
  * options. The visible app window is never the print source.
  *
- * Platform note (reported honestly): Electron's documented print option set
+* Platform note (reported honestly): Electron's documented print option set
  * has no tray / paper-source key, so `settings.paperSource` is carried in the
  * contract but cannot reach the driver — the UI must surface it as
  * unsupported rather than silently dropping it. `oddEven`, `reverse` and
  * `pageOrder` are applied by the renderer to the image array; `pageOrder`
- * additionally drives the N-up grid flow below.
+ * additionally selects the N-up grid and slot assignment below via the shared
+ * `printSheetLayout` rule (Phase 33 / DEF-280).
  */
 
 /** Electron's `pagesPerSheet` allowlist. */
 export const ALLOWED_PAGES_PER_SHEET = [1, 2, 4, 6, 9, 16] as const;
 
 const execFileAsync = promisify(execFile);
-
-/** Columns/rows for each N-up value; a sheet holds `cols * rows` pages. */
-export const NUP_GRID: Record<number, { cols: number; rows: number }> = {
-  1: { cols: 1, rows: 1 },
-  2: { cols: 2, rows: 1 },
-  4: { cols: 2, rows: 2 },
-  6: { cols: 3, rows: 2 },
-  9: { cols: 3, rows: 3 },
-  16: { cols: 4, rows: 4 },
-};
 
 /** Typed rejection reasons. The returned `reason` is a string per the shared
  *  contract; validation returns one of these literals (never a silent no-op). */
@@ -260,43 +251,50 @@ function scalingCss(settings: PrintSettings): string {
   }
 }
 
-/** N-up flow direction within a sheet. The renderer already applies the
- *  definitive page order to `images`; this mirrors it for layout direction. */
-function gridFlowCss(order: PrintPageOrder | undefined): string {
-  const vertical = order === 'vertical' || order === 'verticalReversed';
-  const reversed = order === 'horizontalReversed' || order === 'verticalReversed';
-  const flow = vertical ? 'grid-auto-flow: column;' : 'grid-auto-flow: row;';
-  return reversed ? `${flow} direction: rtl;` : flow;
-}
-
 /**
  * Compose the print document. One sheet per printed page (`page-break-after:
  * always`), each sheet holding `pagesPerSheet` images in a CSS grid when N-up
  * is active. Pure and exported for unit tests.
+ *
+ * Phase 33 / DEF-280 — the sheet GRID and the slot assignment both come from
+ * the shared `printSheetLayout` rule (the same one the renderer preview uses),
+ * so the two can never diverge. Cells are emitted in DOM order (row-major) with
+ * image `slots[cellIndex]` in each cell; a trailing partially-filled sheet keeps
+ * its empty cells so every image stays in its intended position.
  */
 export function composePrintHtml(payload: PrintJobPayload): string {
   const settings = payload.settings ?? {};
   const perSheet = settings.pagesPerSheet ?? 1;
-  const grid = NUP_GRID[perSheet] ?? NUP_GRID[1];
   const landscape = settings.landscape === true;
 
   const sheets: string[][] = [];
   for (let i = 0; i < payload.images.length; i += perSheet) {
     sheets.push(payload.images.slice(i, i + perSheet));
   }
+
+  const layout = printSheetLayout(perSheet, settings.pageOrder);
   const sheetsHtml = sheets
     .map((images) => {
-      const imgs = images
-        .map((src) => `<div class="page"><img src="${src}" alt=""></div>`)
-        .join('');
-      return `<div class="sheet">${imgs}</div>`;
+      // Emit one cell per grid slot in DOM order; empty cells keep the grid shape.
+      const cells =
+        perSheet > 1
+          ? layout.slots
+              .map((slot) => {
+                const src = images[slot];
+                return src === undefined
+                  ? '<div class="page"></div>'
+                  : `<div class="page"><img src="${src}" alt=""></div>`;
+              })
+              .join('')
+          : `<div class="page"><img src="${images[0] ?? ''}" alt=""></div>`;
+      return `<div class="sheet">${cells}</div>`;
     })
     .join('\n');
 
   const gridCss =
     perSheet > 1
-      ? `.sheet { display: grid; grid-template-columns: repeat(${grid.cols}, 1fr);` +
-        ` grid-template-rows: repeat(${grid.rows}, 1fr); ${gridFlowCss(settings.pageOrder)} }`
+      ? `.sheet { display: grid; grid-template-columns: repeat(${layout.cols}, 1fr);` +
+        ` grid-template-rows: repeat(${layout.rows}, 1fr); }`
       : '';
 
   return `<!doctype html>
