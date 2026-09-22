@@ -1865,7 +1865,10 @@ describe("Phase 22 — radius ladder + surface families", () => {
       ["--radius-dialog", "10px"],
       ["--radius-group", "12px"],
       ["--radius-panel", "16px"],
-      ["--radius-window", "20px"],
+      // Phase 35 — the window is opaque and Windows rounds the window
+      // corners (DWM, ~8px), so the app's own window radius matches the OS
+      // corner instead of the old transparent-window 20px.
+      ["--radius-window", "8px"],
     ]) {
       expect(cssClean, `${token} must be declared`).toMatch(
         new RegExp(`${token}:\\s*${value}`),
@@ -1894,11 +1897,15 @@ describe("Phase 22 — radius ladder + surface families", () => {
   it("the docked panels round their page-facing corners only (DEF-247)", () => {
     // The rail faces the page on its RIGHT edge; the palette faces it on
     // its LEFT edge. The window-edge corners stay flush (the frosted
-    // shell clips them to its 20px curvature). Phase 25 — the
+    // shell clips them to its 8px curvature (Phase 35 — matches the OS
+    // window corner now that the window is opaque)). Phase 25 — the
     // text-properties panel is no longer a docked panel: it is a
     // floating card over the page view, rounded on ALL corners.
+    // DEF-294 — the rail's TOP-right corner is square too: the header row
+    // at the rail's top must read flush (only the page-facing bottom-right
+    // corner rounds).
     expect(bodyWith(".side-rail", /border-radius/)).toMatch(
-      /border-radius:\s*0 var\(--panel-radius\) var\(--panel-radius\) 0/,
+      /border-radius:\s*0 0 var\(--panel-radius\) 0/,
     );
     expect(bodyWith(".tools-palette", /border-radius/)).toMatch(
       /border-radius:\s*var\(--panel-radius\) 0 0 var\(--panel-radius\)/,

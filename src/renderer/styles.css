@@ -121,7 +121,13 @@
   --space-section: 24px;
   --space-major: 32px;
 
-  --radius-window: 20px;
+  /* Phase 35 — with the window opaque, Windows itself rounds the
+   * window corners (DWM, ~8px on Windows 11). The app's own clip must
+   * MATCH that radius instead of the old transparent-window 20px, or
+   * the chrome is clipped 12px early and a flat band of the window
+   * background shows in each corner. 8px is the Windows 11 window
+   * corner radius in logical pixels. */
+  --radius-window: 8px;
   --radius-panel: 16px;
   --radius-group: 12px;
   --radius-control: 10px;
@@ -1103,8 +1109,11 @@ input[type="checkbox"] {
   border-bottom: 1px solid var(--border);
   background: var(--bg-toolbar);
   flex-shrink: 0;
-  /* DEF-132 — no `-webkit-app-region` here: the AppHeader sits inside
-   * the draggable titlebar slot and must default to drag. */
+  /* DEF-132 — the header is part of the caption strip and defaults to
+   * drag. Phase 35 re-declares `drag` on `.app-header` explicitly (see
+   * the `.titlebar-slot, .app-header, ...` rule above) so its empty
+   * brand / tab-strip space is caption space regardless of any theme
+   * override; the interactive controls opt out individually. */
 }
 
 /* The TitleBar wraps the existing .app-header so the caption strip
@@ -1173,6 +1182,24 @@ input[type="checkbox"] {
   min-width: 0;
 }
 
+/* Phase 35 — the caption strip is a FULL-WIDTH caption area. When only
+ * `.titlebar` carried `drag`, qa's hit-test measured the strip as only
+ * ~51% draggable (the tab strip's own box was not itself a drag
+ * surface). Every NON-interactive container inside the strip now
+ * re-declares the drag region explicitly — the slot, the header, the
+ * tab strip (tabs and the "+" button still opt out below), and the
+ * brand — so the OS treats every point that is not an interactive
+ * control as caption space (the DEF-132 design, now actually covered).
+ * This is what makes double-click-to-maximise and Aero Snap work from
+ * anywhere on the bar now that the window is no longer layered. */
+.titlebar-slot,
+.app-header,
+.tab-area,
+.tab-list,
+.brand {
+  -webkit-app-region: drag;
+}
+
 /* DEF-132 — interactive children of the caption strip opt out of the
  * window-drag region. Everything else in the bar (brand, tab-strip
  * empty space, header-action gaps, the menu button's padding) stays
@@ -1193,7 +1220,9 @@ input[type="checkbox"] {
 .app-header .tab-close,
 .app-header .tab-new,
 .app-header .theme-toggle,
+.app-header .theme-toggle-wrap,
 .app-header .theme-toggle-popover,
+.app-header .update-indicator,
 .app-header .btn,
 .app-header button,
 .app-header input,
@@ -2465,8 +2494,11 @@ input[type="checkbox"] {
   border-right: 1px solid var(--panel-border);
   /* Phase 22 (DEF-247) — the rail is a ROUNDED docked surface. Only
    * the page-facing corners round; the left corners are flush with the
-   * window edge (the frosted shell clips them to its 20px curvature). */
-  border-radius: 0 var(--panel-radius) var(--panel-radius) 0;
+   * window edge (the frosted shell clips them to its 20px curvature).
+   * DEF-294 — the TOP-RIGHT corner is square: the header row sits at the
+   * rail's top and the operator asked for it flush, so only the
+   * page-facing BOTTOM-right corner rounds. */
+  border-radius: 0 0 var(--panel-radius) 0;
   min-height: 0;
 }
 
@@ -3535,6 +3567,32 @@ input[type="checkbox"] {
    * CONTENT_PADDING_PX (now 0) so jump landings stay exact. */
   padding: 0;
   gap: 18px;
+}
+
+/* DEF-296 — page zoom FLIP. A zoom step re-lays-out the slot instantly (the
+   wrapper takes its NEW width/height), then the wrapper plays a one-shot
+   transform-only scale from the PREVIOUS step's ratio (`--tf-zoom-flip-from`)
+   back to 1, so the page visibly grows / shrinks instead of snapping.
+   Transform-only on purpose: no width/height transition, so there is no
+   layout thrashing and the scroll geometry is settled the moment the zoom
+   lands. PageView adds the class only when motion is not instant; the
+   global prefers-reduced-motion and `:root[data-animations="off"]`
+   catch-alls additionally collapse the animation to its end state, so both
+   accessibility paths are covered. The rotation turn (DEF-274) lives on the
+   INNER `.pdf-page-canvas`, so the two transforms compose as parent x child
+   and never overwrite each other. The PDF bitmap is scaled, never
+   recoloured (DEF-099). */
+.pdf-page-zoom-flip {
+  animation: tf-page-zoom-flip var(--motion-duration-standard) var(--motion-ease-standard);
+}
+
+@keyframes tf-page-zoom-flip {
+  from {
+    transform: scale(var(--tf-zoom-flip-from, 1));
+  }
+  to {
+    transform: scale(1);
+  }
 }
 
 .pdf-page {
@@ -9031,6 +9089,174 @@ rect.ann-highlight.ann-preview {
   color: var(--fg-muted);
 }
 
+/* Phase 35 item 8 — the print dialog's detach control. It sits with the close
+ * button in the header's trailing cluster, so the drag handle's title stays
+ * left and the actions group right. */
+.modal-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.modal-header-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-1);
+  color: var(--fg-muted);
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out);
+}
+
+.modal-header-action:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  color: var(--fg-strong);
+}
+
+.modal-header-action:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* ---------------------------------------------------------------------------
+ * Phase 35 item 8 — the standalone print window.
+ *
+ * A real OS window (native frame, resizable) that hosts the SAME shared print
+ * panel as the in-app dialog. It is a normal app surface, not a modal torn out
+ * of the app: a flat header strip names the document, the panel fills the
+ * window and owns its own scrolling, and the footer stays pinned.
+ * ------------------------------------------------------------------------- */
+
+.print-window {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+  color: var(--fg);
+}
+
+.print-window-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-toolbar);
+  flex: 0 0 auto;
+}
+
+.print-window-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.print-window-title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--fg-strong);
+  letter-spacing: -0.005em;
+}
+
+.print-window-doc {
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 46ch;
+}
+
+.print-window-pages {
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+
+.print-window-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-raised);
+  color: var(--fg-strong);
+  font-size: var(--fs-sm);
+  flex: 0 0 auto;
+}
+
+.print-window-banner-quiet {
+  color: var(--fg-muted);
+}
+
+/* The shared panel is a grid here too: scrolling body, pinned footer. */
+.print-window-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.print-window-panel .modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* A standalone window has room the modal does not: give the preview a little
+ * more width and let the controls breathe. */
+.print-window-panel .print-body {
+  grid-template-columns: minmax(0, 1fr) 240px;
+}
+
+.print-window-panel .print-preview {
+  position: static;
+}
+
+/* A malformed/absent context: a centred, self-explanatory state. */
+.print-window-error {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-6);
+  text-align: center;
+}
+
+.print-window-error-icon {
+  color: var(--fg-muted);
+}
+
+.print-window-error-title {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.print-window-error-text {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--fs-sm);
+  color: var(--fg-muted);
+  line-height: 1.5;
+}
+
 /* Suspects panel (top bar over the workspace) */
 .ocr-suspects-panel {
   display: flex;
@@ -10198,18 +10424,19 @@ rect.ann-highlight.ann-preview {
  * and page move TOGETHER in every theme on the same 150ms ease-out. */
 
 /* DEF-187 — the window shell rounds at the WINDOW radius (--radius-
- * window, 20px — the top of the spec's 18-22px band) so the chrome
- * meets the desktop in the mock's rounded silhouette. The window is
- * transparent in the main process, so the corners composite the
- * wallpaper. `overflow: clip` clips the chrome (title bar band, the
- * full-width command bar, the ambient layer's 1.06 parallax scale) to
- * the rounded bounds — Phase 14.2: clip, not hidden, so the parallax
- * pad can never create a scrollable overflow area that focus-driven
- * scroll-into-view could shift the whole shell with. Maximized windows
- * keep square corners — a rounded shell pressed against the screen
- * edges would show wallpaper notches. */
+ * window) so the chrome meets the desktop in a rounded silhouette.
+ * Phase 35 — the window is opaque now and Windows rounds the corners
+ * itself (DWM, ~8px); the app radius matches it so the two clips
+ * coincide and no flat background band shows at the corners.
+ * `overflow: clip` clips the chrome (title bar band, the full-width
+ * command bar, the ambient layer's 1.06 parallax scale) to the rounded
+ * bounds — Phase 14.2: clip, not hidden, so the parallax pad can never
+ * create a scrollable overflow area that focus-driven scroll-into-view
+ * could shift the whole shell with. Maximized windows keep square
+ * corners — a rounded shell pressed against the screen edges would
+ * show notches. */
 :root[data-theme="frosted"] .app {
-  border-radius: var(--radius-window, 20px);
+  border-radius: var(--radius-window, 8px);
   overflow: clip;
 }
 
@@ -10608,17 +10835,16 @@ rect.ann-highlight.ann-preview {
   background: transparent;
 }
 
-/* The aurora — the frosted theme's tint over the REAL desktop
- * wallpaper. DEF-181: the old opaque var(--tf-bg) base covered the
- * whole window UNDER every glass sheet and defeated the main-process
- * transparency, so the glass diffused this in-app layer instead of the
- * wallpaper behind the window. The base is transparent now — html,
- * body and this layer all step aside — and the aurora survives as pure
- * low-alpha gradient hints tinting the wallpaper the glass reads
- * against. Phase 14.1 — the hints go NEUTRAL (zinc/slate/sky): the
- * glass must read neutral over every backdrop, so the in-app backdrop
- * tint may not push it blue/violet/pink. Every stop sits at or under
- * 0.10 alpha — a quiet tonal variation, never a theme of its own. */
+/* The aurora — the frosted theme's ambient tint. DEF-181 made it pure
+ * hints over the REAL desktop wallpaper through the transparent window;
+ * Phase 35 retires that: the window is opaque and the aurora tints the
+ * app's own opaque base (html/body above), which is what the chrome
+ * glass now diffuses. The base is transparent here so the aurora rides
+ * ON the html/body base rather than stacking a second opaque film.
+ * Phase 14.1 — the hints go NEUTRAL (zinc/slate/sky): the glass must
+ * read neutral over every backdrop, so the in-app backdrop tint may not
+ * push it blue/violet/pink. Every stop sits at or under 0.10 alpha — a
+ * quiet tonal variation, never a theme of its own. */
 :root[data-theme="frosted"] .tf-ambient {
   background-color: transparent;
   background-image:
@@ -10628,22 +10854,15 @@ rect.ann-highlight.ann-preview {
     radial-gradient(52% 48% at 24% 94%, rgba(125, 211, 252, 0.06), transparent 72%);
 }
 
-/* DEF-181 — html/body painted the opaque --bg-base across the whole
- * window UNDER every glass sheet, which is what actually defeated the
- * main-process transparency (`transparent: true` +
- * `backgroundMaterial: 'acrylic'`): the wallpaper never entered the
- * compositor, so the panels diffused the app's own base. In frosted
- * both step aside so the desktop shows through the title bar, the
- * side rail and the tools panel; light/dark keep the opaque base
- * (their unthemed-flash guard above) untouched. */
-:root[data-theme="frosted"] {
-  background: transparent;
-}
-
-:root[data-theme="frosted"] body {
-  background: transparent;
-}
-
+/* Phase 35 — the window is opaque now (no more `transparent: true`),
+ * so the frosted theme's html/body no longer step aside for the desktop
+ * wallpaper: the chrome glass diffuses the app's OWN ambient backdrop
+ * (`.tf-ambient` over this opaque base). They keep painting the themed
+ * --bg-base (the frosted mapping resolves to --tf-bg, #eef1f5 — the
+ * same neutral the window's native background uses), so the base is
+ * explicit and nothing depends on the main-process colour. The DEF-181
+ * "step aside for the wallpaper" overrides are retired by the Phase 35
+ * supersession. Light/dark are unchanged (their opaque base already). */
 /* DEF-181 — the welcome screen is the launch surface, and its solid
  * --bg-sunken / --bg-base sheets covered the whole window under the
  * frosted title bar (same defeat as the ambient base). In frosted both
@@ -11479,6 +11698,37 @@ rect.ann-highlight.ann-preview {
   background: var(--tf-canvas-opaque);
 }
 
+/* DEF-297 — REGRESSION GUARD for DEF-285. Painting the WHOLE single-mode
+   surface opaque also killed the frosted top command bar's glass: the
+   full-bleed `.document-scroller` behind the floating chrome rows became one
+   flat opaque sheet, so the bar's `backdrop-filter` had nothing left to
+   diffuse (the operator's "top bar transparency is no longer visible").
+
+   Frosted ONLY (light/dark keep the flat opaque chrome, DEF-285 untouched).
+   The workspace frame steps aside again (restoring DEF-181's ambient /
+   wallpaper read behind the bar and the chrome around it), and the scroller
+   confines its opaque canvas to the area BELOW the measured chrome band
+   (`--tf-chrome-y`, published on .workspace-main by DocumentView): the band
+   behind the toolbar is transparent, so the glass diffuses the window
+   wallpaper / the page scrolling under it exactly as before DEF-285, while
+   the surface the pages actually sit on stays opaque (`var(--tf-canvas-
+   opaque)` from the band's bottom edge down — DEF-285's requirement holds).
+   The DEF-285 rule above is deliberately NOT edited: this later, more
+   specific override confines where the opaque paint lands. */
+:root[data-theme="frosted"] .tab-stage[data-multi-mode="false"] .workspace-main {
+  background: transparent;
+}
+
+:root[data-theme="frosted"] .tab-stage[data-multi-mode="false"] .document-scroller {
+  background:
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent var(--tf-chrome-y, 92px),
+      var(--tf-canvas-opaque) var(--tf-chrome-y, 92px)
+    );
+}
+
 /* The focused pane's accent affordance: a full-perimeter hairline ring (never
    a one-sided accent border) that fades in on the shared fast motion token. */
 .tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {
@@ -11849,9 +12099,12 @@ rect.ann-highlight.ann-preview {
 .pane-thumb-strip {
   grid-column: 1;
   display: grid;
-  /* Header row + the rail body (the ThumbnailRail's own scroller), the
-     same two-row shape the single-mode rail uses. */
-  grid-template-rows: auto 1fr;
+  /* DEF-291 — HEADERLESS in Multi Mode: the pane header above the workspace
+     already carries the A/B badge and the document name, so the strip is a
+     single row. The body fills the whole strip and starts flush at the pane
+     header's bottom edge (the old `auto 1fr` header row was the 30px dead
+     band the operator flagged). */
+  grid-template-rows: 1fr;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -11861,7 +12114,10 @@ rect.ann-highlight.ann-preview {
      page on its right. Never a one-sided accent border — this is the
      panel's own docking hairline. */
   border-right: 1px solid var(--panel-border);
-  border-radius: 0 var(--panel-radius) var(--panel-radius) 0;
+  /* DEF-294 — the TOP corners are square: the strip now starts flush at the
+     pane header's bottom edge, so a rounded top corner would notch the
+     header/strip seam. Only the page-facing BOTTOM corner rounds. */
+  border-radius: 0 0 var(--panel-radius) 0;
 }
 
 /* Pane A's strip is mirrored: hairline and corners face left. */
@@ -11869,60 +12125,14 @@ rect.ann-highlight.ann-preview {
   grid-column: 2;
   border-right: 0;
   border-left: 1px solid var(--panel-border);
-  border-radius: var(--panel-radius) 0 0 var(--panel-radius);
+  border-radius: 0 0 0 var(--panel-radius);
 }
 
-/* The strip header identifies the pane it belongs to (the same A/B badge
-   material the pane headers use) and is the click target that focuses it. */
-.pane-thumb-strip-header {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 30px;
-  padding: 0 8px;
-  border: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font-size: 11px;
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
-}
-
-.pane-thumb-strip-header:hover {
-  background: var(--bg-hover);
-}
-
-.tab-pane[data-pane-focused="true"] .pane-thumb-strip-header {
-  background: var(--accent-selected);
-}
-
-.tab-pane[data-pane-focused="true"] .pane-thumb-strip-badge {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--fg-on-accent);
-}
-
-.pane-thumb-strip-title {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--fg-strong);
-  font-weight: 500;
-}
-
-.pane-thumb-strip-count {
-  flex: 0 0 auto;
-  font-variant-numeric: tabular-nums;
-}
-
-/* The strip body is the positioning context for its own ThumbnailRail
-   (whose `.thumb-scroller` is `position: absolute; inset: 0`), so each
-   strip keeps its own scroll state and its own visible+buffered window. */
+/* DEF-291 — the strip body is the strip's only row: it fills the column and
+   its top edge is flush with the pane header above (no header row, no dead
+   band). It is the positioning context for its own ThumbnailRail (whose
+   `.thumb-scroller` is `position: absolute; inset: 0`), so each strip keeps
+   its own scroll state and its own visible+buffered window. */
 .pane-thumb-strip-body {
   position: relative;
   min-height: 0;
@@ -11941,10 +12151,6 @@ rect.ann-highlight.ann-preview {
   background: var(--accent-selected);
   outline: 2px solid var(--accent);
   outline-offset: -2px;
-}
-
-.pane-thumb-strip[data-pane-strip-drop-target="true"] .pane-thumb-strip-header {
-  background: var(--accent-selected);
 }
 
 /* Ctrl / Alt makes the drop a copy: the landing slot reads as a copy. */
@@ -12055,7 +12261,6 @@ rect.ann-highlight.ann-preview {
   .multi-divider-grip,
   .multi-pane-pick,
   .multi-pane-open,
-  .pane-thumb-strip-header,
   .page-drag-handle,
   .tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {
     transition: none;

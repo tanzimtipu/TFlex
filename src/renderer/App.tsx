@@ -18,6 +18,7 @@ import type {
   PrintJobPayload,
   PrintJobResult,
   PrinterInfo,
+  PrintWindowContext,
   RecentFile,
   SampleDocument,
   SavedSignature,
@@ -33,6 +34,7 @@ import type { TFlexApi } from "../shared/ipc";
 import { Welcome } from "./components/Welcome";
 import { AppHeader } from "./components/AppHeader";
 import { Toasts, type Toast } from "./components/Toasts";
+import { printWindowOpenFailureMessage } from "./print-window/context";
 import { TitleBar, type MenuGroup } from "./components/TitleBar";
 import { ToolsPalette } from "./components/ToolsPalette";
 import { AboutDialog } from "./components/AboutDialog";
@@ -66,6 +68,7 @@ import {
   resolveTabStripActivation,
 } from "./state/multiModeRouting";
 import { collectModifiedTabIds, orderWindowCloseQueue } from "./state/closeGate";
+import { planJointPaneRefresh, type JointPaneRefresh } from "./state/jointUndo";
 import {
   COMPOSITE_TAB_ID,
   advanceCompositeQueue,
@@ -213,6 +216,8 @@ import {
   diagnosticsPublishAllowed,
   resolveEngineStateForDiagnostics,
 } from "./diagnostics/resolve";
+import { openRequestedPath } from "./openRequestedPath";
+import { useOsFileDrop, useOsOpenPathRequests } from "./hooks/useOsIntegration";
 
 /** Phase 7 — settings persist policy.
  *
@@ -1502,6 +1507,19 @@ export function App(): ReactElement {
     [openFromBytes, pushToast, settings, toastForPdfError, trackAndSave],
   );
 
+  /** Phase 35 — the ONE renderer open path shared by the Open dialog, the
+   *  OS-open listener and the OS file drop. It is exactly the dialog flow
+   *  (Phase 32/33 Multi Mode routing included: the new document is ASSIGNED
+   *  to the focused pane, a file that is already the other pane's document is
+   *  refused). Reads `routeOpenedTabRef.current` at call time so it always
+   *  sees the current focused pane. */
+  const openFromRequest = useCallback(
+    async (path: string): Promise<void> => {
+      await openRequestedPath(path, openPdfFromPath, routeOpenedTabRef.current);
+    },
+    [openPdfFromPath],
+  );
+
   const onOpenClick = useCallback(async (): Promise<void> => {
     const picked = await window.tflex.openFileDialog();
     if (picked === null) return;
@@ -1509,11 +1527,21 @@ export function App(): ReactElement {
     // the focused pane; a file that is already the OTHER pane's document is
     // refused up front so no tab is created for a document that would never
     // become visible. Single mode: the ref's methods are no-ops/false.
-    const routing = routeOpenedTabRef.current;
-    if (routing !== null && routing.refuseFocused(picked)) return;
-    const tabId = await openPdfFromPath(picked);
-    if (tabId !== null && routing !== null) routing.show(tabId);
-  }, [openPdfFromPath]);
+    await openFromRequest(picked);
+  }, [openFromRequest]);
+
+  // Phase 35 — Windows integration. A PDF dropped from Explorer opens the
+  // document through the SAME shared path as the dialog (DEF-295); main's
+  // launch-argv / second-instance path push routes through it too.
+  useOsFileDrop({
+    openPath: openFromRequest,
+    onError: (message): void => pushToast("error", message),
+    onNotice: (message): void => pushToast("info", message),
+  });
+  useOsOpenPathRequests({
+    openPath: openFromRequest,
+    onError: (message): void => pushToast("error", message),
+  });
 
   const onSampleClick = useCallback(
     async (sample: SampleDocument): Promise<void> => {
@@ -1556,13 +1584,11 @@ export function App(): ReactElement {
     async (entry: RecentFile): Promise<void> => {
       // Phase 32 (DEF-277/DEF-278) — a recent-file open is a generic open:
       // it lands in the focused pane, or is refused when it is already the
-      // other pane's document.
-      const routing = routeOpenedTabRef.current;
-      if (routing !== null && routing.refuseFocused(entry.path)) return;
-      const tabId = await openPdfFromPath(entry.path);
-      if (tabId !== null && routing !== null) routing.show(tabId);
+      // other pane's document. Phase 35 — the same shared open path the
+      // dialog, the OS-open listener and the OS file drop use.
+      await openFromRequest(entry.path);
     },
-    [openPdfFromPath],
+    [openFromRequest],
   );
 
   const onRemoveRecent = useCallback(
@@ -1664,6 +1690,12 @@ export function App(): ReactElement {
     const open = openTabsRef.current[id];
     if (open !== undefined) {
       stubRendererEngine.dispose(open.session.engineDocId);
+      // Phase 35 item 8 — if the standalone print window was opened for this
+      // tab's document, tell it the document is gone so it shows its gone
+      // state instead of stale pages (main forwards the event only when the
+      // docId matches the live print window, so a window opened for another
+      // document is untouched).
+      void window.tflex.printWindow?.notifyDocumentGone(open.session.engineDocId);
     }
     // DEF-166 — drop the tab's live-overlay annotation id set with it
     // so a freshly-opened tab never inherits stale live-text marks.
@@ -1967,6 +1999,43 @@ export function App(): ReactElement {
     [],
   );
 
+  /** DEF-292 — map an engine document id back to the live tab that holds
+   *  it. A joint cross-document undo/redo echoes the OTHER document's
+   *  state keyed by its engine doc id; the App needs that document's tab
+   *  id to mirror its `engineUi` and refresh its pdf.js proxy. Scans the
+   *  live tabs (not the pane slots) so it works whether the other pane is
+   *  focused, unfocused, or the document sits in a background tab. */
+  const tabIdForEngineDoc = useCallback((engineDocId: string): string | null => {
+    for (const [id, open] of Object.entries(openTabsRef.current)) {
+      if (open.session.engineDocId === engineDocId) return id;
+    }
+    return null;
+  }, []);
+
+  /** DEF-292 — apply the OTHER pane's post-joint-undo/redo refresh plan:
+   *  mirror its `engineUi` (state + counters + flags), drop its
+   *  renderer-only stamp mirror, and rebuild its pdf.js proxy through the
+   *  same refresh hook the active pane uses. A `null` plan (a plain
+   *  single-document undo/redo) is a clean no-op — the other pane is not
+   *  touched, so no unchanged document is re-serialized for nothing. */
+  const applyJointPaneRefresh = useCallback(
+    (plan: JointPaneRefresh | null): void => {
+      if (plan === null) return;
+      setEngineUiFor(plan.tabId, {
+        state: plan.state,
+        counters: plan.counters,
+        canUndo: plan.canUndo,
+        canRedo: plan.canRedo,
+      });
+      dropPlacedStamps(plan.tabId);
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(plan.tabId).catch(() => undefined);
+      }
+    },
+    [setEngineUiFor, dropPlacedStamps],
+  );
+
   const onUndo = useCallback(
     (tabId: string): void => {
       const open = openTabsRef.current[tabId];
@@ -2012,9 +2081,24 @@ export function App(): ReactElement {
         if (refreshFn !== null) {
           void refreshFn(tabId).catch(() => undefined);
         }
+        // DEF-292 — a joint cross-document move is recorded on BOTH
+        // documents, so this undo may ALSO have reverted the other pane's
+        // document. The engine echoes that document's post-undo state as
+        // `pairedState`; mirror it and refresh its proxy so both panes are
+        // correct from this one call. A plain single-document undo has no
+        // pairedState, so the plan is null and the other pane is untouched.
+        applyJointPaneRefresh(
+          planJointPaneRefresh(
+            "undo",
+            tabId,
+            result.value.pairedState,
+            tabIdForEngineDoc,
+            (id) => engineUiRef.current[id]?.counters,
+          ),
+        );
       });
     },
-    [pushToast, setEngineUiFor, dropPlacedStamps],
+    [pushToast, setEngineUiFor, dropPlacedStamps, applyJointPaneRefresh, tabIdForEngineDoc],
   );
 
   const onRedo = useCallback(
@@ -2051,9 +2135,21 @@ export function App(): ReactElement {
         if (refreshFn !== null) {
           void refreshFn(tabId).catch(() => undefined);
         }
+        // DEF-292 — symmetric to the undo branch: a joint cross-document
+        // move redo re-applies the move on BOTH documents, so the other
+        // pane's mirror and proxy must follow. See `onUndo`.
+        applyJointPaneRefresh(
+          planJointPaneRefresh(
+            "redo",
+            tabId,
+            result.value.pairedState,
+            tabIdForEngineDoc,
+            (id) => engineUiRef.current[id]?.counters,
+          ),
+        );
       });
     },
-    [pushToast, setEngineUiFor, dropPlacedStamps],
+    [pushToast, setEngineUiFor, dropPlacedStamps, applyJointPaneRefresh, tabIdForEngineDoc],
   );
 
   // ---- annotation ops (Phase 3) ----
@@ -5248,6 +5344,31 @@ pushToast(
     [],
   );
 
+  // Phase 35 item 8 — the detach control in the print dialog. App performs
+  // the open (the dialog only builds the context) so a refusal - main
+  // validates the context before creating anything - surfaces through the
+  // app's existing error toast instead of a silent no-op.
+  const onDetachPrint = useCallback(
+    (context: PrintWindowContext): void => {
+      const bridge = window.tflex.printWindow;
+      if (bridge === undefined) {
+        pushToast("error", "This build cannot open a separate print window.");
+        return;
+      }
+      void bridge.open(context).then((result) => {
+        const failure = printWindowOpenFailureMessage(result);
+        if (failure !== null) {
+          pushToast("error", failure);
+        }
+      });
+    },
+    [pushToast],
+  );
+
+  // Phase 35 item 8 — the print window is opened for the ACTIVE document, so
+  // the dialog is handed the active tab's engine doc id, name and page count.
+  // (Built at the PrintDialog render site, where `activeTab` is in scope.)
+
   // DEF-050 — per-tab search-index invalidator. DocumentView registers
   // a callback that clears its cached per-page `PageTextIndex` map and
   // bumps a state tick so the search effect re-runs even when `query`,
@@ -7810,7 +7931,7 @@ pushToast(
             document. The flag is also reset on new-tab / tab-
             switch / close (B10 / B14). */}
         <AnimatePresence mode="popLayout">
-        {ocrSuspectsOpen && activeTab !== null && (
+        {ocrSuspectsOpen && activeTab != null && (
           <OcrSuspectsPanel
             suspects={
               ocrSuspectsByTab[activeTabIdRefLocal.current ?? ""] ?? []
@@ -8028,6 +8149,22 @@ pushToast(
         listPrinters={printListPrinters}
         printJob={runPrintJob}
         onClose={onClosePrint}
+        // DEF-299 - an empty tab has an id but NO `openTabs[id]` entry, so
+        // `activeTab` is `undefined` (not `null`). The old `=== null` guard
+        // let that through and dereferenced `activeTab.session`, crashing the
+        // whole renderer. `== null` covers both, matching the optional
+        // chaining every other access on this path uses; a null/undefined
+        // detach hides the detach control in PrintDialog (no printable doc).
+        detach={
+          activeTab == null
+            ? null
+            : {
+                docId: activeTab.session.engineDocId,
+                documentName: activeTab.displayName,
+                pageCount: activeTab.session.doc.numPages,
+              }
+        }
+        onDetach={onDetachPrint}
       />
       <SaveAsDialog
         open={saveAsOpen}

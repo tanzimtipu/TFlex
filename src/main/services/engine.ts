@@ -117,6 +117,28 @@ interface Snapshot {
   /** Phase 28 — comment threads captured for undo of addComment /
    *  deleteAnnotation (which drops the deleted annotation's thread). */
   comments?: CommentThread[];
+  /** DEF-292 — set ONLY on the undo/redo entries a cross-document move
+   *  pushes. It pairs this snapshot with the other document's snapshot and
+   *  a shared `jointId`, so undoing/redoing from EITHER document reverts/
+   *  re-applies BOTH sides as one action. Present on both stack entries. */
+  joint?: JointSnapshotRef;
+}
+
+/** DEF-292 — the other half of a joint cross-document-move undo/redo entry.
+ *  `otherSnapshot` is always a PLAIN snapshot (its own `joint` is undefined),
+ *  so the two entries reference each other without nesting deeper. */
+interface JointSnapshotRef {
+  jointId: string;
+  otherDocId: string;
+  otherSnapshot: Snapshot;
+}
+
+/** DEF-292 — monotonic id shared by the two halves of one joint move. */
+let jointSeq = 0;
+
+function nextJointId(): string {
+  jointSeq += 1;
+  return `joint-${jointSeq}`;
 }
 
 interface EngineDoc {
@@ -404,7 +426,13 @@ export class EngineService {
     if (doc.undoStack.length === 0) {
       return err('nothing-to-undo', 'undo stack is empty');
     }
-    const prev = doc.undoStack.pop()!;
+    const prev = doc.undoStack[doc.undoStack.length - 1];
+    // DEF-292: a joint cross-document-move entry reverts BOTH documents in
+    // one action; handled separately so the two stacks stay in sync.
+    if (prev.joint) {
+      return this._undoJoint(docId, doc, prev);
+    }
+    doc.undoStack.pop();
     // Phase 10: if the snapshot we're restoring captured pdfDoc bytes,
     // the current (post-edit) state also needs a pdf snapshot so a
     // subsequent redo can restore the edited content.
@@ -417,6 +445,58 @@ export class EngineService {
       ? true
       : false;
     return ok(buildState(doc));
+  }
+
+  /**
+   * DEF-292 — undo one joint cross-document-move entry. Reverts BOTH
+   * documents (the moved pages return to their source at their original
+   * index and leave the target) and pushes a matching joint entry onto
+   * EACH document's redo stack, so redo from either side re-applies both.
+   *
+   * Divergence rule: the other document must still be open AND its undo
+   * stack top must be this entry's counterpart (same `jointId`). Otherwise
+   * NOTHING is mutated and a typed `engine-error` is returned — never a
+   * one-sided restore, so a page can never be lost.
+   */
+  private async _undoJoint(
+    docId: string,
+    doc: EngineDoc,
+    prev: Snapshot,
+  ): Promise<Result<EngineState, EngineError>> {
+    const joint = prev.joint!;
+    const other = this.docs.get(joint.otherDocId);
+    if (other === undefined) {
+      return err(
+        'engine-error',
+        `cannot undo cross-document move: document ${joint.otherDocId} is no longer open`,
+      );
+    }
+    const otherTop = other.undoStack[other.undoStack.length - 1];
+    if (otherTop === undefined || otherTop.joint?.jointId !== joint.jointId) {
+      return err(
+        'engine-error',
+        'cannot undo cross-document move: the other document has diverged',
+      );
+    }
+    // Capture both current (post-move) states so a redo from either side can
+    // re-apply the move.
+    const current = await snapshotDocWithPdf(doc);
+    const otherCurrent = await snapshotDocWithPdf(other);
+    doc.redoStack.push({
+      ...current,
+      joint: { jointId: joint.jointId, otherDocId: joint.otherDocId, otherSnapshot: otherCurrent },
+    });
+    other.redoStack.push({
+      ...otherCurrent,
+      joint: { jointId: joint.jointId, otherDocId: docId, otherSnapshot: current },
+    });
+    doc.undoStack.pop();
+    other.undoStack.pop();
+    await restoreSnapshot(doc, prev);
+    await restoreSnapshot(other, joint.otherSnapshot);
+    doc.modified = doc.undoStack.length > 0;
+    other.modified = other.undoStack.length > 0;
+    return ok(pairedState(joint.otherDocId, doc, other));
   }
 
   // -----------------------------------------------------------------------
@@ -434,7 +514,12 @@ export class EngineService {
     if (doc.redoStack.length === 0) {
       return err('nothing-to-redo', 'redo stack is empty');
     }
-    const next = doc.redoStack.pop()!;
+    const next = doc.redoStack[doc.redoStack.length - 1];
+    // DEF-292: a joint cross-document-move redo re-applies BOTH documents.
+    if (next.joint) {
+      return this._redoJoint(docId, doc, next);
+    }
+    doc.redoStack.pop();
     // Phase 10: mirror undo — capture pdfBytes for current if the redo
     // target has them.
     const current = next.pdfBytes
@@ -444,6 +529,54 @@ export class EngineService {
     await restoreSnapshot(doc, next);
     doc.modified = true;
     return ok(buildState(doc));
+  }
+
+  /**
+   * DEF-292 — redo one joint cross-document-move entry. Symmetric to
+   * `_undoJoint`: re-applies the move on BOTH documents and pushes a
+   * matching joint entry back onto EACH undo stack. Same divergence rule —
+   * if the other document is gone or its redo stack top is not this
+   * entry's counterpart, nothing is mutated and a typed error is returned.
+   */
+  private async _redoJoint(
+    docId: string,
+    doc: EngineDoc,
+    next: Snapshot,
+  ): Promise<Result<EngineState, EngineError>> {
+    const joint = next.joint!;
+    const other = this.docs.get(joint.otherDocId);
+    if (other === undefined) {
+      return err(
+        'engine-error',
+        `cannot redo cross-document move: document ${joint.otherDocId} is no longer open`,
+      );
+    }
+    const otherTop = other.redoStack[other.redoStack.length - 1];
+    if (otherTop === undefined || otherTop.joint?.jointId !== joint.jointId) {
+      return err(
+        'engine-error',
+        'cannot redo cross-document move: the other document has diverged',
+      );
+    }
+    // Capture both current (pre-move) states so a subsequent undo from
+    // either side can revert the move.
+    const current = await snapshotDocWithPdf(doc);
+    const otherCurrent = await snapshotDocWithPdf(other);
+    doc.undoStack.push({
+      ...current,
+      joint: { jointId: joint.jointId, otherDocId: joint.otherDocId, otherSnapshot: otherCurrent },
+    });
+    other.undoStack.push({
+      ...otherCurrent,
+      joint: { jointId: joint.jointId, otherDocId: docId, otherSnapshot: current },
+    });
+    doc.redoStack.pop();
+    other.redoStack.pop();
+    await restoreSnapshot(doc, next);
+    await restoreSnapshot(other, joint.otherSnapshot);
+    doc.modified = true;
+    other.modified = true;
+    return ok(pairedState(joint.otherDocId, doc, other));
   }
 
   // -----------------------------------------------------------------------
@@ -1715,18 +1848,31 @@ export class EngineService {
         }
       }
 
-      // Success: record a per-doc undo snapshot (each doc's undo reverts its
-      // own side) and mark each modified. A COPY leaves the source untouched,
-      // so it gets no snapshot and stays unmodified (no spurious unsaved
-      // prompt on a document whose content did not change).
+      // Success: record ONE joint undo action. A MOVE pushes a paired entry
+      // onto EACH document's undo stack (same jointId, each referencing the
+      // other's pre-move snapshot) so undoing from either side reverts both.
+      // A COPY leaves the source untouched, so it gets no snapshot and stays
+      // unmodified (no spurious unsaved prompt on a document whose content
+      // did not change).
       if (mode === 'move') {
-        fromDoc.undoStack.push(fromSnap);
+        const jointId = nextJointId();
+        fromDoc.undoStack.push({
+          ...fromSnap,
+          joint: { jointId, otherDocId: toDocId, otherSnapshot: toSnap },
+        });
         fromDoc.redoStack = [];
         fromDoc.modified = true;
+        toDoc.undoStack.push({
+          ...toSnap,
+          joint: { jointId, otherDocId: fromDocId, otherSnapshot: fromSnap },
+        });
+        toDoc.redoStack = [];
+        toDoc.modified = true;
+      } else {
+        toDoc.undoStack.push(toSnap);
+        toDoc.redoStack = [];
+        toDoc.modified = true;
       }
-      toDoc.undoStack.push(toSnap);
-      toDoc.redoStack = [];
-      toDoc.modified = true;
       return ok({ from: buildState(fromDoc), to: buildState(toDoc) });
     } catch (e) {
       // Atomic rollback: restore BOTH docs (arrays + pdfDoc bytes) and their
@@ -3987,6 +4133,21 @@ function buildState(doc: EngineDoc): EngineState {
   if (doc.pageLabels && doc.pageLabels.length > 0) {
     state.pageLabels = doc.pageLabels.map((l) => ({ ...l }));
   }
+  return state;
+}
+
+/**
+ * DEF-292 — build `doc`'s state and attach the other document's state as
+ * `pairedState`, so a joint cross-document undo/redo refreshes BOTH panes
+ * from one round-trip. The paired state carries no `pairedState` of its own.
+ */
+function pairedState(
+  otherDocId: string,
+  doc: EngineDoc,
+  other: EngineDoc,
+): EngineState {
+  const state = buildState(doc);
+  state.pairedState = { docId: otherDocId, state: buildState(other) };
   return state;
 }
 

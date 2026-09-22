@@ -195,7 +195,10 @@ describe("DocumentView — the rail side (Phase 33)", () => {
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(rail?.getAttribute("data-pane-strip-doc")).toBe("doc-b");
-    expect(rail?.querySelector("[data-pane-strip-header]")?.textContent).toContain("Beta.pdf");
+    // DEF-291 — the strip is headerless; the name rides the strip's
+    // aria-label and the pane header above, not a second visible row.
+    expect(rail?.querySelector("[data-pane-strip-header]")).toBeNull();
+    expect(rail?.getAttribute("aria-label")).toContain("Beta.pdf");
     // A click on this strip's page-2 thumb navigates THIS view: its own
     // current-page highlight moves (the pane keeps its own scroll state).
     act((): void => {

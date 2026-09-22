@@ -5,10 +5,12 @@
 // In Multi Mode each pane owns its OWN strip at its inner edge. The strip
 // must keep the shared rail's guarantees while becoming a full rail:
 //
-//   - it names its document (pane badge + title + page count) and that
-//     header focuses its own pane;
+//   - DEF-291: it is HEADERLESS — the pane header above already names the
+//     document, so a second name row here duplicated it and pushed the
+//     thumbnails down. The strip carries its identity on its own
+//     attributes / aria-label instead;
 //   - its thumbnails come from its own document and a click navigates its
-//     own pane (onJump);
+//     own pane (onJump) AND focuses that pane (onFocusPane);
 //   - its thumb width is the dynamically computed `computeThumbWidth` for
 //     the loaded-document count, and never drops below the minimum hit
 //     target on a narrow strip;
@@ -126,15 +128,21 @@ const thumbWidths = (host: HTMLElement): string[] =>
   [...host.querySelectorAll<HTMLElement>(".thumb-canvas-wrap")].map((el) => el.style.width);
 
 describe("PaneThumbStrip — identity and navigation", () => {
-  it("names its own document with the pane badge and page count", () => {
+  it("DEF-291: renders NO strip header; identity rides the strip itself", () => {
     const host = renderStrip({ title: "Alpha.pdf", pageCount: 5, pane: "A" });
     const strip = host.querySelector("[data-pane-strip]");
     expect(strip?.getAttribute("data-pane-strip-pane")).toBe("A");
     expect(strip?.getAttribute("data-pane-strip-doc")).toBe("doc-a");
-    const header = host.querySelector("[data-pane-strip-header]");
-    expect(header?.textContent).toContain("Alpha.pdf");
-    expect(header?.textContent).toContain("5 pages");
-    expect(header?.textContent).toContain("A");
+    // The duplicate header row is gone.
+    expect(host.querySelector("[data-pane-strip-header]")).toBeNull();
+    // The strip still knows which pane/document it belongs to.
+    expect(strip?.getAttribute("aria-label")).toContain("Alpha.pdf");
+    expect(strip?.getAttribute("aria-label")).toContain("A");
+    // The body is the strip's FIRST (and only) child — no header row above
+    // it, so its top edge is flush with the strip (and the pane header).
+    const body = host.querySelector("[data-pane-strip-body]");
+    expect(body).not.toBeNull();
+    expect(strip?.firstElementChild).toBe(body);
   });
 
   it("renders its own document's thumbnails and jumps its own pane on a click", () => {
@@ -157,11 +165,11 @@ describe("PaneThumbStrip — identity and navigation", () => {
     expect(onJump).toHaveBeenCalledWith(3);
   });
 
-  it("focuses its own pane from the strip header", () => {
+  it("focuses its own pane on a thumb click (the header click target is gone)", () => {
     const onFocusPane = vi.fn();
     const host = renderStrip({ onFocusPane });
     act((): void => {
-      host.querySelector<HTMLButtonElement>("[data-pane-strip-header]")?.click();
+      host.querySelector<HTMLButtonElement>('.thumb-item[data-page="2"]')?.click();
     });
     expect(onFocusPane).toHaveBeenCalledTimes(1);
   });

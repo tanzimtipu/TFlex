@@ -98,6 +98,53 @@ export const ORIENTATION_LABELS: Record<PrintOrientation, string> = {
   landscape: 'Landscape',
 };
 
+/**
+ * Phase 35 - the control values a print surface seeds from a `PrintSettings`
+ * payload (the standalone print window receives one through its
+ * `PrintWindowContext`). Pure so the mapping is unit-tested without a render.
+ *
+ * `scope` / `customInput` are NOT recoverable: the in-app dialog resolves the
+ * page choice to an ordered image list before it builds settings and
+ * deliberately leaves `pageRanges` unset (see the module header), so the
+ * seeded surface starts at "All pages". Orientation is likewise lossy:
+ * `landscape` travels as a concrete boolean, so a `false` seeds 'auto' (which
+ * reproduces the same concrete landscape for the same document) rather than
+ * guessing 'portrait'.
+ */
+export interface PrintSeedState {
+  deviceName: string | null;
+  copies: number;
+  collate: boolean;
+  scaling: PrintScaling;
+  scalePercent: number;
+  orientation: PrintOrientation;
+  duplex: PrintDuplex;
+  color: boolean;
+  pagesPerSheet: number;
+  pageOrder: PrintPageOrder;
+  oddEven: PrintOddEven;
+  reverse: boolean;
+  printAnnotations: boolean;
+}
+
+export function seedPrintDialogState(settings: PrintSettings): PrintSeedState {
+  return {
+    deviceName: typeof settings.deviceName === 'string' ? settings.deviceName : null,
+    copies: clampCopies(settings.copies ?? PRINT_MIN_COPIES),
+    collate: settings.collate ?? false,
+    scaling: settings.scaling ?? 'fit',
+    scalePercent: clampScalePercent(settings.scalePercent ?? 100),
+    orientation: settings.landscape === true ? 'landscape' : 'auto',
+    duplex: settings.duplex ?? 'simplex',
+    color: settings.color ?? true,
+    pagesPerSheet: settings.pagesPerSheet ?? 1,
+    pageOrder: settings.pageOrder ?? 'horizontal',
+    oddEven: settings.oddEven ?? 'all',
+    reverse: settings.reverse ?? false,
+    printAnnotations: settings.printAnnotations ?? true,
+  };
+}
+
 /** True when a `{ok:false}` reason denotes a user cancellation rather than
  *  a real failure, so the dialog stays quiet instead of showing an error
  *  banner (the virtual-PDF path opens the OS dialog, whose Cancel returns

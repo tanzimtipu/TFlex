@@ -3070,3 +3070,76 @@ cleans `dist/`+`release/win-unpacked/`, runs `npm run build` then plain `npm run
 INSTALLED build -> git-agent commits any evidence specs, tags, pushes branch+tag, and creates the GitHub
 Release in `tanzimtipu/tflex-releases` with the four assets and a body generated from the highlights -> the
 orchestrator verifies the public feed with `webfetch`.
+
+## 2026-09-22: Phase 35 (Windows integration, printing, window behaviour) - eleven defects, one supersession
+
+Phase 35 answered the operator's non-Multi-View batch: standard Windows window behaviour, TFlex as a PDF
+handler, PDF output produced inside the app, and the print UI as its own movable window. The phase's own
+gate and the adversary found ELEVEN defects across the batch (DEF-291..301), all reproduced, fixed and
+closed. Final: 347 unit tests in the affected files and 79 e2e tests green.
+
+**Supersession - the wallpaper show-through is retired.** `transparent: true` makes a Windows window a
+LAYERED window: Aero Snap, double-click-maximise and the auto-hide taskbar hover all stop working (and
+Electron documents that a transparent window is not really resizable). The operator requires the standard
+behaviours, so the window is now opaque (`backgroundColor #eef1f5`) and the frosted chrome diffuses the
+app's OWN ambient background. The frosted look and its motion rules stay; only the source of the
+translucency changed. Recorded in REQUIREMENTS.md's Current-scope supersession. Rule: when a visual
+nicety and a platform behaviour conflict, ask the operator which wins - do not silently trade one for the
+other.
+
+**Rule 1 - a new prop/affordance on a render path must guard `undefined` as well as `null`.** DEF-299
+(HIGH): clicking the caption "+" crashed the renderer to a blank, unrecoverable window
+(`Cannot read properties of undefined (reading 'session')`). An empty tab HAS an id but no `openTabs`
+entry, so the derived active tab is `undefined`; the new Phase 35 detach prop tested `activeTab === null`
+and then dereferenced `activeTab.session` - while every other access on that path used `activeTab?.`.
+Two lessons: (a) use `x == null` for a derived value that can be `undefined` OR `null`, and match the
+optional chaining used elsewhere in the same file; (b) when adding an affordance, sweep the file for the
+same class - the sweep here found a second latent one (the OCR-suspects guard, where `undefined !== null`
+is true, so the panel could mount with no document).
+
+**Rule 2 - an async resolution must never clobber a user selection.** DEF-301 (MEDIUM): on reopening the
+print dialog the stale printer list rendered options immediately, then the fresh `getPrintersAsync`
+resolution overwrote the user's pick with the system default - measured: "Microsoft Print to PDF" selected
+at t=9ms, reverted to the physical Canon at t=86ms, and the job then routed to the PHYSICAL printer. Fix:
+read the current selection through a synchronous ref and apply a device ONLY when nothing is selected yet
+or the previously selected one has disappeared from the fresh list; a fallback must be OBSERVABLE (a
+notice), never silent. This is the general pattern for any list that resolves asynchronously while the
+user is already interacting with it.
+
+**Rule 3 - route OS events to the intended window EXPLICITLY, never by index.** DEF-300 (HIGH): the OS
+file-open (second launch / "Open with" / an Explorer double-click) pushed to
+`BrowserWindow.getAllWindows()[0]`. With the standalone print window open and focused that is the PRINT
+window, which never subscribed - so the open was silently dropped. Fix: hold the main window by reference
+(set from the existing `createWindow` closure), queue until it is loaded, deliver to it even when another
+window is focused, and if it is GONE recreate it for the document rather than dropping the request. The
+`second-instance` focus/restore had the same index-based bug. Any "the app window" in main-process code
+must be a reference, not a list position.
+
+**Rule 4 - printing to a PDF destination happens INSIDE the app.** For a virtual PDF destination the app
+now asks for a path through its OWN save flow FIRST, composes the same sheet document, converts it with
+`printToPDF` and writes the bytes - no Windows/Chromium print window (previously `silent: false` opened a
+window titled "Electron - Print"). A real printer keeps the existing silent path. The produced file reuses
+the SAME shared `printSheetLayout` and composition, so preview/print parity holds by construction.
+
+**Rule 5 - the standalone print window is a real window with a validated context.** `print-window.ts`
+creates a top-level (non-child) framed window titled `Print - TFlex` loading the renderer with
+`?tfWindow=print&context=<JSON>`; the renderer branches its entry and renders ONLY the print UI. A
+malformed context is rejected with no window created; repeat opens focus the existing window (reloading
+only when the docId changed); closing it leaves the app usable and the app quitting closes it; a document
+that closes is announced (`print:documentGone`) so the window never shows stale data. NOTE: the OS title
+comes from the loaded document's `<title>`, not the BrowserWindow `title` option - the renderer must set
+`document.title` (DEF-298).
+
+**Rule 6 - one shared renderer open path.** A dropped file, an OS-open push and the toolbar Open all go
+through ONE `openRequestedPath` so they inherit the Multi Mode semantics (single mode = a tab, Multi Mode
+= assigned to the focused pane). Any new way of opening a document must join that path, not fork it.
+
+**Automation limits worth stating to the operator every time:** CDP-injected mouse input cannot drive OS
+non-client gestures (double-click maximise, Aero Snap to the top/left/right edges) and a real Explorer
+drag-drop cannot be synthesised (a synthetic `File` has no path). The automatable evidence is the caption
+drag-region hit-test (0 dead non-control points) and an `app:openPathRequest` push; the gestures and the
+real drop need the operator's hands.
+
+**Orchestrator note (ledger editing):** twice this session a ledger edit whose `oldString` ended at the
+next entry's `## DEF-...`/`## ADV-...` heading deleted that heading. When appending a History/Disposition
+line, anchor on the LAST line of the entry alone - never include the following heading in the match.

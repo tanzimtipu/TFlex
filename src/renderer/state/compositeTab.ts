@@ -48,7 +48,7 @@ export function compositeDocRefs(
   return out;
 }
 
-/** The single header entry: both names joined with " + " (the tab title's
+/** The single header entry: both names joined with " | " (the tab title's
  *  own ellipsis + tooltip handle the truncation), modified when EITHER
  *  document is modified. Never null — an empty workspace is still one tab. */
 export function compositeHeaderTab(docs: readonly CompositeDocRef[]): CompositeHeaderTab {
@@ -57,7 +57,7 @@ export function compositeHeaderTab(docs: readonly CompositeDocRef[]): CompositeH
   }
   return {
     id: COMPOSITE_TAB_ID,
-    title: docs.map((doc) => doc.title).join(" + "),
+    title: docs.map((doc) => doc.title).join(" | "),
     modified: docs.some((doc) => doc.modified),
   };
 }

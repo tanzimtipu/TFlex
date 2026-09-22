@@ -72,19 +72,25 @@ async function state() {
       headers: document.querySelectorAll('[data-pane-header]').length,
       divider: !!document.querySelector('[data-multi-divider]'),
       // Phase 33 — the shared rail is retired: each pane now renders its own
-      // thumbnail strip ([data-pane-strip]). The focused pane's strip header
-      // carries the accent tint, so "active" is read from the computed
-      // background (the retired [data-rail-section-active] attribute is gone).
+      // thumbnail strip ([data-pane-strip]). DEF-291 — the Multi Mode strip is
+      // HEADERLESS, so the focused pane's accent tint now rides its own
+      // [data-pane-header] row above the workspace. Resolve the
+      // --accent-selected token and read that row's COMPUTED background, so
+      // "active" stays a visual assertion (the retired
+      // [data-rail-section-active] / [data-pane-strip-header] are gone).
       paneStrips: document.querySelectorAll('[data-pane-strip]').length,
-      railActivePane: (() => {
-        const strips = Array.from(document.querySelectorAll('[data-pane-strip-pane]'));
-        const active = strips.find((s) => {
-          const h = s.querySelector('[data-pane-strip-header]');
-          if (h === null) return false;
-          const bg = getComputedStyle(h).backgroundColor;
-          return bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+      activePane: (() => {
+        const probe = document.createElement('div');
+        probe.style.backgroundColor = 'var(--accent-selected)';
+        document.body.appendChild(probe);
+        const accent = getComputedStyle(probe).backgroundColor;
+        probe.remove();
+        const panes = Array.from(document.querySelectorAll('.tab-pane[data-pane]'));
+        const active = panes.find((p) => {
+          const h = p.querySelector('[data-pane-header]');
+          return h !== null && getComputedStyle(h).backgroundColor === accent;
         });
-        return active ? active.getAttribute('data-pane-strip-pane') : null;
+        return active ? active.getAttribute('data-pane') : null;
       })(),
       paneAWidth: widthOf('.tab-pane[data-pane="A"]'),
       paneBWidth: widthOf('.tab-pane[data-pane="B"]'),
@@ -152,7 +158,7 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s1.paneStrips).toBe(1);
   expect(s1.multiThumbA).toBe(126); // one document in Multi Mode -> 126
   expect(s1.focused).toBe('A');
-  expect(s1.railActivePane).toBe('A');
+  expect(s1.activePane).toBe('A');
   expect(s1.cmdPressed).toBe('true');
   expect(s1.dragHandles).toBeGreaterThan(0); // canvas grip exists in Multi Mode
   // All tools entry agrees.
@@ -174,16 +180,23 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s2.paneStrips).toBe(2);
   expect(s2.multiThumbA).toBe(89); // two documents -> 89 (dynamic width)
 
-  // --- [data-pane-strip-header] focuses its pane ---
-  await win.locator('.multi-pane-header[data-pane="A"]').click();
+  // --- DEF-291: the headerless strip still focuses its pane. A thumbnail
+  //     click calls jumpAndFocus (and the pane's pointerdown capture covers
+  //     the rest of the strip), so clicking pane B's thumb must focus pane B;
+  //     the clicked strip must identify as pane B's and name its document. ---
+  await win.locator('.multi-pane-header[data-pane="A"] .multi-pane-title').click();
   await win.waitForTimeout(350);
   expect((await state()).focused).toBe('A');
-  await win.locator('[data-pane-strip-pane="B"] [data-pane-strip-header]').click();
-  await win.waitForTimeout(350);
+  const thumbB = win.locator('[data-pane-strip-pane="B"] .thumb-item').first();
+  await thumbB.scrollIntoViewIfNeeded();
+  await thumbB.click();
+  await win.waitForTimeout(500);
   const s3 = await state();
-  console.log(`[P32-ci] after rail-section-B header click: focused=${s3.focused} railActive=${s3.railActivePane}`);
+  console.log(`[P32-ci] after strip-B thumb click: focused=${s3.focused} active=${s3.activePane}`);
   expect(s3.focused).toBe('B');
-  expect(s3.railActivePane).toBe('B');
+  expect(s3.activePane).toBe('B');
+  expect(await win.locator('.tab-pane[data-pane="B"] [data-pane-strip]').count()).toBe(1);
+  expect(await win.locator('[data-pane-strip-pane="B"]').getAttribute('aria-label')).toContain('Pane B');
 
   // --- [data-multi-divider] resizes the panes ---
   const before = await state();

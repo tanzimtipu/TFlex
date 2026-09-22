@@ -3,17 +3,19 @@ import { vi, describe, it, expect, beforeEach } from 'vitest';
 // vi.mock factories are hoisted — use vi.hoisted() so the mock references
 // are available before the hoisted factory runs.
 
-const { mockShowOpenDialog } = vi.hoisted(() => ({
+const { mockShowOpenDialog, mockShowSaveDialog } = vi.hoisted(() => ({
   mockShowOpenDialog: vi.fn(),
+  mockShowSaveDialog: vi.fn(),
 }));
 
 vi.mock('electron', () => ({
   dialog: {
     showOpenDialog: mockShowOpenDialog,
+    showSaveDialog: mockShowSaveDialog,
   },
 }));
 
-import { openPdfDialog } from '../../../src/main/services/dialog';
+import { openPdfDialog, savePdfDialog } from '../../../src/main/services/dialog';
 
 describe('openPdfDialog', () => {
   beforeEach(() => {
@@ -110,5 +112,34 @@ describe('openPdfDialog', () => {
       properties: ['openFile'],
       filters: [{ name: 'FDF', extensions: ['fdf'] }],
     });
+  });
+});
+
+describe('savePdfDialog', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns the chosen path when a destination is picked', async () => {
+    mockShowSaveDialog.mockResolvedValue({
+      canceled: false,
+      filePath: 'C:\\Users\\test\\Documents\\out.pdf',
+    });
+    const result = await savePdfDialog();
+    expect(result).toBe('C:\\Users\\test\\Documents\\out.pdf');
+    expect(mockShowSaveDialog).toHaveBeenCalledWith({
+      title: 'Save PDF As',
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+  });
+
+  it('returns null when the save dialog is cancelled', async () => {
+    mockShowSaveDialog.mockResolvedValue({ canceled: true });
+    expect(await savePdfDialog()).toBeNull();
+  });
+
+  it('returns null when filePath is undefined even if not cancelled', async () => {
+    mockShowSaveDialog.mockResolvedValue({ canceled: false, filePath: undefined });
+    expect(await savePdfDialog()).toBeNull();
   });
 });

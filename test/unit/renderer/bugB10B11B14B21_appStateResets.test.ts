@@ -80,13 +80,18 @@ describe("B11 — palette Delete opens the DeletePageDialog", () => {
 });
 
 describe("B14 — OCR suspects panel placement and empty-tab guard", () => {
-  it("the panel render guard requires a real active document (activeTab !== null)", async () => {
+  it("the panel render guard requires a real active document (activeTab != null)", async () => {
     const text = await readFile(APP_PATH, "utf8");
     // The previous guard checked activeTabIdRefLocal.current !==
     // null, which is true on empty tabs too (they have an id but
     // no openTabs entry). The guard must now key off the resolved
     // active tab object.
-    expect(text).toMatch(/ocrSuspectsOpen\s*&&\s*activeTab\s*!==\s*null/);
+    //
+    // DEF-299 - `openTabs[activeId]` is `undefined` (not `null`) on an empty
+    // tab, so the old `activeTab !== null` form let the panel through. The
+    // undefined-safe `!= null` covers both and is the form pinned here.
+    expect(text).toMatch(/ocrSuspectsOpen\s*&&\s*activeTab\s*!=\s*null/);
+    expect(text).not.toMatch(/ocrSuspectsOpen\s*&&\s*activeTab\s*!==\s*null/);
   });
 
   it("the .ocr-suspects-panel CSS is a FLOW TOP BAR that reserves its own space (DEF-126)", async () => {

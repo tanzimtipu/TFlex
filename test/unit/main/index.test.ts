@@ -174,6 +174,9 @@ vi.mock('../../../src/main/menu', () => ({
 
 vi.mock('../../../src/main/services/dialog', () => ({
   openPdfDialog: vi.fn().mockResolvedValue('/mock/selected.pdf'),
+  // Phase 35 — the Save-As picker is shared with the virtual-PDF print path;
+  // print.ts reads it at module scope, so the mock must export it.
+  savePdfDialog: vi.fn().mockResolvedValue('/mock/saved.pdf'),
 }));
 
 // ---------------------------------------------------------------------------
@@ -182,6 +185,7 @@ vi.mock('../../../src/main/services/dialog', () => ({
 
 import { start } from '../../../src/main/index';
 import { IPC } from '../../../src/shared/ipc';
+import { savePdfDialog } from '../../../src/main/services/dialog';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -250,6 +254,15 @@ describe('main/index - start()', () => {
 
   it('registers settings:addRecent handler', () => {
     expect(getRegisteredChannels()).toContain(IPC.settingsAddRecent);
+  });
+
+  // Phase 35 - the standalone print window channels.
+  it('registers print:openWindow handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.printOpenWindow);
+  });
+
+  it('registers print:notifyDocumentGone handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.printNotifyDocumentGone);
   });
 
   it('registers engine:loadDocument handler', () => {
@@ -386,7 +399,7 @@ describe('main/index - engineSaveAs handler', () => {
   });
 
   it('returns cancelled error when dialog is canceled', async () => {
-    _showSaveDialog.mockResolvedValue({ canceled: true, filePath: undefined });
+    (savePdfDialog as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
 
     const saveAsCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.engineSaveAs)!;
     const handler = saveAsCall[1] as (...args: unknown[]) => unknown;
@@ -399,14 +412,15 @@ describe('main/index - engineSaveAs handler', () => {
   });
 
   it('calls engine.saveAs on success', async () => {
+    (savePdfDialog as ReturnType<typeof vi.fn>).mockResolvedValueOnce('/mock/save-as.pdf');
+
     const saveAsCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.engineSaveAs)!;
     const handler = saveAsCall[1] as (...args: unknown[]) => unknown;
     await handler({}, 'doc-1');
 
-    expect(_showSaveDialog).toHaveBeenCalledWith({
-      title: 'Save PDF As',
-      filters: [{ name: 'PDF', extensions: ['pdf'] }],
-    });
+    // Phase 35 — Save As and the virtual-PDF print path share ONE picker
+    // (savePdfDialog), so the handler no longer calls the electron dialog
+    // directly.
     expect(_engineInstance.saveAs).toHaveBeenCalledWith('doc-1', '/mock/save-as.pdf');
   });
 

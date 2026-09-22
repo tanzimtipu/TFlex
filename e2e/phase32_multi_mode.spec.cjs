@@ -59,15 +59,20 @@ function headerLoc(pane) {
 }
 
 // Phase 33 — the shared rail is retired in favour of one strip per pane.
-// The retired [data-rail-section-active] attribute is gone; the focused
-// pane's strip header carries the accent tint, so read the COMPUTED
-// background to keep asserting the visual active affordance.
-async function stripActive(pane) {
+// DEF-291 — the Multi Mode strip is HEADERLESS, so the focused pane's accent
+// tint now rides its own [data-pane-header] row above the workspace. Resolve
+// the --accent-selected token and read the pane header's COMPUTED background,
+// keeping the visual active-affordance assertion that follows focus.
+async function paneActive(pane) {
   return win.evaluate((p) => {
-    const el = document.querySelector(`[data-pane-strip-pane="${p}"] [data-pane-strip-header]`);
-    if (!el) return null;
-    const bg = getComputedStyle(el).backgroundColor;
-    return bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent';
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = 'var(--accent-selected)';
+    document.body.appendChild(probe);
+    const accent = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    const h = document.querySelector(`.tab-pane[data-pane="${p}"] [data-pane-header]`);
+    if (!h) return null;
+    return getComputedStyle(h).backgroundColor === accent;
   }, pane);
 }
 
@@ -200,20 +205,25 @@ test('C2 two-pane layout with two different documents, headers, rail sections', 
   // its own pane's document.
   const strips = win.locator('[data-pane-strip]');
   expect(await strips.count()).toBe(2);
-  const titles = [];
+  const labels = [];
   const counts = [];
   const stripDocs = [];
   for (const pane of ['A', 'B']) {
     const strip = win.locator(`[data-pane-strip-pane="${pane}"]`);
-    titles.push((await strip.locator('[data-pane-strip-header]').innerText()).replace(/\s+/g, ' ').trim());
+    // DEF-291 — the strip is headerless; its aria-label names its pane and
+    // document ("Pane A thumbnails: <title>"), which is the strip's identity.
+    labels.push(((await strip.getAttribute('aria-label')) || '').replace(/\s+/g, ' ').trim());
     counts.push(await strip.locator('.thumb-item').count());
     stripDocs.push(await strip.getAttribute('data-pane-strip-doc'));
   }
-  console.log(`[P32] pane strips: A="${titles[0]}" B="${titles[1]}" thumbItems(A,B)=${counts[0]},${counts[1]} docs=${JSON.stringify(stripDocs)}`);
-  expect(titles[0]).toContain('p32-alpha');
-  expect(titles[0]).toContain('34');
-  expect(titles[1]).toContain('p32-beta');
-  expect(titles[1]).toContain('520');
+  console.log(`[P32] pane strips: A="${labels[0]}" B="${labels[1]}" thumbItems(A,B)=${counts[0]},${counts[1]} docs=${JSON.stringify(stripDocs)}`);
+  expect(labels[0], 'strip A names its pane and document').toContain('p32-alpha');
+  expect(labels[0], 'strip A names its pane').toContain('Pane A');
+  expect(labels[1], 'strip B names its pane and document').toContain('p32-beta');
+  expect(labels[1], 'strip B names its pane').toContain('Pane B');
+  // The page counts the retired strip header used to carry are asserted on the
+  // pane header above each strip (a.pageCount=34, b.pageCount=520 at the top of
+  // this test); the strip proves it shows that document via its own thumbnails.
   // Each strip lives inside its own pane and names a distinct document.
   expect(stripDocs[0]).not.toBe(stripDocs[1]);
   expect(await win.locator('.tab-pane[data-pane="A"] [data-pane-strip]').count()).toBe(1);
@@ -254,22 +264,29 @@ test('C3 focus affordance moves on a pane click (and rail active follows)', asyn
   expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
   expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('false');
 
-  await win.locator('.multi-pane-header[data-pane="A"]').click();
+  // Click the header's TITLE (a pane-header click via the pane's pointerdown
+  // capture), not the header container: the container's centre can land on the
+  // [data-pane-clear] button at some window widths, which would empty the pane.
+  await win.locator('.multi-pane-header[data-pane="A"] .multi-pane-title').click();
   await win.waitForTimeout(400);
   console.log(`[P32] after pane A click: A=${await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')} B=${await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')}`);
   expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('true');
   expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('false');
-  expect(await stripActive('A')).toBe(true);
-  expect(await stripActive('B')).toBe(false);
+  expect(await paneActive('A')).toBe(true);
+  expect(await paneActive('B')).toBe(false);
   const activeIsAlpha = await win.evaluate(() => window.tflexDiagnostics().pageCount);
   console.log(`[P32] focused pane A -> diagnostics active doc pageCount=${activeIsAlpha}`);
   expect(activeIsAlpha).toBe(34);
 
-  await win.locator('.multi-pane-header[data-pane="B"]').click();
+  // Click the header's TITLE, not the header container: the container's centre
+  // sits close to the [data-pane-clear] button (a destructive control), so a
+  // container-centre click can empty the pane on some window widths. The title
+  // is still a pane-header click (the pane's pointerdown capture focuses it).
+  await win.locator('.multi-pane-header[data-pane="B"] .multi-pane-title').click();
   await win.waitForTimeout(400);
   console.log(`[P32] after pane B click: A=${await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')} B=${await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')}`);
   expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
-  expect(await stripActive('B')).toBe(true);
+  expect(await paneActive('B')).toBe(true);
   const activeIsBeta = await win.evaluate(() => window.tflexDiagnostics().pageCount);
   console.log(`[P32] focused pane B -> diagnostics active doc pageCount=${activeIsBeta}`);
   expect(activeIsBeta).toBe(520);
@@ -454,21 +471,38 @@ test('C6 each pane keeps its own page position and zoom', async () => {
   // toolbar - DEF-282).
   const sharedPageInput = () => win.locator('[data-shared-toolbar] .page-input');
   const sharedZoomText = () => win.locator('[data-shared-toolbar] .zoom-percent');
+  // The readout is rounded to whole percent, so a fit scale just under the 0.8
+  // ladder step can round to the SAME "80%" string as the 0.8 step. Assert the
+  // zoom change from the pane's own page geometry instead, which is exact.
+  const pageWidth = (pane) =>
+    win.evaluate((p) => {
+      const el = document.querySelector(`.tab-pane[data-pane="${p}"] .page-slot[data-page="1"]`);
+      return el ? Math.round(el.getBoundingClientRect().width) : null;
+    }, pane);
 
   await focusPaneByPage('A');
   const zoomA0 = (await sharedZoomText().innerText()).trim();
+  const wA0 = await pageWidth('A');
   await focusPaneByPage('B');
   const zoomB0 = (await sharedZoomText().innerText()).trim();
+  const wB0 = await pageWidth('B');
 
   // Zoom in with pane A focused changes only pane A's zoom.
   await focusPaneByPage('A');
   await win.locator('[data-shared-toolbar] [aria-label="Zoom in"]').click();
   await win.waitForTimeout(700);
   const zoomA1 = (await sharedZoomText().innerText()).trim();
+  const wA1 = await pageWidth('A');
   await focusPaneByPage('B');
   const zoomB1 = (await sharedZoomText().innerText()).trim();
-  console.log(`[P32] zoom: A ${zoomA0}->${zoomA1}, B ${zoomB0}->${zoomB1}`);
-  expect(zoomA1).not.toBe(zoomA0);
+  const wB1 = await pageWidth('B');
+  console.log(`[P32] zoom: A ${zoomA0}->${zoomA1} (page ${wA0}->${wA1}px), B ${zoomB0}->${zoomB1} (page ${wB0}->${wB1}px)`);
+  // Pane A's page grew = the zoom changed in the expected direction, even when
+  // the rounded readout shows the same "80%" on both sides of the step.
+  expect(wA1, 'zoom-in with pane A focused enlarged pane A').toBeGreaterThan(wA0 + 1);
+  expect(parseFloat(zoomA1), 'pane A readout did not fall').toBeGreaterThanOrEqual(parseFloat(zoomA0));
+  // Pane B is untouched: its geometry and its readout are both unchanged.
+  expect(wB1, 'pane B page width unchanged').toBe(wB0);
   expect(zoomB1).toBe(zoomB0);
 
   // Navigating pane A via its own strip thumbnail moves only pane A.

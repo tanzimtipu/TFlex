@@ -86,6 +86,21 @@ export interface EngineState extends SharedEngineState {
    *  when the wire omits the key. The overlay renders the comment icon
    *  from this list and the comment box reads its entries. */
   comments?: CommentThread[];
+  /** DEF-292 — narrowed override of the shared `pairedState`. The shared
+   *  contract types the paired sub-state as the WIRE `EngineState`; the
+   *  adapter normalizes it before returning, so the renderer's view of a
+   *  joint cross-document undo/redo carries the renderer-shaped
+   *  `EngineState` for the OTHER document. This is what lets the App
+   *  mirror the other pane's `engineUi` and refresh its pdf.js proxy
+   *  from the single round-trip without a second `getState`. */
+  pairedState?: PairedRendererState;
+}
+
+/** DEF-292 — the renderer-normalized other-document state carried by a
+ *  joint cross-document undo/redo (see `EngineState.pairedState`). */
+export interface PairedRendererState {
+  docId: string;
+  state: EngineState;
 }
 
 /** DEF-135/136 — move a registered text box through the engine's

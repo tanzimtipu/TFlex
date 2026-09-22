@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 import { IPC, type SavedSignaturesResult } from "../shared/ipc";
 import type {
   AppInfo,
@@ -31,6 +31,8 @@ import type {
   PrintJobPayload,
   PrintJobResult,
   PrinterInfo,
+  PrintWindowContext,
+  PrintWindowOpenResult,
   RecentFile,
   SampleDocument,
   SpaceAudit,
@@ -479,6 +481,45 @@ const api = {
     return () => {
       ipcRenderer.removeListener(IPC.printRequestEvent, listener);
     };
+  },
+  // Phase 35 - the standalone print window. `open` asks main to create (or
+  // focus/refresh) its own top-level OS window with a validated context;
+  // `notifyDocumentGone` tells main the document was closed (main forwards it
+  // to the print window); `onDocumentGone` is how the print window receives
+  // that notification. All three are used by the same preload surface, since
+  // the print window is just another renderer.
+  printWindow: {
+    open(context: PrintWindowContext): Promise<PrintWindowOpenResult> {
+      return ipcRenderer.invoke(IPC.printOpenWindow, context);
+    },
+    notifyDocumentGone(docId: string): Promise<void> {
+      return ipcRenderer.invoke(IPC.printNotifyDocumentGone, docId);
+    },
+    onDocumentGone(cb: (docId: string) => void): () => void {
+      const listener = (_event: unknown, docId: string): void => cb(docId);
+      ipcRenderer.on(IPC.printDocumentGoneEvent, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC.printDocumentGoneEvent, listener);
+      };
+    },
+  },
+  // Phase 35 — OS file-open request pushed by main: a PDF path from the
+  // launch argv, a second launch (single instance), or a resolved drop.
+  // The renderer routes it through its existing open flow.
+  onOpenPathRequest(cb: (path: string) => void): () => void {
+    const listener = (_event: unknown, path: string): void => cb(path);
+    ipcRenderer.on(IPC.appOpenPathRequestEvent, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC.appOpenPathRequestEvent, listener);
+    };
+  },
+  // Phase 35 (DEF-295) — resolve a dropped `File` to its absolute path.
+  // `webUtils.getPathForFile` only exists in the isolated preload world,
+  // so the renderer reaches it through this bridge.
+  webUtils: {
+    getPathForFile(file: File): string {
+      return webUtils.getPathForFile(file);
+    },
   },
   engine: engineApi,
   signatures: {

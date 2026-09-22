@@ -107,11 +107,11 @@ const byId = (id: string): CompositeDocRef | null =>
 // ---------------------------------------------------------------------------
 
 describe("Phase 34 — item 2: the composite tab projection", () => {
-  it("joins both document names with ' + '", () => {
+  it("joins both document names with ' | ' (DEF-293)", () => {
     const refs = compositeDocRefs("a", "b", byId);
     const tab = compositeHeaderTab(refs);
     expect(tab.id).toBe(COMPOSITE_TAB_ID);
-    expect(tab.title).toBe("report.pdf + long.pdf");
+    expect(tab.title).toBe("report.pdf | long.pdf");
   });
 
   it("follows EITHER document's modified flag", () => {
@@ -148,7 +148,7 @@ describe("Phase 34 — item 2: the strip renders exactly one composite tab", () 
       expect(title?.textContent).toContain("report.pdf");
       expect(title?.textContent).toContain("long.pdf");
       // Graceful truncation keeps the full names in the tooltip.
-      expect(title?.getAttribute("title")).toBe("report.pdf + long.pdf");
+      expect(title?.getAttribute("title")).toBe("report.pdf | long.pdf");
       expect(host.querySelector("[data-tab-id]")?.classList.contains("tab-active")).toBe(true);
     } finally {
       host.remove();

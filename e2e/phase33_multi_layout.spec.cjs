@@ -146,10 +146,11 @@ test('C5 centred side-by-side strips: geometry, own thumbnails, click navigation
     const info = (p) => {
       const strip = document.querySelector(`[data-pane-strip-pane="${p}"]`);
       const wrap = strip ? strip.querySelector('.thumb-canvas-wrap') : null;
-      const header = strip ? strip.querySelector('[data-pane-strip-header]') : null;
+      // DEF-291 — the strip is headerless; its aria-label carries the identity
+      // ("Pane A thumbnails: <title>") now that the visible name row is gone.
       return {
         doc: strip ? strip.getAttribute('data-pane-strip-doc') : null,
-        header: header ? header.innerText.replace(/\s+/g, ' ').trim() : null,
+        label: strip ? (strip.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim() : null,
         thumbW: wrap ? Math.round(wrap.getBoundingClientRect().width) : null,
         thumbs: strip ? strip.querySelectorAll('.thumb-item').length : 0,
       };
@@ -160,8 +161,10 @@ test('C5 centred side-by-side strips: geometry, own thumbnails, click navigation
   expect(stripInfo.A.doc, 'strip A names a document').not.toBeNull();
   expect(stripInfo.B.doc, 'strip B names a document').not.toBeNull();
   expect(stripInfo.A.doc, 'the two strips show different documents').not.toBe(stripInfo.B.doc);
-  expect(stripInfo.A.header, 'strip A header names its document').toContain('p33-alpha');
-  expect(stripInfo.B.header, 'strip B header names its document').toContain('p33-beta');
+  expect(stripInfo.A.label, 'strip A label names its pane and document').toContain('p33-alpha');
+  expect(stripInfo.A.label, 'strip A label names its pane').toContain('Pane A');
+  expect(stripInfo.B.label, 'strip B label names its pane and document').toContain('p33-beta');
+  expect(stripInfo.B.label, 'strip B label names its pane').toContain('Pane B');
   expect(stripInfo.A.thumbs, 'strip A renders thumbnails').toBeGreaterThan(0);
   expect(stripInfo.B.thumbs, 'strip B renders thumbnails').toBeGreaterThan(0);
   // Two documents -> the dynamic width shrinks below the single-mode 126px.

@@ -126,7 +126,9 @@ describe('createMainWindow', () => {
     );
 
     const win = lastWindow();
-    expect(win._opts).toMatchObject({ width: 1200, height: 800, x: 200, y: 300 });
+    // Phase 35 — y is clamped so the window bottom (300 + 800 = 1100) stays
+    // inside the 1080-tall work area: 1080 - 800 = 280.
+    expect(win._opts).toMatchObject({ width: 1200, height: 800, x: 200, y: 280 });
   });
 
   it('maximizes the window when geometry.maximized is true', () => {
@@ -148,6 +150,23 @@ describe('createMainWindow', () => {
     );
 
     expect(lastWindow().maximize).not.toHaveBeenCalled();
+  });
+
+  // Phase 35 — the frontend reported getBackgroundColor() === '#000000'.
+  // Verified against Electron 44: a window created WITHOUT `transparent` and
+  // WITH `backgroundColor` returns that colour; only the retired
+  // `transparent: true` build reported #000000 (alpha dropped). This guards
+  // the opaque base + the absence of the transparency flag.
+  it('sets the frosted base as an opaque backgroundColor and no transparent flag', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const opts = lastWindow()._opts as Record<string, unknown>;
+    expect(opts.backgroundColor).toBe('#eef1f5');
+    expect('transparent' in opts).toBe(false);
+    expect(opts.frame).toBe(false);
   });
 
   it('calls onGeometryChanged when the window moves or resizes', () => {
@@ -343,16 +362,14 @@ describe('createMainWindow', () => {
     expect(opts.resizable).toBe(true);
   });
 
-  // Phase 14 — transparent window so the desktop wallpaper shows through the
-  // renderer's frosted-glass panels. The CSS backdrop-filter only blurs what
-  // is behind the element in the compositor, so without an opaque OS backdrop
-  // the wallpaper composites through the renderer's translucent sheets. No
-  // backgroundMaterial: the Windows 11 DWM acrylic material re-renders its
-  // wallpaper blur on every mouse-move invalidation, which made the wallpaper
-  // behind the glass flicker as the mouse moved — the frosted effect is
-  // CSS-only. hasShadow keeps the frameless drop shadow. frame:false stays
-  // frameless — these options do not re-introduce native caption buttons.
-  it('enables window transparency for desktop wallpaper show-through', () => {
+  // Phase 35 — transparency REMOVED. `transparent: true` makes the window a
+  // Windows layered (WS_EX_LAYERED) window; Electron documents that
+  // transparent windows are not resizable ("setting resizable to true may
+  // make the transparent window stop working") and layered windows are a
+  // known cause of swallowed Aero Snap/maximize and auto-hide taskbar hover.
+  // Behaviour wins over the Phase-14 wallpaper show-through: the frosted look
+  // now diffuses the app's own ambient base (the backgroundColor below).
+  it('does not use a transparent (layered) window', () => {
     createMainWindow(defaultSettings, {
       rendererHtml: '/app/renderer/index.html',
       onGeometryChanged: vi.fn(),
@@ -360,7 +377,43 @@ describe('createMainWindow', () => {
 
     const win = lastWindow();
     const opts = win._opts as Record<string, unknown>;
-    expect(opts.transparent).toBe(true);
+    expect(opts.transparent ?? false).toBe(false);
+    // An opaque base matching the frosted theme's --tf-bg so the app's own
+    // ambient surface replaces the wallpaper show-through.
+    expect(opts.backgroundColor).toBe('#eef1f5');
+  });
+
+  it('keeps the window resizable and maximizable (standard Windows gestures)', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const win = lastWindow();
+    const opts = win._opts as Record<string, unknown>;
+    expect(opts.resizable).toBe(true);
+    expect(opts.maximizable).toBe(true);
+    expect(opts.minimizable).toBe(true);
+  });
+
+  it('fits the saved geometry inside the display work area', () => {
+    _getAllDisplays.mockReturnValue([
+      {
+        workArea: { x: 0, y: 0, width: 1920, height: 1040 },
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+      },
+    ]);
+
+    createMainWindow(
+      {
+        ...defaultSettings,
+        geometry: { x: 100, y: 100, width: 2560, height: 1440, maximized: false },
+      },
+      { rendererHtml: '/app/renderer/index.html', onGeometryChanged: vi.fn() },
+    );
+
+    const opts = lastWindow()._opts as Record<string, unknown>;
+    expect(opts).toMatchObject({ width: 1920, height: 1040, x: 0, y: 0 });
   });
 
   // No DWM background material must be requested: Windows 11 acrylic
@@ -392,7 +445,7 @@ describe('createMainWindow', () => {
     expect(opts.hasShadow).toBe(true);
   });
 
-  it('stays frameless alongside transparency (no native caption duplication)', () => {
+  it('stays frameless and opaque (no native caption duplication)', () => {
     createMainWindow(defaultSettings, {
       rendererHtml: '/app/renderer/index.html',
       onGeometryChanged: vi.fn(),
@@ -401,7 +454,7 @@ describe('createMainWindow', () => {
     const win = lastWindow();
     const opts = win._opts as Record<string, unknown>;
     expect(opts.frame).toBe(false);
-    expect(opts.transparent).toBe(true);
+    expect(opts.transparent ?? false).toBe(false);
     expect(opts.titleBarOverlay ?? false).toBe(false);
   });
 

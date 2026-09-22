@@ -24,6 +24,8 @@ import type {
   PrintJobPayload,
   PrintJobResult,
   PrinterInfo,
+  PrintWindowContext,
+  PrintWindowOpenResult,
   RecentFile,
   SampleDocument,
   SavedSignature,
@@ -74,6 +76,13 @@ export const IPC = {
   // Phase 6 — About + preferences surface
   appGetInfo: "app:getInfo",
   appOpenPath: "app:openPath",
+  // Phase 35 — the OS asked TFlex to open a document: the app was launched
+  // with a PDF path argument, a second launch handed one to the RUNNING
+  // instance (single-instance), or (renderer half, separate dispatch) a PDF
+  // was dropped on the window. Main validates the path is a readable PDF and
+  // pushes it here; the renderer routes it through the SAME open flow it
+  // uses for `openFileDialog` (it does not get a parallel opener).
+  appOpenPathRequestEvent: "app:openPathRequest",
 // Phase 2: page organization engine
   engineLoadDocument: "engine:loadDocument",
   engineLoadDocumentBytes: "engine:loadDocumentBytes",
@@ -194,6 +203,17 @@ export const IPC = {
   printListPrinters: "print:listPrinters",
   printJob: "print:job",
   printRequestEvent: "print:request",
+  // Phase 35 - the print window lives OUTSIDE the app window. The renderer
+  // asks main to open (or focus) its own top-level OS window with a small
+  // validated `PrintWindowContext`; the print window then drives the same
+  // print pipeline over the existing `print:listPrinters` / `print:job`
+  // channels. `print:notifyDocumentGone` is the main-window renderer telling
+  // main a document was closed; main pushes `print:documentGone` to the print
+  // window only when it was opened for that document, so it never shows stale
+  // data.
+  printOpenWindow: "print:openWindow",
+  printNotifyDocumentGone: "print:notifyDocumentGone",
+  printDocumentGoneEvent: "print:documentGone",
 } as const;
 
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
@@ -584,6 +604,18 @@ setEnabled(state: import("./types").MenuEnabledState): void;
   listPrinters(): Promise<PrinterInfo[]>;
   printJob(payload: PrintJobPayload): Promise<PrintJobResult>;
   onPrintRequest(cb: () => void): () => void;
+  /** Phase 35 - the standalone print window. `open` asks main to create (or
+   *  focus/refresh) its own top-level OS window, movable anywhere on the
+   *  desktop including beyond the app window, seeded with a validated
+   *  `PrintWindowContext`. `notifyDocumentGone` lets the main-window renderer
+   *  tell main a document was closed; main pushes the matching
+   *  `onDocumentGone` event to the print window (the print window also uses
+   *  `onDocumentGone` to react). Returns an unsubscribe. */
+  printWindow?: {
+    open(context: PrintWindowContext): Promise<PrintWindowOpenResult>;
+    notifyDocumentGone(docId: string): Promise<void>;
+    onDocumentGone(cb: (docId: string) => void): () => void;
+  };
   /** Phase 6 — About + preferences. Backend fills `AppInfo` from
    *  `app.getVersion()` and the user-data path so the About dialog
    *  can show a version badge and the preferences sheet can show
@@ -595,6 +627,26 @@ setEnabled(state: import("./types").MenuEnabledState): void;
     getInfo(): Promise<AppInfo>;
     openPath(path: string): Promise<void>;
   };
+  /**
+   * Phase 35 (DEF-295) — resolve a `File` from a drag-and-drop (or any
+   * renderer-created File) to its absolute on-disk path. Electron 30+
+   * exposes this only through `webUtils.getPathForFile`, which must be
+   * called from the isolated preload world; this bridge forwards it. The
+   * renderer then feeds the path to the existing `app.openPath` /
+   * `loadPdf` flow. Optional so a preload without the bridge degrades
+   * gracefully (jsdom tests, older builds).
+   */
+  webUtils?: {
+    getPathForFile(file: File): string;
+  };
+  /**
+   * Phase 35 — subscribe to an OS file-open request pushed by main
+   * (`app:openPathRequest`). Fired when the app is launched with a PDF
+   * path argument, when a second launch hands a path to the running
+   * instance, or when the drop path resolves one. The renderer opens the
+   * path through its existing open flow. Returns an unsubscribe.
+   */
+  onOpenPathRequest?(cb: (path: string) => void): () => void;
   /** Phase 6 — OTA updates. Backend manages the update lifecycle
    *  through electron-updater; the renderer polls status and can
    *  trigger download/install. Status changes are pushed as events.

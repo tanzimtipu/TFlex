@@ -5,6 +5,289 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-301: In-app print dialog's printer selection silently reverts to the system default on reopen
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-077)
+- Phase: 35
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`, exit 0) and launch the dev build through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Open `test-fixtures/report.pdf`; wait for `.pdf-page canvas`.
+3. Click `[data-print]` to open the Print dialog; select "Microsoft Print to PDF" in `[data-print-printer]`; click `[data-print-cancel]` to close.
+4. Reopen Print (`[data-print]`) and immediately select "Microsoft Print to PDF"; poll the select value every 75 ms for ~3 s while counting main-process `getPrintersAsync` calls. Repeat the reopen once more.
+
+Expected: the chosen printer stays chosen; the pick must survive the async printer-list resolution, so a virtual-PDF job is produced inside TFlex through its own Save-As dialog (Phase 35 success criterion 3).
+
+Actual: on a reopen the hook still holds the previous activation's `printers` state, so the options render immediately (stale) and the selection is made before the fresh `getPrintersAsync` resolves; when it resolves the printer-load effect calls `setDeviceName(preferred)` (the system default) and silently overwrites the pick. QA measurement (third reopen): selected `Microsoft Print to PDF` at t=8 ms, silently reverted to `Canon TS3100 series` (the system default) at t=86 ms with `getPrintersAsync` call count 3. Reproduced on the third reopen (timing-dependent; the second reopen did not revert in this run). With the default selected, `printJob` takes the non-virtual branch and would route the job to the physical default printer instead of producing the PDF inside TFlex. Pre-existing Phase-30 logic (`PrintDialog.tsx` at HEAD) relocated by Phase 35 into `src/renderer/components/usePrintControls.ts` (printer-list effect deps `[active, listPrinters, seed]`, `printers` state persisting across activations).
+
+Screenshot: none (measurement-only). Harness: e2e/phase35_adv_repro.spec.cjs (test 3); log e2e/phase35_adv_repro.log
+
+History:
+- qa: opened. Independently reproduced on the current dev build via `e2e/phase35_adv_repro.spec.cjs` (3/3 pass). Raw third-reopen timeline: `[{"t":8,"value":"Microsoft Print to PDF","getPrinters":3},{"t":86,"value":"Canon TS3100 series","getPrinters":3}]`; system default `Canon TS3100 series`.
+- orchestrator: FIX-READY (relaying frontend-dev - the shared `usePrintControls` printer-list resolution now reads the current selection through a synchronous ref and applies a device ONLY when nothing is selected yet (a fresh dialog still preselects the system default) or when the previously selected device has disappeared from the fresh list; a re-resolve while a valid selection exists leaves it untouched, so a virtual-PDF pick can no longer be silently replaced by the physical default. A disappeared device falls back deterministically through the same chain and the change is now OBSERVABLE via a `[data-print-printer-notice]` in the panel; a user pick clears the notice. Evidence: new `printSelectionPersist.test.tsx` 5 tests (fresh default, survival across a re-resolve, the exact stale-list window scenario with a held promise, the disappeared-device fallback + notice, the notice clearing) plus the print regression files green; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED. Retested on the current dev build (`npm.cmd run build`, exit 0) via the inverted regression guard `e2e/phase35_adv_repro.spec.cjs` (4/4 pass, exit 0). Raw reopen timelines: first-open `[{"t":62,"value":"Microsoft Print to PDF","getPrinters":1}]`, second-open `[{"t":15,"value":"Microsoft Print to PDF","getPrinters":2}]`, third-open `[{"t":9,"value":"Microsoft Print to PDF","getPrinters":3}]`; `firstReverted=false secondReverted=false thirdReverted=false` - the pick stays selected across every reopen (the old defect reverted to `Canon TS3100 series` at t=86ms). The vanished-device notice was also confirmed: with the printer list stubbed to drop the selected device, the reopen showed `[data-print-printer-notice]` = `"Microsoft Print to PDF" is no longer available. Switched to "Canon TS3100 series".` with the select on `Canon TS3100 series`, and a user pick (`HP Fake 9000`) cleared the notice (`noticeCount=0`). Unit: `printSelectionPersist.test.tsx` 5/5 green.
+
+## DEF-300: With the standalone print window open and focused, an OS file-open is silently dropped
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-076)
+- Phase: 35
+
+Steps to reproduce:
+1. Build and launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf`; wait for `.pdf-page canvas`.
+3. CONTROL: with no print window open, fire the OS second-launch path `app.emit('second-instance', {}, [execPath, '.', <other.pdf>])`; the requested document opens as a new tab.
+4. Open the standalone print window (`window.tflex.printWindow.open({...})`); wait for `[data-print-window]`.
+5. Repeat the `second-instance` OS-open with another PDF; then push `app:openPathRequest` directly to the print window's webContents.
+6. Destroy the print window and repeat the `second-instance` OS-open.
+
+Expected: the OS-supplied PDF opens in the main window (a second launch / "Open with" / Explorer double-click while TFlex is running opens the document in the running instance), or at minimum fails loud.
+
+Actual: with the print window open, `BrowserWindow.getAllWindows()` is `[PRINT, MAIN]` and `getFocusedWindow()` is PRINT. `sendOpenPath` (`src/main/index.ts:63-70`) sends `IPC.appOpenPathRequestEvent` to `getAllWindows()[0]` - the PRINT window. `PrintWindowApp` never subscribes to `onOpenPathRequest`, so the event is discarded with no error and no toast. QA measurements: control with no print window tabs 1 -> 2 (open lands); with the print window open the OS-open left tabs at 2 (dropped) and the direct push to the print window also left tabs at 2; after destroying the print window the next OS-open brought tabs 2 -> 3 (works again). The `second-instance` focus/restore (`index.ts:100-106`) also targets `[0]`, so a second launch focuses the print window rather than the main window.
+
+Screenshot: none (state-only). Harness: e2e/phase35_adv_repro.spec.cjs (test 2); log e2e/phase35_adv_repro.log
+
+History:
+- qa: opened. Independently reproduced on the current dev build via `e2e/phase35_adv_repro.spec.cjs` (3/3 pass). Raw: `windows={"order":[{"i":0,"id":2,"kind":"PRINT"},{"i":1,"id":1,"kind":"MAIN"}],"focused":"PRINT"}`; control tabs `[a,b]`; after OS-open with print window open tabs `[a,b]` (unchanged); after direct push tabs `[a,b]` (unchanged); after closing print window tabs `[a,b,d]`.
+- orchestrator: FIX-READY (relaying backend-dev - the main window is now held by explicit reference (set from the existing `createWindow` closure, no second registry) and is the ONLY target for an OS file-open: a live loaded main window receives it immediately EVEN when another window is focused; a loading one queues and flushes on `did-finish-load` (refactored into `flushPendingOpenPaths`, reused by both paths); a launch race queues and is delivered by the window created moments later; and if the main window is GONE (closed while a print window kept the app alive) a fresh main window is created for the document and the queued path delivered on load - never a silent no-op and never a delivery to a non-main window. The `second-instance` focus/restore now also targets the main window; the print window can no longer receive or swallow the request because targeting is by reference, not by index. Evidence: new `def300OpenPathRouting.test.ts` 5 tests (two windows with the print window first AND focused -> the request lands on the main webContents and the print webContents is never called; the loading queue; the launch race; the main-window-gone recreate + delivery; no-main-window no-throw) + `index.test.ts` 91 and `phase35OpenPath.test.ts` 15 green; `npm run verify` exit 0.)
+- qa: CLOSED. Retested on the current dev build (`npm.cmd run build`, exit 0) via the inverted regression guard `e2e/phase35_adv_repro.spec.cjs` (4/4 pass, exit 0). Raw: control (no print window) tabs 1->2; with the print window open and focused (`windows={"order":[{"i":0,"id":2,"kind":"PRINT"},{"i":1,"id":1,"kind":"MAIN"}],"focused":"PRINT"}`) the OS second-instance open landed in the MAIN window (tabs 2->3) and the print window was untouched (`{"printWindow":true,"tabs":0,"toolbar":0}`); a direct `app:openPathRequest` push to the MAIN window also opened (tabs 3->4); after closing the print window the OS-open still worked (tabs 4->5). Unit: `def300OpenPathRouting.test.ts` 5/5, `index.test.ts` 91/91, `phase35OpenPath.test.ts` 15/15 green.
+
+## DEF-299: Clicking the caption "+" (new tab) crashes the renderer and leaves a blank, unrecoverable window
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: adversary (ADV-075)
+- Phase: 35
+
+Steps to reproduce:
+1. Build and launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf` (1 tab); wait for `.pdf-page canvas`.
+3. Click the tab-strip "+" (`[data-new-tab]`).
+4. Read `#root.innerHTML.length`, `.titlebar`, `.toolbar`, `.app`, the tab count and the captured `pageerror`; then try to click `[data-new-tab]` again as a recovery attempt.
+
+Expected: a new empty tab opens and the app stays usable (the "+" affordance is enabled once `tabs.length >= 1`).
+
+Actual: the renderer throws `TypeError: Cannot read properties of undefined (reading 'session')`; React unmounts the whole tree. QA measurements: before `{"tabs":1,"titlebar":true,"toolbar":true,"app":true,"rootHtmlLen":55561}`; after `{"tabs":0,"titlebar":false,"toolbar":false,"app":false,"rootHtmlLen":0}`; pageerror `["Cannot read properties of undefined (reading 'session')"]`; the recovery click could not reach any control (`recoveredByClick=false`). The window is left as a blank opaque `#eef1f5` surface with no chrome and no control - unrecoverable without restarting the app. Deterministic (every run). Root cause: `src/renderer/App.tsx:6941` derives `const activeTab = tabs.activeId !== null ? openTabs[tabs.activeId] : null;`, and `onNewEmptyTab` (line 1835) only dispatches `open-empty` - it never adds an `openTabs[id]` entry - so for an empty tab `activeTab` is `undefined` (not `null`); the Phase-35 detach prop at lines 8152-8160 (`activeTab === null ? null : { docId: activeTab.session.engineDocId, ... }`) then reads `activeTab.session` and throws, while every other access on that path uses `activeTab?.session`.
+
+Screenshot: screenshots/def299-newtab-blank.png (blank window after the crash). Harness: e2e/phase35_adv_repro.spec.cjs (test 1); log e2e/phase35_adv_repro.log
+
+History:
+- qa: opened. Independently reproduced on the current dev build via `e2e/phase35_adv_repro.spec.cjs` (3/3 pass). Raw: `pageerror` = `Cannot read properties of undefined (reading 'session')`; `#root.innerHTML.length` 55561 -> 0; `.titlebar`/`.toolbar`/`.app` all gone; recovery click impossible; only a relaunch restores the app.
+- orchestrator: FIX-READY (relaying frontend-dev - the Phase 35 detach prop now guards with `activeTab == null ? null : {...}` (undefined-safe, matching the optional chaining used everywhere else on that path), so an empty tab (which has an id but no `openTabs` entry, making `activeTab` undefined) can no longer be dereferenced; with no printable document the prop is `null` and `PrintDialog` already hides the detach control, so the affordance is omitted rather than passed a broken session. The developer also SWEPT the file: the detach block was the only unguarded property access, and one same-class null-vs-undefined guard at App.tsx:7934 (`ocrSuspectsOpen && activeTab !== null`, no property access, but `undefined !== null` is true so the OCR-suspects panel could mount without a document) was changed to `activeTab != null` with its source pin updated. Evidence: new `def299_emptyTabNewTab.test.tsx` renders the REAL App (only DocumentView/parser/rasteriser stubbed), opens a document, clicks `[data-new-tab]` and asserts the chrome survives - verified to be a true guard (reverting the one-word fix reproduces qa's exact TypeError); plus the print/OCR regression files green; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED. Retested on the current dev build (`npm.cmd run build`, exit 0) via the inverted regression guard `e2e/phase35_adv_repro.spec.cjs` (4/4 pass, exit 0). Raw: before `{"tabs":1,"titlebar":true,"tabList":true,"app":true,"welcome":false,"rootHtmlLen":55561}`; after clicking `[data-new-tab]` with a document open `{"tabs":2,"titlebar":true,"tabList":true,"app":true,"welcome":true,"rootHtmlLen":17452}`; after clicking it again with the empty tab active `{"tabs":3,"titlebar":true,"tabList":true,"app":true,"welcome":true,"rootHtmlLen":18148}`; `pageerrors=[]`. The renderer survives both clicks (the empty tab correctly shows the Welcome screen, so the document toolbar is legitimately absent). Unit: `def299_emptyTabNewTab.test.tsx` 1/1 green.
+
+## DEF-298: Standalone print window's OS title is "TFlex", not "Print - TFlex"
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 35
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`, exit 0) and launch the dev build through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`).
+2. Open `test-fixtures/report.pdf`; click `[data-print]` to open the print dialog; click `[data-print-detach]` to open the standalone print window.
+3. Read the BrowserWindow titles (`BrowserWindow.getAllWindows().map(w => ({ id: w.id, title: w.getTitle(), isPrint: w.webContents.getURL().includes('tfWindow=print') }))`).
+
+Expected: the standalone print window's OS title is `Print - TFlex` (`PRINT_WINDOW_TITLE` in `src/main/print-window.ts`), so it is distinguishable from the main app window in the taskbar / Alt-Tab.
+
+Actual: the print window's title is `TFlex` - identical to the main window. `PRINT_WINDOW_TITLE` is passed to the `BrowserWindow` constructor, but the loaded renderer document's `<title>TFlex</title>` (`src/renderer/index.html`) overrides it and `PrintWindowApp` never sets `document.title`. Raw: `[{"id":2,"title":"TFlex","isPrint":true},{"id":1,"title":"TFlex","isPrint":false}]`. Two identically titled windows appear in the taskbar / Alt-Tab. The window is otherwise fully functional (print-only UI, printer list, preview, movable outside the app, closes with the app).
+
+Screenshot: screenshots/phase35-print-window.png
+
+Harness: e2e/phase35_gate.spec.cjs (P35-G4-title); log e2e/phase35_gate.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npm.cmd run build`, exit 0). Raw: both windows title `TFlex`; the print window's webContents URL carries `?tfWindow=print`. `expect(printWin.title).toBe('Print - TFlex')` failed with `Received: "TFlex"`.
+- orchestrator: FIX-READY (relaying frontend-dev - root cause: the print window loads the same `index.html`, whose `<title>TFlex</title>` overrides the BrowserWindow's `title` option, so the document title is what the OS shows. Fix in the renderer's entry branch: a new `PRINT_WINDOW_TITLE` constant plus pure `rendererEntryTitle(entry)` (returns `Print - TFlex` for the print AND print-error entries, `null` for the app entry so the main window's title is never touched), applied as `document.title` in `main.tsx`. The main-process `did-finish-load`/`setTitle` fallback was deliberately NOT added (the renderer carrier is the root cause and persists packaged; `src/main` is outside frontend-dev ownership) - if the packaged retest disproves it, the fallback belongs to backend-dev. Evidence: `printWindowContext.test.ts` 19 tests (incl. the three title cases) + `printWindowWiring.test.ts` 8 (the source guard that `main.tsx` assigns it); `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED. Retested on the current dev build via `e2e/phase35_gate.spec.cjs -g "P35-G4-title"` -> 1 passed (exit 0). Raw: `[{"id":2,"title":"Print - TFlex","isPrint":true},{"id":1,"title":"TFlex","isPrint":false}]` - the standalone print window's OS title is now `Print - TFlex`, distinct from the main window's `TFlex`. The print window's other behaviours re-confirmed in the same build by `e2e/phase35_runclose_reconfirm.spec.cjs` E-b: print-only DOM (`tabs=0 toolbar=0 titlebar=0`, printer list + preview present), moved outside the app bounds (`print.x=1743 > main.x+main.width=1543`), preview updated there (`34 pages -> 2 pages`), print/save completed from the moved window (`Saved to ...tflex-p35-eb-....pdf`, 2 landscape pages), and closing it left the app usable (`printWindows=0`, `mainAlive=true`, tabs=1).
+
+## DEF-297: Frosted single mode: the top command bar's transparency is lost (regression from the DEF-285 canvas-opacity fix)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 33
+
+Steps to reproduce:
+1. Build (`npm.cmd run build`, exit 0) and launch the dev build through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen (`.sample-card`). The default theme is frosted.
+2. Open `test-fixtures/report.pdf` through the title-bar Open control (mocked OS dialog); wait for `.pdf-page canvas`.
+3. Read the computed `background-color` / `backdrop-filter` of `.titlebar`, `.app-header`, `.toolbar`, `.workspace-main`, `.document-scroller`; run `document.elementsFromPoint` at the toolbar's centre; take alpha-preserving 1x1 clips (`screenshot({ omitBackground: true, clip })`) at the caption strip, a toolbar gap and the page.
+4. Scroll the scroller so page content sits under the floating toolbar and capture a screenshot.
+
+Expected: Phase 14 / DEF-181 - in frosted the chrome glass diffuses what is behind it (the wallpaper through the transparent window and/or the page content); the frosted rules make `.workspace-main` and `.document-scroller` transparent (`styles.css:10607`, `styles.css:10491`). The command toolbar keeps its translucent look.
+
+Actual: the caption strip `.titlebar` is still glassy (`rgba(255, 255, 255, 0.75)` + `backdrop-filter: blur(20px) saturate(1.2)`, alpha pixel at (700,22) = `{255,255,255,a:191}`), but the top command bar is now fully opaque: `.toolbar` computes `rgba(255, 255, 255, 0.68)` + `backdrop-filter: blur(20px) saturate(1.2)` over `.workspace-main` and `.document-scroller` which BOTH compute `rgb(238, 241, 245)` (alpha pixel at the toolbar gap (620,70) = `{252,253,254,a:255}`). `document.elementsFromPoint(830,70)` shows `DIV.workspace-main bg rgb(238,241,245)` directly behind `DIV.toolbar`. The opaque background comes from the DEF-285 rule `.tab-stage[data-multi-mode="false"] .workspace-main, .tab-stage[data-multi-mode="false"] .document-scroller { background: var(--tf-canvas-opaque); }` (`styles.css:11477-11480`), which wins the cascade over the frosted transparent rules (`:root[data-theme="frosted"] .workspace-main` `styles.css:10606-10609`; `:root[data-theme="frosted"] .document-scroller` `styles.css:10477-10496`). The glass therefore has nothing but a flat opaque colour to diffuse - the transparency the operator sees in the caption strip is gone from the command bar.
+
+Screenshot: screenshots/def297-topbar-frosted-single.png (page scrolled under the toolbar); screenshots/def297-topbar-frosted-single-top.png.
+
+Harness: e2e/phase35_operator_repro.spec.cjs (DEF7); log e2e/phase35_operator_repro.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npm.cmd run build`, exit 0). Raw: frosted; `.toolbar` bg `rgba(255,255,255,0.68)` backdrop-filter `blur(20px) saturate(1.2)`; `.workspace-main` bg `rgb(238,241,245)`; `.document-scroller` bg `rgb(238,241,245)`; alpha samples `titlebar a:191`, `toolbarGap a:255`, `page a:255`; behind the toolbar centre: `.workspace-main` `rgb(238,241,245)`.
+- orchestrator: FIX-READY (relaying frontend-dev - the frosted single-mode workspace frame is transparent again and the scroller paints a gradient that stays opaque below the chrome band, so the top bar reads as glass over the app's ambient background while the page surface stays opaque (DEF-285's rule text is untouched). Evidence: new `def297_frostedTopbarGlass.test.ts` 5 tests (guarding both fixes so neither can silently undo the other); `npm run verify` exit 0; `build:renderer` exit 0.)
+
+- qa: CLOSED. Retested on the rebuilt dev build (`npm.cmd run build`, exit 0) via `e2e/phase35_retest.spec.cjs` (DEF-297 test, 10/10 pass). Raw: theme=frosted; `.toolbar` bg `rgba(255,255,255,0.68)` + `backdrop-filter: blur(20px) saturate(1.2)`; `.workspace-main` bg `rgba(0,0,0,0)` (transparent); `.document-scroller` bg-image `linear-gradient(rgba(0,0,0,0) 0px, rgba(0,0,0,0) 53px, rgb(238,241,245) 53px)`; `elementsFromPoint` behind the toolbar centre shows `.workspace-main` transparent down to the ambient base; the page surface stays opaque (canvas stop `rgb(238,241,245)`, page bg `rgb(255,255,255)`). The top bar reads as glass again while the canvas stays opaque.
+
+## DEF-296: Page zoom in/out has no animation
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 33
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf` through the title-bar Open control; wait for `.pdf-page canvas`.
+3. Read the computed `transition` / `transform` / `animation` of `.pdf-page`, `.page-slot`, `.document-content`, `.document-scroller`.
+4. Click `button[aria-label="Zoom in"]` and sample the page-1 width immediately and at 16 / 66 / 216 / 516 ms.
+
+Expected: the operator asked for an animation on page zoom in/out - the page size change should be visibly animated rather than snapping.
+
+Actual: no animation exists. `.pdf-page`, `.page-slot`, `.document-content` and `.document-scroller` all compute `transition-duration: 0s`, `transform: none`, `animation-name: none` (the `.pdf-page`/`.page-slot` transition is `all 0s`; the only transitioned surface is `.workspace-main` on `--tf-tools-inset 0.15s`, unrelated to zoom). The page width jumps `1210px -> 1224px` instantly: the first sample immediately after the click already reads 1224px and it stays 1224px at 16/66/216/516 ms. `document.getAnimations({subtree:true}).length` is unchanged (31 before, 31 after). Zoom is a discrete ladder step applied as a layout change.
+
+Screenshot: screenshots/def296-zoom-no-animation.png
+
+Harness: e2e/phase35_operator_repro.spec.cjs (DEF6); log e2e/phase35_operator_repro.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npm.cmd run build`, exit 0). Raw: width sequence `[1210,1224,1224,1224,1224,1224]`; computed transitions `0s` on page/slot/content/scroller.
+- orchestrator: FIX-READY (relaying frontend-dev - a new pure `zoomFlip.ts` plus a `pdf-page-zoom-flip` keyframe animates the page wrapper from the previous scale to the new one on a manual zoom step, transform-only, on `--motion-duration-standard`/`--motion-ease-standard`; it composes as parent x child with DEF-274's rotate transform on the inner canvas, and reduced-motion / Animations-off add nothing. Fit-mode resize recomputes are deliberately excluded (no per-frame churn). Evidence: new `def296_zoomAnimation.test.tsx` 8 tests; `npm run verify` exit 0; `build:renderer` exit 0.)
+
+- qa: CLOSED. Retested on the rebuilt dev build via `e2e/phase35_retest.spec.cjs` (3 DEF-296 tests, all pass). Raw: a Zoom-in click applies `.pdf-page-zoom-flip` with `--tf-zoom-flip-from: 0.9901960784313726` and a live `tf-page-zoom-flip` animation; under `emulateMedia({reducedMotion:'reduce'})` the probe records `seen:false`; with Animations off (`data-animations="off"`) the probe records `seen:false`.
+
+## DEF-295: Dragging a PDF file into TFlex does not open it
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 33
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for the welcome screen (`.sample-card`), no document open.
+2. Dispatch an OS-style file drop (a `dragover` + `drop` `DragEvent` carrying a real `DataTransfer` with a `File` named `dropped.pdf`, type `application/pdf`) on `.app` and on `document.body`.
+3. Read `defaultPrevented` for each event, then check the tab count / welcome state / `location.href`.
+
+Expected: dropping a PDF from Explorer onto the TFlex window opens that document (a normal desktop PDF-app interaction).
+
+Actual: the app has no OS-file-drop handler. Both `dragover` and `drop` report `defaultPrevented: false` on `.app` and on `body`; the tab count stays 0, the welcome screen stays, and `location.href` is unchanged. Source inspection agrees: the only renderer drop handlers are the in-app page drag (`SideRail.tsx`, `DocumentView.tsx`) which use `dataTransfer.setData('text/plain', ...)` and never read `dataTransfer.files`; the main process has no `open-file` / `will-navigate` / argv handling. Limitation: a true Explorer-originated OS drag cannot be automated in this harness, and a synthetic `drop` cannot trigger Chromium's native file-drop navigation; the synthetic evidence plus the absence of any Files handler is what is reported.
+
+Screenshot: screenshots/def295-dragdrop-pdf.png
+
+Harness: e2e/phase35_operator_repro.spec.cjs (DEF5); log e2e/phase35_operator_repro.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npm.cmd run build`, exit 0). Raw: `.app` `{dragoverDefaultPrevented:false,dropDefaultPrevented:false,files:1,types:["Files"]}`, `body` identical; before/after `tabs:0, welcome:true, href:file:///.../dist/renderer/index.html`.
+- orchestrator: FIX-READY (relaying frontend-dev + backend-dev - the preload now exposes `tflex.webUtils.getPathForFile(file)` (Electron's `webUtils`) and a new `useOsFileDrop` hook handles the window-level `dragover`/`drop`: it reacts ONLY when `dataTransfer.types` includes `'Files'` (the in-app page drag is `text/plain` and stays untouched), `preventDefault`s both so Chromium cannot navigate to the file, resolves each dropped file's path and opens it through ONE shared renderer open path (`openRequestedPath`, also used by the OS-launch/second-instance listener and by the toolbar Open/recent paths) so a dropped PDF behaves exactly like one opened from the dialog - a normal tab in single mode, ASSIGNED to the focused pane in Multi Mode. Rule: the FIRST file opens if it is a PDF (mime or `.pdf` name), the rest are reported once via the info toast, and a non-PDF (or an unresolvable path / a missing bridge) fails loud through the existing error toast. NOTE for the retest: a SYNTHETIC `File` resolves to an empty path, so the automated check sees both defaults prevented plus the error toast - the end-to-end open must be verified through the `app:openPathRequest` push (the same renderer path) or a real Explorer drop. Evidence: new `phase35_osIntegration.test.tsx` 15 tests + `phase35_openRequestedPath.test.ts` 4; `npm run verify` exit 0; `build:renderer` exit 0.)
+
+- qa: CLOSED. Retested on the rebuilt dev build via `e2e/phase35_retest.spec.cjs` (2 DEF-295 tests, all pass). Raw: a Files drag on window -> `dragoverDefaultPrevented:true, dropDefaultPrevented:true`; a `text/plain` drag -> both `false` (in-app DnD untouched); the synthetic File fails loud (`TFlex could not resolve the dropped file's location.`). End-to-end open through the same renderer path: pushing `app:openPathRequest` from main opens a normal tab in single mode (tabs 0->1, welcome false) and, in Multi Mode with pane B focused, assigns the new document to pane B (`B ...p35r-295-gamma.pdf 34 pages`).
+
+## DEF-294: Thumbnail panel header has a rounded top-right corner
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 34
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf`; read the computed `border-top-right-radius` of `.side-rail .rail-header` and of its parent `.side-rail` (single mode).
+3. Open a second document (`test-fixtures/long.pdf`), click the first tab, click `[data-toolbar-multi-mode]`, pick the second document into pane B; read the computed `border-top-right-radius` of `[data-pane-strip-header]` and of its parent `[data-pane-strip]` (Multi Mode).
+
+Expected: the thumbnail page-view header's top-right corner is flush (square), per the operator.
+
+Actual: the header element itself declares no radius (`.rail-header` / `.pane-thumb-strip-header` both compute `border-top-right-radius: 0px`), but it is the TOP ROW inside a rounded, `overflow: hidden` panel, so its corner is clipped to the panel's radius. Single mode: parent `.side-rail` computes `border-top-right-radius: 16px` with `overflow: hidden` (the header spans y 44-88, x 0-219). Multi Mode: pane B's `.pane-thumb-strip` computes `border-top-right-radius: 16px` with `overflow: hidden`, and its focused header (background `rgba(37, 99, 235, 0.1)`) is clipped to that corner; pane A mirrors it to `border-top-left-radius: 16px`. Screenshots: screenshots/def294-single-rail-header-corner.png, screenshots/def294-multi-strip-header-corner.png.
+
+Harness: e2e/phase35_operator_repro.spec.cjs (DEF4); log e2e/phase35_operator_repro.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npm.cmd run build`, exit 0). Raw: single `.rail-header` radius `0px`, parent `.side-rail` `16px` overflow `hidden`; multi pane B strip `border-top-right-radius:16px` overflow `hidden`, pane A strip `border-top-left-radius:16px`.
+- orchestrator: FIX-READY (relaying frontend-dev - the clipping containers' radii were made flush on the side that faces the page area: `.side-rail` and the pane-B strip use `0 0 var(--panel-radius) 0` and the mirrored pane-A strip `0 0 0 var(--panel-radius)`, so the header's top-right corner is square in single mode and on both inner edges in Multi Mode, in every theme. Evidence: new `def294_flushThumbHeaderCorner.test.ts` 4 tests + the updated `designTokensContract`; `npm run verify` exit 0; `build:renderer` exit 0.)
+
+- qa: CLOSED. Retested on the rebuilt dev build via `e2e/phase35_retest.spec.cjs` (DEF-294 test, pass). Raw: single `.side-rail` `border-top-right-radius: 0px` (bottom-right still `16px`), `.rail-header` `0px`; Multi pane B strip `border-top-right-radius: 0px`, pane A strip `border-top-left-radius: 0px`.
+
+## DEF-293: Multi View composite tab separator is " + ", not "|"
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 34
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf` and `test-fixtures/long.pdf`; click the first tab; click `[data-toolbar-multi-mode]`; pick the second document into pane B.
+3. Read the composite tab's `.tab-title` innerText, `title` attribute, `scrollWidth` and `clientWidth` (`.tab[data-tab-id="tf-multi-workspace"]`).
+
+Expected: the operator asked for "|" as the Multi View tab separator.
+
+Actual: the separator is `" + "` (space-plus-space), not "|" and not "-". Full label text: `1790076285946-aroawdyr42g-p33-alpha.pdf + 1790076285947-iwdgrsfoth-p33-beta.pdf` (also the `title` attribute). Rendered in a 180px-wide tab it is truncated (`scrollWidth` 527 vs `clientWidth` 180, `text-overflow: ellipsis`), so the separator is not even visible in the strip at this width - only the first name and an ellipsis show; the full joined string is reachable only via the tooltip. The operator's "-" description does not match the code (`compositeTab.ts:60` joins with `" + "`); the requested "|" separator is absent.
+
+Screenshot: screenshots/def293-multi-tab-separator.png
+
+Harness: e2e/phase35_operator_repro.spec.cjs (DEF3); log e2e/phase35_operator_repro.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npm.cmd run build`, exit 0). Raw: innerText/title = `...alpha.pdf + ...beta.pdf`; truncated `true` (scrollWidth 527, clientWidth 180).
+- orchestrator: FIX-READY (relaying frontend-dev - `compositeTab.ts` now joins the document titles with `" | "` (single spaces around a pipe) and the tab test was updated to pin the new string; the label is still ellipsis-truncated in a narrow tab. Evidence: new `def293_compositeTabSeparator.test.ts` 3 tests + the updated `phase34_chunk2`; `npm run verify` exit 0; `build:renderer` exit 0.)
+
+- qa: CLOSED. Retested on the rebuilt dev build via `e2e/phase35_retest.spec.cjs` (DEF-293 test, pass). Raw: composite tab innerText/title = `...p33-alpha.pdf | ...p33-beta.pdf`; contains `" | "`, no `" + "`.
+
+## DEF-292: Multi View: undo after a cross-document page move deletes the page when the target pane is focused
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 34
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf` (34 pages) and `test-fixtures/long.pdf` (520 pages); click the report tab; click `[data-toolbar-multi-mode]`; pick `long.pdf` into pane B so pane A = 34 pages and pane B = 520 pages.
+3. Drag page 1 from pane A's strip (`[data-pane-strip-pane="A"] .thumb-item[data-page="1"]`) onto pane B's strip (`[data-pane-strip-pane="B"] .thumb-item[data-page="2"]`); record both page counts.
+4. Focus pane B (the target) and press Ctrl+Z; record both page counts.
+5. Focus pane A (the source) and press Ctrl+Z; record both page counts.
+
+Expected: one undo reverts the cross-document move atomically - the page returns to its original document and is removed from the target - regardless of which pane is focused. The page must never disappear from both documents.
+
+Actual: the page vanishes from both documents when the undo runs with the target pane focused. Raw: before move A=34 B=520 total=554; after move A=33 B=521 total=554; Ctrl+Z with pane B focused -> A=33 B=520 total=553 (the page is removed from B and NOT restored to A - one page lost). Focusing pane A and pressing Ctrl+Z afterwards restores A=34 B=520 total=554, so the page is only recoverable by a second, differently-focused undo. Saving while the workspace shows the post-undo (B-focused) state would persist the loss (A=33, B=520). This is data loss from a single undo.
+
+Screenshot: screenshots/def292-multi-undo-after-move.png, screenshots/def292-multi-undo-after-undo-B.png, screenshots/def292-multi-undo-after-undo-A.png
+
+Harness: e2e/phase35_operator_repro.spec.cjs (DEF2); log e2e/phase35_operator_repro.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npm.cmd run build`, exit 0). Raw RESULT: `{"before":554,"afterMove":554,"afterUndoB":553,"afterUndoA":554,"lostAfterUndoB":1,"lostAfterUndoA":0}`.
+- orchestrator: FIX-READY (relaying backend-dev + frontend-dev - the cross-document move is now ONE joint undo unit: the engine pushes a paired entry on BOTH documents' stacks (same `jointId`, each carrying the other's pre-move snapshot) and `undo`/`redo` from EITHER document reverts/re-applies BOTH, keeping the stacks in lock-step; the result's `EngineState` carries an optional `pairedState { docId, state }`; a missing counterpart (the other document closed, or a diverged stack) mutates NOTHING and returns a typed error, so a page can never be lost. Renderer half: the adapter caches the paired state and App mirrors the other pane and rebuilds its pdf.js proxy (paired-echo-driven, so a single-document undo does no wasted work), with the typed error surfacing through the existing toast as a clean no-op. Evidence: `test/unit/main/def292.test.ts` 8 tests (undo from either side, redo, a two-move/two-undo sequence conserving every page, closed-doc and divergence errors, single-doc unchanged) + 255 passed across `multiModeMove`/`engine`; renderer `def292_*` 22 tests + 109 engine-client tests; `npm run verify` exit 0; `build:renderer` exit 0.)
+
+- qa: CLOSED. Retested on the rebuilt dev build via `e2e/phase35_retest.spec.cjs` (DEF-292 test, pass) and the original `e2e/phase35_operator_repro.spec.cjs` DEF2 case re-run. Raw: `RESULT={"before":554,"afterMove":554,"afterUndoB":554,"afterUndoA":554,"lostAfterUndoB":0,"lostAfterUndoA":0}`; a second move undone from the SOURCE pane A also conserves 554 (A=34, B=520).
+
+## DEF-291: Multi View: every pane shows the file name twice (pane header + thumbnail-strip header)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: operator (2026-09-22, reported to the orchestrator)
+- Phase: 34
+
+Steps to reproduce:
+1. Launch the dev build through `launchApp`; wait for `.sample-card`.
+2. Open `test-fixtures/report.pdf` and `test-fixtures/long.pdf`; click the report tab; click `[data-toolbar-multi-mode]`; pick `long.pdf` into pane B so both panes are filled.
+3. Read the text and rects of both `[data-pane-header]` elements and both `[data-pane-strip-header]` elements, and the `[data-pane-strip-body]` rects.
+
+Expected: Phase 34 criterion 2/3 - one file-name header per pane; the operator asked to remove the thumbnail page-view header in Multi Mode and make the thumbnail panel flush with the page-view header.
+
+Actual: each pane renders the file name TWICE with identical text. Pane A: `[data-pane-header]` = "A 1790076244788-...-p33-alpha.pdf 34 pages" at rect `{top:97,bottom:131,left:0,right:716}`; `[data-pane-strip-header]` = the same text at `{top:131,bottom:161,left:497,right:811}`. Pane B: header `{top:97,bottom:131,left:724,right:1440}`; strip header `{top:131,bottom:161,left:724,right:1042}`. The strip body (thumbnails) starts at top 161 - 30px below the page-view header's bottom (the strip's own 30px header row) and 64px below the pane header's top, so the thumbnail panel is not flush with the page-view header.
+
+Screenshot: screenshots/def291-multi-duplicate-headers.png
+
+Harness: e2e/phase35_operator_repro.spec.cjs (DEF1); log e2e/phase35_operator_repro.log
+
+History:
+- qa: opened. Reproduced on the rebuilt dev build (`npm.cmd run build`, exit 0). Raw: vertical offset stripBody.top - paneHeader.top = 64px (A and B); paneHeader.bottom -> stripBody.top gap = 30px (A and B).
+- orchestrator: FIX-READY (relaying frontend-dev - in Multi Mode the strip no longer renders its own header (`[data-pane-strip-header]` count 0; the strip carries an aria-label naming its pane and document instead) and the strip's grid is a single `1fr` row, so its body starts flush at the pane header's bottom edge (the 30px dead band is gone). Single mode's rail header is untouched. Evidence: new `def291_multiStripHeaderless.test.tsx` 5 tests + the updated `paneThumbStrip`/`documentViewRailSide`; `npm run verify` exit 0; `build:renderer` exit 0.)
+
+- qa: CLOSED. Retested on the rebuilt dev build via `e2e/phase35_retest.spec.cjs` (DEF-291 test, pass). Raw: Multi Mode `[data-pane-strip-header]` count 0, `[data-pane-strip-body]` count 2; pane A and B `stripBody.top - paneHeader.bottom = 0px` (flush); single mode `.side-rail .rail-header` still present.
+
 ## DEF-290: Multi Mode: the canvas insertion line for the FIRST page is clipped and invisible
 
 - Status: CLOSED

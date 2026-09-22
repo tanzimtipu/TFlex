@@ -3111,6 +3111,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       widthPt={pagePt?.w ?? 612}
                       heightPt={pagePt?.h ?? 792}
                       cssScale={effectiveScale}
+                      // DEF-296 — animate the zoom FLIP only for the
+                      // discrete user zoom steps (manual mode). Fit modes
+                      // recompute `effectiveScale` on every window-resize
+                      // frame, and animating those would be per-frame churn.
+                      zoomAnimated={zoom.mode === "manual"}
                       rotation={pageRotation}
                       shouldRender={true}
                       hits={hitsByPage.get(visiblePage) ?? EMPTY_HITS}

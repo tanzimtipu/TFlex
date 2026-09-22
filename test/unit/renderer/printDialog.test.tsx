@@ -98,6 +98,16 @@ async function flush(): Promise<void> {
   });
 }
 
+/** Click Print and wait for the full raster -> printJob -> commit cycle. */
+async function clickPrint(container: HTMLElement): Promise<void> {
+  const confirm = container.querySelector<HTMLButtonElement>("[data-print-confirm]");
+  expect(confirm).not.toBeNull();
+  await act(async (): Promise<void> => {
+    confirm?.click();
+    await flush();
+  });
+}
+
 function clickLabelFor(container: HTMLElement, selector: string): void {
   const input = container.querySelector<HTMLInputElement>(selector);
   expect(input).not.toBeNull();
@@ -332,6 +342,80 @@ describe("PrintDialog — print run (Phase 30)", () => {
     );
     expect(jobRasters).toHaveLength(1);
     expect(printJob).toHaveBeenCalledTimes(1);
+    cleanup();
+  });
+});
+
+// Phase 35 item 7 — the virtual-PDF destination result states: a saved PDF
+// names its path in the existing success region, a printed/absent outcome
+// keeps today's success copy, a save-cancel stays silent, and each new typed
+// failure reason surfaces through the existing error region.
+describe("PrintDialog — print result states (Phase 35)", () => {
+  it("renders the saved PDF path in the success region", async () => {
+    const printJob = async (): Promise<PrintJobResult> => ({
+      ok: true,
+      outcome: "saved",
+      path: "C:\\Users\\me\\Documents\\TFlex.pdf",
+    });
+    const { container, cleanup } = renderDialog({ printJob, totalPages: 2 });
+    await flush();
+    await clickPrint(container);
+    const success = container.querySelector<HTMLElement>("[data-print-success]");
+    expect(success).not.toBeNull();
+    expect(success?.textContent).toContain("Saved to C:\\Users\\me\\Documents\\TFlex.pdf");
+    expect(container.querySelector("[data-print-error]")).toBeNull();
+    cleanup();
+  });
+
+  it("keeps today's success rendering for an absent outcome", async () => {
+    const printJob = async (): Promise<PrintJobResult> => ({ ok: true });
+    const { container, cleanup } = renderDialog({ printJob, totalPages: 2 });
+    await flush();
+    await clickPrint(container);
+    const success = container.querySelector<HTMLElement>("[data-print-success]");
+    expect(success?.textContent).toContain("Sent 2 pages to HP LaserJet.");
+    cleanup();
+  });
+
+  it("keeps today's success rendering for an explicit 'printed' outcome", async () => {
+    const printJob = async (): Promise<PrintJobResult> => ({
+      ok: true,
+      outcome: "printed",
+    });
+    const { container, cleanup } = renderDialog({ printJob, totalPages: 1 });
+    await flush();
+    await clickPrint(container);
+    const success = container.querySelector<HTMLElement>("[data-print-success]");
+    expect(success?.textContent).toContain("Sent 1 page to HP LaserJet.");
+    cleanup();
+  });
+
+  it("stays quiet on save-cancelled — neither error nor success", async () => {
+    const printJob = async (): Promise<PrintJobResult> => ({
+      ok: false,
+      reason: "save-cancelled",
+    });
+    const { container, cleanup } = renderDialog({ printJob });
+    await flush();
+    await clickPrint(container);
+    expect(container.querySelector("[data-print-error]")).toBeNull();
+    expect(container.querySelector("[data-print-success]")).toBeNull();
+    cleanup();
+  });
+
+  it.each([
+    ["print-to-pdf-failed", "Could not create the PDF"],
+    ["save-write-failed", "Could not write the PDF"],
+    ["print-timeout", "timed out"],
+  ])("surfaces the typed reason %s in the error region", async (reason, copy) => {
+    const printJob = async (): Promise<PrintJobResult> => ({ ok: false, reason });
+    const { container, cleanup } = renderDialog({ printJob });
+    await flush();
+    await clickPrint(container);
+    const error = container.querySelector<HTMLElement>("[data-print-error]");
+    expect(error).not.toBeNull();
+    expect(error?.textContent).toContain(copy);
+    expect(container.querySelector("[data-print-success]")).toBeNull();
     cleanup();
   });
 });

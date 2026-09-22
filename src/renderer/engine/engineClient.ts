@@ -627,16 +627,19 @@ function normalizeState(
   const incomingComments: CommentThread[] | undefined = Array.isArray(maybe.comments)
     ? maybe.comments
     : _prev?.comments;
-  // Strip wire-shape-only keys (`placedSignatures`) from the spread
-  // so the returned renderer state never carries the engine's wire
-  // field name. Without this strip, `placedSignatures` leaks through
-  // `...maybe` into the renderer's EngineState and the App.tsx
-  // mirror's `ui?.state.signatures` lookup is correct only by
-  // coincidence (it just happens to also set `signatures`). Future
-  // refactors must not regress this — the DEF-059-residual test
-  // pins the absence.
-  const { placedSignatures: _stripPlaced, ...maybeStripped } = maybe;
+  // Strip wire-shape-only keys (`placedSignatures`, and the DEF-292
+  // `pairedState` blob) from the spread so the returned renderer state
+  // never carries a raw wire sub-object. `placedSignatures` leaking
+  // through `...maybe` would make the App.tsx mirror's
+  // `ui?.state.signatures` lookup correct only by coincidence; the
+  // `pairedState` blob would leak the WIRE-shaped other-document state
+  // (annotations untranslated). The adapter re-attaches the NORMALIZED
+  // paired state on the joint undo/redo path only (see
+  // `finishUndoRedo`). Future refactors must not regress this — the
+  // DEF-059-residual test pins the absence.
+  const { placedSignatures: _stripPlaced, pairedState: _stripPaired, ...maybeStripped } = maybe;
   void _stripPlaced;
+  void _stripPaired;
   return {
     ...maybeStripped,
     annotations: resolvedAnnotations,
@@ -785,6 +788,31 @@ class RealEngineAdapter implements EngineApi {
     return next;
   }
 
+  /** DEF-292 — finish a state-returning undo/redo. The ACTIVE document's
+   *  state is normalized + cached exactly as before. When the engine
+   *  echoed a JOINT cross-document move (`pairedState`), the OTHER
+   *  document's state is normalized + cached too, from the same
+   *  round-trip, so the other pane's renderer cache is current before
+   *  the App refreshes its pdf.js proxy. The returned active state
+   *  carries the NORMALIZED paired state (never the raw wire blob) so
+   *  the App can mirror the other pane's `engineUi` without a second
+   *  `getState` call. A single-document undo/redo has no `pairedState`
+   *  and returns exactly the state it did before. */
+  private finishUndoRedo(docId: string, raw: SharedEngineState): EngineState {
+    const paired = raw.pairedState;
+    const value = this.normalizeAndCache(docId, raw);
+    if (paired === undefined) return value;
+    const pairedState = this.normalizeAndCache(paired.docId, paired.state);
+    const next: EngineState = {
+      ...value,
+      pairedState: { docId: paired.docId, state: pairedState },
+    };
+    // Keep the active document's cache identical to what the caller
+    // receives (same invariant as `normalizeAndCache`).
+    this.previousStates.set(docId, next);
+    return next;
+  }
+
   /** Read the renderer's most-recent normalized EngineState for
    *  `docId` without an IPC round-trip. Returns `undefined` when
    *  no op has populated the cache yet (e.g. right after
@@ -843,12 +871,12 @@ class RealEngineAdapter implements EngineApi {
 
   async undo(docId: string): Promise<Result<EngineState, EngineError>> {
     const r = await this.inner.undo(docId);
-    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+    return r.ok ? { ok: true, value: this.finishUndoRedo(docId, r.value) } : r;
   }
 
   async redo(docId: string): Promise<Result<EngineState, EngineError>> {
     const r = await this.inner.redo(docId);
-    return r.ok ? { ok: true, value: this.normalizeAndCache(docId, r.value) } : r;
+    return r.ok ? { ok: true, value: this.finishUndoRedo(docId, r.value) } : r;
   }
 
   async merge(

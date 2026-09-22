@@ -30,7 +30,7 @@ import type {
   WatermarkSettings,
 } from '../shared/types';
 import type { SignatureSource } from '../shared/types';
-import { openPdfDialog } from './services/dialog';
+import { openPdfDialog, savePdfDialog } from './services/dialog';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
 import { loadPdfFile, loadFdfFile } from './services/pdf-file';
@@ -42,6 +42,8 @@ import { SignatureService } from './services/signature-service';
 import { UpdateService } from './services/update-service';
 import { applyMenuEnabledState, buildAppMenu } from './menu';
 import { createMainWindow } from './window';
+import { closePrintWindow, notifyPrintDocumentGone, openPrintWindow } from './print-window';
+import { extractFileArgument, looksLikePdfPath } from './open-path';
 
 function mainModuleDir(): string {
   return __dirname;
@@ -52,18 +54,106 @@ function mainModuleDir(): string {
 // during vitest runs that block is skipped and the test drives start().
 const _isVitest = typeof process !== 'undefined' && process.env.VITEST === 'true';
 
+// Phase 35 — paths the OS handed us (launch argv or a second instance) that
+// arrived before the renderer was ready to receive them. Flushed once the
+// window's webContents finishes loading (see createWindow below).
+const pendingOpenPaths: string[] = [];
+
+// DEF-300 — the main application window, held explicitly. An OS file-open is
+// routed to THIS window, never to "whichever window is first" in
+// getAllWindows(): with the standalone print window open, index 0 is the
+// PRINT window, which does not subscribe to open-path requests, so the event
+// was silently discarded.
+let mainWindow: BrowserWindow | null = null;
+
+// DEF-300 — set by start() once createWindow exists. A request that arrives
+// with no live main window (a launch race before the window was created, or
+// the window was closed while a print window kept the app alive) recreates a
+// main window and the queued path is delivered on its did-finish-load.
+let recreateMainWindow: (() => void) | null = null;
+
+/** Flush paths queued before the main window's renderer was ready. */
+function flushPendingOpenPaths(win: BrowserWindow): void {
+  for (const path of pendingOpenPaths.splice(0)) {
+    win.webContents.send(IPC.appOpenPathRequestEvent, path);
+  }
+}
+
+/**
+ * DEF-300 — deliver a validated OS-open request to the MAIN window, or queue
+ * it. The main window is targeted by explicit reference, never by window
+ * index, so the print window can never receive (or swallow) the request.
+ *
+ * Rules:
+ * - A live, loaded main window receives the request immediately, even when a
+ *   different window (the print window) is focused.
+ * - A live but still-loading main window queues the request; it is flushed on
+ *   did-finish-load.
+ * - No live main window (startup race, or closed while a print window kept
+ *   the app alive): queue the request and recreate the main window — never a
+ *   silent no-op and never a delivery to a non-main window.
+ *
+ * Exported for the unit tests (the second-instance/second-launch path is not
+ * registered under vitest, so the routing is driven directly there).
+ */
+export function sendOpenPath(path: string): void {
+  const win = mainWindow;
+  if (win === null || win.isDestroyed()) {
+    pendingOpenPaths.push(path);
+    // When start() has not reached createWindow yet the imminent window will
+    // flush the queue; otherwise recreate the main window for the document.
+    if (recreateMainWindow !== null) {
+      recreateMainWindow();
+    }
+    return;
+  }
+  if (win.webContents.isLoading()) {
+    pendingOpenPaths.push(path);
+    return;
+  }
+  win.webContents.send(IPC.appOpenPathRequestEvent, path);
+}
+
+/**
+ * Phase 35 — validate an OS-supplied path and hand it to the renderer's
+ * existing open flow. Fails LOUD (an error box) for a non-PDF path or a
+ * file that is not a readable PDF, rather than silently ignoring the launch.
+ */
+async function handleOsOpenPath(path: string): Promise<void> {
+  if (!looksLikePdfPath(path)) {
+    dialog.showErrorBox('Cannot open file', `TFlex is a PDF app and cannot open:\n${path}`);
+    return;
+  }
+  const check = await loadPdfFile(path);
+  if (!check.ok) {
+    dialog.showErrorBox('Cannot open PDF', `Could not open:\n${path}\n\n(${check.error})`);
+    return;
+  }
+  sendOpenPath(path);
+}
+
 if (!_isVitest) {
   const gotLock = app.requestSingleInstanceLock();
   if (!gotLock) {
     app.quit();
   } else {
-    app.on('second-instance', () => {
-      const win = BrowserWindow.getAllWindows()[0];
-      if (win !== undefined) {
+    // Phase 35 — a second launch (e.g. double-clicking another PDF in
+    // Explorer) focuses the running window AND opens the file it was
+    // handed, instead of being ignored. The argv shape matches the launch
+    // argv, so the same parser extracts the path.
+    app.on('second-instance', (_event, argv) => {
+      // DEF-300 — focus the MAIN window, not getAllWindows()[0] (which is the
+      // print window while it is open).
+      const win = mainWindow;
+      if (win !== null && !win.isDestroyed()) {
         if (win.isMinimized()) {
           win.restore();
         }
         win.focus();
+      }
+      const path = extractFileArgument(argv, app.isPackaged);
+      if (path !== null) {
+        void handleOsOpenPath(path);
       }
     });
     void start();
@@ -242,14 +332,13 @@ export async function start(): Promise<void> {
     engine.save(docId),
   );
   ipcMain.handle(IPC.engineSaveAs, async (_event, docId: string) => {
-    const result = await dialog.showSaveDialog({
-      title: 'Save PDF As',
-      filters: [{ name: 'PDF', extensions: ['pdf'] }],
-    });
-    if (result.canceled || result.filePath === undefined) {
+    // Phase 35 — the Save-As destination picker is shared with the
+    // virtual-PDF print path (`savePdfDialog`), so the app has one dialog.
+    const filePath = await savePdfDialog();
+    if (filePath === null) {
       return { ok: false, error: { code: 'cancelled' as const, message: 'save cancelled' } };
     }
-    return engine.saveAs(docId, result.filePath);
+    return engine.saveAs(docId, filePath);
   });
   ipcMain.handle(IPC.engineGetState, (_event, docId: string) =>
     engine.getState(docId),
@@ -502,26 +591,73 @@ export async function start(): Promise<void> {
     ? undefined
     : (process.env.ELECTRON_RENDERER_URL ?? 'http://localhost:5173');
 
+  // Phase 35 - the standalone print window. `print:openWindow` validates the
+  // context in main (openPrintWindow) and creates/focuses its own top-level OS
+  // window; `print:notifyDocumentGone` forwards "document closed" to the print
+  // window when it belongs to that document. The print window then drives the
+  // SAME print:listPrinters / print:job pipeline as the in-app dialog.
+  const printWindowSource = { rendererHtml, rendererDevUrl };
+  ipcMain.handle(IPC.printOpenWindow, (_event, context: unknown) =>
+    openPrintWindow(context, printWindowSource),
+  );
+  ipcMain.handle(IPC.printNotifyDocumentGone, (_event, docId: string) => {
+    notifyPrintDocumentGone(docId);
+  });
+
   const onGeometryChanged = (geometry: AppSettings['geometry']): void => {
     const current = settings.getCurrent();
     void settings.save({ ...current, geometry });
   };
 
   const createWindow = (): void => {
-    createMainWindow(currentSettings, {
+    const win = createMainWindow(currentSettings, {
       rendererHtml,
       rendererDevUrl,
       onGeometryChanged,
       // DEF-142 — gate the whole-window close on unsaved edits.
       onCloseRequested: onWindowCloseRequested,
     });
+    // Phase 35 / DEF-300 — track the main window explicitly so OS file-opens
+    // are routed to it, and flush any path that was queued before its
+    // renderer was ready.
+    if (win !== undefined) {
+      mainWindow = win;
+      win.webContents.once('did-finish-load', () => {
+        flushPendingOpenPaths(win);
+      });
+      // Phase 35 — the print window is independent, but must never outlive
+      // the app (no orphan window / zombie process). Closing the main window
+      // closes it; with it gone `window-all-closed` then fires as before.
+      win.on('closed', () => {
+        if (mainWindow === win) {
+          mainWindow = null;
+        }
+        closePrintWindow();
+      });
+    }
   };
-createWindow();
+  recreateMainWindow = createWindow;
+  createWindow();
+
+  // Phase 35 — a PDF path passed on the launch command line opens that
+  // document (the `.pdf` file association / "Open with" path). Skipped
+  // under vitest, where process.argv belongs to the test runner.
+  if (!_isVitest) {
+    const initialPath = extractFileArgument(process.argv, app.isPackaged);
+    if (initialPath !== null) {
+      void handleOsOpenPath(initialPath);
+    }
+  }
 
   app.on('window-all-closed', async () => {
     await settings.saveCurrent();
     await ocr.terminate();
     app.quit();
+  });
+  // Phase 35 — belt-and-braces quit path: any app.quit() (menu Exit, update
+  // install) closes the print window so it can never survive the app.
+  app.on('before-quit', () => {
+    closePrintWindow();
   });
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

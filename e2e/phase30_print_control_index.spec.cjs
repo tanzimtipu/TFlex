@@ -75,11 +75,23 @@ function sheetStyle(win) {
     return {
       cols: el.style.gridTemplateColumns,
       rows: el.style.gridTemplateRows,
-      flow: el.style.gridAutoFlow,
-      dir: el.style.direction,
       landscape: el.getAttribute('data-landscape'),
     };
   });
+}
+
+// Phase 33 / DEF-280 — the page order is realised by the shared
+// `printSheetLayout` slot assignment (grid dims + explicit slots), NOT by
+// `grid-auto-flow` / `direction`. Read each DOM cell's page in cell order.
+function cellPages(win) {
+  return win.evaluate(() =>
+    Array.from(
+      document.querySelectorAll('[data-print-preview-sheet] [data-print-preview-cell]'),
+    ).map((c) => {
+      const p = c.getAttribute('data-print-preview-page');
+      return p === null ? null : Number(p);
+    }),
+  );
 }
 
 function cellCount(win) {
@@ -304,11 +316,19 @@ await win.selectOption('[data-print-odd-even]', 'odd');
     expect(await meta(win), '4-up sheet count is ceil(34/4)').toBe(`34 pages ${MIDDOT} 9 sheets`);
 
     await win.selectOption('[data-print-page-order]', 'vertical');
-    expect((await sheetStyle(win)).flow, 'vertical order flows by column').toBe('column');
+    // Phase 33 — 4-up is a 2x2 grid for EVERY order; the order shows in the
+    // per-cell page sequence (vertical fills by column: [1,3,2,4]).
+    await expect.poll(() => cellPages(win), { timeout: 10000 }).toEqual([1, 3, 2, 4]);
+    expect((await sheetStyle(win)).cols, 'vertical 4-up stays a 2-column grid').toBe('repeat(2, 1fr)');
+    expect((await sheetStyle(win)).rows, 'vertical 4-up stays a 2-row grid').toBe('repeat(2, 1fr)');
     await win.selectOption('[data-print-page-order]', 'horizontalReversed');
-    expect((await sheetStyle(win)).dir, 'horizontal reversed sets rtl').toBe('rtl');
+    // Horizontal-reversed reverses each row: [2,1,4,3].
+    await expect.poll(() => cellPages(win), { timeout: 10000 }).toEqual([2, 1, 4, 3]);
     await win.selectOption('[data-print-page-order]', 'horizontal');
-    expect((await sheetStyle(win)).flow, 'horizontal order flows by row').toBe('row');
+    // Horizontal fills row-major: [1,2,3,4].
+    await expect.poll(() => cellPages(win), { timeout: 10000 }).toEqual([1, 2, 3, 4]);
+    expect((await sheetStyle(win)).cols, 'horizontal 4-up is a 2-column grid').toBe('repeat(2, 1fr)');
+    expect((await sheetStyle(win)).rows, 'horizontal 4-up is a 2-row grid').toBe('repeat(2, 1fr)');
 
     // Screenshot 1: a 4-up preview.
     await win.waitForSelector('[data-print-preview] img', { timeout: 20000 });

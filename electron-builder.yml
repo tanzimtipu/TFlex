@@ -10,6 +10,18 @@ win:
   target:
     - nsis
     - portable
+  # Phase 35 — register TFlex as a .pdf handler so it appears in Explorer's
+  # "Open with" list and can be chosen as the default PDF app in Windows
+  # Settings. `name` is the ProgID / file class (electron-builder passes it
+  # straight to the NSIS APP_ASSOCIATE macro as FILECLASS); `description` is
+  # the class description shown to the shell. No `icon` key: the association
+  # inherits the application icon (`$appExe,0`), consistent with the rest of
+  # the builder config, which sets no custom icon. This never sets the
+  # Windows default handler on its own — the user picks that in Settings.
+  fileAssociations:
+    - ext: pdf
+      name: TFlex.pdf
+      description: PDF Document
 # Phase 13 review — borderless / frameless NSIS installer is NOT supportable
 # via electron-builder, and the limit is recorded here honestly:
 #

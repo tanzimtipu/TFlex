@@ -290,6 +290,18 @@ export interface EngineState {
    *  under the private catalog key `/TFlexComments`, so threads survive
    *  save/reopen. Deleting an annotation drops its thread. */
   comments?: CommentThread[];
+  /** DEF-292 — present only on the result of `undo`/`redo` of a JOINT
+   *  cross-document move: the OTHER document's updated state, so the
+   *  renderer can refresh both panes from one round-trip. Absent on every
+   *  single-document op's state. */
+  pairedState?: PairedEngineState;
+}
+
+/** DEF-292 — the other document's state carried alongside a joint
+ *  cross-document undo/redo (see `EngineState.pairedState`). */
+export interface PairedEngineState {
+  docId: string;
+  state: EngineState;
 }
 
 export interface OpEntry {
@@ -1120,7 +1132,49 @@ export interface PrintJobPayload {
   settings: PrintSettings;
 }
 
-/** Phase 30 — result of a print request. A failure always carries a reason
- *  (a typed `PrintErrorReason` literal or the OS `failureReason` string) so
- *  the dialog can surface it — never a silent no-op. */
-export type PrintJobResult = { ok: true } | { ok: false; reason: string };
+/**
+ * Phase 30 / Phase 35 — result of a print request.
+ *
+ *  - `{ ok: true }` / `{ ok: true, outcome: 'printed' }` — sent to a real
+ *    (non-PDF) printer. An absent `outcome` means 'printed' (backward
+ *    compatible with pre-Phase-35 callers/tests).
+ *  - `{ ok: true, outcome: 'saved', path }` — the virtual-PDF destination:
+ *    TFlex produced the PDF itself and wrote it to `path` via the app's own
+ *    Save-As dialog. No OS/Chromium print window appeared.
+ *  - `{ ok: false, reason }` — a real failure, OR a user cancellation. A
+ *    cancel is reported as a reason matching `/cancel/i` (Phase 35 uses
+ *    `'save-cancelled'`), which the dialog treats as a quiet no-op. The
+ *    renderer should distinguish printed vs saved via `outcome`, and a cancel
+ *    via the existing cancel-reason rule. A failure always carries a reason
+ *    (a typed `PrintErrorReason` literal or the OS `failureReason` string) —
+ *    never a silent no-op.
+ */
+export type PrintJobResult =
+  | { ok: true; outcome?: 'printed' }
+  | { ok: true; outcome: 'saved'; path: string }
+  | { ok: false; reason: string };
+
+/**
+ * Phase 35 - the small context the standalone print window is opened with
+ * (`?tfWindow=print&context=...`). Main validates it before creating the
+ * window: a malformed payload fails loud (`PrintWindowOpenResult.ok = false`)
+ * rather than rendering a broken print UI. The payload deliberately carries
+ * only what the print window needs to fetch the document and seed its
+ * controls - the print settings travel as the SAME `PrintSettings` shape the
+ * in-app dialog and `printJob` already use, so the two paths cannot drift.
+ */
+export interface PrintWindowContext {
+  /** The engine document id the print window prints. */
+  docId: string;
+  /** Display name shown in the window heading. */
+  documentName: string;
+  /** Total page count (validated to a sane, non-negative integer). */
+  pageCount: number;
+  /** The current print dialog settings, as a JSON payload. */
+  settings: PrintSettings;
+}
+
+/** Phase 35 - result of asking main to open (or focus) the print window. */
+export type PrintWindowOpenResult =
+  | { ok: true; /** true when a new window was created, false when focused. */ created: boolean }
+  | { ok: false; /** human-readable validation/creation failure. */ reason: string };

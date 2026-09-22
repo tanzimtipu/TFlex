@@ -2951,3 +2951,187 @@ Unreproduced / not verified (not filed):
 - "Divider drag while the panel is open" was not a no-op (it re-splits correctly), so no
   silence finding there.
 
+## Phase 35 gate — Windows integration, printing and window behaviour
+
+Session label: `phase-35 gate`. Ran against the dev build (`dist/main/index.js` +
+`dist/renderer`, launched only through `e2e/lib/launch.cjs` `launchApp`). Probe scripts and
+fixtures live in `test-fixtures/adv-p35/`; raw logs in `%TEMP%\adv-p35\`.
+
+## ADV-075: Clicking the caption "+" (new tab) crashes the renderer and leaves a blank, unrecoverable window
+
+- Session: phase-35 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Launched the dev build, opened `report.pdf` (1 tab), waited for the canvas.
+2. Clicked the tab-strip "+" button (`[data-new-tab]`) — the new-tab control that sits in the
+   Phase-35 caption drag region (`test-fixtures/adv-p35/newtab_probe.cjs`).
+3. Read the DOM after the click: tab list, `.titlebar`, `.toolbar`, `.app-header`, `.app`,
+   `#root.innerHTML.length`, and the captured `pageerror`.
+
+Expected: a new empty tab opens and the app stays usable (the "+" affordance is enabled once
+`tabs.length >= 1`).
+
+Actual: the renderer throws `TypeError: Cannot read properties of undefined (reading
+'session')`; React unmounts the whole tree (`#root.innerHTML.length` 0; `.titlebar`,
+`.toolbar`, `.app-header`, `.app`, every tab and the welcome pane all gone). The window is
+left as a blank opaque `#eef1f5` surface with no chrome and no control — unrecoverable
+without restarting the app. Reproduced on every run (the crash is deterministic).
+
+Root cause: `src/renderer/App.tsx:6941` derives `const activeTab = tabs.activeId !== null ?
+openTabs[tabs.activeId] : null;`, and `onNewEmptyTab` (line 1835) only dispatches
+`open-empty` — it never adds an `openTabs[id]` entry, so for an empty tab `activeTab` is
+`undefined` (not `null`). The Phase-35 detach prop at lines 8152-8160 does
+`activeTab === null ? null : { docId: activeTab.session.engineDocId, ... }`; `undefined ===
+null` is false, so `activeTab.session` throws. Verified pre-Phase-35 (`git show
+HEAD:src/renderer/App.tsx`) that every other `activeTab` access used the optional form
+`activeTab?.session...`; the unguarded read was introduced with the Phase-35 detach prop.
+The guard on line 7394 already shows the codebase treats `activeTab` as possibly `undefined`.
+
+Screenshot: screenshots/adv-p35-newtab.png (blank window after the crash).
+
+Disposition: ACCEPTED -> DEF-299 (HIGH; the Phase 35 detach prop must not dereference an undefined active tab - a caption "+" click must never blank the renderer, and every access on that path must match the optional-chaining the rest of the file uses)
+
+## ADV-076: With the standalone print window open, an OS file-open (second launch / "Open with") is silently dropped
+
+- Session: phase-35 gate
+- Suggested severity: HIGH
+
+What I did:
+1. Launched the dev build, opened `report.pdf`; opened the standalone print window for that
+   document via `window.tflex.printWindow.open(...)` and waited for `[data-print-window]`.
+2. Logged `BrowserWindow.getAllWindows()` order and `getFocusedWindow()`.
+3. Fired the OS second-launch path: `app.emit('second-instance', {}, [electron, '.',
+   <other.pdf>])` (the same handler a real "Open with" / Explorer double-click uses).
+4. Waited, then read the main window's tab list and the print window's document name.
+5. Also pushed `app:openPathRequest` directly to the print window's webContents.
+   (`test-fixtures/adv-p35/pw_osopen.cjs`.)
+
+Expected: the OS-supplied PDF opens in the main window (requirement item 2: "a second launch
+while TFlex is running opens the document in the RUNNING instance"), or at minimum fails
+loud.
+
+Actual: with the print window open, `getAllWindows()` returned `[PRINT, MAIN]` — index 0 is
+the PRINT window (also the focused window). `sendOpenPath` (`src/main/index.ts:63-70`) sends
+`IPC.appOpenPathRequestEvent` to `BrowserWindow.getAllWindows()[0]`, i.e. the print window.
+`PrintWindowApp` never subscribes to `onOpenPathRequest`, so the event is discarded with no
+error and no toast: the main window's tab list was unchanged and the requested document was
+never opened. Reproduced twice (deterministic). The `second-instance` handler's
+focus/restore (`index.ts:100-106`) also targets `[0]`, so a second launch focuses the print
+window rather than the main window. When no print window is open, `[0]` is the main window
+and the open works (verified separately), so the failure is specific to having this phase's
+print window open.
+
+Log: %TEMP%\adv-p35\target.log (raw window order + tab state before/after).
+Reproduced a third time fully UI-driven: opening the print window with the real
+`[data-print-detach]` ("Separate window") button gives the same `[PRINT, MAIN]` order
+(focused PRINT), and the following second-instance left the main window's tabs unchanged
+(`test-fixtures/adv-p35/detach_repro.cjs`, %TEMP%\adv-p35\detach_repro.log).
+
+Disposition: ACCEPTED -> DEF-300 (HIGH; an OS file-open must reach the MAIN window, not whichever window happens to be first in the list - with the print window focused the open was silently dropped, so the request must be routed to the main window explicitly (and the print window must never swallow it))
+
+## ADV-077: The in-app print dialog's printer selection silently reverts to the system default, routing a virtual-PDF job to the physical printer
+
+- Session: phase-35 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Launched, opened a PDF, opened Print (`[data-print]`), waited for the printer list,
+   selected "Microsoft Print to PDF" (`[data-print-printer]`), closed the dialog.
+2. Reopened Print, selected "Microsoft Print to PDF" again, then polled the select value
+   every 100 ms while counting `getPrintersAsync` calls (`test-fixtures/adv-p35/printer_race.cjs`).
+3. Repeated the full virtual-PDF save sequence with the physical print call stubbed in main
+   (so no paper could print) and logged the selected printer immediately before each confirm
+   (`test-fixtures/adv-p35/pdf_route_real.cjs`).
+
+Expected: the chosen printer stays chosen; a virtual-PDF destination is produced inside
+TFlex through its own Save-As dialog (success criterion 3).
+
+Actual: on a re-open the hook still holds the previous activation's `printers` state, so the
+options render immediately and the user's selection is made before the fresh
+`getPrintersAsync` resolves. When it resolves, the printer-load effect's `.then` calls
+`setDeviceName(preferred)` (the system default) and silently overwrites the selection.
+Measured timeline: selected "Microsoft Print to PDF" at t=9 ms, silently reverted to
+"Canon TS3100 series" (the system default) at t=114 ms. With the default selected,
+`printJob` took the non-virtual branch and called `webContents.print({ silent: true,
+deviceName: 'Canon TS3100 series' })` — a silent print to the PHYSICAL default printer
+instead of producing the PDF inside TFlex. Reproduced in two independent runs, on different
+cases each time (intermittent, timing-dependent). The root logic is
+`src/renderer/components/usePrintControls.ts` (printer-list effect deps `[active,
+listPrinters, seed]`, `printers` state persisting across activations).
+
+Scope note: this effect is byte-identical to the pre-Phase-35 `PrintDialog.tsx` at HEAD
+(deps `[open, listPrinters]`, same `setDeviceName(preferred)`), so the defect pre-dates this
+phase; Phase 35 relocated it into the shared hook that both print surfaces now use. Filed
+because it directly defeats the phase's own success criterion 3 and the operator's item 7.
+
+Logs: %TEMP%\adv-p35\race.log (timeline), %TEMP%\adv-p35\routing_real.log (routed to
+Canon while "Microsoft Print to PDF" was selected).
+
+Disposition: ACCEPTED -> DEF-301 (MEDIUM; the printer pick must survive the async printer-list resolution - a stale list must never overwrite the user's selection, because routing a virtual-PDF job to the physical printer defeats the phase's own criterion 3 and the operator's Print-to-PDF request)
+
+## Phase 35 gate — attacks that did NOT reproduce (defended)
+
+| Attack | Result |
+|---|---|
+| **Hostile print-window contexts** (null / array / string / missing docId / blank docId / numeric docId / negative, fractional, NaN, Infinity, string or >50 000 page count / null-array-string settings) | Defended. Every malformed context resolved `{ ok:false, reason }` and created NO window; exactly one window for valid contexts. |
+| **Ghost / never-opened docId** | Defended. Window opens, shows the load-error banner with the engine's message; Print is disabled. No crash. |
+| **Huge context (200 000-char documentName)** | Defended. Window loads and renders the print UI (200 KB query string); no crash. |
+| **20 repeat opens of the same doc** | Defended. One window only (`maxPrintWindows=1`); first `created:true`, rest `created:false` (focus). |
+| **Doc change reload** | Defended. Opening for a second real document reloads the singleton; the header name and page count update. |
+| **Print window close leaves the app usable** | Defended. Print windows 0, main window 1, app tabs intact. |
+| **Print window resize to 1x1 and to 100 000x100 000** | Defended. OS clamps to the 480x520 minimum and to ~43690; no crash, resizable/minimizable/maximizable true. |
+| **Document-gone path** | Defended. Closing the print window's own tab shows the gone banner and disables Print; closing a DIFFERENT tab leaves the print window untouched. |
+| **Save-dialog cancel (virtual destination)** | Defended. Save dialog invoked once, then quiet: no error, no success, no hidden window created, no file. |
+| **Virtual-PDF produced-file validity** | Defended. 1-up (pages 1-5) → valid `%PDF-`, 5 portrait pages; 2-up landscape reverse (1-6) → 3 landscape pages; 200-page selection → valid 200-page PDF in ~55 s. |
+| **Produced-file page ORDER** | Defended. With the 6-page distinct fixture, reverse + 2-up, the composed print images matched the preview exactly: sheet 1 = [6,5], sheet 2 = [4,3], sheet 3 = [2,1] (`test-fixtures/adv-p35/distinct6.pdf`, `pdf_order.cjs`, `match_composed.mjs`). |
+| **No OS print window on the virtual path** | Defended. `EnumWindows` on the app pid showed no new visible window before/after the print; `webContents.printToPDF` was the only pipeline call. |
+| **Virtual save to a directory / removed drive / read-only file / unicode path** | Defended. Directory/removed-drive/read-only fail loud ("Could not write the PDF to the selected location."); unicode path saves and opens. (See ADV-077 for the separate selection race that can divert these to a real printer.) |
+| **Caption-strip control clickability** | Defended. Hit-test across 61 points: 0 "other" (dead) points; real clicks on the menu, theme, Open, preferences gear (`[data-prefs-dialog]` appears), Print (`[data-print-printer]` appears) and maximize all produced their effect. |
+| **10x maximize/restore + minimize/restore** | Defended. Toggled cleanly each cycle; minimized then restored. |
+| **Opaque window** | Defended. `getBackgroundColor` `#EEF1F5`; body/html `rgb(238,241,245)`; screenshot shows normal chrome, no transparency artifacts. |
+| **Hostile saved geometry** (off-screen, negative, tiny, huge, NaN/strings, maximized) | Defended. Every case landed inside a display's work area (3 displays; huge/partial cases correctly chosen onto the largest display). |
+| **Corrupt settings.json / 30 missing recent files** | Defended. App boots on defaults, welcome renders, no crash. |
+| **Hostile `app:openPathRequest` payloads** (array, object, number, null, empty, whitespace, 100 000-char string, non-PDF, directory, missing, quotes/unicode, `..`) | Defended. Renderer rejects non-strings with "invalid file path from Windows"; the rest fail loud with a toast; no tab created, no crash. |
+| **Second-instance argv** (valid PDF, non-PDF, no file, switch-then-file, non-string entries) | Defended. Valid PDF opens; non-PDF shows the error box; switches skipped. |
+| **Same-file dedupe via OS-open** | Defended. Two pushes of the same path → exactly one tab. |
+| **OS-open in Multi Mode** | Defended. Lands in the focused pane (replaces the focused pane's document), no hidden tab; opening while Preferences is up opens the document behind the modal with no crash. |
+| **Drop path** (non-PDF, synthetic PDF, multi-file, text/plain, onto a control, during a page drag, while a modal is open, on the welcome screen) | Defended. Non-PDF and unresolvable drops fail loud with a toast; a `text/plain` (in-app page-drag) drop is ignored; no tab, no crash, no interference with the modal or the page drag. |
+| **Print-window open/close resource leak** | Defended. 15 open/close cycles kept the process count at 4 and windows at 1 (working set drifted ~+1.3 MB/cycle, consistent with normal cache growth, not unbounded); 20 sequential opens produced exactly one print window. |
+
+**Total Phase-35-gate findings: 3 (2 HIGH, 1 MEDIUM, 0 LOW).**
+
+Unreproduced / not verified (not filed):
+- **Real OS caption gestures** (double-click-to-maximise, drag-to-top Aero Snap): attempted
+  with genuine `user32` `SetCursorPos` + `mouse_event` input at a verified drag-only caption
+  point, with the window forced foreground via its HWND (`win_gestures2.cjs`). Neither a real
+  drag-move nor a real double-click moved/maximised the window, so the injected input appears
+  not to reach the app's non-client handling in this environment; the result is inconclusive,
+  not evidence of a defect. The gate's hit-test (strip is draggable everywhere) is the
+  available evidence.
+- **Real OS file drop happy path**: a synthetic `DataTransfer` `File` has no on-disk path, so
+  `webUtils.getPathForFile` cannot resolve it; only the error/notice branches were exercised.
+  The successful drop-open path was not automatable.
+- **Startup argv path** (`TFlex.exe <pdf>` on a cold launch): `launchApp` passes extra args
+  before the app path, which Electron would treat as the app directory, so the cold-launch
+  argv could not be driven; the identical parser/handler was exercised through
+  `second-instance` instead (ADV-076).
+- **A partial/corrupt file left behind by a mid-write failure**: not reproducible without a
+  filesystem that fails after `writeFile` opens (ENOSPC / device error). Code inspection:
+  `produceVirtualPdf` (`src/main/services/print.ts:587-595`) returns `save-write-failed` on a
+  write error but does not delete a partially written file. Worth a look, but no repro.
+- **Hostile `settings` fields inside a valid print-window context** (e.g. `pagesPerSheet: 3`):
+  main's validator accepts any plain object, so such a context creates a window whose N-up
+  select is inconsistent with the internal state and whose Print would be rejected by
+  `validatePrintPayload` with the raw reason `bad-pages-per-sheet`. Only reachable via a
+  hand-crafted IPC call (the app always builds valid settings), so not filed.
+- **`second-instance` with a null/non-array argv**: `extractFileArgument` throws
+  (`Cannot read properties of null (reading 'length')`) for a null argv. Electron always
+  supplies an array from the OS, so this is not reachable in practice.
+- **Zero-file "Files"-typed drop** (`dt.setData('Files', ...)`): Chromium ignores the reserved
+  type, so `dataTransfer.types` never contained "Files" and the empty-files branch could not
+  be reached synthetically.
+- **Print window opened while the main window is mid-close**: the modal close gate and the
+  separate OS window make this unreachable by pointer; the gate's app-close test covers the
+  teardown path.
+

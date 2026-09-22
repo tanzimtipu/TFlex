@@ -26,6 +26,23 @@ function specForKind(kind: OpenFileDialogKind): FilterSpec {
 }
 
 /**
+ * Phase 35 — the app's single "Save PDF As" destination picker. Shared by the
+ * Save-As engine flow (`index.ts`) and the virtual-PDF print path (`print.ts`)
+ * so the app has exactly ONE save dialog; returns the chosen path, or `null`
+ * when the user dismisses it (a quiet cancel, never an error).
+ */
+export async function savePdfDialog(): Promise<string | null> {
+  const result = await dialog.showSaveDialog({
+    title: 'Save PDF As',
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  });
+  if (result.canceled || result.filePath === undefined) {
+    return null;
+  }
+  return result.filePath;
+}
+
+/**
  * Show an OS open-file dialog. `kind` selects which file-type filter is shown
  * (default `'pdf'`); `'fdf'` switches to the FDF comments filter used by the
  * Import comments (FDF) flow. Returns the normalized picked path, or `null`

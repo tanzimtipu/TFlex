@@ -23,15 +23,18 @@ vi.mock('electron', () => ({
 import {
   ALLOWED_PAGES_PER_SHEET,
   composePrintHtml,
+  isPdfBytes,
   isVirtualPdfPrinter,
   listPrinters,
   mapPrintSettings,
+  mapPrintToPdfOptions,
   printJob,
   validatePrintPayload,
   type HiddenPrintWindow,
   type PrintJobDeps,
 } from '../../../src/main/services/print';
 import { buildAppMenu } from '../../../src/main/menu';
+import { printSheetLayout } from '../../../src/shared/printLayout';
 import type { PrintJobPayload, PrintSettings } from '../../../src/shared/types';
 
 // DEF-270 — a real 1x1 PNG; the old placeholder `data:image/png;base64,AAAA`
@@ -508,18 +511,40 @@ interface FakeDeps {
   deps: PrintJobDeps;
   createWindow: ReturnType<typeof vi.fn>;
   printOptions: () => unknown;
+  /** Phase 35 — captured `printToPDF` options (virtual-PDF path). */
+  pdfOptions: () => unknown;
+  /** Phase 35 — the composed HTML the hidden window was asked to mount. */
+  mountedHtml: () => string;
+  /** Phase 35 — (path, bytes) pairs written by the virtual-PDF path. */
+  written: () => Array<{ path: string; bytes: Uint8Array }>;
   destroyed: () => boolean;
   destroyCount: () => number;
 }
 
+interface FakeOptions {
+  neverCallback?: boolean;
+  timeoutMs?: number;
+  /** Phase 35 — destination the injected Save-As picker returns. */
+  savePath?: string | null;
+  /** Phase 35 — bytes `printToPDF` resolves with (default a valid `%PDF-`). */
+  pdf?: Buffer | Error;
+  /** Phase 35 — a `printToPDF` that never settles (tests the 120 s bound). */
+  neverPdf?: boolean;
+  /** Phase 35 — make the injected write seam reject. */
+  writeError?: Error;
+}
+
 function fakeDeps(
   result: { success: boolean; failureReason?: string },
-  options: { neverCallback?: boolean; timeoutMs?: number } = {},
+  options: FakeOptions = {},
 ): FakeDeps {
   const listeners: Array<() => void> = [];
   let destroyed = false;
   let destroyCalls = 0;
-  let captured: unknown = null;
+  let capturedPrint: unknown = null;
+  let capturedPdf: unknown = null;
+  let mounted = '';
+  const written: Array<{ path: string; bytes: Uint8Array }> = [];
   const createWindow = vi.fn(
     (): HiddenPrintWindow => ({
       webContents: {
@@ -527,9 +552,15 @@ function fakeDeps(
           listeners.push(listener);
         },
         print: (printOptions, callback) => {
-          captured = printOptions;
+          capturedPrint = printOptions;
           if (options.neverCallback === true) return; // DEF-269: driver never calls back
           callback(result.success, result.failureReason ?? '');
+        },
+        printToPDF: (pdfOptions) => {
+          capturedPdf = pdfOptions;
+          if (options.neverPdf === true) return new Promise<Buffer>(() => undefined);
+          if (options.pdf instanceof Error) return Promise.reject(options.pdf);
+          return Promise.resolve(options.pdf ?? Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0x0a]));
         },
       },
       isDestroyed: () => destroyed,
@@ -541,15 +572,26 @@ function fakeDeps(
   );
   const deps: PrintJobDeps = {
     createWindow,
-    loadHtml: async () => {
+    loadHtml: async (_win, html) => {
+      mounted = html;
       for (const listener of listeners) listener();
+    },
+    writePdfFile: async (path, bytes) => {
+      if (options.writeError !== undefined) throw options.writeError;
+      written.push({ path, bytes });
     },
   };
   if (options.timeoutMs !== undefined) deps.timeoutMs = options.timeoutMs;
+  if ('savePath' in options) {
+    deps.chooseSavePath = async () => options.savePath ?? null;
+  }
   return {
     deps,
     createWindow,
-    printOptions: () => captured,
+    printOptions: () => capturedPrint,
+    pdfOptions: () => capturedPdf,
+    mountedHtml: () => mounted,
+    written: () => written,
     destroyed: () => destroyed,
     destroyCount: () => destroyCalls,
   };
@@ -566,7 +608,7 @@ describe('Phase 30: printJob', () => {
   it('resolves ok and destroys the hidden window exactly once on success', async () => {
     const fake = fakeDeps({ success: true });
     const result = await printJob(payload([IMG]), fake.deps);
-    expect(result).toEqual({ ok: true });
+    expect(result).toEqual({ ok: true, outcome: 'printed' });
     expect(fake.destroyed()).toBe(true);
     expect(fake.destroyCount()).toBe(1);
   });
@@ -616,7 +658,11 @@ describe('Phase 30: printJob', () => {
     let destroyCalls = 0;
     const deps: PrintJobDeps = {
       createWindow: () => ({
-        webContents: { once: () => undefined, print: () => undefined },
+        webContents: {
+          once: () => undefined,
+          print: () => undefined,
+          printToPDF: () => Promise.resolve(Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d])),
+        },
         isDestroyed: () => false,
         destroy: () => {
           destroyCalls += 1;
@@ -629,6 +675,181 @@ describe('Phase 30: printJob', () => {
     const result = await printJob(payload([IMG]), deps);
     expect(result).toEqual({ ok: false, reason: 'mount failed' });
     expect(destroyCalls).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 35: virtual-PDF output produced inside TFlex
+// ---------------------------------------------------------------------------
+
+const PDF_DEVICE = 'Microsoft Print to PDF';
+const SAVE_PATH = 'C:/Users/test/Documents/out.pdf';
+
+describe('Phase 35: mapPrintToPdfOptions', () => {
+  it('copies the direct-print mapping and honours the CSS page size', () => {
+    const options = mapPrintToPdfOptions({
+      deviceName: PDF_DEVICE,
+      landscape: true,
+      scaling: 'custom',
+      scalePercent: 150,
+    });
+    expect(options).toEqual({
+      landscape: true,
+      printBackground: true,
+      preferCSSPageSize: true,
+      scale: 1.5,
+    });
+  });
+
+  it('omits scale / pageRanges when absent', () => {
+    const options = mapPrintToPdfOptions({ deviceName: PDF_DEVICE });
+    expect('scale' in options).toBe(false);
+    expect('pageRanges' in options).toBe(false);
+    expect(options.landscape).toBe(false);
+  });
+
+  it('converts 0-based print pageRanges to the 1-based printToPDF string', () => {
+    expect(mapPrintToPdfOptions({ pageRanges: [{ from: 0, to: 2 }] }).pageRanges).toBe('1-3');
+    expect(mapPrintToPdfOptions({ pageRanges: [{ from: 4, to: 4 }] }).pageRanges).toBe('5');
+    expect(
+      mapPrintToPdfOptions({ pageRanges: [{ from: 0, to: 1 }, { from: 4, to: 4 }] }).pageRanges,
+    ).toBe('1-2,5');
+  });
+});
+
+describe('Phase 35: isPdfBytes', () => {
+  it('accepts a %PDF- header and rejects everything else', () => {
+    expect(isPdfBytes(Buffer.from('%PDF-1.7\n'))).toBe(true);
+    expect(isPdfBytes(Buffer.from('not a pdf'))).toBe(false);
+    expect(isPdfBytes(Buffer.alloc(0))).toBe(false);
+    expect(isPdfBytes(Buffer.from('%PD'))).toBe(false);
+  });
+});
+
+describe('Phase 35: printJob virtual-PDF path', () => {
+  it('produces PDF bytes and writes them to the chosen path', async () => {
+    const fake = fakeDeps(
+      { success: true },
+      { savePath: SAVE_PATH, pdf: Buffer.from('%PDF-1.7 bytes') },
+    );
+    const result = await printJob(payload([IMG], { deviceName: PDF_DEVICE }), fake.deps);
+    expect(result).toEqual({ ok: true, outcome: 'saved', path: SAVE_PATH });
+    expect(fake.written()).toHaveLength(1);
+    expect(fake.written()[0].path).toBe(SAVE_PATH);
+    expect(Buffer.from(fake.written()[0].bytes).toString()).toBe('%PDF-1.7 bytes');
+    // No driver print call is made on the virtual path.
+    expect(fake.printOptions()).toBeNull();
+    expect(fake.destroyed()).toBe(true);
+    expect(fake.destroyCount()).toBe(1);
+  });
+
+  it('treats a dismissed save dialog as a quiet cancel with no window and no write', async () => {
+    const fake = fakeDeps({ success: true }, { savePath: null, pdf: Buffer.from('%PDF-1.7') });
+    const result = await printJob(payload([IMG], { deviceName: PDF_DEVICE }), fake.deps);
+    expect(result).toEqual({ ok: false, reason: 'save-cancelled' });
+    expect(fake.createWindow).not.toHaveBeenCalled();
+    expect(fake.written()).toHaveLength(0);
+  });
+
+  it('mounts the SAME composed document and maps landscape + page range (parity)', async () => {
+    const images = [IMG, IMG, IMG];
+    const settings: PrintSettings = {
+      deviceName: PDF_DEVICE,
+      pagesPerSheet: 2,
+      pageOrder: 'horizontal',
+      landscape: true,
+      // 0-based {from,to} -> 1-based "1-3" for printToPDF.
+      pageRanges: [{ from: 0, to: 2 }],
+    };
+    const fake = fakeDeps({ success: true }, { savePath: SAVE_PATH, pdf: Buffer.from('%PDF-1.7') });
+    const result = await printJob(payload(images, settings), fake.deps);
+    expect(result.ok).toBe(true);
+
+    // The mounted document is byte-identical to the direct-print composition.
+    expect(fake.mountedHtml()).toBe(composePrintHtml(payload(images, settings)));
+
+    // Page count follows the composition: 3 images at 2-up is 2 sheets, and
+    // the grid comes straight from the SHARED printSheetLayout rule.
+    const layout = printSheetLayout(2, 'horizontal');
+    expect(fake.mountedHtml().split('class="sheet"').length - 1).toBe(Math.ceil(images.length / 2));
+    expect(fake.mountedHtml()).toContain(`grid-template-columns: repeat(${layout.cols}, 1fr)`);
+    expect(fake.mountedHtml()).toContain(`grid-template-rows: repeat(${layout.rows}, 1fr)`);
+
+    expect(fake.pdfOptions()).toMatchObject({
+      landscape: true,
+      printBackground: true,
+      preferCSSPageSize: true,
+      pageRanges: '1-3',
+    });
+  });
+
+  it('maps a vertical 2-up order to the shared 1x2 grid (parity)', async () => {
+    const images = [IMG, IMG];
+    const settings: PrintSettings = {
+      deviceName: PDF_DEVICE,
+      pagesPerSheet: 2,
+      pageOrder: 'vertical',
+    };
+    const fake = fakeDeps({ success: true }, { savePath: SAVE_PATH, pdf: Buffer.from('%PDF-1.7') });
+    await printJob(payload(images, settings), fake.deps);
+    const layout = printSheetLayout(2, 'vertical');
+    expect(layout).toEqual({ cols: 1, rows: 2, slots: [0, 1] });
+    expect(fake.mountedHtml()).toContain('grid-template-columns: repeat(1, 1fr)');
+    expect(fake.mountedHtml()).toContain('grid-template-rows: repeat(2, 1fr)');
+  });
+
+  it('fails loud with print-to-pdf-failed when printToPDF rejects', async () => {
+    const fake = fakeDeps({ success: true }, { savePath: SAVE_PATH, pdf: new Error('boom') });
+    const result = await printJob(payload([IMG], { deviceName: PDF_DEVICE }), fake.deps);
+    expect(result).toEqual({ ok: false, reason: 'print-to-pdf-failed' });
+    expect(fake.written()).toHaveLength(0);
+    expect(fake.destroyCount()).toBe(1);
+  });
+
+  it('fails loud when printToPDF returns non-PDF bytes', async () => {
+    const fake = fakeDeps({ success: true }, { savePath: SAVE_PATH, pdf: Buffer.from('garbage') });
+    const result = await printJob(payload([IMG], { deviceName: PDF_DEVICE }), fake.deps);
+    expect(result).toEqual({ ok: false, reason: 'print-to-pdf-failed' });
+    expect(fake.written()).toHaveLength(0);
+  });
+
+  it('fails loud with save-write-failed when the write throws', async () => {
+    const fake = fakeDeps(
+      { success: true },
+      { savePath: SAVE_PATH, pdf: Buffer.from('%PDF-1.7'), writeError: new Error('disk full') },
+    );
+    const result = await printJob(payload([IMG], { deviceName: PDF_DEVICE }), fake.deps);
+    expect(result).toEqual({ ok: false, reason: 'save-write-failed' });
+    expect(fake.destroyCount()).toBe(1);
+  });
+
+  it('bounds a stalled printToPDF with print-timeout and destroys once', async () => {
+    const fake = fakeDeps(
+      { success: true },
+      { savePath: SAVE_PATH, neverPdf: true, timeoutMs: 10 },
+    );
+    const result = await printJob(payload([IMG], { deviceName: PDF_DEVICE }), fake.deps);
+    expect(result).toEqual({ ok: false, reason: 'print-timeout' });
+    expect(fake.destroyCount()).toBe(1);
+  });
+
+  it('keeps a real printer on the silent webContents.print path (unchanged)', async () => {
+    const fake = fakeDeps(
+      { success: true },
+      { savePath: SAVE_PATH, pdf: Buffer.from('%PDF-1.7') },
+    );
+    const result = await printJob(
+      payload([IMG], { deviceName: 'HP LaserJet Pro M404', copies: 2 }),
+      fake.deps,
+    );
+    expect(result).toEqual({ ok: true, outcome: 'printed' });
+    expect(fake.printOptions()).toMatchObject({
+      silent: true,
+      printBackground: true,
+      deviceName: 'HP LaserJet Pro M404',
+      copies: 2,
+    });
+    expect(fake.written()).toHaveLength(0);
   });
 });
 

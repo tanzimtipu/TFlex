@@ -208,11 +208,21 @@ function handlerBody(name: string): string {
 }
 
 describe("App wiring — every generic open routes through the ref", () => {
-  it("onOpenClick (Open control / File > Open / Ctrl+O) refuses then shows", () => {
-    const body = handlerBody("onOpenClick");
+  // Phase 35 — the Open dialog, the recent-file click, the OS-open listener
+  // and the OS file drop all route through the ONE `openFromRequest`
+  // callback, which composes the routing ref with `openRequestedPath`
+  // (the pure helper pinned in phase35_openRequestedPath.test.ts).
+  it("openFromRequest is the ONE path: refuse -> open -> assign", () => {
+    const body = handlerBody("openFromRequest");
     expect(body).toMatch(/routeOpenedTabRef\.current/);
-    expect(body).toMatch(/routing\.refuseFocused\(picked\)/);
-    expect(body).toMatch(/routing\.show\(tabId\)/);
+    expect(body).toMatch(
+      /openRequestedPath\(path, openPdfFromPath, routeOpenedTabRef\.current\)/,
+    );
+  });
+
+  it("onOpenClick (Open control / File > Open / Ctrl+O) routes through the shared path", () => {
+    const body = handlerBody("onOpenClick");
+    expect(body).toMatch(/openFromRequest\(picked\)/);
   });
 
   it("onSampleClick (sample cards) refuses then shows the opened tab", () => {
@@ -221,10 +231,9 @@ describe("App wiring — every generic open routes through the ref", () => {
     expect(body).toMatch(/routing\.show\(opened\.tabId\)/);
   });
 
-  it("onRecentClick (recent files) refuses then shows", () => {
+  it("onRecentClick (recent files) routes through the shared path", () => {
     const body = handlerBody("onRecentClick");
-    expect(body).toMatch(/routing\.refuseFocused\(entry\.path\)/);
-    expect(body).toMatch(/routing\.show\(tabId\)/);
+    expect(body).toMatch(/openFromRequest\(entry\.path\)/);
   });
 
   it("the ref is filled with refuseFocused and show", () => {

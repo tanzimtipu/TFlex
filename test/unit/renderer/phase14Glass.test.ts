@@ -279,7 +279,10 @@ describe("Phase 14 — docked glass shell (the panels behave like light/dark)", 
   it("the window shell rounds at the window radius and squares when maximized", () => {
     const body = findRuleBody(css, ':root[data-theme="frosted"] .app');
     expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/border-radius:\s*var\(--radius-window,\s*20px\)/);
+    // Phase 35 — the window is opaque and Windows rounds the corners (DWM,
+    // ~8px), so the app radius matches the OS corner instead of the old
+    // transparent-window 20px (which left a flat band in each corner).
+    expect(body ?? "").toMatch(/border-radius:\s*var\(--radius-window,\s*8px\)/);
     // Phase 14.2 — clip, not hidden: the box must stay NON-scrollable
     // (overflow: hidden boxes are programmatically scrollable, and
     // the ambient parallax pad created a scroll area that focus-driven
@@ -341,15 +344,16 @@ describe("Phase 14 — docked glass shell (the panels behave like light/dark)", 
   });
 });
 
-describe("DEF-181 — the desktop wallpaper composites through the frosted glass", () => {
-  // The main process opens the window with `transparent: true` +
-  // `backgroundMaterial: 'acrylic'` (src/main/window.ts). The renderer
-  // then defeated it by painting an opaque base UNDER every glass
-  // sheet: html, body (--bg-base) and the ambient layer (--tf-bg)
-  // each covered the whole window at alpha 1, so the frosted panels
-  // diffused the app's own base instead of the wallpaper behind the
-  // window. These contracts keep every window-level base transparent
-  // in frosted — light/dark keep theirs.
+describe("Phase 35 — the frosted glass diffuses the app's own ambient base", () => {
+  // Phase 14/DEF-181 relied on the main process opening the window with
+  // `transparent: true` + `backgroundMaterial: 'acrylic'`, and kept
+  // html/body transparent so the desktop wallpaper was the backdrop the
+  // frosted chrome diffused. Phase 35 retires that: `transparent: true`
+  // broke Aero Snap and the auto-hide taskbar, so the window is opaque and
+  // the chrome diffuses the app's OWN ambient backdrop (`.tf-ambient` over
+  // the themed --bg-base). html/body paint the themed base explicitly
+  // (nothing depends on the main-process window colour); light/dark were
+  // already opaque.
   const css = readStyles();
 
   it("the frosted ambient no longer paints an opaque base under the glass", () => {
@@ -358,26 +362,23 @@ describe("DEF-181 — the desktop wallpaper composites through the frosted glass
     expect(body ?? "").toMatch(/background-color:\s*transparent/);
     expect(body ?? "").not.toMatch(/--tf-bg/);
     // The aurora survives as low-alpha gradient hints only (the glass
-    // tints the wallpaper; it does not repaint it).
+    // tints the app's ambient base; it does not repaint it).
     const aurora = body ?? "";
     expect(aurora.match(/radial-gradient\(/g)?.length).toBe(4);
   });
 
-  it("html steps aside in frosted (light/dark keep the --bg-base paint)", () => {
-    const rule = findRuleBodies(css, ':root[data-theme="frosted"]').find((b) =>
+  it("html keeps the themed opaque base in frosted (no wallpaper step-aside)", () => {
+    const transparentRoot = findRuleBodies(css, ':root[data-theme="frosted"]').find((b) =>
       /background:\s*transparent/.test(b),
     );
-    expect(rule, "frosted html must be transparent so the wallpaper composites through")
-      .toBeDefined();
-    // The theme-independent window paint is untouched: bare `html` still
-    // carries the --bg-base guard for light/dark.
+    expect(transparentRoot, "Phase 35 retired the frosted html transparency").toBeUndefined();
     expect(findRuleBody(css, "html")).toMatch(/background:\s*var\(--bg-base\)/);
   });
 
-  it("body steps aside in frosted", () => {
+  it("body keeps the themed opaque base in frosted (no step-aside rule)", () => {
     const body = findRuleBody(css, ':root[data-theme="frosted"] body');
-    expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/background:\s*transparent/);
+    expect(body).toBeNull();
+    expect(findRuleBody(css, "body")).toMatch(/background:\s*var\(--bg-base\)/);
   });
 
   it("the welcome launch surface is a translucent wash, never a solid sheet", () => {

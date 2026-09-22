@@ -10,12 +10,21 @@
 //     [A pages | A thumbs || B thumbs | B pages]
 //
 // The strip is the shared rail's section, promoted to a full rail: its own
-// scroll container, its own header (pane badge + document name + page
-// count), its own dynamically computed thumb width and the chunk-2d
+// scroll container, its own dynamically computed thumb width and the chunk-2d
 // document-aware drag wiring. Only the width differs from the single-mode
 // rail — the Thumb render/cleanup/virtualization rules are the same code
 // path (ThumbnailRail), so a large document never rasterizes every
 // thumbnail at once.
+//
+// DEF-291 — the strip is HEADERLESS in Multi Mode. The pane already carries
+// the A/B badge and the document name in its own `[data-pane-header]` row
+// above the workspace, so a second name row here duplicated it and pushed
+// the thumbnails 30px down (the strip was not flush with the page-view
+// header). Removing the row makes the strip body start flush at the pane
+// header's bottom edge. The strip stays identifiable as its pane's via
+// `data-pane-strip-*`, the `aria-label` below and the shared drag identity;
+// clicking a thumb still focuses the pane (jumpAndFocus), and the pane's
+// own pointerdown capture focuses it from anywhere in the strip.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
@@ -38,7 +47,8 @@ export interface PaneThumbStripProps {
   pane: PaneId;
   /** This pane's document (the tab id) — the strip's drag source identity. */
   tabId: string;
-  /** The document name shown in the strip header. */
+  /** The document name, carried as the strip's accessible label (the
+   *  visible name lives in the pane header above; DEF-291). */
   title: string;
   doc: PDFDocumentProxy;
   pageCount: number;
@@ -58,7 +68,8 @@ export interface PaneThumbStripProps {
    *  click is synthetic (the pane's own pointerdown capture handles the
    *  real gesture). */
   onJump: (page: number) => void;
-  /** Focus this strip's pane (the header is a click target too). */
+  /** Focus this strip's pane (a thumb click does it; DEF-291 removed the
+   *  strip's own header, so the pane's pointerdown capture covers the rest). */
   onFocusPane: () => void;
   /** How many documents are loaded across the strips (1 or 2). The strips
    *  sit side by side in the middle, so each keeps the Phase-32
@@ -160,26 +171,9 @@ export function PaneThumbStrip(props: PaneThumbStripProps): ReactElement {
       data-pane-strip-pane={pane}
       data-pane-strip-doc={tabId}
       data-pane-strip-drop-target={dropTarget === tabId ? "true" : undefined}
+      aria-label={`Pane ${pane} thumbnails: ${title}`}
       ref={stripRef}
     >
-      <button
-        type="button"
-        className="pane-thumb-strip-header"
-        data-pane-strip-header
-        onClick={onFocusPane}
-        aria-label={`Focus pane ${pane}: ${title}`}
-        title={`Show ${title} in pane ${pane}`}
-      >
-        <span className="multi-pane-badge pane-thumb-strip-badge" aria-hidden>
-          {pane}
-        </span>
-        <span className="pane-thumb-strip-title" title={title}>
-          {title}
-        </span>
-        <span className="pane-thumb-strip-count">
-          {pageCount} {pageCount === 1 ? "page" : "pages"}
-        </span>
-      </button>
       <div className="pane-thumb-strip-body" data-pane-strip-body>
         <ThumbnailRail
           doc={doc}
