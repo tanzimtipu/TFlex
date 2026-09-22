@@ -2964,3 +2964,40 @@ tokens were inherited by the PDF canvas area. The canvas area now has its own op
 keeps its glass. NOTE, reported not fixed: SINGLE mode in the frosted theme is also see-through (the
 operator only reported Multi Mode, and criterion 6 required single mode unchanged) - a candidate for a
 future polish pass.
+
+## 2026-09-22: Release 1.25.0 published (Multi Mode + Phase 33 refinements) - two process lessons
+
+Release 1.25.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.25.0 with all
+four assets, and the public feed verifies (`latest.yml` -> `version: 1.25.0`, sha512 `3M9ex0gP...`, size
+163276890). Commits: `ac27df5` (Phase 32 Multi Mode), `c1ab331` (Phase 33 refinements), `e9e7242` (the
+DEF-284/285 fixes + the 1.25.0 notes), `26250fc` (bump), `13baa1e` (the release-gate test closure), tag
+`v1.25.0`. Gates: `verify:full` 312 files / 4085 tests green FIRST TRY, the install gate reported
+FileVersion/ProductVersion 1.25.0, the canonical installed spec 9/9, and the installed build showed Multi
+Mode with one shared toolbar and one All Tools badge plus About reporting 1.25.0 with its five highlights.
+The `npm.cmd run dist` flag trap recorded after 1.24.0 was avoided (the script already carries
+`--publish never`).
+
+**Lesson 1 - "single mode unchanged" can freeze an existing defect.** Phase 33's criterion 6 required
+single mode untouched, so when the see-through canvas was found in Multi Mode (DEF-281) the same
+transparency in SINGLE mode was measured, recorded as an observation and deliberately left alone. The
+operator then reported exactly that ("Don't keep see-through for single mode") and it came back as
+DEF-285. Rule: when an operator reports a defect in ONE mode/theme/pane, check whether the same class
+exists in the others BEFORE scoping the fix - and if it does, either fix both or tell the operator
+explicitly in the report so the decision is theirs. Do not let a "keep X unchanged" criterion preserve a
+bug the user will hit next.
+
+**Lesson 2 - an observation with a VISIBLE symptom is a defect, not a note.** The duplicate All Tools badge
+in Multi Mode was found by the adversary, judged to have no user-facing effect (a real click worked) and
+recorded in AGENTS_NOTES as "known observation, deliberately not filed". The operator reported it in the
+next round ("All Tools badge shouldn't render twice") and it cost a reproduce/file/fix/retest cycle
+(DEF-284) anyway. Rule: if a duplicate/overlapping element is VISIBLE in the UI, file it as a defect with
+a severity that reflects the visual noise, even when clicks degrade gracefully - "harmless" observations
+about visible chrome come back later and cost more.
+
+**Also worth keeping:** the operator's follow-up rounds arrived as short numbered lists mixing bug reports
+with design changes. The handling that worked: classify each item (a bug against an existing criterion ->
+a DEF filed and fixed; a design change -> a new appended phase, or an amendment to the CURRENT phase's
+contract when that phase is still unreleased), then amend the contract text BEFORE dispatching so no spec
+contradicts the operator. Phase 33 exists because items 1-2 of the print feedback and 1-3 of the Multi
+View feedback were design changes; the two follow-ups in this round were bugs (DEF-284/285) and were filed
+as such.
