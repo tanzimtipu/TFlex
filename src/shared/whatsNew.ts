@@ -23,6 +23,18 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.27.0',
+    date: '2026-09-22',
+    highlights: [
+      'The window now behaves like a normal Windows app: double-click the title bar to maximise, drag it to a screen edge to snap, and an auto-hide taskbar pops up as expected.',
+      'TFlex now appears as a PDF reader in Windows - choose it in Open with or set it as your default, and double-clicking a PDF opens it (including while TFlex is already running).',
+      'Printing to Microsoft Print to PDF now happens entirely inside TFlex - choose where to save and the PDF is created with no extra Windows print window.',
+      'The print window can be used as its own window and moved anywhere on the desktop, including outside the TFlex window.',
+      'Multi View: one file name per pane instead of two, the tab separator uses a pipe, and undoing a page you moved between files now returns it to its original file.',
+      'Smaller fixes: dragging a PDF onto TFlex opens it, zooming animates, and the frosted top bar looks right again.',
+    ],
+  },
+  {
     version: '1.26.0',
     date: '2026-09-22',
     highlights: [
