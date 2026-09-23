@@ -3569,13 +3569,19 @@ input[type="checkbox"] {
   gap: 18px;
 }
 
-/* DEF-296 — page zoom FLIP. A zoom step re-lays-out the slot instantly (the
-   wrapper takes its NEW width/height), then the wrapper plays a one-shot
-   transform-only scale from the PREVIOUS step's ratio (`--tf-zoom-flip-from`)
-   back to 1, so the page visibly grows / shrinks instead of snapping.
+/* DEF-296 + DEF-302 — page zoom FLIP. A zoom step re-lays-out the slot
+   instantly (the wrapper takes its NEW width/height), then the wrapper plays
+   a one-shot transform-only FLIP from the inverse of the layout change
+   (`--tf-zoom-flip-dx` / `--tf-zoom-flip-dy` translate and
+   `--tf-zoom-flip-from` scale) back to identity, so the page grows / shrinks
+   AND moves in lockstep with its new box instead of rubber-banding inside an
+   already-resized slot. `transform-origin: 0 0` is the whole point: the
+   inverse is `translate(dx, dy) scale(sx, sy)` about the TOP-LEFT, so the box
+   lands exactly on its pre-zoom rect at the first frame (a 50% 50% origin
+   would start the content off by the box delta — the DEF-302 defect).
    Transform-only on purpose: no width/height transition, so there is no
    layout thrashing and the scroll geometry is settled the moment the zoom
-   lands. PageView adds the class only when motion is not instant; the
+   lands. DocumentView applies the class only when motion is not instant; the
    global prefers-reduced-motion and `:root[data-animations="off"]`
    catch-alls additionally collapse the animation to its end state, so both
    accessibility paths are covered. The rotation turn (DEF-274) lives on the
@@ -3583,15 +3589,17 @@ input[type="checkbox"] {
    and never overwrite each other. The PDF bitmap is scaled, never
    recoloured (DEF-099). */
 .pdf-page-zoom-flip {
+  transform-origin: 0 0;
   animation: tf-page-zoom-flip var(--motion-duration-standard) var(--motion-ease-standard);
 }
 
 @keyframes tf-page-zoom-flip {
   from {
-    transform: scale(var(--tf-zoom-flip-from, 1));
+    transform: translate(var(--tf-zoom-flip-dx, 0px), var(--tf-zoom-flip-dy, 0px))
+      scale(var(--tf-zoom-flip-from, 1));
   }
   to {
-    transform: scale(1);
+    transform: translate(0px, 0px) scale(1, 1);
   }
 }
 

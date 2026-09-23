@@ -6,6 +6,7 @@ import {
   useCallback,
   useImperativeHandle,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -33,6 +34,14 @@ import {
   type PanDragStart,
 } from "../state/handPan";
 import type { OutlineNode } from "../pdf/pdfjs";
+import { useInstantMotion } from "../hooks/useAnimations";
+import {
+  runZoomFlip,
+  zoomAnchorPage,
+  type ZoomFlipPending,
+  type ZoomFlipPageEl,
+  type ZoomFlipRect,
+} from "./zoomFlip";
 import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
 import { SideRail } from "./SideRail";
@@ -1337,6 +1346,84 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const effectiveScaleRef = useRef(effectiveScale);
   effectiveScaleRef.current = effectiveScale;
 
+  // ---- DEF-302 — the page-zoom FLIP --------------------------------------
+  //
+  // The OLD DEF-296 flip scaled the page about its centre inside a slot that
+  // had already jumped to the new size, so the page rubber-banded (on a 25%
+  // step it started ~198px from where the layout had already put it). The
+  // fix is a real FLIP: capture each mounted page's rect BEFORE the zoom
+  // (First), let the layout change (Last), then animate the INVERSE
+  // `translate(dx, dy) scale(sx, sy)` about the top-left back to identity
+  // (Play). DocumentView owns the scroller, so it can also restore the
+  // scroll anchor in the same pre-paint pass: without that, a scrolled-down
+  // document jumps because every page above the anchor reflows.
+  //
+  // The whole pass must run AFTER the new layout commits but BEFORE paint,
+  // and it must run the anchor correction BEFORE it measures `Last` (so the
+  // FLIP is relative to the corrected geometry). PageView cannot do it: its
+  // layout effects fire before the parent's, so the scroll would be corrected
+  // too late. Hence: capture synchronously in the zoom handlers, apply in one
+  // `useLayoutEffect` on `effectiveScale`.
+  const pendingZoomFlipRef = useRef<ZoomFlipPending | null>(null);
+  const instantMotion = useInstantMotion();
+  const instantMotionRef = useRef(instantMotion);
+  instantMotionRef.current = instantMotion;
+
+  /** Page wrapper for a page number (the only `.pdf-page` inside its slot). */
+  const pageElementFor = (page: number | null): HTMLElement | null => {
+    if (page === null) return null;
+    return slotRefsRef.current.get(page)?.querySelector<HTMLElement>(".pdf-page") ?? null;
+  };
+
+  /** Synchronously record the pre-zoom rects + scroll anchor. Returns false
+   *  when nothing is mounted to animate. Called just before the zoom dispatch
+   *  so `First` is the OLD layout. */
+  const captureZoomFlip = useCallback((): boolean => {
+    const scroller = scrollerRef.current;
+    if (scroller === null) return false;
+    const scrollerTop = scroller.getBoundingClientRect().top;
+    const firstRects = new Map<number, ZoomFlipRect>();
+    const pages: ZoomFlipPageEl[] = [];
+    slotRefsRef.current.forEach((slotEl, page) => {
+      const el = slotEl.querySelector<HTMLElement>(".pdf-page");
+      if (el === null) return;
+      const r = el.getBoundingClientRect();
+      if (!(r.width > 0) || !(r.height > 0)) return;
+      firstRects.set(page, { left: r.left, top: r.top, width: r.width, height: r.height });
+      pages.push({ page, el });
+    });
+    if (pages.length === 0) return false;
+    const anchor = zoomAnchorPage(pages, scrollerTop);
+    if (anchor === null) return false;
+    pendingZoomFlipRef.current = {
+      firstRects,
+      anchorPage: anchor.page,
+      anchorOffsetBefore: anchor.el.getBoundingClientRect().top - scrollerTop,
+    };
+    return true;
+  }, []);
+
+  // Apply the zoom FLIP after the new layout commits. Keyed on
+  // `effectiveScale`: manual zoom steps change it; fit-mode recomputes are
+  // never captured (see zoomTo / the wheel handler), so a resize drag runs
+  // this effect with a null pending and does nothing.
+  useLayoutEffect(() => {
+    const pending = pendingZoomFlipRef.current;
+    if (pending === null) return;
+    pendingZoomFlipRef.current = null;
+    const scroller = scrollerRef.current;
+    if (scroller === null) return;
+    const pages: ZoomFlipPageEl[] = [];
+    pending.firstRects.forEach((_rect, page) => {
+      const el = pageElementFor(page);
+      if (el !== null) pages.push({ page, el });
+    });
+    runZoomFlip(scroller, pages, pending, instantMotionRef.current);
+    // `effectiveScale` is the only committed signal that the layout moved.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveScale]);
+
+
   // ---- per-page slot geometry (DEF-141) ----------------------------------
   //
   // PageView reports each mounted page's own dimensions through
@@ -1988,9 +2075,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
 
   // ---- zoom controls -----------------------------------------------------------------
   const zoomTo = useCallback((direction: 1 | -1) => {
-    const next = stepTowards(effectiveScaleRef.current, direction);
+    const current = effectiveScaleRef.current;
+    const next = stepTowards(current, direction);
+    if (next === current) {
+      // Already at the ladder end — no layout change, so no capture (a
+      // stale pending would otherwise fire on the next unrelated scale).
+      return;
+    }
+    // DEF-302 — capture First + the scroll anchor before the layout moves.
+    captureZoomFlip();
     dispatchZoom({ type: "set-manual-scale", scale: next });
-  }, []);
+  }, [captureZoomFlip]);
   const setMode = useCallback(
     (mode: ZoomMode) => {
       if ((mode === "fit-width" || mode === "fit-page") && firstPageSize !== null) {
@@ -2024,12 +2119,16 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         for (let i = 0; i < Math.abs(steps); i += 1) {
           scale = stepTowards(scale, steps > 0 ? 1 : -1);
         }
-        dispatchZoom({ type: "set-manual-scale", scale });
+        if (scale !== effectiveScaleRef.current) {
+          // DEF-302 — capture First + the scroll anchor before the layout.
+          captureZoomFlip();
+          dispatchZoom({ type: "set-manual-scale", scale });
+        }
       }
     };
     scroller.addEventListener("wheel", onWheel, { passive: false });
     return () => scroller.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [captureZoomFlip]);
 
   // ---- search ---------------------------------------------------------------------------
   //
@@ -3111,11 +3210,6 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       widthPt={pagePt?.w ?? 612}
                       heightPt={pagePt?.h ?? 792}
                       cssScale={effectiveScale}
-                      // DEF-296 — animate the zoom FLIP only for the
-                      // discrete user zoom steps (manual mode). Fit modes
-                      // recompute `effectiveScale` on every window-resize
-                      // frame, and animating those would be per-frame churn.
-                      zoomAnimated={zoom.mode === "manual"}
                       rotation={pageRotation}
                       shouldRender={true}
                       hits={hitsByPage.get(visiblePage) ?? EMPTY_HITS}

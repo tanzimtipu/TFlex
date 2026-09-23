@@ -604,9 +604,24 @@ export async function start(): Promise<void> {
     notifyPrintDocumentGone(docId);
   });
 
+  // DEF-303 — the debounced geometry persist is a DISK-ONLY write. The
+  // renderer already received the state at the moment of the transition
+  // (see `onWindowStateChanged` below), and it never reads geometry
+  // x/y/width/height, so echoing this write would only force a settings
+  // re-render ~300 ms after the maximize — the lag DEF-303 measured.
+  // Chosen fix: a geometry-only write emits nothing.
   const onGeometryChanged = (geometry: AppSettings['geometry']): void => {
-    const current = settings.getCurrent();
-    void settings.save({ ...current, geometry });
+    void settings.saveGeometryOnly(geometry);
+  };
+
+  // DEF-303 — push the window-state change IMMEDIATELY (no debounce) so the
+  // caption / controls reflect a maximize / unmaximize / minimize / restore
+  // within a frame. Broadcast-only: the geometry is still persisted later,
+  // once per burst, by the debounced onGeometryChanged above. Uses the
+  // existing `settings:changed` transport, which is the renderer's only
+  // window-state source (App.tsx DEF-202), so no IPC contract changes.
+  const onWindowStateChanged = (geometry: AppSettings['geometry']): void => {
+    broadcast({ ...settings.getCurrent(), geometry });
   };
 
   const createWindow = (): void => {
@@ -614,6 +629,7 @@ export async function start(): Promise<void> {
       rendererHtml,
       rendererDevUrl,
       onGeometryChanged,
+      onWindowStateChanged,
       // DEF-142 — gate the whole-window close on unsaved edits.
       onCloseRequested: onWindowCloseRequested,
     });

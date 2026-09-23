@@ -6,6 +6,14 @@ interface WindowDeps {
   rendererHtml: string;
   rendererDevUrl?: string;
   onGeometryChanged: (geometry: WindowGeometry) => void;
+  /** DEF-303 — immediate window-state notification. Fires on
+   *  maximize / unmaximize / minimize / restore, BEFORE (and independent of)
+   *  the 300 ms geometry debounce, so the renderer's caption / controls can
+   *  reflect the new state in single-digit milliseconds. This callback must
+   *  NOT persist: the debounced `onGeometryChanged` below still writes the
+   *  geometry exactly as before, once per burst. Optional so callers that do
+   *  not care about the caption (tests) keep working. */
+  onWindowStateChanged?: (geometry: WindowGeometry) => void;
   /** DEF-142 — invoked synchronously from the window's 'close' event so the
    *  caller can `event.preventDefault()` when the renderer has unsaved
    *  edits. The caller (index.ts) decides whether to abort the close and
@@ -181,19 +189,37 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
   });
 
   let debounce: NodeJS.Timeout | null = null;
-  const reportGeometry = (): void => {
+  const readGeometry = (): WindowGeometry | null => {
     const maximized = win.isMaximized();
     const bounds = win.getNormalBounds();
     if (bounds.width < 640 || bounds.height < 480) {
-      return;
+      return null;
     }
-    deps.onGeometryChanged({
+    return {
       x: bounds.x,
       y: bounds.y,
       width: bounds.width,
       height: bounds.height,
       maximized,
-    });
+    };
+  };
+  const reportGeometry = (): void => {
+    const geometry = readGeometry();
+    if (geometry === null) {
+      return;
+    }
+    deps.onGeometryChanged(geometry);
+  };
+  // DEF-303 — the state transition itself is emitted synchronously, with no
+  // debounce, so the caption / controls update immediately. The 300 ms
+  // debounce below is left to do exactly what it did before: persist the
+  // geometry (position / size) once per burst.
+  const emitWindowState = (): void => {
+    const geometry = readGeometry();
+    if (geometry === null) {
+      return;
+    }
+    deps.onWindowStateChanged?.(geometry);
   };
   const scheduleReport = (): void => {
     if (debounce !== null) {
@@ -203,8 +229,20 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
   };
   win.on('move', scheduleReport);
   win.on('resize', scheduleReport);
-  win.on('maximize', scheduleReport);
-  win.on('unmaximize', scheduleReport);
+  // DEF-303 — state events emit immediately AND (for maximize / unmaximize,
+  // which change the persisted `maximized` flag) keep the existing debounced
+  // geometry persist. A minimize -> restore -> maximize burst therefore
+  // emits three immediate state updates and still writes the geometry once.
+  win.on('maximize', () => {
+    emitWindowState();
+    scheduleReport();
+  });
+  win.on('unmaximize', () => {
+    emitWindowState();
+    scheduleReport();
+  });
+  win.on('minimize', emitWindowState);
+  win.on('restore', emitWindowState);
 
   win.on('close', (event) => {
     if (debounce !== null) {

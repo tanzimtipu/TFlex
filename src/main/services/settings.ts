@@ -510,7 +510,27 @@ export class SettingsService {
     return task;
   }
 
-  private async _doSave(settings: AppSettings): Promise<void> {
+  /** DEF-303 — persist ONLY the OS window geometry (bounds + `maximized`)
+   *  without echoing `settings:changed` back to the renderer.
+   *
+   *  Main owns the geometry: `src/main/window.ts` pushes every state
+   *  transition immediately through its `onWindowStateChanged` callback, so
+   *  by the time this debounced write lands the renderer already shows the
+   *  correct caption. The renderer never reads geometry.x/y/width/height
+   *  (only `geometry.maximized`, see App.tsx DEF-202), so an echo for a
+   *  geometry-only write buys nothing and costs a full settings re-render
+   *  ~300 ms after the maximize — exactly the lag DEF-303 measured. Chosen
+   *  fix: emit nothing for a geometry-only write. Every other write
+   *  (`save` / `saveCurrent` / `addRecentFile`) keeps the normal echo. */
+  saveGeometryOnly(geometry: WindowGeometry): Promise<void> {
+    this.current = normalizeSettings({ ...this.current, geometry });
+    const snapshot = structuredClone(this.current);
+    const task = this._saveQueue.then(() => this._doSave(snapshot, false));
+    this._saveQueue = task.catch(() => {});
+    return task;
+  }
+
+  private async _doSave(settings: AppSettings, notify = true): Promise<void> {
     const tmp = `${this.filePath}.tmp`;
     try {
       const normalized = normalizeSettings(settings);
@@ -519,7 +539,9 @@ export class SettingsService {
       await rename(tmp, this.filePath);
       this.current = normalized;
       this.persisted = structuredClone(normalized);
-      this.onChange?.(structuredClone(normalized));
+      if (notify) {
+        this.onChange?.(structuredClone(normalized));
+      }
     } catch (e) {
       try {
         await unlink(tmp);

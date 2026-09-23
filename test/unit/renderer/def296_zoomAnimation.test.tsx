@@ -5,30 +5,24 @@
 //
 // The fix is a one-shot transform-only FLIP on the `.pdf-page` wrapper: the
 // slot re-lays-out at the NEW size (no width/height transition, so no layout
-// thrashing), then the wrapper plays `tf-page-zoom-flip` from the previous
-// step's ratio back to 1. The rotation turn (DEF-274) is on the INNER
-// `.pdf-page-canvas`, so the two transforms compose as parent x child.
+// thrashing), then the wrapper plays `tf-page-zoom-flip` back to identity.
 //
-// These tests pin the pure helper, the CSS contract + its motion-token
-// wiring, and the class/var the component applies — and that the instant
-// path (reduced motion) applies NOTHING. Real smoothness is qa's e2e.
+// DEF-302 later upgraded WHAT the animation interpolates (a real
+// translate+scale inverse about `transform-origin: 0 0` instead of a
+// centre-origin scale) and moved the application to DocumentView (which owns
+// the scroller, so it can preserve the scroll anchor). This file keeps the
+// CSS contract + accessibility collapse pinned; the maths, the per-page
+// application and the scroll anchor live in def302_zoomFlip.test.tsx.
 
-(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { act } from "react";
-import { createRoot } from "react-dom/client";
-import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
-import { PageView } from "../../../src/renderer/components/PageView";
 import {
   ZOOM_FLIP_ANIMATION,
-  ZOOM_FLIP_CLASS,
+  ZOOM_FLIP_DX_VAR,
+  ZOOM_FLIP_DY_VAR,
   ZOOM_FLIP_FROM_VAR,
-  zoomFlipFromScale,
 } from "../../../src/renderer/components/zoomFlip";
-import { initialAnnotationToolState } from "../../../src/renderer/annotations/model";
 
 const STYLES_PATH = resolve(__dirname, "../../../src/renderer/styles.css");
 
@@ -54,7 +48,7 @@ function findRuleBody(s: string, selector: string): string | null {
   return null;
 }
 
-describe("DEF-296 — the zoom FLIP is a transform-only scale of the page wrapper", () => {
+describe("DEF-296/DEF-302 — the zoom FLIP is a transform-only animation of the page wrapper", () => {
   const css = readFileSync(STYLES_PATH, "utf8");
 
   it("defines the one-shot zoom-flip animation on motion tokens", () => {
@@ -65,15 +59,25 @@ describe("DEF-296 — the zoom FLIP is a transform-only scale of the page wrappe
     );
   });
 
-  it("the keyframe scales from the previous ratio to 1 (no layout property)", () => {
+  it("anchors the inverse on the top-left (transform-origin: 0 0)", () => {
+    const body = findRuleBody(css, ".pdf-page-zoom-flip {");
+    expect(body).not.toBeNull();
+    expect(body ?? "").toMatch(/transform-origin:\s*0\s+0/);
+  });
+
+  it("the keyframe interpolates translate + scale from the start vars to identity", () => {
     const body = findRuleBody(css, "@keyframes tf-page-zoom-flip {");
     expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(
-      new RegExp(`from\\s*\\{\\s*transform:\\s*scale\\(var\\(${ZOOM_FLIP_FROM_VAR}, 1\\)\\)`),
+    const from = body ?? "";
+    expect(from).toMatch(
+      new RegExp(`from\\s*\\{\\s*transform:\\s*translate\\(var\\(${ZOOM_FLIP_DX_VAR}, 0px\\), var\\(${ZOOM_FLIP_DY_VAR}, 0px\\)\\)`),
     );
-    expect(body ?? "").toMatch(/to\s*\{\s*transform:\s*scale\(1\)/);
+    expect(from).toMatch(
+      new RegExp(`scale\\(var\\(${ZOOM_FLIP_FROM_VAR}, 1\\)\\)`),
+    );
+    expect(from).toMatch(/to\s*\{\s*transform:\s*translate\(0px, 0px\)\s*scale\(1, 1\)/);
     // Width/height are never animated (no layout thrash).
-    expect(body ?? "").not.toMatch(/(width|height|left|top)\s*:/);
+    expect(from).not.toMatch(/(width|height|left|top)\s*:/);
   });
 
   it("both accessibility paths collapse it (reduced motion + Animations off)", () => {
@@ -82,155 +86,5 @@ describe("DEF-296 — the zoom FLIP is a transform-only scale of the page wrappe
     expect(clean).toMatch(/:root\[data-animations="off"\] \*[\s\S]{0,160}animation-duration:\s*0\.01ms !important/);
     // No rule re-enables a duration for the flip class.
     expect(clean).not.toMatch(/\.pdf-page-zoom-flip[^{]*\{[^}]*animation-duration/);
-  });
-});
-
-describe("DEF-296 — zoomFlipFromScale", () => {
-  it("zooming IN starts smaller (ratio < 1); zooming OUT starts larger (> 1)", () => {
-    expect(zoomFlipFromScale(1, 1.25)).toBeCloseTo(0.8);
-    expect(zoomFlipFromScale(1.25, 1)).toBeCloseTo(1.25);
-  });
-
-  it("returns null when there is nothing to animate", () => {
-    expect(zoomFlipFromScale(1, 1)).toBeNull();
-    expect(zoomFlipFromScale(0, 1)).toBeNull();
-    expect(zoomFlipFromScale(Number.NaN, 1)).toBeNull();
-    expect(zoomFlipFromScale(-1, 1)).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// The component applies the class/var on a scale change, and nothing when
-// motion is instant.
-
-const pending: Array<() => void> = [];
-
-function makeDoc(): PDFDocumentProxy {
-  return {
-    numPages: 1,
-    async getPage(): Promise<PDFPageProxy> {
-      return {
-        pageNumber: 1,
-        view: [0, 0, 612, 792],
-        getViewport: (args: { scale: number; rotation?: number }): { width: number; height: number } => ({
-          width: 612 * args.scale,
-          height: 792 * args.scale,
-        }),
-        render: (): { promise: Promise<void>; cancel: () => void } => {
-          const promise = new Promise<void>((r) => pending.push(r));
-          return { promise, cancel: (): void => undefined };
-        },
-        getTextContent: async (): Promise<{ items: unknown[] }> => ({ items: [] }),
-      } as unknown as PDFPageProxy;
-    },
-    destroy: async (): Promise<void> => undefined,
-  } as unknown as PDFDocumentProxy;
-}
-
-function mount(cssScale: number, animated = true): { host: HTMLElement; rerender: (s: number) => void; unmount: () => void } {
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const root = createRoot(host);
-  const noop = (): void => undefined;
-  const draw = (scale: number): void => {
-    act((): void => {
-      root.render(
-        <PageView
-          doc={makeDoc()}
-          page={1}
-          sourcePage={1}
-          widthPt={612}
-          heightPt={792}
-          cssScale={scale}
-          zoomAnimated={animated}
-          shouldRender={true}
-          hits={[]}
-          activeHit={null}
-          registerPage={noop}
-          onPageSize={noop}
-          onActiveHitTop={noop}
-          annotations={[]}
-          annotationTool={initialAnnotationToolState}
-          flashId={null}
-          onCreateAnnotation={noop}
-          onFinishedOneShot={noop}
-          onRenderStart={noop}
-          onRenderEnd={noop}
-        />,
-      );
-    });
-  };
-  draw(cssScale);
-  return {
-    host,
-    rerender: draw,
-    unmount: (): void => {
-      act((): void => root.unmount());
-      host.remove();
-    },
-  };
-}
-
-const wrapper = (host: HTMLElement): HTMLElement | null => host.querySelector(".pdf-page");
-
-describe("DEF-296 — PageView applies the FLIP on a zoom step", () => {
-  beforeEach(() => {
-    pending.length = 0;
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
-      () => ({ fillRect: vi.fn(), drawImage: vi.fn() }) as unknown as CanvasRenderingContext2D,
-    );
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("adds the class and the from-ratio var when cssScale changes", () => {
-    const { host, rerender, unmount } = mount(1);
-    try {
-      expect(wrapper(host)?.className).not.toContain(ZOOM_FLIP_CLASS);
-      rerender(1.25);
-      const el = wrapper(host);
-      expect(el?.className).toContain(ZOOM_FLIP_CLASS);
-      expect(el?.style.getPropertyValue(ZOOM_FLIP_FROM_VAR)).toBe("0.8");
-    } finally {
-      unmount();
-    }
-  });
-
-  it("does not animate a fit-mode recompute (zoomAnimated=false)", () => {
-    const { host, rerender, unmount } = mount(1, false);
-    try {
-      rerender(1.25);
-      const el = wrapper(host);
-      expect(el?.className).not.toContain(ZOOM_FLIP_CLASS);
-      expect(el?.style.getPropertyValue(ZOOM_FLIP_FROM_VAR)).toBe("");
-    } finally {
-      unmount();
-    }
-  });
-
-  it("applies nothing under reduced motion (instant path)", () => {
-    const original = window.matchMedia;
-    (window as { matchMedia?: typeof window.matchMedia }).matchMedia = ((query: string) => ({
-      matches: query.includes("prefers-reduced-motion"),
-      media: query,
-      onchange: null,
-      addEventListener: (): void => undefined,
-      removeEventListener: (): void => undefined,
-      addListener: (): void => undefined,
-      removeListener: (): void => undefined,
-      dispatchEvent: (): boolean => false,
-    })) as unknown as typeof window.matchMedia;
-    const { host, rerender, unmount } = mount(1);
-    try {
-      rerender(1.25);
-      const el = wrapper(host);
-      expect(el?.className).not.toContain(ZOOM_FLIP_CLASS);
-      expect(el?.style.getPropertyValue(ZOOM_FLIP_FROM_VAR)).toBe("");
-    } finally {
-      unmount();
-      (window as { matchMedia?: typeof window.matchMedia }).matchMedia = original;
-    }
   });
 });

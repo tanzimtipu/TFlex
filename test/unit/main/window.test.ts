@@ -600,4 +600,119 @@ describe('createMainWindow', () => {
       expect(onCloseRequested).toHaveBeenCalled();
     });
   });
+
+  // DEF-303 — the window-state / caption update must not wait for the 300 ms
+  // geometry debounce. `onWindowStateChanged` fires synchronously on
+  // maximize / unmaximize / minimize / restore; `onGeometryChanged` keeps
+  // persisting the geometry on the existing debounce (once per burst).
+  describe('DEF-303 — immediate window-state emission', () => {
+    function makeWindow() {
+      const onGeometryChanged = vi.fn();
+      const onWindowStateChanged = vi.fn();
+      createMainWindow(defaultSettings, {
+        rendererHtml: '/app/renderer/index.html',
+        onGeometryChanged,
+        onWindowStateChanged,
+      });
+      const win = lastWindow();
+      (win.isMaximized as ReturnType<typeof vi.fn>).mockReturnValue(false);
+      (win.getNormalBounds as ReturnType<typeof vi.fn>).mockReturnValue({
+        x: 50, y: 60, width: 1024, height: 768,
+      });
+      return { win, onGeometryChanged, onWindowStateChanged };
+    }
+
+    it('emits maximize immediately, before the debounce fires', () => {
+      vi.useFakeTimers();
+      const { win, onGeometryChanged, onWindowStateChanged } = makeWindow();
+      (win.isMaximized as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      (win as any)._emit('maximize');
+
+      // Immediate: no timer advance at all.
+      expect(onWindowStateChanged).toHaveBeenCalledTimes(1);
+      expect(onWindowStateChanged).toHaveBeenCalledWith({
+        x: 50, y: 60, width: 1024, height: 768, maximized: true,
+      });
+      // The persistence path is still debounced.
+      expect(onGeometryChanged).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(350);
+      expect(onGeometryChanged).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it('emits unmaximize immediately, before the debounce fires', () => {
+      vi.useFakeTimers();
+      const { win, onGeometryChanged, onWindowStateChanged } = makeWindow();
+
+      (win as any)._emit('unmaximize');
+
+      expect(onWindowStateChanged).toHaveBeenCalledTimes(1);
+      expect(onWindowStateChanged).toHaveBeenCalledWith(
+        expect.objectContaining({ maximized: false }),
+      );
+      expect(onGeometryChanged).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(350);
+      expect(onGeometryChanged).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+
+    it('emits minimize and restore immediately', () => {
+      vi.useFakeTimers();
+      const { win, onWindowStateChanged } = makeWindow();
+
+      (win as any)._emit('minimize');
+      expect(onWindowStateChanged).toHaveBeenCalledTimes(1);
+      (win as any)._emit('restore');
+      expect(onWindowStateChanged).toHaveBeenCalledTimes(2);
+
+      // Neither state event needed a timer to emit.
+      vi.advanceTimersByTime(0);
+      expect(onWindowStateChanged).toHaveBeenCalledTimes(2);
+      vi.useRealTimers();
+    });
+
+    it('a minimize -> restore -> maximize burst emits each state at once and persists the geometry once', () => {
+      vi.useFakeTimers();
+      const { win, onGeometryChanged, onWindowStateChanged } = makeWindow();
+      (win.isMaximized as ReturnType<typeof vi.fn>).mockReturnValue(true);
+
+      (win as any)._emit('minimize');
+      (win as any)._emit('restore');
+      (win as any)._emit('maximize');
+
+      // Three immediate emissions, zero debounce waits.
+      expect(onWindowStateChanged).toHaveBeenCalledTimes(3);
+      expect(onWindowStateChanged).toHaveBeenLastCalledWith(
+        expect.objectContaining({ maximized: true }),
+      );
+      // Nothing written yet: the burst shares the single debounce.
+      expect(onGeometryChanged).not.toHaveBeenCalled();
+
+      vi.advanceTimersByTime(350);
+      expect(onGeometryChanged).toHaveBeenCalledTimes(1);
+      expect(onGeometryChanged).toHaveBeenCalledWith(
+        expect.objectContaining({ maximized: true }),
+      );
+      vi.useRealTimers();
+    });
+
+    it('does not emit state when the callback is omitted', () => {
+      vi.useFakeTimers();
+      const onGeometryChanged = vi.fn();
+      createMainWindow(defaultSettings, {
+        rendererHtml: '/app/renderer/index.html',
+        onGeometryChanged,
+      });
+      const win = lastWindow();
+
+      expect(() => {
+        (win as any)._emit('minimize');
+        (win as any)._emit('maximize');
+      }).not.toThrow();
+      vi.advanceTimersByTime(350);
+      expect(onGeometryChanged).toHaveBeenCalledTimes(1);
+      vi.useRealTimers();
+    });
+  });
 });

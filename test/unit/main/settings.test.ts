@@ -1185,3 +1185,91 @@ describe('Phase 23: animationsEnabled validation', () => {
     }
   });
 });
+
+// DEF-303 — the debounced window-geometry persist must be a disk-only write:
+// no `settings:changed` echo, so a geometry-only change cannot make the
+// renderer re-render ~300 ms after a maximize. Every other write keeps its echo.
+describe('DEF-303: saveGeometryOnly persists without echoing', () => {
+  it('writes the geometry to disk but does not call onChange', async () => {
+    const echoed: AppSettings[] = [];
+    const svc = new SettingsService(file, (s) => echoed.push(s));
+
+    await svc.saveGeometryOnly({
+      x: 10, y: 20, width: 1024, height: 768, maximized: true,
+    });
+
+    expect(echoed).toHaveLength(0);
+    expect(svc.getCurrent().geometry).toEqual({
+      x: 10, y: 20, width: 1024, height: 768, maximized: true,
+    });
+    const text = await readFile(file, 'utf8');
+    expect(JSON.parse(text).geometry).toEqual({
+      x: 10, y: 20, width: 1024, height: 768, maximized: true,
+    });
+  });
+
+  it('preserves the other settings fields while updating the geometry', async () => {
+    const echoed: AppSettings[] = [];
+    const svc = new SettingsService(file, (s) => echoed.push(s));
+    await svc.save({
+      ...structuredClone(DEFAULT_SETTINGS),
+      theme: 'dark',
+      recentsCap: 5,
+      pagesPanelCollapsed: true,
+    });
+    expect(echoed).toHaveLength(1);
+
+    await svc.saveGeometryOnly({
+      x: 1, y: 2, width: 800, height: 600, maximized: false,
+    });
+
+    // Only the non-geometry write echoed.
+    expect(echoed).toHaveLength(1);
+    const text = await readFile(file, 'utf8');
+    const onDisk = JSON.parse(text);
+    expect(onDisk.theme).toBe('dark');
+    expect(onDisk.recentsCap).toBe(5);
+    expect(onDisk.pagesPanelCollapsed).toBe(true);
+    expect(onDisk.geometry).toEqual({
+      x: 1, y: 2, width: 800, height: 600, maximized: false,
+    });
+  });
+
+  it('normalizes an out-of-range geometry like a normal save (min size floor)', async () => {
+    const svc = new SettingsService(file);
+    await svc.saveGeometryOnly({
+      x: -50, y: -50, width: 100, height: 100, maximized: false,
+    });
+    const text = await readFile(file, 'utf8');
+    const onDisk = JSON.parse(text);
+    expect(onDisk.geometry.width).toBe(640);
+    expect(onDisk.geometry.height).toBe(480);
+  });
+
+  it('a burst of geometry writes still echoes nothing and lands the last value', async () => {
+    const echoed: AppSettings[] = [];
+    const svc = new SettingsService(file, (s) => echoed.push(s));
+
+    await Promise.all([
+      svc.saveGeometryOnly({ x: 1, y: 1, width: 700, height: 500, maximized: false }),
+      svc.saveGeometryOnly({ x: 2, y: 2, width: 800, height: 600, maximized: false }),
+      svc.saveGeometryOnly({ x: 3, y: 3, width: 900, height: 700, maximized: true }),
+    ]);
+
+    expect(echoed).toHaveLength(0);
+    const text = await readFile(file, 'utf8');
+    expect(JSON.parse(text).geometry).toEqual({
+      x: 3, y: 3, width: 900, height: 700, maximized: true,
+    });
+  });
+
+  it('the renderer-initiated save still echoes (the silent path is geometry-only)', async () => {
+    const echoed: AppSettings[] = [];
+    const svc = new SettingsService(file, (s) => echoed.push(s));
+
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), theme: 'light' });
+
+    expect(echoed).toHaveLength(1);
+    expect(echoed[0].theme).toBe('light');
+  });
+});

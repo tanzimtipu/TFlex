@@ -3,9 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useInstantMotion } from '../hooks/useAnimations';
 import {
   ZOOM_FLIP_ANIMATION,
-  ZOOM_FLIP_CLASS,
-  ZOOM_FLIP_FROM_VAR,
-  zoomFlipFromScale,
+  clearZoomFlip,
 } from './zoomFlip';
 import { measureHitRects, type HitRect } from '../pdf/highlight';
 import { isInvalidPageRequest } from '../pdf/pdfjs';
@@ -51,11 +49,6 @@ interface PageViewProps {
   widthPt: number; // fallback dims at scale 1 (placeholder sizing)
 heightPt: number;
   cssScale: number;
-  /** DEF-296 — when true, a `cssScale` change plays the one-shot zoom FLIP
-   *  (the user's zoom in/out and ctrl+wheel steps). Fit-mode recomputes on
-   *  window resize pass false so a resize drag does not start the
-   *  animation on every frame. */
-  zoomAnimated?: boolean;
   shouldRender: boolean;
   hits: SearchHit[];
   activeHit: SearchHit | null;
@@ -326,7 +319,6 @@ export function PageView(props: PageViewProps) {
     widthPt,
 heightPt,
     cssScale,
-    zoomAnimated = true,
     shouldRender,
     hits,
     activeHit,
@@ -409,45 +401,16 @@ heightPt,
   const instantMotionRef = useRef(instantMotion);
   instantMotionRef.current = instantMotion;
 
-  // DEF-296 — the previous cssScale, for the zoom FLIP. The wrapper is laid
-  // out at the NEW size; this effect starts a one-shot transform-only scale
-  // from the old/new ratio back to 1 so the zoom is VISIBLE instead of a
-  // snap. A layout effect (before paint) so the first painted frame of the
-  // new size is already the start scale — no flash of the full size.
-  const prevZoomScaleRef = useRef(cssScale);
-  useLayoutEffect(() => {
-    const el = wrapperRef.current;
-    if (el === null) return;
-    const prev = prevZoomScaleRef.current;
-    prevZoomScaleRef.current = cssScale;
-    const ratio = zoomFlipFromScale(prev, cssScale);
-    // Instant motion (reduced motion / Animations off): no class, no var —
-    // the layout change is the whole update. Fit-mode recomputes
-    // (`zoomAnimated === false`) are excluded so a resize drag never runs
-    // the animation per frame.
-    if (ratio === null || instantMotionRef.current || !zoomAnimated) {
-      el.classList.remove(ZOOM_FLIP_CLASS);
-      el.style.removeProperty(ZOOM_FLIP_FROM_VAR);
-      return;
-    }
-    // Remove first, force a reflow, then re-add so a SECOND zoom step
-    // restarts the one-shot animation instead of being swallowed while the
-    // previous one is still running.
-    el.classList.remove(ZOOM_FLIP_CLASS);
-    el.style.setProperty(ZOOM_FLIP_FROM_VAR, String(ratio));
-    void el.offsetWidth;
-    el.classList.add(ZOOM_FLIP_CLASS);
-  }, [cssScale, zoomAnimated]);
-
-  // Drop the FLIP class/var once the animation lands (the end state is the
-  // identity transform anyway; this keeps the wrapper clean for the next
-  // step and for anything that inspects it).
+  // DEF-302 — the zoom FLIP is driven by DocumentView (it owns the scroller,
+  // so it can preserve the scroll anchor and FLIP every mounted page in one
+  // ordered pass after the new layout commits). The wrapper only cleans up
+  // the class/vars once the one-shot animation lands; the end state is the
+  // identity transform anyway.
   const onZoomFlipEnd = useCallback((e: { animationName: string }): void => {
     if (e.animationName !== ZOOM_FLIP_ANIMATION) return;
     const el = wrapperRef.current;
     if (el === null) return;
-    el.classList.remove(ZOOM_FLIP_CLASS);
-    el.style.removeProperty(ZOOM_FLIP_FROM_VAR);
+    clearZoomFlip(el);
   }, []);
 
 
