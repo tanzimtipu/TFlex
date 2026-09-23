@@ -5,6 +5,36 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-310: Phase 36 PAGES ContextPanel outline escapes its section and overlays the whole panel body
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0). Launch the dev app through the canonical helper, then on the welcome screen run `localStorage.setItem('tfStagePanel','1')` and open the bundled `report.pdf` (34 pages, 8-entry outline). The PAGES ContextPanel mounts alongside the unchanged rail.
+2. Observe the new panel (x220, w220): the outline's 8 links render at the TOP of the panel (y≈96..258), painted over thumbnail 1, instead of inside the collapsible OUTLINE section at the bottom.
+3. Click the OUTLINE section toggle `[data-context-panel="pages"] [data-outline-toggle]` (the section at y863). The click never lands — Playwright reports `<div class="outline-panel">` intercepts pointer events; the section cannot be collapsed or expanded.
+4. Click any panel thumbnail (e.g. page 7) — the same overlay intercepts; the thumbnail is not clickable/selectable.
+
+Expected: the re-parented outline renders inside its collapsible section below the thumbnail stack; the section toggles; the thumbnails stay fully clickable.
+Actual: `.outline-panel` is `position: absolute; inset: 0` (src/renderer/styles.css:2972) and the new ContextPanel wrapper `.context-panel-outline-body` is not a positioning context (static), so the absolute panel escapes to the nearest positioned ancestor, `.glass-sidebar-body` (`position: relative`, styles.css:11184), and spans the ENTIRE panel body. The wrapper meanwhile collapses to 8px. Measured live (e2e/phase36_chunk2_pages_parity.spec.cjs P36C2-E): `.context-panel-outline-body` = {x:220,y:895,w:219,h:8} while the first `.outline-link` = {x:248,y:96,w:183,h:22} and thumb page 1 = {y:120,h:196}; `inside=false`, `overlapThumbs=true`. The overlay also sits above the toggle (y863..895), so it swallows the toggle click.
+
+Severity: HIGH — on any document that has an outline (including the bundled report.pdf), the PAGES panel's thumbnails cannot be clicked or selected and the outline section cannot be toggled: the panel's core workflow is blocked. (The rail's own outline tab is unaffected: `.rail-content` is `position: relative`, so its `.outline-panel` is correctly contained.)
+
+Screenshot: n/a (DOM geometry probe is the evidence; the flag-ON screenshot `screenshots/phase36-chunk2-panel.png` uses the no-outline scanned.pdf by design, to isolate DEF-310 from the thumbnail parity checks)
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk2_pages_parity.spec.cjs` -> P36C2-E fails: `DEF-310: outline links must render inside the outline section` (Expected true, Received false); full log `test-results/phase36-chunk2-pages.log`.
+- P36C2-E geometry: `{"bodyR":{"x":220,"y":895,"w":219,"h":8,"bottom":903},"thumbR":{"x":228,"y":120,"w":193,"h":196,"bottom":316},"firstLink":{"x":248,"y":96,"w":183,"h":22,"bottom":118},"linkCount":8,"inside":false,"overlapThumbs":true}`.
+- The other 6 specs in that file are green on a no-outline fixture (parity + verbs + menu), so the failure is isolated to the outlined-document case.
+- orchestrator: FIX-READY (relaying frontend-dev - the containment now mirrors how the RAIL hosts the same tree: the rail bounds it in `.rail-content` (a positioned box with a definite height), so the ContextPanel's section got the two missing pieces - `position: relative` on its body (the `.rail-content` role, so the absolute `.outline-panel` with its own `inset: 0` is bounded there and scrolls inside the section) and a definite height while the body is mounted (`.context-panel-outline:has(.context-panel-outline-body) { height: 40% }`), staying content-sized when collapsed so the toggle sits flush. `.outline-panel`'s own rule and the rail are untouched. Live geometry after the fix: the section body `{x:220,y:610,w:219,h:294,bottom:903}`, the first link `{y:618,h:22}` -> `inside=true, overlapThumbs=false` (was `{y:895,h:8}` / `y:96` / `inside=false, overlapThumbs=true`); the toggle toggles both ways and the outline navigates. Evidence: `phase36ContextPanel.test.tsx` 32 tests (+5 containment invariants incl. a styles.css contract guard that `.rail-content` stays relative and `.outline-panel` is unchanged); `npm run verify` exit 0; `build:renderer` exit 0.)
+
+History:
+- qa: opened
+- qa: CLOSED. Retested at the Phase 36 chunk-2 gate re-run on the built app (`npm.cmd run build` exit 0). On the OUTLINED bundled report.pdf (34 pages, 8-entry outline) the re-parented tree is now contained: `.context-panel-outline-body` = {x:220,y:610,w:219,h:294,bottom:903}, first `.outline-link` = {x:248,y:618,w:183,h:22,bottom:640} -> `inside=true`, `overlapThumbs=false` (was {x:220,y:895,w:219,h:8} / firstLink y:96 / inside=false, overlapThumbs=true). The OUTLINE toggle toggles both ways (aria-expanded true->false->true; the body unmounts and remounts); a panel thumbnail click jumps the canvas (currentPage 2->7); a hover verb fires with the outline present (page 2 rotated, not intercepted); outline navigation works (currentPage 1->2). `e2e/phase36_chunk2_pages_parity.spec.cjs` 7/7 (P36C2-E green; the two new assertions - thumbnail click and hover verb on the outlined document - were added to P36C2-E for this retest). No-regression: the Phase 30-35 gate/regression suites + the chunk-1 specs = 90 passed / 0 failed; `npm.cmd run verify` exit 0 (conventions clean, 191 source files; typecheck clean).
+
 ## DEF-309: launchApp(extraArgs) wedges the dev app before any window exists
 
 - Status: CLOSED

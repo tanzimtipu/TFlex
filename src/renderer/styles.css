@@ -12403,3 +12403,289 @@ rect.ann-highlight.ann-preview {
   }
 }
 
+
+/* ===========================================================================
+ * Phase 36 (chunk 2) — THE PAGES CONTEXT PANEL.
+ *
+ * The PAGES stage's left panel: a themed header (`Pages · N` + Combine), the
+ * RE-PARENTED ThumbnailRail (live previews, virtualization, drag-reorder,
+ * selection bar, scroll sync — the rail's own component and geometry, so the
+ * stack here is visually identical to today's rail) and the collapsible
+ * outline section wrapping the RE-PARENTED OutlinePanel.
+ *
+ * The panel is mounted ALONGSIDE the unchanged rail only under the temporary
+ * dev flag (`.context-panel-dev`, `?tfStagePanel=1`); the default app never
+ * renders it. Every colour is an existing theme token and every duration an
+ * existing motion token — nothing here introduces a value of its own.
+ * ========================================================================= */
+
+.context-panel {
+  grid-column: 1;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--panel-border);
+  border-radius: 0 0 var(--panel-radius) 0;
+}
+
+/* DEV MOUNT — `?tfStagePanel=1` (or the same key in localStorage). The panel
+ * is placed one rail width to the right of the unchanged rail column so both
+ * surfaces render side by side for the parity comparison; it claims no grid
+ * track and reflows nothing, so the canvas and the rail are untouched. This
+ * whole rule is deleted with the flag when the rail retires. */
+.context-panel-dev {
+  grid-column: auto;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--tf-rail-w, 220px);
+  width: var(--tf-rail-w, 220px);
+  z-index: 9;
+  box-shadow: var(--shadow-menu);
+}
+
+.context-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+}
+
+.context-panel-dev-badge {
+  padding: 2px 4px;
+  font-size: 8px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-on-accent);
+  background: var(--accent);
+  border-radius: var(--radius-1);
+}
+
+/* The header's merge entry: a ghost control at the panel's trailing edge. */
+.context-panel-combine {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-micro);
+  padding: 3px var(--space-small);
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--fg-soft);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.context-panel-combine:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--fg-strong);
+}
+
+.context-panel-combine:focus-visible,
+.thumb-verb:focus-visible,
+.context-panel-section-toggle:focus-visible,
+.context-menu-item:focus-visible {
+  outline: 2px solid var(--tf-accent-focus);
+  outline-offset: 1px;
+}
+
+.context-panel-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The thumbnail stack fills the body. `.thumb-scroller` is
+ * `position: absolute; inset: 0` inside its parent, so this wrapper is the
+ * positioning context — exactly the role `.rail-content` plays for the rail. */
+.context-panel-thumbs {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---- The outline section (collapsible, below the stack) ---- */
+
+/* DEF-310 — the section is the outline's frame. `.outline-panel` is
+ * `position: absolute; inset: 0` (the RAIL's own rule, which the rail's
+ * `.rail-content` bounds), so the section and the body must be bounded boxes
+ * too: with a static body the tree escapes to the nearest positioned
+ * ancestor (`.glass-sidebar-body`) and paints over the thumbnail stack.
+ * Expanded, the section claims a definite share of the panel body — exactly
+ * the role `.rail-content`'s definite height plays in the rail. Collapsed
+ * (no body rendered) it is content-sized, so the toggle sits flush under the
+ * stack with no dead space. */
+.context-panel-outline {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.context-panel-outline:has(.context-panel-outline-body) {
+  height: 40%;
+}
+
+.context-panel-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-micro);
+  width: 100%;
+  padding: var(--space-small) var(--space-control);
+  font: inherit;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.context-panel-section-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+/* The positioning context for the re-parented `.outline-panel`, mirroring
+ * `.rail-content` (`position: relative`) in the rail. The section's definite
+ * height above gives this box a definite height too, so the panel's own
+ * `inset: 0` + `overflow-y: auto` scroll INSIDE the section and can never
+ * reach the thumbnails. `overflow: hidden` keeps the panel's scroller here;
+ * the padding-bottom keeps the last link off the panel's bottom edge. */
+.context-panel-outline-body {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  padding-bottom: var(--space-small);
+}
+
+/* ---- The inline hover verbs on each thumbnail ---- */
+
+/* A semi-opaque themed backdrop (the same film token the chrome uses) keeps
+ * the verbs legible over any page content; the reveal rides the existing
+ * micro motion token. It is pointer-inert until revealed, so it never steals
+ * the thumbnail's hover, click or drag. */
+.thumb-verbs {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  padding: 1px;
+  background: var(--glass-chrome-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-2);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-duration-micro) var(--motion-ease-standard);
+}
+
+.thumb:hover .thumb-verbs,
+.thumb:focus-within .thumb-verbs {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.thumb-verb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-1);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-micro) var(--motion-ease-standard),
+    color var(--motion-duration-micro) var(--motion-ease-standard);
+}
+
+.thumb-verb:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.thumb-verb-danger:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+/* ---- The thumbnail right-click menu ---- */
+
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 184px;
+  padding: var(--space-micro) 0;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-3);
+  box-shadow: var(--shadow-menu);
+}
+
+.context-menu-title {
+  padding: var(--space-micro) var(--space-control) 2px;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 5px var(--space-control);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-micro) var(--motion-ease-standard),
+    color var(--motion-duration-micro) var(--motion-ease-standard);
+}
+
+.context-menu-item:hover {
+  background: var(--accent-soft);
+  color: var(--fg-strong);
+}
+
+.context-menu-item-danger {
+  color: var(--error);
+}
+
+.context-menu-item-danger:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .context-panel-combine,
+  .context-panel-section-toggle,
+  .thumb-verbs,
+  .thumb-verb,
+  .context-menu-item {
+    transition: none;
+  }
+}

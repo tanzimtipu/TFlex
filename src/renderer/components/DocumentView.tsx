@@ -48,6 +48,8 @@ import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
 import { SideRail } from "./SideRail";
 import { PaneThumbStrip } from "./PaneThumbStrip";
+import { ContextPanel } from "./ContextPanel";
+import { currentStagePanelDevFlag } from "../state/devFlags";
 import { ToolsBadge } from "./ToolsBadge";
 import { usePageDragOptional } from "../state/PageDragContext";
 import {
@@ -209,6 +211,18 @@ interface DocumentViewProps {
   onSaveAs?: () => void;
   onMerge?: () => void;
   onSplit?: () => void;
+  /** Phase 36 (chunk 2) — the PAGES ContextPanel's right-click verbs. Each is
+   *  the host's EXISTING surface for that command (the same dialogs the
+   *  toolbar / palette already open); the panel passes the VISIBLE 1-based
+   *  page the gesture landed on so the host can pre-scope the dialog.
+   *  "Insert blank after" is the ONE exception: it is an immediate engine
+   *  insert (no dialog), so its handler receives the page and acts at once.
+   *  Optional: with a handler absent its menu item is not wired (the panel
+   *  is dev-mounted, so the default app never depends on these). */
+  onExtractPages?: (page: number) => void;
+  onInsertBlankPage?: (page: number) => void;
+  onReplacePages?: (page: number) => void;
+  onRenumberPages?: (page: number) => void;
   /** Phase 8 — Optimize / Audit Space dialogs. Both are toolbar
    *  actions that the host owns (the dialogs are mounted at the App
    *  level). The toolbar buttons are disabled when there's no active
@@ -228,8 +242,11 @@ interface DocumentViewProps {
   /** B8 — Delete pages (current / custom range). The toolbar
    *  button only renders when this is wired, mirroring the
    *  `onRotateClockwise` opt-in. Disabled when there's only one
-   *  page left. */
-  onDeletePage?: () => void;
+   *  page left. Phase 36 (chunk 2) — the optional `page` seeds the
+   *  dialog with the page the PAGES panel's "Delete…" gesture landed
+   *  on; the toolbar passes no argument (the dialog then seeds from
+   *  the tab's current page). */
+  onDeletePage?: (page?: number) => void;
   canDeletePage?: boolean;
   /** Phase 3 — annotations. The host (App) holds the canonical list; this
    *  view threads it through to each PageView's overlay and the rail's
@@ -606,6 +623,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onUndo,
   onMerge,
   onSplit,
+  onExtractPages,
+  onInsertBlankPage,
+  onReplacePages,
+  onRenumberPages,
   onOptimize,
   onAuditSpace,
   onRotateClockwise,
@@ -2872,6 +2893,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // SideRail; Multi Mode renders this pane's OWN thumbnail strip, which the
   // workspace places at `railSide` (pane A right, pane B left) so the two
   // strips meet side by side in the middle of the workspace.
+  // Phase 36 (chunk 2) — the PAGES ContextPanel, mounted ALONGSIDE the
+  // unchanged rail behind the temporary `?tfStagePanel=1` dev flag (see
+  // state/devFlags.ts). Read once per mount: the flag is dev-only scaffolding
+  // and is deleted with the flag when the rail retires. The panel is single
+  // mode only (the concept's left context panel applies to SINGLE mode; Multi
+  // Mode keeps its Phase 32-34 centred pane strips).
+  const showContextPanel = useMemo(
+    (): boolean => multiRail === null && currentStagePanelDevFlag(),
+    [multiRail],
+  );
+
   const railNode = multiRail === null ? (
     <SideRail
       doc={doc}
@@ -3006,8 +3038,49 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // area on the left (single mode, unchanged) and AFTER it on the right
       // (Multi Mode's pane A), so the DOM order matches the geometry.
       data-rail-side={showRail ? railSide : undefined}
+      // Phase 36 (chunk 2) — dev-only marker: the PAGES ContextPanel is
+      // mounted alongside the rail for a side-by-side comparison.
+      data-context-panel-dev-mount={showContextPanel ? "true" : undefined}
     >
       {showRail && railSide === "left" ? railNode : null}
+      {showContextPanel && railSide === "left" ? (
+        // The dev panel passes through EXACTLY the rail's own props (doc,
+        // engine state, current page, the per-page sizes, the jump/scroll
+        // sync, the op handlers and the drag wiring) plus the host's existing
+        // organize-dialog entries. It owns no state of its own.
+        <ContextPanel
+          dev
+          doc={doc}
+          currentPage={currentPage}
+          defaultWidthPt={firstPageSize?.w ?? 612}
+          defaultHeightPt={firstPageSize?.h ?? 792}
+          pageSizes={pageSizes}
+          engineState={engineState}
+          proxyVisibleOrder={proxyVisibleOrder}
+          canUndo={canUndo}
+          onOp={onRotate}
+          onDelete={onDelete}
+          onReorder={onReorder}
+          onUndo={onUndo}
+          onJump={(p): void => jumpToPage(p)}
+          outline={outline}
+          onError={railError}
+          onMerge={onMerge}
+          onExtractPages={onExtractPages}
+          onInsertBlank={onInsertBlankPage}
+          onReplacePages={onReplacePages}
+          onRenumberPages={onRenumberPages}
+          onDeletePage={onDeletePage}
+          // Phase 32's cross-document drag wiring, threaded exactly as the
+          // pane strips thread it. The gate above is single mode only, so this
+          // is null in practice today (the panel then keeps the rail's own
+          // intra-document drag semantics); the contract is plumbed now so the
+          // later chunk that gives one panel both modes needs no new wiring.
+          crossDoc={
+            multiRail === null ? null : { tabId: multiRail.tabId, onDrop: multiRail.onDrop }
+          }
+        />
+      ) : null}
       <div ref={mainRef} className="workspace-main">
         {/* Phase 33 (chunk 4) — in Multi Mode the ONE toolbar lives in the
             stage (the shared bar); this pane suppresses its own rows so the

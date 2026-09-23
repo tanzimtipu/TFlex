@@ -1,4 +1,4 @@
-import { ChevronRight, Images, List, MessageSquare, PanelLeftClose, PanelRightOpen, Undo2, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { ChevronRight, Images, List, MessageSquare, PanelLeftClose, PanelRightOpen, Undo2, RotateCcw, RotateCw, Scissors, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
@@ -470,7 +470,27 @@ export interface ThumbnailRailProps {
     /** Apply a resolved drop; App owns the engine + refresh sequence. */
     onDrop: (op: PageDropOp) => void;
   } | null;
+  /** Phase 36 (chunk 2) — the PAGES ContextPanel's inline hover verbs.
+   *  Present ONLY on the ContextPanel's rail instance; every other caller
+   *  (SideRail, PaneThumbStrip) passes nothing, so their DOM, geometry and
+   *  drag behaviour are unchanged. Each verb is handed this thumb's VISIBLE
+   *  1-based page and runs the caller's EXISTING per-page handler. */
+  thumbVerbs?: ThumbVerbs | null;
+  /** Phase 36 (chunk 2) — a right-click on a thumbnail (the ContextPanel's
+   *  menu). Receives the VISIBLE 1-based page plus the pointer's viewport
+   *  coordinates; absent everywhere else, so the native menu is untouched. */
+  onThumbContextMenu?: ThumbContextMenuHandler | null;
 }
+
+/** Phase 36 (chunk 2) — ContextPanel's per-thumbnail verbs. */
+export interface ThumbVerbs {
+  onRotateCw: (page: number) => void;
+  onExtract: (page: number) => void;
+  onDelete: (page: number) => void;
+}
+
+/** Phase 36 (chunk 2) — `(visiblePage, clientX, clientY)`. */
+export type ThumbContextMenuHandler = (page: number, x: number, y: number) => void;
 
 /** Phase 32 — exported so the Multi Mode shared rail can render one
  *  instance per loaded document (each with its own scroll container and
@@ -493,6 +513,8 @@ export function ThumbnailRail({
   onJump,
   thumbWidth = THUMB_WIDTH,
   crossDoc = null,
+  thumbVerbs = null,
+  onThumbContextMenu = null,
 }: ThumbnailRailProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const thumbElsRef = useRef(new Map<number, HTMLElement>());
@@ -934,6 +956,8 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
                 // the top of the effect.
                 railJumpTargetRef.current = label;
               }}
+              thumbVerbs={thumbVerbs}
+              onThumbContextMenu={onThumbContextMenu}
             />
           );
         })}
@@ -1049,6 +1073,12 @@ interface ThumbProps {
    *  this jump" via its railJumpTargetRef. We can't pass the
    *  ref directly because ThumbnailRail owns it. */
   onJumpFromRail: (label: number) => void;
+  /** Phase 36 (chunk 2) — the ContextPanel's inline verbs (absent elsewhere:
+   *  no verbs are rendered and the thumb's DOM is byte-identical to the
+   *  pre-chunk-2 rail). */
+  thumbVerbs?: ThumbVerbs | null;
+  /** Phase 36 (chunk 2) — right-click on this thumb (ContextPanel's menu). */
+  onThumbContextMenu?: ThumbContextMenuHandler | null;
 }
 
 function Thumb({
@@ -1076,8 +1106,17 @@ function Thumb({
   onDragEnd,
   registerThumb,
   onJumpFromRail,
+  thumbVerbs = null,
+  onThumbContextMenu = null,
 }: ThumbProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Phase 36 (chunk 2) — true when the gesture that started a drag landed on
+  // a hover verb or inside the verb cluster. A verb is a real control inside
+  // the (draggable) thumb button, so without this the browser would start a
+  // page drag from the verb: `onDragStart` bails rather than reordering the
+  // document. Set on the thumb's own pointerdown; reset on drag end. It is
+  // inert while `thumbVerbs` is absent (the ContextPanel is its only user). */
+  const pointerDownOnVerbRef = useRef(false);
   // DEF-222 — tracks whether this Thumb is still mounted. The render
   // effect's cleanup must release the bitmap on true unmount, but must
   // NOT blank a still-mounted canvas when it merely re-runs on a
@@ -1316,11 +1355,45 @@ function Thumb({
         onJump(visiblePage);
       }}
       draggable
-      onDragStart={onDragStart}
+      // Phase 36 (chunk 2) — the verb cluster is a CONTROL inside this
+      // draggable button, not a drag handle: remember that the press landed
+      // on it so `onDragStart` can refuse (the drag belongs to the page, and
+      // the verbs must never start one). Inert without `thumbVerbs`.
+      onPointerDown={(e): void => {
+        // `Element`, not `HTMLElement`: the target of a press on a verb's
+        // lucide glyph is the nested SVGElement, which is not an HTMLElement.
+        pointerDownOnVerbRef.current =
+          thumbVerbs !== null &&
+          e.target instanceof Element &&
+          e.target.closest('.thumb-verbs') !== null;
+      }}
+      onDragStart={(e): void => {
+        if (pointerDownOnVerbRef.current) {
+          e.preventDefault();
+          return;
+        }
+        onDragStart(e);
+      }}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
       onDrop={onDrop}
-      onDragEnd={onDragEnd}
+      onDragEnd={(): void => {
+        pointerDownOnVerbRef.current = false;
+        onDragEnd();
+      }}
+      // Phase 36 (chunk 2) — the ContextPanel's right-click menu. Only wired
+      // when the panel asks for it, so the rail's native menu is unchanged.
+      // This is the thumb's own contextmenu (not a document-level
+      // catch-all): it suppresses the native menu for THIS target only and
+      // never touches the bubbling of other events.
+      onContextMenu={
+        onThumbContextMenu === null
+          ? undefined
+          : (e): void => {
+              e.preventDefault();
+              onThumbContextMenu(label, e.clientX, e.clientY);
+            }
+      }
       data-page={label}
       data-source-page={page}
       title={pageLabel !== null ? `Page ${label} (label: ${pageLabel})` : `Page ${label}`}
@@ -1350,6 +1423,64 @@ function Thumb({
         <canvas ref={canvasRef} className="thumb-canvas" />
         {!rendered && <span className="thumb-placeholder" aria-hidden />}
       </span>
+      {/* Phase 36 (chunk 2) — the ContextPanel's inline hover verbs: three
+          12px ghost icon controls at the thumb's top-right corner on a
+          semi-opaque themed backdrop, revealed on hover / focus-within over
+          the existing micro motion token. They are `role="button"` SPANS, not
+          nested buttons: a <button> inside the thumb's own <button> is
+          invalid HTML (React flags it) and the thumb must stay the one real
+          button per page. Their own click/keydown handlers stop the bubble to
+          the thumb's handler (which would jump and could re-select) — a
+          targeted stop on the verb's own handler, never a catch-all — so
+          invoking a verb changes neither the selection nor the page. They are
+          `draggable={false}` and covered by the pointerdown guard above, so
+          they can never start a page drag either. */}
+      {thumbVerbs !== null && (
+        <span className="thumb-verbs" data-thumb-verbs>
+          {(
+            [
+              {
+                id: 'rotate-cw',
+                title: 'Rotate clockwise',
+                aria: `Rotate page ${label} clockwise`,
+                Icon: RotateCw,
+              },
+              { id: 'extract', title: 'Extract this page', aria: `Extract page ${label}`, Icon: Scissors },
+              { id: 'delete', title: 'Delete this page', aria: `Delete page ${label}`, Icon: Trash2 },
+            ] as const
+          ).map(({ id, title, aria, Icon }) => {
+            const run = (): void => {
+              if (id === 'rotate-cw') thumbVerbs.onRotateCw(label);
+              else if (id === 'extract') thumbVerbs.onExtract(label);
+              else thumbVerbs.onDelete(label);
+            };
+            return (
+              <span
+                key={id}
+                role="button"
+                tabIndex={0}
+                draggable={false}
+                className={id === 'delete' ? 'thumb-verb thumb-verb-danger' : 'thumb-verb'}
+                title={title}
+                aria-label={aria}
+                data-thumb-verb={id}
+                onClick={(e): void => {
+                  e.stopPropagation();
+                  run();
+                }}
+                onKeyDown={(e): void => {
+                  if (e.key !== 'Enter' && e.key !== ' ') return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  run();
+                }}
+              >
+                <Icon size={12} aria-hidden />
+              </span>
+            );
+          })}
+        </span>
+      )}
       <span className="thumb-label">
         {pageLabel !== null ? pageLabel : label}
       </span>
@@ -1434,7 +1565,11 @@ interface OutlinePanelProps {
   onError?: (message: string) => void;
 }
 
-function OutlinePanel({ doc, outline, onJump, onError }: OutlinePanelProps) {
+/** Phase 36 (chunk 2) — exported so the PAGES ContextPanel can re-parent the
+ *  same tree (REQUIREMENTS: surfaces are re-parented, never rewritten). The
+ *  render, collapse state and bookmark navigation are byte-identical to the
+ *  rail's outline tab; only the framing around it changes. */
+export function OutlinePanel({ doc, outline, onJump, onError }: OutlinePanelProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggle = (key: string): void => {
     setCollapsed((prev) => {

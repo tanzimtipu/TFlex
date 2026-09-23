@@ -513,6 +513,11 @@ export function App(): ReactElement {
   // the existing onDelete callback directly (no dialog) so a
   // single-thumb click is unaffected.
   const [deletePageOpen, setDeletePageOpen] = useState(false);
+  // Phase 36 (chunk 2) — the PAGES panel's "Delete…" gesture seeds the
+  // dialog with the page it landed on. null means "no seed": the toolbar's
+  // Delete button and the palette open the dialog seeded from the tab's
+  // current page, exactly as before.
+  const [deletePageSeed, setDeletePageSeed] = useState<number | null>(null);
   // B8 — close-tab prompt. The dialog surfaces when the user
   // tries to close a tab with unsaved engine changes. The
   // host tracks which tab id is pending the close and what
@@ -1806,6 +1811,7 @@ export function App(): ReactElement {
     setCommentExportOpen(false);
     setCommentImportOpen(false);
     setDeletePageOpen(false);
+    setDeletePageSeed(null);
     // B21 — the tools palette is App-level (not per-tab) and
     // renders over the workspace even when no tab is active.
     // Closing the last tab left it mounted on the home / welcome
@@ -4608,6 +4614,59 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
     [noteOpApplied, pushToast],
   );
 
+  /** Phase 36 (chunk 2) — the PAGES panel's "Insert blank after" menu item.
+   *  The label promises an IMMEDIATE action on the clicked page, so it calls
+   *  the engine's EXISTING `insertBlankPage` directly with
+   *  afterIndex = page - 1 (0-based visible index after which to insert)
+   *  instead of opening InsertPagesDialog. The dialog stays reachable from
+   *  the toolbar and the All-tools palette. The blank page takes the clicked
+   *  page's size when pdf.js can report it (US Letter otherwise), and the
+   *  proxy/state refresh matches the dialog path (B17/B19: the inserted page
+   *  is not visible until the proxy is rebuilt). */
+  const onInsertBlankAfterPage = useCallback(
+    async (page: number): Promise<void> => {
+      const activeId = activeTabIdRefLocal.current;
+      if (activeId === null) return;
+      const open = openTabsRef.current[activeId];
+      if (open === undefined) return;
+      let widthPt = 612;
+      let heightPt = 792;
+      try {
+        const pdfPage = await open.session.doc.getPage(page);
+        const vp = pdfPage.getViewport({ scale: 1 });
+        widthPt = vp.width;
+        heightPt = vp.height;
+      } catch {
+        // Keep the US Letter fallback when the page cannot be measured.
+      }
+      const res = await engineRef.current.insertBlankPage(
+        open.session.engineDocId,
+        page - 1,
+        widthPt,
+        heightPt,
+      );
+      if (!res.ok) {
+        pushToast("error", describeEngineError(res.error.code, res.error.message));
+        return;
+      }
+      // Same post-op contract as the dialog path: mirror the engine's
+      // echoed state, then rebuild the pdf.js proxy so the new blank page
+      // renders at the right viewport.
+      if (!engineRef.current.available) {
+        noteOpApplied(activeId, res.value);
+      } else {
+        const stateResult = await engineRef.current.getState(open.session.engineDocId);
+        if (stateResult.ok) noteOpApplied(activeId, stateResult.value);
+      }
+      const refreshFn = refreshDocProxyForRef.current;
+      if (refreshFn !== null) {
+        void refreshFn(activeId).catch(() => undefined);
+      }
+      pushToast("info", "Inserted blank page.");
+    },
+    [noteOpApplied, pushToast],
+  );
+
   // ---- Phase 12: residual page-organize + annotate parity ----
 
   /** Phase 12 — open the Replace-pages dialog. Lazy-load the page
@@ -5306,19 +5365,27 @@ pushToast(
   /** Open the B8 delete pages dialog against the active tab. The
    *  toolbar / Tools palette both funnel through this; the rail's
    *  per-thumb delete still uses `onDelete(tabId, [page])`
-   *  directly (no dialog) for the single-thumb case. */
-  const onDeletePageClick = useCallback((): void => {
+   *  directly (no dialog) for the single-thumb case.
+   *
+   *  Phase 36 (chunk 2) — `page` is the optional seed the PAGES panel's
+   *  "Delete…" menu item passes (the visible page the gesture landed on);
+   *  the dialog uses it in place of the tab's current page. The toolbar
+   *  and palette pass no argument, so their behaviour is unchanged. */
+  const onDeletePageClick = useCallback((page?: number): void => {
     if (activeTabIdRefLocal.current === null) return;
+    setDeletePageSeed(page !== undefined && page > 0 ? page : null);
     setDeletePageOpen(true);
   }, []);
 
   const onCancelDeletePage = useCallback((): void => {
     setDeletePageOpen(false);
+    setDeletePageSeed(null);
   }, []);
 
   const onDeletePageConfirm = useCallback(
     (choice: { mode: "current" | "range"; pages: number[] }): void => {
       setDeletePageOpen(false);
+      setDeletePageSeed(null);
       const activeId = activeTabIdRefLocal.current;
       if (activeId === null) return;
       if (choice.pages.length === 0) return;
@@ -7686,6 +7753,22 @@ pushToast(
                     onUndo={engine.undo}
                     onMerge={onMergeClick}
                     onSplit={onSplitClick}
+                    // Phase 36 (chunk 2) — the PAGES ContextPanel's right-click
+                    // verbs. Extract / replace / renumber reuse the SAME dialog
+                    // entries the toolbar and the All-tools palette already
+                    // open; "Delete…" opens the existing delete-pages dialog
+                    // seeded with the clicked page (onDeletePageClick's optional
+                    // seed); "Insert blank after" is an IMMEDIATE engine insert
+                    // (no dialog), because its label promises the action. The
+                    // panel is mounted only behind the temporary
+                    // `?tfStagePanel=1` dev flag, so this wiring changes nothing
+                    // by default.
+                    onExtractPages={(): void => onSplitClick()}
+                    onInsertBlankPage={(page): void => {
+                      void onInsertBlankAfterPage(page);
+                    }}
+                    onReplacePages={onReplacePagesClick}
+                    onRenumberPages={onRenumberPagesClick}
                     onOptimize={onOptimizeClick}
                     onAuditSpace={onAuditClick}
                     // DEF-041 — toolbar Rotate clockwise button. The
@@ -8410,7 +8493,7 @@ pushToast(
           activeTab?.session.doc.numPages ??
           0
         }
-        currentPage={(() => {
+        currentPage={deletePageSeed ?? (() => {
           const id = activeTabIdRefLocal.current;
           if (id === null) return 1;
           const tab = openTabsRef.current[id];
