@@ -118,6 +118,10 @@ vi.mock('../../../src/main/services/dialog', () => ({
 interface FakeWindow {
   isDestroyed: ReturnType<typeof vi.fn>;
   isMinimized: ReturnType<typeof vi.fn>;
+  // DEF-305 — createWindow (src/main/index.ts:691) records the pre-minimise
+  // maximised state via win.isMaximized() for the DEF-303 caption-maximize
+  // planner; the mock must carry it or createWindow throws before routing.
+  isMaximized: ReturnType<typeof vi.fn>;
   restore: ReturnType<typeof vi.fn>;
   focus: ReturnType<typeof vi.fn>;
   webContents: {
@@ -142,6 +146,7 @@ function makeWindow(): FakeWindowFixture {
   const win: FakeWindow = {
     isDestroyed: vi.fn().mockReturnValue(false),
     isMinimized: vi.fn().mockReturnValue(false),
+    isMaximized: vi.fn().mockReturnValue(false),
     restore: vi.fn(),
     focus: vi.fn(),
     webContents: {

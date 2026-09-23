@@ -5,6 +5,30 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-305: verify:full is RED at the 1.27.2 release commit: the DEF-303 planner left a stale window mock in def300OpenPathRouting.test.ts
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 35 (1.27.2 release-push gate)
+
+Steps to reproduce:
+1. Check out the 1.27.2 release commit (package.json version 1.27.2).
+2. From the repo root run `npm.cmd run verify:full`.
+3. Observe `test/unit/main/def300OpenPathRouting.test.ts` > `DEF-300 — OS file-open routes to the main window` fail 4 of its 5 tests with `TypeError: win.isMaximized is not a function` (thrown at src/main/index.ts:691:47).
+
+Expected: `verify:full` exits 0 - conventions clean, typecheck clean, every unit test green. Per AGENTS.md this is MANDATORY before a release push.
+Actual: 4 of 4438 tests fail. Raw summary: `Test Files 1 failed | 343 passed (344)`, `Tests 4 failed | 4434 passed (4438)`. Typecheck is clean (0 `error TS` lines) and conventions report `clean (186 source file(s) scanned)`, so the suite stops on this one file only. A focused rerun `npx vitest run test/unit/main/def300OpenPathRouting.test.ts` reproduces deterministically: `Test Files 1 failed (1)`, `Tests 4 failed | 1 passed (5)`.
+
+Cause / classification: test-side stale mock, NOT a product defect. The 1.27.2 DEF-303 fix added `wasMaximizedBeforeMinimize.set(win, win.isMaximized())` in `createWindow` (src/main/index.ts:691). The mocked BrowserWindow in test/unit/main/def300OpenPathRouting.test.ts has no `isMaximized` member, so `createWindow` throws before the routing assertions run. The real BrowserWindow implements `isMaximized` and the DEF-303 retest (e2e/def303_fix_retest.spec.cjs) exercises the planner against the real window and passes, so there is no runtime impact. This test is owned by the developer role; qa must not edit it.
+
+Screenshot: n/a (unit-test failure)
+
+History:
+- qa: opened (found by the 1.27.2 release-gate `verify:full` run; blocks the push gate)
+- orchestrator: FIX-READY (relaying backend-dev - the `FakeWindow` interface and `makeWindow()` fixture in `test/unit/main/def300OpenPathRouting.test.ts` now carry `isMaximized: vi.fn().mockReturnValue(false)`; no other member was needed at that call site because `createWindow`'s block only calls `isMaximized()` plus `win.on('maximize'|'unmaximize'|'closed')` and `webContents.once('did-finish-load')`, all already present. No assertion was changed and no product code was touched (the real window implements `isMaximized`). SWEEP (all BrowserWindow mocks in unit tests): only two files import `src/main/index.ts` - `index.test.ts` returns `undefined` from `_createMainWindow` by default and its one window-returning test already carries `isMaximized`, so nothing else needed the member; `window.test.ts`'s `MockBrowserWindow` already implements `isMaximized`/`isMinimized`/`restore`/`maximize`; `windowMaximize.test.ts` is a pure planner test with no window mock; the print/fit/token suites never reach the createWindow path. So no third occurrence of this class remains. Evidence: `def300OpenPathRouting` 5 + `index` 97 + `window` 36 + `windowMaximize` 5 = 143 passed across the four files; `npm run verify` exit 0. NOTE: this is the SECOND stale-mock blocker in this release (DEF-304 was the settings mock) - the rule is now recorded: a fix that adds a call on an injected collaborator must sweep every test that mocks that collaborator.)
+- qa: CLOSED. Retested at the 1.27.2 release-push gate. `npm.cmd run verify:full` is GREEN: conventions `clean (186 source file(s) scanned)`, typecheck clean (0 `error TS` lines), `Test Files 344 passed (344)`, `Tests 4438 passed (4438)`, exit 0. The previously failing `test/unit/main/def300OpenPathRouting.test.ts` is green now (5 tests; the stale `isMaximized` mock is present and no assertion changed) and `test/unit/main/whatsNew.test.ts` still passes its release-gate assertions (17 tests; newest entry pinned to 1.27.2). Log: e2e/release_1272_verify_full.rerun.log
+
 ## DEF-304: verify:full is RED at the 1.27.1 release commit: the DEF-303 fix left a stale onGeometryChanged unit test
 
 - Status: CLOSED
