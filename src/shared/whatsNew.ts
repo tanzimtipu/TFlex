@@ -23,6 +23,14 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.27.1',
+    date: '2026-09-23',
+    highlights: [
+      'Page zoom is now smooth: the page grows into its new layout instead of snapping inside an already-resized box, and the view stays anchored where you were reading.',
+      'Maximising from the minimised state is snappier: the title-bar state now updates with the window instead of lagging behind it.',
+    ],
+  },
+  {
     version: '1.27.0',
     date: '2026-09-22',
     highlights: [
