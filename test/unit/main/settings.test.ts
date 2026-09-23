@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, normalizeAnnotationRecentTools, normalizeSettings, SettingsService } from '../../../src/main/services/settings';
+import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, DOCK_PINS_CAP, TOOL_USAGE_CAP, normalizeAnnotationRecentTools, normalizeSettings, SettingsService } from '../../../src/main/services/settings';
 import type { AppSettings, RecentFile } from '../../../src/shared/types';
 
 let dir: string;
@@ -1271,5 +1271,239 @@ describe('DEF-303: saveGeometryOnly persists without echoing', () => {
 
     expect(echoed).toHaveLength(1);
     expect(echoed[0].theme).toBe('light');
+  });
+});
+
+describe('Phase 36: dockPins validation', () => {
+  it('preserves a valid array in order', () => {
+    const result = normalizeSettings({ dockPins: ['rotate', 'delete', 'merge'] });
+    expect(result.dockPins).toEqual(['rotate', 'delete', 'merge']);
+  });
+
+  it('drops non-string entries and empty strings', () => {
+    const result = normalizeSettings({ dockPins: ['rotate', 7, null, '', 'delete', {}, 'merge'] as unknown[] });
+    expect(result.dockPins).toEqual(['rotate', 'delete', 'merge']);
+  });
+
+  it('dedupes duplicates keeping the first occurrence', () => {
+    const result = normalizeSettings({ dockPins: ['rotate', 'delete', 'rotate', 'merge', 'delete'] });
+    expect(result.dockPins).toEqual(['rotate', 'delete', 'merge']);
+  });
+
+  it('truncates an over-long array to DOCK_PINS_CAP preserving order', () => {
+    const result = normalizeSettings({ dockPins: ['a', 'b', 'c', 'd', 'e', 'f'] });
+    expect(result.dockPins).toEqual(['a', 'b', 'c', 'd']);
+    expect(result.dockPins).toHaveLength(DOCK_PINS_CAP);
+  });
+
+  it('truncates after de-duplication, not before', () => {
+    const result = normalizeSettings({ dockPins: ['a', 'a', 'b', 'c', 'd', 'e'] });
+    expect(result.dockPins).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('rejects non-array values (field left absent)', () => {
+    for (const bad of ['rotate', 7, null, undefined, {}, { 0: 'rotate' }] as unknown[]) {
+      const result = normalizeSettings({ dockPins: bad });
+      expect(result.dockPins).toBeUndefined();
+      expect('dockPins' in result).toBe(false);
+    }
+  });
+
+  it('accepts an array whose entries all drop as an empty array', () => {
+    const result = normalizeSettings({ dockPins: [1, null, ''] as unknown[] });
+    expect(result.dockPins).toEqual([]);
+    expect('dockPins' in result).toBe(true);
+  });
+
+  it('save/load round-trips dockPins', async () => {
+    const svc = new SettingsService(file);
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), dockPins: ['rotate', 'merge'] });
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.dockPins).toEqual(['rotate', 'merge']);
+    }
+    const onDisk = JSON.parse(await readFile(file, 'utf8'));
+    expect(onDisk.dockPins).toEqual(['rotate', 'merge']);
+  });
+
+  it('invalid dockPins on disk is dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      pagesPanelCollapsed: true,
+      dockPins: 'rotate',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.dockPins).toBeUndefined();
+      expect('dockPins' in result.value).toBe(false);
+      expect(result.value.pagesPanelCollapsed).toBe(true);
+      expect(result.value.theme).toBe('light');
+    }
+  });
+});
+
+describe('Phase 36: toolUsage validation', () => {
+  it('preserves a valid map of counts', () => {
+    const result = normalizeSettings({ toolUsage: { rotate: 12, merge: 3, delete: 0 } });
+    expect(result.toolUsage).toEqual({ rotate: 12, merge: 3, delete: 0 });
+  });
+
+  it('drops negative, non-finite, non-integer and non-number values', () => {
+    const result = normalizeSettings({
+      toolUsage: {
+        keep: 4,
+        negative: -1,
+        nan: Number.NaN,
+        inf: Number.POSITIVE_INFINITY,
+        fraction: 1.5,
+        strval: '3',
+        boolval: true,
+        nullval: null,
+      } as unknown as Record<string, number>,
+    });
+    expect(result.toolUsage).toEqual({ keep: 4 });
+  });
+
+  it('drops empty-string keys', () => {
+    const result = normalizeSettings({ toolUsage: { '': 9, rotate: 2 } as Record<string, number> });
+    expect(result.toolUsage).toEqual({ rotate: 2 });
+  });
+
+  it('rejects non-object values wholesale (field left absent)', () => {
+    for (const bad of [['rotate', 1], 'rotate', 7, null, undefined, Number.NaN] as unknown[]) {
+      const result = normalizeSettings({ toolUsage: bad });
+      expect(result.toolUsage).toBeUndefined();
+      expect('toolUsage' in result).toBe(false);
+    }
+  });
+
+  it('rejects an array even when it looks object-like', () => {
+    const result = normalizeSettings({ toolUsage: ['a', 'b'] });
+    expect(result.toolUsage).toBeUndefined();
+  });
+
+  it('caps the map at TOOL_USAGE_CAP keeping the highest counts', () => {
+    const raw: Record<string, number> = {};
+    for (let i = 0; i < TOOL_USAGE_CAP + 25; i += 1) {
+      raw[`tool-${i}`] = i;
+    }
+    const result = normalizeSettings({ toolUsage: raw });
+    expect(Object.keys(result.toolUsage ?? {})).toHaveLength(TOOL_USAGE_CAP);
+    // 225 entries, keep the 200 highest: tool-224 down to tool-25 survive,
+    // the 25 lowest (tool-24..tool-0) are dropped.
+    expect(result.toolUsage?.['tool-224']).toBe(224);
+    expect(result.toolUsage?.['tool-25']).toBe(25);
+    expect(result.toolUsage?.['tool-24']).toBeUndefined();
+    expect(result.toolUsage?.['tool-0']).toBeUndefined();
+  });
+
+  it('keeps incoming key order for ties at the cap boundary', () => {
+    const raw: Record<string, number> = {};
+    for (let i = 0; i < TOOL_USAGE_CAP; i += 1) {
+      raw[`first-${i}`] = 5;
+    }
+    // All tie at 5; the capped result keeps the first-inserted 200.
+    const result = normalizeSettings({ toolUsage: raw });
+    expect(Object.keys(result.toolUsage ?? {})).toHaveLength(TOOL_USAGE_CAP);
+    expect(result.toolUsage?.['first-0']).toBe(5);
+    expect(result.toolUsage?.['first-199']).toBe(5);
+  });
+
+  it('accepts a map whose entries all drop as an empty object', () => {
+    const result = normalizeSettings({ toolUsage: { bad: -5 } as Record<string, number> });
+    expect(result.toolUsage).toEqual({});
+    expect('toolUsage' in result).toBe(true);
+  });
+
+  it('save/load round-trips toolUsage', async () => {
+    const svc = new SettingsService(file);
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), toolUsage: { rotate: 7, ocr: 2 } });
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.toolUsage).toEqual({ rotate: 7, ocr: 2 });
+    }
+    const onDisk = JSON.parse(await readFile(file, 'utf8'));
+    expect(onDisk.toolUsage).toEqual({ rotate: 7, ocr: 2 });
+  });
+
+  it('invalid toolUsage on disk is dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'dark',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      dockPins: ['rotate'],
+      toolUsage: 'rotate:3',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.toolUsage).toBeUndefined();
+      expect('toolUsage' in result.value).toBe(false);
+      expect(result.value.dockPins).toEqual(['rotate']);
+      expect(result.value.theme).toBe('dark');
+    }
+  });
+});
+
+describe('Phase 36: toolsPaletteLayout tolerated legacy key', () => {
+  it('keeps accepting list and grid', () => {
+    expect(normalizeSettings({ toolsPaletteLayout: 'list' }).toolsPaletteLayout).toBe('list');
+    expect(normalizeSettings({ toolsPaletteLayout: 'grid' }).toolsPaletteLayout).toBe('grid');
+  });
+
+  it('still rejects other values', () => {
+    for (const bad of ['table', '', 1, null, undefined, ['list']] as unknown[]) {
+      const result = normalizeSettings({ toolsPaletteLayout: bad });
+      expect(result.toolsPaletteLayout).toBeUndefined();
+      expect('toolsPaletteLayout' in result).toBe(false);
+    }
+  });
+
+  it('an existing settings.json with the legacy key loads without error', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'frosted',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      toolsPaletteLayout: 'grid',
+      dockPins: ['rotate'],
+      toolUsage: { rotate: 1 },
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.toolsPaletteLayout).toBe('grid');
+      expect(result.value.dockPins).toEqual(['rotate']);
+      expect(result.value.toolUsage).toEqual({ rotate: 1 });
+    }
+  });
+
+  it('save/load keeps both new fields together with the legacy key', async () => {
+    const svc = new SettingsService(file);
+    const settings: AppSettings = {
+      theme: 'dark',
+      geometry: { ...DEFAULT_SETTINGS.geometry, maximized: true },
+      recentFiles: [],
+      toolsPaletteLayout: 'list',
+      pagesPanelCollapsed: true,
+      dockPins: ['rotate', 'merge', 'delete', 'ocr'],
+      toolUsage: { rotate: 9, merge: 4 },
+    };
+    await svc.save(settings);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.toolsPaletteLayout).toBe('list');
+      expect(result.value.dockPins).toEqual(['rotate', 'merge', 'delete', 'ocr']);
+      expect(result.value.toolUsage).toEqual({ rotate: 9, merge: 4 });
+      expect(result.value.pagesPanelCollapsed).toBe(true);
+    }
   });
 });

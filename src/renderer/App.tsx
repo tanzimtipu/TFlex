@@ -60,6 +60,17 @@ import {
   paneTabId,
   type PaneId,
 } from "./state/multiMode";
+// Phase 36 (chunk 1b) — the stage model + the Stage Rail. The rail renders
+// from App-owned state; the per-pane routing (Multi Mode tracks a stage per
+// pane) is a one-line scope read/write here because the rail component keeps
+// no state of its own.
+import {
+  initialStageState,
+  stageForPane,
+  stageReducer,
+  type Stage,
+} from "./state/stages";
+import { StageRail } from "./components/StageRail";
 // Phase 32 — the focus -> active-tab routing rules and the close/quit gate
 // selection, both pure so the App wiring is a one-liner each.
 import {
@@ -427,6 +438,10 @@ export function App(): ReactElement {
     multiModeReducer,
     initialMultiModeState,
   );
+  // Phase 36 (chunk 1b) — the stage of work. SINGLE mode has one active
+  // stage; Multi Mode tracks one per pane, so the rail reads and writes the
+  // FOCUSED pane's stage while the mode is on.
+  const [stageState, dispatchStage] = useReducer(stageReducer, initialStageState);
   const [splitFraction, setSplitFraction] = useState(0.5);
   const [tabs, dispatchTabs] = useReducer(tabsReducer, initialTabsState);
   const [openTabs, setOpenTabs] = useState<Record<string, OpenTab>>({});
@@ -7413,6 +7428,19 @@ pushToast(
     if (activeId !== null) void onSaveAs(activeId);
   }, [tabs.activeId, onSaveAs]);
 
+  // Phase 36 (chunk 1b) — the Stage Rail's scope. Multi Mode renders ONE
+  // rail for the workspace, so while the mode is on the rail reads and
+  // writes the FOCUSED pane's stage (each pane owns its stage); single mode
+  // drives the one active stage.
+  const stagePane: PaneId | null = multiMode.enabled ? multiMode.focused : null;
+  const activeStage: Stage = stageForPane(stageState, stagePane);
+  const onStageChange = useCallback(
+    (stage: Stage): void => {
+      dispatchStage({ type: "set", pane: stagePane, stage });
+    },
+    [stagePane],
+  );
+
   if (!bootDone || settings === null) {
     return (
       <div className={isMaximized ? "app app-maximized" : "app"}>
@@ -7511,6 +7539,16 @@ pushToast(
         data-tools-mode={settings.toolsPaletteLayout ?? 'list'}
         data-rail-collapsed={pagesPanelCollapsed ? "true" : "false"}
       >
+        {/* Phase 36 (chunk 1b) — the Stage Rail. Mounted here as a fixed
+         * left-edge overlay inside .app-main (already `position: relative`):
+         * it claims no grid track and reflows nothing, so every surface the
+         * later Phase-36 chunks re-home keeps its current geometry. The gear
+         * opens the same Preferences sheet as the title-bar gear. */}
+        <StageRail
+          activeStage={activeStage}
+          onStageChange={onStageChange}
+          onOpenPreferences={(): void => setPrefsOpen(true)}
+        />
         <PageDragProvider>
         <DocumentStage
           tabs={stageTabs}

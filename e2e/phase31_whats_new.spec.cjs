@@ -5,23 +5,36 @@
 // `{ action: 'about' }` from the main process — exactly what src/main/menu.ts
 // emits on Help -> About TFlex.
 //
-// Offline establishment: the app is launched with a Chromium-level DNS block
-// (`--host-resolver-rules=MAP * 127.0.0.1`), so any electron-updater network
-// attempt resolves every host to the loopback (connection refused, fast). The
-// What's New content still renders, and its first highlight line is asserted
-// to be a literal in the built renderer bundle — together proving the notes
-// are bundle-served, not fetched.
+// Offline establishment: this dev build is UNPACKAGED, so electron-updater
+// skips the startup check entirely (no feed contact), the update state stays at
+// its initial idle 'checking' value, and the spec's request listener asserts no
+// github/api request is made. The notes still render, and the first highlight
+// line is asserted to be a literal in the built renderer bundle — together
+// proving the notes are bundle-served, not fetched.
+//
+// DEF-308 / DEF-309 — the belt-and-braces Chromium DNS block
+// (`--host-resolver-rules=MAP * 127.0.0.1` passed through launchApp) is back.
+// DEF-308 removed it because ANY non-empty `extraArgs` wedged this dev app
+// before it created a BrowserWindow; DEF-309 diagnosed that as a harness bug
+// in launch.cjs (extraArgs were placed BEFORE the app path, so the main
+// process's OS-file-argument parser mistook the app directory for a document
+// and blocked in a modal error box) and fixed it. With the harness fixed the
+// switch is applied again, so the offline proof is by construction as well as
+// by the unpackaged-updater skip asserted below.
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('./lib/launch.cjs');
 const { hardClose } = require('./lib/helpers.cjs');
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Chromium DNS block: every hostname resolves to loopback, so any accidental
+// feed contact would fail rather than reach GitHub.
+const BLOCK_NET = '--host-resolver-rules=MAP * 127.0.0.1';
+
 const ROOT = path.resolve(__dirname, '..');
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
 const RUNNING_VERSION = String(pkg.version);
 
-const BLOCK_NET = '--host-resolver-rules=MAP * 127.0.0.1';
 const IPC = { menuAction: 'menu:action', updateStatusChanged: 'update:statusChanged' };
 
 test.describe("Phase 31 - About What's New", () => {
@@ -75,9 +88,10 @@ test.describe("Phase 31 - About What's New", () => {
     //    startup check entirely (AppUpdater.js:278-280: "Skip checkForUpdates
     //    because application is not packed and dev update config is not
     //    forced") — no feed contact is made and the state stays at its initial
-    //    'checking' (idle) value. DNS is ALSO blocked at the Chromium level as
-    //    belt-and-braces. So no update info was obtained from the network, yet
-    //    the bundled notes above rendered.
+    //    'checking' (idle) value. So no update info was obtained from the
+    //    network, yet the bundled notes above rendered. The launch also carries
+    //    the Chromium DNS block (BLOCK_NET), so any accidental feed contact
+    //    would fail to resolve rather than reach GitHub.
     const feedRequests = [];
     win.on('request', (r) => {
       if (/github|tflex-releases|api\./i.test(r.url())) feedRequests.push(r.url());

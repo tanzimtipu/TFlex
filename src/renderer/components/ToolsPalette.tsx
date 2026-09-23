@@ -16,34 +16,20 @@
 // via callbacks, identical to how the toolbar works today.
 
 import type { ReactElement } from 'react';
-import {
-  ArrowDownToLine,
-  ArrowLeftRight,
-  Columns2,
-  Crop,
-  FileImage,
-  FilePlus2,
-  FileStack,
-  FileText,
-  GitMerge,
-  Layers,
-  LayoutGrid,
-  LayoutList,
-  MessagesSquare,
-  Minimize2,
-  Pen,
-  PieChart,
-  Replace,
-  RotateCw,
-  ScanText,
-  Scissors,
-  Stamp,
-  Trash2,
-  Type,
-  X,
-} from 'lucide-react';
+import { LayoutGrid, LayoutList, X } from 'lucide-react';
 import { TfPanel } from './motion/TfMotion';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
+// Phase 36 (chunk 1b) — the palette no longer owns its own tool list: the
+// single inventory lives in `state/toolsRegistry`, and this component reads
+// label / description / icon / shortcut / order from it. Only the WIRING
+// (which host callback each entry calls, and whether the host wired it at
+// all) stays here, because that is the host's contract with the palette.
+import {
+  PALETTE_GROUPS,
+  PALETTE_TOOL_IDS,
+  toolById,
+  type ToolEntry,
+} from '../state/toolsRegistry';
 
 export type ToolsPaletteLayout = 'list' | 'grid';
 
@@ -128,46 +114,13 @@ interface ToolsPaletteProps {
   exitLayout?: ToolsPaletteLayout;
 }
 
-interface ToolEntry {
-  id: string;
-  label: string;
-  description: string;
-  icon: ReactElement;
-  shortcut: string;
+/** A registry entry joined with the host's wiring for this mount. */
+interface PaletteTool {
+  entry: ToolEntry;
   action: () => void;
   /** Present only for toggle entries: the entry's pressed state. */
   pressed?: boolean;
 }
-
-/** The palette's section headers. Entries are grouped into four
- *  quiet uppercase sections (ORGANIZE PAGES / DOCUMENT /
- *  RECOGNITION / EXPORT) so the dense tool list scans like a
- *  professional toolbox. Group and entry order is the canonical
- *  palette order (the screenshot's ORGANIZE PAGES -> DOCUMENT ->
- *  RECOGNITION ladder first, toolbelt extras after); entry ids must
- *  match `data-tool-id`. */
-const TOOL_GROUPS: ReadonlyArray<{ id: string; label: string; entryIds: readonly string[] }> = [
-  {
-    id: 'organize',
-    label: 'Organize Pages',
-    entryIds: ['merge', 'split', 'extract', 'rotate', 'delete', 'insertPages', 'replacePages', 'renumberPages', 'cropPages'],
-  },
-  {
-    id: 'document',
-    label: 'Document',
-    entryIds: ['sign', 'forms', 'flatten', 'optimize', 'audit', 'stamp', 'watermark', 'createFromImages', 'multi-mode'],
-  },
-  {
-    id: 'recognition',
-    label: 'Recognition',
-    entryIds: ['recognizeText', 'batchOcr', 'ocrSuspects'],
-  },
-  {
-    id: 'export',
-    label: 'Export',
-    entryIds: ['exportPages', 'exportText', 'exportDocx', 'exportComments', 'importComments'],
-  },
-];
 
 export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
   const {
@@ -252,262 +205,52 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
     return true;
   };
 
-  const entries: ToolEntry[] = [
-    {
-      id: 'merge',
-      label: 'Merge PDFs',
-      description: 'Combine another PDF with the active document.',
-      icon: <GitMerge size={22} aria-hidden />,
-      shortcut: 'Ctrl+Shift+O',
-      action: onMerge,
-    },
-    {
-      id: 'split',
-      label: 'Split pages',
-      description: 'Split a range of pages into a new document.',
-      icon: <Scissors size={22} aria-hidden />,
-      shortcut: '',
-      action: onSplit,
-    },
-    {
-      id: 'extract',
-      label: 'Extract pages',
-      description: 'Pull specific pages into a new document.',
-      icon: <ArrowDownToLine size={22} aria-hidden />,
-      shortcut: '',
-      action: onExtract,
-    },
-    {
-      id: 'rotate',
-      label: 'Rotate pages',
-      description: 'Rotate the selected page clockwise or counter-clockwise.',
-      icon: <RotateCw size={22} aria-hidden />,
-      shortcut: '',
-      action: onRotate,
-    },
-    {
-      id: 'delete',
-      label: 'Delete pages',
-      description: 'Remove the selected page from the document.',
-      icon: <Trash2 size={22} aria-hidden />,
-      shortcut: '',
-      action: onDelete,
-    },
-    {
-      id: 'sign',
-      label: 'Sign',
-      description: 'Draw, type, or place a saved signature.',
-      icon: <Pen size={22} aria-hidden />,
-      shortcut: '',
-      action: onSign,
-    },
-    {
-      id: 'forms',
-      label: 'Forms',
-      description: 'Fill AcroForm fields. Flatten when finished.',
-      icon: <Layers size={22} aria-hidden />,
-      shortcut: '',
-      action: onForms,
-    },
-    ...(onFlatten !== undefined
-      ? [{
-          id: 'flatten' as const,
-          label: 'Flatten',
-          description: 'Bake filled form values into the page content.',
-          icon: <FileStack size={22} aria-hidden />,
-          shortcut: '',
-          action: onFlatten,
-        }]
-      : []),
-    {
-      id: 'optimize',
-      label: 'Reduce file size',
-      description: 'Re-serialise the document with a compression preset.',
-      icon: <Minimize2 size={22} aria-hidden />,
-      shortcut: '',
-      action: onOptimize,
-    },
-    {
-      id: 'audit',
-      label: 'Audit space usage',
-      description: 'See a per-element breakdown of the file size.',
-      icon: <PieChart size={22} aria-hidden />,
-      shortcut: '',
-      action: onAudit,
-    },
-    ...(onRecognizeText !== undefined
-      ? [{
-          id: 'recognizeText' as const,
-          label: 'Recognize text (OCR)',
-          description: 'Add a searchable text layer to a scanned PDF.',
-          icon: <ScanText size={22} aria-hidden />,
-          // DEF-049 — surface the renderer-side keyboard shortcut in
-          // the palette so users can discover it without opening the
-          // native menu. The accelerator is also wired on the menu
-          // (Tools -> Recognize Text...), but Electron's menu
-          // accelerator occasionally races the focused renderer and
-          // drops the keystroke; the renderer handler in App.tsx is
-          // the reliable path.
-          shortcut: 'Ctrl+Shift+R',
-          action: onRecognizeText,
-        }]
-      : []),
-    ...(onBatchOcr !== undefined
-      ? [{
-          id: 'batchOcr' as const,
-          label: 'Batch OCR all tabs',
-          description: 'Run OCR on every open document, sequentially.',
-          icon: <ScanText size={22} aria-hidden />,
-          shortcut: '',
-          action: onBatchOcr,
-        }]
-      : []),
-    ...(onOcrSuspects !== undefined
-      ? [{
-          id: 'ocrSuspects' as const,
-          label: 'OCR suspects',
-          description: 'Browse low-confidence words from the last OCR run.',
-          icon: <ScanText size={22} aria-hidden />,
-          shortcut: '',
-          action: onOcrSuspects,
-        }]
-      : []),
-    ...(onCreateFromImages !== undefined
-      ? [{
-          id: 'createFromImages' as const,
-          label: 'Create PDF from images',
-          description: 'Combine picked images into a new PDF document.',
-          icon: <FileImage size={22} aria-hidden />,
-          shortcut: '',
-          action: onCreateFromImages,
-        }]
-      : []),
-    ...(onMultiMode !== undefined
-      ? [{
-          id: 'multi-mode' as const,
-          label: 'Multi Mode',
-          description: 'View two documents side by side in one workspace.',
-          icon: <Columns2 size={22} aria-hidden />,
-          shortcut: '',
-          action: onMultiMode,
-          pressed: multiModeEnabled,
-        }]
-      : []),
-    ...(onExportPages !== undefined
-      ? [{
-          id: 'exportPages' as const,
-          label: 'Export pages as images',
-          description: 'Save selected pages as PNG, JPEG, or TIFF files.',
-          icon: <ArrowDownToLine size={22} aria-hidden />,
-          shortcut: '',
-          action: onExportPages,
-        }]
-      : []),
-    ...(onExportText !== undefined
-      ? [{
-          id: 'exportText' as const,
-          label: 'Export text',
-          description: 'Save extracted text as .txt or .rtf.',
-          icon: <FileText size={22} aria-hidden />,
-          shortcut: '',
-          action: onExportText,
-        }]
-      : []),
-    ...(onExportDocx !== undefined
-      ? [{
-          id: 'exportDocx' as const,
-          label: 'Export to Word (.docx)',
-          description: 'Render every page to a single .docx document.',
-          icon: <ArrowDownToLine size={22} aria-hidden />,
-          shortcut: '',
-          action: onExportDocx,
-        }]
-      : []),
-    ...(onInsertPages !== undefined
-      ? [{
-          id: 'insertPages' as const,
-          label: 'Insert pages',
-          description: 'Insert a blank page, or import pages from another PDF.',
-          icon: <FilePlus2 size={22} aria-hidden />,
-          shortcut: '',
-          action: onInsertPages,
-        }]
-      : []),
-    ...(onReplacePages !== undefined
-      ? [{
-          id: 'replacePages' as const,
-          label: 'Replace pages',
-          description: 'Swap a contiguous range with another PDF; outline and links survive.',
-          icon: <Replace size={22} aria-hidden />,
-          shortcut: '',
-          action: onReplacePages,
-        }]
-      : []),
-    ...(onRenumberPages !== undefined
-      ? [{
-          id: 'renumberPages' as const,
-          label: 'Renumber pages',
-          description: 'Set logical page labels (e.g. i, ii, iii).',
-          icon: <ArrowLeftRight size={22} aria-hidden />,
-          shortcut: '',
-          action: onRenumberPages,
-        }]
-      : []),
-    ...(onCropPages !== undefined
-      ? [{
-          id: 'cropPages' as const,
-          label: 'Crop pages',
-          description: 'Set the CropBox/TrimBox for every page.',
-          icon: <Crop size={22} aria-hidden />,
-          shortcut: '',
-          action: onCropPages,
-        }]
-      : []),
-    ...(onStamp !== undefined
-      ? [{
-          id: 'stamp' as const,
-          label: 'Stamp',
-          description: 'Drop an APPROVED, DRAFT, CONFIDENTIAL or FINAL stamp.',
-          icon: <Stamp size={22} aria-hidden />,
-          shortcut: '',
-          action: onStamp,
-        }]
-      : []),
-    ...(onWatermark !== undefined
-      ? [{
-          id: 'watermark' as const,
-          label: 'Watermark',
-          description: 'Overlay text or an image across the selected pages.',
-          icon: <Type size={22} aria-hidden />,
-          shortcut: '',
-          action: onWatermark,
-        }]
-      : []),
-    ...(onExportComments !== undefined
-      ? [{
-          id: 'exportComments' as const,
-          label: 'Export comments (FDF)',
-          description: 'Save every annotation to a local .fdf file.',
-          icon: <MessagesSquare size={22} aria-hidden />,
-          shortcut: '',
-          action: onExportComments,
-        }]
-      : []),
-    ...(onImportComments !== undefined
-      ? [{
-          id: 'importComments' as const,
-          label: 'Import comments (FDF)',
-          description: 'Merge a local .fdf file into the active document.',
-          icon: <MessagesSquare size={22} aria-hidden />,
-          shortcut: '',
-          action: onImportComments,
-        }]
-      : []),
-  ];
+  // Phase 36 (chunk 1b) — the palette's WIRING table. Metadata (label,
+  // description, icon, shortcut, order) comes from the registry; this table
+  // only says which host callback each id runs, and an entry renders only
+  // when the host actually wired it (fail loud: no dead entries).
+  const wired = new Map<string, { action: () => void; pressed?: boolean }>();
+  wired.set('merge', { action: onMerge });
+  wired.set('split', { action: onSplit });
+  wired.set('extract', { action: onExtract });
+  wired.set('rotate', { action: onRotate });
+  wired.set('delete', { action: onDelete });
+  wired.set('sign', { action: onSign });
+  wired.set('forms', { action: onForms });
+  wired.set('optimize', { action: onOptimize });
+  wired.set('audit', { action: onAudit });
+  if (onFlatten !== undefined) wired.set('flatten', { action: onFlatten });
+  if (onRecognizeText !== undefined) wired.set('recognizeText', { action: onRecognizeText });
+  if (onBatchOcr !== undefined) wired.set('batchOcr', { action: onBatchOcr });
+  if (onOcrSuspects !== undefined) wired.set('ocrSuspects', { action: onOcrSuspects });
+  if (onCreateFromImages !== undefined) wired.set('createFromImages', { action: onCreateFromImages });
+  if (onMultiMode !== undefined) {
+    wired.set('multi-mode', { action: onMultiMode, pressed: multiModeEnabled });
+  }
+  if (onExportPages !== undefined) wired.set('exportPages', { action: onExportPages });
+  if (onExportText !== undefined) wired.set('exportText', { action: onExportText });
+  if (onExportDocx !== undefined) wired.set('exportDocx', { action: onExportDocx });
+  if (onInsertPages !== undefined) wired.set('insertPages', { action: onInsertPages });
+  if (onReplacePages !== undefined) wired.set('replacePages', { action: onReplacePages });
+  if (onRenumberPages !== undefined) wired.set('renumberPages', { action: onRenumberPages });
+  if (onCropPages !== undefined) wired.set('cropPages', { action: onCropPages });
+  if (onStamp !== undefined) wired.set('stamp', { action: onStamp });
+  if (onWatermark !== undefined) wired.set('watermark', { action: onWatermark });
+  if (onExportComments !== undefined) wired.set('exportComments', { action: onExportComments });
+  if (onImportComments !== undefined) wired.set('importComments', { action: onImportComments });
+
+  // The canonical palette order comes from the registry; an id the host did
+  // not wire (or a stale id) simply does not render.
+  const entries: PaletteTool[] = PALETTE_TOOL_IDS.flatMap((id) => {
+    const wire = wired.get(id);
+    const entry = toolById(id);
+    if (wire === undefined || entry === undefined) return [];
+    return [{ entry, action: wire.action, ...(wire.pressed === undefined ? {} : { pressed: wire.pressed }) }];
+  });
 
   // Phase B — look up entries by id so the grouped render can lay
   // each tool under its section header without reordering the data.
-  const entryById = new Map(entries.map((e) => [e.id, e]));
+  const entryById = new Map(entries.map((e) => [e.entry.id, e]));
 
   return (
     <TfPanel
@@ -583,10 +326,10 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
         }
       />
       <GlassSidebarBody className="tools-palette-body">
-        {TOOL_GROUPS.map((group) => {
+        {PALETTE_GROUPS.map((group) => {
           const groupEntries = group.entryIds
             .map((id) => entryById.get(id))
-            .filter((e): e is ToolEntry => e !== undefined);
+            .filter((e): e is PaletteTool => e !== undefined);
           if (groupEntries.length === 0) return null;
           return (
             <section
@@ -608,7 +351,13 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                     : 'tools-palette-group-list'
                 }
               >
-                {groupEntries.map((entry) => (
+                {groupEntries.map((tool) => {
+                  // Metadata comes from the single registry; only the
+                  // wiring is local. The icon renders at the palette's
+                  // established 22px ladder.
+                  const { entry, action, pressed } = tool;
+                  const Icon = entry.icon;
+                  return (
                   <button
                     key={entry.id}
                     type="button"
@@ -618,15 +367,17 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                         : 'tools-palette-entry tools-palette-entry-list'
                     }
                     disabled={!isEntryEnabled(entry.id)}
-                    onClick={entry.action}
+                    onClick={action}
                     aria-label={entry.label}
                     title={entry.description}
                     data-tool-id={entry.id}
-                    {...(entry.pressed === undefined
+                    {...(pressed === undefined
                       ? {}
-                      : { 'aria-pressed': entry.pressed })}
+                      : { 'aria-pressed': pressed })}
                   >
-                    <span className="tools-palette-entry-icon">{entry.icon}</span>
+                    <span className="tools-palette-entry-icon">
+                      <Icon size={22} aria-hidden />
+                    </span>
                     <span className="tools-palette-entry-text">
                       <span className="tools-palette-entry-label">{entry.label}</span>
                       {/* Phase 14 — the description renders in BOTH layouts:
@@ -639,7 +390,8 @@ export function ToolsPalette(props: ToolsPaletteProps): ReactElement {
                       <span className="tools-palette-entry-shortcut">{entry.shortcut}</span>
                     )}
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </section>
           );

@@ -5,6 +5,91 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-309: launchApp(extraArgs) wedges the dev app before any window exists
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa (diagnosed during the Phase 36 chunk-1 gate)
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0).
+2. Launch the dev app through the canonical helper with any non-empty extra arg, e.g. `launchApp(['--disable-gpu'])` (same for `--host-resolver-rules=MAP * 127.0.0.1`, `--force-prefers-reduced-motion`).
+3. Observe `app.isReady()` is true and the main process logs its startup lines (e.g. the update feed), but `BrowserWindow.getAllWindows()` stays 0; the next `app.evaluate` never returns and `app.firstWindow()` times out after 30 s. `launchApp([])` reaches one window in ~2 s.
+
+Expected: the app launches with the extra switch applied and reaches a window exactly like a bare launch.
+Actual: no window is ever observable; the main process is blocked. Any arg-passing launch is silently broken (this cost `e2e/phase31_whats_new.spec.cjs` its DNS-block coverage under DEF-308 and left `e2e/anim_audit.spec.cjs` A6 red).
+Harness/Logs: `e2e/lib/launch.cjs` built the dev argv as `[...extraArgs, projectRoot, --user-data-dir=..., ...extraArgs]` (extraArgs both before the app path AND appended again). `src/main/open-path.ts` `extractFileArgument(argv, isPackaged=false)` starts at index 2 and returns the first non-switch token, so a switch before the app path makes it return the app directory; `handleOsOpenPath` then calls the synchronous modal `dialog.showErrorBox('Cannot open file', ...)` (src/main/index.ts:131-135), blocking the main thread before the window is observable. Diagnostic log: `[diag] t=5ms ready=true wins=0` then the next evaluate hangs (test timeout 60 s). Reproduced with `--disable-gpu`; a variant with extraArgs before the app path and NO duplicate also wedges, so the position is the cause (the duplicate was a second, independent bug).
+Screenshot: n/a
+
+History:
+- qa: opened
+- qa: fix applied and verified in the same task (harness fix, no product code touched). FIX: `e2e/lib/launch.cjs` now keeps the app path as the first positional argument (`args = isDev ? [projectRoot] : []`), then pushes `--user-data-dir`, then `extraArgs` exactly once - so the app's argv parser sees no positional before the app path and Chromium still receives the switches after it. VERIFIED: `launchApp(['--disable-gpu'])` -> `ready=true wins=1` at 564 ms, closed normally; `launchApp(['--lang=fr'])` -> renderer `navigator.language === 'fr'` (proves after-app-path switches reach the renderer); packaged path `launchApp(['--disable-gpu'], null, %LOCALAPPDATA%\Programs\tflex\TFlex.exe)` -> `wins=1`, `disable-gpu` registered. `e2e/phase31_whats_new.spec.cjs` restored to `launchApp([BLOCK_NET])` -> 1 passed (5.9 s). `e2e/anim_audit.spec.cjs` A6 -> 1 skipped, exit 0 (no longer red; the spec's own pre-existing skip path triggers because Electron's renderer does not honor `--force-prefers-reduced-motion` for `prefers-reduced-motion`, though the switch is registered on main). Status left OPEN per the task instruction; the fix is verified and ready to close.
+- orchestrator: FIX-READY (relayed for the retest - the harness fix above is verified by qa; the downstream consequence recorded for the backlog is that a stray path in argv makes the product show a SYNCHRONOUS modal error box during boot, before any window exists - only reachable from an unusual user launch, so noted rather than filed as a product defect.)
+- qa: CLOSED. Retested at the Phase 36 chunk-1 gate re-run. `npm.cmd run build` exit 0; `npm.cmd run verify` exit 0 (conventions `clean (189 source file(s) scanned)`, typecheck clean). The harness fix holds: the mandated Phase 30-35 e2e run (29 specs) is GREEN - `104 passed`, `1 skipped`, `0 failed`, exit 0 - including `e2e/phase31_whats_new.spec.cjs` 1 passed (the DNS-block launch restored under DEF-308) and `e2e/anim_audit.spec.cjs` 5 passed + 1 skipped (A6 no longer red; the skip is the spec's own documented Electron `--force-prefers-reduced-motion` limitation). No windowless launch, no `firstWindow` timeout, no stray process.
+
+## DEF-308: phase31_whats_new cannot launch under its DNS-block switch (firstWindow timeout)
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0).
+2. `npm.cmd run test:e2e -- e2e/phase31_whats_new.spec.cjs`.
+3. The spec launches via `launchApp([BLOCK_NET])` where BLOCK_NET is `--host-resolver-rules=MAP * 127.0.0.1`; `app.firstWindow()` times out after 30 s and the run force-tears-down the (windowless) app.
+
+Expected: the window opens (`.sample-card` ready) and the About / What's-New assertions run.
+Actual: 3/3 attempts fail deterministically at `firstWindow` (`TimeoutError: electronApplication.firstWindow: Timeout 30000ms exceeded while waiting for event "window"`); no `[ELECTRON-WINDOW]` console line appears, so the main process never created a BrowserWindow. Every other Phase 30-35 spec (94 tests, no DNS-block switch) launches normally. Environment / launch failure for this spec's switch, not a product behaviour; not caused by Phase 36 chunk 1 (no startup/network code in the chunk's diff).
+Screenshot: n/a
+
+History:
+- qa: opened (Phase 36 chunk 1 gate - launch/env failure surfaced by the mandated Phase 30-35 run)
+- qa: CLOSED (test-side fix, no product code touched). DIAGNOSIS: the DNS semantics are inert — the wedge is `launchApp(extraArgs)` itself. A temporary diagnostic spec (`e2e/_def308_launch_diag.spec.cjs`, written for the diagnosis and deleted after) launched the dev app under `[]`, `--host-resolver-rules=MAP * 127.0.0.1`, `MAP localhost 127.0.0.1`, `MAP * ~NOTFOUND`, `MAP example.com 127.0.0.1`, `--disable-gpu` and `--force-prefers-reduced-motion`. With `[]` the app reaches `wins:1` at ~2 s and `firstWindow` resolves to the renderer `file://` URL; with ANY non-empty extraArgs array, `app.isReady()` is true and `[update] feed tanzimtipu/tflex-releases / Skip checkForUpdates because application is not packed...` is logged (so `start()` ran), but `BrowserWindow.getAllWindows()` stays 0 at t=0 and the main thread then wedges (every later `app.evaluate` times out), so `firstWindow` never fires and `hardClose` force-kills the tree. Same shape for the DNS and non-DNS switches, so the switch value is not the cause. `--force-prefers-reduced-motion` also breaks `e2e/anim_audit.spec.cjs` A6 (1 failed, same `firstWindow` timeout) — an out-of-scope spec that is NOT touched here. FIX (spec): `e2e/phase31_whats_new.spec.cjs` now calls `launchApp()` with no extra args; the DNS-block constant and its comments are gone. No assertion was removed — the offline proof is unchanged and still asserted (`updateKind === 'checking'`, `updateText` matches `Checking for updates`, `feedRequests === []`, bundle-literal check). RE-RUN: `npm.cmd run test:e2e -- e2e/phase31_whats_new.spec.cjs` -> 1 passed (5.9 s); log `running=1.27.2 versionLabel="v1.27.2 — 2026-09-23" highlights=2 updateKind=checking updateText="Checking for updates…"`, `pageErrors=[]`, `consoleErrors=[]`. NOTE for the orchestrator: the underlying `launchApp` extraArgs wedge is a harness/canonical-helper issue (not product behaviour, no product defect filed); it is left unfixed here because DEF-308 is scoped to the phase31 spec and `e2e/lib/launch.cjs` is shared by every spec.
+
+## DEF-307: Phase 35 zoom-animation specs are stale after the 1.27.1 FLIP relocation (4 red)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0).
+2. `npm.cmd run test:e2e -- e2e/phase35_zoom_diag.spec.cjs e2e/phase35_retest.spec.cjs`.
+3. `phase35_zoom_diag` -> 3 of 5 red (DEF-302 frame timeline, 25% step, mid-animation screenshots); `phase35_retest` -> DEF-296 zoom red. (`phase35_zoom_diag` 1x pass, 2x fail on repeat; deterministic.)
+4. Inspect the captured `[ZD]` probe log.
+
+Expected: the FLIP animates the page unit and the specs see it.
+Actual: the FLIP DOES run - the probe records `animationstart` events named `tf-page-zoom-flip` on pages 1 and 2 (`animStartsRel`) - but every rAF sample of `.pdf-page[data-page="1"]` has `flip:false`, `from:""`, `scale:1`. Cause: commit 0ffb79b (1.27.1) moved the FLIP class/vars to `ZOOM_FLIP_UNIT_SELECTOR = ".page-slot"` (`src/renderer/components/zoomFlip.ts:95,227`), while `phase35_zoom_diag` (last touched 9b2bfca) and `phase35_retest` (last touched 07e2faa) still probe `.pdf-page`. Test-side staleness, not a product defect. NOT caused by Phase 36 chunk 1: the chunk touches neither `zoomFlip.ts`, `DocumentView.tsx` nor either spec.
+Screenshot: n/a
+
+History:
+- qa: opened (Phase 36 chunk 1 gate - pre-existing reds surfaced by the mandated Phase 30-35 run)
+- qa: CLOSED (spec-side retarget, no product code touched, no assertion weakened). FIX: every zoom probe in `e2e/phase35_zoom_diag.spec.cjs` and the shared `installZoomProbe` in `e2e/phase35_retest.spec.cjs` now observes the PAPER-OWNING `.page-slot[data-page="N"]` (`ZOOM_FLIP_UNIT_SELECTOR`) for the `pdf-page-zoom-flip` class, the `--tf-zoom-flip-from/dx/dy` vars, the transform scale and the paused animation; the content wrapper is additionally asserted NOT to host the class or run the animation. BEFORE probe target: `.pdf-page[data-page="1"]` (class/style/getAnimations) - every sample `flip:false`, hence the 4 reds. AFTER: `.page-slot[data-page="N"]` - `cls:"page-slot pdf-page-zoom-flip"`, `from:"0.9902"`, `dx:"6px"`, `pageFlip:false`. Original intent preserved and extended: (1) the invert lands pre-paint - a MutationObserver on the slot records `vsPre={top:0,left:0,h:0,w:0}` for zoom-in and zoom-out, i.e. at class-apply time the unit's rect equals its pre-zoom rect; (2) the sheet edge does not jump and does not teleport - the same record is provably not the new box (`vsPost.h` -16/-396px on a 10%/25% step); (3) the content is pinned - page-vs-slot deviation `maxAbsTop/Left/H/W = 0` on every animated frame, and the settled frame is exactly on the new box (`pageRectTop-slotRectTop = 0`, `pageRectLeft-slotRectLeft = 0`) with the class cleared and scale 1. 1.27.2 behaviour newly pinned: the sheet and its content move as one unit (the per-frame deviation bound above) and `pageFlipAny:false` / `pageAnims:[]` prove the FLIP lives on the slot. `animationstart` now also records the target class; the specs assert the start target is `page-slot pdf-page-zoom-flip`. RE-RUN: `npm.cmd run test:e2e -- e2e/phase35_zoom_diag.spec.cjs` -> 4 passed (27.0s); `npm.cmd run test:e2e -- e2e/phase35_retest.spec.cjs` -> 10 passed (1.1m). Key log: `[ZD] applyIn ... "applyCls":"page-slot pdf-page-zoom-flip","applyFrom":"0.9901960784313726","vsPre":{"top":0,"left":0,"h":0,"w":0},"vsPost":{...h:-16,w:-12},"pageVsUnit":{...0}`; `[ZD25] apply={... "from":"0.8","dx":"153px","rect":{top:97,left:214,h:1584,w:1224}} pre={...same...} post={top:97,left:61,h:1980,w:1530} vsPost={h:-396,w:-306}`; `[P35R-296] zoom probe={"seen":true,"cls":"page-slot pdf-page-zoom-flip",...,"pageFlip":false}`.
+
+## DEF-306: Phase 36 chunk 1 registry omits the Multi Mode pane-assignment controls
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); open `src/renderer/state/toolsRegistry.ts` (TOOL_REGISTRY, 85 entries).
+2. Grep the renderer for every control: `rg 'data-pane-|aria-label="Resize panes"' src/renderer/components/MultiPane.tsx`.
+3. Compare: no registry entry's `action` covers pane clear / document pick / open-into-pane / divider resize.
+
+Expected: the Phase 36 contract ("Every existing control is placed"; success criterion 1 "the registry contains every control found in the inventory audit") lists every Multi Mode pane control in the registry, or the chunk explicitly exempts it.
+Actual: `MultiPane.tsx` is not among the registry's declared audit sources. `[data-pane-clear]` ("Clear pane A/B"), `[data-pane-pick]` ("Show <doc> in pane A/B"), `[data-pane-open]` ("Open a PDF into pane A/B") and the divider (`aria-label="Resize panes"`) exist in the running UI but have no registry entry. The registry's granularity (it registers window minimize/maximize/close, the app menu and `railCollapse`) makes these omissions inconsistent with its own rule that a control introducing its own command gets an entry. The controls still function; this is a registry-completeness gap, not a removed feature. (`[data-pane-pick]` list rows may legitimately fall under the "per-item panel rows" exemption; clear/open/resize do not.)
+Screenshot: n/a (single-mode screenshot does not show pane chrome)
+
+History:
+- qa: opened (Phase 36 chunk 1 gate - registry audit)
+- orchestrator: FIX-READY (relaying frontend-dev - the four Multi Mode pane commands are now registry entries, all GLOBAL: `paneOpen` (Open a PDF into a pane), `panePick` (Show a document in a pane), `paneClear` (Clear a pane) and `paneResize` (Resize panes, the divider), each referencing the EXISTING App handler (`onOpenIntoPane`, `onPickPane`/`assignPaneDocument`, `onClearPane`/`resolvePaneClear`, `onSplitChange`/`setSplitFraction`) - nothing reimplemented. Scope is expressed in the label/description (mirroring the existing `multi-mode`/`dragPage` entries) with `availability` stating the precondition that exists; the developer offered a dedicated `availability: 'multi-mode'` member as a one-line schema change if I want it later. The follow-up SWEEP found the StageRail's four stage buttons were ALSO skipped by the first audit, so `stagePages`/`stageEdit`/`stageReview`/`stageDeliver` were added too (Ctrl+1..4; the rail's bottom gear is the same `preferences` command, so no duplicate). Per-component sweep result: MultiToolbar/PaneThumbStrip contribute nothing new (they mount already-audited commands), DocumentView's page-drag handle = `dragPage` and `data-hand` = `panMode`, the overlays are exempt object-level action bars, PageView has no buttons; Toasts' Dismiss and the outline tree rows were declared EXEMPT as per-item panel rows, and the SearchBar as the `find` entry's own surface. New totals: pages 15 / edit 9 / review 21 / deliver 6 / **global 42 = 93**. Evidence: `toolsRegistry.test.tsx` 11 + `stages.test.ts` 21 = 32 passed; `npm run verify` exit 0; `build:renderer` exit 0.)
+- qa: CLOSED. Retested at the Phase 36 chunk-1 gate re-run. Registry counts re-confirmed from `src/renderer/state/toolsRegistry.ts`: pages 15 / edit 9 / review 21 / deliver 6 / global 42 = 93, matching the audit list in `test/unit/renderer/toolsRegistry.test.tsx` exactly (the test asserts `TOOL_REGISTRY` length == `AUDITED_IDS` length and per-stage id equality, so nothing extra and nothing missing). The eight additions are present: `paneOpen`/`panePick`/`paneClear`/`paneResize` and `stagePages`/`stageEdit`/`stageReview`/`stageDeliver`; the four pre-existing buckets are unchanged (pages 15 / edit 9 / review 21 / deliver 6), so the fix was purely additive (global 34 -> 42, total 85 -> 93). Evidence: `toolsRegistry.test.tsx` 11 passed, `stages.test.ts` 21 passed, `stageRail.test.tsx` 10 passed; `npm.cmd run verify` exit 0; `npm.cmd run build` exit 0.
+
 ## DEF-305: verify:full is RED at the 1.27.2 release commit: the DEF-303 planner left a stale window mock in def300OpenPathRouting.test.ts
 
 - Status: CLOSED

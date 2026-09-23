@@ -87,7 +87,11 @@ export interface AppSettings {
    *  asks for next save. */
   recentsCap?: number;
   /** Phase 6 — tools palette layout. 'list' is the dense icon+label
-   *  stack (default); 'grid' is the icon tile layout. */
+   *  stack (default); 'grid' is the icon tile layout.
+   *  Phase 36: TOLERATED LEGACY key — no UI writes it after the All-tools
+   *  palette is retired (see Phase 36), but the validator keeps accepting
+   *  'list' | 'grid' for one release so an existing settings.json does
+   *  not fail validation. The field is not removed this release. */
   toolsPaletteLayout?: 'list' | 'grid';
   /** Phase 6 — per-theme annotation color overrides. See
    *  `AnnotationColors`. The picker reads + writes this list. */
@@ -140,6 +144,22 @@ export interface AppSettings {
   annotationRecentTools?: string[];
   /** Phase 23 - when false, every app animation runs the instant path (see Phase 23). Default true. */
   animationsEnabled?: boolean;
+  /** Phase 36 — tool ids pinned to the Action Dock (max 4; oldest
+   *  overflow into a "..." chip). Validated preserve-if-valid in
+   *  settings.ts: only non-empty strings survive, duplicates are dropped
+   *  (first occurrence wins), an over-long array is truncated to the
+   *  first four after de-duplication, and a non-array rejects the field
+   *  (consumer default `[]`). Unknown tool ids are dropped by the
+   *  consumer, which owns the tools registry — main has no registry to
+   *  check against. */
+  dockPins?: string[];
+  /** Phase 36 — per-tool run counts backing the command palette's
+   *  frequency ranking. Validated preserve-if-valid in settings.ts: only
+   *  non-empty string keys with finite, non-negative integer values
+   *  survive (other entries dropped); the map is capped at its 200
+   *  highest counts, ties keeping incoming order; a non-object rejects
+   *  the field (consumer default `{}`). */
+  toolUsage?: Record<string, number>;
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

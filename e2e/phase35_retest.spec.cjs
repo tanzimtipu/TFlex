@@ -364,13 +364,20 @@ test('DEF-295 retest: openPathRequest assigns to the focused pane in Multi Mode'
 // ---------------------------------------------------------------------------
 async function installZoomProbe() {
   await win.evaluate(() => {
-    window.__zoomProbe = { seen: false, cls: null, from: null, anims: [] };
+    // DEF-307 — the FLIP unit is the PAPER-OWNING `.page-slot`
+    // (ZOOM_FLIP_UNIT_SELECTOR, zoomFlip.ts), not the content-only `.pdf-page`
+    // that the pre-1.27.2 harness watched (commit 0ffb79b relocated it).
+    window.__zoomProbe = { seen: false, cls: null, from: null, dx: null, dy: null, anims: [], pageFlip: null };
     const obs = new MutationObserver(() => {
-      const el = document.querySelector('.pdf-page');
+      const el = document.querySelector('.page-slot');
       if (el && el.classList.contains('pdf-page-zoom-flip')) {
+        const page = document.querySelector('.pdf-page');
         window.__zoomProbe.seen = true;
         window.__zoomProbe.cls = el.className;
         window.__zoomProbe.from = el.style.getPropertyValue('--tf-zoom-flip-from');
+        window.__zoomProbe.dx = el.style.getPropertyValue('--tf-zoom-flip-dx');
+        window.__zoomProbe.dy = el.style.getPropertyValue('--tf-zoom-flip-dy');
+        window.__zoomProbe.pageFlip = page ? page.classList.contains('pdf-page-zoom-flip') : null;
         window.__zoomProbe.anims = document.getAnimations({ subtree: true }).map((a) => a.animationName);
       }
     });
@@ -393,6 +400,9 @@ test('DEF-296 retest: zoom plays the FLIP animation', async () => {
   console.log(`[P35R-296] zoom probe=${JSON.stringify(probe)}`);
   expect(probe.seen).toBe(true);
   expect(probe.cls).toContain('pdf-page-zoom-flip');
+  // DEF-307 — the class/vars live on the PAPER-OWNING `.page-slot` now; the
+  // content wrapper must not carry them (1.27.2 relocation).
+  expect(probe.pageFlip).toBe(false);
   expect(Number(probe.from)).toBeGreaterThan(0);
   expect(probe.anims).toContain('tf-page-zoom-flip');
 });

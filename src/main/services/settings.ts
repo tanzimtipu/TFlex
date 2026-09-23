@@ -70,6 +70,17 @@ export const ANNOTATION_TOOL_IDS: readonly string[] = [
 /** Phase 19 — maximum persisted length of the annotation MRU list. */
 export const ANNOTATION_RECENT_TOOLS_CAP = 6;
 
+/** Phase 36 — maximum number of Action Dock pins persisted. The dock
+ *  overflows beyond this into a "..." chip; the validator truncates an
+ *  over-long array rather than rejecting it (a persisted preference is
+ *  better truncated than lost — stated rule). */
+export const DOCK_PINS_CAP = 4;
+
+/** Phase 36 — maximum number of `toolUsage` entries persisted, so the
+ *  settings file cannot grow unbounded as tool ids accumulate counts. The
+ *  highest-count entries win; ties keep their incoming key order. */
+export const TOOL_USAGE_CAP = 200;
+
 /** Phase 18 — watermark type allowlist. 'text' draws the watermark string
  *  with bundled standard fonts; 'image' embeds a renderer-provided PNG/JPEG
  *  raster (pdf-lib has no rasteriser — same pattern as stamps). */
@@ -314,6 +325,60 @@ export function normalizeAnnotationRecentTools(raw: unknown): string[] | null {
   return out.length > 0 ? out : null;
 }
 
+/** Phase 36 — normalise a raw `dockPins` value, preserve-if-valid /
+ *  reject-if-invalid. Returns `null` when the value must be rejected (not
+ *  an array), so the field stays absent and the consumer applies the
+ *  default `[]`. A valid array keeps non-empty strings only (non-strings
+ *  and '' are dropped), de-duplicates (first occurrence wins), preserves
+ *  order, and truncates to `DOCK_PINS_CAP` — an over-long array is
+ *  truncated, never rejected. The result may be empty when every entry
+ *  was dropped (the consumer default is `[]` either way). Unknown tool ids
+ *  are dropped by the consumer, which owns the tools registry; main has no
+ *  registry to validate ids against, so this function checks shape only.
+ */
+export function normalizeDockPins(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string' || entry.length === 0) continue;
+    if (out.includes(entry)) continue;
+    out.push(entry);
+    if (out.length >= DOCK_PINS_CAP) break;
+  }
+  return out;
+}
+
+/** Phase 36 — normalise a raw `toolUsage` value, preserve-if-valid /
+ *  reject-if-invalid. Returns `null` when the value must be rejected (not
+ *  a plain object — arrays, null and primitives all reject), so the field
+ *  stays absent and the consumer applies the default `{}`. A valid object
+ *  keeps entries whose key is a non-empty string and whose value is a
+ *  finite, non-negative integer; every other entry is dropped, including
+ *  NaN/Infinity, negatives, non-integers and string-valued counts. The map
+ *  is capped at `TOOL_USAGE_CAP`: the highest counts win, ties keep their
+ *  incoming key order. The result may be empty when every entry was
+ *  dropped (the consumer default is `{}` either way).
+ */
+export function normalizeToolUsage(raw: unknown): Record<string, number> | null {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const entries: Array<[string, number]> = [];
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (key.length === 0) continue;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) continue;
+    entries.push([key, value]);
+  }
+  if (entries.length > TOOL_USAGE_CAP) {
+    // Stable sort: ties keep their incoming key order.
+    entries.sort((a, b) => b[1] - a[1]);
+    entries.length = TOOL_USAGE_CAP;
+  }
+  const out: Record<string, number> = {};
+  for (const [key, value] of entries) {
+    out[key] = value;
+  }
+  return out;
+}
+
 function normalizeAnnotationColorEntry(raw: unknown): AnnotationColorPreset | null {
   if (typeof raw === 'string' && raw.length > 0) {
     return { id: raw, hex: raw };
@@ -341,7 +406,10 @@ export function normalizeSettings(raw: unknown): AppSettings {
     recentFiles: normalizeRecentFiles(rawObj.recentFiles, recentsCap),
   };
 
-  // Phase 6: preserve optional settings fields if they are valid
+  // Phase 6: preserve optional settings fields if they are valid.
+  // Phase 36: toolsPaletteLayout is a TOLERATED LEGACY key — no UI writes
+  // it once the All-tools palette is retired, but it must keep validating
+  // for one release so an existing settings.json does not fail.
   if (typeof rawObj.toolsPaletteLayout === 'string' && (rawObj.toolsPaletteLayout === 'list' || rawObj.toolsPaletteLayout === 'grid')) {
     settings.toolsPaletteLayout = rawObj.toolsPaletteLayout;
   }
@@ -445,6 +513,23 @@ export function normalizeSettings(raw: unknown): AppSettings {
   // as saveAsLinearize / pagesPanelCollapsed.
   if (typeof rawObj.animationsEnabled === 'boolean') {
     settings.animationsEnabled = rawObj.animationsEnabled;
+  }
+
+  // Phase 36: Action Dock pins. Reject-if-invalid: a non-array leaves the
+  // field absent (consumer default []). A valid array is filtered
+  // (non-empty strings only), deduped and truncated to DOCK_PINS_CAP.
+  const dockPins = normalizeDockPins(rawObj.dockPins);
+  if (dockPins !== null) {
+    settings.dockPins = dockPins;
+  }
+
+  // Phase 36: per-tool usage counts for palette frequency ranking.
+  // Reject-if-invalid: a non-object leaves the field absent (consumer
+  // default {}). A valid map is filtered (finite non-negative integers
+  // only) and capped at its TOOL_USAGE_CAP highest counts.
+  const toolUsage = normalizeToolUsage(rawObj.toolUsage);
+  if (toolUsage !== null) {
+    settings.toolUsage = toolUsage;
   }
 
   return settings;

@@ -40,13 +40,17 @@ async function launchApp(extraArgs = [], userDataDir = null, executablePath = nu
     if (!fs.existsSync(tempUserData)) fs.mkdirSync(tempUserData, { recursive: true });
   }
 
-  // Chromium switches (e.g. --force-prefers-reduced-motion) must come
-  // BEFORE the app path on the electron command line or Blink never sees
-  // them; app-path argv (none today) keeps working either way.
-  const args = isDev
-    ? [...extraArgs, projectRoot]
-    : [];
-  
+  // DEF-309: the app path must stay the FIRST positional argument (argv[1] in
+  // dev). src/main/open-path.ts extracts an OS-supplied document from argv
+  // starting at index 2 and returns the first non-switch token, so a switch
+  // placed BEFORE the app path makes it mistake the app directory for a
+  // document; handleOsOpenPath then blocks the main process in a synchronous
+  // modal "Cannot open file" error box before any window is observable, so
+  // firstWindow never resolves. Chromium still parses switches that follow the
+  // app path, so extraArgs go after it - exactly once (the previous code also
+  // appended them a second time, duplicating every switch).
+  const args = isDev ? [projectRoot] : [];
+
   if (tempUserData) {
     args.push(`--user-data-dir=${tempUserData}`);
   }

@@ -1835,3 +1835,120 @@ window."
 preference or a remembered last-save directory), it must be added to `AppSettings` with validation in
 `src/main/services/settings.ts` (preserve-if-valid, reject-if-invalid) and this line updated before any
 renderer reads it.
+
+## Phase 36 — TFlex STAGES: an object-first workspace (information-architecture restructuring)
+
+**Operator request (2026-09-23):** restructure the information architecture into **TFlex STAGES** — an
+object-first workspace organized by STAGE OF WORK (`PAGES · EDIT · REVIEW · DELIVER`) rather than by
+feature list. Reference mockup supplied by the operator (`tflex-stages-concept.html`) and the accompanying
+implementation prompt (`TFlex_Stages_Implementation_Prompt.txt`). This is a RESTRUCTURING task: the
+existing animation system, design language, components and behaviours stay intact; surfaces are re-parented
+and re-homed, never rewritten.
+
+**Locked design decisions (operator-approved 2026-09-23 — do not re-litigate per chunk):**
+
+- **The All-tools palette is RETIRED as a UI surface.** Its entries array becomes `toolsRegistry` (data:
+  id, label, description, icon, shortcut, stage, action, availability) and its badge is retired. This
+  SUPERSEDES the "also in the All tools panel" wording of Phases 13/30/32/33 and the single-badge
+  requirement (DEF-284's UI half). Every tool that lived only in that panel must exist in the registry and
+  be reachable from a stage surface and/or the palette.
+- **Command palette**: `Ctrl+K` opens it (fuzzy search across every tool, recent file and view action) and
+  it supersedes the All-tools panel as the browse-everything surface. `Ctrl+Shift+P` stays a legacy alias.
+  **Pin a result to the dock with `Ctrl+Enter`.** `Ctrl+P` remains PRINT and must not be re-bound.
+- **Stages**: `Ctrl+1..4` switch PAGES/EDIT/REVIEW/DELIVER. Stage state is per pane (Multi Mode tracks a
+  stage per pane). The Stage Rail is 44px, full height, four icon+label buttons with the settings gear at
+  its bottom, and collapses to icon-only below a 1100px window width.
+- **One moving part**: switching stage swaps ONLY the left context panel, the dock contents and the
+  inspector contents. The title bar, Stage Rail, canvas and floating pills never move.
+- **Action Dock**: one component, four legal states (stage verbs / selection override / pinned / idle),
+  floating at the bottom-centre of the canvas over the workspace chrome. Nothing else may occupy the
+  bottom-centre of the canvas as WORKSPACE chrome - the object-level action bars (annotation place/confirm,
+  `EditToolbar`) and the floating text panel keep their current behaviour and are exempt.
+  Idle (fade to ~40%) must NEVER trigger while a tool is armed or a drag is in progress. Pins persist
+  (`dockPins`, max 4, oldest overflow into a "..." chip); a pinned tool already present in the stage set is
+  not duplicated.
+- **Inspector**: the right panel (240-280px) showing live properties of the current selection with the
+  actions that apply to it. It RE-PARENTS the existing text-properties, OCR-suspects and annotations
+  components (never reimplements them) and reuses the existing panel-inset machinery - the Phase 33/34 and
+  DEF-286/287 invariants stand: the panel shrinks BOTH panes equally, the page-area floor holds, the stored
+  split fraction re-clamps on geometry change.
+- **Annotations** live in the REVIEW stage: the dock's primary opens ONE expandable surface that hosts the
+  existing `AnnotationToolbar` (select/ink/rect/ellipse/arrow/textbox/callout/note/highlight/underline/
+  strikeout + colour/pen). It must NOT read as a duplicated tool set - the registry gives every tool
+  exactly ONE canonical home and other surfaces only reference it.
+- **Title bar**: keeps Print (icon + Ctrl+P), the update indicator, the theme picker, the preferences gear
+  AND all three quick file actions (Open / Save / Save As). The hamburger becomes an explicit "File" menu
+  label. A settings gear is ADDED to the Stage Rail bottom (the title-bar gear stays).
+- **Multi Mode keeps its Phase 32-34 layout**: centred inner-edge thumbnail strips flanking the divider,
+  ONE shared rail/dock/badge for the workspace, ONE composite tab, and the stage tracked PER PANE. The
+  concept's left context panel applies to SINGLE mode only. The shared Multi Mode toolbar ROW is replaced
+  by the shared floating dock; `--tf-multi-toolbar-h` and its offsets are re-derived while DEF-282's
+  invariant (no overlap with the pane headers, offset applied pre-paint) is preserved by tests.
+- **Motion**: express the concept's timings with the EXISTING motion tokens only (no new durations), and
+  honour reduced motion and the Animations-off switch.
+- **Theming**: the concept's hues are illustrative. The brand accent stays the existing accent token; only
+  four NEW semantic stage tokens are introduced (`--tf-stage-pages`, `--tf-stage-edit`, `--tf-stage-review`,
+  `--tf-stage-deliver`) with a value PER THEME (light / dark / frosted) meeting WCAG AA (4.5:1 text, 3:1
+  icons/chips). Zero hardcoded colours anywhere (the conventions checker enforces this).
+- **Shortcuts may be REASSIGNED** where they collide (the operator approved moving a collided binding to an
+  alternate key); `Ctrl+P` (Print) and the existing document shortcuts (Ctrl+S / Ctrl+F / Ctrl+Shift+O /
+  Ctrl+Shift+S / Ctrl+W / Ctrl+Z / Ctrl+Shift+Z / Ctrl+,) must keep working.
+- **Every existing control is placed**: the registry is built from a grep-audit of the whole UI, not from
+  the concept's 22-item table. Controls with no natural stage go to a GLOBAL bucket (palette + title bar /
+  File menu). Nothing is removed, hidden or downgraded. Specific placements approved: the **Multi Mode
+  toggle** moves to the title bar + palette; **Watermark** sits in REVIEW (and the palette); the **floating
+  text panel** becomes an optional pop-out of the same Inspector component (one component, two mount
+  points - never a second properties UI).
+- **Test migration is part of every chunk**: the e2e suite is updated in the SAME chunk as the surface it
+  describes, with a compatibility pass keeping key `data-*`/aria attributes on moved controls wherever
+  possible. No chunk closes while its specs are red.
+
+**Features**
+
+- `toolsRegistry` as the single tool inventory (every existing command, each with exactly one canonical
+  home) + the per-pane stage model.
+- Stage Rail with the four stages, the gear, `Ctrl+1..4` and the narrow-width collapse.
+- ContextPanel with four stage panels: PAGES (the existing live-thumbnail stack + inline hover verbs +
+  right-click menu + merge entry + the outline section), EDIT (content outline + recognition), REVIEW
+  (annotations + signatures), DELIVER (pre-flight + new document).
+- ActionDock (four states, pins, idle, responsive overflow) replacing the toolbar row.
+- Inspector replacing the All-tools palette, re-parenting the existing property/panel components.
+- CommandPalette (`Ctrl+K`, fuzzy, frequency-boosted, `Ctrl+Enter` pin).
+- Floating page + zoom pills replacing the toolbar's view controls.
+- The four stage tokens per theme.
+
+**Success criteria**
+
+1. Every existing tool is reachable in <= 2 interactions (stage + dock/panel, or Ctrl+K) and the registry
+   contains every control found in the inventory audit - nothing removed, hidden or downgraded.
+2. No toolbar row remains; the canvas gains the reclaimed space; the concept's four states are the only
+   workspace chrome at the bottom-centre of the canvas.
+3. The PAGES panel shows LIVE-RENDERED page previews with today's rotation/deleted/reorder reflection,
+   drag-reorder with its drop indicators, multi-select bulk ops, current-page highlight and scroll sync -
+   verified side by side with the old rail before the old rail is retired.
+4. Delete/Flatten never appear on persistent chrome; Rotate/Delete appear only on thumbnails, the PAGES
+   dock and the right-click menu.
+5. `Ctrl+1..4` switch stages; every pre-existing shortcut still works (`Ctrl+P` = Print unchanged).
+6. The palette lists every registry tool with its stage tag, fuzzy-matches, boosts by usage, and pins with
+   `Ctrl+Enter` (max 4, persisted, restart-surviving).
+7. All four dock states render per spec; idle never triggers while a tool is armed or a drag is in
+   progress; pins survive a restart.
+8. Every new surface is verified in light, dark AND frosted with zero hardcoded colours (the only allowed
+   literals are the new per-theme token definitions) and meets the contrast floors.
+9. All pre-existing unit and e2e tests pass, with new tests for stage switching, dock state transitions,
+   pin persistence, the registry audit, the palette and the inspector; the migrated specs keep asserting
+   the same behaviours.
+10. Multi Mode keeps its Phase 32-34 behaviour (centred strips, one shared dock/rail, one composite tab,
+    per-pane stage) with the DEF-282/286/287 invariants intact, and each pane owns its stage, panel, dock
+    and inspector contents.
+11. The Phase 35 behaviours and the print pipeline are untouched: print dialog/window, the in-app PDF
+    output, the OS open/drop paths and the window behaviour all keep working.
+
+**Settings impact:** TWO new fields, both validated in `src/main/services/settings.ts` before any renderer
+code reads them (preserve-if-valid, reject-if-invalid, mirroring the Phase-6 pattern):
+- `dockPins?: string[]` - tool ids pinned to the Action Dock, capped at 4 (an over-long or invalid array is
+  truncated/dropped per the validator's rule); unknown ids are dropped on read.
+- `toolUsage?: Record<string, number>` - per-tool run counts for palette frequency ranking; non-finite,
+  negative or non-number values are rejected/dropped.
+`toolsPaletteLayout` is retained as a TOLERATED LEGACY key for one release (no UI writes it; the validator
+must keep accepting it so an existing settings.json does not fail validation).
