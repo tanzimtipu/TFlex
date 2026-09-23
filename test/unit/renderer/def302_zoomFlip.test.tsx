@@ -17,26 +17,63 @@
 // animated to identity over the motion token, plus a scroll-anchor correction
 // so a scrolled-down document does not jump.
 //
-// These tests pin the pure maths, the CSS origin, the per-mounted-page
-// application, the scroll anchor on a scrolled document, and the instant
-// (reduced motion / Animations off) suppression.
+// REOPENED: the FLIP covered only the content wrapper while the sheet's paper
+// (the `.page-slot` background) reflowed instantly, so the sheet outline
+// teleported in the first painted frame. The animated unit is therefore the
+// PAPER-OWNING element (`.page-slot`, which contains `.pdf-page`), so paper
+// and content move as one. These tests fail if the paper layer is excluded.
+//
+// These tests pin the pure maths, the CSS origin, the per-unit (paper +
+// content) application, the scroll anchor on a scrolled document, the unit
+// end-event filter, and the instant (reduced motion / Animations off)
+// suppression.
 
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   applyZoomFlip,
   clearZoomFlip,
+  isZoomFlipEnd,
   runZoomFlip,
   scrollAnchorDelta,
   zoomAnchorPage,
   zoomFlipInvert,
+  ZOOM_FLIP_ANIMATION,
   ZOOM_FLIP_CLASS,
   ZOOM_FLIP_DX_VAR,
   ZOOM_FLIP_DY_VAR,
   ZOOM_FLIP_FROM_VAR,
+  ZOOM_FLIP_UNIT_SELECTOR,
   type ZoomFlipPending,
   type ZoomFlipPageEl,
   type ZoomFlipRect,
 } from "../../../src/renderer/components/zoomFlip";
+
+const STYLES_PATH = resolve(__dirname, "../../../src/renderer/styles.css");
+
+function stripCssComments(s: string): string {
+  return s.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+/** Body of the FIRST rule whose selector starts with `selector`. */
+function findRuleBody(s: string, selector: string): string | null {
+  const stripped = stripCssComments(s);
+  const idx = stripped.indexOf(selector);
+  if (idx === -1) return null;
+  const braceOpen = stripped.indexOf("{", idx);
+  if (braceOpen === -1) return null;
+  let depth = 0;
+  for (let i = braceOpen; i < stripped.length; i += 1) {
+    const ch = stripped[i];
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return stripped.slice(braceOpen + 1, i);
+    }
+  }
+  return null;
+}
 
 function withRect(el: HTMLElement, rect: ZoomFlipRect): HTMLElement {
   Object.defineProperty(el, "getBoundingClientRect", {
@@ -315,6 +352,104 @@ describe("DEF-302 — instant motion suppresses the animation, keeps the anchor"
     expect(p10.el.style.getPropertyValue(ZOOM_FLIP_FROM_VAR)).toBe("");
     expect(sim.scrollTop()).toBe(1620);
     expect(p10.el.getBoundingClientRect().top).toBe(-50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-302 (reopened) — the FLIP unit is the PAPER-OWNING page unit.
+//
+// qa's frame evidence pinned the residual: the FLIP animated only `.pdf-page`
+// while the sheet's PAPER (the `.page-slot` background) reflowed instantly to
+// the new size, so the first painted frame already showed the new sheet
+// outline and the content animated into it. These tests FAIL if the paper
+// layer is excluded from the animated unit.
+// ---------------------------------------------------------------------------
+
+describe("DEF-302 (reopened) — the animated unit carries the paper AND the content", () => {
+  /** slot > .pdf-page > (.pdf-page-canvas + .textLayer): the app's shape. */
+  function buildPageUnit(): {
+    slot: HTMLDivElement;
+    page: HTMLDivElement;
+    canvas: HTMLCanvasElement;
+  } {
+    const slot = document.createElement("div");
+    slot.className = "page-slot";
+    const page = document.createElement("div");
+    page.className = "pdf-page";
+    const canvas = document.createElement("canvas");
+    canvas.className = "pdf-page-canvas";
+    const text = document.createElement("div");
+    text.className = "textLayer";
+    page.append(canvas, text);
+    slot.appendChild(page);
+    return { slot, page, canvas };
+  }
+
+  it("the unit owns the sheet paper and contains the content in one element", () => {
+    const { slot, page, canvas } = buildPageUnit();
+    // The unit selector matches the PAPER-OWNING element (its white background
+    // is asserted against styles.css in the next test) ...
+    expect(slot.matches(ZOOM_FLIP_UNIT_SELECTOR)).toBe(true);
+    // ... and the content wrapper is INSIDE it, so one transform moves both.
+    expect(slot.contains(page)).toBe(true);
+    expect(slot.contains(canvas)).toBe(true);
+    // The content wrapper alone is NOT the unit — animating it alone is the
+    // reopened defect (paper excluded).
+    expect(page.matches(ZOOM_FLIP_UNIT_SELECTOR)).toBe(false);
+  });
+
+  it("applies the invert to the paper unit, not the content-only wrapper, with the same maths", () => {
+    const { slot, page } = buildPageUnit();
+    const first: ZoomFlipRect = { left: 260, top: 0, width: 304, height: 394 };
+    const last: ZoomFlipRect = { left: 244, top: 0, width: 335, height: 434 };
+    withRect(slot, last);
+
+    const ok = applyZoomFlip(slot, first);
+    const inv = zoomFlipInvert(first, last);
+    expect(inv).not.toBeNull();
+    expect(ok).toBe(true);
+    // The PAPER element carries the class + the same invert values ...
+    expect(slot.classList.contains(ZOOM_FLIP_CLASS)).toBe(true);
+    expect(Number(slot.style.getPropertyValue(ZOOM_FLIP_FROM_VAR))).toBeCloseTo(inv?.sx ?? 0, 6);
+    expect(slot.style.getPropertyValue(ZOOM_FLIP_DX_VAR)).toBe(`${Number(inv?.dx.toFixed(4))}px`);
+    expect(slot.style.getPropertyValue(ZOOM_FLIP_DY_VAR)).toBe(`${Number(inv?.dy.toFixed(4))}px`);
+    // ... and the content wrapper does NOT animate on its own (no double
+    // transform: paper and content stay one rigid unit).
+    expect(page.classList.contains(ZOOM_FLIP_CLASS)).toBe(false);
+    expect(page.style.getPropertyValue(ZOOM_FLIP_FROM_VAR)).toBe("");
+  });
+
+  it("the unit is the element styles.css paints paper-white", () => {
+    const css = readFileSync(STYLES_PATH, "utf8");
+    const slotBody = findRuleBody(css, ZOOM_FLIP_UNIT_SELECTOR);
+    expect(slotBody).not.toBeNull();
+    // The unit paints the sheet paper (DEF-099) — this is WHY the FLIP must
+    // animate it: the paper is the instantly-reflowing layer.
+    expect(slotBody ?? "").toMatch(/background:\s*#ffffff/);
+    // The content wrapper is a CHILD of the unit, so it rides the same frame.
+    const pageBody = findRuleBody(css, ".pdf-page {");
+    expect(pageBody).not.toBeNull();
+    expect(pageBody ?? "").toMatch(/background:\s*#ffffff/);
+    expect(pageBody ?? "").toMatch(/box-shadow:\s*var\(--shadow-page\)/);
+  });
+});
+
+describe("DEF-302 (reopened) — isZoomFlipEnd clears only the unit's own animation", () => {
+  it("accepts the unit's own tf-page-zoom-flip end", () => {
+    const el = document.createElement("div");
+    expect(isZoomFlipEnd({ animationName: ZOOM_FLIP_ANIMATION, target: el }, el)).toBe(true);
+  });
+
+  it("ignores a descendant's bubbling animationend (target is not the unit)", () => {
+    const unit = document.createElement("div");
+    const child = document.createElement("div");
+    unit.appendChild(child);
+    expect(isZoomFlipEnd({ animationName: ZOOM_FLIP_ANIMATION, target: child }, unit)).toBe(false);
+  });
+
+  it("ignores a different animation name on the unit", () => {
+    const el = document.createElement("div");
+    expect(isZoomFlipEnd({ animationName: "some-other-anim", target: el }, el)).toBe(false);
   });
 });
 

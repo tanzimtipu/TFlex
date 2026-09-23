@@ -53,6 +53,15 @@ export const IPC = {
   // close bypassed that gate, silently discarding unsaved edits.
   windowCloseRequested: "window:closeRequested",
   windowConfirmClose: "window:confirmClose",
+  // DEF-303 — main -> renderer pause/resume signal, driven from the main
+  // process's `minimize` / `restore` events. Chromium suspends a minimised
+  // window's frames regardless of `backgroundThrottling` (the option was
+  // tried and reverted: qa measured ~1 rAF frame/s while minimised and no
+  // latency gain), so the expensive PDF render/raster loop is parked by this
+  // explicit signal. Payload is `WindowMinimizedChange` ({ minimized:
+  // boolean }): true on minimize (pause), false on restore (resume).
+  // Broadcast-only; the renderer consumer is wired separately.
+  windowMinimizedChangedEvent: "window:minimizedChanged",
   openFileDialog: "dialog:openFile",
   pdfLoad: "pdf:load",
   // Phase 12 — separate FDF load path. FDF files start with %FDF- and would
@@ -219,6 +228,13 @@ export const IPC = {
 /** Result of `signatures:save` and `signatures:list`. The renderer treats
  *  the signature service as a flat list of saved entries. */
 export type SavedSignaturesResult = SavedSignature[];
+
+/** DEF-303 — payload of `window:minimizedChanged`. `minimized: true` means the
+ *  window was minimised (pause expensive renderer work); `false` means it was
+ *  restored from minimised (resume). */
+export interface WindowMinimizedChange {
+  minimized: boolean;
+}
 
 /** Phase 9 — engine surface exposed to the renderer. Each method
  *  routes over the matching `engine:*` IPC channel through preload.
@@ -551,6 +567,14 @@ export interface TFlexApi {
    *  so the window shuts. `proceed=false` (or no call) aborts — the window
    *  stays open. The renderer awaits this to know the close proceeded. */
   confirmClose?(proceed: boolean): Promise<void>;
+  /** DEF-303 — subscribe to the main process's pause/resume signal, fired on
+   *  the window's `minimize` (minimized=true) and `restore` (minimized=false)
+   *  events. Chromium suspends a minimised window's frames regardless of
+   *  `backgroundThrottling`, so the expensive PDF render/raster loop is
+   *  parked by this explicit signal rather than by `visibilitychange`.
+   *  Returns an unsubscribe. Optional so a preload without the signal
+   *  degrades gracefully (jsdom tests, older builds). */
+  onMinimizedChanged?(cb: (state: WindowMinimizedChange) => void): () => void;
   openFileDialog(kind?: OpenFileDialogKind): Promise<string | null>;
   loadPdf(path: string): Promise<Result<ArrayBuffer, PdfOpenError>>;
   /** Phase 12 — load an FDF (Forms Data Format) comment file from disk.

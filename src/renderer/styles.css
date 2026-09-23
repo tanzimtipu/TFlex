@@ -3569,16 +3569,22 @@ input[type="checkbox"] {
   gap: 18px;
 }
 
-/* DEF-296 + DEF-302 — page zoom FLIP. A zoom step re-lays-out the slot
-   instantly (the wrapper takes its NEW width/height), then the wrapper plays
-   a one-shot transform-only FLIP from the inverse of the layout change
+/* DEF-296 + DEF-302 — page zoom FLIP. A zoom step re-lays-out the page unit
+   instantly (the slot takes its NEW width/height), then the unit plays a
+   one-shot transform-only FLIP from the inverse of the layout change
    (`--tf-zoom-flip-dx` / `--tf-zoom-flip-dy` translate and
-   `--tf-zoom-flip-from` scale) back to identity, so the page grows / shrinks
-   AND moves in lockstep with its new box instead of rubber-banding inside an
-   already-resized slot. `transform-origin: 0 0` is the whole point: the
-   inverse is `translate(dx, dy) scale(sx, sy)` about the TOP-LEFT, so the box
-   lands exactly on its pre-zoom rect at the first frame (a 50% 50% origin
-   would start the content off by the box delta — the DEF-302 defect).
+   `--tf-zoom-flip-from` scale) back to identity, so the sheet — paper AND
+   content — grows / shrinks AND moves in lockstep with its new box instead of
+   rubber-banding inside an already-resized slot. `transform-origin: 0 0` is
+   the whole point: the inverse is `translate(dx, dy) scale(sx, sy)` about the
+   TOP-LEFT, so the box lands exactly on its pre-zoom rect at the first frame
+   (a 50% 50% origin would start the content off by the box delta — the
+   DEF-302 defect).
+   The class is applied to the PAPER-OWNING page unit (`.page-slot`, which
+   paints the sheet's paper background and contains `.pdf-page`), NOT to the
+   content wrapper alone: the slot is what reflows instantly, so animating
+   only the content let the paper-white outline teleport to the new size in
+   the first painted frame (reopened DEF-302).
    Transform-only on purpose: no width/height transition, so there is no
    layout thrashing and the scroll geometry is settled the moment the zoom
    lands. DocumentView applies the class only when motion is not instant; the
@@ -3658,7 +3664,13 @@ input[type="checkbox"] {
  * inside the slot only when the IntersectionObserver reports it as
  * intersecting the scroller viewport (plus a generous rootMargin). Keeping
  * the slot in the DOM at all times means the scrollbar tracks the full page
- * count without us mounting 500+ canvases at open time. */
+ * count without us mounting 500+ canvases at open time.
+ *
+ * DEF-302 (reopened) — the slot is also the PAPER-OWNING page unit, i.e. the
+ * element the zoom FLIP animates (`ZOOM_FLIP_UNIT_SELECTOR`). Its layout box
+ * coincides with the mounted `.pdf-page` (same geometry formula), so one
+ * transform covers the sheet's paper background AND the content: no painted
+ * frame can show the paper at the new size before the animation runs. */
 .page-slot {
   position: relative;
   display: flex;

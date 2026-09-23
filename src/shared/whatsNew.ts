@@ -23,6 +23,14 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.27.2',
+    date: '2026-09-23',
+    highlights: [
+      'Zooming now moves the page and its sheet as one piece - the white page outline no longer snaps to the new size before the animation starts.',
+      'Restoring TFlex from the taskbar takes a single window transition instead of two, and the app parks its page-rendering work while minimised so it uses less CPU in the background.',
+    ],
+  },
+  {
     version: '1.27.1',
     date: '2026-09-23',
     highlights: [

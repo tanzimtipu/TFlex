@@ -42,6 +42,7 @@ import { SignatureService } from './services/signature-service';
 import { UpdateService } from './services/update-service';
 import { applyMenuEnabledState, buildAppMenu } from './menu';
 import { createMainWindow } from './window';
+import { planCaptionMaximize } from './window-maximize';
 import { closePrintWindow, notifyPrintDocumentGone, openPrintWindow } from './print-window';
 import { extractFileArgument, looksLikePdfPath } from './open-path';
 
@@ -71,6 +72,14 @@ let mainWindow: BrowserWindow | null = null;
 // the window was closed while a print window kept the app alive) recreates a
 // main window and the queued path is delivered on its did-finish-load.
 let recreateMainWindow: (() => void) | null = null;
+
+// DEF-303 — the maximised state a window was in BEFORE it was minimised.
+// While minimised `isMaximized()` reports false and Windows does not emit
+// `unmaximize` when a maximised window is minimised, so the caption-maximize
+// handler cannot read the pre-minimise state off the window directly. The
+// entry is created with the window and kept current by its own
+// `maximize` / `unmaximize` events.
+const wasMaximizedBeforeMinimize = new WeakMap<BrowserWindow, boolean>();
 
 /** Flush paths queued before the main window's renderer was ready. */
 function flushPendingOpenPaths(win: BrowserWindow): void {
@@ -238,10 +247,31 @@ export async function start(): Promise<void> {
   ipcMain.handle(IPC.windowMaximize, (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (win !== null) {
-      if (win.isMaximized()) {
-        win.unmaximize();
-      } else {
-        win.maximize();
+      // DEF-303 — a maximize arriving while the window is still minimised
+      // used to call `win.maximize()` blind, which on Windows stacks a
+      // restore + maximise (two DWM transitions, ~152 ms to the event versus
+      // ~51 ms from the restored state). `win.restore()` returns the window
+      // to its pre-minimise state in ONE transition, so when it was maximised
+      // before minimising a single `restore()` is the whole job. Rule:
+      //   minimised + previously maximised -> restore()
+      //   minimised + previously normal     -> restore(), then maximize()
+      //   not minimised                     -> the existing single-action
+      //                                        toggle (maximize / unmaximize)
+      const minimized = win.isMinimized();
+      const maximized = win.isMaximized();
+      const steps = planCaptionMaximize({
+        minimized,
+        maximized,
+        previouslyMaximized: wasMaximizedBeforeMinimize.get(win) ?? maximized,
+      });
+      for (const step of steps) {
+        if (step === 'restore') {
+          win.restore();
+        } else if (step === 'unmaximize') {
+          win.unmaximize();
+        } else {
+          win.maximize();
+        }
       }
     }
   });
@@ -624,12 +654,30 @@ export async function start(): Promise<void> {
     broadcast({ ...settings.getCurrent(), geometry });
   };
 
+  // DEF-303 — the renderer's PDF render/raster work must be paused while the
+  // window is minimised. Chromium suspends the minimised window's frames
+  // anyway (`backgroundThrottling: false` was tried and reverted — it did not
+  // unblock rAF, and it cost ~62 timer ticks/s of CPU), so this explicit
+  // signal is the mechanism that parks the work. It is driven from the MAIN
+  // process's window `minimize` / `restore` events (wired through the
+  // onMinimizedChanged dep below), broadcast to every live window on the
+  // dedicated `window:minimizedChanged` channel. The renderer consumer is a
+  // separate dispatch.
+  const broadcastMinimizedChanged = (minimized: boolean): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send(IPC.windowMinimizedChangedEvent, { minimized });
+      }
+    }
+  };
+
   const createWindow = (): void => {
     const win = createMainWindow(currentSettings, {
       rendererHtml,
       rendererDevUrl,
       onGeometryChanged,
       onWindowStateChanged,
+      onMinimizedChanged: broadcastMinimizedChanged,
       // DEF-142 — gate the whole-window close on unsaved edits.
       onCloseRequested: onWindowCloseRequested,
     });
@@ -638,6 +686,15 @@ export async function start(): Promise<void> {
     // renderer was ready.
     if (win !== undefined) {
       mainWindow = win;
+      // DEF-303 — keep the pre-minimise maximised state current so the
+      // caption-maximize handler can pick the single-transition path.
+      wasMaximizedBeforeMinimize.set(win, win.isMaximized());
+      win.on('maximize', () => {
+        wasMaximizedBeforeMinimize.set(win, true);
+      });
+      win.on('unmaximize', () => {
+        wasMaximizedBeforeMinimize.set(win, false);
+      });
       win.webContents.once('did-finish-load', () => {
         flushPendingOpenPaths(win);
       });

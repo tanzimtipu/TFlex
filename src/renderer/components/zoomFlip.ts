@@ -9,8 +9,8 @@
 //
 // DEF-302 replaces that with a real FLIP about the element's TOP-LEFT:
 //
-//   First   — measure the page wrapper's viewport rect BEFORE the zoom.
-//   Last    — let the layout change (the wrapper is now its NEW size).
+//   First   — measure the page UNIT's viewport rect BEFORE the zoom.
+//   Last    — let the layout change (the unit is now its NEW size).
 //   Invert  — for a size + position change about `transform-origin: 0 0`:
 //
 //               sx = first.width  / last.width
@@ -25,6 +25,18 @@
 //   Play    — animate that transform to identity over the motion token. The
 //             page content therefore tracks the layout change for the whole
 //             250ms instead of rubber-banding inside a box that already moved.
+//
+// DEF-302 was REOPENED: the FLIP above animated only `.pdf-page`, while the
+// sheet's PAPER is also painted by the `.page-slot`'s own background
+// (styles.css, DEF-099). The slot reflows to its final box instantly, so the
+// paper-white outline teleported to the new size in the first painted frame
+// and the content then animated into it — the operator's "jumps first, then
+// the animation follows". The unit this module animates is therefore the
+// PAPER-OWNING element, `ZOOM_FLIP_UNIT_SELECTOR` (`.page-slot`), which
+// contains `.pdf-page` as its child: one transform moves the sheet outline
+// AND the content, so no painted frame can show the paper at the new size
+// before the animation. The invert maths is unchanged — the slot's layout box
+// coincides with the page wrapper's, so `first`/`last` are the same rects.
 //
 // `applyZoomFlip` measures `last` itself on the live element (after cancelling
 // any in-flight animation), so the applier stays a pure DOM operation while
@@ -43,7 +55,9 @@ export interface ZoomFlipRect {
   height: number;
 }
 
-/** A page wrapper paired with its page number, for `runZoomFlip`. */
+/** A page unit paired with its page number, for `runZoomFlip`. `el` is the
+ *  PAPER-OWNING page unit (`ZOOM_FLIP_UNIT_SELECTOR`), never the content-only
+ *  `.pdf-page` wrapper — see the module header (DEF-302). */
 export interface ZoomFlipPageEl {
   page: number;
   el: HTMLElement;
@@ -71,6 +85,14 @@ export interface ZoomFlipPending {
  *  `tf-page-zoom-flip` keyframe lives in styles.css and is collapsed by the
  *  global reduced-motion / `data-animations="off"` catch-alls. */
 export const ZOOM_FLIP_CLASS = "pdf-page-zoom-flip";
+
+/** The element the FLIP must animate: the PAPER-OWNING page unit. It paints
+ *  the sheet's paper background (styles.css `.page-slot`, DEF-099) AND
+ *  contains the page content (`.pdf-page` + canvas/text/overlays) as a child,
+ *  so one transform moves the sheet outline and the content together in the
+ *  same frame. Animating only the content wrapper lets the paper teleport to
+ *  the new size before the animation (reopened DEF-302). */
+export const ZOOM_FLIP_UNIT_SELECTOR = ".page-slot";
 
 /** The custom property the keyframe reads as its `from` SCALE. Kept a plain
  *  number (the e2e contract asserts `Number(from) > 0`). */
@@ -206,11 +228,23 @@ export function applyZoomFlip(el: HTMLElement, first: ZoomFlipRect): boolean {
   return true;
 }
 
+/** True when `e` is the END of the unit's OWN zoom FLIP — same animation name
+ *  AND fired by the unit itself. The unit hosts nested pages/overlays whose
+ *  animations bubble `animationend` up to it, so the target check keeps a
+ *  descendant's animation from clearing the FLIP early. */
+export function isZoomFlipEnd(
+  e: { animationName: string; target: EventTarget | null },
+  unit: HTMLElement,
+): boolean {
+  return e.animationName === ZOOM_FLIP_ANIMATION && e.target === unit;
+}
+
 /** Apply the whole zoom FLIP: first restore the scroll anchor (so the
- *  viewport does not jump), then animate every mounted page from its
+ *  viewport does not jump), then animate every mounted page UNIT
+ *  (`ZOOM_FLIP_UNIT_SELECTOR`, the paper + content element) from its
  *  pre-zoom rect to identity. Under instant motion (reduced motion /
  *  Animations off) the scroll anchor is still preserved but no page animates.
- *  Returns the number of pages that played the animation. */
+ *  Returns the number of units that played the animation. */
 export function runZoomFlip(
   scroller: { scrollTop: number; getBoundingClientRect: () => ZoomFlipRect },
   pages: readonly ZoomFlipPageEl[],

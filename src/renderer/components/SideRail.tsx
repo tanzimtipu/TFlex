@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { resolveOutlinePage, isInvalidPageRequest, type OutlineNode } from '../pdf/pdfjs';
 import { useLiftAnimation, useRailSwapAnimation } from '../hooks/useAnimations';
 import { computeThumbGeometry, THUMB_WIDTH } from './thumbGeometry';
+import { deferWork } from '../state/renderSuspend';
 import type { EngineState } from '../engine/types';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
@@ -1110,7 +1111,7 @@ function Thumb({
     }
     let disposed = false;
     let renderTask: { cancel: () => void } | null = null;
-    void (async () => {
+    const renderThumb = async (): Promise<void> => {
       let pdfPage: PDFPageProxy;
       try {
         pdfPage = await doc.getPage(page);
@@ -1207,8 +1208,15 @@ function Thumb({
       }
       ctx.drawImage(scratch, 0, 0);
       setRendered(true);
-    })();
+    };
+    // DEF-303 — the thumbnail raster is parked while the window is
+    // minimised and flushed on restore; the cleanup below cancels a parked
+    // run so a stale thumb render never fires after a dep change / unmount.
+    const cancelDeferred = deferWork((): void => {
+      void renderThumb();
+    });
     return () => {
+      cancelDeferred();
       disposed = true;
       try {
         renderTask?.cancel();

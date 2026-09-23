@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
-import { IPC, type SavedSignaturesResult } from "../shared/ipc";
+import { IPC, type SavedSignaturesResult, type WindowMinimizedChange } from "../shared/ipc";
 import type {
   AppInfo,
   AppSettings,
@@ -394,6 +394,17 @@ const api = {
   // it (the gate skips the second 'close'); proceed=false / no call aborts.
   confirmClose(proceed: boolean): Promise<void> {
     return ipcRenderer.invoke(IPC.windowConfirmClose, proceed);
+  },
+  // DEF-303 — main's minimize/restore pause signal. Chromium suspends a
+  // minimised window's frames regardless of `backgroundThrottling`, so the
+  // renderer's PDF render/raster loop pauses on `{ minimized: true }` and
+  // resumes on `{ minimized: false }` (the consumer is wired separately).
+  onMinimizedChanged(cb: (state: WindowMinimizedChange) => void): () => void {
+    const listener = (_event: unknown, state: WindowMinimizedChange): void => cb(state);
+    ipcRenderer.on(IPC.windowMinimizedChangedEvent, listener);
+    return () => {
+      ipcRenderer.removeListener(IPC.windowMinimizedChangedEvent, listener);
+    };
   },
   openFileDialog(kind?: OpenFileDialogKind): Promise<string | null> {
     return ipcRenderer.invoke(IPC.openFileDialog, kind);

@@ -1,12 +1,9 @@
 import { TextLayer, type PDFDocumentProxy, type PDFPageProxy } from 'pdfjs-dist';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useInstantMotion } from '../hooks/useAnimations';
-import {
-  ZOOM_FLIP_ANIMATION,
-  clearZoomFlip,
-} from './zoomFlip';
 import { measureHitRects, type HitRect } from '../pdf/highlight';
 import { isInvalidPageRequest } from '../pdf/pdfjs';
+import { deferWork } from '../state/renderSuspend';
 import type { SearchHit } from '../search/searchIndex';
 import { AnnotationOverlay, type TextItemGeom } from '../annotations/AnnotationOverlay';
 import { StampAnnotations, type PlacedStamp } from '../annotations/StampAnnotations';
@@ -401,17 +398,12 @@ heightPt,
   const instantMotionRef = useRef(instantMotion);
   instantMotionRef.current = instantMotion;
 
-  // DEF-302 — the zoom FLIP is driven by DocumentView (it owns the scroller,
-  // so it can preserve the scroll anchor and FLIP every mounted page in one
-  // ordered pass after the new layout commits). The wrapper only cleans up
-  // the class/vars once the one-shot animation lands; the end state is the
-  // identity transform anyway.
-  const onZoomFlipEnd = useCallback((e: { animationName: string }): void => {
-    if (e.animationName !== ZOOM_FLIP_ANIMATION) return;
-    const el = wrapperRef.current;
-    if (el === null) return;
-    clearZoomFlip(el);
-  }, []);
+  // DEF-302 — the zoom FLIP is driven by DocumentView, and it animates the
+  // PAPER-OWNING page unit (the `.page-slot`), not this content wrapper: the
+  // slot paints the sheet's paper background and contains this wrapper, so one
+  // transform moves the sheet outline and the content together. The slot owns
+  // the class/vars cleanup (DocumentView's `onAnimationEnd`), so there is
+  // nothing to do here.
 
 
   const ready = renderedScale !== null;
@@ -767,8 +759,15 @@ heightPt,
       setRenderedScale(cssScale);
       endRender();
     };
-    void run();
+    // DEF-303 — while the window is minimised the page raster is parked
+    // (not dropped): `deferWork` runs it now when active and flushes it on
+    // restore. The effect's cleanup cancels a parked run so a stale render
+    // never fires after a dep change / unmount.
+    const cancelDeferred = deferWork(() => {
+      void run();
+    });
     return () => {
+      cancelDeferred();
       disposed = true;
       endRender();
       // Cancel any in-flight tasks; pdf.js will throw RenderingCancelledException
@@ -887,7 +886,6 @@ heightPt,
       data-page={page}
       data-stamp-editor-open={stampChromeOpen ? "true" : "false"}
       style={{ width: `${wrapperW}px`, height: `${wrapperH}px` }}
-      onAnimationEnd={onZoomFlipEnd}
     >
       <canvas ref={canvasRef} className="pdf-page-canvas" />
       <div ref={textHostRef} className="textLayer" />

@@ -14,6 +14,15 @@ interface WindowDeps {
    *  geometry exactly as before, once per burst. Optional so callers that do
    *  not care about the caption (tests) keep working. */
   onWindowStateChanged?: (geometry: WindowGeometry) => void;
+  /** DEF-303 — renderer pause/resume signal driven from the window's
+   *  'minimize' / 'restore' events. Chromium suspends a minimised window's
+   *  frames regardless of the `backgroundThrottling` option (qa measured rAF
+   *  at ~1 fps while minimised even with the option off), so the expensive
+   *  PDF render/raster loop must be parked explicitly by this signal instead
+   *  of waiting on Chromium's rAF cadence. `true` on minimize (pause),
+   *  `false` on restore (resume). Optional so callers that do not wire the
+   *  pause (tests) keep working. */
+  onMinimizedChanged?: (minimized: boolean) => void;
   /** DEF-142 — invoked synchronously from the window's 'close' event so the
    *  caller can `event.preventDefault()` when the renderer has unsaved
    *  edits. The caller (index.ts) decides whether to abort the close and
@@ -178,6 +187,14 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // DEF-303 — `backgroundThrottling: false` was tried here to keep the
+      // renderer's rAF loop alive while minimised, but qa measured that
+      // Chromium still suspends a minimised window's frames (~1 rAF frame/s
+      // with the option off, ~62 timer ticks/s) and the restore latency was
+      // unchanged. It bought nothing for the latency and cost ~62 timer
+      // ticks/s of CPU while minimised, so it was reverted to the default.
+      // The explicit `onMinimizedChanged` pause signal below is what parks
+      // the PDF render/raster work while minimised.
     },
   });
 
@@ -241,8 +258,14 @@ export function createMainWindow(settings: AppSettings, deps: WindowDeps): Brows
     emitWindowState();
     scheduleReport();
   });
-  win.on('minimize', emitWindowState);
-  win.on('restore', emitWindowState);
+  win.on('minimize', () => {
+    emitWindowState();
+    deps.onMinimizedChanged?.(true);
+  });
+  win.on('restore', () => {
+    emitWindowState();
+    deps.onMinimizedChanged?.(false);
+  });
 
   win.on('close', (event) => {
     if (debounce !== null) {

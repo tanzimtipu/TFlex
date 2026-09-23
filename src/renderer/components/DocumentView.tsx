@@ -36,6 +36,8 @@ import {
 import type { OutlineNode } from "../pdf/pdfjs";
 import { useInstantMotion } from "../hooks/useAnimations";
 import {
+  clearZoomFlip,
+  isZoomFlipEnd,
   runZoomFlip,
   zoomAnchorPage,
   type ZoomFlipPending,
@@ -99,6 +101,7 @@ import {
   createIdleCleanupCoordinator,
   type IdleCleanupCoordinator,
 } from "../utils/idleCleanup";
+import { waitForRenderActive } from "../state/renderSuspend";
 import type {
   AppTheme,
   FormField,
@@ -1364,20 +1367,32 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // layout effects fire before the parent's, so the scroll would be corrected
   // too late. Hence: capture synchronously in the zoom handlers, apply in one
   // `useLayoutEffect` on `effectiveScale`.
+  //
+  // DEF-302 (reopened) — the FLIP animates the PAPER-OWNING page unit
+  // (`ZOOM_FLIP_UNIT_SELECTOR`, i.e. the `.page-slot`), NOT the content-only
+  // `.pdf-page`. The slot paints the sheet's paper background (DEF-099) and
+  // reflows to its final box instantly; animating only the content left the
+  // paper outline teleported to the new size in the first painted frame. The
+  // slot contains `.pdf-page` as a child, so one transform moves the paper
+  // AND the content together. The slot's layout box coincides with the page
+  // wrapper's (same geometry formula), so the invert maths is unchanged.
   const pendingZoomFlipRef = useRef<ZoomFlipPending | null>(null);
   const instantMotion = useInstantMotion();
   const instantMotionRef = useRef(instantMotion);
   instantMotionRef.current = instantMotion;
 
-  /** Page wrapper for a page number (the only `.pdf-page` inside its slot). */
-  const pageElementFor = (page: number | null): HTMLElement | null => {
+  /** The paper-owning page unit for a page number: its `.page-slot`. This is
+   *  the element the zoom FLIP animates (paper background + content in one). */
+  const pageUnitFor = (page: number | null): HTMLElement | null => {
     if (page === null) return null;
-    return slotRefsRef.current.get(page)?.querySelector<HTMLElement>(".pdf-page") ?? null;
+    return slotRefsRef.current.get(page) ?? null;
   };
 
   /** Synchronously record the pre-zoom rects + scroll anchor. Returns false
    *  when nothing is mounted to animate. Called just before the zoom dispatch
-   *  so `First` is the OLD layout. */
+   *  so `First` is the OLD layout. Only slots holding a mounted PageView (a
+   *  real sheet) are captured; an empty placeholder slot has no content to
+   *  track and reflows instantly like native zoom (accepted). */
   const captureZoomFlip = useCallback((): boolean => {
     const scroller = scrollerRef.current;
     if (scroller === null) return false;
@@ -1385,12 +1400,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const firstRects = new Map<number, ZoomFlipRect>();
     const pages: ZoomFlipPageEl[] = [];
     slotRefsRef.current.forEach((slotEl, page) => {
-      const el = slotEl.querySelector<HTMLElement>(".pdf-page");
-      if (el === null) return;
-      const r = el.getBoundingClientRect();
+      if (slotEl.querySelector(".pdf-page") === null) return;
+      const r = slotEl.getBoundingClientRect();
       if (!(r.width > 0) || !(r.height > 0)) return;
       firstRects.set(page, { left: r.left, top: r.top, width: r.width, height: r.height });
-      pages.push({ page, el });
+      pages.push({ page, el: slotEl });
     });
     if (pages.length === 0) return false;
     const anchor = zoomAnchorPage(pages, scrollerTop);
@@ -1415,7 +1429,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     if (scroller === null) return;
     const pages: ZoomFlipPageEl[] = [];
     pending.firstRects.forEach((_rect, page) => {
-      const el = pageElementFor(page);
+      const el = pageUnitFor(page);
       if (el !== null) pages.push({ page, el });
     });
     runZoomFlip(scroller, pages, pending, instantMotionRef.current);
@@ -2212,6 +2226,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             // Still mid-walk — push the idle window out so cleanup doesn't
             // fire while the search loop is iterating pages.
             idleCleanupRef.current?.noteActivity();
+            // DEF-303 — the window is minimised: park the walk here (it
+            // resumes from this page on restore, progress and collected
+            // hits intact) instead of rasterising the rest of the document
+            // for a window nobody can see. No-op while the window is active.
+            await waitForRenderActive();
             await new Promise<void>((r) => setTimeout(r, 0));
             if (cancelled || token !== searchTokenRef.current) {
               return;
@@ -3180,6 +3199,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                   data-source-page={sourcePage}
                   onDragOver={canvasDragOn ? onCanvasDragOver(visiblePage) : undefined}
                   onDrop={canvasDragOn ? onCanvasDrop(visiblePage) : undefined}
+                  // DEF-302 — the slot IS the page unit the zoom FLIP animates
+                  // (paper background + content in one frame); clear the
+                  // one-shot class/vars when its own animation lands. Guard
+                  // with `isZoomFlipEnd` so a nested overlay's animationend
+                  // (which bubbles here) cannot clear the FLIP early.
+                  onAnimationEnd={(e) => {
+                    if (isZoomFlipEnd(e, e.currentTarget)) clearZoomFlip(e.currentTarget);
+                  }}
                   style={{
                     height:
                       slotGeom !== undefined && slotGeom.heightCss > 0

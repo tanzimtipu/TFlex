@@ -559,10 +559,12 @@ describe('main/index - window:maximize handler', () => {
   it('maximizes an unmaximized window', async () => {
     vi.clearAllMocks();
     _handle.mockClear();
+    _getAllWindows.mockReturnValue([]);
 
     const maximize = vi.fn();
     const unmaximize = vi.fn();
     _fromWebContents.mockReturnValue({
+      isMinimized: vi.fn().mockReturnValue(false),
       isMaximized: vi.fn().mockReturnValue(false),
       maximize,
       unmaximize,
@@ -581,10 +583,12 @@ describe('main/index - window:maximize handler', () => {
   it('unmaximizes an already maximized window', async () => {
     vi.clearAllMocks();
     _handle.mockClear();
+    _getAllWindows.mockReturnValue([]);
 
     const maximize = vi.fn();
     const unmaximize = vi.fn();
     _fromWebContents.mockReturnValue({
+      isMinimized: vi.fn().mockReturnValue(false),
       isMaximized: vi.fn().mockReturnValue(true),
       maximize,
       unmaximize,
@@ -598,6 +602,147 @@ describe('main/index - window:maximize handler', () => {
 
     expect(unmaximize).toHaveBeenCalled();
     expect(maximize).not.toHaveBeenCalled();
+  });
+
+  // DEF-303 — a maximize arriving while the window is still minimised must
+  // first restore() (one DWM transition) and only then maximize() when the
+  // pre-minimise state was normal.
+  it('restores then maximizes a minimised window that was NOT maximised before', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _getAllWindows.mockReturnValue([]);
+
+    const maximize = vi.fn();
+    const unmaximize = vi.fn();
+    const restore = vi.fn();
+    _fromWebContents.mockReturnValue({
+      isMinimized: vi.fn().mockReturnValue(true),
+      isMaximized: vi.fn().mockReturnValue(false),
+      maximize,
+      unmaximize,
+      restore,
+    });
+
+    await start();
+
+    const maxCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.windowMaximize)!;
+    const handler = maxCall[1] as (...args: unknown[]) => unknown;
+    await handler({ sender: {} });
+
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(maximize).toHaveBeenCalledTimes(1);
+    expect(unmaximize).not.toHaveBeenCalled();
+  });
+
+  // DEF-303 — when the window WAS maximised before minimising, restore()
+  // alone returns it to maximised in a single transition; a following
+  // maximize() would stack a redundant second transition.
+  it('only restores a minimised window that WAS maximised before', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _createMainWindow.mockClear();
+
+    const maximize = vi.fn();
+    const unmaximize = vi.fn();
+    const restore = vi.fn();
+    const listeners: Record<string, Array<() => void>> = {};
+    const fakeWin = {
+      isMinimized: vi.fn().mockReturnValue(false),
+      isMaximized: vi.fn().mockReturnValue(false),
+      maximize,
+      unmaximize,
+      restore,
+      on: vi.fn((event: string, cb: () => void) => {
+        (listeners[event] ??= []).push(cb);
+      }),
+      webContents: { once: vi.fn(), send: vi.fn() },
+    };
+    _createMainWindow.mockReturnValueOnce(fakeWin);
+    _fromWebContents.mockReturnValue(fakeWin);
+
+    await start();
+
+    // The user maximised before minimising: the window's own 'maximize'
+    // event updates the tracked pre-minimise state.
+    fakeWin.isMaximized.mockReturnValue(true);
+    for (const cb of listeners['maximize'] ?? []) cb();
+    fakeWin.isMaximized.mockReturnValue(false);
+    fakeWin.isMinimized.mockReturnValue(true);
+
+    const maxCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.windowMaximize)!;
+    const handler = maxCall[1] as (...args: unknown[]) => unknown;
+    await handler({ sender: {} });
+
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(maximize).not.toHaveBeenCalled();
+    expect(unmaximize).not.toHaveBeenCalled();
+  });
+
+  it('does not call window methods when fromWebContents returns null', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _getAllWindows.mockReturnValue([]);
+    _fromWebContents.mockReturnValue(null);
+
+    await start();
+
+    const maxCall = _handle.mock.calls.find((c: unknown[]) => c[0] === IPC.windowMaximize)!;
+    const handler = maxCall[1] as (...args: unknown[]) => unknown;
+    expect(() => handler({ sender: {} })).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-303 — minimise/restore pause broadcast
+// ---------------------------------------------------------------------------
+
+describe('main/index - DEF-303 minimise/restore pause broadcast', () => {
+  it('passes an onMinimizedChanged dep to createMainWindow', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _createMainWindow.mockClear();
+    _getAllWindows.mockReturnValue([]);
+
+    await start();
+
+    const deps = _createMainWindow.mock.calls[0][1] as { onMinimizedChanged?: unknown };
+    expect(typeof deps.onMinimizedChanged).toBe('function');
+  });
+
+  it('broadcasts window:minimizedChanged with { minimized } to live windows', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _createMainWindow.mockClear();
+
+    const send = vi.fn();
+    _getAllWindows.mockReturnValue([
+      { isDestroyed: vi.fn().mockReturnValue(false), webContents: { send } },
+    ]);
+
+    await start();
+
+    const deps = _createMainWindow.mock.calls[0][1] as { onMinimizedChanged: (m: boolean) => void };
+    deps.onMinimizedChanged(true);
+    expect(send).toHaveBeenCalledWith(IPC.windowMinimizedChangedEvent, { minimized: true });
+    deps.onMinimizedChanged(false);
+    expect(send).toHaveBeenCalledWith(IPC.windowMinimizedChangedEvent, { minimized: false });
+  });
+
+  it('skips destroyed windows when broadcasting the pause signal', async () => {
+    vi.clearAllMocks();
+    _handle.mockClear();
+    _createMainWindow.mockClear();
+
+    const send = vi.fn();
+    _getAllWindows.mockReturnValue([
+      { isDestroyed: vi.fn().mockReturnValue(true), webContents: { send } },
+    ]);
+
+    await start();
+
+    const deps = _createMainWindow.mock.calls[0][1] as { onMinimizedChanged: (m: boolean) => void };
+    deps.onMinimizedChanged(true);
+    expect(send).not.toHaveBeenCalled();
   });
 });
 

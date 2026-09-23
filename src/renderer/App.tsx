@@ -218,6 +218,7 @@ import {
 } from "./diagnostics/resolve";
 import { openRequestedPath } from "./openRequestedPath";
 import { useOsFileDrop, useOsOpenPathRequests } from "./hooks/useOsIntegration";
+import { useMinimizedPause } from "./hooks/useMinimizedPause";
 
 /** Phase 7 — settings persist policy.
  *
@@ -978,6 +979,17 @@ export function App(): ReactElement {
     });
     return unsubscribePrintRequest;
   }, []);
+
+  // DEF-303 — `backgroundThrottling: false` was tried and reverted (Chromium
+  // still suspends a minimised window's frames), and `visibilitychange` does
+  // not report a minimise, so the explicit `onMinimizedChanged` signal is
+  // what parks the PDF render/raster work while minimised. Main pushes
+  // `window:minimizedChanged` on minimise/restore; this one subscription
+  // drives the renderer's single
+  // suspend state (`state/renderSuspend`), which the page render and
+  // thumbnail raster entry points consult to park their expensive work and
+  // flush it on resume. Mounted once; unsubscribes on unmount.
+  useMinimizedPause();
 
   // OTA UX — one shared subscription to `tflex.update.onStatusChanged`
   // feeds both the toolbar UpdateIndicator (via `externalState`)

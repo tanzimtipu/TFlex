@@ -345,6 +345,63 @@ describe('createMainWindow', () => {
     });
   });
 
+  // DEF-303 — `backgroundThrottling: false` was tried at creation to keep the
+  // renderer's rAF loop alive while minimised, but qa measured that Chromium
+  // still suspends a minimised window's frames (~1 rAF frame/s; ~62 timer
+  // ticks/s of CPU cost) with no latency gain, so the option was reverted to
+  // the default (absent). The explicit minimise/restore pause signal below is
+  // the mechanism that parks the PDF work instead.
+  it('does not disable backgroundThrottling at window creation', () => {
+    createMainWindow(defaultSettings, {
+      rendererHtml: '/app/renderer/index.html',
+      onGeometryChanged: vi.fn(),
+    });
+
+    const opts = lastWindow()._opts as Record<string, unknown>;
+    const webPreferences = opts.webPreferences as Record<string, unknown>;
+    // Absent so Chromium's default (throttled) behaviour applies.
+    expect('backgroundThrottling' in webPreferences).toBe(false);
+    expect(webPreferences.backgroundThrottling).toBeUndefined();
+    // The other webPreferences must be untouched.
+    expect(webPreferences.contextIsolation).toBe(true);
+    expect(webPreferences.nodeIntegration).toBe(false);
+    expect(webPreferences.sandbox).toBe(true);
+  });
+
+  // DEF-303 — the pause/resume signal is driven from the main process's
+  // 'minimize' / 'restore' events (not the renderer's visibilitychange, which
+  // cannot be trusted to fire on a minimised window).
+  describe('DEF-303 — minimise/restore pause signal', () => {
+    it('emits minimized=true on minimize and minimized=false on restore', () => {
+      const onMinimizedChanged = vi.fn();
+      createMainWindow(defaultSettings, {
+        rendererHtml: '/app/renderer/index.html',
+        onGeometryChanged: vi.fn(),
+        onMinimizedChanged,
+      });
+      const win = lastWindow();
+
+      (win as any)._emit('minimize');
+      expect(onMinimizedChanged).toHaveBeenCalledWith(true);
+      (win as any)._emit('restore');
+      expect(onMinimizedChanged).toHaveBeenCalledWith(false);
+      expect(onMinimizedChanged).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not throw when the pause callback is omitted', () => {
+      createMainWindow(defaultSettings, {
+        rendererHtml: '/app/renderer/index.html',
+        onGeometryChanged: vi.fn(),
+      });
+      const win = lastWindow();
+
+      expect(() => {
+        (win as any)._emit('minimize');
+        (win as any)._emit('restore');
+      }).not.toThrow();
+    });
+  });
+
   // Phase 13 — frameless window. The renderer draws its own title bar
   // (drag region via CSS -webkit-app-region) and caption buttons (over the
   // existing window:minimize/maximize/close IPC). frame:false removes the
