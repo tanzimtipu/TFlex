@@ -3193,3 +3193,38 @@ contain are pushed as part of finishing the work. This is a deliberate operator 
 tag, or a GitHub Release is still published only when the operator asks for a release (or says to go ahead
 with one). When in doubt about which side of that line a push falls on, state the interpretation in the
 report rather than blocking on a question.
+
+## 2026-09-23: Release 1.27.1 - "still broken" was a BUILD LAG, and the lesson that came with it
+
+Release 1.27.1 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.27.1 with all
+four assets, feed verified (`version: 1.27.1`, sha512 `dG8k+H6I...`, size 163285667). Commits: `9b2bfca`
+(the two fixes), `1469af2` (the notes), `94bb356` (the bump), `96cc1a6` (the harness + DEF-304), tag
+`v1.27.1`. Gates: `verify:full` 340 files / 4398 tests green, the install gate upgraded 1.27.0 -> 1.27.1,
+the canonical installed spec 9/9, and the two fixes measured ON the installed build.
+
+**Lesson 1 - when the operator says "still broken", compare the INSTALLED build against the DEV build
+before assuming the fix failed.** The operator reported the zoom and maximise issues persisting after
+`9b2bfca` landed. qa's build comparison settled it in one pass: the installed 1.27.0's `app.asar` contained
+NEITHER `--tf-zoom-flip-dx` NOR `onWindowStateChanged`, while the dev build contained both - the installed
+app simply predated the fix (measured side by side: installed zoom deviation 198px vertically vs dev 0px;
+installed caption echo 343-362ms vs dev 34-45ms). The remedy was a patch release, not a second fix. Keep
+this as the first move for any "still broken" report: identify the build under test (its version AND its
+code markers), and measure the same metric on both builds. It costs one dispatch and can save a whole
+misguided fix cycle.
+
+**Lesson 2 - a fix that changes a service method's contract must sweep the tests that MOCK that service.**
+DEF-304: the DEF-303 fix routed the debounced geometry persistence through a new
+`settings.saveGeometryOnly`, but `test/unit/main/index.test.ts` mocked the settings service without that
+member and still asserted the old `save` call - so the callback threw and `verify:full` went RED at the
+release commit (339/340 files). qa caught it at the push gate (exactly what that gate is for) and the
+release stopped. Rule: when you add or rename a method on a service, grep every test that mocks that
+service (here `index.test.ts` + `def300OpenPathRouting.test.ts`) and update the mock shape AND the
+assertion to the new contract in the same change. Also worth doing: after a fix run, run the test files of
+the modules whose CALLERS you changed, not only the module you edited.
+
+**Also recorded from this release:** the residual HORIZONTAL zoom offset (up to half the width delta - 153px
+on a 25% step) is the page growing centred within its box, identical before and after the fix; the defect
+was the VERTICAL jump and that is now 0px at every frame. And the ~141-157ms OS minimised-to-maximise
+transition floor exists on every build and is not the app's - when the operator reports "maximising takes
+longer", say which part is the OS floor and which part was ours (ours was the ~300ms caption lag, now
+gone: the caption echo equals the OS event).
