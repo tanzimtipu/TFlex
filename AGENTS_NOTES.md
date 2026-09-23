@@ -3170,3 +3170,26 @@ the previous version's installer too. git-agent caught this and selected the 1.2
 there; with "Microsoft Print to PDF" selected the PDF was produced INSIDE the app (34 pages, matching the
 preview) with ZERO visible Windows/Chromium print windows; and Multi View showed one composite tab labelled
 `...alpha.pdf | ...beta.pdf` with the names flanking the divider and no strip header.
+
+## 2026-09-22: Operator verification of the manual items + a standing push authorisation
+
+**Operator-verified (2026-09-22): "check done. its working."** The four behaviours automation cannot drive
+were checked by hand on the installed 1.27.0 build and ALL WORK:
+- double-clicking the title bar toggles maximise/restore;
+- dragging the window to the top screen edge maximises it, and to the left/right edges snaps it to a
+  half-screen split (Aero Snap);
+- an auto-hide taskbar reveals on hover at the bottom screen edge over the TFlex window;
+- dragging a PDF from Explorer onto the TFlex window opens it.
+
+This CLOSES the Phase 35 criteria that were previously "automatable evidence only" (criterion 1's gesture
+half and the real-drop half of the DEF-295 fix) and confirms the transparency-for-behaviour trade-off was
+the right call. When a criterion's verification needs the operator's hands, say so explicitly and record
+their confirmation here - do not leave it as an open unknown.
+
+**Standing push authorisation (operator, 2026-09-22): "Always do this. No need to ask."** ROUTINE pushes no
+longer need a per-run go-ahead: a run-close commit, a docs/release-record commit, and the commits they
+contain are pushed as part of finishing the work. This is a deliberate operator amendment to the
+"Operator-authorised push" rule for routine commits - it does NOT extend to releases: a version bump, a
+tag, or a GitHub Release is still published only when the operator asks for a release (or says to go ahead
+with one). When in doubt about which side of that line a push falls on, state the interpretation in the
+report rather than blocking on a question.
