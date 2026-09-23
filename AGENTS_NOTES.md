@@ -3228,3 +3228,40 @@ was the VERTICAL jump and that is now 0px at every frame. And the ~141-157ms OS 
 transition floor exists on every build and is not the app's - when the operator reports "maximising takes
 longer", say which part is the OS floor and which part was ours (ours was the ~300ms caption lag, now
 gone: the caption echo equals the OS event).
+
+## 2026-09-23: Release 1.27.2 - the third-attempt fixes, and the frame-level lesson that found them
+
+Release 1.27.2 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.27.2 with all
+four assets, feed verified (`version: 1.27.2`, sha512 `PuBNl0jW...`, size 163286988). Commits: `0ffb79b`
+(the fixes + notes), `75a4ec9` (bump), `57aae18` (the installed gates + DEF-305), tag `v1.27.2`. Gates:
+`verify:full` 344 files / 4438 tests green, the install gate upgraded to 1.27.2, the canonical installed
+spec 9/9, and the decisive installed-build checks passed.
+
+**The lesson that found both root causes: AGGREGATE METRICS HIDE PAINT ORDER - measure the PAINTED FRAMES.**
+Two fixes had already been "verified" against aggregate metrics (a 0px content-deviation, a caption echo
+equal to the OS event) while the operator still saw the problems. The third attempt started with CDP
+screencast frame capture (`Page.startScreencast`) plus DOM instrumentation, and that is what finally pinned
+them:
+- ZOOM: the content FLIP was genuinely pre-paint-correct and pinned, but the first painted frame already
+  showed the white SHEET EDGE at the final width (304px -> 335px in frame 01) because the FLIP animated
+  only `.pdf-page` while the paper background belongs to `.page-slot`. The aggregate metric never looked at
+  the paper. Fix: move the FLIP unit to the paper-owning `.page-slot` so the sheet and its content move as
+  one piece (verified frame-by-frame: the edge holds 304px through frames 0-7 and grows with the animation).
+- RESTORE: the app added only +1-3ms over the OS event, and the frames showed the app rendering CORRECTLY
+  throughout - the residual ~155ms is `ShowWindow(SW_RESTORE)` blocking the caller inside the OS call
+  (measured 157ms INSIDE the call), which every app pays with `MinAnimate=1`. The only app-side lever left
+  is cosmetic (the reverted throttle option). Rule: when a latency complaint survives an app-side fix,
+  capture the frames the user actually sees and time the OS call itself before promising anything.
+
+**Rule - a fix that adds a call on an injected collaborator must sweep EVERY test that mocks that
+collaborator.** This release was blocked TWICE by the same class of stale mock, each time at the push gate
+(`verify:full`): DEF-304 (the settings mock lacked `saveGeometryOnly`) and DEF-305 (the window mock lacked
+`isMaximized`). Both were test-side, both cost a release cycle. Sweep by grepping for every test that
+mocks the collaborator (`grep -l "settings" test/unit` / every file importing the module under change) and
+update the mock SHAPE and its assertions in the same commit as the product change.
+
+**Also recorded:** `backgroundThrottling: false` was tried and REVERTED - qa measured that Chromium still
+suspends a minimised window's frames (~1 rAF/s) so it bought no latency and cost ~62 timer ticks/s; the
+explicit `window:minimizedChanged` signal is what parks the PDF work instead. And a minimised window must
+be restored with ONE `restore()` (tracking the pre-minimise maximised state per window) - calling
+`maximize()` on a minimised window stacks two DWM transitions.
