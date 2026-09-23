@@ -32,6 +32,10 @@ const {
         value: { theme: 'dark', geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false }, recentFiles: [] },
       }),
       save: vi.fn().mockResolvedValue(undefined),
+      // DEF-303 — the debounced geometry persist routes through the disk-only
+      // `saveGeometryOnly` (no `settings:changed` echo), so the mock must carry
+      // that member or the callback throws before the assertion runs.
+      saveGeometryOnly: vi.fn().mockResolvedValue(undefined),
       saveCurrent: vi.fn().mockResolvedValue(undefined),
       addRecentFile: vi.fn().mockResolvedValue(undefined),
       getCurrent: vi.fn().mockReturnValue({ theme: 'dark', geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false }, recentFiles: [] }),
@@ -653,9 +657,12 @@ describe('main/index - onGeometryChanged callback', () => {
     const newGeometry = { x: 42, y: 99, width: 1024, height: 768, maximized: false };
     deps.onGeometryChanged(newGeometry);
 
-    expect(_settingsInstance.save).toHaveBeenCalledWith(
-      expect.objectContaining({ geometry: newGeometry }),
-    );
+    // DEF-303 — a geometry change persists through the geometry-only path.
+    expect(_settingsInstance.saveGeometryOnly).toHaveBeenCalledWith(newGeometry);
+    // ...and must NOT go through the echoing `save` path (mirrors
+    // settings.test.ts "persists without echoing": the disk-only write emits no
+    // `settings:changed`, so the renderer does not re-render after a maximize).
+    expect(_settingsInstance.save).not.toHaveBeenCalled();
   });
 });
 

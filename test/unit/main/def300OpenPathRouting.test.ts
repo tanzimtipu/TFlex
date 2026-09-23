@@ -31,6 +31,9 @@ const {
       value: { theme: 'dark', geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false }, recentFiles: [] },
     }),
     save: vi.fn().mockResolvedValue(undefined),
+    // DEF-303 — real service gained the disk-only geometry persist; keep the
+    // mock shape in sync so an onGeometryChanged path can never throw here.
+    saveGeometryOnly: vi.fn().mockResolvedValue(undefined),
     saveCurrent: vi.fn().mockResolvedValue(undefined),
     addRecentFile: vi.fn().mockResolvedValue(undefined),
     getCurrent: vi.fn().mockReturnValue({ theme: 'dark', geometry: { x: 100, y: 100, width: 1440, height: 900, maximized: false }, recentFiles: [] }),
