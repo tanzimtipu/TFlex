@@ -3265,3 +3265,55 @@ suspends a minimised window's frames (~1 rAF/s) so it bought no latency and cost
 explicit `window:minimizedChanged` signal is what parks the PDF work instead. And a minimised window must
 be restored with ONE `restore()` (tracking the pre-minimise maximised state per window) - calling
 `maximize()` on a minimised window stacks two DWM transitions.
+
+## 2026-09-24: Release 1.28.0 - TFlex STAGES (the information-architecture restructuring)
+
+Release 1.28.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.28.0 with all
+four assets, feed verified (`version: 1.28.0`, sha512 `CIL5NIyt...`, size 163304071). Commits: `3456b44`
+(chunk 1), `3253e04` (chunk 2), `8afb77f` (chunks 3-8), `5c15249` (the completion: 3A + the migration + the
+fixes), `e432bbd` (notes), `f2c1044` (bump), `668d406` (the gate re-pointing), tag `v1.28.0`. Gates:
+`verify:full` 381 files / **4949 tests** green, the install gate 1.28.0, the canonical installed spec 9/9,
+and the installed STAGES checks 6/6 (the rail + Ctrl+1..4, the live painted thumbnails, the curated dock
+verbs per stage, Ctrl+K running a tool, the Inspector, and the tool reachability).
+
+**The phase in one line:** the workspace is now organised by STAGE OF WORK (PAGES/EDIT/REVIEW/DELIVER) with
+a tool registry (94 entries, one canonical home each), a context panel, a floating action dock, a Ctrl+K
+command palette, an Inspector, floating pills, an annotations flyout and per-theme stage tokens. 27 defects
+were found and closed (DEF-306..332) and the adversary session (ADV-078..082) verified **every one of the 94
+tools is reachable and none lost its home** - the operator's headline acceptance test.
+
+**Lesson 1 - after retiring a surface, run the FULL unit suite, not just the touched unit files.** Phase 36
+retired the per-view toolbar row, the All-tools palette and its badge, and the rail-in-single-mode chrome.
+The e2e migration was thorough, but SIX unit tests in five renderer files still asserted the retired
+surfaces (`onOcrSuspects`/`onSign` palette call sites, the old `documentRequired` prop shape, the
+pre-DEF-325 `.ann-toolbar` rule) and only surfaced at the release gate's `verify:full` - which costs a
+release cycle. Rule: when a chunk deletes or moves a surface, run `verify:full` (or at least the whole
+renderer unit suite) before closing it, and grep `test/unit` for the retired selectors/symbols.
+
+**Lesson 2 - the canonical installed spec's SURFACE assertions must move with the app; only its VERSION
+SOURCE is pinned.** `e2e/installed/canonical_installed_build.spec.cjs` must always read the expected version
+from `package.json` (never hardcode), but its CORE assertions may - and must - be re-pointed when the app's
+surfaces change. Deferring that left the 1.28.0 Gate 3 red on three stale selectors (`.ann-toolbar`, the
+All-tools palette, the pre-Inspector `margin-right: 0`). When the dispatch says "do not repoint the canonical
+spec", that means the VERSION SOURCE only.
+
+**Operator rulings recorded during this phase (keep for future work):**
+- Multi Mode keeps its Phase 32-34 layout (centred inner-edge strips, ONE shared dock/rail/badge, one
+  composite tab) with the STAGE tracked per pane, even though the concept's criterion 10 says each pane owns
+  its own dock/inspector - the operator chose "keep" (2026-09-23), so the shared dock + shared Inspector with
+  per-pane stage/strips/pills governs.
+- Pin a palette result with `Ctrl+Enter`; `Ctrl+P` stays PRINT forever.
+- The All-tools panel is retired as a surface (supersedes the Phases 13/30/32/33 wording); the registry is
+  its data and Ctrl+K is the browse-everything path.
+- Section 3A surface discipline is contract: one home per capability (ContextPanel = "which thing?",
+  Inspector = "what IS it?", Dock = "what can I do?", right-click = the same dock verbs), enforced by the
+  criterion-11 registry x surfaces sweep test.
+- One deliberate design trim: the dock's verb padding is 4px 7px and the group gap 3px (the concept said
+  9px/4px) so DELIVER's five labels fit single-row at the default window; the operator accepted it.
+
+**Also worth keeping:** the migration tooling in `e2e/lib/helpers.cjs` (`gotoStage`, `ensurePanelExpanded`,
+`runTool(window, id)` - which resolves a tool's current home by itself: the panel header -> the stage dock
+(inline then the overflow lane) -> the Ctrl+K palette fallback, including the annotation ids via the flyout)
+and `e2e/playwright.dev.config.js` (the dev suite config that excludes the installed/release specs BY
+FILENAME, because `--grep-invert` matches titles, not filenames). The migration inventory lives in
+`e2e/PHASE36-MIGRATION-INVENTORY.md`.
