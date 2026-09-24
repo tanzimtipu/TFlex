@@ -130,7 +130,7 @@ describe("Phase 33 (chunk 4) — SharedToolController fan-out", () => {
       dock: () => ({
         pageSelection: selection,
         clearPageSelection: NOOP,
-        bulk: { onRotate: NOOP, onExtract: NOOP, onMerge: NOOP, onDelete: NOOP },
+        bulk: { onRotate: NOOP, onExtract: NOOP, onDelete: NOOP },
         isToolEnabled: () => true,
         disabledReasonFor: () => undefined,
         toolArmed: false,

@@ -132,7 +132,10 @@ async function closeAndReopen(app, win, savePath) {
 }
 
 async function undoOnce(win) {
-  await win.locator('button[aria-label="Undo last change"]').first().click();
+  // Phase 36 — the rail's "Undo last change" button is retired; the engine
+  // undo chord (Ctrl+Z) is the current home.
+  await win.keyboard.press('Control+z');
+  await win.waitForTimeout(600);
 }
 
 /** Zero-gap colour burst on the selected annotation's action-bar colour box:

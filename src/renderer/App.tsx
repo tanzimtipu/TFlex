@@ -77,14 +77,23 @@ import {
 import { StageRail } from "./components/StageRail";
 // Phase 36 (chunk 3a) — the Action Dock's persisted pins and the registry
 // lookup that validates them on read.
-import { addDockPin, removeDockPin, sanitizeDockPins } from "./state/dockModel";
+import {
+  addDockPin,
+  removeDockPin,
+  sanitizeDockPins,
+  type DockAvailability,
+} from "./state/dockModel";
 import { toolById, type ToolEntry } from "./state/toolsRegistry";
 // Phase 36 (chunk 4) — the Command Palette. `paletteChordFor` owns the
 // Ctrl+K / legacy Ctrl+Shift+P chords (Ctrl+P is deliberately absent — it
 // stays Print) and `bumpToolUsage` is the frequency counter the palette
 // ranking reads back.
-import { bumpToolUsage, paletteChordFor } from "./state/commandPalette";
-import { CommandPalette } from "./components/CommandPalette";
+import {
+  PALETTE_ACTION_REASONS,
+  bumpToolUsage,
+  paletteChordFor,
+  paletteDisabledReasonFor,
+} from "./state/commandPalette";import { CommandPalette } from "./components/CommandPalette";
 // Phase 32 — the focus -> active-tab routing rules and the close/quit gate
 // selection, both pure so the App wiring is a one-liner each.
 import {
@@ -7545,6 +7554,24 @@ pushToast(
         void onBatchOcr();
       },
       ocrSuspects: (): void => onOpenOcrSuspects(),
+      // DEF-327 — the live-GATED global commands (an empty undo stack, Multi
+      // Mode off). They are not stage verbs, but they ARE pinnable, so the dock
+      // must be able to RUN a pin of them once `appActionGates` opens; the
+      // Command Palette reads this same map. One implementation, no no-op pin.
+      undo: (): void => {
+        const id = activeTabIdRefLocal.current;
+        if (id !== null) void onUndo(id);
+      },
+      redo: (): void => {
+        const id = activeTabIdRefLocal.current;
+        if (id !== null) void onRedo(id);
+      },
+      paneOpen: (): void => {
+        if (multiMode.enabled) onOpenIntoPane(multiMode.focused);
+      },
+      paneClear: (): void => {
+        if (multiMode.enabled) onClearPane(multiMode.focused);
+      },
     }),
     [
       onMergeClick,
@@ -7569,6 +7596,12 @@ pushToast(
       onOcrClick,
       onBatchOcr,
       onOpenOcrSuspects,
+      onUndo,
+      onRedo,
+      multiMode.enabled,
+      multiMode.focused,
+      onOpenIntoPane,
+      onClearPane,
     ],
   );
 
@@ -7608,10 +7641,27 @@ pushToast(
   // The app-level availability gate for the dock. The registry DECLARES the
   // precondition; this reads the live App state for it.
   const dockHasDocument = tabs.activeId !== null && !activeIsEmpty;
+
+  // DEF-327 — the live per-ACTION gates for the commands whose registry
+  // precondition cannot express their real state: an EMPTY undo stack, Multi
+  // Mode OFF. Both surfaces that can show these verbs (the dock's pins and the
+  // Command Palette) read this ONE map, so neither can offer a no-op.
+  const appActionGates = useMemo<Record<string, () => boolean>>(
+    () => ({
+      undo: (): boolean => activeEngineUi?.canUndo ?? false,
+      redo: (): boolean => activeEngineUi?.canRedo ?? false,
+      paneOpen: (): boolean => multiMode.enabled,
+      paneClear: (): boolean => multiMode.enabled,
+    }),
+    [activeEngineUi, multiMode.enabled],
+  );
+
   const dockAppToolEnabled = useCallback(
     (id: string): boolean => {
       const entry = toolById(id);
       if (entry === undefined) return false;
+      const actionGate = appActionGates[entry.action];
+      if (actionGate !== undefined) return actionGate();
       if (dockAppActions[entry.action] === undefined) return false;
       switch (entry.availability) {
         case "always":
@@ -7639,6 +7689,7 @@ pushToast(
     },
     [
       dockAppActions,
+      appActionGates,
       dockHasDocument,
       recentDisplays.length,
       activeTab,
@@ -7722,6 +7773,31 @@ pushToast(
     return map.get(multiMode.focused) ?? map.get("A") ?? map.get("B") ?? map.get("single") ?? {};
   }, [multiMode.enabled, multiMode.focused]);
 
+  // DEF-327 — each mounted DocumentView ALSO publishes the dock availability it
+  // already gives the Action Dock (the live gate + the refusal copy). The
+  // palette reads the FOCUSED pane's pair, so a palette row for a dock verb can
+  // never disagree with the dock about whether it can run: one gate, two
+  // consumers, no silent no-op. `null` withdraws a closed pane's verdict.
+  const dockAvailabilityRef = useRef<Map<string, DockAvailability>>(new Map());
+  const registerDockAvailabilityFor = useCallback(
+    (pane: PaneId | null, availability: DockAvailability | null): void => {
+      const key = pane ?? "single";
+      if (availability === null) {
+        dockAvailabilityRef.current.delete(key);
+        return;
+      }
+      dockAvailabilityRef.current.set(key, availability);
+    },
+    [],
+  );
+  const focusedDockAvailability = useCallback((): DockAvailability | null => {
+    const map = dockAvailabilityRef.current;
+    if (!multiMode.enabled) return map.get("single") ?? null;
+    return (
+      map.get(multiMode.focused) ?? map.get("A") ?? map.get("B") ?? map.get("single") ?? null
+    );
+  }, [multiMode.enabled, multiMode.focused]);
+
   // The App-level verbs: the dock's own map (identical handlers) plus the
   // global commands the title bar / File menu / Stage Rail own. A registry
   // action that appears in neither this map nor the view commands renders
@@ -7741,14 +7817,6 @@ pushToast(
         if (id !== null) void onSaveAs(id);
       },
       print: onPrintClick,
-      undo: (): void => {
-        const id = activeTabIdRefLocal.current;
-        if (id !== null) void onUndo(id);
-      },
-      redo: (): void => {
-        const id = activeTabIdRefLocal.current;
-        if (id !== null) void onRedo(id);
-      },
       closeTab: (): void => {
         const id = activeTabIdRefLocal.current;
         if (id !== null) closeTab(id);
@@ -7767,12 +7835,6 @@ pushToast(
       // (the sheet reads the OS clipboard and asks for the quality), so the
       // palette row opens that same sheet rather than inventing a second flow.
       createFromClipboard: onCreateClick,
-      paneOpen: (): void => {
-        if (multiMode.enabled) onOpenIntoPane(multiMode.focused);
-      },
-      paneClear: (): void => {
-        if (multiMode.enabled) onClearPane(multiMode.focused);
-      },
       stagePages: (): void => onStageChange("pages"),
       stageEdit: (): void => onStageChange("edit"),
       stageReview: (): void => onStageChange("review"),
@@ -7807,15 +7869,22 @@ pushToast(
     ],
   );
 
-  // The live availability gate, same contract as the dock's: the registry
-  // DECLARES the precondition, this reads the live App state for it. A row is
-  // enabled only when a handler actually exists for it.
+  // The live availability gate. DEF-327 — the FOCUSED pane's published dock
+  // gate answers first for every verb the dock hosts (the edit-layer tools need
+  // Edit mode on, the page selection, the undo stacks): the palette cannot
+  // offer a command the dock knows cannot run. Everything the dock never hosts
+  // (the title bar / File menu / global commands) keeps this host-level
+  // availability, plus the same live per-action gates the dock's pins read.
   const paletteToolEnabled = useCallback(
     (entry: ToolEntry): boolean => {
+      const dockVerdict = focusedDockAvailability()?.isToolEnabled(entry);
+      if (dockVerdict !== undefined) return dockVerdict;
       const hasHandler =
         paletteAppActions[entry.action] !== undefined ||
         focusedViewCommands()[entry.action] !== undefined;
       if (!hasHandler) return false;
+      const actionGate = appActionGates[entry.action];
+      if (actionGate !== undefined) return actionGate();
       switch (entry.availability) {
         case "always":
           return true;
@@ -7844,8 +7913,10 @@ pushToast(
       }
     },
     [
+      focusedDockAvailability,
       paletteAppActions,
       focusedViewCommands,
+      appActionGates,
       dockHasDocument,
       tabs.activeId,
       activeTab,
@@ -7854,6 +7925,23 @@ pushToast(
       openTabs,
       recentDisplays.length,
     ],
+  );
+
+  // DEF-327 — the disabled row's refusal copy, in the dock's own order: the
+  // focused pane's live reason first ("Turn on Edit content first"), then the
+  // shared per-action copy ("Nothing to undo", "Turn on Multi Mode first"), and
+  // otherwise `undefined` so the palette falls back to the registry's declared
+  // availability ("Run Recognize text first").
+  const paletteDisabledReason = useCallback(
+    (entry: ToolEntry): string | undefined => {
+      if (paletteToolEnabled(entry)) return undefined;
+      return paletteDisabledReasonFor({
+        entry,
+        paneReason: focusedDockAvailability()?.disabledReasonFor,
+        actionReasons: PALETTE_ACTION_REASONS,
+      });
+    },
+    [paletteToolEnabled, focusedDockAvailability],
   );
 
   // Run a palette row: the view layer first (exactly like the dock's own
@@ -8143,6 +8231,12 @@ pushToast(
                     registerViewCommands={(commands): void =>
                       registerViewCommandsFor(pane, commands)
                     }
+                    // DEF-327 — the SAME availability pair this pane gives the
+                    // Action Dock is published up so the Command Palette's rows
+                    // for the dock's verbs use the dock's verdict and copy.
+                    registerDockAvailability={(availability): void =>
+                      registerDockAvailabilityFor(pane, availability)
+                    }
                     onToast={pushToast}
                     engineState={engine.engineState}
                     // DEF-139 — visible-order flag for the slot ->
@@ -8150,6 +8244,7 @@ pushToast(
                     // re-serialized getDocumentBytes proxy).
                     proxyVisibleOrder={open.session.proxyVisibleOrder}
                     canUndo={engine.canUndo}
+                    canRedo={engine.canRedo}
                     onRotate={engine.op}
                     onDelete={engine.deletePages}
                     onReorder={engine.reorder}
@@ -8169,7 +8264,6 @@ pushToast(
                       void onInsertBlankAfterPage(page);
                     }}
                     onReplacePages={onReplacePagesClick}
-                    onRenumberPages={onRenumberPagesClick}
                     onOptimize={onOptimizeClick}
                     onAuditSpace={onAuditClick}
                     // Phase 36 (chunk 6) — the EDIT / REVIEW / DELIVER
@@ -8414,25 +8508,17 @@ pushToast(
             formFieldCount={activeTab.forms.fields.length}
             fileSize={activeTab.session.fileSize}
             documentTitle={activeTab.displayName}
-            onRotatePage={(): void => onRotateClockwise(tabs.activeId as string)}
             onRenumberPages={onRenumberPagesClick}
-            onCropPages={onCropPagesClick}
-            onOptimize={onOptimizeClick}
-            onAudit={onAuditClick}
-            onExportPages={onExportClick}
-            onRecognizeText={onOcrClick}
-            ocrStatus={ocrRunByTab[tabs.activeId] === true ? 'Recognized' : null}
+            // Section 3A ruling 6 — the read-only "Annotations: N" count jumps
+            // to REVIEW. The jump is the stage switch `set` on the FOCUSED pane
+            // (`onStageChange` -> `dispatchStage({ type: 'set', pane: stagePane })`),
+            // exactly like the Stage Rail's own buttons.
+            onJumpToReview={(): void => onStageChange('review')}
+            // Ruling 1 of the 3A cleanups — the annotations section is a
+            // read-only count + the jump above: the list, its per-row jump/edit/
+            // delete verbs and every other handler live in the REVIEW panel, so
+            // the Inspector is handed no per-annotation callbacks at all.
             annotations={annotationHandlers(tabs.activeId).annotations}
-            onAnnotationJump={(page): void => {
-              railJumpSeqRef.current += 1;
-              setRailJump({ tabId: tabs.activeId as string, page, seq: railJumpSeqRef.current });
-            }}
-            onAnnotationEdit={(id, patch): void => {
-              void onEditAnnotation(tabs.activeId as string, id, patch);
-            }}
-            onAnnotationDelete={(id): void => {
-              void onDeleteAnnotation(tabs.activeId as string, id);
-            }}
             onExportComments={onCommentExportClick}
             onImportComments={onCommentImportClick}
             exportFormat={settings.exportImageFormat ?? null}
@@ -8926,6 +9012,7 @@ pushToast(
         onPinTool={onDockPin}
         dockPins={dockPins}
         isToolEnabled={paletteToolEnabled}
+        disabledReasonFor={paletteDisabledReason}
         toolUsage={settings.toolUsage}
         recentFiles={paletteRecents}
         onOpenRecent={onPaletteOpenRecent}

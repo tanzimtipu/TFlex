@@ -1,14 +1,17 @@
-// DEF-282 FIX-READY retest (qa, phase 33).
+// DEF-282 FIX-READY retest (qa, phase 33; restated in Phase 36 chunk 7).
 //
 // The shared toolbar used to sit on top of the pane headers (the panes
 // hard-coded `top: 0`), so `[data-pane-clear]`, the pane-header focus click
-// and the strip-header focus click were pointer-unreachable. The fix drives the
-// panes' top from the same measured `--tf-multi-toolbar-h` the divider reads.
+// and the strip focus click were pointer-unreachable. Phase 36 chunk 7 retired
+// that row entirely: NOTHING is measured, the stage writes no toolbar-height
+// variable, the panes own the stage from its top edge (top: 0), and the ONE
+// shared Action Dock floats at the stage's BOTTOM (`.multi-dock-layer`), so its
+// layer can never reach the header band.
 //
-// This spec measures the geometry at the default window size AND at the 640px
-// minimum (where the bar may wrap), asserts zero overlap for BOTH panes and
-// that the divider's vertical span matches the panes', then exercises the two
-// gestures the defect broke. Launches only through the canonical launchApp.
+// This spec measures that restated invariant at the default window size AND at
+// the 640px minimum, asserts the divider's vertical span matches the panes',
+// then exercises the gestures the defect broke. Launches only through the
+// canonical launchApp.
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp } = require('../lib/launch.cjs');
@@ -49,10 +52,15 @@ async function geometry() {
     };
     const stage = document.querySelector('.tab-stage');
     return {
+      // Phase 36 (chunk 7) — the measured toolbar-height offset is RETIRED: the
+      // stage must not write `--tf-multi-toolbar-h` at all (nothing is measured,
+      // so no offset can arrive after a paint).
       toolbarVar: stage ? getComputedStyle(stage).getPropertyValue('--tf-multi-toolbar-h').trim() : null,
       innerWidth: window.innerWidth,
       innerHeight: window.innerHeight,
-      toolbar: rect('[data-shared-toolbar]'),
+      stage: rect('.tab-stage'),
+      // The ONE shared Action Dock's zero-height bottom layer (Multi Mode only).
+      dock: rect('[data-multi-dock-layer]'),
       headerA: rect('.tab-pane[data-pane="A"] [data-pane-header]'),
       headerB: rect('.tab-pane[data-pane="B"] [data-pane-header]'),
       paneA: rect('.tab-pane[data-pane="A"]'),
@@ -64,16 +72,24 @@ async function geometry() {
 
 function assertNoOverlap(g, label) {
   console.log(`[DEF282] ${label} geometry=${JSON.stringify(g)}`);
-  expect(g.toolbar, `${label}: shared toolbar present`).not.toBeNull();
+  expect(g.stage, `${label}: stage present`).not.toBeNull();
   expect(g.headerA, `${label}: pane A header present`).not.toBeNull();
   expect(g.headerB, `${label}: pane B header present`).not.toBeNull();
   expect(g.divider, `${label}: divider present`).not.toBeNull();
-  // "above both panes": no overlap for either pane.
-  expect(g.toolbar.bottom, `${label}: toolbar bottom ${g.toolbar.bottom} overlaps pane A header top ${g.headerA.top}`).toBeLessThanOrEqual(g.headerA.top);
-  expect(g.toolbar.bottom, `${label}: toolbar bottom ${g.toolbar.bottom} overlaps pane B header top ${g.headerB.top}`).toBeLessThanOrEqual(g.headerB.top);
-  // The panes start at the toolbar's bottom (adjacent, no gap, no drift).
-  expect(Math.abs(g.paneA.top - g.toolbar.bottom), `${label}: pane A top not at toolbar bottom`).toBeLessThanOrEqual(1);
-  expect(Math.abs(g.paneB.top - g.toolbar.bottom), `${label}: pane B top not at toolbar bottom`).toBeLessThanOrEqual(1);
+  // Phase 36 (chunk 7) restated invariant: the retired measured offset is gone,
+  // so the stage writes no toolbar-height variable.
+  expect(g.toolbarVar, `${label}: the stage still writes the retired --tf-multi-toolbar-h`).toBe('');
+  // "above both panes": the panes (and therefore their headers) own the stage
+  // from its top edge - no chrome band sits above them.
+  expect(Math.abs(g.paneA.top - g.stage.top), `${label}: pane A is not at the stage top`).toBeLessThanOrEqual(1);
+  expect(Math.abs(g.paneB.top - g.stage.top), `${label}: pane B is not at the stage top`).toBeLessThanOrEqual(1);
+  expect(g.headerA.top - g.stage.top, `${label}: pane A header is not at the stage top`).toBeLessThanOrEqual(1);
+  expect(g.headerB.top - g.stage.top, `${label}: pane B header is not at the stage top`).toBeLessThanOrEqual(1);
+  // The shared dock layer floats at the stage's BOTTOM, so it cannot reach
+  // either pane-header band.
+  expect(g.dock, `${label}: shared dock layer present in Multi Mode`).not.toBeNull();
+  expect(g.dock.top, `${label}: dock layer reaches pane A header top ${g.headerA.top}`).toBeGreaterThanOrEqual(g.headerA.bottom - 1);
+  expect(g.dock.top, `${label}: dock layer reaches pane B header top ${g.headerB.top}`).toBeGreaterThanOrEqual(g.headerB.bottom - 1);
   // The divider's vertical span matches the panes'.
   expect(Math.abs(g.divider.top - g.paneA.top), `${label}: divider top != pane A top`).toBeLessThanOrEqual(1);
   expect(Math.abs(g.divider.top - g.paneB.top), `${label}: divider top != pane B top`).toBeLessThanOrEqual(1);
@@ -90,7 +106,7 @@ test('DEF-282 geometry at default + 640px, reachability, screenshot', async () =
   // ---- default window size ---------------------------------------------
   assertNoOverlap(await geometry(), 'default');
 
-  // ---- 640px minimum width (the bar may wrap) --------------------------
+  // ---- 640px minimum width ---------------------------------------------
   await setSize(640, 800);
   assertNoOverlap(await geometry(), 'narrow-640');
 
@@ -110,10 +126,13 @@ test('DEF-282 geometry at default + 640px, reachability, screenshot', async () =
   await win.waitForTimeout(400);
   expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused'), 'pane-header click focuses pane A').toBe('true');
 
-  // 2. strip-header click focuses its pane
-  await win.locator('[data-pane-strip-pane="B"] [data-pane-strip-header]').click({ timeout: 10000 });
+  // 2. strip focus: the Phase 33 strip is HEADERLESS (DEF-291), so a thumbnail
+  //    click (jumpAndFocus) is the strip's focus path; it must focus its pane.
+  const thumbB = win.locator('[data-pane-strip-pane="B"] .thumb-item').first();
+  await thumbB.scrollIntoViewIfNeeded();
+  await thumbB.click({ timeout: 10000 });
   await win.waitForTimeout(400);
-  expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused'), 'strip-header click focuses pane B').toBe('true');
+  expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused'), 'strip thumbnail click focuses pane B').toBe('true');
 
   // 3. [data-pane-clear] in EACH pane header is clickable and empties the pane
   const clearA = win.locator('.tab-pane[data-pane="A"] [data-pane-clear]');
@@ -126,5 +145,5 @@ test('DEF-282 geometry at default + 640px, reachability, screenshot', async () =
   await clearB.click({ timeout: 10000 });
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]'), 'pane B emptied by its clear control').toBeVisible({ timeout: 10000 });
 
-  console.log('[DEF282] reachability OK: pane-header focus, strip-header focus, both clear controls');
+  console.log('[DEF282] reachability OK: pane-header focus, strip-thumb focus, both clear controls');
 });

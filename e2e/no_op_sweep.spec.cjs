@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armSignTool, openDockVerb, gotoStage, openAnnotationFlyout } = require('./lib/helpers.cjs');
+const { hardClose, armSignTool, openDockVerb, gotoStage, openAnnotationFlyout, runTool, ensurePanelExpanded } = require('./lib/helpers.cjs');
 const fs = require('fs');
 const path = require('path');
 
@@ -100,9 +100,10 @@ test.describe('No-op Sweep and Feature Verification', () => {
     console.log('8. Highlight color default check (visual/diag needed)');
 
     // 3. Word export
-    // Redesign: exports live in the Tools palette (data-tool-id).
-    await window.click('[data-tools-toggle]');
-    await window.click('[data-tool-id="exportDocx"]');
+    // Phase 36 (chunk 3) — exports are Action Dock verbs; resolve the
+    // current home for `exportDocx` (DELIVER dock / command palette).
+    const docxHome = await runTool(window, 'exportDocx');
+    console.log(`3. Word export home: ${docxHome}`);
     // Just verify the dialog opens for now. Real export requires backend.
     await window.waitForSelector('.modal-dialog, .dialog, .sheet');
     await window.keyboard.press('Escape');
@@ -110,7 +111,12 @@ test.describe('No-op Sweep and Feature Verification', () => {
 
     // 5. Left-pane page selection
     // Redesign: thumbnails are .thumb (e2e alias .thumb-item), 1-based
-    // visible order; nth(10) = page 11.
+    // visible order; nth(10) = page 11. Phase 36: the export/optimize dock
+    // verbs above move the active stage, so return to PAGES (and make sure
+    // the ContextPanel is expanded) before touching its thumbnails.
+    await gotoStage(window, 1);
+    await ensurePanelExpanded(window);
+    await window.locator('[data-context-panel-thumbs] .thumb-item').first().waitFor({ timeout: 15000 });
     await window.locator('.thumb-item').nth(10).click();
     await window.waitForTimeout(1000);
     const diagPage = await window.evaluate(() => window.tflexDiagnostics());

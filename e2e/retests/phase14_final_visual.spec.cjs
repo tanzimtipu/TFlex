@@ -7,7 +7,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { launchApp } = require('./../lib/launch.cjs');
-const { getSamplePath, hardClose } = require('./../lib/helpers.cjs');
+const { getSamplePath, hardClose, ensurePanelExpanded } = require('./../lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -64,9 +64,10 @@ test('Phase 14 FINAL visual: aurora through the glass panels (OS grab)', async (
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
   await win.waitForTimeout(1800);
 
-  // Tools palette open (list layout) for the floating-card look.
-  await win.click('[data-tools-toggle]');
-  await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
+  // Phase 36: the retired Tools palette is gone. The floating glass panels
+  // (ContextPanel + Inspector) are already on screen with a document open,
+  // so the aurora-through-glass grab needs no palette drive.
+  await ensurePanelExpanded(win);
   await win.waitForTimeout(900);
 
   await win.screenshot({ path: path.join(ROOT, 'screenshots', 'def14-final-aurora-window.png') });

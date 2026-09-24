@@ -20,7 +20,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { PDFDocument, PDFDict, PDFName, PDFArray } = require('pdf-lib');
 const {
-  launchDev, openSample, openSamplePath, scrollToPage, shot, hardClose,
+  launchDev, openSample, openSamplePath, scrollToPage, shot, hardClose, armAnnotationTool,
 } = require('../lib/helpers.cjs');
 
 function pickSpanFactory(win) {
@@ -76,14 +76,14 @@ test('DEF-174 regression: underline + strikeout stay solid strokes, save/reopen 
     const pickSpan = pickSpanFactory(win);
 
     // --- Underline across the title ---
-    await win.click('button[aria-label="Underline"]');
+    await armAnnotationTool(win, 'underline');
     await win.waitForTimeout(350);
     const spanU = await pickSpan();
     expect(spanU).not.toBeNull();
     await dragAcrossSpan(win, spanU);
 
     // --- Strikethrough across another span ---
-    await win.click('button[aria-label="Strikethrough"]');
+    await armAnnotationTool(win, 'strikeout');
     await win.waitForTimeout(350);
     const spanS = await pickSpan();
     expect(spanS).not.toBeNull();

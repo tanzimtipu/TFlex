@@ -201,7 +201,7 @@ test('DEF-288 "+" disabled with reason in Multi Mode, unchanged in single mode',
   expect(after.activeTabId, 'active tab changed on a disabled "+" click').toBe(before.activeTabId);
 
   // Single mode: enabled and behaves exactly as before.
-  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(800);
   const btn2 = win.locator('[data-new-tab]');
   expect(await btn2.isDisabled(), 'single-mode "+" is disabled').toBe(false);
@@ -255,16 +255,16 @@ test('DEF-289 composite close with both panes empty leaves Multi Mode', async ()
   expect(domActive, 'no tab is selected after the composite close').not.toBeNull();
 });
 
-// Control for DEF-289: the shared toolbar's Multi Mode toggle DOES restore an
-// active tab when it leaves the mode with both panes empty (App.tsx:6850-6866),
-// so the blank workspace is specific to the composite close path.
-test('DEF-289 control: the toolbar toggle restores an active tab with both panes empty', async () => {
+// Control for DEF-289: the title-bar Multi Mode toggle DOES restore an active
+// tab when it leaves the mode with both panes empty (App.tsx:6850-6866), so the
+// blank workspace is specific to the composite close path.
+test('DEF-289 control: the title-bar toggle restores an active tab with both panes empty', async () => {
   await twoPaneSetup(app, win);
   await win.locator('.tab-pane[data-pane="B"] [data-pane-clear]').click();
   await win.waitForTimeout(600);
   await win.locator('.tab-pane[data-pane="A"] [data-pane-clear]').click();
   await win.waitForTimeout(600);
-  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(1000);
   const domActive = await win.evaluate(() => {
     const sel = document.querySelector('.tab[data-tab-id][aria-selected="true"]');
@@ -275,10 +275,10 @@ test('DEF-289 control: the toolbar toggle restores an active tab with both panes
     visiblePanes: document.querySelectorAll('.tab-pane[aria-hidden="false"]').length,
     tabs: document.querySelectorAll('.tab[data-tab-id]').length,
   }));
-  console.log(`[DEF-289-control] toolbar toggle: domActive=${domActive} state=${JSON.stringify(vis)}`);
+  console.log(`[DEF-289-control] title-bar toggle: domActive=${domActive} state=${JSON.stringify(vis)}`);
   expect(vis.multi).toBe('false');
-  expect(domActive, 'toolbar toggle did not restore an active tab').not.toBeNull();
-  expect(vis.visiblePanes, 'toolbar toggle left no visible pane').toBeGreaterThanOrEqual(1);
+  expect(domActive, 'title-bar toggle did not restore an active tab').not.toBeNull();
+  expect(vis.visiblePanes, 'title-bar toggle left no visible pane').toBeGreaterThanOrEqual(1);
 });
 
 // DEF-289 no-tabs-left case: close the underlying document FIRST (Ctrl+W

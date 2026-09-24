@@ -1,0 +1,232 @@
+{
+  "rotation": {
+    "inspectorRotation": "1°",
+    "pageClass": "pdf-page pdf-page-rot-90"
+  },
+  "suspects": {
+    "disabled": false,
+    "title": null,
+    "rect": {
+      "x": 56,
+      "y": 236.02084350585938,
+      "width": 104.45833587646484,
+      "height": 23.28125,
+      "top": 236.02084350585938,
+      "right": 160.45833587646484,
+      "bottom": 259.3020935058594,
+      "left": 56
+    }
+  },
+  "paneRows": [
+    {
+      "id": "paneOpen",
+      "disabled": "false",
+      "title": "Open a document from disk straight into an empty Multi Mode pane."
+    },
+    {
+      "id": "panePick",
+      "disabled": "true",
+      "title": "Pick a document from a Multi Mode pane"
+    },
+    {
+      "id": "paneClear",
+      "disabled": "false",
+      "title": "Empty a Multi Mode pane and choose another document for it."
+    },
+    {
+      "id": "paneResize",
+      "disabled": "true",
+      "title": "Drag the Multi Mode divider"
+    },
+    {
+      "id": "railCollapse",
+      "disabled": "false",
+      "title": "Collapse or expand the left rail."
+    },
+    {
+      "id": "outlinePanel",
+      "disabled": "true",
+      "title": "Switch to the Pages panel to use this"
+    },
+    {
+      "id": "annotationsPanel",
+      "disabled": "true",
+      "title": "Switch to the Review panel to use this"
+    },
+    {
+      "id": "dragPage",
+      "disabled": "true",
+      "title": "Drag a page onto another pane"
+    },
+    {
+      "id": "panMode",
+      "disabled": "false",
+      "title": "Drag anywhere to scroll the document."
+    },
+    {
+      "id": "editTextBox",
+      "disabled": "false",
+      "title": "Drag on the page to place a new text box."
+    },
+    {
+      "id": "pageContextMenu",
+      "disabled": "true",
+      "title": "Right-click a page in the Pages panel"
+    },
+    {
+      "id": "editImage",
+      "disabled": "false",
+      "title": "Click an image to select it, or drag a rectangle to place a new one."
+    },
+    {
+      "id": "tabNew",
+      "disabled": "false",
+      "title": "Open an empty tab to drop a document into."
+    },
+    {
+      "id": "rotate",
+      "disabled": "false",
+      "title": "Rotate the selected page clockwise or counter-clockwise."
+    },
+    {
+      "id": "insertPages",
+      "disabled": "false",
+      "title": "Insert a blank page, or import pages from another PDF."
+    },
+    {
+      "id": "rotateCounterClockwise",
+      "disabled": "false",
+      "title": "Rotate the visible page counter-clockwise."
+    },
+    {
+      "id": "flatten",
+      "disabled": "true",
+      "title": "This document has no form fields"
+    },
+    {
+      "id": "stamp",
+      "disabled": "false",
+      "title": "Drop an APPROVED, DRAFT, CONFIDENTIAL or FINAL stamp."
+    },
+    {
+      "id": "exportPages",
+      "disabled": "false",
+      "title": "Save selected pages as PNG, JPEG, or TIFF files."
+    },
+    {
+      "id": "exportDocx",
+      "disabled": "false",
+      "title": "Render every page to a single .docx document."
+    },
+    {
+      "id": "save",
+      "disabled": "false",
+      "title": "Write the pending engine changes back to the open file."
+    },
+    {
+      "id": "checkForUpdate",
+      "disabled": "false",
+      "title": "Ask the updater whether a newer TFlex exists."
+    },
+    {
+      "id": "annNote",
+      "disabled": "false",
+      "title": "Place a sticky note annotation."
+    },
+    {
+      "id": "pageJump",
+      "disabled": "true",
+      "title": "Type a page number in the page pill"
+    },
+    {
+      "id": "prevPage",
+      "disabled": "false",
+      "title": "Step back one page."
+    },
+    {
+      "id": "nextPage",
+      "disabled": "false",
+      "title": "Step forward one page."
+    },
+    {
+      "id": "toolsPalette",
+      "disabled": "false",
+      "title": "Open the command palette and search every tool, recent file and view action."
+    },
+    {
+      "id": "split",
+      "disabled": "false",
+      "title": "Split a range of pages into a new document."
+    },
+    {
+      "id": "extract",
+      "disabled": "false",
+      "title": "Pull specific pages into a new document."
+    },
+    {
+      "id": "replacePages",
+      "disabled": "false",
+      "title": "Swap a contiguous range with another PDF; outline and links survive."
+    },
+    {
+      "id": "editMode",
+      "disabled": "false",
+      "title": "Replace text, add text boxes and edit images on the page."
+    },
+    {
+      "id": "editToolOff",
+      "disabled": "false",
+      "title": "Return the edit layer to the plain viewer."
+    },
+    {
+      "id": "audit",
+      "disabled": "false",
+      "title": "See a per-element breakdown of the file size."
+    },
+    {
+      "id": "createFromImages",
+      "disabled": "false",
+      "title": "Combine picked images into a new PDF document."
+    },
+    {
+      "id": "openRecent",
+      "disabled": "true",
+      "title": "Pick a recent file from the list below"
+    },
+    {
+      "id": "createFromClipboard",
+      "disabled": "false",
+      "title": "Build a new PDF from the image currently on the clipboard."
+    },
+    {
+      "id": "tabClose",
+      "disabled": "false",
+      "title": "Close the active tab (prompting when there are unsaved changes)."
+    },
+    {
+      "id": "appMenu",
+      "disabled": "true",
+      "title": "Use the File menu in the title bar"
+    },
+    {
+      "id": "annotate",
+      "disabled": "false",
+      "title": "Show the annotation tools: markup, shapes, ink and notes."
+    },
+    {
+      "id": "sign",
+      "disabled": "false",
+      "title": "Draw, type, or place a saved signature."
+    },
+    {
+      "id": "updateDownload",
+      "disabled": "true",
+      "title": "No update is pending"
+    },
+    {
+      "id": "updateInstall",
+      "disabled": "true",
+      "title": "No update is pending"
+    }
+  ]
+}

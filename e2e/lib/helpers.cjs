@@ -388,6 +388,30 @@ async function runTool(window, id) {
   return 'palette';
 }
 
+// Phase 36 migration: a reused profile persists `pagesPanelCollapsed`, so specs
+// that need the panel's thumbnails/sections must expand it first.
+async function ensurePanelExpanded(window) {
+  const collapsed = window.locator('[data-context-panel][data-context-panel-collapsed="true"]');
+  if ((await collapsed.count()) > 0) {
+    await window.locator('[data-rail-collapse]').first().click();
+    await window.waitForTimeout(500);
+  }
+}
+
+// Phase 36 — the floating TextPropertiesPanel card occupies the left edge of
+// the canvas in the EDIT / armed-text stages. A page gesture that starts under
+// it is swallowed by the panel, so specs placing content by a hardcoded page
+// fraction must start the drag to the RIGHT of this edge. Returns 0 when the
+// card is not mounted.
+async function textPanelRight(window) {
+  return window.evaluate(() => {
+    const el = document.querySelector('[data-text-panel]');
+    if (!el) return 0;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 ? Math.round(r.right) : 0;
+  });
+}
+
 // Step-scroll the (virtualized) document scroller until the requested page-slot
 // is mounted, then nudge it near the top of the viewport so pointer gestures on
 // it land on the page, not on the toolbar / window chrome.
@@ -632,4 +656,4 @@ async function hardClose(electronApp, label = 'hardClose') {
   log(`hardClose done (force path) in ${Date.now() - t0}ms`);
 }
 
-module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool, toggleMultiModeViaPalette, gotoStage, openDockVerb, clickDockVerb, runTool, toggleEditMode, armSignTool, openAnnotationFlyout };
+module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool, toggleMultiModeViaPalette, gotoStage, openDockVerb, clickDockVerb, runTool, ensurePanelExpanded, toggleEditMode, armSignTool, openAnnotationFlyout, textPanelRight };

@@ -15,7 +15,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { PDFDocument, PDFName, PDFDict, PDFNumber } = require('pdf-lib');
-const { launchDev, diag, getSamplePath, hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
+const { launchDev, diag, getSamplePath, hardClose, armAnnotationTool, openAnnotationFlyout, gotoStage } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -114,9 +114,20 @@ test('DEF-210 retest: pen stroke commits, disarms, and survives save/reopen', as
   expect(await slotBox(1), 'page slot 1 mounted').not.toBeNull();
 
   // Step 3: arm the Pen tool. The retest names it "the Pen icon, labeled Pen".
-  const penBtn = win.locator('[data-ann-tools-visible] button[data-tool="ink"]');
+  // Phase 36 — the toolbar lives in the REVIEW Annotate flyout; the Pen may sit
+  // in the visible five or in the toolbar's own dropdown.
+  await openAnnotationFlyout(win);
+  let penBtn = win.locator('[data-ann-tools-visible] button[data-tool="ink"]');
+  let penInDropdown = false;
+  if ((await penBtn.count()) === 0) {
+    penInDropdown = true;
+    await win.click('[data-ann-dropdown-toggle]');
+    await win.waitForSelector('[data-ann-dropdown-menu]', { state: 'visible', timeout: 8000 });
+    penBtn = win.locator('[data-ann-dropdown-menu] button[data-tool="ink"]');
+  }
   await expect(penBtn).toBeVisible();
   expect(await penBtn.getAttribute('aria-label'), 'Pen button label').toBe('Pen');
+  console.log(`[DEF210] Pen located in ${penInDropdown ? 'dropdown' : 'visible five'}`);
   await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(400);
   const d1 = await diag(win);
@@ -174,10 +185,12 @@ test('DEF-210 retest: pen stroke commits, disarms, and survives save/reopen', as
   expect(inkBox && inkBox.w > 5 && inkBox.h > 5, 'committed ink paints with a real on-page size').toBe(true);
   await shot(win, 'def-210-stroke-committed.png');
 
-  // Step 5c: the annotation appears in the annotations panel.
-  await win.click('[data-rail-tab="annotations"]');
-  await win.waitForSelector('.ann-panel', { timeout: 8000 });
-  const row = win.locator('.ann-panel-row').first();
+  // Step 5c: the annotation appears in the annotations panel. Phase 36 — the
+  // annotations list lives in the REVIEW ContextPanel (the legacy rail tab is
+  // retired).
+  await gotoStage(win, 3);
+  await win.waitForSelector('[data-context-panel="review"] [data-annotation-panel]', { timeout: 8000 });
+  const row = win.locator('[data-context-panel="review"] .ann-panel-row').first();
   await expect(row).toBeVisible();
   const rowKind = (await row.locator('.ann-panel-row-kind').textContent() || '').trim();
   const rowPage = (await row.locator('.ann-panel-row-page').textContent() || '').trim();

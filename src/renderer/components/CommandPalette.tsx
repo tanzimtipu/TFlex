@@ -63,6 +63,9 @@ export interface CommandPaletteProps {
   dockPins?: readonly string[];
   /** Live availability gate, same contract as the Action Dock. */
   isToolEnabled?: (entry: ToolEntry) => boolean;
+  /** DEF-327 — the SAME live refusal copy the Action Dock shows, so a disabled
+   *  row explains itself with the dock's reason ("Turn on Edit content first"). */
+  disabledReasonFor?: (entry: ToolEntry) => string | undefined;
   /** Per-tool run counts — the frequency boost. */
   toolUsage?: Readonly<Record<string, number>> | undefined;
   /** The recent-file rows (the host's live Recents list). */
@@ -80,6 +83,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
     onPinTool,
     dockPins = NO_PINS,
     isToolEnabled,
+    disabledReasonFor,
     toolUsage,
     recentFiles = NO_RECENTS,
     onOpenRecent,
@@ -98,7 +102,13 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
   // fingers. The gate itself is still consulted on every rebuild.
   const gateRef = useRef(isToolEnabled);
   gateRef.current = isToolEnabled;
+  const reasonRef = useRef(disabledReasonFor);
+  reasonRef.current = disabledReasonFor;
 
+  // DEF-327 — `open` is a dependency: opening the palette must present the
+  // CURRENT availability (an undo stack that filled up, Edit mode that went on,
+  // an OCR run that finished). The gate itself is still read through a ref so
+  // host-state churn cannot re-anchor the highlight mid-list.
   const rows = useMemo<PaletteRow[]>(
     () =>
       buildPaletteRows({
@@ -107,9 +117,10 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
         usage: toolUsage,
         dockPins,
         isToolEnabled: (entry): boolean => gateRef.current?.(entry) ?? true,
+        disabledReasonFor: (entry): string | undefined => reasonRef.current?.(entry),
         entries,
       }),
-    [query, recentFiles, toolUsage, dockPins, entries],
+    [open, query, recentFiles, toolUsage, dockPins, entries],
   );
 
   // Opening resets the surface: an empty query, the first runnable row
@@ -186,6 +197,14 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
 
   // The keys the OPEN palette owns. `paletteNavFor` returns null for every
   // other key — including `Ctrl+P`, which must reach the print path untouched.
+  //
+  // DEF-331 — the palette is the TOP-most surface while it is open, so its
+  // Escape is handled in the CAPTURE phase and stops there: a dialog left open
+  // underneath (Stamp, Preferences, a confirm) must not receive the same press.
+  // Both surfaces listen on `window`; the dialog is registered first, so a
+  // bubble-phase handler would close the dialog and leave the palette. Capture
+  // reaches the palette first, and `stopPropagation` keeps the press from
+  // falling through — a SECOND Escape reaches the dialog.
   useEffect((): (() => void) | undefined => {
     if (!open) return undefined;
     const onKey = (event: KeyboardEvent): void => {
@@ -193,22 +212,22 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
       if (nav === null) return;
       if (nav === 'close') {
         event.preventDefault();
+        event.stopPropagation();
         onClose();
         return;
       }
+      event.preventDefault();
       if (nav === 'next' || nav === 'prev') {
-        event.preventDefault();
         setHighlight((current) =>
           stepHighlightEnabled(rowsRef.current, current, nav === 'next' ? 1 : -1),
         );
         return;
       }
-      event.preventDefault();
       if (nav === 'run') runHighlighted();
       else pinHighlighted();
     };
-    window.addEventListener('keydown', onKey);
-    return (): void => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return (): void => window.removeEventListener('keydown', onKey, true);
   }, [open, onClose, runHighlighted, pinHighlighted]);
 
   // Outside click closes. The listener is passive in the event sense: it never

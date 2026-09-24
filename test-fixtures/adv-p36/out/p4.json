@@ -1,0 +1,241 @@
+{
+  "editModeOffForFlyout": null,
+  "colorAfterHighlight": {
+    "swatch": true,
+    "current": "#2563eb",
+    "disabled": false
+  },
+  "colorPopover": {
+    "popover": true,
+    "presets": 13
+  },
+  "penRow": {
+    "row": true,
+    "widths": [
+      "1.5",
+      "3",
+      "5"
+    ],
+    "inkDisabled": false,
+    "annTool": "ink"
+  },
+  "geom": {
+    "1": {
+      "innerWidth": 1442,
+      "hostWidth": 914,
+      "reserveComputed": 491.6041259765625,
+      "band": 422,
+      "iconOnly": "true",
+      "labelCount": 0,
+      "verbCount": 6,
+      "dockWidth": 241,
+      "dockRect": {
+        "x": 600.3333740234375,
+        "y": 854,
+        "width": 241.33334350585938,
+        "height": 37.333335876464844,
+        "top": 854,
+        "right": 841.6667175292969,
+        "bottom": 891.3333358764648,
+        "left": 600.3333740234375
+      },
+      "pageRect": {
+        "x": 276,
+        "y": 850,
+        "width": 154.4479217529297,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 430.4479217529297,
+        "bottom": 891.3333358764648,
+        "left": 276
+      },
+      "zoomRect": {
+        "x": 940.1979370117188,
+        "y": 850,
+        "width": 225.80209350585938,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 1166.0000305175781,
+        "bottom": 891.3333358764648,
+        "left": 940.1979370117188
+      },
+      "labelsFitEstimateFor6": 420,
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "2": {
+      "innerWidth": 1442,
+      "hostWidth": 914,
+      "reserveComputed": 491.6041259765625,
+      "band": 422,
+      "iconOnly": "true",
+      "labelCount": 0,
+      "verbCount": 6,
+      "dockWidth": 241,
+      "dockRect": {
+        "x": 600.3333740234375,
+        "y": 854,
+        "width": 241.33334350585938,
+        "height": 37.333335876464844,
+        "top": 854,
+        "right": 841.6667175292969,
+        "bottom": 891.3333358764648,
+        "left": 600.3333740234375
+      },
+      "pageRect": {
+        "x": 276,
+        "y": 850,
+        "width": 154.4479217529297,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 430.4479217529297,
+        "bottom": 891.3333358764648,
+        "left": 276
+      },
+      "zoomRect": {
+        "x": 940.1979370117188,
+        "y": 850,
+        "width": 225.80209350585938,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 1166.0000305175781,
+        "bottom": 891.3333358764648,
+        "left": 940.1979370117188
+      },
+      "labelsFitEstimateFor6": 420,
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "3": {
+      "innerWidth": 1442,
+      "hostWidth": 914,
+      "reserveComputed": 491.6041259765625,
+      "band": 422,
+      "iconOnly": "false",
+      "labelCount": 4,
+      "verbCount": 4,
+      "dockWidth": 215,
+      "dockRect": {
+        "x": 613.671875,
+        "y": 843,
+        "width": 214.65625,
+        "height": 48.333335876464844,
+        "top": 843,
+        "right": 828.328125,
+        "bottom": 891.3333358764648,
+        "left": 613.671875
+      },
+      "pageRect": {
+        "x": 276,
+        "y": 850,
+        "width": 154.4479217529297,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 430.4479217529297,
+        "bottom": 891.3333358764648,
+        "left": 276
+      },
+      "zoomRect": {
+        "x": 940.1979370117188,
+        "y": 850,
+        "width": 225.80209350585938,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 1166.0000305175781,
+        "bottom": 891.3333358764648,
+        "left": 940.1979370117188
+      },
+      "labelsFitEstimateFor6": 420,
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "4": {
+      "innerWidth": 1442,
+      "hostWidth": 914,
+      "reserveComputed": 491.6041259765625,
+      "band": 422,
+      "iconOnly": "false",
+      "labelCount": 5,
+      "verbCount": 5,
+      "dockWidth": 422,
+      "dockRect": {
+        "x": 509.8020935058594,
+        "y": 804,
+        "width": 422.3958435058594,
+        "height": 87.33333587646484,
+        "top": 804,
+        "right": 932.1979370117188,
+        "bottom": 891.3333358764648,
+        "left": 509.8020935058594
+      },
+      "pageRect": {
+        "x": 276,
+        "y": 850,
+        "width": 154.4479217529297,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 430.4479217529297,
+        "bottom": 891.3333358764648,
+        "left": 276
+      },
+      "zoomRect": {
+        "x": 940.1979370117188,
+        "y": 850,
+        "width": 225.80209350585938,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 1166.0000305175781,
+        "bottom": 891.3333358764648,
+        "left": 940.1979370117188
+      },
+      "labelsFitEstimateFor6": 420,
+      "overlapPage": false,
+      "overlapZoom": false
+    }
+  },
+  "menuClamp": true,
+  "menuClampResult": {
+    "open": true,
+    "rect": {
+      "x": 1250,
+      "y": 683,
+      "width": 184,
+      "height": 195.65625,
+      "top": 683,
+      "right": 1434,
+      "bottom": 878.65625,
+      "left": 1250
+    },
+    "innerWidth": 1442,
+    "innerHeight": 903,
+    "inViewport": true,
+    "items": [
+      "rotate-cw",
+      "rotate-ccw",
+      "extract",
+      "insert-blank",
+      "replace",
+      "delete"
+    ]
+  },
+  "paletteOverDialog": {
+    "dialogOpenBefore": true,
+    "dialogStill": true,
+    "paletteOpen": true,
+    "afterEsc": {
+      "paletteOpen": true,
+      "dialogOpen": false
+    }
+  },
+  "ctrlP": {
+    "windowsBefore": 1,
+    "windowsAfter": 1,
+    "printInMain": {
+      "shell": false,
+      "dialog": false
+    },
+    "titles": [
+      "file:///C:/Users/tanzi/OneDrive/App%20Development/TFlex/dist/renderer/index.html"
+    ]
+  }
+}

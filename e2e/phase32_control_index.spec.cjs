@@ -5,12 +5,15 @@
 // a NO-OP defect; each assertion below is a DOM/geometry change, never a
 // "click completed" check.
 //
-//   [data-toolbar-multi-mode]      toggle (CommandBar)
-//   [data-tool-id="multi-mode"]    toggle (All tools)
+//   [data-header-multi-mode]       toggle (title bar; the retired CommandBar /
+//                                  All-tools entries are gone)
+//   [data-multi-dock-layer]        the ONE shared Action Dock layer (Multi Mode)
 //   [data-pane] / [data-pane-focused] / [data-pane-header] / [data-pane-clear]
 //   [data-pane-empty] / [data-pane-pick] / [data-pane-open]
 //   [data-multi-divider] / [data-multi-panes]
-//   [data-pane-strip] + -doc/-pane/-header/-drop-target (Phase 33 per-pane strips)
+//   [data-pane-strip] + -doc/-pane/-drop-target (Phase 33 per-pane strips;
+//   DEF-291 headerless)
+//   [data-canvas-pills][data-pill-pane] (per-pane page/zoom/fit/pan pills)
 //   dynamic thumb width (126 single, 89 dual)
 //   [data-page-drag-handle] / [data-drop-indicator] / [data-drop-copy]
 //   .document-scroller[data-page-drop-pane] / .thumb-drop-target/-dragging/-copy
@@ -97,15 +100,15 @@ async function state() {
       singleRailThumbW: thumbW('[data-context-panel]'),
       multiThumbA: thumbW('[data-pane-strip-pane="A"]'),
       dragHandles: document.querySelectorAll('[data-page-drag-handle]').length,
-      cmdPressed: document.querySelector('[data-toolbar-multi-mode]')
-        ? document.querySelector('[data-toolbar-multi-mode]').getAttribute('aria-pressed')
-        : null,
+      // Phase 36 (chunk 7) — the shared workspace chrome is the ONE Action Dock
+      // layer, present only while Multi Mode is on.
+      sharedDock: !!document.querySelector('[data-multi-dock-layer]'),
     };
   });
 }
-async function allToolsPressed() {
-  // Phase 36 (chunk 6) — the single-mode Multi Mode toggle is the title-bar
-  // control; the All-tools palette entry is retired.
+async function headerTogglePressed() {
+  // Phase 36 (chunk 6) — the Multi Mode toggle is the title-bar control; the
+  // retired CommandBar / All-tools entries are gone.
   const el = await win.locator('[data-header-multi-mode]').count();
   if (el === 0) return null;
   return win.locator('[data-header-multi-mode]').getAttribute('aria-pressed');
@@ -145,13 +148,14 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s0.paneStrips).toBe(0);
   expect(s0.singleRailThumbW).toBe(126); // single-mode thumb width
   expect(s0.dragHandles).toBe(0); // canvas drag is Multi-Mode-only
+  expect(s0.sharedDock).toBe(false); // the shared dock layer is Multi-Mode-only
 
   // --- Multi Mode entry: ON (pane A seeded, B empty) ---
   // Phase 36 (chunk 6) — the single-mode home is the title-bar toggle.
   await win.locator('[data-header-multi-mode]').click();
   await win.waitForTimeout(500);
   const s1 = await state();
-  console.log(`[P32-ci] after CommandBar ON: ${JSON.stringify(s1)}`);
+  console.log(`[P32-ci] after title-bar ON: ${JSON.stringify(s1)}`);
   expect(s1.multi).toBe('true');
   expect(s1.multiPanes).toBe('1');
   expect(s1.paneA).toBe(true);
@@ -162,10 +166,10 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s1.multiThumbA).toBe(126); // one document in Multi Mode -> 126
   expect(s1.focused).toBe('A');
   expect(s1.activePane).toBe('A');
-  expect(s1.cmdPressed).toBe('true');
+  expect(s1.sharedDock).toBe(true); // the ONE shared Action Dock layer exists
   expect(s1.dragHandles).toBeGreaterThan(0); // canvas grip exists in Multi Mode
   // The title-bar toggle agrees (pressed while Multi Mode is on).
-  expect(await allToolsPressed()).toBe('true');
+  expect(await headerTogglePressed()).toBe('true');
 
   // --- [data-pane-pick] fills pane B; [data-multi-panes] -> 2 ---
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
@@ -256,7 +260,7 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s5.paneStrips).toBe(2);
 
   // --- Multi Mode OFF via the title-bar toggle ---
-  expect(await allToolsPressed()).toBe('true');
+  expect(await headerTogglePressed()).toBe('true');
   await win.locator('[data-header-multi-mode]').click();
   await win.waitForTimeout(600);
   const s6 = await state();
@@ -267,5 +271,6 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s6.divider).toBe(false);
   expect(s6.paneStrips).toBe(0);
   expect(s6.dragHandles).toBe(0);
+  expect(s6.sharedDock).toBe(false);
   expect(s6.singleRailThumbW).toBe(126);
 });

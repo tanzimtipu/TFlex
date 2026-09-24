@@ -4,7 +4,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 const path = require('node:path');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
@@ -50,7 +50,8 @@ async function pageRect(n) {
 }
 
 async function armAnnTool(tool) {
-  await win.click(`[data-annotation-toolbar] [data-tool="${tool}"]`);
+  // Phase 36 — the annotation toolbar lives in the REVIEW Annotate flyout.
+  await armAnnotationTool(win, tool);
   await win.waitForTimeout(350);
 }
 

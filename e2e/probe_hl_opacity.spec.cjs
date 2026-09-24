@@ -4,7 +4,7 @@
 const { test } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, scrollToPage } = require('./lib/helpers.cjs');
+const { hardClose, scrollToPage, armAnnotationTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -23,7 +23,8 @@ test('PROBE: committed highlight renders translucent', async () => {
     await win.waitForTimeout(2200);
     await scrollToPage(win, 1);
 
-    await win.click('button[aria-label="Highlight"]');
+    // Phase 36 — the annotation toolbar is in the REVIEW Annotate flyout.
+    await armAnnotationTool(win, 'highlight');
     await win.waitForTimeout(350);
     const hlSpan = await win.evaluate(() => {
       const spans = Array.from(

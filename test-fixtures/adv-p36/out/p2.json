@@ -1,0 +1,1140 @@
+{
+  "inventory": {
+    "thumbs": 34,
+    "thumbVerbs": 34,
+    "thumbVerbIds": [
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete",
+      "rotate-cw",
+      "extract",
+      "delete"
+    ],
+    "outlineToggle": 1,
+    "pagePillInput": 1,
+    "handToggle": 1,
+    "railCollapse": 1,
+    "stageRailGear": 1,
+    "menuButton": 1,
+    "titlebarMultiMode": 1
+  },
+  "results": {
+    "merge": {
+      "id": "merge",
+      "label": "Merge PDFs",
+      "surface": "palette",
+      "stage": "pages",
+      "availability": "document",
+      "action": "merge",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"merge\",\"disabled\":\"false\",\"effect\":{\"modal\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"Merge with another PDF\\\"]\"}}"
+    },
+    "split": {
+      "id": "split",
+      "label": "Split pages",
+      "surface": "dock",
+      "stage": "pages",
+      "availability": "document",
+      "action": "split",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Extract or split pages\"]"
+      }
+    },
+    "extract": {
+      "id": "extract",
+      "label": "Extract pages",
+      "surface": "dock",
+      "stage": "pages",
+      "availability": "document",
+      "action": "extract",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Extract or split pages\"]"
+      }
+    },
+    "rotate": {
+      "id": "rotate",
+      "label": "Rotate pages",
+      "surface": "dock",
+      "stage": "pages",
+      "availability": "document",
+      "action": "rotateClockwise",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": "present+enabled (click skipped: mutating/terminal)"
+    },
+    "delete": {
+      "id": "delete",
+      "label": "Delete pages",
+      "surface": "dock",
+      "stage": "pages",
+      "availability": "document",
+      "action": "deletePages",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": "present+enabled (click skipped: mutating/terminal)"
+    },
+    "insertPages": {
+      "id": "insertPages",
+      "label": "Insert pages",
+      "surface": "dock",
+      "stage": "pages",
+      "availability": "document",
+      "action": "insertPages",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Insert pages\"]"
+      }
+    },
+    "replacePages": {
+      "id": "replacePages",
+      "label": "Replace pages",
+      "surface": "dock",
+      "stage": "pages",
+      "availability": "document",
+      "action": "replacePages",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Replace pages\"]"
+      }
+    },
+    "renumberPages": {
+      "id": "renumberPages",
+      "label": "Renumber pages",
+      "surface": "panel",
+      "stage": "pages",
+      "availability": "document",
+      "action": "renumberPages",
+      "effect": "panel entry with no rule (INVESTIGATE)"
+    },
+    "cropPages": {
+      "id": "cropPages",
+      "label": "Crop pages",
+      "surface": "dock",
+      "stage": "pages",
+      "availability": "document",
+      "action": "cropPages",
+      "present": false,
+      "lane": "inline",
+      "effect": "NOT PRESENT on stage dock (inline or overflow)"
+    },
+    "rotateCounterClockwise": {
+      "id": "rotateCounterClockwise",
+      "label": "Rotate counter-clockwise",
+      "surface": "panel",
+      "stage": "pages",
+      "availability": "document",
+      "action": "rotateCounterClockwise",
+      "effect": "panel entry with no rule (INVESTIGATE)"
+    },
+    "pageThumbnails": {
+      "id": "pageThumbnails",
+      "label": "Page thumbnails",
+      "surface": "panel",
+      "stage": "pages",
+      "availability": "document",
+      "action": "railTabThumbnails",
+      "present": true,
+      "effect": "thumbs in PAGES panel: 34"
+    },
+    "outlinePanel": {
+      "id": "outlinePanel",
+      "label": "Bookmarks",
+      "surface": "panel",
+      "stage": "pages",
+      "availability": "document",
+      "action": "railTabOutline",
+      "present": true,
+      "effect": "outline toggle present: 1"
+    },
+    "pageContextMenu": {
+      "id": "pageContextMenu",
+      "label": "Page actions",
+      "surface": "panel",
+      "stage": "pages",
+      "availability": "document",
+      "action": "pageContextMenu",
+      "present": true,
+      "items": [
+        "rotate-cw",
+        "rotate-ccw",
+        "extract",
+        "insert-blank",
+        "replace",
+        "delete"
+      ],
+      "effect": "context menu items=[\"rotate-cw\",\"rotate-ccw\",\"extract\",\"insert-blank\",\"replace\",\"delete\"]"
+    },
+    "clearPageSelection": {
+      "id": "clearPageSelection",
+      "label": "Clear page selection",
+      "surface": "panel",
+      "stage": "pages",
+      "availability": "selection",
+      "action": "clearPageSelection",
+      "present": true,
+      "effect": {
+        "dockState": "\"selection\" -> \"stage\""
+      }
+    },
+    "dragPage": {
+      "id": "dragPage",
+      "label": "Drag page",
+      "surface": "panel",
+      "stage": "pages",
+      "availability": "document",
+      "action": "dragPageToDocument",
+      "draggable": "true",
+      "effect": "thumb-item draggable=true"
+    },
+    "editMode": {
+      "id": "editMode",
+      "label": "Edit content",
+      "surface": "dock",
+      "stage": "edit",
+      "availability": "document",
+      "action": "editModeToggle",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "editToolbar": "0 -> 1",
+        "pressed": "[] -> [\"editMode\"]",
+        "editTool": "null -> \"off\""
+      }
+    },
+    "editToolOff": {
+      "id": "editToolOff",
+      "label": "Edit mode off",
+      "surface": "panel",
+      "stage": "edit",
+      "availability": "document",
+      "action": "editToolOff",
+      "effect": "panel entry with no rule (INVESTIGATE)"
+    },
+    "editText": {
+      "id": "editText",
+      "label": "Edit text",
+      "surface": "dock",
+      "stage": "edit",
+      "availability": "document",
+      "action": "editToolText",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "textPanel": "0 -> 1",
+        "editTool": "\"off\" -> \"text\""
+      }
+    },
+    "editTextBox": {
+      "id": "editTextBox",
+      "label": "Add a text box",
+      "surface": "dock",
+      "stage": "edit",
+      "availability": "document",
+      "action": "editToolBox",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "textPanel": "0 -> 1",
+        "editTool": "\"off\" -> \"box\""
+      }
+    },
+    "editImage": {
+      "id": "editImage",
+      "label": "Edit images",
+      "surface": "dock",
+      "stage": "edit",
+      "availability": "document",
+      "action": "editToolImage",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "editTool": "\"off\" -> \"image\""
+      }
+    },
+    "editDefaultFont": {
+      "id": "editDefaultFont",
+      "label": "Default font",
+      "surface": "panel",
+      "stage": "edit",
+      "availability": "always",
+      "action": "editDefaultFont",
+      "present": false,
+      "fontControl": null,
+      "effect": "edit toolbar MISSING"
+    },
+    "recognizeText": {
+      "id": "recognizeText",
+      "label": "Recognize text (OCR)",
+      "surface": "dock",
+      "stage": "edit",
+      "availability": "document",
+      "action": "recognizeText",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Recognize text (OCR)\"]"
+      }
+    },
+    "batchOcr": {
+      "id": "batchOcr",
+      "label": "Batch OCR all tabs",
+      "surface": "palette",
+      "stage": "edit",
+      "availability": "multi-doc",
+      "action": "batchOcr",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.command-palette-row').filter({ hasText: 'Batch OCR all tabs' }).first()\u001b[22m\n\u001b[2m    - locator resolved to <li role=\"option\" data-stage=\"edit\" aria-selected=\"true\" aria-disabled=\"true\" data-palette-row=\"tool\" data-palette-pinned=\"false\" data-palette-disabled=\"true\" data-palette-tool-id=\"batchOcr\" title=\"Open a second document first\" id=\"tflex-command-palette-list-option-tool:batchOcr\" class=\"command-palette-row command-palette-row-disabled\">…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    58 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "ocrSuspects": {
+      "id": "ocrSuspects",
+      "label": "OCR suspects",
+      "surface": "palette",
+      "stage": "edit",
+      "availability": "ocr-run",
+      "action": "ocrSuspects",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.command-palette-row').filter({ hasText: 'OCR suspects' }).first()\u001b[22m\n\u001b[2m    - locator resolved to <li role=\"option\" data-stage=\"edit\" aria-selected=\"true\" aria-disabled=\"true\" data-palette-row=\"tool\" data-palette-pinned=\"false\" data-palette-disabled=\"true\" title=\"Run Recognize text first\" data-palette-tool-id=\"ocrSuspects\" id=\"tflex-command-palette-list-option-tool:ocrSuspects\" class=\"command-palette-row command-palette-row-disabled\">…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    58 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "annotate": {
+      "id": "annotate",
+      "label": "Annotate",
+      "surface": "dock",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotate",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "flyout": "0 -> 1",
+        "annTool": "null -> \"select\""
+      }
+    },
+    "sign": {
+      "id": "sign",
+      "label": "Sign",
+      "surface": "dock",
+      "stage": "review",
+      "availability": "always",
+      "action": "sign",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Signature\"]"
+      }
+    },
+    "forms": {
+      "id": "forms",
+      "label": "Forms",
+      "surface": "palette",
+      "stage": "review",
+      "availability": "form-fields",
+      "action": "forms",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.command-palette-row').filter({ hasText: 'Forms' }).first()\u001b[22m\n\u001b[2m    - locator resolved to <li role=\"option\" data-stage=\"review\" aria-selected=\"true\" aria-disabled=\"true\" data-palette-row=\"tool\" data-palette-pinned=\"false\" data-palette-tool-id=\"forms\" data-palette-disabled=\"true\" title=\"This document has no form fields\" id=\"tflex-command-palette-list-option-tool:forms\" class=\"command-palette-row command-palette-row-disabled\">…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    58 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "flatten": {
+      "id": "flatten",
+      "label": "Flatten",
+      "surface": "dock",
+      "stage": "review",
+      "availability": "form-fields",
+      "action": "flatten",
+      "present": true,
+      "lane": "inline",
+      "disabled": true,
+      "reason": "This document has no form fields",
+      "effect": "disabled (present with reason)"
+    },
+    "stamp": {
+      "id": "stamp",
+      "label": "Stamp",
+      "surface": "dock",
+      "stage": "review",
+      "availability": "document",
+      "action": "stamp",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Stamp\"]"
+      }
+    },
+    "watermark": {
+      "id": "watermark",
+      "label": "Watermark",
+      "surface": "palette",
+      "stage": "review",
+      "availability": "document",
+      "action": "watermark",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"watermark\",\"disabled\":\"false\",\"effect\":{\"modal\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"Watermark\\\"]\"}}"
+    },
+    "exportComments": {
+      "id": "exportComments",
+      "label": "Export comments (FDF)",
+      "surface": "palette",
+      "stage": "review",
+      "availability": "document",
+      "action": "exportComments",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"exportComments\",\"disabled\":\"false\",\"effect\":{\"modal\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"Export comments\\\"]\"}}"
+    },
+    "importComments": {
+      "id": "importComments",
+      "label": "Import comments (FDF)",
+      "surface": "palette",
+      "stage": "review",
+      "availability": "document",
+      "action": "importComments",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"importComments\",\"disabled\":\"false\",\"effect\":{\"modal\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"Import comments\\\"]\"}}"
+    },
+    "annotationsPanel": {
+      "id": "annotationsPanel",
+      "label": "Annotations",
+      "surface": "panel",
+      "stage": "review",
+      "availability": "document",
+      "action": "railTabAnnotations",
+      "present": true,
+      "effect": "annotations panel present in REVIEW ContextPanel"
+    },
+    "annSelect": {
+      "id": "annSelect",
+      "label": "Select",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationSelect",
+      "effect": "NO OBSERVABLE CHANGE",
+      "lane": "flyout-visible"
+    },
+    "annHighlight": {
+      "id": "annHighlight",
+      "label": "Highlight",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationHighlight",
+      "effect": {
+        "annTool": "\"select\" -> \"highlight\""
+      },
+      "lane": "flyout-visible"
+    },
+    "annUnderline": {
+      "id": "annUnderline",
+      "label": "Underline",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationUnderline",
+      "effect": {
+        "annTool": "\"select\" -> \"underline\""
+      },
+      "lane": "flyout-visible"
+    },
+    "annStrikeout": {
+      "id": "annStrikeout",
+      "label": "Strikethrough",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationStrikeout",
+      "effect": {
+        "annTool": "\"select\" -> \"strikeout\""
+      },
+      "lane": "flyout-visible"
+    },
+    "annInk": {
+      "id": "annInk",
+      "label": "Pen",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationInk",
+      "effect": {
+        "annTool": "\"select\" -> \"ink\""
+      },
+      "lane": "flyout-visible"
+    },
+    "annTextbox": {
+      "id": "annTextbox",
+      "label": "Text box",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationTextbox",
+      "effect": {
+        "textPanel": "0 -> 1",
+        "annTool": "\"select\" -> \"textbox\""
+      },
+      "lane": "flyout-dropdown"
+    },
+    "annRect": {
+      "id": "annRect",
+      "label": "Rectangle",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationRect",
+      "effect": {
+        "annTool": "null -> \"rect\""
+      },
+      "lane": "flyout-dropdown"
+    },
+    "annEllipse": {
+      "id": "annEllipse",
+      "label": "Ellipse",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationEllipse",
+      "effect": {
+        "annTool": "null -> \"ellipse\""
+      },
+      "lane": "flyout-dropdown"
+    },
+    "annArrow": {
+      "id": "annArrow",
+      "label": "Arrow",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationArrow",
+      "effect": {
+        "annTool": "null -> \"arrow\""
+      },
+      "lane": "flyout-dropdown"
+    },
+    "annCallout": {
+      "id": "annCallout",
+      "label": "Callout",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationCallout",
+      "effect": {
+        "textPanel": "0 -> 1",
+        "annTool": "null -> \"callout\""
+      },
+      "lane": "flyout-dropdown"
+    },
+    "annNote": {
+      "id": "annNote",
+      "label": "Sticky note",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "document",
+      "action": "annotationNote",
+      "effect": {
+        "textPanel": "0 -> 1",
+        "annTool": "null -> \"note\""
+      },
+      "lane": "flyout-dropdown"
+    },
+    "annColor": {
+      "id": "annColor",
+      "label": "Annotation color",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "colour-tool",
+      "action": "annotationColor",
+      "present": false,
+      "effect": "color control MISSING in flyout"
+    },
+    "annPenWidth": {
+      "id": "annPenWidth",
+      "label": "Pen width",
+      "surface": "flyout",
+      "stage": "review",
+      "availability": "ink-tool",
+      "action": "annotationPenWidth",
+      "present": false,
+      "effect": "pen width row MISSING"
+    },
+    "optimize": {
+      "id": "optimize",
+      "label": "Reduce file size",
+      "surface": "dock",
+      "stage": "deliver",
+      "availability": "document",
+      "action": "optimize",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Reduce file size\"]"
+      }
+    },
+    "audit": {
+      "id": "audit",
+      "label": "Audit space usage",
+      "surface": "dock",
+      "stage": "deliver",
+      "availability": "document",
+      "action": "auditSpace",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Audit space usage\"]"
+      }
+    },
+    "createFromImages": {
+      "id": "createFromImages",
+      "label": "Create PDF from images",
+      "surface": "palette",
+      "stage": "deliver",
+      "availability": "always",
+      "action": "createFromImages",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"createFromImages\",\"disabled\":\"false\",\"effect\":{\"modal\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"Create PDF from images\\\"]\"}}"
+    },
+    "exportPages": {
+      "id": "exportPages",
+      "label": "Export pages as images",
+      "surface": "dock",
+      "stage": "deliver",
+      "availability": "document",
+      "action": "exportPages",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Export pages as images\"]"
+      }
+    },
+    "exportText": {
+      "id": "exportText",
+      "label": "Export text",
+      "surface": "dock",
+      "stage": "deliver",
+      "availability": "document",
+      "action": "exportText",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Export text\"]"
+      }
+    },
+    "exportDocx": {
+      "id": "exportDocx",
+      "label": "Export to Word (.docx)",
+      "surface": "dock",
+      "stage": "deliver",
+      "availability": "document",
+      "action": "exportDocx",
+      "present": true,
+      "lane": "inline",
+      "disabled": false,
+      "effect": {
+        "modal": "0 -> 1",
+        "titles": "[] -> [\"Export to Word\"]"
+      }
+    },
+    "open": {
+      "id": "open",
+      "label": "Open PDF",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "open",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"open\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\"}}"
+    },
+    "openRecent": {
+      "id": "openRecent",
+      "label": "Open recent file",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "recents",
+      "action": "openRecent",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.command-palette-row').filter({ hasText: 'Open recent file' }).first()\u001b[22m\n\u001b[2m    - locator resolved to <li role=\"option\" data-stage=\"global\" aria-disabled=\"true\" aria-selected=\"false\" data-palette-row=\"tool\" data-palette-pinned=\"false\" data-palette-disabled=\"true\" data-palette-tool-id=\"openRecent\" title=\"Pick a recent file from the list below\" id=\"tflex-command-palette-list-option-tool:openRecent\" class=\"command-palette-row command-palette-row-disabled\">…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    58 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "openSample": {
+      "id": "openSample",
+      "label": "Open sample document",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "openSample",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.command-palette-row').filter({ hasText: 'Open sample document' }).first()\u001b[22m\n\u001b[2m    - locator resolved to <li role=\"option\" data-stage=\"global\" aria-selected=\"true\" aria-disabled=\"true\" data-palette-row=\"tool\" data-palette-pinned=\"false\" data-palette-disabled=\"true\" data-palette-tool-id=\"openSample\" title=\"Pick a sample from the welcome screen\" id=\"tflex-command-palette-list-option-tool:openSample\" class=\"command-palette-row command-palette-row-disabled\">…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    58 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "removeRecent": {
+      "id": "removeRecent",
+      "label": "Remove from Recents",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "recents",
+      "action": "removeRecent",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.command-palette-row').filter({ hasText: 'Remove from Recents' }).first()\u001b[22m\n\u001b[2m    - locator resolved to <li role=\"option\" data-stage=\"global\" aria-selected=\"true\" aria-disabled=\"true\" data-palette-row=\"tool\" data-palette-pinned=\"false\" data-palette-disabled=\"true\" data-palette-tool-id=\"removeRecent\" title=\"Pick a recent file from the list below\" id=\"tflex-command-palette-list-option-tool:removeRecent\" class=\"command-palette-row command-palette-row-disabled\">…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    58 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "createFromClipboard": {
+      "id": "createFromClipboard",
+      "label": "Create PDF from clipboard",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "createFromClipboard",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"createFromClipboard\",\"disabled\":\"false\",\"effect\":{\"modal\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"Create PDF from images\\\"]\"}}"
+    },
+    "save": {
+      "id": "save",
+      "label": "Save",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "tab",
+      "action": "save",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"save\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\",\"toasts\":\"\\\"\\\" -> \\\"Saved 1790238111880-report.pdf.\\\"\"}}"
+    },
+    "saveAs": {
+      "id": "saveAs",
+      "label": "Save a copy",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "tab",
+      "action": "saveAs",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"saveAs\",\"disabled\":\"false\",\"effect\":{\"modal\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"Save a copy\\\"]\"}}"
+    },
+    "print": {
+      "id": "print",
+      "label": "Print",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "document",
+      "action": "print",
+      "effect": "{\"modal\":\"0 -> 1\",\"print\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"toasts\":\"\\\"Saved 1790238111880-report.pdf.\\\" -> \\\"\\\"\",\"titles\":\"[] -> [\\\"Print\\\"]\"}"
+    },
+    "find": {
+      "id": "find",
+      "label": "Find in document",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "document",
+      "action": "find",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"find\",\"disabled\":\"false\",\"effect\":{\"search\":\"0 -> 1\",\"palette\":\"1 -> 0\"}}"
+    },
+    "zoomIn": {
+      "id": "zoomIn",
+      "label": "Zoom in",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "zoomIn",
+      "present": true,
+      "effect": "148% -> 150%"
+    },
+    "zoomOut": {
+      "id": "zoomOut",
+      "label": "Zoom out",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "zoomOut",
+      "present": true,
+      "effect": "150% -> 125%"
+    },
+    "fitWidth": {
+      "id": "fitWidth",
+      "label": "Fit width",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "fitWidth",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"fitWidth\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\"}}"
+    },
+    "fitPage": {
+      "id": "fitPage",
+      "label": "Fit page",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "fitPage",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"fitPage\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\"}}"
+    },
+    "prevPage": {
+      "id": "prevPage",
+      "label": "Previous page",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "prevPage",
+      "effect": "pills present: yes",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-page-pill] button[aria-label=\"Previous page\"]').first()\u001b[22m\n\u001b[2m    - locator resolved to <button disabled type=\"button\" class=\"tool-btn\" title=\"Previous page\" aria-label=\"Previous page\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "nextPage": {
+      "id": "nextPage",
+      "label": "Next page",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "nextPage",
+      "effect": "1 -> 2"
+    },
+    "pageJump": {
+      "id": "pageJump",
+      "label": "Go to page",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "pageJump",
+      "effect": "2 -> 3"
+    },
+    "undo": {
+      "id": "undo",
+      "label": "Undo",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "document",
+      "action": "undo",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"undo\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\"}}"
+    },
+    "redo": {
+      "id": "redo",
+      "label": "Redo",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "document",
+      "action": "redo",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"redo\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\"}}"
+    },
+    "tabNew": {
+      "id": "tabNew",
+      "label": "New empty tab",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "tab",
+      "action": "tabNew",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"tabNew\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\",\"dockState\":\"\\\"stage\\\" -> null\",\"hand\":\"\\\"false\\\" -> null\"}}"
+    },
+    "tabClose": {
+      "id": "tabClose",
+      "label": "Close Tab",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "tab",
+      "action": "closeTab",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"tabClose\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\",\"dockState\":\"null -> \\\"stage\\\"\",\"hand\":\"null -> \\\"false\\\"\"}}"
+    },
+    "multi-mode": {
+      "id": "multi-mode",
+      "label": "Multi Mode",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "document",
+      "action": "multiModeToggle",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"multi-mode\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\"}}"
+    },
+    "paneOpen": {
+      "id": "paneOpen",
+      "label": "Open a PDF into a pane",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "paneOpen",
+      "effect": "multi-mode-only: tested in p3"
+    },
+    "panePick": {
+      "id": "panePick",
+      "label": "Show a document in a pane",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "multi-doc",
+      "action": "panePick",
+      "effect": "multi-mode-only: tested in p3"
+    },
+    "paneClear": {
+      "id": "paneClear",
+      "label": "Clear a pane",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "paneClear",
+      "effect": "multi-mode-only: tested in p3"
+    },
+    "paneResize": {
+      "id": "paneResize",
+      "label": "Resize panes",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "paneResize",
+      "effect": "multi-mode-only: tested in p3"
+    },
+    "toggleTheme": {
+      "id": "toggleTheme",
+      "label": "Toggle Theme",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "toggleTheme",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"toggleTheme\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\"}}"
+    },
+    "preferences": {
+      "id": "preferences",
+      "label": "Preferences",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "preferences",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"preferences\",\"disabled\":\"false\",\"effect\":{\"sheet\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"Preferences\\\"]\"}}"
+    },
+    "checkForUpdate": {
+      "id": "checkForUpdate",
+      "label": "Check for Update",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "checkForUpdate",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"checkForUpdate\",\"disabled\":\"false\",\"effect\":{\"sheet\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"Checking for updates\\\"]\"}}"
+    },
+    "updateDownload": {
+      "id": "updateDownload",
+      "label": "Download update",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "update-pending",
+      "action": "updateDownload",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.command-palette-row').filter({ hasText: 'Download update' }).first()\u001b[22m\n\u001b[2m    - locator resolved to <li role=\"option\" data-stage=\"global\" aria-selected=\"true\" aria-disabled=\"true\" data-palette-row=\"tool\" data-palette-pinned=\"false\" data-palette-disabled=\"true\" title=\"No update is pending\" data-palette-tool-id=\"updateDownload\" class=\"command-palette-row command-palette-row-disabled\" id=\"tflex-command-palette-list-option-tool:updateDownload\">…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    58 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "updateInstall": {
+      "id": "updateInstall",
+      "label": "Restart to update",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "update-pending",
+      "action": "updateInstall",
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.command-palette-row').filter({ hasText: 'Restart to update' }).first()\u001b[22m\n\u001b[2m    - locator resolved to <li role=\"option\" data-stage=\"global\" aria-selected=\"true\" aria-disabled=\"true\" data-palette-row=\"tool\" data-palette-pinned=\"false\" data-palette-disabled=\"true\" title=\"No update is pending\" data-palette-tool-id=\"updateInstall\" class=\"command-palette-row command-palette-row-disabled\" id=\"tflex-command-palette-list-option-tool:updateInstall\">…</li>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is not enabled\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    58 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is not enabled\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "about": {
+      "id": "about",
+      "label": "About TFlex",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "about",
+      "effect": "{\"path\":\"palette\",\"found\":true,\"rowId\":\"about\",\"disabled\":\"false\",\"effect\":{\"sheet\":\"0 -> 1\",\"palette\":\"1 -> 0\",\"titles\":\"[] -> [\\\"About TFlex\\\"]\"}}"
+    },
+    "appMenu": {
+      "id": "appMenu",
+      "label": "Application menu",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "appMenu",
+      "present": true,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-menu-button]').first()\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" title=\"File menu\" aria-haspopup=\"menu\" aria-expanded=\"false\" aria-label=\"File menu\" data-menu-button=\"true\" class=\"titlebar-menu-button titlebar-menu-file\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"presentation\" class=\"sheet-backdrop\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"presentation\" class=\"sheet-backdrop\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div role=\"presentation\" class=\"sheet-backdrop\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "toolsPalette": {
+      "id": "toolsPalette",
+      "label": "Browse all tools",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "openCommandPalette",
+      "present": true,
+      "effect": "palette opened by Ctrl+K: true"
+    },
+    "panMode": {
+      "id": "panMode",
+      "label": "Pan mode",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "handToggle",
+      "present": true,
+      "error": "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-hand-toggle]').first()\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" class=\"tool-btn\" aria-pressed=\"false\" aria-label=\"Pan mode\" data-hand-toggle=\"true\" data-hand-active=\"false\" title=\"Pan mode: drag anywhere to scroll the document\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"presentation\" class=\"sheet-backdrop\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <div role=\"presentation\" class=\"sheet-backdrop\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    57 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <div role=\"presentation\" class=\"sheet-backdrop\">…</div> intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    "railCollapse": {
+      "id": "railCollapse",
+      "label": "Collapse panel",
+      "surface": "panel",
+      "stage": "global",
+      "availability": "document",
+      "action": "railCollapse",
+      "present": false,
+      "effect": "undefined -> undefined"
+    },
+    "stagePages": {
+      "id": "stagePages",
+      "label": "Pages stage",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "stagePages",
+      "effect": "{\"palette\":{\"path\":\"palette\",\"found\":true,\"rowId\":\"stagePages\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\"}}}"
+    },
+    "stageEdit": {
+      "id": "stageEdit",
+      "label": "Edit stage",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "stageEdit",
+      "effect": "{\"palette\":{\"path\":\"palette\",\"found\":true,\"rowId\":\"stageEdit\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\",\"stage\":\"\\\"pages\\\" -> \\\"edit\\\"\"}}}"
+    },
+    "stageReview": {
+      "id": "stageReview",
+      "label": "Review stage",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "stageReview",
+      "effect": "{\"palette\":{\"path\":\"palette\",\"found\":true,\"rowId\":\"stageReview\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\",\"stage\":\"\\\"pages\\\" -> \\\"review\\\"\"}}}"
+    },
+    "stageDeliver": {
+      "id": "stageDeliver",
+      "label": "Deliver stage",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "stageDeliver",
+      "effect": "{\"palette\":{\"path\":\"palette\",\"found\":true,\"rowId\":\"stageDeliver\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\",\"stage\":\"\\\"pages\\\" -> \\\"deliver\\\"\"}}}"
+    },
+    "windowMinimize": {
+      "id": "windowMinimize",
+      "label": "Minimize window",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "windowMinimize",
+      "effect": "{\"palette\":{\"path\":\"palette\",\"found\":true,\"rowId\":\"windowMinimize\",\"disabled\":\"false\",\"effect\":{}}}"
+    },
+    "windowMaximize": {
+      "id": "windowMaximize",
+      "label": "Maximize window",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "windowMaximize",
+      "effect": "{\"palette\":{\"path\":\"palette\",\"found\":true,\"rowId\":\"windowMaximize\",\"disabled\":\"false\",\"effect\":{\"palette\":\"1 -> 0\"}}}"
+    },
+    "windowClose": {
+      "id": "windowClose",
+      "label": "Close window",
+      "surface": "palette",
+      "stage": "global",
+      "availability": "always",
+      "action": "windowClose",
+      "error": "page.evaluate: Target page, context or browser has been closed"
+    }
+  }
+}

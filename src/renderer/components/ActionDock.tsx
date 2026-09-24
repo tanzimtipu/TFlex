@@ -11,8 +11,10 @@
 //                                button accent-soft, unavailable verbs
 //                                DISABLED (never hidden) with a tooltip reason.
 //   State 2  selection override â€” >=1 pages selected in PAGES: the `[N pages]`
-//                                chip plus Rotate / Extract / Merge / Delete /
-//                                Clear. Clear returns to State 1.
+//                                chip plus Rotate / Extract / Delete / Clear
+//                                (section 3A ruling 9: Merge is NOT a dock verb
+//                                - it lives on the PAGES panel header only).
+//                                Clear returns to State 1.
 //   State 3  pinned tools      â€” dockPins after a trailing divider; a pin that
 //                                duplicates the current set is dropped and the
 //                                divider collapses. Right-click pins/unpins.
@@ -53,6 +55,7 @@ import {
   labelledDockNeed,
   labelsFitBand,
   pillBandHeight,
+  pillFreeBand,
   pillReserve,
   shouldLiftDock,
   type PillBox,
@@ -61,11 +64,11 @@ import { toolById, dockToolsForStage, type ToolEntry } from '../state/toolsRegis
 import type { Stage } from '../state/stages';
 
 /** The State 2 bulk verbs, reusing the EXISTING multi-page engine/dialog
- *  paths. The host owns them; the dock only passes the selected page array. */
+ *  paths. The host owns them; the dock only passes the selected page array.
+ *  Section 3A ruling 9: no Merge — `＋ Combine…` is the PAGES panel header's. */
 export interface DockBulkActions {
   onRotate: (pages: readonly number[]) => void;
   onExtract: (pages: readonly number[]) => void;
-  onMerge: (pages: readonly number[]) => void;
   onDelete: (pages: readonly number[]) => void;
 }
 
@@ -156,7 +159,6 @@ export function buildSelectionVerbs(
   const runs: Record<string, () => void> = {
     rotate: (): void => bulk.onRotate(pages),
     extract: (): void => bulk.onExtract(pages),
-    merge: (): void => bulk.onMerge(pages),
     delete: (): void => bulk.onDelete(pages),
     [DOCK_CLEAR_ID]: onClearPageSelection,
   };
@@ -208,8 +210,14 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   const [overflowOpen, setOverflowOpen] = useState(false);
   /** DEF-315 — the MEASURED pill band: the reserve the dock must leave clear
    *  (from the pills' own inner edges) and their height for the vertical yield.
-   *  `null` until measured; the cap then falls back to the live measurement. */
-  const [pill, setPill] = useState<{ reserve: number; pillHeight: number } | null>(null);
+   *  DEF-330 — plus the pill-FREE band the dock actually occupies when it is
+   *  parked between the pills. `null` until measured; the cap then falls back to
+   *  the live reserve measurement. */
+  const [pill, setPill] = useState<{
+    reserve: number;
+    pillHeight: number;
+    free: { left: number; width: number } | null;
+  } | null>(null);
   const pillKeyRef = useRef('');
   const menuRef = useRef<HTMLDivElement | null>(null);
   const hoveredRef = useRef(false);
@@ -262,10 +270,18 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         hostRight: hostRect.right,
       });
       const bandHeight = pillBandHeight(page, zoom);
-      const key = `${reserve}:${Math.round(bandHeight)}`;
+      // DEF-330 — the pill-FREE band needs BOTH boxes: with only one pill there
+      // is no "between" to place the dock in, so the symmetric reserve stays.
+      const free =
+        page !== null && zoom !== null
+          ? pillFreeBand({ page, zoom, hostLeft: hostRect.left })
+          : null;
+      const key = `${reserve}:${Math.round(bandHeight)}:${
+        free === null ? 'x' : `${Math.round(free.left)}:${Math.round(free.width)}`
+      }`;
       if (key === pillKeyRef.current) return;
       pillKeyRef.current = key;
-      setPill({ reserve, pillHeight: bandHeight });
+      setPill({ reserve, pillHeight: bandHeight, free });
     };
     measure();
     if (typeof ResizeObserver === 'undefined') return undefined;
@@ -287,8 +303,30 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   const reserve = pill?.reserve ?? DOCK_DEFAULT_RESERVE;
   const band = dockBand(width, reserve);
   const lifted = pill !== null && shouldLiftDock(band);
+  // DEF-330 — the pill-FREE band. The symmetric `band` doubles the WIDEST
+  // pill's offset, so it charged the dock for slack the narrower side never
+  // uses; between the pills there is `free.width` to work with and the dock
+  // parks at the band's own centre (`--dock-shift`), clear of both pills by
+  // construction. Unmeasured, or lifted above the pill row, the dock goes back
+  // to the host-centre geometry.
+  const freeBand = pill?.free ?? null;
   const planWidth = dockPlanWidth({ hostWidth: width, band, lifted, measured: pill !== null });
-  const dockCap = lifted ? Math.max(0, width - 2 * DOCK_LIFT_INSET) : band;
+  // DEF-330 — the dock is placed IN the pill-free band when one was measured
+  // and it is not lifted: `left`/`right` are the band's own insets (host
+  // relative) so the dock's shrink-to-fit width is the BAND, not the host's
+  // right half under `left: 50%` (which capped DELIVER at 457px while the band
+  // allowed 493.75px and wrapped it onto a second row). The reported band is
+  // then the band the dock is placed against; unmeasured or lifted it stays the
+  // symmetric band (the geometry is unchanged - the narrow-width behaviour).
+  const bandPlaced = !lifted && freeBand !== null;
+  const placementBand = bandPlaced && freeBand !== null ? freeBand.width : band;
+  const bandRight =
+    bandPlaced && freeBand !== null
+      ? Math.max(0, width - freeBand.left - freeBand.width)
+      : 0;
+  const dockCap = lifted ? Math.max(0, width - 2 * DOCK_LIFT_INSET) : freeBand?.width ?? band;
+  const dockShift =
+    lifted || freeBand === null ? 0 : freeBand.left + freeBand.width / 2 - width / 2;
   const activeSet = useMemo(() => new Set(activeToolIds ?? []), [activeToolIds]);
 
   /** A verb's tooltip. An ENABLED verb explains what it does; a DISABLED one
@@ -381,15 +419,18 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       }),
     [primaryVerbs, pinnedVerbs.length, toolUsage, planWidth],
   );
-  // DEF-315 — the labels yield EARLIER than the 900px host break when the
-  // labelled dock (with its pins) cannot fit the measured band.
-  const iconOnly =
-    hostIconOnly ||
-    (pill !== null &&
-      !labelsFitBand(
-        labelledDockNeed(primaryVerbs.length, pinnedVerbs.length),
-        band,
-      ));
+  // DEF-315 / DEF-330 — the labels yield when the labelled dock (with its pins)
+  // cannot fit the band, measured from the labels' OWN widths (a per-verb
+  // constant cannot tell DELIVER's five wide verbs from PAGES' six narrow ones).
+  // The plan is judged against the band the dock would actually occupy: the
+  // pill-free band when it is parked between the pills, the host-cap band when
+  // lifted, and the symmetric band before the pills are measured.
+  const labelBand = lifted ? band : freeBand?.width ?? band;
+  const need = labelledDockNeed(
+    primaryVerbs.map((v) => v.label),
+    pinnedVerbs.map((v) => v.label),
+  );
+  const iconOnly = hostIconOnly || (pill !== null && !labelsFitBand(need, labelBand));
   const visibleIds = useMemo(() => new Set(plan.visible.map((e) => e.id)), [plan]);
   const inlineVerbs = useMemo(
     () => primaryVerbs.filter((v) => visibleIds.has(v.id)),
@@ -532,17 +573,29 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       data-dock-idle={idle ? 'true' : 'false'}
       data-dock-icon-only={iconOnly ? 'true' : 'false'}
       data-dock-compact={compact ? 'true' : 'false'}
-      data-dock-band={Math.round(band)}
+      data-dock-band={Math.round(placementBand)}
+      data-dock-free-band={freeBand === null ? undefined : Math.round(freeBand.width)}
+      data-dock-band-placed={bandPlaced ? 'true' : undefined}
+      data-dock-shift={Math.round(dockShift)}
       data-dock-lift={lifted ? 'true' : 'false'}
       /* DEF-315 — the measured pill geometry, published where the stylesheet
        * consumes it. `--dock-reserve` is the pill band the cap subtracts;
        * `--dock-lift` parks the dock above the pill row when the band cannot
-       * hold it (0px otherwise, so the transform is a no-op). */
+       * hold it (0px otherwise, so the transform is a no-op). DEF-330 —
+       * `--dock-shift` moves the dock from the host centre to the centre of the
+       * pill-free band (0px when unmeasured or lifted, so the geometry is
+       * unchanged then). */
       style={
         {
           maxWidth: `${dockCap}px`,
           '--dock-reserve': `${reserve}px`,
           '--dock-lift': `${lifted ? (pill?.pillHeight ?? 0) + DOCK_PILL_GAP : 0}px`,
+          '--dock-shift': `${dockShift}px`,
+          /* DEF-330 — the pill-free band's own insets (host relative), used by
+           * the band-placed rule to position the dock inside the band while
+           * `margin-inline: auto` keeps it centred. */
+          '--dock-band-left': `${freeBand === null ? width / 2 : freeBand.left}px`,
+          '--dock-band-right': `${bandRight}px`,
         } as CSSProperties
       }
       onPointerOver={(): void => {

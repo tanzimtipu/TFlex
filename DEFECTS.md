@@ -5,6 +5,209 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-332: Phase 36 full dev suite -- the edit-box overlay does not move on drag while textbox/callout/note do (phase25 C3)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf`.
+2. Run `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js e2e/phase25_text_panel_float.spec.cjs -g "C3 text element move integrity"`.
+3. Read the `[P25] C3-edit` log line (the edit-box drag) and compare it with the `[P25] C3-ann` lines for the textbox/callout/note.
+
+Expected: the edit box moves with the mouse (delta ~{x:120,y:100}), exactly like the other three annotation kinds in the same test.
+Actual: the edit box does not move at all -- `delta {x:0,y:0}`, `pre == post == settled {x:524.3,y:700.3,w:200,h:70}` -- while the textbox (`delta {x:160,y:130}`), callout (`{x:90,y:120}`) and note (`{x:70,y:90}`) all move correctly. Reproduced twice: in the full dev-suite shard 2/4 run and in an isolated re-run.
+
+Severity: MEDIUM -- the edit-layer text box cannot be repositioned by dragging, while the other annotation kinds can; the box is still editable, so it degrades rather than blocks.
+
+Evidence / command output:
+- `e2e/dev_suite_shard2.log` (shard 2/4: 118 passed, 1 failed) and `e2e/rerun_phase25_c3.log` (isolated re-run, same failure). Raw: `[P25] C3-edit {"panelDuringEdit":{"open":true,"mode":"text"},"kind":"editbox","dx":120,"dy":100,"pre":{"x":524.3,"y":700.3,"w":200,"h":70},"post":{"x":524.3,"y":700.3,"w":200,"h":70},"settled":{"x":524.3,"y":700.3,"w":200,"h":70},"delta":{"x":0,"y":0},"count":1,"engineBefore":1,"engineAfter":1}`; failure at `e2e/phase25_text_panel_float.spec.cjs:581` `edit box: x delta 0 vs mouse 120`.
+
+History:
+- qa: opened (found during the DEF-327..331 full dev-suite run; outside the five-defect scope, recorded for the orchestrator's disposition)
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0). `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js e2e/phase25_text_panel_float.spec.cjs -g "C3 text element move integrity"` -> 1 passed. Raw `[P25] C3-edit {"panelDuringEdit":{"open":true,"mode":"text"},"kind":"editbox","dx":120,"dy":100,"pre":{"x":524.3,"y":700.3,"w":200,"h":70},"post":{"x":644.3,"y":800.3,"w":200,"h":70},"settled":{"x":644.3,"y":800.3,"w":200,"h":70},"delta":{"x":120,"y":100},"count":1,"engineBefore":1,"engineAfter":1}` -- the edit box now moves with the mouse, matching the other three kinds in the same test (textbox `{x:160,y:130}`, callout `{x:90,y:120}`, note `{x:70,y:90}`). Root cause was the two-row dock covering the pointer (DEF-330); with the dock single-row the drag reaches the box.
+
+## DEF-331: Phase 36 Escape with the Command Palette open over a dialog closes the dialog and leaves the palette
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-082)
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf`.
+2. Press `Ctrl+3` (REVIEW) and click the dock's `stamp` verb (the Stamp dialog opens).
+3. Press `Ctrl+K` (the palette opens over the still-open dialog).
+4. Press Escape once and check which surfaces remain.
+
+Expected: the topmost surface (the palette) closes on Escape, or both close; the palette's own key handler is bound while it is open.
+Actual: the Stamp dialog closed and the palette stayed open; a second Escape closed the palette. Both surfaces are `aria-modal="true"` while open, so the window carried two stacked modal layers and Escape addressed the lower one.
+
+Severity: LOW -- recoverable (a second Escape still closes the palette), but the top-most surface must own the key.
+
+History:
+- qa: opened (Phase 36 gate; disposition of ADV-082)
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/def327_331_retest.spec.cjs`. `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js e2e/def327_331_retest.spec.cjs -g DEF-331` -> 1 passed. Raw: stamp dialog open=1; palette over dialog `{"palette":true,"dialog":true}`; after first Escape `{"palette":false,"dialog":true}` (the palette, the top-most surface, closed and the dialog survived); after second Escape `{"palette":false,"dialog":false}`. The palette's Escape is now capture-phase with `stopPropagation`, so the dialog first registered on `window` no longer steals the press.
+
+## DEF-330: Phase 36 at the default window three of the four stage docks still wrap onto two rows
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-081)
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf` at the default window (measured `innerWidth=1442`, `innerHeight=903`; canvas host 914px).
+2. Walk `Ctrl+1..4` and measure each `.action-dock` rect, `data-dock-band`, `data-dock-free-band`, `data-dock-icon-only`, the label count and the number of distinct verb rows, plus both floating pill rects.
+3. Inspect `screenshots/phase36-def330-default.png` (DELIVER at the default window).
+
+Expected: one row of labelled verbs per stage, clear of the page/zoom pills.
+Actual: PAGES (6 labels), EDIT (6 labels) and DELIVER (5 labels) each WRAP to two rows; only REVIEW (4 labels) is one row. Raw at the default window: PAGES/EDIT/DELIVER dock 457x87px, verbs on 2 distinct row tops (811 and 850); REVIEW dock 215x48px, 1 row. DELIVER keeps all five labels but "Export to Word (.docx)" sits alone on the second row (screenshot). `data-dock-icon-only="false"` and `data-dock-free-band="494"` for all four, `data-dock-band="422"`, `max-width: 493.75px`. Pill clearance is ~26px each side (dock 457..914, page pill right 430, zoom pill left 940) -- no pill is touched. Root cause: the dock's shrink-to-fit width is capped at 457px because `left: 50%` leaves only the host's right half (457px) available, so any labelled set wider than ~441px content wraps even though `max-width` is 493.75px; DELIVER's real label widths (~512px with gaps and padding) and PAGES/EDIT (~478px) exceed it. The fix restored the PAGES/EDIT labels and moved the dock into the pill-free band, but the single-row requirement at the app's own default size is still not met.
+
+Severity: MEDIUM -- at the app's normal window size three of the four stage docks render as a two-tier block instead of the designed single row; the verbs remain clickable, so it degrades rather than blocks.
+
+Screenshot: screenshots/phase36-def330-default.png (DELIVER: first row of four labelled verbs, "Export to Word (.docx)" alone on a second row)
+
+History:
+- qa: opened (Phase 36 gate; disposition of ADV-081)
+- qa: retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/def327_331_retest.spec.cjs`. `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js e2e/def327_331_retest.spec.cjs -g DEF-330` -> the default-window test FAILED: `pages single row / Expected: < 60 / Received: 87` at the dock-height assertion; raw logged above. `-g narrow-width` -> 1 passed (icon-only, 0 labels, `data-dock-lift="true"`, `data-dock-compact="true"`, `...` overflow at 760/640; canvas host 372 at 900, 232 at 760, 112 at 640), so the narrow-width behaviour is unchanged. Remains OPEN -- the default-window single-row criterion is not achieved.
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0). `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js e2e/def327_331_retest.spec.cjs -g DEF-330` -> 2 passed. Default window inner=1442x903, hostWidth=914, band=494, freeBand=494; all four stages LABELLED, single row (verbRows=1, dockHeight=48): PAGES dock 450px / 6 labels / clearPage 30 / clearZoom 30; EDIT dock 453px / 6 labels / clearPage 28 / clearZoom 28; REVIEW dock 196px / 4 labels / clearPage 157 / clearZoom 157; DELIVER dock 490px / 5 labels / clearPage 10 / clearZoom 10. Narrow widths unchanged: at 900/760/640 all four icon-only, 0 labels, lift=true, compact=true (overflow 1 at 760 for pages/edit, 1 for all at 640). Visual judgement of the fresh `screenshots/phase36-def330-default.png` (DELIVER): the five labels render on one row, fully legible, evenly spaced, inside the frosted pill between the page and zoom pills; the 4px 7px verb padding / 3px group gap trim reads clean and consistent with the app's design language, not cramped or off-spec. The 10px pill clearance each side is tight but no pill is touched.
+
+## DEF-329: Phase 36 the Inspector's Rotation value showed the raw quarter-turn index with a degree sign
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-080)
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf`.
+2. Press `Ctrl+1` (PAGES) and rotate page 1 (Rotate CW).
+3. Read the Inspector's Rotation row (`[data-inspector-value="rotation"]`) and the rendered page element's class.
+
+Expected: `90°` for one rotation (`EngineState.rotations` is a quarter-turn counter and every other consumer multiplies by 90: `PageView`'s `pdf-page-rot-N` class, `SideRail`'s thumbnails).
+Actual: the row showed `1°` while the page element was `pdf-page pdf-page-rot-90`; a second rotation showed `2°`, so the read-only value was wrong by a factor of 90.
+
+Severity: MEDIUM -- the single read-only rotation value the PAGES inspector exposes was misinformation.
+
+History:
+- qa: opened (Phase 36 gate; disposition of ADV-080)
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/def327_331_retest.spec.cjs`. `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js e2e/def327_331_retest.spec.cjs -g DEF-329` -> 1 passed. Raw: before `rotation="0°" page1="pdf-page"`; after Rotate CW `rotation="90°" page1="pdf-page pdf-page-rot-90"`; after a second Rotate CW `rotation="180°"`. The value now tracks the page's actual rotation.
+
+## DEF-328: Phase 36 the EDIT stage's Review suspects button was enabled before any OCR run and was a silent no-op
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-079)
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf` (no OCR run).
+2. Press `Ctrl+2` (EDIT) and read `[data-context-panel-action="suspects"]` (disabled state, `title`).
+3. Click it and check for `[data-ocr-suspects-panel]` and toasts.
+
+Expected: disabled with the same reason the palette's `ocrSuspects` row shows ("Run Recognize text first"), or the click fails loud.
+Actual: the button looked and behaved as available, but clicking it produced no suspects panel and no toast (`onOpenOcrSuspects` returns early until a run has completed).
+
+Severity: MEDIUM -- an enabled no-op (AGENTS.md fail-loud violation); the run is the button's only precondition.
+
+History:
+- qa: opened (Phase 36 gate; disposition of ADV-079)
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/def327_331_retest.spec.cjs`. `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js e2e/def327_331_retest.spec.cjs -g DEF-328` -> 1 passed. Raw: before OCR `{"disabled":true,"title":"Run Recognize text first"}`; after a real OCR run (palette `recognizeText` -> `currentPage` -> confirm, suspects summary "0 low-confidence words") `{"disabled":false,"title":null}`, and clicking the EDIT entry reopened `[data-ocr-suspects-panel]`. The button is now gated exactly like its palette row.
+
+## DEF-327: Phase 36 the Command Palette showed several commands as enabled although they cannot run, and running them was a silent no-op
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-078)
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf` (fresh: `canUndo:false`, `canRedo:false`, Edit mode off, Multi Mode off).
+2. From `Ctrl+K`, search and run each of `Undo`, `Redo`, `Add a text box`, `Edit text`, `Edit images`, `Open a PDF into a pane`, `Clear a pane`; record `data-palette-disabled` and `title`, click, and diff state (modal/backdrop count, toasts, `[data-edit-toolbar]`, `[data-multi-mode="true"]`).
+
+Expected: a row whose command cannot run is disabled with the reason (as the palette already did for `batchOcr`/`ocrSuspects`/`panePick`), or running it fails loud.
+Actual: all seven rows rendered `data-palette-disabled="false"` with their normal description as the tooltip; clicking each closed the palette and produced NO toast, NO dialog and NO state change (`undo`/`redo` early-return on an empty stack; the edit-layer handlers are `edit?.onAction(...)` with `edit === null`; `paneOpen`/`paneClear` are guarded by `if (multiMode.enabled)`).
+
+Severity: MEDIUM -- seven enabled no-ops on the primary command surface (AGENTS.md fail-loud violation).
+
+History:
+- qa: opened (Phase 36 gate; disposition of ADV-078)
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/def327_331_retest.spec.cjs`. `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js e2e/def327_331_retest.spec.cjs -g DEF-327` -> 2 passed. Raw rows all `disabled:"true"` with the dock's copy: `undo` "Nothing to undo"; `redo` "Nothing to redo"; `editText`/`editTextBox`/`editImage` "Turn on Edit content first"; `paneOpen`/`paneClear` "Turn on Multi Mode first". A dispatched click on the disabled `undo` row left the palette open with 0 modals. A runnable row still runs (`stageDeliver` -> `data-context-panel-stage="deliver"`). A PINNED gated command is not dead: `dockPins:["undo"]` rendered `[data-dock-pin="undo"]` disabled on an empty stack, enabled once page 1 was rotated (`pdf-page pdf-page-rot-90`), and clicking it undid the rotation (page back to `pdf-page`).
+
+## DEF-326: Phase 24 C2 — after save/reopen a Times/bold sticky note shows Courier in the TextPropertiesPanel although the engine style is Times
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36 (3A full-suite triage)
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf`.
+2. Place a note, set its font to `Times` and bold `true` in the panel Text properties, Save As to a temp file, close the tab and reopen the saved PDF.
+3. Click the reopened note (`selectAnnOverlay` -> `.ann-note[data-kind="note"]`) and read `[data-text-panel]`'s font.
+
+Expected: the reopened note's panel shows `Times` + bold `true`, matching the persisted engine style.
+Actual: the engine annotation model still carries `style.font === 'Times'` (the assertion at phase24 line 400 passes), but the TextPropertiesPanel reports `font: "Courier"` (`{"mode":"annotation","font":"Courier","size":"12","bold":true,...}`), so the canonical style editor misrepresents the persisted font.
+
+Severity: MEDIUM — the panel is the only style editor for the annotation; a font that silently displays as Courier can be re-applied on the next edit, changing the document's appearance.
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase24_annotation_styles.spec.cjs` -> `C2 save + reopen round-trip (textbox full, callout/note font+bold)` fails: `Error: note panel font=Times / Expected: "Times" / Received: "Courier"` at `e2e/phase24_annotation_styles.spec.cjs:427`; log `[P24] C2-panel-note {"mode":"annotation","font":"Courier","size":"12","bold":true,...}`. The textbox (`font=Times`) and callout (`font=Courier`) panel round-trips both pass, so the mismatch is note-specific.
+
+History:
+- qa: opened (Phase 36 3A full-suite triage; the drive path was first migrated off the retired in-canvas editor, then this residual product mismatch remained)
+- qa: CLOSED — retested on the rebuilt app (`npm.cmd run build`, exit 0). `npm.cmd run test:e2e -- e2e/phase24_annotation_styles.spec.cjs --grep "C2 save"` -> 1 passed; `[P24] C2-reopened` engine note `{"kind":"note","text":"P24-NT","style":{"bold":true,"font":"Times"}}`; `[P24] C2-panel-note {"mode":"annotation","font":"Times","size":"12","bold":true,...}`. The reopened note is selected by a real click (the test asserts `active && panel`), so nothing intercepts it, and the panel shows the engine's Times. Unit `test/unit/renderer/def326_reopenedNoteStyle.test.tsx` -> 5 passed (the comment card flips above the selection when the below band would cover a neighbouring annotation).
+
+## DEF-325: Phase 36 at the 640px minimum width the Inspector overlays the REVIEW annotation flyout's tool-dropdown toggle, so it cannot be clicked
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36 (3A full-suite triage)
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper, open `report.pdf`, and resize the window to 640x600.
+2. Switch to the REVIEW stage (`Ctrl+3`) and open the Annotate flyout (the REVIEW dock's `annotate` verb).
+3. Click `[data-ann-dropdown-toggle]` (the "All annotation tools" chevron, which holds every tool outside the visible five).
+
+Expected: the dropdown toggle is hit-testable and opens `[data-ann-dropdown-menu]` inside the viewport (DEF-229's contract).
+Actual: the click is intercepted by the Inspector — the button resolves but Playwright reports `<div class="glass-sidebar-body inspector-body">…</div> from <div class="inspector" data-inspector data-inspector-stage="review">…</div> subtree intercepts pointer events`, and the click times out after 30s. The 264px default-open Inspector overlays the flyout toggle at 640px (same class as DEF-319's zoom-pill coverage).
+
+Severity: MEDIUM — at the supported minimum window width half of the annotation tools (all but the visible five) are unreachable from the REVIEW flyout; the palette remains a fallback, so it degrades rather than blocks.
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/retests/def229_retest.spec.cjs` -> `DEF-229: group reachable + clickable at 640; menu inside viewport; titlebar usable` fails at `e2e/retests/def229_retest.spec.cjs:76` with the Inspector interception log above; the earlier group-reachability and Highlight-arm assertions pass.
+
+History:
+- qa: opened (Phase 36 3A full-suite triage)
+- qa: CLOSED — retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/def315_324_325_retest.spec.cjs`. `npm.cmd run test:e2e -- e2e/def315_324_325_retest.spec.cjs -g DEF-325` -> 1 passed. At 1440/1100/900/760/640 the toggle resolves to itself (`resolves:true`) and sits inside the canvas overlay (640: toggle 306..334, canvas 264..376, Inspector 376..640); a real click opened `[data-ann-dropdown-menu]` inside the viewport at every width (640 menu 306..334 x 787..819). Unit `test/unit/renderer/def325_flyoutContainment.test.tsx` -> 7 passed.
+
+## DEF-324: Phase 36 — at the 640px minimum window width the title-bar tab strip collapses to 15px, hiding every tab title (DEF-244/245 regression)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36 (3A full-suite triage)
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf` so one document tab exists.
+2. Resize the window to 640x800 (the app's documented `MIN_WINDOW_WIDTH` is 640) and read `.tab-area` / `.tab-list` / `.tab-title` geometry.
+
+Expected: at the 640px minimum the tab strip keeps a usable width and the first/active tab title is visible (the DEF-244/245 responsive contract, `styles.css` lines 1692-1736).
+Actual: `innerW=640` but `.tab-area` clientWidth = **15px** while the first tab is 227px wide, so `visibleTitleW = 0` — the strip is collapsed and no tab title (nor the active tab) is reachable. The Phase-36 title-bar additions (File label, quick file actions, print/theme/gear/update/Multi-Mode controls) consume the widths the DEF-244 rules were tuned for.
+
+Severity: MEDIUM — at the supported minimum window width opened documents become effectively unidentifiable/unswitchable from the tab strip; keyboard/menu paths still work, so it degrades rather than blocks.
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/retests/def_243_246_retest.spec.cjs` -> both `DEF-244: 640/820/1440 tab-area width...` and `DEF-245: active tab scrolled into view...` fail at width 640. Raw: `[def244|640] {"innerW":640,"tabAreaW":15,"tabListClientW":15,"tabListScrollW":265,"listRect":{"left":266,"right":281},"firstTabRect":{"left":270,"right":497,"w":227},"titleW":180,"visibleTitleW":0,...}`; `[def245|640-switch-first] {"scrollLeft":0,"clientW":15,"scrollW":495,"visibleTitleW":0,"startVisible":true}`.
+
+History:
+- qa: opened (Phase 36 3A full-suite triage; the 820/1440 assertions pass, so the break is the 640 band)
+- qa: CLOSED — retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/def315_324_325_retest.spec.cjs`. `npm.cmd run test:e2e -- e2e/def315_324_325_retest.spec.cjs -g DEF-324` -> 1 passed. Raw `[DEF-324|w]` tab-area widths: 1440=686, 1100=346, 900=306, 760=166, 640=129; active-title visible width 165/165/165/149/112 (readable at every width, was 0). Open/Save/Save As/Print/theme/gear/Multi Mode all hit-testable at all five. The tab close and `+` are hit-testable at 900/1100/1440 without scrolling; at 760/640 they sit past the strip's visible viewport (the strip is a horizontal scroller, DEF-245) and are hit-testable once the strip scrolls them in — proven by a real click at 640: `[DEF-324-click|640] {"before":1,"afterNew":2,"afterClose":1}`. Unit `test/unit/renderer/def324_titlebarResponsive.test.ts` -> 8 passed.
+
 ## DEF-323: Phase 36 Multi Mode — each pane's `.canvas-overlay` is inset by the Inspector a SECOND time, so pane B's pills are pushed into the divider region and the shared Action Dock covers them
 
 - Status: CLOSED
@@ -196,7 +399,7 @@ History:
 
 ## DEF-316: Phase 36 chunk 3 retired the command row without migrating the legacy e2e specs — the full suite is red
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: HIGH
 - Found by: qa
 - Phase: 36
@@ -227,9 +430,11 @@ History:
 
 - qa: final-gate re-run (Phase 36 chunk 7/8 + LAYOUT PASS). The full e2e suite (542 tests, installed/release excluded) is STILL RED: 356 passed / 161 failed / 2 skipped / 13 did not run across three shards (36.3m + 39.4m + 59.4m). The migration is far from complete — ~110 spec files still drive retired/moved surfaces (the four `data-tools-*` patterns, `tfStagePanel`, `[data-shared-toolbar]`, `[data-toolbar-*]`, `[data-unified-toolbar]`, `[data-rail-collapse]`, `[data-ruler-page]`, `[data-ann-dropdown-toggle]`, `[aria-label="Highlight"]`). The Phase 36 specs themselves are green except `phase36_chunk3_dock_gate` P36-C3-N (blocked by DEF-322). Status stays OPEN; the migration needs its own dispatch.
 
+- qa: CLOSED — the migration is complete and the dev suite is green. `npm.cmd run build` exit 0; `npm.cmd run test:e2e -- --config=e2e/playwright.dev.config.js` -> 470 passed / 3 skipped / 0 failed (1.3h). The 3 skips are the pre-existing `test.skip` T1/T2/T3 in `e2e/retests/def_211_ghost_dialog_retest.spec.cjs`. The installed/release specs are excluded by FILENAME via `e2e/playwright.dev.config.js` (`testIgnore` regexes `e2e/installed/**`, `e2e/archived/**`, `release_1[0-9]+.*_installed.*\.spec\.cjs$`); `--list` confirms 0 installed specs remain. Grep for the retired surfaces (`data-tools-badge|data-tools-palette|data-tools-layout|tfStagePanel|data-shared-toolbar|data-unified-toolbar|data-toolbar-edit-toggle|data-toolbar-rotate-cw`) across active specs returns only comments, the chunk-3/chunk-4-6 retirement proofs (`phase36_chunk3_dock_gate`, `phase36_chunk456_gate` assert the controls are ABSENT), and the frozen-artifact release spec `def214_reverify_v1170` (pinned to the pre-Phase-36 packaged exe, deliberately not migrated). `data-rail-collapse`/`data-ruler-page` are live (`ContextPanel.tsx:425`, `SideRail.tsx:233/1097`).
+
 ## DEF-315: Phase 36 Action Dock still covers the zoom pill's Zoom out at narrow window widths (<= ~890px)
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM
 - Found by: qa
 - Phase: 36
@@ -251,6 +456,7 @@ Evidence / command output:
 
 History:
 - qa: opened (found during the DEF-313 retest width sweep)
+- qa: CLOSED — retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/def315_324_325_retest.spec.cjs`. `npm.cmd run test:e2e -- e2e/def315_324_325_retest.spec.cjs -g DEF-315` -> 1 passed. At 1440/1100/900/760/640 `covered=[]` (every `[data-canvas-pills]` control is the top element at its own centre) and `dockHitsPage=false dockHitsZoom=false`; the dock lifts above the pills as the canvas narrows (640: dock 292..348 x 697..791, page pill 276..381 x 847..888, zoom pill 195..364 x 799..840). Unit `test/unit/renderer/def315_dockPillClearance.test.tsx` -> 42 passed.
 
 ## DEF-314: Phase 36 EDIT dock's primary is disabled exactly when Edit mode is OFF — Edit content unreachable in single mode
 

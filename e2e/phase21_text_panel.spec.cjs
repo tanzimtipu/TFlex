@@ -516,7 +516,14 @@ const RETIRED_STYLE = '.edit-inline-field-font, .edit-inline-field-size, .edit-i
 async function dragOnPage(win, fx, fy) {
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
-  const x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 200));
+  // Keep the drag clear of the floating Text-properties panel (Phase 26),
+  // which overlays the page's left edge and would swallow the drag start.
+  const panelRight = await win.evaluate(() => {
+    const p = document.querySelector('[data-text-panel]');
+    return p ? p.getBoundingClientRect().right : 0;
+  });
+  let x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 200));
+  x = Math.min(Math.max(x, panelRight + 40), vp.w - 200);
   const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * fy, vp.h - 200));
   await win.mouse.move(x, y);
   await win.mouse.down();

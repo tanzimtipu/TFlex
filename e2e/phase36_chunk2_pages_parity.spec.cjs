@@ -570,9 +570,11 @@ test('P36C2-C hover verbs: reveal, right action for the right page, no select/ju
 });
 
 // ---------------------------------------------------------------------------
-// D. Panel-only — the right-click menu's seven items.
+// D. Panel-only — the right-click menu's six items (section 3A ruling 2:
+//    Renumber… was REMOVED from the menu; its single home is the Inspector's
+//    `Label · renumber…`).
 // ---------------------------------------------------------------------------
-test('P36C2-D right-click menu: seven items, each does what its label promises', async () => {
+test('P36C2-D right-click menu: six items, each does what its label promises', async () => {
   
   // No-outline fixture so the menu gestures are not blocked by the DEF-310
   // outline overlay.
@@ -581,7 +583,7 @@ test('P36C2-D right-click menu: seven items, each does what its label promises',
   const menu = await openPageMenu(2);
   expect(await menu.getAttribute('data-page')).toBe('2');
   const labels = await win.$$eval('[data-context-menu] [data-menu-item]', (els) => els.map((e) => e.textContent.trim()));
-  expect(labels).toEqual(['Rotate CW', 'Rotate CCW', 'Extract…', 'Insert blank after', 'Replace…', 'Renumber…', 'Delete…']);
+  expect(labels).toEqual(['Rotate CW', 'Rotate CCW', 'Extract…', 'Insert blank after', 'Replace…', 'Delete…']);
   console.log(`[P36C2-D] menu items: ${JSON.stringify(labels)}`);
 
   // "Insert blank after" is IMMEDIATE: count +1, a new blank at that position,
@@ -618,7 +620,7 @@ test('P36C2-D right-click menu: seven items, each does what its label promises',
     .toContain('thumb-rot-90');
   console.log('[P36C2-D] Rotate CW item rotated page 4');
 
-  // Extract… / Replace… / Renumber… open their EXISTING dialogs.
+  // Extract… / Replace… open their EXISTING dialogs.
   await openPageMenu(4);
   await win.locator('[data-context-menu] [data-menu-item="extract"]').click();
   await win.waitForSelector('#split-dialog-title', { timeout: 8000 });
@@ -631,11 +633,18 @@ test('P36C2-D right-click menu: seven items, each does what its label promises',
   await closeDialog('[data-replace-pages-dialog]');
   console.log('[P36C2-D] Replace… opened the replace dialog');
 
+  // Section 3A ruling 2 — Renumber… is NOT a menu item; the menu stays the
+  // page-verb shortcut. Renumber's single home is the Inspector's
+  // `Label · renumber…`, which opens the SAME existing dialog.
   await openPageMenu(4);
-  await win.locator('[data-context-menu] [data-menu-item="renumber"]').click();
+  expect(await win.locator('[data-context-menu] [data-menu-item="renumber"]').count(), 'no Renumber… menu item').toBe(0);
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(400);
+  expect(await win.locator('[data-context-menu]').count(), 'Escape closed the menu').toBe(0);
+  await win.locator('[data-inspector] [data-inspector-action="renumber"]').click();
   await win.waitForSelector('[data-renumber-pages-dialog]', { timeout: 8000 });
   await closeDialog('[data-renumber-pages-dialog]');
-  console.log('[P36C2-D] Renumber… opened the renumber dialog');
+  console.log('[P36C2-D] Renumber is the Inspector Label · renumber… (no menu item); dialog opened');
 
   // Selecting an item closes the menu.
   expect(await win.locator('[data-context-menu]').count()).toBe(0);

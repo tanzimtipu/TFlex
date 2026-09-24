@@ -22,7 +22,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool, openSamplePath, scrollToPage, sampleCanvasPageRect } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, openSamplePath, scrollToPage, sampleCanvasPageRect, textPanelRight } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -60,7 +60,10 @@ async function openReport(app, win) {
 async function dragOnPage(win, fx, fy, dxPx = 190, dyPx = 60) {
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
-  const x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 240));
+  // Phase 36 — dodge the floating TextPropertiesPanel card (it covers the left
+  // edge of the canvas; a drag starting under it never reaches the page).
+  const avoidX = (await textPanelRight(win)) + 30;
+  const x = Math.max(40, Math.min(Math.max(pg.x + pg.width * fx, avoidX), vp.w - 240));
   const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * fy, vp.h - 110));
   await win.mouse.move(x, y);
   await win.mouse.down();

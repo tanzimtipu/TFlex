@@ -1,0 +1,19 @@
+{
+  "formsDock": {
+    "flatten": {
+      "disabled": false,
+      "title": "Bake filled form values into the page content."
+    },
+    "forms": "not-on-dock"
+  },
+  "flattenDialog": [
+    "Flatten form fields"
+  ],
+  "formsRow": {
+    "disabled": "false",
+    "title": "Fill AcroForm fields. Flatten when finished."
+  },
+  "formsDialog": [
+    "Flatten form fields"
+  ]
+}

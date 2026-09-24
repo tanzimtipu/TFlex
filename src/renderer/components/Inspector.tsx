@@ -12,26 +12,23 @@
 //     selectors (`[data-text-panel]`, `[data-txt-font]`, ...) and its specs
 //     keep working. The inspector's stylesheet neutralises its floating-card
 //     geometry while it is mounted inline (see `.inspector .text-props-float`).
-//   - `OcrSuspectsPanel` (components/OcrSuspectsPanel.tsx) is re-parented into
-//     the EDIT stage when the host supplies suspects; its `[data-ocr-suspects-panel]`
-//     contract is untouched.
 //   - `AnnotationsPanel` (annotations/AnnotationsPanel.tsx) is re-parented into
 //     the REVIEW stage's document view; its `[data-annotation-panel]` contract
-//     is untouched.
+//     is untouched. The Inspector only REFERENCES that list (a count + the
+//     jump), never a second copy. The OCR suspects view is entered from the
+//     EDIT panel alone (section 3A ruling 4), so the Inspector mounts no copy.
 //
 // Sections are resolved by the pure `inspectorSections(stage, kind)` so the
 // per-stage/per-selection contract is unit-testable without a DOM.
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { ChevronDown, Crop, Hash, RotateCw, X } from 'lucide-react';
+import { Hash, X } from 'lucide-react';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
-import { OcrSuspectsPanel } from './OcrSuspectsPanel';
 import { TextPropertiesPanel } from '../edit/TextPropertiesPanel';
 import type { TextPropertiesPanelProps } from '../edit/TextPropertiesPanel';
 import { formatBytes } from '../utils/formatBytes';
-import type { Annotation, AnnotationPatch } from '../annotations/model';
-import type { OcrSuspect } from '../../shared/types';
+import type { Annotation } from '../annotations/model';
 import type { TextBoxStylePatch } from '../../shared/types';
 import type { TextStyleValues } from '../edit/textStyle';
 import type { Stage } from '../state/stages';
@@ -75,14 +72,20 @@ export type InspectorSectionId =
   | 'document'
   | 'text'
   | 'cropbox'
-  | 'ocr'
   | 'signature'
   | 'comments'
   | 'annotations'
   | 'export';
 
 /** The sections a (stage, selection) pair renders, in order. Pure, so the
- *  per-stage / per-selection contract is pinned by tests without a DOM. */
+ *  per-stage / per-selection contract is pinned by tests without a DOM.
+ *
+ *  Section 3A surface discipline:
+ *   - The EDIT/page section is the CropBox ONLY (ruling 4: the OCR status is
+ *     the EDIT ContextPanel's Recognition section, never repeated here).
+ *   - The PAGES page section carries read-only Size / Rotation, the Label
+ *     renumber affordance, and the annotations jump — no Crop row (ruling 3)
+ *     and no rotate affordance (ruling 1). */
 export function inspectorSections(
   stage: Stage,
   kind: InspectorSelectionKind,
@@ -92,7 +95,7 @@ export function inspectorSections(
       return kind === 'page' ? ['page', 'on-page', 'document'] : ['document'];
     case 'edit':
       if (kind === 'text') return ['text'];
-      if (kind === 'page') return ['cropbox', 'ocr'];
+      if (kind === 'page') return ['cropbox'];
       return ['document'];
     case 'review':
       // A selected signature inspects the signature; the document view
@@ -115,6 +118,17 @@ export function inspectorSelectionLabel(selection: InspectorSelection): string {
     case 'none':
       return selection.name ?? 'Document';
   }
+}
+
+/** DEF-329 — the PAGES Rotation row's text. `EngineState.rotations` is a
+ *  QUARTER-TURN index (`(rot + delta) % 4`, see `stubEngine`), so the degrees
+ *  every other consumer shows are `index * 90` (`PageView`'s `pdf-page-rot-N`
+ *  class, `SideRail`'s thumbnails). The raw index with a degree sign ("1°" for
+ *  a 90° page) was misinformation; the read-only value must be the real angle. */
+export function rotationDegreesText(rotation: number | null): string {
+  if (rotation === null || !Number.isFinite(rotation)) return '\u2014';
+  const quarter = ((Math.round(rotation) % 4) + 4) % 4;
+  return `${quarter * 90}\u00b0`;
 }
 
 /** Phase 36 (chunk 6) — resolve the Inspector's LIVE selection from the host's
@@ -208,40 +222,30 @@ export interface InspectorProps {
   cropBox?: { x: number; y: number; width: number; height: number } | null;
   annotationCount?: number;
   formFieldCount?: number;
-  fileSize?: number | null;
+fileSize?: number | null;
   documentTitle?: string | null;
-  /** The page's inline rotate affordance. */
-  onRotatePage?: () => void;
-  /** The `renumber...` affordance (opens the existing dialog). */
+  /** Section 3A ruling 5: File size is a READ-ONLY value here; the Optimize /
+   *  Audit affordances live ONLY in the DELIVER stage (the dock + the panel's
+   *  pre-flight), so the Inspector wires no handler for them. */
+  /** The `renumber…` affordance (opens the existing dialog). The Inspector's
+   *  `Label · renumber…` is its ONLY home (ruling 2). */
   onRenumberPages?: () => void;
-  /** The `crop...` affordance (opens the existing dialog). */
-  onCropPages?: () => void;
-  /** The document-size disclosure's two entries. */
-  onOptimize?: () => void;
-  onAudit?: () => void;
-  onExportPages?: () => void;
-  onRecognizeText?: () => void;
+  /** Section 3A ruling 6: the "Annotations: N" count is read-only but JUMPS
+   *  to the REVIEW stage when clicked — the host switches the focused pane's
+   *  stage (`stageReducer` `set`). The ONE documented exception to the
+   *  no-affordance rule for inspector values. */
+  onJumpToReview?: () => void;
 
   // --- EDIT ------------------------------------------------------------
   /** The re-parented Phase-21/25 text-properties component. */
   textPanel?: TextPropertiesPanelProps | null;
-  /** The OCR status line for the EDIT stage's page view. */
-  ocrStatus?: string | null;
-  /** The re-parented Phase-11 OCR-suspects component (EDIT stage). */
-  ocrSuspects?: {
-    suspects: readonly OcrSuspect[];
-    hasRun: boolean;
-    onNavigate: (suspect: OcrSuspect) => void;
-    onClose: () => void;
-  } | null;
 
   // --- REVIEW ----------------------------------------------------------
   signatureStyle?: string | null;
   signatureHint?: string | null;
+  /** The annotations list, REFERENCED here as a read-only count (the list's one
+   *  home is the REVIEW panel; section 3A ruling 6). */
   annotations?: readonly Annotation[];
-  onAnnotationJump?: (page: number, id: string) => void;
-  onAnnotationEdit?: (id: string, patch: AnnotationPatch) => void;
-  onAnnotationDelete?: (id: string) => void;
   onExportComments?: () => void;
   onImportComments?: () => void;
 
@@ -319,18 +323,11 @@ export function Inspector(props: InspectorProps): ReactElement {
     cropBox = null,
     annotationCount = 0,
     formFieldCount = 0,
-    fileSize = null,
+fileSize = null,
     documentTitle = null,
-    onRotatePage,
     onRenumberPages,
-    onCropPages,
-    onOptimize,
-    onAudit,
-    onExportPages,
-    onRecognizeText,
+    onJumpToReview,
     textPanel = null,
-    ocrStatus = null,
-    ocrSuspects = null,
     signatureStyle = null,
     signatureHint = null,
     annotations = [],
@@ -342,10 +339,6 @@ export function Inspector(props: InspectorProps): ReactElement {
     onExport,
   } = props;
 
-  // The document-size `?` disclosure (Optimize / Audit space). Local UI
-  // state only - the actions themselves are the host's existing dialogs.
-  const [docMenuOpen, setDocMenuOpen] = useState(false);
-
   const sections = useMemo(
     () => inspectorSections(stage, selection.kind),
     [stage, selection.kind],
@@ -355,25 +348,20 @@ export function Inspector(props: InspectorProps): ReactElement {
     pageSize === null
       ? '\u2014'
       : `${Math.round(pageSize.widthPt)} x ${Math.round(pageSize.heightPt)} pt`;
-  const rotationText = pageRotation === null ? '\u2014' : `${pageRotation}\u00b0`;
+  const rotationText = rotationDegreesText(pageRotation);
   const fileSizeText = fileSize === null ? '\u2014' : formatBytes(fileSize);
 
-  /** The page (PAGES) section: size / rotation / label / crop. */
+/** The page (PAGES) section: read-only Size / Rotation + the Label
+   *  renumber affordance. Section 3A: Rotation is a VALUE (no ↻ — ruling 1),
+   *  there is no Crop row (ruling 3), and Label · renumber… is its only home
+   *  (ruling 2). */
   const renderPageSection = (): ReactElement => (
     <Section id="page" title="Page">
       <Row id="size" label="Size">
         {pageSizeText}
       </Row>
       <Row id="rotation" label="Rotation">
-        <span className="inspector-inline">
-          <span data-inspector-value="rotation">{rotationText}</span>
-          <Action
-            id="rotate"
-            label="Rotate"
-            onClick={onRotatePage}
-            icon={<RotateCw size={12} aria-hidden />}
-          />
-        </span>
+        <span data-inspector-value="rotation">{rotationText}</span>
       </Row>
       <Row id="label" label="Label">
         <span className="inspector-inline">
@@ -386,21 +374,25 @@ export function Inspector(props: InspectorProps): ReactElement {
           />
         </span>
       </Row>
-      <Row id="crop" label="Crop">
-        <Action
-          id="crop"
-          label={'crop\u2026'}
-          onClick={onCropPages}
-          icon={<Crop size={12} aria-hidden />}
-        />
-      </Row>
     </Section>
   );
-  /** PAGES - the counts that apply to the selected page. */
+  /** PAGES - the counts that apply to the selected page. The annotations
+   *  count is read-only but JUMPS to the REVIEW stage on click (section 3A
+   *  ruling 6 — the ONE documented inspector-value exception); Form fields
+   *  stays a plain value. */
   const renderOnPageSection = (): ReactElement => (
     <Section id="on-page" title="On this page">
       <Row id="annotations" label="Annotations">
-        {annotationCount}
+        <button
+          type="button"
+          className="inspector-link"
+          data-inspector-action="jump-to-review"
+          onClick={onJumpToReview}
+          disabled={onJumpToReview === undefined}
+          title="Show the annotations list in the REVIEW panel"
+        >
+          <span data-inspector-annotations-count>{annotationCount}</span>
+        </button>
       </Row>
       <Row id="form-fields" label="Form fields">
         {formFieldCount}
@@ -408,7 +400,9 @@ export function Inspector(props: InspectorProps): ReactElement {
     </Section>
   );
 
-  /** The DOCUMENT section: file size + the Optimize / Audit disclosure. */
+  /** The DOCUMENT section: read-only facts. Section 3A ruling 5 — File size
+   *  is a VALUE with NO "▾" affordance, and Optimize / Audit live only in the
+   *  DELIVER stage (the dock + the panel's pre-flight). */
   const renderDocumentSection = (): ReactElement => (
     <Section id="document" title="Document">
       {documentTitle !== null && (
@@ -420,50 +414,8 @@ export function Inspector(props: InspectorProps): ReactElement {
         {pageCount}
       </Row>
       <Row id="file-size" label="File size">
-        <span className="inspector-inline">
-          <span data-inspector-value="file-size">{fileSizeText}</span>
-          <button
-            type="button"
-            className="inspector-action inspector-disclosure"
-            data-inspector-action="document-menu"
-            aria-expanded={docMenuOpen}
-            aria-label="Document actions"
-            title="Optimize / Audit space"
-            onClick={(): void => setDocMenuOpen((v) => !v)}
-          >
-            <ChevronDown size={12} aria-hidden />
-          </button>
-        </span>
+        <span data-inspector-value="file-size">{fileSizeText}</span>
       </Row>
-      {docMenuOpen && (
-        <div className="inspector-menu" data-inspector-menu="document" role="menu">
-          <button
-            type="button"
-            role="menuitem"
-            className="inspector-menu-item"
-            data-inspector-action="optimize"
-            onClick={onOptimize}
-            disabled={onOptimize === undefined}
-          >
-            {'Optimize\u2026'}
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="inspector-menu-item"
-            data-inspector-action="audit"
-            onClick={onAudit}
-            disabled={onAudit === undefined}
-          >
-            {'Audit space\u2026'}
-          </button>
-        </div>
-      )}
-      <div className="inspector-quick-actions" data-inspector-quick-actions>
-        <Action id="quick-optimize" label={'Optimize\u2026'} onClick={onOptimize} />
-        <Action id="quick-audit" label={'Audit space\u2026'} onClick={onAudit} />
-        <Action id="quick-export" label={'Export\u2026'} onClick={onExportPages} />
-      </div>
     </Section>
   );
   /** EDIT - the re-parented text-properties component (text object selected). */
@@ -477,7 +429,8 @@ export function Inspector(props: InspectorProps): ReactElement {
     </Section>
   );
 
-  /** EDIT - the selected page's CropBox values + OCR status. */
+  /** EDIT - the selected page's CropBox values. Section 3A ruling 4: no OCR
+   *  status here — the EDIT ContextPanel's Recognition section is its home. */
   const renderCropBoxSection = (): ReactElement => (
     <Section id="cropbox" title="CropBox">
       {cropBox === null ? (
@@ -503,20 +456,7 @@ export function Inspector(props: InspectorProps): ReactElement {
     </Section>
   );
 
-  const renderOcrSection = (): ReactElement => (
-    <Section id="ocr" title="Recognition">
-      <Row id="ocr-status" label="OCR status">
-        {ocrStatus ?? 'Not run'}
-      </Row>
-      <Action
-        id="recognize"
-        label={'Recognize text\u2026'}
-        onClick={onRecognizeText}
-      />
-    </Section>
-  );
-
-  const renderSignatureSection = (): ReactElement => (
+const renderSignatureSection = (): ReactElement => (
     <Section id="signature" title="Signature">
       <Row id="signature-style" label="Style">
         {signatureStyle ?? '\u2014'}
@@ -583,10 +523,8 @@ export function Inspector(props: InspectorProps): ReactElement {
         return renderDocumentSection();
       case 'text':
         return renderTextSection();
-      case 'cropbox':
+case 'cropbox':
         return renderCropBoxSection();
-      case 'ocr':
-        return renderOcrSection();
       case 'signature':
         return renderSignatureSection();
       case 'comments':
@@ -631,16 +569,6 @@ export function Inspector(props: InspectorProps): ReactElement {
             {sectionBody(id)}
           </div>
         ))}
-        {stage === 'edit' && ocrSuspects !== null && (
-          <div className="inspector-slot" data-inspector-slot="ocr-suspects">
-            <OcrSuspectsPanel
-              suspects={ocrSuspects.suspects}
-              hasRun={ocrSuspects.hasRun}
-              onNavigate={ocrSuspects.onNavigate}
-              onClose={ocrSuspects.onClose}
-            />
-          </div>
-        )}
       </GlassSidebarBody>
     </div>
   );

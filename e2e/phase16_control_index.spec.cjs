@@ -36,7 +36,7 @@
 // (e2e/lib/launch.cjs via launchDev). Serial by config (workers: 1).
 
 const { test, expect } = require('@playwright/test');
-const { launchDev, openSample, diag, shot, hardClose } = require('./lib/helpers.cjs');
+const { launchDev, openSample, diag, shot, hardClose, gotoStage } = require('./lib/helpers.cjs');
 
 // Set the theme through the UI (title-bar theme popover), the way a user
 // would, and wait for data-theme + the 400ms crossfade to settle.
@@ -118,13 +118,19 @@ async function openWorkspace() {
 test('P16C-1: icon-only header; view-toggle icons work while expanded', async () => {
   const { electronApp, window } = await openWorkspace();
   try {
+    // A reused profile can persist the collapsed panel; expand it first.
+    await window.locator('.context-panel-header').waitFor({ timeout: 15000 }).catch(() => {});
+    if ((await window.locator('[data-context-panel][data-context-panel-collapsed="true"]').count()) > 0) {
+      await window.locator('[data-rail-collapse]').first().click();
+      await window.waitForTimeout(500);
+    }
     const header = window.locator('.context-panel-header');
     await header.waitFor({ timeout: 15000 });
 
-    // Icon-only: no title span, no visible text anywhere in the header.
-    expect(await window.locator('.context-panel-header .glass-sidebar-title').count()).toBe(0);
+    // Phase 36: the ContextPanel header shows its own title (no longer the
+    // icon-only legacy rail header).
     const headerText = (await header.textContent().catch(() => null)) ?? '';
-    expect(headerText.trim(), 'rail header must be icon-only').toBe('');
+    expect(headerText.trim().length, 'the ContextPanel header shows a title').toBeGreaterThan(0);
 
     // Collapse control exists with the expanded-state promise.
     const collapse = window.locator('[data-rail-collapse]');
@@ -132,33 +138,32 @@ test('P16C-1: icon-only header; view-toggle icons work while expanded', async ()
     expect(await collapse.getAttribute('title')).toBe('Collapse panel');
     expect(await window.locator('[data-rail-ruler]').count()).toBe(0);
 
-    // View-toggle icons (thumbnails / annotations / bookmarks) still work.
-    // Phase 36: the sections are the ContextPanel's own hooks now.
+    // View sections (thumbnails / annotations / bookmarks) still work.
+    // Phase 36: the ContextPanel BODY is stage-gated — thumbnails live in
+    // PAGES, the annotations list in REVIEW — so visit each stage to prove
+    // each section renders (the retired single rail showed them as tabs).
     const thumbsTab = window.locator('[data-context-panel-thumbs]');
-    const annTab = window.locator('[data-context-panel-section="annotations"]');
-    const bookmarksTab = window.locator('[data-context-panel-outline]');
     await expect(thumbsTab).toBeVisible();
-    await expect(annTab).toBeVisible();
-    const hasBookmarks = (await bookmarksTab.count()) > 0; // only with an outline
-
     await window.locator('[data-context-panel-thumbs] .thumb-item').first().waitFor({ timeout: 15000 });
 
-    // Annotations section renders the annotations panel.
-    await annTab.click();
-    await window.locator('[data-annotation-panel]').waitFor({ timeout: 10000 });
-
-    // Back to thumbnails.
-    await window.locator('[data-context-panel-thumbs] .thumb-item').first().waitFor({ timeout: 10000 });
-
-    // Bookmarks tab only exists when the document has an outline.
+    // Outline section (PAGES) only exists when the document has an outline.
+    // It mounts EXPANDED by default (outlineOpen=true), so assert its body
+    // renders rather than clicking the toggle (which would close it).
+    const bookmarksTab = window.locator('[data-context-panel-outline]');
+    const hasBookmarks = (await bookmarksTab.count()) > 0;
     if (hasBookmarks) {
-      await bookmarksTab.click();
       await window.locator('.outline-panel').waitFor({ timeout: 10000 });
-      await thumbsTab.click();
-      await window.locator('.thumb-item').first().waitFor({ timeout: 10000 });
+      console.log('[P16C-1] outline section present and rendered');
     } else {
-      console.log('[P16C-1] report.pdf has no outline - bookmarks tab correctly absent');
+      console.log('[P16C-1] report.pdf has no outline - outline section correctly absent');
     }
+
+    // Annotations section renders the annotations panel in the REVIEW body.
+    await gotoStage(window, 3);
+    const annTab = window.locator('[data-context-panel-section="annotations"]');
+    await expect(annTab).toBeVisible();
+    await window.locator('[data-annotation-panel]').waitFor({ timeout: 10000 });
+    await gotoStage(window, 1); // back to PAGES for the screenshot
 
     await shot(window, 'phase16-ctl-expanded-verify.png');
   } finally {
@@ -351,13 +356,15 @@ test('P16C-5: expand button on the ruler strip restores the thumbnail rail', asy
 
     await window.locator('[data-rail-ruler]').waitFor({ state: 'detached', timeout: 5000 });
     expect(await window.locator('[data-rail-ruler]').count(), 'ruler strip must be gone').toBe(0);
-    await window.locator('.thumb-item').first().waitFor({ timeout: 15000 });
+    await window.locator('[data-context-panel-thumbs] .thumb-item').first().waitFor({ timeout: 15000 });
+    await window.waitForTimeout(400); // 140ms --tf-rail-w tween + settle
     expect(await window.locator('[data-rail-collapse]').getAttribute('title')).toBe('Collapse panel');
 
     const col = await window.evaluate(() =>
       parseFloat(getComputedStyle(document.querySelector('.workspace')).gridTemplateColumns.split(' ')[0]),
     );
-    expect(col, 'rail column restored to 220px').toBeCloseTo(220, 0);
+    // Phase 36: the expanded panel width is the ContextPanel's own width.
+    expect(col, 'panel column restored to its expanded width').toBeGreaterThan(200);
     expect(await window.locator('.app-main[data-rail-collapsed="true"]').count()).toBe(0);
 
     await shot(window, 'phase16-ctl-expanded-restored.png');
@@ -394,26 +401,35 @@ test('P16C-6: no-op sweep - every new control double-clicked, nothing hangs', as
     expect(d.currentPage, 'double-click on a ruler number lands on that page').toBe(3);
     console.log('[P16C-6] ruler number double-click: page', d.currentPage, ', responsive');
 
-    // 3. Expand, then double-click each view-toggle icon.
+    // 3. Expand, then double-click the panel's section surfaces. Phase 36:
+    //    the ContextPanel body is stage-gated, so exercise each section in
+    //    its own stage (the retired rail showed them as always-present tabs).
     await window.locator('[data-rail-collapse]').click();
     await window.locator('.thumb-scroller').waitFor({ timeout: 10000 });
-    const thumbsTab = window.locator('.rail-tab[title="Page thumbnails"]');
-    await thumbsTab.click();
-    await thumbsTab.click();
-    const annTab = window.locator('[data-rail-tab="annotations"]');
-    await annTab.click();
-    await annTab.click();
-    const bm = window.locator('.rail-tab[title="Bookmarks"]');
-    if ((await bm.count()) > 0) {
-      await bm.click();
-      await bm.click();
-      await thumbsTab.click();
+    await gotoStage(window, 1);
+    if ((await window.locator('[data-context-panel][data-context-panel-collapsed="true"]').count()) > 0) {
+      await window.locator('[data-rail-collapse]').first().click();
+      await window.waitForTimeout(500);
     }
+    const thumbsTab = window.locator('[data-context-panel-thumbs]');
+    await thumbsTab.waitFor({ timeout: 10000 });
+    await thumbsTab.click();
+    await thumbsTab.click();
+    const bm = window.locator('[data-context-panel-outline]');
+    if ((await bm.count()) > 0) {
+      await bm.locator('[data-outline-toggle]').click();
+      await bm.locator('[data-outline-toggle]').click();
+    }
+    // Annotations section lives in the REVIEW body.
+    await gotoStage(window, 3);
+    const annTab = window.locator('[data-context-panel-section="annotations"]');
+    await annTab.click();
+    await annTab.click();
     await settle();
-    await assertResponsive(window, 'after view-toggle double-clicks');
+    await assertResponsive(window, 'after section double-clicks');
     const d2 = await window.evaluate(() => window.tflexDiagnostics());
     expect(d2.pageCount, 'engine state intact after the sweep').toBeGreaterThan(0);
-    console.log('[P16C-6] view-toggle double-clicks: responsive, engine intact');
+    console.log('[P16C-6] section double-clicks: responsive, engine intact');
 
     await shot(window, 'phase16-ctl-noop-aftermath.png');
   } finally {

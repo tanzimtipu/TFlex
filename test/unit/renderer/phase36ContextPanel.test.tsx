@@ -118,7 +118,6 @@ interface PanelHandlers {
 onExtractPages?: (page: number) => void;
   onInsertBlank?: (page: number) => void;
   onReplacePages?: (page: number) => void;
-  onRenumberPages?: (page: number) => void;
   onDeletePage?: (page: number) => void;
 }
 
@@ -161,7 +160,6 @@ function renderPanel(
           onExtractPages={current.onExtractPages}
           onInsertBlank={current.onInsertBlank}
 onReplacePages={current.onReplacePages}
-          onRenumberPages={current.onRenumberPages}
           onDeletePage={current.onDeletePage}
         />,
       );
@@ -540,7 +538,7 @@ describe("ContextPanel — inline hover verbs", () => {
 });
 
 describe("ContextPanel — the right-click menu", () => {
-  it("lists all seven items, in the spec's order, for the page that was right-clicked", () => {
+it("lists the SIX page verbs, in order (Renumber REMOVED — section 3A ruling 2)", () => {
     const { host, unmount } = renderPanel({ pageCount: 4 });
     try {
       expect(host.querySelector("[data-context-menu]")).toBeNull();
@@ -556,9 +554,10 @@ describe("ContextPanel — the right-click menu", () => {
         "Extract…",
         "Insert blank after",
         "Replace…",
-        "Renumber…",
         "Delete…",
       ]);
+      // Renumber… has exactly ONE home: the Inspector's `Label · renumber…`.
+      expect(host.querySelector('[data-menu-item="renumber"]')).toBeNull();
     } finally {
       unmount();
     }
@@ -571,7 +570,6 @@ it("each item runs its own EXISTING handler with the menu's page", () => {
       { id: "extract", key: "onExtractPages", expected: 2 },
       { id: "insert-blank", key: "onInsertBlank", expected: 2 },
       { id: "replace", key: "onReplacePages", expected: 2 },
-      { id: "renumber", key: "onRenumberPages", expected: 2 },
       { id: "delete", key: "onDeletePage", expected: 2 },
     ];
     for (const testCase of cases) {
@@ -581,7 +579,6 @@ it("each item runs its own EXISTING handler with the menu's page", () => {
         onExtractPages: vi.fn(),
         onInsertBlank: vi.fn(),
         onReplacePages: vi.fn(),
-        onRenumberPages: vi.fn(),
         onDeletePage: vi.fn(),
       };
       const { host, unmount } = renderPanel({
@@ -591,7 +588,6 @@ it("each item runs its own EXISTING handler with the menu's page", () => {
         onExtractPages: spies.onExtractPages as PanelHandlers["onExtractPages"],
         onInsertBlank: spies.onInsertBlank as PanelHandlers["onInsertBlank"],
         onReplacePages: spies.onReplacePages as PanelHandlers["onReplacePages"],
-        onRenumberPages: spies.onRenumberPages as PanelHandlers["onRenumberPages"],
         onDeletePage: spies.onDeletePage as PanelHandlers["onDeletePage"],
       });
       try {
@@ -717,7 +713,7 @@ it("each item runs its own EXISTING handler with the menu's page", () => {
     expect(clampMenuPosition(600, 400, 2000, 2000, 1200, 800)).toEqual({ left: 8, top: 8 });
   });
 
-  it("keeps the seven items in ONE data list (labels + wiring together)", () => {
+it("keeps the SIX items in ONE data list (labels + wiring together)", () => {
     const page = 7;
     const handlers = {
       onRotateCw: vi.fn(),
@@ -725,7 +721,6 @@ it("each item runs its own EXISTING handler with the menu's page", () => {
       onExtract: vi.fn(),
       onInsertBlank: vi.fn(),
       onReplace: vi.fn(),
-onRenumber: vi.fn(),
       onDeletePage: vi.fn(),
     };
     const items = buildPageMenuItems(page, handlers);
@@ -735,7 +730,6 @@ onRenumber: vi.fn(),
       "extract",
       "insert-blank",
       "replace",
-      "renumber",
       "delete",
     ]);
     expect(items.filter((i) => i.danger === true).map((i) => i.id)).toEqual(["delete"]);

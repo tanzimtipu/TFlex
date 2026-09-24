@@ -9,7 +9,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('./lib/launch.cjs');
-const { openSample, shot, hardClose } = require('./lib/helpers.cjs');
+const { openSample, shot, hardClose, runTool } = require('./lib/helpers.cjs');
 
 test.describe('Phase 18 watermark — part 2 (coords, tile, range guard)', () => {
   test.describe.configure({ mode: 'serial' });
@@ -41,15 +41,11 @@ test.describe('Phase 18 watermark — part 2 (coords, tile, range guard)', () =>
   }
 
   // Bring the watermark dialog to the front: early-return if it is still
-  // open from the previous test, otherwise route through the tools palette.
+  // open from the previous test, otherwise route through its current home
+  // (the REVIEW stage Action Dock's watermark verb).
   async function openDialog() {
     if (await window.locator('[data-watermark-dialog]').isVisible().catch(() => false)) return;
-    const palette = window.locator('[data-tools-palette]');
-    if (!(await palette.isVisible().catch(() => false))) {
-      await window.locator('[data-tools-toggle]').click();
-    }
-    await palette.waitFor({ state: 'visible', timeout: 15000 });
-    await window.locator('[data-tool-id="watermark"]').click();
+    await runTool(window, 'watermark');
     await expect(window.locator('[data-watermark-dialog]')).toBeVisible();
   }
 

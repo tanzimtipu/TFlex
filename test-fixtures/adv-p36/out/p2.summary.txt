@@ -1,0 +1,94 @@
+merge [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"merge","disabled":"false","effect":{"modal":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"Merge with another PDF\"]"}}
+split [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Extract or split pages\"]"}
+extract [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Extract or split pages\"]"}
+rotate [dock] present=true disabled=false :: present+enabled (click skipped: mutating/terminal)
+delete [dock] present=true disabled=false :: present+enabled (click skipped: mutating/terminal)
+insertPages [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Insert pages\"]"}
+replacePages [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Replace pages\"]"}
+renumberPages [panel] present=undefined disabled=undefined :: panel entry with no rule (INVESTIGATE)
+cropPages [dock] present=false disabled=undefined :: NOT PRESENT on stage dock (inline or overflow)
+rotateCounterClockwise [panel] present=undefined disabled=undefined :: panel entry with no rule (INVESTIGATE)
+pageThumbnails [panel] present=true disabled=undefined :: thumbs in PAGES panel: 34
+outlinePanel [panel] present=true disabled=undefined :: outline toggle present: 1
+pageContextMenu [panel] present=true disabled=undefined :: context menu items=["rotate-cw","rotate-ccw","extract","insert-blank","replace","delete"]
+clearPageSelection [panel] present=true disabled=undefined :: {"dockState":"\"selection\" -> \"stage\""}
+dragPage [panel] present=undefined disabled=undefined :: thumb-item draggable=true
+editMode [dock] present=true disabled=false :: {"editToolbar":"0 -> 1","pressed":"[] -> [\"editMode\"]","editTool":"null -> \"off\""}
+editToolOff [panel] present=undefined disabled=undefined :: panel entry with no rule (INVESTIGATE)
+editText [dock] present=true disabled=false :: {"textPanel":"0 -> 1","editTool":"\"off\" -> \"text\""}
+editTextBox [dock] present=true disabled=false :: {"textPanel":"0 -> 1","editTool":"\"off\" -> \"box\""}
+editImage [dock] present=true disabled=false :: {"editTool":"\"off\" -> \"image\""}
+editDefaultFont [panel] present=false disabled=undefined :: edit toolbar MISSING
+recognizeText [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Recognize text (OCR)\"]"}
+batchOcr [palette] present=undefined disabled=undefined :: undefined
+ocrSuspects [palette] present=undefined disabled=undefined :: undefined
+annotate [dock] present=true disabled=false :: {"flyout":"0 -> 1","annTool":"null -> \"select\""}
+sign [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Signature\"]"}
+forms [palette] present=undefined disabled=undefined :: undefined
+flatten [dock] present=true disabled=true :: disabled (present with reason)
+stamp [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Stamp\"]"}
+watermark [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"watermark","disabled":"false","effect":{"modal":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"Watermark\"]"}}
+exportComments [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"exportComments","disabled":"false","effect":{"modal":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"Export comments\"]"}}
+importComments [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"importComments","disabled":"false","effect":{"modal":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"Import comments\"]"}}
+annotationsPanel [panel] present=true disabled=undefined :: annotations panel present in REVIEW ContextPanel
+annSelect [flyout] present=undefined disabled=undefined :: NO OBSERVABLE CHANGE
+annHighlight [flyout] present=undefined disabled=undefined :: {"annTool":"\"select\" -> \"highlight\""}
+annUnderline [flyout] present=undefined disabled=undefined :: {"annTool":"\"select\" -> \"underline\""}
+annStrikeout [flyout] present=undefined disabled=undefined :: {"annTool":"\"select\" -> \"strikeout\""}
+annInk [flyout] present=undefined disabled=undefined :: {"annTool":"\"select\" -> \"ink\""}
+annTextbox [flyout] present=undefined disabled=undefined :: {"textPanel":"0 -> 1","annTool":"\"select\" -> \"textbox\""}
+annRect [flyout] present=undefined disabled=undefined :: {"annTool":"null -> \"rect\""}
+annEllipse [flyout] present=undefined disabled=undefined :: {"annTool":"null -> \"ellipse\""}
+annArrow [flyout] present=undefined disabled=undefined :: {"annTool":"null -> \"arrow\""}
+annCallout [flyout] present=undefined disabled=undefined :: {"textPanel":"0 -> 1","annTool":"null -> \"callout\""}
+annNote [flyout] present=undefined disabled=undefined :: {"textPanel":"0 -> 1","annTool":"null -> \"note\""}
+annColor [flyout] present=false disabled=undefined :: color control MISSING in flyout
+annPenWidth [flyout] present=false disabled=undefined :: pen width row MISSING
+optimize [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Reduce file size\"]"}
+audit [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Audit space usage\"]"}
+createFromImages [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"createFromImages","disabled":"false","effect":{"modal":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"Create PDF from images\"]"}}
+exportPages [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Export pages as images\"]"}
+exportText [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Export text\"]"}
+exportDocx [dock] present=true disabled=false :: {"modal":"0 -> 1","titles":"[] -> [\"Export to Word\"]"}
+open [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"open","disabled":"false","effect":{"palette":"1 -> 0"}}
+openRecent [palette] present=undefined disabled=undefined :: undefined
+openSample [palette] present=undefined disabled=undefined :: undefined
+removeRecent [palette] present=undefined disabled=undefined :: undefined
+createFromClipboard [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"createFromClipboard","disabled":"false","effect":{"modal":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"Create PDF from images\"]"}}
+save [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"save","disabled":"false","effect":{"palette":"1 -> 0","toasts":"\"\" -> \"Saved 1790238111880-report.pdf.\""}}
+saveAs [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"saveAs","disabled":"false","effect":{"modal":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"Save a copy\"]"}}
+print [palette] present=undefined disabled=undefined :: {"modal":"0 -> 1","print":"0 -> 1","palette":"1 -> 0","toasts":"\"Saved 1790238111880-report.pdf.\" -> \"\"","titles":"[] -> [\"Print\"]"}
+find [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"find","disabled":"false","effect":{"search":"0 -> 1","palette":"1 -> 0"}}
+zoomIn [panel] present=true disabled=undefined :: 148% -> 150%
+zoomOut [panel] present=true disabled=undefined :: 150% -> 125%
+fitWidth [panel] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"fitWidth","disabled":"false","effect":{"palette":"1 -> 0"}}
+fitPage [panel] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"fitPage","disabled":"false","effect":{"palette":"1 -> 0"}}
+prevPage [panel] present=undefined disabled=undefined :: pills present: yes
+nextPage [panel] present=undefined disabled=undefined :: 1 -> 2
+pageJump [panel] present=undefined disabled=undefined :: 2 -> 3
+undo [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"undo","disabled":"false","effect":{"palette":"1 -> 0"}}
+redo [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"redo","disabled":"false","effect":{"palette":"1 -> 0"}}
+tabNew [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"tabNew","disabled":"false","effect":{"palette":"1 -> 0","dockState":"\"stage\" -> null","hand":"\"false\" -> null"}}
+tabClose [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"tabClose","disabled":"false","effect":{"palette":"1 -> 0","dockState":"null -> \"stage\"","hand":"null -> \"false\""}}
+multi-mode [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"multi-mode","disabled":"false","effect":{"palette":"1 -> 0"}}
+paneOpen [panel] present=undefined disabled=undefined :: multi-mode-only: tested in p3
+panePick [panel] present=undefined disabled=undefined :: multi-mode-only: tested in p3
+paneClear [panel] present=undefined disabled=undefined :: multi-mode-only: tested in p3
+paneResize [panel] present=undefined disabled=undefined :: multi-mode-only: tested in p3
+toggleTheme [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"toggleTheme","disabled":"false","effect":{"palette":"1 -> 0"}}
+preferences [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"preferences","disabled":"false","effect":{"sheet":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"Preferences\"]"}}
+checkForUpdate [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"checkForUpdate","disabled":"false","effect":{"sheet":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"Checking for updates\"]"}}
+updateDownload [palette] present=undefined disabled=undefined :: undefined
+updateInstall [palette] present=undefined disabled=undefined :: undefined
+about [palette] present=undefined disabled=undefined :: {"path":"palette","found":true,"rowId":"about","disabled":"false","effect":{"sheet":"0 -> 1","palette":"1 -> 0","titles":"[] -> [\"About TFlex\"]"}}
+appMenu [palette] present=true disabled=undefined :: undefined
+toolsPalette [palette] present=true disabled=undefined :: palette opened by Ctrl+K: true
+panMode [panel] present=true disabled=undefined :: undefined
+railCollapse [panel] present=false disabled=undefined :: undefined -> undefined
+stagePages [palette] present=undefined disabled=undefined :: {"palette":{"path":"palette","found":true,"rowId":"stagePages","disabled":"false","effect":{"palette":"1 -> 0"}}}
+stageEdit [palette] present=undefined disabled=undefined :: {"palette":{"path":"palette","found":true,"rowId":"stageEdit","disabled":"false","effect":{"palette":"1 -> 0","stage":"\"pages\" -> \"edit\""}}}
+stageReview [palette] present=undefined disabled=undefined :: {"palette":{"path":"palette","found":true,"rowId":"stageReview","disabled":"false","effect":{"palette":"1 -> 0","stage":"\"pages\" -> \"review\""}}}
+stageDeliver [palette] present=undefined disabled=undefined :: {"palette":{"path":"palette","found":true,"rowId":"stageDeliver","disabled":"false","effect":{"palette":"1 -> 0","stage":"\"pages\" -> \"deliver\""}}}
+windowMinimize [palette] present=undefined disabled=undefined :: {"palette":{"path":"palette","found":true,"rowId":"windowMinimize","disabled":"false","effect":{}}}
+windowMaximize [palette] present=undefined disabled=undefined :: {"palette":{"path":"palette","found":true,"rowId":"windowMaximize","disabled":"false","effect":{"palette":"1 -> 0"}}}
+windowClose [palette] present=undefined disabled=undefined :: undefined

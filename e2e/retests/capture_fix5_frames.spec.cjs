@@ -5,7 +5,7 @@
 const { test } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, ensurePanelExpanded } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
@@ -24,8 +24,13 @@ test('capture fix5 frame sequence', async () => {
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
   await win.waitForTimeout(1500);
 
+  // Phase 36: the Tools palette is retired. FIX 5's subject — the panel and
+  // the page moving together on the shared slide curve — now lives in the
+  // ContextPanel: collapse/expand it and capture the same frame sequence.
+  await ensurePanelExpanded(win);
+  await win.waitForTimeout(300);
   const frameDelays = [0, 60, 120, 180, 240, 300, 420];
-  await win.click('button[data-tools-toggle]');
+  await win.click('[data-rail-collapse]');
   for (let i = 0; i < frameDelays.length; i += 1) {
     const shotT0 = Date.now();
     await win.screenshot({ path: path.join(SHOTS, `fix5-anim-frame-${String(i).padStart(2, '0')}.png`) });

@@ -1,0 +1,941 @@
+{
+  "tabsBefore": 2,
+  "entered": {
+    "railActive": "pages",
+    "railCount": 1,
+    "dockCount": 2,
+    "dockState": "stage",
+    "dockVerbs": [
+      "rotate",
+      "extract",
+      "insertPages",
+      "replacePages",
+      "split",
+      "delete",
+      "rotate",
+      "extract",
+      "insertPages",
+      "replacePages",
+      "split",
+      "delete"
+    ],
+    "dockRect": {
+      "x": 619.578125,
+      "y": 843,
+      "width": 478.84375,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 1098.421875,
+      "bottom": 891.3333358764648,
+      "left": 619.578125
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 613,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "A",
+        "focused": "true",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 613,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      },
+      {
+        "pane": "B",
+        "focused": "false",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 621
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 393,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "pages",
+      "selection": "page"
+    }
+  },
+  "pickOptions": [
+    {
+      "id": "8766af92-41a0-4175-86fb-c3493520187b",
+      "text": "1790239699816-report.pdf34 pages"
+    }
+  ],
+  "afterPick": {
+    "railActive": "pages",
+    "railCount": 1,
+    "dockCount": 1,
+    "dockState": "stage",
+    "dockVerbs": [
+      "rotate",
+      "extract",
+      "insertPages",
+      "replacePages",
+      "split",
+      "delete"
+    ],
+    "dockRect": {
+      "x": 377.578125,
+      "y": 843,
+      "width": 478.84375,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 856.421875,
+      "bottom": 891.3333358764648,
+      "left": 377.578125
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 1190,
+          "bottom": 78,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 613,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "B",
+        "focused": "true",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "focused": "false",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 613,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 841,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 841
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 393,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "pages",
+      "selection": "page"
+    }
+  },
+  "afterBDeliver": {
+    "railActive": "deliver",
+    "railCount": 1,
+    "dockCount": 1,
+    "dockState": "stage",
+    "dockVerbs": [
+      "optimize",
+      "audit",
+      "exportPages",
+      "exportText",
+      "exportDocx"
+    ],
+    "dockRect": {
+      "x": 360.24481201171875,
+      "y": 843,
+      "width": 513.5104370117188,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 873.7552490234375,
+      "bottom": 891.3333358764648,
+      "left": 360.24481201171875
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 1190,
+          "bottom": 78,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 613,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "B",
+        "focused": "true",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "focused": "false",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 613,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 841,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 841
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 393,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "deliver",
+      "selection": "page"
+    }
+  },
+  "afterAEdit": {
+    "railActive": "edit",
+    "railCount": 1,
+    "dockCount": 1,
+    "dockState": "stage",
+    "dockVerbs": [
+      "editMode",
+      "editText",
+      "editImage",
+      "editTextBox",
+      "recognizeText",
+      "cropPages"
+    ],
+    "dockRect": {
+      "x": 375.953125,
+      "y": 843,
+      "width": 482.09375,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 858.046875,
+      "bottom": 891.3333358764648,
+      "left": 375.953125
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 1190,
+          "bottom": 78,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 613,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "B",
+        "focused": "true",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "focused": "false",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 613,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 841,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 841
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 393,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "edit",
+      "selection": "page"
+    }
+  },
+  "focusBagain": {
+    "railActive": "edit",
+    "railCount": 1,
+    "dockCount": 1,
+    "dockState": "stage",
+    "dockVerbs": [
+      "editMode",
+      "editText",
+      "editImage",
+      "editTextBox",
+      "recognizeText",
+      "cropPages"
+    ],
+    "dockRect": {
+      "x": 375.953125,
+      "y": 843,
+      "width": 482.09375,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 858.046875,
+      "bottom": 891.3333358764648,
+      "left": 375.953125
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 1190,
+          "bottom": 78,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 613,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "B",
+        "focused": "true",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "focused": "false",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 613,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 841,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 841
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 393,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "edit",
+      "selection": "page"
+    }
+  },
+  "backToA": {
+    "railActive": "edit",
+    "railCount": 1,
+    "dockCount": 1,
+    "dockState": "stage",
+    "dockVerbs": [
+      "editMode",
+      "editText",
+      "editImage",
+      "editTextBox",
+      "recognizeText",
+      "cropPages"
+    ],
+    "dockRect": {
+      "x": 375.953125,
+      "y": 843,
+      "width": 482.09375,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 858.046875,
+      "bottom": 891.3333358764648,
+      "left": 375.953125
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 1190,
+          "bottom": 78,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 613,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "B",
+        "focused": "true",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "focused": "false",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 613,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 841,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 841
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 393,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "edit",
+      "selection": "page"
+    }
+  },
+  "headerOverlap": [
+    {
+      "pane": "B",
+      "overlapsDock": false
+    },
+    {
+      "pane": "A",
+      "overlapsDock": false
+    }
+  ],
+  "afterRapid": {
+    "railActive": "deliver",
+    "railCount": 1,
+    "dockCount": 1,
+    "dockState": "stage",
+    "dockVerbs": [
+      "optimize",
+      "audit",
+      "exportPages",
+      "exportText",
+      "exportDocx"
+    ],
+    "dockRect": {
+      "x": 360.24481201171875,
+      "y": 843,
+      "width": 513.5104370117188,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 873.7552490234375,
+      "bottom": 891.3333358764648,
+      "left": 360.24481201171875
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 1190,
+          "bottom": 78,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 34,
+          "top": 44,
+          "right": 613,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "B",
+        "focused": "true",
+        "rect": {
+          "x": 621,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 621
+        }
+      },
+      {
+        "pane": "A",
+        "focused": "false",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 569,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 613,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 841,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 1190,
+          "bottom": 903.3333740234375,
+          "left": 841
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 349,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 393,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "deliver",
+      "selection": "page"
+    }
+  },
+  "afterRapidErrors": {
+    "broken": false
+  },
+  "shrink": {
+    "640": {
+      "innerWidth": 640,
+      "panes": [
+        {
+          "pane": "B",
+          "width": 162
+        },
+        {
+          "pane": "A",
+          "width": 162
+        }
+      ],
+      "scrollerWidths": [
+        44,
+        34,
+        44,
+        34
+      ],
+      "divider": true
+    },
+    "760": {
+      "innerWidth": 760,
+      "panes": [
+        {
+          "pane": "B",
+          "width": 222
+        },
+        {
+          "pane": "A",
+          "width": 222
+        }
+      ],
+      "scrollerWidths": [
+        44,
+        34,
+        44,
+        34
+      ],
+      "divider": true
+    },
+    "900": {
+      "innerWidth": 900,
+      "panes": [
+        {
+          "pane": "B",
+          "width": 292
+        },
+        {
+          "pane": "A",
+          "width": 292
+        }
+      ],
+      "scrollerWidths": [
+        72,
+        62,
+        72,
+        62
+      ],
+      "divider": true
+    },
+    "1100": {
+      "innerWidth": 1100,
+      "panes": [
+        {
+          "pane": "B",
+          "width": 392
+        },
+        {
+          "pane": "A",
+          "width": 392
+        }
+      ],
+      "scrollerWidths": [
+        172,
+        162,
+        172,
+        162
+      ],
+      "divider": true
+    },
+    "1442": {
+      "innerWidth": 1442,
+      "panes": [
+        {
+          "pane": "B",
+          "width": 563
+        },
+        {
+          "pane": "A",
+          "width": 563
+        }
+      ],
+      "scrollerWidths": [
+        343,
+        333,
+        343,
+        333
+      ],
+      "divider": true
+    }
+  },
+  "left": {
+    "multiMode": false,
+    "dockCount": 2,
+    "railCount": 1,
+    "workspace": true
+  }
+}

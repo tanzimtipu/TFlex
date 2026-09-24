@@ -10,7 +10,7 @@
 // .cmd/.ps1 shims; no hand-concatenated file:// URLs.
 
 const { test, expect } = require('@playwright/test');
-const { hardClose, armAnnotationTool, toggleEditMode, armSignTool, runTool } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool, toggleEditMode, armSignTool, runTool, textPanelRight } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -344,17 +344,22 @@ test('BUG4: Add box committed text box cannot be dragged with the mouse', async 
   const pageLayer = win.locator('.page-slot[data-page="1"]').first();
   await pageLayer.waitFor({ timeout: 8000 });
   const pb = await pageLayer.boundingBox();
-  await win.mouse.move(pb.x + 60, pb.y + 60);
+  const avoidX4 = (await textPanelRight(win)) + 30;
+  await win.mouse.move(Math.max(pb.x + 60, avoidX4), pb.y + 60);
   await win.mouse.down();
-  await win.mouse.move(pb.x + 260, pb.y + 200, { steps: 10 });
+  await win.mouse.move(Math.max(pb.x + 260, avoidX4 + 200), pb.y + 200, { steps: 10 });
   await win.mouse.up();
   await win.waitForTimeout(600);
 
-  // Type text + commit.
-  const editor = win.locator('.edit-inline-textarea');
-  await editor.waitFor({ timeout: 8000 });
-  await win.fill('.edit-inline-textarea', 'MOVE ME 123');
-  await win.keyboard.press('Control+Enter');
+  // Type text + commit. Phase 26 — the in-canvas editor is retired; the panel
+  // Text field is the editor and commits on blur.
+  await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+  await win.waitForFunction(() => {
+    const ta = document.querySelector('[data-txt-text]');
+    return ta !== null && ta.disabled === false;
+  }, null, { timeout: 8000 });
+  await win.locator('[data-txt-text]').fill('MOVE ME 123');
+  await win.locator('[data-txt-text]').blur();
   await win.waitForTimeout(1200);
 
   const boxCount = await win.evaluate(() => document.querySelectorAll('.edit-box').length);
@@ -418,15 +423,22 @@ test('BUG5: move placed text box -> artifacts; select placed box -> no Delete op
   const by = (titleRect ? titleRect.y : 15) - 4;
   const bw = (titleRect ? titleRect.w : 340) + 8;
   const bh = (titleRect ? titleRect.h : 40) + 8;
-  await win.mouse.move(pb.x + bx, pb.y + by);
+  // Phase 36 — the floating TextPropertiesPanel card covers the title area;
+  // dodge it so the box drag reaches the page.
+  const avoidX5 = (await textPanelRight(win)) + 30;
+  await win.mouse.move(Math.max(pb.x + bx, avoidX5), pb.y + by);
   await win.mouse.down();
-  await win.mouse.move(pb.x + bx + bw, pb.y + by + bh, { steps: 10 });
+  await win.mouse.move(Math.max(pb.x + bx + bw, avoidX5 + bw), pb.y + by + bh, { steps: 10 });
   await win.mouse.up();
   await win.waitForTimeout(600);
-  const editor = win.locator('.edit-inline-textarea');
-  await editor.waitFor({ timeout: 8000 });
-  await win.fill('.edit-inline-textarea', 'MY BOX');
-  await win.keyboard.press('Control+Enter');
+  // Phase 26 — panel Text field is the editor (commits on blur).
+  await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+  await win.waitForFunction(() => {
+    const ta = document.querySelector('[data-txt-text]');
+    return ta !== null && ta.disabled === false;
+  }, null, { timeout: 8000 });
+  await win.locator('[data-txt-text]').fill('MY BOX');
+  await win.locator('[data-txt-text]').blur();
   await win.waitForTimeout(1500);
 
   const boxCount = await win.evaluate(() => document.querySelectorAll('.edit-box').length);

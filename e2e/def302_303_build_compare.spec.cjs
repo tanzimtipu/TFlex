@@ -89,10 +89,13 @@ function installSampler() {
       pageRectH: pr ? Math.round(pr.height) : null,
       pageRectW: pr ? Math.round(pr.width) : null,
       scale: scaleOf(p),
-      flip: p ? p.classList.contains('pdf-page-zoom-flip') : null,
-      from: p ? p.style.getPropertyValue('--tf-zoom-flip-from') : null,
-      dx: p ? p.style.getPropertyValue('--tf-zoom-flip-dx') : null,
-      dy: p ? p.style.getPropertyValue('--tf-zoom-flip-dy') : null,
+// 1.27.1 moved the FLIP class/vars from .pdf-page to the paper-owning
+      // unit ZOOM_FLIP_UNIT_SELECTOR = '.page-slot' (DEF-307 note); read the
+      // SLOT, not the content-only page element.
+      flip: s ? s.classList.contains('pdf-page-zoom-flip') : null,
+      from: s ? s.style.getPropertyValue('--tf-zoom-flip-from') : null,
+      dx: s ? s.style.getPropertyValue('--tf-zoom-flip-dx') : null,
+      dy: s ? s.style.getPropertyValue('--tf-zoom-flip-dy') : null,
       canvasW: c ? c.width : null,
       canvasH: c ? c.height : null,
       canvasCssW: c ? c.style.width : null,
@@ -273,15 +276,16 @@ test('BUILD-COMPARE zoom screenshot DEF-302', async () => {
     const btn = document.querySelector('button[aria-label="Zoom in"]');
     btn.click();
     let tries = 0;
-    const attempt = () => {
-      const el = document.querySelector('.pdf-page[data-page="1"]');
+const attempt = () => {
+      // 1.27.1 — the FLIP lives on the .page-slot unit (ZOOM_FLIP_UNIT_SELECTOR).
+      const el = document.querySelector('.page-slot[data-page="1"]');
       const a = el ? el.getAnimations().find((x) => x.animationName === 'tf-page-zoom-flip') : null;
       if (a) {
         a.pause(); a.currentTime = 60;
         const cs = getComputedStyle(el);
-        const slot = document.querySelector('.page-slot[data-page="1"]');
+        const page = document.querySelector('.pdf-page[data-page="1"]');
         return resolve({ ok: true, scale: new DOMMatrixReadOnly(cs.transform).a,
-          slotH: slot ? slot.offsetHeight : null, pageH: el.offsetHeight,
+          slotH: el.offsetHeight, pageH: page ? page.offsetHeight : null,
           from: el.style.getPropertyValue('--tf-zoom-flip-from'),
           dx: el.style.getPropertyValue('--tf-zoom-flip-dx'),
           dy: el.style.getPropertyValue('--tf-zoom-flip-dy'),
@@ -295,8 +299,8 @@ test('BUILD-COMPARE zoom screenshot DEF-302', async () => {
   const shotPath = path.join(SHOTS, `def302-compare-${BUILD}.png`);
   await win.screenshot({ path: shotPath });
   console.log(`[CMP-ZS] ${await versionTag()} at50=${at50} pause=${JSON.stringify(info)} shot=${shotPath}`);
-  await win.evaluate(() => {
-    const el = document.querySelector('.pdf-page[data-page="1"]');
+await win.evaluate(() => {
+    const el = document.querySelector('.page-slot[data-page="1"]');
     const a = el && el.getAnimations().find((x) => x.animationName === 'tf-page-zoom-flip');
     if (a) a.finish();
   });

@@ -283,7 +283,7 @@ test.describe('Phase 36 chunk 5 — the Inspector', () => {
     }
 
     expect(seen.pages.slots).toEqual(['page', 'on-page', 'document']);
-    expect(seen.edit.slots).toEqual(['cropbox', 'ocr']);
+    expect(seen.edit.slots).toEqual(['cropbox']);
     expect(seen.review.slots).toEqual(['comments', 'annotations']);
     expect(seen.deliver.slots).toEqual(['export', 'document']);
     expect(seen.pages.title).toContain('Page 1');
@@ -296,10 +296,13 @@ test.describe('Phase 36 chunk 5 — the Inspector', () => {
     expect(await win.locator('[data-context-panel="review"] [data-annotation-panel]').count(), 'the list lives in the REVIEW panel').toBe(1);
     console.log('[P36C456-P6] annotations list has one home (REVIEW panel); Inspector references it');
 
-    // The re-parented components keep their own selectors in their stages.
+    // Section 3A ruling 4 — the EDIT page section is the CropBox ONLY; the OCR
+    // status is the EDIT ContextPanel's Recognition section, never repeated in
+    // the Inspector.
     await gotoStage(win, 2);
-    expect(await win.locator('[data-inspector-slot="ocr"] [data-inspector-action="recognize"]').count()).toBe(1);
-    console.log('[P36C456-P6] EDIT/OCR affordance present');
+    expect(await win.locator('[data-inspector-slot="cropbox"]').count()).toBe(1);
+    expect(await win.locator('[data-inspector-slot="ocr"]').count(), 'no OCR section in the Inspector').toBe(0);
+    console.log('[P36C456-P6] EDIT/page section is CropBox only (no OCR section)');
   });
 
   test('P7 the Inspector affordances call the existing handlers', async () => {
@@ -307,42 +310,27 @@ test.describe('Phase 36 chunk 5 — the Inspector', () => {
     await gotoStage(win, 1);
     const rotBefore = await win.evaluate(() => window.tflexDiagnostics().engineState.rotations[0]);
 
-    // rotate (PAGES page section)
-    await win.locator('[data-inspector-action="rotate"]').click();
-    await win.waitForTimeout(900);
-    const rotAfter = await win.evaluate(() => window.tflexDiagnostics().engineState.rotations[0]);
-    console.log(`[P36C456-P7] rotate: rotations[0] ${rotBefore} -> ${rotAfter}`);
-    expect(rotAfter, 'the Inspector Rotate affordance rotated the current page').toBe(1);
+    // Section 3A rulings 1 + 3 — the PAGES Rotation is a READ-ONLY value (no
+    // rotate affordance) and there is no Crop row in the PAGES inspector. The
+    // value reflects the engine's current rotation for the active page.
+    expect(await win.locator('[data-inspector-action="rotate"]').count(), 'no rotate affordance (read-only value)').toBe(0);
+    expect(await win.locator('[data-inspector-action="crop"]').count(), 'no Crop row in the PAGES inspector').toBe(0);
+    const rotText = await win.locator('[data-inspector-value="rotation"]').innerText();
+    console.log(`[P36C456-P7] PAGES rotation is a read-only value: "${rotText}" (engine rotation index ${rotBefore})`);
+    expect(rotText, 'the rotation value tracks the engine rotation').toBe(`${rotBefore}\u00b0`);
 
-    // renumber -> the existing dialog
+    // renumber -> the existing dialog (its ONLY home, ruling 2)
     await win.locator('[data-inspector-action="renumber"]').click();
     await win.waitForSelector('[data-renumber-pages-dialog]', { state: 'visible', timeout: 8000 });
     console.log('[P36C456-P7] renumber opened the existing renumber dialog');
     await closeDialog('[data-renumber-pages-dialog]');
 
-    // crop -> the existing dialog
-    await win.locator('[data-inspector-action="crop"]').click();
-    await win.waitForSelector('[data-crop-pages-dialog]', { state: 'visible', timeout: 8000 });
-    console.log('[P36C456-P7] crop opened the existing crop dialog');
-    await closeDialog('[data-crop-pages-dialog]');
-
-    // document disclosure -> Optimize / Audit
-    await win.locator('[data-inspector-action="document-menu"]').click();
-    await win.waitForSelector('[data-inspector-menu="document"]', { state: 'visible', timeout: 8000 });
-    await win.locator('[data-inspector-menu="document"] [data-inspector-action="optimize"]').click();
-    await win.waitForSelector('.optimize-dialog', { state: 'visible', timeout: 8000 });
-    console.log('[P36C456-P7] Optimize opened the existing dialog');
-    await closeDialog('.optimize-dialog');
-    if ((await win.locator('[data-inspector-menu="document"]').count()) === 0) {
-      await win.locator('[data-inspector-action="document-menu"]').click();
-    }
-    await win.locator('[data-inspector-menu="document"] [data-inspector-action="audit"]').click();
-    await win.waitForSelector('.audit-dialog', { state: 'visible', timeout: 8000 });
-    console.log('[P36C456-P7] Audit space opened the existing dialog');
-    await closeDialog('.audit-dialog');
-
-    // quick export -> the existing export dialog
-    await win.locator('[data-inspector-action="quick-export"]').click();
+    // DELIVER: the Inspector's Export affordance -> the existing export dialog.
+    // (Section 3A ruling 5: the old PAGES document disclosure and its
+    // Optimize / Audit / quick-export actions are gone; Optimize / Audit live
+    // only in the DELIVER dock + panel pre-flight.)
+    await gotoStage(win, 4);
+    await win.locator('[data-inspector-action="export"]').click();
     await win.waitForSelector('[data-export-dialog]', { state: 'visible', timeout: 8000 });
     console.log('[P36C456-P7] Export opened the existing export dialog');
     await closeDialog('[data-export-dialog]');

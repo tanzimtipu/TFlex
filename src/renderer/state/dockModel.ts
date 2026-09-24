@@ -17,7 +17,12 @@
 // `dockPrimaryState` resolves 1-vs-2 and the component appends the pins.
 
 import type { Stage } from './stages';
-import { toolById, type ToolAvailability, type ToolEntry } from './toolsRegistry';
+import {
+  isDockHostedAction,
+  toolById,
+  type ToolAvailability,
+  type ToolEntry,
+} from './toolsRegistry';
 
 /** The dock's idle delay (the spec's 3s). */
 export const DOCK_IDLE_MS = 3000;
@@ -35,8 +40,12 @@ export const DOCK_COMPACT_WIDTH = 640;
 export const DOCK_MAX_PINS = 4;
 
 /** The State 2 bulk verbs, in order, as registry ids (so pin dedupe and the
- *  registry's own icons/labels are reused — the dock invents no list). */
-export const DOCK_BULK_IDS = ['rotate', 'extract', 'merge', 'delete'] as const;
+ *  registry's own icons/labels are reused — the dock invents no list).
+ *
+ *  Phase 36 / section 3A ruling 9: Merge is NOT a dock verb — `＋ Combine…`
+ *  lives on the PAGES panel header ONLY, so the selection override is
+ *  `[N pages] | Rotate · Extract · Delete · Clear`. */
+export const DOCK_BULK_IDS = ['rotate', 'extract', 'delete'] as const;
 
 /** State 2's Clear control id (the registry's own selection-clearing entry). */
 export const DOCK_CLEAR_ID = 'clearPageSelection';
@@ -82,6 +91,65 @@ export const DOCK_AVAILABILITY_REASON: Record<ToolAvailability, string> = {
 export function defaultDockEnabled(entry: ToolEntry, selectionCount: number): boolean {
   if (entry.availability === 'selection') return selectionCount > 0;
   return true;
+}
+
+/**
+ * DEF-327 — the ONE live availability gate for a registry entry, shared by the
+ * Action Dock (including its pins) and the Command Palette. Both surfaces show
+ * the same verbs and must agree about whether they can run, so this is the only
+ * implementation: any verb that cannot run is DISABLED with a reason instead of
+ * being a silent no-op.
+ *
+ * The answer is THREE-state: `true` / `false`, or `undefined` when the calling
+ * pane does not govern the entry at all (a title-bar / global command the dock
+ * never hosts). The palette then falls back to the host's own app-level
+ * availability for it; the dock treats `undefined` as unavailable.
+ */
+export interface DockAvailabilityArgs {
+  /** How many pages the PAGES panel currently has selected. */
+  pageSelectionCount: number;
+  /** Edit mode is ON (the edit-layer tools' live precondition). */
+  editModeOpen: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** The pane's view-level handlers, keyed by registry `action`. */
+  viewActions: Readonly<Record<string, unknown>>;
+  /** The App's gate for the verbs the dock hosts (`isDockToolEnabled`). */
+  appEnabled?: ((id: string) => boolean) | undefined;
+}
+
+export function dockAvailabilityFor(
+  entry: ToolEntry,
+  args: DockAvailabilityArgs,
+): boolean | undefined {
+  // View-level gates the registry cannot express from host state alone.
+  if (entry.action === 'clearPageSelection') return args.pageSelectionCount > 0;
+  // DEF-314 — `editModeToggle` IS the control that turns Edit mode ON, so it is
+  // enabled while Edit mode is OFF; only the edit-layer TOOL verbs need Edit
+  // mode already on. DEF-327 — the palette reports the same verdict (and the
+  // dock's own "Turn on Edit content first" copy) for these rows.
+  if (entry.action.startsWith('editTool')) return args.editModeOpen;
+  if (entry.action === 'annotationColor' || entry.action === 'annotationPenWidth') return false;
+  // DEF-327 — the undo stacks are renderer state the registry cannot see; an
+  // empty stack is a no-op, so both surfaces disable the row. The copy is the
+  // one the rail's own Undo button already uses.
+  if (entry.action === 'undo') return args.canUndo;
+  if (entry.action === 'redo') return args.canRedo;
+  if (args.viewActions[entry.action] !== undefined) return true;
+  // Not a verb this pane governs: the caller's own availability decides.
+  if (!isDockHostedAction(entry.action)) return undefined;
+  return args.appEnabled?.(entry.id) ?? false;
+}
+
+/**
+ * The focused pane's published availability pair (DEF-327): the SAME gate and
+ * the SAME refusal copy the Action Dock consumes, so the Command Palette can
+ * never disagree with the dock about a verb they both show. Registered by the
+ * pane, read by the host (`registerDockAvailability`), `null` on unmount.
+ */
+export interface DockAvailability {
+  isToolEnabled: (entry: ToolEntry) => boolean | undefined;
+  disabledReasonFor: (entry: ToolEntry) => string | undefined;
 }
 
 /** The two primary shapes the dock can be in (State 3 rides along). */

@@ -1,0 +1,780 @@
+{
+  "rail": {
+    "1080": {
+      "innerWidth": 1080,
+      "compact": "true",
+      "labelDisplay": "none",
+      "labelVisible": 0,
+      "buttons": [
+        {
+          "kind": "pages",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "edit",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "review",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "deliver",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "gear",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        }
+      ]
+    },
+    "1099": {
+      "innerWidth": 1099,
+      "compact": "true",
+      "labelDisplay": "none",
+      "labelVisible": 0,
+      "buttons": [
+        {
+          "kind": "pages",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "edit",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "review",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "deliver",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "gear",
+          "w": 43,
+          "h": 32,
+          "hitSelfOrChild": true
+        }
+      ]
+    },
+    "1100": {
+      "innerWidth": 1100,
+      "compact": "false",
+      "labelDisplay": "block",
+      "labelVisible": 28.08333396911621,
+      "buttons": [
+        {
+          "kind": "pages",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "edit",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "review",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "deliver",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "gear",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        }
+      ]
+    },
+    "1101": {
+      "innerWidth": 1101,
+      "compact": "false",
+      "labelDisplay": "block",
+      "labelVisible": 28.08333396911621,
+      "buttons": [
+        {
+          "kind": "pages",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "edit",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "review",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "deliver",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "gear",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        }
+      ]
+    },
+    "1140": {
+      "innerWidth": 1140,
+      "compact": "false",
+      "labelDisplay": "block",
+      "labelVisible": 28.08333396911621,
+      "buttons": [
+        {
+          "kind": "pages",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "edit",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "review",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "deliver",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        },
+        {
+          "kind": "gear",
+          "w": 43,
+          "h": 43,
+          "hitSelfOrChild": true
+        }
+      ]
+    }
+  },
+  "compactClicks": [
+    {
+      "stage": "edit",
+      "before": "pages",
+      "after": "edit"
+    },
+    {
+      "stage": "review",
+      "before": "edit",
+      "after": "review"
+    },
+    {
+      "stage": "deliver",
+      "before": "review",
+      "after": "deliver"
+    },
+    {
+      "stage": "pages",
+      "before": "deliver",
+      "after": "pages"
+    }
+  ],
+  "gearClick": {
+    "before": false,
+    "after": true
+  },
+  "titlebar": {
+    "640": {
+      "innerWidth": 640,
+      "count": 13,
+      "controls": [
+        {
+          "name": "File",
+          "w": 28,
+          "h": 22,
+          "x": 8,
+          "y": 11,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Open PDF document",
+          "w": 28,
+          "h": 28,
+          "x": 78,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Save",
+          "w": 28,
+          "h": 28,
+          "x": 116,
+          "y": 8,
+          "disabled": true,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Save a copy",
+          "w": 28,
+          "h": 28,
+          "x": 146,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Close 1790239992782-re",
+          "w": 18,
+          "h": 18,
+          "x": 379,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": false
+        },
+        {
+          "name": "New empty tab",
+          "w": 24,
+          "h": 34,
+          "x": 411,
+          "y": -1,
+          "disabled": false,
+          "onScreen": false,
+          "hitSelfOrChild": false
+        },
+        {
+          "name": "Multi Mode",
+          "w": 28,
+          "h": 28,
+          "x": 356,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Print",
+          "w": 28,
+          "h": 28,
+          "x": 388,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Open preferences",
+          "w": 28,
+          "h": 28,
+          "x": 420,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Change theme",
+          "w": 42,
+          "h": 28,
+          "x": 452,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Minimize window",
+          "w": 46,
+          "h": 43,
+          "x": 502,
+          "y": 0,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Maximize window",
+          "w": 46,
+          "h": 43,
+          "x": 548,
+          "y": 0,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Close window",
+          "w": 46,
+          "h": 43,
+          "x": 594,
+          "y": 0,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        }
+      ]
+    },
+    "760": {
+      "innerWidth": 760,
+      "count": 13,
+      "controls": [
+        {
+          "name": "File",
+          "w": 28,
+          "h": 22,
+          "x": 8,
+          "y": 11,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Open PDF document",
+          "w": 28,
+          "h": 28,
+          "x": 78,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Save",
+          "w": 28,
+          "h": 28,
+          "x": 116,
+          "y": 8,
+          "disabled": true,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Save a copy",
+          "w": 28,
+          "h": 28,
+          "x": 146,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Close 1790239992782-re",
+          "w": 18,
+          "h": 18,
+          "x": 379,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": false
+        },
+        {
+          "name": "New empty tab",
+          "w": 24,
+          "h": 34,
+          "x": 411,
+          "y": -1,
+          "disabled": false,
+          "onScreen": false,
+          "hitSelfOrChild": false
+        },
+        {
+          "name": "Multi Mode",
+          "w": 28,
+          "h": 28,
+          "x": 392,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Print",
+          "w": 28,
+          "h": 28,
+          "x": 424,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Open preferences",
+          "w": 28,
+          "h": 28,
+          "x": 456,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Change theme",
+          "w": 126,
+          "h": 28,
+          "x": 488,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Minimize window",
+          "w": 46,
+          "h": 43,
+          "x": 622,
+          "y": 0,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Maximize window",
+          "w": 46,
+          "h": 43,
+          "x": 668,
+          "y": 0,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Close window",
+          "w": 46,
+          "h": 43,
+          "x": 714,
+          "y": 0,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        }
+      ]
+    },
+    "900": {
+      "innerWidth": 900,
+      "count": 13,
+      "controls": [
+        {
+          "name": "File",
+          "w": 28,
+          "h": 22,
+          "x": 8,
+          "y": 11,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Open PDF document",
+          "w": 28,
+          "h": 28,
+          "x": 78,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Save",
+          "w": 28,
+          "h": 28,
+          "x": 116,
+          "y": 8,
+          "disabled": true,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Save a copy",
+          "w": 28,
+          "h": 28,
+          "x": 146,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Close 1790239992782-re",
+          "w": 18,
+          "h": 18,
+          "x": 379,
+          "y": 18,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "New empty tab",
+          "w": 24,
+          "h": 34,
+          "x": 411,
+          "y": 9,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Multi Mode",
+          "w": 28,
+          "h": 28,
+          "x": 532,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Print",
+          "w": 28,
+          "h": 28,
+          "x": 564,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Open preferences",
+          "w": 28,
+          "h": 28,
+          "x": 596,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Change theme",
+          "w": 126,
+          "h": 28,
+          "x": 628,
+          "y": 8,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Minimize window",
+          "w": 46,
+          "h": 43,
+          "x": 762,
+          "y": 0,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Maximize window",
+          "w": 46,
+          "h": 43,
+          "x": 808,
+          "y": 0,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        },
+        {
+          "name": "Close window",
+          "w": 46,
+          "h": 43,
+          "x": 854,
+          "y": 0,
+          "disabled": false,
+          "onScreen": true,
+          "hitSelfOrChild": true
+        }
+      ]
+    }
+  },
+  "clicks640": [
+    {
+      "label": "File",
+      "err": null,
+      "before": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "after": {
+        "menuPopover": true,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "changed": true
+    },
+    {
+      "label": "Theme",
+      "err": null,
+      "before": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "after": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "changed": false
+    },
+    {
+      "label": "Preferences",
+      "err": null,
+      "before": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "after": {
+        "menuPopover": false,
+        "modal": 1,
+        "prefs": true,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "changed": true
+    },
+    {
+      "label": "MultiMode",
+      "err": null,
+      "before": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "after": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": true,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "changed": true
+    },
+    {
+      "label": "MultiModeBack",
+      "err": null,
+      "before": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": true,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "after": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "changed": true
+    },
+    {
+      "label": "Open",
+      "err": null,
+      "before": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "after": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "changed": false
+    },
+    {
+      "label": "SaveAs",
+      "err": null,
+      "before": {
+        "menuPopover": false,
+        "modal": 0,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "after": {
+        "menuPopover": false,
+        "modal": 1,
+        "prefs": false,
+        "multi": false,
+        "theme": "frosted",
+        "tabs": 1
+      },
+      "changed": true
+    }
+  ],
+  "windows": 1
+}

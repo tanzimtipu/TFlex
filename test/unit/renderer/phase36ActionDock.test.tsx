@@ -21,7 +21,6 @@ function bulk(overrides: Partial<DockBulkActions> = {}): DockBulkActions {
   return {
     onRotate: vi.fn(),
     onExtract: vi.fn(),
-    onMerge: vi.fn(),
     onDelete: vi.fn(),
     ...overrides,
   };
@@ -181,7 +180,7 @@ describe("Phase 36 — ActionDock State 1: stage verbs", () => {
 });
 
 describe("Phase 36 — ActionDock State 2: selection override", () => {
-  it("renders the chip plus Rotate / Extract / Merge / Delete / Clear", () => {
+  it("renders the chip plus Rotate / Extract / Delete / Clear (no Merge — ruling 9)", () => {
     const { host, unmount } = renderDock({ activeStage: "pages", pageSelection: [2, 4] });
     try {
       expect(host.querySelector("[data-dock-state]")?.getAttribute("data-dock-state")).toBe(
@@ -191,7 +190,6 @@ describe("Phase 36 — ActionDock State 2: selection override", () => {
       expect(verbIds(host, "primary")).toEqual([
         "rotate",
         "extract",
-        "merge",
         "delete",
         "clearPageSelection",
       ]);
@@ -206,12 +204,26 @@ describe("Phase 36 — ActionDock State 2: selection override", () => {
     try {
       clickOn(verb(host, "rotate"));
       clickOn(verb(host, "extract"));
-      clickOn(verb(host, "merge"));
       clickOn(verb(host, "delete"));
       expect(b.onRotate).toHaveBeenCalledWith([1, 3]);
       expect(b.onExtract).toHaveBeenCalledWith([1, 3]);
-      expect(b.onMerge).toHaveBeenCalledWith([1, 3]);
       expect(b.onDelete).toHaveBeenCalledWith([1, 3]);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("State 2 is EXACTLY [chip] | Rotate · Extract · Delete · Clear (no merge verb)", () => {
+    const { host, unmount } = renderDock({ activeStage: "pages", pageSelection: [1] });
+    try {
+      expect(verbIds(host, "primary")).toEqual([
+        "rotate",
+        "extract",
+        "delete",
+        "clearPageSelection",
+      ]);
+      // Section 3A ruling 9 — Merge is not a dock verb in any state.
+      expect(host.querySelector('[data-dock-verb="merge"]')).toBeNull();
     } finally {
       unmount();
     }

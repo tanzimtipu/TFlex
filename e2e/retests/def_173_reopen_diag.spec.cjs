@@ -25,7 +25,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const { PDFDocument, PDFDict, PDFName, PDFNumber } = require('pdf-lib');
-const { launchDev, openSample, scrollToPage, shot, sampleCanvasPageRect, hardClose } = require('../lib/helpers.cjs');
+const { launchDev, openSample, scrollToPage, shot, sampleCanvasPageRect, hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
 
 test('DEF-174: reopened highlight renders ONCE - pale canvas wash (/CA 0.35), no overlay rect', async () => {
   test.setTimeout(240000);
@@ -39,7 +39,8 @@ test('DEF-174: reopened highlight renders ONCE - pale canvas wash (/CA 0.35), no
     await scrollToPage(win, 1);
     await win.waitForTimeout(400);
 
-    await win.click('button[aria-label="Highlight"]');
+    // Phase 36 — the annotation toolbar is in the REVIEW Annotate flyout.
+    await armAnnotationTool(win, 'highlight');
     await win.waitForTimeout(350);
     const span = await win.evaluate(() => {
       const pageEl = document.querySelector('.tab-pane[aria-hidden="false"] .pdf-page[data-page="1"]')
@@ -137,15 +138,18 @@ test('DEF-174: reopened highlight renders ONCE - pale canvas wash (/CA 0.35), no
     console.log(`[def174diag] canvas sample AFTER REOPEN: ${JSON.stringify(reopened, null, 1)}`);
     expect(reopened, 'page-1 canvas must be mounted to sample').not.toBeNull();
     const dom = reopened.topColors[0];
+    // The default annotation colour is now the single accent token #2563eb
+    // (DEFAULT_ANNOTATION_COLOR), superseding the Phase-2 muted orange, so the
+    // 0.35 /CA wash over white is ~rgb(179,200,248).
     const [r, g, b] = dom.rgb;
     console.log(`[def174diag] dominant canvas color under highlight: rgb(${dom.rgb.join(',')}) x${dom.n}`);
-    expect(r, 'pale wash R ~244 (opaque block was 224)').toBeGreaterThanOrEqual(230);
-    expect(g, 'pale wash G ~208 (opaque block was 122)').toBeGreaterThanOrEqual(190);
-    expect(g).toBeLessThanOrEqual(225);
-    expect(b, 'pale wash B ~182 (opaque block was 45)').toBeGreaterThanOrEqual(165);
-    expect(b).toBeLessThanOrEqual(200);
-    const distToOpaque = Math.hypot(r - 224, g - 122, b - 45);
-    expect(distToOpaque, 'canvas must NOT paint the full-opacity #e07a2d block').toBeGreaterThan(80);
+    expect(r, 'pale blue wash R ~179').toBeGreaterThanOrEqual(168);
+    expect(r).toBeLessThanOrEqual(192);
+    expect(g, 'pale blue wash G ~200').toBeGreaterThanOrEqual(188);
+    expect(g).toBeLessThanOrEqual(214);
+    expect(b, 'pale blue wash B ~248').toBeGreaterThanOrEqual(236);
+    const distToOpaque = Math.hypot(r - 37, g - 99, b - 235);
+    expect(distToOpaque, 'canvas must NOT paint the full-opacity #2563eb block').toBeGreaterThan(80);
     expect(reopened.darkGlyphs, 'title glyphs must stay dark/readable under the reopened wash').toBeGreaterThan(0);
 
     await shot(win, 'def-174-diag-reopen-pale-wash.png');

@@ -1,0 +1,55 @@
+{
+  "settingsBefore": [
+    "cropPages",
+    "audit",
+    "optimize",
+    "watermark"
+  ],
+  "afterRestart": {
+    "present": true,
+    "state": "stage",
+    "idle": "false",
+    "pins": [
+      "cropPages",
+      "audit",
+      "optimize",
+      "watermark"
+    ],
+    "inline": [
+      "rotate",
+      "extract",
+      "insertPages",
+      "replacePages",
+      "split",
+      "delete",
+      "cropPages",
+      "audit",
+      "optimize",
+      "watermark"
+    ]
+  },
+  "idleWhileAnnotationArmed": {
+    "annTool": "highlight",
+    "idle": "false"
+  },
+  "idleWhileDragging": "false",
+  "idleWhileHandActive": {
+    "hand": "true",
+    "idle": "false"
+  },
+  "menu": {
+    "menu": true,
+    "printItem": {
+      "label": "Print...",
+      "accelerator": "CmdOrCtrl+P",
+      "enabled": true
+    }
+  },
+  "printViaMenuItem": {
+    "shell": true,
+    "dialog": false,
+    "palette": false
+  },
+  "windowsAfterPrint": 1,
+  "titlebarPrintCount": 1
+}

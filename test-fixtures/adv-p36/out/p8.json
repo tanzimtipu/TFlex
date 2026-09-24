@@ -1,0 +1,437 @@
+{
+  "hostileSettingsBooted": true,
+  "settingsAfterNormalize": {
+    "theme": "dark",
+    "geometry": {
+      "x": 60,
+      "y": 60,
+      "width": 1442,
+      "height": 903,
+      "maximized": true
+    },
+    "dockPins": [
+      "rotate",
+      "rotate",
+      "not-a-real-tool",
+      "cropPages",
+      "split",
+      "delete",
+      "extract",
+      "insertPages"
+    ],
+    "toolUsage": {
+      "rotate": -5,
+      "split": "many",
+      "extract": 3.7,
+      "delete": 1e+308,
+      "merge": 2,
+      "watermark": 999999,
+      "": 7,
+      "bad": null
+    },
+    "toolsPaletteLayout": {
+      "left": 10,
+      "top": 20,
+      "width": 300,
+      "height": 400
+    },
+    "recentFiles": [
+      {
+        "path": "C:\\does\\not\\exist\\gone.pdf",
+        "name": "gone.pdf",
+        "openedAt": "2020-01-01T00:00:00.000Z"
+      },
+      {
+        "path": "",
+        "name": "",
+        "openedAt": "nope"
+      }
+    ]
+  },
+  "hostilePins": [
+    "cropPages"
+  ],
+  "paletteTopRows": [
+    "delete",
+    "watermark",
+    "merge",
+    "split",
+    "extract",
+    "rotate"
+  ],
+  "railBoundary": {
+    "1099": {
+      "innerWidth": 2560,
+      "compact": "false",
+      "railRect": {
+        "x": 0,
+        "y": 44,
+        "width": 44,
+        "height": 1348,
+        "top": 44,
+        "right": 44,
+        "bottom": 1392,
+        "left": 0
+      },
+      "buttons": [
+        {
+          "kind": "pages",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "edit",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "review",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "deliver",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "gear",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        }
+      ]
+    },
+    "1100": {
+      "innerWidth": 2560,
+      "compact": "false",
+      "railRect": {
+        "x": 0,
+        "y": 44,
+        "width": 44,
+        "height": 1348,
+        "top": 44,
+        "right": 44,
+        "bottom": 1392,
+        "left": 0
+      },
+      "buttons": [
+        {
+          "kind": "pages",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "edit",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "review",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "deliver",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "gear",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        }
+      ]
+    },
+    "1101": {
+      "innerWidth": 2560,
+      "compact": "false",
+      "railRect": {
+        "x": 0,
+        "y": 44,
+        "width": 44,
+        "height": 1348,
+        "top": 44,
+        "right": 44,
+        "bottom": 1392,
+        "left": 0
+      },
+      "buttons": [
+        {
+          "kind": "pages",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "edit",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "review",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "deliver",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        },
+        {
+          "kind": "gear",
+          "w": 43,
+          "hitSelfOrChild": true,
+          "label": true
+        }
+      ]
+    }
+  },
+  "compactStageClick": "review",
+  "titlebar640": {
+    "innerWidth": 2560,
+    "barRect": {
+      "x": 0,
+      "y": 0,
+      "width": 2560,
+      "height": 44,
+      "top": 0,
+      "right": 2560,
+      "bottom": 44,
+      "left": 0
+    },
+    "controls": [
+      {
+        "name": "File",
+        "w": 54,
+        "h": 22,
+        "x": 8,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Open PDF document",
+        "w": 70,
+        "h": 28,
+        "x": 158,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Save",
+        "w": 28,
+        "h": 28,
+        "x": 238,
+        "disabled": true,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Save a copy",
+        "w": 28,
+        "h": 28,
+        "x": 268,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Close 1790239926451-repo",
+        "w": 18,
+        "h": 18,
+        "x": 503,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "New empty tab",
+        "w": 24,
+        "h": 34,
+        "x": 536,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Multi Mode",
+        "w": 28,
+        "h": 28,
+        "x": 2218,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Print",
+        "w": 28,
+        "h": 28,
+        "x": 2254,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Open preferences",
+        "w": 28,
+        "h": 28,
+        "x": 2290,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Change theme",
+        "w": 80,
+        "h": 28,
+        "x": 2326,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Minimize window",
+        "w": 46,
+        "h": 43,
+        "x": 2422,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Restore window",
+        "w": 46,
+        "h": 43,
+        "x": 2468,
+        "disabled": false,
+        "hitSelfOrChild": true
+      },
+      {
+        "name": "Close window",
+        "w": 46,
+        "h": 43,
+        "x": 2514,
+        "disabled": false,
+        "hitSelfOrChild": true
+      }
+    ]
+  },
+  "titlebarClicks": [
+    {
+      "label": "File",
+      "before": {
+        "modal": 0,
+        "stage": "review",
+        "theme": "dark",
+        "multi": false
+      },
+      "after": {
+        "modal": 0,
+        "stage": "review",
+        "theme": "dark",
+        "multi": false
+      },
+      "changed": false
+    },
+    {
+      "label": "Open",
+      "before": {
+        "modal": 0,
+        "stage": "review",
+        "theme": "dark",
+        "multi": false
+      },
+      "after": {
+        "modal": 0,
+        "stage": "review",
+        "theme": "dark",
+        "multi": false
+      },
+      "changed": false
+    },
+    {
+      "label": "Save",
+      "before": {
+        "modal": 0,
+        "stage": "review",
+        "theme": "dark",
+        "multi": false,
+        "error": "locator.click: Timeout 4000ms exceeded."
+      },
+      "after": {
+        "modal": 0,
+        "stage": "review",
+        "theme": "dark",
+        "multi": false
+      },
+      "changed": true
+    },
+    {
+      "label": "SaveAs",
+      "before": {
+        "modal": 0,
+        "stage": "review",
+        "theme": "dark",
+        "multi": false
+      },
+      "after": {
+        "modal": 1,
+        "stage": "review",
+        "theme": "dark",
+        "multi": false
+      },
+      "changed": true
+    },
+    {
+      "label": "MultiMode",
+      "before": {
+        "modal": 1,
+        "stage": "review",
+        "theme": "dark",
+        "multi": false
+      },
+      "after": {
+        "modal": 0,
+        "stage": "pages",
+        "theme": "dark",
+        "multi": true
+      },
+      "changed": true
+    },
+    {
+      "label": "Preferences",
+      "before": {
+        "modal": 0,
+        "stage": "pages",
+        "theme": "dark",
+        "multi": true
+      },
+      "after": {
+        "modal": 1,
+        "stage": "pages",
+        "theme": "dark",
+        "multi": true
+      },
+      "changed": true
+    },
+    {
+      "label": "Print",
+      "before": {
+        "modal": 1,
+        "stage": "pages",
+        "theme": "dark",
+        "multi": true
+      },
+      "after": {
+        "modal": 1,
+        "stage": "pages",
+        "theme": "dark",
+        "multi": true
+      },
+      "changed": false
+    }
+  ]
+}

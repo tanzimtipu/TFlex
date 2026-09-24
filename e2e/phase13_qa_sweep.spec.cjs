@@ -13,7 +13,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, openAnnotationFlyout, toggleEditMode } = require('./lib/helpers.cjs');
+const { hardClose, openAnnotationFlyout, toggleEditMode, ensurePanelExpanded, gotoStage } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -410,10 +410,13 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   // — a plain click navigates — so Shift-click the thumb to raise its action
   // bar. (The multi-select ContextPanel selects on a plain click, but it is
   // behind the ?tfStagePanel dev flag and not mounted here.)
-  // Phase 36: the thumbnail rail is re-parented under the ContextPanel.
-  await win.locator('[data-context-panel-thumbs] .thumb-item').first().click({ modifiers: ['Shift'] });
-  await win.waitForSelector('[data-rail-action-bar]', { timeout: 8000 });
-  await win.click('[data-rail-action-bar] [aria-label="Rotate counter-clockwise"]');
+  // Phase 36: the thumbnail rail is re-parented under the ContextPanel; the
+  // panel selects on Ctrl+click and its action bar rides the panel thumbs.
+  await gotoStage(win, 1);
+  await ensurePanelExpanded(win);
+  await win.locator('[data-context-panel-thumbs] .thumb-item').first().click({ modifiers: ['Control'] });
+  await win.waitForSelector('[data-context-panel-thumbs] [data-rail-action-bar]', { timeout: 8000 });
+  await win.click('[data-context-panel-thumbs] [data-rail-action-bar] [aria-label="Rotate counter-clockwise"]');
   await wait(1200);
   const rotAfter = await win.evaluate(() => (window.tflexDiagnostics().engineState.rotations || []).slice(0, 4));
   console.log(`[rotate-ccw] before=${JSON.stringify(rotBefore)} after=${JSON.stringify(rotAfter)}`);
@@ -421,6 +424,17 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   // Undo the rotation to leave a clean doc state.
   await win.keyboard.press('Control+z');
   await wait(600);
+
+  // Phase 36 — the single accent rule's thumbnail ring: .thumb-current lives
+  // in the PAGES ContextPanel body, which is stage-gated. The annotation
+  // toolbar step below switches to REVIEW, so read the ring HERE while the
+  // PAGES stage is still active.
+  const thumbRing = await win.evaluate(() => {
+    const t = document.querySelector('.thumb-current');
+    return t ? getComputedStyle(t).boxShadow : null;
+  });
+  console.log(`[accent] thumb-current boxShadow: ${thumbRing}`);
+  expect(thumbRing, 'thumbnail selection ring uses the accent').toContain('37, 99, 235');
 
   // --- More (ellipsis) opened the Tools palette; Phase 36 retired it for the
   // ContextPanel, which is the tools panel now. ---
@@ -466,12 +480,6 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   console.log(`[accent] active tool (pointer moved away): ${JSON.stringify(activeTool)}`);
   expect(activeTool, 'arming Highlight must leave an active tool button').not.toBeNull();
   expect(activeTool.bg, 'armed tool wash must be the accent-selected blue').toContain('37, 99, 235');
-  const thumbRing = await win.evaluate(() => {
-    const t = document.querySelector('.thumb-current');
-    return t ? getComputedStyle(t).boxShadow : null;
-  });
-  console.log(`[accent] thumb-current boxShadow: ${thumbRing}`);
-  expect(thumbRing, 'thumbnail selection ring uses the accent').toContain('37, 99, 235');
 
   // Annotation close-up with an armed accent tool (color evidence in shot)
   await win.locator('.ann-toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-07-annotation-toolbar-closeup.png') });

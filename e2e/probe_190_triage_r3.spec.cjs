@@ -1,7 +1,7 @@
 // QA triage probe round 4: callout on a scrolled page, drag point INSIDE viewport.
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, textPanelRight } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -54,14 +54,17 @@ test('R3: callout drag on scrolled page 4, drag point INSIDE viewport', async ()
   console.log('[R3] page4 rect: ' + JSON.stringify(pr));
   if (!pr || !pr.hasCanvas) throw new Error('page 4 not mounted with canvas');
 
-  // Drag from 15% height (safely inside the viewport), anchored at 25% width.
-  const ax = pr.x + pr.w * 0.25;
+  // Drag from 15% height (safely inside the viewport), anchored clear of the
+  // floating TextPropertiesPanel card (Phase 36; it covers the left canvas edge).
+  // The card only mounts once the tool is armed, so arm FIRST, then measure.
+  await armAnnotationTool(win, 'callout');
+  await win.waitForTimeout(400);
+
+  const ax = Math.max(pr.x + pr.w * 0.25, (await textPanelRight(win)) + 30);
   const ay = pr.y + pr.h * 0.15;
   console.log('[R3] drag from (' + Math.round(ax) + ',' + Math.round(ay) + ') viewport h=' + pr.vh);
   if (ay > pr.vh - 20) throw new Error('drag anchor still below viewport: ' + ay);
 
-  await armAnnotationTool(win, 'callout');
-  await win.waitForTimeout(400);
   await win.mouse.move(ax, ay);
   await win.mouse.down();
   await win.mouse.move(ax + 180, ay + 90, { steps: 8 });

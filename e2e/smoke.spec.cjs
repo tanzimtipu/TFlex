@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const os = require('node:os');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armSignTool, openDockVerb } = require('./lib/helpers.cjs');
+const { hardClose, armSignTool, openDockVerb, armAnnotationTool } = require('./lib/helpers.cjs');
 
 test('smoke', async () => {
   const electronApp = await launchApp();
@@ -35,7 +35,9 @@ async function runSmoke(electronApp, window) {
 
   // Verify DEF-070
   console.log('Checking DEF-070...');
-  await window.click('[aria-label="Highlight"]');
+  // Phase 36 — the annotation toolbar lives in the REVIEW dock's Annotate
+  // flyout; arm Highlight through the canonical helper (was `[aria-label]`).
+  await armAnnotationTool(window, 'highlight');
   const swatch = window.locator('.color-swatch, [aria-label="Pick color"]');
   if (await swatch.isVisible()) {
       await swatch.click();

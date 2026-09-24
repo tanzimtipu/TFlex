@@ -1,0 +1,504 @@
+{
+  "byWidth": {
+    "640": {
+      "innerWidth": 640,
+      "bar": {
+        "x": 0,
+        "y": 0,
+        "width": 640,
+        "height": 44,
+        "top": 0,
+        "right": 640,
+        "bottom": 44,
+        "left": 0
+      },
+      "tabArea": {
+        "rect": {
+          "x": 186,
+          "y": 0,
+          "width": 129,
+          "height": 43.333335876464844,
+          "top": 0,
+          "right": 315,
+          "bottom": 43.333335876464844,
+          "left": 186
+        },
+        "scrollW": 129,
+        "clientW": 129
+      },
+      "close": null,
+      "newTab": {
+        "rect": {
+          "x": 410,
+          "y": -1,
+          "w": 24,
+          "h": 34
+        },
+        "cx": 422,
+        "cy": 16,
+        "hitChain": [
+          "BUTTON.header-gear",
+          "DIV.header-actions",
+          "HEADER.app-header",
+          "DIV.titlebar-slot"
+        ],
+        "hitIsSelf": false,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "file": {
+        "rect": {
+          "x": 8,
+          "y": 11,
+          "w": 28,
+          "h": 22
+        },
+        "cx": 22,
+        "cy": 22,
+        "hitChain": [
+          "svg.[object SVGAnimatedString]",
+          "BUTTON.titlebar-menu-button titlebar-",
+          "DIV.titlebar-menu",
+          "DIV.glass-chrome glass-chrome-titl"
+        ],
+        "hitIsSelf": true,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "newTabDisabled": false
+    },
+    "700": {
+      "innerWidth": 700,
+      "bar": {
+        "x": 0,
+        "y": 0,
+        "width": 700,
+        "height": 44,
+        "top": 0,
+        "right": 700,
+        "bottom": 44,
+        "left": 0
+      },
+      "tabArea": {
+        "rect": {
+          "x": 186,
+          "y": 0,
+          "width": 189,
+          "height": 43.333335876464844,
+          "top": 0,
+          "right": 375,
+          "bottom": 43.333335876464844,
+          "left": 186
+        },
+        "scrollW": 189,
+        "clientW": 189
+      },
+      "close": null,
+      "newTab": {
+        "rect": {
+          "x": 410,
+          "y": -1,
+          "w": 24,
+          "h": 34
+        },
+        "cx": 422,
+        "cy": 16,
+        "hitChain": [
+          "svg.[object SVGAnimatedString]",
+          "BUTTON.header-multi-mode",
+          "DIV.header-actions",
+          "HEADER.app-header"
+        ],
+        "hitIsSelf": false,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "file": {
+        "rect": {
+          "x": 8,
+          "y": 11,
+          "w": 28,
+          "h": 22
+        },
+        "cx": 22,
+        "cy": 22,
+        "hitChain": [
+          "svg.[object SVGAnimatedString]",
+          "BUTTON.titlebar-menu-button titlebar-",
+          "DIV.titlebar-menu",
+          "DIV.glass-chrome glass-chrome-titl"
+        ],
+        "hitIsSelf": true,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "newTabDisabled": false
+    },
+    "760": {
+      "innerWidth": 760,
+      "bar": {
+        "x": 0,
+        "y": 0,
+        "width": 760,
+        "height": 44,
+        "top": 0,
+        "right": 760,
+        "bottom": 44,
+        "left": 0
+      },
+      "tabArea": {
+        "rect": {
+          "x": 186,
+          "y": 0,
+          "width": 165.75,
+          "height": 43.333335876464844,
+          "top": 0,
+          "right": 351.75,
+          "bottom": 43.333335876464844,
+          "left": 186
+        },
+        "scrollW": 166,
+        "clientW": 166
+      },
+      "close": null,
+      "newTab": {
+        "rect": {
+          "x": 410,
+          "y": -1,
+          "w": 24,
+          "h": 34
+        },
+        "cx": 422,
+        "cy": 16,
+        "hitChain": [
+          "DIV.header-actions",
+          "HEADER.app-header",
+          "DIV.titlebar-slot",
+          "DIV.glass-chrome glass-chrome-titl"
+        ],
+        "hitIsSelf": false,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "file": {
+        "rect": {
+          "x": 8,
+          "y": 11,
+          "w": 28,
+          "h": 22
+        },
+        "cx": 22,
+        "cy": 22,
+        "hitChain": [
+          "svg.[object SVGAnimatedString]",
+          "BUTTON.titlebar-menu-button titlebar-",
+          "DIV.titlebar-menu",
+          "DIV.glass-chrome glass-chrome-titl"
+        ],
+        "hitIsSelf": true,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "newTabDisabled": false
+    },
+    "800": {
+      "innerWidth": 800,
+      "bar": {
+        "x": 0,
+        "y": 0,
+        "width": 800,
+        "height": 44,
+        "top": 0,
+        "right": 800,
+        "bottom": 44,
+        "left": 0
+      },
+      "tabArea": {
+        "rect": {
+          "x": 186,
+          "y": 0,
+          "width": 205.75,
+          "height": 43.333335876464844,
+          "top": 0,
+          "right": 391.75,
+          "bottom": 43.333335876464844,
+          "left": 186
+        },
+        "scrollW": 206,
+        "clientW": 206
+      },
+      "close": null,
+      "newTab": {
+        "rect": {
+          "x": 410,
+          "y": -1,
+          "w": 24,
+          "h": 34
+        },
+        "cx": 422,
+        "cy": 16,
+        "hitChain": [
+          "svg.[object SVGAnimatedString]",
+          "SPAN.update-indicator update-indica",
+          "DIV.header-actions",
+          "HEADER.app-header"
+        ],
+        "hitIsSelf": false,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "file": {
+        "rect": {
+          "x": 8,
+          "y": 11,
+          "w": 28,
+          "h": 22
+        },
+        "cx": 22,
+        "cy": 22,
+        "hitChain": [
+          "svg.[object SVGAnimatedString]",
+          "BUTTON.titlebar-menu-button titlebar-",
+          "DIV.titlebar-menu",
+          "DIV.glass-chrome glass-chrome-titl"
+        ],
+        "hitIsSelf": true,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "newTabDisabled": false
+    },
+    "900": {
+      "innerWidth": 900,
+      "bar": {
+        "x": 0,
+        "y": 0,
+        "width": 900,
+        "height": 44,
+        "top": 0,
+        "right": 900,
+        "bottom": 44,
+        "left": 0
+      },
+      "tabArea": {
+        "rect": {
+          "x": 186,
+          "y": 0,
+          "width": 305.75,
+          "height": 43.333335876464844,
+          "top": 0,
+          "right": 491.75,
+          "bottom": 43.333335876464844,
+          "left": 186
+        },
+        "scrollW": 306,
+        "clientW": 306
+      },
+      "close": null,
+      "newTab": {
+        "rect": {
+          "x": 410,
+          "y": 9,
+          "w": 24,
+          "h": 34
+        },
+        "cx": 422,
+        "cy": 26,
+        "hitChain": [
+          "path.[object SVGAnimatedString]",
+          "svg.[object SVGAnimatedString]",
+          "BUTTON.tab-new",
+          "LI.tab-list-new"
+        ],
+        "hitIsSelf": true,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "file": {
+        "rect": {
+          "x": 8,
+          "y": 11,
+          "w": 28,
+          "h": 22
+        },
+        "cx": 22,
+        "cy": 22,
+        "hitChain": [
+          "svg.[object SVGAnimatedString]",
+          "BUTTON.titlebar-menu-button titlebar-",
+          "DIV.titlebar-menu",
+          "DIV.glass-chrome glass-chrome-titl"
+        ],
+        "hitIsSelf": true,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "newTabDisabled": false
+    },
+    "1000": {
+      "innerWidth": 1000,
+      "bar": {
+        "x": 0,
+        "y": 0,
+        "width": 1000,
+        "height": 44,
+        "top": 0,
+        "right": 1000,
+        "bottom": 44,
+        "left": 0
+      },
+      "tabArea": {
+        "rect": {
+          "x": 311.9270935058594,
+          "y": 0,
+          "width": 245.8229217529297,
+          "height": 43.333335876464844,
+          "top": 0,
+          "right": 557.7500152587891,
+          "bottom": 43.333335876464844,
+          "left": 311.9270935058594
+        },
+        "scrollW": 246,
+        "clientW": 246
+      },
+      "close": null,
+      "newTab": {
+        "rect": {
+          "x": 536,
+          "y": -1,
+          "w": 24,
+          "h": 34
+        },
+        "cx": 548,
+        "cy": 16,
+        "hitChain": [
+          "path.[object SVGAnimatedString]",
+          "svg.[object SVGAnimatedString]",
+          "BUTTON.tab-new",
+          "LI.tab-list-new"
+        ],
+        "hitIsSelf": true,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "file": {
+        "rect": {
+          "x": 8,
+          "y": 11,
+          "w": 54,
+          "h": 22
+        },
+        "cx": 35,
+        "cy": 22,
+        "hitChain": [
+          "SPAN.titlebar-menu-label",
+          "BUTTON.titlebar-menu-button titlebar-",
+          "DIV.titlebar-menu",
+          "DIV.glass-chrome glass-chrome-titl"
+        ],
+        "hitIsSelf": true,
+        "cs": {
+          "visibility": "visible",
+          "pointerEvents": "auto",
+          "opacity": "1"
+        }
+      },
+      "newTabDisabled": false
+    }
+  },
+  "themePopover": {
+    "options": [
+      {
+        "value": "frosted",
+        "rect": {
+          "x": 322.66668701171875,
+          "y": 39.66666793823242,
+          "width": 166.6666717529297,
+          "height": 30,
+          "top": 39.66666793823242,
+          "right": 489.33335876464844,
+          "bottom": 69.66666793823242,
+          "left": 322.66668701171875
+        },
+        "disabled": false
+      },
+      {
+        "value": "dark",
+        "rect": {
+          "x": 322.66668701171875,
+          "y": 69.66667175292969,
+          "width": 166.6666717529297,
+          "height": 30,
+          "top": 69.66667175292969,
+          "right": 489.33335876464844,
+          "bottom": 99.66667175292969,
+          "left": 322.66668701171875
+        },
+        "disabled": false
+      },
+      {
+        "value": "light",
+        "rect": {
+          "x": 322.66668701171875,
+          "y": 99.66667175292969,
+          "width": 166.6666717529297,
+          "height": 30,
+          "top": 99.66667175292969,
+          "right": 489.33335876464844,
+          "bottom": 129.6666717529297,
+          "left": 322.66668701171875
+        },
+        "disabled": false
+      },
+      {
+        "value": "system",
+        "rect": {
+          "x": 322.66668701171875,
+          "y": 129.6666717529297,
+          "width": 166.6666717529297,
+          "height": 30,
+          "top": 129.6666717529297,
+          "right": 489.33335876464844,
+          "bottom": 159.6666717529297,
+          "left": 322.66668701171875
+        },
+        "disabled": false
+      }
+    ],
+    "visible": true,
+    "changed": "frosted -> frosted"
+  }
+}

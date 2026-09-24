@@ -12,7 +12,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette, runTool } = require('./lib/helpers.cjs');
 const { twoPaneSetup, focusPaneByPage, paneCount, openFile, tmpCopy, REPORT, LONG } = require('./lib/p33_common.cjs');
 
 const COMPOSITE = '.tab[data-tab-id="tf-multi-workspace"]';
@@ -45,7 +45,7 @@ async function compositeDotVisible() {
   });
 }
 async function rotateFocused() {
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1100);
 }
 
@@ -139,7 +139,7 @@ test('C3 mode OFF restores the individual tabs with the focused pane document ac
   await focusPaneByPage(win, 'A');
   expect(await win.locator('.tab-pane[data-pane="A"]').getAttribute('data-pane-focused')).toBe('true');
 
-  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(700);
   expect(await win.locator('.tab-stage').getAttribute('data-multi-mode')).toBe('false');
 
@@ -157,7 +157,7 @@ test('C3 mode OFF restores the individual tabs with the focused pane document ac
   await win.waitForTimeout(1200);
   await focusPaneByPage(win, 'B');
   expect(await win.locator('.tab-pane[data-pane="B"]').getAttribute('data-pane-focused')).toBe('true');
-  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(700);
   const activeB = await win.locator('.tab[data-tab-id][aria-selected="true"] .tab-title').innerText();
   console.log(`[P34-tab] mode OFF focused B: active="${activeB}"`);

@@ -1,0 +1,23 @@
+{
+  "welcome": {
+    "welcome": true,
+    "recentRows": 1,
+    "removeControls": 0,
+    "bodyText": " FileTFTFlexOpenFrosted GlassPagesEditReviewDeliverSettingsTFlexA modern PDF studio for Windows.Open a document to begin, or pick one of the samples below to see TFlex in action. Search and navigation are keyboard-driven; everything you need lives one click away. Open PDFCtrl O Create from images Merge PDFsRecent11790240977158-report.pdfC:\\Users\\tanzi\\OneDrive\\App Development\\TFlex\\test-fixtures\\a"
+  },
+  "openRecentWorked": true,
+  "beforeRemove": 1,
+  "afterRemove": 1,
+  "mmBefore": {
+    "panes": 3,
+    "empty": 1,
+    "openBtn": true
+  },
+  "mmAfter": {
+    "emptyPanes": 0,
+    "headers": [
+      "A",
+      "B"
+    ]
+  }
+}

@@ -135,10 +135,12 @@ test('P36-C3-A dock: the four stage verb sets, the accent-soft primary, a disabl
 });
 
 // ---------------------------------------------------------------------------
-// B. State 2 — the selection override: the chip, and the bulk Rotate / Delete
-//    acting on the selected pages through the existing engine paths.
+// B. State 2 — the selection override: the chip, and the bulk Rotate / Extract
+//    / Delete / Clear acting on the selected pages through the existing engine
+//    paths. (Section 3A ruling 9: Merge was REMOVED from the bulk set — its
+//    home is the PAGES panel header's Combine control.)
 // ---------------------------------------------------------------------------
-test('P36-C3-B selection override: [N pages] chip + bulk Rotate/Delete act on the set', async () => {
+test('P36-C3-B selection override: [N pages] chip + bulk Rotate/Extract/Delete act on the set', async () => {
   await openSample();
   const panel = win.locator('[data-context-panel="pages"]');
   await expect(panel).toBeVisible();
@@ -175,8 +177,8 @@ test('P36-C3-B selection override: [N pages] chip + bulk Rotate/Delete act on th
   expect(await dockState()).toBe('selection');
   const chip = await win.locator('[data-dock-chip]').innerText();
   console.log(`[P36C3-B] chip="${chip}" verbs=${JSON.stringify(await dockVerbs())}`);
-  expect(chip).toBe('3 pages');
-  expect(await dockVerbs()).toEqual(['rotate', 'extract', 'merge', 'delete', 'clearPageSelection']);
+expect(chip).toBe('3 pages');
+  expect(await dockVerbs()).toEqual(['rotate', 'extract', 'delete', 'clearPageSelection']);
 
   // Bulk Rotate rotates exactly the selected pages (existing engine path). The
   // engine stores rotation as a quarter-turn count (0..3), so cw = 1.
@@ -1086,12 +1088,16 @@ test('P36-C3-R leavers: merge/renumber/rotate-ccw/watermark/createFromImages fro
   console.log(`[P36C3-R] rotateCounterClockwise -> thumb menu: rotations[0] ${before} -> ${afterCcw}`);
   expect(afterCcw, 'the CCW menu verb rotated page 1 a quarter turn').not.toBe(before);
 
-  // renumberPages -> the same thumbnail right-click menu (renumber).
+  // renumberPages -> the Inspector's `Label · renumber…` (section 3A ruling 2:
+  // renumber is NOT a thumbnail-menu verb any more).
   await panel.locator('.thumb-item[data-page="1"]').click({ button: 'right' });
   await win.waitForSelector('[data-context-menu]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-menu-item="renumber"]').click();
+  expect(await win.locator('[data-context-menu] [data-menu-item="renumber"]').count(), 'no renumber menu item').toBe(0);
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(400);
+  await win.locator('[data-inspector] [data-inspector-action="renumber"]').click();
   await win.waitForSelector('[data-renumber-pages-dialog]', { state: 'visible', timeout: 8000 });
-  console.log('[P36C3-R] renumberPages -> thumb menu: renumber dialog opened');
+  console.log('[P36C3-R] renumberPages -> Inspector Label · renumber…: renumber dialog opened');
   await win.keyboard.press('Escape');
   await win.waitForTimeout(500);
 

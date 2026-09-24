@@ -530,6 +530,17 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
       ? null
       : (effectiveAnnotations.find((a) => a.id === selectedAnnId) ?? null);
 
+  /** DEF-326 — the page bounds of every annotation OTHER than the selected
+   *  one. The selected annotation's comment card uses these to avoid
+   *  covering a neighbouring annotation's hit surface. Computed here (and
+   *  memoized) so the card's placement memo is stable across re-renders. */
+  const otherAnnBounds = useMemo((): PageRect[] => {
+    if (selectedAnn === null) return [];
+    return effectiveAnnotations
+      .filter((a) => a.id !== selectedAnn.id)
+      .map((a) => annotationBounds(a));
+  }, [effectiveAnnotations, selectedAnn]);
+
   // Phase 21 (annotations) — report the selected committed annotation
   // upward. `selectedAnn` keeps a stable object identity while the
   // underlying annotation is unchanged, so this only fires on a real
@@ -1243,6 +1254,10 @@ export function AnnotationOverlay(props: AnnotationOverlayProps): ReactElement {
           cssScale={cssScale}
           widthPt={widthPt}
           heightPt={heightPt}
+          // DEF-326 — the OTHER annotations' bounds, so the card never
+          // lands on a neighbouring annotation's hit surface (a reopened
+          // note behind the card could otherwise never be selected).
+          avoid={otherAnnBounds}
         />
       )}
 

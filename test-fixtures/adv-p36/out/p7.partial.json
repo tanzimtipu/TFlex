@@ -1,0 +1,416 @@
+{
+  "tabsBefore": 2,
+  "entered": {
+    "railActive": "pages",
+    "railCount": 1,
+    "dockCount": 2,
+    "dockState": "stage",
+    "dockVerbs": [
+      "rotate",
+      "extract",
+      "insertPages",
+      "replacePages",
+      "split",
+      "delete",
+      "rotate",
+      "extract",
+      "insertPages",
+      "replacePages",
+      "split",
+      "delete"
+    ],
+    "dockRect": {
+      "x": 617.578125,
+      "y": 843,
+      "width": 478.84375,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 1096.421875,
+      "bottom": 891.3333358764648,
+      "left": 617.578125
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 567,
+          "height": 34,
+          "top": 44,
+          "right": 611,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "A",
+        "focused": "true",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 567,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 611,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      },
+      {
+        "pane": "B",
+        "focused": "false",
+        "rect": {
+          "x": 619,
+          "y": 44,
+          "width": 567,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1186,
+          "bottom": 903.3333740234375,
+          "left": 619
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 347,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 391,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "pages",
+      "selection": "page"
+    }
+  },
+  "pickOptions": [
+    {
+      "id": "5a01b733-c4ad-4e5c-b50a-412179ec3e13",
+      "text": "1790239623846-report.pdf34 pages"
+    }
+  ],
+  "afterPick": {
+    "railActive": "pages",
+    "railCount": 1,
+    "dockCount": 1,
+    "dockState": "stage",
+    "dockVerbs": [
+      "rotate",
+      "extract",
+      "insertPages",
+      "replacePages",
+      "split",
+      "delete"
+    ],
+    "dockRect": {
+      "x": 375.578125,
+      "y": 843,
+      "width": 478.84375,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 854.421875,
+      "bottom": 891.3333358764648,
+      "left": 375.578125
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 619,
+          "y": 44,
+          "width": 567,
+          "height": 34,
+          "top": 44,
+          "right": 1186,
+          "bottom": 78,
+          "left": 619
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 567,
+          "height": 34,
+          "top": 44,
+          "right": 611,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "B",
+        "focused": "true",
+        "rect": {
+          "x": 619,
+          "y": 44,
+          "width": 567,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1186,
+          "bottom": 903.3333740234375,
+          "left": 619
+        }
+      },
+      {
+        "pane": "A",
+        "focused": "false",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 567,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 611,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "B",
+        "rect": {
+          "x": 839,
+          "y": 903.3333740234375,
+          "width": 347,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 1186,
+          "bottom": 903.3333740234375,
+          "left": 839
+        }
+      },
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 347,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 391,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "pages",
+      "selection": "page"
+    }
+  },
+  "afterBDeliver": {
+    "railActive": "deliver",
+    "railCount": 1,
+    "dockCount": 1,
+    "dockState": "stage",
+    "dockVerbs": [
+      "rotate",
+      "extract",
+      "insertPages",
+      "replacePages",
+      "split",
+      "delete"
+    ],
+    "dockRect": {
+      "x": 617.578125,
+      "y": 843,
+      "width": 478.84375,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 1096.421875,
+      "bottom": 891.3333358764648,
+      "left": 617.578125
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 699,
+          "height": 34,
+          "top": 44,
+          "right": 743,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "A",
+        "focused": "false",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 699,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 743,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      },
+      {
+        "pane": "B",
+        "focused": "true",
+        "rect": {
+          "x": 751,
+          "y": 44,
+          "width": 699,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1450,
+          "bottom": 903.3333740234375,
+          "left": 751
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 479,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 523,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": null
+  },
+  "afterAEdit": {
+    "railActive": "edit",
+    "railCount": 1,
+    "dockCount": 2,
+    "dockState": "stage",
+    "dockVerbs": [
+      "rotate",
+      "extract",
+      "insertPages",
+      "replacePages",
+      "split",
+      "delete",
+      "editMode",
+      "editText",
+      "editImage",
+      "editTextBox",
+      "recognizeText",
+      "cropPages"
+    ],
+    "dockRect": {
+      "x": 617.578125,
+      "y": 843,
+      "width": 478.84375,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 1096.421875,
+      "bottom": 891.3333358764648,
+      "left": 617.578125
+    },
+    "pinCount": 0,
+    "headers": [
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 567,
+          "height": 34,
+          "top": 44,
+          "right": 611,
+          "bottom": 78,
+          "left": 44
+        }
+      }
+    ],
+    "panes": [
+      {
+        "pane": "A",
+        "focused": "true",
+        "rect": {
+          "x": 44,
+          "y": 44,
+          "width": 567,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 611,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      },
+      {
+        "pane": "B",
+        "focused": "false",
+        "rect": {
+          "x": 619,
+          "y": 44,
+          "width": 567,
+          "height": 859.3333740234375,
+          "top": 44,
+          "right": 1186,
+          "bottom": 903.3333740234375,
+          "left": 619
+        }
+      }
+    ],
+    "pills": [
+      {
+        "pane": "A",
+        "rect": {
+          "x": 44,
+          "y": 903.3333740234375,
+          "width": 347,
+          "height": 0,
+          "top": 903.3333740234375,
+          "right": 391,
+          "bottom": 903.3333740234375,
+          "left": 44
+        }
+      }
+    ],
+    "compositeTab": 0,
+    "tabs": 0,
+    "divider": true,
+    "multiMode": true,
+    "inspector": {
+      "stage": "edit",
+      "selection": "page"
+    }
+  }
+}

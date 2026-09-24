@@ -342,8 +342,14 @@ async function createTextBoxBelow(scale, runPx, label) {
   let b = toViewport(scale, { x: px.x + px.w, y: px.y + px.h });
   // Phase 25/26 — the floating text panel covers the page's left edge, so a
   // left-side drag is intercepted by the panel. Shift the drag clear of it and
-  // recompute the canvas-px rect from the actual viewport point.
-  const MIN_X = 500;
+  // recompute the canvas-px rect from the actual viewport point. Phase 36: read
+  // the panel's ACTUAL right edge (it is wider than the old hardcoded 500px and
+  // now floats inside .workspace-main), so a fixed MIN_X starts the drag on it.
+  const panelRight = await win.evaluate(() => {
+    const p = document.querySelector('[data-text-panel]');
+    return p ? p.getBoundingClientRect().right : 0;
+  });
+  const MIN_X = Math.max(500, panelRight + 40);
   if (a.x < MIN_X) {
     const shift = MIN_X - a.x;
     a = { x: a.x + shift, y: a.y };

@@ -1,0 +1,5 @@
+locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-pane-header][data-pane="B"]')[22m
+
+    at C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\adv-p36\p7_multi.cjs:85:63

@@ -1,0 +1,19 @@
+locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-dock-verb="editTextBox"]').first()[22m
+[2m    - locator resolved to <button disabled type="button" class="action-dock-verb" aria-label="Add a text box" data-dock-verb="editTextBox" title="Turn on Edit content first">…</button>[22m
+[2m  - attempting click action[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is not enabled[22m
+[2m    - retrying click action[22m
+[2m    - waiting 20ms[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is not enabled[22m
+[2m    - retrying click action[22m
+[2m      - waiting 100ms[22m
+[2m    58 × waiting for element to be visible, enabled and stable[22m
+[2m       - element is not enabled[22m
+[2m     - retrying click action[22m
+[2m       - waiting 500ms[22m
+
+    at C:\Users\tanzi\OneDrive\App Development\TFlex\test-fixtures\adv-p36\p9_discipline.cjs:86:68

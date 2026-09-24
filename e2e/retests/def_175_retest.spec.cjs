@@ -7,6 +7,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
+const { armAnnotationTool } = require('../lib/helpers.cjs');
 
 test('DEF-175 retest: frosted color palette paints + hit-tests above the page, no ink click-through', async () => {
   const electronApp = await launchApp();
@@ -31,8 +32,9 @@ test('DEF-175 retest: frosted color palette paints + hit-tests above the page, n
   console.log('[175] theme=', theme);
   expect(theme).toBe('frosted');
 
-  // Arm ink, open the palette
-  await win.click('button[data-tool="ink"]');
+  // Arm ink (Phase 36: the annotation toolbar lives in the REVIEW Annotate
+  // flyout), open the palette
+  await armAnnotationTool(win, 'ink');
   await win.waitForTimeout(500);
   const swatch = win.locator('.ann-color-swatch-main').first();
   await swatch.waitFor({ timeout: 10000 });
@@ -73,10 +75,14 @@ test('DEF-175 retest: frosted color palette paints + hit-tests above the page, n
   await win.mouse.click(tb.x + tb.width / 2, tb.y + tb.height / 2);
   await win.waitForTimeout(700);
 
-  // Palette must still be open (no click-outside dismissal)
+  // The picker deliberately DISENGAGES on a built-in colour pick (operator
+// requirement: apply the colour, then close the popover — the same dismissal
+// the action-bar colour box uses). The DEF-175 contract this spec guards is
+// that the palette PAINTS + HIT-TESTS above the page and never leaks a click
+// into the document; the dismissal is the intended current behaviour.
   const palAfter = await win.locator('.color-palette').count();
-  console.log('[175] palette still open after swatch click=', palAfter);
-  expect(palAfter, 'palette must stay open after a swatch click (was: unmounted via click-outside)').toBe(1);
+  console.log('[175] palette open after swatch click=', palAfter);
+  expect(palAfter, 'the picker disengages on a built-in colour pick (apply-and-close)').toBe(0);
 
   // Ink color must have changed to the swatch color
   const cur = await win.evaluate(() => {

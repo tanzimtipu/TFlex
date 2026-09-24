@@ -357,10 +357,12 @@ test('DEF-303 retest: maximize timeline, OS calls, rAF-while-minimised, post-res
   out(`main loop max drift over run: ${main.loop.reduce((m, s) => Math.max(m, s.drift), 0)}ms`);
 
   // ---- Assertions: the observable fix outcomes ----
-  // `getLastWebPreferences()` does not surface `backgroundThrottling` in this
-  // Electron build; `webContents.backgroundThrottling` is the documented live
-  // property and reports false (so the creation-time option took effect).
-  expect(prefs.wcBackgroundThrottling).toBe(false);
+  // DEF-303 follow-up: `backgroundThrottling: false` was tried and REVERTED
+  // (src/main/window.ts:190, src/renderer/state/renderSuspend.ts) — it did NOT
+  // stop the compositor throttling. The fix is the renderer's explicit
+  // pause/resume machinery, so the live property now reports the Chromium
+  // DEFAULT (true) and is deliberately not relied upon.
+  expect(prefs.wcBackgroundThrottling).toBe(true);
   expect(A.osCalls.map((c) => c.m)).toEqual(['maximize']);
   expect(B.osCalls.map((c) => c.m)).toEqual(['restore']);
   expect(C.osCalls.map((c) => c.m)).toEqual(['restore', 'maximize']);

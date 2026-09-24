@@ -1,0 +1,149 @@
+{
+  "oneTab": {
+    "count": 1,
+    "docks": [
+      {
+        "checkVisibility": true,
+        "rect": {
+          "x": 600,
+          "y": 854,
+          "w": 241
+        },
+        "hitSelf": false,
+        "hit": "DIV.action-dock-group",
+        "hiddenBy": null,
+        "inMultiLayer": false,
+        "opacity": "1"
+      }
+    ]
+  },
+  "twoTabs": {
+    "count": 2,
+    "docks": [
+      {
+        "checkVisibility": false,
+        "rect": {
+          "x": 600,
+          "y": 854,
+          "w": 241
+        },
+        "hitSelf": false,
+        "hit": "DIV.action-dock-group",
+        "hiddenBy": {
+          "tag": "DIV",
+          "cls": "action-dock",
+          "visibility": "hidden",
+          "display": "flex",
+          "ariaHidden": null
+        },
+        "inMultiLayer": false,
+        "opacity": "1"
+      },
+      {
+        "checkVisibility": true,
+        "rect": {
+          "x": 600,
+          "y": 854,
+          "w": 241
+        },
+        "hitSelf": false,
+        "hit": "DIV.action-dock-group",
+        "hiddenBy": null,
+        "inMultiLayer": false,
+        "opacity": "1"
+      }
+    ]
+  },
+  "multiEnter": {
+    "count": 2,
+    "docks": [
+      {
+        "checkVisibility": false,
+        "rect": {
+          "x": 614,
+          "y": 843,
+          "w": 479
+        },
+        "hitSelf": false,
+        "hit": "DIV.multi-pane-empty",
+        "hiddenBy": {
+          "tag": "DIV",
+          "cls": "action-dock",
+          "visibility": "hidden",
+          "display": "flex",
+          "ariaHidden": null
+        },
+        "inMultiLayer": false,
+        "opacity": "0.4"
+      },
+      {
+        "checkVisibility": true,
+        "rect": {
+          "x": 372,
+          "y": 843,
+          "w": 479
+        },
+        "hitSelf": false,
+        "hit": "DIV.action-dock-group",
+        "hiddenBy": null,
+        "inMultiLayer": true,
+        "opacity": "0.409788"
+      }
+    ]
+  },
+  "multiFilled": {
+    "count": 1,
+    "docks": [
+      {
+        "checkVisibility": true,
+        "rect": {
+          "x": 372,
+          "y": 843,
+          "w": 479
+        },
+        "hitSelf": false,
+        "hit": "DIV.action-dock-group",
+        "hiddenBy": null,
+        "inMultiLayer": true,
+        "opacity": "1"
+      }
+    ]
+  },
+  "afterLeave": {
+    "count": 2,
+    "docks": [
+      {
+        "checkVisibility": true,
+        "rect": {
+          "x": 600,
+          "y": 854,
+          "w": 241
+        },
+        "hitSelf": false,
+        "hit": "DIV.action-dock-group",
+        "hiddenBy": null,
+        "inMultiLayer": false,
+        "opacity": "0.400669"
+      },
+      {
+        "checkVisibility": false,
+        "rect": {
+          "x": 600,
+          "y": 854,
+          "w": 241
+        },
+        "hitSelf": false,
+        "hit": "DIV.action-dock-group",
+        "hiddenBy": {
+          "tag": "DIV",
+          "cls": "action-dock",
+          "visibility": "hidden",
+          "display": "flex",
+          "ariaHidden": null
+        },
+        "inMultiLayer": false,
+        "opacity": "0.425714"
+      }
+    ]
+  }
+}

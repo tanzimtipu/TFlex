@@ -1423,6 +1423,22 @@ export function isDockSurfaceEntry(entry: ToolEntry): boolean {
   return (entry.surface ?? 'dock') === 'dock';
 }
 
+/** The registry ACTIONS the curated Action Dock hosts in some stage. DEF-327 —
+ *  the Command Palette asks the dock's own gate about exactly these actions and
+ *  keeps its host-level availability for everything else, so the two surfaces
+ *  can never disagree about a verb they both show. */
+const DOCK_HOSTED_ACTIONS: ReadonlySet<string> = new Set(
+  Object.values(DOCK_STAGE_IDS)
+    .flat()
+    .map((id) => BY_ID.get(id)?.action)
+    .filter((action): action is string => action !== undefined),
+);
+
+/** True when the Action Dock hosts this registry ACTION in any stage. */
+export function isDockHostedAction(action: string): boolean {
+  return DOCK_HOSTED_ACTIONS.has(action);
+}
+
 /** The Action Dock's curated verb set for a stage, resolved from the registry
  *  by id so each verb reuses the registry's own icon/label/gate. A stage with
  *  no curated list (or `global`) renders no dock verbs. */

@@ -134,36 +134,9 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
       });
     }
 
-    async function badgeFacts() {
-      return win.evaluate(() => {
-        // Inlined (not the Node-scope parseRgba): this runs in the page.
-        const parseRgba = (str) => {
-          const m = /rgba?\(([^)]+)\)/.exec(str || '');
-          if (!m) return null;
-          const p = m[1].split(',').map((s) => parseFloat(s.trim()));
-          return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 };
-        };
-        const badge = document.querySelector('.tools-badge[data-tools-badge], [data-tools-badge]');
-        if (!badge) return null;
-        const label = badge.querySelector('.tools-badge-label');
-        const cs = getComputedStyle(badge);
-        const labelCs = label ? getComputedStyle(label) : null;
-        const r = badge.getBoundingClientRect();
-        return {
-          opacity: parseFloat(cs.opacity),
-          ariaPressed: badge.getAttribute('aria-pressed'),
-          ariaLabel: badge.getAttribute('aria-label'),
-          width: r.width,
-          x: r.x,
-          y: r.y,
-          labelPresent: !!label,
-          labelText: label ? label.textContent.trim() : null,
-          labelBg: label ? labelCs.backgroundColor : null,
-          labelBgAlpha: label ? parseRgba(getComputedStyle(label).backgroundColor).a : null,
-          labelColor: label ? getComputedStyle(label).color : null,
-        };
-      });
-    }
+    // The retired pill-era "All tools" badge helper (badgeFacts) was removed
+    // with the Phase 36 badge retirement. The badge's live absence regression
+    // assertion is in section 3 below.
 
     // ------------------------------------------------------------------
     // Setup: fresh launch (frosted default) + open report.pdf

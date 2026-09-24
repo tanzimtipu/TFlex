@@ -152,7 +152,16 @@ async function assertDisarmedAndGhostGone(tag) {
 
 // ---- T1: Insert Pages dialog over a pending Text-box ghost ----
 
-test('DEF-211 T1: Insert Pages dialog disarms the ghost (textbox tool)', async () => {
+// RETIRED (Phase 26, and the Phase 36 surface move that followed). T1/T2/T3
+// assert that an UNCONFIRMED in-canvas textbox/note GHOST editor stays mounted
+// while its tool is armed, and that opening a dialog disarms it. Phase 26
+// REMOVED the in-canvas editor: a textbox/note click now places the annotation
+// immediately and hands editing to the panel Text field, so there is no pending
+// ghost to disarm. The current no-in-canvas-editor contract is covered by
+// e2e/phase26_panel_text_edit.spec.cjs C1; the armed-tool disarm-on-pending-bar
+// contract by e2e/regression_b_port.spec.cjs B1-port (Sign Cancel) and
+// e2e/sweep_annotations_sign.spec.cjs (Escape disarm).
+test.skip('DEF-211 T1: Insert Pages dialog disarms the ghost (textbox tool)', async () => {
   await launch();
   await openDoc();
 
@@ -211,7 +220,8 @@ test('DEF-211 T1: Insert Pages dialog disarms the ghost (textbox tool)', async (
 
 // ---- T2: Optimize dialog over a pending Note ghost ----
 
-test('DEF-211 T2: Optimize dialog disarms the ghost (note tool)', async () => {
+// RETIRED — see the T1 note above.
+test.skip('DEF-211 T2: Optimize dialog disarms the ghost (note tool)', async () => {
   await launch();
   await openDoc();
 
@@ -259,7 +269,8 @@ test('DEF-211 T2: Optimize dialog disarms the ghost (note tool)', async () => {
 
 // ---- T3: Save As sheet over a pending ghost on a modified document ----
 
-test('DEF-211 T3: Save As sheet disarms the ghost (textbox, modified doc)', async () => {
+// RETIRED — see the T1 note above.
+test.skip('DEF-211 T3: Save As sheet disarms the ghost (textbox, modified doc)', async () => {
   await launch();
   await openDoc();
 

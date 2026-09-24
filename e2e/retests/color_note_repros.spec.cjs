@@ -74,13 +74,16 @@ test('BUG-4: sticky note text not visible inside after apply', async () => {
   await window.waitForTimeout(400);
   const editorOpen = await window.locator('[data-annotation-editor="note"]').count();
   console.log('BUG4 note editor open:', editorOpen);
-  // type text
-  const editor = window.locator('[data-annotation-editor="note"] textarea, [data-annotation-editor="note"] input');
-  if (await editor.count()) { await editor.first().fill('Hello sticky note'); }
-  await window.waitForTimeout(200);
+  // type text — Phase 26: the in-canvas note editor is retired; the panel Text
+  // field is the editor and commits on blur.
+  await window.waitForSelector('[data-txt-text]', { timeout: 8000 });
+  await window.waitForFunction(() => {
+    const ta = document.querySelector('[data-txt-text]');
+    return ta !== null && ta.disabled === false;
+  }, null, { timeout: 8000 });
+  await window.locator('[data-txt-text]').fill('Hello sticky note');
   await snap('bug4-note-editor');
-  // confirm
-  await window.locator('[data-annotation-action="note-confirm"]').first().click({ force: true });
+  await window.locator('[data-txt-text]').blur();
   await window.waitForTimeout(600);
 
   const noteInfo = await window.evaluate(() => {
@@ -111,9 +114,14 @@ test('BUG-5: sticky note has no Sign-like selector; icon+text separated', async 
   await armAnnotationTool(window, 'note');
   await window.mouse.click(pbox.x + 400, pbox.y + 400);
   await window.waitForTimeout(400);
-  const editor = window.locator('[data-annotation-editor="note"] textarea, [data-annotation-editor="note"] input');
-  if (await editor.count()) { await editor.first().fill('Note for BUG-5'); }
-  await window.locator('[data-annotation-action="note-confirm"]').first().click({ force: true });
+  // Phase 26 — the panel Text field is the note editor (commits on blur).
+  await window.waitForSelector('[data-txt-text]', { timeout: 8000 });
+  await window.waitForFunction(() => {
+    const ta = document.querySelector('[data-txt-text]');
+    return ta !== null && ta.disabled === false;
+  }, null, { timeout: 8000 });
+  await window.locator('[data-txt-text]').fill('Note for BUG-5');
+  await window.locator('[data-txt-text]').blur();
   await window.waitForTimeout(600);
 
   // now click the committed note icon

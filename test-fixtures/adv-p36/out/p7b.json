@@ -1,0 +1,562 @@
+{
+  "beforeMM": {
+    "count": 2,
+    "docks": [
+      {
+        "rect": {
+          "x": 600.3333740234375,
+          "y": 854,
+          "width": 241.33334350585938,
+          "height": 37.333335876464844,
+          "top": 854,
+          "right": 841.6667175292969,
+          "bottom": 891.3333358764648,
+          "left": 600.3333740234375
+        },
+        "verbs": 6,
+        "verbIds": [
+          "rotate",
+          "extract",
+          "insertPages",
+          "replacePages",
+          "split",
+          "delete"
+        ],
+        "visible": true,
+        "opacity": "1",
+        "parent": "canvas-overlay",
+        "inMultiLayer": false,
+        "multiMode": false
+      },
+      {
+        "rect": {
+          "x": 600.3333740234375,
+          "y": 854,
+          "width": 241.33334350585938,
+          "height": 37.333335876464844,
+          "top": 854,
+          "right": 841.6667175292969,
+          "bottom": 891.3333358764648,
+          "left": 600.3333740234375
+        },
+        "verbs": 6,
+        "verbIds": [
+          "rotate",
+          "extract",
+          "insertPages",
+          "replacePages",
+          "split",
+          "delete"
+        ],
+        "visible": true,
+        "opacity": "1",
+        "parent": "canvas-overlay",
+        "inMultiLayer": false,
+        "multiMode": false
+      }
+    ]
+  },
+  "enterSamples": [
+    {
+      "t": 400,
+      "count": 2,
+      "docks": [
+        {
+          "rect": {
+            "x": 613.578125,
+            "y": 843,
+            "width": 478.84375,
+            "height": 48.333335876464844,
+            "top": 843,
+            "right": 1092.421875,
+            "bottom": 891.3333358764648,
+            "left": 613.578125
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": true
+        },
+        {
+          "rect": {
+            "x": 371.578125,
+            "y": 843,
+            "width": 478.84375,
+            "height": 48.333335876464844,
+            "top": 843,
+            "right": 850.421875,
+            "bottom": 891.3333358764648,
+            "left": 371.578125
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "multi-dock-layer",
+          "inMultiLayer": true,
+          "multiMode": true
+        }
+      ]
+    },
+    {
+      "t": 1200,
+      "count": 2,
+      "docks": [
+        {
+          "rect": {
+            "x": 613.578125,
+            "y": 843,
+            "width": 478.84375,
+            "height": 48.333335876464844,
+            "top": 843,
+            "right": 1092.421875,
+            "bottom": 891.3333358764648,
+            "left": 613.578125
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": true
+        },
+        {
+          "rect": {
+            "x": 371.578125,
+            "y": 843,
+            "width": 478.84375,
+            "height": 48.333335876464844,
+            "top": 843,
+            "right": 850.421875,
+            "bottom": 891.3333358764648,
+            "left": 371.578125
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "multi-dock-layer",
+          "inMultiLayer": true,
+          "multiMode": true
+        }
+      ]
+    },
+    {
+      "t": 2500,
+      "count": 2,
+      "docks": [
+        {
+          "rect": {
+            "x": 613.578125,
+            "y": 843,
+            "width": 478.84375,
+            "height": 48.333335876464844,
+            "top": 843,
+            "right": 1092.421875,
+            "bottom": 891.3333358764648,
+            "left": 613.578125
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": true
+        },
+        {
+          "rect": {
+            "x": 371.578125,
+            "y": 843,
+            "width": 478.84375,
+            "height": 48.333335876464844,
+            "top": 843,
+            "right": 850.421875,
+            "bottom": 891.3333358764648,
+            "left": 371.578125
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "multi-dock-layer",
+          "inMultiLayer": true,
+          "multiMode": true
+        }
+      ]
+    },
+    {
+      "t": 4000,
+      "count": 2,
+      "docks": [
+        {
+          "rect": {
+            "x": 613.578125,
+            "y": 843,
+            "width": 478.84375,
+            "height": 48.333335876464844,
+            "top": 843,
+            "right": 1092.421875,
+            "bottom": 891.3333358764648,
+            "left": 613.578125
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "0.4",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": true
+        },
+        {
+          "rect": {
+            "x": 371.578125,
+            "y": 843,
+            "width": 478.84375,
+            "height": 48.333335876464844,
+            "top": 843,
+            "right": 850.421875,
+            "bottom": 891.3333358764648,
+            "left": 371.578125
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "0.4",
+          "parent": "multi-dock-layer",
+          "inMultiLayer": true,
+          "multiMode": true
+        }
+      ]
+    }
+  ],
+  "Bdeliver": {
+    "rail": "deliver",
+    "focused": "B",
+    "verbs": [
+      "optimize",
+      "audit",
+      "exportPages",
+      "exportText",
+      "exportDocx"
+    ]
+  },
+  "Aedit": {
+    "rail": "edit",
+    "focused": "A",
+    "verbs": [
+      "editMode",
+      "editText",
+      "editImage",
+      "editTextBox",
+      "recognizeText",
+      "cropPages"
+    ]
+  },
+  "backToB": {
+    "rail": "deliver",
+    "focused": "B",
+    "verbs": [
+      "optimize",
+      "audit",
+      "exportPages",
+      "exportText",
+      "exportDocx"
+    ],
+    "inspector": "deliver"
+  },
+  "leaveSamples": [
+    {
+      "t": 400,
+      "count": 2,
+      "docks": [
+        {
+          "rect": {
+            "x": 600.3333740234375,
+            "y": 854,
+            "width": 241.33334350585938,
+            "height": 37.333335876464844,
+            "top": 854,
+            "right": 841.6667175292969,
+            "bottom": 891.3333358764648,
+            "left": 600.3333740234375
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": false
+        },
+        {
+          "rect": {
+            "x": 600.3333740234375,
+            "y": 854,
+            "width": 241.33334350585938,
+            "height": 37.333335876464844,
+            "top": 854,
+            "right": 841.6667175292969,
+            "bottom": 891.3333358764648,
+            "left": 600.3333740234375
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": false
+        }
+      ]
+    },
+    {
+      "t": 1200,
+      "count": 2,
+      "docks": [
+        {
+          "rect": {
+            "x": 600.3333740234375,
+            "y": 854,
+            "width": 241.33334350585938,
+            "height": 37.333335876464844,
+            "top": 854,
+            "right": 841.6667175292969,
+            "bottom": 891.3333358764648,
+            "left": 600.3333740234375
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": false
+        },
+        {
+          "rect": {
+            "x": 600.3333740234375,
+            "y": 854,
+            "width": 241.33334350585938,
+            "height": 37.333335876464844,
+            "top": 854,
+            "right": 841.6667175292969,
+            "bottom": 891.3333358764648,
+            "left": 600.3333740234375
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": false
+        }
+      ]
+    },
+    {
+      "t": 2500,
+      "count": 2,
+      "docks": [
+        {
+          "rect": {
+            "x": 600.3333740234375,
+            "y": 854,
+            "width": 241.33334350585938,
+            "height": 37.333335876464844,
+            "top": 854,
+            "right": 841.6667175292969,
+            "bottom": 891.3333358764648,
+            "left": 600.3333740234375
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": false
+        },
+        {
+          "rect": {
+            "x": 600.3333740234375,
+            "y": 854,
+            "width": 241.33334350585938,
+            "height": 37.333335876464844,
+            "top": 854,
+            "right": 841.6667175292969,
+            "bottom": 891.3333358764648,
+            "left": 600.3333740234375
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "1",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": false
+        }
+      ]
+    },
+    {
+      "t": 4000,
+      "count": 2,
+      "docks": [
+        {
+          "rect": {
+            "x": 600.3333740234375,
+            "y": 854,
+            "width": 241.33334350585938,
+            "height": 37.333335876464844,
+            "top": 854,
+            "right": 841.6667175292969,
+            "bottom": 891.3333358764648,
+            "left": 600.3333740234375
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "0.4",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": false
+        },
+        {
+          "rect": {
+            "x": 600.3333740234375,
+            "y": 854,
+            "width": 241.33334350585938,
+            "height": 37.333335876464844,
+            "top": 854,
+            "right": 841.6667175292969,
+            "bottom": 891.3333358764648,
+            "left": 600.3333740234375
+          },
+          "verbs": 6,
+          "verbIds": [
+            "rotate",
+            "extract",
+            "insertPages",
+            "replacePages",
+            "split",
+            "delete"
+          ],
+          "visible": true,
+          "opacity": "0.4",
+          "parent": "canvas-overlay",
+          "inMultiLayer": false,
+          "multiMode": false
+        }
+      ]
+    }
+  ]
+}

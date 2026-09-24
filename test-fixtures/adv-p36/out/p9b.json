@@ -1,0 +1,70 @@
+{
+  "thumbVerb": {
+    "count": 34,
+    "trial": "ok",
+    "rotation": "0° -> 1°"
+  },
+  "suspectsBtn": {
+    "disabled": false,
+    "title": null,
+    "text": "Review suspects"
+  },
+  "suspectsBtnAfterClick": {
+    "panel": false,
+    "toast": [],
+    "before": false
+  },
+  "newTab640": {
+    "rect": {
+      "x": 411,
+      "y": -1,
+      "w": 24,
+      "h": 34
+    },
+    "centre": {
+      "cx": 423,
+      "cy": 16
+    },
+    "hitIsSelf": false,
+    "hit": "BUTTON.header-gear",
+    "disabled": false,
+    "pointerEvents": "auto",
+    "appRegion": "no-drag",
+    "tabListScrollLeft": 0,
+    "trial": "ok"
+  },
+  "tabClose640": {
+    "rect": {
+      "x": 255,
+      "y": 8,
+      "w": 18,
+      "h": 18
+    },
+    "centre": {
+      "cx": 264,
+      "cy": 17
+    },
+    "hitIsSelf": true,
+    "hit": "path.[object SVGAnimatedString]",
+    "disabled": false,
+    "pointerEvents": "auto",
+    "appRegion": "no-drag",
+    "tabListScrollLeft": 123.33333587646484,
+    "trial": "ok"
+  },
+  "headerActions640": {
+    "rect": {
+      "x": 315,
+      "y": 0,
+      "width": 179,
+      "height": 43.333335876464844,
+      "top": 0,
+      "right": 494,
+      "bottom": 43.333335876464844,
+      "left": 315
+    },
+    "firstChild": "update-indicator update-indicator-checki"
+  },
+  "tabCloseReal": "clicked",
+  "tabsAfterClose": 0
+}

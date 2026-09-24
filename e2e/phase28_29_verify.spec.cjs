@@ -61,8 +61,18 @@ async function setTheme(win, theme) {
 async function dragOnPage(win, fx, fy, dxPx, dyPx, page = 1) {
   const pg = await win.locator(`.pdf-page[data-page="${page}"]`).boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
-  const x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 240));
-  const y = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 110));
+  // Keep the drag clear of the floating Text-properties panel (Phase 26),
+  // which overlays the page's left edge and would swallow the drag start.
+  const panelRight = await win.evaluate(() => {
+    const p = document.querySelector('[data-text-panel]');
+    return p ? p.getBoundingClientRect().right : 0;
+  });
+  let x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 240));
+  x = Math.min(Math.max(x, panelRight + 40), vp.w - 240);
+  // Keep the drag (START and END) clear of the floating CanvasPills/Action
+  // Dock band at the viewport bottom: a pointerup on that chrome cancels the
+  // pending annotation before it is committed.
+  const y = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 130 - dyPx));
   await win.mouse.move(x, y);
   await win.mouse.down();
   await win.mouse.move(x + dxPx, y + dyPx, { steps: 6 });
@@ -801,8 +811,14 @@ test('P29 C1 flush padding 0 in all three themes', async () => {
     log('P29C1', rows);
     for (const r of rows) {
       for (const [k, v] of Object.entries(r.scroller)) {
+        if (k === 'mr') continue; // Phase 36: the Inspector inset, asserted below
         expect(v, `${r.theme}: .document-scroller ${k} is 0`).toMatch(/^0(px)?$/);
       }
+      // Phase 36: with a document open the Inspector mounts and insets the
+      // scroller's right margin by --tf-tools-inset (INSPECTOR_W_PX = 264px).
+      // That is the panel inset, not page padding — assert it is exactly the
+      // documented width so a stray gutter still fails this flush check.
+      expect(r.scroller.mr, `${r.theme}: .document-scroller right margin is the Inspector inset (264px)`).toBe('264px');
       for (const [k, v] of Object.entries(r.content)) {
         expect(v, `${r.theme}: .document-content ${k} is 0`).toMatch(/^0(px)?$/);
       }
@@ -922,6 +938,14 @@ test('P29 C3 flush-page annotation coords + panel + tools palette', async () => 
     await win.keyboard.press('Escape');
     await armAnnotationTool(win, 'textbox');
     await dragOnPage(win, 0.4, 0.7, 170, 60);
+    await win.waitForTimeout(800);
+    log('P29C3-textbox-probe', await win.evaluate(() => ({
+      annShapes: document.querySelectorAll('.ann-shape').length,
+      textboxShapes: document.querySelectorAll('.ann-shape[data-kind="textbox"]').length,
+      actionBars: document.querySelectorAll('[data-content-action-bar]').length,
+      flyout: document.querySelectorAll('[data-annotation-flyout]').length,
+      panelField: (() => { const t = document.querySelector('[data-txt-text]'); return t ? { disabled: t.disabled, value: t.value } : null; })(),
+    })));
     await win.waitForSelector('[data-txt-text]', { timeout: 10000 });
     await win.waitForFunction(() => {
       const ta = document.querySelector('[data-txt-text]');

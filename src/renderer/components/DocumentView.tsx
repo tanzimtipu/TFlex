@@ -55,7 +55,7 @@ import {
 } from "./Inspector";
 import { ActionDock, type DockBulkActions } from "./ActionDock";
 import { prunePageSelection } from "../state/pageSelection";
-import { sanitizeDockPins } from "../state/dockModel";
+import { dockAvailabilityFor, sanitizeDockPins, type DockAvailability } from "../state/dockModel";
 import { toolById, type ToolEntry } from "../state/toolsRegistry";
 import type { Stage } from "../state/stages";
 import { usePageDragOptional } from "../state/PageDragContext";
@@ -146,15 +146,15 @@ export interface DocDiagnostics {
   searchQuery: string;
   searchHits: number;
   searchIndexProgress: SearchIndexProgress | null;
-  // DEF-093 — the active annotation tool (null when no tool is armed,
+  // DEF-093 â€” the active annotation tool (null when no tool is armed,
   // i.e. when the user is in plain "select" mode). The renderer state
   // holds an `AnnotationTool` enum whose `"select"` value means "no
   // tool active"; e2e harnesses had been getting `undefined` for this
   // field because it was never reported through the diagnostics
   // channel. Mirroring the `"select"` -> `null` mapping here keeps the
   // contract uniform across the surface (every key is either a value
-  // or `null`, never `undefined`). The previous behaviour — omitting
-  // the key entirely — left harnesses with an `undefined` they had to
+  // or `null`, never `undefined`). The previous behaviour â€” omitting
+  // the key entirely â€” left harnesses with an `undefined` they had to
   // special-case.
   activeTool: AnnotationTool | null;
 }
@@ -167,13 +167,13 @@ interface DocumentViewProps extends DocumentViewDockProps {
   onPersist: (v: PersistedViewer) => void;
   onDiagnostics: (d: DocDiagnostics) => void;
   onSearchIndexProgress?: (p: SearchIndexProgress | null) => void;
-  /** Def-050 — register an imperative invalidator the host can call
+  /** Def-050 â€” register an imperative invalidator the host can call
    *  when the underlying doc's text content has changed (e.g. after
    *  OCR writes an invisible Tr=3 text layer to the engine's copy of
    *  the doc). The invalidator clears the cached per-page
    *  `PageTextIndex` entries and re-runs the search effect so the
    *  next `findPageHits` walks `pdf.js`'s `getTextContent()` afresh
-   *  — picking up OCR words that the prior cache didn't have. The
+   *  â€” picking up OCR words that the prior cache didn't have. The
    *  callback runs synchronously; no-op when the search bar isn't
    *  open. */
   registerSearchIndexInvalidator?: (invalidate: () => void) => void;
@@ -181,23 +181,25 @@ interface DocumentViewProps extends DocumentViewDockProps {
   /** Live engine state for the active tab. Drives the rail pageCount,
    *  thumbnail rotations, and toolbar modified indicator. */
   engineState: EngineState;
-  /** DEF-139 — true once the tab's pdf.js `doc` proxy was rebuilt from
+  /** DEF-139 â€” true once the tab's pdf.js `doc` proxy was rebuilt from
    *  `engine.getDocumentBytes` bytes via `refreshDocProxyFor`. A
    *  re-serialized file is written in the engine's VISIBLE order (the
    *  `serializeDoc` `pageOrder` sequence), so the renderer must ask the
-   *  proxy for `visiblePage` itself — NOT `pageOrder[visiblePage-1]+1`,
+   *  proxy for `visiblePage` itself â€” NOT `pageOrder[visiblePage-1]+1`,
    *  which is a pdf-lib ORIGINAL page index and only addresses the
    *  original open bytes. Defaults to false (original proxy). */
   proxyVisibleOrder?: boolean;
-  /** True when the active tab has unsaved engine changes. Phase 22 —
+  /** True when the active tab has unsaved engine changes. Phase 22 â€”
    *  the CommandBar no longer shows a Save control, so this view no
    *  longer reads it; the title bar (AppHeader) owns Save state. The
    *  prop is retained (optional) for host/harness compatibility. */
   modified?: boolean;
   /** Whether undo is currently possible for the active tab. */
   canUndo: boolean;
+  /** Whether redo is currently possible (DEF-327: the dock/palette gate). */
+  canRedo?: boolean;
   /** False for sample documents (Save is gated to Save-As only).
-   *  Phase 22 — no longer read here (Save moved to the title bar). */
+   *  Phase 22 â€” no longer read here (Save moved to the title bar). */
   saveInPlaceEnabled?: boolean;
   /** Rail engine callbacks. Each is optional so the rail can degrade
    *  gracefully (e.g. tests can omit them to render the rail with no
@@ -207,8 +209,8 @@ interface DocumentViewProps extends DocumentViewDockProps {
   onReorder?: (fromIndex: number, toIndex: number) => void;
   onUndo?: () => void;
   /** Toolbar action callbacks. */
-  /** Phase 14.1 — the command bar's accent Open button (the reference
-   *  places Open in the command bar, not the title bar). Phase 22 —
+  /** Phase 14.1 â€” the command bar's accent Open button (the reference
+   *  places Open in the command bar, not the title bar). Phase 22 â€”
    *  SUPERSEDED: Open / Save / Save As live in the caption strip
    *  (AppHeader's .titlebar-file group), so these props are no longer
    *  read here. They stay on the interface for host/harness
@@ -217,12 +219,12 @@ interface DocumentViewProps extends DocumentViewDockProps {
   onSave?: () => void;
   onSaveAs?: () => void;
   onMerge?: () => void;
-  /** Phase 36 (chunk 3b) — SUPERSEDED: the command toolbar row is retired, so
+  /** Phase 36 (chunk 3b) â€” SUPERSEDED: the command toolbar row is retired, so
    *  Split is reached from the PAGES dock / the palette / the thumbnails'
    *  verbs (routed through App's `onDockToolAction`). This prop stays on the
    *  interface for host/harness compatibility, like Open / Save above. */
   onSplit?: () => void;
-  /** Phase 36 (chunk 2) — the PAGES ContextPanel's right-click verbs. Each is
+  /** Phase 36 (chunk 2) â€” the PAGES ContextPanel's right-click verbs. Each is
    *  the host's EXISTING surface for that command (the same dialogs the
    *  toolbar / palette already open); the panel passes the VISIBLE 1-based
    *  page the gesture landed on so the host can pre-scope the dialog.
@@ -232,40 +234,39 @@ interface DocumentViewProps extends DocumentViewDockProps {
   onExtractPages?: (page: number) => void;
   onInsertBlankPage?: (page: number) => void;
   onReplacePages?: (page: number) => void;
-  onRenumberPages?: (page: number) => void;
-  /** Phase 8 — Optimize / Audit Space dialogs. Both are toolbar
+  /** Phase 8 â€” Optimize / Audit Space dialogs. Both are toolbar
    *  actions that the host owns (the dialogs are mounted at the App
    *  level). The toolbar buttons are disabled when there's no active
    *  document, so the dialogs themselves don't need a guard. */
   onOptimize?: () => void;
   onAuditSpace?: () => void;
-  /** DEF-041 — Rotate the current page clockwise. The host passes a
+  /** DEF-041 â€” Rotate the current page clockwise. The host passes a
    *  callback that uses `engine.applyOp({kind:'rotate', page, dir:'cw'})`
    *  with the page the toolbar reports as currently visible. The
    *  toolbar button only renders when this is wired, so missing
    *  wiring (e.g. tests) doesn't surface a no-op button. */
   onRotateClockwise?: () => void;
-  /** Phase 13 — Rotate the current page counter-clockwise. Same
+  /** Phase 13 â€” Rotate the current page counter-clockwise. Same
    *  contract as `onRotateClockwise` with the engine op dir flipped
    *  to "ccw"; the toolbar button only renders when wired. */
   onRotateCounterClockwise?: () => void;
-  /** B8 — Delete pages (current / custom range). The toolbar
+  /** B8 â€” Delete pages (current / custom range). The toolbar
    *  button only renders when this is wired, mirroring the
    *  `onRotateClockwise` opt-in. Disabled when there's only one
-   *  page left. Phase 36 (chunk 2) — the optional `page` seeds the
-   *  dialog with the page the PAGES panel's "Delete…" gesture landed
+   *  page left. Phase 36 (chunk 2) â€” the optional `page` seeds the
+   *  dialog with the page the PAGES panel's "Deleteâ€¦" gesture landed
    *  on; the toolbar passes no argument (the dialog then seeds from
    *  the tab's current page). */
   onDeletePage?: (page?: number) => void;
-  /** Phase 36 (chunk 3b) — SUPERSEDED: the retired toolbar was the only
+  /** Phase 36 (chunk 3b) â€” SUPERSEDED: the retired toolbar was the only
    *  reader; the PAGES dock's Delete verb is disabled from the host's gate
    *  instead. Kept on the interface for host/harness compatibility. */
   canDeletePage?: boolean;
-  /** Phase 3 — annotations. The host (App) holds the canonical list; this
+  /** Phase 3 â€” annotations. The host (App) holds the canonical list; this
    *  view threads it through to each PageView's overlay and the rail's
    *  annotations panel. */
   annotations?: Annotation[];
-  /** DEF-166 — annotation ids whose overlay text must be drawn LIVE
+  /** DEF-166 â€” annotation ids whose overlay text must be drawn LIVE
    *  (created / edited since the current page-canvas bytes were
    *  loaded). Threaded to every PageView's AnnotationOverlay so a
    *  parsed-from-file textbox/callout (whose baked FreeText
@@ -275,7 +276,7 @@ interface DocumentViewProps extends DocumentViewDockProps {
   onCreateAnnotation?: (annotation: Annotation) => void;
   onEditAnnotation?: (id: string, patch: AnnotationPatch) => void;
   onDeleteAnnotation?: (id: string) => void;
-  /** Phase 28 — append a comment / reply to an annotation's thread. The
+  /** Phase 28 â€” append a comment / reply to an annotation's thread. The
    *  host (App) routes it to the engine and mirrors the echoed state,
    *  which refreshes the comment box's list and flips the annotation's
    *  comment badge on. Threaded to every PageView's overlay. */
@@ -288,7 +289,7 @@ interface DocumentViewProps extends DocumentViewDockProps {
   signatures?: SignaturePlacement[];
   savedSignatures?: SavedSignature[];
   armedSignatureId?: string | null;
-  /** Phase 36 (chunk 6) — the EDIT / REVIEW / DELIVER ContextPanel's host
+  /** Phase 36 (chunk 6) â€” the EDIT / REVIEW / DELIVER ContextPanel's host
    *  wiring. All optional: an absent handler disables its control (never a
    *  silent no-op), so the document-less harnesses stay unchanged. */
   onSignSignature?: (signatureId: string) => void;
@@ -300,16 +301,16 @@ interface DocumentViewProps extends DocumentViewDockProps {
   onOpenOcrSuspects?: () => void;
   fileSize?: number | null;
   onCreateFromImages?: () => void;
-  /** Phase 36 (chunk 6) — publish the CURRENT text-object selection (the edit
+  /** Phase 36 (chunk 6) â€” publish the CURRENT text-object selection (the edit
    *  model's selected committed box, or the text-run target the panel edits)
    *  so the host can feed the Inspector's EDIT/text section. `null` when
    *  nothing text-bearing is selected. The snapshot carries the view's OWN
    *  handlers, so the Inspector never re-implements the text edit path.
-   *  Phase 36 (chunk 7) — BOTH panes publish in Multi Mode; the host's
+   *  Phase 36 (chunk 7) â€” BOTH panes publish in Multi Mode; the host's
    *  `resolvePaneSelection` guard keeps only the FOCUSED pane's publish, so the
    *  ONE shared Inspector follows the pane the user is working in. */
   onTextSelectionChange?: (selection: InspectorTextSelection | null) => void;
-  /** B10 — armed stamp. When non-null, every PageView shows a
+  /** B10 â€” armed stamp. When non-null, every PageView shows a
    *  ghost preview following the cursor; clicking a page embeds
    *  the stamp at the click point. */
   armedStamp?: {
@@ -318,11 +319,11 @@ interface DocumentViewProps extends DocumentViewDockProps {
     pngWidth: number;
     pngHeight: number;
   } | null;
-  /** B10 / DEF-101 — successfully placed stamps for this tab
+  /** B10 / DEF-101 â€” successfully placed stamps for this tab
    *  (recorded by the host on `addStamp` success). Rendered as
    *  `.stamp-annotation` DOM surfaces per page. */
   stampAnnotations?: import("../annotations/StampAnnotations").PlacedStamp[];
-  /** Bug 6 — placed stamps are editable/movable/deletable like
+  /** Bug 6 â€” placed stamps are editable/movable/deletable like
    *  every annotation: the bar's Confirm / Delete / Edit route
    *  through these to the host, which re-bakes the page via the
    *  engine's editImage lever. */
@@ -347,29 +348,29 @@ interface DocumentViewProps extends DocumentViewDockProps {
   onPlaceSignature?: (signatureId: string, page: number, rect: SignaturePlacement["rect"]) => void;
   onMoveSignature?: (placementId: string, rect: SignaturePlacement["rect"]) => void;
   onDeleteSignature?: (placementId: string) => void;
-  /** B1 — exit Sign mode. The host wires this to the same setter
+  /** B1 â€” exit Sign mode. The host wires this to the same setter
    *  that the toolbar's Sign toggle uses; the pending action bar's
    *  Cancel button calls it through this callback so the overlay
    *  doesn't need a direct reference to App-level state. */
   onCancelSignatureArm?: () => void;
-  /** Phase 13 — disarm the armed stamp ghost. Pan mode and the stamp
+  /** Phase 13 â€” disarm the armed stamp ghost. Pan mode and the stamp
    *  ghost both own page-pointer input; when Hand is armed while a
    *  stamp is pending, the host drops the pending stamp so the pan
    *  drag is the only gesture that handles the press. */
   onDisarmStamp?: () => void;
-  /** Phase 6 — annotation color palette. The toolbar shows a
+  /** Phase 6 â€” annotation color palette. The toolbar shows a
    *  single swatch that opens a popover picker; the host owns the
    *  saved presets (typically App.settings.annotationColors). The
    *  shape matches the shared `AppSettings.annotationColors` field:
    *  each bucket is an array of `{ id, hex }` preset objects. */
   annotationPalette?: { light?: Array<{ id: string; hex: string }>; dark?: Array<{ id: string; hex: string }> } | null;
   onAnnotationPaletteChange?: (next: { light?: Array<{ id: string; hex: string }>; dark?: Array<{ id: string; hex: string }> }) => void;
-  /** Phase 19 — persisted MRU annotation tool order (most-recent-first,
+  /** Phase 19 â€” persisted MRU annotation tool order (most-recent-first,
    *  sanitised by the backend to known ids, deduped, capped at 6). App
    *  owns the value; DocumentView threads it to the annotation group so
    *  the visible five can be computed. */
   annotationRecentTools?: string[];
-  /** Phase 19 — the host persists a new MRU order after the user arms a
+  /** Phase 19 â€” the host persists a new MRU order after the user arms a
    *  tool. Threaded through to the annotation group; App owns the write. */
   onAnnotationRecentToolsChange?: (ids: string[]) => void;
   /** Active theme ('light' | 'dark' | 'frosted'). Drives which
@@ -383,34 +384,34 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  forms), so a single mode is active at a time. */
   editModeOpen?: boolean;
   onEditModeToggle?: () => void;
-  /** Phase 16 — the side-rail pages panel is collapsed to the ruler
+  /** Phase 16 â€” the side-rail pages panel is collapsed to the ruler
    *  strip. The host (App) owns the persisted value; DocumentView
    *  only threads it to the SideRail. */
   pagesPanelCollapsed?: boolean;
-  /** Phase 16 — asks the host to toggle the pages-panel collapsed
+  /** Phase 16 â€” asks the host to toggle the pages-panel collapsed
    *  state. Threaded to the SideRail, whose expand/collapse button
    *  calls it; the rail never owns the value itself. */
   onTogglePagesPanelCollapsed?: () => void;
-  /** Phase 32 — the rail master switch. `false` suppresses the rail
+  /** Phase 32 â€” the rail master switch. `false` suppresses the rail
    *  entirely and collapses the workspace grid to the page column
    *  (`data-rail="none"`), leaving no empty gutter. Defaults to `true`.
-   *  Phase 33 — Multi Mode no longer suppresses it: each pane renders its
+   *  Phase 33 â€” Multi Mode no longer suppresses it: each pane renders its
    *  own strip (see `multiRail`) instead of the full SideRail. */
   showRail?: boolean;
-  /** Phase 33 — which side of the page area this view's rail occupies.
+  /** Phase 33 â€” which side of the page area this view's rail occupies.
    *  Single mode keeps the default `'left'` (unchanged). Multi Mode renders
    *  pane A's strip on its RIGHT and pane B's on its LEFT, so the two
    *  strips meet side by side in the MIDDLE of the workspace:
    *  `[A pages | A thumbs || B thumbs | B pages]`. */
   railSide?: "left" | "right";
-  /** Phase 33 — Multi Mode's per-pane thumbnail strip. When present the
+  /** Phase 33 â€” Multi Mode's per-pane thumbnail strip. When present the
    *  rail slot renders this pane's OWN strip (document header + the
    *  existing ThumbnailRail) at `railSide`, instead of the full SideRail.
    *  `null` (the single-mode default) renders the unchanged SideRail. */
   multiRail?: {
     /** Which pane this view fills (drives the strip's badge). */
     pane: "A" | "B";
-    /** This view's document (the tab id) — the strip's drag identity. */
+    /** This view's document (the tab id) â€” the strip's drag identity. */
     tabId: string;
     /** The document name shown in the strip header. */
     title: string;
@@ -421,20 +422,20 @@ interface DocumentViewProps extends DocumentViewDockProps {
     /** Apply a resolved page drop (the cross-document drag seam). */
     onDrop: (op: PageDropOp) => void;
   } | null;
-  /** Phase 32 — Multi Mode state for the CommandBar control. The host
+  /** Phase 32 â€” Multi Mode state for the CommandBar control. The host
    *  (App) owns the mode; this view only threads it to the toolbar. */
   multiModeEnabled?: boolean;
-  /** Phase 36 (chunk 3b) — SUPERSEDED: the retired toolbar hosted this
+  /** Phase 36 (chunk 3b) â€” SUPERSEDED: the retired toolbar hosted this
    *  toggle. Multi Mode's canonical home is now the title bar + the command
    *  palette; the prop stays on the interface for host/harness compatibility. */
   onMultiModeToggle?: () => void;
-  /** Phase 32 (chunk 2b) — an external page jump: a page drop reveals the
+  /** Phase 32 (chunk 2b) â€” an external page jump: a page drop reveals the
    *  landing page in the target pane. `seq` makes each request unique, so
    *  clicking the same thumbnail twice both land and a re-render never
    *  replays a stale request. `null` (the single-mode default) means this
    *  view is never driven from outside. */
   jumpRequest?: { page: number; seq: number } | null;
-  /** Phase 33 (chunk 4) + Phase 36 (chunk 7) — Multi Mode's SHARED workspace
+  /** Phase 33 (chunk 4) + Phase 36 (chunk 7) â€” Multi Mode's SHARED workspace
    *  wiring. When supplied, this view suppresses its OWN toolbar rows (the ONE
    *  shared Action Dock renders the workspace's verbs) and instead:
    *    - publishes its DOCK CONTEXT (page selection, State-2 bulk verbs, the
@@ -448,20 +449,20 @@ interface DocumentViewProps extends DocumentViewDockProps {
     pane: PaneId;
     controller: SharedToolController;
   } | null;
-  /** Phase 36 (chunk 7) — the pane this view fills in Multi Mode (`null` in
+  /** Phase 36 (chunk 7) â€” the pane this view fills in Multi Mode (`null` in
    *  single mode). It gates the per-pane chrome the chunk adds: the pane's own
    *  floating pills (each pane keeps its own page / zoom / pan) and the
    *  document keyboard handler (find / Escape act on the FOCUSED pane only, so
    *  the workspace never ends up with two search bars). */
   multiPane?: PaneId | null;
-  /** Phase 36 (chunk 7) — true while THIS view is the focused pane. The REVIEW
+  /** Phase 36 (chunk 7) â€” true while THIS view is the focused pane. The REVIEW
    *  annotations flyout is ONE surface: only the focused pane mounts it. */
   paneFocused?: boolean;
-  /** Phase 36 (chunk 7) — the shared chrome idle (reported by the ONE dock).
+  /** Phase 36 (chunk 7) â€” the shared chrome idle (reported by the ONE dock).
    *  Multi Mode's per-pane pills fade with it, exactly as single mode's pills
    *  fade with the view's own dock. */
   chromeIdle?: boolean;
-  /** Phase 32 (chunk 2d) — canvas page drag and drop. Present only in Multi
+  /** Phase 32 (chunk 2d) â€” canvas page drag and drop. Present only in Multi
    *  Mode: each page grows a hover-revealed grip (`data-page-drag-handle`)
    *  that starts a document-aware drag, and every page slot accepts a drop
    *  from the other document with an insertion indicator. Absent (the
@@ -486,7 +487,7 @@ interface DocumentViewProps extends DocumentViewDockProps {
       newText: string;
       style: import("../edit/model").EditTextStyle;
       oldRect?: { x: number; y: number; width: number; height: number };
-      /** DEF-232 — the page the committing overlay owns. */
+      /** DEF-232 â€” the page the committing overlay owns. */
       page: number;
     }) => void;
     onCommitTextBox: (args: {
@@ -497,7 +498,7 @@ interface DocumentViewProps extends DocumentViewDockProps {
       text: string;
       style: import("../edit/model").EditTextStyle;
       background: "white" | "none";
-      /** DEF-232 sibling — the page the committing overlay owns. */
+      /** DEF-232 sibling â€” the page the committing overlay owns. */
       page: number;
     }) => void;
     onCommitImageEdit: (args: {
@@ -507,10 +508,10 @@ interface DocumentViewProps extends DocumentViewDockProps {
       bytes: Uint8Array;
       format: "png" | "jpeg";
       id: string;
-      /** DEF-232 sibling — the page the committing overlay owns. */
+      /** DEF-232 sibling â€” the page the committing overlay owns. */
       page: number;
     }) => void;
-    /** DEF-127 — commit a committed text box's drag (move/resize):
+    /** DEF-127 â€” commit a committed text box's drag (move/resize):
      *  the host re-bakes the box at `newRect` through the engine's
      *  existing editImage contract. */
     onCommitTextBoxMove: (args: {
@@ -520,18 +521,18 @@ interface DocumentViewProps extends DocumentViewDockProps {
       style: import("../edit/model").EditTextStyle;
       background: "white" | "none";
       id: string;
-      /** DEF-232 sibling — the page the committing overlay owns. */
+      /** DEF-232 sibling â€” the page the committing overlay owns. */
       page: number;
     }) => void;
-    /** DEF-135/136 — delete a committed text box through the engine's
-     *  registry (engine.deleteTextBox). Wire → DocumentView → PageView
-     *  → EditOverlay's box placement toolbar. */
+    /** DEF-135/136 â€” delete a committed text box through the engine's
+     *  registry (engine.deleteTextBox). Wire â†’ DocumentView â†’ PageView
+     *  â†’ EditOverlay's box placement toolbar. */
     onDeleteTextBox?: (id: string) => void;
-    /** Phase 21 — apply a style patch to the SELECTED committed box
+    /** Phase 21 â€” apply a style patch to the SELECTED committed box
      *  (App routes it to `engine.updateTextBox`). Absent when the host
      *  cannot target a registry box. */
     onTextStylePatch?: (patch: TextBoxStylePatch) => void;
-    /** Phase 26 — apply a patch (the panel Text field's session commit)
+    /** Phase 26 â€” apply a patch (the panel Text field's session commit)
      *  to a SPECIFIC committed box, by id. App routes it to
      *  `engine.updateTextBox`; absent when the host cannot target the
      *  registry. */
@@ -559,12 +560,12 @@ const EMPTY_HITS: SearchHit[] = [];
 // idle GPU memory on the open canvas (DEF-016 exit target).
 const INITIAL_MOUNT_PAGES = 3;
 
-// Phase 29 — the canvas is flush. `.document-content` carries no
+// Phase 29 â€” the canvas is flush. `.document-content` carries no
 // top/bottom padding in ANY theme, so the scroll math's top pad is the
 // (now zero) CONTENT_PADDING_PX everywhere; the frosted theme no longer
 // adds a chrome-stack offset.
 
-/** DEF-232 — compare two reported page-1 sizes by VALUE. A doc-proxy
+/** DEF-232 â€” compare two reported page-1 sizes by VALUE. A doc-proxy
  *  swap re-publishes an equal-but-new `{ w, h }` object; treating that
  *  as a geometry transition made the DEF-098 mount-sync effect yank
  *  the scroller back to the current-page readout on every refresh. */
@@ -591,7 +592,7 @@ const PAGE_BUFFER_PAGES = 1;
 // mounted-set change, no annotation op, no search op) before we ask
 // pdf.js to flush its per-document worker-side caches via
 // `doc.cleanup()`. The cleanup drops the font cache, the global image
-// cache, and the page-tree / page-index lookup tables — the dominant
+// cache, and the page-tree / page-index lookup tables â€” the dominant
 // idle-time memory contributors for long PDFs (DEF-016). 3 seconds is
 // long enough that scroll-jitter and the qa 10-second idle window
 // both see the cleaned state, short enough that the renderer settles
@@ -601,7 +602,7 @@ const DOC_IDLE_CLEANUP_MS = 3000;
 // How many pages around the viewport we keep mounted. IntersectionObserver
 // does the actual gating; this margin only sizes the buffer so fast scrolls
 // don't reveal blank slots. The IO rootMargin is hard-coded in the IO
-// useEffect below (800px top/bottom) — tight enough to keep the IO's
+// useEffect below (800px top/bottom) â€” tight enough to keep the IO's
 // effective intersection window within ~1 page above and below the
 // viewport at fit-width, so the observer's internal entry table stays
 // bounded instead of tracking hundreds of slot elements on long.pdf.
@@ -616,19 +617,19 @@ export interface DocumentViewHandle {
 }
 
 /**
- * DEF-254 — the annotation-selection conduit's page guard.
+ * DEF-254 â€” the annotation-selection conduit's page guard.
  *
  * Every mounted page's `AnnotationOverlay` reports its own selection upward:
  * `(null, ownPage)` while nothing on that page is selected, `(ann, ownPage)`
  * when the user selects one. The host keeps a SINGLE selection, so without
  * this guard a page that MOUNTS later (virtualization mounting page 5 while
  * page 4's overlay is selected, or a neighbour remounting during the panel's
- * reflow) reported `null` and clobbered the live selection — the text
+ * reflow) reported `null` and clobbered the live selection â€” the text
  * properties panel opened and then closed on its own.
  *
  * Rule: a non-null report from ANY page is authoritative (it sets the
  * selection). A null report only clears when it comes from the page that
- * currently HOLDS the selection — a neighbouring page saying "nothing is
+ * currently HOLDS the selection â€” a neighbouring page saying "nothing is
  * selected over here" is not a deselect gesture.
  */
 export function applyAnnSelectionReport(
@@ -641,7 +642,34 @@ export function applyAnnSelectionReport(
   return prev;
 }
 
-/** Phase 36 (chunk 3a) — the ActionDock wiring the host (App) supplies. All
+/**
+ * Phase 24 â€” the annotation text-properties values. The panel reflects the
+ * SELECTED annotation's STORED style (font/size/bold/italic/underline/
+ * highlight/align/lineHeight/baselineShift/list/indent), falling back to the
+ * per-tool defaults for any field the annotation never set (absent fields
+ * never overwrite the default). The colour is always the annotation's ACTUAL
+ * colour (or the armed tool's colour while nothing is selected yet).
+ *
+ * DEF-326 â€” extracted as a pure helper so the "panel shows what the ENGINE
+ * holds" contract is unit-testable: a reopened note carrying `style.font`
+ * must surface that exact family, never the tool default. (The original
+ * defect was a click being swallowed by a neighbouring comment card before
+ * the note could ever become the selection; this helper pins the resolution
+ * half so a regression there is caught too.)
+ */
+export function annotationTextPanelValues(
+  defaults: TextStyleValues,
+  annotation: Annotation | null,
+  color: TextStyleValues["color"],
+): TextStyleValues {
+  return {
+    ...defaults,
+    ...annotation?.style,
+    color,
+  };
+}
+
+/** Phase 36 (chunk 3a) â€” the ActionDock wiring the host (App) supplies. All
  *  optional: a DocumentView with no `activeStage` renders no dock, so the
  *  dev/test harnesses and every pre-chunk-3a mount are unchanged. */
 export interface DocumentViewDockProps {
@@ -658,13 +686,18 @@ export interface DocumentViewDockProps {
   onDockToolAction?: (id: string) => boolean;
   /** App-level availability for those same entries. */
   isDockToolEnabled?: (id: string) => boolean;
-  /** Phase 36 (chunk 4) — publish the view-level commands this view owns
+  /** Phase 36 (chunk 4) â€” publish the view-level commands this view owns
    *  (zoom presets, page stepping, find, pan, the edit / annotation tools) to
    *  the host, which routes the Command Palette's rows through them. Same
    *  pattern as `registerSearchIndexInvalidator`: the SAME handlers the pills
    *  and the dock already call, never a second implementation. `null`
    *  withdraws this view's commands (unmount / tab close). */
   registerViewCommands?: (commands: Record<string, () => void> | null) => void;
+  /** DEF-327 â€” publish this view's dock availability (the gate + the refusal
+   *  copy the Action Dock consumes) to the host, so the Command Palette's rows
+   *  for the dock's own verbs use the dock's verdict instead of a second guess.
+   *  `null` withdraws it (unmount / tab close). */
+  registerDockAvailability?: (availability: DockAvailability | null) => void;
 }
 
 /**
@@ -682,10 +715,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onSearchIndexProgress,
   registerSearchIndexInvalidator,
   registerViewCommands,
+  registerDockAvailability,
   onToast,
-  engineState,
   proxyVisibleOrder = false,
+  engineState,
   canUndo,
+  canRedo = false,
   onRotate,
   onDelete,
   onReorder,
@@ -694,7 +729,6 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onExtractPages,
   onInsertBlankPage,
   onReplacePages,
-  onRenumberPages,
   onRotateClockwise,
   onRotateCounterClockwise,
   onDeletePage,
@@ -705,7 +739,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onEditAnnotation,
   onDeleteAnnotation,
   onAddComment,
-  /** DEF-166 — annotation ids whose overlay text must be drawn LIVE
+  /** DEF-166 â€” annotation ids whose overlay text must be drawn LIVE
    *  (created / edited since the current page-canvas bytes were
    *  loaded). Threaded to every PageView's AnnotationOverlay so a
    *  parsed-from-file textbox/callout (whose baked FreeText
@@ -770,7 +804,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   ref,
 ) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  // Phase-C frosted layering — the full-bleed scroller needs the
+  // Phase-C frosted layering â€” the full-bleed scroller needs the
   // measured chrome stack height so .document-content pads down by
   // exactly the toolbar rows that float above it (see the
   // measurement effect below).
@@ -788,13 +822,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const inFlightRendersRef = useRef(0);
   // Stable callbacks for PageView to report render lifecycle. useCallback
   // with empty deps so the render effect's dep array doesn't churn and
-  // re-fire the entire getPage → render → TextLayer pipeline on every
+  // re-fire the entire getPage â†’ render â†’ TextLayer pipeline on every
   // DocumentView re-render.
   const onPageRenderStart = useCallback((): void => {
     inFlightRendersRef.current += 1;
   }, []);
   const onPageRenderEnd = useCallback((): void => {
-    // Never go negative — a cancelled effect that ended without firing
+    // Never go negative â€” a cancelled effect that ended without firing
     // its beginRender() (e.g. shouldRender flipped false before any
     // page was actually rendered) should not underflow the counter.
     inFlightRendersRef.current = Math.max(0, inFlightRendersRef.current - 1);
@@ -806,7 +840,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
 
   const [firstPageSize, setFirstPageSize] = useState<{ w: number; h: number } | null>(null);
 
-  // Phase 3 — annotation tool state. Declared ahead of the Phase-21
+  // Phase 3 â€” annotation tool state. Declared ahead of the Phase-21
   // text-properties panel block below, which reads the armed annotation
   // text tool (`textbox` / `callout` / `note`) to decide whether the
   // panel opens in annotation mode and which colour it reflects.
@@ -815,7 +849,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     initialAnnotationToolState,
   );
 
-  // Phase 33 (chunk 4) — when the SHARED Multi Mode toolbar is wired, an
+  // Phase 33 (chunk 4) â€” when the SHARED Multi Mode toolbar is wired, an
   // annotation action from this pane is fanned out to every pane's reducer
   // through the controller, so both panes arm / disarm together. `self` is
   // passed so this pane's own reducer runs exactly once. Single mode keeps
@@ -832,7 +866,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     [sharedTools, rawDispatchAnnTool],
   );
 
-  // Phase 21 — text-properties panel state. The panel is selection-aware:
+  // Phase 21 â€” text-properties panel state. The panel is selection-aware:
   // a selected committed box shows its ACTUAL values, otherwise the
   // per-tool defaults (with any not-yet-committed tweaks kept locally).
   const [pendingTextStyle, setPendingTextStyle] = useState<TextStyleValues | null>(null);
@@ -844,17 +878,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     if (edit === null || edit.state.selectedTextBox === null) return null;
     return edit.state.textBoxes.find((b) => b.id === edit.state.selectedTextBox) ?? null;
   }, [edit?.state.selectedTextBox, edit?.state.textBoxes]);
-  // Phase 21 (annotations) — the committed annotation the page overlay
+  // Phase 21 (annotations) â€” the committed annotation the page overlay
   // reports as selected, if any. The overlay owns per-page selection; it
   // reports upward so the panel can reflect a selected annotation text
   // object's ACTUAL colour without a second selection model. The reported
   // OBJECT is kept (not just its id): a just-placed annotation is not in
   // the engine's `annotations` list yet (the create round-trips over IPC),
   // and looking the id up in that list alone made `selectedAnnText` flip
-  // false for a frame — the panel closed, reflowed 248px, and the user's
+  // false for a frame â€” the panel closed, reflowed 248px, and the user's
   // follow-up click on the placed annotation landed on a moving origin.
   const [selectedAnn, setSelectedAnn] = useState<Annotation | null>(null);
-  // DEF-254 — the report carries the reporting page's number. `page` is the
+  // DEF-254 â€” the report carries the reporting page's number. `page` is the
   // VISIBLE page index, the same space `Annotation.page` uses, so the guard
   // can compare them. See `applyAnnSelectionReport`.
   const onSelectAnnotation = useCallback((ann: Annotation | null, fromPage: number): void => {
@@ -867,7 +901,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // keystroke and is committed as ONE engine op when it ends (field blur
   // / Escape / target change), so one edit session is exactly one undo
   // entry. Mid-typing the page is painted from the renderer-local draft
-  // (`renderedAnnotations`) or the box registry — never an op per
+  // (`renderedAnnotations`) or the box registry â€” never an op per
   // keystroke.
   const [textEdit, setTextEdit] = useState<{
     target: TextTarget;
@@ -880,11 +914,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   textEditRef.current = textEdit;
   const [textFocusToken, setTextFocusToken] = useState(0);
   const [textCommitToken, setTextCommitToken] = useState(0);
-  /** Phase 26 — the Edit overlay's selected text target (box or run). */
+  /** Phase 26 â€” the Edit overlay's selected text target (box or run). */
   const [editTextTarget, setEditTextTarget] = useState<EditTextTarget | null>(null);
   /** The id of a text annotation placed this gesture with empty text. */
   const justPlacedTextRef = useRef<string | null>(null);
-  /** Phase 26 — paint the session's live text over the engine list so
+  /** Phase 26 â€” paint the session's live text over the engine list so
    *  the page follows every keystroke (the annotation overlay renders
    *  exactly what the host hands it). */
   const renderedAnnotations = useMemo((): Annotation[] => {
@@ -933,7 +967,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       : textEdit !== null && textEditKey === textTargetKeyNow
         ? textEdit.text
         : textTargetBase;
-  // Phase 26 — the Edit overlay reported its selected text target (a
+  // Phase 26 â€” the Edit overlay reported its selected text target (a
   // committed box or a text run). The report arrives through the editProp
   // memo below; it focuses the panel field so clicking a text element in
   // Edit mode starts typing immediately.
@@ -941,7 +975,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     setEditTextTarget(target);
     if (target !== null) setTextFocusToken((n) => n + 1);
   }, []);
-  /** Phase 26 — the annotation overlay placed or clicked a text element:
+  /** Phase 26 â€” the annotation overlay placed or clicked a text element:
    *  focus the panel's Text field with its content selected. */
   const onAnnTextFocusRequest = useCallback((): void => {
     setTextFocusToken((n) => n + 1);
@@ -951,12 +985,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // committed box's `isNew` flag on the ref the cleanup reads (DEF-257).
   const prevTextTargetKeyRef = useRef<string | null>(null);
   const prevTextTargetRef = useRef<TextTarget | null>(null);
-  // DEF-262 — mirrors so the stable commit / style callbacks read the latest
+  // DEF-262 â€” mirrors so the stable commit / style callbacks read the latest
   // annotation list and per-page sizes without becoming unstable.
   const annotationsRef = useRef(annotations);
   annotationsRef.current = annotations;
   const pageSizesRef = useRef<Map<number, { w: number; h: number }>>(new Map());
-  /** DEF-262 — the rect a textbox / callout must be persisted at to hold its
+  /** DEF-262 â€” the rect a textbox / callout must be persisted at to hold its
    *  current text + (optionally merged) style legibly. Null when the stored
    *  rect already fits. This is the SAME growth rule the live overlay renders,
    *  so the persisted rect and the on-screen height agree. */
@@ -984,7 +1018,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     },
     [],
   );
-  /** DEF-262 / Phase 30 — persist a text commit. When the text needs a taller
+  /** DEF-262 / Phase 30 â€” persist a text commit. When the text needs a taller
    *  box the new rect rides `editAnnotation`'s in-place `rect` patch, so the
    *  annotation keeps its id and the panel's selection survives the commit
    *  (the old delete + re-create re-created it and fired a fresh selection
@@ -999,8 +1033,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     },
     [annGrownRect, onEditAnnotation],
   );
-  /** Phase 26 — end the edit session and commit it as ONE engine op.
-   *  Phase 29 (DEF-266) — `relatedTarget` is the focus target the panel's
+  /** Phase 26 â€” end the edit session and commit it as ONE engine op.
+   *  Phase 29 (DEF-266) â€” `relatedTarget` is the focus target the panel's
    *  Text field reported on blur. When it is a control INSIDE the panel the
    *  session must stay open (the user is composing styles on the still-active
    *  run), so no commit happens and the run is not deselected. */
@@ -1011,14 +1045,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     textEditRef.current = null;
     setTextEdit(null);
     if (session === null) return;
-    // A session means the placement was USED — it is no longer an
+    // A session means the placement was USED â€” it is no longer an
     // abandoned empty placement (so the stray-placement cleanup below
     // must not delete it).
     justPlacedTextRef.current = null;
     const { target } = session;
     if (target.kind === "annotation") {
       if (session.text.trim() === "") {
-        // An empty text annotation carries no content — a fresh
+        // An empty text annotation carries no content â€” a fresh
         // placement is dropped again (the old empty-text guard).
         onDeleteAnnotation?.(target.id);
         return;
@@ -1050,7 +1084,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           background: box.background,
           page: box.page,
         });
-        // DEF-257 — the box is in the engine registry now, so it is no
+        // DEF-257 â€” the box is in the engine registry now, so it is no
         // longer a renderer-only placement. Clear `isNew` on the live
         // target (state + the ref the target-change cleanup reads), else
         // that cleanup treats the committed box as an abandoned empty
@@ -1071,7 +1105,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     // mask cover, so it performs the commit when the token flips.
     setTextCommitToken((n) => n + 1);
   }, [onEditAnnotation, onDeleteAnnotation, persistAnnText]);
-  /** Phase 26 — a keystroke in the panel's Text field. The page follows
+  /** Phase 26 â€” a keystroke in the panel's Text field. The page follows
    *  immediately (annotation draft / box registry); the engine is
    *  untouched until the session commits. */
   const handlePanelTextChange = useCallback(
@@ -1127,7 +1161,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const hadSession = textEditRef.current !== null;
     commitTextSession();
     if (hadSession) return;
-    // A placement that was never typed into leaves no session behind —
+    // A placement that was never typed into leaves no session behind â€”
     // drop the stray empty surface when the target moves away.
     const abandoned = justPlacedTextRef.current;
     if (abandoned !== null) {
@@ -1137,7 +1171,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       }
       return;
     }
-    // Phase 26 — a freshly dragged Edit-mode box that never received text
+    // Phase 26 â€” a freshly dragged Edit-mode box that never received text
     // is dropped from the renderer registry (it never reached the engine).
     if (previous !== null && previous.kind === "box" && previous.isNew === true) {
       editRef.current?.onAction({ type: "delete-text-box", id: previous.id });
@@ -1158,7 +1192,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     (selectedTextBox !== null || edit.state.tool === "text" || edit.state.tool === "box");
   const textPanelMode: "text" | "annotation" = tfTextPanelOpen ? "text" : "annotation";
   const textPanelOpen = tfTextPanelOpen || annTextToolArmed || selectedAnnText;
-  // DEF-321 — ONE properties UI per selection. The Inspector's EDIT/text
+  // DEF-321 â€” ONE properties UI per selection. The Inspector's EDIT/text
   // section is the canonical mount; this view's floating card is the pop-out
   // and is suppressed exactly when the Inspector is showing the same
   // selection. The two predicates are pure (see Inspector.tsx) so the rule is
@@ -1189,27 +1223,16 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const textPanelValues: TextStyleValues =
     textPanelMode === "text"
       ? textPanelTextValues
-      : {
-          // Phase 24 — the annotation panel reflects the SELECTED
-          // annotation's STORED style (font/size/bold/italic/underline/
-          // highlight/align/lineHeight/baselineShift/list/indent), falling
-          // back to the per-tool defaults for any field the annotation has
-          // never set (absent fields never overwrite the default). The
-          // colour is always the annotation's ACTUAL colour, or the armed
-          // tool's colour while nothing is selected yet.
-          ...textPanelDefaults,
-          ...selectedAnnotation?.style,
-          color: annotationPanelColor,
-        };
+      : annotationTextPanelValues(textPanelDefaults, selectedAnnotation, annotationPanelColor);
   const handleTextPanelPatch = useCallback(
     (patch: TextBoxStylePatch): void => {
       if (textPanelMode === "annotation") {
-        // Phase 24 — a selected annotation text object now takes the FULL
+        // Phase 24 â€” a selected annotation text object now takes the FULL
         // patch. Every non-colour field rides `editAnnotation`'s `style`
         // payload (the engine validates + merges it and re-bakes the /AP
         // stream); colour keeps its own path. A colour-only patch never
         // reaches the style route, and a style-only patch never re-sends
-        // colour — a mixed patch (clear formatting) goes out as ONE call
+        // colour â€” a mixed patch (clear formatting) goes out as ONE call
         // so it is a single undo step.
         const { color: patchColor, ...rest } = patch;
         const style = annotationStyleFromPanelPatch(rest);
@@ -1217,7 +1240,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         const hasColor = patchColor !== undefined;
         if (selectedAnnText && selectedAnnotation !== null) {
           if (!hasStyle && !hasColor) return;
-          // DEF-262 / Phase 30 — a style control that needs a TALLER box (a
+          // DEF-262 / Phase 30 â€” a style control that needs a TALLER box (a
           // bigger size, a list prefix, more indent, a longer line-height)
           // must persist the grown rect too, else save + reopen shrinks the
           // text back into the old one-line box. The grown rect and the new
@@ -1275,13 +1298,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // move when a proxy refresh merely shrinks page 1 in place. Before
   // this split, a crop committed through `refreshDocProxyFor` re-fetched
   // page 1's (smaller) dims, the fit recomputed from them, and every
-  // OTHER uncropped page re-rendered at a bigger absolute scale — the
+  // OTHER uncropped page re-rendered at a bigger absolute scale â€” the
   // "zoom jump after crop" defect (crop undo showed the reverse jump).
   // The anchor only moves on:
   //   - first resolution (open),
   //   - an explicit user fit action (fit-width / fit-page button),
   //   - a doc refresh whose page-1 size is NOT an inset of the anchor
-  //     (a genuine page identity change — delete / reorder / insert —
+  //     (a genuine page identity change â€” delete / reorder / insert â€”
   //     which legitimately re-fits to the new first page).
   const [fitAnchor, setFitAnchor] = useState<{ w: number; h: number } | null>(null);
   // `mountedPages` are the only pages that get a real PageView (canvas +
@@ -1291,17 +1314,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const [mountedPages, setMountedPages] = useState<Set<number>>(new Set());
   const [viewportBox, setViewportBox] = useState({ w: 0, h: 0 });
   const [currentPage, setCurrentPage] = useState(initial.currentPage);
-  // DEF-141 — per-page sizes (un-rotated pt dims) reported by each
+  // DEF-141 â€” per-page sizes (un-rotated pt dims) reported by each
   // mounted PageView's `onPageSize`. The scroller renders every slot
   // at ITS OWN page's size so a per-page crop of page 1 no longer
   // collapses pages 2..N into the crop box. The map survives a doc
-  // proxy refresh (same DocumentView instance — App keys the tab-pane
+  // proxy refresh (same DocumentView instance â€” App keys the tab-pane
   // by tab id), so the OTHER pages keep their pre-refresh sizes the
   // moment `refreshDocProxyFor` swaps in the re-serialized bytes; each
   // slot re-reports its size when it re-renders, correcting any page
   // whose size actually changed (the cropped page itself).
   const [pageSizes, setPageSizes] = useState<Map<number, { w: number; h: number }>>(new Map());
-  // DEF-262 — the commit path reads the latest page sizes through this ref
+  // DEF-262 â€” the commit path reads the latest page sizes through this ref
   // (declared above `commitTextSession`, which must stay stable).
   pageSizesRef.current = pageSizes;
 
@@ -1310,9 +1333,9 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     manualScale: initial.manualScale,
   } as ZoomState);
 
-  // Phase 3 — per-annotation flash highlight. The annotation tool state
+  // Phase 3 â€” per-annotation flash highlight. The annotation tool state
   // itself is declared above (the Phase-21 panel block reads it).
-  // DEF-211 — imperative handle so the host can disarm the annotation
+  // DEF-211 â€” imperative handle so the host can disarm the annotation
   // tool before opening a dialog overlaying the workspace.
   useImperativeHandle(ref, () => ({
     disarmAnnotationTool: (): void => {
@@ -1331,7 +1354,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const searchTokenRef = useRef(0);
   const indexesRef = useRef(new Map<number, PageTextIndex>());
 
-  // Phase 13 — Hand (pan) mode. Transient viewer state (never persisted):
+  // Phase 13 â€” Hand (pan) mode. Transient viewer state (never persisted):
   // when armed, the scroller handles pointer drags as grab-and-drag
   // scrolling, annotation tools are inert (see AnnotationToolbar's
   // `handModeOpen` gate), and every other pointer-active overlay is
@@ -1341,12 +1364,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const toggleHand = useCallback((): void => {
     setHandActive((v) => !v);
   }, []);
-  // DEF-050 — invalidation bump. The host (App) calls the imperative
+  // DEF-050 â€” invalidation bump. The host (App) calls the imperative
   // search-index invalidator after OCR completes; this tick state is
   // bumped so the search effect re-runs even though `query`, `doc`,
   // and `pageCount` are unchanged. `indexesRef` is reset at the same
   // moment so the rebuild path calls `pdf.js`'s `getTextContent()`
-  // fresh on every page — which is where OCR-injected text becomes
+  // fresh on every page â€” which is where OCR-injected text becomes
   // visible to the indexer.
   const [searchInvalidationTick, setSearchInvalidationTick] = useState(0);
 
@@ -1357,12 +1380,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const onSearchIndexProgressRef = useRef(onSearchIndexProgress);
   onSearchIndexProgressRef.current = onSearchIndexProgress;
 
-  // DEF-050 — wire the host's imperative search-index invalidator. The
+  // DEF-050 â€” wire the host's imperative search-index invalidator. The
   // registered callback (a) clears `indexesRef` so the next search
   // walks every page and re-fetches `getTextContent()`, and (b) bumps
   // `searchInvalidationTick` to trigger the search effect's re-run
   // even when `query` / `doc` / `pageCount` are unchanged. The
-  // invalidator is a no-op while the search bar isn't open — there
+  // invalidator is a no-op while the search bar isn't open â€” there
   // is no in-flight search to invalidate.
   //
   // Note: we do not include `registerSearchIndexInvalidator` in the
@@ -1384,7 +1407,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const invalidate = (): void => {
       // Drop every cached page index so the next search re-fetches
       // getTextContent() from pdf.js. Clearing the map alone is not
-      // enough — the search effect's deps (`query`, `doc`,
+      // enough â€” the search effect's deps (`query`, `doc`,
       // `pageCount`) are unchanged after OCR, so React would not
       // re-run the effect. Bumping `searchInvalidationTick` is the
       // explicit "kick" that forces a rebuild.
@@ -1395,7 +1418,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     hasRegisteredInvalidatorRef.current = true;
   }, []);
 
-  // ---- Phase C — frosted chrome-over-document measurement ----------------
+  // ---- Phase C â€” frosted chrome-over-document measurement ----------------
   //
   // The frosted theme floats the workspace chrome rows (toolbar /
   // annotation toolbar / search bar / edit toolbar) OVER a full-bleed
@@ -1407,7 +1430,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // as `--tf-chrome-y` on .workspace-main for the floating text panel
   // (`top: calc(var(--tf-chrome-y) + 8px)`).
   //
-  // Phase 29 — the page view is FLUSH: `.document-content` has no
+  // Phase 29 â€” the page view is FLUSH: `.document-content` has no
   // top/bottom padding in any theme, so `contentTopPadRef` is the zero
   // CONTENT_PADDING_PX everywhere and the scroll geometry helpers track
   // the flush DOM exactly. `--tf-chrome-y` no longer feeds any content
@@ -1429,7 +1452,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       )) {
         chromePx += el.offsetHeight;
       }
-      // Phase 29 — flush canvas: the content top pad is 0 in every
+      // Phase 29 â€” flush canvas: the content top pad is 0 in every
       // theme, so the scroll math never adds a chrome offset.
       contentTopPadRef.current = CONTENT_PADDING_PX;
       if (chromePx > 0) {
@@ -1470,7 +1493,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const effectiveScaleRef = useRef(effectiveScale);
   effectiveScaleRef.current = effectiveScale;
 
-  // ---- DEF-302 — the page-zoom FLIP --------------------------------------
+  // ---- DEF-302 â€” the page-zoom FLIP --------------------------------------
   //
   // The OLD DEF-296 flip scaled the page about its centre inside a slot that
   // had already jumped to the new size, so the page rubber-banded (on a 25%
@@ -1489,7 +1512,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // too late. Hence: capture synchronously in the zoom handlers, apply in one
   // `useLayoutEffect` on `effectiveScale`.
   //
-  // DEF-302 (reopened) — the FLIP animates the PAPER-OWNING page unit
+  // DEF-302 (reopened) â€” the FLIP animates the PAPER-OWNING page unit
   // (`ZOOM_FLIP_UNIT_SELECTOR`, i.e. the `.page-slot`), NOT the content-only
   // `.pdf-page`. The slot paints the sheet's paper background (DEF-099) and
   // reflows to its final box instantly; animating only the content left the
@@ -1578,9 +1601,9 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // known size (page 1's live size on first open, then the biggest page
   // reported so far). Too-big placeholder shows a larger paper rectangle
   // briefly (corrected the moment the page mounts and reports its own
-  // size) instead of clipping content into a too-small slot — the
+  // size) instead of clipping content into a too-small slot â€” the
   // DEF-141 failure mode. Page 1 always uses `firstPageSize` (the live
-  // size of the current proxy — authoritative on refresh; a stale
+  // size of the current proxy â€” authoritative on refresh; a stale
   // `pageSizes` entry from before a crop must not win).
   const onPageSize = useCallback((page: number, widthPt: number, heightPt: number): void => {
     setPageSizes((prev) => {
@@ -1630,7 +1653,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   //
   // `doc.getPage(1)` materializes page 1's per-page state in the worker
   // (commonObjs, page tree cache entry for index 0). We only need its
-  // view[] for layout sizing — release the proxy immediately so the
+  // view[] for layout sizing â€” release the proxy immediately so the
   // page-1 state doesn't stay resident before the initial mount's
   // PageView re-fetches it (page 1 is in the INITIAL_MOUNT_PAGES range
   // anyway, so the small re-parse cost is irrelevant) (DEF-016).
@@ -1647,7 +1670,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       setFirstPageSize(size);
       // Fit-anchor rule: a proxy refresh (crop / OCR / undo) whose new
       // page-1 size is an INSET of the current anchor (same physical
-      // page, just smaller — a crop) must NOT re-anchor the fit, or
+      // page, just smaller â€” a crop) must NOT re-anchor the fit, or
       // every uncropped page re-scales with the refresh. A refresh that
       // is not an inset is a genuine page identity change (delete /
       // reorder / insert / a new file) and legitimately re-fits. First
@@ -1663,7 +1686,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       });
       // Drop page 1's per-page worker state right after we read the
       // dims. The next time page 1 is touched (the initial mount's
-      // PageView) pdfjs re-parses from the document stream — a few
+      // PageView) pdfjs re-parses from the document stream â€” a few
       // ms cost in exchange for not pinning page 1's state on the
       // critical-path open.
       try {
@@ -1702,7 +1725,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // The geometry-based mount (below) is the SOURCE OF TRUTH for which pages
   // get a real PageView. The IO is treated as a progressive refinement: it
   // can ADD pages to the union when (and only when) the browser actually
-  // fires IO callbacks for them. It cannot REMOVE pages — the geometry
+  // fires IO callbacks for them. It cannot REMOVE pages â€” the geometry
   // mount owns removal. This is robust against environments where IO
   // callbacks are dropped or never fire (headless harnesses, certain
   // page-zoom configs): in those cases the geometry mount still works, and
@@ -1716,7 +1739,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // IntersectionObserver's internal map doesn't keep a reference to a
       // node React has already removed. Without this, IO instances leak
       // one slot's HTMLElement per scroll-driven remount cycle (DEF-016
-      // — DOM-counted headroom, but a real retention path for any code
+      // â€” DOM-counted headroom, but a real retention path for any code
       // that walks up from the IO).
       if (prev !== undefined) {
         observerRef.current?.unobserve(prev);
@@ -1761,11 +1784,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           }
         }
         if (changed) {
-          // IO is touching the visible range — push out any pending
+          // IO is touching the visible range â€” push out any pending
           // idle cleanup so it doesn't fire mid-render.
           idleCleanupRef.current?.noteActivity();
           // Re-run the geometry mount so the IO additions become visible
-          // through the state — the state IS the union of geometry + IO.
+          // through the state â€” the state IS the union of geometry + IO.
           computeGeometryMountRef.current();
         }
       },
@@ -1790,7 +1813,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // To guarantee a working mount regardless of IO behavior, we compute the
   // visible page range from scrollTop + slot geometry in JS (using
   // `mixedVisiblePageRange` from pageGeometry.ts, the per-page-size
-  // variant — DEF-141). The mounted set is the geometry range, UNION'd
+  // variant â€” DEF-141). The mounted set is the geometry range, UNION'd
   // with IO extras that are still close enough to the viewport to be
   // useful. Far-out IO extras are pruned so the mounted set stays bounded.
   const computeGeometryMountRef = useRef<() => void>(() => undefined);
@@ -1805,7 +1828,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       pageGeomRef.current,
       pageCount,
       PAGE_BUFFER_PAGES,
-      // Phase 29 — flush canvas: the content top pad is 0 in every
+      // Phase 29 â€” flush canvas: the content top pad is 0 in every
       // theme (CONTENT_PADDING_PX), and the mount's "fully above the
       // viewport" math subtracts exactly that real padding.
       contentTopPadRef.current,
@@ -1819,7 +1842,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // pruned (and their bitmap is dropped via PageView's unmount +
       // shouldRender=false clear). A smaller buffer keeps idle memory
       // lower at the cost of a slightly slower first scroll into a far
-      // page — the rail re-renders from scratch on demand.
+      // page â€” the rail re-renders from scratch on demand.
       const PRUNE_DISTANCE_PAGES = 4;
       const keepLow = rangeStart - PRUNE_DISTANCE_PAGES;
       const keepHigh = rangeEnd + PRUNE_DISTANCE_PAGES;
@@ -1856,19 +1879,19 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // Initial synchronous mount: as soon as the document opens and the first
   // page's dimensions are known, mount the first INITIAL_MOUNT_PAGES slots so
   // the very first paint already shows real bitmaps. No IO round-trip, no
-  // async — by definition available on the first paint.
+  // async â€” by definition available on the first paint.
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (scroller === null) return;
-    // DEF-098 — the mount-sync block must ONLY land a *pending*
+    // DEF-098 â€” the mount-sync block must ONLY land a *pending*
     // jump (one whose scrollTo bailed for lack of geometry). The
-    // previous shape — `jumpTargetRef.current ?? currentPage` —
+    // previous shape â€” `jumpTargetRef.current ?? currentPage` â€”
     // re-ran this effect on EVERY `currentPage` change and
     // INSTANT-scrolled the scroller to whatever page the heuristic
     // last computed. Mid-smooth-scroll that dragged `currentPage`
     // to an intermediate page (the DEF-058 lock only holds while
     // scroll events flow), so this effect snapped the scroller back
-    // to that intermediate page — the "jump starts then snaps
+    // to that intermediate page â€” the "jump starts then snaps
     // back" failure. With the pending-flag gate the effect only
     // ever applies a jump the user clicked but the scroller has not
     // yet landed, and it clears itself afterwards: after a jump
@@ -1890,13 +1913,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         syncGuardRef.current.pageCount !== pageCount)
     ) {
       // No jump in flight, but the geometry (or page count) just
-      // changed — e.g. the doc opened and `firstPageSize` finally
+      // changed â€” e.g. the doc opened and `firstPageSize` finally
       // resolved, or a delete/reorder changed `pageCount`. Keep the
       // scroller on the currently-active page. This runs only on
       // the transition (guarded by the ref), never on `currentPage`
       // changes driven by the heuristic.
       //
-      // DEF-232 — the comparison is by VALUE, not object identity. A
+      // DEF-232 â€” the comparison is by VALUE, not object identity. A
       // doc-proxy swap (`refreshDocProxyFor`: edit / annotation /
       // crop / OCR bakes re-serialize the engine doc) publishes a NEW
       // `{ w, h }` object for the SAME page size, and an identity
@@ -1942,7 +1965,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
 
   // ---- scroll -> current page --------------------------------------------------
   //
-  // DEF-058 — track an in-flight jump target so the scroll-event
+  // DEF-058 â€” track an in-flight jump target so the scroll-event
   // heuristic (which fires repeatedly during a smooth scroll) cannot
   // drag `currentPage` back to an intermediate page while the scroll
   // animation is still mid-flight. Without the guard, a jump from
@@ -1954,18 +1977,18 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // it without making the ref a dep of any effect.
   //
   // The target is cleared in three ways:
-  //   1. `scrollend` (browsers that fire it) — definitive end of
+  //   1. `scrollend` (browsers that fire it) â€” definitive end of
   //      the smooth scroll.
   //   2. The scroll handler notices the scroller is now AT or PAST
-  //      the target page's top edge — same math as the initial
-  //      `jumpToPage` target — and clears the lock.
-  //   3. A fallback timer (`JUMP_LOCK_FALLBACK_MS`) — covers
+  //      the target page's top edge â€” same math as the initial
+  //      `jumpToPage` target â€” and clears the lock.
+  //   3. A fallback timer (`JUMP_LOCK_FALLBACK_MS`) â€” covers
   //      browsers / harnesses that never fire `scrollend` and
   //      that may interrupt the smooth scroll before reaching the
   //      target.
   const jumpTargetRef = useRef<number | null>(null);
   const jumpLockTimerRef = useRef<number | null>(null);
-  // DEF-098 — a queued jump whose `scrollTo` bailed because the
+  // DEF-098 â€” a queued jump whose `scrollTo` bailed because the
   // geometry (`firstPageSize`) wasn't ready yet. Set inside
   // `jumpToPage` when it returns early; the mount-sync effect below
   // lands the scroller on the jump target the moment the geometry
@@ -1973,10 +1996,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // mount-sync effect from INSTANT-killing an in-flight smooth
   // scroll: a click that *did* scroll must never be re-applied.
   const pendingJumpLandingRef = useRef(false);
-  // DEF-098 — gates the initial-page-restore effect to a single run
+  // DEF-098 â€” gates the initial-page-restore effect to a single run
   // per DocumentView mount (see the effect for the why).
   const didInitialRestoreRef = useRef(false);
-  // DEF-098 — last `{firstPageSize, pageCount}` pair the mount-sync
+  // DEF-098 â€” last `{firstPageSize, pageCount}` pair the mount-sync
   // effect synced against. The effect's post-open / post-delete
   // "keep the current page in view" re-sync must fire only on those
   // transitions, never on `currentPage` changes (which the
@@ -1986,14 +2009,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     firstPageSize: null,
     pageCount: 0,
   });
-  // DEF-098 — the mount-sync effect's INITIAL_MOUNT_PAGES seeding
+  // DEF-098 â€” the mount-sync effect's INITIAL_MOUNT_PAGES seeding
   // (pages 1..3 + IO extras) is an open-time one-shot. Previously it
   // re-ran on every `currentPage` change, re-adding the first pages
-  // to the mounted set on every page turn — the geometry mount then
+  // to the mounted set on every page turn â€” the geometry mount then
   // pruned them again, churning PageView mount/unmount cycles (each
   // a pdf.js getPage render) on every jump.
   const mountSeededRef = useRef(false);
-  // DEF-058 — last scrollTop we successfully validated as "past
+  // DEF-058 â€” last scrollTop we successfully validated as "past
   // the jump target". When the user lands on the target we clear
   // the lock; if a subsequent user-driven scroll moves away the
   // heuristic must take over again immediately.
@@ -2019,10 +2042,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     }
     scrollRafRef.current = window.requestAnimationFrame(() => {
       scrollRafRef.current = 0;
-      // Touching the document — push out any pending idle cleanup so
+      // Touching the document â€” push out any pending idle cleanup so
       // it doesn't fire mid-render. Resets the 5s window from "now".
       idleCleanupRef.current?.noteActivity();
-      // DEF-058 — while a jump is in flight, suppress the scroll-driven
+      // DEF-058 â€” while a jump is in flight, suppress the scroll-driven
       // currentPage update UNLESS the scroller has reached the target
       // (in which case we let the heuristic run, then clear the lock).
       const target = jumpTargetRef.current;
@@ -2046,7 +2069,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             jumpLockTimerRef.current = window.setTimeout(() => {
               jumpTargetRef.current = null;
               jumpLockTimerRef.current = null;
-              // DEF-098 — release the lock WITHOUT recomputing
+              // DEF-098 â€” release the lock WITHOUT recomputing
               // `currentPage`. The scroller may still be advancing
               // toward the jump target on a throttled main thread;
               // forcing a recompute from the mid-flight scrollTop
@@ -2083,7 +2106,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // modern browsers; attach it once and use it to drop the jump
   // lock immediately. If the browser doesn't support `scrollend`
   // (older Chromium, some WebKit), the fallback timer above covers
-  // us — see the JUMP_LOCK_FALLBACK_MS branch.
+  // us â€” see the JUMP_LOCK_FALLBACK_MS branch.
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (scroller === null) return;
@@ -2107,7 +2130,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const jumpToPage = useCallback(
     (page: number, smooth = true) => {
       const scroller = scrollerRef.current;
-      // B6 — always update `currentPage` so the SideRail highlight
+      // B6 â€” always update `currentPage` so the SideRail highlight
       // and the toolbar page indicator reflect the new active page
       // even when the scroller geometry isn't ready yet (e.g. the
       // user clicks a thumb before the first page has reported its
@@ -2129,25 +2152,25 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       jumpLockTimerRef.current = window.setTimeout(() => {
         jumpTargetRef.current = null;
         jumpLockTimerRef.current = null;
-        // DEF-098 — release-only. No forced recompute from whatever
+        // DEF-098 â€” release-only. No forced recompute from whatever
         // scrollTop the scroller happens to hold now (it may still
         // be gliding toward the target on a busy main thread). The
         // jump target stays sticky; the heuristic resumes on the
         // next real scroll event or `scrollend`.
       }, JUMP_LOCK_FALLBACK_MS);
       if (scroller === null || firstPageSize === null) {
-        // Geometry not ready yet — currentPage is set, but the
+        // Geometry not ready yet â€” currentPage is set, but the
         // scrollTo call has nothing to land on. The
         // `firstPageSize`-dependent effect above will trigger a
         // re-render and the next interaction will scroll normally.
-        // DEF-098 — flag the queued jump so the mount-sync effect
+        // DEF-098 â€” flag the queued jump so the mount-sync effect
         // lands the scroller the moment the geometry arrives (and
         // so it does NOT try to re-apply a click that *did* scroll).
         pendingJumpLandingRef.current = true;
         return;
       }
       const target = mixedSlotOffsetTop(page, pageGeomRef.current, contentTopPadRef.current);
-      // DEF-098 — the click's own scroll runs now; make sure the
+      // DEF-098 â€” the click's own scroll runs now; make sure the
       // mount-sync effect does not re-apply it as a queued jump
       // (which would INSTANT-kill this smooth scroll). A subsequent
       // bail (geometry missing) re-flags it above.
@@ -2156,7 +2179,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         top: Math.max(target - contentTopPadRef.current, 0),
         behavior: smooth ? "smooth" : "instant",
       });
-      // DEF-058 — set the jump target FIRST so the scroll heuristic
+      // DEF-058 â€” set the jump target FIRST so the scroll heuristic
       // sees the lock the moment the first scroll event fires (the
       // browser may begin animating before the next microtask).
       // Set the optimistic currentPage too so the SideRail highlight
@@ -2164,7 +2187,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // scroll lands.
       void target;
     },
-    // DEF-098 — `computeCurrentPage` is no longer called from this
+    // DEF-098 â€” `computeCurrentPage` is no longer called from this
     // body (the fallback timer is release-only), so it is not a dep
     // anymore. `firstPageSize` alone drives the identity: the body
     // closes over it for the scroll target.
@@ -2173,7 +2196,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
 
   // ---- initial page restore -------------------------------------------------------
   useEffect(() => {
-    // DEF-098 — this effect must fire at most ONCE per DocumentView
+    // DEF-098 â€” this effect must fire at most ONCE per DocumentView
     // mount. The previous deps (`[jumpToPage, initial.currentPage]`)
     // re-ran it on every App persist round-trip: `jumpToPage`
     // recreated its identity whenever `firstPageSize`/`pageCount`
@@ -2213,11 +2236,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const current = effectiveScaleRef.current;
     const next = stepTowards(current, direction);
     if (next === current) {
-      // Already at the ladder end — no layout change, so no capture (a
+      // Already at the ladder end â€” no layout change, so no capture (a
       // stale pending would otherwise fire on the next unrelated scale).
       return;
     }
-    // DEF-302 — capture First + the scroll anchor before the layout moves.
+    // DEF-302 â€” capture First + the scroll anchor before the layout moves.
     captureZoomFlip();
     dispatchZoom({ type: "set-manual-scale", scale: next });
   }, [captureZoomFlip]);
@@ -2255,7 +2278,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           scale = stepTowards(scale, steps > 0 ? 1 : -1);
         }
         if (scale !== effectiveScaleRef.current) {
-          // DEF-302 — capture First + the scroll anchor before the layout.
+          // DEF-302 â€” capture First + the scroll anchor before the layout.
           captureZoomFlip();
           dispatchZoom({ type: "set-manual-scale", scale });
         }
@@ -2275,7 +2298,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // snapshot in tflexDiagnostics can show what's going on.
   //
   // DEF-050 (OCR + stale cache): OCR writes an invisible Tr=3 text layer
-  // to the engine's copy of the doc — but the renderer's `doc` proxy is
+  // to the engine's copy of the doc â€” but the renderer's `doc` proxy is
   // unchanged, so any cached `PageTextIndex` entries built before OCR
   // still reflect pre-OCR content. The host registers an invalidator via
   // `registerSearchIndexInvalidator`; on OCR completion (or any other
@@ -2283,7 +2306,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // invalidator, which clears `indexesRef` and bumps
   // `searchInvalidationTick` (a dep of this effect). On the next run
   // we walk every page, call `pdf.js`'s `getTextContent()` afresh, and
-  // rebuild the index — including any OCR-injected text items, since
+  // rebuild the index â€” including any OCR-injected text items, since
   // pdf.js returns TextItem-like objects regardless of rendering mode.
   //
   // DEF-050 (hang after OCR): the original "stuck on Searching..."
@@ -2324,7 +2347,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             const pdfPage = await doc.getPage(page);
             const textContent = await pdfPage.getTextContent();
             // pdf.js returns TextItem-like objects regardless of the
-            // page's text rendering mode — visible text and OCR-injected
+            // page's text rendering mode â€” visible text and OCR-injected
             // invisible text (Tr=3) share the same `{ str, transform, ... }`
             // shape. The map below collapses both to the same string
             // representation so `buildPageIndex` doesn't need to know
@@ -2344,10 +2367,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             const snapshot = { built, total };
             setSearchIndexProgress(snapshot);
             onSearchIndexProgressRef.current?.(snapshot);
-            // Still mid-walk — push the idle window out so cleanup doesn't
+            // Still mid-walk â€” push the idle window out so cleanup doesn't
             // fire while the search loop is iterating pages.
             idleCleanupRef.current?.noteActivity();
-            // DEF-303 — the window is minimised: park the walk here (it
+            // DEF-303 â€” the window is minimised: park the walk here (it
             // resumes from this page on restore, progress and collected
             // hits intact) instead of rasterising the rest of the document
             // for a window nobody can see. No-op while the window is active.
@@ -2416,7 +2439,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   //
   // On long.pdf these dominate the renderer idle footprint (DEF-016
   // exit target: <=150 MB idle). `doc.cleanup()` flushes them all in
-  // one async call, but only when no render is in flight — pdf.js
+  // one async call, but only when no render is in flight â€” pdf.js
   // refuses cleanup during active renders.
   //
   // The coordinator is rebuilt per `doc` identity: a pending cleanup
@@ -2426,7 +2449,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   useEffect(() => {
     const coord = createIdleCleanupCoordinator(
       () => {
-        // pdf.js cleanup is async. Swallow rejection — a failed
+        // pdf.js cleanup is async. Swallow rejection â€” a failed
         // cleanup is a memory miss, not a correctness issue, and the
         // next idle window will try again.
         return Promise.resolve(doc.cleanup()).catch(() => undefined);
@@ -2514,17 +2537,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     },
     [onDeleteSignature],
   );
-  // B1 — stable wrapper for the host's "exit Sign mode" setter.
+  // B1 â€” stable wrapper for the host's "exit Sign mode" setter.
   // The pending action bar's Cancel button calls through this.
   const onCancelSignatureArmStable = useCallback((): void => {
     onCancelSignatureArm?.();
   }, [onCancelSignatureArm]);
 
-  // Phase 10 — pass the edit state through to PageView with a
+  // Phase 10 â€” pass the edit state through to PageView with a
   // stable callback so child re-renders are isolated. The host
   // (App) owns the reducer + IPC.
   //
-  // Phase 21 — the panel's CURRENT values (the selected box's actual
+  // Phase 21 â€” the panel's CURRENT values (the selected box's actual
   // formatting, or the pending per-tool defaults when nothing is
   // selected) ride along as `textStyle`. The inline editor no longer
   // owns style controls: it reads this prop for its live preview AND
@@ -2535,7 +2558,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     return {
       ...edit,
       textStyle: editTextStyleFromValues(textPanelTextValues),
-      // Phase 26 — the panel's Text field drives Edit-mode text too: the
+      // Phase 26 â€” the panel's Text field drives Edit-mode text too: the
       // overlay reports its selected text target up, receives the live
       // session text for its run preview, and commits a run when the
       // session's token flips.
@@ -2553,13 +2576,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     textCommitToken,
   ]);
 
-  // B5 / B14 — when Edit mode opens, force the annotation tool
+  // B5 / B14 â€” when Edit mode opens, force the annotation tool
   // back to "select". The toolbar's `editBlocksTool` gate already
   // prevents arming shape / markup tools while Edit is open, but
   // it does NOT reset a tool that was already active when the
   // user opened Edit. Without this effect, the user could leave
   // a rectangle armed, open Edit mode, and the AnnotationOverlay
-  // would still respond to shape drags — over the Edit overlay
+  // would still respond to shape drags â€” over the Edit overlay
   // (B14). Forcing the reducer to "select" on the rising edge
   // of `editModeOpen` keeps the AnnotationOverlay inert while
   // Edit is open.
@@ -2571,16 +2594,16 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     prevEditModeOpenRef.current = editModeOpen;
   }, [editModeOpen]);
 
-  // DEF-257 — opening Edit mode (and any later engine registry echo)
+  // DEF-257 â€” opening Edit mode (and any later engine registry echo)
   // rehydrates the renderer's text-box mirror from the engine registry.
   // The mirror (`edit.state.textBoxes`) is what every page's EditOverlay
   // draws its `.edit-box` surfaces from; App adopts the engine list on
   // every state echo, but a re-open with no new echo left a committed box
-  // in the engine and absent from the mirror — so it had no surface and
+  // in the engine and absent from the mirror â€” so it had no surface and
   // could not be selected or moved.
   //
-  // `sameTextBoxes` keeps it idempotent — an unchanged registry
-  // dispatches nothing, so no duplicate surfaces and no openTabs churn —
+  // `sameTextBoxes` keeps it idempotent â€” an unchanged registry
+  // dispatches nothing, so no duplicate surfaces and no openTabs churn â€”
   // and an ABSENT or EMPTY `textBoxes` list (the engine reports `[]` for
   // a document with no boxes) leaves a renderer-local draft untouched.
   useEffect(() => {
@@ -2643,7 +2666,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // Hand the toolbar's actions straight through the reducer. The toolbar is
   // disabled when there is no document (always-disabled prop is false here
   // because a tab is mounted only when a document is open).
-  /** Phase 28 — the toolbar's dropdown colour drives the ARMED tool
+  /** Phase 28 â€” the toolbar's dropdown colour drives the ARMED tool
    *  only. The selected annotation's colour is owned by the in-canvas
    *  action bar's colour box (it patches THAT annotation live), so this
    *  no longer intercepts `set-color` to patch the selection. */
@@ -2656,7 +2679,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
 
   // When the rail's annotations panel jumps to an annotation, scroll to its
   // page and pulse a flash highlight on the matching overlay. The flash is
-  // purely visual — it does not move focus or selection.
+  // purely visual â€” it does not move focus or selection.
   const flashAnnotation = useCallback((id: string): void => {
     setFlashId(id);
     if (flashTimerRef.current !== null) {
@@ -2706,20 +2729,20 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     dispatchAnnTool({ type: "set-tool", tool: "select" });
   }, []);
 
-  // Phase 21 regression fix — a text-bearing annotation is selected the
+  // Phase 21 regression fix â€” a text-bearing annotation is selected the
   // instant it is placed, in the SAME batched update as the one-shot
   // disarm above. The panel then stays open on the selection branch
   // (`selectedAnnText`) instead of the armed-tool branch. Before this,
   // the disarm dropped the last open branch on placement: the panel
   // closed, reflowed the page 248px, and the user's follow-up click on
   // the annotation they had just placed landed on a moving origin.
-  // Only the annotation text kinds take part — the panel is theirs;
+  // Only the annotation text kinds take part â€” the panel is theirs;
   // shape / ink / arrow placement is unchanged.
   const onAnnCreate = useCallback(
     (ann: Annotation): void => {
       if (ann.kind === "textbox" || ann.kind === "note" || ann.kind === "callout") {
         setSelectedAnn(ann);
-        // Phase 26 — a text element is placed EMPTY and its text is typed
+        // Phase 26 â€” a text element is placed EMPTY and its text is typed
         // in the panel's Text field. Remember it so an untouched
         // placement is dropped again when the session ends empty.
         if (ann.text === "") justPlacedTextRef.current = ann.id;
@@ -2745,7 +2768,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const prev = prevExternalToolActiveRef.current;
     if (anyExternalToolActive && !prev) {
       dispatchAnnTool({ type: "set-tool", tool: "select" });
-      // Phase 13 — hand (pan) mode is a viewer mode and loses to every
+      // Phase 13 â€” hand (pan) mode is a viewer mode and loses to every
       // external tool surface: opening Edit / Sign / Stamp while pan is
       // armed drops pan first, so the two never share the pointer.
       setHandActive(false);
@@ -2781,7 +2804,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
 
   // ---- Phase 13: grab-and-drag panning ------------------------------------
   // While hand mode is armed the scroller owns pointer presses: press
-  // anywhere that is NOT interactive chrome (links, buttons, inputs —
+  // anywhere that is NOT interactive chrome (links, buttons, inputs â€”
   // isPanBlockingTarget bails first so their native click still lands),
   // capture the pointer, and invert the drag delta into scrollLeft /
   // scrollTop. preventDefault on the press keeps the text layer from
@@ -2905,7 +2928,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
 
   // ---- keyboard: Ctrl+F opens search, Escape closes / disarms -------------
   //
-  // Phase 36 (chunk 7) — in Multi Mode this pane's chrome facts are needed
+  // Phase 36 (chunk 7) â€” in Multi Mode this pane's chrome facts are needed
   // before the keyboard handler: `inMultiPane` gates the per-pane floating
   // pills, and `paneOwnsKeys` scopes the document chords to the FOCUSED pane
   // (both panes are mounted and visible, so an ungated window handler would
@@ -2913,17 +2936,17 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const inMultiPane = multiPane !== null;
   const paneOwnsKeys = !inMultiPane || paneFocused;
 
-  // Bug 4 — Escape disarms ANY armed annotation tool first, then closes
+  // Bug 4 â€” Escape disarms ANY armed annotation tool first, then closes
   // search. Previously Escape only closed the search bar, so an armed
   // sticky-note / ink / shape tool stayed hot after the user pressed
   // Escape (the next page click created unexpected content).
-  // Phase 13 — Escape also exits hand (pan) mode, ahead of the
+  // Phase 13 â€” Escape also exits hand (pan) mode, ahead of the
   // annotation tool check: hand mode is the outermost viewer mode and
   // its toolbar gate makes the annotation buttons inert, so Escape
   // must leave pan first.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      // Phase 36 (chunk 7) — in Multi Mode only the FOCUSED pane's view acts on
+      // Phase 36 (chunk 7) â€” in Multi Mode only the FOCUSED pane's view acts on
       // the document chord. Both panes are mounted and visible, so an ungated
       // handler would open the search bar in BOTH panes at once (and the
       // shared annotation fan-out already keeps the disarm coherent).
@@ -2969,7 +2992,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       searchQuery: query,
       searchHits: hits.length,
       searchIndexProgress,
-      // DEF-093 — expose the annotation tool through the diagnostics
+      // DEF-093 â€” expose the annotation tool through the diagnostics
       // surface. `"select"` is the renderer's "no tool" sentinel; map
       // it to `null` so e2e harnesses see the same shape every other
       // field uses (value or null, never undefined).
@@ -3004,11 +3027,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     [onToast],
   );
 
-  // Phase 33 — the rail slot's content. Multi Mode renders this pane's OWN
+  // Phase 33 â€” the rail slot's content. Multi Mode renders this pane's OWN
   // thumbnail strip, which the workspace places at `railSide` (pane A right,
   // pane B left) so the two strips meet side by side in the middle.
   //
-  // Phase 36 (chunk 6) — SINGLE mode now renders the STAGES ContextPanel in
+  // Phase 36 (chunk 6) â€” SINGLE mode now renders the STAGES ContextPanel in
   // the rail's place (the concept's left context panel applies to SINGLE mode
   // only; Multi Mode keeps its Phase 32-34 centred pane strips). The panel
   // re-parents the rail's own ThumbnailRail + OutlinePanel, so the thumbnails,
@@ -3016,7 +3039,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // that mounted it alongside the rail in chunk 2 is retired.
 
   // ---- EDIT panel: the current page's modelled content -------------------
-  // Built from the EXISTING edit model — the panel never reads it itself.
+  // Built from the EXISTING edit model â€” the panel never reads it itself.
   const editContent = useMemo<ContextPanelEditContent[]>(() => {
     if (edit === null) return [];
     const boxes = edit.state.textBoxes.map((b) => ({
@@ -3049,7 +3072,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // The Inspector is mounted by the host, but the text selection + its
   // handlers live HERE (the edit model / text-edit session). The view
   // publishes a snapshot upward so the host can feed the Inspector's
-  // EDIT/text section; there is NO second selection model — the snapshot IS
+  // EDIT/text section; there is NO second selection model â€” the snapshot IS
   // the existing selection's view.
   const textSelection = useMemo<InspectorTextSelection | null>(() => {
     if (textTarget === null) return null;
@@ -3066,7 +3089,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       focusToken: textFocusToken,
     };
     // `textPanelValues` is rebuilt each render by design (it merges the live
-    // annotation style), so the snapshot identity is not the publish signal —
+    // annotation style), so the snapshot identity is not the publish signal â€”
     // the effect below gates on the observable shape instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -3099,7 +3122,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           JSON.stringify(textSelection.values),
         ].join('\u0000');
   const lastTextSelectionKeyRef = useRef<string | null>(null);
-  // DEF-321 — a LAYOUT effect: the floating pop-out closes on the same commit
+  // DEF-321 â€” a LAYOUT effect: the floating pop-out closes on the same commit
   // that the target appears, so the host's Inspector copy must be mounted in
   // the same paint or the selection would briefly have no properties UI at all.
   // Publishing after paint left exactly that one-frame gap.
@@ -3157,10 +3180,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // so the floating pills fade WITH the dock, never on their own clock.
   const [dockIdle, setDockIdle] = useState(false);
 
-  // State 2's bulk verbs — every one reuses an EXISTING multi-page path: the
+  // State 2's bulk verbs â€” every one reuses an EXISTING multi-page path: the
   // engine's rotate op (one call per selected page), the delete-pages engine
-  // op (which already takes a page array), and the host's existing extract /
-  // merge dialog entries.
+  // op (which already takes a page array), and the host's existing extract
+  // dialog entry. Section 3A ruling 9: Merge is NOT a dock verb (the PAGES
+  // panel header's `ï¼‹ Combineâ€¦` owns it), so it is absent here.
   const dockBulk = useMemo<DockBulkActions>(
     () => ({
       onRotate: (pages): void => {
@@ -3169,14 +3193,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onExtract: (pages): void => {
         if (pages.length > 0) onExtractPages?.(pages[0]);
       },
-      onMerge: (): void => onMerge?.(),
       onDelete: (pages): void => {
         if (pages.length === 0) return;
         onDelete?.([...pages]);
         setPageSelection([]);
       },
     }),
-    [onRotate, onExtractPages, onMerge, onDelete],
+    [onRotate, onExtractPages, onDelete],
   );
 
   // The dock's availability gate and action routing. This view runs the
@@ -3224,12 +3247,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     ],
   );
 
-  // Phase 36 (chunk 4) — the Command Palette's view-command bridge.
+  // Phase 36 (chunk 4) â€” the Command Palette's view-command bridge.
   //
   // The palette is mounted once by App (it must work on the welcome screen and
   // must never mount twice in Multi Mode), but the view-level verbs live HERE.
-  // Publishing the handlers this view already owns — the CanvasPills' zoom /
-  // page stepping, the search toggle, the dock's own view verbs — keeps ONE
+  // Publishing the handlers this view already owns â€” the CanvasPills' zoom /
+  // page stepping, the search toggle, the dock's own view verbs â€” keeps ONE
   // implementation of each command: the palette never re-implements zoom.
   const viewCommands = useMemo<Record<string, () => void>>(
     () => ({
@@ -3270,27 +3293,30 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     [viewDockActions, onDockToolAction],
   );
 
+  const dockAvailabilityArgs = useMemo(
+    () => ({
+      pageSelectionCount: pageSelection.length,
+      editModeOpen,
+      canUndo,
+      canRedo,
+      viewActions: viewDockActions,
+      appEnabled: isDockToolEnabled,
+    }),
+    [pageSelection.length, editModeOpen, canUndo, canRedo, viewDockActions, isDockToolEnabled],
+  );
+
+  /** DEF-327 â€” the dock's live gate for one entry, from the ONE shared decision
+   *  (`dockAvailabilityFor`). `undefined` (not a verb this pane governs) reads
+   *  as unavailable here, exactly as before. */
   const dockToolEnabled = useCallback(
-    (entry: ToolEntry): boolean => {
-      // View-level gates the registry cannot express from App state alone.
-      if (entry.action === 'clearPageSelection') return pageSelection.length > 0;
-      // DEF-314 — `editModeToggle` IS the control that turns Edit mode ON, so
-      // it is enabled while Edit mode is OFF (a document is always open in this
-      // view). Only the edit-layer TOOL verbs need Edit mode to already be on.
-      if (entry.action.startsWith('editTool')) return editModeOpen;
-      if (entry.action === 'annotationColor' || entry.action === 'annotationPenWidth') {
-        return false;
-      }
-      if (viewDockActions[entry.action] !== undefined) return true;
-      return isDockToolEnabled?.(entry.id) ?? false;
-    },
-    [pageSelection.length, editModeOpen, viewDockActions, isDockToolEnabled],
+    (entry: ToolEntry): boolean => dockAvailabilityFor(entry, dockAvailabilityArgs) ?? false,
+    [dockAvailabilityArgs],
   );
 
   const dockDisabledReason = useCallback(
     (entry: ToolEntry): string | undefined => {
       if (dockToolEnabled(entry)) return undefined;
-      // DEF-311 — leave the reason undefined so the dock uses the registry's
+      // DEF-311 â€” leave the reason undefined so the dock uses the registry's
       // declared availability copy ("Run Recognize text first") instead of the
       // tool's description. Only the edit layer needs live copy: its gate is
       // Edit mode, not the entry's declared 'document' precondition.
@@ -3299,6 +3325,36 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     },
     [dockToolEnabled],
   );
+
+  /** DEF-327 â€” the SAME gate, published to the host so the Command Palette's
+   *  rows for the dock's own verbs get the dock's verdict instead of a second
+   *  guess. The pane's copy rides along so a disabled palette row shows the
+   *  dock's reason ("Turn on Edit content first"), never the registry default. */
+  const dockPaletteAvailability = useMemo<DockAvailability>(
+    () => ({
+      isToolEnabled: (entry): boolean | undefined =>
+        dockAvailabilityFor(entry, dockAvailabilityArgs),
+      disabledReasonFor: (entry): string | undefined => dockDisabledReason(entry),
+    }),
+    [dockAvailabilityArgs, dockDisabledReason],
+  );
+
+  // DEF-327 â€” publish the availability pair to the host (the same one-shot
+  // registration shape as the view commands: `null` withdraws it on unmount, so
+  // a closed pane's verdict never lingers in the palette). Re-registered
+  // whenever the gate's inputs change, so the host's map always holds the
+  // CURRENT verdict.
+  const dockPaletteAvailabilityRef = useRef(dockPaletteAvailability);
+  dockPaletteAvailabilityRef.current = dockPaletteAvailability;
+  const registerDockAvailabilityRef = useRef(registerDockAvailability);
+  registerDockAvailabilityRef.current = registerDockAvailability;
+  useEffect((): (() => void) | undefined => {
+    const register = registerDockAvailabilityRef.current;
+    if (register === undefined) return undefined;
+    const published = dockPaletteAvailabilityRef.current;
+    register(published);
+    return (): void => register(null);
+  }, [dockPaletteAvailability]);
 
   const dockPinsSanitized = useMemo(() => sanitizeDockPins(dockPins), [dockPins]);
 
@@ -3315,7 +3371,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const dockDragInProgress = drag !== null && drag.source !== null;
 
   const railNode = multiRail === null ? (
-    // Phase 36 (chunk 6) — SINGLE mode's left slot is the STAGES ContextPanel.
+    // Phase 36 (chunk 6) â€” SINGLE mode's left slot is the STAGES ContextPanel.
     // It passes through EXACTLY the rail's own props (doc, engine state, the
     // current page, the per-page sizes, the jump/scroll sync, the op handlers,
     // the drag wiring and the organize-dialog entries) plus the stage panels'
@@ -3328,14 +3384,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       currentPage={currentPage}
       defaultWidthPt={firstPageSize?.w ?? 612}
       defaultHeightPt={firstPageSize?.h ?? 792}
-      // DEF-148 — the per-VISIBLE-page sizes the mounted PageViews
+      // DEF-148 â€” the per-VISIBLE-page sizes the mounted PageViews
       // report. ThumbnailRail sizes each thumb wrap from ITS OWN page's
       // aspect ratio (never a single page-1-derived ratio), so a
       // per-page crop of page 1 no longer collapses pages 2..N into
       // the crop square.
       pageSizes={pageSizes}
       engineState={engineState}
-      // DEF-139 — the thumb bitmap source must follow the same
+      // DEF-139 â€” the thumb bitmap source must follow the same
       // slot -> proxy-page rule as the main view (visible order
       // when the proxy was rebuilt from getDocumentBytes).
       proxyVisibleOrder={proxyVisibleOrder}
@@ -3351,20 +3407,19 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onExtractPages={onExtractPages}
       onInsertBlank={onInsertBlankPage}
       onReplacePages={onReplacePages}
-      onRenumberPages={onRenumberPages}
       onDeletePage={onDeletePage}
       // Phase 32's cross-document drag wiring: single mode keeps the rail's
       // intra-document drag semantics (null), exactly as before.
       crossDoc={null}
-      // Phase 36 (chunk 3a) — the thumbnail multi-select. The set is owned
+      // Phase 36 (chunk 3a) â€” the thumbnail multi-select. The set is owned
       // here and consumed by the dock (State 2); the panel only writes it.
       pageSelection={pageSelection}
       onPageSelectionChange={setPageSelection}
-      // Phase 16 — the collapse affordance, re-homed to the panel header. The
+      // Phase 16 â€” the collapse affordance, re-homed to the panel header. The
       // host (App) owns the value; the panel renders it and reports toggles.
       collapsed={pagesPanelCollapsed ?? false}
       onToggleCollapsed={onTogglePagesPanelCollapsed}
-      // EDIT — the current page's modelled content + the recognition summary.
+      // EDIT â€” the current page's modelled content + the recognition summary.
       editContent={editContent}
       onSelectEditContent={selectEditContent}
       ocrStatus={ocrStatus}
@@ -3372,7 +3427,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       ocrSuspectCount={ocrSuspectCount}
       onRecognizeText={onRecognizeText}
       onOpenOcrSuspects={onOpenOcrSuspects}
-      // REVIEW — the annotations list (the ONE home for it) plus the
+      // REVIEW â€” the annotations list (the ONE home for it) plus the
       // saved-signatures section.
       annotations={annotations}
       onJumpToAnnotation={onAnnJump}
@@ -3382,7 +3437,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       armedSignatureId={armedSignatureId}
       onSignSignature={onSignSignature}
       onManageSignatures={onManageSignatures}
-      // DELIVER — the pre-flight checklist reads the existing state only.
+      // DELIVER â€” the pre-flight checklist reads the existing state only.
       fileSize={fileSize}
       formFieldCount={formFields.length}
       onOptimize={onOptimize}
@@ -3420,7 +3475,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // CURRENT state. In single mode `sharedTools` is null: no registration,
   // no effects, no change.
   //
-  // Phase 36 (chunk 7) — the pane publishes its DOCK CONTEXT (not a toolbar
+  // Phase 36 (chunk 7) â€” the pane publishes its DOCK CONTEXT (not a toolbar
   // model): the ONE shared Action Dock renders the workspace's verbs from the
   // FOCUSED pane's entry, so the selection, the availability gates and the
   // idle suppression must all come from the pane that owns them.
@@ -3469,7 +3524,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   const suppressToolbar = sharedTools !== null;
 
   return (
-    // Phase 25 — `data-text-panel-open` is now a PURE STATE MARKER (the
+    // Phase 25 â€” `data-text-panel-open` is now a PURE STATE MARKER (the
     // panel's open/close truth for tests and e2e); it no longer drives any
     // layout. The old --tf-text-w grid column and its page reflow are gone:
     // the panel floats inside .workspace-main, so the page never moves.
@@ -3477,14 +3532,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       className="workspace"
       data-text-panel-open={textPanelOpen ? "true" : "false"}
       data-rail={showRail ? undefined : "none"}
-      // Phase 33 — the rail side. The rail node is placed BEFORE the page
+      // Phase 33 â€” the rail side. The rail node is placed BEFORE the page
       // area on the left (single mode, unchanged) and AFTER it on the right
       // (Multi Mode's pane A), so the DOM order matches the geometry.
       data-rail-side={showRail ? railSide : undefined}
     >
       {showRail && railSide === "left" ? railNode : null}
       <div ref={mainRef} className="workspace-main">
-        {/* Phase 36 (chunk 3b) — the per-view command toolbar ROW is RETIRED
+        {/* Phase 36 (chunk 3b) â€” the per-view command toolbar ROW is RETIRED
             in SINGLE mode: every control it hosted is reachable from its new
             home (page nav + zoom/fit -> the floating CanvasPills; pan -> the
             pills' Hand control; find -> Ctrl+F / the palette; rotate, delete,
@@ -3541,7 +3596,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         >
           <div className="document-content">
             {Array.from({ length: pageCount }, (_, i) => i + 1).map((visiblePage) => {
-              // DEF-064 — after a delete / reorder the visual scroller
+              // DEF-064 â€” after a delete / reorder the visual scroller
               // used to keep its original `doc.numPages` slots while
               // the rail correctly shrank to `engineState.pageCount`,
               // so the scroller showed phantom slots for the deleted
@@ -3558,7 +3613,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
               // the pure helper that does the translation (tested
               // independently in pageGeometry.test.ts).
               //
-              // DEF-139 — the translation must respect which proxy
+              // DEF-139 â€” the translation must respect which proxy
               // family the tab currently holds. `engineState.pageOrder`
               // entries are pdf-lib ORIGINAL page indices; they address
               // the ORIGINAL open bytes (identity file order) but NOT a
@@ -3572,7 +3627,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                 engineState.pageOrder,
                 proxyVisibleOrder,
               );
-              // DEF-057 — read the engine-applied quarter-turn rotation
+              // DEF-057 â€” read the engine-applied quarter-turn rotation
               // for this visible page slot and thread it down to the
               // PageView. The engine's `rotations` array is indexed by
               // VISIBLE position (the same order DocumentView's slots
@@ -3585,7 +3640,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
               // thumb CSS class flipped, the main view did not).
               const pageRotation = engineState.rotations[visiblePage - 1] ?? 0;
               const isMounted = mountedPages.has(visiblePage);
-              // DEF-141 — per-page slot geometry. Each slot reserves
+              // DEF-141 â€” per-page slot geometry. Each slot reserves
               // space for ITS OWN page (mixed-size document): a crop of
               // page 1 must not shrink pages 2..N. `pageLayouts.geom`
               // holds the rotation-aware CSS dims; `pageLayouts.pt` the
@@ -3601,7 +3656,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                   data-source-page={sourcePage}
                   onDragOver={canvasDragOn ? onCanvasDragOver(visiblePage) : undefined}
                   onDrop={canvasDragOn ? onCanvasDrop(visiblePage) : undefined}
-                  // DEF-302 — the slot IS the page unit the zoom FLIP animates
+                  // DEF-302 â€” the slot IS the page unit the zoom FLIP animates
                   // (paper background + content in one frame); clear the
                   // one-shot class/vars when its own animation lands. Guard
                   // with `isZoomFlipEnd` so a nested overlay's animationend
@@ -3623,7 +3678,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                   {isMounted && (
                     <PageView
                       doc={doc}
-                      // DEF-133 — thread BOTH page spaces into
+                      // DEF-133 â€” thread BOTH page spaces into
                       // PageView. `page` is the VISIBLE index every
                       // overlay uses when it creates content
                       // (annotations / forms / signatures / stamps /
@@ -3632,7 +3687,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       // it against the CURRENT pageOrder). `sourcePage`
                       // is the index into the pdf.js proxy, which
                       // stays in SOURCE order after a delete /
-                      // reorder / insert — only PageView's
+                      // reorder / insert â€” only PageView's
                       // `doc.getPage(sourcePage)` render uses it.
                       page={visiblePage}
                       sourcePage={sourcePage}
@@ -3652,21 +3707,21 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       liveAnnTextIds={liveAnnTextIds}
                       onCreateAnnotation={onAnnCreate}
                       onFinishedOneShot={onAnnFinishedOneShot}
-                      // DEF-096 — committed note icons open their
+                      // DEF-096 â€” committed note icons open their
                       // editor; Confirm/Delete route through these
                       // (same AnnotationPatch path as the panel).
                       onEditAnnotation={onEditAnnotation}
                       onDeleteAnnotation={onDeleteAnnotation}
-                      // Phase 21 (annotations) — report the overlay's
+                      // Phase 21 (annotations) â€” report the overlay's
                       // committed-annotation selection upward so the
                       // text-properties panel can reflect a selected
                       // annotation text object's actual colour.
                       onSelectAnnotation={onSelectAnnotation}
-                      // Phase 26 — placing or clicking a text element
+                      // Phase 26 â€” placing or clicking a text element
                       // focuses the panel's Text field (the single live
                       // text-editing surface; no in-canvas editor).
                       onTextFocusRequest={onAnnTextFocusRequest}
-                      // Phase 28 — the selection bar's colour box reuses
+                      // Phase 28 â€” the selection bar's colour box reuses
                       // the toolbar's picker, so it needs the same
                       // preset bucket + saved custom presets.
                       annotationPaletteTheme={themeName === 'light' ? 'light' : 'dark'}
@@ -3683,13 +3738,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                           ? undefined
                           : (next): void => onAnnotationPaletteChange(next)
                       }
-                      // Phase 28 — comment threads + the append op. The
+                      // Phase 28 â€” comment threads + the append op. The
                       // threads ride on the engine state mirror; the
                       // overlay draws one badge per commented element and
                       // the comment box for the selected annotation.
                       comments={engineState.comments}
                       onAddComment={onAddComment}
-                      // Bug 1 — opening an edit toolbox disarms the
+                      // Bug 1 â€” opening an edit toolbox disarms the
                       // annotation creation tool (select). Without
                       // this, an armed sticky-note / ink / shape
                       // tool stays hot while the toolbox is open,
@@ -3707,7 +3762,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       onPlaceSignature={onPlaceSignatureStable}
                       onMoveSignature={onMoveSignatureStable}
                       onDeleteSignature={onDeleteSignatureStable}
-                      // B1 — exit Sign mode. Wired to the pending
+                      // B1 â€” exit Sign mode. Wired to the pending
                       // action bar's Cancel button (and to the
                       // overlay's Esc handler for a pending
                       // placement). Delete drops only the
@@ -3715,7 +3770,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       // leaves the Sign tool armed for the next
                       // page click.
                       onCancelSignatureArm={onCancelSignatureArmStable}
-                      // B10 — armed stamp ghost + click-to-embed.
+                      // B10 â€” armed stamp ghost + click-to-embed.
                       // The stamp ghost follows the cursor on
                       // every page; clicking embeds the stamp at
                       // the click point.
@@ -3724,7 +3779,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                       stampAnnotations={stampAnnotations.filter(
                         (s) => s.page === visiblePage,
                       )}
-                      // Bug 6 — stamp select/move/delete/retype
+                      // Bug 6 â€” stamp select/move/delete/retype
                       // handlers (the same page-level callbacks the
                       // user-facing stamp surfaces use).
                       onMoveStamp={onMoveStamp}
@@ -3750,7 +3805,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                   )}
                   {canvasTargetHere !== null && canvasTargetHere.atIndex === visiblePage && (
                     <div
-                      // DEF-290 — the first slot's line anchors flush inside
+                      // DEF-290 â€” the first slot's line anchors flush inside
                       // the slot's top edge (mirrors the rail's first-slot
                       // handling) instead of the between-pages -9px offset,
                       // which fell above the scroller's visible top and was
@@ -3788,15 +3843,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             })}
           </div>
         </div>
-        {/* Phase 36 (chunk 5) — the floating All Tools badge is RETIRED. The
+        {/* Phase 36 (chunk 5) â€” the floating All Tools badge is RETIRED. The
             Inspector is the workspace's right panel and needs no toggle, so
             no view renders a badge any more (DEF-284's single-badge rule is
             moot: there is no badge to duplicate). */}
-        {/* Phase 25 — the text-properties panel is a FLOATING card over
+        {/* Phase 25 â€” the text-properties panel is a FLOATING card over
             the page view (absolutely positioned inside .workspace-main),
             NOT a workspace grid column. It has no header, is draggable by
             its grip, and opening/closing it never reflows the page.
-            DEF-321 — for a SELECTED text target the Inspector's EDIT/text
+            DEF-321 â€” for a SELECTED text target the Inspector's EDIT/text
             section is the canonical mount and this pop-out is suppressed
             (one properties UI per selection); it stays the mount for an
             armed tool with nothing selected, and whenever the Inspector is
@@ -3812,7 +3867,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           onTextCommit={commitTextSession}
           focusToken={textFocusToken}
         />
-        {/* DEF-319 — the CANVAS-BOUND floating-chrome layer. The page/zoom
+        {/* DEF-319 â€” the CANVAS-BOUND floating-chrome layer. The page/zoom
             pills, the annotations flyout and the Action Dock all live inside
             it, so they anchor to the VISIBLE canvas: the layer is inset on the
             right by the open Inspector's width (--tf-tools-inset), which is
@@ -3822,7 +3877,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             pixel-identical to before. The layer is pointer-inert; the pills,
             the flyout and the dock opt back in. */}
         <div className="canvas-overlay" data-canvas-overlay>
-        {/* Phase 36 (chunk 3b / chunk 7) — the floating page + zoom pills.
+        {/* Phase 36 (chunk 3b / chunk 7) â€” the floating page + zoom pills.
             SINGLE mode keeps their unchanged placement (page bottom-left, zoom
             bottom-right of the canvas). In MULTI MODE each pane carries its OWN
             pills inside its OWN canvas bounds, so page / zoom / pan act on the
@@ -3848,11 +3903,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             pane={multiPane}
           />
         )}
-        {/* Phase 36 (chunk 3b) — the ONE annotations flyout. The REVIEW dock's
+        {/* Phase 36 (chunk 3b) â€” the ONE annotations flyout. The REVIEW dock's
             Annotate primary toggles it; it hosts the EXISTING AnnotationToolbar
             (re-parented), so the registry's annotation entries have exactly one
             home and the dock never renders a duplicate set.
-            Phase 36 (chunk 7) — in Multi Mode it is ONE surface driven by the
+            Phase 36 (chunk 7) â€” in Multi Mode it is ONE surface driven by the
             FOCUSED pane: only the focused pane's view mounts it (the dock's
             Annotate verb routes to the focused pane's `annotate` command), and
             a pane that loses focus closes it, so a focus switch can never leave
@@ -3878,7 +3933,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                   ? undefined
                   : (next): void => onAnnotationPaletteChange(next)
               }
-              /* Phase-15 — frosted is a dark acrylic variant, so the
+              /* Phase-15 â€” frosted is a dark acrylic variant, so the
                  annotation palette treats it as the 'dark' preset bucket
                  (the shared AnnotationColors contract has no frosted key). */
               theme={themeName === 'light' ? 'light' : 'dark'}
@@ -3887,13 +3942,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             />
           </AnnotationFlyout>
         )}
-        {/* Phase 36 (chunk 3a / chunk 7) — the Action Dock. Mounted as an
+        {/* Phase 36 (chunk 3a / chunk 7) â€” the Action Dock. Mounted as an
             ADDITION at the bottom-centre of the canvas (the `.canvas-overlay`
             layer is the positioning context, DEF-319) so nothing else moves:
             the rail, the palette and the flyout all stay. It renders only when
             the host supplies a stage (every pre-chunk-3a mount omits it) and is
             suppressed in Multi Mode, where the ONE shared dock
-            (`MultiActionDock`) floats at the workspace's bottom-centre instead —
+            (`MultiActionDock`) floats at the workspace's bottom-centre instead â€”
             a per-pane dock would be a second surface. */}
         {activeStage !== undefined && !suppressToolbar && (
           <ActionDock
@@ -3916,7 +3971,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         )}
         </div>
       </div>
-      {/* Phase 33 — the rail's RIGHT-side slot (Multi Mode's pane A): the
+      {/* Phase 33 â€” the rail's RIGHT-side slot (Multi Mode's pane A): the
           strip sits immediately after the page area, so A's strip and B's
           (on the left of its own page area) meet in the middle. */}
       {showRail && railSide === "right" ? railNode : null}
@@ -3929,12 +3984,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
 // longer needs to register itself with the parent.
 const NOOP_REGISTER = (): void => undefined;
 
-// Stable empty annotations array — passed to PageView when a page has no
+// Stable empty annotations array â€” passed to PageView when a page has no
 // annotations, so the prop's reference doesn't change between renders.
 const EMPTY_ANNOTATIONS: Annotation[] = [];
 
-// ---- Phase 26 — the panel Text field's target model -----------------------
-/** A text target reported up by the Edit overlay (Phase 26 — the inline
+// ---- Phase 26 â€” the panel Text field's target model -----------------------
+/** A text target reported up by the Edit overlay (Phase 26 â€” the inline
  *  editor is retired, so Edit-mode text is edited in the panel's Text
  *  field). */
 export type EditTextTarget =
@@ -3949,7 +4004,7 @@ export type EditTextTarget =
 /** Everything the panel's Text field can edit. */
 type TextTarget = EditTextTarget | { kind: "annotation"; id: string };
 
-/** Stable identity for a text target — used to tell "same target, next
+/** Stable identity for a text target â€” used to tell "same target, next
  *  keystroke" (same session) from "new target" (commit the old session). */
 function textTargetKey(t: TextTarget | null): string | null {
   if (t === null) return null;

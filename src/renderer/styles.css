@@ -6775,6 +6775,27 @@ rect.ann-highlight.ann-preview {
 .inspector-row-value { color: var(--fg); text-align: right; min-width: 0; }
 .inspector-inline { display: inline-flex; align-items: center; gap: var(--sp-1); }
 
+/* Section 3A ruling 6 — the read-only "Annotations: N" count is the ONE
+ * inspector value that is clickable: it JUMPS to the REVIEW stage. Styled as
+ * an inline accent link (no button chrome), tokens only. */
+.inspector-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  border-radius: var(--radius-control);
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.inspector-link:hover:not(:disabled) { color: var(--accent-hover); text-decoration: underline; }
+.inspector-link:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.inspector-link:disabled { opacity: 0.5; cursor: default; }
+
 .inspector-action {
   display: inline-flex;
   align-items: center;
@@ -13192,9 +13213,10 @@ rect.ann-highlight.ann-preview {
  *
  * Geometry per the Phase-36 contract: absolute, bottom 12px, horizontally
  * centred; padding 6px 8px, radius 12px, gap 4px; a verb is a 16px icon over a
- * 9px label, padding 4px 9px, radius 8px. Every colour is an existing theme
- * token and every duration an existing motion token — the dock introduces
- * none of its own.
+ * 9px label, padding 4px 7px (DEF-330 trimmed the concept's 9px so DELIVER's
+ * five real labels fit the pill-free band on one row), radius 8px. Every
+ * colour is an existing theme token and every duration an existing motion
+ * token — the dock introduces none of its own.
  * ========================================================================= */
 .action-dock {
   position: absolute;
@@ -13202,8 +13224,13 @@ rect.ann-highlight.ann-preview {
   left: 50%;
   /* DEF-315 — the dock stays centred on the canvas; the vertical YIELD (above
    * the pill row at hosts too narrow for any free band) is a transform, so it
-   * composites and never reflows the page. */
-  transform: translate(-50%, calc(-1 * var(--dock-lift, 0px)));
+   * composites and never reflows the page. DEF-330 — `--dock-shift` moves the
+   * dock from the HOST centre to the centre of the pill-FREE band between the
+   * two pills (the symmetric reserve charged the dock for the wider pill's
+   * slack twice, which at the default window cost the PAGES/EDIT labels and
+   * wrapped DELIVER onto a second row). It is 0px until the pills are measured
+   * and while the dock is lifted, so both those geometries are unchanged. */
+  transform: translate(calc(-50% + var(--dock-shift, 0px)), calc(-1 * var(--dock-lift, 0px)));
   z-index: 7;
   box-sizing: border-box;
   display: flex;
@@ -13237,6 +13264,25 @@ rect.ann-highlight.ann-preview {
     opacity var(--motion-duration-panel) var(--motion-ease-standard);
 }
 
+/* DEF-330 — between the pills the dock is placed INSIDE the pill-free band
+ * instead of on the host's centre under `left: 50%`. The old geometry left the
+ * shrink-to-fit dock only the host's RIGHT HALF (457px at the default window),
+ * so a labelled DELIVER dock (needing ~492px, and the band allowing 493.75px)
+ * wrapped onto a second row even though `max-width` said it fit. With both
+ * band insets set and `width: max-content` (capped by the inline `max-width`,
+ * which is the band width) the dock hugs its single row up to the band and
+ * `margin-inline: auto` keeps it centred in the band. `--dock-shift` is not
+ * applied here (it is 0 for the band-placed state anyway); the transform
+ * carries only the vertical `--dock-lift`. Unmeasured or lifted docks keep the
+ * host-centre geometry above. */
+.action-dock[data-dock-band-placed='true'] {
+  left: var(--dock-band-left, 50%);
+  right: var(--dock-band-right, 0px);
+  width: max-content;
+  margin-inline: auto;
+  transform: translate(0px, calc(-1 * var(--dock-lift, 0px)));
+}
+
 /* DEF-315 — last-resort yield: with less than one verb of free band the dock
  * has no horizontal home, so it parks ABOVE the pill row (still centred on the
  * canvas, the pills still in their corners). `--dock-lift` is the measured pill
@@ -13259,10 +13305,14 @@ rect.ann-highlight.ann-preview {
   align-items: center;
   justify-content: center;
   /* DEF-313 — the verb group wraps inside the capped dock instead of
-   * overflowing and clipping its trailing verb. */
+   * overflowing and clipping its trailing verb. DEF-330 — the inter-verb gap
+   * and the verb padding are trimmed by 1px / 2px so the WIDEST curated set
+   * (DELIVER's five labels, ~490px real) fits the pill-free band (493.75px at
+   * the default window) on ONE row: at the designed 4px gap / 9px padding its
+   * real width is ~514px, which no placed geometry can fit between the pills. */
   flex-wrap: wrap;
   max-width: 100%;
-  gap: 4px;
+  gap: 3px;
 }
 
 /* The state change (State 1 <-> State 2) is a ~140ms crossfade on the existing
@@ -13294,7 +13344,11 @@ rect.ann-highlight.ann-preview {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  padding: 4px 9px;
+  /* DEF-330 — 7px (not the concept's 9px) horizontal padding: with the
+   * measured Inter advance the five DELIVER labels need ~490px on one row
+   * inside the 493.75px pill-free band at the default window; at 9px they need
+   * ~514px and would wrap. Vertical padding is unchanged. */
+  padding: 4px 7px;
   background: transparent;
   border: 0;
   border-radius: 8px;
@@ -13580,8 +13634,13 @@ rect.ann-highlight.ann-preview {
 
 .annotation-flyout {
   box-sizing: border-box;
-  min-width: 260px;
+  /* DEF-325 — `min-width: 0` (was a fixed 260px): the flyout is a
+   * canvas-bound surface, so it must be allowed to shrink with the visible
+   * canvas instead of centring past it under the Inspector. `overflow:
+   * hidden` keeps any residual overflow inside that canvas-bound box. */
+  min-width: 0;
   max-width: calc(100% - 24px);
+  overflow: hidden;
   padding: 6px 8px 8px;
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
@@ -13639,6 +13698,32 @@ rect.ann-highlight.ann-preview {
 .annotation-flyout-body {
   display: flex;
   align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* DEF-325 — the flyout is a CANVAS-BOUND surface (it lives inside the
+ * pointer-inert `.canvas-overlay`, DEF-319), so its box must never spill
+ * past the visible canvas into the Inspector. Its own `min-width: 260px`
+ * used to win over `max-width: calc(100% - 24px)` on a narrow canvas: the
+ * box centred, and its right half (the "All annotation tools" dropdown
+ * toggle) landed under the 264px Inspector, which then swallowed the click.
+ *
+ * Rule: the flyout shrinks to the canvas (`min-width: 0`), and the
+ * re-parented annotation capsule wraps inside it, so every tool control —
+ * including the dropdown toggle — stays inside the canvas at every width.
+ * Nothing is removed; the tools reflow onto more rows on a narrow canvas. */
+.annotation-flyout .ann-toolbar {
+  flex-wrap: wrap;
+  justify-content: center;
+  height: auto;
+  max-width: 100%;
+  row-gap: 2px;
+}
+
+.annotation-flyout .ann-tools-visible {
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -13901,6 +13986,74 @@ rect.ann-highlight.ann-preview {
   .command-palette,
   .command-palette-row {
     transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * DEF-324 — the caption strip at the 640px band (Phase 36 regression).
+ *
+ * Phase 36 added the "File" label, the quick file actions, the Multi Mode
+ * toggle, the update indicator, the theme picker, Print and the gear to the
+ * caption strip. With the DEF-244 bands alone the strip's fixed chrome again
+ * consumed the tab strip's whole share at the 640px minimum (.tab-area
+ * measured 15px, every tab title clipped).
+ *
+ * Rule: as the strip narrows the LOWER-PRIORITY chrome compacts first, so the
+ * tab strip always keeps a usable width and the ACTIVE tab's title stays
+ * readable. Every control stays mounted and reachable — only its face
+ * compacts, exactly like the DEF-244 Open/theme bands:
+ *
+ *   <= 900px — the brand drops its wordmark (the "TF" mark stays), the File
+ *              trigger drops its text label (the chevron, aria-label and
+ *              "File menu" tooltip stay), and the header's paddings/gaps
+ *              tighten. The quick file actions stay icon-and-hook identical;
+ *              the Multi Mode / Print / gear controls are untouched (the
+ *              theme label already hides at <= 700).
+ *
+ * No control is removed, no handler changes and no tab-strip scrolling
+ * behaviour changes — the strip simply gets a usable width at the minimum
+ * window size (and enough width at 900 for the DEF-245 "active tab fully
+ * visible" contract).
+ *
+ * Placement note: this block sits AFTER every base rule it overrides, so the
+ * media declarations win on source order (a media rule earlier than its base
+ * rule loses the cascade).
+ * ------------------------------------------------------------------------- */
+@media (max-width: 900px) {
+  /* Brand: keep the mark, drop the wordmark. */
+  .brand > span:not(.brand-mark) {
+    display: none;
+  }
+
+  .brand {
+    padding-right: var(--sp-2);
+  }
+
+  /* File menu: icon-only face; aria-label / tooltip keep the name. */
+  .titlebar-menu-label {
+    display: none;
+  }
+
+  .titlebar-menu-file {
+    padding: 0 5px;
+  }
+
+  /* Tighten the header chrome so the tab strip keeps the reclaimed width. */
+  .app-header {
+    padding: 0 var(--sp-2);
+  }
+
+  .header-actions {
+    gap: var(--sp-1);
+    padding-left: var(--sp-2);
+  }
+
+  .titlebar-file {
+    margin-right: var(--sp-2);
+  }
+
+  .theme-toggle {
+    padding: 0 5px;
   }
 }
 

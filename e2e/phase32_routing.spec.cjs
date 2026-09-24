@@ -2,8 +2,8 @@
 //
 // Covers success criterion 3: every document-scoped operation acts on the
 // FOCUSED pane only, leaving the other pane's document untouched.
-//   - page operations through the real toolbar controls
-//     ([data-toolbar-delete-pages], [data-toolbar-rotate-cw]),
+//   - page operations through the real dock verbs
+//     (`rotate` / `delete` via helpers.runTool),
 //   - undo / redo (menu accelerators, routed through the active tab),
 //   - Save (the title-bar control reads the active tab),
 //   - the two tab-strip rules.
@@ -13,7 +13,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette, runTool } = require('./lib/helpers.cjs');
 
 const FIX = path.resolve(__dirname, '..', 'test-fixtures');
 const ALPHA_SRC = path.join(FIX, 'report.pdf'); // 34 pages
@@ -89,7 +89,7 @@ async function twoPaneSetup() {
 // Phase 33 — Multi Mode has ONE shared toolbar; the page-op controls live
 // there and act on the FOCUSED pane, so the caller sets focus first.
 async function deleteCurrentPage() {
-  await win.locator('[data-shared-toolbar] [data-toolbar-delete-pages]').first().click();
+  await runTool(win, 'delete');
   await win.waitForSelector('[data-delete-pages-dialog]', { timeout: 10000 });
   await win.locator('[data-delete-confirm]').click();
   await win.waitForTimeout(1200);
@@ -132,7 +132,7 @@ test('R1 toolbar page operations act on the focused pane only', async () => {
   // --- focus B, rotate via the SHARED toolbar (acts on the focused pane) ---
   await focusPane('B');
   let before = await diag();
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1200);
   let after = await diag();
   console.log(`[P32-routing] B rotate: B rot ${JSON.stringify(before.rotations)} -> ${JSON.stringify(after.rotations)}`);
@@ -143,7 +143,7 @@ test('R1 toolbar page operations act on the focused pane only', async () => {
   expect(aRot[0]).toBe(0);
 
   // --- focus A, rotate via the shared toolbar ---
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1200);
   const aRot2 = (await diag()).rotations;
   console.log(`[P32-routing] A rotations after A rotate = ${JSON.stringify(aRot2)}`);
@@ -196,10 +196,10 @@ test('R2 undo/redo target the focused pane', async () => {
   await twoPaneSetup();
   // Rotate both documents so both have an undo entry.
   await focusPane('A');
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1100);
   await focusPane('B');
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1100);
   const aRot = await (async () => { await focusPane('A'); return (await diag()).rotations[0]; })();
   const bRot = await (async () => { await focusPane('B'); return (await diag()).rotations[0]; })();
@@ -243,10 +243,10 @@ test('R2 undo/redo target the focused pane', async () => {
 test('R3 Save targets the focused pane', async () => {
   await twoPaneSetup();
   await focusPane('A');
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1100);
   await focusPane('B');
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1100);
 
   const aMod = await (async () => { await focusPane('A'); return (await diag()).modified; })();

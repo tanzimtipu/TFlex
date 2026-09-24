@@ -1,4 +1,4 @@
-// Phase 18 part 1 — Watermark: palette gate, live preview + position grid,
+// Phase 18 part 1 — Watermark: dock gate, live preview + position grid,
 // text/typography/opacity apply (timed) + baked pixel proof.
 //
 // Compact validation spec: exactly 4 tests, one serial describe, a single
@@ -19,7 +19,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp } = require('./lib/launch.cjs');
-const { openSample, shot, hardClose } = require('./lib/helpers.cjs');
+const { openSample, shot, hardClose, runTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const SLOTS = [
@@ -94,72 +94,27 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
     }, quadrant);
   }
 
-  test('T1: palette gate on welcome screen, enabled + dialog on open doc', async () => {
+  test('T1: dock gate on welcome screen, reachable + dialog on open doc', async () => {
     test.setTimeout(120000);
 
-    // Welcome screen (no doc): the watermark entry must NOT be actionable.
-    // Explicit gate: palette unreachable (`[data-tools-toggle]` count 0) OR
-    // the watermark entry absent OR the present entry disabled. A
-    // present-and-enabled entry is a hard failure.
-    const toggleCount = await window.locator('[data-tools-toggle]').count();
-    let entryCount = 0;
-    let entryEnabled = false;
-    let branch;
-    if (toggleCount === 0) {
-      branch = 'palette-unreachable (no [data-tools-toggle] on welcome screen)';
-      // Evidence path: the menu accelerator is a real user route to the
-      // palette on the welcome screen — open it and record the entry state.
-      await window.keyboard.press('Control+Shift+P');
-      const pal = window.locator('[data-tools-palette]');
-      const opened = await pal
-        .waitFor({ state: 'visible', timeout: 5000 })
-        .then(() => true, () => false);
-      if (opened) {
-        const entry = window.locator('[data-tool-id="watermark"]');
-        entryCount = await entry.count();
-        entryEnabled = entryCount > 0 ? await entry.isEnabled() : false;
-        branch += entryCount === 0
-          ? ' | palette open, watermark entry absent'
-          : entryEnabled
-            ? ' | palette open, watermark entry ENABLED'
-            : ' | palette open, watermark entry disabled';
-      } else {
-        branch += ' | palette not reachable on welcome screen';
-      }
-    } else {
-      await window.locator('[data-tools-toggle]').first().click();
-      await window.locator('[data-tools-palette]')
-        .waitFor({ state: 'visible', timeout: 10000 });
-      const entry = window.locator('[data-tool-id="watermark"]');
-      entryCount = await entry.count();
-      entryEnabled = entryCount > 0 ? await entry.isEnabled() : false;
-      branch = entryCount === 0
-        ? 'watermark entry absent from palette'
-        : entryEnabled
-          ? 'watermark entry ENABLED'
-          : 'watermark entry present but disabled';
-    }
-    const presentAndEnabled = entryCount > 0 && entryEnabled;
-    const notActionable = toggleCount === 0 || entryCount === 0 || !entryEnabled;
-    console.log(`PHASE18_T1_GATE_BRANCH=${branch}`);
-    console.log(`PHASE18_T1_GATE=${JSON.stringify({ toggleCount, entryCount, entryEnabled, presentAndEnabled, notActionable })}`);
-    expect(presentAndEnabled, 'no present-and-enabled watermark entry on the doc-less welcome screen').toBe(false);
-    expect(notActionable, 'welcome-screen watermark gate disjunction (unreachable OR absent OR disabled)').toBe(true);
+    // Welcome screen (no doc): Watermark must NOT be reachable. Phase 36 moved
+    // the tool to the REVIEW stage's Action Dock; the stage dock only mounts
+    // with a document open, so on the document-less welcome screen there is
+    // no watermark verb (and no dock) at all. A present verb here is a failure.
+    const welcomeVerbCount = await window.locator('[data-dock-verb="watermark"]').count();
+    const welcomeDockCount = await window.locator('[data-action-dock]').count();
+    console.log(`PHASE18_T1_GATE_BRANCH=dock-verb-home (welcomeVerb=${welcomeVerbCount}, dockMounted=${welcomeDockCount})`);
+    console.log(`PHASE18_T1_GATE=${JSON.stringify({ welcomeVerbCount, welcomeDockCount })}`);
+    expect(welcomeVerbCount, 'no watermark dock verb before a document is open').toBe(0);
+    expect(welcomeDockCount, 'no Action Dock on the document-less welcome screen').toBe(0);
 
-    // Open the bundled report sample; the entry must become actionable.
+    // Open the bundled report sample; the tool must become reachable there.
     await openSample(window, electronApp, 'report.pdf');
     await window.waitForSelector('.pdf-page canvas', { timeout: 30000 });
     await window.waitForTimeout(1000);
 
-    const palette = window.locator('[data-tools-palette]');
-    if (!(await palette.isVisible().catch(() => false))) {
-      await window.locator('[data-tools-toggle]').click();
-    }
-    await palette.waitFor({ state: 'visible', timeout: 15000 });
-    const entry = window.locator('[data-tool-id="watermark"]');
-    await expect(entry, 'watermark palette entry visible with doc open').toBeVisible();
-    await expect(entry, 'watermark palette entry enabled with doc open').toBeEnabled();
-    await entry.click();
+    const home = await runTool(window, 'watermark');
+    console.log(`PHASE18_T1_WATERMARK_HOME=${home}`);
     await expect(window.locator('[data-watermark-dialog]'), 'watermark dialog').toBeVisible();
   });
 
@@ -239,14 +194,9 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
       .toBe(0);
     await shot(window, 'phase18-applied-text.png');
 
-    // Reopen the dialog via the palette and check the applied-watermarks
-    // row (id + text + pages) and the dialog's control set.
-    const palette = window.locator('[data-tools-palette]');
-    if (!(await palette.isVisible().catch(() => false))) {
-      await window.locator('[data-tools-toggle]').click();
-    }
-    await palette.waitFor({ state: 'visible', timeout: 15000 });
-    await window.locator('[data-tool-id="watermark"]').click();
+    // Reopen the dialog through its current home and check the
+    // applied-watermarks row (id + text + pages) and the control set.
+    await runTool(window, 'watermark');
     await expect(window.locator('[data-watermark-dialog]')).toBeVisible();
 
     const row = window.locator('[data-watermark-applied="wm-1"]');
@@ -299,14 +249,9 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
   test('T4: pixel proof — baked page-1 canvas', async () => {
     test.setTimeout(180000);
 
-    // Close the dialog via its own close button, then the palette.
+    // Close the dialog via its own close button.
     await window.locator('[data-watermark-dialog] .modal-close').click();
     await expect(window.locator('[data-watermark-dialog]')).toHaveCount(0);
-    const palette = window.locator('[data-tools-palette]');
-    if (await palette.isVisible().catch(() => false)) {
-      await window.locator('[data-tools-palette] .tools-palette-close').click();
-      await expect(palette).toHaveCount(0);
-    }
 
     // Wait for the pdf.js proxy refresh: page-1 canvas mounted and sized.
     await window.waitForFunction(() => {

@@ -5,8 +5,9 @@
 // The panel is prop-driven: this suite pins which sections each
 // (stage, selection) pair renders, the DOCUMENT fallback when nothing is
 // selected, that every affordance calls the host's EXISTING handler, and that
-// the three re-parented components (text-properties, OCR suspects,
-// annotations) render with their own selectors intact.
+// the re-parented text-properties component renders with its own selectors
+// intact. The annotations section is the reference-only count + the jump, and
+// the suspects view is NOT mounted here at all (3A ruling 4).
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -56,8 +57,8 @@ describe("Phase 36 chunk 5 — inspectorSections resolves the per-stage contract
   it.each([
     ["pages", "page", ["page", "on-page", "document"]],
     ["pages", "none", ["document"]],
-    ["edit", "text", ["text"]],
-    ["edit", "page", ["cropbox", "ocr"]],
+["edit", "text", ["text"]],
+    ["edit", "page", ["cropbox"]],
     ["edit", "none", ["document"]],
     ["review", "signature", ["signature"]],
     ["review", "none", ["comments", "annotations"]],
@@ -82,7 +83,7 @@ describe("Phase 36 chunk 5 - the PAGES sections and their affordances", () => {
       selection: { kind: "page", page: 2 },
       pageCount: 9,
       pageSize: { widthPt: 612, heightPt: 792 },
-      pageRotation: 90,
+      pageRotation: 1,
       pageLabel: "ii",
       annotationCount: 4,
       formFieldCount: 2,
@@ -97,13 +98,17 @@ describe("Phase 36 chunk 5 - the PAGES sections and their affordances", () => {
       // Header carries the selection label.
       expect(host.querySelector(".glass-sidebar-title")?.textContent).toBe("Inspector \u00b7 Page 2");
       // Property rows: label left, value right.
-      for (const id of ["size", "rotation", "label", "crop"]) {
+      for (const id of ["size", "rotation", "label"]) {
         expect(host.querySelector(`[data-inspector-row="${id}"]`), id).not.toBeNull();
       }
+      // Section 3A ruling 3 - the PAGES inspector has NO Crop row.
+      expect(host.querySelector('[data-inspector-row="crop"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-action="crop"]')).toBeNull();
       expect(host.querySelector('[data-inspector-row="size"]')?.textContent).toContain("612 x 792 pt");
+      // DEF-329 - `pageRotation` is the engine's QUARTER-TURN index (1 = 90°).
       expect(host.querySelector('[data-inspector-value="rotation"]')?.textContent).toBe("90\u00b0");
       expect(host.querySelector('[data-inspector-value="label"]')?.textContent).toBe("ii");
-      expect(host.querySelector('[data-inspector-row="annotations"]')?.textContent).toContain("4");
+      expect(host.querySelector('[data-inspector-annotations-count]')?.textContent).toBe("4");
       expect(host.querySelector('[data-inspector-row="form-fields"]')?.textContent).toContain("2");
       expect(host.querySelector('[data-inspector-value="file-size"]')?.textContent).toBe("2.0 KB");
       expect(host.querySelector('[data-inspector-row="title"]')?.textContent).toContain("Report.pdf");
@@ -112,60 +117,85 @@ describe("Phase 36 chunk 5 - the PAGES sections and their affordances", () => {
     }
   });
 
-  it("wires the inline page affordances to the host handlers", () => {
-    const onRotatePage = vi.fn();
+  it("ROTATION is a READ-ONLY value (section 3A ruling 1: no ↻ affordance)", () => {
+    const { host, unmount } = mount({
+      stage: "pages",
+      selection: { kind: "page", page: 1 },
+      pageRotation: 2,
+      onRenumberPages: vi.fn(),
+    });
+    try {
+      expect(host.querySelector('[data-inspector-value="rotation"]')?.textContent).toBe("180\u00b0");
+      // No rotate affordance anywhere in the Inspector.
+      expect(host.querySelector('[data-inspector-action="rotate"]')).toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("wires the Label renumber affordance to the host handler", () => {
     const onRenumberPages = vi.fn();
-    const onCropPages = vi.fn();
     const { host, unmount } = mount({
       stage: "pages",
       selection: { kind: "page", page: 1 },
-      onRotatePage,
       onRenumberPages,
-      onCropPages,
     });
     try {
-      click(host, '[data-inspector-action="rotate"]');
       click(host, '[data-inspector-action="renumber"]');
-      click(host, '[data-inspector-action="crop"]');
-      expect(onRotatePage).toHaveBeenCalledTimes(1);
       expect(onRenumberPages).toHaveBeenCalledTimes(1);
-      expect(onCropPages).toHaveBeenCalledTimes(1);
     } finally {
       unmount();
     }
   });
 
-  it("opens the document disclosure and runs Optimize / Audit from it", () => {
-    const onOptimize = vi.fn();
-    const onAudit = vi.fn();
+  it("the Annotations count is read-only but JUMPS to REVIEW on click (ruling 6)", () => {
+    const onJumpToReview = vi.fn();
     const { host, unmount } = mount({
       stage: "pages",
       selection: { kind: "page", page: 1 },
-      onOptimize,
-      onAudit,
+      annotationCount: 3,
+      onJumpToReview,
     });
     try {
-      expect(host.querySelector('[data-inspector-menu="document"]')).toBeNull();
-      click(host, '[data-inspector-action="document-menu"]');
-      expect(host.querySelector('[data-inspector-menu="document"]')).not.toBeNull();
-      click(host, '[data-inspector-menu="document"] [data-inspector-action="optimize"]');
-      click(host, '[data-inspector-menu="document"] [data-inspector-action="audit"]');
-      expect(onOptimize).toHaveBeenCalledTimes(1);
-      expect(onAudit).toHaveBeenCalledTimes(1);
+      const jump = host.querySelector<HTMLButtonElement>('[data-inspector-action="jump-to-review"]');
+      expect(jump).not.toBeNull();
+      expect(jump?.querySelector("[data-inspector-annotations-count]")?.textContent).toBe("3");
+      click(host, '[data-inspector-action="jump-to-review"]');
+      expect(onJumpToReview).toHaveBeenCalledTimes(1);
     } finally {
       unmount();
     }
   });
 
-  it("disables an affordance the host did not wire (never a silent no-op)", () => {
+  it("disables the renumber affordance the host did not wire (never a silent no-op)", () => {
     const { host, unmount } = mount({
       stage: "pages",
       selection: { kind: "page", page: 1 },
     });
     try {
-      const rotate = host.querySelector<HTMLButtonElement>('[data-inspector-action="rotate"]');
-      expect(rotate).not.toBeNull();
-      expect(rotate?.disabled).toBe(true);
+      const renumber = host.querySelector<HTMLButtonElement>('[data-inspector-action="renumber"]');
+      expect(renumber).not.toBeNull();
+      expect(renumber?.disabled).toBe(true);
+    } finally {
+      unmount();
+    }
+  });
+});
+
+describe("Phase 36 chunk 5 - the DOCUMENT read-only facts", () => {
+  it("renders file size as a VALUE with NO affordance (section 3A ruling 5)", () => {
+    const { host, unmount } = mount({
+      stage: "pages",
+      selection: { kind: "page", page: 1 },
+      fileSize: 2048,
+    });
+    try {
+      expect(host.querySelector('[data-inspector-value="file-size"]')?.textContent).toBe("2.0 KB");
+      // No disclosure and no Optimize/Audit affordance anywhere.
+      expect(host.querySelector('[data-inspector-action="document-menu"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-action="optimize"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-action="audit"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-quick-actions]')).toBeNull();
     } finally {
       unmount();
     }
@@ -180,16 +210,14 @@ describe("Phase 36 chunk 5 - the DOCUMENT fallback with nothing selected", () =>
       pageCount: 12,
       fileSize: 4096,
       documentTitle: "Deck.pdf",
-      onOptimize: vi.fn(),
-      onAudit: vi.fn(),
-      onExportPages: vi.fn(),
     });
     try {
       expect(slots(host)).toEqual(["document"]);
       expect(host.querySelector(".glass-sidebar-title")?.textContent).toBe("Inspector \u00b7 Document");
       expect(host.querySelector('[data-inspector-row="page-count"]')?.textContent).toContain("12");
       expect(host.querySelector('[data-inspector-value="file-size"]')?.textContent).toBe("4.0 KB");
-      expect(host.querySelector('[data-inspector-quick-actions]')).not.toBeNull();
+      // Section 3A ruling 5 - the document facts are read-only.
+      expect(host.querySelector("[data-inspector-quick-actions]")).toBeNull();
     } finally {
       unmount();
     }
@@ -234,55 +262,48 @@ describe("Phase 36 chunk 5 - the re-parented components", () => {
     }
   });
 
-  it("EDIT + a page shows the CropBox values and the OCR status", () => {
+it("EDIT + a page shows ONLY the CropBox values (no OCR status — ruling 4)", () => {
     const { host, unmount } = mount({
       stage: "edit",
       selection: { kind: "page", page: 1 },
       cropBox: { x: 10.4, y: 20.6, width: 300.2, height: 400.9 },
-      ocrStatus: "Recognized",
-      onRecognizeText: vi.fn(),
     });
     try {
-      expect(slots(host)).toEqual(["cropbox", "ocr"]);
+      expect(slots(host)).toEqual(["cropbox"]);
       expect(host.querySelector('[data-inspector-row="cropbox-x"]')?.textContent).toContain("10");
       expect(host.querySelector('[data-inspector-row="cropbox-w"]')?.textContent).toContain("300");
-      expect(host.querySelector('[data-inspector-row="ocr-status"]')?.textContent).toContain("Recognized");
+      // Section 3A ruling 4 — the OCR status is the EDIT ContextPanel's ONLY.
+      expect(host.querySelector('[data-inspector-row="ocr-status"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-section="ocr"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-action="recognize"]')).toBeNull();
     } finally {
       unmount();
     }
   });
 
-  it("EDIT re-parents the OCR-suspects component when the host supplies it", () => {
-    const onNavigate = vi.fn();
+  it("EDIT never mounts the suspects view — the EDIT panel owns it (ruling 4)", () => {
     const { host, unmount } = mount({
       stage: "edit",
       selection: { kind: "page", page: 1 },
-      ocrSuspects: {
-        suspects: [{ page: 1, word: "teh", confidence: 41, rect: { x: 1, y: 2, width: 3, height: 4 } }],
-        hasRun: true,
-        onNavigate,
-        onClose: vi.fn(),
-      },
+      cropBox: { x: 10, y: 20, width: 300, height: 400 },
     });
     try {
-      // The re-parented component keeps its own selector.
-      expect(host.querySelector("[data-ocr-suspects-panel]")).not.toBeNull();
-      click(host, "[data-ocr-suspect-word]");
-      expect(onNavigate).toHaveBeenCalledTimes(1);
+      // The 3A cleanup: the suspects view is entered from the EDIT ContextPanel
+      // alone, so the Inspector has no mount point for it at all.
+      expect(host.querySelector("[data-ocr-suspects-panel]")).toBeNull();
+      expect(host.querySelector('[data-inspector-slot="ocr-suspects"]')).toBeNull();
     } finally {
       unmount();
     }
   });
 
   it("REVIEW + the document re-parents the comments rows and REFERENCES the annotations list", () => {
-    const onJump = vi.fn();
     const onExportComments = vi.fn();
     const onImportComments = vi.fn();
     const { host, unmount } = mount({
       stage: "review",
       selection: { kind: "none" },
       annotations: [],
-      onAnnotationJump: onJump,
       onExportComments,
       onImportComments,
     });
@@ -292,6 +313,11 @@ describe("Phase 36 chunk 5 - the re-parented components", () => {
       // REVIEW panel); the Inspector shows a reference, never a second copy.
       expect(host.querySelector("[data-annotation-panel]")).toBeNull();
       expect(host.querySelector("[data-inspector-annotations-reference]")).not.toBeNull();
+      // The 3A cleanup: no per-annotation verbs here either — the section is the
+      // count + the jump link only, so the host wires no row callbacks.
+      expect(host.querySelector('[data-inspector-action="annotation-jump"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-action="annotation-edit"]')).toBeNull();
+      expect(host.querySelector('[data-inspector-action="annotation-delete"]')).toBeNull();
       click(host, '[data-inspector-action="export-comments"]');
       click(host, '[data-inspector-action="import-comments"]');
       expect(onExportComments).toHaveBeenCalledTimes(1);

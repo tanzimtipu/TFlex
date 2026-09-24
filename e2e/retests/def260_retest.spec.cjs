@@ -197,13 +197,16 @@ test('DEF-260 retest: P28 C3 bar re-confirm + pink-armed create', async () => {
     expect(swatchAfter, 'dropdown pick changed the armed swatch').not.toBe(swatchBefore);
     expect(afterDropdown.color, 'the SELECTED annotation was NOT patched by the dropdown').toBe('blue');
 
-    // --- Create path: the pink-armed tool draws a pink shape (was a no-op).
+// Create path: the pink-armed tool draws a pink shape (was a no-op).
     await win.keyboard.press('Escape');
     await win.waitForTimeout(400);
     await armAnnotationTool(win, 'rect');
     await win.waitForTimeout(300);
     const nBefore = (await anns(win)).filter((a) => a.kind === 'rect').length;
-    await dragOnPage(win, 0.6, 0.65, 130, 70);
+    // Phase 36 — draw in the UPPER canvas band: the REVIEW Annotate flyout +
+    // Action Dock now occupy the bottom-centre, so a 0.65-height drag started
+    // on the flyout and never reached the page.
+    await dragOnPage(win, 0.6, 0.35, 130, 70);
     await win.waitForTimeout(1600);
     const rects = (await anns(win)).filter((a) => a.kind === 'rect');
     const created = rects.find((a) => a.id !== selectedId);

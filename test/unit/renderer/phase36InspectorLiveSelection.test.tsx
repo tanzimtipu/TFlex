@@ -136,7 +136,7 @@ describe('Phase 36 chunk 6 — the real selected object reaches the Inspector', 
       textPanel: inspectorTextPanelFor(null),
     });
     try {
-      expect(slots(host)).toEqual(['cropbox', 'ocr']);
+      expect(slots(host)).toEqual(['cropbox']);
       expect(host.querySelector('[data-inspector-text-panel]')).toBeNull();
     } finally {
       unmount();

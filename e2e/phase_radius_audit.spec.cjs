@@ -151,8 +151,8 @@ test('Audit A - rounded surface consistency', async () => {
     await openSample(window, electronApp, 'report.pdf');
     await window.waitForTimeout(900);
     await surface(window, 'tab', '.tab');
-    await surface(window, 'tools-badge', '.tools-badge-tracker');
-    await surface(window, 'side-rail', '.side-rail');
+    await surface(window, 'action-dock', '[data-action-dock]');
+    await surface(window, 'inspector', '[data-inspector]');
     await surface(window, 'ann-toolbar', '[data-annotation-toolbar]');
 
     await window.waitForSelector('[data-context-panel]', { state: 'visible', timeout: 8000 }).catch(() => {});

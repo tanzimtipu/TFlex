@@ -40,6 +40,9 @@ test('DEF-229: group reachable + clickable at 640; menu inside viewport; titleba
     await openReport(app, win);
 
     // --- Group reachability at 640 ---
+    // Phase 36 — the annotation toolbar (data-annotation-toolbar) lives inside
+    // the REVIEW Annotate flyout; open it before measuring the group.
+    await openAnnotationFlyout(win);
     const layout = await win.evaluate(() => {
       const g = document.querySelector('[data-annotation-toolbar]');
       const r = g.getBoundingClientRect();

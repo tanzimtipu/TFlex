@@ -3,8 +3,10 @@
 // The left document's name sits on the divider's LEFT and the right document's
 // name on its RIGHT, so the two names read as the two sides of one split
 // workspace. The names update when a pane's document is replaced, the clear
-// control still works and focuses its pane, and nothing overlaps the shared
-// toolbar or the page areas at 1440x900 and at the 640px minimum width.
+// control still works and focuses its pane, and nothing overlaps the pane
+// headers or the page areas at 1440x900 and at the 640px minimum width (the
+// retired shared toolbar row is gone; the ONE shared Action Dock floats at the
+// stage's bottom and can never reach the header band).
 //
 // Launches only through the canonical launchApp helper.
 const { test, expect } = require('@playwright/test');
@@ -55,8 +57,11 @@ async function geom() {
       countB: text('.tab-pane[data-pane="B"] [data-pane-header] .multi-pane-count'),
       headerA: rect('.tab-pane[data-pane="A"] [data-pane-header]'),
       headerB: rect('.tab-pane[data-pane="B"] [data-pane-header]'),
+      stage: rect('.tab-stage'),
       divider: rect('[data-multi-divider]'),
-      toolbar: rect('[data-shared-toolbar]'),
+      // Phase 36 (chunk 7) — the retired shared toolbar row is replaced by the
+      // ONE shared Action Dock layer, pinned to the stage's bottom edge.
+      dock: rect('[data-multi-dock-layer]'),
       pageA: rect('.tab-pane[data-pane="A"] .page-slot[data-page="1"]'),
       pageB: rect('.tab-pane[data-pane="B"] .page-slot[data-page="1"]'),
     };
@@ -139,14 +144,20 @@ test('C3 [data-pane-clear] still works and focuses its pane', async () => {
   expect(await paneCount(win, 'A'), 'pane A is untouched').toBe(34);
 });
 
-test('C4 no overlap of the toolbar or the page areas at 1440x900 and at 640px', async () => {
+test('C4 no overlap of the pane headers, the shared dock or the page areas at 1440x900 and at 640px', async () => {
   await twoPaneSetup(app, win);
 
   const check = (g, label) => {
-    console.log(`[P34-headers] ${label}: toolbar.bottom=${g.toolbar.bottom} headerA.top=${g.headerA.top} headerB.top=${g.headerB.top} headerA.bottom=${g.headerA.bottom} pageA.top=${g.pageA.top} headerB.bottom=${g.headerB.bottom} pageB.top=${g.pageB.top} divider=(${g.divider.left},${g.divider.right}) titleA.right=${g.titleA.right} titleB.left=${g.titleB.left}`);
-    // The shared toolbar never overlaps either pane header.
-    expect(g.toolbar.bottom, `${label}: toolbar overlaps pane A header`).toBeLessThanOrEqual(g.headerA.top + 1);
-    expect(g.toolbar.bottom, `${label}: toolbar overlaps pane B header`).toBeLessThanOrEqual(g.headerB.top + 1);
+    console.log(`[P34-headers] ${label}: stage.top=${g.stage.top} headerA.top=${g.headerA.top} headerB.top=${g.headerB.top} headerA.bottom=${g.headerA.bottom} pageA.top=${g.pageA.top} headerB.bottom=${g.headerB.bottom} pageB.top=${g.pageB.top} dock.top=${g.dock && g.dock.top} divider=(${g.divider.left},${g.divider.right}) titleA.right=${g.titleA.right} titleB.left=${g.titleB.left}`);
+    // No chrome band above the pane headers: the panes (and their headers) own
+    // the stage from its top edge (the retired shared toolbar row used to push
+    // them down). The ONE shared Action Dock floats at the stage's BOTTOM.
+    expect(g.headerA.top - g.stage.top, `${label}: pane A header is not at the stage top`).toBeLessThanOrEqual(1);
+    expect(g.headerB.top - g.stage.top, `${label}: pane B header is not at the stage top`).toBeLessThanOrEqual(1);
+    // The shared dock layer cannot reach either pane-header band.
+    expect(g.dock, `${label}: shared dock layer present in Multi Mode`).not.toBeNull();
+    expect(g.dock.top, `${label}: dock layer reaches pane A header band`).toBeGreaterThanOrEqual(g.headerA.bottom - 1);
+    expect(g.dock.top, `${label}: dock layer reaches pane B header band`).toBeGreaterThanOrEqual(g.headerB.bottom - 1);
     // The headers never overlap their page areas.
     expect(g.headerA.bottom, `${label}: pane A header overlaps its page area`).toBeLessThanOrEqual(g.pageA.top + 1);
     expect(g.headerB.bottom, `${label}: pane B header overlaps its page area`).toBeLessThanOrEqual(g.pageB.top + 1);

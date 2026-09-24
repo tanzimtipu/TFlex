@@ -9,7 +9,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose, toggleEditMode } = require('../lib/helpers.cjs');
+const { hardClose, toggleEditMode, textPanelRight } = require('../lib/helpers.cjs');
 const path = require('node:path');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 const FULL_TEXT = 'ARTIFACT CHECK 88';
@@ -103,7 +103,8 @@ test('DEF-146: committing a textbox with long text -> full text visible, not tru
   const slot1 = win.locator('.page-slot[data-page="1"]').first();
   await slot1.waitFor({ timeout: 15000 });
   const slotRect = await slot1.boundingBox();
-  const px = slotRect.x + slotRect.width * 0.28;
+  // Phase 36 — dodge the floating TextPropertiesPanel card (left canvas edge).
+  const px = Math.max(slotRect.x + slotRect.width * 0.28, (await textPanelRight(win)) + 30);
   const py = slotRect.y + 230;
   await win.mouse.move(px, py);
   await win.mouse.down();

@@ -1,8 +1,9 @@
 // Phase 32 — Multi Mode e2e (spec 1 of 4).
 //
-// Covers success criteria 1 and 2: the mode round-trip through BOTH entry
-// points (CommandBar icon + All tools entry, states agree, clean return to
-// the single-pane layout), the two-pane layout with two different documents,
+// Covers success criteria 1 and 2: the mode round-trip through its title-bar
+// control ([data-header-multi-mode], the single control that drives BOTH
+// directions; the ONE shared workspace Action Dock exists only while the mode
+// is on, clean return to the single-pane layout), the two-pane layout,
 // the per-pane headers (name + page count), the focus affordance, pane B's
 // empty state + pick list (excluding the other pane's document),
 // [data-pane-open] opening a PDF straight into a pane, the amended
@@ -84,8 +85,8 @@ async function paneHeader(pane) {
 }
 
 // Focus a pane through its PAGE AREA. The pane HEADER is the other documented
-// focus path, but the Phase 33 shared toolbar currently overlays it (DEF-282);
-// that path is asserted by phase33_multi_toolbar.spec.cjs.
+// focus path (the retired shared toolbar that used to overlay it is gone -
+// DEF-282); that path is asserted by retests/def282_retest.spec.cjs.
 async function focusPaneByPage(pane) {
   const page = win.locator(`.tab-pane[data-pane="${pane}"] .pdf-page`).first();
   await page.scrollIntoViewIfNeeded().catch(() => {});
@@ -113,8 +114,8 @@ async function twoPaneSetup() {
   await waitTabCount(2);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
   await win.waitForTimeout(300);
-  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode; the
-  // Multi Mode toggle now lives in the All-tools palette.
+  // Phase 36 (chunk 6) — the Multi Mode toggle is the title-bar control (the
+  // retired CommandBar row and All-tools palette entry are gone).
   await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p32-beta' }).first().click();
@@ -135,19 +136,19 @@ test.afterEach(async () => {
 });
 test.setTimeout(180000);
 
-test('C1 mode round-trip: the title-bar toggle and the shared toolbar agree, off returns to single-pane', async () => {
+test('C1 mode round-trip: the title-bar toggle drives the mode; the shared dock belongs to Multi Mode', async () => {
   await openFile(tmpCopy(ALPHA_SRC, 'p32-alpha.pdf'));
   await waitTabCount(1);
   const stage = win.locator('.tab-stage');
 
   expect(await stage.getAttribute('data-multi-mode')).toBe('false');
   expect(await win.locator('[data-pane]').count()).toBe(0);
-  // Phase 36 (chunk 3): the per-view CommandBar ROW is retired in single mode,
-  // so no inline toggle remains; the All-tools palette entry is the single-mode
-  // home (the title-bar control arrives in a later chunk).
-  expect(await win.locator('[data-toolbar-multi-mode]').count()).toBe(0);
+  // Phase 36 (chunk 7): the per-view command ROW is retired and the ONE shared
+  // Action Dock renders only while Multi Mode is on, so single mode has no
+  // shared workspace dock layer.
+  expect(await win.locator('[data-multi-dock-layer]').count()).toBe(0);
 
-  // --- ON via the title-bar toggle (the single-mode home) ---
+  // --- ON via the title-bar toggle (the single control, works both ways) ---
   const headerToggle = win.locator('[data-header-multi-mode]');
   expect(await headerToggle.getAttribute('aria-pressed')).toBe('false');
   await headerToggle.click();
@@ -155,9 +156,11 @@ test('C1 mode round-trip: the title-bar toggle and the shared toolbar agree, off
   expect(await stage.getAttribute('data-multi-mode')).toBe('true');
   expect(await win.locator('.tab-pane[data-pane="A"]').count()).toBe(1);
   expect(await win.locator('.tab-pane[data-pane="B"]').count()).toBe(1);
-  const cmdPressed = await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().getAttribute('aria-pressed');
-  console.log(`[P32] after title-bar ON: stage=${await stage.getAttribute('data-multi-mode')} cmdPressed=${cmdPressed} panes=${await win.locator('[data-pane]').count()} multiPanes=${await stage.getAttribute('data-multi-panes')}`);
-  expect(cmdPressed).toBe('true');
+  // The shared workspace layer (the ONE Action Dock that replaced the retired
+  // shared toolbar row) exists exactly while the mode is on.
+  const sharedDockCount = await win.locator('[data-multi-dock-layer]').count();
+  console.log(`[P32] after title-bar ON: stage=${await stage.getAttribute('data-multi-mode')} sharedDock=${sharedDockCount} panes=${await win.locator('[data-pane]').count()} multiPanes=${await stage.getAttribute('data-multi-panes')}`);
+  expect(sharedDockCount).toBe(1);
   // The title-bar toggle agrees.
   expect(await headerToggle.getAttribute('aria-pressed')).toBe('true');
 
@@ -170,14 +173,14 @@ test('C1 mode round-trip: the title-bar toggle and the shared toolbar agree, off
   expect(await win.locator('[data-pane-header]').count()).toBe(0);
   expect(await win.locator('[data-multi-divider]').count()).toBe(0);
   expect(await headerToggle.getAttribute('aria-pressed')).toBe('false');
-  expect(await win.locator('[data-shared-toolbar]').count(), 'no shared toolbar in single mode').toBe(0);
+  expect(await win.locator('[data-multi-dock-layer]').count(), 'no shared dock in single mode').toBe(0);
 
-  // --- ON again via the title bar, OFF via the shared toolbar (the reverse pair) ---
+  // --- ON again, OFF again (the round-trip is repeatable) ---
   await headerToggle.click();
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('true');
   expect(await headerToggle.getAttribute('aria-pressed')).toBe('true');
-  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
+  await headerToggle.click();
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('false');
   expect(await win.locator('[data-pane]').count()).toBe(0);
@@ -412,7 +415,7 @@ test('C2b opening a document while Multi Mode is on assigns it to the focused pa
   expect(await stage.getAttribute('data-multi-panes')).toBe('2');
 
   // --- Single mode is unchanged: the open lands as a normal active tab ---
-  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('false');
   // Switching the mode off restores the individual tabs. The two documents
@@ -467,12 +470,12 @@ test('C2c the same file cannot be assigned to the other pane (DEF-278)', async (
 
 test('C6 each pane keeps its own page position and zoom', async () => {
   await twoPaneSetup(); // A=alpha (34), B=beta (520)
-  // Phase 33 — Multi Mode has ONE shared toolbar whose page/zoom readout
-  // reflects the FOCUSED pane, so read it after focusing each pane. Focus
-  // through the page area (the header is currently overlaid by the shared
-  // toolbar - DEF-282).
-  const sharedPageInput = () => win.locator('[data-shared-toolbar] .page-input');
-  const sharedZoomText = () => win.locator('[data-shared-toolbar] .zoom-percent');
+  // Phase 36 (chunk 7) — each non-empty pane owns its OWN canvas pills
+  // ([data-canvas-pills][data-pill-pane]), so a pane's page/zoom readout is
+  // read from that pane directly (the retired shared-toolbar readout that
+  // reflected only the focused pane is gone).
+  const panePageInput = (pane) => win.locator(`[data-pill-pane="${pane}"] .page-input`);
+  const paneZoomText = (pane) => win.locator(`[data-pill-pane="${pane}"] .zoom-percent`);
   // The readout is rounded to whole percent, so a fit scale just under the 0.8
   // ladder step can round to the SAME "80%" string as the 0.8 step. Assert the
   // zoom change from the pane's own page geometry instead, which is exact.
@@ -482,41 +485,36 @@ test('C6 each pane keeps its own page position and zoom', async () => {
       return el ? Math.round(el.getBoundingClientRect().width) : null;
     }, pane);
 
-  await focusPaneByPage('A');
-  const zoomA0 = (await sharedZoomText().innerText()).trim();
+  const zoomA0 = (await paneZoomText('A').innerText()).trim();
   const wA0 = await pageWidth('A');
-  await focusPaneByPage('B');
-  const zoomB0 = (await sharedZoomText().innerText()).trim();
+  const zoomB0 = (await paneZoomText('B').innerText()).trim();
   const wB0 = await pageWidth('B');
 
-  // Zoom in with pane A focused changes only pane A's zoom.
-  await focusPaneByPage('A');
-  await win.locator('[data-shared-toolbar] [aria-label="Zoom in"]').click();
+  // Zoom in through PANE A's own pill changes only pane A's zoom.
+  await win.locator('[data-pill-pane="A"] [aria-label="Zoom in"]').click();
   await win.waitForTimeout(700);
-  const zoomA1 = (await sharedZoomText().innerText()).trim();
+  const zoomA1 = (await paneZoomText('A').innerText()).trim();
   const wA1 = await pageWidth('A');
-  await focusPaneByPage('B');
-  const zoomB1 = (await sharedZoomText().innerText()).trim();
+  const zoomB1 = (await paneZoomText('B').innerText()).trim();
   const wB1 = await pageWidth('B');
   console.log(`[P32] zoom: A ${zoomA0}->${zoomA1} (page ${wA0}->${wA1}px), B ${zoomB0}->${zoomB1} (page ${wB0}->${wB1}px)`);
   // Pane A's page grew = the zoom changed in the expected direction, even when
   // the rounded readout shows the same "80%" on both sides of the step.
-  expect(wA1, 'zoom-in with pane A focused enlarged pane A').toBeGreaterThan(wA0 + 1);
+  expect(wA1, 'zoom-in on pane A enlarged pane A').toBeGreaterThan(wA0 + 1);
   expect(parseFloat(zoomA1), 'pane A readout did not fall').toBeGreaterThanOrEqual(parseFloat(zoomA0));
   // Pane B is untouched: its geometry and its readout are both unchanged.
   expect(wB1, 'pane B page width unchanged').toBe(wB0);
   expect(zoomB1).toBe(zoomB0);
 
   // Navigating pane A via its own strip thumbnail moves only pane A. The strip
-  // click focuses pane A (jumpAndFocus), so read the shared readout directly
-  // after it settles — an extra focus click can perturb the scroll heuristic.
+  // click focuses pane A (jumpAndFocus); each pane's own pill then reports that
+  // pane's page, so no extra focus click is needed to read it.
   const thumbA5 = win.locator('[data-pane-strip-pane="A"] .thumb-item[data-page="5"]');
   await thumbA5.first().scrollIntoViewIfNeeded();
   await thumbA5.first().click();
   await win.waitForTimeout(1600);
-  const aPage = await sharedPageInput().inputValue();
-  await focusPaneByPage('B');
-  const bPage = await sharedPageInput().inputValue();
+  const aPage = await panePageInput('A').inputValue();
+  const bPage = await panePageInput('B').inputValue();
   console.log(`[P32] page inputs after A strip -> page 5: A=${aPage} B=${bPage}`);
   expect(Number(aPage)).toBe(5);
   expect(Number(bPage)).toBe(1);

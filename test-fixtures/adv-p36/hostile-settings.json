@@ -1,0 +1,38 @@
+{
+  "theme": "dark",
+  "geometry": {
+    "x": 60,
+    "y": 60,
+    "width": 1444,
+    "height": 903,
+    "maximized": true
+  },
+  "recentFiles": [
+    {
+      "path": "C:\\Users\\tanzi\\OneDrive\\App Development\\TFlex\\test-fixtures\\adv-p36\\samples\\1790239926451-report.pdf",
+      "name": "1790239926451-report.pdf",
+      "openedAt": "2026-09-24T08:52:16.535Z"
+    },
+    {
+      "path": "C:\\does\\not\\exist\\gone.pdf",
+      "name": "gone.pdf",
+      "openedAt": "2020-01-01T00:00:00.000Z"
+    },
+    {
+      "path": "",
+      "name": "",
+      "openedAt": "nope"
+    }
+  ],
+  "dockPins": [
+    "rotate",
+    "not-a-real-tool",
+    "cropPages",
+    "split"
+  ],
+  "toolUsage": {
+    "delete": 1e+308,
+    "merge": 2,
+    "watermark": 999999
+  }
+}

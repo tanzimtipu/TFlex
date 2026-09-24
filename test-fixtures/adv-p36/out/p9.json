@@ -1,0 +1,321 @@
+{
+  "pagesInspector": {
+    "sections": [
+      "page",
+      "on-page",
+      "document"
+    ],
+    "rows": [
+      "size",
+      "rotation",
+      "label",
+      "annotations",
+      "form-fields",
+      "title",
+      "page-count",
+      "file-size"
+    ],
+    "actions": [
+      "renumber",
+      "jump-to-review"
+    ],
+    "hasCropRow": false,
+    "hasOcrRow": false,
+    "rotation": "0°",
+    "label": "—",
+    "annCount": "0"
+  },
+  "jumpToReview": {
+    "label": "jump-to-review",
+    "err": null,
+    "changed": true,
+    "before": [],
+    "after": [],
+    "delta": [
+      "stage:\"pages\"->\"review\"",
+      "outlineBody:true->false",
+      "annPanels:0->1",
+      "rotation:\"0°\"->null"
+    ]
+  },
+  "reviewAfterJump": {
+    "sections": [
+      "comments",
+      "annotations"
+    ],
+    "reference": true,
+    "annPanels": 1,
+    "annListRows": 0,
+    "panelSections": [
+      "annotations",
+      "signatures"
+    ],
+    "panelAnn": true
+  },
+  "editDiscipline": {
+    "panelSections": [
+      "content",
+      "recognition"
+    ],
+    "panelOcrStatus": "Not run",
+    "inspectorSections": [
+      "cropbox"
+    ],
+    "inspectorRows": [
+      "cropbox"
+    ],
+    "inspectorOcrRow": false,
+    "inspectorOcrStatus": false
+  },
+  "textBoxPlace": {
+    "pageBox": {
+      "x": 264,
+      "y": -2303.33349609375,
+      "width": 908,
+      "height": 1175.05224609375
+    }
+  },
+  "textPanelsAfterPlace": {
+    "modal": 0,
+    "titles": [],
+    "stage": "edit",
+    "collapsed": null,
+    "outlineBody": false,
+    "suspects": false,
+    "textPanels": 1,
+    "inspectText": false,
+    "annToolbars": 0,
+    "annPanels": 0,
+    "pageCount": "/ 34",
+    "rotation": null,
+    "toast": ""
+  },
+  "reviewCounts": {
+    "flyouts": 1,
+    "toolbars": 1,
+    "annPanels": 1,
+    "panelSections": [
+      "annotations",
+      "signatures"
+    ]
+  },
+  "sweep": [
+    {
+      "label": "combine",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [
+        "Merge with another PDF"
+      ],
+      "delta": [
+        "modal:0->1",
+        "titles:[]->[\"Merge with another PDF\"]"
+      ]
+    },
+    {
+      "label": "collapse",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [],
+      "delta": [
+        "collapsed:null->\"true\"",
+        "outlineBody:true->false"
+      ]
+    },
+    {
+      "label": "collapse-back",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [],
+      "delta": [
+        "collapsed:\"true\"->null",
+        "outlineBody:false->true"
+      ]
+    },
+    {
+      "label": "outline-toggle",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [],
+      "delta": [
+        "outlineBody:true->false"
+      ]
+    },
+    {
+      "label": "outline-toggle-back",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [],
+      "delta": [
+        "outlineBody:false->true"
+      ]
+    },
+    {
+      "label": "panel-recognize",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [
+        "Recognize text (OCR)"
+      ],
+      "delta": [
+        "modal:0->1",
+        "titles:[]->[\"Recognize text (OCR)\"]"
+      ]
+    },
+    {
+      "label": "panel-suspects",
+      "err": null,
+      "changed": false,
+      "before": [],
+      "after": [],
+      "delta": []
+    },
+    {
+      "label": "panel-manage-signatures",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [
+        "Signature"
+      ],
+      "delta": [
+        "modal:0->1",
+        "titles:[]->[\"Signature\"]"
+      ]
+    },
+    {
+      "label": "inspector-export-comments",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [
+        "Export comments"
+      ],
+      "delta": [
+        "modal:0->1",
+        "titles:[]->[\"Export comments\"]"
+      ]
+    },
+    {
+      "label": "inspector-import-comments",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [
+        "Import comments"
+      ],
+      "delta": [
+        "modal:0->1",
+        "titles:[]->[\"Import comments\"]"
+      ]
+    },
+    {
+      "label": "panel-optimize",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [
+        "Reduce file size"
+      ],
+      "delta": [
+        "modal:0->1",
+        "titles:[]->[\"Reduce file size\"]"
+      ]
+    },
+    {
+      "label": "panel-from-images",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [
+        "Create PDF from images"
+      ],
+      "delta": [
+        "modal:0->1",
+        "titles:[]->[\"Create PDF from images\"]"
+      ]
+    },
+    {
+      "label": "inspector-export",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [
+        "Export pages as images"
+      ],
+      "delta": [
+        "modal:0->1",
+        "titles:[]->[\"Export pages as images\"]"
+      ]
+    },
+    {
+      "label": "inspector-renumber",
+      "err": "locator.click: Timeout 30000ms exceeded.",
+      "changed": false,
+      "before": [],
+      "after": [],
+      "delta": []
+    },
+    {
+      "label": "thumb-verb-rotate-cw",
+      "err": "locator.click: Timeout 30000ms exceeded.",
+      "changed": false,
+      "before": [],
+      "after": [],
+      "delta": []
+    },
+    {
+      "label": "menu-insert-blank",
+      "err": null,
+      "changed": true,
+      "before": [],
+      "after": [],
+      "delta": [
+        "pageCount:\"/ 34\"->\"/ 35\"",
+        "toast:\"\"->\"Inserted blank page.\""
+      ]
+    }
+  ],
+  "newTabClick640": {
+    "label": "new-tab-640",
+    "err": null,
+    "changed": true,
+    "before": [],
+    "after": [],
+    "delta": [
+      "outlineBody:true->false",
+      "pageCount:\"/ 34\"->null",
+      "rotation:\"0°\"->null"
+    ]
+  },
+  "headerActions640": {
+    "actions": {
+      "x": 315,
+      "y": 0,
+      "width": 179,
+      "height": 43.333335876464844,
+      "top": 0,
+      "right": 494,
+      "bottom": 43.333335876464844,
+      "left": 315
+    },
+    "newTab": {
+      "x": 320.75,
+      "y": -0.6666666865348816,
+      "width": 24,
+      "height": 34,
+      "top": -0.6666666865348816,
+      "right": 344.75,
+      "bottom": 33.33333331346512,
+      "left": 320.75
+    },
+    "tabCount": 2,
+    "overlapping": true
+  }
+}

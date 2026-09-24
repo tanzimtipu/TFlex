@@ -3135,3 +3135,155 @@ Unreproduced / not verified (not filed):
   separate OS window make this unreachable by pointer; the gate's app-close test covers the
   teardown path.
 
+## Phase 36 gate — TFlex STAGES (information architecture)
+
+Session label: `phase-36 gate`. Ran against the real dev build (`npm.cmd run build` output in
+`dist/`, launched via `e2e/lib/launch.cjs` `launchApp` with `--disable-gpu`). Harnesses live in
+`test-fixtures/adv-p36/` (`lib.cjs`, `p1_surface.cjs`, `p2_reach.cjs`, `p3_focus.cjs`,
+`p4_flyout_geom.cjs`, `p5_dock_states.cjs`, `p6_idle_restart.cjs`, `p7_multi.cjs`,
+`p7b_dock_dup.cjs`, `p7c_dock_vis.cjs`, `p8_settings_chrome.cjs`, `p8b_chrome.cjs`,
+`p8c_tabclose.cjs`, `p9_discipline.cjs`, `p9b_actionable.cjs`, `p10_evidence.cjs`,
+`p11_palette_noop.cjs`); screenshots in `screenshots/adv-p36/`.
+
+The full registry walk (94 entries in `src/renderer/state/toolsRegistry.ts`, each reached through
+its host surface) is in the session report; every entry was reachable. Five findings were filed.
+
+## ADV-078: The Command Palette shows several commands as enabled although they cannot run, and running them is a silent no-op
+
+- Session: phase-36 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Built the dev bundle and launched it (`e2e/lib/launch.cjs` -> `launchApp`), opened a copy of
+   `assets/samples/report.pdf`, and captured `window.tflexDiagnostics()` for the baseline
+   (`canUndo: false`, `canRedo: false`, `activeTool: null`, one tab).
+2. From the `Ctrl+K` palette, searched and ran each of: `Undo`, `Redo`, `Add a text box`,
+   `Edit text`, `Edit images`, `Open a PDF into a pane`, `Clear a pane`. For each row recorded
+   `data-palette-disabled` and `title`, clicked the row, and diffed state
+   (modal/backdrop count, toasts, `[data-edit-toolbar]`, `[data-multi-mode="true"]`) before/after.
+3. Contrasted with the Action Dock at `Ctrl+2`, which renders the same edit commands.
+
+Expected: a row whose command cannot run is either disabled with the reason (the palette already
+does this correctly for `batchOcr` = "Open a second document first", `ocrSuspects` = "Run
+Recognize text first", `annColor`/`annPenWidth`, `panePick`, `paneResize`) or running it fails
+loud. Per AGENTS.md a control that triggers nothing is a defect.
+
+Actual: all seven rows rendered `data-palette-disabled="false"` with their normal description as
+the tooltip; clicking each closed the palette and produced NO toast, NO dialog and NO state
+change. Specifically: `undo`/`redo` are enabled on a fresh document with empty undo/redo stacks
+(`App.tsx` `onUndo`/`onRedo` return early when the counter is 0); `editTextBox`/`editText`/
+`editImage` are enabled while Edit mode is OFF and their handlers are `edit?.onAction(...)` with
+`edit === null` (the dock renders the SAME commands disabled with "Turn on Edit content first");
+`paneOpen`/`paneClear` are enabled outside Multi Mode and their handlers are guarded by `if
+(multiMode.enabled)` (`App.tsx` `paletteAppActions`). The palette's only availability gate
+(`paletteToolEnabled`) maps the registry's `document` precondition to "a document is open" and
+never consults the undo counters, the edit-mode flag or the Multi Mode flag.
+
+Screenshot: screenshots/adv-p36/p10-palette-pane.png (`paneOpen`/`paneClear` enabled);
+`p11_palette_noop.cjs` output has the per-row before/after diff.
+
+Disposition: ACCEPTED -> DEF-327 (MEDIUM; the palette must not present a command as runnable when it cannot run - disable it with the SAME availability reason the dock already shows, so `undo`/`redo` on an empty stack and the Edit tools with Edit mode off are gated, and Multi-Mode-only commands are gated outside Multi Mode; a silent no-op is a fail-loud violation)
+
+## ADV-079: The EDIT stage's "Review suspects" button is enabled before any OCR run and is a silent no-op
+
+- Session: phase-36 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Opened a copy of `report.pdf` (no OCR run), pressed `Ctrl+2` (EDIT stage).
+2. Read `[data-context-panel-action="suspects"]`: `disabled=false`, no `title`.
+3. Clicked it and checked for `[data-ocr-suspects-panel]` and toasts.
+
+Expected: the button is disabled with the same reason the Command Palette's `ocrSuspects` row
+shows ("Run Recognize text first"), or the click fails loud.
+
+Actual: the button looks and behaves as available, but clicking it produces no suspects panel
+and no toast. `App.tsx` `onOpenOcrSuspects` returns early unless
+`ocrRunByTabRef.current[activeId] === true`; the ContextPanel only gates the button on the
+handler being undefined, not on the live OCR state.
+
+Screenshot: screenshots/adv-p36/p10-edit-suspects.png
+
+Disposition: ACCEPTED -> DEF-328 (MEDIUM; the EDIT panel's "Review suspects" entry must be gated exactly like its palette row - enabled only after an OCR run produced suspects, with the same reason copy; never an enabled no-op)
+
+## ADV-080: The Inspector's "Rotation" value shows the raw quarter-turn index with a degree sign ("1°" for a 90° page)
+
+- Session: phase-36 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Opened a copy of `report.pdf`, pressed `Ctrl+1` (PAGES).
+2. Right-clicked page 1's thumbnail and chose "Rotate CW".
+3. Read the Inspector's Rotation row (`[data-inspector-value="rotation"]`) and the rendered page
+   element's class.
+
+Expected: `90°`. `EngineState.rotations` is a quarter-turn counter (`stubEngine.ts` does
+`(rot + delta) % 4`) and every consumer multiplies it by 90 before display
+(`PageView.tsx:526` `const rotDeg = (rotation * 90)`, `SideRail.tsx:1387` the same).
+
+Actual: the Inspector showed `1°` while the page element was `pdf-page pdf-page-rot-90`. After a
+second rotation it reads `2°`; rotating counter-clockwise from 0 reads `3°`. `Inspector.tsx`
+`renderPageSection` renders `${pageRotation}°` and `App.tsx:8407` passes
+`activeEngineUi?.state.rotations[currentPage - 1]` straight through, so the degree sign is
+appended to the index. It is the only value the Phase 36 PAGES inspector exposes for rotation
+("Rotation is a VALUE (no rotate affordance)"), so the single read-only value is wrong by 90x.
+
+Screenshot: screenshots/adv-p36/p10-inspector-rotation.png
+
+Disposition: ACCEPTED -> DEF-329 (MEDIUM; the Inspector's Rotation row must show the real rotation in degrees - the raw quarter-turn index with a degree sign ("1°" for a 90-degree page) is a wrong read-only value, i.e. misinformation)
+
+## ADV-081: On the default maximised window the DELIVER dock wraps onto two rows and the PAGES/EDIT docks drop every label
+
+- Session: phase-36 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Opened a copy of `report.pdf` at the default maximised window (1442x903; canvas host 914px).
+2. Walked `Ctrl+1..4` and measured `.action-dock` rect, `data-dock-band`,
+   `data-dock-icon-only`, `data-dock-lift`, the label count, and both floating pill rects.
+
+Expected: one row of labelled verbs per stage, clear of the page/zoom pills.
+
+Actual:
+- DELIVER (5 labelled verbs): the dock is capped at the measured band (`data-dock-band="422"`)
+  and WRAPS to two rows, 422.4x87.3px instead of one ~37px row; "Export to Word (.docx)" sits
+  alone on a second row (screenshot p1-stage4.png).
+- PAGES and EDIT (6 verbs): `data-dock-icon-only="true"` and no labels at all, while REVIEW (4
+  verbs) keeps its labels at the same window size.
+- Geometry: the two pills + their insets measure a ~492px reserve on a 914px host, leaving a
+  422px band; `labelledDockNeed` (`dockFit.ts`) budgets only 64px/verb, so the estimate says the
+  PAGES set (6 verbs -> 420+8) does not fit while the DELIVER set (5 -> 352+8) "fits" and then
+  wraps. No pill overlap was measured (`dockRect` never intersects either pill at any stage), so
+  this is a layout-quality regression, not the DEF-315 clearance bug. This corroborates the
+  already-OPEN DEF-315 (narrow-width dock vs zoom pill) but the two-row wrap is a distinct
+  outcome at the app's own default window size.
+
+Screenshot: screenshots/adv-p36/p1-stage4.png, screenshots/adv-p36/p3-dock-pages.png
+
+Disposition: ACCEPTED -> DEF-330 (MEDIUM; at the DEFAULT maximised window the dock must render as designed - the DELIVER dock wrapping onto two rows and the PAGES/EDIT docks dropping every label is a layout regression at the app's normal size, not just at the narrow extremes)
+
+## ADV-082: Escape with the Command Palette open over a dialog closes the dialog and leaves the palette
+
+- Session: phase-36 gate
+- Suggested severity: LOW
+
+What I did:
+1. Opened a copy of `report.pdf`, pressed `Ctrl+3` (REVIEW), clicked the dock's `stamp` verb
+   (Stamp dialog open).
+2. Pressed `Ctrl+K` (palette opens on top of the still-open dialog).
+3. Pressed Escape once and checked which surfaces remained.
+
+Expected: the topmost surface (the palette) closes on Escape, or both close; the palette's own
+key handler is bound while it is open.
+
+Actual: the Stamp dialog closed and the palette stayed open (palette open, dialog gone); a second
+Escape closed the palette. Both surfaces are `aria-modal="true"` while open, so the window
+carried two stacked modal layers and Escape addressed the lower one. Recoverable, hence LOW.
+
+Screenshot: none (state-only; `p4_flyout_geom.cjs` -> `out/p4.json` records
+`paletteOverDialog.afterEsc = { paletteOpen: true, dialogOpen: false }`).
+
+Disposition: ACCEPTED -> DEF-331 (LOW; with the palette open over a dialog, Escape must close the TOP-most surface - the palette - rather than closing the dialog underneath and leaving the palette)
+
+
+

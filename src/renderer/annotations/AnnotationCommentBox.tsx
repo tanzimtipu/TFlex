@@ -29,18 +29,50 @@ export const COMMENT_BOX_WIDTH = 288;
 /** Minimum usable height below the action bar before the card flips
  *  above the annotation instead. */
 export const COMMENT_BOX_MIN_BELOW = 160;
+/** DEF-326 — the height the avoidance check assumes for the card (the
+ *  empty-card height; a thread with entries can grow past it, but the
+ *  rule only has to keep the un-selected annotations clear of the card's
+ *  primary hit band). */
+export const COMMENT_BOX_ESTIMATED_HEIGHT = 160;
 /** Gap between the action bar's top edge and the card. */
 const ACTION_BAR_CLEARANCE = 36;
 /** Gap between the card and the page view's edges. */
 const EDGE_GAP = 8;
 
+/** A CSS-px box for the overlap test. */
+interface CssBox {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** True when two CSS boxes overlap (touching edges do not count). */
+function boxesOverlap(a: CssBox, b: CssBox): boolean {
+  return (
+    a.left < b.left + b.width &&
+    a.left + a.width > b.left &&
+    a.top < b.top + b.height &&
+    a.top + a.height > b.top
+  );
+}
+
 /** Pure placement math: where the comment card sits inside the page
- *  view for a given annotation. Exported for unit tests. */
+ *  view for a given annotation. Exported for unit tests.
+ *
+ *  DEF-326 — `avoid` carries the OTHER committed annotations' page bounds.
+ *  The card is first tried BELOW the selection (the Phase-28 home); when
+ *  that box would cover another annotation's own hit surface (which would
+ *  make that annotation unclickable behind the card, the reopened-note
+ *  regression), the card flips ABOVE the selection instead. Only when
+ *  neither band is clear does it fall back to the legacy below/above
+ *  choice. The selected annotation itself is never in `avoid`. */
 export function commentBoxPlacement(
   bounds: PageRect,
   cssScale: number,
   widthPt: number,
   heightPt: number,
+  avoid: readonly PageRect[] = [],
 ): CSSProperties {
   const pageW = widthPt * cssScale;
   const pageH = heightPt * cssScale;
@@ -50,13 +82,40 @@ export function commentBoxPlacement(
     EDGE_GAP,
     Math.min(ring.left, Math.max(EDGE_GAP, pageW - COMMENT_BOX_WIDTH - EDGE_GAP)),
   );
+  const avoidBoxes: CssBox[] = avoid.map((r) => {
+    const box = overlayRectToCss(r, cssScale);
+    return { left: box.left, top: box.top, width: box.width, height: box.height };
+  });
   const belowTop = barTop + ACTION_BAR_CLEARANCE;
-  if (pageH - belowTop >= COMMENT_BOX_MIN_BELOW) {
+  const roomBelow = pageH - belowTop >= COMMENT_BOX_MIN_BELOW;
+  const belowBox: CssBox = {
+    left,
+    top: belowTop,
+    width: COMMENT_BOX_WIDTH,
+    height: COMMENT_BOX_ESTIMATED_HEIGHT,
+  };
+  const aboveBottom = Math.max(EDGE_GAP, pageH - ring.top + EDGE_GAP);
+  const aboveBox: CssBox = {
+    left,
+    top: pageH - aboveBottom - COMMENT_BOX_ESTIMATED_HEIGHT,
+    width: COMMENT_BOX_WIDTH,
+    height: COMMENT_BOX_ESTIMATED_HEIGHT,
+  };
+  const belowBlocked = avoidBoxes.some((box) => boxesOverlap(belowBox, box));
+  const aboveBlocked = avoidBoxes.some((box) => boxesOverlap(aboveBox, box));
+
+  if (roomBelow && !belowBlocked) {
     return { left, top: belowTop, width: COMMENT_BOX_WIDTH };
   }
-  // Not enough room below: bottom-anchor the card just above the ring.
-  const aboveBottom = Math.max(EDGE_GAP, pageH - ring.top + EDGE_GAP);
-  return { left, bottom: aboveBottom, width: COMMENT_BOX_WIDTH };
+  if (!aboveBlocked) {
+    // Not enough room below, or the below band would cover another
+    // annotation: bottom-anchor the card just above the ring.
+    return { left, bottom: aboveBottom, width: COMMENT_BOX_WIDTH };
+  }
+  // Both bands collide: keep the legacy below/above room rule.
+  return roomBelow
+    ? { left, top: belowTop, width: COMMENT_BOX_WIDTH }
+    : { left, bottom: aboveBottom, width: COMMENT_BOX_WIDTH };
 }
 
 /** Relative time for recent entries (under a week), absolute date
@@ -84,15 +143,20 @@ export interface AnnotationCommentBoxProps {
   cssScale: number;
   widthPt: number;
   heightPt: number;
+  /** DEF-326 — the other committed annotations on this page (their page
+   *  bounds). Used only to keep the card OFF their hit surfaces so a
+   *  neighbouring annotation (a reopened note, etc.) stays clickable
+   *  while this one is selected. */
+  avoid?: readonly PageRect[];
 }
 
 export default function AnnotationCommentBox(props: AnnotationCommentBoxProps): ReactElement {
-  const { ann, entries, onAddComment, cssScale, widthPt, heightPt } = props;
+  const { ann, entries, onAddComment, cssScale, widthPt, heightPt, avoid = [] } = props;
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const style = useMemo(
-    () => commentBoxPlacement(annotationBounds(ann), cssScale, widthPt, heightPt),
-    [ann, cssScale, widthPt, heightPt],
+    () => commentBoxPlacement(annotationBounds(ann), cssScale, widthPt, heightPt, avoid),
+    [ann, cssScale, widthPt, heightPt, avoid],
   );
   const canSubmit = draft.trim().length > 0;
   const submit = (): void => {

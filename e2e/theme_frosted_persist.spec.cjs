@@ -44,6 +44,12 @@ test('Frosted selectable and selection persists across restart', async () => {
   await openPrefs(window);
   const options = await window.locator(`${themeSelect} option`).allTextContents();
   expect(options).toEqual(['Light', 'Dark', 'Frosted', 'System default']);
+  // Frosted is the factory default, so picking it as the FIRST action is a
+  // no-op on the select and writes nothing (the settings writer fires on
+  // CHANGE only). Park the value on Dark first, then select Frosted, so the
+  // persistence assertion tests a real change.
+  await window.selectOption(themeSelect, 'dark');
+  await window.waitForTimeout(300);
   await window.selectOption(themeSelect, 'frosted');
   await expect(window.locator(themeSelect)).toHaveValue('frosted');
   await window.waitForTimeout(500); // allow the settings IPC write to flush

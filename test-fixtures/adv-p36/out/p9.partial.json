@@ -1,0 +1,70 @@
+{
+  "pagesInspector": {
+    "sections": [
+      "page",
+      "on-page",
+      "document"
+    ],
+    "rows": [
+      "size",
+      "rotation",
+      "label",
+      "annotations",
+      "form-fields",
+      "title",
+      "page-count",
+      "file-size"
+    ],
+    "actions": [
+      "renumber",
+      "jump-to-review"
+    ],
+    "hasCropRow": false,
+    "hasOcrRow": false,
+    "rotation": "0°",
+    "label": "—",
+    "annCount": "0"
+  },
+  "jumpToReview": {
+    "label": "jump-to-review",
+    "err": null,
+    "changed": true,
+    "before": [],
+    "after": [],
+    "delta": [
+      "stage:\"pages\"->\"review\"",
+      "outlineBody:true->false",
+      "annPanels:0->1",
+      "rotation:\"0°\"->null"
+    ]
+  },
+  "reviewAfterJump": {
+    "sections": [
+      "comments",
+      "annotations"
+    ],
+    "reference": true,
+    "annPanels": 1,
+    "annListRows": 0,
+    "panelSections": [
+      "annotations",
+      "signatures"
+    ],
+    "panelAnn": true
+  },
+  "editDiscipline": {
+    "panelSections": [
+      "content",
+      "recognition"
+    ],
+    "panelOcrStatus": "Not run",
+    "inspectorSections": [
+      "cropbox"
+    ],
+    "inspectorRows": [
+      "cropbox"
+    ],
+    "inspectorOcrRow": false,
+    "inspectorOcrStatus": false
+  }
+}

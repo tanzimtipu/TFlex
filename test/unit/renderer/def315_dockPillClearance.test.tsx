@@ -42,6 +42,7 @@ import {
   labelledDockNeed,
   labelsFitBand,
   pillBandHeight,
+  pillFreeBand,
   pillReserve,
   rectsIntersect,
   shouldLiftDock,
@@ -171,14 +172,35 @@ describe("DEF-315 — the measured pill reserve", () => {
   });
 
   it("drops the labels only when the labelled dock (with its pins) cannot fit", () => {
-    // Six labelled PAGES verbs.
-    expect(labelledDockNeed(6, 0) + DOCK_PILL_GAP <= 964).toBe(true);
-    expect(labelsFitBand(labelledDockNeed(6, 0), 744)).toBe(true);
-    // ...with four pins the labelled dock needs 701px, so a 524px band yields
-    // (701 + the 8px clearance = 709 > 524) while a 744px band still fits.
-    expect(labelledDockNeed(6, 4)).toBe(701);
-    expect(labelsFitBand(labelledDockNeed(6, 4), 524)).toBe(false);
-    expect(labelsFitBand(labelledDockNeed(6, 4), 744)).toBe(true);
+    // DEF-330 — the need is the LABELS' own width: DELIVER's five wide verbs
+    // need more room than PAGES' six narrow ones, which a per-verb constant can
+    // never express.
+    const pages = [
+      "Rotate pages",
+      "Extract pages",
+      "Insert pages",
+      "Replace pages",
+      "Split pages",
+      "Delete pages",
+    ];
+    const deliver = [
+      "Reduce file size",
+      "Audit space usage",
+      "Export pages as images",
+      "Export text",
+      "Export to Word (.docx)",
+    ];
+    const pins = ["Zoom in", "Zoom out", "Fit width", "Fit page"];
+    expect(labelledDockNeed(deliver)).toBeGreaterThan(labelledDockNeed(pages));
+    expect(labelledDockNeed(pages)).toBeCloseTo(450.6, 1);
+    expect(labelledDockNeed(deliver)).toBeCloseTo(491.6, 1);
+    // Six labelled PAGES verbs fit a generous band...
+    expect(labelsFitBand(labelledDockNeed(pages), 964)).toBe(true);
+    // ...with four pins the labelled dock needs ~682px, so a 524px band yields
+    // while a 744px band still fits.
+    expect(labelledDockNeed(pages, pins)).toBeCloseTo(682, 1);
+    expect(labelsFitBand(labelledDockNeed(pages, pins), 524)).toBe(false);
+    expect(labelsFitBand(labelledDockNeed(pages, pins), 744)).toBe(true);
   });
 });
 
@@ -218,7 +240,7 @@ function mountDock(hostWidth: number, options: Partial<ActionDockProps> = {}): H
     activeStage: "pages",
     pageSelection: [],
     onClearPageSelection: vi.fn(),
-    bulk: { onRotate: vi.fn(), onExtract: vi.fn(), onMerge: vi.fn(), onDelete: vi.fn() },
+    bulk: { onRotate: vi.fn(), onExtract: vi.fn(), onDelete: vi.fn() },
     dockPins: [],
     onPinTool: vi.fn(),
     onUnpinTool: vi.fn(),
@@ -244,12 +266,28 @@ function mountDock(hostWidth: number, options: Partial<ActionDockProps> = {}): H
   };
 }
 
-/** The dock's worst-case box: it is centred on the host and can be at most its
- *  published cap wide. */
-function dockBox(hostWidth: number, cap: number, lifted: boolean): Rect {
-  const centre = hostWidth / 2;
+/** The dock's worst-case box. DEF-330 — between the pills the dock occupies the
+ *  pill-FREE band (centred in it, `--dock-shift`); lifted, and before a
+ *  measurement, it keeps the host-centre geometry. */
+function dockBox(
+  hostWidth: number,
+  cap: number,
+  lifted: boolean,
+  free: { left: number; width: number } | null = null,
+): Rect {
+  const centre =
+    !lifted && free !== null ? free.left + free.width / 2 : hostWidth / 2;
   const bottom = HOST_H - PILL_BOTTOM - (lifted ? PILL_H + DOCK_PILL_GAP : 0);
   return { left: centre - cap / 2, right: centre + cap / 2, top: bottom - DOCK_H, bottom };
+}
+
+/** The pill-free band for this harness's live-measured pill widths. */
+function freeBandOf(hostWidth: number): { left: number; width: number } {
+  return pillFreeBand({
+    page: pill("page", hostWidth),
+    zoom: pill("zoom", hostWidth),
+    hostLeft: 0,
+  });
 }
 
 describe("DEF-315 — the dock clears the pills at every supported host width", () => {
@@ -259,13 +297,26 @@ describe("DEF-315 — the dock clears the pills at every supported host width", 
       try {
         const band = dockBand(hostWidth, DOCK_DEFAULT_RESERVE);
         const lifted = shouldLiftDock(band);
+        const free = freeBandOf(hostWidth);
         expect(dock.style.getPropertyValue("--dock-reserve")).toBe(`${DOCK_DEFAULT_RESERVE}px`);
-        expect(dock.getAttribute("data-dock-band")).toBe(String(band));
+        // DEF-330 — the published band is the band the dock is PLACED against:
+        // the pill-free band between the pills, or the symmetric band while the
+        // dock is lifted above them.
+        expect(dock.getAttribute("data-dock-band")).toBe(
+          String(lifted ? band : Math.round(free.width)),
+        );
+        expect(dock.getAttribute("data-dock-band-placed")).toBe(lifted ? null : "true");
         expect(dock.getAttribute("data-dock-lift")).toBe(lifted ? "true" : "false");
+        // DEF-330 — between the pills the cap is the pill-free band; lifted it
+        // is the host minus the 12px gutters (unchanged from DEF-315).
         const cap = Number.parseFloat(dock.style.maxWidth);
-        expect(cap).toBe(lifted ? hostWidth - 24 : band);
+        expect(cap).toBe(lifted ? hostWidth - 24 : free.width);
+        expect(dock.getAttribute("data-dock-free-band")).toBe(String(Math.round(free.width)));
+        expect(dock.style.getPropertyValue("--dock-shift")).toBe(
+          `${lifted ? 0 : free.left + free.width / 2 - hostWidth / 2}px`,
+        );
 
-        const dockRect = dockBox(hostWidth, cap, lifted);
+        const dockRect = dockBox(hostWidth, cap, lifted, free);
         const pageRect = pill("page", hostWidth);
         const zoomRect = pill("zoom", hostWidth);
         if (!lifted) {
@@ -313,11 +364,13 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
     try {
       expect(wide.dock.getAttribute("data-dock-icon-only")).toBe("false");
       expect(wide.dock.querySelector(".action-dock-label")).not.toBeNull();
-      // band 524px: a labelled dock with 4 pins needs 709px, so it yields.
-      expect(tight.dock.getAttribute("data-dock-band")).toBe("524");
+      // DEF-330 — the band is the pill-FREE one: 1000px host leaves 588px, and
+      // a labelled dock with four pins needs ~682px, so it yields.
+      expect(tight.dock.getAttribute("data-dock-band")).toBe("588");
+      expect(tight.dock.getAttribute("data-dock-free-band")).toBe("588");
       expect(tight.dock.getAttribute("data-dock-icon-only")).toBe("true");
       expect(tight.dock.querySelector(".action-dock-label")).toBeNull();
-      // Without pins 420px of labels still fit the 524px band.
+      // Without pins the six PAGES labels (~451px) still fit the 588px band.
       expect(plain.dock.getAttribute("data-dock-icon-only")).toBe("false");
     } finally {
       wide.unmount();
@@ -397,8 +450,10 @@ describe("DEF-315 — the stylesheet consumes the measured reserve", () => {
   });
 
   it("lifts the dock with the published --dock-lift transform (no layout change)", () => {
+    // DEF-330 — the same transform also carries the pill-free band shift
+    // (`--dock-shift`, 0px until the pills are measured / while lifted).
     expect(css).toMatch(
-      /\.action-dock\s*\{[^}]*transform:\s*translate\(-50%,\s*calc\(-1 \* var\(--dock-lift,\s*0px\)\)\)/s,
+      /\.action-dock\s*\{[^}]*transform:\s*translate\(calc\(-50% \+ var\(--dock-shift,\s*0px\)\),\s*calc\(-1 \* var\(--dock-lift,\s*0px\)\)\)/s,
     );
     expect(css).toMatch(/\.action-dock\[data-dock-lift='true'\]\s*\{[^}]*max-width:\s*max\(0px,\s*calc\(100% - 24px\)\)/s);
   });

@@ -1,0 +1,448 @@
+{
+  "welcome": {
+    "buttons": [
+      "File",
+      "Open",
+      "Frosted Glass",
+      "Pages",
+      "Edit",
+      "Review",
+      "Deliver",
+      "Settings",
+      "Open PDFCtrl O",
+      "Create from images",
+      "Merge PDFs",
+      "form.pdfClick to open · PDF",
+      "long.pdfClick to open · PDF",
+      "report.pdfClick to open · PDF",
+      "scanned.pdfClick to open · PDF"
+    ],
+    "samples": 4,
+    "recents": 0
+  },
+  "paletteOnWelcome": true,
+  "paletteWelcomeRows": {
+    "count": "94",
+    "recents": 0,
+    "openSampleDisabled": "true",
+    "openDisabled": "false"
+  },
+  "geom": {
+    "1": {
+      "innerWidth": 1442,
+      "innerHeight": 903,
+      "hostClientWidth": 914,
+      "hostRect": {
+        "x": 264,
+        "y": 44,
+        "width": 914,
+        "height": 859.3333740234375,
+        "top": 44,
+        "right": 1178,
+        "bottom": 903.3333740234375,
+        "left": 264
+      },
+      "dockRect": {
+        "x": 600.3333740234375,
+        "y": 854,
+        "width": 241.33334350585938,
+        "height": 37.333335876464844,
+        "top": 854,
+        "right": 841.6667175292969,
+        "bottom": 891.3333358764648,
+        "left": 600.3333740234375
+      },
+      "dockBand": "422",
+      "dockIconOnly": "true",
+      "dockCompact": "false",
+      "dockLift": "false",
+      "labelCount": 0,
+      "verbLabels": [],
+      "verbCount": 6,
+      "pagePill": {
+        "x": 276,
+        "y": 850,
+        "width": 154.4479217529297,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 430.4479217529297,
+        "bottom": 891.3333358764648,
+        "left": 276
+      },
+      "zoomPill": {
+        "x": 940.1979370117188,
+        "y": 850,
+        "width": 225.80209350585938,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 1166.0000305175781,
+        "bottom": 891.3333358764648,
+        "left": 940.1979370117188
+      },
+      "reserve": "491.6041259765625px",
+      "lift": "0px",
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "2": {
+      "innerWidth": 1442,
+      "innerHeight": 903,
+      "hostClientWidth": 914,
+      "hostRect": {
+        "x": 264,
+        "y": 44,
+        "width": 914,
+        "height": 859.3333740234375,
+        "top": 44,
+        "right": 1178,
+        "bottom": 903.3333740234375,
+        "left": 264
+      },
+      "dockRect": {
+        "x": 600.3333740234375,
+        "y": 854,
+        "width": 241.33334350585938,
+        "height": 37.333335876464844,
+        "top": 854,
+        "right": 841.6667175292969,
+        "bottom": 891.3333358764648,
+        "left": 600.3333740234375
+      },
+      "dockBand": "422",
+      "dockIconOnly": "true",
+      "dockCompact": "false",
+      "dockLift": "false",
+      "labelCount": 0,
+      "verbLabels": [],
+      "verbCount": 6,
+      "pagePill": {
+        "x": 276,
+        "y": 850,
+        "width": 154.4479217529297,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 430.4479217529297,
+        "bottom": 891.3333358764648,
+        "left": 276
+      },
+      "zoomPill": {
+        "x": 940.1979370117188,
+        "y": 850,
+        "width": 225.80209350585938,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 1166.0000305175781,
+        "bottom": 891.3333358764648,
+        "left": 940.1979370117188
+      },
+      "reserve": "491.6041259765625px",
+      "lift": "0px",
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "3": {
+      "innerWidth": 1442,
+      "innerHeight": 903,
+      "hostClientWidth": 914,
+      "hostRect": {
+        "x": 264,
+        "y": 44,
+        "width": 914,
+        "height": 859.3333740234375,
+        "top": 44,
+        "right": 1178,
+        "bottom": 903.3333740234375,
+        "left": 264
+      },
+      "dockRect": {
+        "x": 613.671875,
+        "y": 843,
+        "width": 214.65625,
+        "height": 48.333335876464844,
+        "top": 843,
+        "right": 828.328125,
+        "bottom": 891.3333358764648,
+        "left": 613.671875
+      },
+      "dockBand": "422",
+      "dockIconOnly": "false",
+      "dockCompact": "false",
+      "dockLift": "false",
+      "labelCount": 4,
+      "verbLabels": [
+        "Annotate",
+        "Sign",
+        "Stamp",
+        "Flatten"
+      ],
+      "verbCount": 4,
+      "pagePill": {
+        "x": 276,
+        "y": 850,
+        "width": 154.4479217529297,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 430.4479217529297,
+        "bottom": 891.3333358764648,
+        "left": 276
+      },
+      "zoomPill": {
+        "x": 940.1979370117188,
+        "y": 850,
+        "width": 225.80209350585938,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 1166.0000305175781,
+        "bottom": 891.3333358764648,
+        "left": 940.1979370117188
+      },
+      "reserve": "491.6041259765625px",
+      "lift": "0px",
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "4": {
+      "innerWidth": 1442,
+      "innerHeight": 903,
+      "hostClientWidth": 914,
+      "hostRect": {
+        "x": 264,
+        "y": 44,
+        "width": 914,
+        "height": 859.3333740234375,
+        "top": 44,
+        "right": 1178,
+        "bottom": 903.3333740234375,
+        "left": 264
+      },
+      "dockRect": {
+        "x": 509.8020935058594,
+        "y": 804,
+        "width": 422.3958435058594,
+        "height": 87.33333587646484,
+        "top": 804,
+        "right": 932.1979370117188,
+        "bottom": 891.3333358764648,
+        "left": 509.8020935058594
+      },
+      "dockBand": "422",
+      "dockIconOnly": "false",
+      "dockCompact": "false",
+      "dockLift": "false",
+      "labelCount": 5,
+      "verbLabels": [
+        "Reduce file size",
+        "Audit space usage",
+        "Export pages as images",
+        "Export text",
+        "Export to Word (.docx)"
+      ],
+      "verbCount": 5,
+      "pagePill": {
+        "x": 276,
+        "y": 850,
+        "width": 154.4479217529297,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 430.4479217529297,
+        "bottom": 891.3333358764648,
+        "left": 276
+      },
+      "zoomPill": {
+        "x": 940.1979370117188,
+        "y": 850,
+        "width": 225.80209350585938,
+        "height": 41.333335876464844,
+        "top": 850,
+        "right": 1166.0000305175781,
+        "bottom": 891.3333358764648,
+        "left": 940.1979370117188
+      },
+      "reserve": "491.6041259765625px",
+      "lift": "0px",
+      "overlapPage": false,
+      "overlapZoom": false
+    }
+  },
+  "ctrlP": {
+    "printShell": false,
+    "printDialog": false,
+    "paletteOpen": false
+  },
+  "legacyAlias": true,
+  "ctrlKTogglesClosed": true,
+  "cropPages": {
+    "inline": true,
+    "disabled": false,
+    "title": "Set the CropBox/TrimBox for every page.",
+    "overflowChip": false,
+    "allInline": [
+      "editMode",
+      "editText",
+      "editImage",
+      "editTextBox",
+      "recognizeText",
+      "cropPages"
+    ],
+    "editModePressed": null,
+    "editToolbar": false,
+    "after": [
+      "Crop pages"
+    ]
+  },
+  "editModeOn": {
+    "toolbar": true,
+    "fontSelect": {
+      "options": 3,
+      "value": "Helvetica"
+    },
+    "offButton": true,
+    "tools": [
+      "off",
+      "text",
+      "box",
+      "image"
+    ]
+  },
+  "editToolOff": {
+    "pressed": [
+      "off"
+    ],
+    "editModeVerbPressed": "true"
+  },
+  "ccw": {
+    "menuItem": true,
+    "rotation": "0° -> 3°"
+  },
+  "renumber": {
+    "present": true,
+    "disabled": false,
+    "after": [
+      "Renumber pages"
+    ],
+    "dialog": true
+  },
+  "flyout": {
+    "present": true,
+    "rect": {
+      "x": 614.6666870117188,
+      "y": 752.6666870117188,
+      "width": 212.6666717529297,
+      "height": 78.66667175292969,
+      "top": 752.6666870117188,
+      "right": 827.3333587646484,
+      "bottom": 831.3333587646484,
+      "left": 614.6666870117188
+    },
+    "hasColor": false,
+    "hasDropdownToggle": true,
+    "toolsVisible": [
+      "select",
+      "highlight",
+      "underline",
+      "strikeout",
+      "ink"
+    ],
+    "toolbarPresent": true,
+    "html": "<div class=\"annotation-flyout-header\"><span class=\"annotation-flyout-title\">Annotations</span><button type=\"button\" class=\"annotation-flyout-close\" aria-label=\"Close annotations\" title=\"Close annotations\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-x\" aria-hidden=\"true\"><path d=\"M18 6 6 18\"></path><path d=\"m6 6 12 12\"></path></svg></button></div><div class=\"annotation-flyout-body\"><div data-annotation-toolbar=\"\" role=\"group\" aria-label=\"Annotate\" class=\"glass-control-group toolbar-group commandbar-group-annotate ann-toolbar\"><div class=\"ann-tools-visible\" role=\"group\" aria-label=\"Recent annotation tools\" data-ann-tools-visible=\"true\"><button type=\"button\" class=\"tool-btn tool-btn-active ann-tool-btn\" aria-pressed=\"true\" aria-disabled=\"false\" aria-label=\"Select (no annotation tool)\" title=\"Select\" data-tool=\"select\"><svg xmlns=\"http://www.w3.org/2000/svg\" width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"lucide lucide-mouse-pointer"
+  },
+  "penWidth": {
+    "row": false,
+    "widths": [],
+    "menuOpen": true
+  },
+  "paneOpenSingle": {
+    "found": true,
+    "id": "paneOpen",
+    "disabled": "false",
+    "title": "Open a document from disk straight into an empty Multi Mode pane.",
+    "before": {
+      "palette": true,
+      "modal": 0,
+      "toasts": [],
+      "multimode": false,
+      "tabs": 0
+    },
+    "after": {
+      "palette": false,
+      "modal": 0,
+      "toasts": [],
+      "multimode": false,
+      "tabs": 0
+    },
+    "observable": true
+  },
+  "paneClearSingle": {
+    "found": true,
+    "id": "paneClear",
+    "disabled": "false",
+    "title": "Empty a Multi Mode pane and choose another document for it.",
+    "before": {
+      "palette": true,
+      "modal": 0,
+      "toasts": [],
+      "multimode": false,
+      "tabs": 0
+    },
+    "after": {
+      "palette": false,
+      "modal": 0,
+      "toasts": [],
+      "multimode": false,
+      "tabs": 0
+    },
+    "observable": true
+  },
+  "fitWidth": {
+    "present": true,
+    "pressed": "true",
+    "zoom": "148%"
+  },
+  "fitPage": {
+    "present": true,
+    "pressed": "true",
+    "zoom": "104%"
+  },
+  "undo": {
+    "disabled": "false",
+    "rotation": "1° -> 0°"
+  },
+  "redo": {
+    "disabled": "false",
+    "rotation": "0° -> 1°"
+  },
+  "multiMode": {
+    "togglePressed": "true",
+    "panes": 3,
+    "sharedDock": true,
+    "dockCount": 1
+  },
+  "theme": {
+    "before": "frosted",
+    "after": "dark"
+  },
+  "railCollapse": {
+    "present": true,
+    "before": null,
+    "after": "true"
+  },
+  "fileMenu": {
+    "open": true,
+    "groups": [
+      "open",
+      "merge",
+      "save",
+      "saveAs",
+      "closeTab",
+      "undo",
+      "redo",
+      "preferences",
+      "toggleTheme",
+      "showToolsPalette",
+      "recognizeText",
+      "checkForUpdate",
+      "about"
+    ],
+    "text": "FileOpen...Ctrl+OMerge...Ctrl+Shift+OSaveCtrl+SSave As...Ctrl+Shift+SClose TabCtrl+WEditUndoCtrl+ZRedoCtrl+Shift+ZPreferences...Ctrl+,ViewToggle ThemeCtrl+Shift+TCommand Palette...Ctrl+Shift+PToolsRecognize Text...Ctrl+Shift+RHelpCheck for Update...Ctrl+Shift+UAbout TFlex"
+  }
+}

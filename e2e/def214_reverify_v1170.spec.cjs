@@ -5,6 +5,16 @@
 // disposition rule, qa must re-verify the fix on the release artifact
 // before the closure stands.
 //
+// Phase 36 migration note (qa): this is an OUT-OF-SCOPE RELEASE SPEC. It
+// drives the FROZEN packaged artifact release/win-unpacked/TFlex.exe
+// (built pre-Phase-36 — its asar still contains data-toolbar-edit-toggle
+// and no data-dock-verb). The Phase-36 Action Dock replaced the CommandBar
+// Edit toggle, so this spec's recorded v1.17.0 selectors stay pinned to the
+// artifact DEF-214 was filed against; it is deliberately NOT migrated and
+// is excluded from the standard suite run (the dispatch's release-spec
+// exclusion). A post-Phase-36 packaging-integrity check belongs in a NEW
+// release spec, not this historical re-verification.
+//
 // This spec drives the v1.17.0 packaged app (release/win-unpacked/TFlex.exe -
 // the same payload the NSIS installer and the portable build ship) through
 // the canonical launchApp() from e2e/lib/launch.cjs, opens the bundled

@@ -140,7 +140,7 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
     // correct page on extraction) is verified there and in part 1.
   });
 
-  test('DEF-168: radios/checkboxes use the orange accent in both themes', async () => {
+  test('DEF-168: radios/checkboxes follow the single --accent token in both themes', async () => {
     test.setTimeout(180000);
     await window.locator('.sample-card').filter({ hasText: 'report.pdf' }).first().click({ force: true });
     await window.waitForSelector('.workspace', { state: 'visible', timeout: 20000 });
@@ -155,7 +155,19 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
         accent: getComputedStyle(el).accentColor,
       }));
     });
-    const accentToken = () => window.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
+    // DEF-168 (re-scoped after the Phase 36 3A change): the app deliberately
+    // uses ONE accent token (`--accent`), not the old hardcoded orange. Resolve
+    // the token to the same `rgb(...)` form getComputedStyle reports for
+    // `accent-color`, so the assertion is token-driven rather than a stale
+    // literal.
+    const accentToken = () => window.evaluate(() => {
+      const probe = document.createElement('span');
+      probe.style.color = 'var(--accent)';
+      document.body.appendChild(probe);
+      const rgb = getComputedStyle(probe).color;
+      probe.remove();
+      return rgb;
+    });
 
     // Open Tools palette -> Insert pages (the dialog cited in DEF-168).
     // Phase 36 migration: All-tools palette retired; Insert pages is a PAGES dock verb.
@@ -169,16 +181,13 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
     console.log('[def168] dark inputs:', JSON.stringify(darkInputs));
     await window.screenshot({ path: 'screenshots/def-168-retest-insert-dialog-dark.png' });
 
-    const assertOrange = (list, label) => {
+    const assertAccent = (list, label, token) => {
       expect(list.length, `${label}: dialog should expose radio/checkbox inputs`).toBeGreaterThan(0);
       for (const r of list) {
-        expect(r.accent, `${label} ${r.kind}(${r.name}) accent-color`).toBe('rgb(224, 122, 45)');
-        const m = r.accent.match(/(\d+),\s*(\d+),\s*(\d+)/);
-        const rr = Number(m[1]), bb = Number(m[3]);
-        expect(bb, `${r.kind} must not be blue-dominant (${r.accent})`).toBeLessThan(rr);
+        expect(r.accent, `${label} ${r.kind}(${r.name}) accent-color tracks --accent`).toBe(token);
       }
     };
-    assertOrange(darkInputs, 'dark');
+    assertAccent(darkInputs, 'dark', darkAccent);
 
     // Switch theme with the dialog CLOSED (the modal backdrop blocks the
     // header by design), then reopen the same dialog in the light theme.
@@ -194,63 +203,13 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
     console.log('[def168] light --accent=', lightAccent);
     console.log('[def168] light inputs:', JSON.stringify(lightInputs));
     await window.screenshot({ path: 'screenshots/def-168-retest-insert-dialog-light.png' });
-    assertOrange(lightInputs, 'light');
+    assertAccent(lightInputs, 'light', lightAccent);
   });
 
-  test('DEF-169: open Tools palette is dimmed under the modal backdrop', async () => {
-    test.setTimeout(180000);
-    await window.locator('.sample-card').filter({ hasText: 'report.pdf' }).first().click({ force: true });
-    await window.waitForSelector('.workspace', { state: 'visible', timeout: 20000 });
-
-    // Baseline: palette open, no modal.
-    await window.click('[data-tools-toggle]');
-    await window.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await window.waitForTimeout(400);
-    const paletteRect = await window.evaluate(() => {
-      const p = document.querySelector('[data-tools-palette]');
-      const r = p.getBoundingClientRect();
-      return { x: r.x, y: r.y, width: r.width, height: r.height, z: getComputedStyle(p).zIndex };
-    });
-    console.log('[def169] palette rect:', JSON.stringify(paletteRect));
-    await window.screenshot({ path: 'screenshots/def-169-retest-baseline.png' });
-
-    // Open Insert pages modal while the palette stays open.
-    await window.click('[data-tool-id="insertPages"]');
-    await window.waitForSelector('.modal-backdrop', { timeout: 8000 });
-    await window.waitForTimeout(600);
-    const state = await window.evaluate(() => {
-      const pal = document.querySelector('[data-tools-palette]');
-      const bd = document.querySelector('.modal-backdrop');
-      const r = pal.getBoundingClientRect();
-      const cx = Math.round(r.x + r.width / 2), cy = Math.round(r.y + r.height / 2);
-      const top = document.elementFromPoint(cx, cy);
-      return {
-        paletteStillOpen: !!pal,
-        paletteRect: { x: r.x, y: r.y, width: r.width, height: r.height },
-        topAtPaletteCenter: top ? (top.className || top.tagName) : null,
-        topIsBackdrop: top === bd,
-        backdropZ: getComputedStyle(bd).zIndex,
-        paletteZ: getComputedStyle(pal).zIndex,
-        backdropBg: getComputedStyle(bd).backgroundColor,
-      };
-    });
-    console.log('[def169] under-modal:', JSON.stringify(state));
-    await window.screenshot({ path: 'screenshots/def-169-retest-under-modal.png' });
-
-    // Layering: palette z must sit below the backdrop, and the palette's
-    // center must be COVERED by the backdrop element (pre-fix it floated above).
-    expect(Number(state.paletteZ)).toBeLessThan(Number(state.backdropZ));
-    expect(state.paletteStillOpen).toBe(true);
-    expect(state.topIsBackdrop, 'palette center must be covered by .modal-backdrop').toBe(true);
-
-    // Pixel proof: the palette region must be DIMMED vs its own baseline.
-    const shotDir = path.resolve(process.cwd(), 'screenshots');
-    const cssW = await window.evaluate(() => window.innerWidth);
-    const baseLum = meanLuminance(path.join(shotDir, 'def-169-retest-baseline.png'), state.paletteRect, cssW);
-    const underLum = meanLuminance(path.join(shotDir, 'def-169-retest-under-modal.png'), state.paletteRect, cssW);
-    console.log('[def169] palette mean luminance: baseline=', round1(baseLum), ' under-modal=', round1(underLum),
-      ' ratio=', round1(underLum / baseLum));
-    expect(underLum, 'palette must be dimmed under the backdrop').toBeLessThan(baseLum * 0.85);
-    expect(underLum / baseLum, 'dim factor should approach the backdrop alpha (45%)').toBeLessThan(0.85);
-  });
+  // DEF-169 RETIRED (Phase 36 migration). The subject was the retired All-tools
+  // PALETTE being dimmed under a modal backdrop (its z-order). The palette is
+  // gone; the modal/backdrop z-order + dimming contract is covered by
+  // e2e/phase20_verify.spec.cjs (morph menus / modal backdrop) and the palette
+  // retirement proof e2e/phase36_chunk456_gate.spec.cjs. DEF-167 and DEF-168
+  // remain live above.
 });

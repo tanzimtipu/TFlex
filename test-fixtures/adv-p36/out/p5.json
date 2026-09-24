@@ -1,0 +1,742 @@
+{
+  "selectionState": {
+    "present": true,
+    "state": "selection",
+    "idle": "false",
+    "iconOnly": "false",
+    "compact": "false",
+    "band": "422",
+    "lift": "false",
+    "chip": "2 pages",
+    "inline": [
+      {
+        "id": "rotate",
+        "disabled": false,
+        "w": 74
+      },
+      {
+        "id": "extract",
+        "disabled": false,
+        "w": 77
+      },
+      {
+        "id": "delete",
+        "disabled": false,
+        "w": 74
+      },
+      {
+        "id": "clearPageSelection",
+        "disabled": false,
+        "w": 105
+      }
+    ],
+    "pins": [],
+    "overflowChip": false,
+    "rect": {
+      "x": 515.1302490234375,
+      "y": 843,
+      "width": 411.7395935058594,
+      "height": 48.333335876464844,
+      "top": 843,
+      "right": 926.8698425292969,
+      "bottom": 891.3333358764648,
+      "left": 515.1302490234375
+    },
+    "pagePill": {
+      "x": 276,
+      "y": 850,
+      "width": 154.4479217529297,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 430.4479217529297,
+      "bottom": 891.3333358764648,
+      "left": 276
+    },
+    "zoomPill": {
+      "x": 940.1979370117188,
+      "y": 850,
+      "width": 225.80209350585938,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 1166.0000305175781,
+      "bottom": 891.3333358764648,
+      "left": 940.1979370117188
+    },
+    "overlapPage": false,
+    "overlapZoom": false
+  },
+  "afterClear": {
+    "present": true,
+    "state": "stage",
+    "idle": "false",
+    "iconOnly": "true",
+    "compact": "false",
+    "band": "422",
+    "lift": "false",
+    "chip": null,
+    "inline": [
+      {
+        "id": "rotate",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "extract",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "insertPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "replacePages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "split",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "delete",
+        "disabled": false,
+        "w": 34
+      }
+    ],
+    "pins": [],
+    "overflowChip": false,
+    "rect": {
+      "x": 600.3333740234375,
+      "y": 854,
+      "width": 241.33334350585938,
+      "height": 37.333335876464844,
+      "top": 854,
+      "right": 841.6667175292969,
+      "bottom": 891.3333358764648,
+      "left": 600.3333740234375
+    },
+    "pagePill": {
+      "x": 276,
+      "y": 850,
+      "width": 154.4479217529297,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 430.4479217529297,
+      "bottom": 891.3333358764648,
+      "left": 276
+    },
+    "zoomPill": {
+      "x": 940.1979370117188,
+      "y": 850,
+      "width": 225.80209350585938,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 1166.0000305175781,
+      "bottom": 891.3333358764648,
+      "left": 940.1979370117188
+    }
+  },
+  "pinNotices": [
+    "Pinned Crop pages to the dock",
+    "Pinned Audit space usage to the dock",
+    "Pinned Reduce file size to the dock",
+    "Pinned Watermark to the dock",
+    "Dock is full (max 4 pins)",
+    "Watermark is already pinned"
+  ],
+  "afterPin1": {
+    "present": true,
+    "state": "stage",
+    "idle": "false",
+    "iconOnly": "true",
+    "compact": "false",
+    "band": "422",
+    "lift": "false",
+    "chip": null,
+    "inline": [
+      {
+        "id": "rotate",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "extract",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "insertPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "replacePages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "split",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "delete",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "cropPages",
+        "disabled": false,
+        "w": 34
+      }
+    ],
+    "pins": [
+      "cropPages"
+    ],
+    "overflowChip": false,
+    "rect": {
+      "x": 578.8333740234375,
+      "y": 854,
+      "width": 284.3333435058594,
+      "height": 37.333335876464844,
+      "top": 854,
+      "right": 863.1667175292969,
+      "bottom": 891.3333358764648,
+      "left": 578.8333740234375
+    },
+    "pagePill": {
+      "x": 276,
+      "y": 850,
+      "width": 154.4479217529297,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 430.4479217529297,
+      "bottom": 891.3333358764648,
+      "left": 276
+    },
+    "zoomPill": {
+      "x": 940.1979370117188,
+      "y": 850,
+      "width": 225.80209350585938,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 1166.0000305175781,
+      "bottom": 891.3333358764648,
+      "left": 940.1979370117188
+    }
+  },
+  "afterPin4": {
+    "present": true,
+    "state": "stage",
+    "idle": "false",
+    "iconOnly": "true",
+    "compact": "false",
+    "band": "422",
+    "lift": "false",
+    "chip": null,
+    "inline": [
+      {
+        "id": "rotate",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "extract",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "insertPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "replacePages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "split",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "delete",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "cropPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "audit",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "optimize",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "watermark",
+        "disabled": false,
+        "w": 34
+      }
+    ],
+    "pins": [
+      "cropPages",
+      "audit",
+      "optimize",
+      "watermark"
+    ],
+    "overflowChip": false,
+    "rect": {
+      "x": 521.8333740234375,
+      "y": 854,
+      "width": 398.3333435058594,
+      "height": 37.333335876464844,
+      "top": 854,
+      "right": 920.1667175292969,
+      "bottom": 891.3333358764648,
+      "left": 521.8333740234375
+    },
+    "pagePill": {
+      "x": 276,
+      "y": 850,
+      "width": 154.4479217529297,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 430.4479217529297,
+      "bottom": 891.3333358764648,
+      "left": 276
+    },
+    "zoomPill": {
+      "x": 940.1979370117188,
+      "y": 850,
+      "width": 225.80209350585938,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 1166.0000305175781,
+      "bottom": 891.3333358764648,
+      "left": 940.1979370117188
+    }
+  },
+  "afterPin5": {
+    "present": true,
+    "state": "stage",
+    "idle": "false",
+    "iconOnly": "true",
+    "compact": "false",
+    "band": "422",
+    "lift": "false",
+    "chip": null,
+    "inline": [
+      {
+        "id": "rotate",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "extract",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "insertPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "replacePages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "split",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "delete",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "cropPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "audit",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "optimize",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "watermark",
+        "disabled": false,
+        "w": 34
+      }
+    ],
+    "pins": [
+      "cropPages",
+      "audit",
+      "optimize",
+      "watermark"
+    ],
+    "overflowChip": false,
+    "rect": {
+      "x": 521.8333740234375,
+      "y": 854,
+      "width": 398.3333435058594,
+      "height": 37.333335876464844,
+      "top": 854,
+      "right": 920.1667175292969,
+      "bottom": 891.3333358764648,
+      "left": 521.8333740234375
+    },
+    "pagePill": {
+      "x": 276,
+      "y": 850,
+      "width": 154.4479217529297,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 430.4479217529297,
+      "bottom": 891.3333358764648,
+      "left": 276
+    },
+    "zoomPill": {
+      "x": 940.1979370117188,
+      "y": 850,
+      "width": 225.80209350585938,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 1166.0000305175781,
+      "bottom": 891.3333358764648,
+      "left": 940.1979370117188
+    }
+  },
+  "afterPinAgain": {
+    "present": true,
+    "state": "stage",
+    "idle": "false",
+    "iconOnly": "true",
+    "compact": "false",
+    "band": "422",
+    "lift": "false",
+    "chip": null,
+    "inline": [
+      {
+        "id": "rotate",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "extract",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "insertPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "replacePages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "split",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "delete",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "cropPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "audit",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "optimize",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "watermark",
+        "disabled": false,
+        "w": 34
+      }
+    ],
+    "pins": [
+      "cropPages",
+      "audit",
+      "optimize",
+      "watermark"
+    ],
+    "overflowChip": false,
+    "rect": {
+      "x": 521.8333740234375,
+      "y": 854,
+      "width": 398.3333435058594,
+      "height": 37.333335876464844,
+      "top": 854,
+      "right": 920.1667175292969,
+      "bottom": 891.3333358764648,
+      "left": 521.8333740234375
+    },
+    "pagePill": {
+      "x": 276,
+      "y": 850,
+      "width": 154.4479217529297,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 430.4479217529297,
+      "bottom": 891.3333358764648,
+      "left": 276
+    },
+    "zoomPill": {
+      "x": 940.1979370117188,
+      "y": 850,
+      "width": 225.80209350585938,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 1166.0000305175781,
+      "bottom": 891.3333358764648,
+      "left": 940.1979370117188
+    }
+  },
+  "settingsDockPins": [
+    "cropPages",
+    "audit",
+    "optimize",
+    "watermark"
+  ],
+  "deliverWidths": {
+    "dockWidth": 284,
+    "dockHeight": 37,
+    "labels": [
+      {
+        "id": "optimize",
+        "w": 34,
+        "label": null
+      },
+      {
+        "id": "audit",
+        "w": 34,
+        "label": null
+      },
+      {
+        "id": "exportPages",
+        "w": 34,
+        "label": null
+      },
+      {
+        "id": "exportText",
+        "w": 34,
+        "label": null
+      },
+      {
+        "id": "exportDocx",
+        "w": 34,
+        "label": null
+      },
+      {
+        "id": "cropPages",
+        "w": 34,
+        "label": null
+      },
+      {
+        "id": "watermark",
+        "w": 34,
+        "label": null
+      }
+    ],
+    "band": "422"
+  },
+  "idleAfterWait": {
+    "present": true,
+    "state": "stage",
+    "idle": "true",
+    "iconOnly": "true",
+    "compact": "false",
+    "band": "422",
+    "lift": "false",
+    "chip": null,
+    "inline": [
+      {
+        "id": "rotate",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "extract",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "insertPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "replacePages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "split",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "delete",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "cropPages",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "audit",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "optimize",
+        "disabled": false,
+        "w": 34
+      },
+      {
+        "id": "watermark",
+        "disabled": false,
+        "w": 34
+      }
+    ],
+    "pins": [
+      "cropPages",
+      "audit",
+      "optimize",
+      "watermark"
+    ],
+    "overflowChip": false,
+    "rect": {
+      "x": 521.8333740234375,
+      "y": 854,
+      "width": 398.3333435058594,
+      "height": 37.333335876464844,
+      "top": 854,
+      "right": 920.1667175292969,
+      "bottom": 891.3333358764648,
+      "left": 521.8333740234375
+    },
+    "pagePill": {
+      "x": 276,
+      "y": 850,
+      "width": 154.4479217529297,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 430.4479217529297,
+      "bottom": 891.3333358764648,
+      "left": 276
+    },
+    "zoomPill": {
+      "x": 940.1979370117188,
+      "y": 850,
+      "width": 225.80209350585938,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 1166.0000305175781,
+      "bottom": 891.3333358764648,
+      "left": 940.1979370117188
+    }
+  },
+  "armed": {
+    "signModal": true,
+    "idle": "false",
+    "idleAfter3s": "true"
+  },
+  "narrow": {
+    "640": {
+      "innerWidth": 640,
+      "state": "stage",
+      "iconOnly": "true",
+      "compact": "true",
+      "band": "0",
+      "lift": "true",
+      "inlineCount": 4,
+      "overflowChip": true,
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "760": {
+      "innerWidth": 760,
+      "state": "stage",
+      "iconOnly": "true",
+      "compact": "true",
+      "band": "0",
+      "lift": "true",
+      "inlineCount": 5,
+      "overflowChip": true,
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "900": {
+      "innerWidth": 900,
+      "state": "stage",
+      "iconOnly": "true",
+      "compact": "true",
+      "band": "0",
+      "lift": "true",
+      "inlineCount": 9,
+      "overflowChip": true,
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "1000": {
+      "innerWidth": 1000,
+      "state": "stage",
+      "iconOnly": "true",
+      "compact": "true",
+      "band": "0",
+      "lift": "true",
+      "inlineCount": 10,
+      "overflowChip": false,
+      "overlapPage": false,
+      "overlapZoom": false
+    },
+    "1200": {
+      "innerWidth": 1200,
+      "state": "stage",
+      "iconOnly": "true",
+      "compact": "false",
+      "band": "180",
+      "lift": "false",
+      "inlineCount": 4,
+      "overflowChip": true,
+      "overlapPage": false,
+      "overlapZoom": false
+    }
+  }
+}

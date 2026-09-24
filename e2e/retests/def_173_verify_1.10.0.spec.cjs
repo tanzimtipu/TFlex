@@ -32,7 +32,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { PDFDocument, PDFName, PDFDict, PDFArray } = require('pdf-lib');
 const {
-  launchDev, openSample, openSamplePath, scrollToPage, shot, sampleCanvasPageRect, hardClose,
+  launchDev, openSample, openSamplePath, scrollToPage, shot, sampleCanvasPageRect, hardClose, armAnnotationTool,
 } = require('../lib/helpers.cjs');
 
 const ACTIVE_PANE = '.tab-pane[aria-hidden="false"]';
@@ -72,7 +72,7 @@ test('DEF-173/174: committed + preview highlight translucent; save bakes /CA 0.3
     await win.waitForTimeout(400);
 
     // --- 2. Arm Highlight and drag across the page-1 title ---
-    await win.click('button[aria-label="Highlight"]');
+    await armAnnotationTool(win, 'highlight');
     await win.waitForTimeout(350);
 
     const spanInfo = await pickHighlightSpan(win);
@@ -144,7 +144,7 @@ test('DEF-173/174: committed + preview highlight translucent; save bakes /CA 0.3
     // clicking the Highlight button again (Toolbar.tsx: "clicking it again
     // disarms"; DocumentView's Escape only closes search). The highlight
     // must persist and stay translucent.
-    await win.click('button[aria-label="Highlight"]');
+    await armAnnotationTool(win, 'highlight');
     await win.waitForTimeout(800);
     const disarmed = await win.evaluate(() => {
       const d = window.tflexDiagnostics();
@@ -255,17 +255,19 @@ test('DEF-173/174: committed + preview highlight translucent; save bakes /CA 0.3
     expect(canvasSample, 'page-1 canvas must be mounted to sample').not.toBeNull();
     const dom = canvasSample.topColors[0];
     expect(dom, 'a dominant canvas color must exist under the highlight bbox').toBeTruthy();
-    // DEF-174 fix: pale orange = 0.35 x #e07a2d Multiply over white = ~(244,208,182).
+    // DEF-174 fix: pale accent-blue wash = 0.35 x #2563eb
+    // (DEFAULT_ANNOTATION_COLOR, the single accent token that superseded the
+    // Phase-2 muted orange) over white = ~(179,200,248).
     const [r, g, b] = dom.rgb;
     console.log(`[def174] dominant canvas color under highlight: rgb(${dom.rgb.join(',')}) x${dom.n}`);
-    expect(r, 'pale wash R must be near-white (>=230; opaque block was 224)').toBeGreaterThanOrEqual(230);
-    expect(g, 'pale wash G ~208 (opaque block was 122)').toBeGreaterThanOrEqual(190);
-    expect(g).toBeLessThanOrEqual(225);
-    expect(b, 'pale wash B ~182 (opaque block was 45)').toBeGreaterThanOrEqual(165);
-    expect(b).toBeLessThanOrEqual(200);
-    // Explicitly NOT the full-opacity #e07a2d (224,122,45).
-    const distToOpaque = Math.hypot(r - 224, g - 122, b - 45);
-    expect(distToOpaque, 'canvas must NOT paint the full-opacity #e07a2d block (DEF-174 original defect)').toBeGreaterThan(80);
+    expect(r, 'pale blue wash R ~179').toBeGreaterThanOrEqual(168);
+    expect(r).toBeLessThanOrEqual(192);
+    expect(g, 'pale blue wash G ~200').toBeGreaterThanOrEqual(188);
+    expect(g).toBeLessThanOrEqual(214);
+    expect(b, 'pale blue wash B ~248').toBeGreaterThanOrEqual(236);
+    // Explicitly NOT the full-opacity accent #2563eb (37,99,235).
+    const distToOpaque = Math.hypot(r - 37, g - 99, b - 235);
+    expect(distToOpaque, 'canvas must NOT paint the full-opacity #2563eb block (DEF-174 original defect)').toBeGreaterThan(80);
     // Text readability: dark glyph pixels must survive under the wash.
     expect(canvasSample.darkGlyphs, 'title glyphs must stay dark/readable under the reopened wash').toBeGreaterThan(0);
 

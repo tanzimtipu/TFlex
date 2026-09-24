@@ -101,9 +101,11 @@ export interface ContextPanelProps {
   /** "Insert blank after" — an IMMEDIATE action: the host inserts a blank
    *  page directly after the clicked visible page (engine `insertBlankPage`
    *  with afterIndex = page - 1). No dialog. */
-  onInsertBlank?: (page: number) => void;
+onInsertBlank?: (page: number) => void;
   onReplacePages?: (page: number) => void;
-  onRenumberPages?: (page: number) => void;
+  /** Section 3A ruling 2: Renumber is NOT a thumbnail-menu verb. The
+   *  Inspector's `Label · renumber…` is its ONLY affordance, so this panel
+   *  exposes no renumber handler. */
   /** "Delete…" — the ellipsis promises a dialog, so this opens the host's
    *  EXISTING delete-pages dialog seeded with the clicked page. The thumbnail
    *  hover trash verb is a DIFFERENT path: it stays an immediate per-page
@@ -201,7 +203,6 @@ export interface PageMenuHandlers {
   onExtract: (page: number) => void;
   onInsertBlank: (page: number) => void;
   onReplace: (page: number) => void;
-  onRenumber: (page: number) => void;
   /** Opens the delete-pages dialog with the clicked page (NOT an immediate
    *  delete — the label's ellipsis promises a dialog). */
   onDeletePage: (page: number) => void;
@@ -214,8 +215,12 @@ export interface PageMenuItem {
   run: () => void;
 }
 
-/** The right-click menu's seven items, as data: the component renders them
- *  and the tests assert both the list and the handler each one calls. */
+/** The right-click menu's SIX items, as data: the component renders them
+ *  and the tests assert both the list and the handler each one calls.
+ *
+ *  Section 3A ruling 2: Renumber… is REMOVED here — the Inspector's
+ *  `Label · renumber…` is its only affordance. The menu stays the page-verb
+ *  shortcut for rotate / extract / insert / replace / delete. */
 export function buildPageMenuItems(page: number, h: PageMenuHandlers): PageMenuItem[] {
   return [
     { id: 'rotate-cw', label: 'Rotate CW', run: (): void => h.onRotateCw(page) },
@@ -223,7 +228,6 @@ export function buildPageMenuItems(page: number, h: PageMenuHandlers): PageMenuI
     { id: 'extract', label: 'Extract…', run: (): void => h.onExtract(page) },
     { id: 'insert-blank', label: 'Insert blank after', run: (): void => h.onInsertBlank(page) },
     { id: 'replace', label: 'Replace…', run: (): void => h.onReplace(page) },
-    { id: 'renumber', label: 'Renumber…', run: (): void => h.onRenumber(page) },
     { id: 'delete', label: 'Delete…', danger: true, run: (): void => h.onDeletePage(page) },
   ];
 }
@@ -281,9 +285,8 @@ export function ContextPanel(props: ContextPanelProps): ReactElement {
     onError,
     onMerge,
     onExtractPages,
-    onInsertBlank,
+onInsertBlank,
     onReplacePages,
-    onRenumberPages,
     onDeletePage,
     crossDoc = null,
     pageSelection = null,
@@ -358,12 +361,11 @@ export function ContextPanel(props: ContextPanelProps): ReactElement {
             onRotateCw: (page: number): void => onOp?.({ kind: 'rotate', page, dir: 'cw' }),
             onRotateCcw: (page: number): void => onOp?.({ kind: 'rotate', page, dir: 'ccw' }),
             onExtract: (page: number): void => onExtractPages?.(page),
-            onInsertBlank: (page: number): void => onInsertBlank?.(page),
+onInsertBlank: (page: number): void => onInsertBlank?.(page),
             onReplace: (page: number): void => onReplacePages?.(page),
-            onRenumber: (page: number): void => onRenumberPages?.(page),
             onDeletePage: (page: number): void => onDeletePage?.(page),
           }),
-    [menu, onOp, onExtractPages, onInsertBlank, onReplacePages, onRenumberPages, onDeletePage],
+    [menu, onOp, onExtractPages, onInsertBlank, onReplacePages, onDeletePage],
   );
 
   const openMenu: ThumbContextMenuHandler = (page, x, y): void => {
@@ -555,7 +557,12 @@ export function ContextPanel(props: ContextPanelProps): ReactElement {
             className="context-panel-action"
             data-context-panel-action="suspects"
             onClick={(): void => onOpenOcrSuspects?.()}
-            disabled={onOpenOcrSuspects === undefined}
+            // DEF-328 — the SAME gate as the palette's `ocrSuspects` row and
+            // the SAME refusal copy: the suspects view only exists after a run
+            // produced a list, so the control is disabled (never an enabled
+            // no-op) until then.
+            disabled={onOpenOcrSuspects === undefined || !ocrHasRun}
+            title={ocrHasRun ? undefined : 'Run Recognize text first'}
           >
             <span>Review suspects</span>
           </button>

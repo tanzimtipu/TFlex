@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const path = require('path');
 const fs = require('fs');
@@ -83,11 +83,9 @@ test.describe('Phase 13 Final Gate', () => {
     
     await window.waitForSelector('.workspace', { state: 'visible', timeout: 20000 });
     
-    // Redesign: annotation tools are DISABLED while Edit mode is open
-    // (mutual exclusion, title "Edit mode is open — close Edit to use
-    // annotation tools"). With Edit closed the Highlight button is
-    // enabled directly, so no edit-toggle detour anymore.
-    await window.click('button[aria-label="Highlight"]', { force: true });
+    // Phase 36 — the annotation toolbar lives in the REVIEW dock's Annotate
+    // flyout; arm Highlight through the canonical helper.
+    await armAnnotationTool(window, 'highlight');
     
     // Open palette
     await window.click('.ann-color-swatch-main', { force: true });

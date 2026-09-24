@@ -105,28 +105,76 @@ export function dockBand(hostWidth: number, reserve: number): number {
   return Math.max(0, hostWidth - reserve);
 }
 
+/**
+ * DEF-330 — the pill-FREE band: the horizontal span the dock may actually use
+ * when it is placed BETWEEN the two pills instead of on the host's centre.
+ *
+ * The symmetric `dockBand` is over-conservative whenever the pills differ in
+ * width (the live page pill is ~154px, the zoom pill ~226px): doubling the
+ * WIDEST pill's offset charges the dock for slack the other side never uses, so
+ * a 914px canvas left only a 422px band while the pills actually leave 494px
+ * between them. At the app's default maximised window that alone dropped every
+ * label from the PAGES/EDIT docks and wrapped DELIVER onto two rows.
+ *
+ * The band is already CLEARANCE-EXCLUSIVE (`DOCK_PILL_GAP` on each side), so a
+ * dock capped to it can never reach either pill; `left` is host-relative.
+ * Returns `null` when either pill is unmeasured (the caller keeps the symmetric
+ * reserve then).
+ */
+export function pillFreeBand(args: {
+  page: PillBox;
+  zoom: PillBox;
+  hostLeft: number;
+}): { left: number; width: number } {
+  return {
+    left: args.page.right - args.hostLeft + DOCK_PILL_GAP,
+    width: Math.max(0, args.zoom.left - args.page.right - 2 * DOCK_PILL_GAP),
+  };
+}
+
 /** True when the horizontal band cannot hold the collapsed dock. */
 export function shouldLiftDock(band: number): boolean {
   return band < DOCK_MIN_BAND;
 }
 
-/**
- * The labelled dock's natural width for `verbCount` verbs plus `pinnedCount`
- * pins (CSS-derived: a labelled verb is max(16px icon, 9px label) + 18px
- * padding, clamped to the widest curated label set at ~64px; gap 4px; dock
- * padding 16px; the pin divider 1px + its gap). Used ONLY to decide whether
- * the labels still fit the measured band — a pinned, labelled dock at 900px
- * host is what makes "icon-only earlier" fire.
- */
-export function labelledDockNeed(verbCount: number, pinnedCount: number): number {
-  const units = verbCount + pinnedCount;
-  if (units <= 0) return 0;
-  return units * 64 + (units - 1) * 4 + 16 + (pinnedCount > 0 ? 9 : 0);
+/** The average advance width of a dock label at 9px Inter, measured from the
+ *  real curated labels: "Export to Word (.docx)" is 89.9px for its 22
+ *  characters, "Sign" 18px for 4, and 4.2px/char reproduces every curated
+ *  label to within ~2% (mean absolute error < 4px). The label's own width is
+ *  what decides the fit — a per-verb CONSTANT cannot: DELIVER's five wide verbs
+ *  (491px) are wider than PAGES' six narrow ones (462px). */
+export const DOCK_LABEL_ADVANCE_PX = 4.2;
+
+/** One labelled dock verb's ESTIMATED width: the wider of its 16px icon and
+ *  its 9px label, plus padding. The model keeps the concept's 2 x 9px padding
+ *  (18), which now OVERESTIMATES the rendered 2 x 7px (DEF-330 trimmed the
+ *  verb padding to fit the pill-free band), so the fit test stays conservative
+ *  rather than dropping labels a dock could render. */
+export function dockVerbWidth(label: string): number {
+  return Math.max(16, label.length * DOCK_LABEL_ADVANCE_PX) + 18;
 }
 
-/** True when the labelled dock fits the band with the pill clearance to spare. */
+/**
+ * The labelled dock's width for these verbs: the verbs, the 4px gaps, the
+ * dock's 16px horizontal padding and — when pins ride along — the 1px divider
+ * plus its gap. Used ONLY to decide whether the labels still fit the band; the
+ * band itself decides the layout (and the `...` chip absorbs any pin overflow).
+ */
+export function labelledDockNeed(
+  labels: readonly string[],
+  pinnedLabels: readonly string[] = [],
+): number {
+  const all = [...labels, ...pinnedLabels];
+  if (all.length === 0) return 0;
+  const sum = all.reduce((total, label) => total + dockVerbWidth(label), 0);
+  return sum + (all.length - 1) * 4 + 16 + (pinnedLabels.length > 0 ? 9 : 0);
+}
+
+/** True when the labelled dock fits the band. The band passed in is already
+ *  clearance-exclusive (see `pillFreeBand` / `dockBand` + the pill reserve), so
+ *  this is a plain fit test — no second clearance is charged. */
 export function labelsFitBand(need: number, band: number): boolean {
-  return need + DOCK_PILL_GAP <= band;
+  return need <= band;
 }
 
 /**

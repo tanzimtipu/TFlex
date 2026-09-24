@@ -681,15 +681,17 @@ const stage = win.locator('.tab-stage');
     expect(await stage.getAttribute('data-multi-mode')).toBe('true');
     expect(await stage.getAttribute('data-multi-panes')).toBe('2');
 
-    // Focus pane A (click its page area) so the shared toolbar's zoom acts on
-    // A, the pane this test samples.
+    // Focus pane A (click its page area) so the pane-A pills below act on A,
+    // the pane this test samples.
     await win.locator('.tab-pane[data-pane="A"] .pdf-page').first().click();
     await win.waitForTimeout(300);
     // Zoom pane A out so the page is narrower than the pane: this exposes the
     // pane CANVAS as real gutters beside the page (the operator's see-through
-    // area), not just the 18px inter-page gaps. Phase 33 — Multi Mode's zoom
-    // controls live in the ONE shared toolbar (per-pane toolbars are retired).
-    const zoomOut = win.locator('[data-shared-toolbar] [aria-label="Zoom out"]');
+    // area), not just the 18px inter-page gaps. Phase 36 (chunk 7) — each pane
+    // owns its own canvas pills ([data-canvas-pills][data-pill-pane]); the pane
+    // A pills are the current home of the zoom controls (the retired shared
+    // toolbar row is gone).
+    const zoomOut = win.locator('[data-pill-pane="A"] [aria-label="Zoom out"]');
     for (let i = 0; i < 6; i += 1) {
       await zoomOut.click();
       await win.waitForTimeout(150);

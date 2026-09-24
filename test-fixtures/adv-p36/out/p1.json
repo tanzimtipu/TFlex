@@ -1,0 +1,1418 @@
+{
+  "stages": {
+    "1": {
+      "railActive": "pages",
+      "railCompact": "false",
+      "dockState": "stage",
+      "dockIdle": "false",
+      "dockIconOnly": "true",
+      "dockCompact": "false",
+      "dockBand": "422",
+      "dockLift": "false",
+      "verbs": [
+        {
+          "id": "rotate",
+          "disabled": false,
+          "pressed": null,
+          "title": "Rotate the selected page clockwise or counter-clockwise.",
+          "text": ""
+        },
+        {
+          "id": "extract",
+          "disabled": false,
+          "pressed": null,
+          "title": "Pull specific pages into a new document.",
+          "text": ""
+        },
+        {
+          "id": "insertPages",
+          "disabled": false,
+          "pressed": null,
+          "title": "Insert a blank page, or import pages from another PDF.",
+          "text": ""
+        },
+        {
+          "id": "replacePages",
+          "disabled": false,
+          "pressed": null,
+          "title": "Swap a contiguous range with another PDF; outline and links survive.",
+          "text": ""
+        },
+        {
+          "id": "split",
+          "disabled": false,
+          "pressed": null,
+          "title": "Split a range of pages into a new document.",
+          "text": ""
+        },
+        {
+          "id": "delete",
+          "disabled": false,
+          "pressed": null,
+          "title": "Remove the selected page from the document.",
+          "text": ""
+        }
+      ],
+      "overflowItems": [],
+      "pins": [],
+      "panelStage": "pages",
+      "panelCollapsed": null,
+      "panelHeader": "Pages · 34Combine…",
+      "sections": [],
+      "panelActions": [],
+      "inspStage": "pages",
+      "inspSelection": "page",
+      "inspSections": [
+        "page",
+        "on-page",
+        "document"
+      ],
+      "inspSlots": [
+        "page",
+        "on-page",
+        "document"
+      ],
+      "actions": [
+        {
+          "id": "renumber",
+          "disabled": false
+        },
+        {
+          "id": "jump-to-review",
+          "disabled": false
+        }
+      ],
+      "thumbCount": 0,
+      "annPanel": false
+    },
+    "2": {
+      "railActive": "edit",
+      "railCompact": "false",
+      "dockState": "stage",
+      "dockIdle": "false",
+      "dockIconOnly": "true",
+      "dockCompact": "false",
+      "dockBand": "422",
+      "dockLift": "false",
+      "verbs": [
+        {
+          "id": "editMode",
+          "disabled": false,
+          "pressed": null,
+          "title": "Replace text, add text boxes and edit images on the page.",
+          "text": ""
+        },
+        {
+          "id": "editText",
+          "disabled": true,
+          "pressed": null,
+          "title": "Turn on Edit content first",
+          "text": ""
+        },
+        {
+          "id": "editImage",
+          "disabled": true,
+          "pressed": null,
+          "title": "Turn on Edit content first",
+          "text": ""
+        },
+        {
+          "id": "editTextBox",
+          "disabled": true,
+          "pressed": null,
+          "title": "Turn on Edit content first",
+          "text": ""
+        },
+        {
+          "id": "recognizeText",
+          "disabled": false,
+          "pressed": null,
+          "title": "Add a searchable text layer to a scanned PDF.",
+          "text": ""
+        },
+        {
+          "id": "cropPages",
+          "disabled": false,
+          "pressed": null,
+          "title": "Set the CropBox/TrimBox for every page.",
+          "text": ""
+        }
+      ],
+      "overflowItems": [],
+      "pins": [],
+      "panelStage": "edit",
+      "panelCollapsed": null,
+      "panelHeader": "Edit",
+      "sections": [
+        "content",
+        "recognition"
+      ],
+      "panelActions": [
+        {
+          "id": "recognize",
+          "disabled": false
+        },
+        {
+          "id": "suspects",
+          "disabled": false
+        }
+      ],
+      "inspStage": "edit",
+      "inspSelection": "page",
+      "inspSections": [
+        "cropbox"
+      ],
+      "inspSlots": [
+        "cropbox"
+      ],
+      "actions": [],
+      "thumbCount": 0,
+      "annPanel": false
+    },
+    "3": {
+      "railActive": "review",
+      "railCompact": "false",
+      "dockState": "stage",
+      "dockIdle": "false",
+      "dockIconOnly": "false",
+      "dockCompact": "false",
+      "dockBand": "422",
+      "dockLift": "false",
+      "verbs": [
+        {
+          "id": "annotate",
+          "disabled": false,
+          "pressed": null,
+          "title": "Show the annotation tools: markup, shapes, ink and notes.",
+          "text": "Annotate"
+        },
+        {
+          "id": "sign",
+          "disabled": false,
+          "pressed": null,
+          "title": "Draw, type, or place a saved signature.",
+          "text": "Sign"
+        },
+        {
+          "id": "stamp",
+          "disabled": false,
+          "pressed": null,
+          "title": "Drop an APPROVED, DRAFT, CONFIDENTIAL or FINAL stamp.",
+          "text": "Stamp"
+        },
+        {
+          "id": "flatten",
+          "disabled": true,
+          "pressed": null,
+          "title": "This document has no form fields",
+          "text": "Flatten"
+        }
+      ],
+      "overflowItems": [],
+      "pins": [],
+      "panelStage": "review",
+      "panelCollapsed": null,
+      "panelHeader": "Review",
+      "sections": [
+        "annotations",
+        "signatures"
+      ],
+      "panelActions": [
+        {
+          "id": "manage-signatures",
+          "disabled": false
+        }
+      ],
+      "inspStage": "review",
+      "inspSelection": "page",
+      "inspSections": [
+        "comments",
+        "annotations"
+      ],
+      "inspSlots": [
+        "comments",
+        "annotations"
+      ],
+      "actions": [
+        {
+          "id": "export-comments",
+          "disabled": false
+        },
+        {
+          "id": "import-comments",
+          "disabled": false
+        }
+      ],
+      "thumbCount": 0,
+      "annPanel": true
+    },
+    "4": {
+      "railActive": "deliver",
+      "railCompact": "false",
+      "dockState": "stage",
+      "dockIdle": "false",
+      "dockIconOnly": "false",
+      "dockCompact": "false",
+      "dockBand": "422",
+      "dockLift": "false",
+      "verbs": [
+        {
+          "id": "optimize",
+          "disabled": false,
+          "pressed": null,
+          "title": "Re-serialise the document with a compression preset.",
+          "text": "Reduce file size"
+        },
+        {
+          "id": "audit",
+          "disabled": false,
+          "pressed": null,
+          "title": "See a per-element breakdown of the file size.",
+          "text": "Audit space usage"
+        },
+        {
+          "id": "exportPages",
+          "disabled": false,
+          "pressed": null,
+          "title": "Save selected pages as PNG, JPEG, or TIFF files.",
+          "text": "Export pages as images"
+        },
+        {
+          "id": "exportText",
+          "disabled": false,
+          "pressed": null,
+          "title": "Save extracted text as .txt or .rtf.",
+          "text": "Export text"
+        },
+        {
+          "id": "exportDocx",
+          "disabled": false,
+          "pressed": null,
+          "title": "Render every page to a single .docx document.",
+          "text": "Export to Word (.docx)"
+        }
+      ],
+      "overflowItems": [],
+      "pins": [],
+      "panelStage": "deliver",
+      "panelCollapsed": null,
+      "panelHeader": "Deliver",
+      "sections": [
+        "preflight",
+        "new-document"
+      ],
+      "panelActions": [
+        {
+          "id": "optimize",
+          "disabled": false
+        },
+        {
+          "id": "from-images",
+          "disabled": false
+        }
+      ],
+      "inspStage": "deliver",
+      "inspSelection": "page",
+      "inspSections": [
+        "export",
+        "document"
+      ],
+      "inspSlots": [
+        "export",
+        "document"
+      ],
+      "actions": [
+        {
+          "id": "export",
+          "disabled": false
+        }
+      ],
+      "thumbCount": 0,
+      "annPanel": false
+    }
+  },
+  "palette": {
+    "empty": {
+      "count": "95",
+      "rows": [
+        {
+          "kind": "recent",
+          "id": null,
+          "stage": null,
+          "disabled": null,
+          "pinned": null,
+          "title": null,
+          "label": "1790238007334-report.pdf"
+        },
+        {
+          "kind": "tool",
+          "id": "merge",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Combine another PDF with the active document.",
+          "label": "Merge PDFs"
+        },
+        {
+          "kind": "tool",
+          "id": "split",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Split a range of pages into a new document.",
+          "label": "Split pages"
+        },
+        {
+          "kind": "tool",
+          "id": "extract",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Pull specific pages into a new document.",
+          "label": "Extract pages"
+        },
+        {
+          "kind": "tool",
+          "id": "rotate",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Rotate the selected page clockwise or counter-clockwise.",
+          "label": "Rotate pages"
+        },
+        {
+          "kind": "tool",
+          "id": "delete",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Remove the selected page from the document.",
+          "label": "Delete pages"
+        },
+        {
+          "kind": "tool",
+          "id": "insertPages",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Insert a blank page, or import pages from another PDF.",
+          "label": "Insert pages"
+        },
+        {
+          "kind": "tool",
+          "id": "replacePages",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Swap a contiguous range with another PDF; outline and links survive.",
+          "label": "Replace pages"
+        },
+        {
+          "kind": "tool",
+          "id": "renumberPages",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Set logical page labels (e.g. i, ii, iii).",
+          "label": "Renumber pages"
+        },
+        {
+          "kind": "tool",
+          "id": "cropPages",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Set the CropBox/TrimBox for every page.",
+          "label": "Crop pages"
+        },
+        {
+          "kind": "tool",
+          "id": "rotateCounterClockwise",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Rotate the visible page counter-clockwise.",
+          "label": "Rotate counter-clockwise"
+        },
+        {
+          "kind": "tool",
+          "id": "pageThumbnails",
+          "stage": "pages",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Switch to the Pages panel to use this",
+          "label": "Page thumbnails"
+        },
+        {
+          "kind": "tool",
+          "id": "outlinePanel",
+          "stage": "pages",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Switch to the Pages panel to use this",
+          "label": "Bookmarks"
+        },
+        {
+          "kind": "tool",
+          "id": "pageContextMenu",
+          "stage": "pages",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Right-click a page in the Pages panel",
+          "label": "Page actions"
+        },
+        {
+          "kind": "tool",
+          "id": "clearPageSelection",
+          "stage": "pages",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Drop the current thumbnail selection.",
+          "label": "Clear page selection"
+        },
+        {
+          "kind": "tool",
+          "id": "dragPage",
+          "stage": "pages",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Drag a page onto another pane",
+          "label": "Drag page"
+        },
+        {
+          "kind": "tool",
+          "id": "editMode",
+          "stage": "edit",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Replace text, add text boxes and edit images on the page.",
+          "label": "Edit content"
+        },
+        {
+          "kind": "tool",
+          "id": "editToolOff",
+          "stage": "edit",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Return the edit layer to the plain viewer.",
+          "label": "Edit mode off"
+        },
+        {
+          "kind": "tool",
+          "id": "editText",
+          "stage": "edit",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Click a text run to replace it.",
+          "label": "Edit text"
+        },
+        {
+          "kind": "tool",
+          "id": "editTextBox",
+          "stage": "edit",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Drag on the page to place a new text box.",
+          "label": "Add a text box"
+        },
+        {
+          "kind": "tool",
+          "id": "editImage",
+          "stage": "edit",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Click an image to select it, or drag a rectangle to place a new one.",
+          "label": "Edit images"
+        },
+        {
+          "kind": "tool",
+          "id": "editDefaultFont",
+          "stage": "edit",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Pick the font in the Edit panel",
+          "label": "Default font"
+        },
+        {
+          "kind": "tool",
+          "id": "recognizeText",
+          "stage": "edit",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Add a searchable text layer to a scanned PDF.",
+          "label": "Recognize text (OCR)"
+        },
+        {
+          "kind": "tool",
+          "id": "batchOcr",
+          "stage": "edit",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Open a second document first",
+          "label": "Batch OCR all tabs"
+        },
+        {
+          "kind": "tool",
+          "id": "ocrSuspects",
+          "stage": "edit",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Run Recognize text first",
+          "label": "OCR suspects"
+        },
+        {
+          "kind": "tool",
+          "id": "annotate",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Show the annotation tools: markup, shapes, ink and notes.",
+          "label": "Annotate"
+        },
+        {
+          "kind": "tool",
+          "id": "sign",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Draw, type, or place a saved signature.",
+          "label": "Sign"
+        },
+        {
+          "kind": "tool",
+          "id": "forms",
+          "stage": "review",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "This document has no form fields",
+          "label": "Forms"
+        },
+        {
+          "kind": "tool",
+          "id": "flatten",
+          "stage": "review",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "This document has no form fields",
+          "label": "Flatten"
+        },
+        {
+          "kind": "tool",
+          "id": "stamp",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Drop an APPROVED, DRAFT, CONFIDENTIAL or FINAL stamp.",
+          "label": "Stamp"
+        },
+        {
+          "kind": "tool",
+          "id": "watermark",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Overlay text or an image across the selected pages.",
+          "label": "Watermark"
+        },
+        {
+          "kind": "tool",
+          "id": "exportComments",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Save every annotation to a local .fdf file.",
+          "label": "Export comments (FDF)"
+        },
+        {
+          "kind": "tool",
+          "id": "importComments",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Merge a local .fdf file into the active document.",
+          "label": "Import comments (FDF)"
+        },
+        {
+          "kind": "tool",
+          "id": "annotationsPanel",
+          "stage": "review",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Switch to the Review panel to use this",
+          "label": "Annotations"
+        },
+        {
+          "kind": "tool",
+          "id": "annSelect",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Select and move existing annotations (no tool armed).",
+          "label": "Select"
+        },
+        {
+          "kind": "tool",
+          "id": "annHighlight",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Highlight text runs.",
+          "label": "Highlight"
+        },
+        {
+          "kind": "tool",
+          "id": "annUnderline",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Underline text runs.",
+          "label": "Underline"
+        },
+        {
+          "kind": "tool",
+          "id": "annStrikeout",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Strike text runs through.",
+          "label": "Strikethrough"
+        },
+        {
+          "kind": "tool",
+          "id": "annInk",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Draw freehand ink.",
+          "label": "Pen"
+        },
+        {
+          "kind": "tool",
+          "id": "annTextbox",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Place a text box annotation.",
+          "label": "Text box"
+        },
+        {
+          "kind": "tool",
+          "id": "annRect",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Draw a rectangle annotation.",
+          "label": "Rectangle"
+        },
+        {
+          "kind": "tool",
+          "id": "annEllipse",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Draw an ellipse annotation.",
+          "label": "Ellipse"
+        },
+        {
+          "kind": "tool",
+          "id": "annArrow",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Draw an arrow annotation.",
+          "label": "Arrow"
+        },
+        {
+          "kind": "tool",
+          "id": "annCallout",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Place a callout annotation.",
+          "label": "Callout"
+        },
+        {
+          "kind": "tool",
+          "id": "annNote",
+          "stage": "review",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Place a sticky note annotation.",
+          "label": "Sticky note"
+        },
+        {
+          "kind": "tool",
+          "id": "annColor",
+          "stage": "review",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Pick the colour in the annotation flyout",
+          "label": "Annotation color"
+        },
+        {
+          "kind": "tool",
+          "id": "annPenWidth",
+          "stage": "review",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Pick the pen width in the annotation flyout",
+          "label": "Pen width"
+        },
+        {
+          "kind": "tool",
+          "id": "optimize",
+          "stage": "deliver",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Re-serialise the document with a compression preset.",
+          "label": "Reduce file size"
+        },
+        {
+          "kind": "tool",
+          "id": "audit",
+          "stage": "deliver",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "See a per-element breakdown of the file size.",
+          "label": "Audit space usage"
+        },
+        {
+          "kind": "tool",
+          "id": "createFromImages",
+          "stage": "deliver",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Combine picked images into a new PDF document.",
+          "label": "Create PDF from images"
+        },
+        {
+          "kind": "tool",
+          "id": "exportPages",
+          "stage": "deliver",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Save selected pages as PNG, JPEG, or TIFF files.",
+          "label": "Export pages as images"
+        },
+        {
+          "kind": "tool",
+          "id": "exportText",
+          "stage": "deliver",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Save extracted text as .txt or .rtf.",
+          "label": "Export text"
+        },
+        {
+          "kind": "tool",
+          "id": "exportDocx",
+          "stage": "deliver",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Render every page to a single .docx document.",
+          "label": "Export to Word (.docx)"
+        },
+        {
+          "kind": "tool",
+          "id": "open",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Open a PDF from disk.",
+          "label": "Open PDF"
+        },
+        {
+          "kind": "tool",
+          "id": "openRecent",
+          "stage": "global",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Pick a recent file from the list below",
+          "label": "Open recent file"
+        },
+        {
+          "kind": "tool",
+          "id": "openSample",
+          "stage": "global",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Pick a sample from the welcome screen",
+          "label": "Open sample document"
+        },
+        {
+          "kind": "tool",
+          "id": "removeRecent",
+          "stage": "global",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Pick a recent file from the list below",
+          "label": "Remove from Recents"
+        },
+        {
+          "kind": "tool",
+          "id": "createFromClipboard",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Build a new PDF from the image currently on the clipboard.",
+          "label": "Create PDF from clipboard"
+        },
+        {
+          "kind": "tool",
+          "id": "save",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Write the pending engine changes back to the open file.",
+          "label": "Save"
+        },
+        {
+          "kind": "tool",
+          "id": "saveAs",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Save the active document to a new file.",
+          "label": "Save a copy"
+        },
+        {
+          "kind": "tool",
+          "id": "print",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Open the print dialog for the active document.",
+          "label": "Print"
+        },
+        {
+          "kind": "tool",
+          "id": "find",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Search the active document and walk the hits.",
+          "label": "Find in document"
+        },
+        {
+          "kind": "tool",
+          "id": "zoomIn",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Increase the canvas zoom level.",
+          "label": "Zoom in"
+        },
+        {
+          "kind": "tool",
+          "id": "zoomOut",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Decrease the canvas zoom level.",
+          "label": "Zoom out"
+        },
+        {
+          "kind": "tool",
+          "id": "fitWidth",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Scale the page to the width of the canvas.",
+          "label": "Fit width"
+        },
+        {
+          "kind": "tool",
+          "id": "fitPage",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Scale the page to fit the whole canvas.",
+          "label": "Fit page"
+        },
+        {
+          "kind": "tool",
+          "id": "prevPage",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Step back one page.",
+          "label": "Previous page"
+        },
+        {
+          "kind": "tool",
+          "id": "nextPage",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Step forward one page.",
+          "label": "Next page"
+        },
+        {
+          "kind": "tool",
+          "id": "pageJump",
+          "stage": "global",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Type a page number in the page pill",
+          "label": "Go to page"
+        },
+        {
+          "kind": "tool",
+          "id": "undo",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Undo the last document change.",
+          "label": "Undo"
+        },
+        {
+          "kind": "tool",
+          "id": "redo",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Redo the last undone change.",
+          "label": "Redo"
+        },
+        {
+          "kind": "tool",
+          "id": "tabNew",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Open an empty tab to drop a document into.",
+          "label": "New empty tab"
+        },
+        {
+          "kind": "tool",
+          "id": "tabClose",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Close the active tab (prompting when there are unsaved changes).",
+          "label": "Close Tab"
+        },
+        {
+          "kind": "tool",
+          "id": "multi-mode",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "View two documents side by side in one workspace.",
+          "label": "Multi Mode"
+        },
+        {
+          "kind": "tool",
+          "id": "paneOpen",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Open a document from disk straight into an empty Multi Mode pane.",
+          "label": "Open a PDF into a pane"
+        },
+        {
+          "kind": "tool",
+          "id": "panePick",
+          "stage": "global",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Pick a document from a Multi Mode pane",
+          "label": "Show a document in a pane"
+        },
+        {
+          "kind": "tool",
+          "id": "paneClear",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Empty a Multi Mode pane and choose another document for it.",
+          "label": "Clear a pane"
+        },
+        {
+          "kind": "tool",
+          "id": "paneResize",
+          "stage": "global",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Drag the Multi Mode divider",
+          "label": "Resize panes"
+        },
+        {
+          "kind": "tool",
+          "id": "toggleTheme",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Switch between Light, Dark and Frosted Glass.",
+          "label": "Toggle Theme"
+        },
+        {
+          "kind": "tool",
+          "id": "preferences",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Open the preferences sheet.",
+          "label": "Preferences"
+        },
+        {
+          "kind": "tool",
+          "id": "checkForUpdate",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Ask the updater whether a newer TFlex exists.",
+          "label": "Check for Update"
+        },
+        {
+          "kind": "tool",
+          "id": "updateDownload",
+          "stage": "global",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "No update is pending",
+          "label": "Download update"
+        },
+        {
+          "kind": "tool",
+          "id": "updateInstall",
+          "stage": "global",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "No update is pending",
+          "label": "Restart to update"
+        },
+        {
+          "kind": "tool",
+          "id": "about",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Version, credits and the changelog.",
+          "label": "About TFlex"
+        },
+        {
+          "kind": "tool",
+          "id": "appMenu",
+          "stage": "global",
+          "disabled": "true",
+          "pinned": "false",
+          "title": "Use the File menu in the title bar",
+          "label": "Application menu"
+        },
+        {
+          "kind": "tool",
+          "id": "toolsPalette",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Open the command palette and search every tool, recent file and view action.",
+          "label": "Browse all tools"
+        },
+        {
+          "kind": "tool",
+          "id": "panMode",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Drag anywhere to scroll the document.",
+          "label": "Pan mode"
+        },
+        {
+          "kind": "tool",
+          "id": "railCollapse",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Collapse or expand the left rail.",
+          "label": "Collapse panel"
+        },
+        {
+          "kind": "tool",
+          "id": "stagePages",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Switch the workspace to the PAGES stage.",
+          "label": "Pages stage"
+        },
+        {
+          "kind": "tool",
+          "id": "stageEdit",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Switch the workspace to the EDIT stage.",
+          "label": "Edit stage"
+        },
+        {
+          "kind": "tool",
+          "id": "stageReview",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Switch the workspace to the REVIEW stage.",
+          "label": "Review stage"
+        },
+        {
+          "kind": "tool",
+          "id": "stageDeliver",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Switch the workspace to the DELIVER stage.",
+          "label": "Deliver stage"
+        },
+        {
+          "kind": "tool",
+          "id": "windowMinimize",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Minimize the TFlex window.",
+          "label": "Minimize window"
+        },
+        {
+          "kind": "tool",
+          "id": "windowMaximize",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Maximize or restore the TFlex window.",
+          "label": "Maximize window"
+        },
+        {
+          "kind": "tool",
+          "id": "windowClose",
+          "stage": "global",
+          "disabled": "false",
+          "pinned": "false",
+          "title": "Close the TFlex window.",
+          "label": "Close window"
+        }
+      ]
+    },
+    "registeredIds": [
+      "merge",
+      "split",
+      "extract",
+      "rotate",
+      "delete",
+      "insertPages",
+      "replacePages",
+      "renumberPages",
+      "cropPages",
+      "rotateCounterClockwise",
+      "pageThumbnails",
+      "outlinePanel",
+      "pageContextMenu",
+      "clearPageSelection",
+      "dragPage",
+      "editMode",
+      "editToolOff",
+      "editText",
+      "editTextBox",
+      "editImage",
+      "editDefaultFont",
+      "recognizeText",
+      "batchOcr",
+      "ocrSuspects",
+      "annotate",
+      "sign",
+      "forms",
+      "flatten",
+      "stamp",
+      "watermark",
+      "exportComments",
+      "importComments",
+      "annotationsPanel",
+      "annSelect",
+      "annHighlight",
+      "annUnderline",
+      "annStrikeout",
+      "annInk",
+      "annTextbox",
+      "annRect",
+      "annEllipse",
+      "annArrow",
+      "annCallout",
+      "annNote",
+      "annColor",
+      "annPenWidth",
+      "optimize",
+      "audit",
+      "createFromImages",
+      "exportPages",
+      "exportText",
+      "exportDocx",
+      "open",
+      "openRecent",
+      "openSample",
+      "removeRecent",
+      "createFromClipboard",
+      "save",
+      "saveAs",
+      "print",
+      "find",
+      "zoomIn",
+      "zoomOut",
+      "fitWidth",
+      "fitPage",
+      "prevPage",
+      "nextPage",
+      "pageJump",
+      "undo",
+      "redo",
+      "tabNew",
+      "tabClose",
+      "multi-mode",
+      "paneOpen",
+      "panePick",
+      "paneClear",
+      "paneResize",
+      "toggleTheme",
+      "preferences",
+      "checkForUpdate",
+      "updateDownload",
+      "updateInstall",
+      "about",
+      "appMenu",
+      "toolsPalette",
+      "panMode",
+      "railCollapse",
+      "stagePages",
+      "stageEdit",
+      "stageReview",
+      "stageDeliver",
+      "windowMinimize",
+      "windowMaximize",
+      "windowClose"
+    ],
+    "query": {
+      "crop": {
+        "count": "14",
+        "rows": [
+          {
+            "id": "cropPages",
+            "label": "Crop pages",
+            "disabled": "false"
+          },
+          {
+            "id": "createFromClipboard",
+            "label": "Create PDF from clipboard",
+            "disabled": "false"
+          },
+          {
+            "id": "watermark",
+            "label": "Watermark",
+            "disabled": "false"
+          },
+          {
+            "id": "replacePages",
+            "label": "Replace pages",
+            "disabled": "false"
+          },
+          {
+            "id": "pageContextMenu",
+            "label": "Page actions",
+            "disabled": "true"
+          },
+          {
+            "id": "batchOcr",
+            "label": "Batch OCR all tabs",
+            "disabled": "true"
+          },
+          {
+            "id": "tabClose",
+            "label": "Close Tab",
+            "disabled": "false"
+          },
+          {
+            "id": "editText",
+            "label": "Edit text",
+            "disabled": "false"
+          }
+        ],
+        "empty": false,
+        "highlighted": "cropPages"
+      },
+      "long": {
+        "count": "0",
+        "rows": [],
+        "empty": true,
+        "highlighted": null
+      },
+      "unicode": {
+        "count": "0",
+        "rows": [],
+        "empty": true,
+        "highlighted": null
+      },
+      "regex": {
+        "count": "0",
+        "rows": [],
+        "empty": true,
+        "highlighted": null
+      },
+      "none": {
+        "count": "0",
+        "rows": [],
+        "empty": true,
+        "highlighted": null
+      }
+    }
+  },
+  "inspector": {},
+  "pills": {
+    "page": {
+      "x": 276,
+      "y": 850,
+      "width": 154.4479217529297,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 430.4479217529297,
+      "bottom": 891.3333358764648,
+      "left": 276
+    },
+    "zoom": {
+      "x": 940.1979370117188,
+      "y": 850,
+      "width": 225.80209350585938,
+      "height": 41.333335876464844,
+      "top": 850,
+      "right": 1166.0000305175781,
+      "bottom": 891.3333358764648,
+      "left": 940.1979370117188
+    },
+    "pageText": "/ 34",
+    "zoomText": "148%",
+    "controls": [
+      {
+        "tag": "BUTTON",
+        "label": "Previous page",
+        "disabled": true
+      },
+      {
+        "tag": "INPUT",
+        "label": "Current page",
+        "disabled": false
+      },
+      {
+        "tag": "BUTTON",
+        "label": "Next page",
+        "disabled": false
+      }
+    ]
+  },
+  "rails": {
+    "emptyState": {
+      "welcome": true,
+      "stageRail": true,
+      "dock": false,
+      "inspector": false
+    }
+  },
+  "fileMenu": {
+    "error": "no menu button found"
+  }
+}

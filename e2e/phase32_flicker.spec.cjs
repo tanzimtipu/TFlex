@@ -19,7 +19,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette, runTool } = require('./lib/helpers.cjs');
 
 const FIX = path.resolve(__dirname, '..', 'test-fixtures');
 const REPORT_SRC = path.join(FIX, 'report.pdf'); // 34 pages
@@ -273,7 +273,7 @@ test('F1 no flicker: toggling Multi Mode on and off', async () => {
   // OFF
   let p = sampleTimeline(1600, 16, [PROBE_VISIBLE]);
   await win.waitForTimeout(80);
-  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   let s = await p;
   let a = analyse(s, 'V');
   logAnalyse('F1 toggle OFF', 'V', a);
@@ -440,7 +440,7 @@ test('F5 visual captures: two-pane, mid-drag, single-mode', async () => {
 
   // Mode off: unchanged single-pane layout.
   await focusPane('A');
-  await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
+  await win.locator('[data-header-multi-mode]').first().click();
   await win.waitForTimeout(900);
   await win.screenshot({ path: path.join(SHOTS, 'phase32-single-mode.png') });
   console.log('[P32-flicker] captured screenshots/phase32-single-mode.png');
@@ -534,7 +534,7 @@ test('B1 responsiveness: two 34-page docs - scroll, focus, drag (rAF + liveness)
   console.log(`[P32-resp] cross-doc drag: rAF ${JSON.stringify(r3)} liveness ${JSON.stringify(l3)}`);
 
   // --- mode-toggle and pane-focus settle timings ---
-  const offMs = await clickSettleMs('[data-shared-toolbar] [data-toolbar-multi-mode]');
+  const offMs = await clickSettleMs('[data-header-multi-mode]');
   await win.waitForTimeout(600);
   // Phase 36 (chunk 6) — the single-mode Multi Mode toggle is the title-bar
   // control; measure its settle time.
@@ -558,10 +558,10 @@ test('B1 responsiveness: two 34-page docs - scroll, focus, drag (rAF + liveness)
 test('CQ1 window close with BOTH panes modified: prompt covers both, Cancel aborts', async () => {
   await twoPaneSetup();
   await focusPane('A');
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1100);
   await focusPane('B');
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1100);
 
   await electronApp.evaluate(({ BrowserWindow }) => {
@@ -587,10 +587,10 @@ test('CQ1 window close with BOTH panes modified: prompt covers both, Cancel abor
 test('CQ2 window close queue walks BOTH modified panes in turn', async () => {
   await twoPaneSetup();
   await focusPane('A');
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1100);
   await focusPane('B');
-  await win.locator('[data-shared-toolbar] [data-toolbar-rotate-cw]').first().click();
+  await runTool(win, 'rotate');
   await win.waitForTimeout(1100);
 
   await electronApp.evaluate(({ BrowserWindow }) => {

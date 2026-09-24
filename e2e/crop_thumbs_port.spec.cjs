@@ -9,7 +9,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, runTool } = require('./lib/helpers.cjs');
+const { hardClose, runTool, gotoStage } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const FULL_ASPECT = 612 / 792; // 0.7727
@@ -161,6 +161,12 @@ test('PORT BUG1: crop page 1 -> thumbnail rail pages 2/3/4 stay FULL page, not c
   // Crop page 1 to a distinctive centered 200x200 box.
   const finalCrop = await cropPage1To(206, 296, 200, 200);
   console.log(`[PORT|CROP] crop box=${JSON.stringify(finalCrop)}`);
+
+  // Phase 36 — the crop flow leaves the workspace in the EDIT stage (the
+  // Inspector shows the CropBox), so return to PAGES where the thumbnails
+  // are stage-gated before measuring them.
+  await gotoStage(win, 1);
+  await win.waitForTimeout(900);
 
   const after = await thumbGeom(4);
   console.log(`[PORT|AFTER-THUMBS] ${JSON.stringify(after)}`);

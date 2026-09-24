@@ -95,7 +95,7 @@ function renderDock(options: Partial<ActionDockProps> = {}): Harness {
     activeStage: "pages",
     pageSelection: [],
     onClearPageSelection: vi.fn(),
-    bulk: { onRotate: vi.fn(), onExtract: vi.fn(), onMerge: vi.fn(), onDelete: vi.fn() },
+    bulk: { onRotate: vi.fn(), onExtract: vi.fn(), onDelete: vi.fn() },
     dockPins: [],
     onPinTool: vi.fn(),
     onUnpinTool: vi.fn(),

@@ -79,6 +79,33 @@ export const VIEW_ACTION_IDS: readonly string[] = [
   'stageDeliver',
 ];
 
+/** DEF-327 — the host's refusal copy for the commands whose registry
+ *  precondition cannot express their live state (an empty undo stack, Multi
+ *  Mode off). The palette and the dock's pins gate on the same live state, so
+ *  they explain it with the same words; the undo copy is the one the rail's own
+ *  Undo button already carries. */
+export const PALETTE_ACTION_REASONS: Readonly<Record<string, string>> = {
+  undo: 'Nothing to undo',
+  redo: 'Nothing to redo',
+  paneOpen: 'Turn on Multi Mode first',
+  paneClear: 'Turn on Multi Mode first',
+};
+
+/**
+ * DEF-327 — the refusal copy for a DISABLED row, in the Action Dock's own
+ * order: the focused pane's live reason first ("Turn on Edit content first"),
+ * then the host's per-action copy ("Nothing to undo"). `undefined` means "no
+ * live copy", and the row then falls back to the registry's declared
+ * availability ("Run Recognize text first") — exactly like the dock.
+ */
+export function paletteDisabledReasonFor(args: {
+  entry: ToolEntry;
+  paneReason?: ((entry: ToolEntry) => string | undefined) | undefined;
+  actionReasons?: Readonly<Record<string, string>> | undefined;
+}): string | undefined {
+  return args.paneReason?.(args.entry) ?? args.actionReasons?.[args.entry.action];
+}
+
 /** The stage tag chip's text: the four rail stages plus the global bucket. */
 export const STAGE_TAG_LABELS: Record<ToolStage, string> = {
   ...STAGE_LABELS,
@@ -205,6 +232,11 @@ export interface PaletteRowGateArgs {
   /** Host availability gate (live state). Absent = the registry's own
    *  preconditions are the only gate. */
   isToolEnabled?: (entry: ToolEntry) => boolean;
+  /** DEF-327 — the host's live refusal copy for a disabled row, consulted
+   *  BEFORE the registry's declared availability copy, exactly like the Action
+   *  Dock's own `reasonFor` (the host knows WHY: "Turn on Edit content first",
+   *  "Nothing to undo"). */
+  disabledReasonFor?: (entry: ToolEntry) => string | undefined;
   /** The persisted dock pins (already validated) — drives the pinned marker
    *  and the dock's own dedupe. */
   dockPins?: readonly string[];
@@ -218,7 +250,12 @@ export function paletteRowState(
   const interactive = PALETTE_INTERACTIVE_ONLY[entry.action];
   if (interactive !== undefined) return { enabled: false, reason: interactive };
   if (gate.isToolEnabled !== undefined && !gate.isToolEnabled(entry)) {
-    return { enabled: false, reason: DOCK_AVAILABILITY_REASON[entry.availability] };
+    // The dock's own order (ActionDock `reasonFor`): the host's live copy wins,
+    // then the registry's declared availability ("Run Recognize text first").
+    return {
+      enabled: false,
+      reason: gate.disabledReasonFor?.(entry) ?? DOCK_AVAILABILITY_REASON[entry.availability],
+    };
   }
   return { enabled: true, reason: undefined };
 }
