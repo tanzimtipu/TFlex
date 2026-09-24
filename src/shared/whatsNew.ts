@@ -23,6 +23,18 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.28.0',
+    date: '2026-09-23',
+    highlights: [
+      'A new workspace organised by stage of work: Pages, Edit, Review and Deliver (Ctrl+1 to Ctrl+4). Pick a stage and the tools for that stage come to you.',
+      'An action dock at the bottom of the page offers the next likely steps for whatever you have selected - rotate, extract, sign, export and more - and you can pin your favourites to it.',
+      'Press Ctrl+K for a command palette that searches every tool, recent file and action, and learns the ones you use most.',
+      'A new inspector on the right shows the properties of whatever is selected, with the actions that apply to it.',
+      'Page thumbnails now carry their own quick actions, and a tidier title bar puts Open, Save, Save As, Print and Multi Mode within reach.',
+      'Everything that was there before is still here: all 94 tools are reachable in two clicks or from Ctrl+K.',
+    ],
+  },
+  {
     version: '1.27.2',
     date: '2026-09-23',
     highlights: [
