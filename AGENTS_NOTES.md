@@ -3317,3 +3317,70 @@ spec", that means the VERSION SOURCE only.
 and `e2e/playwright.dev.config.js` (the dev suite config that excludes the installed/release specs BY
 FILENAME, because `--grep-invert` matches titles, not filenames). The migration inventory lives in
 `e2e/PHASE36-MIGRATION-INVENTORY.md`.
+
+## 2026-09-25: Release 1.29.0 - Phase 37 (the operator's 22-item STAGES feedback round)
+
+Release 1.29.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.29.0 with all
+four assets, and the public feed verifies (`version: 1.29.0`, sha512 `TFQpjrof...`, size 163303616).
+Commits: `729467d` (the phase work, 121 files), `a8e4666` (bump), tag `v1.29.0` (peels to `a8e4666`).
+Gates: `verify:full` 384 files / **5034 tests** green, the install gate 1.29.0, the canonical installed
+spec 9/9 (re-pointed), and the new installed headline spec 5/5.
+
+**The phase in one line:** the 22 operator items landed in six chunks - the responsive dock ladder and its
+one-row guarantee, the Inspector carrying the text controls at its top, the edit-text bar as
+Confirm/Delete/Cancel with the selection kept visible, the stage rail hidden on the welcome, the narrower
+panel (184px) and strips (150px), the Ctrl+K hint, and the in-app print dialog removed in favour of the
+standalone print window. Five defects (DEF-333..337, from ADV-083..086) were found by the gate and the
+adversary **inside the phase** and all closed before the release - three of them MEDIUM.
+
+**Lesson 1 - a documented rung order must be the AUTHORITY; a measured "does it fit" fallback must not
+override it.** DEF-334 (from ADV-083, MEDIUM): success criterion 10 names the exact responsive order
+(Inspector collapse @1200, panel @1000, labels @880, arrows @720), but the effective label rule was the
+MEASURED canvas-width/pill-band fit, so at the DEFAULT 1440 window every label was already gone while the
+Inspector and panel sat expanded - and Phase 37 growing the PAGES set from six to eight verbs is what
+pushed the measured need past the default band. That re-broke the CLOSED DEF-330, and it made a
+"labels hidden" state that reversed only at ~1500. Fix: the ladder decides the rung; the measurement may
+only drive the arrows lane. Corollary recorded in the same release: the Ctrl+K hint (operator item 21)
+was gated on that measured lane, so it was invisible at the default window - an operator's UI item must be
+verified AT THE DEFAULT WINDOW FIRST, not at whichever width makes the test pass.
+
+**Lesson 2 - a control that SHOWS an intent must RECORD that intent, not blind-toggle a stored bit.**
+DEF-335 (from ADV-084, MEDIUM): the Inspector/panel collapse control always called the preference toggle.
+When the ladder was forcing the collapse, the control's aria-label read "Expand inspector" - but the click
+stored `collapsed = true`, latching the OPPOSITE of the label, and the panel then did not reverse when the
+window grew (a second click was needed). Fix: `collapsePreferenceAfterToggle(effectiveCollapsed)` - the
+manual control expresses the state the user SEES. Rule: when an effective state comes from two sources
+(a user preference and an automatic rung), the manual control must resolve the effective state first.
+
+**Lesson 3 - the measurement must never depend on the state it controls.** DEF-337 (from ADV-086, LOW,
+the hardest of the five): the arrows should render only when the row overflows, but `useRowOverflow` read
+`clientWidth === 0` as "overflowing" while `.action-dock-scroll` was `display: contents` whenever the
+arrows were off - so the hook's own verdict removed the box it had measured
+(`0 -> overflow -> box -> fits -> no overflow -> no box -> 0`). It settled on dead arrows at 640 and
+flickered at 700. Fix: `clientWidth === 0` means UNKNOWN (never overflow), the scroll container keeps its
+box at every state (geometry keyed on a stable `data-dock-arrows-lane`), plus a change-guard. The first
+attempt at this fix shipped and failed its retest - if a fix makes a measurement feed its own input, it is
+not a fix.
+
+**Lesson 4 - a retired row/surface leaves its CSS TOKEN behind, silently offsetting whatever still reads
+it.** DEF-333 (MEDIUM): `.inspector { top: var(--toolbar-h, 52px) }` kept the retired Phase-36 command
+row's height, so the Phase 37 "flush Inspector" criterion measured a 52px gap against the canvas and the
+left panel. Fix: `top: 0` (the Inspector is a child of `.app-main`, whose padding box starts at the 44px
+caption line). Rule: when a surface is retired, grep the styles for its tokens (`--toolbar-h` here) and
+neutralise or delete them; the two remaining uses are dead `.tools-palette` rules for a component that is
+no longer mounted - a housekeeping candidate, not a live offset.
+
+**Lesson 5 - the "surface retirement -> sweep" rule applies to the INSTALLED spec too.** The canonical
+installed spec failed at CORE 1 because it asserted the `editMode` dock verb, which Phase 37 removed when
+the EDIT stage began enabling edit mode itself. Re-pointed to "the EDIT stage mounts `[data-edit-toolbar]`,
+leaving disarms it" - the meaning preserved (one edit toggle, in the stage), the selector current.
+
+**Also worth keeping:** every fix batch carried an assertion proving it (the ladder test, the collapse
+test, the print-entry test, the overflow test), and the DEF-337 overflow test was proven red without the
+fix before being accepted. The adversary's raw captures (`test-fixtures/adv-p37/out/`) and its Electron
+profile (`test-fixtures/adv-p37/userdata/`) stay untracked run output - the harnesses and fixtures are
+committed; a `.gitignore` entry for those two subdirs is tidy-up for a future pass.
+
+**Operator ruling recorded this phase:** the ladder breakpoints keep their EXCLUSIVE semantics - a rung
+named "@1200" fires AT 1200 downward (`width < 1200`), so 1200 itself is still expanded and 1199 is
+collapsed. The gate assertions were written to the implemented semantics rather than moving the threshold.
