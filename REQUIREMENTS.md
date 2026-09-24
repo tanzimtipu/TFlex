@@ -1952,3 +1952,94 @@ code reads them (preserve-if-valid, reject-if-invalid, mirroring the Phase-6 pat
   negative or non-number values are rejected/dropped.
 `toolsPaletteLayout` is retained as a TOLERATED LEGACY key for one release (no UI writes it; the validator
 must keep accepting it so an existing settings.json does not fail validation).
+
+## Phase 37 — STAGES feedback round (22 operator items)
+
+**Operator request (2026-09-24):** the 22 numbered items below (verbatim groupings). All of them are
+refinements of the Phase 36 surfaces - the design language, the motion tokens and every existing behaviour
+stay; nothing may be removed or hidden.
+
+**Features (grouped; the ruling text IS the contract)**
+
+**A. Inspector integration + chrome (items 1, 3, 5, 10, 22)**
+- The text-manipulation panel is INTEGRATED INTO the Inspector for BOTH the annotate flow and the edit flow:
+  the text manipulation sits at the TOP of the Inspector and the Inspector's existing content below it,
+  separated by a subtle divider; the whole column scrolls when it is too long.
+- The secondary panel that appears after choosing a tool from the dock (e.g. an annotation tool) renders as
+  ONE ROW with NO header. It follows the same responsive behaviours as the dock (E below).
+- The Inspector is FLUSH with the canvas top (no rounded left corner, no disjointed gaps) and gains an
+  expand/collapse control.
+- The Inspector's buttons are professional: a comfortable hit target and legible label size (no tiny text).
+- Rails and panels gain SUBTLE SEPARATORS between distinct controls/rows/text blocks so items read as
+  distinct elements, not a wall of plain text.
+
+**B. Thumbnail panel + rail (items 4, 8, 9, 15, 16, 18, 19)**
+- The panel's collapse/expand chevron must actually flip with the state (it currently never changes).
+- The Stage Rail is NOT visible on the welcome (home) screen.
+- The panel header's "Pages…" text is removed and the panel becomes narrower accordingly.
+- The Outline section's bottom is flush with the panel bottom, with a separator between the thumbnail area
+  and the Outline section.
+- The Multi Mode thumbnail strips are narrower (they carry too much empty space).
+- The Multi Mode strips get the SAME options as the single-mode panel, including the right-click menu.
+- Placement audit: no control or label touches the window/canvas edge ("Settings" currently does); icons,
+  panels and docks all get industry-standard padding and alignment.
+
+**C. Edit text (items 11, 12, 13)**
+- After selecting text, the action bar is `Confirm`, `Delete`, `Cancel` - the `Edit` option goes (selecting
+  the text already brings the text-manipulation panel).
+- Selecting text must NOT make it invisible - the selected text stays visible.
+- The "Edit content" verb is removed from the EDIT dock: entering the EDIT stage ENABLES edit mode in the
+  canvas (the stage is the switch).
+
+**D. Labels (item 14)** - "Renumber pages" is renamed "Rename pages" everywhere.
+
+**E. Action Dock behaviour (items 2, 6, 7, 21)**
+- The dock is ALWAYS ONE ROW. It must never stack vertically.
+- Responsive ladder as the window shrinks, in this exact order: (1) collapse the Inspector, (2) collapse the
+  thumbnail panel, (3) hide the dock verbs' LABELS to fit, (4) if still too wide, shrink the dock and show
+  left/right ARROW controls to scroll the verbs. Growing the window reverses the ladder.
+- The dock renders CONSISTENTLY in every theme (same surface, spacing, contrast).
+- The dock contains ALL the relevant tools for the stage BY DEFAULT, and a tool can be UNPINNED from it;
+  a small hint line above the dock points at `Ctrl+K` for searching tools.
+
+**F. Retirements (item 17)** - the in-app print dialog/window is REMOVED; the print entry points (title-bar
+Print, File > Print, `Ctrl+P`) open the standalone print window directly.
+
+**G. Bug (item 20)** - the `watermark` dock tool is greyed with "open a document first" even when a document
+IS open. The availability gate must reflect the real state.
+
+**Success criteria**
+
+1. With a text object selected in the annotate flow AND in the edit flow, the Inspector shows the text
+   manipulation at the top and its own content below, split by a subtle divider, and the column scrolls
+   without clipping (verified for a long control set at 640 and 1440 widths).
+2. The secondary tool panel (after picking a dock tool) renders one row, no header; at narrow widths it
+   follows the dock's label-hiding/arrow behaviours (E).
+3. The Inspector is flush with the canvas top (no rounded left corner, no gap), can be collapsed and
+   expanded, and its expanded state matches the canvas geometry; its buttons meet a professional size
+   (state the pixel targets).
+4. Every rail/panel shows subtle separators between its distinct controls/rows (a screenshot per surface).
+5. The thumbnail panel's chevron flips with the collapsed state; the "Pages…" header is gone and the panel is
+   narrower; the Outline is flush at the panel's bottom with a separator above it.
+6. The Stage Rail is absent on the welcome screen and present with a document open.
+7. Multi Mode's strips are narrower, carry the same options as single mode (drag-reorder, hover verbs,
+   right-click menu, multi-select) and look identical in behaviour.
+8. Edit text: the action bar is `Confirm` / `Delete` / `Cancel` (no `Edit`); the selected text stays VISIBLE;
+   and entering the EDIT stage enables edit mode in the canvas with no "Edit content" verb in the dock.
+9. "Rename pages" is the label everywhere (the dock/panel/palette/menu title).
+10. The dock is one row at every supported width and never stacks; the responsive ladder collapses the
+    Inspector, then the thumbnail panel, then the labels, then shows the arrows - in that order, reversing
+    when growing.
+11. The dock looks identical in light, dark and frosted (the same surface/spacing/contrast).
+12. The dock carries all the stage's tools by default, a tool can be unpinned, and the `Ctrl+K` hint appears
+    above it.
+13. The in-app print dialog is gone; the title-bar Print / File > Print / `Ctrl+P` open the standalone print
+    window (verified on the installed build).
+14. The watermark tool is enabled with a document open (the gate bug fixed) and disabled with none, with the
+    correct reason.
+15. No control or label touches a window/canvas edge (the placement audit), verified by measuring the edge
+    gaps of the header controls, the rail, the panels and the dock.
+
+**Settings impact:** one new field - `dockUnpinned?: string[]` (the tool ids the user removed from the dock;
+validated like `dockPins`: an array of non-empty strings, de-duplicated, unknown ids dropped on read, a
+cap to keep the file bounded). No other settings change.

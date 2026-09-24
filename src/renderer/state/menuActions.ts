@@ -222,6 +222,7 @@ export function gateOnActiveDoc(
  *  (DEF-065). */
 export function snapshotMenuEnabled(
   hasActiveDoc: boolean,
+  hasPrintableDoc: boolean = hasActiveDoc,
 ): {
   "menu.save": boolean;
   "menu.saveAs": boolean;
@@ -236,9 +237,10 @@ export function snapshotMenuEnabled(
     "menu.closeTab": hasActiveDoc,
     "menu.undo": hasActiveDoc,
     "menu.redo": hasActiveDoc,
-    // DEF-271 — Print shares the active-document gate: with no document
-    // open the File > Print item (and its Ctrl+P accelerator) must be
-    // disabled rather than silently doing nothing.
-    "menu.print": hasActiveDoc,
+    // DEF-271 / DEF-336 — Print shares the active-document gate, but an empty
+    // placeholder tab (an active tab with no engine session) has nothing to
+    // print, so the File > Print item (and its Ctrl+P accelerator) is disabled
+    // rather than silently doing nothing.
+    "menu.print": hasPrintableDoc,
   };
 }

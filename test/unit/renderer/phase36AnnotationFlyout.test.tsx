@@ -5,8 +5,8 @@
 // The REVIEW dock's Annotate primary opens ONE expandable surface that hosts
 // the EXISTING AnnotationToolbar (re-parented, selectors/aria kept). These
 // tests pin: closed renders nothing, open renders exactly ONE surface carrying
-// the real toolbar, arming a tool runs the existing annotation action, Esc
-// closes, and the close button closes.
+// the real toolbar, arming a tool runs the existing annotation action, and Esc
+// closes. Phase 37 (item 3): the surface is ONE row with no header/close row.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -114,16 +114,19 @@ describe("Phase 36 (chunk 3b) — the annotations flyout surface", () => {
     }
   });
 
-  it("closes on Escape and via the close button", () => {
+  it("renders ONE row with NO header and closes on Escape (Phase 37 item 3)", () => {
     const onClose = vi.fn();
     const { host, unmount } = renderFlyout(true, onClose);
     try {
+      // The header/close row is gone; the dock verb + Esc are the dismissal.
+      expect(host.querySelector(".annotation-flyout-header")).toBeNull();
+      expect(host.querySelector(".annotation-flyout-close")).toBeNull();
+      expect(host.querySelector(".annotation-flyout-title")).toBeNull();
+      expect(host.querySelector("[data-annotation-flyout-row]")).not.toBeNull();
       act((): void => {
         window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
       });
       expect(onClose).toHaveBeenCalledTimes(1);
-      clickOn(host.querySelector("[data-annotation-flyout] .annotation-flyout-close") as Element);
-      expect(onClose).toHaveBeenCalledTimes(2);
     } finally {
       unmount();
     }

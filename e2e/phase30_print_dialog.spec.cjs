@@ -1,32 +1,35 @@
-// Phase 30 chunk 1+2 focused verification (qa).
+// Phase 30 print entry points — MIGRATED for Phase 37 item 17.
 //
-// Verifies, in the real launched Electron app:
-//   1. the title-bar Print icon opens the Print dialog;
-//   2. the printer dropdown is populated from the REAL system printer list
-//      (this machine has "Microsoft Print to PDF");
+// Phase 37 removed the in-app print modal: the title-bar Print icon, File >
+// Print and Ctrl+P now open the STANDALONE print window (`?tfWindow=print`, a
+// separate top-level BrowserWindow). This spec now verifies the SAME
+// behaviours against that surface:
+//   1. the title-bar Print icon opens the standalone print window;
+//   2. the printer dropdown is populated from the REAL system printer list;
 //   3. the preview reflects a changed custom page range (1-2);
-//   4. Cancel closes the dialog;
-//   5. the Ctrl+P menu accelerator re-opens it (menu -> print:request ->
-//      renderer path). Delivered via webContents.sendInputEvent because CDP
-//      key injection cannot trigger Electron menu accelerators (see step 5).
+//   4. Cancel closes the print window;
+//   5. Ctrl+P (native input path) re-opens/focuses it;
+//   6. the shared PrintPanel fits the print window's viewport (no clipping).
 //
-// Fixture: test-fixtures/report.pdf (34 pages, text-rich) - a >= 3-page doc.
-//
-// NOT clicked: [data-print-confirm]. The real hand-off opens a Chromium print
-// dialog inside a hidden window (or prints to a device) and can hang the run;
-// the payload/print path is covered by the dialog unit tests and the backend
-// printToPDF composition check.
+// Fixture: test-fixtures/report.pdf (34 pages, text-rich).
+// NOT clicked: [data-print-confirm] (a real print can hang the run; the
+// payload path is covered by the dialog unit tests + the backend check).
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const {
+  hardClose,
+  openSamplePath,
+  openStandalonePrintWindow,
+  closeStandalonePrintWindow,
+} = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
 const MIDDOT = '\u00b7'; // the preview meta separator
 
-test('Phase 30 print dialog: icon + Ctrl+P + real printers + range preview', async () => {
+test('Phase 37 print entry points: title-bar icon + Ctrl+P + real printers + range preview (standalone window)', async () => {
   test.setTimeout(180000);
   const app = await launchApp();
   const win = await app.firstWindow();
@@ -39,63 +42,52 @@ test('Phase 30 print dialog: icon + Ctrl+P + real printers + range preview', asy
   win.on('pageerror', (err) => pageErrors.push(err.message));
 
   try {
-    // --- open a >= 3-page fixture -----------------------------------------
     await win.waitForSelector('.sample-card', { timeout: 30000 });
-    const fixture = getSamplePath('report.pdf');
-    await app.evaluate(async ({ dialog }, p) => {
-      dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
-    }, fixture);
-    await win.locator('button:has-text("Open PDF")').first().click();
-    await win.waitForSelector('.workspace', { timeout: 30000 });
+    await openSamplePath(win, app, getSamplePath('report.pdf'));
     await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
     await win.waitForTimeout(600);
     const pageCount = await win.evaluate(() => window.tflexDiagnostics().pageCount);
-    console.log(`[P30] fixture=report.pdf pageCount=${pageCount}`);
+    console.log(`[P37-P30] fixture=report.pdf pageCount=${pageCount}`);
     expect(pageCount, 'fixture has >= 3 pages').toBeGreaterThanOrEqual(3);
 
-    // --- 2. title-bar Print icon opens the dialog -------------------------
-    await win.click('[data-print]');
-    await win.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
+    // --- 1. the in-app modal is gone; the title-bar icon opens the window. ---
+    const modal = await win.evaluate(() => ({
+      dialog: document.querySelectorAll('[data-print-dialog]').length,
+      shell: document.querySelectorAll('[data-print-dialog-shell]').length,
+      klass: document.querySelectorAll('.print-dialog').length,
+    }));
+    console.log(`[P37-P30] in-app modal selectors=${JSON.stringify(modal)}`);
+    for (const [k, v] of Object.entries(modal)) expect(v, `no in-app ${k}`).toBe(0);
 
-    // The printer list is fetched asynchronously on open; wait until it has
-    // settled (a real option, or the empty/error state) before reading it.
-    await win.waitForFunction(
-      () => {
-        const sel = document.querySelector('[data-print-printer]');
-        if (sel === null) return false;
-        const hasReal = [...sel.querySelectorAll('option')].some((o) => o.value !== '');
-        const settled =
-          document.querySelector('[data-print-empty], [data-print-printers-error]') !== null;
-        return hasReal || settled;
-      },
-      null,
-      { timeout: 20000 },
-    );
+    const printPage = await openStandalonePrintWindow(app, win);
+    const info = await app.evaluate(({ BrowserWindow }) => {
+      const all = BrowserWindow.getAllWindows();
+      const pw = all.find((w) => w.webContents.getURL().includes('tfWindow=print'));
+      return { count: all.length, title: pw?.getTitle() };
+    });
+    console.log(`[P37-P30] standalone window=${JSON.stringify(info)}`);
+    expect(info.count).toBe(2);
+    expect(info.title).toBe('Print - TFlex');
 
-    const options = await win.$$eval('[data-print-printer] option', (opts) =>
-      opts.map((o) => ({ text: (o.textContent || '').trim(), value: o.value })),
-    );
-    console.log(`[P30] printer options=${JSON.stringify(options)}`);
+    // --- 2. the printer dropdown is populated. ---
+    const options = await printPage.$$eval('[data-print-printer] option', (opts) =>
+      opts.map((o) => ({ text: (o.textContent || '').trim(), value: o.value })));
+    console.log(`[P37-P30] printer options=${JSON.stringify(options)}`);
     expect(options.length, 'printer dropdown has at least one option').toBeGreaterThanOrEqual(1);
-    const pdfOption = options.find(
-      (o) => /pdf/i.test(o.text) || /pdf/i.test(o.value),
-    );
+    const pdfOption = options.find((o) => /pdf/i.test(o.text) || /pdf/i.test(o.value));
     expect(pdfOption, 'at least one printer option mentions PDF').toBeTruthy();
+    expect(await printPage.locator('[data-print-preview]').isVisible(), 'preview panel visible').toBe(true);
 
-    const previewVisible = await win.locator('[data-print-preview]').isVisible();
-    expect(previewVisible, 'preview panel is visible').toBe(true);
-
-    // --- 3. custom range 1-2 changes the preview page/sheet count ---------
-    const metaBefore = (await win.textContent('[data-print-preview-meta]')).trim();
-    console.log(`[P30] preview meta before=${JSON.stringify(metaBefore)}`);
+    // --- 3. custom range 1-2 changes the preview page/sheet count. ---
+    const metaBefore = (await printPage.textContent('[data-print-preview-meta]')).trim();
+    console.log(`[P37-P30] preview meta before=${JSON.stringify(metaBefore)}`);
     expect(metaBefore, 'preview starts at the full document count').toBe(
       `${pageCount} pages ${MIDDOT} ${pageCount} sheets`,
     );
-
-    await win.click('[data-print-range-custom]');
-    await win.fill('[data-print-range-input]', '1-2');
+    await printPage.click('[data-print-range-custom]');
+    await printPage.fill('[data-print-range-input]', '1-2');
     const expectedAfter = `2 pages ${MIDDOT} 2 sheets`;
-    await win.waitForFunction(
+    await printPage.waitForFunction(
       (want) => {
         const el = document.querySelector('[data-print-preview-meta]');
         return el !== null && el.textContent.trim() === want;
@@ -103,94 +95,59 @@ test('Phase 30 print dialog: icon + Ctrl+P + real printers + range preview', asy
       expectedAfter,
       { timeout: 8000 },
     );
-    const metaAfter = (await win.textContent('[data-print-preview-meta]')).trim();
-    console.log(`[P30] preview meta after=${JSON.stringify(metaAfter)}`);
+    const metaAfter = (await printPage.textContent('[data-print-preview-meta]')).trim();
+    console.log(`[P37-P30] preview meta after=${JSON.stringify(metaAfter)}`);
     expect(metaAfter, 'preview reflects the 1-2 custom range').toBe(expectedAfter);
 
-    // --- 4. Cancel closes the dialog --------------------------------------
-    await win.click('[data-print-cancel]');
-    await win.locator('[data-print-printer]').waitFor({ state: 'detached', timeout: 8000 });
-    expect(await win.locator('[data-print-printer]').count(), 'dialog closed by Cancel').toBe(0);
+    // --- 4. Cancel closes the print window. ---
+    await printPage.click('[data-print-cancel]');
+    await printPage.waitForEvent('close', { timeout: 8000 }).catch(() => {});
+    await win.waitForTimeout(600);
+    const afterCancel = await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows().filter((w) => w.webContents.getURL().includes('tfWindow=print')).length);
+    console.log(`[P37-P30] print windows after Cancel=${afterCancel}`);
+    expect(afterCancel, 'Cancel closed the print window').toBe(0);
 
-    // --- 5. Ctrl+P accelerator re-opens the dialog ------------------------
-    // NOTE (qa diagnostic): Playwright's `page.keyboard.press('Control+P')`
-    // injects the key through CDP, which reaches the renderer (observed
-    // keydown, defaultPrevented=false) but does NOT trigger Electron's
-    // browser-process menu accelerator. The accelerator itself is proven by
-    // delivering the same Ctrl+P key event through
-    // `webContents.sendInputEvent`, which is the native input path the OS
-    // uses. The renderer has no Ctrl+P handler, so the only route to the
-    // dialog is menu accelerator -> print:request -> renderer. Clicking the
-    // File > Print menu item directly also opened the dialog (same path).
+    // --- 5. Ctrl+P (native sendInputEvent) re-opens it. ---
+    const p2 = app.waitForEvent('window');
     await win.bringToFront();
     await app.evaluate(({ BrowserWindow }) => {
-      const w = BrowserWindow.getAllWindows()[0];
-      w.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'P', modifiers: ['control'] });
-      w.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'P', modifiers: ['control'] });
+      const main = BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes('tfWindow=print'));
+      main.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'P', modifiers: ['control'] });
+      main.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'P', modifiers: ['control'] });
     });
-    await win.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
-    console.log('[P30] Ctrl+P accelerator re-opened the dialog');
+    const printPage2 = await p2;
+    await printPage2.waitForSelector('[data-print-window]', { timeout: 30000 });
+    console.log('[P37-P30] Ctrl+P re-opened the standalone print window');
 
-    // --- 6. DEF-268 containment: footer inside the viewport, no dialog scroll
-    // Let the open animation settle so geometry is the steady state.
-    await win.waitForSelector('.print-dialog', { state: 'visible', timeout: 8000 });
-    await win.waitForTimeout(600);
-
-    const m = await win.evaluate(() => {
-      const dialog = document.querySelector('.print-dialog');
-      const body = document.querySelector('.print-dialog .modal-body');
-      const footer = document.querySelector('.print-dialog .modal-footer');
+    // --- 6. the shared PrintPanel fits the print window's viewport. ---
+    await printPage2.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
+    await printPage2.waitForTimeout(600);
+    const m = await printPage2.evaluate(() => {
+      const root = document.querySelector('[data-print-window]');
       const confirm = document.querySelector('[data-print-confirm]');
       const r = (el) => {
         const b = el.getBoundingClientRect();
         return { top: b.top, bottom: b.bottom, left: b.left, right: b.right };
       };
       return {
-        vw: window.innerWidth,
-        vh: window.innerHeight,
-        dialogScrollHeight: dialog.scrollHeight,
-        dialogClientHeight: dialog.clientHeight,
-        bodyScrollWidth: body.scrollWidth,
-        bodyClientWidth: body.clientWidth,
-        footer: r(footer),
+        vw: window.innerWidth, vh: window.innerHeight,
+        rootScrollHeight: root.scrollHeight, rootClientHeight: root.clientHeight,
         confirm: r(confirm),
       };
     });
-    console.log(`[P30][DEF268] measurements=${JSON.stringify(m)}`);
+    console.log(`[P37-P30] containment=${JSON.stringify(m)}`);
+    expect(m.rootScrollHeight, 'no window-level vertical overflow').toBeLessThanOrEqual(m.rootClientHeight + 1);
+    expect(m.confirm.bottom, 'the Print action is inside the print window viewport').toBeLessThanOrEqual(m.vh);
+    expect(m.confirm.left, 'the Print action is inside the print window viewport').toBeGreaterThanOrEqual(0);
 
-    // 1. the dialog itself must not scroll as a whole, and the body must not
-    //    hide horizontal overflow.
-    expect(
-      m.dialogScrollHeight,
-      'dialog has no dialog-level vertical scroll',
-    ).toBeLessThanOrEqual(m.dialogClientHeight + 1);
-    expect(
-      m.bodyScrollWidth,
-      'dialog body has no hidden horizontal overflow',
-    ).toBeLessThanOrEqual(m.bodyClientWidth + 1);
+    await printPage2.screenshot({ path: path.join(SHOTS, 'phase30-print-dialog.png') });
+    console.log(`[P37-P30] screenshot ${path.join(SHOTS, 'phase30-print-dialog.png')}`);
+    await closeStandalonePrintWindow(app, printPage2);
 
-    // 2. the footer must sit inside the viewport (and inside the 900 px
-    //    default window height).
-    expect(m.footer.bottom, 'footer bottom inside viewport').toBeLessThanOrEqual(m.vh);
-    expect(m.footer.bottom, 'footer bottom inside 900 px window').toBeLessThanOrEqual(900);
-
-    // 3. the primary Print action must be visible and clickable without
-    //    scrolling the dialog.
-    expect(await win.locator('[data-print-confirm]').isVisible(), 'Print button visible').toBe(true);
-    expect(m.confirm.bottom, 'Print button bottom inside viewport').toBeLessThanOrEqual(m.vh);
-
-    // --- 7. one screenshot of the open dialog -----------------------------
-    const dialogBeforeShot = await win.locator('.print-dialog').count();
-    const shotPath = path.join(SHOTS, 'phase30-print-dialog.png');
-    await win.screenshot({ path: shotPath });
-    const dialogAfterShot = await win.locator('.print-dialog').count();
-    console.log(
-      `[P30] screenshot=${shotPath} dialogBefore=${dialogBeforeShot} dialogAfter=${dialogAfterShot}`,
-    );
-
-    console.log(`[P30] consoleErrors=${JSON.stringify(consoleErrors)}`);
-    console.log(`[P30] pageErrors=${JSON.stringify(pageErrors)}`);
+    console.log(`[P37-P30] consoleErrors=${JSON.stringify(consoleErrors)}`);
+    console.log(`[P37-P30] pageErrors=${JSON.stringify(pageErrors)}`);
   } finally {
-    await hardClose(app, 'p30-print');
+    await hardClose(app, 'p37-p30-print');
   }
 });

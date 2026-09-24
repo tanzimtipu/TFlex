@@ -335,7 +335,7 @@ const REGISTRY = [
   },
   {
     id: 'renumberPages',
-    label: 'Renumber pages',
+    label: 'Rename pages',
     description: 'Set logical page labels (e.g. i, ii, iii).',
     icon: ArrowLeftRight,
     shortcut: '',
@@ -1284,9 +1284,10 @@ const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
   pageContextMenu: 'panel',
   clearPageSelection: 'panel',
   dragPage: 'panel',
-  // EDIT — the curated dock set is editMode/editText/editImage/editTextBox/
-  // recognizeText/cropPages; the edit layer itself hosts the tool toggles.
-  editMode: 'dock',
+  // EDIT — the curated dock set is editText/editImage/editTextBox/
+  // recognizeText/cropPages; Phase 37 (item 13) removed the `editMode`
+  // verb — entering the EDIT STAGE is the switch that turns edit mode on.
+  editMode: 'panel',
   editToolOff: 'panel',
   editText: 'dock',
   editTextBox: 'dock',
@@ -1392,38 +1393,66 @@ export function toolsForStage(stage: ToolStage): readonly ToolEntry[] {
   return TOOL_REGISTRY.filter((entry) => entry.stage === stage);
 }
 
-/** The Action Dock's CURATED verb set per stage, in render order. The
- *  concept "Action Dock" shows 5-7 verbs per stage, NOT every registry entry
- *  whose rail stage matches: panel/section/view controls (thumbnails, outline,
- *  per-page menus, clear, drag) and the non-concept commands (merge, renumber,
- *  rotate-counter-clockwise, watermark, the extra exports, every GLOBAL entry)
- *  keep a panel/palette home and must not crowd the dock (DEF-313). `|` in the
- *  concept's table separates visual groups; the dock renders one row.
+/** The Action Dock's verb set per stage, in render order.
  *
- *  PAGES:  rotate · extract · insertPages · replacePages | split · delete
- *  EDIT:   editMode (the toggle/primary) · editText · editImage · editTextBox
- *          | recognizeText · cropPages
- *  REVIEW: annotate (the flyout primary) · sign · stamp | flatten
- *  DELIVER: optimize · audit | exportPages · exportText · exportDocx
+ *  Phase 37 (item 21) WIDENED the dock from the Phase-36 curated 5-6 to the
+ *  stage's FULL relevant set: every registry entry whose canonical `stage` is
+ *  this stage and whose control is a CONTENT command. The rule (enforced by
+ *  `dockRelevantIdsForStage` and pinned in tests) is:
  *
- *  `editMode` is the EDIT primary and the ONLY control that turns Edit mode on
- *  (DEF-314): it is enabled whenever a document is open and shows its pressed
- *  state while Edit mode is on. */
+ *    relevant = entry.stage === stage
+ *             AND entry.surface !== 'panel'   (navigation/panel chrome)
+ *             AND entry.surface !== 'flyout'  (the annotation set; the dock
+ *                                              references it through `annotate`)
+ *
+ *  So the PAGES panel verbs (thumbnails, outline, page context menu, clear
+ *  selection, drag), the edit-layer toggles, the pane chrome and every GLOBAL
+ *  entry stay OUT, while the DIALOG commands the palette used to be the only
+ *  home for (Merge, Rename pages via the panel, Watermark, Forms, the comment
+ *  FDF import/export, Batch OCR, OCR suspects, Create from images) now ride the
+ *  dock by default. The list below keeps a deliberate primary-first order; the
+ *  SET is asserted equal to the derived rule in the unit tests.
+ *
+ *  `editMode` is retired (Phase 37 item 13): entering the EDIT stage is the
+ *  switch that turns Edit mode on, so the dock no longer offers that verb. */
 export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
-  pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete'],
-  edit: ['editMode', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'cropPages'],
-  review: ['annotate', 'sign', 'stamp', 'flatten'],
-  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx'],
+  pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
+  edit: ['editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
+  review: [
+    'annotate',
+    'sign',
+    'stamp',
+    'flatten',
+    'forms',
+    'watermark',
+    'exportComments',
+    'importComments',
+  ],
+  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
 };
 
-/** True when the Action Dock hosts this entry as a verb. Entries the REVIEW
- *  flyout hosts (`surface: 'flyout'`) and every panel/palette entry are
- *  skipped: the dock renders only the curated `DOCK_STAGE_IDS` set. */
+/** The Phase-37 relevance rule for one entry (see `DOCK_STAGE_IDS`). */
+export function isDockRelevantEntry(entry: ToolEntry, stage: Stage): boolean {
+  if (entry.stage !== stage) return false;
+  return entry.surface !== 'panel' && entry.surface !== 'flyout';
+}
+
+/** The `relevant` set for a stage, derived straight from the registry in
+ *  registry order. `DOCK_STAGE_IDS` must contain exactly these ids; the unit
+ *  tests assert the equality so the rule cannot drift from the closed list. */
+export function dockRelevantIdsForStage(stage: Stage): readonly string[] {
+  return TOOL_REGISTRY.filter((e) => isDockRelevantEntry(e, stage)).map((e) => e.id);
+}
+
+/** True when the Action Dock hosts this entry as a verb. Phase 37 (item 21):
+ *  the dock renders the explicit `DOCK_STAGE_IDS` set, which now includes the
+ *  palette's dialog commands; the flyout-hosted annotation tools stay off (the
+ *  `annotate` primary references the whole set). */
 export function isDockSurfaceEntry(entry: ToolEntry): boolean {
   return (entry.surface ?? 'dock') === 'dock';
 }
 
-/** The registry ACTIONS the curated Action Dock hosts in some stage. DEF-327 —
+/** The registry ACTIONS the Action Dock hosts in some stage. DEF-327 —
  *  the Command Palette asks the dock's own gate about exactly these actions and
  *  keeps its host-level availability for everything else, so the two surfaces
  *  can never disagree about a verb they both show. */
@@ -1439,14 +1468,16 @@ export function isDockHostedAction(action: string): boolean {
   return DOCK_HOSTED_ACTIONS.has(action);
 }
 
-/** The Action Dock's curated verb set for a stage, resolved from the registry
- *  by id so each verb reuses the registry's own icon/label/gate. A stage with
- *  no curated list (or `global`) renders no dock verbs. */
+/** The Action Dock's verb set for a stage, resolved from the registry by id so
+ *  each verb reuses the registry's own icon/label/gate. The explicit list is
+ *  authoritative (it may include palette-surface dialog commands), so the
+ *  surface filter is not re-applied here. A stage with no list (or `global`)
+ *  renders no dock verbs. */
 export function dockToolsForStage(stage: ToolStage): readonly ToolEntry[] {
   if (stage === 'global') return [];
   return DOCK_STAGE_IDS[stage].flatMap((id) => {
     const entry = BY_ID.get(id);
-    return entry === undefined || !isDockSurfaceEntry(entry) ? [] : [entry];
+    return entry === undefined ? [] : [entry];
   });
 }
 

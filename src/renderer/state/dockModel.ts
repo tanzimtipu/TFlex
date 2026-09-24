@@ -124,10 +124,11 @@ export function dockAvailabilityFor(
 ): boolean | undefined {
   // View-level gates the registry cannot express from host state alone.
   if (entry.action === 'clearPageSelection') return args.pageSelectionCount > 0;
-  // DEF-314 — `editModeToggle` IS the control that turns Edit mode ON, so it is
-  // enabled while Edit mode is OFF; only the edit-layer TOOL verbs need Edit
-  // mode already on. DEF-327 — the palette reports the same verdict (and the
-  // dock's own "Turn on Edit content first" copy) for these rows.
+  // DEF-314 / Phase 37 (item 13) — the EDIT stage is the Edit-mode switch, so
+  // the `editModeToggle` verb no longer rides the dock; only the edit-layer
+  // TOOL verbs need Edit mode already on. DEF-327 — the palette reports the
+  // same verdict (and the dock's own "Turn on Edit content first" copy) for
+  // these rows.
   if (entry.action.startsWith('editTool')) return args.editModeOpen;
   if (entry.action === 'annotationColor' || entry.action === 'annotationPenWidth') return false;
   // DEF-327 — the undo stacks are renderer state the registry cannot see; an
@@ -138,6 +139,24 @@ export function dockAvailabilityFor(
   if (args.viewActions[entry.action] !== undefined) return true;
   // Not a verb this pane governs: the caller's own availability decides.
   if (!isDockHostedAction(entry.action)) return undefined;
+  return args.appEnabled?.(entry.id) ?? false;
+}
+
+/**
+ * Phase 37 (item 20) — the dock's final boolean gate. `dockAvailabilityFor`
+ * answers THREE-state because the palette needs `undefined` for entries the
+ * pane does not govern; the DOCK, however, is rendering this entry right now
+ * (a stage verb or a user PIN), so an `undefined` verdict must fall through to
+ * the app-level gate the dock already holds rather than be coerced to
+ * "unavailable". That coercion is what greyed the pinned Watermark verb with
+ * "Open a document first" while a document was open.
+ */
+export function dockEnabledWithFallback(
+  entry: ToolEntry,
+  args: DockAvailabilityArgs,
+): boolean {
+  const verdict = dockAvailabilityFor(entry, args);
+  if (verdict !== undefined) return verdict;
   return args.appEnabled?.(entry.id) ?? false;
 }
 
@@ -210,6 +229,89 @@ export function removeDockPin(pins: readonly string[], id: string): string[] {
 /** True when the dock has room for one more pin. */
 export function canPinMore(pins: readonly string[]): boolean {
   return pins.length < DOCK_MAX_PINS;
+}
+
+/** The un-pin cap (matches the settings validator's `DOCK_UNPINNED_CAP`). */
+export const DOCK_MAX_UNPINNED = 200;
+
+/**
+ * Phase 37 (item 21) — the tools the user has REMOVED from the dock (the
+ * inverse of a pin). Like `sanitizeDockPins`, this drops unknown registry ids
+ * (the renderer owns the registry; main cannot validate ids), collapses
+ * duplicates and caps the list. A non-array reads as no un-pins.
+ */
+export function sanitizeDockUnpinned(raw: unknown, max: number = DOCK_MAX_UNPINNED): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== 'string' || value.length === 0) continue;
+    if (toolById(value) === undefined) continue;
+    if (out.includes(value)) continue;
+    out.push(value);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Add an un-pin: unknown ids are refused, duplicates are a no-op, and the
+ *  list is capped (a full list keeps its current entries rather than evicting). */
+export function addDockUnpin(
+  unpinned: readonly string[],
+  id: string,
+  max: number = DOCK_MAX_UNPINNED,
+): string[] {
+  if (toolById(id) === undefined) return [...unpinned];
+  if (unpinned.includes(id)) return [...unpinned];
+  if (unpinned.length >= max) return [...unpinned];
+  return [...unpinned, id];
+}
+
+/** Remove an un-pin; a missing id is a no-op. */
+export function removeDockUnpin(unpinned: readonly string[], id: string): string[] {
+  if (!unpinned.includes(id)) return [...unpinned];
+  return unpinned.filter((p) => p !== id);
+}
+
+/** The dock's two curated lists: explicit cross-stage pins, and the tools the
+ *  user removed from their stage's default set. */
+export interface DockCuration {
+  pins: readonly string[];
+  unpinned: readonly string[];
+}
+
+/**
+ * Phase 37 (item 21) — the dock now shows the stage's FULL relevant tool set by
+ * default, so a pin is only the extra cross-stage placement. Pin a tool that
+ * IS in the current stage's default set and the operation RESTORES it (drops
+ * it from `unpinned`) instead of storing a redundant pin; pin any other tool
+ * and it rides along as an explicit pin. Either way the id leaves `unpinned`.
+ */
+export function pinDockTool(
+  curation: DockCuration,
+  id: string,
+  defaultIds: readonly string[],
+): { pins: string[]; unpinned: string[] } {
+  const unpinned = removeDockUnpin(sanitizeDockUnpinned(curation.unpinned), id);
+  if (defaultIds.includes(id)) return { pins: [...curation.pins], unpinned };
+  return { pins: addDockPin(curation.pins, id), unpinned };
+}
+
+/**
+ * Unpin a tool: remove any explicit pin AND, when the tool is part of the
+ * current stage's default set, record it in `unpinned` so it stays gone until
+ * it is re-pinned. Both writes are idempotent, so a double-click cannot corrupt
+ * the lists.
+ */
+export function unpinDockTool(
+  curation: DockCuration,
+  id: string,
+  defaultIds: readonly string[],
+): { pins: string[]; unpinned: string[] } {
+  const pins = removeDockPin(sanitizeDockPins(curation.pins), id);
+  const unpinned = defaultIds.includes(id)
+    ? addDockUnpin(sanitizeDockUnpinned(curation.unpinned), id)
+    : sanitizeDockUnpinned(curation.unpinned);
+  return { pins, unpinned };
 }
 
 /**

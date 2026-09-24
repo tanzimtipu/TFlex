@@ -15,7 +15,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openStandalonePrintWindow } = require('./lib/helpers.cjs');
 const { openFile, tmpCopy, REPORT } = require('./lib/p33_common.cjs');
 
 let app = null;
@@ -127,9 +127,9 @@ test('E-a virtual-PDF print produces the file inside TFlex, no print window', as
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
 
-  await win.click('[data-print]');
-  await chooseVirtualPdf(win);
-  const previewMeta = await win.locator('[data-print-preview-meta]').innerText();
+  const printPage = await openStandalonePrintWindow(app, win);
+  await chooseVirtualPdf(printPage);
+  const previewMeta = await printPage.locator('[data-print-preview-meta]').innerText();
 
   const outPath = path.join(os.tmpdir(), `tflex-p35-ea-${Date.now()}.pdf`);
   await app.evaluate(({ dialog }, p) => {
@@ -138,9 +138,9 @@ test('E-a virtual-PDF print produces the file inside TFlex, no print window', as
 
   const mainPid = await app.evaluate(() => process.pid);
   const before = listOsWindows(mainPid);
-  await win.click('[data-print-confirm]');
-  await win.waitForSelector('[data-print-success]', { timeout: 60000 });
-  const success = await win.locator('[data-print-success]').innerText();
+  await printPage.click('[data-print-confirm]');
+  await printPage.waitForSelector('[data-print-success]', { timeout: 60000 });
+  const success = await printPage.locator('[data-print-success]').innerText();
   await win.waitForTimeout(1500);
   const after = listOsWindows(mainPid);
   const printWindows = visiblePrintWindows(after);
@@ -167,14 +167,8 @@ test('E-b detached print window prints while moved outside the app window', asyn
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
 
-  await win.click('[data-print]');
-  await win.waitForSelector('[data-print-detach]', { state: 'visible', timeout: 15000 });
-  const pagePromise = app.waitForEvent('window');
-  await win.click('[data-print-detach]');
-  const printPage = await pagePromise;
-  await printPage.waitForSelector('[data-print-window]', { timeout: 30000 });
-  await printPage.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
-  await printPage.waitForTimeout(1000);
+  const printPage = await openStandalonePrintWindow(app, win);
+  await printPage.waitForTimeout(600);
 
   // Print-only UI: no app chrome/tabs, printer list + preview present.
   const chrome = await printPage.evaluate(() => ({

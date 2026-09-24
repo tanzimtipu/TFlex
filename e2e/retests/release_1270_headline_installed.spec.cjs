@@ -18,7 +18,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose, dismissUpdatePrompt } = require('../lib/helpers.cjs');
+const { hardClose, dismissUpdatePrompt, openStandalonePrintWindow } = require('../lib/helpers.cjs');
 const { SHOTS, openFile, tmpCopy, twoPaneSetup } = require('../lib/p33_common.cjs');
 
 const EXPECTED = require('../../package.json').version;
@@ -88,13 +88,10 @@ async function openDetachedPrintWindow() {
   await openFile(app, win, tmpCopy(require('../lib/p33_common.cjs').REPORT, 'p3305-print.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
-  await win.click('[data-print]');
-  await win.waitForSelector('[data-print-detach]', { state: 'visible', timeout: 15000 });
-  const pagePromise = app.waitForEvent('window');
-  await win.click('[data-print-detach]');
-  const printPage = await pagePromise;
-  await printPage.waitForSelector('[data-print-window]', { timeout: 30000 });
-  await printPage.waitForTimeout(800);
+  // Phase 37 item 17 — the title-bar Print icon opens the standalone window
+  // directly (the in-app modal and its detach control were removed).
+  const printPage = await openStandalonePrintWindow(app, win);
+  await printPage.waitForTimeout(600);
   return printPage;
 }
 
@@ -169,20 +166,13 @@ test('1.27.0 (b): virtual PDF destination produces the PDF with no Windows/Chrom
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
 
-  await win.click('[data-print]');
-  await win.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
-  await win.waitForFunction(() => {
-    const sel = document.querySelector('[data-print-printer]');
-    if (sel === null) return false;
-    const hasReal = [...sel.querySelectorAll('option')].some((o) => o.value !== '');
-    return hasReal || document.querySelector('[data-print-empty], [data-print-printers-error]') !== null;
-  }, null, { timeout: 20000 });
-  const options = await win.$$eval('[data-print-printer] option', (opts) => opts.map((o) => ({ text: (o.textContent || '').trim(), value: o.value })));
+  const printPage = await openStandalonePrintWindow(app, win);
+  const options = await printPage.$$eval('[data-print-printer] option', (opts) => opts.map((o) => ({ text: (o.textContent || '').trim(), value: o.value })));
   console.log(`[release-1270-g5b] printers=${JSON.stringify(options)}`);
   const pdfOption = options.find((o) => /pdf/i.test(o.text) || /pdf/i.test(o.value));
   expect(pdfOption, 'a virtual PDF printer is offered').toBeTruthy();
-  await win.selectOption('[data-print-printer]', pdfOption.value);
-  await win.waitForTimeout(400);
+  await printPage.selectOption('[data-print-printer]', pdfOption.value);
+  await printPage.waitForTimeout(400);
 
   // Stub the app's own Save-As seam (the native dialog cannot be automated).
   const outPath = path.join(os.tmpdir(), `tflex-release1270-${Date.now()}.pdf`);
@@ -194,9 +184,9 @@ test('1.27.0 (b): virtual PDF destination produces the PDF with no Windows/Chrom
   const before = listOsWindows(mainPid);
   console.log(`[release-1270-g5b] OS windows before confirm=${JSON.stringify(before)}`);
 
-  await win.click('[data-print-confirm]');
-  await win.waitForSelector('[data-print-success]', { timeout: 60000 });
-  const success = await win.locator('[data-print-success]').innerText();
+  await printPage.click('[data-print-confirm]');
+  await printPage.waitForSelector('[data-print-success]', { timeout: 60000 });
+  const success = await printPage.locator('[data-print-success]').innerText();
   console.log(`[release-1270-g5b] success=${JSON.stringify(success)}`);
   await win.waitForTimeout(1500);
   const after = listOsWindows(mainPid);
@@ -217,7 +207,10 @@ test('1.27.0 (b): virtual PDF destination produces the PDF with no Windows/Chrom
 
   const windowsAfter = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
   console.log(`[release-1270-g5b] app windows after=${windowsAfter}`);
-  expect(windowsAfter, 'no extra app/print window after the virtual-PDF print').toBe(1);
+  // Phase 37 item 17 — the standalone print window stays open after the print,
+  // so there are exactly TWO app windows (the app + the print window) and no
+  // extra OS print window (asserted above).
+  expect(windowsAfter, 'no extra app/print window beyond the app + the standalone print window').toBe(2);
 });
 
 // ---------------------------------------------------------------------------

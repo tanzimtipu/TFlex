@@ -25,6 +25,7 @@ import {
   PALETTE_GROUPS,
   PALETTE_TOOL_IDS,
   TOOL_REGISTRY,
+  dockRelevantIdsForStage,
   dockToolsForStage,
   paletteEntries,
   toolById,
@@ -80,7 +81,7 @@ const PALETTE_TEXT: Record<string, readonly [string, string]> = {
   delete: ["Delete pages", "Remove the selected page from the document."],
   insertPages: ["Insert pages", "Insert a blank page, or import pages from another PDF."],
   replacePages: ["Replace pages", "Swap a contiguous range with another PDF; outline and links survive."],
-  renumberPages: ["Renumber pages", "Set logical page labels (e.g. i, ii, iii)."],
+  renumberPages: ["Rename pages", "Set logical page labels (e.g. i, ii, iii)."],
   cropPages: ["Crop pages", "Set the CropBox/TrimBox for every page."],
   sign: ["Sign", "Draw, type, or place a saved signature."],
   forms: ["Forms", "Fill AcroForm fields. Flatten when finished."],
@@ -201,32 +202,41 @@ describe("toolsRegistry — canonical surface + the curated dock sets (DEF-313)"
     );
   });
 
-  it("returns the CURATED dock set per stage, in the concept's order", () => {
+  it("returns the FULL relevant dock set per stage (Phase 37 item 21)", () => {
     expect(dockToolsForStage("pages").map((e) => e.id)).toEqual([
-      "rotate", "extract", "insertPages", "replacePages", "split", "delete",
+      "rotate", "extract", "insertPages", "replacePages", "split", "delete", "merge", "cropPages",
     ]);
     expect(dockToolsForStage("edit").map((e) => e.id)).toEqual([
-      "editMode", "editText", "editImage", "editTextBox", "recognizeText", "cropPages",
+      "editText", "editImage", "editTextBox", "recognizeText", "batchOcr", "ocrSuspects",
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
-      "annotate", "sign", "stamp", "flatten",
+      "annotate", "sign", "stamp", "flatten", "forms", "watermark",
+      "exportComments", "importComments",
     ]);
     expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([
-      "optimize", "audit", "exportPages", "exportText", "exportDocx",
+      "optimize", "audit", "exportPages", "exportText", "exportDocx", "createFromImages",
     ]);
     expect(dockToolsForStage("global")).toEqual([]);
+    // The closed list must equal the derived Phase-37 relevance rule exactly, so
+    // the rule cannot drift from the rendered set.
+    for (const stage of ["pages", "edit", "review", "deliver"] as const) {
+      expect(
+        new Set(dockToolsForStage(stage).map((e) => e.id)),
+        stage,
+      ).toEqual(new Set(dockRelevantIdsForStage(stage)));
+    }
   });
 
-  it("keeps the non-concept verbs OUT of the dock (each keeps a real home)", () => {
+  it("keeps the panel/navigation verbs and GLOBAL entries OUT of the dock", () => {
     const allDockIds = ["pages", "edit", "review", "deliver"].flatMap((s) =>
       dockToolsForStage(s as "pages").map((e) => e.id),
     );
     for (const id of [
-      "merge", "renumberPages", "rotateCounterClockwise", "pageThumbnails",
+      "renumberPages", "rotateCounterClockwise", "pageThumbnails",
       "outlinePanel", "pageContextMenu", "clearPageSelection", "dragPage",
-      "editToolOff", "editDefaultFont", "batchOcr", "ocrSuspects",
-      "forms", "watermark", "exportComments", "importComments",
-      "annotationsPanel", "createFromImages",
+      "editMode", "editToolOff", "editDefaultFont", "annotationsPanel",
+      "annSelect", "annHighlight", "annInk", "annColor", "annPenWidth",
+      "stagePages", "open", "save", "undo",
     ]) {
       expect(allDockIds, id).not.toContain(id);
       // ...and each is still a registered entry (nothing removed).

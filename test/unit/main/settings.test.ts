@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, DOCK_PINS_CAP, TOOL_USAGE_CAP, normalizeAnnotationRecentTools, normalizeSettings, SettingsService } from '../../../src/main/services/settings';
+import { ANNOTATION_RECENT_TOOLS_CAP, DEFAULT_SETTINGS, DOCK_PINS_CAP, DOCK_UNPINNED_CAP, TOOL_USAGE_CAP, normalizeAnnotationRecentTools, normalizeSettings, SettingsService } from '../../../src/main/services/settings';
 import type { AppSettings, RecentFile } from '../../../src/shared/types';
 
 let dir: string;
@@ -1504,6 +1504,83 @@ describe('Phase 36: toolsPaletteLayout tolerated legacy key', () => {
       expect(result.value.dockPins).toEqual(['rotate', 'merge', 'delete', 'ocr']);
       expect(result.value.toolUsage).toEqual({ rotate: 9, merge: 4 });
       expect(result.value.pagesPanelCollapsed).toBe(true);
+    }
+  });
+});
+
+describe('Phase 37: dockUnpinned validation', () => {
+  it('preserves a valid array in order', () => {
+    const result = normalizeSettings({ dockUnpinned: ['rotate', 'delete', 'merge'] });
+    expect(result.dockUnpinned).toEqual(['rotate', 'delete', 'merge']);
+  });
+
+  it('drops non-string entries and empty strings', () => {
+    const result = normalizeSettings({ dockUnpinned: ['rotate', 7, null, '', 'delete', {}, 'merge'] as unknown[] });
+    expect(result.dockUnpinned).toEqual(['rotate', 'delete', 'merge']);
+  });
+
+  it('dedupes duplicates keeping the first occurrence', () => {
+    const result = normalizeSettings({ dockUnpinned: ['rotate', 'delete', 'rotate', 'merge', 'delete'] });
+    expect(result.dockUnpinned).toEqual(['rotate', 'delete', 'merge']);
+  });
+
+  it('truncates an over-long array to DOCK_UNPINNED_CAP preserving order', () => {
+    const raw = Array.from({ length: DOCK_UNPINNED_CAP + 10 }, (_, i) => `tool-${i}`);
+    const result = normalizeSettings({ dockUnpinned: raw });
+    expect(result.dockUnpinned).toHaveLength(DOCK_UNPINNED_CAP);
+    expect(result.dockUnpinned?.[0]).toBe('tool-0');
+    expect(result.dockUnpinned?.[DOCK_UNPINNED_CAP - 1]).toBe(`tool-${DOCK_UNPINNED_CAP - 1}`);
+    expect(result.dockUnpinned?.[DOCK_UNPINNED_CAP]).toBeUndefined();
+  });
+
+  it('truncates after de-duplication, not before', () => {
+    const raw = Array.from({ length: DOCK_UNPINNED_CAP + 10 }, () => 'rotate');
+    const result = normalizeSettings({ dockUnpinned: raw });
+    expect(result.dockUnpinned).toEqual(['rotate']);
+  });
+
+  it('rejects non-array values (field left absent)', () => {
+    for (const bad of ['rotate', 7, null, undefined, {}, { 0: 'rotate' }] as unknown[]) {
+      const result = normalizeSettings({ dockUnpinned: bad });
+      expect(result.dockUnpinned).toBeUndefined();
+      expect('dockUnpinned' in result).toBe(false);
+    }
+  });
+
+  it('accepts an array whose entries all drop as an empty array', () => {
+    const result = normalizeSettings({ dockUnpinned: [1, null, ''] as unknown[] });
+    expect(result.dockUnpinned).toEqual([]);
+    expect('dockUnpinned' in result).toBe(true);
+  });
+
+  it('save/load round-trips dockUnpinned', async () => {
+    const svc = new SettingsService(file);
+    await svc.save({ ...structuredClone(DEFAULT_SETTINGS), dockUnpinned: ['rotate', 'merge'] });
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.dockUnpinned).toEqual(['rotate', 'merge']);
+    }
+    const onDisk = JSON.parse(await readFile(file, 'utf8'));
+    expect(onDisk.dockUnpinned).toEqual(['rotate', 'merge']);
+  });
+
+  it('invalid dockUnpinned on disk is dropped on load without corrupting other fields', async () => {
+    await writeFile(file, JSON.stringify({
+      theme: 'light',
+      geometry: DEFAULT_SETTINGS.geometry,
+      recentFiles: [],
+      pagesPanelCollapsed: true,
+      dockUnpinned: 'rotate',
+    }), 'utf8');
+    const svc = new SettingsService(file);
+    const result = await svc.load();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.dockUnpinned).toBeUndefined();
+      expect('dockUnpinned' in result.value).toBe(false);
+      expect(result.value.pagesPanelCollapsed).toBe(true);
+      expect(result.value.theme).toBe('light');
     }
   });
 });

@@ -5,6 +5,125 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-337: Phase 37 the dock's scroll arrows render when the row already fits, so clicking them does nothing
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-086)
+- Phase: 37
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf`.
+2. Press Ctrl+4 (DELIVER) and set the window to 700, 640 and 719; read `[data-dock-scroll]` scrollWidth/clientWidth and `[data-action-dock][data-dock-arrows]`, then click `[data-dock-arrow="right"]` and read `scrollLeft`.
+3. Press Ctrl+3 (REVIEW), open the Annotate flyout, and repeat at 719/640 on `[data-annotation-flyout-scroll]` and its arrows.
+
+Expected: the arrows scroll the verb row; where the row already fits, the arrows are not offered (fail-loud: no control that does nothing).
+Actual: at 640 the dock renders `data-dock-arrows="true"` with `scrollWidth === clientWidth === 195` (nothing to scroll) and clicking either arrow leaves `scrollLeft` at 0; the state oscillates across reads (700: false/true/false, 640: true/false/true). At 719 the arrows do work (scrollWidth 144 / clientWidth 94, right arrow scrollLeft 0 -> 50.67). The annotation flyout's arrows are correctly absent (scrollWidth === clientWidth === 195 at 719/640). Root cause: `useRowOverflow` treats `clientWidth === 0` as overflowing, but `.action-dock-scroll` is `display: contents` while the arrows are off, so the scroller has no box; the hook turns the arrows on, the box appears and fits, the hook turns them off, the box disappears - a feedback loop whose settled state is timing-dependent.
+
+Severity: LOW -- a clickable control that does nothing at some widths, and a flickering arrow lane; no data or workflow impact.
+
+Screenshot: screenshots/phase37-def337-arrows-719.png (the arrows at 719, where they do scroll).
+
+History:
+- qa: opened (from ADV-086)
+- qa: retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/phase37_def334_337_retest.spec.cjs`. `npm.cmd run test:e2e -- e2e/phase37_def334_337_retest.spec.cjs -g "DEF-337 dead"` -> FAILED at `at 640 the DELIVER row fits, so no arrows` (`Expected: "false" / Received: "true"`). Raw: 640 reads `[{"arrows":"true","scrollWidth":195,"clientWidth":195},...]`; 700 reads `[{"arrows":"false"},{"arrows":"true","scrollWidth":195,"clientWidth":195},{"arrows":"false"}]`; 719 `{"arrows":"true","scrollWidth":144,"clientWidth":94}` and right arrow `scrollLeft 0 -> 50.67`. The flyout half passes (`-g "DEF-337 flyout"` -> 1 passed; 719/640 `arrows:"false"`, `scrollWidth === clientWidth === 195`). Remains OPEN -- the dock's dead arrows are not fixed.
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0). `npm.cmd run test:e2e -- e2e/phase37_def334_337_retest.spec.cjs -g "DEF-337"` -> 2 passed. Raw: DELIVER 700 three reads identical `{"arrows":"false","arrowCount":0,"scrollWidth":195,"clientWidth":195}`; DELIVER 640 three reads identical `{"arrows":"false","arrowCount":0,"scrollWidth":195,"clientWidth":195}`; DELIVER 719 three reads identical `{"arrows":"true","arrowCount":2,"scrollWidth":144,"clientWidth":94}` and right arrow `scrollLeft 0 -> 50.67`; flyout 719/640 `{"arrows":"false","arrowCount":0,"scrollWidth":195,"clientWidth":195}`. The arrows are absent and stable where the row fits, present and scrolling where it overflows. The full retest file is 5 passed; the migrated `e2e/phase37_gate.spec.cjs` is 7 passed.
+
+## DEF-336: Phase 37 Print is enabled on an empty placeholder tab but silently does nothing
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-085)
+- Phase: 37
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf` (one document tab).
+2. Click the title-bar `+` (`[data-new-tab]`) so an EMPTY placeholder tab becomes active.
+3. Read `[data-print].disabled` and the native `Menu.getApplicationMenu().getMenuItemById('menu.print').enabled`; click the title-bar Print and invoke the native item.
+
+Expected: an enabled Print opens the standalone print window; if there is no printable document the control is DISABLED (with a reason) and does not accept the click.
+Actual: with the empty tab active, `[data-print].disabled === false` and `menu.print.enabled === true`, but neither entry opens a print window and no toast appears.
+
+Severity: MEDIUM -- an enabled control that cannot run and does not explain why.
+
+Screenshot: screenshots/phase37-def336-empty-tab-print.png (welcome + disabled Print).
+
+History:
+- qa: opened (from ADV-085)
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/phase37_def334_337_retest.spec.cjs`. `npm.cmd run test:e2e -- e2e/phase37_def334_337_retest.spec.cjs -g "DEF-336"` -> 1 passed. Raw: empty tab active `{"tabs":2,"welcome":true,"disabled":true,"title":"Open a document to print"}`; native `menu.print` `{"enabled":false}`; a forced click on the disabled title-bar Print opened no window (`before=0 after=0`). With the document tab active: `{"disabled":false,"title":"Print (Ctrl+P)"}`, native `menu.print` `{"enabled":true}`, and the standalone print window opened. The disabled control now explains why and no clickable print control is a silent no-op.
+
+## DEF-335: Phase 37 one click on the Inspector/panel Expand control at a ladder-collapsed width latches the collapse
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-084)
+- Phase: 37
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf`; Ctrl+1 (PAGES).
+2. Set 1100 (ladder rung 1; the Inspector is collapsed and the control reads "Expand inspector"). Click `[data-inspector-collapse]` ONCE, then grow to 1300.
+3. Repeat for the panel at 900 (`[data-rail-collapse]`, "Expand panel"), then grow to 1300.
+4. At a ladder-idle width (1300) toggle both controls both ways.
+
+Expected: one click on the Expand affordance records the EXPAND intent, so the surface is expanded once the ladder releases; at a ladder-idle width the control is a plain both-ways toggle.
+Actual: one click at 1100 left the Inspector collapsed at 1300 (`insp1300AfterOneClick=true`); the panel behaved the same at 900 -> 1300. Root cause: the control toggled the raw user preference (default false) to true, latching the opposite of its label.
+
+Severity: MEDIUM -- the surface does not reverse when the window grows; recoverable by a second click.
+
+History:
+- qa: opened (from ADV-084)
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/phase37_def334_337_retest.spec.cjs`. `npm.cmd run test:e2e -- e2e/phase37_def334_337_retest.spec.cjs -g "DEF-335"` -> 1 passed. Raw: inspector at 1100 `collapsed=true`, label "Expand inspector"; after one click still `true`; at 1300 `collapsed=false` (expanded). Panel at 900 `collapsed=true`, label "Expand panel"; after one click still `true`; at 1300 `collapsed=false`. At idle 1300 both controls toggle both ways (inspector false -> true -> false; panel false -> true -> false).
+
+## DEF-334: Phase 37 at the default 1440 window the PAGES dock drops every label while the Inspector and panel stay expanded
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-083)
+- Phase: 37
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper and open `report.pdf`; Ctrl+1 (PAGES).
+2. Sweep the window 1920 -> 640 and back, recording `.app-main[data-inspector-collapsed]`, `[data-context-panel][data-context-panel-collapsed]`, and the dock's `data-dock-icon-only` / `data-dock-arrows` / visible `.action-dock-label` count / verb-row count.
+
+Expected: the ladder order from REQUIREMENTS.md Phase 37 (E) / success criterion 10 -- collapse the Inspector (<1200), then the panel (<1000), then hide the labels (<880), then show the arrows (<720) -- and the eight PAGES labels kept (not dropped) at the default window, with the arrows lane used when the labelled row cannot fit.
+Actual: the label rung was driven by the measured canvas width, not the 880 breakpoint: at the default 1440x900 window the PAGES dock was icon-only (0 labels) with the Inspector and panel both expanded; labels only returned at innerWidth >= ~1500.
+
+Severity: MEDIUM -- the documented ladder order was not what rendered; the verbs stayed clickable, so it degraded rather than blocked.
+
+Screenshot: screenshots/phase37-def334-ladder-1440.png (the eight PAGES labels kept, arrows lane engaged).
+
+History:
+- qa: opened (from ADV-083)
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0) with `e2e/phase37_def334_337_retest.spec.cjs`. `npm.cmd run test:e2e -- e2e/phase37_def334_337_retest.spec.cjs -g "DEF-334"` -> 1 passed. Raw at 1440: `labels=8, visibleLabels=6, clippedLabels=["Rotate pages","Crop pages"], iconOnly=false, arrows=true, scrollWidth=509/clientWidth=450, verbRows=1, nowrap` -- the labels are kept and the arrows lane scrolls them instead of dropping them. Ladder order (down and up identical): inner=1200 Inspector expanded (breakpoint is strictly <1200), inner=1199 Inspector collapsed; inner=999 panel collapsed; inner=879 iconOnly=true, labels=0; inner=719 arrows=true. No wrap/stacking at any width (verbRows=1, flex-wrap nowrap).
+
+## DEF-333: Phase 37 item 3/5 -- the Inspector is not flush with the canvas top (52px gap)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 37
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0), then `npm.cmd run test:e2e -- e2e/phase37_gate.spec.cjs -g "P37-A"` (launches the real app through the canonical helper and opens `report.pdf` at 1440x900).
+2. Read the `[P37-A] flush=...` line.
+
+Expected: the Inspector is FLUSH with the canvas top -- success criterion 3 ("The Inspector is flush with the canvas top (no rounded left corner, no gap)") and operator item 3/5. `.inspector.top` should equal `.workspace-main.top` (and the left ContextPanel top).
+
+Actual: `.inspector` top = 96 while `.workspace-main` (canvas) top = 44 and the left ContextPanel top = 44 -- a 52px gap above the Inspector. The radius is correctly 0 and the shadow none, so only the top gap fails. Cause: `.inspector { top: var(--toolbar-h, 52px) }` (styles.css ~6734) resolves `--toolbar-h` to `--chrome-commandbar-h` = 52px, although the command-bar row that token reserved was retired in Phase 36; the Inspector therefore sits one dead command-row below the canvas top while the left panel is flush at 44.
+
+Severity: MEDIUM -- an explicit Phase 37 requirement (flush Inspector) is unmet and the two side panels visibly misalign; visual/layout only, no data or workflow impact.
+
+Screenshot: screenshots/phase37-inspector-text.png, screenshots/phase37-panel.png (the right panel starts ~52px below the left panel/canvas top).
+
+Evidence / command output:
+- `[P37-A] flush={"inspectorTop":96,"inspectorLeft":1176,"inspectorRight":1440,"workspaceTop":44,"workspaceRight":1440,"contextPanelTop":44,"toolbarH":"52px","radius":"0px","shadow":"none","borderLeft":"0.666667px rgba(15, 23, 42, 0.12)"}` -- assertion `Math.abs(inspectorTop - workspaceTop) <= 2` failed with `Received: 52`.
+- The same offset is visible in the multi-strip and panel screenshots (`screenshots/phase37-multi-strips.png`).
+
+History:
+- qa: opened
+- orchestrator: FIX-READY -- relaying frontend-dev: `.inspector { top: var(--toolbar-h, 52px) }` -> `top: 0` (the Inspector is a direct child of `.app-main`, whose padding box starts at the 44px caption line, the same edge as the canvas and the ContextPanel); the retired-token assertion was inverted in `test/unit/renderer/phase37Inspector.test.tsx` so the offset cannot return. Evidence: `npm.cmd run verify` exit 0; `npm.cmd run test:unit -- test/unit/renderer/phase37Inspector.test.tsx` 1 file / 13 passed; `npm.cmd run build:renderer` exit 0. Expected measurement: inspectorTop 44, gap 0. Other `--toolbar-h` uses reported but not changed (dead `.tools-palette` rules at styles.css:6666 / :9749 - the palette is no longer mounted; left as a separate cleanup decision).
+- qa: CLOSED -- retested on the rebuilt app (`npm.cmd run build`, exit 0). `npm.cmd run test:e2e -- e2e/phase37_gate.spec.cjs -g "P37-A"` -> the `[P37-A] flush=...` line now reads `{"inspectorTop":44,"inspectorLeft":1176,"inspectorRight":1440,"workspaceTop":44,"workspaceRight":1440,"contextPanelTop":44,"toolbarH":"52px","radius":"0px","shadow":"none","borderLeft":"0.666667px rgba(15, 23, 42, 0.12)"}` -- inspectorTop 44 == workspaceTop 44 == contextPanelTop 44, gap 0, radius 0px, shadow none. The flush criterion passes. (The same P37-A run fails later at line 250 on a stale assertion that encodes the pre-DEF-335 latch behaviour, and P37-A2 fails at line 344 on a stale assertion that encodes the pre-DEF-337 always-on flyout arrows; both are test-implementation staleness, not the flush defect.)
+
 ## DEF-332: Phase 36 full dev suite -- the edit-box overlay does not move on drag while textbox/callout/note do (phase25 C3)
 
 - Status: CLOSED

@@ -23,6 +23,18 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.29.0',
+    date: '2026-09-25',
+    highlights: [
+      'The tool dock keeps every tool on a single row and reflows as the window narrows - collapsing panels, then labels, then arrows.',
+      'The Inspector sits flush against the canvas and puts the text controls at its top.',
+      'Editing text keeps your selection visible, with Confirm, Delete and Cancel on the bar.',
+      'A narrower thumbnail panel and a flush Outline give the page more room, and the stage rail stays out of the way on the welcome screen.',
+      'Printing now opens in its own window.',
+      'Multi Mode panes are slimmer and carry the full set of page actions.',
+    ],
+  },
+  {
     version: '1.28.0',
     date: '2026-09-23',
     highlights: [

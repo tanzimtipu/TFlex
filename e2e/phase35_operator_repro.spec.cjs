@@ -10,7 +10,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, dismissUpdatePrompt, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
+const { hardClose, dismissUpdatePrompt, toggleMultiModeViaPalette, openStandalonePrintWindow } = require('./lib/helpers.cjs');
 const {
   twoPaneSetup,
   focusPaneByPage,
@@ -705,56 +705,37 @@ test('P35-D print dialog confinement and PDF printer', async () => {
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
 
-  await win.click('[data-print]');
-  await win.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
-  await win.waitForFunction(() => {
-    const sel = document.querySelector('[data-print-printer]');
-    if (sel === null) return false;
-    const hasReal = [...sel.querySelectorAll('option')].some((o) => o.value !== '');
-    return hasReal || document.querySelector('[data-print-empty], [data-print-printers-error]') !== null;
-  }, null, { timeout: 20000 });
-
-  const options = await win.$$eval('[data-print-printer] option', (opts) => opts.map((o) => ({ text: (o.textContent || '').trim(), value: o.value })));
+  const printPage = await openStandalonePrintWindow(app, win);
+  const options = await printPage.$$eval('[data-print-printer] option', (opts) => opts.map((o) => ({ text: (o.textContent || '').trim(), value: o.value })));
   console.log(`[P35-D] printers=${JSON.stringify(options)}`);
   const pdfOption = options.find((o) => /pdf/i.test(o.text) || /pdf/i.test(o.value));
-  if (pdfOption) await win.selectOption('[data-print-printer]', pdfOption.value);
+  if (pdfOption) await printPage.selectOption('[data-print-printer]', pdfOption.value);
+  await printPage.waitForTimeout(500);
+
+  // Confinement: the standalone window is a top-level OS window that lives
+  // entirely outside the app window (the in-app modal's clamp is retired).
+  const rectBefore = await app.evaluate(({ BrowserWindow }) => {
+    const pw = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('tfWindow=print'));
+    return pw.getBounds();
+  });
+  console.log(`[P35-D] print window rect (before move)=${JSON.stringify(rectBefore)}`);
+
+  await app.evaluate(({ BrowserWindow }) => {
+    const all = BrowserWindow.getAllWindows();
+    const pw = all.find((w) => w.webContents.getURL().includes('tfWindow=print'));
+    const main = all.find((w) => !w.webContents.getURL().includes('tfWindow=print'));
+    const mb = main.getBounds();
+    pw.setBounds({ x: mb.x + mb.width + 200, y: mb.y + 120, width: 820, height: 860 });
+  });
   await win.waitForTimeout(500);
-
-  // Confinement: dialog rect vs viewport, then drag the header far outside.
-  const rectBefore = await win.evaluate(() => {
-    const el = document.querySelector('[data-print-dialog-shell] .modal-dialog, .print-dialog');
-    const r = el.getBoundingClientRect();
-    return { top: Math.round(r.top), left: Math.round(r.left), right: Math.round(r.right), bottom: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height), vw: window.innerWidth, vh: window.innerHeight };
+  const moved = await app.evaluate(({ BrowserWindow }) => {
+    const all = BrowserWindow.getAllWindows();
+    const pw = all.find((w) => w.webContents.getURL().includes('tfWindow=print'));
+    const main = all.find((w) => !w.webContents.getURL().includes('tfWindow=print'));
+    return { print: pw.getBounds(), main: main.getBounds() };
   });
-  console.log(`[P35-D] dialog rect (before drag)=${JSON.stringify(rectBefore)}`);
-  await shot('p35d-print-dialog-in-app.png');
-
-  const handle = await win.locator('[data-print-drag-handle]').first().boundingBox();
-  if (handle) {
-    await win.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
-    await win.mouse.down();
-    await win.mouse.move(handle.x + 4000, handle.y + 4000, { steps: 20 });
-    await win.mouse.up();
-    await win.waitForTimeout(500);
-  }
-  const rectAfter = await win.evaluate(() => {
-    const shell = document.querySelector('[data-print-dialog-shell]');
-    const el = document.querySelector('.print-dialog');
-    const r = el.getBoundingClientRect();
-    return { transform: shell ? getComputedStyle(shell).transform : null, top: Math.round(r.top), left: Math.round(r.left), right: Math.round(r.right), bottom: Math.round(r.bottom), vw: window.innerWidth, vh: window.innerHeight };
-  });
-  console.log(`[P35-D] dialog rect (after drag 4000,4000)=${JSON.stringify(rectAfter)}`);
-  await shot('p35d-print-dialog-dragged.png');
-
-  // Reset the drag so the confirm button is reachable.
-  const handle2 = await win.locator('[data-print-drag-handle]').first().boundingBox();
-  if (handle2) {
-    await win.mouse.move(handle2.x + handle2.width / 2, handle2.y + handle2.height / 2);
-    await win.mouse.down();
-    await win.mouse.move(handle2.x - 4000, handle2.y - 4000, { steps: 20 });
-    await win.mouse.up();
-    await win.waitForTimeout(500);
-  }
+  console.log(`[P35-D] print window rect (after move)=${JSON.stringify(moved)}`);
+  expect(moved.print.x, 'the print window lives outside the app window').toBeGreaterThan(moved.main.x + moved.main.width);
 
   const windowsBefore = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map((w) => ({ id: w.id, title: w.getTitle(), visible: w.isVisible() })));
   console.log(`[P35-D] windows before confirm=${JSON.stringify(windowsBefore)}`);
@@ -762,7 +743,7 @@ test('P35-D print dialog confinement and PDF printer', async () => {
   console.log(`[P35-D] main electron pid=${mainPid}`);
 
   // Click confirm with Microsoft Print to PDF and observe what the user sees.
-  await win.click('[data-print-confirm]');
+  await printPage.click('[data-print-confirm]').catch(() => {});
   const seenIds = new Set(windowsBefore.map((w) => w.id));
   const newWindows = [];
   const t0 = Date.now();

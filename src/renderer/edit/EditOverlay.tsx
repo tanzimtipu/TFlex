@@ -181,6 +181,11 @@ export interface EditOverlayProps {
    *  then commits the run it owns (it knows the rect and keeps the white
    *  mask cover over the original until the engine refresh lands). */
   textCommitToken?: number;
+  /** Phase 37 (item 11) — the action bar's Cancel: discard the panel's
+   *  live text session WITHOUT committing (the host restores whatever the
+   *  live keystrokes mutated). Optional so direct-mount hosts / tests that
+   *  predate it keep working (Cancel then only reverts the pending move). */
+  onDiscardTextEdit?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +281,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     onDeleteTextBox,
     textStyle,
     onTextTargetChange,
+    onDiscardTextEdit,
   } = props;
 
   // Phase 26 — the SELECTED text target (a committed box or a text run).
@@ -297,9 +303,9 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
   // DEF-152 — a real move drag on a committed box now parks a PENDING
   // move instead of committing on pointerup: the box's registry rect
   // follows the drag live, but the ENGINE move only happens when the
-  // box's action bar Confirm is pressed (the bar now carries
-  // Confirm / Edit / Delete). While pending, the white eraser cover
-  // (DEF-155) stays mounted so the OLD baked rect never flashes
+  // box's action bar Confirm is pressed (Phase 37 item 11: the bar
+  // carries Confirm / Delete / Cancel). While pending, the white eraser
+  // cover (DEF-155) stays mounted so the OLD baked rect never flashes
   // before the confirmed engine mask + proxy refresh land.
   const [pendingTextBoxMove, setPendingTextBoxMove] = useState<{
     id: string;
@@ -323,10 +329,10 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     text: string;
   } | null>(null);
   // DEF-153 — the text tool's SELECTED (movable) text run. Single
-  // click selects the run + shows the Confirm/Edit/Delete bar;
-  // double click opens the inline editor. The run's rect is the
-  // move target; a drag parks a pending run move committed by the
-  // bar's Confirm (onCommitTextEdit with oldRect).
+  // click selects the run + shows the Confirm / Delete / Cancel bar
+  // (Phase 37 item 11); the panel's Text field edits it live. The run's
+  // rect is the move target; a drag parks a pending run move committed
+  // by the bar's Confirm (onCommitTextEdit with oldRect).
   const [runSelection, setRunSelection] = useState<{
     rect: { x: number; y: number; width: number; height: number };
     text: string;
@@ -749,6 +755,10 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       const hit = hitTextBox(boxesForPage, pt);
       if (hit !== null) {
         dispatch({ type: "select-text-box", textBoxId: hit.id });
+        // Phase 37 (item 11) — selecting a box IS the text-manipulation
+        // panel's entry point (the bar's Edit verb is gone): make the box
+        // the panel's Text target right away.
+        setTextTarget({ kind: "box", id: hit.id, page, rect: { ...hit.rect }, text: hit.text });
         movedRef.current = false;
         // DEF-152 — pressing another box reverts any unconfirmed
         // move of a different box (the engine never received it).
@@ -772,6 +782,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       setRunSelection(null);
       setPendingRunMove(null);
       dispatch({ type: "select-text-box", textBoxId: null });
+      setTextTarget(null);
       setBoxDrag({ from: pt, to: pt });
       e.preventDefault();
       return;
@@ -1184,6 +1195,17 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
     return null;
   })();
 
+  // Phase 37 (item 12) — the text the RunLivePreview paints over the eraser.
+  // A live panel session wins; otherwise the selected run's committed text
+  // is shown, so selecting text never hides it (the eraser above masks the
+  // baked run and this is what replaces it).
+  const runPreviewText =
+    tool === "text" && textTarget !== null && textTarget.kind === "run"
+      ? textLive !== null && textLive.length > 0
+        ? textLive
+        : textTarget.text
+      : null;
+
   return (
     <div
       ref={rootRef}
@@ -1292,8 +1314,10 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               onConfirm={(): void => {
                 if (pendingTextBoxMove === null) {
                   // No pending move — Confirm commits the selection
-                  // (closes the bar; nothing else changed).
+                  // (closes the bar; the panel's live session commits
+                  // through the target clear).
                   dispatch({ type: "select-text-box", textBoxId: null });
+                  setTextTarget(null);
                   return;
                 }
                 if (pendingTextBoxMove.id !== box.id) return;
@@ -1301,21 +1325,24 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
                 // the engine; the bar + eraser stay mounted until the
                 // engine mask + proxy refresh resolve (DEF-155).
                 void confirmPendingBoxMove();
-              }}
-              onEdit={(): void => {
-                // Phase 26 — make this box the panel Text field's target
-                // (the inline editor is retired).
-                setTextTarget({
-                  kind: "box",
-                  id: box.id,
-                  page,
-                  rect: { ...box.rect },
-                  text: box.text,
-                });
+                setTextTarget(null);
               }}
               onDelete={(): void => {
                 setPendingTextBoxMove(null);
+                // Phase 37 (item 11) — discarding the live session restores
+                // whatever the panel's keystrokes had mutated in the registry.
+                onDiscardTextEdit?.();
+                setTextTarget(null);
                 onDeleteTextBox?.(box.id);
+              }}
+              onCancel={(): void => {
+                // Phase 37 (item 11) — Cancel reverts the renderer-local
+                // pending move (the engine never received it), discards any
+                // live panel session, and dismisses the selection.
+                revertPendingBoxMove();
+                onDiscardTextEdit?.();
+                setTextTarget(null);
+                dispatch({ type: "select-text-box", textBoxId: null });
               }}
             />
           );
@@ -1381,17 +1408,6 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             setRunSelection(null);
             setPendingRunMove(null);
           }}
-          onEdit={(): void => {
-            // Phase 26 — make this run the panel Text field's target
-            // (the inline editor is retired).
-            setTextTarget({
-              kind: "run",
-              id: "",
-              page,
-              rect: { ...runSelection.rect },
-              text: runSelection.text,
-            });
-          }}
           onDelete={(): void => {
             const style: EditTextStyle = {
               font: defaultFont,
@@ -1408,15 +1424,27 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             setRunSelection(null);
             setPendingRunMove(null);
           }}
+          onCancel={(): void => {
+            // Phase 37 (item 11) — Cancel reverts the renderer-local pending
+            // move (the engine never saw it), discards any live panel
+            // session, and dismisses the selection + panel target. Same
+            // dismiss semantics as a press on the empty page.
+            onDiscardTextEdit?.();
+            setPendingRunEdit(null);
+            setPendingRunMove(null);
+            setRunSelection(null);
+            setTextTarget(null);
+          }}
           confirmLabel="Confirm"
-          editLabel="Edit"
           deleteLabel="Delete"
+          cancelLabel="Cancel"
           confirmTitle="Confirm the move"
-          editTitle="Edit text"
           deleteTitle="Delete text (mask)"
+          cancelTitle="Cancel (revert the move)"
           confirmAria="Confirm text run move"
-          editAria="Edit text run"
           deleteAria="Delete text run"
+          cancelAria="Cancel text run changes"
+          cancelAfterDelete
           dataActionPrefix="textrun"
         />
       )}
@@ -1503,12 +1531,15 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       {/* Phase 26 — the selected text RUN's live preview: the panel's
           Text field is the editor, so the run's rect is masked (the
           eraser above) and the session text is painted at the run's
-          position on every keystroke. No in-canvas editor exists. */}
-      {tool === "text" && textTarget !== null && textTarget.kind === "run" &&
-        textLive !== undefined && textLive !== null && textLive.length > 0 && (
+          position on every keystroke.
+          Phase 37 (item 12) — the preview must ALWAYS back the mask: a
+          bare selection (no panel session yet) falls back to the run's
+          committed text, so the selected text stays VISIBLE instead of
+          a white hole. */}
+      {runPreviewText !== null && runPreviewText.length > 0 && (
           <RunLivePreview
-            rect={textTarget.rect}
-            text={textLive}
+            rect={textTarget === null ? { x: 0, y: 0, width: 0, height: 0 } : textTarget.rect}
+            text={runPreviewText}
             style={textStyle ?? defaultEditTextStyle(defaultFont)}
             cssScale={cssScale}
           />
@@ -1840,25 +1871,26 @@ interface PlacementToolbarProps {
  *  text box. Anchored just under the box (like the image
  *  PlacementToolbar) with three actions: Confirm commits a pending
  *  move (the box's drag used to commit implicitly on pointerup — now
- *  it parks a pending move that this button confirms), Edit reopens
- *  the inline editor with the box's committed content, Delete routes
- *  through `onDeleteTextBox` (the host's engine.deleteTextBox). The
- *  bar stops the pointerdown so a button press never starts a
- *  drag-to-create on the page behind it. The buttons reuse the
- *  SHARED content-action-bar chrome (DEF-153 consistency); the
- *  legacy `data-edit-box-action` attributes stay as stable
- *  selectors. */
+ *  it parks a pending move that this button confirms), Delete routes
+ *  through `onDeleteTextBox` (the host's engine.deleteTextBox), and
+ *  Phase 37 (item 11) Cancel reverts the pending move / discards the
+ *  live session. The old Edit verb is gone: selecting the box already
+ *  makes it the panel Text target. The bar stops the pointerdown so a
+ *  button press never starts a drag-to-create on the page behind it.
+ *  The buttons reuse the SHARED content-action-bar chrome (DEF-153
+ *  consistency); the legacy `data-edit-box-action` attributes stay as
+ *  stable selectors. */
 interface TextBoxToolbarProps {
   box: TextBoxPlacement;
   cssScale: number;
   pageWidthPt: number;
   onConfirm: () => void;
-  onEdit: () => void;
   onDelete: () => void;
+  onCancel: () => void;
 }
 
 function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
-  const { box, cssScale, pageWidthPt, onConfirm, onEdit, onDelete } = props;
+  const { box, cssScale, pageWidthPt, onConfirm, onDelete, onCancel } = props;
   // Position the toolbar just under the box, anchored to its left
   // edge. Clamp inside the page.
   const topPt = box.rect.y + box.rect.height + 4;
@@ -1885,16 +1917,6 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
       </button>
       <button
         type="button"
-        className="toolbox-action-btn edit-box-toolbar-btn"
-        onClick={onEdit}
-        data-edit-box-action="edit"
-        aria-label="Edit text box"
-        title="Edit text"
-      >
-        Edit
-      </button>
-      <button
-        type="button"
         className="toolbox-action-btn toolbox-action-btn--delete edit-box-toolbar-btn edit-box-toolbar-btn-danger"
         onClick={onDelete}
         data-edit-box-action="delete"
@@ -1902,6 +1924,16 @@ function TextBoxToolbar(props: TextBoxToolbarProps): ReactElement {
         title="Delete text box"
       >
         Delete
+      </button>
+      <button
+        type="button"
+        className="toolbox-action-btn toolbox-action-btn--cancel edit-box-toolbar-btn"
+        onClick={onCancel}
+        data-edit-box-action="cancel"
+        aria-label="Cancel text box changes"
+        title="Cancel (revert the move)"
+      >
+        Cancel
       </button>
     </TfBar>
   );

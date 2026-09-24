@@ -216,6 +216,17 @@ interface Harness {
   unmount: () => void;
 }
 
+/** Phase 37 (item 6) — the compact `...` lane is still exercised here with the
+ *  arrows rung explicitly OFF: these tests model a wide VIEWPORT (ladder rungs
+ *  1-3 only) whose measured canvas band is narrow, which is exactly when the
+ *  `...` lane (not the arrows) applies. */
+const NO_ARROWS = {
+  inspectorCollapsed: false,
+  panelCollapsed: false,
+  iconOnly: false,
+  arrows: false,
+} as const;
+
 function mountDock(hostWidth: number, options: Partial<ActionDockProps> = {}): Harness {
   const host = document.createElement("div");
   host.style.position = "relative";
@@ -357,7 +368,7 @@ describe("DEF-315 — the dock clears the pills at every supported host width", 
 // ---------------------------------------------------------------------------
 
 describe("DEF-315 — the dock yields before it reaches a pill", () => {
-  it("drops the labels on the measured band even when the host is above 900px", () => {
+  it("keeps the labels on the measured band above the 880 rung, routing to arrows", () => {
     const wide = mountDock(1440, { dockPins: ["zoomIn", "zoomOut", "fitWidth", "fitPage"] });
     const tight = mountDock(1000, { dockPins: ["zoomIn", "zoomOut", "fitWidth", "fitPage"] });
     const plain = mountDock(1000);
@@ -365,11 +376,15 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
       expect(wide.dock.getAttribute("data-dock-icon-only")).toBe("false");
       expect(wide.dock.querySelector(".action-dock-label")).not.toBeNull();
       // DEF-330 — the band is the pill-FREE one: 1000px host leaves 588px, and
-      // a labelled dock with four pins needs ~682px, so it yields.
+      // a labelled dock with four pins needs ~682px.
       expect(tight.dock.getAttribute("data-dock-band")).toBe("588");
       expect(tight.dock.getAttribute("data-dock-free-band")).toBe("588");
-      expect(tight.dock.getAttribute("data-dock-icon-only")).toBe("true");
-      expect(tight.dock.querySelector(".action-dock-label")).toBeNull();
+      // DEF-334 — 1000 is above the 880 rung, so the labels STAY and the row
+      // scrolls with the arrows instead of yielding the labels.
+      expect(tight.dock.getAttribute("data-dock-icon-only")).toBe("false");
+      expect(tight.dock.querySelector(".action-dock-label")).not.toBeNull();
+      expect(tight.dock.getAttribute("data-dock-arrows")).toBe("true");
+      expect(tight.dock.querySelector("[data-dock-overflow]")).toBeNull();
       // Without pins the six PAGES labels (~451px) still fit the 588px band.
       expect(plain.dock.getAttribute("data-dock-icon-only")).toBe("false");
     } finally {
@@ -379,28 +394,17 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
     }
   });
 
-  it("collapses the verbs that do not fit the band into the `...` chip, keeping the pins", () => {
-    const { dock, unmount } = mountDock(640, { dockPins: ["zoomIn"], toolUsage: { rotate: 9, extract: 8 } });
+  it("keeps every verb reachable in the arrows lane when the band cannot fit the pins", () => {
+    const { dock, unmount } = mountDock(640, { dockPins: ["zoomIn"], toolUsage: { rotate: 9, extract: 8 }, ladder: NO_ARROWS });
     try {
-      const chip = dock.querySelector<HTMLElement>("[data-dock-overflow]");
-      expect(chip).not.toBeNull();
+      // DEF-334 — a labelled row that cannot fit prefers the arrows lane over
+      // dropping labels: nothing hides behind a `...` menu, the pins stay.
+      expect(dock.getAttribute("data-dock-icon-only")).toBe("false");
+      expect(dock.getAttribute("data-dock-arrows")).toBe("true");
+      expect(dock.querySelector("[data-dock-overflow]")).toBeNull();
+      expect([...dock.querySelectorAll('[data-dock-group="primary"] [data-dock-verb]')]).toHaveLength(8);
       expect([...dock.querySelectorAll("[data-dock-pin]")].map((el) => el.getAttribute("data-dock-pin"))).toEqual([
         "zoomIn",
-      ]);
-      // band 164px -> capacity 3, one slot taken by the pin.
-      expect([...dock.querySelectorAll('[data-dock-group="primary"] [data-dock-verb]')]).toHaveLength(2);
-      // Nothing is hidden: the four collapsed verbs live in the chip's menu.
-      expect(dock.querySelectorAll("[data-dock-overflow-item]")).toHaveLength(0);
-      act((): void => {
-        (chip as HTMLElement).click();
-      });
-      const items = [...dock.querySelectorAll<HTMLElement>("[data-dock-overflow-item]")];
-      expect(items).toHaveLength(4);
-      expect(items.map((el) => el.getAttribute("data-dock-overflow-item"))).toEqual([
-        "insertPages",
-        "replacePages",
-        "split",
-        "delete",
       ]);
     } finally {
       unmount();
@@ -408,13 +412,13 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
   });
 
   it("lets a lifted dock use the host width (the pills are no longer beside it)", () => {
-    const { dock, unmount } = mountDock(540);
+    const { dock, unmount } = mountDock(540, { ladder: NO_ARROWS });
     try {
       expect(dock.getAttribute("data-dock-lift")).toBe("true");
       expect(dock.style.getPropertyValue("--dock-lift")).toBe(`${PILL_H + DOCK_PILL_GAP}px`);
       expect(Number.parseFloat(dock.style.maxWidth)).toBe(516);
-      // Plan width is the host: all six curated PAGES verbs stay inline.
-      expect([...dock.querySelectorAll("[data-dock-group='primary'] [data-dock-verb]")]).toHaveLength(6);
+      // Plan width is the host: all eight relevant PAGES verbs stay inline.
+      expect([...dock.querySelectorAll("[data-dock-group='primary'] [data-dock-verb]")]).toHaveLength(8);
       expect(dock.querySelector("[data-dock-overflow]")).toBeNull();
     } finally {
       unmount();
@@ -422,12 +426,12 @@ describe("DEF-315 — the dock yields before it reaches a pill", () => {
   });
 
   it("keeps the pinned verbs reachable at the app's minimum-width host", () => {
-    const { dock, unmount } = mountDock(420, { dockPins: ["zoomIn"] });
+    const { dock, unmount } = mountDock(420, { dockPins: ["zoomIn"], ladder: NO_ARROWS });
     try {
       expect(dock.getAttribute("data-dock-lift")).toBe("true");
       expect(Number.parseFloat(dock.style.maxWidth)).toBe(396);
       expect([...dock.querySelectorAll("[data-dock-pin]")]).toHaveLength(1);
-      expect([...dock.querySelectorAll("[data-dock-group='primary'] [data-dock-verb]")]).toHaveLength(6);
+      expect([...dock.querySelectorAll("[data-dock-group='primary'] [data-dock-verb]")]).toHaveLength(8);
     } finally {
       unmount();
     }

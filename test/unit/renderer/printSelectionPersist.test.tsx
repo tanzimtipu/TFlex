@@ -40,7 +40,7 @@ vi.mock("../../../src/renderer/pdf/printRaster", () => ({
   ),
 }));
 
-import { PrintDialog } from "../../../src/renderer/components/PrintDialog";
+import { PrintSurface } from "./printSurfaceHarness";
 import type {
   PrintJobPayload,
   PrintJobResult,
@@ -84,8 +84,8 @@ function mountDialog(): Harness {
   ): void => {
     act((): void => {
       root.render(
-        <PrintDialog
-          open={open}
+        <PrintSurface
+          active={open}
           totalPages={3}
           currentPage={1}
           resolveActiveDoc={(): never => fakeDocProxy(3) as never}

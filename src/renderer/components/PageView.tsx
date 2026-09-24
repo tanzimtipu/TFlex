@@ -243,6 +243,9 @@ heightPt: number;
     /** Phase 26 — flips when the panel's edit session commits; the
      *  overlay then commits the run it owns (rect + mask cover). */
     textCommitToken?: number;
+    /** Phase 37 (item 11) — discard the panel's live session (the action
+     *  bar's Cancel) so the overlay's Cancel does not save the draft. */
+    onDiscardTextEdit?: () => void;
   } | null;
 }
 
@@ -1008,6 +1011,7 @@ heightPt,
           onTextTargetChange={edit.onTextTargetChange}
           textLive={edit.textLive ?? null}
           textCommitToken={edit.textCommitToken ?? 0}
+          onDiscardTextEdit={edit.onDiscardTextEdit}
         />
       )}
       {!ready && <div className="page-placeholder" aria-hidden />}

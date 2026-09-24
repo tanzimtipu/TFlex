@@ -220,7 +220,6 @@ describe("Phase 36 (chunk 3b) — every retired row control has a reachable new 
     ["split", "pages"],
     ["insertPages", "pages"],
     ["replacePages", "pages"],
-    ["editMode", "edit"],
     ["editText", "edit"],
     ["recognizeText", "edit"],
     ["sign", "review"],
@@ -246,6 +245,11 @@ describe("Phase 36 (chunk 3b) — every retired row control has a reachable new 
     expect(toolById("renumberPages")?.surface).toBe("panel");
     expect(toolById("createFromImages")?.surface).toBe("palette");
     expect(PALETTE_TOOL_IDS).toContain("createFromImages");
+    // Phase 37 (item 13) — the EDIT stage is the Edit-mode switch, so the
+    // `editMode` verb is no longer docked; it keeps its registry entry.
+    expect(toolById("editMode")).toBeDefined();
+    expect(toolById("editMode")?.surface).not.toBe("dock");
+    expect(dockToolsForStage("edit").map((e) => e.id)).not.toContain("editMode");
   });
 
   it("pan mode, find and multi-mode keep a registered reachable home", () => {

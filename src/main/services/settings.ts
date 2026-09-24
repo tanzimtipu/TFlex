@@ -81,6 +81,12 @@ export const DOCK_PINS_CAP = 4;
  *  highest-count entries win; ties keep their incoming key order. */
 export const TOOL_USAGE_CAP = 200;
 
+/** Phase 37 — maximum number of Action Dock un-pins persisted, so the ids
+ *  the user removed from the dock cannot grow the settings file unbounded.
+ *  The validator truncates an over-long array rather than rejecting it
+ *  (same preserve-a-persisted-preference rule as `DOCK_PINS_CAP`). */
+export const DOCK_UNPINNED_CAP = 200;
+
 /** Phase 18 — watermark type allowlist. 'text' draws the watermark string
  *  with bundled standard fonts; 'image' embeds a renderer-provided PNG/JPEG
  *  raster (pdf-lib has no rasteriser — same pattern as stamps). */
@@ -348,6 +354,29 @@ export function normalizeDockPins(raw: unknown): string[] | null {
   return out;
 }
 
+/** Phase 37 — normalise a raw `dockUnpinned` value, preserve-if-valid /
+ *  reject-if-invalid. Returns `null` when the value must be rejected (not
+ *  an array), so the field stays absent and the consumer applies the
+ *  default `[]`. A valid array keeps non-empty strings only (non-strings
+ *  and '' are dropped), de-duplicates (first occurrence wins), preserves
+ *  order, and truncates to `DOCK_UNPINNED_CAP` — an over-long array is
+ *  truncated, never rejected. The result may be empty when every entry
+ *  was dropped (the consumer default is `[]` either way). Unknown tool ids
+ *  are dropped by the consumer, which owns the tools registry; main has no
+ *  registry to validate ids against, so this function checks shape only.
+ */
+export function normalizeDockUnpinned(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null;
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== 'string' || entry.length === 0) continue;
+    if (out.includes(entry)) continue;
+    out.push(entry);
+    if (out.length >= DOCK_UNPINNED_CAP) break;
+  }
+  return out;
+}
+
 /** Phase 36 — normalise a raw `toolUsage` value, preserve-if-valid /
  *  reject-if-invalid. Returns `null` when the value must be rejected (not
  *  a plain object — arrays, null and primitives all reject), so the field
@@ -530,6 +559,15 @@ export function normalizeSettings(raw: unknown): AppSettings {
   const toolUsage = normalizeToolUsage(rawObj.toolUsage);
   if (toolUsage !== null) {
     settings.toolUsage = toolUsage;
+  }
+
+  // Phase 37: Action Dock un-pins (tool ids the user removed). Reject-if-
+  // invalid: a non-array leaves the field absent (consumer default []). A
+  // valid array is filtered (non-empty strings only), deduped and truncated
+  // to DOCK_UNPINNED_CAP.
+  const dockUnpinned = normalizeDockUnpinned(rawObj.dockUnpinned);
+  if (dockUnpinned !== null) {
+    settings.dockUnpinned = dockUnpinned;
   }
 
   return settings;

@@ -54,33 +54,37 @@ async function setStage(n) {
 }
 
 async function dockVerbs() {
-  return win.$$eval('[data-action-dock] [data-dock-verb]', (els) =>
+  // Phase 37 — the full set may spill into the `...` overflow menu at a
+  // non-arrow width, so the rendered set is inline + overflow.
+  const inline = await win.$$eval('[data-action-dock] [data-dock-verb]:not([data-dock-pin])', (els) =>
     els.map((e) => e.getAttribute('data-dock-verb')));
+  if ((await win.locator('[data-dock-overflow]').count()) === 0) return inline;
+  await win.locator('[data-dock-overflow]').first().click();
+  await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
+  const overflow = await win.$$eval('[data-dock-overflow-item]', (els) =>
+    els.map((e) => e.getAttribute('data-dock-overflow-item')));
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(200);
+  return [...inline, ...overflow];
 }
 
 async function dockState() {
   return win.locator('[data-action-dock]').getAttribute('data-dock-state');
 }
 
-// RE-DERIVED after the DEF-311..314 fixes: the dock now renders the CURATED
-// `DOCK_STAGE_IDS` set (toolsRegistry), and the registry's `surface` field
-// (`SURFACE_BY_ID`, compiler-enforced complete) marks every entry's home. The
-// dock hosts only `surface: 'dock'` entries, and only those the curated list
-// names — so the dock shows 4-6 verbs per stage instead of every registry
-// entry whose rail stage matches. Changed from the previous EXPECTED:
-//   pages  15 -> 6   (merge moved to the palette; renumberPages,
-//                     rotateCounterClockwise, pageThumbnails, outlinePanel,
-//                     pageContextMenu, clearPageSelection, dragPage to panels)
-//   edit    9 -> 6   (editToolOff + editDefaultFont to panels; batchOcr +
-//                     ocrSuspects to the palette)
-//   review  9 -> 4   (forms/watermark/exportComments/importComments to the
-//                     palette, annotationsPanel to a panel)
-//   deliver 6 -> 5   (createFromImages to the palette)
+async function loadSettings() {
+  const r = await win.evaluate(() => window.tflex.loadSettings());
+  return r && r.ok ? r.value : null;
+}
+
+// RE-DERIVED for Phase 37 (item 21): the dock now renders the stage's FULL
+// relevant set by default (DOCK_STAGE_IDS in toolsRegistry), not the Phase-36
+// curated subset. `editMode` is retired (the EDIT stage is the switch).
 const EXPECTED = {
-  pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete'],
-  edit: ['editMode', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'cropPages'],
-  review: ['annotate', 'sign', 'stamp', 'flatten'],
-  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx'],
+  pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
+  edit: ['editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
+  review: ['annotate', 'sign', 'stamp', 'flatten', 'forms', 'watermark', 'exportComments', 'importComments'],
+  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
 };
 
 // ---------------------------------------------------------------------------
@@ -113,24 +117,22 @@ test('P36-C3-A dock: the four stage verb sets, the accent-soft primary, a disabl
   expect(primaryBg).not.toBe('rgba(0, 0, 0, 0)');
 
   // DEF-311 retest — a disabled verb's tooltip is the availability REASON, not
-  // the description. `ocrSuspects` (the old probe) is no longer a dock verb
-  // (it moved to the palette with the curation), so the probe uses the edit
-  // layer's tool verbs: with Edit mode OFF, `editText` is disabled and its
-  // title must state the precondition, never its description ("Click a text
-  // run to replace it.").
+  // the description. Phase 37 item 13: entering EDIT enables Edit mode, so the
+  // edit-layer tools are ENABLED; the disabled probe is `ocrSuspects`, which
+  // needs an OCR run first (its title must state that precondition).
   await setStage(2);
-  const disabledId = 'editText';
-  const disabled = win.locator(`[data-dock-verb="${disabledId}"]`);
+  const disabledId = 'ocrSuspects';
+  let disabled = win.locator(`[data-dock-verb="${disabledId}"]`);
+  if ((await disabled.count()) === 0) {
+    await win.locator('[data-dock-overflow]').first().click();
+    await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
+    disabled = win.locator(`[data-dock-overflow-item="${disabledId}"]`);
+  }
   expect(await disabled.count(), 'a disabled verb is still rendered').toBe(1);
-  expect(await disabled.isDisabled(), `${disabledId} is disabled while Edit mode is OFF`).toBe(true);
+  expect(await disabled.isDisabled(), `${disabledId} is disabled before an OCR run`).toBe(true);
   const reason = await disabled.getAttribute('title');
   console.log(`[P36C3-A] ${disabledId} disabled title="${reason}"`);
-  expect(reason, 'the disabled tooltip is the availability reason').toBe('Turn on Edit content first');
-  const entry = await win.evaluate((id) => {
-    const el = document.querySelector(`[data-dock-verb="${id}"]`);
-    return el === null ? null : el.getAttribute('title');
-  }, disabledId);
-  expect(entry, 'never the description').not.toBe('Click a text run to replace it.');
+  expect(reason, 'the disabled tooltip is the availability reason').toBe('Run Recognize text first');
   expect(await disabled.evaluate((el) => getComputedStyle(el).cursor)).toBe('not-allowed');
 });
 
@@ -209,7 +211,7 @@ expect(chip).toBe('3 pages');
 // C. State 3 — pins: right-click Pin, the divider, dedupe against the current
 //    stage set, and the cap at 4.
 // ---------------------------------------------------------------------------
-test('P36-C3-C pins: right-click Pin (real UI), divider, no duplicate, cap at 4', async () => {
+test('P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, cap at 4', async () => {
   await openSample();
 
   // DEF-312 retest — the pin menu is PICKED FROM THE REAL UI (no DOM-invoked
@@ -236,35 +238,57 @@ test('P36-C3-C pins: right-click Pin (real UI), divider, no duplicate, cap at 4'
     await win.locator(`[data-dock-menu-item="${which}"]`).click();
     await win.waitForTimeout(500);
   };
-  const pin = async (id) => { await openMenu(id); await invokeMenu('pin'); };
 
-  // DELIVER: pin 'optimize' while it is ALREADY a DELIVER stage verb -> stored
-  // but deduped here (the divider collapses, no duplicate button).
-  await setStage(4);
-  await pin('optimize');
-  console.log(`[P36C3-C] in DELIVER: inline optimize=${await win.locator('[data-dock-verb="optimize"]:not([data-dock-pin])').count()} pinned=${await win.locator('[data-dock-pin="optimize"]').count()} divider=${await win.locator('[data-dock-divider]').count()}`);
-  expect(await win.locator('[data-dock-pin="optimize"]').count()).toBe(0);
-  expect(await win.locator('[data-dock-verb="optimize"]').count(), 'the stage copy is not duplicated').toBe(1);
-  expect(await win.locator('[data-dock-divider]').count()).toBe(0);
+  // --- Phase 37 item 21: UN-PIN a default PAGES verb. It leaves the dock and
+  // is recorded in `dockUnpinned` (the inverse of a pin). ---
+  await setStage(1);
+  await openMenu('split');
+  await invokeMenu('unpin');
+  expect(await win.locator('[data-dock-verb="split"]').count(), 'the un-pinned default verb is gone').toBe(0);
+  let stored = null;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 10000) {
+    const s = await loadSettings();
+    if (s && Array.isArray(s.dockUnpinned) && s.dockUnpinned.includes('split')) { stored = s.dockUnpinned; break; }
+    await win.waitForTimeout(250);
+  }
+  console.log(`[P36C3-C] after unpin: split=${await win.locator('[data-dock-verb="split"]').count()} dockUnpinned=${JSON.stringify(stored)}`);
+  expect(stored, 'the un-pin is recorded in dockUnpinned').toContain('split');
 
-  // Pin three more from their own stages (each is a stage verb there, so each
-  // is deduped WHERE it lives and appears after the divider elsewhere). All
-  // four chosen verbs are NOT PAGES verbs, so all four show in PAGES. (flatten
-  // is deliberately NOT used: report.pdf has no form fields, so it is disabled
-  // there and cannot be right-clicked.)
-  await setStage(2); await pin('recognizeText');
-  await setStage(3); await pin('stamp');
-  await setStage(4); await pin('audit');
+  // --- RE-PIN via the Command Palette Ctrl+Enter RESTORES the default verb
+  // (pinDockTool drops it from `unpinned` rather than storing a redundant pin). ---
+  await win.evaluate(() => {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) el.blur();
+  });
+  await win.keyboard.press('Control+k');
+  await win.waitForSelector('[data-command-palette]', { timeout: 8000 });
+  await win.fill('[data-command-palette-input]', 'split pages');
+  await win.waitForTimeout(250);
+  await win.locator('[data-palette-tool-id="split"]').first().hover();
+  await win.keyboard.press('Control+Enter');
+  await win.waitForTimeout(600);
+  await win.keyboard.press('Escape');
+  await win.waitForSelector('[data-command-palette]', { state: 'detached', timeout: 8000 });
+  await setStage(1);
+  const s2 = await loadSettings();
+  console.log(`[P36C3-C] after re-pin: split=${await win.locator('[data-dock-verb="split"]').count()} dockUnpinned=${JSON.stringify(s2 && s2.dockUnpinned)}`);
+  expect(await win.locator('[data-dock-verb="split"]').count(), 're-pinning a default verb restores it').toBe(1);
+  expect((s2 && s2.dockUnpinned) || [], 'the un-pin is cleared on re-pin').not.toContain('split');
 
-  // PAGES: none of the four is a PAGES stage verb -> all four pins show.
+  // --- cap at 4: seed four cross-stage pins, then the Pin item is refused. ---
+  const s3 = await loadSettings();
+  await win.evaluate((v) => window.tflex.saveSettings(v), {
+    ...s3,
+    dockPins: ['watermark', 'optimize', 'audit', 'recognizeText'],
+    dockUnpinned: [],
+  });
+  await win.waitForTimeout(800);
   await setStage(1);
   const pinnedIds = await win.$$eval('[data-action-dock] [data-dock-pin]', (els) =>
     els.map((e) => e.getAttribute('data-dock-pin')));
-  console.log(`[P36C3-C] in PAGES: pinned=${JSON.stringify(pinnedIds)} divider=${await win.locator('[data-dock-divider]').count()}`);
-  expect(pinnedIds).toEqual(['optimize', 'recognizeText', 'stamp', 'audit']);
-  expect(await win.locator('[data-dock-divider]').count(), 'one divider before the pin group').toBe(1);
-
-  // Cap at 4: the Pin item is disabled with the fullness reason.
+  console.log(`[P36C3-C] seeded cross-stage pins=${JSON.stringify(pinnedIds)} divider=${await win.locator('[data-dock-divider]').count()}`);
+  expect(pinnedIds.length, 'four cross-stage pins render after the divider').toBe(4);
   await openMenu('rotate');
   const pinItem = win.locator('[data-dock-menu-item="pin"]');
   expect(await pinItem.isDisabled()).toBe(true);
@@ -273,19 +297,18 @@ test('P36-C3-C pins: right-click Pin (real UI), divider, no duplicate, cap at 4'
   await win.keyboard.press('Escape');
   await win.waitForTimeout(300);
 
-  // Unpin round-trip through the real UI: unpinning 'stamp' removes it.
-  await setStage(3);
-  await openMenu('stamp');
-  await invokeMenu('unpin');
+  // --- unpin round-trip on a seeded cross-stage pin. ---
   await setStage(1);
-  expect(await win.locator('[data-dock-pin="stamp"]').count()).toBe(0);
+  await openMenu('audit');
+  await invokeMenu('unpin');
+  expect(await win.locator('[data-dock-pin="audit"]').count()).toBe(0);
   expect((await win.$$eval('[data-action-dock] [data-dock-pin]', (els) => els.map((e) => e.getAttribute('data-dock-pin')))).length).toBe(3);
 });
 
 // ---------------------------------------------------------------------------
 // D. dockPins persists across a RELAUNCH (the settings round-trip).
 // ---------------------------------------------------------------------------
-test('P36-C3-D dockPins persist across a relaunch', async () => {
+test('P36-C3-D dock curation (un-pin) persists across a relaunch', async () => {
   // The default beforeEach app is not needed here; drop it so only one
   // instance holds a user-data dir at a time.
   await hardClose(app, 'p36-c3-tmp');
@@ -307,36 +330,36 @@ test('P36-C3-D dockPins persist across a relaunch', async () => {
 
   const first = await boot('persist-1');
   try {
-    await first.w.keyboard.press('Control+2');
-    await first.w.waitForTimeout(300);
-    await first.w.locator('[data-dock-verb="recognizeText"]').first().click({ button: 'right' });
+    await first.w.keyboard.press('Control+1');
+    await first.w.waitForTimeout(400);
+    // Phase 37 item 21 — un-pin a default verb: it is recorded in dockUnpinned.
+    await first.w.locator('[data-dock-verb="split"]').first().click({ button: 'right' });
     await first.w.waitForSelector('[data-dock-menu]', { state: 'visible', timeout: 8000 });
-    // DEF-312 retest — the menu is now portalled to the body, so a real click
-    // reaches the item (no DOM-invoked workaround).
-    await first.w.locator('[data-dock-menu-item="pin"]').click();
+    await first.w.locator('[data-dock-menu-item="unpin"]').click();
 
     let stored = null;
     const start = Date.now();
     while (Date.now() - start < 15000) {
       try {
         const s = JSON.parse(fs.readFileSync(file, 'utf8'));
-        if (Array.isArray(s.dockPins) && s.dockPins.includes('recognizeText')) { stored = s.dockPins; break; }
+        if (Array.isArray(s.dockUnpinned) && s.dockUnpinned.includes('split')) { stored = s.dockUnpinned; break; }
       } catch { /* not written yet */ }
       await new Promise((r) => setTimeout(r, 200));
     }
-    console.log(`[P36C3-D] persisted dockPins=${JSON.stringify(stored)}`);
-    expect(stored, 'dockPins written to settings.json on pin').toContain('recognizeText');
+    console.log(`[P36C3-D] persisted dockUnpinned=${JSON.stringify(stored)}`);
+    expect(stored, 'dockUnpinned written to settings.json on unpin').toContain('split');
   } finally {
     await hardClose(first.a, 'p36-c3-persist-1');
   }
 
   const second = await boot('persist-2');
   try {
-    const pinned = await second.w.$$eval('[data-action-dock] [data-dock-pin]', (els) =>
-      els.map((e) => e.getAttribute('data-dock-pin')));
-    console.log(`[P36C3-D] after relaunch (PAGES) pinned=${JSON.stringify(pinned)}`);
-    expect(pinned, 'the pin survives the relaunch').toContain('recognizeText');
-    expect(await second.w.locator('[data-dock-divider]').count()).toBe(1);
+    await second.w.keyboard.press('Control+1');
+    await second.w.waitForTimeout(500);
+    const verbs = await second.w.$$eval('[data-action-dock] [data-dock-verb]', (els) =>
+      els.map((e) => e.getAttribute('data-dock-verb')));
+    console.log(`[P36C3-D] after relaunch (PAGES) verbs=${JSON.stringify(verbs)}`);
+    expect(verbs, 'the un-pin survives the relaunch').not.toContain('split');
   } finally {
     await hardClose(second.a, 'p36-c3-persist-2');
   }
@@ -436,42 +459,34 @@ test('P36-C3-F responsive: labels drop <900px, compact plan fits <640px', async 
 
   await setSize(620, 800);
   await win.waitForFunction(
-    () => document.querySelector('[data-action-dock]')?.getAttribute('data-dock-compact') === 'true',
+    () => document.querySelector('[data-action-dock]')?.getAttribute('data-dock-arrows') === 'true',
     null, { timeout: 10000 });
   const host620 = await hostW();
-  const capacity = Math.max(1, Math.floor((host620 - 16) / 38)); // DOCK_ICON_VERB_W
   const inlineVerbs = await win.locator('[data-action-dock] [data-dock-verb]').count();
-  const chip = win.locator('[data-dock-overflow]');
-  const chipCount = await chip.count();
-  console.log(`[P36C3-F] 620 host=${host620} compact=${await dock.getAttribute('data-dock-compact')} capacity=${capacity} inlineVerbs=${inlineVerbs} overflowChip=${chipCount}`);
-  // RE-DERIVED after the DEF-313 curation and the Inspector inset. The chip
-  // renders iff the planned PAGES set (6 verbs, no pins) exceeds the compact
-  // capacity. `inlineVerbs` is the RENDERED count, already capped at capacity,
-  // so the plan's own rule is asserted as: chip present -> inline + overflow
-  // equals the full 6-verb set; chip absent -> all 6 are inline.
-  if (chipCount === 1) {
-    await chip.click();
-    await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
-    const items = await win.locator('[data-dock-overflow-item]').count();
-    console.log(`[P36C3-F] overflow items=${items}`);
-    expect(items).toBeGreaterThan(0);
-    expect(inlineVerbs + items, 'inline + overflow == the full PAGES set').toBe(6);
-    await win.keyboard.press('Escape');
-  } else {
-    // No overflow to collapse: every planned verb is rendered inline and must
-    // stay inside the dock box (the wrapping flex layout), never clipped.
-    expect(inlineVerbs, 'no overflow: every planned verb is inline').toBe(6);
-    const clipped = await win.evaluate(() => {
-      const d = document.querySelector('[data-action-dock]');
-      const dr = d.getBoundingClientRect();
-      return [...d.querySelectorAll('[data-dock-verb]')].filter((el) => {
-        const r = el.getBoundingClientRect();
-        return r.left < dr.left - 0.6 || r.right > dr.right + 0.6 || r.top < dr.top - 0.6 || r.bottom > dr.bottom + 0.6;
-      }).map((el) => el.getAttribute('data-dock-verb'));
-    });
-    console.log(`[P36C3-F] 620 clipped=${JSON.stringify(clipped)}`);
-    expect(clipped).toEqual([]);
-  }
+  const chipCount = await win.locator('[data-dock-overflow]').count();
+  console.log(`[P36C3-F] 620 host=${host620} compact=${await dock.getAttribute('data-dock-compact')} arrows=${await dock.getAttribute('data-dock-arrows')} inlineVerbs=${inlineVerbs} overflowChip=${chipCount}`);
+  // Phase 37 item 6 — at the arrows rung every PAGES verb stays inline and the
+  // row scrolls; nothing is hidden behind a `...` chip and nothing is clipped.
+  expect(chipCount, 'the arrows rung replaces the overflow chip').toBe(0);
+  expect(inlineVerbs, 'every PAGES verb is rendered inline at the arrows rung').toBe(8);
+  const scrollRow = await win.evaluate(() => {
+    const el = document.querySelector('[data-dock-scroll]');
+    return { overflowX: getComputedStyle(el).overflowX, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
+  });
+  console.log(`[P36C3-F] 620 scroller=${JSON.stringify(scrollRow)}`);
+  expect(scrollRow.overflowX, 'the arrows rung makes the row horizontally scrollable').toBe('auto');
+  // Horizontal overflow is the SCROLL (allowed); only vertical clipping would
+  // mean the row stacked. Assert the verbs stay on the dock's single row.
+  const clipped = await win.evaluate(() => {
+    const d = document.querySelector('[data-action-dock]');
+    const dr = d.getBoundingClientRect();
+    return [...d.querySelectorAll('[data-dock-verb]')].filter((el) => {
+      const r = el.getBoundingClientRect();
+      return r.top < dr.top - 0.6 || r.bottom > dr.bottom + 0.6;
+    }).map((el) => el.getAttribute('data-dock-verb'));
+  });
+  console.log(`[P36C3-F] 620 vertically-clipped=${JSON.stringify(clipped)}`);
+  expect(clipped, 'no verb is clipped vertically (the row never stacks)').toEqual([]);
 
   await setSize(1440, 900);
   await win.waitForFunction(
@@ -756,10 +771,11 @@ test('P36-C3-H flyout: one surface, all tools, arming runs the action, Esc close
   console.log(`[P36C3-H] annotations ${annBefore} -> ${annAfter}`);
   expect(annAfter, 'the armed flyout tool created an annotation from a page drag').toBe(annBefore + 1);
 
-  // The close button dismisses.
-  await win.locator('[data-annotation-flyout] .annotation-flyout-close').click();
+  // Phase 37 (item 3) — the flyout has no header/close button now: a re-click
+  // of the dock's Annotate verb dismisses it (Esc is covered below).
+  await win.locator('[data-dock-verb="annotate"]').click();
   await win.waitForTimeout(500);
-  expect(await win.locator('[data-annotation-flyout]').count(), 'the close button dismisses').toBe(0);
+  expect(await win.locator('[data-annotation-flyout]').count(), 're-clicking Annotate dismisses the flyout').toBe(0);
 
   // Esc dismisses in a clean state (no armed tool / selection to consume it).
   await win.locator('[data-dock-verb="annotate"]').click();
@@ -905,15 +921,18 @@ test('P36-C3-J reachability: every relocated control acts from its new home', as
   await win.keyboard.press('Escape');
   await win.waitForTimeout(500);
 
-  // edit -> EDIT dock (DEF-314 retest: `editMode` is the toggle, so it is
-  // ENABLED while Edit mode is OFF; the edit-layer tools stay disabled).
+  // edit -> EDIT dock (Phase 37 item 13: the EDIT STAGE is the Edit-mode
+  // switch, so entering EDIT enables the edit layer; the `editMode` verb is
+  // retired).
   await setStage(2);
-  const editModeDisabled = await win.locator('[data-dock-verb="editMode"]').isDisabled();
-  const editTextDisabled = await win.locator('[data-dock-verb="editText"]').isDisabled();
-  console.log(`[P36C3-J] EDIT dock: editMode disabled=${editModeDisabled} editText disabled=${editTextDisabled}`);
-  expect(editModeDisabled, 'editMode is ENABLED while Edit mode is OFF').toBe(false);
-  expect(editTextDisabled, 'the edit-layer tools need Edit mode ON').toBe(true);
-  log('edit -> EDIT dock', !editModeDisabled, `editMode disabled=${editModeDisabled} (edit mode OFF)`);
+  const editModeVerb = await win.locator('[data-dock-verb="editMode"]').count();
+  const editToolbar = await win.locator('[data-edit-toolbar]').count();
+  const editTextEnabled = await win.locator('[data-dock-verb="editText"]').isEnabled();
+  console.log(`[P36C3-J] EDIT dock: editModeVerb=${editModeVerb} editToolbar=${editToolbar} editTextEnabled=${editTextEnabled}`);
+  expect(editModeVerb, 'the editMode verb is retired').toBe(0);
+  expect(editToolbar, 'entering EDIT enables Edit mode').toBeGreaterThan(0);
+  expect(editTextEnabled, 'the edit-layer tools are enabled in the EDIT stage').toBe(true);
+  log('edit -> EDIT dock', editToolbar > 0, `editToolbar=${editToolbar} (stage-enabled)`);
 
   // sign -> REVIEW dock
   await setStage(3);
@@ -1005,24 +1024,31 @@ test('P36-C3-K reachability on a form document: forms + flatten act from REVIEW 
   console.log('[P36C3-K] empty-space click cleared the panel selection');
 
   await setStage(3);
+  const clickDock = async (id) => {
+    if ((await win.locator(`[data-dock-verb="${id}"]`).count()) > 0) {
+      await win.locator(`[data-dock-verb="${id}"]`).first().click();
+      return;
+    }
+    await win.locator('[data-dock-overflow]').first().click();
+    await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
+    await win.locator(`[data-dock-overflow-item="${id}"]`).first().click();
+  };
   await win.waitForFunction(() => {
     const b = document.querySelector('[data-dock-verb="flatten"]');
     return b !== null && b.disabled === false;
   }, null, { timeout: 20000 });
-  expect(await win.locator('[data-dock-verb="forms"]').count(), 'forms is NOT a dock verb (curation)').toBe(0);
-  await win.locator('[data-dock-verb="flatten"]').click();
+  // Phase 37 item 21 — `forms` is a dock verb again (the full REVIEW set).
+  expect(await win.locator('[data-dock-verb="forms"]').count(), 'forms is a dock verb again').toBe(1);
+  await clickDock('flatten');
   await win.waitForSelector('#flatten-title', { state: 'visible', timeout: 10000 });
   console.log('[P36C3-K] flatten dialog opened on form.pdf');
   await win.keyboard.press('Escape');
   await win.waitForTimeout(600);
-  // forms moved to the palette (curation) — reach it in the Command Palette.
-  await win.keyboard.press('Control+k');
-  await win.waitForSelector('[data-command-palette]', { timeout: 10000 });
-  await win.fill('[data-command-palette-input]', 'forms');
-  await win.waitForTimeout(250);
-  await win.locator('[data-palette-tool-id="forms"]').first().click();
+  // forms runs from the dock too (same dialog).
+  await setStage(3);
+  await clickDock('forms');
   await win.waitForSelector('#flatten-title', { state: 'visible', timeout: 10000 });
-  console.log('[P36C3-K] forms (palette) dialog opened on form.pdf');
+  console.log('[P36C3-K] forms (dock) dialog opened on form.pdf');
   await win.keyboard.press('Escape');
   await win.waitForTimeout(500);
 });
@@ -1031,31 +1057,26 @@ test('P36-C3-K reachability on a form document: forms + flatten act from REVIEW 
 // Q. DEF-314 retest — `editMode` is the EDIT stage's primary and the toggle
 //    that turns Edit mode ON: enabled while it is OFF, pressed while ON.
 // ---------------------------------------------------------------------------
-test('P36-C3-Q editMode: enabled while Edit mode is OFF, toggles ON then OFF', async () => {
+test('P36-C3-Q the EDIT stage is the Edit-mode switch (the editMode verb is retired)', async () => {
   await openSample();
+  // Entering EDIT enables Edit mode.
   await setStage(2);
-  const btn = win.locator('[data-dock-verb="editMode"]');
-  expect(await btn.count()).toBe(1);
-  expect(await btn.isDisabled(), 'editMode is ENABLED while Edit mode is OFF').toBe(false);
-  expect(await btn.getAttribute('aria-pressed'), 'not pressed while Edit mode is OFF').toBe(null);
-  expect(await win.locator('[data-edit-toolbar]').count(), 'Edit mode is OFF to begin with').toBe(0);
-  expect(await win.locator('[data-dock-verb="editText"]').isDisabled(), 'the edit-layer tools need Edit mode').toBe(true);
-  console.log(`[P36C3-Q] OFF: editMode disabled=${await btn.isDisabled()} aria-pressed=${await btn.getAttribute('aria-pressed')} editToolbar=${await win.locator('[data-edit-toolbar]').count()} editTextDisabled=${await win.locator('[data-dock-verb="editText"]').isDisabled()}`);
+  await win.waitForTimeout(600);
+  expect(await win.locator('[data-dock-verb="editMode"]').count(), 'the editMode dock verb is retired').toBe(0);
+  expect(await win.locator('[data-edit-toolbar]').count(), 'Edit mode is ON in the EDIT stage').toBeGreaterThan(0);
+  expect(await win.locator('[data-dock-verb="editText"]').isEnabled(), 'the edit-layer tools are enabled').toBe(true);
+  console.log(`[P36C3-Q] EDIT: toolbar=${await win.locator('[data-edit-toolbar]').count()} editTextEnabled=${await win.locator('[data-dock-verb="editText"]').isEnabled()}`);
 
-  await btn.click();
-  await win.waitForTimeout(900);
-  const onPressed = await btn.getAttribute('aria-pressed');
-  const onToolbar = await win.locator('[data-edit-toolbar]').count();
-  console.log(`[P36C3-Q] ON: aria-pressed=${onPressed} editToolbar=${onToolbar} editTextDisabled=${await win.locator('[data-dock-verb="editText"]').isDisabled()}`);
-  expect(onToolbar, 'Edit mode is actually ON').toBeGreaterThan(0);
-  expect(onPressed, 'the toggle reports its pressed state').toBe('true');
-  expect(await win.locator('[data-dock-verb="editText"]').isDisabled(), 'the edit layer tools enable with Edit mode').toBe(false);
+  // Leaving EDIT turns it OFF.
+  await setStage(1);
+  await win.waitForTimeout(600);
+  expect(await win.locator('[data-edit-toolbar]').count(), 'leaving EDIT turns Edit mode OFF').toBe(0);
 
-  await btn.click();
-  await win.waitForTimeout(900);
-  console.log(`[P36C3-Q] OFF again: aria-pressed=${await btn.getAttribute('aria-pressed')} editToolbar=${await win.locator('[data-edit-toolbar]').count()}`);
-  expect(await win.locator('[data-edit-toolbar]').count(), 'Edit mode is OFF again').toBe(0);
-  expect(await btn.getAttribute('aria-pressed'), 'the pressed state clears').toBe(null);
+  // Re-entering turns it back ON.
+  await setStage(2);
+  await win.waitForTimeout(600);
+  expect(await win.locator('[data-edit-toolbar]').count(), 're-entering EDIT turns it ON again').toBeGreaterThan(0);
+  console.log('[P36C3-Q] stage-driven Edit mode verified both ways');
 });
 
 // ---------------------------------------------------------------------------

@@ -43,7 +43,7 @@ vi.mock("../../../src/renderer/pdf/printRaster", () => ({
   ),
 }));
 
-import { PrintDialog } from "../../../src/renderer/components/PrintDialog";
+import { PrintSurface } from "./printSurfaceHarness";
 
 const PRINTERS: PrinterInfo[] = [
   { name: "HP LaserJet", displayName: "HP LaserJet", isDefault: true },
@@ -55,8 +55,8 @@ function renderDialog(totalPages: number): { container: HTMLElement; cleanup: ()
   const root: Root = createRoot(container);
   act((): void => {
     root.render(
-      <PrintDialog
-        open={true}
+      <PrintSurface
+        active
         totalPages={totalPages}
         currentPage={1}
         resolveActiveDoc={(): never => ({ numPages: totalPages }) as never}
@@ -143,7 +143,7 @@ const CASES: Case[] = [
   { nup: 6, order: "verticalReversed", cols: "repeat(2, 1fr)", rows: "repeat(3, 1fr)", pages: [3, 6, 2, 5, 1, 4] },
 ];
 
-describe("PrintDialog preview — Phase 33 / DEF-280 page order", () => {
+describe("PrintSurface preview — Phase 33 / DEF-280 page order", () => {
   it("maps every sheet layout through the shared rule (grid dims + cell images)", async () => {
     const { container, cleanup } = renderDialog(6);
     await flush();

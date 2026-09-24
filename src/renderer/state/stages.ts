@@ -119,6 +119,17 @@ export function stageForPane(state: StageState, pane: PaneId | null): Stage {
   return state.panes[pane] ?? state.single;
 }
 
+/**
+ * Phase 37 (item 13) — the stage IS the Edit-mode switch: entering the
+ * EDIT stage turns the canvas's edit mode ON, leaving it turns it OFF.
+ * Pure so the mapping is unit-testable without mounting App; App applies
+ * it in ONE effect keyed on the active stage (the single source of truth —
+ * no second edit-mode toggle).
+ */
+export function editModeForStage(stage: Stage): boolean {
+  return stage === 'edit';
+}
+
 export function stageReducer(state: StageState, action: StageAction): StageState {
   switch (action.type) {
     case 'set': {

@@ -15,12 +15,18 @@
 // interaction". The two share the tools-palette container so the
 // user can move between them, but their internal layouts differ.
 
-import { Image, MousePointer2, Plus, Type } from "lucide-react";
-import type { ReactElement } from "react";
+import { ChevronLeft, ChevronRight, Image, MousePointer2, Plus, Type } from "lucide-react";
+import { useRef, type ReactElement } from "react";
 import type { EditFont } from "../../shared/types";
 import { EDIT_DEFAULT_FONTS, DEFAULT_EDIT_DEFAULT_FONT } from "../state/preferences";
 import type { EditTextStyle, EditTool } from "./model";
+import type { DockLadder } from "../state/dockResponsive";
+import { resolveSecondaryRowLadder } from "../state/secondaryRow";
+import { useRowOverflow } from "../hooks/useRowOverflow";
 import { TfBar } from "../components/motion/TfMotion";
+
+/** How far one arrow click scrolls the single tool row (mirrors the dock). */
+const EDIT_TOOLBAR_SCROLL_STEP = 160;
 
 export interface EditToolbarProps {
   tool: EditTool;
@@ -38,12 +44,56 @@ export interface EditToolbarProps {
    *  a new text box". The toolbar renders this as a one-line
    *  caption so the user always knows what the next click does. */
   hint: string;
+  /** Phase 37 (item 3) — the ONE responsive ladder the host resolved. The
+   *  EditToolbar is the secondary surface for the edit tools, so it hides its
+   *  labels first and then shows scroll arrows exactly like the dock. */
+  ladder?: DockLadder;
 }
 
 export function EditToolbar(props: EditToolbarProps): ReactElement {
-  const { tool, onSelect, defaultFont, onDefaultFontChange, enabled, hint } = props;
+  const { tool, onSelect, defaultFont, onDefaultFontChange, enabled, hint, ladder } = props;
+  const { iconOnly, arrows: arrowsLane } = resolveSecondaryRowLadder(ladder);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // DEF-337 — the arrows render only when the row genuinely overflows, so a
+  // row that already fits never offers a dead control.
+  const arrows = useRowOverflow(scrollRef, arrowsLane);
+
+  /** Phase 37 (item 3) — scroll the single row by one step (arrows rung). */
+  const scrollRow = (direction: -1 | 1): void => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const delta = direction * EDIT_TOOLBAR_SCROLL_STEP;
+    if (typeof el.scrollBy === 'function') {
+      el.scrollBy({ left: delta, behavior: 'smooth' });
+    } else {
+      el.scrollLeft += delta;
+    }
+  };
+
   return (
-    <TfBar className="edit-toolbar" data-edit-toolbar role="toolbar" aria-label="Edit tools">
+    <TfBar
+      className="edit-toolbar"
+      data-edit-toolbar
+      data-edit-icon-only={iconOnly ? 'true' : 'false'}
+      data-edit-arrows={arrows ? 'true' : 'false'}
+      role="toolbar"
+      aria-label="Edit tools"
+    >
+      {/* Phase 37 (item 3) — the row never wraps; at the ladder's last rung the
+          arrows scroll it instead (mirrors the dock's single-row behaviour). */}
+      {arrows && (
+        <button
+          type="button"
+          className="edit-toolbar-arrow"
+          data-edit-arrow="left"
+          aria-label="Scroll edit tools left"
+          title="Scroll left"
+          onClick={(): void => scrollRow(-1)}
+        >
+          <ChevronLeft size={16} aria-hidden />
+        </button>
+      )}
+      <div className="edit-toolbar-scroll" ref={scrollRef} data-edit-toolbar-scroll>
       <button
         type="button"
         className={tool === "off" ? "edit-toolbar-btn edit-toolbar-btn-active" : "edit-toolbar-btn"}
@@ -94,7 +144,8 @@ export function EditToolbar(props: EditToolbarProps): ReactElement {
       </button>
       <div className="edit-toolbar-divider" aria-hidden />
       <label className="edit-toolbar-font">
-        <span className="edit-toolbar-font-label">Font</span>
+        {/* Rung 3 — the label hides before anything scrolls. */}
+        {!iconOnly && <span className="edit-toolbar-font-label">Font</span>}
         <select
           value={defaultFont}
           onChange={(e): void => {
@@ -113,9 +164,25 @@ export function EditToolbar(props: EditToolbarProps): ReactElement {
           ))}
         </select>
       </label>
-      <div className="edit-toolbar-hint" data-edit-hint>
-        {hint}
+      {/* Rung 3 — the status hint is a label; it hides with the font label. */}
+      {!iconOnly && (
+        <div className="edit-toolbar-hint" data-edit-hint>
+          {hint}
+        </div>
+      )}
       </div>
+      {arrows && (
+        <button
+          type="button"
+          className="edit-toolbar-arrow"
+          data-edit-arrow="right"
+          aria-label="Scroll edit tools right"
+          title="Scroll right"
+          onClick={(): void => scrollRow(1)}
+        >
+          <ChevronRight size={16} aria-hidden />
+        </button>
+      )}
     </TfBar>
   );
 }

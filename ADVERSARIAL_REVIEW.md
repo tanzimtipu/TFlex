@@ -3285,5 +3285,208 @@ Screenshot: none (state-only; `p4_flyout_geom.cjs` -> `out/p4.json` records
 
 Disposition: ACCEPTED -> DEF-331 (LOW; with the palette open over a dialog, Escape must close the TOP-most surface - the palette - rather than closing the dialog underneath and leaving the palette)
 
+## Phase 37 gate - STAGES feedback round (22 operator items)
+
+Session label: `phase-37 gate`. Ran against the real dev build via
+`e2e/lib/launch.cjs` (`test-fixtures/adv-p37/lib.cjs` `boot`, dev main + dist renderer).
+Harnesses live in `test-fixtures/adv-p37/` (`p1_ladder.cjs`, `p2_rail_arrows.cjs`,
+`p3_dock.cjs`, `p4_print.cjs`, `p5_edittext.cjs`, `p6_inspector.cjs`,
+`p7_annotate_wm.cjs`, `p8_annotate.cjs`, `p8b_single_panel.cjs`, `p9_surfaces.cjs`,
+`p9b_flyout.cjs`, `p10_ladder_labels.cjs`, `p11_print2.cjs`, `p11b_empty_print.cjs`,
+`p12_toggle.cjs`, `p13_latch.cjs`; raw JSON in `test-fixtures/adv-p37/out/`).
+Screenshots in `screenshots/adv-p37/`. Every probe opened a COPY of a bundled sample.
+
+Defended (no finding): the ladder thresholds themselves and their reverse
+(Inspector at 1199/1200, panel at 999/1000, arrows at 719/720; down-sweep and
+up-sweep state identical, no oscillation, no stacking - verb rows = 1 at every
+width, no dock/pill overlap); the welcome/document Stage Rail truth table; the
+panel chevron flip (collapse/expand, aria + `data-collapse-direction`); the
+184px PAGES panel with no title; the Outline flush to the panel bottom; the
+Multi Mode strip at 150px with the full right-click menu and hover verbs; the
+dock surface identical in light/dark/frosted (same height/gap/padding/font);
+the Inspector text panel integrated at the TOP with the divider and one
+instance only (DEF-321 holds) in both the EDIT and annotate flows, the column
+scrolling; the EDIT-stage-as-switch (no `editMode`/`Edit content` verb); the
+text-run bar Confirm/Delete/Cancel with the selected text staying visible and
+Cancel/Delete clean; the watermark gate (enabled with a document, correct
+reason when disabled); `dockUnpinned` persistence, cross-stage pin/unpin
+coherence, and hostile/oversized/duplicate `dockUnpinned` on disk (all
+sanitised, no crash); the standalone print window via the title-bar icon and
+the native File > Print / Ctrl+P item (singleton focus, document-gone banner,
+no `[data-print-dialog]` anywhere).
+
+## ADV-083: At the default 1440 window the PAGES dock drops every label while the Inspector and panel stay expanded - the label rung fires far above its documented threshold
+
+- Session: phase-37 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. Booted the dev build (`test-fixtures/adv-p37/lib.cjs`), opened a copy of
+   `assets/samples/report.pdf`, pressed Ctrl+1 (PAGES) then Ctrl+4 (DELIVER).
+2. Swept the window content size 1920x900 down to 640x900 in steps and back up
+   (`BrowserWindow.setContentSize`; `window.innerWidth` is the content box).
+   At each width recorded `.app-main[data-inspector-collapsed]`,
+   `[data-context-panel][data-context-panel-collapsed]`, and the dock's
+   `data-dock-icon-only` / `data-dock-arrows` / visible `.action-dock-label`
+   count / verb-row count. Harness `p1_ladder.cjs`, `p10_ladder_labels.cjs`.
+
+Condensed table (PAGES; down and up runs identical, so only one row per width):
+
+| innerWidth | Inspector | panel | dock labels | arrows | verb rows |
+|---|---|---|---|---|---|
+| 1920 | expanded | expanded | 8 | no | 1 |
+| 1700 | expanded | expanded | 8 | no | 1 |
+| 1600 | expanded | expanded | 8 | no | 1 |
+| 1500 | expanded | expanded | 8 | no | 1 |
+| 1450 | expanded | expanded | 0 | no | 1 |
+| 1440 (default) | expanded | expanded | 0 | no | 1 |
+| 1400-1200 | expanded | expanded | 0 | no | 1 |
+| 1199 | collapsed | expanded | 0 | no | 1 |
+| 1000 | collapsed | expanded | 0 | no | 1 |
+| 999-720 | collapsed | collapsed | 0 | no | 1 |
+| 719-640 | collapsed | collapsed | 0 | yes | 1 |
+
+Expected: the ladder order from REQUIREMENTS.md Phase 37 (E) / success
+criterion 10 - collapse the Inspector (<1200), then the panel (<1000), then
+hide the labels (<880), then show the arrows (<720) - and "all four stages
+labelled, single row" at the default window (the CLOSED DEF-330).
+
+Actual: the label rung is effectively driven by the measured CANVAS width
+(`hostIconOnly` when the canvas host < 900, or `labelsFitBand` when the labelled
+dock cannot fit the pill-free band), NOT by `resolveDockLadder`'s 880
+breakpoint. At the app's default 1440x900 window the PAGES dock is icon-only (0
+labels) with the Inspector and thumbnail panel both EXPANDED; labels only return
+at innerWidth >= ~1500 (canvas host ~1008, band ~588). So across ~880-1499 the
+labels are hidden while rungs 1 and 2 are NOT engaged - the exact order of
+criterion 10 is not what renders. It is also layout-dependent: in Multi Mode at
+1440 the same PAGES dock renders all 8 labels (wider canvas), while in single
+mode at 1440 it renders none. Phase 37 grew the PAGES default set from the
+curated six to eight verbs (`rotate, extract, insertPages, replacePages, split,
+delete, merge, cropPages`), which is exactly what pushes the labelled need past
+the default band and re-breaks the CLOSED DEF-330. No wrapping/stacking occurs
+(rows = 1 throughout), so this is a label/ladder-order regression, not the
+old two-row wrap.
+
+Screenshot: screenshots/adv-p37/p10-1440-pages.png (icon-only dock at the
+default window), screenshots/adv-p37/p10-1600-deliver.png (labels at 1600),
+screenshots/adv-p37/p9-multi.png (same width, labels in Multi Mode).
+
+Disposition: ACCEPTED -> DEF-334
+
+## ADV-084: One click on the Inspector/panel Expand control at a ladder-collapsed width latches the collapse, so the panel stays collapsed after the window grows
+
+- Session: phase-37 gate
+- Suggested severity: MEDIUM
+
+What I did (harness `p13_latch.cjs`, `p12_toggle.cjs`):
+1. Booted the dev build, opened a copy of `report.pdf`, Ctrl+1 (PAGES).
+2. Control run at 1300 (ladder idle): `[data-inspector-collapse]` collapses then
+   expands correctly (false -> true -> false).
+3. Set 1100 (ladder rung 1; the Inspector is collapsed and the control's
+   aria-label is "Expand inspector"). Clicked `[data-inspector-collapse]` ONCE,
+   then grew the window to 1300.
+4. Repeated for the thumbnail panel at 900 (`[data-rail-collapse]`,
+   aria-label "Expand panel"), then grew to 1300.
+5. Also did TWO clicks at 1100 then grew.
+
+Expected: per the code's own contract ("a manual expand while the ladder is
+engaged changes nothing visible until the window grows past the rung") the
+Inspector/panel should be EXPANDED once the ladder releases, or at worst the
+click should be a no-op.
+
+Actual:
+- Inspector: at 1100 collapsed=true, label "Expand inspector"; one click -> still
+  collapsed; grow to 1300 -> still collapsed (`insp1300AfterOneClick=true`). A
+  second click at 1300 then expands. Two clicks at 1100 -> expanded at 1300.
+- Panel: at 900 collapsed=true, label "Expand panel"; one click; grow to 1300 ->
+  still collapsed (`panel1300AfterOneClick=true`).
+Root cause: the control always calls `onToggleCollapsed` (a preference toggle).
+With the ladder forcing collapsed and the user preference default false, one
+click on the "Expand" affordance records `userCollapsed = true`, i.e. it latches
+the OPPOSITE of the label. The panel then does not reverse when the window
+grows, which is the exact "state that does not reverse when growing / manual
+toggle fighting the ladder" case. Recoverable by a second click at the wider
+window, hence MEDIUM not HIGH.
+
+Screenshot: none (state-only; raw in test-fixtures/adv-p37/out/p13.json).
+
+Disposition: ACCEPTED -> DEF-335
+
+## ADV-085: Print is enabled on an empty placeholder tab but silently does nothing (no window, no toast)
+
+- Session: phase-37 gate
+- Suggested severity: MEDIUM
+
+What I did (harness `p11b_empty_print.cjs`, `p11_print2.cjs`):
+1. Booted the dev build, opened a copy of `report.pdf` (one document tab).
+2. Clicked the title-bar `+` (`[data-new-tab]`) so an EMPTY placeholder tab
+   became active (the welcome screen is shown; two tabs exist).
+3. Read `[data-print].disabled` and the native menu item
+   `Menu.getApplicationMenu().getMenuItemById('menu.print').enabled`.
+4. Clicked the title-bar Print button, then separately invoked the native
+   File > Print item's `click()`. Watched for a new BrowserWindow and for any
+   toast.
+
+Expected: an enabled Print opens the standalone print window; if there is no
+printable document the control is DISABLED (with a reason) and does not accept
+the click - the fail-loud rule ("a control that cannot act is disabled and
+explains why").
+
+Actual: with the empty tab active, `[data-print].disabled === false` and
+`menu.print.enabled === true`, but neither entry opens a print window and no
+toast/error appears (`titlebarOpenedWindow=false`, `menuOpenedWindow=false`,
+toasts unchanged, no state change). `buildActivePrintContext()` returns null for
+a tab with no engine session and `openPrintWindow()` returns silently. This is
+an enabled control that cannot run and does not explain why. (With genuinely no
+document at all the same controls ARE correctly disabled, so the bug is specific
+to the empty-tab-active-while-another-doc-is-open state.)
+
+Screenshot: screenshots/adv-p37/p11b-empty-tab.png (welcome + enabled Print).
+
+Disposition: ACCEPTED -> DEF-336
+
+## ADV-086: At the arrows rung the arrows are rendered when the row already fits, so clicking them does nothing
+
+- Session: phase-37 gate
+- Suggested severity: LOW
+
+What I did (harness `p2_rail_arrows.cjs`, `p9b_flyout.cjs`):
+1. Opened a copy of `report.pdf`, Ctrl+4 (DELIVER). Set the window to 719, 700
+   and 640 and recorded `[data-dock-scroll]` scrollWidth/clientWidth, then
+   clicked `[data-dock-arrow="right"]` and `[data-dock-arrow="left"]` and read
+   `scrollLeft`.
+2. Ctrl+3 (REVIEW), opened the Annotate flyout, and repeated at 1440/1000/880/
+   760/719/640 on `[data-annotation-flyout-scroll]` and its arrows.
+
+Expected: the arrows scroll the verb row; where the row already fits, the
+arrows are not offered or are disabled (fail-loud: no control that does nothing).
+
+Actual:
+- DELIVER at 700 and 640: `data-dock-arrows="true"` while
+  `scrollWidth === clientWidth === 195` (nothing to scroll); clicking either
+  arrow leaves `scrollLeft` at 0. (At 719 the dock arrows DO work - scroll
+  94/144 -> 50.7 - so the dock is only dead once the row fits.)
+- Annotation flyout at 719 and 640: `data-flyout-arrows="true"` with
+  `scrollWidth === clientWidth === 195`; its arrows are dead at every width
+  tested (the flyout body is 195px and its content always fits).
+
+Screenshot: screenshots/adv-p37/p9b-flyout-640.png (flyout arrows with a
+non-overflowing row).
+
+Disposition: ACCEPTED -> DEF-337
+
+Negative results (no finding): no dock stacking or clipping at any width or in
+the 640x1200 / 1920x480 shapes; no ladder oscillation (down and up sweeps
+identical); no crash, hang or unhandled error in any probe; hostile
+`dockUnpinned` values (string, null, duplicates, unknown ids, 5000 entries) are
+sanitised on load with no crash and the default verbs restored; unpinning all
+eight PAGES verbs persists and leaves an empty dock that the Ctrl+K palette can
+restore (no dead end observed). NOT fully verified: opening print while another
+in-app modal is up (my Combine click did not leave a modal open, so the probe was
+inconclusive - the standalone window did open from the native menu and the main
+window survived); Multi Mode strip multi-select and drag-reorder parity (the
+right-click menu and hover verbs were verified, the drag/multi-select paths were
+not exhaustively exercised).
+
 
 

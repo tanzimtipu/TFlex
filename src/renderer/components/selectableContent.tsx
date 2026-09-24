@@ -13,9 +13,11 @@
 //     rect math, reused by the annotation overlay, the edit overlay
 //     and the text-run selection; identical drag semantics
 //     everywhere).
-//   - `ContentActionBar` — the shared Confirm / Edit / Delete bar
-//     (buttons reuse `.toolbox-action-btn`; per-family class names
-//     remain on the buttons purely as stable selectors for tests).
+//   - `ContentActionBar` — the shared action bar (per-family verb set:
+//     annotate = Confirm / [colour] / Cancel / Delete; edit text
+//     (Phase 37) = Confirm / Delete / Cancel). Buttons reuse
+//     `.toolbox-action-btn`; per-family class names remain on the
+//     buttons purely as stable selectors for tests).
 //   - `ContentGrip` — the shared "Drag to move" grip strip every
 //     floating editor shows (note editor, textbox / callout editors,
 //     the edit inline editor — DEF-153(d) previously had THREE
@@ -129,11 +131,12 @@ export function ContentGrip(props: {
 }
 
 // ---------------------------------------------------------------------------
-// ContentActionBar — the shared Confirm / Edit / Delete bar
+// ContentActionBar — the shared action bar
 //
 // Rendered under a selected (movable) item. Every kind gets the SAME
 // chrome; per-family class names ride along as stable selectors for
 // the existing tests (`.edit-box-toolbar-btn`, `.ann-content-action`).
+// `cancelAfterDelete` sets the verb order per flow (Phase 37 item 11).
 // The bar stops the POINTERDOWN so a press on a button never starts a
 // page-canvas drag behind it; click events on the buttons flow
 // untouched (AGENTS.md cross-bubbling rule).
@@ -151,11 +154,15 @@ export interface ContentActionBarProps {
   onDelete?: () => void;
   /** Phase 28 — an optional Cancel verb, rendered after the middle slot
    *  and before Delete. The annotation bar uses it to undo the live
-   *  edit session. */
+   *  edit session. Phase 37 (item 11) — the edit-flow bar needs the order
+   *  Confirm / Delete / Cancel, so `cancelAfterDelete` moves Cancel after
+   *  Delete. The annotate flow keeps the default (Cancel before Delete). */
   onCancel?: () => void;
   cancelLabel?: string;
   cancelTitle?: string;
   cancelAria?: string;
+  /** Render the Cancel verb AFTER Delete (Confirm / Delete / Cancel). */
+  cancelAfterDelete?: boolean;
   /** Modal verbs — Edit is shown only when a real edit toolbox
    *  exists; Delete only when an engine delete path exists. */
   showEdit?: boolean;
@@ -197,6 +204,7 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
     cancelLabel = "Cancel",
     cancelTitle = "Cancel",
     cancelAria,
+    cancelAfterDelete = false,
     showEdit = true,
     showDelete = true,
     confirmLabel = "Confirm",
@@ -214,6 +222,18 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
     children,
   } = props;
   const prefix = dataActionPrefix;
+  const cancelButton = onCancel !== undefined && (
+    <button
+      type="button"
+      className="toolbox-action-btn toolbox-action-btn--cancel content-action-btn"
+      onClick={onCancel}
+      data-content-action={`${prefix}-cancel`}
+      aria-label={cancelAria ?? cancelLabel}
+      title={cancelTitle}
+    >
+      {cancelLabel}
+    </button>
+  );
   return (
     <TfBar
       className={className}
@@ -252,18 +272,7 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
         </button>
       )}
       {middle}
-      {onCancel !== undefined && (
-        <button
-          type="button"
-          className="toolbox-action-btn toolbox-action-btn--cancel content-action-btn"
-          onClick={onCancel}
-          data-content-action={`${prefix}-cancel`}
-          aria-label={cancelAria ?? cancelLabel}
-          title={cancelTitle}
-        >
-          {cancelLabel}
-        </button>
-      )}
+      {!cancelAfterDelete && cancelButton}
       {showDelete && onDelete !== undefined && (
         <button
           type="button"
@@ -277,6 +286,7 @@ export function ContentActionBar(props: ContentActionBarProps): ReactElement {
           {deleteLabel}
         </button>
       )}
+      {cancelAfterDelete && cancelButton}
       {children}
     </TfBar>
   );

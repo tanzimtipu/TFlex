@@ -257,8 +257,10 @@ describe("DEF-287 — the pane page area keeps its minimum", () => {
     expect(g.paneA.page).toBe(MIN_PAGE_WIDTH_PX);
     expect(g.paneA.strip).toBe(STRIP_MIN_PX);
     expect(g.paneA.strip).toBeLessThan(STRIP_REST_PX);
-    // Before the panel: a comfortably usable page area.
-    expect(multiPaneGeometry(640, 0, 0.5).paneA.page).toBe(96);
+    // Before the panel: a comfortably usable page area. Phase 37 (item 18)
+    // narrowed the strip rest from 220 to 150, so the page gains 70px:
+    // 640/2 - 4 (divider half) - 150 (strip) = 166.
+    expect(multiPaneGeometry(640, 0, 0.5).paneA.page).toBe(166);
   });
 
   it("caps the inset when the requested panel would starve the panes", () => {
@@ -289,8 +291,10 @@ describe("DEF-287 — the pane page area keeps its minimum", () => {
       strip: STRIP_MIN_PX,
       page: MIN_PAGE_WIDTH_PX,
     });
-    // In between the strip yields, the page stays at its floor.
-    const mid = stripAndPageWidths(250);
+    // In between the strip yields, the page stays at its floor. Phase 37
+    // (item 18): with the 150px rest, a 180px pane gives free = 36 -> strip
+    // 136 (between the 100px floor and the 150px rest), page 44.
+    const mid = stripAndPageWidths(180);
     expect(mid.strip).toBeGreaterThanOrEqual(STRIP_MIN_PX);
     expect(mid.strip).toBeLessThan(STRIP_REST_PX);
     expect(mid.page).toBeGreaterThanOrEqual(MIN_PAGE_WIDTH_PX);
@@ -301,8 +305,9 @@ describe("DEF-287 — the pane page area keeps its minimum", () => {
     expect(MIN_PAGE_WIDTH_PX).toBe(44);
     expect(MIN_PANE_PANE_PX).toBe(144);
     expect(MIN_PANES_BUDGET_PX).toBe(296); // 640 - 344
-    // Single mode at 640 with the panel open: 220 rail + 344 inset -> 76px.
-    expect(640 - 220 - 344).toBe(76);
+    // Phase 37 (item 15): single mode at 640 with the panel open: the rail is
+    // now 184px (was 220), so 640 - 184 - 344 = 112px.
+    expect(640 - 184 - 344).toBe(112);
   });
 });
 

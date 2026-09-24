@@ -160,6 +160,14 @@ export interface AppSettings {
    *  highest counts, ties keeping incoming order; a non-object rejects
    *  the field (consumer default `{}`). */
   toolUsage?: Record<string, number>;
+  /** Phase 37 — tool ids the user has REMOVED from the Action Dock (the
+   *  inverse of `dockPins`). Validated preserve-if-valid in settings.ts:
+   *  only non-empty strings survive, duplicates are dropped (first
+   *  occurrence wins), order is preserved, an over-long array is truncated
+   *  to `DOCK_UNPINNED_CAP`, and a non-array rejects the field (consumer
+   *  default `[]`). Unknown tool ids are dropped by the consumer, which
+   *  owns the tools registry — main has no registry to check against. */
+  dockUnpinned?: string[];
 }
 
 /** Phase 6 — what the renderer gets back from `app:getInfo`. The

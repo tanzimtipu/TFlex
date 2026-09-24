@@ -57,7 +57,9 @@ describe("Phase 36 chunk 5 — inspectorSections resolves the per-stage contract
   it.each([
     ["pages", "page", ["page", "on-page", "document"]],
     ["pages", "none", ["document"]],
-["edit", "text", ["text"]],
+    // Phase 37 (item 1) — a selected text object lifts the panel to the TOP;
+    // the sections BELOW are the stage's existing content.
+    ["edit", "text", ["document"]],
     ["edit", "page", ["cropbox"]],
     ["edit", "none", ["document"]],
     ["review", "signature", ["signature"]],
@@ -249,9 +251,13 @@ describe("Phase 36 chunk 5 - the re-parented components", () => {
       },
     });
     try {
-      expect(slots(host)).toEqual(["text"]);
+      // Phase 37 (item 1) — the text panel leads the column; the stage's own
+      // content (the document facts in EDIT) renders below the divider.
+      expect(slots(host)).toEqual(["document"]);
       // The re-parented component's own selectors are untouched.
       expect(host.querySelector("[data-inspector-text-panel]")).not.toBeNull();
+      expect(host.querySelector("[data-inspector-text-top]")).not.toBeNull();
+      expect(host.querySelector("[data-inspector-divider]")).not.toBeNull();
       expect(host.querySelector("[data-text-panel]")).not.toBeNull();
       expect(host.querySelector("[data-txt-font]")).not.toBeNull();
       expect(host.querySelector("[data-txt-size]")).not.toBeNull();

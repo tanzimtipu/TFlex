@@ -6,10 +6,11 @@
 // box centred and its right half (the "All annotation tools" dropdown toggle)
 // landed under the Inspector and the click was swallowed.
 //
-// The fix keeps the flyout canvas-bound (`min-width: 0`, `overflow: hidden`)
-// and lets the re-parented annotation capsule WRAP, so the dropdown toggle
-// stays inside the canvas at every supported width. These tests pin the CSS
-// contract at 1440 / 1100 / 900 / 760 / 640 and exercise the toggle itself.
+// The fix keeps the flyout canvas-bound (`min-width: 0`, `overflow: hidden`);
+// Phase 37 (item 3) keeps the annotation capsule on ONE row (no wrap) and
+// scrolls it with the ladder's arrows, so the dropdown toggle stays inside the
+// canvas at every width. These tests pin the CSS contract at 1440 / 1100 / 900
+// / 760 / 640 and exercise the toggle itself.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -58,20 +59,26 @@ describe("DEF-325 — the flyout is canvas-bound at every supported width", () =
     expect(flyout).not.toMatch(/min-width:\s*260px/);
   });
 
-  it("the annotation capsule wraps inside the flyout (no spill into the Inspector)", () => {
+  it("the annotation capsule stays on ONE scrolling row inside the flyout (Phase 37 item 3)", () => {
     const group = ruleBody(".annotation-flyout .ann-toolbar");
     expect(group).not.toBeNull();
-    expect(group).toMatch(/flex-wrap:\s*wrap/);
+    // Phase 37 (item 3) supersedes the DEF-325 wrap: the row never wraps; the
+    // ladder's arrows scroll the body instead.
+    expect(group).toMatch(/flex-wrap:\s*nowrap/);
     expect(group).toMatch(/max-width:\s*100%/);
-    expect(group).toMatch(/height:\s*auto/);
 
     const tools = ruleBody(".annotation-flyout .ann-tools-visible");
     expect(tools).not.toBeNull();
-    expect(tools).toMatch(/flex-wrap:\s*wrap/);
+    expect(tools).toMatch(/flex-wrap:\s*nowrap/);
 
     const body = ruleBody(".annotation-flyout-body");
     expect(body).not.toBeNull();
     expect(body).toMatch(/min-width:\s*0/);
+    expect(body).toMatch(/overflow-x:\s*auto/);
+
+    const row = ruleBody(".annotation-flyout-row");
+    expect(row).not.toBeNull();
+    expect(row).toMatch(/display:\s*flex/);
   });
 
   it("renders the real dropdown toggle and opens its menu (the DEF-325 target)", () => {

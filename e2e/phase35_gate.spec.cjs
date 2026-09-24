@@ -9,7 +9,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette, openStandalonePrintWindow } = require('./lib/helpers.cjs');
 const { openFile, tmpCopy, REPORT } = require('./lib/p33_common.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
@@ -196,28 +196,21 @@ test('P35-G3 virtual-PDF destination produces the file inside TFlex, no print wi
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
 
-  await win.click('[data-print]');
-  await win.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
-  await win.waitForFunction(() => {
-    const sel = document.querySelector('[data-print-printer]');
-    if (sel === null) return false;
-    const hasReal = [...sel.querySelectorAll('option')].some((o) => o.value !== '');
-    return hasReal || document.querySelector('[data-print-empty], [data-print-printers-error]') !== null;
-  }, null, { timeout: 20000 });
-  const options = await win.$$eval('[data-print-printer] option', (opts) => opts.map((o) => ({ text: (o.textContent || '').trim(), value: o.value })));
+  const printPage = await openStandalonePrintWindow(app, win);
+  const options = await printPage.$$eval('[data-print-printer] option', (opts) => opts.map((o) => ({ text: (o.textContent || '').trim(), value: o.value })));
   console.log(`[P35-G3] printers=${JSON.stringify(options)}`);
   const pdfOption = options.find((o) => /pdf/i.test(o.text) || /pdf/i.test(o.value));
   expect(pdfOption).toBeTruthy();
-  await win.selectOption('[data-print-printer]', pdfOption.value);
-  await win.waitForTimeout(400);
+  await printPage.selectOption('[data-print-printer]', pdfOption.value);
+  await printPage.waitForTimeout(400);
 
   // A 2-page landscape selection so the produced file's count + orientation
   // are checkable against the preview.
-  await win.click('[data-print-range-custom]');
-  await win.fill('[data-print-range-input]', '1-2');
-  await win.click('[data-print-orientation-landscape]');
-  await win.waitForTimeout(500);
-  const previewMeta = await win.locator('[data-print-preview-meta]').innerText();
+  await printPage.click('[data-print-range-custom]');
+  await printPage.fill('[data-print-range-input]', '1-2');
+  await printPage.click('[data-print-orientation-landscape]');
+  await printPage.waitForTimeout(500);
+  const previewMeta = await printPage.locator('[data-print-preview-meta]').innerText();
   console.log(`[P35-G3] preview meta=${JSON.stringify(previewMeta)}`);
 
   // Stub the app's own Save-As seam (the native dialog cannot be automated).
@@ -230,9 +223,9 @@ test('P35-G3 virtual-PDF destination produces the file inside TFlex, no print wi
   const before = listOsWindows(mainPid);
   console.log(`[P35-G3] OS windows before confirm=${JSON.stringify(before)}`);
 
-  await win.click('[data-print-confirm]');
-  await win.waitForSelector('[data-print-success]', { timeout: 60000 });
-  const success = await win.locator('[data-print-success]').innerText();
+  await printPage.click('[data-print-confirm]');
+  await printPage.waitForSelector('[data-print-success]', { timeout: 60000 });
+  const success = await printPage.locator('[data-print-success]').innerText();
   console.log(`[P35-G3] success=${JSON.stringify(success)}`);
   await win.waitForTimeout(1500);
 
@@ -265,13 +258,10 @@ async function openDetachedPrintWindow() {
   await openFile(app, win, tmpCopy(REPORT, 'p35g4-print.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
-  await win.click('[data-print]');
-  await win.waitForSelector('[data-print-detach]', { state: 'visible', timeout: 15000 });
-  const pagePromise = app.waitForEvent('window');
-  await win.click('[data-print-detach]');
-  const printPage = await pagePromise;
-  await printPage.waitForSelector('[data-print-window]', { timeout: 30000 });
-  await printPage.waitForTimeout(800);
+  // Phase 37 item 17 — the title-bar Print icon opens the standalone window
+  // directly (the in-app modal and its detach control were removed).
+  const printPage = await openStandalonePrintWindow(app, win);
+  await printPage.waitForTimeout(600);
   return printPage;
 }
 
@@ -383,10 +373,8 @@ test('P35-G4b app closing closes the print window', async () => {
 
 test('P35-G4c document-gone path disables the print action', async () => {
   const printPage = await openDetachedPrintWindow();
-  // Close the in-app print dialog so the tab close button is reachable.
-  await win.keyboard.press('Escape');
-  await win.waitForTimeout(600);
-  // Close the document tab in the app; main forwards the gone event.
+  // Phase 37 item 17 — the print window is a separate OS window, so it never
+  // blocks the app; the document tab is directly closable.
   await win.locator('.tab-close').first().click();
   await win.waitForTimeout(1500);
   const gone = await printPage.evaluate(() => ({

@@ -167,9 +167,10 @@ test("ABOUT: Help > About reports the package.json version and a non-empty What'
 // STAGES retired the single-mode command row (and its `.ann-toolbar`). The
 // workspace chrome that stands in for it is the Stage Rail plus the per-stage
 // Action Dock; the annotation toolbar is re-parented into the REVIEW dock's
-// Annotate flyout; the edit toggle is the EDIT dock's `editMode` verb (DEF-314).
-// The assertion INTENT is unchanged: the single-mode command surface exists and
-// is reachable, and the edit toggle arms/disarms the edit toolbar.
+// Annotate flyout. Phase 37 (item 13) retired the EDIT dock's `editMode` verb:
+// the EDIT stage itself is now the edit-mode switch. The assertion INTENT is
+// unchanged: the single-mode command surface exists and is reachable, and the
+// edit toggle arms/disarms the edit toolbar.
 test('CORE 1: Stage Rail chrome reachable; annotation toolbar reachable; edit toggle arms/disarms', async () => {
   await withApp(async (win, pageErrors, app) => {
     await openReport(app, win);
@@ -191,16 +192,21 @@ test('CORE 1: Stage Rail chrome reachable; annotation toolbar reachable; edit to
     expect(await win.locator('[data-annotation-flyout] .ann-toolbar').isVisible(),
       'annotation toolbar reachable in the REVIEW flyout').toBe(true);
 
-    // The edit toggle is the EDIT dock's `editMode` verb now.
+    // Phase 37 (item 13): the EDIT stage IS the edit-mode switch - entering it
+    // enables edit mode and mounts the edit toolbar; there is no `editMode` dock
+    // verb any more. The assertion INTENT is unchanged: the edit toggle
+    // arms/disarms the edit toolbar.
     await gotoStage(win, 2);
-    const editToggle = win.locator('[data-dock-verb="editMode"]');
-    expect(await editToggle.count(), 'exactly one edit toggle').toBe(1);
-    await editToggle.click();
+    expect(await win.locator('[data-dock-verb="editMode"]').count(),
+      'no editMode dock verb (the stage is the switch)').toBe(0);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
-    expect(await win.locator('.edit-toolbar').isVisible(), 'edit toolbar mounted after arming').toBe(true);
-    await editToggle.click();
-    await win.waitForTimeout(400);
-    expect(await win.locator('[data-edit-toolbar]').count(), 'edit toolbar disarms').toBe(0);
+    expect(await win.locator('.edit-toolbar').isVisible(), 'edit toolbar mounted on entering EDIT').toBe(true);
+    await gotoStage(win, 1);
+    await win.waitForTimeout(500);
+    expect(await win.locator('[data-edit-toolbar]').count(), 'edit toolbar disarms on leaving EDIT').toBe(0);
+    await gotoStage(win, 2);
+    await win.waitForTimeout(500);
+    expect(await win.locator('[data-edit-toolbar]').count(), 're-entering EDIT re-arms the edit toolbar').toBe(1);
     expect(pageErrors, 'zero uncaught renderer page errors').toEqual([]);
   }, 'canonical-core1');
 });

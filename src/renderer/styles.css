@@ -444,7 +444,13 @@
 @property --tf-rail-w {
   syntax: "<length>";
   inherits: true;
-  initial-value: 220px;
+  /* Phase 37 (item 15) — narrowed 220px -> 184px: the PAGES header title is
+   * gone, so the panel only needs to hold the Combine entry + the collapse
+   * control plus the thumbnail stack. 184px still fits the 126px thumbnail
+   * plus the scroller's 16px horizontal chrome (142px) with room for the
+   * header controls. Items 15/18 stay coherent: the single panel is 184px,
+   * the headerless Multi Mode strips are 150px. */
+  initial-value: 184px;
 }
 
 /* Phase 25 — the text-properties card's WIDTH. The card floats over the
@@ -1127,6 +1133,19 @@ input[type="checkbox"] {
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   position: relative;
+}
+
+/* Phase 37 (item 8) — on the welcome/home screen the Stage Rail is not
+ * rendered, so its 44px track collapses and the stage spans the full frame.
+ * The condition is the same one that shows the welcome pane (and hides the
+ * ContextPanel). As soon as a document is open the rail returns to its track
+ * and the stage moves back to column 2. */
+.app-main[data-stage-rail-hidden="true"] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-main[data-stage-rail-hidden="true"] .tab-stage {
+  grid-column: 1;
 }
 
 /* Phase 13 — frameless window. The TitleBar is the drag region; the
@@ -6712,18 +6731,82 @@ rect.ann-highlight.ann-preview {
  * ------------------------------------------------------------------------- */
 .inspector {
   position: absolute;
-  top: var(--toolbar-h, 52px);
+  /* DEF-333 — FLUSH with the workspace's top edge. The panel is a direct child
+   * of `.app-main` (position: relative), whose padding box starts at the
+   * caption line (44px) — the SAME edge the canvas (.workspace-main) and the
+   * left ContextPanel start at. The retired `--toolbar-h` token (52px, the
+   * command-row height removed in Phase 36) offset the panel one dead command
+   * row below that edge (96px vs 44px). `top: 0` is the correct
+   * containing-block value; the measured gap to the canvas/context panel is 0. */
+  top: 0;
   right: 0;
   bottom: 0;
   width: var(--tools-panel-w, 264px);
   background: var(--panel-bg);
   border-left: 1px solid var(--panel-border);
-  border-radius: var(--panel-radius) 0 0 var(--panel-radius);
-  box-shadow: var(--panel-shadow);
+  /* Phase 37 (item 3) — FLUSH with the canvas top: no rounded left corner and
+   * no shadow seam. The panel is docked edge-to-edge like the left panel; the
+   * only chrome is the shared hairline. */
+  border-radius: 0;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   min-width: 0;
   z-index: 30;
+}
+
+/* Phase 37 (items 3 + 6) — the Inspector's responsive/user collapse. It stays
+ * MOUNTED as a narrow strip so its own expand control is always reachable; the
+ * strip's width is the inset the canvas reserves, so it never overlaps the
+ * page. The host resolves `collapsed` as `userCollapsed || ladder rung`. */
+.app-main[data-inspector-collapsed='true'] {
+  --tools-panel-w: var(--inspector-collapsed-w, 44px);
+  --tf-tools-inset: var(--tools-panel-w, 44px);
+}
+
+.inspector-collapsed-strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: var(--sp-2);
+}
+
+.inspector-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.inspector-collapse-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.inspector-collapse-toggle:hover:not(:disabled) { background: var(--bg-hover); color: var(--fg-strong); }
+.inspector-collapse-toggle:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.inspector-collapse-toggle:disabled { opacity: 0.5; cursor: default; }
+
+/* Phase 37 (item 1) — the text-manipulation block at the TOP of the body,
+ * followed by the subtle divider and the stage sections. The body is the ONE
+ * scroller (`.inspector .inspector-body`), so the whole column scrolls as a
+ * unit with no nested scrollbar fighting it. */
+.inspector-divider {
+  height: 1px;
+  margin: var(--sp-1) 0;
+  background: var(--divider);
+}
+.inspector .inspector-body .text-props-panel {
+  /* The re-parented card never owns its own scrollbar inline. */
+  max-height: none;
+  overflow: visible;
 }
 
 /* Specificity note: `.inspector .inspector-body` (0,2,0) must beat the shared
@@ -6782,7 +6865,9 @@ rect.ann-highlight.ann-preview {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-1);
-  padding: 0;
+  /* Phase 37 (item 10) — legible label size + a comfortable hit target. */
+  min-height: 24px;
+  padding: 2px 4px;
   border: none;
   background: transparent;
   color: var(--accent);
@@ -6799,13 +6884,17 @@ rect.ann-highlight.ann-preview {
 .inspector-action {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-1);
-  padding: 2px var(--sp-2);
+  gap: 6px;
+  /* Phase 37 (item 10) — professional affordance sizing: a 28px comfortable
+   * hit target with a legible 12px label (the app's --fs-sm body scale),
+   * consistent 4x10 padding and the shared control radius. No tiny text. */
+  min-height: 28px;
+  padding: 4px 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-control);
+  border-radius: var(--radius-2);
   background: transparent;
   color: var(--fg);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   cursor: pointer;
   transition: background var(--motion-duration-fast) var(--motion-ease-standard);
 }
@@ -6840,8 +6929,19 @@ rect.ann-highlight.ann-preview {
 .inspector-quick-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--sp-1);
+  gap: var(--sp-2);
   margin-top: var(--sp-1);
+}
+
+/* Phase 37 (item 22) — SUBTLE separators between distinct rows/text blocks in
+ * the Inspector so the sections read as discrete items, not a wall of text.
+ * A hairline token, one consistent rhythm, never a heavy border. */
+.inspector-section-body > * + * {
+  border-top: 1px solid var(--divider);
+  padding-top: var(--sp-1);
+}
+.inspector-section-body > .inspector-row + .inspector-row {
+  padding-top: var(--sp-2);
 }
 
 /* The re-parented annotations panel fills the section edge-to-edge. */
@@ -9001,7 +9101,9 @@ rect.ann-highlight.ann-preview {
 
 .edit-toolbar {
   display: flex;
-  flex-wrap: wrap;
+  /* Phase 37 (item 3) — the secondary edit row is ONE row: it never wraps and
+   * never stacks. At the ladder's last rung the arrows scroll it. */
+  flex-wrap: nowrap;
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
@@ -9013,6 +9115,35 @@ rect.ann-highlight.ann-preview {
    * the 1fr scroller row (see the .workspace-main comment). */
   grid-row: 3;
 }
+
+/* Phase 37 (item 3) — the single scrolling row + the ladder's arrows. */
+.edit-toolbar-scroll {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.edit-toolbar-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--motion-fast) var(--ease-out);
+}
+.edit-toolbar-arrow:hover { background: var(--bg-hover, var(--accent-soft)); color: var(--fg); }
+.edit-toolbar-arrow:focus-visible { outline: none; box-shadow: var(--focus-ring); }
 
 .edit-toolbar-btn {
   display: inline-flex;
@@ -12407,7 +12538,12 @@ rect.ann-highlight.ann-preview {
    the strip; single mode's rail column (`--tf-rail-w`, which still shrinks
    to the ruler) is untouched. */
 .workspace:has(> .pane-thumb-strip) {
-  --tf-strip-w: 220px;
+  /* Phase 37 (item 18) — the Multi Mode strips carry too much empty space at
+   * 220px for their 89px two-document thumbnails, so the rest width drops to
+   * 150px (the single-mode panel is 184px). The floor stays `--tf-strip-min`
+   * (100px = 84px minimum thumb + 16px chrome); at 150px each 89px thumb keeps
+   * a comfortable margin and the strip still reads legibly. */
+  --tf-strip-w: 150px;
   --tf-strip-min: 100px;
   --tf-page-min: 44px;
   grid-template-columns:
@@ -12634,7 +12770,12 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
   justify-content: space-between;
   width: 44px;
-  padding: var(--sp-2) 0;
+  /* Phase 37 (item 9, the placement audit) — a horizontal inset so the rail's
+   * controls (and the "Settings" label in particular) never touch the window's
+   * leading edge. 3px per side leaves a 38px content box; the rail label is
+   * sized (see .stage-rail-label) so every stage word plus the gear's
+   * "Settings" fits inside it with a visible edge gap. */
+  padding: var(--sp-2) 3px;
   background: var(--bg-rail);
   border-right: 1px solid var(--border);
   -webkit-app-region: no-drag;
@@ -12664,6 +12805,9 @@ rect.ann-highlight.ann-preview {
   padding: 7px 0;
   background: transparent;
   border: 0;
+  /* Phase 37 (item 9) — the control's own surface is inset from the rail's
+   * edges, so its hover/active wash never grazes the window edge. */
+  border-radius: var(--radius-2);
   color: var(--fg-muted);
   cursor: pointer;
   transition:
@@ -12731,10 +12875,13 @@ rect.ann-highlight.ann-preview {
 }
 
 .stage-rail-label {
-  font-size: 8px;
+  /* Phase 37 (item 9) — 7px / 0.02em lets every label (including the gear's
+   * "Settings") fit the 38px content box, so no word is flush with the
+   * window edge. Still a legible micro-label, now with real padding. */
+  font-size: 7px;
   line-height: 1;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.02em;
   white-space: nowrap;
 }
 
@@ -12785,6 +12932,16 @@ rect.ann-highlight.ann-preview {
   display: flex;
   align-items: center;
   gap: var(--space-small);
+  /* Phase 37 (item 15) — the PAGES header has no title, so the actions cluster
+   * fills the header row: Combine stays at the leading edge and the collapse
+   * chevron is pushed to the trailing edge by its own margin-left:auto. With a
+   * title present (EDIT/REVIEW/DELIVER) this is a harmless flex-grow. */
+  flex: 1 1 auto;
+}
+
+.context-panel-header .glass-sidebar-actions {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* The header's merge entry: a ghost control at the panel's trailing edge. */
@@ -12851,11 +13008,21 @@ rect.ann-highlight.ann-preview {
   flex: 0 1 auto;
   min-height: 0;
   overflow: hidden;
-  border-top: 1px solid var(--border-subtle);
+  /* Phase 37 (item 16) — the hairline separator between the thumbnail area and
+   * the Outline now uses the SAME item-22 divider token as the Inspector's
+   * inter-row rules (not the heavier border-subtle), so every separator in the
+   * product shares one treatment. */
+  border-top: 1px solid var(--divider);
 }
 
+/* Phase 37 (item 16) — with a body the Outline claims a definite share of the
+ * panel body (`height: 40%`) and `.context-panel-thumbs` (flex: 1 1 auto)
+ * takes the rest, so the section's bottom edge is FLUSH with the panel's
+ * bottom edge. `flex-basis` is pinned to the same share so a short body can
+ * never shrink the section up off the bottom. */
 .context-panel-outline:has(.context-panel-outline-body) {
   height: 40%;
+  flex: 0 0 40%;
 }
 
 .context-panel-section-toggle {
@@ -12938,6 +13105,15 @@ rect.ann-highlight.ann-preview {
   gap: var(--sp-1);
   padding: var(--space-small) var(--space-control);
   border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Phase 37 (item 22) — subtle separators between the distinct rows / text
+ * blocks inside a section (the section-level rule above already separates the
+ * sections themselves). A hairline token, consistent rhythm, no heavy border;
+ * the section title keeps its own spacing and is never preceded by a rule. */
+.context-panel-section > *:not(.context-panel-section-title) + *:not(.context-panel-section-title) {
+  border-top: 1px solid var(--divider);
+  padding-top: var(--space-micro);
 }
 
 .context-panel-section-title {
@@ -13234,7 +13410,11 @@ rect.ann-highlight.ann-preview {
   z-index: 7;
   box-sizing: border-box;
   display: flex;
-  flex-wrap: wrap;
+  /* Phase 37 (item 2) — the dock is ALWAYS ONE ROW. Wrap was the Phase-36
+   * behaviour (`...` overflow absorbed the excess); the responsive ladder's
+   * arrows now scroll the row instead, so the dock must never stack at any
+   * width. `nowrap` is the structural guarantee. */
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
   gap: 4px;
@@ -13304,13 +13484,11 @@ rect.ann-highlight.ann-preview {
   display: flex;
   align-items: center;
   justify-content: center;
-  /* DEF-313 — the verb group wraps inside the capped dock instead of
-   * overflowing and clipping its trailing verb. DEF-330 — the inter-verb gap
-   * and the verb padding are trimmed by 1px / 2px so the WIDEST curated set
-   * (DELIVER's five labels, ~490px real) fits the pill-free band (493.75px at
-   * the default window) on ONE row: at the designed 4px gap / 9px padding its
-   * real width is ~514px, which no placed geometry can fit between the pills. */
-  flex-wrap: wrap;
+  /* Phase 37 (item 2) — the verb group NEVER wraps; the ladder's arrows scroll
+   * it instead. The dock and its groups are one row at every width. DEF-330 —
+   * the inter-verb gap and the verb padding are trimmed by 1px / 2px so the
+   * WIDEST set fits the pill-free band on ONE row. */
+  flex-wrap: nowrap;
   max-width: 100%;
   gap: 3px;
 }
@@ -13467,6 +13645,96 @@ rect.ann-highlight.ann-preview {
 .action-dock-menu-item:disabled {
   color: var(--fg-disabled);
   cursor: not-allowed;
+}
+
+/* Phase 37 (item 6) — the single-row verb strip. In its default form
+ * `display: contents` makes it transparent to the dock's flex layout, so the
+ * pre-ladder geometry is pixel-identical; at the ladder's arrows LANE it
+ * becomes a horizontally scrollable row and the two arrows drive it.
+ *
+ * DEF-337 — the lane is keyed on `data-dock-arrows-lane`, NOT on the gated
+ * `data-dock-arrows`: the container must be a real box for the whole lane so
+ * the overflow measurement never depends on the arrows it controls. Keying it
+ * on the gated attribute collapsed the box when the arrows were hidden
+ * (`display: contents` -> `clientWidth 0`), the hook read 0 as "overflowing",
+ * the box reappeared and fit, and the state oscillated to dead arrows at 640. */
+.action-dock-scroll {
+  display: contents;
+}
+
+.action-dock[data-dock-arrows-lane='true'] .action-dock-scroll {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.action-dock[data-dock-arrows-lane='true'] .action-dock-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Phase 37 (item 6) — the ladder's left/right scroll controls. A comfortable
+ * 26px hit target, themed from the same verb tokens as the row they drive. */
+.action-dock-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.action-dock-arrow:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.action-dock-arrow:active:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.action-dock-arrow:focus-visible {
+  outline: 2px solid var(--tf-accent-focus);
+  outline-offset: -2px;
+}
+
+/* Phase 37 (item 21) — the unobtrusive Ctrl+K hint above the dock. Absolutely
+ * positioned out of the single verb row; hidden at the arrows rung by the
+ * component, so it never steals width from the verbs. */
+.action-dock-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 5px);
+  text-align: center;
+  font-size: 9px;
+  line-height: 1;
+  color: var(--fg-faint);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.action-dock-kbd {
+  padding: 1px 4px;
+  font: inherit;
+  color: var(--fg-muted);
+  background: var(--bg-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -13637,11 +13905,13 @@ rect.ann-highlight.ann-preview {
   /* DEF-325 — `min-width: 0` (was a fixed 260px): the flyout is a
    * canvas-bound surface, so it must be allowed to shrink with the visible
    * canvas instead of centring past it under the Inspector. `overflow:
-   * hidden` keeps any residual overflow inside that canvas-bound box. */
+   * hidden` keeps any residual overflow inside that canvas-bound box.
+   * Phase 37 (item 3) — ONE row, no header: the padding is the row's only
+   * chrome. */
   min-width: 0;
   max-width: calc(100% - 24px);
   overflow: hidden;
-  padding: 6px 8px 8px;
+  padding: 6px 8px;
   background: var(--bg-elevated);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-group);
@@ -13652,83 +13922,65 @@ rect.ann-highlight.ann-preview {
   pointer-events: auto;
 }
 
-.annotation-flyout-header {
+/* Phase 37 (item 3) — the secondary surface's ONE row: the scroll body with
+ * the ladder's optional left/right arrows. It never wraps and never stacks. */
+.annotation-flyout-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--space-micro);
+  min-width: 0;
+  max-width: 100%;
 }
 
-.annotation-flyout-title {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  color: var(--fg-muted);
-}
-
-.annotation-flyout-close {
+.annotation-flyout-arrow {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
   padding: 0;
-  background: transparent;
-  border: 1px solid transparent;
+  border: none;
   border-radius: var(--radius-2);
+  background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  transition:
-    background-color var(--motion-duration-fast) var(--motion-ease-standard),
-    color var(--motion-duration-fast) var(--motion-ease-standard);
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-standard);
 }
-
-.annotation-flyout-close:hover {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
-}
-
-.annotation-flyout-close:focus-visible {
-  outline: 2px solid var(--tf-accent-focus);
-  outline-offset: -2px;
-}
+.annotation-flyout-arrow:hover { background: var(--bg-hover); color: var(--fg-strong); }
+.annotation-flyout-arrow:focus-visible { outline: 2px solid var(--tf-accent-focus); outline-offset: -2px; }
 
 .annotation-flyout-body {
   display: flex;
   align-items: center;
   min-width: 0;
-  overflow: hidden;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
-/* DEF-325 — the flyout is a CANVAS-BOUND surface (it lives inside the
- * pointer-inert `.canvas-overlay`, DEF-319), so its box must never spill
- * past the visible canvas into the Inspector. Its own `min-width: 260px`
- * used to win over `max-width: calc(100% - 24px)` on a narrow canvas: the
- * box centred, and its right half (the "All annotation tools" dropdown
- * toggle) landed under the 264px Inspector, which then swallowed the click.
- *
- * Rule: the flyout shrinks to the canvas (`min-width: 0`), and the
- * re-parented annotation capsule wraps inside it, so every tool control —
- * including the dropdown toggle — stays inside the canvas at every width.
- * Nothing is removed; the tools reflow onto more rows on a narrow canvas. */
+/* DEF-325 (updated by Phase 37 item 3) — the flyout is a CANVAS-BOUND surface
+ * (it lives inside the pointer-inert `.canvas-overlay`, DEF-319), so its box
+ * must never spill past the visible canvas into the Inspector. It shrinks to
+ * the canvas (`min-width: 0`) and the re-parented annotation capsule stays on
+ * ONE row: it does NOT wrap any more — the ladder's arrows scroll it, exactly
+ * like the dock. */
 .annotation-flyout .ann-toolbar {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
   height: auto;
   max-width: 100%;
-  row-gap: 2px;
+  flex: 0 0 auto;
 }
 
 .annotation-flyout .ann-tools-visible {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .canvas-pill,
-  .annotation-flyout-close {
+  .annotation-flyout-arrow {
     transition: none;
   }
 }

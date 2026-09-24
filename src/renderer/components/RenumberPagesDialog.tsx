@@ -126,7 +126,7 @@ export function RenumberPagesDialog(
       >
         <div className="modal-header">
           <h2 id="renumber-pages-dialog-title" className="modal-title">
-            Renumber pages
+            Rename pages
           </h2>
           <button
             type="button"

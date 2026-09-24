@@ -30,6 +30,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ThumbnailRail } from "./SideRail";
+import type { ThumbVerbs } from "./SideRail";
+import { usePageThumbMenu } from "./pageThumbMenu";
 import { computeThumbWidth } from "./thumbGeometry";
 import { buildPageLabelMap } from "./pageGeometry";
 import type { EngineState } from "../engine/types";
@@ -37,10 +39,12 @@ import type { PaneId } from "../state/multiMode";
 import type { PageDropOp } from "../state/pageDrag";
 import { usePageDragOptional } from "../state/PageDragContext";
 
-/** The strip's own width at rest — the same 220px column the single-mode
- *  rail occupies (--tf-rail-w). It is the measurement fallback and the
- *  value used in jsdom, where clientWidth is always 0. */
-export const STRIP_WIDTH_PX = 220;
+/** The strip's own width at rest — Phase 37 (item 18): narrowed from 220px to
+ *  150px (the single-mode panel is 184px). It is the measurement fallback and
+ *  the value used in jsdom, where clientWidth is always 0. At 150px the
+ *  two-document 89px thumbnail plus the 16px scroller chrome still fit with
+ *  room to spare. */
+export const STRIP_WIDTH_PX = 150;
 
 export interface PaneThumbStripProps {
   /** Which pane this strip belongs to (A or B); drives the badge. */
@@ -75,9 +79,22 @@ export interface PaneThumbStripProps {
    *  sit side by side in the middle, so each keeps the Phase-32
    *  area-preserving thumb width for that count. */
   documentCount: number;
-  /** Phase 32 (chunk 2d) — document-aware drag wiring; makes this strip a
+/** Phase 32 (chunk 2d) — document-aware drag wiring; makes this strip a
    *  cross-document drag source/target. */
   crossDoc: { tabId: string; onDrop: (op: PageDropOp) => void };
+
+  // --- Phase 37 (chunk 5, item 19) — SAME options as the single-mode panel --
+  /** The right-click menu's dialog entries. Each receives the VISIBLE 1-based
+   *  page the gesture landed on; absent disables that menu item's effect. */
+  onExtractPages?: (page: number) => void;
+  /** "Insert blank after" — an IMMEDIATE engine insert (no dialog). */
+  onInsertBlank?: (page: number) => void;
+  onReplacePages?: (page: number) => void;
+  /** "Delete…" — opens the host's delete-pages dialog seeded with the page. */
+  onDeletePage?: (page: number) => void;
+  /** The host-owned multi-select SET (DocumentView owns it in every mode). */
+  pageSelection?: readonly number[] | null;
+  onPageSelectionChange?: ((pages: number[]) => void) | null;
 }
 export function PaneThumbStrip(props: PaneThumbStripProps): ReactElement {
   const {
@@ -97,11 +114,17 @@ export function PaneThumbStrip(props: PaneThumbStripProps): ReactElement {
     onDelete,
     onReorder,
     onUndo,
-    onJump,
+onJump,
     onFocusPane,
     documentCount,
     crossDoc,
-} = props;
+    onExtractPages,
+    onInsertBlank,
+    onReplacePages,
+    onDeletePage,
+    pageSelection = null,
+    onPageSelectionChange = null,
+  } = props;
 
   const stripRef = useRef<HTMLDivElement | null>(null);
   const [stripWidth, setStripWidth] = useState(STRIP_WIDTH_PX);
@@ -147,10 +170,32 @@ export function PaneThumbStrip(props: PaneThumbStripProps): ReactElement {
     }
     return m;
   }, [engineState.pageOrder]);
-  const pageLabelMap = useMemo(
+const pageLabelMap = useMemo(
     () => buildPageLabelMap(engineState.pageLabels),
     [engineState.pageLabels],
   );
+
+  // Phase 37 (item 19) — the SAME inline hover verbs the single-mode panel
+  // renders, built from this strip's own engine handlers.
+  const verbs = useMemo<ThumbVerbs>(
+    () => ({
+      onRotateCw: (page: number): void => onOp?.({ kind: "rotate", page, dir: "cw" }),
+      onExtract: (page: number): void => onExtractPages?.(page),
+      onDelete: (page: number): void => onDelete?.([page]),
+    }),
+    [onOp, onExtractPages, onDelete],
+  );
+
+  // Phase 37 (item 19) — the SAME six-item right-click menu, via the shared
+  // controller (the single-mode panel uses this exact hook; no fork).
+  const { openMenu, menuNode } = usePageThumbMenu({
+    onRotateCw: (page: number): void => onOp?.({ kind: "rotate", page, dir: "cw" }),
+    onRotateCcw: (page: number): void => onOp?.({ kind: "rotate", page, dir: "ccw" }),
+    onExtract: (page: number): void => onExtractPages?.(page),
+    onInsertBlank: (page: number): void => onInsertBlank?.(page),
+    onReplace: (page: number): void => onReplacePages?.(page),
+    onDeletePage: (page: number): void => onDeletePage?.(page),
+  });
 
   // Phase 32 (chunk 2d) — the landing strip highlights while a
   // cross-document drag hovers it (the per-thumb slot affordance rides on
@@ -190,11 +235,16 @@ export function PaneThumbStrip(props: PaneThumbStripProps): ReactElement {
           onDelete={onDelete}
           onReorder={onReorder}
           onUndo={onUndo}
-          onJump={jumpAndFocus}
+onJump={jumpAndFocus}
           thumbWidth={thumbWidth}
           crossDoc={crossDoc}
+          thumbVerbs={verbs}
+          onThumbContextMenu={openMenu}
+          pageSelection={pageSelection}
+          onPageSelectionChange={onPageSelectionChange}
         />
       </div>
+      {menuNode}
     </div>
   );
 }

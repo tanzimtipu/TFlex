@@ -30,7 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { CSSProperties, ReactElement } from 'react';
 import type { LucideIcon } from 'lucide-react';
-import { Ellipsis } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Ellipsis } from 'lucide-react';
 import {
   DOCK_AVAILABILITY_REASON,
   DOCK_BULK_IDS,
@@ -44,8 +44,11 @@ import {
   isDockIconOnly,
   planDockOverflow,
   sanitizeDockPins,
+  sanitizeDockUnpinned,
   selectionChipLabel,
 } from '../state/dockModel';
+import { resolveDockLadder, type DockLadder } from '../state/dockResponsive';
+import { useRowOverflow } from '../hooks/useRowOverflow';
 import {
   DOCK_DEFAULT_RESERVE,
   DOCK_LIFT_INSET,
@@ -84,6 +87,10 @@ export interface ActionDockProps {
   /** Registry tool ids pinned to the dock, in order (already validated by the
    *  host on read; the dock re-sanitizes defensively). */
   dockPins: readonly string[];
+  /** Phase 37 (item 21) — registry tool ids the user UNPINNED from their
+   *  stage's default set (the inverse of a pin). Validated against the
+   *  registry here; unknown ids are dropped. */
+  dockUnpinned?: readonly string[];
   onPinTool: (id: string) => void;
   onUnpinTool: (id: string) => void;
   /** Run a registry tool id. The host maps ids to its existing handlers. */
@@ -101,6 +108,10 @@ export interface ActionDockProps {
   /** The canvas width for the responsive rules. When omitted the dock measures
    *  its own container and re-renders on resize. */
   canvasWidth?: number;
+  /** Phase 37 (items 2 + 6) — the ONE responsive ladder resolved by the host
+   *  from the measured workspace width. When omitted the dock derives the same
+   *  ladder from its own measured width (standalone / test mounts). */
+  ladder?: DockLadder;
   /** Per-tool run counts â€” the compact overflow ranks by usage. */
   toolUsage?: Readonly<Record<string, number>> | undefined;
   /** Verb ids whose tool is currently ON (e.g. `editMode` while Edit mode is
@@ -131,6 +142,9 @@ interface PinMenuState {
 
 const MENU_W = 168;
 const MENU_H = 76;
+
+/** Phase 37 (item 6) — how far one arrow click scrolls the dock's verb strip. */
+export const DOCK_SCROLL_STEP = 160;
 
 /** Clamp a pointer-anchored menu into the viewport (8px gutter). Mirrors the
  *  ContextPanel's clamp so both popovers behave identically. */
@@ -186,6 +200,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     onClearPageSelection,
     bulk,
     dockPins,
+    dockUnpinned,
     onPinTool,
     onUnpinTool,
     onRunTool,
@@ -194,12 +209,14 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     toolArmed = false,
     dragInProgress = false,
     canvasWidth,
+    ladder: ladderProp,
     toolUsage,
     activeToolIds,
     onIdleChange,
   } = props;
 
   const rootRef = useRef<HTMLElement | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [measuredWidth, setMeasuredWidth] = useState<number>(() =>
     typeof window === 'undefined' ? 1200 : window.innerWidth,
   );
@@ -296,7 +313,14 @@ export function ActionDock(props: ActionDockProps): ReactElement {
 
   const width = canvasWidth ?? measuredWidth;
   const compact = isDockCompact(width);
-  const hostIconOnly = isDockIconOnly(width);
+  // Phase 37 (items 2 + 6) — the responsive ladder. The host resolves it once
+  // from the measured workspace width and threads it to every dock; a
+  // standalone dock (test / preview mount) derives the same ladder from its own
+  // measured width, so the rungs are always the ONE implementation.
+  const ladder = useMemo(
+    () => ladderProp ?? resolveDockLadder(width),
+    [ladderProp, width],
+  );
   // DEF-315 — the band the dock may occupy and whether the pills leave room
   // for it at all. `reserve` is the measured pill band, consumed by the CSS
   // cap (`max-width: 100% - var(--dock-reserve)`) and the inline cap here.
@@ -346,7 +370,14 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   );
 
   // ---- State 1 / State 2 ------------------------------------------------
-  const stageEntries = useMemo(() => dockToolsForStage(activeStage), [activeStage]);
+  // Phase 37 (item 21) — the stage's FULL relevant set by default, MINUS the
+  // tools the user unpinned (unknown ids dropped, capped, deduped). Pinned
+  // tools are appended in State 3 (deduped against whatever is here).
+  const unpinned = useMemo(() => sanitizeDockUnpinned(dockUnpinned), [dockUnpinned]);
+  const stageEntries = useMemo(
+    () => dockToolsForStage(activeStage).filter((entry) => !unpinned.includes(entry.id)),
+    [activeStage, unpinned],
+  );
   const primaryState = dockPrimaryState({
     activeStage,
     selectionCount: pageSelection.length,
@@ -409,28 +440,51 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   // ---- responsive overflow ---------------------------------------------
   // DEF-315 — plan on the BAND once the pills are measured, so the `...` chip
   // absorbs the overflow inside it rather than the dock growing toward a pill.
-  const plan = useMemo(
-    () =>
-      planDockOverflow({
-        primary: primaryVerbs,
-        pinnedCount: pinnedVerbs.length,
-        usage: toolUsage,
-        width: planWidth,
-      }),
-    [primaryVerbs, pinnedVerbs.length, toolUsage, planWidth],
-  );
-  // DEF-315 / DEF-330 — the labels yield when the labelled dock (with its pins)
-  // cannot fit the band, measured from the labels' OWN widths (a per-verb
-  // constant cannot tell DELIVER's five wide verbs from PAGES' six narrow ones).
-  // The plan is judged against the band the dock would actually occupy: the
-  // pill-free band when it is parked between the pills, the host-cap band when
-  // lifted, and the symmetric band before the pills are measured.
+  //
+  // DEF-334 — `resolveDockLadder`'s 880 rung is the AUTHORITY for hiding the
+  // dock's labels. The measured fit (canvas host < 900, or the labelled dock
+  // wider than the pill-free band) may only route the row into the ARROWS lane
+  // where it scrolls, never silently drop labels above 880. Phase 37 grew the
+  // PAGES default set to eight verbs, so the labelled row genuinely cannot fit
+  // the default band; the no-wrap guarantee is kept by preferring the arrows
+  // lane over hiding labels (the re-opened DEF-330).
   const labelBand = lifted ? band : freeBand?.width ?? band;
   const need = labelledDockNeed(
     primaryVerbs.map((v) => v.label),
     pinnedVerbs.map((v) => v.label),
   );
-  const iconOnly = hostIconOnly || (pill !== null && !labelsFitBand(need, labelBand));
+  const iconOnly = ladder.iconOnly;
+  const measuredLabelOverflow =
+    !ladder.iconOnly &&
+    (isDockIconOnly(width) || (pill !== null && !labelsFitBand(need, labelBand)));
+  // The lane decision (plan + hints): the ladder's last rung OR a labelled row
+  // that cannot fit its band. Rendering of the arrows is separately gated on a
+  // real overflow measurement (DEF-337).
+  const arrowsLane = ladder.arrows || measuredLabelOverflow;
+  // Phase 37 (item 6) — once the ladder reaches its LAST rung (or the labelled
+  // row must scroll) the `...` chip is replaced by the left/right ARROWS: every
+  // verb stays in the single row and the row scrolls, so nothing is ever hidden
+  // behind a menu at the smallest width and the dock still never stacks.
+  const plan = useMemo(
+    () =>
+      arrowsLane
+        ? { visible: [...primaryVerbs], overflow: [] }
+        : planDockOverflow({
+            primary: primaryVerbs,
+            pinnedCount: pinnedVerbs.length,
+            usage: toolUsage,
+            width: planWidth,
+          }),
+    [arrowsLane, primaryVerbs, pinnedVerbs.length, toolUsage, planWidth],
+  );
+  // DEF-337 — the arrows exist only when the scroll container genuinely
+  // overflows; a row that already fits offers no dead control.
+  const rowOverflow = useRowOverflow(
+    scrollRef,
+    arrowsLane,
+    `${iconOnly}:${Math.round(need)}`,
+  );
+  const arrows = arrowsLane && rowOverflow;
   const visibleIds = useMemo(() => new Set(plan.visible.map((e) => e.id)), [plan]);
   const inlineVerbs = useMemo(
     () => primaryVerbs.filter((v) => visibleIds.has(v.id)),
@@ -521,6 +575,20 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     setMenu({ id, x, y });
   };
 
+  /** Phase 37 (item 6) — scroll the single-row verb strip by one step. Called
+   *  by the ladder's left/right arrows only; guarded so a mount without the
+   *  scroll container (or a test environment without `scrollBy`) is a no-op. */
+  const scrollVerbs = useCallback((direction: -1 | 1): void => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const delta = direction * DOCK_SCROLL_STEP;
+    if (typeof el.scrollBy === 'function') {
+      el.scrollBy({ left: delta, behavior: 'smooth' });
+    } else {
+      el.scrollLeft += delta;
+    }
+  }, []);
+
   const menuPos =
     menu === null
       ? null
@@ -573,6 +641,12 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       data-dock-idle={idle ? 'true' : 'false'}
       data-dock-icon-only={iconOnly ? 'true' : 'false'}
       data-dock-compact={compact ? 'true' : 'false'}
+      data-dock-arrows={arrows ? 'true' : 'false'}
+      /* DEF-337 — the ladder's arrows LANE, independent of whether the gated
+       * arrows currently render. The stylesheet keys the scroll container's
+       * real box off THIS, so its geometry never depends on the hook's verdict
+       * (the feedback loop that settled on dead arrows). */
+      data-dock-arrows-lane={arrowsLane ? 'true' : 'false'}
       data-dock-band={Math.round(placementBand)}
       data-dock-free-band={freeBand === null ? undefined : Math.round(freeBand.width)}
       data-dock-band-placed={bandPlaced ? 'true' : undefined}
@@ -608,68 +682,110 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         setHovered(false);
       }}
     >
-      {primaryState === 'selection' && (
-        <span className="action-dock-chip" data-dock-chip>
-          {selectionChipLabel(pageSelection.length)}
+      {/* Phase 37 (item 21) — the Ctrl+K hint, a small themed line above the
+          dock. It is absolutely positioned so it never joins the dock's single
+          verb row, and it is hidden only at the ladder's smallest rung (the
+          arrows, innerWidth < 720) with the rest of the shed chrome. The hint
+          sits ABOVE the row, so it never competes for the row's width: it is
+          keyed on the LADDER's width rung, not the measured overflow LANE. The
+          eight labelled PAGES verbs make the lane turn on at 1440; keying on
+          the lane hid the hint at the default window, which the operator asked
+          to keep visible (item 21). */}
+      {!ladder.arrows && (
+        <span className="action-dock-hint" data-dock-hint>
+          Search all tools: <kbd className="action-dock-kbd">Ctrl+K</kbd>
         </span>
       )}
-      <div className="action-dock-group" key={primaryState} data-dock-group="primary">
-        {inlineVerbs.map((verb, index) => renderVerb(verb, { primary: index === 0, pin: false }))}
-      </div>
-      {overflowVerbs.length > 0 && (
-        <div className="action-dock-overflow">
-          <button
-            type="button"
-            className="action-dock-verb action-dock-more"
-            data-dock-overflow
-            aria-label="More actions"
-            aria-expanded={overflowOpen}
-            aria-haspopup="menu"
-            title="More actions"
-            onClick={(): void => {
-              setMenu(null);
-              setOverflowOpen((v) => !v);
-            }}
-          >
-            <span className="action-dock-icon" aria-hidden>
-              <Ellipsis size={16} />
-            </span>
-            {!iconOnly && <span className="action-dock-label">More</span>}
-          </button>
-          {overflowOpen && (
-            <div className="action-dock-menu action-dock-menu-overflow" role="menu" data-dock-overflow-menu>
-              {overflowVerbs.map((verb) => {
-                const Icon = verb.icon;
-                return (
-                  <button
-                    key={verb.id}
-                    type="button"
-                    role="menuitem"
-                    className="action-dock-menu-item"
-                    data-dock-overflow-item={verb.id}
-                    disabled={!verb.enabled}
-                    title={verb.reason}
-                    onClick={(): void => {
-                      setOverflowOpen(false);
-                      verb.run();
-                    }}
-                  >
-                    <Icon size={14} aria-hidden />
-                    <span>{verb.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+      {/* Phase 37 (item 6) — the ladder's last rung: left/right arrows scroll
+          the single verb row instead of wrapping or hiding verbs in a menu. */}
+      {arrows && (
+        <button
+          type="button"
+          className="action-dock-arrow"
+          data-dock-arrow="left"
+          aria-label="Scroll dock tools left"
+          title="Scroll left"
+          onClick={(): void => scrollVerbs(-1)}
+        >
+          <ChevronLeft size={16} aria-hidden />
+        </button>
       )}
-      {pinnedVerbs.length > 0 && (
-        <>
-          <span className="action-dock-divider" role="separator" data-dock-divider />
-          <div className="action-dock-group" data-dock-group="pins">
-            {pinnedVerbs.map((verb) => renderVerb(verb, { primary: false, pin: true }))}
+      <div className="action-dock-scroll" ref={scrollRef} data-dock-scroll>
+        {primaryState === 'selection' && (
+          <span className="action-dock-chip" data-dock-chip>
+            {selectionChipLabel(pageSelection.length)}
+          </span>
+        )}
+        <div className="action-dock-group" key={primaryState} data-dock-group="primary">
+          {inlineVerbs.map((verb, index) => renderVerb(verb, { primary: index === 0, pin: false }))}
+        </div>
+        {overflowVerbs.length > 0 && (
+          <div className="action-dock-overflow">
+            <button
+              type="button"
+              className="action-dock-verb action-dock-more"
+              data-dock-overflow
+              aria-label="More actions"
+              aria-expanded={overflowOpen}
+              aria-haspopup="menu"
+              title="More actions"
+              onClick={(): void => {
+                setMenu(null);
+                setOverflowOpen((v) => !v);
+              }}
+            >
+              <span className="action-dock-icon" aria-hidden>
+                <Ellipsis size={16} />
+              </span>
+              {!iconOnly && <span className="action-dock-label">More</span>}
+            </button>
+            {overflowOpen && (
+              <div className="action-dock-menu action-dock-menu-overflow" role="menu" data-dock-overflow-menu>
+                {overflowVerbs.map((verb) => {
+                  const Icon = verb.icon;
+                  return (
+                    <button
+                      key={verb.id}
+                      type="button"
+                      role="menuitem"
+                      className="action-dock-menu-item"
+                      data-dock-overflow-item={verb.id}
+                      disabled={!verb.enabled}
+                      title={verb.reason}
+                      onClick={(): void => {
+                        setOverflowOpen(false);
+                        verb.run();
+                      }}
+                    >
+                      <Icon size={14} aria-hidden />
+                      <span>{verb.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </>
+        )}
+        {pinnedVerbs.length > 0 && (
+          <>
+            <span className="action-dock-divider" role="separator" data-dock-divider />
+            <div className="action-dock-group" data-dock-group="pins">
+              {pinnedVerbs.map((verb) => renderVerb(verb, { primary: false, pin: true }))}
+            </div>
+          </>
+        )}
+      </div>
+      {arrows && (
+        <button
+          type="button"
+          className="action-dock-arrow"
+          data-dock-arrow="right"
+          aria-label="Scroll dock tools right"
+          title="Scroll right"
+          onClick={(): void => scrollVerbs(1)}
+        >
+          <ChevronRight size={16} aria-hidden />
+        </button>
       )}
       {/* DEF-312 — the Pin/Unpin menu is portaled to `document.body`. The dock
           carries `transform: translateX(-50%)`, and a transformed ancestor is
@@ -707,7 +823,9 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               role="menuitem"
               className="action-dock-menu-item"
               data-dock-menu-item="unpin"
-              disabled={!menuPinned}
+              /* Phase 37 (item 21) — ANY rendered verb can be unpinned now: a
+                 default stage verb is recorded in `dockUnpinned`, an explicit
+                 pin is dropped from `dockPins`. The host owns which list. */
               onClick={(): void => {
                 setMenu(null);
                 onUnpinTool(menu.id);

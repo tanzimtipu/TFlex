@@ -67,7 +67,7 @@ const slots = (host: HTMLElement): string[] =>
   );
 
 describe('Phase 36 chunk 6 — the host mapping helpers', () => {
-  it('resolves a text object only in EDIT, a signature only in REVIEW, else the page', () => {
+  it('resolves a text object in EDIT or the annotate (REVIEW) flow, a signature in REVIEW, else the page', () => {
     const text = textSnapshot();
     expect(
       inspectorSelectionFor({ stage: 'edit', text, signatureLabel: null, page: 4 }),
@@ -75,11 +75,10 @@ describe('Phase 36 chunk 6 — the host mapping helpers', () => {
     expect(
       inspectorSelectionFor({ stage: 'review', text: null, signatureLabel: 'Ada', page: 4 }),
     ).toEqual({ kind: 'signature', name: 'Ada' });
-    // A text object does not hijack REVIEW, and an armed signature does not
-    // hijack EDIT — each selection kind belongs to its own stage.
+    // Phase 37 (item 1) — the annotate flow (REVIEW) shows the text panel too.
     expect(
       inspectorSelectionFor({ stage: 'review', text, signatureLabel: null, page: 4 }),
-    ).toEqual({ kind: 'page', page: 4 });
+    ).toEqual({ kind: 'text', name: 'Text object' });
     expect(
       inspectorSelectionFor({ stage: 'edit', text: null, signatureLabel: 'Ada', page: 4 }),
     ).toEqual({ kind: 'page', page: 4 });
@@ -114,7 +113,11 @@ describe('Phase 36 chunk 6 — the real selected object reaches the Inspector', 
       textPanel: inspectorTextPanelFor(text),
     });
     try {
-      expect(slots(host)).toEqual(['text']);
+      // Phase 37 (item 1) — the panel is the top block; the document facts are
+      // the sections below it.
+      expect(slots(host)).toEqual(['document']);
+      expect(host.querySelector('[data-inspector-text-panel]')).not.toBeNull();
+      expect(host.querySelector('[data-inspector-divider]')).not.toBeNull();
       expect(host.querySelector('.glass-sidebar-title')?.textContent).toBe('Inspector · Text object');
       const ta = host.querySelector<HTMLTextAreaElement>('[data-txt-text]');
       expect(ta?.value).toBe('Hello world');

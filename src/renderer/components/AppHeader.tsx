@@ -95,6 +95,10 @@ interface AppHeaderProps {
    *  preferences gear. Opens the print dialog (same surface as File >
    *  Print and Ctrl+P). */
   onPrint?: () => void;
+  /** DEF-336 — whether the ACTIVE tab holds a printable document. An empty
+   *  placeholder tab has no engine session, so the Print icon disables (with a
+   *  reason in its tooltip) rather than accepting a click that does nothing. */
+  printEnabled?: boolean;
   /** Phase 36 (chunk 6) — the Multi Mode toggle, moved into the title bar
    *  (approved placement; the Command Palette keeps its own route). Omitted
    *  means the control is not rendered (harnesses / pre-Phase-36 mounts), so
@@ -134,7 +138,7 @@ function themeLabel(value: ThemeDefault): string {
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, onMultiModeToggle, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true, multiModeEnabled = false } = props;
+  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, printEnabled = true, onMultiModeToggle, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true, multiModeEnabled = false } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   // The picker's selection is the SAVED preference (themeDefault) —
@@ -508,10 +512,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
           type="button"
           className="header-print"
           onClick={onPrint}
-          disabled={activeId === null}
+          disabled={activeId === null || !printEnabled}
           aria-haspopup="dialog"
           aria-label="Print"
-          title="Print (Ctrl+P)"
+          title={printEnabled ? "Print (Ctrl+P)" : "Open a document to print"}
           data-print
         >
           <Printer size={16} aria-hidden />

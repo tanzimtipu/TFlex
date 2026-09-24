@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 //
-// Phase 36 (chunk 7) — Multi Mode integration: the ONE shared Action Dock, the
+// Phase 36 (chunk 7) â€” Multi Mode integration: the ONE shared Action Dock, the
 // per-pane stage + view controls, and the shared Inspector's focus rule.
 //
 // The workspace keeps its Phase 32-34 layout exactly: the centred inner-edge
@@ -302,9 +302,11 @@ const paneEl = (host: HTMLElement, pane: PaneId): HTMLElement => {
   return el;
 };
 
-/** The dock's rendered verb ids, in DOM order (inline verbs only). */
+/** The dock's rendered verb ids, in DOM order (inline verbs only). Phase 37
+ *  item 6 wraps the groups in `.action-dock-scroll`, so the query is a
+ *  descendant, not a direct child. */
 const dockVerbIds = (host: HTMLElement): string[] =>
-  [...host.querySelectorAll<HTMLElement>("[data-action-dock] > .action-dock-group > [data-dock-verb]")].map(
+  [...host.querySelectorAll<HTMLElement>("[data-action-dock] .action-dock-group > [data-dock-verb]")].map(
     (el) => el.dataset.dockVerb ?? "",
   );
 
@@ -321,7 +323,7 @@ const focusPane = (host: HTMLElement, pane: PaneId): void => {
 // ---------------------------------------------------------------------------
 // (1) ONE shared dock, driven by the FOCUSED pane's stage.
 
-describe("Phase 36 (chunk 7) � the ONE shared Action Dock", () => {
+describe("Phase 36 (chunk 7) ï¿½ the ONE shared Action Dock", () => {
   it("renders exactly one dock for the workspace, never one per pane", () => {
     const { host, unmount } = mount(createElement(MultiHarness, { probes: freshProbes() }));
     try {
@@ -345,7 +347,8 @@ describe("Phase 36 (chunk 7) � the ONE shared Action Dock", () => {
   it("shows the focused pane's stage verbs and swaps them on a focus switch", () => {
     const { host, unmount } = mount(createElement(MultiHarness, { probes: freshProbes() }));
     try {
-      // Focused A -> A's PAGES stage verbs, in registry order.
+      // Focused A -> A's PAGES stage verbs, in registry order (Phase 37 item 21
+      // widened the set).
       expect(dockVerbIds(host)).toEqual([
         "rotate",
         "extract",
@@ -353,16 +356,18 @@ describe("Phase 36 (chunk 7) � the ONE shared Action Dock", () => {
         "replacePages",
         "split",
         "delete",
+        "merge",
+        "cropPages",
       ]);
       focusPane(host, "B");
       // Focused B -> B's EDIT stage verbs: the same ONE dock, new contents.
       expect(dockVerbIds(host)).toEqual([
-        "editMode",
         "editText",
         "editImage",
         "editTextBox",
         "recognizeText",
-        "cropPages",
+        "batchOcr",
+        "ocrSuspects",
       ]);
       focusPane(host, "A");
       expect(dockVerbIds(host)).toEqual([
@@ -372,6 +377,8 @@ describe("Phase 36 (chunk 7) � the ONE shared Action Dock", () => {
         "replacePages",
         "split",
         "delete",
+        "merge",
+        "cropPages",
       ]);
       expect(host.querySelectorAll("[data-action-dock]")).toHaveLength(1);
     } finally {
@@ -388,12 +395,12 @@ describe("Phase 36 (chunk 7) � the ONE shared Action Dock", () => {
       });
       expect(paneEl(host, "B").getAttribute("data-pane-focused")).toBe("true");
       expect(dockVerbIds(host)).toEqual([
-        "editMode",
         "editText",
         "editImage",
         "editTextBox",
         "recognizeText",
-        "cropPages",
+        "batchOcr",
+        "ocrSuspects",
       ]);
       expect(host.querySelectorAll("[data-action-dock]")).toHaveLength(1);
     } finally {
@@ -409,12 +416,30 @@ describe("Phase 36 (chunk 7) � the ONE shared Action Dock", () => {
       act((): void => {
         api.setStage?.("A", "review");
       });
-      expect(dockVerbIds(host)).toEqual(["annotate", "sign", "stamp", "flatten"]);
+      expect(dockVerbIds(host)).toEqual([
+        "annotate",
+        "sign",
+        "stamp",
+        "flatten",
+        "forms",
+        "watermark",
+        "exportComments",
+        "importComments",
+      ]);
       // The UNFOCUSED pane's stage change never leaks into the dock.
       act((): void => {
         api.setStage?.("B", "deliver");
       });
-      expect(dockVerbIds(host)).toEqual(["annotate", "sign", "stamp", "flatten"]);
+      expect(dockVerbIds(host)).toEqual([
+        "annotate",
+        "sign",
+        "stamp",
+        "flatten",
+        "forms",
+        "watermark",
+        "exportComments",
+        "importComments",
+      ]);
     } finally {
       unmount();
     }
@@ -424,7 +449,7 @@ describe("Phase 36 (chunk 7) � the ONE shared Action Dock", () => {
 // ---------------------------------------------------------------------------
 // (2) Per-pane stage + per-pane view controls (the pills).
 
-describe("Phase 36 (chunk 7) � each pane keeps its own stage and its own pills", () => {
+describe("Phase 36 (chunk 7) ï¿½ each pane keeps its own stage and its own pills", () => {
   it("gives each pane its own pills, inside its own canvas bounds", () => {
     const { host, unmount } = mount(createElement(MultiHarness, { probes: freshProbes() }));
     try {
@@ -518,7 +543,7 @@ describe("Phase 36 (chunk 7) � each pane keeps its own stage and its own pills
 // ---------------------------------------------------------------------------
 // (3) The shared Inspector's focus rule (the pure decision App wires).
 
-describe("Phase 36 (chunk 7) � the shared Inspector follows the FOCUSED pane", () => {
+describe("Phase 36 (chunk 7) ï¿½ the shared Inspector follows the FOCUSED pane", () => {
   it("single mode always applies the publish (the unchanged path)", () => {
     expect(resolvePaneSelection(null, "A", "sel")).toEqual({ apply: true, value: "sel" });
     expect(resolvePaneSelection(null, "B", null)).toEqual({ apply: true, value: null });
@@ -536,7 +561,7 @@ describe("Phase 36 (chunk 7) � the shared Inspector follows the FOCUSED pane",
 // ---------------------------------------------------------------------------
 // (4) The Phase 32-34 layout is unchanged and the dock floats over its centre.
 
-describe("Phase 36 (chunk 7) � the workspace layout", () => {
+describe("Phase 36 (chunk 7) ï¿½ the workspace layout", () => {
   it("keeps rail | pane A (pages + strip) | divider | pane B (strip + pages) | inspector", () => {
     const { host, unmount } = mount(createElement(MultiHarness, { probes: freshProbes() }));
     try {
@@ -573,7 +598,7 @@ describe("Phase 36 (chunk 7) � the workspace layout", () => {
 // ---------------------------------------------------------------------------
 // (5) The invariants, with their numbers.
 
-describe("Phase 36 (chunk 7) � DEF-282 / DEF-286 / DEF-287 hold", () => {
+describe("Phase 36 (chunk 7) ï¿½ DEF-282 / DEF-286 / DEF-287 hold", () => {
   it("DEF-282: no chrome can reach the pane headers (dock layer is bottom-only)", () => {
     const { host, unmount } = mount(createElement(MultiHarness, { probes: freshProbes() }));
     try {
@@ -668,7 +693,7 @@ function cssRuleBody(src: string, selector: string): string | null {
   }
 }
 
-describe("Phase 36 (chunk 7) � the pane pills never reach the shared dock", () => {
+describe("Phase 36 (chunk 7) ï¿½ the pane pills never reach the shared dock", () => {
   it("the symmetric dock reserve clears the widest stacked pill footprint", () => {
     // The dock is centred with a symmetric reserve, so its half-width band is
     // `DOCK_DEFAULT_RESERVE / 2` from each workspace edge. A pane's stacked

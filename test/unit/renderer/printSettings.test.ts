@@ -3,6 +3,7 @@ import {
   buildPrintSettings,
   clampCopies,
   clampScalePercent,
+  defaultPrintSettings,
   isCancelReason,
   type PrintDialogState,
 } from "../../../src/renderer/pdf/printSettings";
@@ -132,5 +133,30 @@ describe("printSettings — clamps and cancel detection", () => {
     expect(isCancelReason("Print job canceled")).toBe(true);
     expect(isCancelReason("cancelled by user")).toBe(true);
     expect(isCancelReason("The printer is offline")).toBe(false);
+  });
+});
+
+describe("printSettings — defaultPrintSettings (Phase 37 item 17)", () => {
+  it("is the default dialog state mapped onto the contract", () => {
+    const settings = buildPrintSettings(state({
+      deviceName: null,
+      orientation: "auto",
+      autoLandscape: false,
+    }));
+    expect(defaultPrintSettings()).toEqual(settings);
+  });
+
+  it("round-trips through seedPrintDialogState to the control defaults", () => {
+    const settings = defaultPrintSettings();
+    expect(settings.copies).toBe(1);
+    expect(settings.scaling).toBe("fit");
+    expect(settings.duplex).toBe("simplex");
+    expect(settings.color).toBe(true);
+    expect(settings.pagesPerSheet).toBe(1);
+    expect(settings.oddEven).toBe("all");
+    expect(settings.reverse).toBe(false);
+    expect(settings.printAnnotations).toBe(true);
+    expect(settings.landscape).toBe(false);
+    expect(settings.deviceName).toBeUndefined();
   });
 });

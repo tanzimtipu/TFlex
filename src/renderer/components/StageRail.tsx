@@ -48,6 +48,21 @@ export function isStageRailEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
+/** Phase 37 (item 8) — the Stage Rail is a DOCUMENT surface: absent on the
+ *  welcome (home) screen, present once a real document is open. This is the
+ *  exact complement of the welcome condition App already uses (`no tabs`, or
+ *  only the empty placeholder tab with Multi Mode off), exported so App keys
+ *  the rail and the welcome pane off ONE source and the unit tests can pin
+ *  the truth table. */
+export function isStageRailVisible(
+  tabCount: number,
+  activeIsEmpty: boolean,
+  multiModeEnabled: boolean,
+): boolean {
+  const showWelcome = tabCount === 0 || (activeIsEmpty && !multiModeEnabled);
+  return !showWelcome;
+}
+
 const STAGE_ICONS: Record<Stage, LucideIcon> = {
   pages: Files,
   edit: Pencil,

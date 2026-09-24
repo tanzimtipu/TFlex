@@ -1,10 +1,17 @@
-// Phase 35 item 8 - source-wiring guards for the standalone print window.
+// Phase 35 item 8 / Phase 37 item 17 - source-wiring guards for the standalone
+// print window.
 //
 // The renderer half spans three files whose wiring a render test cannot
 // cheaply cover: the entry branch in `main.tsx` (it runs at import time),
 // App's tab-close notification (inside a 300-line useCallback), and App's
-// detach handler (the refusal toast needs the app's toast reducer). These are
-// asserted against the source, mirroring the app's other wiring guards.
+// print entry points (the refusal toast needs the app's toast reducer). These
+// are asserted against the source, mirroring the app's other wiring guards.
+//
+// Phase 37 item 17: the in-app print modal was removed, so the old "detach
+// control wiring" guards became the "print entry-point wiring" guards below -
+// the title-bar icon, File > Print and Ctrl+P all call the same
+// `openPrintWindow` opener, which builds the active document's
+// `PrintWindowContext` directly.
 import { describe, expect, it } from "vitest";
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -57,15 +64,15 @@ describe("App.tsx - document-gone wiring on tab close", () => {
   });
 });
 
-describe("App.tsx - the detach control wiring", () => {
-  it("opens the print window through the preload bridge", () => {
+describe("App.tsx - the print entry-point wiring (Phase 37 item 17)", () => {
+  it("opens the standalone print window through the preload bridge", () => {
     expect(appSource).toMatch(/bridge\.open\(context\)/);
     expect(appSource).toMatch(/window\.tflex\.printWindow/);
   });
 
   it("surfaces a refusal through the existing error toast", () => {
     const match = appSource.match(
-      /const onDetachPrint = useCallback\([\s\S]*?\[pushToast\],\r?\n  \);/,
+      /const openPrintWindow = useCallback\([\s\S]*?\[buildActivePrintContext, pushToast\]\);/,
     );
     expect(match).not.toBeNull();
     if (match === null) return;
@@ -74,9 +81,30 @@ describe("App.tsx - the detach control wiring", () => {
     expect(body).toMatch(/pushToast\("error", failure\)/);
   });
 
-  it("hands the dialog the active document and the handler", () => {
-    expect(appSource).toMatch(/onDetach=\{onDetachPrint\}/);
-    expect(appSource).toMatch(/docId: activeTab\.session\.engineDocId/);
-    expect(appSource).toMatch(/documentName: activeTab\.displayName/);
+  it("builds the context from the active document and the default settings", () => {
+    const match = appSource.match(
+      /const buildActivePrintContext = useCallback\([\s\S]*?^  \}, \[\]\);/m,
+    );
+    expect(match).not.toBeNull();
+    if (match === null) return;
+    const body = match[0];
+    expect(body).toMatch(/docId: tab\.session\.engineDocId/);
+    expect(body).toMatch(/documentName: tab\.displayName/);
+    expect(body).toMatch(/pageCount: tab\.session\.doc\.numPages/);
+    expect(body).toMatch(/settings: defaultPrintSettings\(\)/);
+  });
+
+  it("routes all three entry points at the same opener and mounts no modal", () => {
+    // Title-bar Print icon.
+    expect(appSource).toMatch(/onPrint=\{openPrintWindow\}/);
+    // File > Print / Ctrl+P arrive on the main-process `print:request` channel.
+    const sub = appSource.match(
+      /window\.tflex\.onPrintRequest\(\(\) => \{[\s\S]*?\}\);/,
+    );
+    expect(sub).not.toBeNull();
+    expect(sub?.[0]).toMatch(/openPrintWindowRef\.current\(\)/);
+    // The in-app modal and its component are gone.
+    expect(appSource).not.toMatch(/<PrintDialog/);
+    expect(appSource).not.toMatch(/components\/PrintDialog/);
   });
 });

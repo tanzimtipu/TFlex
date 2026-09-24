@@ -20,6 +20,7 @@ import { ActionDock } from "./ActionDock";
 import type { SharedToolController } from "./multiToolController";
 import type { PaneId } from "../state/multiMode";
 import type { Stage } from "../state/stages";
+import type { DockLadder } from "../state/dockResponsive";
 
 export interface MultiActionDockProps {
   controller: SharedToolController;
@@ -29,6 +30,8 @@ export interface MultiActionDockProps {
   activeStage: Stage;
   /** Registry tool ids pinned to the dock (App's validated settings field). */
   dockPins: readonly string[];
+  /** Phase 37 (item 21) — registry tool ids the user unpinned (the inverse). */
+  dockUnpinned?: readonly string[];
   onPinTool: (id: string) => void;
   onUnpinTool: (id: string) => void;
   /** Run a verb. App routes it to the focused pane's view-level command or to
@@ -40,6 +43,9 @@ export interface MultiActionDockProps {
   activeToolIds?: readonly string[];
   /** State 4 reporter: App shares the idle flip with the panes' pills. */
   onIdleChange?: (idle: boolean) => void;
+  /** Phase 37 (items 2 + 6) — the shared responsive ladder (App resolves it
+   *  once from the measured workspace width). */
+  ladder?: DockLadder;
 }
 
 export function MultiActionDock(props: MultiActionDockProps): ReactElement | null {
@@ -66,6 +72,8 @@ export function MultiActionDock(props: MultiActionDockProps): ReactElement | nul
       onClearPageSelection={dock.clearPageSelection}
       bulk={dock.bulk}
       dockPins={props.dockPins}
+      dockUnpinned={props.dockUnpinned}
+      ladder={props.ladder}
       onPinTool={props.onPinTool}
       onUnpinTool={props.onUnpinTool}
       onRunTool={props.onRunTool}

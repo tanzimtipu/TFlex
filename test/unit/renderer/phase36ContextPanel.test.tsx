@@ -284,12 +284,14 @@ afterEach((): void => {
   vi.restoreAllMocks();
 });
 
-describe("ContextPanel — header (Pages · N + Combine)", () => {
-  it("shows the live page count and runs the EXISTING merge handler", () => {
+describe("ContextPanel — header (title removed + Combine)", () => {
+  it("shows NO PAGES title and runs the EXISTING merge handler", () => {
     const onMerge = vi.fn();
     const { host, unmount } = renderPanel({ pageCount: 3, onMerge });
     try {
-      expect(host.querySelector(".glass-sidebar-title")?.textContent).toBe("Pages · 3");
+      // Phase 37 (item 15) — the "Pages · N" title text is removed; the
+      // header keeps the Combine entry and the collapse control.
+      expect(host.querySelector(".glass-sidebar-title")).toBeNull();
       const combine = host.querySelector<HTMLButtonElement>("[data-context-panel-combine]");
       expect(combine).not.toBeNull();
       expect(combine?.textContent).toContain("Combine");
@@ -308,9 +310,11 @@ describe("ContextPanel — header (Pages · N + Combine)", () => {
   it("follows the engine's page count (deletes re-report it live)", () => {
     const { host, rerender, unmount } = renderPanel({ pageCount: 3 });
     try {
-      expect(host.querySelector(".glass-sidebar-title")?.textContent).toBe("Pages · 3");
+      // No title to drift; the stack is the live source of truth.
+      expect(host.querySelector(".glass-sidebar-title")).toBeNull();
+      expect(thumbs(host).map((t) => t.getAttribute("data-page"))).toEqual(["1", "2", "3"]);
       rerender({ pageCount: 2, engineState: makeEngineState(2) });
-      expect(host.querySelector(".glass-sidebar-title")?.textContent).toBe("Pages · 2");
+      expect(host.querySelector(".glass-sidebar-title")).toBeNull();
       expect(thumbs(host).map((t) => t.getAttribute("data-page"))).toEqual(["1", "2"]);
     } finally {
       unmount();

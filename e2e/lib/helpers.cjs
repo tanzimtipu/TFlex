@@ -656,4 +656,43 @@ async function hardClose(electronApp, label = 'hardClose') {
   log(`hardClose done (force path) in ${Date.now() - t0}ms`);
 }
 
-module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool, toggleMultiModeViaPalette, gotoStage, openDockVerb, clickDockVerb, runTool, ensurePanelExpanded, toggleEditMode, armSignTool, openAnnotationFlyout, textPanelRight };
+// Phase 37 (item 17) — the in-app print modal is retired. The title-bar Print
+// icon, File > Print and Ctrl+P all open the STANDALONE print window
+// (`?tfWindow=print`), which is a separate top-level BrowserWindow. This is the
+// ONE opener the migrated print specs use; it returns the print window's Page.
+async function openStandalonePrintWindow(electronApp, window) {
+  const pagePromise = electronApp.waitForEvent('window');
+  await window.click('[data-print]');
+  const printPage = await pagePromise;
+  await printPage.waitForSelector('[data-print-window]', { timeout: 30000 });
+  await printPage.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 20000 });
+  await printPage.waitForFunction(
+    () => {
+      const sel = document.querySelector('[data-print-printer]');
+      if (sel === null) return false;
+      const hasReal = [...sel.querySelectorAll('option')].some((o) => o.value !== '');
+      return hasReal || document.querySelector('[data-print-empty], [data-print-printers-error]') !== null;
+    },
+    null,
+    { timeout: 20000 },
+  );
+  return printPage;
+}
+
+// Close the standalone print window (and any other print window) from main.
+async function closeStandalonePrintWindow(electronApp, printPage) {
+  if (printPage && !printPage.isClosed()) {
+    await printPage.close().catch(() => {});
+  }
+  await electronApp
+    .evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()
+        .filter((w) => w.webContents.getURL().includes('tfWindow=print'))
+        .forEach((w) => {
+          if (!w.isDestroyed()) w.close();
+        });
+    })
+    .catch(() => {});
+}
+
+module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool, toggleMultiModeViaPalette, gotoStage, openDockVerb, clickDockVerb, runTool, ensurePanelExpanded, toggleEditMode, armSignTool, openAnnotationFlyout, textPanelRight, openStandalonePrintWindow, closeStandalonePrintWindow };

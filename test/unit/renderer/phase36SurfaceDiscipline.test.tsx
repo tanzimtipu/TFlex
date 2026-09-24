@@ -55,7 +55,10 @@ type Capability = string;
  *  sanctions it. A capability observed anywhere else fails the sweep. */
 const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
   // ---- PAGES ---------------------------------------------------------
-  merge: { surfaces: ['panel'], why: 'ruling 9: `＋ Combine…` is the PAGES panel header ONLY' },
+  merge: {
+    surfaces: ['dock', 'panel'],
+    why: 'Phase 37 item 21: Merge joined the PAGES dock default set; the PAGES panel header keeps `＋ Combine…`',
+  },
   rotate: { surfaces: ['dock', 'menu'], why: 'ruling 1: verb on the hover/dock/right-click ONLY' },
   rotateCounterClockwise: {
     surfaces: ['menu'],
@@ -72,10 +75,16 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
     surfaces: ['inspector'],
     why: 'ruling 2: Inspector `Label · renumber…` ONLY (REMOVED from the menu)',
   },
-  cropPages: { surfaces: ['dock'], why: 'ruling 3: EDIT dock (crop dialog); no PAGES inspector crop row' },
+  cropPages: {
+    surfaces: ['dock'],
+    why: 'Phase 37 item 21: crop rides its registry stage (PAGES) on the dock; no PAGES inspector crop row',
+  },
 
   // ---- EDIT ----------------------------------------------------------
-  editMode: { surfaces: ['dock'], why: 'the EDIT dock primary' },
+  editMode: {
+    surfaces: [],
+    why: 'Phase 37 item 13: entering the EDIT STAGE is the switch; no dock verb',
+  },
   editText: { surfaces: ['dock'], why: 'the EDIT dock verb' },
   editImage: { surfaces: ['dock'], why: 'the EDIT dock verb' },
   editTextBox: { surfaces: ['dock'], why: 'the EDIT dock verb' },
@@ -83,7 +92,11 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
     surfaces: ['dock', 'panel'],
     why: 'the dock verb + the EDIT panel Recognition section (ruling 4 keeps the panel home)',
   },
-  ocrSuspects: { surfaces: ['panel'], why: 'ruling 4: OCR status/suspects are the EDIT panel ONLY' },
+  ocrSuspects: {
+    surfaces: ['dock', 'panel'],
+    why: 'Phase 37 item 21 adds the OCR-suspects dialog command to the dock; ruling 4 keeps the panel home',
+  },
+  batchOcr: { surfaces: ['dock'], why: 'Phase 37 item 21: batch OCR rides the EDIT dock' },
 
   // ---- REVIEW --------------------------------------------------------
   annotate: { surfaces: ['dock'], why: 'the REVIEW dock primary (opens the one flyout)' },
@@ -93,8 +106,16 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
   },
   stamp: { surfaces: ['dock'], why: 'the REVIEW dock verb' },
   flatten: { surfaces: ['dock'], why: 'the REVIEW dock verb' },
-  exportComments: { surfaces: ['inspector'], why: 'ruling 8: FDF export is the REVIEW inspector ONLY' },
-  importComments: { surfaces: ['inspector'], why: 'ruling 8: FDF import is the REVIEW inspector ONLY' },
+  forms: { surfaces: ['dock'], why: 'Phase 37 item 21: Forms dialog command rides the REVIEW dock' },
+  watermark: { surfaces: ['dock'], why: 'Phase 37 item 21 (and item 20): Watermark rides the REVIEW dock' },
+  exportComments: {
+    surfaces: ['dock', 'inspector'],
+    why: 'Phase 37 item 21 adds the REVIEW dock verb; ruling 8 keeps the Inspector FDF export',
+  },
+  importComments: {
+    surfaces: ['dock', 'inspector'],
+    why: 'Phase 37 item 21 adds the REVIEW dock verb; ruling 8 keeps the Inspector FDF import',
+  },
 
   // ---- DELIVER -------------------------------------------------------
   optimize: {
@@ -108,7 +129,10 @@ const SANCTIONED: Record<Capability, { surfaces: Surface[]; why: string }> = {
   },
   exportText: { surfaces: ['dock'], why: 'the DELIVER dock verb' },
   exportDocx: { surfaces: ['dock'], why: 'the DELIVER dock verb' },
-  createFromImages: { surfaces: ['panel'], why: 'the DELIVER panel `From images…` entry' },
+  createFromImages: {
+    surfaces: ['dock', 'panel'],
+    why: 'Phase 37 item 21 adds the DELIVER dock verb; the panel `From images…` entry stays',
+  },
 
   // ---- Inspector-only, non-registry controls -------------------------
   jumpToReview: {
@@ -128,6 +152,13 @@ const RULED_MULTI_SURFACE: Capability[] = [
   'sign',
   'optimize',
   'exportPages',
+  // Phase 37 item 21 — the dock's widened default set deliberately shares these
+  // dialog commands with their existing panel/inspector homes.
+  'merge',
+  'ocrSuspects',
+  'exportComments',
+  'importComments',
+  'createFromImages',
 ];
 // ---------------------------------------------------------------------------
 // jsdom stubs (the ContextPanel PAGES body mounts the live ThumbnailRail)
@@ -429,8 +460,9 @@ describe('Phase 36 / 3A criterion 11(a) � surface discipline sweep', () => {
     // ruling 2 � renumber is inspector-only, never a menu entry
     expect(observed.menu.has('renumberPages')).toBe(false);
     expect(observed.inspector.has('renumberPages')).toBe(true);
-    // ruling 9 � merge is not a dock verb
-    expect(observed.dock.has('merge')).toBe(false);
+    // Phase 37 item 21 — Merge joined the PAGES dock default set; the panel
+    // header retains its `＋ Combine…` affordance.
+    expect(observed.dock.has('merge')).toBe(true);
     expect(observed.panel.has('merge')).toBe(true);
     // rulings 5 / 8 � optimize/audit are DELIVER dock+panel, FDF is REVIEW inspector
     expect(observed.inspector.has('optimize')).toBe(false);
@@ -666,7 +698,7 @@ describe('Phase 36 / 3A � the nine rulings', () => {
     }
   });
 
-  it('ruling 3: no Crop row in the PAGES inspector; crop IS an EDIT dock verb', () => {
+  it('ruling 3: no Crop row in the PAGES inspector; crop rides its PAGES dock', () => {
     const { host, unmount } = mount(
       createElement(Inspector, {
         stage: 'pages',
@@ -680,8 +712,9 @@ describe('Phase 36 / 3A � the nine rulings', () => {
     } finally {
       unmount();
     }
-    expect(dockToolsForStage('edit').map((e) => e.id)).toContain('cropPages');
-    expect(dockToolsForStage('pages').map((e) => e.id)).not.toContain('cropPages');
+    // Phase 37 item 21 — crop rides its registry stage (PAGES) on the dock.
+    expect(dockToolsForStage('pages').map((e) => e.id)).toContain('cropPages');
+    expect(dockToolsForStage('edit').map((e) => e.id)).not.toContain('cropPages');
   });
 
   it('ruling 4: OCR status/suspects are the EDIT panel ONLY, never the Inspector', () => {
@@ -829,7 +862,9 @@ describe('Phase 36 / 3A � the nine rulings', () => {
     } finally {
       panel.unmount();
     }
-    expect(collectDock('pages')).not.toContain('merge');
+    // Phase 37 item 21 — Merge IS a PAGES dock verb now, but it is NOT part of
+    // the State-2 selection override (the four ids asserted above).
+    expect(dockToolsForStage('pages').map((e) => e.id)).toContain('merge');
   });
 });
 

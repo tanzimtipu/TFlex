@@ -25,23 +25,23 @@
 // toggle. Page state, selection, edit state, signatures and engine ops all
 // belong to the host (DocumentView/App) and are threaded through.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import {
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   FilePlus2,
   FileSignature,
   Image as ImageIcon,
-  PanelLeftClose,
-  PanelRightOpen,
   Plus,
   ScanText,
   Type,
 } from 'lucide-react';
 import { OutlinePanel, RulerStrip, ThumbnailRail } from './SideRail';
-import type { ThumbContextMenuHandler, ThumbVerbs } from './SideRail';
+import type { ThumbVerbs } from './SideRail';
+import { usePageThumbMenu } from './pageThumbMenu';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
 import type { Annotation, AnnotationPatch } from '../annotations/model';
@@ -174,76 +174,21 @@ onInsertBlank?: (page: number) => void;
   onCreateFromImages?: (() => void) | null;
 }
 
-/** Fallback menu box used when the platform reports no layout (jsdom, or the
- *  first frame before the menu is measured). Only affects the clamp. */
-const MENU_W = 184;
-const MENU_H = 212;
+// Phase 37 (chunk 5, item 19) — the menu machinery has ONE home now: the
+// shared `pageThumbMenu` module, which the Multi Mode strips re-parent. The
+// historical named exports stay on this module so the pre-chunk-5 tests and
+// callers keep resolving unchanged.
+export { buildPageMenuItems, clampMenuPosition } from './pageThumbMenu';
+export type { PageMenuHandlers, PageMenuItem } from './pageThumbMenu';
 
-/** Keep a pointer-anchored menu inside the viewport with an 8px gutter. */
-export function clampMenuPosition(
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-  vw: number,
-  vh: number,
-  margin = 8,
-): { left: number; top: number } {
-  const maxLeft = Math.max(margin, vw - w - margin);
-  const maxTop = Math.max(margin, vh - h - margin);
-  return {
-    left: Math.min(Math.max(margin, x), maxLeft),
-    top: Math.min(Math.max(margin, y), maxTop),
-  };
-}
-
-export interface PageMenuHandlers {
-  onRotateCw: (page: number) => void;
-  onRotateCcw: (page: number) => void;
-  onExtract: (page: number) => void;
-  onInsertBlank: (page: number) => void;
-  onReplace: (page: number) => void;
-  /** Opens the delete-pages dialog with the clicked page (NOT an immediate
-   *  delete — the label's ellipsis promises a dialog). */
-  onDeletePage: (page: number) => void;
-}
-
-export interface PageMenuItem {
-  id: string;
-  label: string;
-  danger?: boolean;
-  run: () => void;
-}
-
-/** The right-click menu's SIX items, as data: the component renders them
- *  and the tests assert both the list and the handler each one calls.
- *
- *  Section 3A ruling 2: Renumber… is REMOVED here — the Inspector's
- *  `Label · renumber…` is its only affordance. The menu stays the page-verb
- *  shortcut for rotate / extract / insert / replace / delete. */
-export function buildPageMenuItems(page: number, h: PageMenuHandlers): PageMenuItem[] {
-  return [
-    { id: 'rotate-cw', label: 'Rotate CW', run: (): void => h.onRotateCw(page) },
-    { id: 'rotate-ccw', label: 'Rotate CCW', run: (): void => h.onRotateCcw(page) },
-    { id: 'extract', label: 'Extract…', run: (): void => h.onExtract(page) },
-    { id: 'insert-blank', label: 'Insert blank after', run: (): void => h.onInsertBlank(page) },
-    { id: 'replace', label: 'Replace…', run: (): void => h.onReplace(page) },
-    { id: 'delete', label: 'Delete…', danger: true, run: (): void => h.onDeletePage(page) },
-  ];
-}
-
-interface MenuState {
-  page: number;
-  x: number;
-  y: number;
-}
-
-/** The header title per stage. The PAGES panel carries the live page count;
- *  the other stages are single words. */
-export function contextPanelTitle(stage: Stage, pageCount: number): string {
+/** The header title per stage. Phase 37 (item 15) REMOVED the PAGES title:
+ *  the panel header is now just the Combine entry + the collapse control,
+ *  which is why the panel narrowed (see --tf-rail-w). The other stages keep
+ *  their single-word titles. */
+export function contextPanelTitle(stage: Stage, _pageCount: number): string {
   switch (stage) {
     case 'pages':
-      return `Pages \u00b7 ${pageCount}`;
+      return '';
     case 'edit':
       return 'Edit';
     case 'review':
@@ -314,11 +259,8 @@ onInsertBlank,
     onCreateFromImages = null,
   } = props;
 
-  const pageCount = engineState.pageCount;
+const pageCount = engineState.pageCount;
   const [outlineOpen, setOutlineOpen] = useState(true);
-  const [menu, setMenu] = useState<MenuState | null>(null);
-  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
 
   // The same visible -> source mapping and label map the rail builds, so a
   // reordered or renumbered document renders identically here.
@@ -353,68 +295,23 @@ onInsertBlank,
     [onOp, onExtractPages, onDelete],
   );
 
-  const menuItems = useMemo(
-    () =>
-      menu === null
-        ? []
-        : buildPageMenuItems(menu.page, {
-            onRotateCw: (page: number): void => onOp?.({ kind: 'rotate', page, dir: 'cw' }),
-            onRotateCcw: (page: number): void => onOp?.({ kind: 'rotate', page, dir: 'ccw' }),
-            onExtract: (page: number): void => onExtractPages?.(page),
-onInsertBlank: (page: number): void => onInsertBlank?.(page),
-            onReplace: (page: number): void => onReplacePages?.(page),
-            onDeletePage: (page: number): void => onDeletePage?.(page),
-          }),
-    [menu, onOp, onExtractPages, onInsertBlank, onReplacePages, onDeletePage],
-  );
+// The right-click menu's verbs, threaded to the shared controller (the
+  // same machinery the Multi Mode strips use — one home, no fork).
+  const { openMenu, menuNode } = usePageThumbMenu({
+    onRotateCw: (page: number): void => onOp?.({ kind: 'rotate', page, dir: 'cw' }),
+    onRotateCcw: (page: number): void => onOp?.({ kind: 'rotate', page, dir: 'ccw' }),
+    onExtract: (page: number): void => onExtractPages?.(page),
+    onInsertBlank: (page: number): void => onInsertBlank?.(page),
+    onReplace: (page: number): void => onReplacePages?.(page),
+    onDeletePage: (page: number): void => onDeletePage?.(page),
+  });
 
-  const openMenu: ThumbContextMenuHandler = (page, x, y): void => {
-    setMenu({ page, x, y });
-  };
-
-  // Dismissal: Esc, a pointerdown outside the menu, and any scroll. None of
-  // these swallow the event (no preventDefault / stopPropagation): an
-  // outside press still reaches its own target, so dismissing the menu can
-  // never eat a thumbnail click or a panel control (AGENTS cross-bubbling).
-  useEffect((): (() => void) | undefined => {
-    if (menu === null) return undefined;
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') setMenu(null);
-    };
-    const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target;
-      if (target instanceof Node && menuRef.current?.contains(target) === true) return;
-      setMenu(null);
-    };
-    const onScroll = (): void => setMenu(null);
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('scroll', onScroll, true);
-    return (): void => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('scroll', onScroll, true);
-    };
-  }, [menu]);
-
-  // Clamp the menu into the viewport once it is measured. The fallback box
-  // keeps the clamp meaningful before layout (or in jsdom).
-  useEffect((): void => {
-    if (menu === null) {
-      setMenuPos(null);
-      return;
-    }
-    const el = menuRef.current;
-    const w = el === null || el.offsetWidth === 0 ? MENU_W : el.offsetWidth;
-    const h = el === null || el.offsetHeight === 0 ? MENU_H : el.offsetHeight;
-    setMenuPos(
-      clampMenuPosition(menu.x, menu.y, w, h, window.innerWidth, window.innerHeight),
-    );
-  }, [menu]);
-
-  // The collapse control is the RAIL's affordance, re-homed to this header.
-  // The `data-rail-collapse` hook and the two titles are unchanged, so the
-  // existing e2e contract keeps resolving.
+  // Phase 37 (item 4) — the collapse control is the RAIL's affordance,
+  // re-homed to this header. The chevron FLIPS with the state: expanded shows
+  // ChevronLeft (press to collapse toward the edge), collapsed shows
+  // ChevronRight (press to expand). `data-rail-collapse` and the two
+  // titles/aria-labels are unchanged, so the existing e2e contract resolves
+  // in both states.
   const collapseButton = (
     <button
       type="button"
@@ -423,8 +320,9 @@ onInsertBlank: (page: number): void => onInsertBlank?.(page),
       title={collapsed ? 'Expand panel' : 'Collapse panel'}
       aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
       data-rail-collapse
+      data-collapse-direction={collapsed ? 'expand' : 'collapse'}
     >
-      {collapsed ? <PanelRightOpen size={16} aria-hidden /> : <PanelLeftClose size={16} aria-hidden />}
+      {collapsed ? <ChevronRight size={16} aria-hidden /> : <ChevronLeft size={16} aria-hidden />}
     </button>
   );
 
@@ -706,6 +604,8 @@ onInsertBlank: (page: number): void => onInsertBlank?.(page),
           ? renderDeliver()
           : renderPages();
 
+const headerTitle = contextPanelTitle(stage, pageCount);
+
   return (
     <div
       className="context-panel"
@@ -715,7 +615,9 @@ onInsertBlank: (page: number): void => onInsertBlank?.(page),
     >
       <GlassSidebarHeader
         className="context-panel-header"
-        title={contextPanelTitle(stage, pageCount)}
+        /* Phase 37 (item 15) — the PAGES title is GONE (empty title = no
+         * title span). EDIT / REVIEW / DELIVER keep their word. */
+        title={headerTitle === '' ? undefined : headerTitle}
         actions={
           <div className="context-panel-actions">
             {!collapsed && stage === 'pages' && (
@@ -743,34 +645,7 @@ onInsertBlank: (page: number): void => onInsertBlank?.(page),
         ) : (
           body
         )}
-        {menu !== null && menuPos !== null && (
-          <div
-            ref={menuRef}
-            className="context-menu"
-            role="menu"
-            aria-label={`Page ${menu.page} actions`}
-            data-context-menu
-            data-page={menu.page}
-            style={{ left: menuPos.left, top: menuPos.top }}
-          >
-            <div className="context-menu-title">Page {menu.page}</div>
-            {menuItems.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="menuitem"
-                className={item.danger === true ? 'context-menu-item context-menu-item-danger' : 'context-menu-item'}
-                data-menu-item={item.id}
-                onClick={(): void => {
-                  setMenu(null);
-                  item.run();
-                }}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {menuNode}
       </GlassSidebarBody>
     </div>
   );

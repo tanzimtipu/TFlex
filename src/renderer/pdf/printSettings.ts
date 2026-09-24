@@ -91,6 +91,30 @@ export function buildPrintSettings(state: PrintDialogState): PrintSettings {
   return settings;
 }
 
+/**
+ * Phase 37 item 17 - the default `PrintSettings` the print entry points hand
+ * the standalone print window. There is no persisted print-settings store
+ * (print options are per-print), so this mirrors the control defaults the
+ * removed in-app dialog used: fit scaling, simplex, colour, 1-up, all pages,
+ * annotations on, no device (the window preselects the system default).
+ * Identical to `buildPrintSettings` on the default dialog state.
+ */
+export function defaultPrintSettings(): PrintSettings {
+  return {
+    copies: 1,
+    collate: false,
+    scaling: 'fit',
+    landscape: false,
+    duplex: 'simplex',
+    color: true,
+    pagesPerSheet: 1,
+    pageOrder: 'horizontal',
+    oddEven: 'all',
+    reverse: false,
+    printAnnotations: true,
+  };
+}
+
 /** Human labels for each orientation value, shared by the dialog. */
 export const ORIENTATION_LABELS: Record<PrintOrientation, string> = {
   auto: 'Auto',

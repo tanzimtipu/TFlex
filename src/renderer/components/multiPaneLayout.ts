@@ -21,9 +21,13 @@ import { THUMB_MIN_WIDTH, THUMB_RAIL_INSET_PX } from "./thumbGeometry";
 /** The divider's rendered width; mirrors `--tf-divider-w` in styles.css. */
 export const PANE_DIVIDER_W_PX = 8;
 
-/** The thumbnail strip column at rest — the single-mode rail's rest width
- *  (also `STRIP_WIDTH_PX` in PaneThumbStrip and `--tf-strip-w` in CSS). */
-export const STRIP_REST_PX = 220;
+/** The thumbnail strip column at rest — Phase 37 (item 18): narrowed from the
+ *  single-mode rail's 220px to 150px, because the headerless Multi Mode strips
+ *  only hold two-document 89px thumbnails and carried too much empty space.
+ *  Still wider than the `STRIP_MIN_PX` floor, so the strip only starts
+ *  yielding once the pane is genuinely narrow. Also `STRIP_WIDTH_PX` in
+ *  PaneThumbStrip and `--tf-strip-w` in CSS. */
+export const STRIP_REST_PX = 150;
 
 /** The strip column's floor: a minimum-hit-target thumbnail
  *  (`THUMB_MIN_WIDTH`) plus the scroller's horizontal chrome
@@ -54,6 +58,12 @@ export const MIN_PANE_WIDTH_PX = 320;
  *  TARGET, not the animated computed value, so the settled geometry is what
  *  decides. */
 export const INSPECTOR_W_PX = 264;
+
+/** Phase 37 (item 3) — the Inspector's COLLAPSED width: a narrow strip that
+ *  keeps the expand control reachable (mirrors the Stage Rail's 44px track).
+ *  The canvas reclaims everything else; the strip never overlaps it because
+ *  the same value drives `--tf-tools-inset` while collapsed. */
+export const INSPECTOR_COLLAPSED_W_PX = 44;
 
 /** The largest inset the panes may consume at `stageWidth` before their
  *  minimum page area would be violated. `MultiPane` measures the stage and

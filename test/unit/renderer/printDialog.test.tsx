@@ -26,7 +26,7 @@ vi.mock("../../../src/renderer/pdf/printRaster", () => ({
   }),
 }));
 
-import { PrintDialog } from "../../../src/renderer/components/PrintDialog";
+import { PrintSurface } from "./printSurfaceHarness";
 import { rasterizePagesForPrint } from "../../../src/renderer/pdf/printRaster";
 import type {
   PrintJobPayload,
@@ -35,10 +35,11 @@ import type {
 } from "../../../src/shared/types";
 
 /**
- * Phase 30 — print dialog rendering tests. Pins the control surface (every
- * `data-print-*` selector), the no-printer empty state, the run-state
- * disabling, the custom-range validation message, and that the
- * annotations toggle reaches the outgoing PrintSettings.
+ * Phase 30 / Phase 37 item 17 — print surface rendering tests. The in-app
+ * modal was removed; these now drive the SHARED surface (`PrintPanel` +
+ * `usePrintControls`) the standalone print window renders, so every
+ * `data-print-*` control, the no-printer empty state, the run-state
+ * disabling, the custom-range validation and the result states stay pinned.
  */
 
 const PRINTERS: PrinterInfo[] = [
@@ -69,8 +70,8 @@ function renderDialog(args: RenderArgs = {}): {
   const printJob = args.printJob ?? (async (): Promise<PrintJobResult> => ({ ok: true }));
   act((): void => {
     root.render(
-      <PrintDialog
-        open={true}
+      <PrintSurface
+        active
         totalPages={args.totalPages ?? 3}
         currentPage={args.currentPage ?? 1}
         resolveActiveDoc={(): never => fakeDocProxy(args.totalPages ?? 3) as never}
@@ -136,7 +137,7 @@ function setValue(
   });
 }
 
-describe("PrintDialog — control surface (Phase 30)", () => {
+describe("PrintSurface — control surface (Phase 30)", () => {
   it("renders every promised control with its data-print-* selector", async () => {
     const { container, cleanup } = renderDialog();
     await flush();
@@ -202,7 +203,7 @@ describe("PrintDialog — control surface (Phase 30)", () => {
   });
 });
 
-describe("PrintDialog — no printer (Phase 30)", () => {
+describe("PrintSurface — no printer (Phase 30)", () => {
   it("shows the empty state and disables Print", async () => {
     const { container, cleanup } = renderDialog({
       listPrinters: async (): Promise<PrinterInfo[]> => [],
@@ -215,7 +216,7 @@ describe("PrintDialog — no printer (Phase 30)", () => {
   });
 });
 
-describe("PrintDialog — range validation (Phase 30)", () => {
+describe("PrintSurface — range validation (Phase 30)", () => {
   it("shows the range error for a malformed custom range and disables Print", async () => {
     const { container, cleanup } = renderDialog();
     await flush();
@@ -229,7 +230,7 @@ describe("PrintDialog — range validation (Phase 30)", () => {
   });
 });
 
-describe("PrintDialog — print run (Phase 30)", () => {
+describe("PrintSurface — print run (Phase 30)", () => {
   it("send the selected pages and settings, including the annotations toggle", async () => {
     const payloads: PrintJobPayload[] = [];
     const printJob = vi.fn(async (payload: PrintJobPayload): Promise<PrintJobResult> => {
@@ -350,7 +351,7 @@ describe("PrintDialog — print run (Phase 30)", () => {
 // names its path in the existing success region, a printed/absent outcome
 // keeps today's success copy, a save-cancel stays silent, and each new typed
 // failure reason surfaces through the existing error region.
-describe("PrintDialog — print result states (Phase 35)", () => {
+describe("PrintSurface — print result states (Phase 35)", () => {
   it("renders the saved PDF path in the success region", async () => {
     const printJob = async (): Promise<PrintJobResult> => ({
       ok: true,

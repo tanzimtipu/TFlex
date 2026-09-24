@@ -1,11 +1,11 @@
 // @vitest-environment jsdom
 //
-// DEF-311..DEF-314 — the Phase 36 (chunk 3) Action Dock defects:
+// DEF-311..DEF-314 â€” the Phase 36 (chunk 3) Action Dock defects:
 //
 //   DEF-313 the dock renders a CURATED concept set per stage, not every
 //           registry entry, and never spans the canvas over the pills.
-//   DEF-314 the EDIT dock's `editMode` verb is the toggle that turns Edit
-//           mode ON: enabled while OFF, pressed while ON.
+//   DEF-314 (superseded by Phase 37 item 13) the EDIT stage is the Edit-mode
+//           switch; the dock no longer offers an `editMode` verb.
 //   DEF-312 the Pin/Unpin menu renders against the viewport (portal) and
 //           clamps inside it, so a verb can actually be pinned.
 //   DEF-311 a disabled verb's tooltip is the availability reason, not the
@@ -16,15 +16,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { act, createElement, useState } from "react";
+import { act } from "react";
 import { createRoot } from "react-dom/client";
-import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ActionDock, clampDockMenu, type ActionDockProps } from "../../../src/renderer/components/ActionDock";
-import { DocumentView } from "../../../src/renderer/components/DocumentView";
-import type { EngineState } from "../../../src/renderer/engine/types";
 import {
   DOCK_AVAILABILITY_REASON,
 } from "../../../src/renderer/state/dockModel";
+import { editModeForStage } from "../../../src/renderer/state/stages";
 import {
   DOCK_STAGE_IDS,
   TOOL_REGISTRY,
@@ -33,54 +31,6 @@ import {
 } from "../../../src/renderer/state/toolsRegistry";
 
 const STYLES_PATH = resolve(__dirname, "../../../src/renderer/styles.css");
-
-function stubObservers(): void {
-  const g = globalThis as unknown as { IntersectionObserver?: unknown; ResizeObserver?: unknown };
-  if (g.IntersectionObserver === undefined) {
-    class Noop {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    }
-    g.IntersectionObserver = Noop;
-  }
-  if (g.ResizeObserver === undefined) {
-    class Noop {
-      observe(): void {}
-      unobserve(): void {}
-      disconnect(): void {}
-    }
-    g.ResizeObserver = Noop;
-  }
-  const proto = Element.prototype as unknown as { scrollTo?: unknown };
-  if (proto.scrollTo === undefined) proto.scrollTo = (): void => undefined;
-}
-
-function makeDocStub(numPages: number): PDFDocumentProxy {
-  return {
-    numPages,
-    async getPage(): Promise<unknown> {
-      return {
-        view: [0, 0, 612, 792],
-        getViewport: (): { width: number; height: number } => ({ width: 612, height: 792 }),
-        render: (): { promise: Promise<void> } => ({ promise: Promise.resolve() }),
-        cleanup: async (): Promise<void> => undefined,
-      };
-    },
-    destroy: async (): Promise<void> => undefined,
-  } as unknown as PDFDocumentProxy;
-}
-
-function makeEngineState(pageCount: number): EngineState {
-  return {
-    pageCount,
-    pageOrder: Array.from({ length: pageCount }, (_, i) => i),
-    rotations: Array.from({ length: pageCount }, () => 0),
-    deleted: Array.from({ length: pageCount }, () => false),
-    modified: false,
-    annotations: [],
-  };
-}
 
 interface Harness {
   host: HTMLElement;
@@ -120,43 +70,46 @@ const verbIds = (host: HTMLElement): string[] =>
     (el) => el.getAttribute("data-dock-verb") ?? "",
   );
 
-describe("DEF-313 — the dock's curated set per stage", () => {
-  it("returns exactly the concept verbs, in order, per stage", () => {
+describe("DEF-313 / Phase 37 item 21 — the dock's relevant set per stage", () => {
+  it("returns exactly the relevant verbs, in order, per stage", () => {
     expect(dockToolsForStage("pages").map((e) => e.id)).toEqual([
-      "rotate", "extract", "insertPages", "replacePages", "split", "delete",
+      "rotate", "extract", "insertPages", "replacePages", "split", "delete", "merge", "cropPages",
     ]);
     expect(dockToolsForStage("edit").map((e) => e.id)).toEqual([
-      "editMode", "editText", "editImage", "editTextBox", "recognizeText", "cropPages",
+      "editText", "editImage", "editTextBox", "recognizeText", "batchOcr", "ocrSuspects",
     ]);
     expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
-      "annotate", "sign", "stamp", "flatten",
+      "annotate", "sign", "stamp", "flatten", "forms", "watermark",
+      "exportComments", "importComments",
     ]);
     expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([
-      "optimize", "audit", "exportPages", "exportText", "exportDocx",
+      "optimize", "audit", "exportPages", "exportText", "exportDocx", "createFromImages",
     ]);
-    // Every curated id is uniquely owned by its stage list.
+    // Every listed id is uniquely owned by its stage list.
     const all = Object.values(DOCK_STAGE_IDS).flat();
     expect(new Set(all).size).toBe(all.length);
   });
 
-  it("every dock-stage id resolves to the registered dock surface", () => {
+  it("every dock-stage id resolves to a registered content command", () => {
     for (const ids of Object.values(DOCK_STAGE_IDS)) {
       for (const id of ids) {
         const entry = toolById(id);
         expect(entry, id).toBeDefined();
-        expect(entry?.surface, id).toBe("dock");
+        // Phase 37 item 21 — the dock's set now includes palette dialog
+        // commands; only the panel/navigation chrome and the flyout set stay out.
+        expect(entry?.surface, id).not.toBe("panel");
+        expect(entry?.surface, id).not.toBe("flyout");
       }
     }
   });
 
-  it("leaves the panel/context verbs and the non-concept commands out of the dock", () => {
+  it("leaves the panel/navigation verbs and the flyout set out of the dock", () => {
     const docked = Object.values(DOCK_STAGE_IDS).flat();
     for (const id of [
-      "merge", "renumberPages", "rotateCounterClockwise", "pageThumbnails",
+      "renumberPages", "rotateCounterClockwise", "pageThumbnails",
       "outlinePanel", "pageContextMenu", "clearPageSelection", "dragPage",
-      "editToolOff", "editDefaultFont", "batchOcr", "ocrSuspects", "forms",
-      "watermark", "exportComments", "importComments", "annotationsPanel",
-      "createFromImages",
+      "editMode", "editToolOff", "editDefaultFont", "annotationsPanel",
+      "annSelect", "annHighlight", "annInk", "annColor",
     ]) {
       expect(docked, id).not.toContain(id);
       expect(toolById(id), id).toBeDefined();
@@ -170,14 +123,14 @@ describe("DEF-313 — the dock's curated set per stage", () => {
   });
 });
 
-describe("DEF-313 — the dock can never span the canvas over the pills", () => {
-  it("renders the same curated PAGES set wide and narrow (no 15-verb row)", () => {
+describe("DEF-313 â€” the dock can never span the canvas over the pills", () => {
+  it("renders the same relevant PAGES set wide and narrow (never a wrap)", () => {
     for (const canvasWidth of [900, 1400]) {
       const { host, unmount } = renderDock({ activeStage: "pages", canvasWidth });
       try {
-        expect(verbIds(host)).toHaveLength(6);
+        expect(verbIds(host)).toHaveLength(8);
         expect(verbIds(host)).toEqual([
-          "rotate", "extract", "insertPages", "replacePages", "split", "delete",
+          "rotate", "extract", "insertPages", "replacePages", "split", "delete", "merge", "cropPages",
         ]);
       } finally {
         unmount();
@@ -185,7 +138,7 @@ describe("DEF-313 — the dock can never span the canvas over the pills", () => 
     }
   });
 
-  it("caps the dock width to the MEASURED pill reserve (DEF-315) and lets the verb group wrap", () => {
+  it("caps the dock width to the MEASURED pill reserve (DEF-315) and NEVER stacks (Phase 37 item 2)", () => {
     const css = readFileSync(STYLES_PATH, "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
     // DEF-315 supersedes the hardcoded 380px reserve: the cap subtracts the
     // MEASURED pill band published as --dock-reserve (fallback 476px = the live
@@ -195,83 +148,29 @@ describe("DEF-313 — the dock can never span the canvas over the pills", () => 
       /\.action-dock\s*\{[^}]*max-width:\s*max\(0px,\s*calc\(100% - var\(--dock-reserve,\s*476px\)\)\)/s,
     );
     expect(css).not.toMatch(/max\(220px,\s*calc\(100% - 380px\)\)/);
-    // The verb group wraps instead of overflowing/clipping its trailing verb.
-    expect(css).toMatch(/\.action-dock-group\s*\{[^}]*flex-wrap:\s*wrap/s);
+    // Phase 37 (item 2) — the dock and its verb group are ONE ROW: `nowrap`
+    // replaces the Phase-36 wrap in both rules.
+    expect(css).toMatch(/\.action-dock\s*\{[^}]*flex-wrap:\s*nowrap/s);
+    expect(css).toMatch(/\.action-dock-group\s*\{[^}]*flex-wrap:\s*nowrap/s);
+    expect(css).not.toMatch(/\.action-dock-group\s*\{[^}]*flex-wrap:\s*wrap/s);
   });
 });
 
-describe("DEF-314 — the EDIT dock's editMode verb toggles Edit mode ON", () => {
-  function mountEditable(toggles: boolean[]): HTMLElement {
-    stubObservers();
-    const host = document.createElement("div");
-    document.body.appendChild(host);
-    const root = createRoot(host);
-    function Harness(): ReturnType<typeof createElement> {
-      const [open, setOpen] = useState(false);
-      return createElement(DocumentView, {
-        doc: makeDocStub(3),
-        pageCount: 3,
-        outline: null,
-        initial: {
-          zoomMode: "fit-width",
-          manualScale: 1,
-          currentPage: 1,
-          searchOpen: false,
-          query: "",
-          activeHitIndex: -1,
-        },
-        onPersist: (): void => undefined,
-        onDiagnostics: (): void => undefined,
-        engineState: makeEngineState(3),
-        canUndo: false,
-        annotations: [],
-        formFields: [],
-        signatures: [],
-        savedSignatures: [],
-        stampAnnotations: [],
-        multiModeEnabled: false,
-        activeStage: "edit",
-        dockPins: [],
-        onDockToolAction: vi.fn(() => true),
-        isDockToolEnabled: (): boolean => true,
-        sharedTools: null,
-        editModeOpen: open,
-        onEditModeToggle: (): void => {
-          toggles.push(!open);
-          setOpen((v) => !v);
-        },
-      });
-    }
-    act((): void => {
-      root.render(createElement(Harness));
-    });
-    return host;
-  }
+describe("DEF-314 (Phase 37 item 13) — the EDIT stage is the Edit-mode switch, not a dock verb", () => {
+  it("the EDIT dock no longer offers an editMode verb, and editMode is not dock-hosted", () => {
+    expect(dockToolsForStage("edit").map((e) => e.id)).not.toContain("editMode");
+    expect(toolById("editMode")?.surface).not.toBe("dock");
+  });
 
-  it("enables editMode while Edit mode is OFF and reaches the toggle on click", () => {
-    const toggles: boolean[] = [];
-    const host = mountEditable(toggles);
-    try {
-      const button = host.querySelector<HTMLButtonElement>('[data-dock-verb="editMode"]');
-      expect(button).not.toBeNull();
-      expect(button?.hasAttribute("disabled"), "editMode is the ON switch, so it is enabled").toBe(
-        false,
-      );
-      act((): void => {
-        button?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-      });
-      expect(toggles, "the dock's editMode verb toggled Edit mode ON").toEqual([true]);
-      // The re-render reflects ON: pressed state.
-      expect(
-        host.querySelector('[data-dock-verb="editMode"]')?.getAttribute("aria-pressed"),
-      ).toBe("true");
-    } finally {
-      host.remove();
-    }
+  it("maps the stage to edit mode: EDIT enables it, every other stage disables it", () => {
+    expect(editModeForStage("edit")).toBe(true);
+    expect(editModeForStage("pages")).toBe(false);
+    expect(editModeForStage("review")).toBe(false);
+    expect(editModeForStage("deliver")).toBe(false);
   });
 });
 
-describe("DEF-312 — the Pin/Unpin menu is viewport-positioned and clampable", () => {
+describe("DEF-312 â€” the Pin/Unpin menu is viewport-positioned and clampable", () => {
   it("portals the menu to the body, clamped inside the window, and pins through the UI", () => {
     const onPinTool = vi.fn();
     const { host, unmount } = renderDock({ activeStage: "deliver", onPinTool });
@@ -321,7 +220,7 @@ describe("DEF-312 — the Pin/Unpin menu is viewport-positioned and clampable", 
   });
 });
 
-describe("DEF-311 — a disabled verb shows the availability reason", () => {
+describe("DEF-311 â€” a disabled verb shows the availability reason", () => {
   it("prefers the registry's availability copy over the description", () => {
     const { host, unmount } = renderDock({
       activeStage: "deliver",

@@ -23,7 +23,7 @@
 
 import { useMemo } from 'react';
 import type { ReactElement, ReactNode } from 'react';
-import { Hash, X } from 'lucide-react';
+import { Hash, PanelRightClose, PanelRightOpen, X } from 'lucide-react';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
 import { TextPropertiesPanel } from '../edit/TextPropertiesPanel';
 import type { TextPropertiesPanelProps } from '../edit/TextPropertiesPanel';
@@ -70,7 +70,6 @@ export type InspectorSectionId =
   | 'page'
   | 'on-page'
   | 'document'
-  | 'text'
   | 'cropbox'
   | 'signature'
   | 'comments'
@@ -79,6 +78,13 @@ export type InspectorSectionId =
 
 /** The sections a (stage, selection) pair renders, in order. Pure, so the
  *  per-stage / per-selection contract is pinned by tests without a DOM.
+ *
+ *  Phase 37 (item 1) — these are the sections BELOW the text-manipulation
+ *  block. When a text object is selected (EDIT or the REVIEW/annotate flow)
+ *  `textPanel !== null` and the Inspector renders the re-parented
+ *  `TextPropertiesPanel` at the TOP, above these sections, split by a subtle
+ *  divider. The `text` section id is therefore retired from the returned lists
+ *  (the panel is no longer one of the stage's sections).
  *
  *  Section 3A surface discipline:
  *   - The EDIT/page section is the CropBox ONLY (ruling 4: the OCR status is
@@ -94,12 +100,15 @@ export function inspectorSections(
     case 'pages':
       return kind === 'page' ? ['page', 'on-page', 'document'] : ['document'];
     case 'edit':
-      if (kind === 'text') return ['text'];
+      // EDIT + text: the text panel rides ABOVE; the document facts stay below.
+      if (kind === 'text') return ['document'];
       if (kind === 'page') return ['cropbox'];
       return ['document'];
     case 'review':
       // A selected signature inspects the signature; the document view
-      // hosts the comments + the re-parented annotations list.
+      // hosts the comments + the re-parented annotations list. Phase 37
+      // (item 1): a selected TEXT object keeps those same below-sections and
+      // lifts the text panel to the top.
       return kind === 'signature' ? ['signature'] : ['comments', 'annotations'];
     case 'deliver':
       return ['export', 'document'];
@@ -140,7 +149,10 @@ export function inspectorSelectionFor(args: {
   signatureLabel: string | null;
   page: number;
 }): InspectorSelection {
-  if (args.stage === 'edit' && args.text !== null) {
+  // Phase 37 (item 1) — the text-manipulation panel is integrated into the
+  // Inspector for BOTH flows: the EDIT flow (stage `edit`) and the ANNOTATE
+  // flow (stage `review`, where a text annotation is selected).
+  if ((args.stage === 'edit' || args.stage === 'review') && args.text !== null) {
     return { kind: 'text', name: args.text.name };
   }
   if (args.stage === 'review' && args.signatureLabel !== null) {
@@ -176,14 +188,14 @@ export function inspectorTextPanelFor(
  *  Inspector's EDIT/text section (the CANONICAL home) and the floating card in
  *  the DocumentView. For a GIVEN selection exactly ONE may be visible.
  *
- *  The Inspector owns the panel when its EDIT/text section will actually
- *  render: the view publishes the selection upward (`onTextSelectionChange` is
- *  wired — single mode only), the stage is EDIT (the section's only stage; see
- *  `inspectorSections`), and a text target exists (`inspectorSelectionFor`
- *  yields kind `text`). In every other case the floating card is the only
- *  properties UI and must stay: an armed text tool with nothing selected yet
- *  (pre-placement style defaults), a text annotation selected in REVIEW, or
- *  Multi Mode (where the host withdraws the published selection). */
+ *  The Inspector owns the panel when its text block will actually render: the
+ *  view publishes the selection upward (`onTextSelectionChange` is wired —
+ *  single mode only), the stage is one of the two text flows — EDIT or the
+ *  REVIEW annotate flow (Phase 37 item 1) — and a text target exists
+ *  (`inspectorSelectionFor` yields kind `text`). In every other case the
+ *  floating card is the only properties UI and must stay: an armed text tool
+ *  with nothing selected yet (pre-placement style defaults), or Multi Mode
+ *  (where the host withdraws the published selection). */
 export function inspectorOwnsTextPanel(args: {
   /** True when the view publishes its selection to the Inspector (single
    *  mode). False in Multi Mode, where the host withdraws it. */
@@ -193,7 +205,11 @@ export function inspectorOwnsTextPanel(args: {
   /** True when a text target (object / run / annotation) is selected. */
   hasTextTarget: boolean;
 }): boolean {
-  return args.publishesSelection && args.stage === 'edit' && args.hasTextTarget;
+  return (
+    args.publishesSelection &&
+    (args.stage === 'edit' || args.stage === 'review') &&
+    args.hasTextTarget
+  );
 }
 
 /** DEF-321 — the floating card's `open` state. The card is the pop-out of the
@@ -212,6 +228,13 @@ export interface InspectorProps {
   selection?: InspectorSelection;
   /** Optional close affordance; the host owns the panel's visibility. */
   onClose?: () => void;
+  /** Phase 37 (items 3 + 6) — the responsive collapse signal. `true` when the
+   *  Inspector is collapsed, either by the user or by the Action Dock's ladder.
+   *  The host owns the state and resolves it as `userCollapsed || rung` (see
+   *  `inspectorCollapsedFor`); the control below toggles ONLY the user's own
+   *  preference, so a manual expand can never fight the ladder. */
+  collapsed?: boolean;
+  onToggleCollapsed?: () => void;
 
 
   // --- PAGES / DOCUMENT ------------------------------------------------
@@ -316,6 +339,8 @@ export function Inspector(props: InspectorProps): ReactElement {
     stage,
     selection = { kind: 'none' },
     onClose,
+    collapsed = false,
+    onToggleCollapsed,
     pageCount = 0,
     pageSize = null,
     pageRotation = null,
@@ -368,7 +393,7 @@ fileSize = null,
           <span data-inspector-value="label">{pageLabel ?? '\u2014'}</span>
           <Action
             id="renumber"
-            label={'renumber\u2026'}
+            label={'rename\u2026'}
             onClick={onRenumberPages}
             icon={<Hash size={12} aria-hidden />}
           />
@@ -418,16 +443,24 @@ fileSize = null,
       </Row>
     </Section>
   );
-  /** EDIT - the re-parented text-properties component (text object selected). */
-  const renderTextSection = (): ReactElement => (
-    <Section id="text" title="Text">
-      {textPanel !== null ? (
-        <div className="inspector-text-panel" data-inspector-text-panel>
+  /** Phase 37 (item 1) — the text-manipulation block, rendered at the TOP of
+   *  the Inspector for both flows (EDIT and the REVIEW/annotate flow). The
+   *  re-parented component keeps every selector; a subtle divider separates it
+   *  from the stage sections below, and the whole body column scrolls. */
+  const renderTextBlock = (): ReactElement | null =>
+    textPanel === null ? null : (
+      <>
+        <div className="inspector-text-panel" data-inspector-text-panel data-inspector-text-top>
           <TextPropertiesPanel {...textPanel} open />
         </div>
-      ) : null}
-    </Section>
-  );
+        <div
+          className="inspector-divider"
+          data-inspector-divider
+          role="separator"
+          aria-orientation="horizontal"
+        />
+      </>
+    );
 
   /** EDIT - the selected page's CropBox values. Section 3A ruling 4: no OCR
    *  status here — the EDIT ContextPanel's Recognition section is its home. */
@@ -521,9 +554,7 @@ const renderSignatureSection = (): ReactElement => (
         return renderOnPageSection();
       case 'document':
         return renderDocumentSection();
-      case 'text':
-        return renderTextSection();
-case 'cropbox':
+      case 'cropbox':
         return renderCropBoxSection();
       case 'signature':
         return renderSignatureSection();
@@ -536,40 +567,83 @@ case 'cropbox':
     }
   };
 
+  /** Phase 37 (item 3) — the expand/collapse control. ONE control, rendered in
+   *  both states (the header when expanded, the strip when collapsed), wired to
+   *  the host's `onToggleCollapsed`. It toggles the USER's preference only; the
+   *  ladder's rung 1 is OR-ed by the host, so a manual expand can never fight
+   *  the ladder. */
+  const collapseControl = (
+    <button
+      type="button"
+      className="inspector-collapse-toggle"
+      data-inspector-collapse
+      onClick={onToggleCollapsed}
+      disabled={onToggleCollapsed === undefined}
+      aria-expanded={!collapsed}
+      aria-label={collapsed ? 'Expand inspector' : 'Collapse inspector'}
+      title={collapsed ? 'Expand inspector' : 'Collapse inspector'}
+    >
+      {collapsed ? (
+        <PanelRightOpen size={16} aria-hidden />
+      ) : (
+        <PanelRightClose size={16} aria-hidden />
+      )}
+    </button>
+  );
+
   return (
     <div
       className="inspector"
       data-inspector
       data-inspector-stage={stage}
       data-inspector-selection={selection.kind}
+      data-inspector-collapsed={collapsed ? 'true' : 'false'}
       role="complementary"
       aria-label="Inspector"
     >
-      <GlassSidebarHeader
-        className="inspector-header"
-        title={`Inspector \u00b7 ${inspectorSelectionLabel(selection)}`}
-        actions={
-          onClose !== undefined ? (
-            <button
-              type="button"
-              className="inspector-close"
-              data-inspector-close
-              onClick={onClose}
-              aria-label="Close inspector"
-              title="Close"
-            >
-              <X size={16} aria-hidden />
-            </button>
-          ) : undefined
-        }
-      />
-      <GlassSidebarBody className="inspector-body">
-        {sections.map((id) => (
-          <div key={id} className="inspector-slot" data-inspector-slot={id}>
-            {sectionBody(id)}
-          </div>
-        ))}
-      </GlassSidebarBody>
+      {collapsed ? (
+        // Phase 37 (item 3) — the collapsed Inspector is a narrow strip that
+        // keeps the expand control reachable (mirrors the pages panel's ruler
+        // strip). The host gives it its own inset width, so it never overlaps
+        // the canvas.
+        <div className="inspector-collapsed-strip" data-inspector-collapsed-strip>
+          {collapseControl}
+        </div>
+      ) : (
+        <>
+          <GlassSidebarHeader
+            className="inspector-header"
+            title={`Inspector \u00b7 ${inspectorSelectionLabel(selection)}`}
+            actions={
+              <div className="inspector-header-actions">
+                {collapseControl}
+                {onClose !== undefined ? (
+                  <button
+                    type="button"
+                    className="inspector-close"
+                    data-inspector-close
+                    onClick={onClose}
+                    aria-label="Close inspector"
+                    title="Close"
+                  >
+                    <X size={16} aria-hidden />
+                  </button>
+                ) : null}
+              </div>
+            }
+          />
+          <GlassSidebarBody className="inspector-body">
+            {/* Phase 37 (item 1) — the text-manipulation block leads the column,
+                with the stage sections below the divider. */}
+            {renderTextBlock()}
+            {sections.map((id) => (
+              <div key={id} className="inspector-slot" data-inspector-slot={id}>
+                {sectionBody(id)}
+              </div>
+            ))}
+          </GlassSidebarBody>
+        </>
+      )}
     </div>
   );
 }

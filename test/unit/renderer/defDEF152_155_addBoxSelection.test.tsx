@@ -182,10 +182,11 @@ describe("DEF-152 — the moved box's action bar carries Confirm / Edit / Delete
       expect(onCommitTextBoxMove).not.toHaveBeenCalled();
       const bar = host.querySelector("[data-edit-box-toolbar]");
       expect(bar, "bar appears for the selected/moved box").not.toBeNull();
-      // DEF-152 — exactly the promised verbs.
+      // Phase 37 item 11 — Confirm / Delete / Cancel (the Edit verb is gone).
       expect(host.querySelector("[data-edit-box-action='confirm']")?.textContent?.trim()).toBe("Confirm");
-      expect(host.querySelector("[data-edit-box-action='edit']")?.textContent?.trim()).toBe("Edit");
       expect(host.querySelector("[data-edit-box-action='delete']")?.textContent?.trim()).toBe("Delete");
+      expect(host.querySelector("[data-edit-box-action='cancel']")?.textContent?.trim()).toBe("Cancel");
+      expect(host.querySelector("[data-edit-box-action='edit']"), "no Edit verb").toBeNull();
       // Confirm commits the THREADED position (old = engine rect,
       // new = drag end).
       clickConfirm(host);

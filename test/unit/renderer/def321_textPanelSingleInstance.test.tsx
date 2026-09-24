@@ -15,10 +15,11 @@
 //     host's panel state says so AND the Inspector is NOT showing that same
 //     selection;
 //   * the Inspector owns it exactly when the view publishes the selection
-//     (single mode), the stage is EDIT, and a text target exists;
+//     (single mode), the stage is one of the text flows (EDIT, or REVIEW's
+//     annotate flow — Phase 37 item 1), and a text target exists;
 //   * the pop-out therefore stays the only properties UI for an armed tool
-//     with nothing selected, for a text annotation selected in REVIEW, and in
-//     Multi Mode (where the host withdraws the published selection).
+//     with nothing selected, and in Multi Mode (where the host withdraws the
+//     published selection).
 //
 // The count assertion below mounts both real mount points as DocumentView does
 // and asserts exactly ONE `.text-props-panel` and ONE `[data-txt-text]`.
@@ -73,10 +74,11 @@ describe('DEF-321 — the single-instance rule (pure)', () => {
     expect(
       inspectorOwnsTextPanel({ publishesSelection: true, stage: 'edit', hasTextTarget: false }),
     ).toBe(false);
-    // A text annotation selected in REVIEW: the Inspector shows the document.
+    // A text annotation selected in REVIEW: Phase 37 (item 1) moved this into
+    // the Inspector (the annotate flow), so the Inspector now owns it.
     expect(
       inspectorOwnsTextPanel({ publishesSelection: true, stage: 'review', hasTextTarget: true }),
-    ).toBe(false);
+    ).toBe(true);
     // Multi Mode withdraws the published selection.
     expect(
       inspectorOwnsTextPanel({ publishesSelection: false, stage: 'edit', hasTextTarget: true }),
@@ -230,7 +232,7 @@ describe('DEF-321 — exactly one TextPropertiesPanel per selection', () => {
     }
   });
 
-  it('a text annotation selected in REVIEW keeps the pop-out (Inspector shows the document)', () => {
+  it('a text annotation selected in REVIEW now renders ONE Inspector instance (annotate flow)', () => {
     const { host, unmount } = mountBoth({
       stage: 'review',
       publishesSelection: true,
@@ -239,8 +241,10 @@ describe('DEF-321 — exactly one TextPropertiesPanel per selection', () => {
     });
     try {
       const c = counts(host);
-      expect(c.panels, 'the pop-out is the only instance in REVIEW').toBe(1);
-      expect(c.inInspector).toBe(0);
+      // Phase 37 (item 1) — the annotate flow integrates the panel into the
+      // Inspector, so the Inspector copy is the only instance.
+      expect(c.panels, 'one instance in the annotate flow').toBe(1);
+      expect(c.inInspector).toBe(1);
     } finally {
       unmount();
     }

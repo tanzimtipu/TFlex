@@ -304,7 +304,9 @@ describe("Phase 36 — ActionDock State 3: pins", () => {
       expect(pin).not.toBeNull();
       expect(unpin).not.toBeNull();
       expect(pin?.hasAttribute("disabled")).toBe(false);
-      expect(unpin?.hasAttribute("disabled")).toBe(true);
+      // Phase 37 item 21 — a default stage verb can be unpinned (the host
+      // records it in `dockUnpinned`), so Unpin is enabled for any verb.
+      expect(unpin?.hasAttribute("disabled")).toBe(false);
       clickOn(pin as Element);
       expect(onPinTool).toHaveBeenCalledWith("split");
     } finally {
@@ -438,7 +440,7 @@ describe("Phase 36 — ActionDock State 4: idle", () => {
   });
 });
 
-describe("Phase 36 — ActionDock responsive rules", () => {
+describe("Phase 36/37 — ActionDock responsive rules", () => {
   it("drops the labels below 900px", () => {
     const wide = renderDock({ canvasWidth: 1200 });
     const narrow = renderDock({ canvasWidth: 800 });
@@ -457,17 +459,22 @@ describe("Phase 36 — ActionDock responsive rules", () => {
     }
   });
 
-  it("collapses the least-used unpinned verbs into a `...` chip below 640px", () => {
+  it("collapses the least-used unpinned verbs into a `...` chip when compact WITHOUT arrows", () => {
     const onRunTool = vi.fn();
     const { host, unmount } = renderDock({
       activeStage: "pages",
       canvasWidth: 100,
+      // Phase 37 (item 6) — an explicit ladder with the arrows rung OFF keeps
+      // the retained `...` overflow lane testable; at the ladder's last rung
+      // the arrows replace it (see the next test).
+      ladder: { inspectorCollapsed: true, panelCollapsed: true, iconOnly: true, arrows: false },
       dockPins: ["zoomIn"],
       toolUsage: { rotate: 9, extract: 8 },
       onRunTool,
     });
     try {
       expect(host.querySelector("[data-action-dock]")?.getAttribute("data-dock-compact")).toBe("true");
+      expect(host.querySelector("[data-action-dock]")?.getAttribute("data-dock-arrows")).toBe("false");
       const more = host.querySelector<HTMLElement>("[data-dock-overflow]");
       expect(more).not.toBeNull();
       // The pinned verb stays regardless of the overflow.
@@ -481,6 +488,43 @@ describe("Phase 36 — ActionDock responsive rules", () => {
       expect(onRunTool).toHaveBeenCalled();
     } finally {
       unmount();
+    }
+  });
+
+  it("Phase 37 item 6 — at the arrows rung every verb stays in one scrolling row", () => {
+    const scrollBy = vi.fn();
+    const { host, unmount } = renderDock({ activeStage: "pages", canvasWidth: 640 });
+    try {
+      expect(host.querySelector("[data-action-dock]")?.getAttribute("data-dock-arrows")).toBe("true");
+      // No `...` menu at the arrows rung: the full set is present, scrollable.
+      expect(host.querySelector("[data-dock-overflow]")).toBeNull();
+      expect(verbIds(host, "primary")).toEqual(dockToolsForStage("pages").map((t) => t.id));
+      const left = host.querySelector<HTMLElement>('[data-dock-arrow="left"]');
+      const right = host.querySelector<HTMLElement>('[data-dock-arrow="right"]');
+      expect(left).not.toBeNull();
+      expect(right).not.toBeNull();
+      const scroller = host.querySelector<HTMLElement>("[data-dock-scroll]");
+      expect(scroller).not.toBeNull();
+      scroller!.scrollBy = scrollBy;
+      clickOn(right as Element);
+      expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ left: 160 }));
+      clickOn(left as Element);
+      expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ left: -160 }));
+    } finally {
+      unmount();
+    }
+  });
+
+  it("Phase 37 item 21 — the Ctrl+K hint rides above the dock and hides at the arrows rung", () => {
+    const wide = renderDock({ canvasWidth: 1400 });
+    const narrow = renderDock({ canvasWidth: 640 });
+    try {
+      const hint = wide.host.querySelector("[data-dock-hint]");
+      expect(hint?.textContent).toContain("Search all tools: Ctrl+K");
+      expect(narrow.host.querySelector("[data-dock-hint]")).toBeNull();
+    } finally {
+      wide.unmount();
+      narrow.unmount();
     }
   });
 });

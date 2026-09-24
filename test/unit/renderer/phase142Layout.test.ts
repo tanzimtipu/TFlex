@@ -142,21 +142,20 @@ describe("Phase 14.2 FIX 1 (Phase 19 supersession) — the annotation row is ret
   const css = readStyles();
   const clean = stripCssComments(css);
 
-  it("the legacy bare .ann-toolbar row is gone; the canvas-bound flyout rule wraps intentionally (DEF-325)", () => {
+  it("the legacy bare .ann-toolbar row is gone; the flyout row is ONE line (DEF-325, Phase 37 item 3)", () => {
     // Phase 19 — the tools live inside the CommandBar capsule, so the
     // legacy BARE class carries no rule of its own (inert e2e hook only).
     // Match the bare selector exactly: DEF-325 then added a DESCENDANT
     // rule (`.annotation-flyout .ann-toolbar`) so the re-parented capsule
-    // wraps inside the canvas at narrow widths, and a substring search for
-    // `.ann-toolbar {` also hits that descendant.
+    // stays inside the canvas. Phase 37 (item 3) supersedes the DEF-325 wrap:
+    // it stays on ONE row and the ladder's arrows scroll it.
     expect(clean).not.toMatch(/(^|\})\s*\.ann-toolbar\s*\{/);
-    const wrapRule = findRuleBody(clean, ".annotation-flyout .ann-toolbar {");
-    expect(wrapRule, "DEF-325 canvas-bound wrap rule missing").not.toBeNull();
-    // The wrap is the point: it must shrink to the canvas and reflow.
-    expect(wrapRule ?? "").toMatch(/flex-wrap:\s*wrap/);
-    expect(wrapRule ?? "").toMatch(/justify-content:\s*center/);
-    expect(wrapRule ?? "").toMatch(/height:\s*auto/);
-    expect(wrapRule ?? "").toMatch(/max-width:\s*100%/);
+    const rowRule = findRuleBody(clean, ".annotation-flyout .ann-toolbar {");
+    expect(rowRule, "DEF-325 canvas-bound flyout rule missing").not.toBeNull();
+    expect(rowRule ?? "").toMatch(/flex-wrap:\s*nowrap/);
+    expect(rowRule ?? "").toMatch(/justify-content:\s*center/);
+    expect(rowRule ?? "").toMatch(/height:\s*auto/);
+    expect(rowRule ?? "").toMatch(/max-width:\s*100%/);
     const visible = findRuleBody(css, ".ann-tools-visible {");
     expect(visible).not.toBeNull();
     expect(visible ?? "").toMatch(/display:\s*inline-flex/);

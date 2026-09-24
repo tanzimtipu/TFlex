@@ -43,6 +43,29 @@ const STAGE_LABELS: Record<Stage, string[]> = {
   deliver: ['Reduce file size', 'Audit space usage', 'Export pages as images', 'Export text', 'Export to Word (.docx)'],
 };
 
+/** Phase 37 (item 21) — the dock's WIDENED relevant sets, as rendered. At the
+ *  default-window band (~494px) these exceed the band, so DEF-334 routes the
+ *  labelled row into the ARROWS lane (all labels kept, one scrolling row)
+ *  instead of yielding them; the ladder hides labels only below 880px. */
+const DOCK_LABELS: Record<Stage, string[]> = {
+  pages: [
+    'Rotate pages', 'Extract pages', 'Insert pages', 'Replace pages',
+    'Split pages', 'Delete pages', 'Merge PDFs', 'Crop pages',
+  ],
+  edit: [
+    'Edit text', 'Edit images', 'Add a text box', 'Recognize text (OCR)',
+    'Batch OCR all tabs', 'OCR suspects',
+  ],
+  review: [
+    'Annotate', 'Sign', 'Stamp', 'Flatten', 'Forms', 'Watermark',
+    'Export comments (FDF)', 'Import comments (FDF)',
+  ],
+  deliver: [
+    'Reduce file size', 'Audit space usage', 'Export pages as images',
+    'Export text', 'Export to Word (.docx)', 'Create PDF from images',
+  ],
+};
+
 function boxOf(left: number, top: number, right: number, bottom: number): DOMRect {
   return {
     left,
@@ -64,7 +87,11 @@ function pill(name: 'page' | 'zoom', hostWidth: number): PillBox {
 }
 
 /** Mount the dock with the two pills stubbed to the live default geometry. */
-function mountDock(hostWidth: number, stage: Stage): { dock: HTMLElement; unmount: () => void } {
+function mountDock(
+  hostWidth: number,
+  stage: Stage,
+  options: Partial<ActionDockProps> = {},
+): { dock: HTMLElement; unmount: () => void } {
   const host = document.createElement('div');
   host.style.position = 'relative';
   document.body.appendChild(host);
@@ -94,6 +121,7 @@ function mountDock(hostWidth: number, stage: Stage): { dock: HTMLElement; unmoun
     onUnpinTool: vi.fn(),
     onRunTool: vi.fn(),
     canvasWidth: hostWidth,
+    ...options,
   };
   act((): void => {
     root.render(createPortal(<ActionDock {...props} />, host));
@@ -125,21 +153,28 @@ describe('DEF-330 â€” the dock renders as designed at the default window', 
     expect(CANVAS - (2 * (DOCK_PILL_INSET + ZOOM_W) + 2 * DOCK_PILL_GAP)).toBeCloseTo(422.4, 1);
   });
 
-  it('fits all four curated stages labelled in ONE row at the default size', () => {
+  it('renders ONE ROW with every label at the default size (arrows lane when the band cannot fit)', () => {
     const band = freeBand().width;
     for (const stage of ['pages', 'edit', 'review', 'deliver'] as const) {
       const { dock, unmount } = mountDock(CANVAS, stage);
       try {
         const labels = [...dock.querySelectorAll('.action-dock-label')];
-        expect(dock.getAttribute('data-dock-icon-only'), stage).toBe('false');
-        expect(labels.map((el) => el.textContent), stage).toEqual(STAGE_LABELS[stage]);
-        expect(labels.length, stage).toBe(STAGE_LABELS[stage].length);
-        // One row: the labelled width fits the band the dock actually has, so
-        // nothing wraps (the cap is published for the probe).
-        expect(Number(dock.getAttribute('data-dock-free-band')), stage).toBe(Math.round(band));
+        // The band-placed geometry is unchanged.
         expect(dock.getAttribute('data-dock-band-placed'), stage).toBe('true');
+        expect(Number(dock.getAttribute('data-dock-free-band')), stage).toBe(Math.round(band));
         expect(Number(dock.getAttribute('data-dock-band')), stage).toBe(Math.round(band));
-        expect(labelledDockNeed(STAGE_LABELS[stage]), stage).toBeLessThanOrEqual(band);
+        // DEF-334 — the 880 rung owns the labels; at the default window (914)
+        // the widened sets stay labelled and the lane scrolls, so nothing is
+        // silently dropped (the re-opened DEF-330). Where a set genuinely
+        // exceeds the band the arrows lane is used, never a label drop.
+        expect(dock.getAttribute('data-dock-icon-only'), stage).toBe('false');
+        expect(labels.map((el) => el.textContent), stage).toEqual(DOCK_LABELS[stage]);
+        if (labelledDockNeed(DOCK_LABELS[stage]) > band) {
+          expect(dock.getAttribute('data-dock-arrows'), stage).toBe('true');
+          expect(dock.querySelector('[data-dock-overflow]'), stage).toBeNull();
+        }
+        // ALWAYS one row: at most the primary group + the pins group.
+        expect(dock.querySelectorAll('[data-dock-group]').length, stage).toBeLessThanOrEqual(2);
       } finally {
         unmount();
       }
@@ -231,50 +266,56 @@ describe('DEF-330 â€” the dock renders as designed at the default window', 
     }
   });
 
-  it('stays labelled at 1100px and yields only where the labels genuinely do not fit', () => {
+  it('stays labelled everywhere above the 880 rung, routing to arrows where the band is tight', () => {
+    // 1100px canvas leaves ~679.75px of band: every widened set fits.
+    const wideBand = 1100 - (DOCK_PILL_INSET + PAGE_W + DOCK_PILL_GAP) - (DOCK_PILL_INSET + ZOOM_W + DOCK_PILL_GAP);
     for (const stage of ['pages', 'edit', 'review', 'deliver'] as const) {
       const wide = mountDock(1100, stage);
       try {
+        expect(labelledDockNeed(DOCK_LABELS[stage]), `1100 need ${stage}`).toBeLessThanOrEqual(wideBand);
         expect(wide.dock.getAttribute('data-dock-icon-only'), `1100 ${stage}`).toBe('false');
       } finally {
         wide.unmount();
       }
     }
-    // 900px canvas: 479.75px of band. DELIVER's five wide verbs (491.6px) no
-    // longer fit, so it yields â€” genuinely narrow, not a threshold artifact.
-    for (const stage of ['pages', 'edit', 'review'] as const) {
+    // 900px canvas leaves ~479.75px: every widened set now exceeds it, but
+    // 900 is ABOVE the 880 rung, so DEF-334 keeps the labels and uses the
+    // arrows lane rather than dropping them.
+    const mediumBand = 900 - (DOCK_PILL_INSET + PAGE_W + DOCK_PILL_GAP) - (DOCK_PILL_INSET + ZOOM_W + DOCK_PILL_GAP);
+    for (const stage of ['pages', 'edit', 'review', 'deliver'] as const) {
       const medium = mountDock(900, stage);
       try {
+        expect(labelledDockNeed(DOCK_LABELS[stage]), `900 need ${stage}`).toBeGreaterThan(mediumBand);
         expect(medium.dock.getAttribute('data-dock-icon-only'), `900 ${stage}`).toBe('false');
+        expect(medium.dock.querySelectorAll('.action-dock-label').length, `900 ${stage}`).toBe(
+          DOCK_LABELS[stage].length,
+        );
+        expect(medium.dock.getAttribute('data-dock-arrows'), `900 ${stage}`).toBe('true');
       } finally {
         medium.unmount();
       }
     }
-    const narrowDeliver = mountDock(900, 'deliver');
-    try {
-      expect(narrowDeliver.dock.getAttribute('data-dock-icon-only')).toBe('true');
-      expect(labelledDockNeed(STAGE_LABELS.deliver)).toBeGreaterThan(900 - 174.45 - 237.8 - 16);
-    } finally {
-      narrowDeliver.unmount();
-    }
   });
 
-  it('keeps the narrow-width behaviour: icon-only under 900px, `...` chip when compact', () => {
-    const small = mountDock(899, 'review');
+  it('hides labels only below the 880 rung; the compact lane above it is the arrows', () => {
+    // 899 is above the 880 rung: the labels stay (the old host-width 900
+    // threshold is not the authority).
+    const above = mountDock(899, 'review');
     try {
-      expect(small.dock.getAttribute('data-dock-icon-only')).toBe('true');
-      expect(small.dock.querySelector('.action-dock-label')).toBeNull();
+      expect(above.dock.getAttribute('data-dock-icon-only')).toBe('false');
+      expect(above.dock.querySelector('.action-dock-label')).not.toBeNull();
+      expect(above.dock.getAttribute('data-dock-arrows')).toBe('true');
     } finally {
-      small.unmount();
+      above.unmount();
     }
-    const compact = mountDock(640, 'pages');
+    // 640 is below both rungs: icon-only, arrows present, one row.
+    const below = mountDock(640, 'pages');
     try {
-      // Under the 900px break the labels are gone and the compact plan starts
-      // collapsing the tail into the `...` chip (DEF-313/315, unchanged).
-      expect(compact.dock.getAttribute('data-dock-icon-only')).toBe('true');
-      expect(compact.dock.querySelector('[data-dock-overflow]')).not.toBeNull();
+      expect(below.dock.getAttribute('data-dock-icon-only')).toBe('true');
+      expect(below.dock.querySelector('.action-dock-label')).toBeNull();
+      expect(below.dock.getAttribute('data-dock-arrows')).toBe('true');
     } finally {
-      compact.unmount();
+      below.unmount();
     }
   });
 

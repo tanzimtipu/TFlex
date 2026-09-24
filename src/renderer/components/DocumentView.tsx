@@ -55,7 +55,8 @@ import {
 } from "./Inspector";
 import { ActionDock, type DockBulkActions } from "./ActionDock";
 import { prunePageSelection } from "../state/pageSelection";
-import { dockAvailabilityFor, sanitizeDockPins, type DockAvailability } from "../state/dockModel";
+import { dockAvailabilityFor, dockEnabledWithFallback, sanitizeDockPins, type DockAvailability } from "../state/dockModel";
+import type { DockLadder } from "../state/dockResponsive";
 import { toolById, type ToolEntry } from "../state/toolsRegistry";
 import type { Stage } from "../state/stages";
 import { usePageDragOptional } from "../state/PageDragContext";
@@ -677,10 +678,17 @@ export interface DocumentViewDockProps {
   activeStage?: Stage;
   /** The persisted, registry-validated dock pins (max 4). */
   dockPins?: readonly string[];
+  /** Phase 37 (item 21) — registry tool ids the user unpinned from their
+   *  stage's default dock set. */
+  dockUnpinned?: readonly string[];
   onDockPin?: (id: string) => void;
   onDockUnpin?: (id: string) => void;
   /** Per-tool usage counts for the compact overflow ranking. */
   toolUsage?: Readonly<Record<string, number>> | undefined;
+  /** Phase 37 (items 2 + 6) — the ONE responsive ladder the host resolved from
+   *  the measured workspace width; threaded to the ActionDock so the dock's
+   *  label/arrow rungs agree with the Inspector/panel rungs. */
+  dockLadder?: DockLadder;
   /** App-level registry actions this view cannot run itself (dialogs, OCR,
    *  export, sign, forms, ...). Returns true when it handled the id. */
   onDockToolAction?: (id: string) => boolean;
@@ -795,9 +803,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   chromeIdle = false,
   activeStage,
   dockPins = [],
+  dockUnpinned = [],
   onDockPin,
   onDockUnpin,
   toolUsage,
+  dockLadder,
   onDockToolAction,
   isDockToolEnabled,
 }: DocumentViewProps,
@@ -1105,6 +1115,29 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     // mask cover, so it performs the commit when the token flips.
     setTextCommitToken((n) => n + 1);
   }, [onEditAnnotation, onDeleteAnnotation, persistAnnText]);
+  /** Phase 37 (item 11) — the Edit overlay's action-bar Cancel: DISCARD the
+   *  live text session without committing it. The panel's keystrokes mutate
+   *  the box registry live, so a box target is restored to the session's
+   *  original text; a run target needs no engine work (the overlay drops its
+   *  pending move). Clearing the session first means the target-change effect
+   *  that follows the selection's dismissal commits nothing. */
+  const discardTextSession = useCallback((): void => {
+    const session = textEditRef.current;
+    textEditRef.current = null;
+    setTextEdit(null);
+    if (session === null) return;
+    justPlacedTextRef.current = null;
+    const { target } = session;
+    if (target.kind === "box" && session.text !== session.original) {
+      const box = textBoxesRef.current.find((b) => b.id === target.id);
+      if (box !== undefined) {
+        editRef.current?.onAction({
+          type: "upsert-text-box",
+          placement: { ...box, text: session.original },
+        });
+      }
+    }
+  }, []);
   /** Phase 26 â€” a keystroke in the panel's Text field. The page follows
    *  immediately (annotation draft / box registry); the engine is
    *  untouched until the session commits. */
@@ -2566,6 +2599,9 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       textLive:
         textEdit !== null && textEdit.target.kind === "run" ? textEdit.text : null,
       textCommitToken,
+      // Phase 37 (item 11) — the edit-flow action bar's Cancel discards the
+      // live session instead of committing it.
+      onDiscardTextEdit: discardTextSession,
     };
   }, [
     editModeOpen,
@@ -2574,6 +2610,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     onEditTextTargetChange,
     textEdit,
     textCommitToken,
+    discardTextSession,
   ]);
 
   // B5 / B14 â€” when Edit mode opens, force the annotation tool
@@ -3306,10 +3343,13 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   );
 
   /** DEF-327 â€” the dock's live gate for one entry, from the ONE shared decision
-   *  (`dockAvailabilityFor`). `undefined` (not a verb this pane governs) reads
-   *  as unavailable here, exactly as before. */
+   *  (`dockEnabledWithFallback`). Phase 37 (item 20) â€” a PINNED verb the pane
+   *  does not specially govern (e.g. Watermark) yields `undefined` from
+   *  `dockAvailabilityFor`; the dock then consults the app-level gate it already
+   *  holds instead of coercing to "unavailable", or the verb greys out with
+   *  "Open a document first" even with a document open. */
   const dockToolEnabled = useCallback(
-    (entry: ToolEntry): boolean => dockAvailabilityFor(entry, dockAvailabilityArgs) ?? false,
+    (entry: ToolEntry): boolean => dockEnabledWithFallback(entry, dockAvailabilityArgs),
     [dockAvailabilityArgs],
   );
 
@@ -3465,6 +3505,16 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onReorder={onReorder}
       onUndo={onUndo}
       onJump={(p): void => jumpToPage(p)}
+      // Phase 37 (chunk 5, item 19) — Multi Mode strips carry the SAME options
+      // as the single-mode panel: the right-click menu's dialog entries, the
+      // inline hover verbs (built inside the strip from onOp/onDelete + these),
+      // and the multi-select set the focused pane's dock already consumes.
+      onExtractPages={onExtractPages}
+      onInsertBlank={onInsertBlankPage}
+      onReplacePages={onReplacePages}
+      onDeletePage={onDeletePage}
+      pageSelection={pageSelection}
+      onPageSelectionChange={setPageSelection}
     />
   );
 
@@ -3565,6 +3615,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
               }
               enabled
               hint={editToolbarHint}
+              ladder={dockLadder}
             />
           )}
         </AnimatePresence>
@@ -3914,7 +3965,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             two flyouts (or a stale one) on screen. */}
         {activeStage === 'review' &&
           (!suppressToolbar || (inMultiPane && paneFocused)) && (
-          <AnnotationFlyout open={flyoutOpen} onClose={(): void => setFlyoutOpen(false)}>
+          <AnnotationFlyout
+            open={flyoutOpen}
+            onClose={(): void => setFlyoutOpen(false)}
+            ladder={dockLadder}
+          >
             <AnnotationToolbar
               state={annTool}
               onAction={onAnnToolAction}
@@ -3957,6 +4012,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             onClearPageSelection={clearPageSelection}
             bulk={dockBulk}
             dockPins={dockPinsSanitized}
+            dockUnpinned={dockUnpinned}
+            ladder={dockLadder}
             onPinTool={(id): void => onDockPin?.(id)}
             onUnpinTool={(id): void => onDockUnpin?.(id)}
             onRunTool={runDockTool}

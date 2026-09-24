@@ -15,9 +15,6 @@ import type {
   OptimizePreset,
   PageLabelEntry,
   PdfOpenError,
-  PrintJobPayload,
-  PrintJobResult,
-  PrinterInfo,
   PrintWindowContext,
   RecentFile,
   SampleDocument,
@@ -69,21 +66,24 @@ import {
 // pane) is a one-line scope read/write here because the rail component keeps
 // no state of its own.
 import {
+  editModeForStage,
   initialStageState,
   stageForPane,
   stageReducer,
   type Stage,
 } from "./state/stages";
-import { StageRail } from "./components/StageRail";
+import { StageRail, isStageRailVisible } from "./components/StageRail";
 // Phase 36 (chunk 3a) — the Action Dock's persisted pins and the registry
 // lookup that validates them on read.
 import {
-  addDockPin,
-  removeDockPin,
+  pinDockTool,
   sanitizeDockPins,
+  sanitizeDockUnpinned,
+  unpinDockTool,
   type DockAvailability,
 } from "./state/dockModel";
-import { toolById, type ToolEntry } from "./state/toolsRegistry";
+import { collapsePreferenceAfterToggle, inspectorCollapsedFor, resolveDockLadder } from "./state/dockResponsive";
+import { dockToolsForStage, toolById, type ToolEntry } from "./state/toolsRegistry";
 // Phase 36 (chunk 4) — the Command Palette. `paletteChordFor` owns the
 // Ctrl+K / legacy Ctrl+Shift+P chords (Ctrl+P is deliberately absent — it
 // stays Print) and `bumpToolUsage` is the frequency counter the palette
@@ -113,7 +113,7 @@ import {
   planCompositeClose,
 } from "./state/compositeTab";
 import { DocumentStage, type StageTab } from "./components/MultiPane";
-import { INSPECTOR_W_PX } from "./components/multiPaneLayout";
+import { INSPECTOR_COLLAPSED_W_PX, INSPECTOR_W_PX } from "./components/multiPaneLayout";
 import { MultiActionDock } from "./components/MultiActionDock";
 import { SharedToolController } from "./components/multiToolController";
 // Phase 33 — the per-pane thumbnail strips are rendered by each pane's own
@@ -189,8 +189,8 @@ import {
   type OcrScope,
 } from "./components/OcrDialog";
 import { OcrSuspectsPanel } from "./components/OcrSuspectsPanel";
-import { PrintDialog } from "./components/PrintDialog";
 import { rasterizePagesForOcr } from "./pdf/ocrRasterize";
+import { defaultPrintSettings } from "./pdf/printSettings";
 import type { EngineApi, EngineOp, EngineState } from "./engine/types";
 import type { PlacedStamp } from "./annotations/StampAnnotations";
 import {
@@ -449,6 +449,30 @@ export function App(): ReactElement {
     initialPagesPanelState,
   );
   const pagesPanelCollapsed = pagesPanel.collapsed;
+  // Phase 37 (items 2 + 6) — the ONE responsive controller. It keys on the
+  // measured WORKSPACE width (the window content box), NOT the post-collapse
+  // canvas: collapsing the Inspector/panel widens the canvas, so a ladder keyed
+  // on its own output would oscillate. `resolveDockLadder` is the single pure
+  // implementation and App consumes all four rungs here.
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window === "undefined" ? 1440 : window.innerWidth,
+  );
+  useEffect((): (() => void) => {
+    const onResize = (): void => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return (): void => window.removeEventListener("resize", onResize);
+  }, []);
+  const dockLadder = useMemo(() => resolveDockLadder(viewportWidth), [viewportWidth]);
+  // The panel's EFFECTIVE collapsed state: the user's preference OR the
+  // ladder's rung 2. The ladder never writes the persisted preference.
+  const pagesPanelCollapsedEffective = pagesPanelCollapsed || dockLadder.panelCollapsed;
+  // Phase 37 (items 3 + 6) — the Inspector's collapse signal: the user's own
+  // collapse OR the ladder's rung 1 (the ONE `userCollapsed || rung`
+  // precedence rule, `inspectorCollapsedFor`). The collapse CONTROL (this
+  // chunk) toggles only the user's preference, so a manual expand can never
+  // fight the ladder.
+  const [inspectorCollapsed, setInspectorCollapsed] = useState(false);
+  const inspectorCollapsedEffective = inspectorCollapsedFor(inspectorCollapsed, dockLadder);
   // Phase 32 — Multi Mode. The mode + the two pane slots live in App
   // (session-only, per the phase's Settings-impact line); the split is a
   // pure view value the divider drag writes.
@@ -470,6 +494,14 @@ export function App(): ReactElement {
   // openTabs so the engine state can be updated without churning the rest
   // of the tab record.
   const [engineUi, setEngineUi] = useState<Record<string, EngineUiState>>({});
+  // DEF-336 — print needs a real document on the ACTIVE tab. An empty
+  // placeholder tab has a `tabs.activeId` but no `OpenTab` entry (no engine
+  // session), so `buildActivePrintContext` returns null. Every print entry
+  // point keys off this same predicate: the title-bar icon disables, the File >
+  // Print item disables through the menu snapshot, and a direct request still
+  // fails loud with a toast rather than a silent no-op.
+  const activeTabHasDocument =
+    tabs.activeId !== null && openTabs[tabs.activeId] !== undefined;
   // Dialog state
   const [mergeOpen, setMergeOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
@@ -629,10 +661,6 @@ export function App(): ReactElement {
   // that pops up after a successful OCR run so the user can browse
   // low-confidence words without leaving the document.
   const [ocrOpen, setOcrOpen] = useState(false);
-  // Phase 30 — print dialog visibility. Opened from the title-bar Print
-  // icon, File > Print and Ctrl+P (all funnel through `onPrintClick` /
-  // the `onPrintRequest` subscription below).
-  const [printOpen, setPrintOpen] = useState(false);
   const [ocrSuspectsOpen, setOcrSuspectsOpen] = useState(false);
   /** Per-tab OCR suspect list. The engine.ocrSuspects call returns
    *  a fresh list each time; we cache it on the active tab so the
@@ -729,6 +757,12 @@ export function App(): ReactElement {
   const savedSignaturesRef = useRef(savedSignatures);
   savedSignaturesRef.current = savedSignatures;
   const activeTabIdRefLocal = useRef<string | null>(null);
+  // Phase 37 item 17 — forward declaration for the print entry point (defined
+  // later, next to the other dialog handlers). The `onPrintRequest` menu
+  // subscription below is mounted once with empty deps, so it reaches the
+  // latest opener through this ref instead of re-subscribing. Same
+  // forward-declared-ref pattern as `activeTabIdRefLocal` above.
+  const openPrintWindowRef = useRef<() => void>(() => undefined);
   // B7 — keep the latest `editModeOpen` in a ref so the tab close
   // handler can read it synchronously without taking the value as
   // a dependency (the close handler is otherwise stable and we
@@ -1017,14 +1051,15 @@ export function App(): ReactElement {
     return unsubscribeCloseRequest;
   }, []);
 
-  // Phase 30 — File > Print / Ctrl+P (pushed from the main-process menu)
-  // opens the same PrintDialog as the title-bar Print icon. Guard on an
-  // active tab: with no document open there is nothing to print. The
-  // subscription is stable and unsubscribes on unmount.
+  // Phase 37 item 17 — File > Print / Ctrl+P (pushed from the main-process
+  // menu) opens the STANDALONE print window for the active document, exactly
+  // like the title-bar Print icon. Guard on an active tab: with no document
+  // open there is nothing to print. The opener reads the live tab through
+  // refs, so the subscription stays stable and unsubscribes on unmount.
   useEffect(() => {
     if (typeof window.tflex.onPrintRequest !== "function") return;
     const unsubscribePrintRequest = window.tflex.onPrintRequest(() => {
-      if (activeTabIdRefLocal.current !== null) setPrintOpen(true);
+      openPrintWindowRef.current();
     });
     return unsubscribePrintRequest;
   }, []);
@@ -1177,12 +1212,16 @@ export function App(): ReactElement {
   // writing a partial object would wipe theme / geometry / recents
   // (same null-guard shape as onToggleTheme above).
   const togglePagesPanelCollapsed = useCallback((): void => {
-    const next = !pagesPanel.collapsed;
+    // DEF-335 — record the intent the control's label shows. While rung 2
+    // forces the panel collapsed the control reads "Expand", so one click
+    // records the expand preference; the panel then expands once the window
+    // grows past 1000. At a ladder-idle width this is a both-ways toggle.
+    const next = collapsePreferenceAfterToggle(pagesPanelCollapsedEffective);
     dispatchPagesPanel({ type: "set", collapsed: next });
     if (settings === null) return;
     const updated: AppSettings = { ...settings, pagesPanelCollapsed: next };
     trackAndSave(updated);
-  }, [pagesPanel.collapsed, settings, trackAndSave]);
+  }, [pagesPanelCollapsedEffective, settings, trackAndSave]);
 
   const pushToast = useCallback((kind: Toast["kind"], text: string): void => {
     dispatchError({ type: "push", toast: { kind, text } });
@@ -4795,7 +4834,7 @@ const onPickMergeFile = useCallback(async (): Promise<{ path: string; bytes: Uin
       if (res === undefined) {
         pushToast(
           "error",
-          describeEngineError("engine-error", "Renumber pages requires the Phase 12 backend update."),
+          describeEngineError("engine-error", "Rename pages requires the Phase 12 backend update."),
         );
         return;
       }
@@ -5445,56 +5484,58 @@ pushToast(
     setOcrOpen(false);
   }, []);
 
-  // ---- Phase 30: print ----
+  // ---- Phase 30 / Phase 37 item 17: print ----
 
-  /** Open the print dialog against the active tab. The title-bar Print
-   *  icon, File > Print and Ctrl+P all funnel through this. */
-  const onPrintClick = useCallback((): void => {
-    if (activeTabIdRefLocal.current === null) return;
-    setPrintOpen(true);
+  /** Build the standalone print window's context for the ACTIVE document:
+   *  the engine doc id, the display name, the page count and the default
+   *  print settings. There is no persisted print-settings store, so the
+   *  settings are the control defaults the removed in-app dialog seeded with
+   *  (`defaultPrintSettings`); the standalone window seeds its own controls
+   *  from them via `seedPrintDialogState`. Returns null when no document is
+   *  open (or the active tab has no engine entry - an empty tab). */
+  const buildActivePrintContext = useCallback((): PrintWindowContext | null => {
+    const id = activeTabIdRefLocal.current;
+    if (id === null) return null;
+    const tab = openTabsRef.current[id];
+    if (tab == null) return null;
+    return {
+      docId: tab.session.engineDocId,
+      documentName: tab.displayName,
+      pageCount: tab.session.doc.numPages,
+      settings: defaultPrintSettings(),
+    };
   }, []);
 
-  const onClosePrint = useCallback((): void => {
-    setPrintOpen(false);
-  }, []);
-
-  /** Stable wrappers around the preload print surface so the dialog's
-   *  printer-list effect does not re-run on every App re-render. */
-  const printListPrinters = useCallback((): Promise<PrinterInfo[]> => {
-    return window.tflex.listPrinters();
-  }, []);
-
-  const runPrintJob = useCallback(
-    (payload: PrintJobPayload): Promise<PrintJobResult> => {
-      return window.tflex.printJob(payload);
-    },
-    [],
-  );
-
-  // Phase 35 item 8 — the detach control in the print dialog. App performs
-  // the open (the dialog only builds the context) so a refusal - main
-  // validates the context before creating anything - surfaces through the
-  // app's existing error toast instead of a silent no-op.
-  const onDetachPrint = useCallback(
-    (context: PrintWindowContext): void => {
-      const bridge = window.tflex.printWindow;
-      if (bridge === undefined) {
-        pushToast("error", "This build cannot open a separate print window.");
-        return;
+  /** Open the standalone print window for the active document. The title-bar
+   *  Print icon, File > Print and Ctrl+P all funnel through this. A refusal
+   *  (a malformed context, or a window that could not be created) surfaces
+   *  through the app's existing error toast instead of a silent no-op. */
+  const openPrintWindow = useCallback((): void => {
+    const context = buildActivePrintContext();
+    if (context === null) {
+      // DEF-336 — an empty placeholder tab active while another tab holds a
+      // document: the title-bar control and File > Print are disabled, but a
+      // direct Ctrl+P / programmatic request must still fail loud rather than
+      // silently do nothing.
+      pushToast("error", "Open a document to print. The active tab is empty.");
+      return;
+    }
+    const bridge = window.tflex.printWindow;
+    if (bridge === undefined) {
+      pushToast("error", "This build cannot open a separate print window.");
+      return;
+    }
+    void bridge.open(context).then((result) => {
+      const failure = printWindowOpenFailureMessage(result);
+      if (failure !== null) {
+        pushToast("error", failure);
       }
-      void bridge.open(context).then((result) => {
-        const failure = printWindowOpenFailureMessage(result);
-        if (failure !== null) {
-          pushToast("error", failure);
-        }
-      });
-    },
-    [pushToast],
-  );
+    });
+  }, [buildActivePrintContext, pushToast]);
 
-  // Phase 35 item 8 — the print window is opened for the ACTIVE document, so
-  // the dialog is handed the active tab's engine doc id, name and page count.
-  // (Built at the PrintDialog render site, where `activeTab` is in scope.)
+  // Keep the stable `onPrintRequest` subscription pointed at the latest
+  // opener (the ref pattern documented at its declaration).
+  openPrintWindowRef.current = openPrintWindow;
 
   // DEF-050 — per-tab search-index invalidator. DocumentView registers
   // a callback that clears its cached per-page `PageTextIndex` map and
@@ -6599,10 +6640,15 @@ pushToast(
   // `.enabled` accordingly. We push the snapshot after React
   // commits the active-id change so the effect's dep is stable.
   useEffect(() => {
+    // DEF-336 — Save / Save As / Close / Undo / Redo stay keyed to the active
+    // TAB (unchanged); Print additionally needs a real document, so an empty
+    // placeholder tab disables File > Print instead of accepting a click that
+    // does nothing. The dep includes `activeTabHasDocument` because a document
+    // loads into an already-active tab without `tabs.activeId` changing.
     window.tflex.menu.setEnabled(
-      snapshotMenuEnabled(tabs.activeId !== null),
+      snapshotMenuEnabled(tabs.activeId !== null, activeTabHasDocument),
     );
-  }, [tabs.activeId]);
+  }, [tabs.activeId, activeTabHasDocument]);
 
   activeTabIdRefLocal.current = tabs.activeId;
 
@@ -7078,6 +7124,11 @@ pushToast(
   // panel-inset machinery below and the .app-main data attribute both read
   // this one flag, so the panel and the page inset can never disagree.
   const inspectorOpen = tabs.activeId !== null && !activeIsEmpty;
+  // Phase 37 (items 2 + 6) — the Inspector is MOUNTED whenever a document is
+  // open (so the next chunk's collapse control has a home), but its EFFECTIVE
+  // visibility also honours the ladder's rung 1. The inset machinery and the
+  // .app-main data attributes read this ONE derived flag.
+  const inspectorVisible = inspectorOpen && !inspectorCollapsedEffective;
 
   // ---- Phase 32 — Multi Mode ----------------------------------------
   // The mode is a VIEW over the tab store: a pane holds a tab id and the
@@ -7481,6 +7532,17 @@ pushToast(
     [stagePane],
   );
 
+  // Phase 37 (item 13) — the stage IS the Edit-mode switch. Entering the
+  // EDIT stage turns the canvas's edit mode on and every other stage turns
+  // it off; the `editMode` dock verb is retired. ONE effect keyed on the
+  // active stage, so there is no second source of truth for edit mode.
+  const prevActiveStageRef = useRef<Stage>(activeStage);
+  useEffect((): void => {
+    if (prevActiveStageRef.current === activeStage) return;
+    prevActiveStageRef.current = activeStage;
+    setEditMode(editModeForStage(activeStage));
+  }, [activeStage, setEditMode]);
+
   // Phase 36 (chunk 6) — the Inspector's LIVE selection.
   //
   //   - The TEXT-OBJECT selection is the active DocumentView's published
@@ -7605,37 +7667,71 @@ pushToast(
     ],
   );
 
-  // The dock's persisted pins, validated against the registry on read (unknown
-  // ids dropped, de-duped, capped at 4). This is the ONLY writer of `dockPins`.
+  // The dock's persisted pins + un-pins, both validated against the registry on
+  // read (unknown ids dropped, de-duped, capped). These are the ONLY writers.
   const dockPins = useMemo(() => sanitizeDockPins(settings?.dockPins), [settings?.dockPins]);
+  const dockUnpinned = useMemo(
+    () => sanitizeDockUnpinned(settings?.dockUnpinned),
+    [settings?.dockUnpinned],
+  );
+  // Phase 37 (item 21) — the CURRENT stage's default verb ids, used to decide
+  // whether a pin RESTORES an un-pinned default tool or records a cross-stage
+  // pin (see `pinDockTool`). The focused pane's stage drives the shared dock.
+  const dockDefaultIds = useMemo(
+    () => dockToolsForStage(activeStage).map((entry) => entry.id),
+    [activeStage],
+  );
 
   const onDockPin = useCallback(
     (id: string): void => {
       setSettings((prev) => {
         if (prev === null) return prev;
-        const next = addDockPin(sanitizeDockPins(prev.dockPins), id);
-        const updated: AppSettings = { ...prev, dockPins: next };
-        if (next.length === sanitizeDockPins(prev.dockPins).length) return prev;
+        const next = pinDockTool(
+          {
+            pins: sanitizeDockPins(prev.dockPins),
+            unpinned: sanitizeDockUnpinned(prev.dockUnpinned),
+          },
+          id,
+          dockDefaultIds,
+        );
+        const updated: AppSettings = { ...prev, dockPins: next.pins, dockUnpinned: next.unpinned };
+        if (
+          next.pins.length === sanitizeDockPins(prev.dockPins).length &&
+          next.unpinned.length === sanitizeDockUnpinned(prev.dockUnpinned).length
+        ) {
+          return prev;
+        }
         trackAndSave(updated);
         return updated;
       });
     },
-    [trackAndSave],
+    [trackAndSave, dockDefaultIds],
   );
 
   const onDockUnpin = useCallback(
     (id: string): void => {
       setSettings((prev) => {
         if (prev === null) return prev;
-        const current = sanitizeDockPins(prev.dockPins);
-        const next = removeDockPin(current, id);
-        if (next.length === current.length) return prev;
-        const updated: AppSettings = { ...prev, dockPins: next };
+        const next = unpinDockTool(
+          {
+            pins: sanitizeDockPins(prev.dockPins),
+            unpinned: sanitizeDockUnpinned(prev.dockUnpinned),
+          },
+          id,
+          dockDefaultIds,
+        );
+        if (
+          next.pins.length === sanitizeDockPins(prev.dockPins).length &&
+          next.unpinned.length === sanitizeDockUnpinned(prev.dockUnpinned).length
+        ) {
+          return prev;
+        }
+        const updated: AppSettings = { ...prev, dockPins: next.pins, dockUnpinned: next.unpinned };
         trackAndSave(updated);
         return updated;
       });
     },
-    [trackAndSave],
+    [trackAndSave, dockDefaultIds],
   );
 
   // The app-level availability gate for the dock. The registry DECLARES the
@@ -7816,7 +7912,7 @@ pushToast(
         const id = activeTabIdRefLocal.current;
         if (id !== null) void onSaveAs(id);
       },
-      print: onPrintClick,
+      print: openPrintWindow,
       closeTab: (): void => {
         const id = activeTabIdRefLocal.current;
         if (id !== null) closeTab(id);
@@ -7848,7 +7944,7 @@ pushToast(
       onOpenClick,
       onSave,
       onSaveAs,
-      onPrintClick,
+      openPrintWindow,
       onUndo,
       onRedo,
       closeTab,
@@ -8026,6 +8122,19 @@ pushToast(
     );
   }
 
+  // Phase 37 (item 8) — the Stage Rail is a DOCUMENT surface: hidden on the
+  // welcome (home) screen, present once a document is open. Keyed to the SAME
+  // condition that shows the welcome pane (and therefore hides the
+  // ContextPanel/Inspector) via ONE helper, so the rail and the welcome pane
+  // can never disagree. The app's stage state lives in App, not in the rail,
+  // so hiding the rail never loses it.
+  const stageRailVisible = isStageRailVisible(
+    tabs.tabs.length,
+    activeIsEmpty === true,
+    multiMode.enabled,
+  );
+  const showWelcomeEffective = !stageRailVisible;
+
   return (
     <div className={isMaximized ? "app app-maximized" : "app"}>
       {/* Phase 14 — the frosted theme's ambient backdrop. Paints the
@@ -8077,7 +8186,9 @@ pushToast(
           // open. Same single source of truth (`prefsOpen`).
           onOpenPreferences={(): void => setPrefsOpen(true)}
           // Phase 30 — the Print icon sits immediately left of the gear.
-          onPrint={onPrintClick}
+          onPrint={openPrintWindow}
+          // DEF-336 — enabled only with a real document on the active tab.
+          printEnabled={activeTabHasDocument}
           // Phase 22 — the relocated Open / Save / Save As. The CommandBar
           // no longer renders them; the caption strip owns them now.
           onOpenFile={onOpenClick}
@@ -8113,19 +8224,25 @@ pushToast(
           reflows together in every theme. */}
       <div
         className="app-main"
-        data-tools-open={inspectorOpen ? "true" : "false"}
-        data-rail-collapsed={pagesPanelCollapsed ? "true" : "false"}
+        data-tools-open={inspectorVisible ? "true" : "false"}
+        data-rail-collapsed={pagesPanelCollapsedEffective ? "true" : "false"}
+        data-inspector-collapsed={inspectorCollapsedEffective ? "true" : "false"}
+        // Phase 37 (item 8) — true on the welcome/home screen. Collapses the
+        // rail's 44px track and lets the stage span the full frame.
+        data-stage-rail-hidden={stageRailVisible ? "false" : "true"}
       >
-        {/* Phase 36 (chunk 1b) — the Stage Rail. Mounted here as a fixed
-         * left-edge overlay inside .app-main (already `position: relative`):
-         * it claims no grid track and reflows nothing, so every surface the
-         * later Phase-36 chunks re-home keeps its current geometry. The gear
-         * opens the same Preferences sheet as the title-bar gear. */}
-        <StageRail
-          activeStage={activeStage}
-          onStageChange={onStageChange}
-          onOpenPreferences={(): void => setPrefsOpen(true)}
-        />
+        {/* Phase 36 (chunk 1b) — the Stage Rail. Mounted here as a REAL 44px
+         * grid track inside .app-main (already `position: relative`); it
+         * claims only its own column and reflows nothing. The gear opens the
+         * same Preferences sheet as the title-bar gear. Phase 37 (item 8) —
+         * it is NOT rendered on the welcome screen (a document surface). */}
+        {stageRailVisible && (
+          <StageRail
+            activeStage={activeStage}
+            onStageChange={onStageChange}
+            onOpenPreferences={(): void => setPrefsOpen(true)}
+          />
+        )}
         <PageDragProvider>
         <DocumentStage
           tabs={stageTabs}
@@ -8135,7 +8252,7 @@ pushToast(
           // placeholder), so toggling the mode can never remount a
           // DocumentView. With the mode off this is the pre-Phase-32
           // condition exactly.
-          showWelcome={tabs.tabs.length === 0 || (activeIsEmpty && !multiMode.enabled)}
+          showWelcome={showWelcomeEffective}
           welcomeKey={tabs.activeId ?? 'welcome'}
           welcome={
             <Welcome
@@ -8154,10 +8271,15 @@ pushToast(
           onSplitChange={setSplitFraction}
           // DEF-287 (residual) — the Inspector's requested inset target: 0
           // when no document is open, the Inspector's single width when it
-          // is. A change re-clamps the stored split fraction so both panes
-          // keep their minimum without a drag (Phase 36 chunk 5: the retired
-          // palette's list/grid modes collapsed to ONE width).
-          toolsInsetTarget={inspectorOpen ? INSPECTOR_W_PX : 0}
+          // is, or the narrow strip width while collapsed (Phase 37 item 3),
+          // so the panes' geometry always matches the CSS inset.
+          toolsInsetTarget={
+            inspectorOpen
+              ? inspectorCollapsedEffective
+                ? INSPECTOR_COLLAPSED_W_PX
+                : INSPECTOR_W_PX
+              : 0
+          }
           onFocusPane={onFocusPane}
           onClearPane={onClearPane}
           onPickPane={onPickPane}
@@ -8175,6 +8297,8 @@ pushToast(
                 pane={multiMode.focused}
                 activeStage={activeStage}
                 dockPins={dockPins}
+                dockUnpinned={dockUnpinned}
+                ladder={dockLadder}
                 onPinTool={onDockPin}
                 onUnpinTool={onDockUnpin}
                 onRunTool={runSharedDockTool}
@@ -8212,6 +8336,8 @@ pushToast(
                     // `onDockToolAction`.
                     activeStage={stageForPane(stageState, pane)}
                     dockPins={dockPins}
+                    dockUnpinned={dockUnpinned}
+                    dockLadder={dockLadder}
                     onDockPin={onDockPin}
                     onDockUnpin={onDockUnpin}
                     toolUsage={settings.toolUsage}
@@ -8414,7 +8540,7 @@ pushToast(
                     // Phase 16 — pages-panel collapsed state: App owns
                     // the persisted value; DocumentView threads it to
                     // the SideRail (the rail never owns the state).
-                    pagesPanelCollapsed={pagesPanelCollapsed}
+                    pagesPanelCollapsed={pagesPanelCollapsedEffective}
                     onTogglePagesPanelCollapsed={togglePagesPanelCollapsed}
                     // Phase 32 — Multi Mode suppresses each pane's OWN rail
                     // (the shared two-section rail is the next chunk); the
@@ -8473,11 +8599,12 @@ pushToast(
         </PageDragProvider>
         {/* Phase 36 (chunk 5 + 6) — the INSPECTOR. It replaces the retired
             All-tools palette as the workspace's right panel, so it is mounted
-            whenever a real document is open (`inspectorOpen`, the SAME flag
-            that drives .app-main's data-tools-open and --tf-tools-inset).
-            There is no toggle: the palette's badge, the File > Tools row and
-            the toolbar button are all retired or re-pointed at the Command
-            Palette.
+            whenever a real document is open. Phase 37 (items 3 + 6) — the
+            panel is now MOUNTED even while collapsed so its own collapse control
+            (next chunk) has a home; the ladder's rung 1 drives
+            `inspectorCollapsedEffective`, which the .app-main attributes, the
+            inset and the CSS all read. `data-tools-open` still reflects the
+            EFFECTIVE visibility (`inspectorVisible`).
 
             The HOST owns the selection. Chunk 6 wires the LIVE selections:
             the active DocumentView publishes its text-object selection up
@@ -8488,6 +8615,18 @@ pushToast(
         {inspectorOpen && activeTab !== null && tabs.activeId !== null && (
           <Inspector
             stage={activeStage}
+            collapsed={inspectorCollapsedEffective}
+            // DEF-335 — the control's label follows the EFFECTIVE state, so a
+            // click records the intent it shows: while the ladder forces the
+            // collapse the control reads "Expand" and one click records the
+            // expand preference (the surface then expands when the window
+            // grows past the rung). At a ladder-idle width this is a plain
+            // both-ways toggle.
+            onToggleCollapsed={(): void =>
+              setInspectorCollapsed(
+                collapsePreferenceAfterToggle(inspectorCollapsedEffective),
+              )
+            }
             selection={inspectorSelection}
             textPanel={inspectorTextPanel}
             signatureStyle={
@@ -8741,36 +8880,6 @@ pushToast(
           onOcrConfirm(result);
         }}
         onClose={onCancelOcr}
-      />
-      <PrintDialog
-        open={printOpen}
-        totalPages={activeTab?.session.doc.numPages ?? 0}
-        currentPage={(() => {
-          const id = activeTabIdRefLocal.current;
-          if (id === null) return 1;
-          const tab = openTabsRef.current[id];
-          return tab ? Math.max(1, Math.floor(tab.persisted.currentPage)) : 1;
-        })()}
-        resolveActiveDoc={resolveActiveDocForOcr}
-        listPrinters={printListPrinters}
-        printJob={runPrintJob}
-        onClose={onClosePrint}
-        // DEF-299 - an empty tab has an id but NO `openTabs[id]` entry, so
-        // `activeTab` is `undefined` (not `null`). The old `=== null` guard
-        // let that through and dereferenced `activeTab.session`, crashing the
-        // whole renderer. `== null` covers both, matching the optional
-        // chaining every other access on this path uses; a null/undefined
-        // detach hides the detach control in PrintDialog (no printable doc).
-        detach={
-          activeTab == null
-            ? null
-            : {
-                docId: activeTab.session.engineDocId,
-                documentName: activeTab.displayName,
-                pageCount: activeTab.session.doc.numPages,
-              }
-        }
-        onDetach={onDetachPrint}
       />
       <SaveAsDialog
         open={saveAsOpen}

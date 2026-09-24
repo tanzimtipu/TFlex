@@ -4,16 +4,18 @@
 // registry (addTextBox / moveTextBox / deleteTextBox +
 // EngineState.textBoxes). This pins the renderer's placement-toolbar
 // half of the integration: a SELECTED committed box shows a toolbar
-// (mirroring the image placement toolbar) with Delete (route through
-// the host's engine.deleteTextBox) + Edit (reopens the inline editor
-// with the box's committed content).
+// (mirroring the image placement toolbar) with Confirm + Delete (route
+// through the host's engine.deleteTextBox) + Cancel.
+//
+// Phase 37 (item 11) supersedes the old Edit verb: selecting the box
+// already makes it the panel's text target, so the bar is
+// Confirm / Delete / Cancel.
 //
 // Contract:
 //   1. A selected committed box renders `[data-edit-box-toolbar]`
-//      with Edit and Delete actions.
+//      with Confirm / Delete / Cancel actions and NO Edit.
 //   2. Delete fires `onDeleteTextBox(id)`.
-//   3. Edit reopens the inline editor pre-filled with the box's
-//      committed text/style/background, carrying the box id.
+//   3. Cancel reverts / dismisses the selection.
 //   4. A toolbar-button press does NOT start a drag-to-create on the
 //      page behind it (the bar stops the pointerdown), and the click
 //      still completes (AGENTS.md cross-bubbling rule).
@@ -122,13 +124,20 @@ function selectedBoxTool(initial: Partial<EditState> = {}): EditState {
 }
 
 describe("DEF-135/136 — committed text box placement toolbar", () => {
-  it("renders Edit + Delete actions for a selected box", () => {
+  it("renders Confirm + Delete + Cancel actions for a selected box (no Edit)", () => {
     const { host, unmount } = mountBoxTool(selectedBoxTool());
     try {
       const bar = host.querySelector("[data-edit-box-toolbar]");
       expect(bar).not.toBeNull();
-      expect(host.querySelector("[data-edit-box-action='edit']")).not.toBeNull();
+      expect(host.querySelector("[data-edit-box-action='confirm']")).not.toBeNull();
       expect(host.querySelector("[data-edit-box-action='delete']")).not.toBeNull();
+      expect(host.querySelector("[data-edit-box-action='cancel']")).not.toBeNull();
+      // Phase 37 item 11 — the Edit verb is gone.
+      expect(host.querySelector("[data-edit-box-action='edit']")).toBeNull();
+      const verbs = [...(bar?.querySelectorAll("button") ?? [])].map((b) =>
+        b.textContent?.trim(),
+      );
+      expect(verbs).toEqual(["Confirm", "Delete", "Cancel"]);
     } finally {
       unmount();
     }
