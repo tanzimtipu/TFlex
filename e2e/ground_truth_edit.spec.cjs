@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
-const { launchDev, openSample, scrollToPage, shot, hardClose } = require('./lib/helpers.cjs');
+const { launchDev, openSample, scrollToPage, shot, hardClose, toggleEditMode } = require('./lib/helpers.cjs');
 const fs = require('node:fs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
@@ -24,9 +24,9 @@ test.describe('Ground Truth: Edit Mode Verification', () => {
     await scrollToPage(win, 1);
 
     // 3. Click Edit button
-    // Selector found in qa_verify_edit_box.spec.cjs: [data-toolbar-edit-toggle]
-    const editToggle = win.locator('[data-toolbar-edit-toggle]');
-    await editToggle.click();
+    // Phase 36 (chunk 3) — the per-view command row is retired; Edit mode is
+    // the EDIT dock's `editMode` verb.
+    await toggleEditMode(win);
     
     // Wait for edit toolbar
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });

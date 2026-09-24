@@ -36,7 +36,12 @@ import { AppHeader } from "./components/AppHeader";
 import { Toasts, type Toast } from "./components/Toasts";
 import { printWindowOpenFailureMessage } from "./print-window/context";
 import { TitleBar, type MenuGroup } from "./components/TitleBar";
-import { ToolsPalette } from "./components/ToolsPalette";
+import {
+  Inspector,
+  inspectorSelectionFor,
+  inspectorTextPanelFor,
+} from "./components/Inspector";
+import type { InspectorTextSelection } from "./components/Inspector";
 import { AboutDialog } from "./components/AboutDialog";
 import { PreferencesDialog } from "./components/PreferencesDialog";
 import { UpdateIndicator } from "./components/UpdateIndicator";
@@ -57,7 +62,6 @@ import {
   initialMultiModeState,
   paneAssignError,
   paneAssignPathError,
-  paneTabId,
   type PaneId,
 } from "./state/multiMode";
 // Phase 36 (chunk 1b) — the stage model + the Stage Rail. The rail renders
@@ -71,6 +75,16 @@ import {
   type Stage,
 } from "./state/stages";
 import { StageRail } from "./components/StageRail";
+// Phase 36 (chunk 3a) — the Action Dock's persisted pins and the registry
+// lookup that validates them on read.
+import { addDockPin, removeDockPin, sanitizeDockPins } from "./state/dockModel";
+import { toolById, type ToolEntry } from "./state/toolsRegistry";
+// Phase 36 (chunk 4) — the Command Palette. `paletteChordFor` owns the
+// Ctrl+K / legacy Ctrl+Shift+P chords (Ctrl+P is deliberately absent — it
+// stays Print) and `bumpToolUsage` is the frequency counter the palette
+// ranking reads back.
+import { bumpToolUsage, paletteChordFor } from "./state/commandPalette";
+import { CommandPalette } from "./components/CommandPalette";
 // Phase 32 — the focus -> active-tab routing rules and the close/quit gate
 // selection, both pure so the App wiring is a one-liner each.
 import {
@@ -79,6 +93,7 @@ import {
   resolveTabStripActivation,
 } from "./state/multiModeRouting";
 import { collectModifiedTabIds, orderWindowCloseQueue } from "./state/closeGate";
+import { resolvePaneSelection } from "./state/multiChrome";
 import { planJointPaneRefresh, type JointPaneRefresh } from "./state/jointUndo";
 import {
   COMPOSITE_TAB_ID,
@@ -89,11 +104,8 @@ import {
   planCompositeClose,
 } from "./state/compositeTab";
 import { DocumentStage, type StageTab } from "./components/MultiPane";
-import {
-  TOOLS_PANEL_W_GRID_PX,
-  TOOLS_PANEL_W_LIST_PX,
-} from "./components/multiPaneLayout";
-import { MultiToolbar } from "./components/MultiToolbar";
+import { INSPECTOR_W_PX } from "./components/multiPaneLayout";
+import { MultiActionDock } from "./components/MultiActionDock";
 import { SharedToolController } from "./components/multiToolController";
 // Phase 33 — the per-pane thumbnail strips are rendered by each pane's own
 // DocumentView (`multiRail` + `railSide`), so App no longer composes a
@@ -120,7 +132,6 @@ import {
   type ThemeDefault,
 } from "./state/preferences";
 import { applyAnnotationPaletteChange } from "./state/colorPalette";
-import type { AnnotationColors } from "./state/colorPalette";
 import {
   dispatchMenuAction,
   gateOnActiveDoc,
@@ -135,7 +146,6 @@ import {
   type PersistedViewer,
   type SearchIndexProgress,
 } from "./components/DocumentView";
-import { ToolsBadge } from "./components/ToolsBadge";
 import { splitRecentPath } from "./utils/recentPath";
 import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
@@ -193,7 +203,6 @@ import {
   type EditAction,
   type EditState,
   type EditTextStyle,
-  type EditTool,
 } from "./edit/model";
 import {
   defaultImageDecoder,
@@ -458,6 +467,13 @@ export function App(): ReactElement {
   // Phase 4 — signature manager modal + flatten confirm
   const [sigModalOpen, setSigModalOpen] = useState(false);
   const [flattenOpen, setFlattenOpen] = useState(false);
+  // Phase 36 (chunk 6) — the LIVE text-object selection published by the
+  // active DocumentView (the edit model's selected box, or the text-run
+  // target the panel edits). The Inspector's EDIT/text section reads it;
+  // there is no second selection model — the view owns the selection and
+  // this merely mirrors the snapshot it hands up.
+  const [inspectorTextSelection, setInspectorTextSelection] =
+    useState<InspectorTextSelection | null>(null);
   // Phase 8 — Optimize + Audit Space dialogs. Optimistic state: the
   // dialogs themselves drive the engine IPC; the dialog result is
   // routed back into `openFromBytes` (optimize) or rendered directly
@@ -548,12 +564,16 @@ export function App(): ReactElement {
   const [activePageSizes, setActivePageSizes] = useState<
     Record<number, { widthPt: number; heightPt: number }>
   >({});
-  // Phase 6 — Tools palette state, About dialog, Preferences dialog.
-  // Phase 6 — Tools palette state, About dialog, Preferences dialog.
-  // Layout persists via settings.toolsPaletteLayout; open/close is
-  // session-only. The toolbar's Tools button toggles the palette and
-  // Ctrl+Shift+P from the menu does the same.
-  const [toolsPaletteOpen, setToolsPaletteOpen] = useState(false);
+  // Phase 36 (chunk 5) — the INSPECTOR. It REPLACES the retired All-tools
+  // palette as the workspace's right panel. It is not a toggled overlay any
+  // more: it is visible whenever a real document is open, and the panel-inset
+  // machinery below reads the same derived flag (`inspectorOpen`). The
+  // palette's `toolsPaletteLayout` setting stays a tolerated legacy key with
+  // no renderer writer (AppSettings, main-process validator).
+  //
+  // Phase 36 (chunk 4) — the Command Palette (`Ctrl+K`). Session-only; it is
+  // the browse-everything surface that superseded the All-tools panel.
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   // OTA UX — the update prompt. Opens automatically when the
@@ -1815,9 +1835,9 @@ export function App(): ReactElement {
     // B21 — the tools palette is App-level (not per-tab) and
     // renders over the workspace even when no tab is active.
     // Closing the last tab left it mounted on the home / welcome
-    // screen. Reset it on close so the palette disappears with
-    // the document it belonged to.
-    setToolsPaletteOpen(false);
+    // screen. Phase 36 (chunk 5): the palette is retired and the
+    // Inspector is derived from "a document is open", so closing the
+    // last tab hides it without any explicit reset.
     // B6 — pending close-tab prompt state. If the user closed a
     // tab via the prompt and the dialog is still showing (the
     // save flow is in flight, the error message is rendering),
@@ -3815,7 +3835,11 @@ const menuContext: MenuActionContext = useMemo<MenuActionContext>(
         onToggleTheme();
       },
       showToolsPalette: (): void => {
-        setToolsPaletteOpen((v) => !v);
+        // Phase 36 (chunk 5) — RE-POINTED. The All-tools panel is retired, so
+        // the File > Tools route now opens the Command Palette (the
+        // browse-everything surface that superseded it). The action id and
+        // the Ctrl+Shift+P accelerator stay the same legacy aliases.
+        setCommandPaletteOpen(true);
       },
       about: (): void => {
         setAboutOpen(true);
@@ -7004,7 +7028,12 @@ pushToast(
         label: "View",
         entries: [
           { id: "theme", label: "Toggle Theme", accelerator: "Ctrl+Shift+T", action: "toggleTheme" },
-          { id: "tools", label: "Show Tools Palette", accelerator: "Ctrl+Shift+P", action: "showToolsPalette" },
+          // Phase 36 (chunk 5) — the label follows the route: the All-tools
+          // panel is retired and this row opens the Command Palette. The
+          // action id stays `showToolsPalette` so the main-process menu IPC
+          // (src/main/menu.ts, which still sends 'showToolsPalette' and whose
+          // own label needs the same update) keeps dispatching.
+          { id: "tools", label: "Command Palette...", accelerator: "Ctrl+Shift+P", action: "showToolsPalette" },
         ],
       },
       {
@@ -7034,6 +7063,12 @@ pushToast(
 
   const activeTab = tabs.activeId !== null ? openTabs[tabs.activeId] : null;
   const activeEngineUi = tabs.activeId !== null ? engineUi[tabs.activeId] : null;
+
+  // Phase 36 (chunk 5) — the Inspector's visibility: a real document is open
+  // (an empty placeholder tab or the welcome screen has none to inspect). The
+  // panel-inset machinery below and the .app-main data attribute both read
+  // this one flag, so the panel and the page inset can never disagree.
+  const inspectorOpen = tabs.activeId !== null && !activeIsEmpty;
 
   // ---- Phase 32 — Multi Mode ----------------------------------------
   // The mode is a VIEW over the tab store: a pane holds a tab id and the
@@ -7343,81 +7378,10 @@ pushToast(
     [sharedToolController],
   );
 
-  // The shared EditToolbar arms its tool for BOTH pane tabs (their edit state
-  // lives on `openTabs`), so the next interaction in either pane uses it.
-  const broadcastEditAction = useCallback(
-    (action: EditAction): void => {
-      const ids: string[] = [];
-      if (multiMode.paneA !== null) ids.push(multiMode.paneA);
-      if (multiMode.paneB !== null) ids.push(multiMode.paneB);
-      if (ids.length === 0) return;
-      setOpenTabs((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        for (const id of ids) {
-          const tab = prev[id];
-          if (tab === undefined) continue;
-          const edited = editReducer(tab.edit, action);
-          if (edited !== tab.edit) {
-            next[id] = { ...tab, edit: edited };
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
-    },
-    [multiMode.paneA, multiMode.paneB],
-  );
-
-  // The tab the workspace is effectively working on: the focused pane's
-  // document in Multi Mode (the Phase-32 routing invariant), the active tab
-  // in single mode.
-  const focusedPaneTabId = multiMode.enabled
-    ? paneTabId(multiMode, multiMode.focused)
-    : tabs.activeId;
-  const focusedPaneOpen = focusedPaneTabId !== null ? openTabs[focusedPaneTabId] : undefined;
-  const focusedEditTool: EditTool =
-    editModeOpen && focusedPaneOpen !== undefined ? focusedPaneOpen.edit.tool : "off";
-  const focusedPageCount =
-    focusedPaneTabId !== null ? engineUi[focusedPaneTabId]?.state.pageCount ?? 0 : 0;
-  const focusedHasFormFields = (focusedPaneOpen?.forms.fields.length ?? 0) > 0;
-
-  const annotationPaletteForBar: AnnotationColors | null =
-    settings === null || settings.annotationColors === undefined
-      ? null
-      : {
-          light: (settings.annotationColors.light ?? []).map((p) =>
-            typeof p === "string" ? { id: `legacy-${p}`, hex: p } : p,
-          ),
-          dark: (settings.annotationColors.dark ?? []).map((p) =>
-            typeof p === "string" ? { id: `legacy-${p}`, hex: p } : p,
-          ),
-        };
-  const onAnnotationPaletteChangeBar = useCallback(
-    (next: AnnotationColors): void => {
-      setSettings((prev) => {
-        if (prev === null) return prev;
-        const updated = applyAnnotationPaletteChange(prev, next);
-        if (updated !== prev) trackAndSave(updated);
-        return updated;
-      });
-    },
-    [trackAndSave],
-  );
-  const onAnnotationRecentToolsChangeBar = useCallback(
-    (ids: string[]): void => {
-      setSettings((prev) => {
-        if (prev === null) return prev;
-        const updated = preferencesReducer(prev, {
-          type: "set-annotation-recent-tools",
-          value: ids,
-        });
-        if (updated !== prev) trackAndSave(updated);
-        return updated;
-      });
-    },
-    [trackAndSave],
-  );
+  // Phase 36 (chunk 7) — the workspace's ONE Action Dock is the surface that
+  // picks an EDIT tool now. Its EDIT verbs route to the FOCUSED pane's own
+  // edit model (each pane keeps its own stage and its own tools), so the
+  // retired shared bar's both-panes broadcast is gone with it.
 
   // The rail's jump request. `seq` is what makes two clicks on the same
   // page both land (DocumentView's external-jump effect ignores a repeat).
@@ -7508,11 +7472,467 @@ pushToast(
     [stagePane],
   );
 
+  // Phase 36 (chunk 6) — the Inspector's LIVE selection.
+  //
+  //   - The TEXT-OBJECT selection is the active DocumentView's published
+  //     snapshot (`inspectorTextSelection`, single mode only).
+  //   - The SIGNATURE selection is the host's own armed-signature state.
+  //   - Everything else falls back to the active page.
+  //
+  // ONE source per selection kind — the Inspector never keeps its own copy.
+  // The mapping is the pure `inspectorSelectionFor` / `inspectorTextPanelFor`
+  // helpers so the wiring is unit-testable without mounting App.
+  const armedSignature =
+    armedSignatureId === null
+      ? null
+      : savedSignatures.find((s) => s.id === armedSignatureId) ?? null;
+  const inspectorSelection = inspectorSelectionFor({
+    stage: activeStage,
+    text: inspectorTextSelection,
+    signatureLabel: armedSignature === null ? null : armedSignature.label,
+    page: Math.max(1, Math.floor(activeTab?.persisted.currentPage ?? 1)),
+  });
+  const inspectorTextPanel = inspectorTextPanelFor(inspectorTextSelection);
+  // Multi Mode's shared Inspector follows the FOCUSED pane (Phase 36 chunk 7):
+  // entering the mode withdraws a single-mode selection, and a focus switch
+  // withdraws the previous pane's, so the panel never shows a background
+  // pane's object. The newly focused pane re-publishes on its next change.
+  useEffect((): void => {
+    if (multiMode.enabled) setInspectorTextSelection(null);
+  }, [multiMode.enabled, multiMode.focused]);
+
+  // ---- Phase 36 (chunk 3a): the Action Dock's host wiring -----------------
+  //
+  // The dock renders every verb of the active stage from the registry. This
+  // view cannot run the APP-level verbs (dialogs, OCR, export, sign, forms),
+  // so it supplies them here as a map keyed by the registry's `action` — the
+  // dock's DocumentView runs the view-level verbs itself and defers the rest.
+  // Nothing is reimplemented: each entry calls the SAME handler the command
+  // toolbar / palette already uses. A registry entry with no handler ANYWHERE
+  // is disabled by the availability gate below (never a silent no-op).
+  const dockAppActions = useMemo<Record<string, () => void>>(
+    () => ({
+      merge: onMergeClick,
+      split: onSplitClick,
+      extract: (): void => setSplitOpen(true),
+      deletePages: (): void => onDeletePageClick(),
+      insertPages: onInsertPagesClick,
+      replacePages: onReplacePagesClick,
+      renumberPages: onRenumberPagesClick,
+      cropPages: onCropPagesClick,
+      sign: (): void => {
+        if (armedSignatureId !== null) {
+          setArmedSignatureId(null);
+          return;
+        }
+        if (editModeOpenRef.current) setEditMode(false);
+        setSigModalOpen(true);
+      },
+      forms: (): void => setFlattenOpen(true),
+      flatten: (): void => setFlattenOpen(true),
+      stamp: onStampClick,
+      watermark: onWatermarkClick,
+      exportComments: onCommentExportClick,
+      importComments: onCommentImportClick,
+      optimize: onOptimizeClick,
+      auditSpace: onAuditClick,
+      createFromImages: onCreateClick,
+      exportPages: onExportClick,
+      exportText: onTextExportClick,
+      exportDocx: onDocxExportClick,
+      recognizeText: onOcrClick,
+      batchOcr: (): void => {
+        void onBatchOcr();
+      },
+      ocrSuspects: (): void => onOpenOcrSuspects(),
+    }),
+    [
+      onMergeClick,
+      onSplitClick,
+      onDeletePageClick,
+      onInsertPagesClick,
+      onReplacePagesClick,
+      onRenumberPagesClick,
+      onCropPagesClick,
+      armedSignatureId,
+      setEditMode,
+      onStampClick,
+      onWatermarkClick,
+      onCommentExportClick,
+      onCommentImportClick,
+      onOptimizeClick,
+      onAuditClick,
+      onCreateClick,
+      onExportClick,
+      onTextExportClick,
+      onDocxExportClick,
+      onOcrClick,
+      onBatchOcr,
+      onOpenOcrSuspects,
+    ],
+  );
+
+  // The dock's persisted pins, validated against the registry on read (unknown
+  // ids dropped, de-duped, capped at 4). This is the ONLY writer of `dockPins`.
+  const dockPins = useMemo(() => sanitizeDockPins(settings?.dockPins), [settings?.dockPins]);
+
+  const onDockPin = useCallback(
+    (id: string): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const next = addDockPin(sanitizeDockPins(prev.dockPins), id);
+        const updated: AppSettings = { ...prev, dockPins: next };
+        if (next.length === sanitizeDockPins(prev.dockPins).length) return prev;
+        trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
+
+  const onDockUnpin = useCallback(
+    (id: string): void => {
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const current = sanitizeDockPins(prev.dockPins);
+        const next = removeDockPin(current, id);
+        if (next.length === current.length) return prev;
+        const updated: AppSettings = { ...prev, dockPins: next };
+        trackAndSave(updated);
+        return updated;
+      });
+    },
+    [trackAndSave],
+  );
+
+  // The app-level availability gate for the dock. The registry DECLARES the
+  // precondition; this reads the live App state for it.
+  const dockHasDocument = tabs.activeId !== null && !activeIsEmpty;
+  const dockAppToolEnabled = useCallback(
+    (id: string): boolean => {
+      const entry = toolById(id);
+      if (entry === undefined) return false;
+      if (dockAppActions[entry.action] === undefined) return false;
+      switch (entry.availability) {
+        case "always":
+          return true;
+        case "document":
+          return dockHasDocument;
+        case "recents":
+          return recentDisplays.length > 0;
+        case "form-fields":
+          return (activeTab?.forms.fields.length ?? 0) > 0;
+        case "ocr-run":
+          return ocrRunByTab[tabs.activeId ?? ""] === true;
+        case "multi-doc":
+          return Object.keys(openTabs).length > 1;
+        case "tab":
+          return tabs.activeId !== null;
+        // The dock has no colour/pen popover and no updater surface, and the
+        // selection gate is owned by the pane's DocumentView.
+        case "colour-tool":
+        case "ink-tool":
+        case "update-pending":
+        case "selection":
+          return false;
+      }
+    },
+    [
+      dockAppActions,
+      dockHasDocument,
+      recentDisplays.length,
+      activeTab,
+      ocrRunByTab,
+      tabs.activeId,
+      openTabs,
+    ],
+  );
+
+  const onDockToolAction = useCallback(
+    (id: string): boolean => {
+      const entry = toolById(id);
+      if (entry === undefined) return false;
+      const run = dockAppActions[entry.action];
+      if (run === undefined) return false;
+      run();
+      return true;
+    },
+    [dockAppActions],
+  );
+
+  // ---- Phase 36 (chunk 7): the Multi Mode shared workspace chrome ---------
+  //
+  // The ONE shared Action Dock reports its State-4 idle flip; App shares it
+  // with BOTH panes' floating pills, so the whole workspace's chrome fades in
+  // lockstep (single mode's per-view dock keeps reporting to its own view).
+  const [sharedDockIdle, setSharedDockIdle] = useState(false);
+
+  // The shared Inspector's text-selection rule: in Multi Mode only the FOCUSED
+  // pane's publish may drive the panel (`resolvePaneSelection`); the
+  // focus-switch clear below withdraws the previous pane's selection.
+  const onPaneTextSelection = useCallback(
+    (pane: PaneId | null, selection: InspectorTextSelection | null): void => {
+      const decision = resolvePaneSelection<InspectorTextSelection>(
+        pane,
+        multiMode.focused,
+        selection,
+      );
+      if (decision.apply) setInspectorTextSelection(decision.value);
+    },
+    [multiMode.focused],
+  );
+
+  // ---- Phase 36 (chunk 4): the Command Palette's host wiring -------------
+  //
+  // The palette is MOUNTED HERE, once, for the whole window: it must work on
+  // the welcome screen (its recent-file rows) and must never mount twice in
+  // Multi Mode. Every command it runs is routed to the SAME handler its
+  // existing control already calls — the dock's map, the App's own global
+  // verbs, or the focused DocumentView's published view commands. Nothing
+  // here re-implements a command.
+
+  // ONE entry point for every route that opens the palette: `Ctrl+K`, the
+  // legacy `Ctrl+Shift+P` alias, the File > Tools menu row and the registry's
+  // `openCommandPalette` row. Phase 36 (chunk 5) — the All-tools panel is
+  // retired, so there is no panel to close any more.
+  const openCommandPalette = useCallback((): void => {
+    setCommandPaletteOpen(true);
+  }, []);
+
+  // Each mounted DocumentView publishes the view-level commands it owns
+  // (zoom presets, page stepping, find, pan, the edit / annotation tools),
+  // keyed by the pane — single mode is `null`. The palette reads the FOCUSED
+  // pane's set, so a Multi Mode palette row runs in the pane the user is
+  // working in.
+  const viewCommandsRef = useRef<Map<string, Record<string, () => void>>>(new Map());
+  const registerViewCommandsFor = useCallback(
+    (pane: PaneId | null, commands: Record<string, () => void> | null): void => {
+      const key = pane ?? "single";
+      if (commands === null) {
+        viewCommandsRef.current.delete(key);
+        return;
+      }
+      viewCommandsRef.current.set(key, commands);
+    },
+    [],
+  );
+  const focusedViewCommands = useCallback((): Record<string, () => void> => {
+    const map = viewCommandsRef.current;
+    if (!multiMode.enabled) return map.get("single") ?? {};
+    return map.get(multiMode.focused) ?? map.get("A") ?? map.get("B") ?? map.get("single") ?? {};
+  }, [multiMode.enabled, multiMode.focused]);
+
+  // The App-level verbs: the dock's own map (identical handlers) plus the
+  // global commands the title bar / File menu / Stage Rail own. A registry
+  // action that appears in neither this map nor the view commands renders
+  // DISABLED in the palette (never a silent no-op).
+  const paletteAppActions = useMemo<Record<string, () => void>>(
+    () => ({
+      ...dockAppActions,
+      open: (): void => {
+        void onOpenClick();
+      },
+      save: (): void => {
+        const id = activeTabIdRefLocal.current;
+        if (id !== null) void onSave(id);
+      },
+      saveAs: (): void => {
+        const id = activeTabIdRefLocal.current;
+        if (id !== null) void onSaveAs(id);
+      },
+      print: onPrintClick,
+      undo: (): void => {
+        const id = activeTabIdRefLocal.current;
+        if (id !== null) void onUndo(id);
+      },
+      redo: (): void => {
+        const id = activeTabIdRefLocal.current;
+        if (id !== null) void onRedo(id);
+      },
+      closeTab: (): void => {
+        const id = activeTabIdRefLocal.current;
+        if (id !== null) closeTab(id);
+      },
+      tabNew: onNewEmptyTab,
+      multiModeToggle: onMultiModeToggle,
+      toggleTheme: onToggleTheme,
+      preferences: (): void => setPrefsOpen(true),
+      checkForUpdate: onCheckForUpdate,
+      updateDownload: onUpdateDownload,
+      updateInstall: onUpdateInstall,
+      about: (): void => setAboutOpen(true),
+      openCommandPalette,
+      railCollapse: togglePagesPanelCollapsed,
+      // The clipboard-create command's UI is the Create sheet's own button
+      // (the sheet reads the OS clipboard and asks for the quality), so the
+      // palette row opens that same sheet rather than inventing a second flow.
+      createFromClipboard: onCreateClick,
+      paneOpen: (): void => {
+        if (multiMode.enabled) onOpenIntoPane(multiMode.focused);
+      },
+      paneClear: (): void => {
+        if (multiMode.enabled) onClearPane(multiMode.focused);
+      },
+      stagePages: (): void => onStageChange("pages"),
+      stageEdit: (): void => onStageChange("edit"),
+      stageReview: (): void => onStageChange("review"),
+      stageDeliver: (): void => onStageChange("deliver"),
+      windowMinimize: (): void => window.tflex.minimizeWindow(),
+      windowMaximize: (): void => window.tflex.maximizeWindow(),
+      windowClose: (): void => window.tflex.closeWindow(),
+    }),
+    [
+      dockAppActions,
+      onOpenClick,
+      onSave,
+      onSaveAs,
+      onPrintClick,
+      onUndo,
+      onRedo,
+      closeTab,
+      onNewEmptyTab,
+      onMultiModeToggle,
+      onToggleTheme,
+      onCheckForUpdate,
+      onUpdateDownload,
+      onUpdateInstall,
+      openCommandPalette,
+      togglePagesPanelCollapsed,
+      onCreateClick,
+      multiMode.enabled,
+      multiMode.focused,
+      onOpenIntoPane,
+      onClearPane,
+      onStageChange,
+    ],
+  );
+
+  // The live availability gate, same contract as the dock's: the registry
+  // DECLARES the precondition, this reads the live App state for it. A row is
+  // enabled only when a handler actually exists for it.
+  const paletteToolEnabled = useCallback(
+    (entry: ToolEntry): boolean => {
+      const hasHandler =
+        paletteAppActions[entry.action] !== undefined ||
+        focusedViewCommands()[entry.action] !== undefined;
+      if (!hasHandler) return false;
+      switch (entry.availability) {
+        case "always":
+          return true;
+        case "document":
+          return dockHasDocument;
+        case "tab":
+          return tabs.activeId !== null;
+        case "form-fields":
+          return (activeTab?.forms.fields.length ?? 0) > 0;
+        case "ocr-run":
+          return ocrRunByTab[tabs.activeId ?? ""] === true;
+        case "update-pending":
+          return (
+            updateState?.kind === "available" || updateState?.kind === "downloaded"
+          );
+        case "multi-doc":
+          return Object.keys(openTabs).length > 1;
+        // The view layer owns these gates (it owns the page selection and the
+        // armed tools); the handler's existence is the palette's own check.
+        case "recents":
+          return recentDisplays.length > 0;
+        case "selection":
+        case "colour-tool":
+        case "ink-tool":
+          return true;
+      }
+    },
+    [
+      paletteAppActions,
+      focusedViewCommands,
+      dockHasDocument,
+      tabs.activeId,
+      activeTab,
+      ocrRunByTab,
+      updateState,
+      openTabs,
+      recentDisplays.length,
+    ],
+  );
+
+  // Run a palette row: the view layer first (exactly like the dock's own
+  // `runDockTool`), then the App verbs. The frequency counter is written
+  // through the SAME settings path everything else uses, and only when a
+  // handler actually ran.
+  const onPaletteRun = useCallback(
+    (id: string): void => {
+      const entry = toolById(id);
+      if (entry === undefined) return;
+      const run =
+        focusedViewCommands()[entry.action] ?? paletteAppActions[entry.action] ?? undefined;
+      if (run === undefined) return;
+      run();
+      setSettings((prev) => {
+        if (prev === null) return prev;
+        const updated: AppSettings = { ...prev, toolUsage: bumpToolUsage(prev.toolUsage, id) };
+        trackAndSave(updated);
+        return updated;
+      });
+    },
+    [focusedViewCommands, paletteAppActions, trackAndSave],
+  );
+
+  // Phase 36 (chunk 7) — the ONE shared Action Dock's verb runner in Multi
+  // Mode. Same order as the dock's own `runDockTool` (and as the palette): the
+  // FOCUSED pane's view-level command first (rotate, edit / annotation tools,
+  // pan, clear, the REVIEW Annotate flyout), then App's own app-level handler.
+  // A verb with neither stays DISABLED through the pane's published gate, so a
+  // missing handler can never be a silent no-op.
+  const runSharedDockTool = useCallback(
+    (id: string): void => {
+      const entry = toolById(id);
+      if (entry === undefined) return;
+      const run =
+        focusedViewCommands()[entry.action] ?? dockAppActions[entry.action] ?? undefined;
+      run?.();
+    },
+    [focusedViewCommands, dockAppActions],
+  );
+
+  const paletteRecents = useMemo(
+    () => recentDisplays.map((row) => ({ path: row.entry.path, label: row.meta.name })),
+    [recentDisplays],
+  );
+  const onPaletteOpenRecent = useCallback(
+    (path: string): void => {
+      const match = recentDisplays.find((row) => row.entry.path === path);
+      if (match === undefined) return;
+      void onRecentClick(match.entry);
+    },
+    [recentDisplays, onRecentClick],
+  );
+
+  // The keyboard chords. `paletteChordFor` owns exactly two: `Ctrl+K` (toggle)
+  // and `Ctrl+Shift+P` (the legacy aliases opens). It deliberately returns
+  // null for `Ctrl+P` — the PRINT accelerator is never intercepted here, so it
+  // keeps reaching the same handler it always did.
+  useEffect((): (() => void) => {
+    const onKey = (event: KeyboardEvent): void => {
+      const chord = paletteChordFor(event);
+      if (chord === null) return;
+      event.preventDefault();
+      if (chord === "legacy-open") {
+        openCommandPalette();
+        return;
+      }
+      if (commandPaletteOpen) setCommandPaletteOpen(false);
+      else openCommandPalette();
+    };
+    window.addEventListener("keydown", onKey);
+    return (): void => window.removeEventListener("keydown", onKey);
+  }, [commandPaletteOpen, openCommandPalette]);
+
   if (!bootDone || settings === null) {
     return (
       <div className={isMaximized ? "app app-maximized" : "app"}>
         <TitleBar maximized={false} />
-        <div className="app-main" data-tools-open="false" data-tools-mode="list" />
+        <div className="app-main" data-tools-open="false" />
         <Toasts items={[]} onDismiss={dismissToast} />
       </div>
     );
@@ -7561,6 +7981,9 @@ pushToast(
           // workspace tab, so the "+" is disabled with a reason instead of
           // silently creating a tab the user cannot see.
           multiModeEnabled={multiMode.enabled}
+          // Phase 36 (chunk 6) — the Multi Mode toggle's approved home: the
+          // title bar. The palette keeps its own registry route.
+          onMultiModeToggle={onMultiModeToggle}
           // Phase 13 — the Settings (gear) affordance in the title bar
           // opens the same Preferences sheet the Edit menu and Ctrl+,
           // open. Same single source of truth (`prefsOpen`).
@@ -7584,15 +8007,15 @@ pushToast(
           updateIndicator={<UpdateIndicator externalState={updateState} />}
         />
       </TitleBar>
-      {/* Phase 14.2 FIX 4/5 — the open Tools panel's state lives on
-          .app-main as data attributes, driven by the SAME
-          `toolsPaletteOpen` state that mounts the palette below. The
-          CSS animates --tf-tools-inset from these (registered
-          @property, transitioned on .workspace-main, consumed by the
-          scroller's margin-right) so the page view narrows beside the
-          open panel in EVERY theme and panel + page move together on
-          the same 300ms ease-out. data-tools-mode mirrors the
-          persisted palette layout (list 344px / grid 380px).
+      {/* Phase 36 (chunk 5) — the open INSPECTOR's state lives on .app-main
+          as a data attribute, driven by the SAME `inspectorOpen` flag that
+          mounts the panel below. The CSS animates --tf-tools-inset from it
+          (registered @property, transitioned on .workspace-main, consumed by
+          the scroller's margin-right) so the page view narrows beside the
+          open panel in EVERY theme and panel + page move together on the
+          shared panel-slide tokens. The retired palette's layout-mode width
+          attribute (list 344px / grid 380px) is gone: the Inspector has ONE
+          width.
 
           Phase 16 — data-rail-collapsed is driven by the SAME
           `pagesPanel` state that swaps the rail body to the ruler
@@ -7602,8 +8025,7 @@ pushToast(
           reflows together in every theme. */}
       <div
         className="app-main"
-        data-tools-open={toolsPaletteOpen ? "true" : "false"}
-        data-tools-mode={settings.toolsPaletteLayout ?? 'list'}
+        data-tools-open={inspectorOpen ? "true" : "false"}
         data-rail-collapsed={pagesPanelCollapsed ? "true" : "false"}
       >
         {/* Phase 36 (chunk 1b) — the Stage Rail. Mounted here as a fixed
@@ -7642,82 +8064,42 @@ pushToast(
           multiMode={multiMode}
           splitFraction={splitFraction}
           onSplitChange={setSplitFraction}
-          // DEF-287 (residual) — the All Tools panel's requested inset target:
-          // 0 closed, 344 list / 380 grid open. A change re-clamps the stored
-          // split fraction so both panes keep their minimum without a drag.
-          toolsInsetTarget={
-            toolsPaletteOpen
-              ? settings.toolsPaletteLayout === "grid"
-                ? TOOLS_PANEL_W_GRID_PX
-                : TOOLS_PANEL_W_LIST_PX
-              : 0
-          }
+          // DEF-287 (residual) — the Inspector's requested inset target: 0
+          // when no document is open, the Inspector's single width when it
+          // is. A change re-clamps the stored split fraction so both panes
+          // keep their minimum without a drag (Phase 36 chunk 5: the retired
+          // palette's list/grid modes collapsed to ONE width).
+          toolsInsetTarget={inspectorOpen ? INSPECTOR_W_PX : 0}
           onFocusPane={onFocusPane}
           onClearPane={onClearPane}
           onPickPane={onPickPane}
           onOpenIntoPane={onOpenIntoPane}
-          // Phase 33 (chunk 4) — the workspace's ONE toolbar: rendered once
-          // in the stage above both panes while Multi Mode is on. It reads
-          // the focused pane's model and arms BOTH panes.
-          sharedToolbar={
+          // Phase 36 (chunk 7) — the workspace's ONE Action Dock: rendered
+          // once, floating at the workspace's bottom-centre while Multi Mode
+          // is on. It reads the FOCUSED pane's stage (the verb set) and that
+          // pane's published context (selection, gates, idle suppression), so
+          // a focus switch changes its contents. Every verb routes through
+          // `runSharedDockTool` (the focused view's command, then App's).
+          sharedDock={
             multiMode.enabled ? (
-              <MultiToolbar
+              <MultiActionDock
                 controller={sharedToolController}
                 pane={multiMode.focused}
-                theme={settings.theme === "light" ? "light" : "dark"}
-                annotationPalette={annotationPaletteForBar}
-                onAnnotationPaletteChange={onAnnotationPaletteChangeBar}
-                annotationRecentTools={settings.annotationRecentTools ?? []}
-                onAnnotationRecentToolsChange={onAnnotationRecentToolsChangeBar}
-                editModeOpen={editModeOpen}
-                onEditModeToggle={(): void => setEditMode(!editModeOpen)}
-                multiModeEnabled={multiMode.enabled}
-                onMultiModeToggle={onMultiModeToggle}
-                signToolActive={armedSignatureId !== null}
-                onSignClick={(): void => {
-                  window.dispatchEvent(new CustomEvent("tflex:sign-button"));
-                }}
-                hasFormFields={focusedHasFormFields}
-                onFlattenClick={(): void => {
-                  window.dispatchEvent(new CustomEvent("tflex:flatten-button"));
-                }}
-                onMerge={onMergeClick}
-                onSplit={onSplitClick}
-                onOptimize={onOptimizeClick}
-                onAuditSpace={onAuditClick}
-                onRotateClockwise={
-                  focusedPaneTabId === null
-                    ? undefined
-                    : (): void => onRotateClockwise(focusedPaneTabId)
-                }
-                onRotateCounterClockwise={
-                  focusedPaneTabId === null
-                    ? undefined
-                    : (): void => onRotateCounterClockwise(focusedPaneTabId)
-                }
-                onDeletePage={onDeletePageClick}
-                canDeletePage={focusedPageCount > 1}
-                editTool={focusedEditTool}
-                editDefaultFont={settings.editDefaultFont ?? "Helvetica"}
-                onEditSelect={(tool): void => broadcastEditAction({ type: "set-tool", tool })}
-                onEditDefaultFontChange={setEditDefaultFont}
+                activeStage={activeStage}
+                dockPins={dockPins}
+                onPinTool={onDockPin}
+                onUnpinTool={onDockUnpin}
+                onRunTool={runSharedDockTool}
+                toolUsage={settings.toolUsage}
+                activeToolIds={editModeOpen ? ['editMode'] : []}
+                onIdleChange={setSharedDockIdle}
               />
             ) : null
           }
-          // Phase 33 / DEF-284 — the workspace's ONE All Tools badge. It is a
-          // single `position: fixed` element (window right edge) owned by the
-          // stage in Multi Mode; every mounted DocumentView suppresses its own
-          // copy while `multiModeEnabled` is true, so no per-pane duplicate
-          // mounts (criterion 4b). In single mode this prop is null and each
-          // DocumentView keeps its own badge, unchanged.
-          toolsBadge={
-            multiMode.enabled ? (
-              <ToolsBadge
-                open={toolsPaletteOpen}
-                onToggle={(): void => setToolsPaletteOpen((v) => !v)}
-              />
-            ) : null
-          }
+          // Phase 36 (chunk 5) — the All Tools badge is RETIRED (the
+          // Inspector is the right panel and needs no toggle affordance). The
+          // stage no longer receives a `toolsBadge` node; the DEF-284
+          // single-badge rule is moot because there is no badge at all.
           // Phase 33 — each pane's own DocumentView renders its own
           // thumbnail strip (pane A on the right, pane B on the left), so
           // the stage no longer hosts a shared rail.
@@ -7734,12 +8116,33 @@ pushToast(
                     pageCount={engine.engineState.pageCount}
                     outline={open.session.outline}
                     initial={open.persisted}
+                    // Phase 36 (chunk 3a) — the Action Dock. The stage is the
+                    // pane's own stage in Multi Mode (the shared dock arrives
+                    // with the shared-workspace chunk; per-pane docks are
+                    // suppressed there), the pins are the validated settings
+                    // field, and the app-level verbs are routed through
+                    // `onDockToolAction`.
+                    activeStage={stageForPane(stageState, pane)}
+                    dockPins={dockPins}
+                    onDockPin={onDockPin}
+                    onDockUnpin={onDockUnpin}
+                    toolUsage={settings.toolUsage}
+                    onDockToolAction={onDockToolAction}
+                    isDockToolEnabled={dockAppToolEnabled}
                     onPersist={persistFor(meta.id)}
                     onDiagnostics={diagnosticsFor(meta.id)}
                     onSearchIndexProgress={searchIndexProgressFor(meta.id)}
                     registerSearchIndexInvalidator={(
                       fn,
                     ): void => registerSearchIndexInvalidatorFor(meta.id, fn)}
+                    // Phase 36 (chunk 4) — the Command Palette's view-command
+                    // bridge: this pane publishes the commands it owns (zoom,
+                    // page stepping, find, pan, the edit / annotation tools) so
+                    // the palette runs them here rather than re-implementing
+                    // them. Keyed by pane; `null` withdraws them on unmount.
+                    registerViewCommands={(commands): void =>
+                      registerViewCommandsFor(pane, commands)
+                    }
                     onToast={pushToast}
                     engineState={engine.engineState}
                     // DEF-139 — visible-order flag for the slot ->
@@ -7760,9 +8163,7 @@ pushToast(
                     // seeded with the clicked page (onDeletePageClick's optional
                     // seed); "Insert blank after" is an IMMEDIATE engine insert
                     // (no dialog), because its label promises the action. The
-                    // panel is mounted only behind the temporary
-                    // `?tfStagePanel=1` dev flag, so this wiring changes nothing
-                    // by default.
+                    // panel is the default single-mode left slot since chunk 6.
                     onExtractPages={(): void => onSplitClick()}
                     onInsertBlankPage={(page): void => {
                       void onInsertBlankAfterPage(page);
@@ -7771,6 +8172,32 @@ pushToast(
                     onRenumberPages={onRenumberPagesClick}
                     onOptimize={onOptimizeClick}
                     onAuditSpace={onAuditClick}
+                    // Phase 36 (chunk 6) — the EDIT / REVIEW / DELIVER
+                    // ContextPanel's host wiring. Every entry reuses an
+                    // EXISTING handler: the OCR dialog, the suspects panel's
+                    // gated opener, the signature manager + its apply path,
+                    // Optimize and the "from images" dialog. The panel is the
+                    // default single-mode left slot now (the chunk-2 dev flag
+                    // is retired). `onTextSelectionChange` publishes the live
+                    // text-object selection up so the Inspector's EDIT/text
+                    // section shows the REAL selected object.
+                    ocrStatus={ocrRunByTab[meta.id] === true ? 'Recognized' : null}
+                    ocrHasRun={ocrRunByTab[meta.id] === true}
+                    ocrSuspectCount={ocrSuspectsByTab[meta.id]?.length ?? 0}
+                    onRecognizeText={onOcrClick}
+                    onOpenOcrSuspects={onOpenOcrSuspects}
+                    onSignSignature={onSigManagerApply}
+                    onManageSignatures={(): void => setSigModalOpen(true)}
+                    fileSize={open.session.fileSize}
+                    onCreateFromImages={onCreateClick}
+                    onTextSelectionChange={
+                      // Phase 36 (chunk 7) — the shared Inspector follows the
+                      // FOCUSED pane, so BOTH panes publish and the host's
+                      // `resolvePaneSelection` guard drops a background pane's
+                      // publish (single mode passes `null` as the pane and
+                      // always applies, unchanged).
+                      (selection): void => onPaneTextSelection(pane, selection)
+                    }
                     // DEF-041 — toolbar Rotate clockwise button. The
                     // page indicator's "current" page is what the
                     // user sees on screen; rotating that page is
@@ -7826,8 +8253,6 @@ pushToast(
                     onRetypeStamp={(id, stampId): void => {
                       void onRetypeStamp(meta.id, id, stampId);
                     }}
-                    toolsPaletteOpen={toolsPaletteOpen}
-                    onToolsPaletteToggle={(): void => setToolsPaletteOpen((v) => !v)}
                     annotationPalette={
                       settings.annotationColors === undefined
                         ? null
@@ -7930,6 +8355,14 @@ pushToast(
                     sharedTools={
                       multiMode.enabled && pane !== null ? sharedToolsFor(pane) : null
                     }
+                    // Phase 36 (chunk 7) — the per-pane Multi Mode chrome: the
+                    // pane id gates the pane's OWN floating pills, `paneFocused`
+                    // owns the ONE shared annotations flyout, and `chromeIdle`
+                    // is the shared dock's State-4 flip so the whole workspace's
+                    // chrome fades together.
+                    multiPane={pane}
+                    paneFocused={pane !== null && pane === multiMode.focused}
+                    chromeIdle={sharedDockIdle}
                     // Phase 32 (chunk 2d) — canvas page drag and drop is a
                     // Multi Mode feature: the hover grip and the page drop
                     // targets exist only while the mode is on. Single mode
@@ -7944,115 +8377,69 @@ pushToast(
           }}
         />
         </PageDragProvider>
-        <AnimatePresence>
-          {toolsPaletteOpen && (
-            <ToolsPalette
-              layout={settings.toolsPaletteLayout ?? 'list'}
-              // Phase 14.2 FIX 5 — the persisted layout mode the panel
-              // is EXITING with. TfPanel pins the exit transform to the
-              // mode's travel the mount target promised; without the
-              // persisted value the exit reads `layout === 'list'`
-              // (component-local) and a closed-in-grid-mode panel
-              // snapped to the list travel mid-fade.
-              exitLayout={settings.toolsPaletteLayout ?? 'list'}
-              onLayoutChange={(next): void => {
-                setSettings((prev) => {
-                  if (prev === null) return prev;
-                  const updated = preferencesReducer(prev, {
-                    type: 'set-tools-palette-layout',
-                    value: next,
-                  });
-                  trackAndSave(updated);
-                  return updated;
-                });
-              }}
-              onMerge={onMergeClick}
-              onSplit={onSplitClick}
-              onExtract={(): void => setSplitOpen(true)}
-              onRotate={(): void => {
-                // DEF: palette rotate was a no-op stub (the
-                // comment claimed "rotate happens per-page in the
-                // rail" but the palette entry is reachable without
-                // a rail thumbnail selection — e.g. after closing
-                // the rail tab to the annotations panel). Wire it
-                // through the same path the toolbar's Rotate
-                // clockwise button uses (which reads the active
-                // tab's persisted currentPage and dispatches the
-                // engine rotate op).
-                const id = activeTabIdRefLocal.current;
-                if (id === null) return;
-                onRotateClockwise(id);
-              }}
-              onDelete={(): void => {
-                // B11 — the palette's Delete entry opens the SAME
-                // DeletePageDialog the toolbar's Delete button uses
-                // (current page / custom range, with the "must keep
-                // at least one page" validation inside the dialog).
-                // The previous wiring was a toast no-op ("Select a
-                // thumbnail in the left rail…") that told the user
-                // to go elsewhere — a silent dead end for an entry
-                // that looks exactly like the toolbar control. The
-                // dialog gates on the active tab and resolves the
-                // current page itself.
-                onDeletePageClick();
-              }}
-              onSign={(): void => {
-                if (armedSignatureId !== null) {
-                  setArmedSignatureId(null);
-                } else {
-                  // DEF-125 — arming Sign from the palette exits Edit
-                  // mode too (same cross-disarm as the toolbar path):
-                  // the edit layer would otherwise swallow the
-                  // placement click.
-                  if (editModeOpenRef.current) {
-                    setEditMode(false);
-                  }
-                  setSigModalOpen(true);
-                }
-              }}
-              onForms={(): void => setFlattenOpen(true)}
-              onFlatten={(): void => setFlattenOpen(true)}
-              onOptimize={onOptimizeClick}
-              onAudit={onAuditClick}
-              onCreateFromImages={onCreateClick}
-              onExportPages={onExportClick}
-              onExportText={onTextExportClick}
-              onExportDocx={onDocxExportClick}
-              onInsertPages={onInsertPagesClick}
-              onRecognizeText={onOcrClick}
-              onBatchOcr={(): void => {
-                void onBatchOcr();
-              }}
-              onOcrSuspects={(): void => onOpenOcrSuspects()}
-              onReplacePages={onReplacePagesClick}
-              onRenumberPages={onRenumberPagesClick}
-              onCropPages={onCropPagesClick}
-              onStamp={onStampClick}
-              onExportComments={onCommentExportClick}
-              onImportComments={onCommentImportClick}
-              onWatermark={onWatermarkClick}
-              hasOcrSuspects={Object.values(ocrRunByTab).some(Boolean)}
-              onClose={(): void => setToolsPaletteOpen(false)}
-              // B11 / DEF-102 — `documentRequired` must be false on an
-              // empty tab. The previous shape was
-              // `activeTab !== null`; on an empty tab `openTabs[id]`
-              // has NO entry (empty tabs only exist in the tab bar),
-              // so `activeTab` is `undefined` — and
-              // `undefined !== null` is TRUE, which told the palette
-              // "a document is active" and enabled Recognize Text /
-              // OCR on a doc-less tab. Gating on the active tab not
-              // being empty makes every document-required entry
-              // (Recognize text, OCR suspects, batch OCR, ...)
-              // disabled on the welcome screen and on empty tabs.
-              documentRequired={tabs.activeId !== null && !activeIsEmpty}
-              hasFormFields={(activeTab?.forms.fields.length ?? 0) > 0}
-              // Phase 32 — the All-tools entry and the CommandBar control
-              // toggle the same App-owned mode state.
-              onMultiMode={onMultiModeToggle}
-              multiModeEnabled={multiMode.enabled}
-            />
-          )}
-        </AnimatePresence>
+        {/* Phase 36 (chunk 5 + 6) — the INSPECTOR. It replaces the retired
+            All-tools palette as the workspace's right panel, so it is mounted
+            whenever a real document is open (`inspectorOpen`, the SAME flag
+            that drives .app-main's data-tools-open and --tf-tools-inset).
+            There is no toggle: the palette's badge, the File > Tools row and
+            the toolbar button are all retired or re-pointed at the Command
+            Palette.
+
+            The HOST owns the selection. Chunk 6 wires the LIVE selections:
+            the active DocumentView publishes its text-object selection up
+            (`inspectorTextSelection`), and the signature selection reads the
+            host's armed-signature state — one source per kind, no duplicates.
+            Every affordance routes through the SAME handler the toolbar /
+            menu / dialog already uses — the Inspector owns no command. */}
+        {inspectorOpen && activeTab !== null && tabs.activeId !== null && (
+          <Inspector
+            stage={activeStage}
+            selection={inspectorSelection}
+            textPanel={inspectorTextPanel}
+            signatureStyle={
+              armedSignature === null
+                ? null
+                : armedSignature.source.kind === 'typed'
+                  ? 'Typed'
+                  : 'Drawn'
+            }
+            signatureHint={armedSignature === null ? null : 'Click a page to place'}
+            pageCount={activeEngineUi?.state.pageCount ?? activeTab.session.doc.numPages}
+            pageRotation={
+              activeEngineUi?.state.rotations[
+                Math.max(1, Math.floor(activeTab.persisted.currentPage)) - 1
+              ] ?? null
+            }
+            annotationCount={annotationHandlers(tabs.activeId).annotations.length}
+            formFieldCount={activeTab.forms.fields.length}
+            fileSize={activeTab.session.fileSize}
+            documentTitle={activeTab.displayName}
+            onRotatePage={(): void => onRotateClockwise(tabs.activeId as string)}
+            onRenumberPages={onRenumberPagesClick}
+            onCropPages={onCropPagesClick}
+            onOptimize={onOptimizeClick}
+            onAudit={onAuditClick}
+            onExportPages={onExportClick}
+            onRecognizeText={onOcrClick}
+            ocrStatus={ocrRunByTab[tabs.activeId] === true ? 'Recognized' : null}
+            annotations={annotationHandlers(tabs.activeId).annotations}
+            onAnnotationJump={(page): void => {
+              railJumpSeqRef.current += 1;
+              setRailJump({ tabId: tabs.activeId as string, page, seq: railJumpSeqRef.current });
+            }}
+            onAnnotationEdit={(id, patch): void => {
+              void onEditAnnotation(tabs.activeId as string, id, patch);
+            }}
+            onAnnotationDelete={(id): void => {
+              void onDeleteAnnotation(tabs.activeId as string, id);
+            }}
+            onExportComments={onCommentExportClick}
+            onImportComments={onCommentImportClick}
+            exportFormat={settings.exportImageFormat ?? null}
+            onExport={onExportClick}
+          />
+        )}
+
         {/* B14 — the suspects panel must only render against a
             REAL document. The previous guard checked
             `activeTabIdRefLocal.current !== null`, which is true
@@ -8528,6 +8915,21 @@ pushToast(
         }}
       />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
+      {/* Phase 36 (chunk 4) — the Command Palette. Mounted once for the whole
+       * window (so it works on the welcome screen and never doubles up in
+       * Multi Mode); every row runs an EXISTING handler, and `Ctrl+Enter` pins
+       * through the same `dockPins` writer the Action Dock uses. */}
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={(): void => setCommandPaletteOpen(false)}
+        onRunTool={onPaletteRun}
+        onPinTool={onDockPin}
+        dockPins={dockPins}
+        isToolEnabled={paletteToolEnabled}
+        toolUsage={settings.toolUsage}
+        recentFiles={paletteRecents}
+        onOpenRecent={onPaletteOpenRecent}
+      />
       <AboutDialog
         open={aboutOpen}
         onClose={(): void => setAboutOpen(false)}

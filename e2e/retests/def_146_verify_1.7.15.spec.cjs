@@ -9,7 +9,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, toggleEditMode } = require('../lib/helpers.cjs');
 const path = require('node:path');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 const FULL_TEXT = 'ARTIFACT CHECK 88';
@@ -62,6 +62,10 @@ async function boxSnapshot(label) {
       boxCount: boxes.length,
       boxRects: boxes.map(rect),
       mirrorTexts: mirrors.map((m) => (m.textContent || '').trim()),
+      // The raw committed text (the mirror's own attribute) — textContent
+      // concatenates wrapped line divs without spaces, so it is not a
+      // faithful read of the box's content.
+      mirrorAttrs: mirrors.map((m) => m.getAttribute('data-edit-box-text-mirror') || ''),
       // Computed font size of the mirror (px) — a fitted size should be
       // proportionate to the box, not the ~71.8px oversized default.
       mirrorFonts: mirrors.map((m) => {
@@ -90,7 +94,7 @@ async function page1Text() {
 test('DEF-146: committing a textbox with long text -> full text visible, not truncated', async () => {
   await openSampleFromCard('report.pdf');
 
-  await win.click('[data-toolbar-edit-toggle]');
+  await toggleEditMode(win);
   await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.click('[data-edit-tool="box"]');
@@ -120,9 +124,10 @@ test('DEF-146: committing a textbox with long text -> full text visible, not tru
   await shot('def-146-1715-after-commit.png');
 
   const mirrorText = committed.mirrorTexts.join('|');
+  const mirrorAttr = committed.mirrorAttrs.join('|');
   const mirrorFont = committed.mirrorFonts[0] || 0;
   const boxRect = committed.boxRects[0];
-  console.log(`[146] mirrorText="${mirrorText}" font=${mirrorFont.toFixed(2)} box=${JSON.stringify(boxRect)}`);
+  console.log(`[146] mirrorText="${mirrorText}" mirrorAttr="${mirrorAttr}" font=${mirrorFont.toFixed(2)} box=${JSON.stringify(boxRect)}`);
   const p1 = await page1Text();
   console.log(`[146] page1 textLayer has full text? ${/ARTIFACT CHECK 88/i.test(p1.text)}`);
 
@@ -146,11 +151,13 @@ test('DEF-146: committing a textbox with long text -> full text visible, not tru
 
   // --- Verdict ---
   // The committed box must carry the FULL text in its mirror (not "AR")...
-  const fullTextOk = committed.mirrorTexts.some((t) => t === FULL_TEXT) || /ARTIFACT CHECK 88/.test(mirrorText);
+  // Read the raw mirror attribute, not textContent: a wrapped box renders one
+  // div per line, so textContent drops the spaces between lines.
+  const fullTextOk = committed.mirrorAttrs.some((t) => t === FULL_TEXT) || /ARTIFACT CHECK 88/.test(mirrorAttr);
   // ...and the mirror font must be fitted to the box (not the oversized ~71.8px default).
   const fontFits = mirrorFont > 4 && mirrorFont < 60;
   // After move+confirm the box still holds the full string.
-  const fullTextAfterMove = moved.mirrorTexts.some((t) => t === FULL_TEXT) || /ARTIFACT CHECK 88/.test(moved.mirrorTexts.join('|'));
+  const fullTextAfterMove = moved.mirrorAttrs.some((t) => t === FULL_TEXT) || /ARTIFACT CHECK 88/.test(moved.mirrorAttrs.join('|'));
   const pass = fullTextOk && fontFits && fullTextAfterMove;
   console.log(`[146|VERDICT] fullTextInMirror=${fullTextOk} fontFitsBox=${fontFits} (font=${mirrorFont.toFixed(2)}px) fullTextAfterMove=${fullTextAfterMove}`);
   console.log(`[146|VERDICT] RESULT=${pass ? 'PASS' : 'FAIL'}`);

@@ -12,7 +12,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp } = require('./lib/launch.cjs');
-const { openSamplePath, hardClose } = require('./lib/helpers.cjs');
+const { openSamplePath, hardClose, gotoStage } = require('./lib/helpers.cjs');
 
 const FIXTURE = path.resolve(__dirname, '..', 'test-fixtures', 'report.pdf');
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
@@ -286,12 +286,14 @@ test('rotate page: page view / thumbnail flicker timeline', async () => {
   await win.waitForSelector('.thumb-item[data-page="1"] canvas.thumb-canvas', { timeout: 30000 });
   await win.waitForTimeout(1800);
 
-  // Confirm the rotate control exists in the RUNNING app (do not assume).
-  const rotate = win.locator('[data-toolbar-rotate-cw]');
+  // Phase 36 (chunk 3) — the per-view command row is retired; Rotate is the
+  // PAGES Action Dock's `rotate` verb.
+  await gotoStage(win, 1);
+  const rotate = win.locator('[data-dock-verb="rotate"]');
   const rotateCount = await rotate.count();
   const rotateVisible = rotateCount > 0 ? await rotate.first().isVisible() : false;
-  console.log(`[ROT] rotate control [data-toolbar-rotate-cw] count=${rotateCount} visible=${rotateVisible}`);
-  if (rotateCount === 0) throw new Error('rotate control [data-toolbar-rotate-cw] not found in running app');
+  console.log(`[ROT] rotate control [data-dock-verb="rotate"] count=${rotateCount} visible=${rotateVisible}`);
+  if (rotateCount === 0) throw new Error('rotate control [data-dock-verb="rotate"] not found in running app');
 
   // Baseline state + screenshot.
   const baseline = await win.evaluate(() => {
@@ -341,7 +343,7 @@ test('rotate page: page view / thumbnail flicker timeline', async () => {
   // Stamp the real click time on the rotate button.
   await win.evaluate(() => {
     window.__rotateClickT = null;
-    const btn = document.querySelector('[data-toolbar-rotate-cw]');
+    const btn = document.querySelector('[data-dock-verb="rotate"]');
     btn.addEventListener('click', () => { window.__rotateClickT = performance.now(); }, { capture: true });
   });
 

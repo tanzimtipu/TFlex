@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, runTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -28,10 +28,8 @@ test('BUG-14: Recognize Text blank screen + no low-confidence toast + suspects b
   const d0 = await window.evaluate(() => window.tflexDiagnostics());
   console.log('BUG14 scanned pageCount:', d0.pageCount, 'activeTool:', d0.activeTool);
 
-  // open OCR dialog
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.click('[data-tool-id="recognizeText"]');
+  // open OCR dialog (Phase 36: OCR is an EDIT dock verb now)
+  await runTool(window, 'recognizeText');
   await window.waitForSelector('.ocr-dialog', { timeout: 10000 });
   await snap('bug14-ocr-dialog');
 
@@ -114,9 +112,7 @@ test('BUG-14: Recognize Text blank screen + no low-confidence toast + suspects b
 test('BUG-20: crop box adjustment causes flicker/artifact window', async () => {
   test.setTimeout(120000);
   await openSample('report.pdf');
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.click('[data-tool-id="cropPages"]');
+  await runTool(window, 'cropPages');
   await window.waitForSelector('[data-crop-pages-dialog]', { timeout: 10000 });
   await window.waitForTimeout(500);
   await snap('bug20-crop-dialog');

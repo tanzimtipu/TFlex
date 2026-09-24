@@ -128,7 +128,7 @@ test('1.27.0 (a): detach opens "Print - TFlex", print-only UI, movable outside t
   const chrome = await printPage.evaluate(() => ({
     printWindow: !!document.querySelector('[data-print-window]'),
     tabs: document.querySelectorAll('.tab[data-tab-id]').length,
-    toolbar: document.querySelectorAll('.toolbar').length,
+    toolbar: document.querySelectorAll('.action-dock').length,
     titlebar: document.querySelectorAll('.titlebar').length,
     appChrome: document.querySelectorAll('.app').length,
     printer: !!document.querySelector('[data-print-printer]'),

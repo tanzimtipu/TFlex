@@ -12,7 +12,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
 const { twoPaneSetup, focusPaneByPage, paneCount, openFile, tmpCopy, REPORT, LONG } = require('./lib/p33_common.cjs');
 
 const COMPOSITE = '.tab[data-tab-id="tf-multi-workspace"]';
@@ -150,9 +150,8 @@ test('C3 mode OFF restores the individual tabs with the focused pane document ac
   expect(active).toContain('p33-alpha');
 
   // Focus pane B path: turn the mode back on, fill pane B, focus B, exit ->
-  // beta active.
-  await win.locator('[data-toolbar-multi-mode]:visible').first().click();
-  await win.waitForTimeout(600);
+  // beta active. Phase 36 (chunk 3): the single-mode toggle is in the palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p33-beta' }).first().click();
   await win.waitForTimeout(1200);

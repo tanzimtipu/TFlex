@@ -906,15 +906,29 @@ function workspacePanelOpen(host: HTMLElement): string | null {
   return host.querySelector(".workspace")?.getAttribute("data-text-panel-open") ?? null;
 }
 
-/** Arm the textbox tool the way a user does: the MRU row when it is there,
- *  otherwise the all-tools dropdown (the default MRU row is select /
- *  highlight / underline / strikeout / ink, so textbox lives in the menu). */
+/** Arm the textbox tool the way a user does: open the REVIEW annotations
+ *  flyout (Phase 36 chunk 3b — the toolbar row is retired), then use the MRU
+ *  row when it is there, otherwise the all-tools dropdown (the default MRU row
+ *  is select / highlight / underline / strikeout / ink, so textbox lives in
+ *  the menu). */
 function armTextboxTool(host: HTMLElement): void {
   const direct = host.querySelector(
     "[data-annotation-toolbar] button[data-tool='textbox']",
   );
   if (direct !== null) {
     click(direct);
+    return;
+  }
+  // The annotation toolbar now lives in the REVIEW dock's flyout.
+  const annotate = host.querySelector('[data-dock-verb="annotate"]');
+  if (annotate !== null) {
+    click(annotate);
+  }
+  const opened = host.querySelector(
+    "[data-annotation-toolbar] button[data-tool='textbox']",
+  );
+  if (opened !== null) {
+    click(opened);
     return;
   }
   const toggle = host.querySelector("[data-ann-dropdown-toggle]");
@@ -961,6 +975,9 @@ describe("Phase 21 regression — the text-properties panel across a placement",
           savedSignatures: [],
           stampAnnotations: [],
           onCreateAnnotation: args.onCreateAnnotation,
+          // Phase 36 (chunk 3b) — annotations live in the REVIEW stage; the
+          // dock's Annotate primary opens their flyout.
+          activeStage: "review",
         }),
       );
       await Promise.resolve();

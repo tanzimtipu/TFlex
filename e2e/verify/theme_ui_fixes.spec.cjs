@@ -97,16 +97,6 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
       await win.waitForTimeout(700); // crossfade token 400ms + settle
     }
 
-    /** Toolbar icon colors (computed) in the current theme. */
-    async function toolbarIconColors() {
-      return win.evaluate(() =>
-      Array.from(document.querySelectorAll('.toolbar .tool-btn[data-icon]')).map((b) => ({
-          icon: b.getAttribute('data-icon'),
-          color: getComputedStyle(b).color,
-        })),
-      );
-    }
-
     /**
      * Page-1 geometry probe.
      *  - scrollerTop: top of the .document-scroller box
@@ -128,7 +118,7 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
         const sR = scroller.getBoundingClientRect();
         const pR = page.getBoundingClientRect();
         let chromeBottom = wsR.top;
-        for (const s of ['.toolbar', '.ann-toolbar', '.search-bar', '.edit-toolbar']) {
+        for (const s of ['.ann-toolbar', '.search-bar', '.edit-toolbar']) {
           const el = document.querySelector(s);
           if (!el) continue;
           const r = el.getBoundingClientRect();
@@ -208,23 +198,9 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
       ).toBeGreaterThanOrEqual(3.0);
     }
 
-    const frostedIcons = await toolbarIconColors();
-    console.log(`[icons:frosted] toolbar = ${JSON.stringify(frostedIcons)}`);
-    const frostedHexes = frostedIcons.map((i) => rgbToHex(i.color)).filter(Boolean);
-    expect(
-      new Set(frostedHexes).size,
-      'frosted toolbar must stay multi-hue, not monochrome',
-    ).toBeGreaterThanOrEqual(4);
-    for (const t of frostedIcons) {
-      const hex = rgbToHex(t.color);
-      if (!hex) continue;
-      const ratio = contrastVsWhite(hex);
-      console.log(`[icons:frosted] ${t.icon} ${hex} vs white = ${ratio.toFixed(2)}`);
-      expect(
-        ratio,
-        `frosted toolbar icon ${t.icon} (${hex}) must clear 3:1 vs white`,
-      ).toBeGreaterThanOrEqual(3.0);
-    }
+    // Phase 36 (chunk 3): the per-view command row is retired, so the
+    // CommandBar's multi-hue icon contract has no surface to assert here; the
+    // Action Dock's icon/theme contract is covered by phase36_chunk3_dock_gate.
     await snap('ui_fix_frosted_toolbar.png');
 
     // ------------------------------------------------------------------
@@ -275,121 +251,41 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
         Math.abs(g2.pageTop - baselinePageTop),
         `${t}: page 1 must start at the SAME position as in frosted (got ${g2.pageTop.toFixed(1)} vs frosted ${baselinePageTop.toFixed(1)})`,
       ).toBeLessThanOrEqual(2);
-      const icons = await toolbarIconColors();
-      const hues = new Set(icons.map((i) => rgbToHex(i.color)).filter(Boolean));
-      console.log(`[spacing:${t}] pageTop=${g2.pageTop.toFixed(1)} (frosted was ${baselinePageTop.toFixed(1)}); icon hues = ${hues.size}`);
-      expect(hues.size, `${t}: toolbar must stay multi-hue`).toBeGreaterThanOrEqual(4);
+      console.log(`[spacing:${t}] pageTop=${g2.pageTop.toFixed(1)} (frosted was ${baselinePageTop.toFixed(1)})`);
       await snap(shot);
     }
 
-    // Back to frosted for the badge work.
+    // Back to frosted for the chrome regression check.
     await setThemeViaDropdown('frosted');
     console.log(`[errors so far] ${rendererErrors.length}`);
 
     // ------------------------------------------------------------------
-    // 3. "ALL TOOLS" BADGE
+    // 3. "ALL TOOLS" BADGE — RETIRED ASSERTIONS (Phase 36 triage)
+    //
+    // This section asserted the PILL-ERA badge (a ~55x48 pill, rest opacity
+    // 0.35, a semi-transparent two-swatch "All tools" label chip, a dark-ink
+    // label in frosted and a white 0.2-alpha chip in dark). That badge was
+    // deliberately superseded by the 36x100 arrow tab (commit a0f72cc,
+    // "panel-attached badge with 36x100 size and slide animation"), whose
+    // label reads "All Tools" and whose surface is a solid blue gradient with
+    // white text — so every assertion here was stale. The CURRENT badge is
+    // covered by e2e/badge_size_slide.spec.cjs (36x100 box + slide) and
+    // e2e/badge_chevron_gap.spec.cjs (chevron swap + scrollbar/panel gap), and
+    // the badge itself is retired by the next Phase-36 chunk (the All-tools
+    // palette becomes the Inspector). The stale pill-era assertions are
+    // therefore deleted rather than migrated.
     // ------------------------------------------------------------------
-    const closed1 = await badgeFacts();
-    console.log(`[badge:closed] ${JSON.stringify(closed1)}`);
-    expect(closed1, 'tools badge pill must exist').not.toBeNull();
-    expect(closed1.labelPresent, 'closed palette: the "All tools" label must be present').toBe(true);
-    expect(closed1.labelText).toBe('All tools');
-    expect(
-      closed1.labelBgAlpha,
-      'the label chip must be semi-transparent (alpha > 0 and < 0.6)',
-    ).toBeGreaterThan(0);
-    expect(closed1.labelBgAlpha).toBeLessThan(0.6);
-    expect(closed1.labelColor, 'the label text must carry a dark ink in frosted').toMatch(/rgb\(3[0-9], 4[0-9], 5[0-9]\)/);
-    expect(parseFloat(closed1.opacity), 'closed badge stays quiet (opacity 0.35) at rest').toBeCloseTo(0.35, 1);
-    expect(
-      closed1.width > 32,
-      'closed badge must grow past the 32px min-width to fit the label',
-    ).toBe(true);
-    await snap('ui_fix_badge_closed_frosted.png');
-    // close-up of the badge itself
-    {
-      const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
-      const box = { x: closed1.x, y: closed1.y, w: closed1.width, h: 48 };
-      const x0 = Math.max(0, box.x - 70);
-      const y0 = Math.max(0, box.y - 60);
-      await win.screenshot({
-        path: path.join(SHOTS, 'ui_fix_badge_closed_closeup.png'),
-        clip: {
-          x: x0,
-          y: y0,
-          width: Math.min(box.width + 140, vp.w - x0),
-          height: Math.min(box.h + 120, vp.h - y0),
-        },
-      });
-    }
 
-    // Open direction: click the badge -> palette opens, label drops.
-    const marginClosed = await win.evaluate(() => {
-      const sc = document.querySelector('.document-scroller');
-      return sc ? parseFloat(getComputedStyle(sc).marginRight) : null;
-    });
-    await win.locator('[data-tools-badge]').click();
-    await win.waitForSelector('.app-main[data-tools-open="true"]', { timeout: 5000 });
-    await win.waitForSelector('[data-tools-palette]', { timeout: 5000 });
-    await win.waitForTimeout(500);
-    const openState = await badgeFacts();
-    console.log(`[badge:open] ${JSON.stringify(openState)}`);
-    await win.waitForSelector('[data-tools-palette]', { timeout: 3000 });
-    const marginOpen = await win.evaluate(() =>
-      parseFloat(getComputedStyle(document.querySelector('.document-scroller')).marginRight),
-    );
-    console.log(`[badge] margin-right closed=${marginClosed} open=${marginOpen}`);
-    expect(marginOpen, 'page view must narrow while the palette is open').toBeGreaterThan(
-      (marginClosed || 0) + 100,
-    );
-    const openFacts = await badgeFacts();
-    expect(openState.ariaPressed, 'open badge aria-pressed').toBe('true');
-    expect(
-      openFacts.labelPresent,
-      'open state: the "All tools" label must be dropped (bare chevron)',
-    ).toBe(false);
-    await snap('ui_fix_badge_open_frosted.png');
-
-    // Close direction: second click closes the palette, label returns.
-    await win.locator('[data-tools-badge]').click();
-    await win.waitForSelector('.app-main[data-tools-open="false"]', { timeout: 5000 });
-    await win.waitForSelector('[data-tools-palette]', { state: 'detached', timeout: 5000 });
-    await win.waitForTimeout(400);
-    const marginReclosed = await win.evaluate(() =>
-      parseFloat(getComputedStyle(document.querySelector('.document-scroller')).marginRight),
-    );
-    const reclosed = await badgeFacts();
-    console.log(`[badge:reclosed] margin=${marginReclosed} label=${reclosed.labelText}`);
-    expect(
-      Math.abs(marginReclosed - (marginClosed || 0)),
-      'page-view margin must restore after close',
-    ).toBeLessThanOrEqual(2);
-    expect(reclosed.labelPresent, 're-closed: the "All tools" label must be back').toBe(true);
-    expect(reclosed.labelText).toBe('All tools');
-    expect(reclosed.ariaPressed).toBe('false');
-    await snap('ui_fix_badge_reclosed.png');
-
-    // Dark-theme badge label (the chip tints per theme: white 0.2 alpha).
-    await setThemeViaDropdown('dark');
-    const darkBadge = await badgeFacts();
-    console.log(`[badge:dark] ${JSON.stringify(darkBadge)}`);
-    expect(darkBadge.labelPresent, 'dark theme keeps the "All tools" label on the closed badge').toBe(true);
-    expect(
-      darkBadge.labelBgAlpha,
-      'dark label chip must be the white 0.2-alpha wash',
-    ).toBeCloseTo(0.2, 1);
-    await snap('ui_fix_badge_closed_dark.png');
-
-    // Regression: no "All tools" control smuggled into the toolbar.
+    // Regression: no "All tools" control smuggled into the workspace chrome.
     const toolbarButtons = await win.evaluate(() =>
-      Array.from(document.querySelectorAll('.toolbar button')).map((b) => ({
+      Array.from(document.querySelectorAll('.action-dock button')).map((b) => ({
         label: b.getAttribute('aria-label') || '',
         title: b.getAttribute('title') || '',
         text: (b.textContent || '').trim(),
       })),
     );
     const allToolsInToolbar = toolbarButtons.filter((b) => /all tools/i.test(b.label + b.title + b.text));
-    expect(allToolsInToolbar, 'the toolbar must not carry an "All tools" button').toHaveLength(0);
+    expect(allToolsInToolbar, 'the dock must not carry an "All tools" button').toHaveLength(0);
 
     // ------------------------------------------------------------------
     // Zero renderer errors across the whole run.

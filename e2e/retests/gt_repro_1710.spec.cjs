@@ -10,7 +10,7 @@
 // .cmd/.ps1 shims; no hand-concatenated file:// URLs.
 
 const { test, expect } = require('@playwright/test');
-const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool, toggleEditMode, armSignTool, runTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -63,16 +63,12 @@ async function openSample(name) {
   await win.waitForTimeout(1500);
 }
 
-async function openTools() {
-  await win.click('[data-tools-toggle]');
-  await win.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-  await win.waitForTimeout(300);
-}
+// Phase 36 migration: the All-tools palette is retired; runTool resolves each
+// tool's current home (dock lane, panel/menu, or the Command Palette).
+const DOCK_STAGE = {};
 
 async function openPaletteTool(toolId) {
-  const open = await win.evaluate(() => document.querySelector('[data-tools-palette]') !== null);
-  if (!open) await openTools();
-  await win.click(`[data-tool-id="${toolId}"]`);
+  return runTool(win, toolId);
 }
 
 async function shot(name) {
@@ -260,7 +256,7 @@ test('BUG3dup: drag a committed signature, then click it -> position reverts', a
   await openSample('report.pdf');
 
   // Create + place a typed signature.
-  await win.click('button[aria-label="Sign tool"]');
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 10000 });
   await win.click('.sig-tab:has-text("Type")');
   await win.fill('input[aria-label="Type your signature"]', 'QA');
@@ -321,10 +317,9 @@ test('BUG4: Add box committed text box cannot be dragged with the mouse', async 
   await openSample('report.pdf');
 
   // Enter Edit mode and choose Add box.
-  await win.click('button[aria-label="Edit content" i]').catch(() => {});
+  await toggleEditMode(win);
   await win.click('[data-edit-toggle]').catch(() => {});
   // Fallback: look for the edit toggle by text.
-  const editTooToggle = win.locator('[data-tools-toggle]');
   // Find the edit toolbar toggle button (it may be the toolbar "Edit content").
   // Use the annotation toolbar path: edit mode enters via the main toolbar.
   const editToggled = await win.evaluate(() =>
@@ -397,7 +392,7 @@ test('BUG5: move placed text box -> artifacts; select placed box -> no Delete op
   await openSample('report.pdf');
 
   // Enter Edit + Add box (mirror BUG4's working entry).
-  await win.click('button[aria-label="Edit content" i]').catch(() => {});
+  await toggleEditMode(win);
   await win.click('[data-edit-toggle]').catch(() => {});
   await win.waitForTimeout(800);
   const boxTool = win.locator('button[aria-label="Add box"]').or(win.locator('[data-edit-tool="box"]'));

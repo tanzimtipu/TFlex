@@ -935,15 +935,14 @@ test('P29 C3 flush-page annotation coords + panel + tools palette', async () => 
     expect(tbx && tbx.text, 'floating text panel edits live on the flush page').toBe('FLUSH');
 
     // Tools palette still opens.
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
+    // Phase 36 migration: the All-tools palette is retired; the ContextPanel is
+    // the tools panel and is always present with a document open.
+    await win.waitForSelector('[data-context-panel]', { timeout: 8000 });
     const tools = await win.evaluate(() => ({
-      open: document.querySelector('.app-main')?.getAttribute('data-tools-open'),
-      palette: document.querySelectorAll('[data-tools-palette]').length,
+      contextPanel: document.querySelectorAll('[data-context-panel]').length,
     }));
     log('P29C3-tools', tools);
-    expect(tools.open, 'tools palette opens').toBe('true');
-    expect(tools.palette, 'tools palette mounted').toBe(1);
+    expect(tools.contextPanel, 'tools ContextPanel mounted').toBe(1);
   } finally {
     await hardClose(app, 'p29-c3');
   }

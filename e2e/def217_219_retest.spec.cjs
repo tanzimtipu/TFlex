@@ -10,7 +10,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { openSample, hardClose } = require('./lib/helpers.cjs');
+const { openSample, hardClose, runTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -41,12 +41,8 @@ async function setControl(selector, value) {
 }
 
 async function openWatermarkDialog() {
-  const palette = window.locator('[data-tools-palette]');
-  if (!(await palette.isVisible().catch(() => false))) {
-    await window.locator('[data-tools-toggle]').first().click();
-  }
-  await palette.waitFor({ state: 'visible', timeout: 15000 });
-  await window.locator('[data-tool-id="watermark"]').click();
+  // Phase 36 migration: All-tools palette retired; runTool opens Watermark's home.
+  await runTool(window, 'watermark');
   await window.locator('[data-watermark-dialog]').waitFor({ state: 'visible', timeout: 10000 });
   await window.waitForTimeout(400);
 }

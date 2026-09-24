@@ -180,7 +180,7 @@ test('E-b detached print window prints while moved outside the app window', asyn
   const chrome = await printPage.evaluate(() => ({
     printWindow: !!document.querySelector('[data-print-window]'),
     tabs: document.querySelectorAll('.tab[data-tab-id]').length,
-    toolbar: document.querySelectorAll('.toolbar').length,
+    toolbar: document.querySelectorAll('.action-dock').length,
     titlebar: document.querySelectorAll('.titlebar').length,
     printer: !!document.querySelector('[data-print-printer]'),
     preview: !!document.querySelector('[data-print-preview]'),

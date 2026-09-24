@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, gotoStage, runTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -27,11 +27,7 @@ test('BUG-11: palette Delete page only toasts, no current/custom/range dialog', 
   test.setTimeout(120000);
   await openSample('report.pdf');
 
-  // open tools palette
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  // click palette Delete page
-  await window.click('[data-tool-id="delete"]');
+  await runTool(window, 'delete');
   await window.waitForTimeout(600);
 
   const toastAfterPalette = await window.evaluate(() => document.querySelector('.toast, .toast-info, [class*="toast"]')?.textContent || null);
@@ -52,9 +48,7 @@ test('BUG-19: Add blank page adds more than one page / label / no render', async
   const before = await diag();
   console.log('BUG19 pageCount before:', before.pageCount);
 
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.click('[data-tool-id="insertPages"]');
+  await runTool(window, 'insertPages');
   await window.waitForSelector('[data-insert-pages-dialog]');
   await window.waitForTimeout(300);
 
@@ -97,9 +91,7 @@ test('BUG-12: DOCX export throws undefined inner error', async () => {
   });
 
   await openSample('report.pdf');
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.click('[data-tool-id="exportDocx"]');
+  await runTool(window, 'exportDocx');
   await window.waitForSelector('[data-docx-export-dialog]');
   await window.waitForTimeout(400);
   await snap('bug12-docx-dialog');
@@ -119,7 +111,9 @@ test('BUG-12: DOCX export throws undefined inner error', async () => {
 test('BUG-11b: toolbar Delete opens the current/custom/range dialog (control)', async () => {
   test.setTimeout(120000);
   await openSample('report.pdf');
-  await window.click('[data-toolbar-delete-pages]');
+  // Phase 36 (chunk 3) — Delete is the PAGES dock's `delete` verb.
+  await gotoStage(window, 1);
+  await window.click('[data-dock-verb="delete"]');
   await window.waitForTimeout(600);
   const dialogVisible = await window.locator('[data-delete-pages-dialog]').count();
   const modeCurrent = await window.locator('[data-delete-mode="current"]').count();
@@ -132,9 +126,7 @@ test('BUG-11b: toolbar Delete opens the current/custom/range dialog (control)', 
 test('BUG-17: Insert/Replace pages dialog closes when mouse leaves after highlighting text', async () => {
   test.setTimeout(120000);
   await openSample('report.pdf');
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.click('[data-tool-id="insertPages"]');
+  await runTool(window, 'insertPages');
   await window.waitForSelector('[data-insert-pages-dialog]');
   await window.waitForTimeout(300);
 
@@ -167,9 +159,7 @@ test('BUG-17: Insert/Replace pages dialog closes when mouse leaves after highlig
 test('BUG-17b: Insert pages dialog closes on plain outside click (backdrop)', async () => {
   test.setTimeout(120000);
   await openSample('report.pdf');
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.click('[data-tool-id="insertPages"]');
+  await runTool(window, 'insertPages');
   await window.waitForSelector('[data-insert-pages-dialog]');
   await window.waitForTimeout(300);
 

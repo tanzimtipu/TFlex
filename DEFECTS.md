@@ -5,6 +5,361 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-323: Phase 36 Multi Mode — each pane's `.canvas-overlay` is inset by the Inspector a SECOND time, so pane B's pills are pushed into the divider region and the shared Action Dock covers them
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app via the canonical helper and open `report.pdf` and `long.pdf`.
+2. Enter Multi Mode (title-bar toggle) and fill pane B so both panes have a document.
+3. Measure each pane's `[data-canvas-pills]` container and its `[data-page-pill]` / `[data-zoom-pill]`, plus `[data-action-dock]`.
+
+Expected: each pane's pills sit inside that pane's own canvas bounds (pane A at its left edge, pane B at its right edge), clear of the shared dock at the workspace bottom-centre.
+Actual: the panes are already laid out to the LEFT of the Inspector (pane B right = 1178 = stage right - 264), but each pane's `.canvas-overlay` ALSO carries `right: var(--tf-tools-inset)` (264px), so pane B's overlay is only 79px wide (835..914). Its right-anchored pills therefore extend LEFT from x=902 to x=684 — into the divider region — and the shared dock (x=372..851) covers them by 167px. In the screenshot pane B's page pill renders as a clipped "20 >" with its Previous control and part of the input hidden under the dock.
+
+Severity: MEDIUM — pane B's page pill loses its Previous control and part of its input in Multi Mode; page navigation is still possible via the pane strip and the dock, so it degrades rather than blocks.
+
+Screenshot: screenshots/phase36-final-multi.png (pane B's page pill reads "20 >" under the dock)
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_dock_diag.spec.cjs` -> `panes=[{pane:A,rect:44..607,main:44..387},{pane:B,rect:615..1178,main:835..1178}]`; `pills=[{pane:A,container:44..123,page:56..203,zoom:56..274},{pane:B,container:835..914,page:747..902,zoom:684..902}]`; `dock:372..851`. Pane B's container is 79px wide (835..914) because the 264px Inspector inset is applied to the pane overlay a second time; its pills (684..902) overlap the dock (372..851) by 167px.
+
+History:
+- qa: opened (Phase 36 final gate)
+- qa: CLOSED — retested independently on the rebuilt app (npm.cmd run build, exit 0) with my own probe `e2e/phase36_def322_323_retest.spec.cjs`. `npm.cmd run test:e2e -- e2e/phase36_def322_323_retest.spec.cjs --grep DEF-323` -> 1 passed; `[P36-DEF323] dock={"left":372,"right":850,...} panes=[A 44..607, B 615..1178] pills=[{pane:A,container:44..387,page:56..210,zoom:56..274,covered:[]},{pane:B,container:835..1178,page:1004..1166,zoom:948..1166,covered:[]}]`. Each pane's overlay is now its full pane width (343px, was pane B's 79px) because `.tab-stage[data-multi-mode='true'] .canvas-overlay { right: 0 }`; pane A's pills sit at A's left edge and pane B's at B's right edge, every control hit-testable, and both are outboard of the shared dock (A page ends 210 < dock 372; B zoom starts 948 > dock 850).
+
+## DEF-322: Phase 36 LAYOUT PASS — at <= ~900px window width the floating zoom pill overlaps the page pill, making the page pill's Next control unclickable
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app via the canonical helper and open `report.pdf` (the Inspector is open by default at 264px).
+2. Resize the window to 900x900 (`BrowserWindow.setSize`).
+3. Hit-test every `[data-page-pill]` control with `document.elementFromPoint` at its own centre.
+
+Expected: the two floating pills sit in the canvas's bottom corners and never overlap, so every page-pill control is the top element at its own centre (the P36-C3-N invariant).
+Actual: the page pill occupies x=276..430 and the zoom pill x=406..624, so they overlap by 24px. The page pill's `Next page` button (x=396..424) resolves to `DIV.canvas-pill canvas-pill-zoom`; Playwright cannot click it. The LAYOUT PASS inset the pills by the Inspector (264px), so at a 900px window the canvas host is only 372px wide while the two pills need 154+218+24 = 396px. At 1440/1100 the pills clear; the collision begins once the host is narrower than the pill pair.
+
+Severity: MEDIUM — a supported window width (the app minimum is 640px) loses the page pill's Next control; page navigation is still possible via the PAGES panel and the dock, so it degrades rather than blocks.
+
+Screenshot: screenshots/phase36-final-multi.png (the narrow-width case is measured, not shot)
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_layout_retest.spec.cjs --grep "page-pill clearance"` -> `[PILL] w=900 vw=900 dock={"left":357,"right":543,"top":773,"bottom":839} pill={"left":276,"right":430,"top":847,"bottom":888} covered=[{"label":"Next page","btn":{"left":396,"right":424,"top":851,"bottom":883},"topEl":"DIV.canvas-pill canvas-pill-zoom"}]`.
+- `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs --grep "P36-C3-N"` -> `[P36C3-N] w=900 ... covered=["page:Next page"]`.
+
+History:
+- qa: opened (Phase 36 final gate)
+- qa: CLOSED — retested independently on the rebuilt app (npm.cmd run build, exit 0) with my own probe `e2e/phase36_def322_323_retest.spec.cjs`. `npm.cmd run test:e2e -- e2e/phase36_def322_323_retest.spec.cjs --grep DEF-322` -> 1 passed. At 1440/1100/900/760/640 the two pills never intersect and `covered=[]` (every page/zoom control is the top element at its own centre): 1440 page 276..430 vs zoom 938..1164; 900 page 276..381 vs zoom 455..624 (compact, readout hidden); 640 page 276..381 vs zoom 195..364 raised to top 799 (stacked). The logged ladder confirms the container-query yield: `zoomRaised: 1440=false 1100=false 900=false 760=true 640=true` (full -> compact -> stacked keyed on `.canvas-overlay` width, not the window).
+
+## DEF-321: Phase 36 EDIT — the same TextPropertiesPanel is mounted TWICE and both copies are visible for one text-object selection
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app via the canonical helper and open `report.pdf`.
+2. `Ctrl+2` (EDIT), turn Edit content ON (EDIT dock), add a text box (EDIT dock "Add a text box"), and click the new box so it is the selected text object.
+3. Observe the workspace.
+
+Expected: the Phase-36 contract says the floating text panel "becomes an optional pop-out of the same Inspector component (one component, two mount points - never a second properties UI)" — one properties UI at a time, the pop-out opt-in.
+Actual: BOTH mount points render visible at once for the SAME selection: a floating `.text-props-panel` (248x723 at x=232) over the canvas AND the Inspector's `.inspector-text-panel .text-props-panel` (216x722 at x=1195), each with its own `[data-txt-text]` field. Two identical properties UIs are on screen and both edit the same object.
+
+Severity: MEDIUM — not data loss (both write the same target), but the duplicated UI is confusing and directly contradicts the "never a second properties UI" wording; two live text fields for one object can also fight over focus.
+
+Screenshot: screenshots/phase36-chunk6-inspector.png
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk456_gate.spec.cjs --grep P7b` -> `[P36C456-P7b] text selection=text ...` and `[P36C456-P7b] text-props panels: {"total":2,"inInspector":1,"visibleOutside":1,"rects":[{"w":248,"h":723,"x":232,"y":91},{"w":216,"h":722,"x":1195,"y":176}]}`.
+- `npm.cmd run test:e2e -- e2e/phase25_text_panel_float.spec.cjs` -> `C3` failed with a strict-mode violation: `locator('[data-txt-text]') resolved to 2 elements` (one floating, one inside `role=complementary Inspector`). Migrated that spec to `:visible`.
+
+History:
+- qa: opened (Phase 36 chunk 4/5/6 gate)
+- qa: CLOSED — retested on the rebuilt app (npm.cmd run build, exit 0). `npm.cmd run test:e2e -- e2e/phase36_layout_retest.spec.cjs --grep DEF-321` -> 1 passed; `[DEF321] text-props panels: {"total":1,"visible":1,"inInspector":1,"txtText":1,"rects":[{"w":216,"h":722,"x":1195}]}` — exactly ONE visible `.text-props-panel` and ONE `[data-txt-text]`, the Inspector's canonical mount. Unit `test/unit/renderer/def321_textPanelSingleInstance.test.tsx` green.
+
+## DEF-320: Phase 36 Stage Rail overlays the ContextPanel's left edge (clips its header, and a collapsed panel cannot be re-expanded)
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app via the canonical helper and open `report.pdf` (or `scanned.pdf`).
+2. Measure the 44px Stage Rail (`[data-stage-rail]`) and the promoted ContextPanel (`[data-context-panel]`): both are anchored at x=0.
+3. Collapse the panel from its header (`[data-rail-collapse]`, first click works), then try to expand it again by clicking the header control (now title "Expand panel").
+
+Expected: the 44px Stage Rail and the ContextPanel are adjacent, not stacked — the panel's header/content is fully visible and the header's collapse/expand control is clickable in both states.
+Actual: the Stage Rail is a fixed overlay at x=0..44 and the panel now occupies x=0..220, so the rail covers the panel's left 44px. When EXPANDED the header title is clipped (`titleClientW:44` vs `titleScrollW:57` for "Pages · 6") and the left padding/outline links fall under the rail. When COLLAPSED the panel header shrinks under the rail, so the "Expand panel" button is covered and cannot be clicked — the panel is stuck on the ruler strip for the rest of the session (the collapsed state also persists across restart).
+
+Severity: HIGH — the panel's own collapse/expand cycle is broken (a stated chunk-6 affordance: the collapse control re-homed to the panel header), and once collapsed the user cannot restore the thumbnail panel by mouse.
+
+Screenshot: screenshots/phase36-chunk2-panel.png (rail over the panel's left edge; title reads "...es"), screenshots/phase36-chunk6-inspector.png
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk456_gate.spec.cjs` -> `[P36C456-P10] geometry={"inset":"264px","inspectorW":264,"inspectorLeft":1178,"rail":{"left":0,"right":44,"w":44},"panel":{"left":0,"right":220,"w":220},"railPanelOverlapPx":44}`; `[P36C456-P8] expand-button hit-test: {"hit":false,"topEl":"path..."}` then Playwright: `<nav class="stage-rail" ...> subtree intercepts pointer events` on the `[data-rail-collapse]` (title "Expand panel") click.
+- `e2e/phase36_chunk3_mig.log` (P36-C3-K) -> clicking the panel `.thumb-scroller` at x=8 is intercepted by `<nav class="stage-rail" ...>`.
+- `e2e/phase36_chunk2_pages_parity.spec.cjs` (P36C2-B1) -> `header fit: {... "titleClientW":44,"titleScrollW":57,"titleTruncated":true,"titleText":"Pages · 6" ...}`.
+
+History:
+- qa: opened (Phase 36 chunk 4/5/6 gate)
+- qa: CLOSED — retested on the rebuilt app (npm.cmd run build, exit 0). `npm.cmd run test:e2e -- e2e/phase36_layout_retest.spec.cjs --grep DEF-320` -> 1 passed; `[DEF320] rail={"left":0,"right":44,"w":44} panel={"left":44,"right":264,"w":220} overlap=0`; collapse -> `{"w":48,"attr":"true"}` with control title "Expand panel", re-expand -> `{"w":220,"attr":null}`. The rail now claims a real 44px grid track beside the panel; the collapse/expand control is clickable both ways. Unit `test/unit/renderer/def320_stageRailTrack.test.tsx` green.
+
+## DEF-319: Phase 36 Inspector covers the floating zoom pill — zoom / fit / pan controls are unclickable
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app via the canonical helper and open `report.pdf`.
+2. The Inspector is open by default (a real document is open) at 264px on the right.
+3. Try to click the bottom-right floating zoom pill's `Zoom out` / `Zoom in` / `Fit width` / `Fit page` / pan controls (`[data-zoom-pill]`).
+
+Expected: the floating zoom pill's controls are hit-testable and act (they replace the retired toolbar's view controls).
+Actual: the zoom pill is anchored to the full stage's right edge (`zoomRect.left=1204,right=1430` at 1440px) while the Inspector's inset (`.document-scroller` margin-right: 264px) ends the visible page area at x=1176. Every zoom-pill control therefore sits under the Inspector: `elementFromPoint` at the Zoom-out/Zoom-in centre resolves to `DIV.glass-sidebar-body inspector-body`, and Playwright cannot click any of them.
+
+Severity: MEDIUM — the page pill still works and the View menu accelerators exist, but the whole floating zoom/fit/pan surface is mouse-unreachable in the default state.
+
+Screenshot: screenshots/phase36-chunk6-inspector.png
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk456_gate.spec.cjs` -> `[P36C456-P10] DEF-319 zoom-pill hit-test: {"zoomRect":{"left":1204,"right":1430},"topEl":"DIV.glass-sidebar-body inspector-body","hit":false}`; a direct `[data-zoom-pill] [aria-label="Zoom out"]` click times out with `<div class="glass-sidebar-body inspector-body"> ... intercepts pointer events`.
+- `e2e/phase36_chunk3_mig.log` (P36-C3-N/P36-C3-G) -> at 1440px `covered=["zoom:Zoom out","zoom:Zoom in","zoom:Fit width","zoom:Fit page","zoom:Pan mode"]` and `[P36C3-G] PAGES element at the Zoom-in point=glass-sidebar-body inspector-body`.
+
+History:
+- qa: opened (Phase 36 chunk 4/5/6 gate)
+- qa: CLOSED — retested on the rebuilt app (npm.cmd run build, exit 0). `npm.cmd run test:e2e -- e2e/phase36_layout_retest.spec.cjs --grep DEF-319` -> 1 passed; `[DEF319] w=1440 zoomRect={"left":938,"right":1164} covered=[]`, `w=1100 covered=[]`, `w=900 covered=[]`, `w=760 covered=[]`, `w=640 covered=[]`; Zoom in acted `147% -> 150%` and Fit width set `aria-pressed=true`. The pills now live in the Inspector-inset `.canvas-overlay`, so every zoom/fit/pan control is hit-testable at all five widths. (The separate page-pill-vs-zoom-pill collision at <=900px is DEF-322.) Unit `test/unit/renderer/def315_dockPillClearance.test.tsx` green.
+
+## DEF-318: Phase 36 REVIEW panel — the re-parented annotations list escapes its section and covers the Signatures action row
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app via the canonical helper and open `report.pdf`.
+2. `Ctrl+3` (REVIEW). The ContextPanel shows the Annotations section (the ONE annotations home) followed by the Signatures section.
+3. Try to click the Signatures section's "Manage signatures..." button (`[data-context-panel-action="manage-signatures"]`).
+
+Expected: the annotations list occupies its own section and the signatures action row below it is clickable.
+Actual: the wrapper `[data-context-panel-annotations]` has zero height (rect `{y:116,h:0}`) and the re-parented `AnnotationsPanel` is absolutely positioned, escaping the wrapper; its `.hint` span overlays the Signatures section (`signatures` y=125..204, button y=173..196) and `elementFromPoint` at the button centre resolves to `SPAN.hint`. Playwright cannot click "Manage signatures...". This is the same positioning-context class as DEF-310 (the outline escape).
+
+Severity: MEDIUM — the annotations list itself works (click/jump/edit/delete), but the Signatures section's primary action is unreachable while the annotations panel overlays it.
+
+Screenshot: screenshots/phase36-chunk6-review.png
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk456_gate.spec.cjs` -> `[P36C456-P8] signatures affordance hit-test: {"annotations":{"x":12,"y":116,"w":195,"h":0,"bottom":116},"signatures":{"x":0,"y":125,"w":219,"h":80,"bottom":204},"button":{"x":12,"y":173,"w":143,"h":23,"bottom":196},"topEl":"SPAN.hint","buttonHit":false}`; Playwright: `<span class="hint">Pick a tool from the toolbar... from <section aria-label="Annotations"...> subtree intercepts pointer events`.
+
+History:
+- qa: opened (Phase 36 chunk 4/5/6 gate)
+- qa: CLOSED — retested on the rebuilt app (npm.cmd run build, exit 0). `npm.cmd run test:e2e -- e2e/phase36_layout_retest.spec.cjs --grep DEF-318` -> 1 passed; `[DEF318] wrapper={"x":56,"y":116,"w":195,"h":699,"bottom":815} button={"x":56,"y":871,"w":143,"h":23,"bottom":895} topEl=SPAN. hit=true` and the click opened `.sig-manager`. The annotations wrapper now has real height (699px) and the Signatures action row is the top element at its own centre. Unit `test/unit/renderer/def318_annotationsContainment.test.tsx` green.
+
+## DEF-317: REVIEW Annotate flyout — the annotation dropdown menu is not anchored to its arrow (it overlaps the trigger)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app via the canonical helper and open `report.pdf`.
+2. `Ctrl+3` (REVIEW), click the dock's Annotate verb to open the `[data-annotation-flyout]`.
+3. Click the annotation toolbar's dropdown arrow `[data-ann-dropdown-toggle]`.
+
+Expected: the portaled `[data-ann-dropdown-menu]` is flush/joined with the arrow (DEF-248's joined-dropdown contract), fully on-screen, and does not cover the arrow — so re-clicking the arrow closes it.
+Actual: the menu is clamped to the viewport instead of flipping above the bottom-anchored trigger, so its bottom lands at the window bottom and it overlaps the arrow. Measured at 1440x900: `menuTop=391, menuBottom=900` vs `toggleTop=785, toggleBottom=817` — neither flush-below nor flush-above. Because the menu covers the toggle, the documented "re-click the arrow closes" path is blocked (the arrow's own menu row intercepts the click).
+
+Severity: MEDIUM — the menu is still usable (pick a row, or Escape), but it is detached from its trigger and the re-click-to-close affordance is dead. It is a regression of DEF-225/DEF-248 introduced when the annotation toolbar was re-parented from the top command row into the bottom-anchored flyout (chunk 3).
+
+Screenshot: n/a (DOM geometry is the evidence)
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase19_annotation_group.spec.cjs` -> `[p19-anchor] {"menuLeft":695,"menuRight":895,"menuW":200,"menuTop":391,"menuBottom":900,"menuH":509,"toggleTop":785,"toggleBottom":817,...}`; test `anchoring` fails on `flushBelow || flushAbove`; test `dropdown` fails re-clicking the toggle (the open menu intercepts the pointer).
+- `npm.cmd run test:e2e -- e2e/phase20_verify.spec.cjs` -> `C1 morph menus open+close` fails in light/dark/frosted on `ann flush below trigger (gap 0)`.
+
+History:
+- qa: opened (found while migrating the DEF-316 legacy specs to the flyout)
+- qa: CLOSED — retested on the built app (npm.cmd run build, exit 0). `npm.cmd run test:e2e -- e2e/phase19_annotation_group.spec.cjs --grep anchoring` -> `[p19-anchor] {"menuLeft":695,"menuRight":895,"menuW":200,"menuTop":276,"menuBottom":786,"menuH":509,"toggleLeft":867,"toggleRight":895,"toggleTop":785,"toggleBottom":817,"innerWidth":1440,"innerHeight":900}` — menu right edge flush with the toggle right edge (895==895) and flush ABOVE (menuBottom 785.7 vs toggleTop 785.7, sub-pixel), no intersection; narrow 820x700 re-place also flush above (menuBottom 585 == toggleTop 585). `--grep dropdown` -> 2 passed (re-click closes, aria-expanded false). `npm.cmd run test:e2e -- e2e/phase20_verify.spec.cjs --grep "C1 morph"` -> 3 passed (light/dark/frosted); ann open `rest=[696.33,279.67,200,509.35]` vs `trigger=[868.33,788.67,28,32]`, gapBelow=-541, anchorGap=0. `npm.cmd run test:unit -- test/unit/renderer/annotationToolGroup.test.tsx` -> 16 passed. Migrated `e2e/phase20_verify.spec.cjs:184` from a below-only flush assertion to `flushBelow || flushAbove` (mirroring phase19:440-442), and migrated the stale `menuLeft > innerWidth/2` proxy at `phase19_annotation_group.spec.cjs:443` to the real anchoring contract (`menuLeft ≈ toggleRight - menuW`) because the chunk-3 re-parent moved the toggle into the bottom flyout.
+- qa: full-file confirmation on the rebuilt app — `npm.cmd run test:e2e -- e2e/phase19_annotation_group.spec.cjs` -> 10 passed; `npm.cmd run test:e2e -- e2e/phase20_verify.spec.cjs` -> 12 passed. Status remains CLOSED.
+
+## DEF-316: Phase 36 chunk 3 retired the command row without migrating the legacy e2e specs — the full suite is red
+
+- Status: OPEN
+- Severity: HIGH
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0).
+2. `npm.cmd run test:e2e -- --grep-invert 'GATE2 installed|GATE3 zoom|GATE4 restore'` (the installed/release spec excluded).
+3. Observe the legacy specs (phase13-31, class_sweep, def* retests, probes, sweeps) fail while waiting for selectors the Phase-36 restructuring retired.
+
+Expected: Phase 36's own rule — "Test migration is part of every chunk: the e2e suite is updated in the SAME chunk as the surface it describes... No chunk closes while its specs are red."
+Actual: the uncommitted chunk-3 work removes the command row (`<Toolbar>` is no longer rendered by DocumentView; HEAD still rendered it at `DocumentView.tsx:3089`), but only the phase32-36 specs were migrated. 80 failures were observed by test 324/561 before the run hit the 70-minute cap; the dominant waits are `[data-toolbar-edit-toggle]` (7), `.toolbar` (2), `[data-toolbar-rotate-cw]`, plus `[data-rail-collapse]`, `[data-ruler-page]`, `[data-ann-dropdown-toggle]`, `[aria-label="Sign tool"]`. Every phase32-36 spec passes (only `no_op_sweep.spec.cjs` fails in that group).
+
+Severity: HIGH — breaks the phase's stated test-migration requirement and blocks the chunk-3 gate. Not a user-facing regression.
+
+Screenshot: n/a
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- --grep-invert 'GATE2 installed|GATE3 zoom|GATE4 restore'` -> 80 failure lines by `[324/561]`; run terminated at the 70-minute cap. Failure counts by spec: phase19_annotation_group 11, phase20_verify 8, phase27_fonts_spacing 6, class_sweep_def221_222 6, phase16_control_index 5, phase14_2_verify 4, phase21_text_panel 4, ...
+- The remaining 26 spec files (probe_frost_spacing onward, release spec excluded) -> `29 failed, 28 passed (17.8m)`, including `smoke.spec.cjs` (click timeout) and the `tools_badge_*` specs (the All-tools badge is retired). Total observed: >=109 red tests.
+- The waits are retired selectors: `[data-toolbar-edit-toggle]`, `.toolbar`, `[data-toolbar-rotate-cw]`, `[data-ann-dropdown-toggle]`, `[aria-label="Sign tool"]`, `[aria-label="Highlight"]`, `[aria-label="Flatten form fields"]`, `[data-rail-collapse]`, `[data-ruler-page]`.
+- `git show HEAD:src/renderer/components/DocumentView.tsx | rg '<Toolbar'` -> `3089: <Toolbar` (the row existed at HEAD, so these specs were green before the chunk-3 work).
+
+History:
+- qa: opened
+- qa: migration pass complete — every legacy spec that drove the retired single-mode command row was repointed to the new homes (Action Dock verbs, CanvasPills, REVIEW Annotate flyout, palette, thumbnail rail verbs) or deleted as a retired-surface diagnostic (12 diagnostic/probe specs removed). Grep is clean: no spec drives a retired row control in single mode (remaining `[data-toolbar-*]` references are the still-live Multi Mode shared toolbar, the chunk-3 retirement proof in `phase36_chunk3_dock_gate.spec.cjs`, and comments). Status stays OPEN: the migrated assertions pass except those blocked by DEF-317 (ann dropdown misplacement in the flyout) and a set of failures not caused by the row retirement (see the qa report — B22 textbox move, def_247_249 radii/reflow, def_145/146 text-space loss). Full-suite run deferred to the release gate (chunk 9).
+- qa: legacy-red triage complete (Phase 36 chunk 3). GREEN in isolation (already migrated by the earlier pass, no action): `def_247_249_retest` 3 passed, `regression_b_port -g B22` 1 passed, `def_145_verify_1.7.15` 1 passed, `def_146_verify_1.7.15` 1 passed. STALENESS (migrated/deleted): `frost_verify` — the theme-list assertion was already migrated to include `system`; the remaining red was the zoom check, whose palette-open state covered the new bottom-right CanvasPills zoom pill. Migrated the spec to close the palette before the zoom check and to arm Highlight through the REVIEW flyout (2 passed). `theme_ui_fixes` — the badge section asserted the superseded pill-era badge (label `All tools`, rest opacity 0.35, semi-transparent label chip); deleted the stale section (the current 36x100 badge is covered by `badge_size_slide` + `badge_chevron_gap`) and kept the dock "no All tools" regression check (1 passed). `tools_badge_arrow_verify` — asserted the superseded 72x200 arrow badge (`.tools-badge-content` no longer exists); deleted the spec (current badge covered by `badge_size_slide` + `badge_chevron_gap`). `phase13_qa_sweep` — the migrated rotate-ccw path used a plain thumb click, but the legacy rail only SELECTS on a modifier click, and the flyout's Escape had closed the annotation toolbar; migrated to a Shift-click and re-opened the flyout (4 passed). No defects filed. Remaining reds among the listed specs: none. Status left OPEN for the orchestrator.
+- qa: chunk 4/5/6 migration pass (the palette/badge retirement + the Inspector promotion). MIGRATED: `e2e/lib/helpers.cjs` (`toggleMultiModeViaPalette` -> the title-bar `[data-header-multi-mode]` toggle, which fixes ~15 Phase 32-36 call sites); `phase34_panel_inset` (the 264px Inspector invariant: equal pane shrink, page floor, no blank strip, single-mode inset); `phase36_chunk2_pages_parity` (dev flag retired — the panel IS the default; rail-parity comparisons dropped with their subject); `phase36_chunk3_dock_gate` (badge/palette -> Command Palette / title bar; DEF-319/DEF-320 carve-outs); `phase23_animations_switch` (palette-resize surface removed; palette -> Command Palette); `phase25_text_panel_float` (palette section removed; `:visible` text field for DEF-321); `phase20_verify` (palette -> Command Palette; palette-resize removed); `phase14_qa` (P14-C/D removed; E/F repointed to live surfaces); `phase16_focused` (header scope -> `.context-panel-header`); `phase30_rect_geometry_switch` (undo reached via the PAGES stage); `phase32_control_index`/`phase32_flicker`/`phase32_multi_mode`/`phase32_routing` (badge/palette -> title bar / Command Palette; 264px inset); `phase34_divider` (264px inset); `phase35_operator_repro`/`phase35_retest` (`.side-rail` -> `.context-panel`; zoom driven through the Command Palette's `zoomIn`). DELETED (subject deliberately retired, no other coverage lost): `badge_size_slide`, `badge_chevron_gap`, `tools_badge_redesign`, `retests/def284_285_retest_1250`, `retests/def284_285_operator_repro`, `retests/def256_retest`. RESULTS: Phase 30-36 suite 128 passed / 0 failed; migrated legacy specs green (`phase14_qa`+`phase20_verify` 15, `phase23` 4, `phase25` 4, `phase34_panel_inset`+`phase16_focused`+`def286_290` 14); `npm.cmd run verify` exit 0 (conventions clean, 198 files; typecheck clean). GREP STILL DIRTY: the four patterns (`data-tools-badge`/`data-tools-palette`/`data-tools-layout`/`tfStagePanel`) and the retired rail selectors remain in ~65 ACTIVE legacy specs outside the Phase 30-36 suites and the named migration set (e.g. `anim_audit`, `anim_probe`, `class_sweep_def221_222`, `crop_thumbs_port`, `def217_219_retest`, `def233_234_retest`, `frost_verify`, `full_retest`, `motion_verify`, `panel_speed_verify`, `phase13_qa_sweep`, `phase13_visual_verification`, `phase141_control_sweep`, `phase18_watermark*`, `phase20_baseline`, `phase28_29_verify`, `probe_*`, `qa_reference_compare`, `regression_b_port`, `sweep_*`, `verify/*`, and many `retests/*`). Status stays OPEN: the named specs and the Phase 30-36 suites are green, but the full-suite grep is not clean. Four defects filed from this gate: DEF-318 (REVIEW annotations overlay the Signatures row), DEF-319 (Inspector covers the zoom pill), DEF-320 (Stage Rail overlays the ContextPanel; collapsed panel cannot be re-expanded), DEF-321 (duplicate text-properties UI).
+
+- qa: final-gate re-run (Phase 36 chunk 7/8 + LAYOUT PASS). The full e2e suite (542 tests, installed/release excluded) is STILL RED: 356 passed / 161 failed / 2 skipped / 13 did not run across three shards (36.3m + 39.4m + 59.4m). The migration is far from complete — ~110 spec files still drive retired/moved surfaces (the four `data-tools-*` patterns, `tfStagePanel`, `[data-shared-toolbar]`, `[data-toolbar-*]`, `[data-unified-toolbar]`, `[data-rail-collapse]`, `[data-ruler-page]`, `[data-ann-dropdown-toggle]`, `[aria-label="Highlight"]`). The Phase 36 specs themselves are green except `phase36_chunk3_dock_gate` P36-C3-N (blocked by DEF-322). Status stays OPEN; the migration needs its own dispatch.
+
+## DEF-315: Phase 36 Action Dock still covers the zoom pill's Zoom out at narrow window widths (<= ~890px)
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0), launch the dev app via the canonical helper, open the bundled `report.pdf` (PAGES stage).
+2. Resize the window to 760px wide (the app's minimum is 640px; the Stage Rail is explicitly icon-only below 1100px).
+3. Look at the bottom band: the Action Dock wraps to two rows and its box reaches over the zoom pill's left edge; the "Zoom out" button is no longer the top element at its own centre.
+
+Expected: the dock floats in the bottom-centre clear of both pills at every supported width (DEF-313's fix claims the cap "can never cover the pills").
+Actual: the dock is centred on the CANVAS host, not on the free band between the pills, and its `max-width: max(220px, calc(100% - 380px))` floor (220px) exceeds that free band once the host is narrower than ~640px. Measured live (e2e/phase36_chunk3_dock_gate.spec.cjs P36-C3-N): at 760px the dock is `{left:380,right:600,w:220,h:65}` while the page pill is `{left:232,right:386}` and the zoom pill `{left:530,right:748}`; `elementFromPoint` at the "Zoom out" centre resolves outside the button (`covered=["zoom:Zoom out"]`). At 900px the boxes still overlap by 19px (dock right 681 vs zoom pill left 662) but no control centre is covered; 1100/1440 are clean.
+
+Severity: MEDIUM — a visible workspace-chrome control is unclickable at a supported window width. Mitigation: Ctrl+wheel zoom and the Ctrl+K palette still reach zoom-out, so the workflow is degraded, not blocked.
+
+Screenshot: n/a (DOM geometry + elementFromPoint probe is the evidence)
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs -g P36-C3-N` -> `[P36C3-N] w=760 ... dock={"left":380,"right":600,...,"w":220,"h":65} page={"left":232,"right":386,"w":154} zoom={"left":530,"right":748,"w":218} clipped=[] outsideHost=[] covered=["zoom:Zoom out"] hitsPage=true hitsZoom=true`.
+
+History:
+- qa: opened (found during the DEF-313 retest width sweep)
+
+## DEF-314: Phase 36 EDIT dock's primary is disabled exactly when Edit mode is OFF — Edit content unreachable in single mode
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0), launch the dev app via the canonical helper, open the bundled `report.pdf`.
+2. Press `Ctrl+2` (EDIT stage) and inspect the Action Dock.
+3. Observe `[data-dock-verb="editMode"]` ("Edit content", the EDIT stage's primary) is DISABLED, and so are `editToolOff` / `editText` / `editTextBox` / `editImage` / `editDefaultFont`.
+4. Look for any other single-mode entry point: the command row is retired, the Tools palette wires no `editMode` entry, the registry gives it `shortcut: ''`, and the menu accelerator table (App.tsx ~6990-7025) has no edit entry. None exists — Edit mode can never be turned ON.
+
+Expected: the EDIT stage's primary verb enters Edit content (it is the relocation target for the retired row's `[data-toolbar-edit-toggle]`), i.e. it is enabled whenever a document is open and toggles Edit mode.
+Actual: the dock's availability gate in DocumentView makes every `editTool*` verb AND `editModeToggle` return `editModeOpen` (src/renderer/components/DocumentView.tsx:3066-3068), so the verb is enabled only once Edit mode is ALREADY on. With Edit mode off (the default) the entire EDIT stage is inert; there is no other route, so Edit content cannot be entered at all in single mode.
+Measured live (e2e/phase36_chunk3_dock_gate.spec.cjs P36-C3-J): `EDIT dock: editMode disabled=true editText disabled=true`; `unreachable-from-new-home=["edit -> EDIT dock"]`.
+
+Severity: HIGH — a stated Phase-36 requirement (criterion 1: every tool reachable in <= 2 interactions; the locked relocation "edit -> the EDIT dock") is broken and the whole Edit-content workflow is unreachable in single mode.
+
+Screenshot: n/a (DOM/enabled-state probe is the evidence)
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs -g P36-C3-J` -> `[P36C3-J] EDIT dock: editMode disabled=true editText disabled=true`, `[P36C3-J] unreachable-from-new-home=["edit -> EDIT dock"]`.
+- `[data-dock-verb="editMode"]` = `{action:'editModeToggle', availability:'document'}`; DocumentView gate returns `editModeOpen` for `editModeToggle`.
+
+History:
+- qa: opened
+- qa: CLOSED — retest PASS. `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs -g P36-C3-Q` -> `[P36C3-Q] OFF: editMode disabled=false aria-pressed=null editToolbar=0 editTextDisabled=true`; `ON: aria-pressed=true editToolbar=1 editTextDisabled=false`; `OFF again: aria-pressed=null editToolbar=0`. `-g P36-C3-J` -> `EDIT dock: editMode disabled=false editText disabled=true`, `unreachable-from-new-home=[]`. The verb is enabled while Edit mode is OFF, toggles it ON (the edit toolbar mounts), shows `aria-pressed=true`, and toggles it OFF again.
+
+## DEF-313: Phase 36 PAGES Action Dock spans the full canvas width and covers BOTH floating pills — page/zoom controls unclickable in the default stage
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0), launch the dev app via the canonical helper, open the bundled `report.pdf` (the PAGES stage is active by default).
+2. Try to click the floating page pill's `[aria-label="Next page"]` (bottom-left) or any zoom-pill control (bottom-right).
+3. Observe the click never lands: the Action Dock (`[data-action-dock]`) spans the whole canvas width at the SAME bottom band and intercepts the pointer.
+
+Expected: the dock floats at the bottom-CENTRE and the page/zoom pills sit cleanly in the bottom corners, both clickable (they are the retired row's relocated view controls).
+Actual: the PAGES stage renders all 15 registry verbs in one row that is nearly the full canvas width (the dock's `max-width: calc(100% - 24px)` row), so it overlaps both pills; the single row also overflows its own container and clips the trailing verb ("Drag page") at the right edge instead of wrapping. Measured live (e2e/phase36_chunk3_dock_gate.spec.cjs P36-C3-G): dock `{left:232,right:1430,top:843,bottom:891,w:1198,h:48}`, page pill `{left:232,right:386,top:850,bottom:891}`, zoom pill `{left:1204,right:1430,top:850,bottom:891}` — `dockHitsPage=true`, `dockHitsZoom=true`, and the element at the Next-page point is `action-dock-label` (a dock verb). The screenshot `screenshots/phase36-chunk3-dock.png` shows "Merge PDFs" painted over the page pill and the last verb clipped at the right edge. In REVIEW (9 verbs) the dock is narrow and the pills are clean (see `screenshots/phase36-chunk3-stage-review.png`).
+
+Severity: HIGH — in the DEFAULT (PAGES) stage the relocated page-navigation and zoom/fit/pan controls are unusable, blocking a supported workflow and the "floating pills replace the toolbar's view controls" requirement.
+
+Screenshot: screenshots/phase36-chunk3-dock.png (dock covering the page pill at the bottom-left)
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs -g P36-C3-G` -> `[P36C3-G] PAGES dock/pill geometry={"dock":{...,"left":232,"right":1430,"w":1198,"h":48},"page":{...},"zoom":{...},"dockHitsPage":true,"dockHitsZoom":true}`; `element at the Next-page point in PAGES = action-dock-label`.
+- P36-C3-G exercises the pill handlers from the DELIVER stage (narrow dock) and they work there.
+
+History:
+- qa: opened
+- qa: CLOSED — retest PASS on the assigned criteria. `-g P36-C3-A` -> PAGES dock verbs are exactly `["rotate","extract","insertPages","replacePages","split","delete"]` (the curated six). `-g P36-C3-G` -> `dockHitsPage=false dockHitsZoom=false`, `element at the Next-page point=Next page`, `element at the Zoom-in point=Zoom in`, and a real PAGES-stage Next-page click advanced the page 1->2. `-g P36-C3-N` -> `clipped=[] outsideHost=[]` at 1440/1100/900/760. `-g P36-C3-R` -> the leavers act from their new homes (merge via the panel header, rotate-ccw + renumber via the thumbnail right-click menu, watermark + createFromImages via the palette). A NARROW-WIDTH residue (the dock covering the zoom pill's Zoom out at <= ~890px) is a distinct mechanism and is filed as DEF-315.
+
+## DEF-312: Phase 36 dock Pin/Unpin menu is positioned off-viewport (fixed-position inside the transformed dock) — pinning is unusable
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0), launch the dev app via the canonical helper, open the bundled `report.pdf`.
+2. Right-click any Action Dock verb (e.g. `[data-dock-verb="optimize"]` in DELIVER, or `[data-dock-verb="merge"]` in PAGES).
+3. Look at where the Pin/Unpin menu appears. It renders far below the window; the user never sees it, so "Pin to dock" cannot be clicked.
+
+Expected: the right-click Pin/Unpin menu appears next to the pointer (clamped into the viewport), so a verb can be pinned/unpinned.
+Actual: `.action-dock-menu` is `position: fixed` (styles.css) but is a descendant of `.action-dock`, which carries `transform: translateX(-50%)`. A transformed ancestor becomes the containing block for fixed-position descendants, so the viewport coordinates computed by `clampDockMenu` are applied relative to the dock instead of the viewport and the menu lands ~700px below the window. Measured live (e2e/phase36_chunk3_dock_gate.spec.cjs P36-C3-C): menu rect `{"left":1074,"top":1663,"right":1222,"bottom":1728,"vw":1442,"vh":903}` (and `top:1624` for every later open) — `insideViewport=false` on every open; Playwright reports "element is outside of the viewport". The pin STATE machine and the `dockPins` settings round-trip themselves work (verified by invoking the menu items directly): 4 pins show after the divider in a stage that does not already own them, the 5th Pin is disabled with "Dock is full (max 4 pins)", and a pin survives a relaunch.
+Screenshot: n/a (the menu is off-screen; the DOM rect + Playwright's viewport refusal are the evidence)
+
+Severity: HIGH — the pins feature (Phase-36 criterion 7, "pins survive a restart") cannot be driven from the UI at all.
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs -g P36-C3-C` -> `[P36C3-C] pin menu rect={"left":1074,"top":1663,...,"vh":903} insideViewport=false` (repeated on every open).
+- Before the probe was added, `locator('[data-dock-menu-item="pin"]').click()` timed out with "element is outside of the viewport".
+
+History:
+- qa: opened
+- qa: CLOSED — retest PASS. `-g P36-C3-C` drives the pin through the REAL UI (right-click a dock verb -> click "Pin to dock"); every menu open is inside the viewport (`optimize {left:625,top:819,right:773,bottom:884,vw:1442,vh:903} insideViewport=true`, likewise recognizeText/stamp/audit/rotate/stamp). 4 pins show after ONE divider in PAGES (`pinned=["optimize","recognizeText","stamp","audit"]`), the 5th Pin is disabled with `title="Dock is full (max 4 pins)"`, and unpin removes it. `-g P36-C3-D` -> `persisted dockPins=["recognizeText"]` then `after relaunch (PAGES) pinned=["recognizeText"]` (divider=1).
+
+## DEF-311: Phase 36 disabled dock verbs show the tool DESCRIPTION as the tooltip, not the availability reason
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 36
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0), launch the dev app via the canonical helper, open the bundled `report.pdf`.
+2. Press `Ctrl+2` (EDIT stage); `[data-dock-verb="ocrSuspects"]` is disabled (availability `ocr-run`).
+3. Hover it and read the tooltip.
+
+Expected: the disabled verb's tooltip explains WHY it is unavailable (the pure dock model defines `DOCK_AVAILABILITY_REASON['ocr-run']` = "Run Recognize text first", which `ActionDock` uses as its default when the host supplies no reason).
+Actual: the tooltip is the tool's DESCRIPTION — "Browse low-confidence words from the last OCR run." DocumentView always supplies `disabledReasonFor`, returning `entry.description` for every disabled verb (src/renderer/components/DocumentView.tsx:3078-3082), so the availability copy is never shown.
+
+Severity: LOW — cosmetic/UX copy; the verb is correctly disabled and a tooltip is present, but it does not state the precondition.
+
+Screenshot: n/a
+
+Evidence / command output:
+- `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs -g P36-C3-A` -> `[P36C3-A] ocrSuspects disabled title="Browse low-confidence words from the last OCR run."` (expected "Run Recognize text first").
+
+History:
+- qa: opened
+- qa: CLOSED — retest PASS. `-g P36-C3-A` -> `[P36C3-A] editText disabled title="Turn on Edit content first"` — the availability reason, not the description ("Click a text run to replace it."). The probe was re-derived from `ocrSuspects` (now a palette entry, not a dock verb) to the edit layer's `editText`, which is disabled while Edit mode is OFF.
+
 ## DEF-310: Phase 36 PAGES ContextPanel outline escapes its section and overlays the whole panel body
 
 - Status: CLOSED

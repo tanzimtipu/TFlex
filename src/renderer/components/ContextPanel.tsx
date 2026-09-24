@@ -1,13 +1,9 @@
-// Phase 36 (chunk 2) — the PAGES stage's ContextPanel.
+// Phase 36 (chunk 2 + chunk 6) — the STAGES ContextPanel.
 //
 // The STAGES information architecture replaces the rail's tab strip with one
-// stage-owned panel per stage. This chunk builds ONLY the PAGES panel, and it
-// is built ALONGSIDE the existing SideRail (behind the temporary dev flag
-// documented in `state/devFlags.ts`) so the two surfaces can be compared
-// side by side before the rail is retired in a later chunk. Nothing here
-// retires, rewrites or alters the rail: the thumbnail stack, the outline
-// tree, the drag system, the selection and every engine op are the SAME
-// components/code paths the rail already uses.
+// stage-owned panel per stage. Chunk 2 built the PAGES panel behind a dev flag;
+// chunk 6 adds the other three stages and PROMOTES the panel to the real left
+// slot (single mode), retiring the flag.
 //
 // RE-PARENTING (not reimplementation):
 //   - ThumbnailRail (SideRail.tsx) owns the live-rendered previews, the
@@ -18,24 +14,62 @@
 //     verbs and the right-click hook) that render only when provided.
 //   - OutlinePanel (SideRail.tsx) is the same tree, re-parented below the
 //     thumbnails in a collapsible section.
+//   - OcrSuspectsPanel / TextPropertiesPanel / AnnotationsPanel are NOT
+//     re-implemented here. The EDIT panel shows the recognition SUMMARY and
+//     the EXISTING batch-OCR entry; the annotations LIST has exactly ONE home
+//     (the Inspector's REVIEW document view) and this panel shows only a
+//     read-only reference to it (see the REVIEW section note).
 //
 // The panel owns exactly one piece of state of its own: which page's
-// right-click menu is open and where. Page state, selection and engine ops
-// all belong to the host (DocumentView/App) and are threaded through.
+// right-click menu is open and where, plus the outline section's own collapse
+// toggle. Page state, selection, edit state, signatures and engine ops all
+// belong to the host (DocumentView/App) and are threaded through.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
-import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
-import { OutlinePanel, ThumbnailRail } from './SideRail';
+import {
+  ChevronDown,
+  ChevronRight,
+  FilePlus2,
+  FileSignature,
+  Image as ImageIcon,
+  PanelLeftClose,
+  PanelRightOpen,
+  Plus,
+  ScanText,
+  Type,
+} from 'lucide-react';
+import { OutlinePanel, RulerStrip, ThumbnailRail } from './SideRail';
 import type { ThumbContextMenuHandler, ThumbVerbs } from './SideRail';
 import { GlassSidebarBody, GlassSidebarHeader } from './GlassSidebar';
+import { AnnotationsPanel } from '../annotations/AnnotationsPanel';
+import type { Annotation, AnnotationPatch } from '../annotations/model';
 import { buildPageLabelMap } from './pageGeometry';
+import { formatBytes } from '../utils/formatBytes';
 import type { EngineState } from '../engine/types';
 import type { OutlineNode } from '../pdf/pdfjs';
 import type { PageDropOp } from '../state/pageDrag';
+import type { Stage } from '../state/stages';
+import type { SavedSignature } from '../../shared/types';
+
+/** A single item in the EDIT stage's content outline: the text boxes and
+ *  image placements the app already models for the CURRENT page. Built by the
+ *  host from the edit model — the panel never reads the model itself. */
+export interface ContextPanelEditContent {
+  id: string;
+  kind: 'text' | 'image';
+  label: string;
+  /** 1-based visible page the object lives on. */
+  page: number;
+  selected: boolean;
+}
 
 export interface ContextPanelProps {
+  /** The stage this panel belongs to. Defaults to PAGES so every pre-chunk-6
+   *  mount (and the document-less harnesses) keep today's behaviour. */
+  stage?: Stage;
+
   doc: PDFDocumentProxy;
   /** The 1-based VISIBLE page the canvas is showing (scroll sync). The LIVE
    *  page count comes from `engineState.pageCount` — one source of truth, so
@@ -61,7 +95,7 @@ export interface ContextPanelProps {
   onError?: (message: string) => void;
   /** Header — the EXISTING merge entry (the CommandBar's handler). */
   onMerge?: () => void;
-/** Right-click menu verbs — the host's EXISTING surfaces for each. Each
+  /** Right-click menu verbs — the host's EXISTING surfaces for each. Each
    *  receives the VISIBLE 1-based page the gesture landed on. */
   onExtractPages?: (page: number) => void;
   /** "Insert blank after" — an IMMEDIATE action: the host inserts a blank
@@ -79,9 +113,63 @@ export interface ContextPanelProps {
    *  Mode strips thread it. `null` in single mode, where ThumbnailRail keeps
    *  its pre-Phase-32 intra-document drag semantics byte-for-byte. */
   crossDoc?: { tabId: string; onDrop: (op: PageDropOp) => void } | null;
-  /** Dev-mount marker: renders the unmistakable DEV badge on the header.
-   *  Only the `?tfStagePanel=1` scaffolding sets it. */
-  dev?: boolean;
+  /** Phase 36 (chunk 3a) — the thumbnail MULTI-SELECT, threaded straight to
+   *  the re-parented ThumbnailRail. The SET is host-owned (DocumentView). */
+  pageSelection?: readonly number[] | null;
+  onPageSelectionChange?: ((pages: number[]) => void) | null;
+
+  // --- Header collapse (the rail's collapse affordance, re-homed) --------
+  /** Phase 16 — true while the panel is collapsed to the ruler strip. The
+   *  host (App) owns the value; the panel only renders it. */
+  collapsed?: boolean;
+  /** Phase 16 — asks the host to toggle the collapsed state. */
+  onToggleCollapsed?: () => void;
+
+  // --- EDIT -------------------------------------------------------------
+  /** The current page's modelled text boxes + image placements (built by the
+   *  host from the edit model). `null`/absent renders the empty state. */
+  editContent?: readonly ContextPanelEditContent[] | null;
+  /** Select one edit object (the host's existing edit-model selection). */
+  onSelectEditContent?: ((id: string, kind: 'text' | 'image') => void) | null;
+  /** The OCR status line for the active document ("Recognized" / null). */
+  ocrStatus?: string | null;
+  /** True once at least one OCR run has completed on the active doc. */
+  ocrHasRun?: boolean;
+  /** The low-confidence suspect count from the last run (0 when none). */
+  ocrSuspectCount?: number;
+  /** The EXISTING batch-OCR entry (App's `onOcrClick`). */
+  onRecognizeText?: () => void;
+  /** The EXISTING suspects-panel entry (App's own gated open handler). */
+  onOpenOcrSuspects?: () => void;
+
+  // --- REVIEW -----------------------------------------------------------
+  /** The active document's annotations. The REVIEW body re-parents the SAME
+   *  AnnotationsPanel the rail's annotations tab rendered — exactly ONE home
+   *  for the list (the Inspector shows only a reference to it). */
+  annotations?: readonly Annotation[];
+  /** Jump to (and flash) an annotation (the host's existing handler). */
+  onJumpToAnnotation?: ((page: number, id: string) => void) | null;
+  onEditAnnotation?: ((id: string, patch: AnnotationPatch) => void) | null;
+  onDeleteAnnotation?: ((id: string) => void) | null;
+  /** The saved signatures mirror (App state). */
+  savedSignatures?: readonly SavedSignature[];
+  /** The currently armed signature id, if any (App state). */
+  armedSignatureId?: string | null;
+  /** Arm a saved signature for placement (the EXISTING manager-apply path). */
+  onSignSignature?: ((signatureId: string) => void) | null;
+  /** Open the EXISTING signature manager modal. */
+  onManageSignatures?: (() => void) | null;
+
+  // --- DELIVER ----------------------------------------------------------
+  /** The active document's file size in bytes. */
+  fileSize?: number | null;
+  /** The active document's form-field count (0 = none or already flattened;
+   *  the app has no separate "flattened" flag — see the pre-flight note). */
+  formFieldCount?: number;
+  /** The EXISTING Optimize entry (the document-size disclosure's action). */
+  onOptimize?: () => void;
+  /** The EXISTING "create from images" dialog entry. */
+  onCreateFromImages?: (() => void) | null;
 }
 
 /** Fallback menu box used when the platform reports no layout (jsdom, or the
@@ -146,13 +234,36 @@ interface MenuState {
   y: number;
 }
 
+/** The header title per stage. The PAGES panel carries the live page count;
+ *  the other stages are single words. */
+export function contextPanelTitle(stage: Stage, pageCount: number): string {
+  switch (stage) {
+    case 'pages':
+      return `Pages \u00b7 ${pageCount}`;
+    case 'edit':
+      return 'Edit';
+    case 'review':
+      return 'Review';
+    case 'deliver':
+      return 'Deliver';
+  }
+}
+
 /**
- * The PAGES stage panel. Header (`Pages · N` + Combine), then the SAME live
- * thumbnail stack the rail renders, then the collapsible outline section.
+ * The STAGES left panel. One component, four stage bodies:
+ *   PAGES   — the header's Combine entry, the SAME live thumbnail stack the
+ *             rail renders, then the collapsible outline section.
+ *   EDIT    — the current page's modelled content outline + the Recognition
+ *             section (OCR status, the suspects count, the batch entry).
+ *   REVIEW  — the saved-signatures section (arm / manage) + a read-only
+ *             annotations reference (the list itself is the Inspector's).
+ *   DELIVER — the pre-flight checklist (OCR / file size + optimize / forms)
+ *             + the "New document: From images…" entry.
  * All document state is owned by the host; this component only routes it.
  */
 export function ContextPanel(props: ContextPanelProps): ReactElement {
   const {
+    stage = 'pages',
     doc,
     currentPage,
     defaultWidthPt,
@@ -169,13 +280,35 @@ export function ContextPanel(props: ContextPanelProps): ReactElement {
     outline,
     onError,
     onMerge,
-onExtractPages,
+    onExtractPages,
     onInsertBlank,
     onReplacePages,
     onRenumberPages,
     onDeletePage,
     crossDoc = null,
-    dev = false,
+    pageSelection = null,
+    onPageSelectionChange = null,
+    collapsed = false,
+    onToggleCollapsed,
+    editContent = null,
+    onSelectEditContent = null,
+    ocrStatus = null,
+    ocrHasRun = false,
+    ocrSuspectCount = 0,
+    onRecognizeText,
+    onOpenOcrSuspects,
+    annotations = [],
+    onJumpToAnnotation = null,
+    onEditAnnotation = null,
+    onDeleteAnnotation = null,
+    savedSignatures = [],
+    armedSignatureId = null,
+    onSignSignature = null,
+    onManageSignatures = null,
+    fileSize = null,
+    formFieldCount = 0,
+    onOptimize,
+    onCreateFromImages = null,
   } = props;
 
   const pageCount = engineState.pageCount;
@@ -227,7 +360,7 @@ onExtractPages,
             onExtract: (page: number): void => onExtractPages?.(page),
             onInsertBlank: (page: number): void => onInsertBlank?.(page),
             onReplace: (page: number): void => onReplacePages?.(page),
-onRenumber: (page: number): void => onRenumberPages?.(page),
+            onRenumber: (page: number): void => onRenumberPages?.(page),
             onDeletePage: (page: number): void => onDeletePage?.(page),
           }),
     [menu, onOp, onExtractPages, onInsertBlank, onReplacePages, onRenumberPages, onDeletePage],
@@ -277,82 +410,331 @@ onRenumber: (page: number): void => onRenumberPages?.(page),
     );
   }, [menu]);
 
+  // The collapse control is the RAIL's affordance, re-homed to this header.
+  // The `data-rail-collapse` hook and the two titles are unchanged, so the
+  // existing e2e contract keeps resolving.
+  const collapseButton = (
+    <button
+      type="button"
+      className="rail-tab rail-tab-collapse context-panel-collapse"
+      onClick={(): void => onToggleCollapsed?.()}
+      title={collapsed ? 'Expand panel' : 'Collapse panel'}
+      aria-label={collapsed ? 'Expand panel' : 'Collapse panel'}
+      data-rail-collapse
+    >
+      {collapsed ? <PanelRightOpen size={16} aria-hidden /> : <PanelLeftClose size={16} aria-hidden />}
+    </button>
+  );
+
+  // ---- PAGES -----------------------------------------------------------
+  const renderPages = (): ReactElement => (
+    <>
+      <div className="context-panel-thumbs" data-context-panel-thumbs>
+        <ThumbnailRail
+          doc={doc}
+          pageCount={pageCount}
+          currentPage={currentPage}
+          aspectRatio={defaultHeightPt / defaultWidthPt}
+          pageSizes={pageSizes}
+          rotations={engineState.rotations}
+          visibleToSource={visibleToSource}
+          proxyVisibleOrder={proxyVisibleOrder}
+          pageLabelMap={pageLabelMap}
+          canUndo={canUndo}
+          onOp={onOp}
+          onDelete={onDelete}
+          onReorder={onReorder}
+          onUndo={onUndo}
+          onJump={onJump}
+          crossDoc={crossDoc}
+          thumbVerbs={verbs}
+          onThumbContextMenu={openMenu}
+          pageSelection={pageSelection}
+          onPageSelectionChange={onPageSelectionChange}
+        />
+      </div>
+      {outline !== null && (
+        <section className="context-panel-outline" data-context-panel-outline aria-label="Outline">
+          <button
+            type="button"
+            className="context-panel-section-toggle"
+            onClick={(): void => setOutlineOpen((v) => !v)}
+            aria-expanded={outlineOpen}
+            aria-controls="context-panel-outline-body"
+            data-outline-toggle
+          >
+            {outlineOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
+            <span>Outline</span>
+          </button>
+          {outlineOpen && (
+            <div className="context-panel-outline-body" id="context-panel-outline-body" data-context-panel-outline-body>
+              <OutlinePanel doc={doc} outline={outline} onJump={onJump} onError={onError} />
+            </div>
+          )}
+        </section>
+      )}
+    </>
+  );
+
+  // ---- EDIT ------------------------------------------------------------
+  // The content outline of the CURRENT page: the text boxes + image
+  // placements the app already models. The host builds the items from the
+  // edit model; selecting one routes to the host's existing edit selection.
+  const pageEditContent = editContent === null ? [] : editContent.filter((i) => i.page === currentPage);
+  const renderEdit = (): ReactElement => (
+    <>
+      <section className="context-panel-section" data-context-panel-section="content" aria-label="Content">
+        <div className="context-panel-section-title">Content</div>
+        {pageEditContent.length === 0 ? (
+          <p className="context-panel-empty" data-edit-content-empty>
+            No editable content on this page.
+          </p>
+        ) : (
+          <div className="context-panel-list" data-edit-content-list>
+            {pageEditContent.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={
+                  item.selected
+                    ? 'context-panel-item context-panel-item-selected'
+                    : 'context-panel-item'
+                }
+                aria-pressed={item.selected}
+                data-edit-content-item={item.id}
+                data-edit-content-kind={item.kind}
+                onClick={(): void => onSelectEditContent?.(item.id, item.kind)}
+              >
+                {item.kind === 'image' ? (
+                  <ImageIcon size={14} aria-hidden />
+                ) : (
+                  <Type size={14} aria-hidden />
+                )}
+                <span className="context-panel-item-label">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+      <section className="context-panel-section" data-context-panel-section="recognition" aria-label="Recognition">
+        <div className="context-panel-section-title">Recognition</div>
+        <div className="context-panel-row" data-ocr-status-row>
+          <span className="context-panel-row-label">OCR status</span>
+          <span className="context-panel-row-value" data-ocr-status>
+            {ocrStatus ?? 'Not run'}
+          </span>
+        </div>
+        <div className="context-panel-row" data-ocr-suspects-row>
+          <span className="context-panel-row-label">Suspects</span>
+          <span className="context-panel-row-value">
+            <span
+              className={
+                ocrHasRun && ocrSuspectCount > 0
+                  ? 'context-panel-badge context-panel-badge-alert'
+                  : 'context-panel-badge'
+              }
+              data-ocr-suspect-count
+            >
+              {ocrHasRun ? ocrSuspectCount : '\u2014'}
+            </span>
+          </span>
+        </div>
+        <div className="context-panel-actions-row">
+          <button
+            type="button"
+            className="context-panel-action"
+            data-context-panel-action="recognize"
+            onClick={(): void => onRecognizeText?.()}
+            disabled={onRecognizeText === undefined}
+          >
+            <ScanText size={13} aria-hidden />
+            <span>Recognize text…</span>
+          </button>
+          <button
+            type="button"
+            className="context-panel-action"
+            data-context-panel-action="suspects"
+            onClick={(): void => onOpenOcrSuspects?.()}
+            disabled={onOpenOcrSuspects === undefined}
+          >
+            <span>Review suspects</span>
+          </button>
+        </div>
+      </section>
+    </>
+  );
+
+  // ---- REVIEW ----------------------------------------------------------
+  // The annotations LIST has exactly ONE home: this panel's REVIEW body — it
+  // re-parents the SAME AnnotationsPanel the rail's annotations tab rendered
+  // (the rail leaves the single-mode slot with this chunk). The Inspector's
+  // REVIEW section shows only a read-only reference to the count, never a
+  // second copy of the list. The saved-signatures section follows.
+  const renderReview = (): ReactElement => (
+    <>
+      <section className="context-panel-section" data-context-panel-section="annotations" aria-label="Annotations">
+        <div className="context-panel-section-title">Annotations</div>
+        <div className="context-panel-annotations" data-context-panel-annotations>
+          <AnnotationsPanel
+            annotations={[...annotations]}
+            onJumpTo={(page, id): void => onJumpToAnnotation?.(page, id)}
+            onEdit={(id, patch): void => onEditAnnotation?.(id, patch)}
+            onDelete={(id): void => onDeleteAnnotation?.(id)}
+          />
+        </div>
+      </section>
+      <section className="context-panel-section" data-context-panel-section="signatures" aria-label="Signatures">
+        <div className="context-panel-section-title">Signatures</div>
+        {savedSignatures.length === 0 ? (
+          <p className="context-panel-empty" data-signatures-empty>
+            No saved signatures yet.
+          </p>
+        ) : (
+          <div className="context-panel-list" data-saved-signatures-list>
+            {savedSignatures.map((sig) => {
+              const armed = armedSignatureId === sig.id;
+              return (
+                <button
+                  key={sig.id}
+                  type="button"
+                  className={
+                    armed
+                      ? 'context-panel-item context-panel-item-selected'
+                      : 'context-panel-item'
+                  }
+                  aria-pressed={armed}
+                  data-saved-signature={sig.id}
+                  onClick={(): void => onSignSignature?.(sig.id)}
+                  disabled={onSignSignature === null}
+                  title={armed ? 'Placing this signature' : 'Click a page to place this signature'}
+                >
+                  <FileSignature size={14} aria-hidden />
+                  <span className="context-panel-item-label">{sig.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        <div className="context-panel-actions-row">
+          <button
+            type="button"
+            className="context-panel-action"
+            data-context-panel-action="manage-signatures"
+            onClick={(): void => onManageSignatures?.()}
+            disabled={onManageSignatures === null}
+          >
+            <FileSignature size={13} aria-hidden />
+            <span>Manage signatures…</span>
+          </button>
+        </div>
+      </section>
+    </>
+  );
+
+  // ---- DELIVER ---------------------------------------------------------
+  // The pre-flight checklist READS the existing state only: the OCR status
+  // (the same flag the EDIT panel shows), the file size (the session's
+  // byte count, with the Optimize entry) and the form-field count. The app
+  // keeps no separate "flattened" flag — a flattened document and a
+  // form-less document both report zero fields, so both read "None" here.
+  const renderDeliver = (): ReactElement => (
+    <>
+      <section className="context-panel-section" data-context-panel-section="preflight" aria-label="Pre-flight">
+        <div className="context-panel-section-title">Pre-flight</div>
+        <div className="context-panel-row" data-preflight="ocr">
+          <span className="context-panel-row-label">OCR</span>
+          <span className="context-panel-row-value">{ocrStatus ?? 'Not run'}</span>
+        </div>
+        <div className="context-panel-row" data-preflight="file-size">
+          <span className="context-panel-row-label">File size</span>
+          <span className="context-panel-row-value">
+            <span data-file-size>{fileSize === null ? '\u2014' : formatBytes(fileSize)}</span>
+          </span>
+        </div>
+        <div className="context-panel-row" data-preflight="optimize">
+          <span className="context-panel-row-label">Optimize</span>
+          <span className="context-panel-row-value">
+            <button
+              type="button"
+              className="context-panel-action"
+              data-context-panel-action="optimize"
+              onClick={(): void => onOptimize?.()}
+              disabled={onOptimize === undefined}
+            >
+              <span>Optimize…</span>
+            </button>
+          </span>
+        </div>
+        <div className="context-panel-row" data-preflight="forms">
+          <span className="context-panel-row-label">Form fields</span>
+          <span className="context-panel-row-value" data-form-fields>
+            {formFieldCount > 0 ? `${formFieldCount} to flatten` : 'None'}
+          </span>
+        </div>
+      </section>
+      <section className="context-panel-section" data-context-panel-section="new-document" aria-label="New document">
+        <div className="context-panel-section-title">New document</div>
+        <div className="context-panel-actions-row">
+          <button
+            type="button"
+            className="context-panel-action"
+            data-context-panel-action="from-images"
+            onClick={(): void => onCreateFromImages?.()}
+            disabled={onCreateFromImages === null}
+          >
+            <FilePlus2 size={13} aria-hidden />
+            <span>From images…</span>
+          </button>
+        </div>
+      </section>
+    </>
+  );
+
+  const body =
+    stage === 'edit'
+      ? renderEdit()
+      : stage === 'review'
+        ? renderReview()
+        : stage === 'deliver'
+          ? renderDeliver()
+          : renderPages();
+
   return (
     <div
-      className={dev ? 'context-panel context-panel-dev' : 'context-panel'}
-      data-context-panel="pages"
-      data-context-panel-stage="pages"
-      data-context-panel-dev={dev ? 'true' : undefined}
+      className="context-panel"
+      data-context-panel={stage}
+      data-context-panel-stage={stage}
+      data-context-panel-collapsed={collapsed ? 'true' : undefined}
     >
       <GlassSidebarHeader
         className="context-panel-header"
-        title={`Pages · ${pageCount}`}
+        title={contextPanelTitle(stage, pageCount)}
         actions={
           <div className="context-panel-actions">
-            {dev && (
-              <span className="context-panel-dev-badge" data-context-panel-dev-badge>
-                DEV
-              </span>
+            {!collapsed && stage === 'pages' && (
+              <button
+                type="button"
+                className="context-panel-combine"
+                onClick={(): void => onMerge?.()}
+                title="Combine with another PDF"
+                aria-label="Combine with another PDF"
+                data-context-panel-combine
+              >
+                <Plus size={12} aria-hidden />
+                <span>Combine…</span>
+              </button>
             )}
-            <button
-              type="button"
-              className="context-panel-combine"
-              onClick={(): void => onMerge?.()}
-              title="Combine with another PDF"
-              aria-label="Combine with another PDF"
-              data-context-panel-combine
-            >
-              <Plus size={12} aria-hidden />
-              <span>Combine…</span>
-            </button>
+            {collapseButton}
           </div>
         }
       />
       <GlassSidebarBody className="context-panel-body">
-        {/* The thumbnail stack: the rail's OWN ThumbnailRail, same props,
-            same geometry (thumbWidth defaults to THUMB_WIDTH — the chunk
-            keeps the current rail width) and the same virtualization. */}
-        <div className="context-panel-thumbs" data-context-panel-thumbs>
-          <ThumbnailRail
-            doc={doc}
-            pageCount={pageCount}
-            currentPage={currentPage}
-            aspectRatio={defaultHeightPt / defaultWidthPt}
-            pageSizes={pageSizes}
-            rotations={engineState.rotations}
-            visibleToSource={visibleToSource}
-            proxyVisibleOrder={proxyVisibleOrder}
-            pageLabelMap={pageLabelMap}
-            canUndo={canUndo}
-            onOp={onOp}
-            onDelete={onDelete}
-            onReorder={onReorder}
-            onUndo={onUndo}
-            onJump={onJump}
-            crossDoc={crossDoc}
-            thumbVerbs={verbs}
-            onThumbContextMenu={openMenu}
-          />
-        </div>
-        {outline !== null && (
-          <section className="context-panel-outline" data-context-panel-outline aria-label="Outline">
-            <button
-              type="button"
-              className="context-panel-section-toggle"
-              onClick={(): void => setOutlineOpen((v) => !v)}
-              aria-expanded={outlineOpen}
-              aria-controls="context-panel-outline-body"
-              data-outline-toggle
-            >
-              {outlineOpen ? <ChevronDown size={14} aria-hidden /> : <ChevronRight size={14} aria-hidden />}
-              <span>Outline</span>
-            </button>
-            {outlineOpen && (
-              <div className="context-panel-outline-body" id="context-panel-outline-body" data-context-panel-outline-body>
-                <OutlinePanel doc={doc} outline={outline} onJump={onJump} onError={onError} />
-              </div>
-            )}
-          </section>
+        {collapsed ? (
+          <div className="context-panel-ruler" data-context-panel-ruler>
+            <RulerStrip pageCount={pageCount} currentPage={currentPage} onJump={onJump} />
+          </div>
+        ) : (
+          body
         )}
         {menu !== null && menuPos !== null && (
           <div

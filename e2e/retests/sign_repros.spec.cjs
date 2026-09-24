@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool, armSignTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -22,7 +22,8 @@ async function snap(name) { await window.screenshot({ path: `screenshots/${name}
 
 // Create a typed signature, save it, and arm it (Sign tool). Returns when armed.
 async function createAndArmSignature() {
-  await window.click('button[aria-label="Sign tool"]');
+  // Phase 36 (chunk 3) — Sign is the REVIEW dock's `sign` verb.
+  await armSignTool(window);
   await window.waitForSelector('.sig-manager', { timeout: 10000 });
   await window.click('.sig-tab:has-text("Type")').catch(() => {});
   const typeInput = window.locator('input[aria-label="Type your signature"]');
@@ -46,7 +47,7 @@ test('BUG-1: click embedded signature -> no selector; Confirm does not exit Sign
   // armed + ghost should be present
   const armedBefore = await window.locator('.signatures-layer').first().getAttribute('data-armed');
   const ghostBefore = await window.locator('.sig-ghost').count();
-  const toolbarPressed = await window.locator('button[aria-label="Sign tool"]').getAttribute('aria-pressed');
+  const toolbarPressed = await window.locator('.signatures-layer').first().getAttribute('data-armed');
   console.log('BUG1 before place: armed=', armedBefore, 'ghost=', ghostBefore, 'toolbarPressed=', toolbarPressed);
   await snap('bug1-armed-ghost');
 
@@ -70,7 +71,7 @@ test('BUG-1: click embedded signature -> no selector; Confirm does not exit Sign
   const committedCount = await window.locator('.sig-placement').count();
   const armedAfterConfirm = await window.locator('.signatures-layer').first().getAttribute('data-armed');
   const ghostAfterConfirm = await window.locator('.sig-ghost').count();
-  const toolbarAfter = await window.locator('button[aria-label="Sign tool"]').getAttribute('aria-pressed');
+  const toolbarAfter = await window.locator('.signatures-layer').first().getAttribute('data-armed');
   console.log('BUG1 after confirm: committed=', committedCount, 'armed=', armedAfterConfirm, 'ghost=', ghostAfterConfirm, 'toolbarPressed=', toolbarAfter);
   await snap('bug1-after-confirm');
 

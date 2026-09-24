@@ -24,7 +24,7 @@ const os = require('node:os');
 const { inflateSync } = require('node:zlib');
 const { PDFDocument, PDFRawStream } = require('pdf-lib');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool, openSamplePath } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, openSamplePath, toggleEditMode } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -157,7 +157,7 @@ async function fillPanelText(win, text) {
 // Place a committed TFlex Edit-mode text box through the real UI and select it.
 async function createTextBox(win, text, fx = 0.62, fy = 0.2) {
   if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
   }
   await win.click('[data-edit-tool="box"]');
@@ -187,7 +187,7 @@ async function selectBox(win, text) {
 /** Close Edit mode (annotation tools are gated while it is open). */
 async function closeEditMode(win) {
   if ((await win.locator('[data-edit-toolbar]').count()) > 0) {
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForTimeout(400);
   }
 }
@@ -400,7 +400,7 @@ test('C1d Edit-mode text run: panel char spacing drives the run commit', async (
   try {
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openReport(app, win);
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.click('[data-edit-tool="text"]');
     await win.waitForTimeout(300);

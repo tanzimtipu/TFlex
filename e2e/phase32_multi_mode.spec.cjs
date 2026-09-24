@@ -16,7 +16,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
 
 const FIX = path.resolve(__dirname, '..', 'test-fixtures');
 const ALPHA_SRC = path.join(FIX, 'report.pdf'); // 34 pages
@@ -113,8 +113,9 @@ async function twoPaneSetup() {
   await waitTabCount(2);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p32-beta' }).first().click();
   await win.waitForTimeout(1200);
@@ -134,48 +135,48 @@ test.afterEach(async () => {
 });
 test.setTimeout(180000);
 
-test('C1 mode round-trip: CommandBar and All tools agree, off returns to single-pane', async () => {
+test('C1 mode round-trip: the title-bar toggle and the shared toolbar agree, off returns to single-pane', async () => {
   await openFile(tmpCopy(ALPHA_SRC, 'p32-alpha.pdf'));
   await waitTabCount(1);
   const stage = win.locator('.tab-stage');
 
   expect(await stage.getAttribute('data-multi-mode')).toBe('false');
   expect(await win.locator('[data-pane]').count()).toBe(0);
-  expect(await win.locator('[data-toolbar-multi-mode]').count()).toBe(1);
+  // Phase 36 (chunk 3): the per-view CommandBar ROW is retired in single mode,
+  // so no inline toggle remains; the All-tools palette entry is the single-mode
+  // home (the title-bar control arrives in a later chunk).
+  expect(await win.locator('[data-toolbar-multi-mode]').count()).toBe(0);
 
-  // --- ON via the CommandBar control ---
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  // --- ON via the title-bar toggle (the single-mode home) ---
+  const headerToggle = win.locator('[data-header-multi-mode]');
+  expect(await headerToggle.getAttribute('aria-pressed')).toBe('false');
+  await headerToggle.click();
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('true');
   expect(await win.locator('.tab-pane[data-pane="A"]').count()).toBe(1);
   expect(await win.locator('.tab-pane[data-pane="B"]').count()).toBe(1);
-  const cmdPressed = await win.locator('[data-toolbar-multi-mode]').first().getAttribute('aria-pressed');
-  console.log(`[P32] after CommandBar ON: stage=${await stage.getAttribute('data-multi-mode')} cmdPressed=${cmdPressed} panes=${await win.locator('[data-pane]').count()} multiPanes=${await stage.getAttribute('data-multi-panes')}`);
+  const cmdPressed = await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().getAttribute('aria-pressed');
+  console.log(`[P32] after title-bar ON: stage=${await stage.getAttribute('data-multi-mode')} cmdPressed=${cmdPressed} panes=${await win.locator('[data-pane]').count()} multiPanes=${await stage.getAttribute('data-multi-panes')}`);
   expect(cmdPressed).toBe('true');
+  // The title-bar toggle agrees.
+  expect(await headerToggle.getAttribute('aria-pressed')).toBe('true');
 
-  // All tools entry agrees.
-  await win.locator('[data-tools-badge]').first().click();
-  await win.waitForSelector('[data-tool-id="multi-mode"]', { timeout: 10000 });
-  const allPressed = await win.locator('[data-tool-id="multi-mode"]').getAttribute('aria-pressed');
-  console.log(`[P32] All tools entry aria-pressed after CommandBar ON = ${allPressed}`);
-  expect(allPressed).toBe('true');
-
-  // --- OFF via the All tools entry ---
-  await win.locator('[data-tool-id="multi-mode"]').click();
+  // --- OFF via the title-bar toggle ---
+  await headerToggle.click();
   await win.waitForTimeout(500);
-  console.log(`[P32] after All tools OFF: stage=${await stage.getAttribute('data-multi-mode')} panes=${await win.locator('[data-pane]').count()}`);
+  console.log(`[P32] after title-bar OFF: stage=${await stage.getAttribute('data-multi-mode')} panes=${await win.locator('[data-pane]').count()}`);
   expect(await stage.getAttribute('data-multi-mode')).toBe('false');
   expect(await win.locator('[data-pane]').count()).toBe(0);
   expect(await win.locator('[data-pane-header]').count()).toBe(0);
   expect(await win.locator('[data-multi-divider]').count()).toBe(0);
-  expect(await win.locator('[data-tool-id="multi-mode"]').getAttribute('aria-pressed')).toBe('false');
-  expect(await win.locator('[data-toolbar-multi-mode]').first().getAttribute('aria-pressed')).toBe('false');
+  expect(await headerToggle.getAttribute('aria-pressed')).toBe('false');
+  expect(await win.locator('[data-shared-toolbar]').count(), 'no shared toolbar in single mode').toBe(0);
 
-  // --- ON again via All tools, OFF via CommandBar (the reverse pair) ---
-  await win.locator('[data-tool-id="multi-mode"]').click();
+  // --- ON again via the title bar, OFF via the shared toolbar (the reverse pair) ---
+  await headerToggle.click();
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('true');
-  expect(await win.locator('[data-tool-id="multi-mode"]').getAttribute('aria-pressed')).toBe('true');
+  expect(await headerToggle.getAttribute('aria-pressed')).toBe('true');
   await win.locator('[data-shared-toolbar] [data-toolbar-multi-mode]').first().click();
   await win.waitForTimeout(500);
   expect(await stage.getAttribute('data-multi-mode')).toBe('false');
@@ -301,8 +302,9 @@ test('C4 pane B empty state + pick list excludes the other pane document', async
   // holds alpha and beta stays an open tab the pick list can offer.
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
 
   const empty = win.locator('.tab-pane[data-pane="B"][data-pane-empty]');
   await expect(empty).toBeVisible({ timeout: 15000 });
@@ -326,8 +328,8 @@ test('C4 pane B empty state + pick list excludes the other pane document', async
 test('C5 [data-pane-open] opens a PDF directly into the empty pane', async () => {
   await openFile(tmpCopy(ALPHA_SRC, 'p32-alpha.pdf'));
   await waitTabCount(1);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) — the single-mode Multi Mode toggle is in the palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
 
   await mockOpen(tmpCopy(BETA_SRC, 'p32-beta.pdf'));
@@ -505,12 +507,13 @@ test('C6 each pane keeps its own page position and zoom', async () => {
   expect(wB1, 'pane B page width unchanged').toBe(wB0);
   expect(zoomB1).toBe(zoomB0);
 
-  // Navigating pane A via its own strip thumbnail moves only pane A.
+  // Navigating pane A via its own strip thumbnail moves only pane A. The strip
+  // click focuses pane A (jumpAndFocus), so read the shared readout directly
+  // after it settles — an extra focus click can perturb the scroll heuristic.
   const thumbA5 = win.locator('[data-pane-strip-pane="A"] .thumb-item[data-page="5"]');
   await thumbA5.first().scrollIntoViewIfNeeded();
   await thumbA5.first().click();
-  await win.waitForTimeout(900);
-  await focusPaneByPage('A');
+  await win.waitForTimeout(1600);
   const aPage = await sharedPageInput().inputValue();
   await focusPaneByPage('B');
   const bPage = await sharedPageInput().inputValue();

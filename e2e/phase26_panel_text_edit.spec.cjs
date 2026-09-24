@@ -20,7 +20,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool, openSamplePath } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, openSamplePath, toggleEditMode } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -49,7 +49,7 @@ async function dragOnPage(win, fx, fy, dxPx = 190, dyPx = 60) {
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 240));
-  const y = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 110));
+  const y = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 240));
   await win.mouse.move(x, y);
   await win.mouse.down();
   await win.mouse.move(x + dxPx, y + dyPx, { steps: 6 });
@@ -135,7 +135,7 @@ async function placeTextViaPanel(win, kind, text, fx, fy) {
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
     const nx = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 40));
-    const ny = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 110));
+    const ny = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 240));
     await win.mouse.click(nx, ny);
   }
   await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
@@ -182,7 +182,7 @@ test('C1 no in-canvas editor for textbox/callout/note/edit box', async () => {
 
     // Edit-mode text box: enter Edit mode, arm box, drag, then double-click.
     await win.screenshot({ path: path.join(SHOTS, 'phase26-annotations-clean.png') }).catch(() => {});
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.click('[data-edit-tool="box"]');
     const editArmed = await win.evaluate(() => ({
@@ -486,7 +486,7 @@ test('C1b single click places a textbox (panel field, no editor)', async () => {
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
     const cx = Math.max(40, Math.min(pg.x + pg.width * 0.35, vp.w - 40));
-    const cy = Math.max(40, Math.min(pg.y + pg.height * 0.3, vp.h - 110));
+    const cy = Math.max(40, Math.min(pg.y + pg.height * 0.3, vp.h - 240));
     await win.mouse.click(cx, cy);
     await win.waitForTimeout(800);
     const st = await win.evaluate(() => {

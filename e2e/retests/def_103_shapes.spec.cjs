@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool, armSignTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -30,7 +30,7 @@ test('DEF-103: rect and ellipse place after sign', async () => {
   const pbox = await page.boundingBox();
 
   // Sign flow (place + confirm)
-  await window.click('button[aria-label="Sign tool"]');
+  await armSignTool(window);
   await window.waitForSelector('.sig-manager', { timeout: 10000 });
   await window.click('.sig-tab:has-text("Type")').catch(() => {});
   const typeInput = window.locator('input[aria-label="Type your signature"]');

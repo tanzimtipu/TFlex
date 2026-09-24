@@ -118,11 +118,11 @@ async function openWorkspace() {
 test('P16C-1: icon-only header; view-toggle icons work while expanded', async () => {
   const { electronApp, window } = await openWorkspace();
   try {
-    const header = window.locator('.rail-header');
+    const header = window.locator('.context-panel-header');
     await header.waitFor({ timeout: 15000 });
 
     // Icon-only: no title span, no visible text anywhere in the header.
-    expect(await window.locator('.rail-header .glass-sidebar-title').count()).toBe(0);
+    expect(await window.locator('.context-panel-header .glass-sidebar-title').count()).toBe(0);
     const headerText = (await header.textContent().catch(() => null)) ?? '';
     expect(headerText.trim(), 'rail header must be icon-only').toBe('');
 
@@ -133,27 +133,22 @@ test('P16C-1: icon-only header; view-toggle icons work while expanded', async ()
     expect(await window.locator('[data-rail-ruler]').count()).toBe(0);
 
     // View-toggle icons (thumbnails / annotations / bookmarks) still work.
-    const thumbsTab = window.locator('.rail-tab[title="Page thumbnails"]');
-    const annTab = window.locator('[data-rail-tab="annotations"]');
-    const bookmarksTab = window.locator('.rail-tab[title="Bookmarks"]');
+    // Phase 36: the sections are the ContextPanel's own hooks now.
+    const thumbsTab = window.locator('[data-context-panel-thumbs]');
+    const annTab = window.locator('[data-context-panel-section="annotations"]');
+    const bookmarksTab = window.locator('[data-context-panel-outline]');
     await expect(thumbsTab).toBeVisible();
     await expect(annTab).toBeVisible();
     const hasBookmarks = (await bookmarksTab.count()) > 0; // only with an outline
 
-    await thumbsTab.click();
-    await window.locator('.thumb-item').first().waitFor({ timeout: 15000 });
+    await window.locator('[data-context-panel-thumbs] .thumb-item').first().waitFor({ timeout: 15000 });
 
-    // Annotations tab swaps the rail body to the annotations panel. The
-    // swap is an AnimatePresence crossfade (280ms exit), so wait for the
-    // outgoing thumbnail layer to fully detach before counting.
+    // Annotations section renders the annotations panel.
     await annTab.click();
     await window.locator('[data-annotation-panel]').waitFor({ timeout: 10000 });
-    await window.locator('.thumb-item').first().waitFor({ state: 'detached', timeout: 5000 });
-    expect(await window.locator('.thumb-item').count()).toBe(0);
 
     // Back to thumbnails.
-    await thumbsTab.click();
-    await window.locator('.thumb-item').first().waitFor({ timeout: 10000 });
+    await window.locator('[data-context-panel-thumbs] .thumb-item').first().waitFor({ timeout: 10000 });
 
     // Bookmarks tab only exists when the document has an outline.
     if (hasBookmarks) {
@@ -227,8 +222,8 @@ test('P16C-2: collapse button -> 48px ruler strip, settled on the registered tok
         scrollbarWidth: cs.scrollbarWidth,
         webkitWidth: webkit.width,
         webkitDisplay: webkit.display,
-        railBorder: getComputedStyle(document.querySelector('.side-rail')).borderRightWidth,
-        railBorderStyle: getComputedStyle(document.querySelector('.side-rail')).borderRightStyle,
+        railBorder: getComputedStyle(document.querySelector('[data-context-panel]')).borderRightWidth,
+        railBorderStyle: getComputedStyle(document.querySelector('[data-context-panel]')).borderRightStyle,
       };
     });
     const noChrome = sb.scrollbarWidth === 'none' || sb.webkitWidth === '0px' || sb.webkitDisplay === 'none';

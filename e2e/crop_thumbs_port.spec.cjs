@@ -9,7 +9,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, runTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const FULL_ASPECT = 612 / 792; // 0.7727
@@ -51,12 +51,7 @@ async function openSampleFromCard(name) {
 }
 
 async function openTools() {
-  const open = await win.evaluate(() => document.querySelector('[data-tools-palette]') !== null);
-  if (!open) {
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-    await win.waitForTimeout(300);
-  }
+  // Phase 36 migration: the All-tools palette is retired; use runTool(id).
 }
 
 // Set the crop box on the editor page to (x,y,w,h) in page points (612x792).
@@ -115,8 +110,7 @@ async function setCropBoxTo(x, y, width, height) {
 }
 
 async function cropPage1To(x, y, width, height) {
-  await openTools();
-  await win.click('[data-tool-id="cropPages"]');
+  await runTool(win, 'cropPages');
   await win.waitForSelector('[data-crop-pages-dialog]', { timeout: 10000 });
   await win.waitForTimeout(800);
   await win.click('[data-crop-mode="perPage"]');

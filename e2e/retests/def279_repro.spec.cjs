@@ -15,7 +15,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('../lib/helpers.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const { PDFDocument } = require(path.join(ROOT, 'node_modules', 'pdf-lib'));
@@ -90,7 +90,8 @@ test('DEF-279 case-variant path bypasses the same-file guard and a save overwrit
   //    tab, so this flow is RED while the defect is present.)
   await win.locator('.tab[data-tab-id]').first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  // Phase 36 (chunk 3) — single-mode Multi Mode toggle now lives in the palette.
+  await toggleMultiModeViaPalette(win);
   await win.waitForTimeout(600);
   await app.evaluate(async ({ dialog }, fp) => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });

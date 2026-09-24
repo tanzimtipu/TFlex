@@ -1,7 +1,7 @@
 // qa probe 5: REAL UI paths — form widget fill and Sign tool placement — and
 // whether they converge the diagnostics mirror (modified) + enable Save.
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armSignTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 test.describe('QA redesign probe 5', () => {
@@ -56,7 +56,7 @@ test.describe('QA redesign probe 5', () => {
     await window.waitForSelector('.workspace');
     await window.waitForTimeout(800);
 
-    await window.click('button[aria-label="Sign tool"]');
+    await armSignTool(window);
     await window.waitForTimeout(700);
     const modal = await window.evaluate(() => {
       const btns = Array.from(document.querySelectorAll('button')).map(b => b.textContent.trim()).filter(t => /signature|draw|type|saved|use this/i.test(t)).slice(0, 12);

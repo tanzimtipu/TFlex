@@ -14,7 +14,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
-const { hardClose, openSamplePath } = require('../lib/helpers.cjs');
+const { hardClose, openSamplePath, toggleEditMode } = require('../lib/helpers.cjs');
 
 test('DEF-257 retest: committed edit box survives close/reopen, selectable + movable', async () => {
   test.setTimeout(240000);
@@ -33,7 +33,7 @@ test('DEF-257 retest: committed edit box survives close/reopen, selectable + mov
     await win.waitForTimeout(400);
 
     // Place an Edit-mode text box through the Phase-26 panel field.
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.click('[data-edit-tool="box"]');
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
@@ -83,10 +83,10 @@ test('DEF-257 retest: committed edit box survives close/reopen, selectable + mov
     expect(afterToggle.editBoxes, 'no abandoned-new-box delete on target clear').toBe(1);
 
     // Close Edit mode (the text target clears -> the Phase-26 cleanup runs).
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForTimeout(600);
     // Re-open Edit mode.
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.waitForTimeout(800);
 

@@ -6,7 +6,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, gotoStage } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 const SAMPLES = path.resolve(__dirname, '..', '..', 'assets', 'samples');
@@ -87,7 +87,8 @@ test.describe('DEF-243..246 FIX-READY retest', () => {
     test.setTimeout(240000);
     const src = await launchAndOpenTemp();
     const before = await statOf(src);
-    await win.click('.tab-pane[aria-hidden="false"] [data-toolbar-rotate-cw]');
+    await gotoStage(win, 1);
+    await win.click('.tab-pane[aria-hidden="false"] [data-dock-verb="rotate"]');
     await win.waitForTimeout(1200);
     await win.keyboard.press('Control+s');
     await win.waitForTimeout(2000);
@@ -106,7 +107,8 @@ test.describe('DEF-243..246 FIX-READY retest', () => {
   test('DEF-243b: Ctrl+Shift+S opens Save As, source byte/mtime-identical, copy written', async () => {
     test.setTimeout(240000);
     const src = await launchAndOpenTemp();
-    await win.click('.tab-pane[aria-hidden="false"] [data-toolbar-rotate-cw]');
+    await gotoStage(win, 1);
+    await win.click('.tab-pane[aria-hidden="false"] [data-dock-verb="rotate"]');
     await win.waitForTimeout(1200);
     const before = await statOf(src);
     const copyPath = path.join(os.tmpdir(), `tflex-def243-copy-${Date.now()}.pdf`);
@@ -361,7 +363,8 @@ test.describe('DEF-243..246 FIX-READY retest', () => {
     expect(clean.ctrlShiftS, 'clean: Ctrl+Shift+S opens Save As').toBe(true);
     expect(clean.menuRoute.opened, 'clean: menu route opens Save As').toBe(true);
 
-    await win.click('.tab-pane[aria-hidden="false"] [data-toolbar-rotate-cw]');
+    await gotoStage(win, 1);
+    await win.click('.tab-pane[aria-hidden="false"] [data-dock-verb="rotate"]');
     await win.waitForTimeout(1300);
     const modified = await row('modified');
     expect(modified.saveDisabled, 'modified: Save enabled').toBe(false);
@@ -437,7 +440,8 @@ test.describe('DEF-243..246 FIX-READY retest', () => {
     expect(clean.ctrlShiftS, 'read-only clean: Ctrl+Shift+S opens Save As').toBe(true);
     expect(clean.menuRoute, 'read-only clean: menu route opens Save As').toBe(true);
 
-    await win.click('.tab-pane[aria-hidden="false"] [data-toolbar-rotate-cw]');
+    await gotoStage(win, 1);
+    await win.click('.tab-pane[aria-hidden="false"] [data-dock-verb="rotate"]');
     await win.waitForTimeout(1300);
     const modified = await row('readonly-modified');
     expect(modified.saveDisabled, 'read-only modified: Save disabled').toBe(true);

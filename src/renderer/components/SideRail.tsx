@@ -22,6 +22,13 @@ import {
   resolveDrop,
   type PageDropOp,
 } from '../state/pageDrag';
+import {
+  applyPageSelectGesture,
+  pageSelectGestureFor,
+  samePageSelection,
+  type PageSelectGesture,
+  type PageSelectionState,
+} from '../state/pageSelection';
 
 interface SideRailProps {
   doc: PDFDocumentProxy;
@@ -480,6 +487,14 @@ export interface ThumbnailRailProps {
    *  menu). Receives the VISIBLE 1-based page plus the pointer's viewport
    *  coordinates; absent everywhere else, so the native menu is untouched. */
   onThumbContextMenu?: ThumbContextMenuHandler | null;
+  /** Phase 36 (chunk 3a) — the ContextPanel's multi-select SET (visible
+   *  1-based pages, ascending). Present ONLY on the panel's rail instance;
+   *  SideRail and PaneThumbStrip pass nothing and keep their single-selection
+   *  behaviour byte-for-byte. When the callback is present the rail is
+   *  CONTROLLED: it reads the set and reports every gesture's new set to the
+   *  host (DocumentView), which is what the ActionDock consumes. */
+  pageSelection?: readonly number[] | null;
+  onPageSelectionChange?: ((pages: number[]) => void) | null;
 }
 
 /** Phase 36 (chunk 2) — ContextPanel's per-thumbnail verbs. */
@@ -515,6 +530,8 @@ export function ThumbnailRail({
   crossDoc = null,
   thumbVerbs = null,
   onThumbContextMenu = null,
+  pageSelection = null,
+  onPageSelectionChange = null,
 }: ThumbnailRailProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const thumbElsRef = useRef(new Map<number, HTMLElement>());
@@ -541,6 +558,43 @@ export function ThumbnailRail({
   const [dragFromIndex, setDragFromIndex] = useState<number | null>(null);
   const [dropTarget, setDropTarget] = useState<number | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
+  // Phase 36 (chunk 3a) — multi-select. When `onPageSelectionChange` is wired
+  // (the ContextPanel only) the SET is host-owned and the rail is controlled:
+  // Ctrl/Cmd toggles a page, Shift extends from the anchor, a plain click
+  // navigates AND leaves exactly that page selected, and a click on empty
+  // panel space clears. The anchor is a gesture cursor, kept locally because
+  // it is not app state. Everything below derives from the same `selectedSet`
+  // so the legacy single-selection consumers (the action bar, the drag
+  // wiring) keep working unchanged.
+  const multiSelect = onPageSelectionChange != null;
+  const [anchor, setAnchor] = useState<number | null>(null);
+  const selectionPages = multiSelect ? pageSelection ?? [] : null;
+  const selectedSet = useMemo(
+    () => new Set<number>(selectionPages ?? []),
+    [selectionPages],
+  );
+  const singleSelected = multiSelect
+    ? selectionPages !== null && selectionPages.length === 1
+      ? selectionPages[0]
+      : null
+    : selected;
+  const applyPageGesture = useCallback(
+    (page: number, gesture: PageSelectGesture): void => {
+      if (!multiSelect) {
+        // Legacy path (SideRail / PaneThumbStrip): the modifier click selects.
+        setSelected(page);
+        return;
+      }
+      const current: PageSelectionState = { pages: selectionPages ?? [], anchor };
+      const next = applyPageSelectGesture(current, page, gesture, pageCount);
+      if (next === current) return;
+      if (next.anchor !== current.anchor) setAnchor(next.anchor);
+      if (!samePageSelection(next.pages, current.pages)) {
+        onPageSelectionChange?.([...next.pages]);
+      }
+    },
+    [multiSelect, selectionPages, anchor, pageCount, onPageSelectionChange],
+  );
   const railRootRef = useRef<HTMLDivElement | null>(null);
   const drag = usePageDragOptional();
   const docAware = crossDoc !== null && drag !== null;
@@ -735,12 +789,15 @@ export function ThumbnailRail({
     }
   }, [currentPage, pageCount, slotTops]);
 
-  // Drop selection when the selected page goes away (delete, etc.).
+  // Drop selection when the selected page goes away (delete, etc.). In
+  // multi-select the HOST prunes the set (DocumentView), so this legacy
+  // single-selection guard only runs for the rail / pane-strip instances.
   useEffect(() => {
+    if (multiSelect) return;
     if (selected !== null && selected > pageCount) {
       setSelected(null);
     }
-  }, [selected, pageCount]);
+  }, [multiSelect, selected, pageCount]);
 
 const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void => {
     // Phase 32 (chunk 2d): a drag started here carries this section's
@@ -750,9 +807,16 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
     if (docAware && crossDoc !== null && drag !== null) {
       e.dataTransfer.effectAllowed = 'copyMove';
       e.dataTransfer.setData('text/plain', String(page));
-      drag.begin(
-        buildDragSource(crossDoc.tabId, page, selected === null ? null : [selected]),
-      );
+      // Phase 36 (chunk 3a) — in multi-select the drag carries the whole SET
+      // (the engine's cross-document path already takes a page array); every
+      // other instance keeps today's single-page source exactly.
+      const dragPages =
+        multiSelect && selectionPages !== null && selectionPages.length > 0
+          ? [...selectionPages]
+          : singleSelected === null
+            ? null
+            : [singleSelected];
+      drag.begin(buildDragSource(crossDoc.tabId, page, dragPages));
       return;
     }
     setDragFromIndex(page);
@@ -851,10 +915,23 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
     drag.hover(null);
   };
 
+  // Phase 36 (chunk 3a) — a click on EMPTY panel space clears the multi-select.
+  // Bubble-phase and target-guarded (never a catch-all): a click that landed on
+  // a thumbnail (or anything inside one) bails out, and nothing is
+  // prevented/stopped, so every other handler still sees the event.
+  const onScrollerClick = (e: React.MouseEvent<HTMLDivElement>): void => {
+    if (!multiSelect) return;
+    if (selectionPages === null || selectionPages.length === 0) return;
+    if (e.target instanceof Element && e.target.closest('.thumb') !== null) return;
+    setAnchor(null);
+    onPageSelectionChange?.([]);
+  };
+
   return (
     <div
       className="thumb-scroller"
       ref={railRootRef}
+      onClick={multiSelect ? onScrollerClick : undefined}
       onDragOver={docAware ? onScrollerDragOver : undefined}
       onDrop={docAware ? onScrollerDrop : undefined}
       onDragLeave={docAware ? onScrollerDragLeave : undefined}
@@ -887,7 +964,7 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
           // addresses the original open bytes.
           const sourcePage = proxyVisibleOrder ? page : (visibleToSource.get(page) ?? page);
           const rot = rotations[page - 1] ?? 0;
-          const isSel = selected === page;
+          const isSel = multiSelect ? selectedSet.has(page) : selected === page;
           // `key={page}` keeps the React/DOM order stable (1..N), but the
           // bitmap comes from `sourcePage`, so when the engine reorders
           // the document the rendered thumbnails move in lockstep. The
@@ -937,6 +1014,7 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
               pageLabel={pageLabelMap === null ? null : pageLabelMap.get(page) ?? null}
               onJump={onJump}
               onSelect={setSelected}
+              onSelectGesture={multiSelect ? applyPageGesture : null}
               onDragStart={onDragStart(page)}
               onDragOver={onDragOver(page)}
               onDragLeave={onDragLeave}
@@ -967,19 +1045,23 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
           </div>
         )}
       </div>
-      {selected !== null && selected <= pageCount && (
+      {singleSelected !== null && singleSelected <= pageCount && (
         <ThumbActions
-          page={selected}
+          page={singleSelected}
           canRotate={onOp !== undefined}
           canDelete={onDelete !== undefined && pageCount > 1}
-          onRotateCw={(): void => onOp?.({ kind: 'rotate', page: selected, dir: 'cw' })}
-          onRotateCcw={(): void => onOp?.({ kind: 'rotate', page: selected, dir: 'ccw' })}
+          onRotateCw={(): void => onOp?.({ kind: 'rotate', page: singleSelected, dir: 'cw' })}
+          onRotateCcw={(): void => onOp?.({ kind: 'rotate', page: singleSelected, dir: 'ccw' })}
           onDelete={(): void => {
             if (onDelete === undefined) return;
-            onDelete([selected]);
-            setSelected(null);
+            onDelete([singleSelected]);
+            if (multiSelect) onPageSelectionChange?.([]);
+            else setSelected(null);
           }}
-          onClearSelection={(): void => setSelected(null)}
+          onClearSelection={(): void => {
+            if (multiSelect) onPageSelectionChange?.([]);
+            else setSelected(null);
+          }}
         />
       )}
     </div>
@@ -1079,6 +1161,10 @@ interface ThumbProps {
   thumbVerbs?: ThumbVerbs | null;
   /** Phase 36 (chunk 2) — right-click on this thumb (ContextPanel's menu). */
   onThumbContextMenu?: ThumbContextMenuHandler | null;
+  /** Phase 36 (chunk 3a) — when present, every click routes through the
+   *  multi-select gesture handler (toggle / extend / replace) instead of the
+   *  legacy modifier-select. Absent everywhere but the ContextPanel. */
+  onSelectGesture?: ((page: number, gesture: PageSelectGesture) => void) | null;
 }
 
 function Thumb({
@@ -1108,6 +1194,7 @@ function Thumb({
   onJumpFromRail,
   thumbVerbs = null,
   onThumbContextMenu = null,
+  onSelectGesture = null,
 }: ThumbProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Phase 36 (chunk 2) — true when the gesture that started a drag landed on
@@ -1323,6 +1410,19 @@ function Thumb({
       ref={(el) => registerThumb(label, el)}
       className={classes}
       onClick={(e): void => {
+        // Phase 36 (chunk 3a) — the ContextPanel's multi-select. A plain click
+        // keeps today's NAVIGATE behaviour and additionally leaves exactly this
+        // page selected; Ctrl/Cmd toggles; Shift extends from the anchor. The
+        // modifier gestures never navigate (today's rail behaviour).
+        if (onSelectGesture !== null) {
+          const gesture = pageSelectGestureFor(e);
+          if (gesture === 'replace') {
+            onJumpFromRail(label);
+            onJump(label);
+          }
+          onSelectGesture(label, gesture);
+          return;
+        }
         // Shift-click toggles selection; plain click jumps. Cmd/Ctrl-click
         // also selects.
         if (e.shiftKey || e.metaKey || e.ctrlKey) {

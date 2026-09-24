@@ -170,7 +170,9 @@ test('C2 drag tracks the pointer 1:1, re-splits both panes within the min clamp,
   console.log(`[P34-divider] drag far left: paneA=${aMin} paneB=${bMax}`);
   expect(aMin, 'pane A clamps at the 320px minimum').toBeGreaterThanOrEqual(316);
   expect(aMin).toBeLessThanOrEqual(326);
-  expect(bMax, 'pane B takes the complement').toBeGreaterThan(1000);
+  // Phase 36 (chunk 5) — the Inspector reserves 264px at the stage's right, so
+  // pane B's complement is (stage - 264 - paneA - divider), not the full stage.
+  expect(bMax, 'pane B takes the complement').toBeGreaterThan(800);
 
   // --- drag far right: pane B clamps at the minimum ---
   const box3 = await win.locator('[data-multi-divider]').boundingBox();
@@ -184,7 +186,7 @@ test('C2 drag tracks the pointer 1:1, re-splits both panes within the min clamp,
   console.log(`[P34-divider] drag far right: paneA=${aMax} paneB=${bMin}`);
   expect(bMin, 'pane B clamps at the 320px minimum').toBeGreaterThanOrEqual(316);
   expect(bMin).toBeLessThanOrEqual(326);
-  expect(aMax).toBeGreaterThan(1000);
+  expect(aMax, 'pane A takes the complement').toBeGreaterThan(800);
 
   // The grip is still visible and hit-testable after the drag + theme change.
   const info = await dividerInfo();

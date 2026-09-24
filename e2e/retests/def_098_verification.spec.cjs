@@ -38,7 +38,7 @@ test.describe('DEF-098 Verification: Thumbnail Jump', () => {
     expect(diag.currentPage).toBe(1);
 
     // Ensure thumbnails are visible
-    const rail = window.locator('.side-rail');
+    const rail = window.locator('[data-context-panel]');
     const thumbTab = window.locator('.rail-tab[title="Page thumbnails"]');
     
     // If side rail isn't visible or doesn't have the active-rail class we expect, click it

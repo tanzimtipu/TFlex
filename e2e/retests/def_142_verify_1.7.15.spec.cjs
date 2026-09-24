@@ -10,7 +10,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, gotoStage } = require('../lib/helpers.cjs');
 const path = require('node:path');
 const os = require('node:os');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
@@ -40,7 +40,9 @@ async function openSampleFromCard(name) {
 }
 
 async function modifyDoc() {
-  await win.click('[data-toolbar-rotate-cw]');
+  // Phase 36 (chunk 3) — Rotate is the PAGES dock's `rotate` verb.
+  await gotoStage(win, 1);
+  await win.click('[data-dock-verb="rotate"]');
   await win.waitForTimeout(1400);
   const modified = await win.evaluate(() => window.tflexDiagnostics().modified);
   const tabModified = await win.evaluate(() => window.tflexDiagnostics().tabModified);

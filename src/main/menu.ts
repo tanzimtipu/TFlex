@@ -159,7 +159,7 @@ export function buildAppMenu(deps: MenuDeps): void {
       label: 'Tools',
       submenu: [
         {
-          label: 'Show Tools Palette',
+          label: 'Command Palette...',
           accelerator: 'CmdOrCtrl+Shift+P',
           click: () => send('showToolsPalette'),
         },

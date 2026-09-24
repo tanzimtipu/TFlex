@@ -1,16 +1,16 @@
-// Phase 36 (chunk 2) gate (qa) — the PAGES ContextPanel's parity with the
-// existing SideRail, plus the panel-only chrome (hover verbs, right-click
-// menu, Combine, outline) and the flag-OFF no-op assertion.
+// Phase 36 (chunk 2, migrated at the chunk 6 gate) — the PAGES ContextPanel's
+// own behaviour plus the panel-only chrome (hover verbs, right-click menu,
+// Combine, outline).
 //
-// The chunk mounts the new ContextPanel ALONGSIDE the unchanged rail behind
-// the temporary dev flag (`?tfStagePanel=1` / localStorage `tfStagePanel`).
-// With the flag ON both surfaces are mounted in ONE session against the SAME
-// live document, so the parity comparisons below measure the rail and the
-// panel in the SAME DOM at the SAME time.
+// Chunk 2 originally mounted the panel ALONGSIDE the unchanged SideRail behind
+// a temporary dev flag and asserted parity between the two. Chunk 6 PROMOTED
+// the panel to the DEFAULT single-mode left slot and retired the rail and the
+// flag (the panel IS the default — nothing to enable). These tests now assert
+// the panel's own behaviour directly; the parity-with-the-rail comparisons are
+// gone with their subject. The panel's selectors are unchanged.
 //
-// Launches only through the canonical launchApp helper. Captures exactly TWO
-// screenshots: screenshots/phase36-chunk2-rail.png (flag off) and
-// screenshots/phase36-chunk2-panel.png (flag on).
+// Launches only through the canonical launchApp helper. Captures ONE
+// screenshot: screenshots/phase36-chunk2-panel.png.
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -19,12 +19,9 @@ const { hardClose } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
-const RAIL_SHOT = path.join(SHOTS, 'phase36-chunk2-rail.png');
 const PANEL_SHOT = path.join(SHOTS, 'phase36-chunk2-panel.png');
 
-const RAIL = '.side-rail';
 const PANEL = '[data-context-panel="pages"]';
-const FLAG = 'tfStagePanel';
 
 let app = null;
 let win = null;
@@ -42,16 +39,10 @@ test.afterEach(async () => {
 });
 test.setTimeout(300000);
 
-async function enableFlag() {
-  await win.evaluate((key) => {
-    try { localStorage.setItem(key, '1'); } catch (_) { /* ignore */ }
-  }, FLAG);
-}
-
 async function openDoc(name) {
   await win.locator('.sample-card').filter({ hasText: name }).first().click();
   await win.waitForSelector('.workspace', { timeout: 30000 });
-  await win.waitForSelector(`${RAIL} .thumb-item`, { timeout: 30000 });
+  await win.waitForSelector(`${PANEL} .thumb-item`, { timeout: 30000 });
   await win.waitForTimeout(1500);
 }
 
@@ -244,99 +235,78 @@ function sigDiff(a, b) {
   return Number((s / a.length).toFixed(2));
 }
 
-function table(label, rail, panel) {
+function table(label, panel) {
   console.log(`[P36C2] === ${label} ===`);
-  console.log(`[P36C2] rail  : count=${rail ? rail.count : 'n/a'} scrollerH=${rail ? rail.scrollerH : 'n/a'} painted=${rail ? JSON.stringify(paintedPages(rail)) : 'n/a'}`);
   console.log(`[P36C2] panel : count=${panel ? panel.count : 'n/a'} scrollerH=${panel ? panel.scrollerH : 'n/a'} painted=${panel ? JSON.stringify(paintedPages(panel)) : 'n/a'}`);
 }
 
 // ---------------------------------------------------------------------------
-// A. Flag OFF — the default app renders NOTHING new and the rail is untouched.
+// A. The panel IS the default single-mode left slot: no dev markers, no rail,
+//    and the panel chrome (verbs / menu / Combine) renders.
 // ---------------------------------------------------------------------------
-test('P36C2-A flag OFF: no panel / verbs / menu; the existing rail is untouched', async () => {
+test('P36C2-A the panel is the default left slot; no dev markers, no rail; chrome present', async () => {
   await openDoc('scanned.pdf');
 
-  expect(await win.locator('[data-context-panel]').count(), 'no ContextPanel by default').toBe(0);
+  expect(await win.locator(PANEL).count(), 'the PAGES panel is the default left slot').toBe(1);
   expect(await win.locator('[data-context-panel-dev-mount]').count(), 'no dev-mount marker').toBe(0);
-  expect(await win.locator('[data-thumb-verbs]').count(), 'no hover verbs by default').toBe(0);
-  expect(await win.locator('[data-context-menu]').count(), 'no right-click menu by default').toBe(0);
-  expect(await win.locator('[data-context-panel-combine]').count(), 'no Combine by default').toBe(0);
+  expect(await win.locator('[data-context-panel-dev-badge]').count(), 'no dev badge').toBe(0);
+  expect(await win.locator('.side-rail').count(), 'the retired rail is not mounted in single mode').toBe(0);
+  expect(await win.locator('[data-pane-strip]').count(), 'no Multi Mode pane strip in single mode').toBe(0);
 
-  const rail = await measure(RAIL);
-  expect(rail, 'the existing rail renders').not.toBeNull();
-  expect(rail.count).toBe(6);
-  expect(rail.thumbs.map((t) => t.page)).toEqual(Array.from({ length: 6 }, (_, i) => i + 1));
+  const panel = await measure(PANEL);
+  expect(panel, 'the panel renders thumbs').not.toBeNull();
+  expect(panel.count).toBe(6);
+  expect(panel.thumbs.map((t) => t.page)).toEqual(Array.from({ length: 6 }, (_, i) => i + 1));
   // A real preview is painted (non-zero backing store + ink), never a placeholder.
-  const painted = rail.thumbs.filter((t) => t.painted);
-  expect(painted.length, 'at least one rail preview painted').toBeGreaterThan(0);
-  for (const t of painted) expect(t.ink, `rail page ${t.page} has real ink`).toBeGreaterThan(0);
-  await expect(win.locator(`${RAIL} .thumb-current`)).toHaveAttribute('data-page', '1');
-  console.log(`[P36C2-A] flag OFF rail: count=${rail.count} painted=${JSON.stringify(paintedPages(rail))}`);
-
-  await win.waitForTimeout(400);
-  await win.screenshot({ path: RAIL_SHOT });
-  console.log(`[P36C2-A] screenshot: ${RAIL_SHOT}`);
+  const painted = panel.thumbs.filter((t) => t.painted);
+  expect(painted.length, 'at least one panel preview painted').toBeGreaterThan(0);
+  for (const t of painted) expect(t.ink, `panel page ${t.page} has real ink`).toBeGreaterThan(0);
+  await expect(win.locator(`${PANEL} .thumb-current`)).toHaveAttribute('data-page', '1');
+  // The chrome exists (verbs are hover-hidden but mounted; Combine is present).
+  expect(await win.locator(`${PANEL} .thumb-item[data-page="1"] [data-thumb-verbs]`).count()).toBe(1);
+  expect(await win.locator('[data-context-panel-combine]').count()).toBe(1);
+  console.log(`[P36C2-A] panel default: count=${panel.count} painted=${JSON.stringify(paintedPages(panel))}`);
 });
 
 // ---------------------------------------------------------------------------
-// B1. Flag ON — the rail and panel side by side: LIVE previews + GEOMETRY.
+// B1. The panel's live previews + thumbnail geometry.
 // ---------------------------------------------------------------------------
-test('P36C2-B1 parity: live previews and thumbnail geometry match on both surfaces', async () => {
-  await enableFlag();
-  // Same fixture/page as the flag-OFF screenshot (P36C2-A). No outline, so the
-  // screenshot also shows the panel's hover affordances cleanly (DEF-310's
-  // outline overlay would cover them on report.pdf).
+test('P36C2-B1 live previews and thumbnail geometry', async () => {
+  // scanned.pdf has NO outline, so the screenshot also shows the panel's hover
+  // affordances cleanly (the outline section would sit below the thumbnails).
   await openDoc('scanned.pdf');
 
   await expect(win.locator(PANEL)).toBeVisible();
-  await expect(win.locator(RAIL)).toBeVisible();
-  await expect(win.locator(PANEL)).toHaveAttribute('data-context-panel-dev', 'true');
   await expect(win.locator(`${PANEL} .glass-sidebar-title`)).toHaveText('Pages · 6');
-  expect(await win.locator('[data-context-panel-dev-badge]').count()).toBe(1);
 
-  const rail = await measure(RAIL);
   const panel = await measure(PANEL);
-  table('B1 previews + geometry', rail, panel);
+  table('B1 previews + geometry', panel);
 
-  // Same live page count and same ascending order on both.
-  expect(panel.count).toBe(rail.count);
-  expect(rail.count).toBe(6);
-  expect(panel.thumbs.map((t) => t.page)).toEqual(rail.thumbs.map((t) => t.page));
+  expect(panel.count).toBe(6);
+  expect(panel.thumbs.map((t) => t.page)).toEqual([1, 2, 3, 4, 5, 6]);
 
-  // LIVE RENDERED: every VISIBLE thumbnail on each surface has a painted
-  // canvas with real ink; nothing visible is a bare placeholder.
-  for (const [name, m] of [['rail', rail], ['panel', panel]]) {
-    const vis = m.thumbs.filter((t) => t.visible);
-    expect(vis.length, `${name} has visible thumbs`).toBeGreaterThan(0);
-    for (const t of vis) {
-      expect(t.painted, `${name} visible page ${t.page} is painted (not a placeholder)`).toBe(true);
-      expect(t.ink, `${name} visible page ${t.page} shows real ink`).toBeGreaterThan(0);
-    }
-    console.log(`[P36C2-B1] ${name} visible pages = ${JSON.stringify(vis.map((t) => t.page))}`);
+  // LIVE RENDERED: every VISIBLE thumbnail has a painted canvas with real ink;
+  // nothing visible is a bare placeholder.
+  const vis = panel.thumbs.filter((t) => t.visible);
+  expect(vis.length, 'panel has visible thumbs').toBeGreaterThan(0);
+  for (const t of vis) {
+    expect(t.painted, `visible page ${t.page} is painted (not a placeholder)`).toBe(true);
+    expect(t.ink, `visible page ${t.page} shows real ink`).toBeGreaterThan(0);
   }
+  console.log(`[P36C2-B1] panel visible pages = ${JSON.stringify(vis.map((t) => t.page))}`);
 
-  // GEOMETRY: identical wrap width/height and slot tops for every page,
-  // measured on both surfaces in the same session.
-  const rMap = byPage(rail);
-  const pMap = byPage(panel);
-  let mismatches = 0;
-  for (const page of rMap.keys()) {
-    const r = rMap.get(page);
-    const p = pMap.get(page);
-    expect(p, `panel has page ${page}`).toBeTruthy();
-    if (r.wrapW !== p.wrapW || r.wrapH !== p.wrapH || Math.abs(r.top - p.top) > 1) {
-      mismatches += 1;
-      console.log(`[P36C2-B1] GEOM MISMATCH page ${page}: rail wrap=${r.wrapW}x${r.wrapH} top=${r.top} vs panel wrap=${p.wrapW}x${p.wrapH} top=${p.top}`);
-    }
+  // GEOMETRY: every mounted thumb has a real wrap box and the slot tops ascend
+  // with the page order (the stack is a single column).
+  let prevTop = -Infinity;
+  for (const t of panel.thumbs) {
+    expect(t.wrapW, `page ${t.page} wrap width`).toBeGreaterThan(20);
+    expect(t.wrapH, `page ${t.page} wrap height`).toBeGreaterThan(20);
+    expect(t.top, `page ${t.page} top ascends`).toBeGreaterThan(prevTop);
+    prevTop = t.top;
   }
-  expect(mismatches, 'wrap width/height and slot tops identical on both surfaces').toBe(0);
-  // Same canvas width chosen by both (the same rail geometry).
-  expect(panel.thumbs[0].wrapW).toBe(rail.thumbs[0].wrapW);
-  console.log(`[P36C2-B1] geometry: thumbWidth=${rail.thumbs[0].wrapW} wrapH(page1)=${rail.thumbs[0].wrapH} railTops=panelTops (all ${rail.count} pages)`);
+  console.log(`[P36C2-B1] geometry: thumbWidth=${panel.thumbs[0].wrapW} wrapH(page1)=${panel.thumbs[0].wrapH} ascendingTops=true`);
 
-  // The flag-ON screenshot: both surfaces mounted side by side on the same
-  // pristine document/page, with a panel thumbnail hovered so the inline
-  // verbs are visible for the design-language comparison.
+  // The panel screenshot: hovered so the inline verbs are visible.
   await win.locator(`${PANEL} .thumb-item[data-page="2"]`).hover();
   await win.waitForTimeout(600);
   await win.screenshot({ path: PANEL_SHOT });
@@ -360,19 +330,12 @@ test('P36C2-B1 parity: live previews and thumbnail geometry match on both surfac
       thumb1: rr(root.querySelector('.thumb-item[data-page="1"]')),
       links: [...root.querySelectorAll('.outline-link')].slice(0, 3).map(rr),
       linkCount: root.querySelectorAll('.outline-link').length,
-      outlineScrollH: (() => {
-        const el = root.querySelector('.context-panel-outline-body');
-        return el ? { scrollH: el.scrollHeight, clientH: el.clientHeight, overY: getComputedStyle(el).overflowY } : null;
-      })(),
     };
   }, PANEL);
   console.log(`[P36C2-B1] panel layout: ${JSON.stringify(layout)}`);
 
   // Header fit probe (cosmetic): the title is `white-space: nowrap` +
-  // `text-overflow: ellipsis`, so it truncates when the DEV badge + Combine
-  // squeeze it. Report the header's available title width vs the title's
-  // natural width at the 220px dev width, and the same arithmetic for the
-  // final 200px panel width (where the DEV badge is gone).
+  // `text-overflow: ellipsis`, so it truncates if Combine squeezes it.
   const header = await win.evaluate((panel) => {
     const root = document.querySelector(panel);
     const h = root.querySelector('.glass-sidebar-header');
@@ -404,41 +367,35 @@ test('P36C2-B1 parity: live previews and thumbnail geometry match on both surfac
 });
 
 // ---------------------------------------------------------------------------
-// B2. Flag ON — engine-state reflection: rotate + delete, both surfaces.
+// B2. Engine-state reflection: rotate + delete re-render the panel.
 // ---------------------------------------------------------------------------
-test('P36C2-B2 parity: rotate and delete re-render BOTH surfaces', async () => {
-  await enableFlag();
+test('P36C2-B2 rotate and delete re-render the panel', async () => {
   await openReport();
 
-  // Rotate page 1 via the EXISTING toolbar control.
-  await win.locator('[data-toolbar-rotate-cw]').first().click();
+  // Rotate page 1 via the relocated control: the per-view command row is
+  // retired, so the PAGES dock's Rotate verb (action 'rotateClockwise', the
+  // same handler the old [data-toolbar-rotate-cw] called) is its new home.
+  await win.locator('[data-dock-verb="rotate"]').first().click();
   await expect.poll(async () => win.locator(`${PANEL} .thumb-item[data-page="1"]`).getAttribute('class'), { timeout: 20000 })
-    .toContain('thumb-rot-90');
-  await expect.poll(async () => win.locator(`${RAIL} .thumb-item[data-page="1"]`).getAttribute('class'), { timeout: 20000 })
     .toContain('thumb-rot-90');
   const rot = await win.evaluate(({ panel }) => {
     const p = document.querySelector(`${panel} .thumb-item[data-page="1"]`);
-    const r = document.querySelector('.side-rail .thumb-item[data-page="1"]');
-    return { panel: p ? p.className : null, rail: r ? r.className : null };
+    return { panel: p ? p.className : null };
   }, { panel: PANEL });
-  console.log(`[P36C2-B2] after rotate page1: panel="${rot.panel}" rail="${rot.rail}"`);
+  console.log(`[P36C2-B2] after rotate page1: panel="${rot.panel}"`);
   expect(rot.panel).toContain('thumb-rot-90');
-  expect(rot.rail).toContain('thumb-rot-90');
 
-  // Delete page 3 from the RAIL's own selection action bar (the rail path).
-  await win.locator(`${RAIL} .thumb-item[data-page="3"]`).click({ modifiers: ['Control'] });
-  await expect(win.locator(`${RAIL} [data-rail-action-bar="3"]`)).toBeVisible();
-  await win.locator(`${RAIL} [data-rail-action-bar="3"] button[aria-label="Delete this page"]`).click();
+  // Delete page 3 through the panel's own hover delete verb (an IMMEDIATE
+  // delete; the panel re-renders from the new engine state).
+  await win.locator(`${PANEL} .thumb-item[data-page="3"]`).hover();
+  await win.locator(`${PANEL} .thumb-item[data-page="3"] [data-thumb-verb="delete"]`).click();
 
   await expect.poll(async () => (await engine()).pageCount, { timeout: 30000 }).toBe(33);
   await expect.poll(async () => win.locator(`${PANEL} .thumb-item`).count(), { timeout: 30000 }).toBe(33);
-  await expect.poll(async () => win.locator(`${RAIL} .thumb-item`).count(), { timeout: 30000 }).toBe(33);
   await expect(win.locator(`${PANEL} .glass-sidebar-title`)).toHaveText('Pages · 33');
 
-  const rail = await measure(RAIL);
   const panel = await measure(PANEL);
-  table('B2 after delete', rail, panel);
-  expect(panel.thumbs.map((t) => t.page)).toEqual(rail.thumbs.map((t) => t.page));
+  table('B2 after delete', panel);
   expect(panel.thumbs.map((t) => t.page)).toEqual(Array.from({ length: 33 }, (_, i) => i + 1));
   const e = await engine();
   expect(e.pageCount).toBe(33);
@@ -446,108 +403,69 @@ test('P36C2-B2 parity: rotate and delete re-render BOTH surfaces', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// B3. Flag ON — drag-reorder (both surfaces), scroll sync, current highlight
-//     and today's selection behaviour.
+// B3. Drag-reorder (drop line), scroll sync, current highlight and selection.
 // ---------------------------------------------------------------------------
-test('P36C2-B3 parity: drag-reorder, drop line, scroll sync and selection', async () => {
-  await enableFlag();
+test('P36C2-B3 drag-reorder, drop line, scroll sync and selection', async () => {
   // scanned.pdf (6 pages) has NO outline, so it isolates the thumbnail
-  // behaviours from the DEF-310 outline-overlay defect (which blocks pointer
-  // input across the panel body on report.pdf — see P36C2-E). The rail and
-  // panel are still compared side by side in the SAME session.
+  // behaviours from the outline section.
   await openDoc('scanned.pdf');
 
-  // --- drag in the RAIL: the drop line shows there; both surfaces re-order.
+  // --- drag: the drop line shows mid-drag; the engine re-orders.
   const before = (await engine()).pageOrder;
-  const sigBefore = await sigs(RAIL);
-  await dragStep('start', { src: `${RAIL} .thumb-item[data-page="1"]` });
-  await win.waitForTimeout(200);
-  const over = await dragStep('over', { tgt: `${RAIL} .thumb-item[data-page="3"]` });
-  expect(over.ok, 'rail dragover accepted').toBe(true);
-  await win.waitForTimeout(300);
-  expect(await win.locator(`${RAIL} [data-thumb-drop-line]`).count(), 'rail drop line appears mid-drag').toBeGreaterThan(0);
-  await dragStep('drop', { tgt: `${RAIL} .thumb-item[data-page="3"]` });
-  await win.waitForTimeout(300);
-  await dragStep('end', { src: `${RAIL} .thumb-item[data-page="1"]` });
-  await expect.poll(async () => JSON.stringify((await engine()).pageOrder), { timeout: 20000 }).not.toBe(JSON.stringify(before));
-  await win.waitForTimeout(1800);
-  const railSigs1 = await sigs(RAIL);
-  const panelSigs1 = await sigs(PANEL);
-  let matched = 0;
-  let maxDiff = 0;
-  for (const p of Object.keys(railSigs1)) {
-    if (panelSigs1[p] === undefined) continue;
-    const d = sigDiff(railSigs1[p], panelSigs1[p]);
-    if (d === null) continue;
-    matched += 1;
-    maxDiff = Math.max(maxDiff, d);
-  }
-  console.log(`[P36C2-B3] rail drag: pageOrder ${JSON.stringify(before.slice(0, 6))} -> ${JSON.stringify((await engine()).pageOrder.slice(0, 6))}`);
-  console.log(`[P36C2-B3] rail drag: signatures compared on ${matched} pages, max diff ${maxDiff}; slot1 before/after diff ${sigDiff(sigBefore[1], railSigs1[1])}`);
-  expect(matched, 'both surfaces painted the same pages after the rail drag').toBeGreaterThan(2);
-  expect(maxDiff, 'both surfaces render identical rasters after the rail drag').toBeLessThan(5);
-
-  // --- drag in the PANEL: drop line shows there; both surfaces re-order.
-  const before2 = (await engine()).pageOrder;
+  const sigBefore = await sigs(PANEL);
   await dragStep('start', { src: `${PANEL} .thumb-item[data-page="1"]` });
   await win.waitForTimeout(200);
-  await dragStep('over', { tgt: `${PANEL} .thumb-item[data-page="3"]` });
+  const over = await dragStep('over', { tgt: `${PANEL} .thumb-item[data-page="3"]` });
+  expect(over.ok, 'panel dragover accepted').toBe(true);
   await win.waitForTimeout(300);
   expect(await win.locator(`${PANEL} [data-thumb-drop-line]`).count(), 'panel drop line appears mid-drag').toBeGreaterThan(0);
   await dragStep('drop', { tgt: `${PANEL} .thumb-item[data-page="3"]` });
   await win.waitForTimeout(300);
   await dragStep('end', { src: `${PANEL} .thumb-item[data-page="1"]` });
-  await expect.poll(async () => JSON.stringify((await engine()).pageOrder), { timeout: 20000 }).not.toBe(JSON.stringify(before2));
+  await expect.poll(async () => JSON.stringify((await engine()).pageOrder), { timeout: 20000 }).not.toBe(JSON.stringify(before));
   await win.waitForTimeout(1800);
-  const railSigs2 = await sigs(RAIL);
-  const panelSigs2 = await sigs(PANEL);
-  let matched2 = 0;
-  let maxDiff2 = 0;
-  for (const p of Object.keys(panelSigs2)) {
-    if (railSigs2[p] === undefined) continue;
-    const d = sigDiff(panelSigs2[p], railSigs2[p]);
-    if (d === null) continue;
-    matched2 += 1;
-    maxDiff2 = Math.max(maxDiff2, d);
-  }
-  console.log(`[P36C2-B3] panel drag: pageOrder ${JSON.stringify(before2.slice(0, 6))} -> ${JSON.stringify((await engine()).pageOrder.slice(0, 6))}`);
-  console.log(`[P36C2-B3] panel drag: signatures compared on ${matched2} pages, max diff ${maxDiff2}`);
-  expect(matched2, 'both surfaces painted the same pages after the panel drag').toBeGreaterThan(2);
-  expect(maxDiff2, 'both surfaces render identical rasters after the panel drag').toBeLessThan(5);
+  const panelSigs1 = await sigs(PANEL);
+  console.log(`[P36C2-B3] drag: pageOrder ${JSON.stringify(before.slice(0, 6))} -> ${JSON.stringify((await engine()).pageOrder.slice(0, 6))}; slot1 before/after diff ${sigDiff(sigBefore[1], panelSigs1[1])}`);
+  expect(sigDiff(sigBefore[1], panelSigs1[1]), 'the panel repainted slot 1 after the reorder').not.toBeNull();
 
-  // --- scroll sync: scrolling the canvas moves the highlight on BOTH.
+  // --- a second drag with a different target still re-orders.
+  const before2 = (await engine()).pageOrder;
+  await dragStep('start', { src: `${PANEL} .thumb-item[data-page="2"]` });
+  await win.waitForTimeout(200);
+  await dragStep('drop', { tgt: `${PANEL} .thumb-item[data-page="4"]` });
+  await win.waitForTimeout(300);
+  await dragStep('end', { src: `${PANEL} .thumb-item[data-page="2"]` });
+  await expect.poll(async () => JSON.stringify((await engine()).pageOrder), { timeout: 20000 }).not.toBe(JSON.stringify(before2));
+  console.log(`[P36C2-B3] second drag re-ordered: ${JSON.stringify((await engine()).pageOrder.slice(0, 6))}`);
+
+  // --- scroll sync: scrolling the canvas moves the panel highlight.
   await scrollCanvasTo(5);
   await expect.poll(async () => (await engine()).currentPage, { timeout: 15000 }).toBe(5);
-  await expect.poll(async () => win.locator(`${RAIL} .thumb-current`).getAttribute('data-page'), { timeout: 15000 }).toBe('5');
   await expect.poll(async () => win.locator(`${PANEL} .thumb-current`).getAttribute('data-page'), { timeout: 15000 }).toBe('5');
-  console.log('[P36C2-B3] scroll sync: both highlights followed the canvas to page 5');
+  console.log('[P36C2-B3] scroll sync: panel highlight followed the canvas to page 5');
 
-  // --- click a thumbnail in each surface; the canvas jumps on both.
-  await win.locator(`${RAIL} .thumb-item[data-page="3"]`).click();
+  // --- click a thumbnail; the canvas jumps.
+  await win.locator(`${PANEL} .thumb-item[data-page="3"]`).click();
   await expect.poll(async () => (await engine()).currentPage, { timeout: 15000 }).toBe(3);
-  await expect.poll(async () => win.locator(`${PANEL} .thumb-current`).getAttribute('data-page'), { timeout: 15000 }).toBe('3');
-  await win.locator(`${PANEL} .thumb-item[data-page="5"]`).click();
-  await expect.poll(async () => (await engine()).currentPage, { timeout: 15000 }).toBe(5);
-  await expect.poll(async () => win.locator(`${RAIL} .thumb-current`).getAttribute('data-page'), { timeout: 15000 }).toBe('5');
-  console.log('[P36C2-B3] thumb click: rail->3 and panel->5 both moved the canvas');
+  console.log('[P36C2-B3] thumb click moved the canvas to page 3');
 
-  // --- today's selection behaviour (single-select): PLAIN click navigates and
-  //     does NOT select; a modifier click selects without navigating.
+  // --- Phase 36 (chunk 3) selection semantics: the PAGES panel is
+  //     MULTI-SELECT, so a PLAIN click navigates AND selects exactly that page
+  //     (State 2's trigger), and Ctrl extends without navigating.
   await win.locator(`${PANEL} .thumb-item[data-page="2"]`).click();
-  expect(await win.locator(`${PANEL} .thumb-selected`).count(), 'panel plain click does not select').toBe(0);
-  expect(await win.locator(`${RAIL} .thumb-selected`).count(), 'rail plain click does not select').toBe(0);
+  expect(await win.locator(`${PANEL} .thumb-selected`).count(), 'panel plain click single-selects').toBe(1);
+  expect(await win.locator(`${PANEL} .thumb-selected`).getAttribute('data-page')).toBe('2');
   await expect.poll(async () => (await engine()).currentPage, { timeout: 15000 }).toBe(2);
-  // Let the canvas smooth-scroll settle before measuring "no navigation"
-  // (mid-flight the scroll heuristic can transiently report a passed page).
+  // Let the canvas smooth-scroll settle before measuring "no navigation".
   await win.waitForTimeout(1500);
   const settledPage = (await engine()).currentPage;
-  await win.locator(`${RAIL} .thumb-item[data-page="3"]`).click({ modifiers: ['Control'] });
-  await expect(win.locator(`${RAIL} .thumb-selected`)).toHaveAttribute('data-page', '3');
-  await win.waitForTimeout(600);
-  expect((await engine()).currentPage, 'modifier select does not navigate').toBe(settledPage);
   await win.locator(`${PANEL} .thumb-item[data-page="4"]`).click({ modifiers: ['Control'] });
-  await expect(win.locator(`${PANEL} .thumb-selected`)).toHaveAttribute('data-page', '4');
-  console.log('[P36C2-B3] selection: plain click = navigate (no select) on BOTH; modifier click = single-select on BOTH; deferred multi-select untouched');
+  const panelSelected = (await win.locator(`${PANEL} .thumb-selected`).evaluateAll((els) =>
+    els.map((e) => e.getAttribute('data-page')))).sort();
+  console.log(`[P36C2-B3] panel selection after plain + Ctrl: ${JSON.stringify(panelSelected)}`);
+  expect(panelSelected, 'Ctrl extends the panel selection').toEqual(['2', '4']);
+  expect((await engine()).currentPage, 'Ctrl select does not navigate').toBe(settledPage);
+  console.log('[P36C2-B3] selection: plain click = navigate + single-select; Ctrl extends without navigating');
 });
 
 // Close whatever dialog is open (Escape, then the modal close button).
@@ -578,7 +496,7 @@ async function openPageMenu(page) {
 // C. Panel-only — the inline hover verbs.
 // ---------------------------------------------------------------------------
 test('P36C2-C hover verbs: reveal, right action for the right page, no select/jump/drag', async () => {
-  await enableFlag();
+  
   // No-outline fixture so the verb clicks are not blocked by the DEF-310
   // outline overlay (report.pdf would intercept every panel-body pointer).
   await openDoc('scanned.pdf');
@@ -655,7 +573,7 @@ test('P36C2-C hover verbs: reveal, right action for the right page, no select/ju
 // D. Panel-only — the right-click menu's seven items.
 // ---------------------------------------------------------------------------
 test('P36C2-D right-click menu: seven items, each does what its label promises', async () => {
-  await enableFlag();
+  
   // No-outline fixture so the menu gestures are not blocked by the DEF-310
   // outline overlay.
   await openDoc('scanned.pdf');
@@ -727,7 +645,7 @@ test('P36C2-D right-click menu: seven items, each does what its label promises',
 // E. Panel-only — Combine entry + the outline section.
 // ---------------------------------------------------------------------------
 test('P36C2-E Combine opens the merge dialog; the outline section toggles and navigates', async () => {
-  await enableFlag();
+  
   await openReport();
 
   await win.locator('[data-context-panel-combine]').click();

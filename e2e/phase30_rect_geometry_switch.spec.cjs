@@ -17,7 +17,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool, openSamplePath } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, openSamplePath, gotoStage } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -192,6 +192,9 @@ test('T2: rect move is ONE op, one undo restores it, save+reopen persists', asyn
     // ONE undo entry restores the original rect. A delete + create pair would
     // need TWO undos (and the first would resurrect a duplicate), so a single
     // undo returning the original id + geometry proves the one-op switch.
+    // Phase 36 (chunk 6) — the "Undo last change" control lives in the PAGES
+    // ContextPanel's thumbnail stack, so switch to PAGES to reach it.
+    await gotoStage(win, 1);
     await win.locator('button[aria-label="Undo last change"]').first().click();
     const reverted = await waitForAnn(win, (a) => a.id === id && a.rect
       && Math.abs(a.rect.x - orig.x) < 1.5 && Math.abs(a.rect.y - orig.y) < 1.5

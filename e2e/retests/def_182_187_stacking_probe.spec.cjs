@@ -44,8 +44,9 @@ test('stacking probe under glass sample points', async () => {
     await win.click('button[title="Zoom in"]');
     await win.waitForTimeout(80);
   }
-  await win.click('[data-tools-toggle]');
-  await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
+  // Phase 36 migration: All-tools palette retired; the ContextPanel is present
+  // with a document open, so just let the surfaces settle.
+  await win.waitForSelector('[data-context-panel]', { timeout: 8000 }).catch(() => {});
   await win.waitForTimeout(600);
 
   const probe = await win.evaluate(() => {

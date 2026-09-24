@@ -1,6 +1,6 @@
 // Ground-truth reproduction (Bugs 3, 6, 7, 8, 10) on the DEV build (originally written against the installed app).
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, runTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 const path = require('node:path');
 const SCREENSHOT_DIR = path.resolve(__dirname, '..', '..', 'screenshots');
@@ -28,16 +28,13 @@ async function openReport() {
   await win.waitForTimeout(1500);
 }
 
-async function openTools() {
-  await win.click('[data-tools-toggle]');
-  await win.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-  await win.waitForTimeout(300);
-}
+// Phase 36 migration: the All-tools palette is retired; each tool is a stage
+// Action Dock verb now (inline or the "More" overflow lane). The dialogs and
+// assertions below are unchanged.
 
 test('Bug 3/6: DOCX export drag-highlight out of window closes dialog (no guard)', async () => {
   await openReport();
-  await openTools();
-  await win.click('[data-tool-id="exportDocx"]');
+  await runTool(win, 'exportDocx');
   await win.waitForSelector('[data-docx-export-dialog]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.screenshot({ path: path.join(SCREENSHOT_DIR, 'gt-bug3-docx-open.png') });
@@ -58,8 +55,7 @@ test('Bug 3/6: DOCX export drag-highlight out of window closes dialog (no guard)
 
 test('Bug 6 positive control: InsertPages dialog does NOT close on drag-out (B17 guard)', async () => {
   await openReport();
-  await openTools();
-  await win.click('[data-tool-id="insertPages"]');
+  await runTool(win, 'insertPages');
   await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 10000 });
   await win.waitForTimeout(400);
 
@@ -78,8 +74,7 @@ test('Bug 7: insert blank after page 1 -> thumbnail rail state', async () => {
   await openReport();
   const d0 = await win.evaluate(() => window.tflexDiagnostics());
   console.log('[BUG7] pageCount before=', d0.pageCount);
-  await openTools();
-  await win.click('[data-tool-id="insertPages"]');
+  await runTool(win, 'insertPages');
   await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 10000 });
   await win.fill('[data-insert-position]', '2');
   await win.waitForTimeout(200);
@@ -114,8 +109,7 @@ test('Bug 7: insert blank after page 1 -> thumbnail rail state', async () => {
 
 test('Bug 8: crop mode-switch flicker + per-page crops all + undo not rendering', async () => {
   await openReport();
-  await openTools();
-  await win.click('[data-tool-id="cropPages"]');
+  await runTool(win, 'cropPages');
   await win.waitForSelector('[data-crop-pages-dialog]', { timeout: 10000 });
   await win.waitForTimeout(600);
 

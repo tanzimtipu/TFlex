@@ -23,7 +23,7 @@ const os = require('node:os');
 const { inflateSync } = require('node:zlib');
 const { PDFDocument, PDFRawStream } = require('pdf-lib');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
-const { hardClose, openSamplePath } = require('../lib/helpers.cjs');
+const { hardClose, openSamplePath, toggleEditMode } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -82,7 +82,7 @@ async function readPayloads(app) {
 
 // Select the first real text-layer run through the Edit-mode text tool.
 async function selectRun(win) {
-  await win.click('button[aria-label="Edit content"]');
+  await toggleEditMode(win);
   await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
   await win.click('[data-edit-tool="text"]');
   await win.waitForTimeout(300);

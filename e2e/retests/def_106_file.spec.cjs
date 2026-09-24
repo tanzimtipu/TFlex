@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, clickDockVerb } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const os = require('node:os');
 const path = require('node:path');
@@ -50,9 +50,13 @@ test('DEF-106: DOCX export completes and produces a file', async () => {
 
   await openSample('report.pdf');
 
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.click('[data-tool-id="exportDocx"]');
+  // Phase 36 (chunk 9 migration): the All-tools palette and its
+  // `[data-tool-id="exportDocx"]` row are retired. Export to Word is a
+  // DELIVER-stage Action Dock verb now (`[data-dock-verb="exportDocx"]`,
+  // spilling into the overflow menu when the dock is full). Same dialog and
+  // the same saved-file assertions follow.
+  const lane = await clickDockVerb(window, 4, 'exportDocx');
+  console.log('DEF-106 dock verb lane:', lane);
   await window.waitForSelector('[data-docx-export-dialog]');
   await window.waitForTimeout(400);
 

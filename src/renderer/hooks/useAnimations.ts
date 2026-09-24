@@ -365,6 +365,41 @@ export function usePopAnimation(options: PopOptions = {}): MotionVariantSet {
 }
 
 /* ----------------------------------------------------------------------- */
+/* Command palette — Scale Fade (the Phase-36 browse-everything surface)     */
+/* ----------------------------------------------------------------------- */
+
+/** Phase 36 (chunk 4) — the Command Palette's reveal: scale
+ *  --motion-scale-enter (0.95) -> 1 with opacity over the PANEL band
+ *  (140ms, the shortest existing duration token — the spec's "~140ms
+ *  scale/opacity"), the reverse to --motion-scale-exit on the way out.
+ *  Transform + opacity only, so the palette composites: no layout is
+ *  touched while it opens over the canvas.
+ *
+ *  Reduced motion / Animations off collapse it to the shared opacity-only
+ *  zero-duration band (the same fallback every other surface uses), so the
+ *  palette still mounts and closes without a transform ever animating. */
+export function useCommandPaletteAnimation(): MotionVariantSet {
+  const instant = useInstantMotion();
+  return useMemo<MotionVariantSet>(() => {
+    if (instant) return reducedVariants();
+    return {
+      initial: { opacity: MOTION_OPACITY.hidden, scale: MOTION_SCALE.enter },
+      animate: {
+        opacity: MOTION_OPACITY.visible,
+        scale: 1,
+        transition: { duration: msToSeconds(MOTION_DURATION.panel), ease: MOTION_EASE.enter },
+      },
+      exit: {
+        opacity: MOTION_OPACITY.hidden,
+        scale: MOTION_SCALE.exit,
+        transition: { duration: msToSeconds(MOTION_DURATION.panel), ease: MOTION_EASE.exit },
+        pointerEvents: "none",
+      },
+    };
+  }, [instant]);
+}
+
+/* ----------------------------------------------------------------------- */
 /* Hover lift — Luminous Hover / Thumbnail Lift                             */
 
 export interface LiftOptions {

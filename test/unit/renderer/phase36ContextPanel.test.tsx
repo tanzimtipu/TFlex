@@ -143,7 +143,6 @@ function renderPanel(
     act((): void => {
       root.render(
         <ContextPanel
-          dev
           doc={current.doc ?? makeDocStub(pageCount)}
           currentPage={current.currentPage ?? 1}
           defaultWidthPt={612}
@@ -298,8 +297,11 @@ describe("ContextPanel — header (Pages · N + Combine)", () => {
       expect(combine?.textContent).toContain("Combine");
       clickOn(combine as HTMLButtonElement);
       expect(onMerge).toHaveBeenCalledTimes(1);
-      // The dev mount is unmistakable.
-      expect(host.querySelector("[data-context-panel-dev-badge]")).not.toBeNull();
+      // Phase 36 (chunk 6) — the dev badge is retired with the dev flag: the
+      // panel is the real default left slot now and carries the re-homed
+      // collapse control (the rail's `data-rail-collapse` hook).
+      expect(host.querySelector("[data-context-panel-dev-badge]")).toBeNull();
+      expect(host.querySelector("[data-rail-collapse]")).not.toBeNull();
     } finally {
       unmount();
     }

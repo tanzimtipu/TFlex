@@ -5,7 +5,7 @@
 const { test } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, runTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -31,10 +31,7 @@ test('PROBE: frosted dialog + menu surface facts', async () => {
       await win.waitForTimeout(600);
 
       // Dialog
-      await win.click('[data-tools-toggle]');
-      await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-      await win.waitForTimeout(500);
-      await win.click('[data-tool-id="insertPages"]');
+      await runTool(win, 'insertPages');
       await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 8000 });
       await win.waitForTimeout(700);
       const dlg = await win.evaluate(() => {
@@ -60,11 +57,7 @@ test('PROBE: frosted dialog + menu surface facts', async () => {
       await win.screenshot({ path: path.join(SHOTS, `probe-dialog-${theme}.png`) });
       await win.keyboard.press('Escape');
       await win.waitForTimeout(700);
-      const palOpen = await win.evaluate(() => !!document.querySelector('[data-tools-palette]'));
-      if (palOpen) {
-        await win.click('[data-tools-toggle]');
-        await win.waitForTimeout(600);
-      }
+      // Phase 36: the All-tools palette is retired; nothing to close here.
 
       // App menu + theme popover
       await win.click('[data-menu-button]');

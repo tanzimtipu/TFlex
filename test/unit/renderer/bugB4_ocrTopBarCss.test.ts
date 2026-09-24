@@ -31,8 +31,11 @@ function stylesCss(): string {
 describe("DEF-126 — OCR suspects panel reserves space (never covers the rail / palette)", () => {
   it("the panel is a FLOW bar, not an absolute overlay (no top/left/right/z-index calc)", () => {
     const css = stylesCss();
+    // Phase 36 (chunk 5) added `.inspector .ocr-suspects-panel` (the Inspector's
+    // inline re-parent override), which contains the same substring. Anchor to a
+    // line that STARTS with the selector so this scans the bar's own rule.
     const panel = css.slice(
-      css.indexOf(".ocr-suspects-panel {"),
+      css.indexOf("\n.ocr-suspects-panel {") + 1,
       css.indexOf(".ocr-suspects-header"),
     );
     // Flow element at the top of the flex column.

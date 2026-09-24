@@ -17,7 +17,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, scrollToPage } = require('./lib/helpers.cjs');
+const { hardClose, scrollToPage, armAnnotationTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -46,6 +46,33 @@ async function readTheme() {
 async function setThemeViaDropdown(want) {
   await win.click('[data-theme-toggle]');
   await win.waitForSelector('.theme-toggle-popover', { timeout: 5000 });
+  await win.waitForTimeout(600);
+  const diag = await win.evaluate((w) => {
+    const opt = document.querySelector(`[data-theme-option="${w}"]`);
+    const pop = document.querySelector('.theme-toggle-popover');
+    const eb = document.querySelector('.welcome-eyebrow');
+    const r = opt.getBoundingClientRect();
+    const cx = r.x + r.width / 2;
+    const cy = r.y + r.height / 2;
+    const top = document.elementFromPoint(cx, cy);
+    const pr = pop ? pop.getBoundingClientRect() : null;
+    const er = eb ? eb.getBoundingClientRect() : null;
+    const chain = [];
+    let n = pop;
+    while (n && n !== document.documentElement) {
+      const cs = getComputedStyle(n);
+      chain.push(`${n.tagName}.${n.className}|z=${cs.zIndex}|pos=${cs.position}|tf=${cs.transform === 'none' ? 'none' : 'yes'}|op=${cs.opacity}|bf=${cs.backdropFilter}`);
+      n = n.parentElement;
+    }
+    return {
+      opt: { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) },
+      pop: pr ? { x: Math.round(pr.x), y: Math.round(pr.y), w: Math.round(pr.width), h: Math.round(pr.height), z: getComputedStyle(pop).zIndex } : null,
+      eyebrow: er ? { x: Math.round(er.x), y: Math.round(er.y), w: Math.round(er.width), h: Math.round(er.height) } : null,
+      topEl: top ? `${top.tagName}.${top.className}` : null,
+      chain,
+    };
+  }, want);
+  console.log(`[theme-diag:${want}] ${JSON.stringify(diag)}`);
   await win.click(`[data-theme-option="${want}"]`);
   await win.waitForFunction(
     (w) => document.documentElement.getAttribute('data-theme') === w,
@@ -197,7 +224,7 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
     });
     console.log(`[item2] dropdown open (Enter): ${JSON.stringify(openState)}`);
     expect(openState.expanded).toBe('true');
-    expect(openState.order, 'Frosted must lead the option list').toEqual(['frosted', 'dark', 'light']);
+    expect(openState.order, 'Frosted must lead the option list').toEqual(['frosted', 'dark', 'light', 'system']);
     expect(openState.checked, 'frosted must be the selected/default option').toEqual(['frosted']);
     await snap('frost-m-dropdown-open.png');
 
@@ -274,20 +301,14 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
 
     // ------------------------------------------------------------------
     // ITEM 5 (toolbar pass) - colorful icons
+    // Phase 36 (chunk 3): the per-view command row is retired, so its
+    // per-button semantic icon hues have no surface to assert. The Action
+    // Dock's own icon/theme contract is covered by
+    // phase36_chunk3_dock_gate.spec.cjs (criterion 8 surfaces).
     // ------------------------------------------------------------------
-    const toolbarIcons = await win.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll('.toolbar .tool-btn[data-icon]'));
-      return btns.map((b) => ({
-        icon: b.getAttribute('data-icon'),
-        color: getComputedStyle(b).color,
-      }));
-    });
-    console.log(`[item5] toolbar icon colors: ${JSON.stringify(toolbarIcons)}`);
-    const distinctToolbar = new Set(toolbarIcons.map((i) => i.color));
-    expect(distinctToolbar.size, 'toolbar icons must carry multiple semantic hues, not one monochrome').toBeGreaterThanOrEqual(4);
 
     // ------------------------------------------------------------------
-    // ITEM 3 - acrylic quality on chrome (doc view: toolbar + rail live)
+    // ITEM 3 - acrylic quality on chrome (doc view: rail live)
     // Phase-14.1 contract (neutral glass correction): the films are
     // NEUTRAL WHITE rgba(255,255,255,...) sheets in the 0.68-0.75 band
     // (frame 0.75, toolbar 0.68, rail 0.68, panel 0.68) with the 20px
@@ -296,7 +317,7 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
     // transparent with NO blur. Blue is accent-only (Open button,
     // selected states, active tools, focus).
     // ------------------------------------------------------------------
-    const chromeSelectors = ['.titlebar', '.app-header', '.toolbar', '.side-rail'];
+    const chromeSelectors = ['.titlebar', '.app-header', '.side-rail'];
     const chrome = [];
     for (const sel of chromeSelectors) {
       const facts = await chromeStyle(sel);
@@ -340,15 +361,12 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
 
     // ------------------------------------------------------------------
     // ITEM 7a - moving reflection present (normal motion)
+    // Phase 36 (chunk 3): the retired command row was the second sheen
+    // surface; the rail remains, and the Action Dock carries no ::after sheen.
     // ------------------------------------------------------------------
-    const reflToolbar = await chromeStyle('.toolbar');
     const reflRail = await chromeStyle('.side-rail');
-    console.log(`[item7] toolbar::after anim=${reflToolbar.afterAnimationName} ${reflToolbar.afterAnimationDuration}, rail::after anim=${reflRail.afterAnimationName} ${reflRail.afterAnimationDuration}, pe=${reflToolbar.afterPointerEvents}`);
-    expect(reflToolbar.afterAnimationName, 'frosted toolbar must run the acrylic-sheen sweep').toBe('acrylic-sheen');
+    console.log(`[item7] rail::after anim=${reflRail.afterAnimationName} ${reflRail.afterAnimationDuration}`);
     expect(reflRail.afterAnimationName).toBe('acrylic-sheen');
-    expect(reflToolbar.afterPointerEvents, 'the band must never join a hit test').toBe('none');
-    // subtlety: mechanical band gradient peak is 0.05 alpha per styles.css; verify the animation is slow (>=7s loop)
-    expect(parseFloat(reflToolbar.afterAnimationDuration)).toBeGreaterThanOrEqual(7);
 
     // ------------------------------------------------------------------
     // ITEM 5 (palette pass) + ITEM 6 - open the tools panel
@@ -515,6 +533,12 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
     console.log(`[item8] avg scroll step = ${avgScroll.toFixed(1)}ms`);
     expect(avgScroll, 'scroll steps must stay smooth (<150ms per 600px step incl. 2 rAF ticks)').toBeLessThan(150);
 
+    // Phase 36 (chunk 3) — the zoom controls moved from the retired command row
+    // to the bottom-right CanvasPills. The palette (opened above for the enter
+    // sample) is a full-height right panel that covers that pill, so close it
+    // before the zoom check: this spec's subject is the zoom readout, not the
+    // palette-open layout.
+    await closePaletteIfOpen();
     await win.click('button[title="Zoom in"]');
     await win.waitForTimeout(400);
     const zoomAfter = await win.evaluate(() => {
@@ -590,7 +614,10 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
     // page 5, so return to page 1 first and pick a span that is actually
     // inside the viewport.
     await scrollToPage(win, 1);
-    await win.click('button[aria-label="Highlight"]');
+    // Phase 36 (chunk 3) — the annotation toolbar lives in the REVIEW Annotate
+    // flyout now; arm Highlight through its new home (the helper opens the
+    // flyout and clicks the tool).
+    await armAnnotationTool(win, 'highlight');
     await win.waitForTimeout(350);
     const hlSpan = await win.evaluate(() => {
       const spans = Array.from(
@@ -662,7 +689,7 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
     console.log(`[item7] prefers-reduced-motion (emulated) = ${reduced}`);
     expect(reduced, 'the reduced-motion switch must reach the renderer').toBe(true);
 
-    // Open a doc so .toolbar/.side-rail exist
+    // Open a doc so .side-rail exists
     const reportPath = getSamplePath('report.pdf');
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
@@ -672,15 +699,12 @@ test.describe.serial('frosted-acrylic + motion verification (dev build v1.10.2 P
     await win.waitForTimeout(2000);
 
     const refl = await win.evaluate(() => {
-      const tb = document.querySelector('.toolbar');
       const sr = document.querySelector('.side-rail');
       return {
-        toolbarAnim: tb ? getComputedStyle(tb, '::after').animationName : null,
         railAnim: sr ? getComputedStyle(sr, '::after').animationName : null,
       };
     });
     console.log(`[item7] reduced-motion reflection anim: ${JSON.stringify(refl)}`);
-    expect(refl.toolbarAnim, 'the moving reflection must be ABSENT under prefers-reduced-motion').toBe('none');
     expect(refl.railAnim).toBe('none');
 
     // Motion wrappers: reduced mode = opacity-only, instant

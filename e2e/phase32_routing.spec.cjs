@@ -13,7 +13,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
 
 const FIX = path.resolve(__dirname, '..', 'test-fixtures');
 const ALPHA_SRC = path.join(FIX, 'report.pdf'); // 34 pages
@@ -77,8 +77,9 @@ async function twoPaneSetup() {
   await waitTabCount(2);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p32-beta' }).first().click();
   await win.waitForTimeout(1200);
@@ -171,21 +172,22 @@ test('R1 toolbar page operations act on the focused pane only', async () => {
   expect(aAfterDel2).toBe(aAfterDel - 1);
   expect(bAfterDel2).toBe(bAfterDel);
 
-  // --- a GLOBAL entry point (All tools > Delete) routes to the focused
-  //     pane: open the palette from the topmost (pane B) tools badge, then
-  //     delete. ---
-  await win.locator('[data-tools-badge]').last().click({ force: true });
-  await win.waitForSelector('[data-tool-id="delete"]', { timeout: 10000 });
+  // --- a GLOBAL entry point (Command Palette > Delete pages) routes to the
+  //     focused pane: focus B, open the palette, run Delete pages. ---
   await focusPane('B');
   const aBeforeGlobal = await paneCount('A');
   const bBeforeGlobal = await paneCount('B');
-  await win.locator('[data-tool-id="delete"]').click();
+  await win.keyboard.press('Control+k');
+  await win.waitForSelector('[data-command-palette]', { timeout: 10000 });
+  await win.fill('[data-command-palette-input]', 'delete pages');
+  await win.waitForTimeout(200);
+  await win.locator('[data-palette-tool-id="delete"]').first().click();
   await win.waitForSelector('[data-delete-pages-dialog]', { timeout: 10000 });
   await win.locator('[data-delete-confirm]').click();
   await win.waitForTimeout(1200);
   const aAfterGlobal = await paneCount('A');
   const bAfterGlobal = await paneCount('B');
-  console.log(`[P32-routing] All tools Delete while B focused: A ${aBeforeGlobal}->${aAfterGlobal}, B ${bBeforeGlobal}->${bAfterGlobal}`);
+  console.log(`[P32-routing] palette Delete while B focused: A ${aBeforeGlobal}->${aAfterGlobal}, B ${bBeforeGlobal}->${bAfterGlobal}`);
   expect(aAfterGlobal).toBe(aBeforeGlobal);
   expect(bAfterGlobal).toBe(bBeforeGlobal - 1);
 });
@@ -308,10 +310,9 @@ test('R4 tab-strip activation rules apply with Multi Mode OFF; ON shows ONE comp
 
   // Turning the mode ON collapses the strip to EXACTLY ONE composite tab that
   // names the pane document(s); the per-document activation rules are gone.
-  // Click the VISIBLE control (two tabs are mounted, the hidden one has its
-  // own toolbar copy).
-  await win.locator('[data-toolbar-multi-mode]:visible').first().click();
-  await win.waitForTimeout(600);
+  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode, so the
+  // Multi Mode toggle's single-mode home is the All-tools palette entry.
+  await toggleMultiModeViaPalette(win);
   expect(await stage.getAttribute('data-multi-mode')).toBe('true');
   const tabsOn = win.locator('.tab[data-tab-id]');
   expect(await tabsOn.count()).toBe(1);

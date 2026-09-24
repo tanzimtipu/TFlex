@@ -13,7 +13,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openAnnotationFlyout, toggleEditMode } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -315,10 +315,15 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   await openReport(electronApp, win);
 
   await win.screenshot({ path: path.join(SHOTS, 'phase13-qa-02-workspace-light.png') });
-  await win.locator('.toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-05-toolbar-closeup.png') });
+  // Phase 36 (chunk 3) — the command row is retired; the Action Dock is the
+  // workspace chrome now, and the annotation group lives in the REVIEW flyout.
+  await openAnnotationFlyout(win);
+  await win.locator('.action-dock').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-05-toolbar-closeup.png') });
   await win.locator('.ann-toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-07-annotation-toolbar-closeup.png') });
 
-  // --- Icon-only toolbar sweep: every button named, no text labels ---
+  // --- Icon-only sweep: every annotation / edit button named, no text labels.
+  //     The retired command row's own icon-only contract is superseded by the
+  //     Action Dock, whose labels/aria are covered by phase36_chunk3_dock_gate.
   const sweep = await win.evaluate(() => {
     const scan = (scope) => Array.from(document.querySelectorAll(`${scope} .tool-btn, ${scope} button`)).filter((b, i, arr) => arr.indexOf(b) === i).map((b) => ({
       label: b.getAttribute('aria-label'),
@@ -327,16 +332,14 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
       innerText: (b.innerText || '').trim(),
     }));
     return {
-      toolbar: scan('.toolbar'),
       annToolbar: scan('.ann-toolbar'),
       editToolbar: scan('.edit-toolbar'),
       labelSpans: document.querySelectorAll('.tool-btn-label').length,
     };
   });
-  console.log(`[toolbar] main buttons (${sweep.toolbar.length}): ${JSON.stringify(sweep.toolbar.map((b) => b.label))}`);
   console.log(`[ann] buttons (${sweep.annToolbar.length}): ${JSON.stringify(sweep.annToolbar.map((b) => b.label))}`);
   console.log(`[edit] buttons (${sweep.editToolbar.length}): ${JSON.stringify(sweep.editToolbar.map((b) => b.label))}`);
-  for (const b of [...sweep.toolbar, ...sweep.annToolbar]) {
+  for (const b of [...sweep.annToolbar]) {
     expect(b.label, 'every toolbar button must have an aria-label').toBeTruthy();
     expect(b.title, 'every toolbar button must have a title tooltip').toBeTruthy();
     expect(b.hasTextSpan, 'icon-only: no text label spans').toBe(false);
@@ -401,7 +404,16 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
 
   // --- Rotate counter-clockwise changes the engine rotation ---
   const rotBefore = await win.evaluate(() => (window.tflexDiagnostics().engineState.rotations || []).slice(0, 4));
-  await win.click('[data-toolbar-rotate-ccw]');
+  // Phase 36 (chunk 3) — the command row is retired; counter-clockwise rotation
+  // is the thumbnail rail's selected-page action (the PAGES dock verb is cw).
+  // The legacy rail (the single-mode default) only SELECTS on a modifier click
+  // — a plain click navigates — so Shift-click the thumb to raise its action
+  // bar. (The multi-select ContextPanel selects on a plain click, but it is
+  // behind the ?tfStagePanel dev flag and not mounted here.)
+  // Phase 36: the thumbnail rail is re-parented under the ContextPanel.
+  await win.locator('[data-context-panel-thumbs] .thumb-item').first().click({ modifiers: ['Shift'] });
+  await win.waitForSelector('[data-rail-action-bar]', { timeout: 8000 });
+  await win.click('[data-rail-action-bar] [aria-label="Rotate counter-clockwise"]');
   await wait(1200);
   const rotAfter = await win.evaluate(() => (window.tflexDiagnostics().engineState.rotations || []).slice(0, 4));
   console.log(`[rotate-ccw] before=${JSON.stringify(rotBefore)} after=${JSON.stringify(rotAfter)}`);
@@ -410,15 +422,15 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   await win.keyboard.press('Control+z');
   await wait(600);
 
-  // --- More (ellipsis) opens the Tools palette ---
-  await win.click('[data-tools-toggle]');
+  // --- More (ellipsis) opened the Tools palette; Phase 36 retired it for the
+  // ContextPanel, which is the tools panel now. ---
   await wait(500);
   const palette = await win.evaluate(() => {
-    const el = document.querySelector('.tools-palette, [data-tools-palette]');
+    const el = document.querySelector('[data-context-panel]');
     return el ? { visible: el.offsetParent !== null, cls: el.className } : null;
   });
-  console.log(`[more] palette: ${JSON.stringify(palette)}`);
-  expect(palette, 'More (ellipsis) must open the Tools palette').not.toBeNull();
+  console.log(`[more] context panel: ${JSON.stringify(palette)}`);
+  expect(palette, 'the tools ContextPanel is present').not.toBeNull();
   await win.keyboard.press('Escape');
   await wait(300);
 
@@ -436,6 +448,10 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   expect(accent.accent.toLowerCase()).toBe('#2563eb');
   expect(accent.openBg).toBe('rgb(37, 99, 235)');
 
+  // Phase 36 (chunk 3) — the annotation toolbar lives in the REVIEW Annotate
+  // flyout, and the flyout's own Escape handler closed it during the hand-pan
+  // step above. Re-open it before arming Highlight.
+  await openAnnotationFlyout(win);
   await win.click('[data-tool="highlight"]');
   await wait(400);
   // Move the pointer off the toolbar first: the resting :hover wash
@@ -461,7 +477,7 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   await win.locator('.ann-toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-07-annotation-toolbar-closeup.png') });
 
   // --- Edit toolbar icon-only (CONTROL-INDEX row): Off / Edit text / Add box / Image ---
-  await win.click('[data-toolbar-edit-toggle]');
+  await toggleEditMode(win);
   await wait(600);
   const editSweep = await win.evaluate(() => {
     const btns = Array.from(document.querySelectorAll('.edit-toolbar button')).map((b) => ({
@@ -479,7 +495,7 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   }
   expect(editSweep.labelSpans).toBe(0);
   await win.locator('.edit-toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-11-edit-toolbar-closeup.png') });
-  await win.click('[data-toolbar-edit-toggle]'); // close edit mode
+  await toggleEditMode(win); // close edit mode
   await wait(400);
 
   console.log(`[errors] ${errors.length}: ${JSON.stringify(errors.slice(0, 5))}`);

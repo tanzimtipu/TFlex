@@ -123,10 +123,9 @@ describe("B6 — tab close clears ALL tool states (App + per-tab)", () => {
       "setDocxExportOpen(false)",
       "setCommentExportOpen(false)",
       "setCommentImportOpen(false)",
-      // B21 — the tools palette is App-level and would otherwise
-      // stay mounted over the home / welcome screen after the
-      // last tab closes.
-      "setToolsPaletteOpen(false)",
+      // Phase 36 (chunk 5) — the All-tools palette retired, so the B21
+      // `setToolsPaletteOpen(false)` reset is gone; the Inspector is derived
+      // from "a document is open" and hides itself when the last tab closes.
     ]) {
       expect(body).toContain(setter);
     }

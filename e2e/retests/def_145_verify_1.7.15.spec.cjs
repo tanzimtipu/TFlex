@@ -7,7 +7,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, toggleEditMode } = require('../lib/helpers.cjs');
 const path = require('node:path');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
@@ -60,6 +60,13 @@ async function boxSnapshot(label) {
       boxRects: boxes.map(rect),
       mirrorCount: mirrors.length,
       mirrorTexts: mirrors.map((m) => (m.textContent || '').trim().slice(0, 40)),
+      // The raw committed text (the mirror's own attribute) — textContent
+      // concatenates wrapped line divs without spaces, so it is not a
+      // faithful read of the box's content.
+      mirrorAttrs: mirrors.map((m) => m.getAttribute('data-edit-box-text-mirror') || ''),
+      mirrorLineTexts: mirrors.map((m) =>
+        Array.from(m.querySelectorAll('[data-edit-box-line]')).map((l) => (l.textContent || '').trim()),
+      ),
       mirrorRects: mirrors.map(rect),
     };
   });
@@ -71,7 +78,7 @@ test('DEF-145: dragging a committed textbox -> box + text travel together, no st
   await openSampleFromCard('report.pdf');
 
   // Edit mode -> Add box tool -> place a box with text, commit via Ctrl+Enter.
-  await win.click('[data-toolbar-edit-toggle]');
+  await toggleEditMode(win);
   await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.click('[data-edit-tool="box"]');
@@ -99,7 +106,10 @@ test('DEF-145: dragging a committed textbox -> box + text travel together, no st
 
   const committed = await boxSnapshot('COMMITTED');
   expect(committed.boxCount, 'a committed box must exist').toBeGreaterThanOrEqual(1);
-  expect(committed.mirrorTexts.join('|'), 'committed box must hold the full text').toContain('STALE CHECK BOX');
+  // Read the mirror's raw committed text (its own attribute), not textContent:
+  // a wrapped box renders one div per line, so textContent drops the spaces
+  // between lines ("STALECHECKBOX"). The attribute is the box's actual content.
+  expect(committed.mirrorAttrs.join('|'), 'committed box must hold the full text').toContain('STALE CHECK BOX');
 
   // Re-arm the box tool so the committed box is draggable.
   await win.click('[data-edit-tool="box"]');

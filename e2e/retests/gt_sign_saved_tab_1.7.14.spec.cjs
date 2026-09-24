@@ -9,7 +9,7 @@
 // Launch only via e2e/lib/launch.cjs against the DEV build (historically: the packaged installed exe).
 
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armSignTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
@@ -79,7 +79,7 @@ async function savedRows(label) {
 }
 
 async function openSignManager() {
-  await win.click('button[aria-label="Sign tool"]');
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 10000 });
   await win.waitForTimeout(600);
 }

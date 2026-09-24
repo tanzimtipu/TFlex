@@ -15,7 +15,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, scrollToPage } = require('./lib/helpers.cjs');
+const { hardClose, scrollToPage, gotoStage, toggleEditMode, openDockVerb, runTool } = require('./lib/helpers.cjs');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -60,7 +60,9 @@ async function openReport() {
 }
 
 async function armEditTool(tool) {
-  await win.click('[data-toolbar-edit-toggle]');
+  // Phase 36 (chunk 3) — the per-view command row is retired; Edit mode is the
+  // EDIT dock's `editMode` verb.
+  await toggleEditMode(win);
   await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
   await win.waitForTimeout(300);
   if (tool && tool !== 'off') {
@@ -601,12 +603,7 @@ test('A1c image move: old rect masked, band above stable, no leftover, save/reop
 // ---------------------------------------------------------------------------
 
 async function openTools() {
-  const open = await win.evaluate(() => document.querySelector('[data-tools-palette]') !== null);
-  if (!open) {
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-    await win.waitForTimeout(300);
-  }
+  // Phase 36 migration: the All-tools palette is retired; use runTool(id).
 }
 
 test('A2 flash sweep: thumb canvas zeroing + main canvas blank around each tool commit', async () => {
@@ -615,8 +612,7 @@ test('A2 flash sweep: thumb canvas zeroing + main canvas blank around each tool 
   const rows = {};
 
   // 1. Watermark apply.
-  await openTools();
-  await win.locator('[data-tool-id="watermark"]').click();
+  await runTool(win, 'watermark');
   await win.waitForSelector('[data-watermark-dialog]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.locator('[data-watermark-text]').fill('SWEEP');
@@ -627,8 +623,7 @@ test('A2 flash sweep: thumb canvas zeroing + main canvas blank around each tool 
   await win.waitForTimeout(500);
 
   // 2. Watermark delete-by-id (reopen dialog; applied row wm-1).
-  await openTools();
-  await win.locator('[data-tool-id="watermark"]').click();
+  await runTool(win, 'watermark');
   await win.waitForSelector('[data-watermark-dialog]', { timeout: 10000 });
   await win.waitForTimeout(500);
   const delCount = await win.locator('[data-watermark-delete]').count();
@@ -645,14 +640,14 @@ test('A2 flash sweep: thumb canvas zeroing + main canvas blank around each tool 
   await win.waitForTimeout(400);
 
   // 3. Rotate page.
+  await gotoStage(win, 1);
   rows['rotate-page'] = await aroundFlash(async () => {
-    await win.click('[data-toolbar-rotate-cw]');
+    await win.click('[data-dock-verb="rotate"]');
   }, 3500, 1);
   console.log(`[A2|rotate-page] ${JSON.stringify(rows['rotate-page'])}`);
 
   // 4. Delete page (last page, range mode, to avoid moving page 1).
-  await openTools();
-  await win.click('[data-tool-id="delete"]');
+  await runTool(win, 'delete');
   await win.waitForSelector('[data-delete-pages-dialog]', { timeout: 8000 });
   await win.waitForTimeout(300);
   await win.click('[data-delete-mode="range"]');
@@ -665,8 +660,7 @@ test('A2 flash sweep: thumb canvas zeroing + main canvas blank around each tool 
   console.log(`[A2|delete-page] ${JSON.stringify(rows['delete-page'])}`);
 
   // 5. Crop pages.
-  await openTools();
-  await win.click('[data-tool-id="cropPages"]');
+  await runTool(win, 'cropPages');
   await win.waitForSelector('[data-crop-pages-dialog]', { timeout: 10000 });
   await win.waitForTimeout(800);
   rows['crop-pages'] = await aroundFlash(async () => {
@@ -675,7 +669,7 @@ test('A2 flash sweep: thumb canvas zeroing + main canvas blank around each tool 
   console.log(`[A2|crop-pages] ${JSON.stringify(rows['crop-pages'])}`);
 
   // 6. Optimize (opens the reduced result as a new tab).
-  await win.click('[data-toolbar-optimize]');
+  await openDockVerb(win, 4, 'optimize');
   await win.waitForSelector('.optimize-dialog', { timeout: 10000 });
   await win.waitForTimeout(500);
   rows['optimize'] = await aroundFlash(async () => {

@@ -15,7 +15,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, toggleEditMode, openAnnotationFlyout, armSignTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -31,6 +31,19 @@ async function openReport(app, win) {
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(400);
+}
+
+// Phase 36 (chunk 4) — the All-tools palette is retired; the Command Palette
+// (Ctrl+K) is the browse-everything surface. Opens it (if needed) and runs a
+// registry tool by id through its real row.
+async function openPaletteTool(win, id, query) {
+  if ((await win.locator('[data-command-palette]').count()) === 0) {
+    await win.keyboard.press('Control+k');
+    await win.waitForSelector('[data-command-palette]', { timeout: 8000 });
+  }
+  await win.fill('[data-command-palette-input]', query);
+  await win.waitForTimeout(200);
+  await win.locator(`[data-palette-tool-id="${id}"]`).first().click();
 }
 
 async function setTheme(win, want) {
@@ -132,6 +145,9 @@ for (const theme of THEMES) {
 
       for (const m of MENUS) {
         await win.waitForTimeout(250);
+        // Phase 36 (chunk 3) — the ann menu lives in the REVIEW Annotate
+        // flyout; Escape closes it, so re-open it for the ann entry.
+        if (m.name === 'ann') await openAnnotationFlyout(win);
         const trig = await rectOf(win, m.trigger);
         expect(trig, `${m.name} trigger present`).not.toBeNull();
 
@@ -177,8 +193,13 @@ for (const theme of THEMES) {
         // real interpolation, not a jump
         expect(widths.length, `${m.name} width interpolates`).toBeGreaterThanOrEqual(4);
         expect(opacities.some((o) => o > 0.8 && o < 1), `${m.name} surface opacity ramps`).toBe(true);
-        // flush (gap 0) at the anchored edge
-        expect(near(rest.y - trig.bottom, 0, 1.5), `${m.name} flush below trigger (gap 0)`).toBe(true);
+// flush (gap 0) at the anchored edge. Phase 36 (chunk 3) re-parents the
+        // ann group into the REVIEW flyout at the BOTTOM of the canvas, so its
+        // dropdown flips ABOVE the arrow (DEF-317); the theme/titlebar menus
+        // still open below. Same intent either way: flush, not detached.
+        const flushBelow = near(rest.y - trig.bottom, 0, 1.5);
+        const flushAbove = near(rest.bottom - trig.y, 0, 1.5);
+        expect(flushBelow || flushAbove, `${m.name} flush with trigger (gap 0, above or below)`).toBe(true);
         const anchorGap = m.anchorSide === 'right' ? rest.right - trig.right : rest.x - trig.x;
         // Right-anchored menus are exactly flush; the title-bar menu keeps a
         // deliberate 4px left inset (--sp-1) — record it, bound it small.
@@ -300,7 +321,7 @@ test('C2a sign modal tab-switch resize + pane cross-fade', async () => {
   try {
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openReport(app, win);
-    await win.click('button[data-icon="sign"]');
+    await armSignTool(win);
     await win.waitForSelector('.sig-manager', { timeout: 8000 });
     await win.waitForTimeout(600);
     await installMultiProbe(win);
@@ -371,71 +392,10 @@ test('C2a sign modal tab-switch resize + pane cross-fade', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// C2b — tools palette list<->grid width swap in lockstep with page inset+badge.
+// C2b REMOVED with its subject (Phase 36 chunk 5): the All-tools palette's
+// list<->grid width swap and its page-inset/badge lockstep are retired — the
+// Inspector has ONE width and no badge.
 // ---------------------------------------------------------------------------
-test('C2b tools palette resize lockstep with page inset + badge', async () => {
-  test.setTimeout(180000);
-  const app = await launchApp();
-  const win = await app.firstWindow();
-  try {
-    await win.waitForSelector('.sample-card', { timeout: 30000 });
-    await openReport(app, win);
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.waitForTimeout(500);
-    await installMultiProbe(win);
-
-    const sample = async (label) => {
-      const pre = await win.evaluate(() => {
-        const el = document.querySelector('[data-tools-palette]');
-        const cs = getComputedStyle(el);
-        return { tp: cs.transitionProperty, td: cs.transitionDuration, w: cs.width, cls: el.className, inline: el.style.transition };
-      });
-      log(`C2b ${label} pre`, pre);
-      await mpStart(win, ['[data-tools-palette]', '.document-scroller', '.tools-badge-tracker'], 800);
-      await win.click(`[data-tools-layout="${label.endsWith('grid') ? 'grid' : 'list'}"]`);
-      const rows = await mpRead(win);
-      const series = (sel, key) => [...new Set(rows.map((f) => {
-        const s = f.states.find((x) => x.s === sel);
-        return s && s.n > 0 ? Math.round(s[key]) : null;
-      }).filter((v) => v !== null))];
-      const r = {
-        paletteWidths: series('[data-tools-palette]', 'w'),
-        scrollerRights: series('.document-scroller', 'right'),
-        badgeRights: series('.tools-badge-tracker', 'right'),
-        frames: rows.length,
-      };
-      log(`C2b ${label}`, r);
-      return r;
-    };
-
-    const results = [];
-    for (const theme of ['light', 'dark', 'frosted']) {
-      await setTheme(win, theme);
-      if (await win.locator('[data-tools-palette]').count() === 0) {
-        await win.click('[data-tools-toggle]');
-        await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-        await win.waitForTimeout(400);
-      }
-      await win.waitForTimeout(250);
-      const toGrid = await sample(`${theme}-to-grid`);
-      await win.waitForTimeout(400);
-      const toList = await sample(`${theme}-to-list`);
-      results.push({ theme, toGrid, toList });
-    }
-    await win.screenshot({ path: path.join(SHOTS, 'phase20-verify-palette-resize.png') });
-
-    for (const { theme, toGrid, toList } of results) {
-      for (const [name, r] of [['grid', toGrid], ['list', toList]]) {
-        expect(r.paletteWidths.length, `${theme} ${name}: palette width interpolates`).toBeGreaterThanOrEqual(3);
-        expect(r.scrollerRights.length, `${theme} ${name}: page inset interpolates`).toBeGreaterThanOrEqual(3);
-        expect(r.badgeRights.length, `${theme} ${name}: badge interpolates`).toBeGreaterThanOrEqual(3);
-      }
-    }
-  } finally {
-    await hardClose(app, 'p20-c2b');
-  }
-});
 
 // ---------------------------------------------------------------------------
 // C3 — window-to-window swaps (no both-absent / both-at-rest frame).
@@ -450,16 +410,12 @@ test('C3a stamp action bar <-> stamp type editor swap', async () => {
   try {
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openReport(app, win);
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.click('[data-tool-id="stamp"]');
+    // Phase 36 (chunk 4) — the stamp tool now lives in the REVIEW dock; reach it
+    // through the Command Palette so the surface stays the same one row.
+    await openPaletteTool(win, 'stamp', 'stamp');
     await win.waitForSelector('[data-stamp-dialog]', { timeout: 8000 });
     await win.click('[data-stamp-confirm]');
     await win.waitForTimeout(500);
-    if (await win.locator('[data-tools-palette]').count()) {
-      await win.click('[data-tools-toggle]');
-      await win.waitForTimeout(350);
-    }
     const page = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     await win.mouse.click(page.x + page.width * 0.5, page.y + page.height * 0.5);
     await win.waitForSelector('.stamp-annotation', { timeout: 10000 });
@@ -498,7 +454,9 @@ test('C3b edit box toolbar -> panel Text field (inline editor retired)', async (
   try {
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openReport(app, win);
-    await win.click('button[aria-label="Edit content"]');
+    // Phase 36 (chunk 3) — the command row is retired; Edit mode is the EDIT
+    // dock's `editMode` verb.
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.click('[data-edit-tool="box"]');
     const page = await win.locator('.pdf-page[data-page="1"]').boundingBox();
@@ -514,8 +472,8 @@ test('C3b edit box toolbar -> panel Text field (inline editor retired)', async (
       const ta = document.querySelector('[data-txt-text]');
       return ta !== null && ta.disabled === false;
     }, null, { timeout: 8000 });
-    await win.locator('[data-txt-text]').fill('QA SWAP');
-    await win.locator('[data-txt-text]').blur();
+    await win.locator('[data-txt-text]:visible').first().fill('QA SWAP');
+    await win.locator('[data-txt-text]:visible').first().blur();
     await win.waitForTimeout(900);
     // select the committed box -> box toolbar
     if (await win.locator('[data-edit-box-toolbar]').count() === 0) {
@@ -550,7 +508,7 @@ test('C3c signature pending view enters/exits animated (no sibling committed swa
   try {
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openReport(app, win);
-    await win.click('button[data-icon="sign"]');
+    await armSignTool(win);
     await win.waitForSelector('.sig-manager', { timeout: 8000 });
     await win.locator('.sig-tab', { hasText: 'Type' }).first().click();
     await win.waitForTimeout(450);
@@ -638,6 +596,8 @@ test('C4 surface inventory sweep (runtime appearance probe)', async () => {
     };
 
     // color popover (TfPopover) — arm a markup tool so the swatch renders
+    // Phase 36 (chunk 3) — open the REVIEW Annotate flyout first.
+    await openAnnotationFlyout(win);
     await win.click('[data-ann-dropdown-toggle]');
     await win.waitForSelector('[data-ann-dropdown-menu]', { timeout: 6000 });
     await win.click('[data-ann-dropdown-menu] [data-tool="highlight"]');
@@ -648,29 +608,29 @@ test('C4 surface inventory sweep (runtime appearance probe)', async () => {
     await win.keyboard.press('Escape');
     await win.waitForTimeout(400);
 
-    // tools palette (TfPanel)
-    add('tools palette', await appearanceProbe(win, '[data-tools-palette]', async () => {
-      await win.click('[data-tools-toggle]');
-    }, 900));
-    await win.waitForTimeout(400);
+    // tools palette (TfPanel) REMOVED with its subject (Phase 36 chunk 5): the
+    // All-tools palette is retired. The Inspector's appearance is probed by the
+    // chunk 4/5/6 gate.
 
     // insert dialog (TfDialog) + backdrop
+    if ((await win.locator('[data-command-palette]').count()) === 0) {
+      await win.keyboard.press('Control+k');
+      await win.waitForSelector('[data-command-palette]', { timeout: 8000 });
+    }
+    await win.fill('[data-command-palette-input]', 'insert pages');
+    await win.waitForTimeout(150);
     add('insert pages dialog', await appearanceProbe(win, '.modal-dialog', async () => {
-      await win.click('[data-tool-id="insertPages"]');
+      await win.locator('[data-palette-tool-id="insertPages"]').first().click();
     }, 900));
     await win.keyboard.press('Escape');
     await win.waitForFunction(() => document.querySelector('.modal-dialog') === null, null, { timeout: 5000 }).catch(() => {});
-    if (await win.locator('[data-tools-palette]').count()) {
-      await win.click('[data-tools-toggle]');
-      await win.waitForTimeout(350);
-    }
 
     // edit toolbar (TfBar)
     add('edit toolbar', await appearanceProbe(win, '[data-edit-toolbar]', async () => {
-      await win.click('button[aria-label="Edit content"]');
+      await toggleEditMode(win);
     }));
     await win.waitForTimeout(400);
-    await win.click('button[aria-label="Edit content"]').catch(() => {});
+    await toggleEditMode(win);
     await win.waitForTimeout(400);
 
     // search bar (TfBar)
@@ -683,6 +643,7 @@ test('C4 surface inventory sweep (runtime appearance probe)', async () => {
     // Phase 26 — the in-canvas annotation textbox toolbox is retired. The
     // surface-inventory row is retired to the Phase-26 contract: placing a
     // textbox mounts NO editor and the panel's Text field is the editor.
+    await openAnnotationFlyout(win);
     await win.click('[data-ann-dropdown-toggle]');
     await win.waitForSelector('[data-ann-dropdown-menu]', { timeout: 6000 });
     await win.click('[data-ann-dropdown-menu] [data-tool="textbox"]');
@@ -732,9 +693,7 @@ test('C4 surface inventory sweep (runtime appearance probe)', async () => {
     await win.waitForTimeout(400);
 
     // toast (TfToast) via the watermark apply action
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.click('[data-tool-id="watermark"]');
+    await openPaletteTool(win, 'watermark', 'watermark');
     await win.waitForSelector('[data-watermark-dialog]', { timeout: 8000 });
     await win.waitForTimeout(400);
     add('toast', await appearanceProbe(win, '.toast', async () => {
@@ -774,12 +733,8 @@ test('C4b OCR suspects bar appearance probe', async () => {
   try {
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openReport(app, win);
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.waitForTimeout(300);
-
-    // Real trigger: recognizeText -> OCR dialog -> confirm.
-    await win.click('[data-tool-id="recognizeText"]');
+    // Real trigger: recognizeText (Command Palette) -> OCR dialog -> confirm.
+    await openPaletteTool(win, 'recognizeText', 'recognize');
     await win.waitForSelector('[data-ocr-confirm]', { timeout: 8000 });
     await win.click('[data-ocr-scope="currentPage"]');
     await win.waitForTimeout(150);
@@ -806,19 +761,21 @@ test('C4b OCR suspects bar appearance probe', async () => {
       () => document.querySelector('[data-ocr-suspects-panel]') === null,
       null, { timeout: 5000 },
     );
-    if (await win.locator('[data-tools-palette]').count() === 0) {
-      await win.click('[data-tools-toggle]');
-      await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
+    // Re-open through the Command Palette's ocrSuspects row.
+    if ((await win.locator('[data-command-palette]').count()) === 0) {
+      await win.keyboard.press('Control+k');
+      await win.waitForSelector('[data-command-palette]', { timeout: 8000 });
     }
+    await win.fill('[data-command-palette-input]', 'suspects');
     await win.waitForTimeout(200);
     expect(
-      await win.locator('[data-tool-id="ocrSuspects"]').isEnabled(),
+      await win.locator('[data-palette-tool-id="ocrSuspects"]').first().getAttribute('data-palette-disabled'),
       'ocrSuspects enabled after a successful OCR run',
-    ).toBe(true);
+    ).toBe('false');
 
     await installMultiProbe(win);
     const r = await appearanceProbe(win, '.ocr-suspects-panel', async () => {
-      await win.click('[data-tool-id="ocrSuspects"]');
+      await win.locator('[data-palette-tool-id="ocrSuspects"]').first().click();
     }, 1200);
     log('C4b OCR suspects bar', r);
     expect(r.frames, 'OCR suspects bar mounts').toBeGreaterThan(0);
@@ -868,7 +825,7 @@ test('C6 reduced motion collapses morph/tabs/swap/resize, structure intact', asy
     await win.waitForTimeout(300);
 
     // Sign tabs: switch still changes panes, size snaps (no tween)
-    await win.click('button[data-icon="sign"]');
+    await armSignTool(win);
     await win.waitForSelector('.sig-manager', { timeout: 8000 });
     await win.waitForTimeout(500);
     await win.locator('.sig-tab', { hasText: 'Draw' }).first().click();
@@ -884,23 +841,12 @@ test('C6 reduced motion collapses morph/tabs/swap/resize, structure intact', asy
     await win.keyboard.press('Escape');
     await win.waitForTimeout(400);
 
-    // palette resize: structure changes, width snaps
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.waitForTimeout(400);
-    await mpStart(win, ['[data-tools-palette]'], 700);
-    await win.click('[data-tools-layout="grid"]');
-    const palRows = await mpRead(win);
-    const widths = [...new Set(palRows.map((f) => f.states[0]).filter((s) => s && s.n > 0).map((s) => Math.round(s.w)))];
-    log('C6 palette reduced', { distinctWidths: widths });
-    expect(widths, 'reduced: palette reaches the new width').toContain(380);
-    expect(widths.length, 'reduced: palette width change is instant').toBeLessThanOrEqual(2);
+    // palette resize REMOVED with its subject (Phase 36 chunk 5): the All-tools
+    // palette's list<->grid width swap is retired (the Inspector has ONE width).
 
     // Phase 26 — the inline editor is retired. Reduced motion: placing a box
     // targets the panel Text field with no in-canvas editor and no animation.
-    await win.click('[data-tools-toggle]');
-    await win.waitForTimeout(300);
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     await win.click('[data-edit-tool="box"]');
@@ -1016,16 +962,10 @@ test('C-ghost exiting surface is non-interactive and locator-safe', async () => 
     // Phase 26 — the annotation toolbox is retired. The stamp-type editor is
     // the remaining inert-bearing in-canvas family: confirm its exit frames
     // are pointer-events:none AND inert, and hit-test-free.
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.click('[data-tool-id="stamp"]');
+    await openPaletteTool(win, 'stamp', 'stamp');
     await win.waitForSelector('[data-stamp-dialog]', { timeout: 8000 });
     await win.click('[data-stamp-confirm]');
     await win.waitForTimeout(500);
-    if (await win.locator('[data-tools-palette]').count()) {
-      await win.click('[data-tools-toggle]');
-      await win.waitForTimeout(350);
-    }
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     await win.mouse.click(pg.x + pg.width * 0.5, pg.y + pg.height * 0.5);
     await win.waitForSelector('.stamp-annotation', { timeout: 10000 });

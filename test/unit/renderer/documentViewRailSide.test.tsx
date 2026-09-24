@@ -139,9 +139,10 @@ describe("DocumentView — the rail side (Phase 33)", () => {
     const host = await mountView({});
     const workspace = host.querySelector(".workspace");
     expect(workspace?.getAttribute("data-rail-side")).toBe("left");
-    // No strip in single mode: the unchanged SideRail occupies the slot.
+    // Phase 36 (chunk 6) — single mode's left slot is the STAGES ContextPanel
+    // (the rail retired from this slot); the page area still follows it.
     expect(host.querySelector("[data-pane-strip]")).toBeNull();
-    const rail = host.querySelector(".side-rail");
+    const rail = host.querySelector('[data-context-panel="pages"]');
     const main = host.querySelector(PAGE_AREA);
     expect(rail).not.toBeNull();
     expect(rail?.compareDocumentPosition(main as Node)).toBe(

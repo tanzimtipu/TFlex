@@ -393,6 +393,26 @@
   --hit: rgba(37, 99, 235, 0.28);
   --hit-active: rgba(37, 99, 235, 0.55);
 
+  /* Phase 36 — the four STAGE-IDENTIFICATION tokens. They answer "which
+   * stage of work is this?" (the palette's stage tag chips, the Stage Rail's
+   * per-stage icons) and are the ONLY place a stage hue is spent: the brand
+   * accent stays reserved for primary/selection, so the rail's active wash +
+   * accent indicator and the dock's primary verb are never repainted here.
+   *
+   * One hue FAMILY per stage in all three themes — cyan (PAGES, navigation),
+   * amber (EDIT, writing), rose (REVIEW, checking) and green (DELIVER, done):
+   * four well-separated families, none of them the accent blue. Only the
+   * TONE moves per theme (deep on the white light surfaces, bright on the
+   * near-black dark surfaces, deeper again on the light frosted glass) so
+   * every value clears WCAG AA on the surface it is drawn on: >= 4.5:1 text
+   * (the chip label) and >= 3:1 icons/chips (the rail icon, a stage dot).
+   * Measured (see phase36StageTokens.test.ts): text-on-chip 4.7-6.1,
+   * icon-on-rail 4.9-7.1, chip-on-active-rail 4.2-5.5. */
+  --tf-stage-pages: #0e7490;
+  --tf-stage-edit: #9a4408;
+  --tf-stage-review: #be123c;
+  --tf-stage-deliver: #116632;
+
   color-scheme: light;
 }
 
@@ -552,6 +572,16 @@
   --glass-group-bg: rgba(255, 255, 255, 0.06);
   --glass-group-border: rgba(255, 255, 255, 0.1);
   --glass-hover-bg: rgba(255, 255, 255, 0.1);
+
+  /* Phase 36 — the four stage-identification tokens on the near-black dark
+   * surfaces: the SAME cyan / amber / rose / green hue families, brightened
+   * two Tailwind steps (cyan-400 / amber-400 / rose-400 / green-400) so each
+   * clears the 4.5:1 text floor on the dark raised surface and the 3:1 icon
+   * floor with a wide margin (text-on-chip 6.0-9.2, icon-on-rail 6.9-11.1). */
+  --tf-stage-pages: #22d3ee;
+  --tf-stage-edit: #fbbf24;
+  --tf-stage-review: #fb7185;
+  --tf-stage-deliver: #4ade80;
 
   color-scheme: dark;
 }
@@ -761,6 +791,16 @@
   --panel-border: rgba(15, 23, 42, 0.12);
   --panel-radius: var(--radius-panel);
   --panel-shadow: none;
+
+  /* Phase 36 — the four stage-identification tokens on the LIGHT frosted
+   * glass (the declared rail composite sits just off white, the palette card
+   * closer still): the same cyan / amber / rose / green families pulled a step
+   * deeper than the flat light theme so the label keeps the 4.5:1 text floor
+   * across the translucent rail (text-on-chip 5.9-6.6, icon-on-rail 6.7-7.5). */
+  --tf-stage-pages: #0d6277;
+  --tf-stage-edit: #96400c;
+  --tf-stage-review: #a80f34;
+  --tf-stage-deliver: #0f5f30;
 
   color-scheme: light;
 }
@@ -1069,8 +1109,22 @@ input[type="checkbox"] {
 }
 
 .app-main {
-  display: flex;
-  flex-direction: column;
+  /* DEF-320 — the Stage Rail claims a REAL 44px layout track. The rail was a
+   * chunk-1 absolute left-edge OVERLAY (mounted before the ContextPanel moved
+   * into the left slot), so once the panel took that slot the two stacked at
+   * x=0: the rail clipped the panel's header and, collapsed, covered its
+   * "Expand panel" control. The app frame is now the four-zone grid the phase
+   * contract describes — rail | context panel | canvas | inspector — where the
+   * rail track is column 1 of THIS container and the panel/canvas columns live
+   * one level down inside `.workspace` (`.tab-stage` owns them). Nothing can
+   * overlap at any width: the panel's own column starts at x=44.
+   *
+   * Two rows: the OCR suspects bar (a FLOW element, DEF-126) spans row 1 and
+   * the rail + stage share row 2. With no bar, row 1 is empty (auto -> 0) and
+   * row 2 (1fr) owns the whole frame, exactly the old flex-column result. */
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   position: relative;
 }
@@ -1278,6 +1332,20 @@ input[type="checkbox"] {
   outline: none;
   box-shadow: var(--focus-ring);
 }
+
+/* Phase 36 (chunk 6) — the trigger reads as an explicit "File" label (the
+ * hamburger face retired). The icon-sized box widens to fit the word; the
+ * popover, its groups and every entry are untouched. */
+.titlebar-menu-file {
+  width: auto;
+  min-width: 28px;
+  padding: 0 var(--space-small);
+  gap: var(--space-micro);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.titlebar-menu-label { line-height: 1; }
 
 /* Menu popover — vertically flush with the title bar's bottom edge.
  * Global motion (menu-enter primitive @ --tf-motion-normal, 180ms in
@@ -1956,11 +2024,59 @@ input[type="checkbox"] {
   cursor: not-allowed;
 }
 
+/* Phase 36 (chunk 6) — the Multi Mode toggle in the title bar. Same chrome
+ * ladder as .header-print / .header-gear (28px icon control); the active
+ * state uses the shared accent wash, mirroring the retired CommandBar control. */
+.header-multi-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
+}
+
+.header-multi-mode:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.header-multi-mode:active {
+  background: var(--accent-pressed-soft);
+  color: var(--accent);
+}
+
+.header-multi-mode:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.header-multi-mode[data-multi-mode-active="true"],
+.header-multi-mode[aria-pressed="true"] {
+  background: var(--accent-selected);
+  color: var(--fg-strong);
+}
+
 .tab-stage {
   flex: 1 1 auto;
   position: relative;
   min-height: 0;
   min-width: 0;
+  /* DEF-320 — the stage is the app frame's second column, in the same 1fr row
+   * as the rail (the first column is the rail's 44px track; see .app-main). */
+  grid-column: 2;
+  grid-row: 2;
 }
 
 .tab-pane {
@@ -2441,21 +2557,17 @@ input[type="checkbox"] {
     var(--panel-slide-ease);
 }
 
-/* Phase 14.2 FIX 4 — the open Tools panel pushes the page view over
- * in ALL themes (light and dark included, not just frosted). The
- * state lives on .app-main as data attributes driven by the same
- * `toolsPaletteOpen` state that mounts the palette, so the inset and
- * the panel's own enter motion start on the same frame — no
- * mount/unmount lag, no sequential steps. The panel width follows
- * the persisted layout mode (list 344px / grid 380px); the page view
- * ends flush against the panel's left edge — no breathing gap. */
+/* Phase 36 (chunk 5) — the open INSPECTOR pushes the page view over in ALL
+ * themes (light and dark included, not just frosted). The state lives on
+ * .app-main as data attributes driven by the same `inspectorOpen` state that
+ * mounts the panel, so the inset and the panel's own enter motion start on
+ * the same frame — no mount/unmount lag, no sequential steps. The panel width
+ * is the single Inspector width (the 240-280px band); the retired All-tools
+ * palette's list/grid modes (344/380) are gone with it. The page view ends
+ * flush against the panel's left edge — no breathing gap. */
 .app-main[data-tools-open="true"] {
-  --tools-panel-w: 344px;
-  --tf-tools-inset: var(--tools-panel-w, 344px);
-}
-
-.app-main[data-tools-open="true"][data-tools-mode="grid"] {
-  --tools-panel-w: 380px;
+  --tools-panel-w: 264px;
+  --tf-tools-inset: var(--tools-panel-w, 264px);
 }
 
 /* Phase 16 — the collapsed pages-rail width. The SAME React state
@@ -6587,6 +6699,160 @@ rect.ann-highlight.ann-preview {
  * icon-tile width is gone. */
 .tools-palette-grid { width: 380px; }
 
+/* ===========================================================================
+ * Phase 36 (chunk 5) — the INSPECTOR: the workspace's right panel.
+ *
+ * It takes the retired All-tools palette's slot and its inset machinery
+ * (--tools-panel-w / --tf-tools-inset / data-tools-open on .app-main), but
+ * owns its own surface class so the palette's identity is retired. Width is
+ * the single Inspector width (the 240-280px band); the palette's list/grid
+ * layout modes retired with it, so there is no width toggle. The material is
+ * the same shared --panel-* contract as the left rail (one surface, one
+ * hairline, one radius policy in every theme; frosted re-maps the surface).
+ * ------------------------------------------------------------------------- */
+.inspector {
+  position: absolute;
+  top: var(--toolbar-h, 52px);
+  right: 0;
+  bottom: 0;
+  width: var(--tools-panel-w, 264px);
+  background: var(--panel-bg);
+  border-left: 1px solid var(--panel-border);
+  border-radius: var(--panel-radius) 0 0 var(--panel-radius);
+  box-shadow: var(--panel-shadow);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  z-index: 30;
+}
+
+/* Specificity note: `.inspector .inspector-body` (0,2,0) must beat the shared
+ * `.glass-sidebar-body` rule (0,1,0, later in the sheet) whose
+ * `overflow: hidden` would otherwise clip the scrolling sections. */
+.inspector .inspector-body {
+  overflow-y: auto;
+  padding: var(--sp-3) var(--space-standard);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.inspector-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.inspector-close:hover { background: var(--bg-hover); color: var(--fg-strong); }
+.inspector-close:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.inspector-section { display: flex; flex-direction: column; gap: var(--sp-2); }
+.inspector-section-title {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+.inspector-section-body { display: flex; flex-direction: column; gap: var(--sp-1); }
+
+.inspector-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-height: 24px;
+  font-size: var(--fs-sm);
+}
+.inspector-row-label { color: var(--fg-muted); }
+.inspector-row-value { color: var(--fg); text-align: right; min-width: 0; }
+.inspector-inline { display: inline-flex; align-items: center; gap: var(--sp-1); }
+
+.inspector-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.inspector-action:hover:not(:disabled) { background: var(--bg-hover); }
+.inspector-action:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.inspector-action:disabled { opacity: 0.5; cursor: default; }
+
+.inspector-disclosure { padding: 2px var(--sp-1); }
+
+.inspector-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-1);
+  background: var(--bg-raised);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-control);
+}
+.inspector-menu-item {
+  text-align: left;
+  padding: var(--sp-1) var(--sp-2);
+  border: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: var(--fs-sm);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+.inspector-menu-item:hover:not(:disabled) { background: var(--bg-hover); }
+.inspector-menu-item:disabled { opacity: 0.5; cursor: default; }
+
+.inspector-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+}
+
+/* The re-parented annotations panel fills the section edge-to-edge. */
+.inspector-embedded { margin: 0 calc(-1 * var(--space-standard)); }
+.inspector-embedded .ann-panel { border: none; background: transparent; }
+/* Phase 36 (chunk 6) — a read-only reference line inside a section (e.g. the
+ *  annotations list's ONE home is the REVIEW panel, so the Inspector points
+ *  there instead of duplicating the list). */
+.inspector-note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+/* The re-parented text-properties card renders INLINE inside the Inspector:
+ * its float wrapper stops being absolutely positioned and its card fills the
+ * section. Its own selectors and controls are untouched. */
+.inspector .text-props-float { position: static; top: auto; left: auto; }
+.inspector .text-props-panel {
+  width: 100%;
+  max-height: none;
+  box-shadow: none;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* The re-parented OCR-suspects bar also renders inline (standalone it is a
+ * top bar over the workspace; inside the Inspector it is a section body). */
+.inspector .ocr-suspects-panel { position: static; height: auto; box-shadow: none; }
+
+
 /* Phase 14.1 — the palette header is the shared GlassSidebarHeader
  * (title left, layout toggle + close right, 44px row); the legacy
  * .tools-palette-header class stays on the element for the CSS/e2e
@@ -9281,6 +9547,11 @@ rect.ann-highlight.ann-preview {
 .ocr-suspects-panel {
   display: flex;
   flex-direction: column;
+  /* DEF-320 — .app-main is the app frame's grid now (rail | stage). The bar
+   * keeps its DEF-126 FLOW behaviour as the full-width row 1 above the rail +
+   * stage row, so the workspace simply starts below it. */
+  grid-column: 1 / -1;
+  grid-row: 1;
   /* DEF-126 — the suspect bar is a FLOW element, not an absolute
    * overlay. It sits at the top of `.app-main`'s flex column
    * (order: -1 puts it above the tab-stage; flex-shrink: 0 keeps
@@ -11572,12 +11843,14 @@ rect.ann-highlight.ann-preview {
 
 .tab-stage[data-multi-mode="true"] {
   --tf-divider-w: 8px;
-  /* Phase 33 (chunk 4) — the ONE shared toolbar row's height. Both panes
-     start below it; MultiPane measures the real row height (wrapping
-     included) and writes this variable inline. With no shared bar the
-     variable stays 0 and the panes own the whole stage, exactly as chunk 3. */
-  --tf-multi-toolbar-h: 0px;
-  /* Phase 34 (chunk 1, refined in chunk 3) — the All Tools inset is consumed
+  /* Phase 36 (chunk 7) — the shared toolbar ROW is retired. Its measured
+     height (`--tf-multi-toolbar-h`) and the panes' / divider's top offset went
+     with it: the panes own the whole stage from its top edge, and the ONE
+     shared Action Dock floats at the workspace's bottom-centre
+     (`.multi-dock-layer`), so no workspace chrome can be laid over the pane
+     headers (DEF-282's invariant, restated). Nothing is measured, so no offset
+     can arrive after a paint. */
+  /* Phase 34 (chunk 1, refined in chunk 3) — the Inspector inset is consumed
      ONCE at the stage level. Each pane's width and the divider's left
      subtract HALF the inset (`--tf-pane-inset`, the requested
      --tf-tools-inset capped so the panes keep their minimum page area —
@@ -11592,31 +11865,26 @@ rect.ann-highlight.ann-preview {
     var(--panel-slide-ease);
 }
 
-/* The workspace's single toolbar: full-width above the two panes. It reuses
-   the exact .toolbar / .edit-toolbar chrome, so it reads as the app's one
-   command bar, not a third column. */
-.multi-toolbar-row {
+/* Phase 36 (chunk 7) — the ONE shared Action Dock's layer. A zero-height box
+   pinned to the stage's BOTTOM edge (inset on the right by the open Inspector's
+   width, exactly like single mode's `.canvas-overlay`), so the dock it hosts
+   floats at the workspace's bottom-centre — centred over BOTH panes — and its
+   geometry can never reach the pane-header band at the top. The layer claims no
+   pointer events (the dock opts back in), so the page canvas stays usable, and
+   `z-index: 7` keeps the dock above the panes and the divider. It travels with
+   the Inspector's slide on the same registered token, so the dock stays centred
+   on the VISIBLE canvas while the panel animates. */
+.multi-dock-layer {
   position: absolute;
-  top: 0;
   left: 0;
-  right: 0;
-  z-index: 3;
-  min-width: 0;
-  /* Layout only: the enter/exit motion is the existing chrome's; PDF content
-     is never touched. */
-  will-change: auto;
-}
-
-.multi-toolbar-row > .multi-toolbar {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.multi-toolbar-row .edit-toolbar {
-  /* In the shared row there is no .workspace-main grid to pin to. */
-  grid-row: auto;
-  min-width: 0;
+  right: var(--tf-tools-inset, 0px);
+  bottom: 0;
+  /* Zero height: the dock's `bottom: 12px` is measured from the stage's bottom
+     edge only, so no declaration here can lift workspace chrome over a pane
+     header. The dock's own `bottom`-anchored box is the sole occupant. */
+  height: 0;
+  z-index: 7;
+  pointer-events: none;
 }
 
 /* Phase 33 — the two panes own the whole stage. (Phase 32's shared rail
@@ -11624,13 +11892,12 @@ rect.ann-highlight.ann-preview {
    DocumentView, so the stage has no rail column to reserve.) */
 
 .tab-stage[data-multi-mode="true"] .tab-pane[data-pane] {
-  /* DEF-282 — the panes (and therefore their headers and strips) start BELOW
-     the ONE shared toolbar row. The offset is the row's measured height
-     (MultiPane writes it inline, wrapping included); `top: 0` here let the
-     absolutely-positioned toolbar cover the pane-header row and made
-     `[data-pane-clear]` and the header/strip focus clicks unreachable.
-     The divider reads the same variable, so all three stay consistent. */
-  top: var(--tf-multi-toolbar-h, 0px);
+  /* Phase 36 (chunk 7) — the shared toolbar row is RETIRED, so the panes (and
+     therefore their headers and strips) own the stage from its top edge: no
+     offset is measured or written, so no chrome can cover the pane-header row
+     and `[data-pane-clear]` / the header / strip focus clicks are always
+     reachable (DEF-282's invariant, restated). */
+  top: 0;
   bottom: 0;
   left: auto;
   right: auto;
@@ -11879,7 +12146,9 @@ rect.ann-highlight.ann-preview {
 
 .multi-divider {
   position: absolute;
-  top: var(--tf-multi-toolbar-h, 0px);
+  /* Phase 36 (chunk 7) — no shared-row offset any more: the divider spans the
+     stage from its top edge, exactly like the panes it divides. */
+  top: 0;
   bottom: 0;
   /* Phase 34 (chunk 3) — the divider consumes the SAME capped inset as the
      pane widths (see the pane rule), so its centre stays exactly between
@@ -11951,6 +12220,31 @@ rect.ann-highlight.ann-preview {
   background: var(--fg-on-accent);
   color: var(--accent);
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28);
+}
+
+/* ---- Phase 36 (chunk 7) — the per-pane floating pills -------------------- */
+
+/* Each pane keeps its OWN page / zoom / pan pills inside its OWN canvas bounds,
+   so the view controls act on the pane that owns them. They STACK at the pane's
+   OUTER edge (pane A's page area is its left column, pane B's its right), which
+   leaves the workspace's bottom-centre band free for the ONE shared Action Dock
+   — the pane-inner-edge placement would sit exactly under it. The stack is
+   page pill at the bottom with the zoom pill directly above it: the two pills'
+   horizontal footprint stays at the widest single pill (the zoom pill), so a
+   minimum-width pane (320px) still holds them. */
+.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane="A"] .canvas-pill {
+  left: 12px;
+  right: auto;
+}
+
+.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane="B"] .canvas-pill {
+  right: 12px;
+  left: auto;
+}
+
+/* 12px inset + the 40px pill + a 6px gap between the stacked pills. */
+.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane] .canvas-pill-zoom {
+  bottom: 58px;
 }
 
 /* ---- empty pane -------------------------------------------------------- */
@@ -12296,18 +12590,23 @@ rect.ann-highlight.ann-preview {
  * rail's bottom. Below the host's compact breakpoint the labels drop and the
  * rail is icon-only.
  *
- * It is mounted as an absolutely-positioned overlay INSIDE .app-main (which
- * is already `position: relative`), so it claims no grid track, reflows
- * nothing, and leaves every existing surface exactly where it was while the
- * later Phase-36 chunks re-home the panels around it. Every colour is an
- * existing theme token and every duration an existing motion token: the four
- * per-theme --tf-stage-* tokens arrive with the stage-panel chunk, not here.
+ * It is a REAL grid item in `.app-main`'s 44px first column (row 2), beside
+ * the stage (DEF-320): the rail reserves its own track, reflows nothing, and
+ * can never overlap the ContextPanel that now owns the app's left slot. Every
+ * duration is an existing motion token, and every stage is IDENTIFIED by its
+ * per-theme `--tf-stage-*` token (Phase 36 chunk 8): the icon carries the
+ * stage hue while the ACTIVE affordance — the accent-soft wash and the 2px
+ * accent indicator — stays the brand accent, never a stage hue.
  * ========================================================================= */
 .stage-rail {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
+  /* DEF-320 — the rail is a REAL grid item in .app-main's 44px first column
+   * (row 2, beside the stage), not the chunk-1 absolute overlay. It therefore
+   * reserves its own space and can never stack over the ContextPanel: the
+   * panel's column starts at x=44, so the header and its collapse/expand
+   * control stay fully visible and clickable in both states, at every width. */
+  position: relative;
+  grid-column: 1;
+  grid-row: 2;
   z-index: 8;
   box-sizing: border-box;
   display: flex;
@@ -12377,6 +12676,33 @@ rect.ann-highlight.ann-preview {
   background: var(--accent);
 }
 
+/* Phase 36 (chunk 8) — per-stage IDENTIFICATION: each stage button's icon
+ * carries its semantic stage hue, so the four stages read apart at a glance
+ * in every theme. The hue is set once per button as --stage-hue and consumed
+ * by the icon; the label stays --fg-muted and the ACTIVE state keeps the
+ * accent-soft wash + accent indicator above (the stage hue never claims the
+ * active affordance). The gear (no data-stage) keeps the neutral muted icon. */
+.stage-rail-btn[data-stage="pages"] {
+  --stage-hue: var(--tf-stage-pages);
+}
+
+.stage-rail-btn[data-stage="edit"] {
+  --stage-hue: var(--tf-stage-edit);
+}
+
+.stage-rail-btn[data-stage="review"] {
+  --stage-hue: var(--tf-stage-review);
+}
+
+.stage-rail-btn[data-stage="deliver"] {
+  --stage-hue: var(--tf-stage-deliver);
+}
+
+.stage-rail-btn[data-stage] .stage-rail-icon {
+  color: var(--stage-hue);
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
 .stage-rail-icon {
   display: inline-flex;
   align-items: center;
@@ -12405,18 +12731,20 @@ rect.ann-highlight.ann-preview {
 
 
 /* ===========================================================================
- * Phase 36 (chunk 2) — THE PAGES CONTEXT PANEL.
+ * Phase 36 — THE STAGES CONTEXT PANEL.
  *
- * The PAGES stage's left panel: a themed header (`Pages · N` + Combine), the
- * RE-PARENTED ThumbnailRail (live previews, virtualization, drag-reorder,
- * selection bar, scroll sync — the rail's own component and geometry, so the
- * stack here is visually identical to today's rail) and the collapsible
- * outline section wrapping the RE-PARENTED OutlinePanel.
+ * The stage's left panel, promoted to the real single-mode left slot in chunk
+ * 6 (the chunk-2 dev flag is retired). PAGES: a themed header (`Pages · N` +
+ * Combine), the RE-PARENTED ThumbnailRail (live previews, virtualization,
+ * drag-reorder, selection bar, scroll sync — the rail's own component and
+ * geometry, so the stack here is visually identical to today's rail) and the
+ * collapsible outline section wrapping the RE-PARENTED OutlinePanel. EDIT /
+ * REVIEW / DELIVER render the stage bodies below (content + recognition /
+ * annotations + signatures / pre-flight + new document); the header's
+ * collapse control is the rail's own affordance, re-homed.
  *
- * The panel is mounted ALONGSIDE the unchanged rail only under the temporary
- * dev flag (`.context-panel-dev`, `?tfStagePanel=1`); the default app never
- * renders it. Every colour is an existing theme token and every duration an
- * existing motion token — nothing here introduces a value of its own.
+ * Every colour is an existing theme token and every duration an existing
+ * motion token — nothing here introduces a value of its own.
  * ========================================================================= */
 
 .context-panel {
@@ -12432,37 +12760,10 @@ rect.ann-highlight.ann-preview {
   border-radius: 0 0 var(--panel-radius) 0;
 }
 
-/* DEV MOUNT — `?tfStagePanel=1` (or the same key in localStorage). The panel
- * is placed one rail width to the right of the unchanged rail column so both
- * surfaces render side by side for the parity comparison; it claims no grid
- * track and reflows nothing, so the canvas and the rail are untouched. This
- * whole rule is deleted with the flag when the rail retires. */
-.context-panel-dev {
-  grid-column: auto;
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: var(--tf-rail-w, 220px);
-  width: var(--tf-rail-w, 220px);
-  z-index: 9;
-  box-shadow: var(--shadow-menu);
-}
-
 .context-panel-actions {
   display: flex;
   align-items: center;
   gap: var(--space-small);
-}
-
-.context-panel-dev-badge {
-  padding: 2px 4px;
-  font-size: 8px;
-  line-height: 1;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg-on-accent);
-  background: var(--accent);
-  border-radius: var(--radius-1);
 }
 
 /* The header's merge entry: a ghost control at the panel's trailing edge. */
@@ -12574,6 +12875,192 @@ rect.ann-highlight.ann-preview {
   overflow: hidden;
   padding-bottom: var(--space-small);
 }
+
+/* DEF-318 — the REVIEW annotations section owns a BOUNDED, scrollable body,
+ * the same containment DEF-310 applied to the outline section. The
+ * re-parented `.ann-panel` is `position: absolute; inset: 0` (the rail's own
+ * rule), so the section AND its wrapper must be bounded boxes: with a static
+ * wrapper the panel escaped to the nearest positioned ancestor
+ * (`.glass-sidebar-body`) and painted its `.hint` over the Signatures action
+ * row, leaving "Manage signatures..." unclickable.
+ *
+ * `flex: 1 1 auto` gives the section the panel body's remaining height while
+ * the Signatures section below keeps its own content height, so the two
+ * sections can never overlap. The wrapper plays `.rail-content`'s role — a
+ * `position: relative` box with a definite height — so `.ann-panel-list`
+ * (`overflow-y: auto`) scrolls INSIDE the section. */
+.context-panel-section[data-context-panel-section="annotations"] {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.context-panel-annotations {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---- Phase 36 (chunk 6) — the EDIT / REVIEW / DELIVER stage bodies ----
+ *
+ * One shared vocabulary for the three non-PAGES panels: a section (title +
+ * rows / list / actions), a label-left / value-right row, a selectable list
+ * item, a count badge and a ghost action button. Every colour and duration is
+ * an existing theme / motion token — no value of its own. */
+
+.context-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--space-small) var(--space-control);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.context-panel-section-title {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.context-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-small);
+  font-size: var(--fs-xs);
+}
+
+.context-panel-row-label { color: var(--fg-muted); }
+.context-panel-row-value { color: var(--fg); text-align: right; min-width: 0; }
+
+.context-panel-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-micro);
+}
+
+.context-panel-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-micro);
+  width: 100%;
+  padding: 3px var(--space-small);
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  color: var(--fg-soft);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.context-panel-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.context-panel-item-selected,
+.context-panel-item[aria-pressed="true"] {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--fg-strong);
+}
+
+.context-panel-item:disabled { opacity: 0.5; cursor: default; }
+.context-panel-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.context-panel-badge {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--fg-soft);
+  background: var(--bg-hover);
+  border-radius: var(--radius-2);
+}
+
+.context-panel-badge-alert {
+  color: var(--fg-on-accent);
+  background: var(--accent);
+}
+
+.context-panel-empty,
+.context-panel-note {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+.context-panel-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-micro);
+}
+
+.context-panel-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-micro);
+  padding: 3px var(--space-small);
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--fg-soft);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.context-panel-action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+  color: var(--fg-strong);
+}
+
+.context-panel-action:disabled { opacity: 0.5; cursor: default; }
+.context-panel-action:focus-visible { outline: 2px solid var(--tf-accent-focus); outline-offset: 1px; }
+
+.context-panel-collapse { margin-left: auto; }
+
+/* DEF-320 — the COLLAPSED panel is the 48px ruler strip, so its header must
+ * centre the lone expand control instead of laying a title + a 38px button
+ * into a 16px content box (where the button overflowed the strip's padding
+ * box and only a clipped slice stayed clickable). This mirrors the rail's own
+ * `.glass-sidebar-header.rail-header-ruler` treatment: no capsule, no gap,
+ * a 2px inset. The button is then fully inside the strip at every width, so
+ * "Expand panel" is always reachable — the defect's stuck-collapsed state is
+ * gone by construction. */
+.context-panel[data-context-panel-collapsed="true"] .context-panel-header {
+  padding: 0 2px;
+  justify-content: center;
+  gap: 0;
+}
+
+/* Collapsed to the ruler strip: the panel body is the ruler's positioning
+ * context, mirroring the rail's `.rail-content` role. */
+.context-panel-ruler {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.context-panel-ruler .rail-ruler { position: absolute; inset: 0; }
 
 /* ---- The inline hover verbs on each thumbnail ---- */
 
@@ -12689,3 +13176,731 @@ rect.ann-highlight.ann-preview {
     transition: none;
   }
 }
+
+
+/* ===========================================================================
+ * Phase 36 (chunk 3a) — THE ACTION DOCK.
+ *
+ * The floating verb surface at the bottom-centre of the canvas: ONE component
+ * with four legal states (stage verbs / selection override / pinned / idle),
+ * mounted INSIDE the pointer-inert `.canvas-overlay` layer (DEF-319), which is
+ * `.workspace-main` inset by the open Inspector's width. The dock therefore
+ * centres on the VISIBLE canvas and its `100%` cap and its measured pill
+ * reserve (ActionDock reads its `parentElement`, now that layer) both resolve
+ * against the canvas — never against the canvas plus the Inspector. It claims
+ * no grid track and reflows nothing.
+ *
+ * Geometry per the Phase-36 contract: absolute, bottom 12px, horizontally
+ * centred; padding 6px 8px, radius 12px, gap 4px; a verb is a 16px icon over a
+ * 9px label, padding 4px 9px, radius 8px. Every colour is an existing theme
+ * token and every duration an existing motion token — the dock introduces
+ * none of its own.
+ * ========================================================================= */
+.action-dock {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  /* DEF-315 — the dock stays centred on the canvas; the vertical YIELD (above
+   * the pill row at hosts too narrow for any free band) is a transform, so it
+   * composites and never reflows the page. */
+  transform: translate(-50%, calc(-1 * var(--dock-lift, 0px)));
+  z-index: 7;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 8px;
+  /* DEF-315 — the dock must never reach the two floating pills. The reserve is
+   * MEASURED, not assumed: ActionDock publishes `--dock-reserve` (px) from the
+   * pills' own boxes, so the cap tracks their real widths (the zoom readout
+   * gains a digit; the page-label hint appears/disappears). The fallback is the
+   * live measurement at the widest pill — 2 * (12px inset + 218px zoom pill)
+   * + 2 * 8px clearance = 476px — and `max(0px, ...)` keeps the declaration
+   * valid (never negative, never "none") at hosts narrower than the reserve,
+   * where ActionDock parks the dock above the pills instead. */
+  max-width: max(0px, calc(100% - var(--dock-reserve, 476px)));
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-menu);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  -webkit-app-region: no-drag;
+  /* DEF-319 — the dock now lives inside the pointer-inert `.canvas-overlay`
+   * layer, so it opts back into pointer events (the layer's `none` would
+   * otherwise be inherited and make every dock verb unclickable). */
+  pointer-events: auto;
+  transition:
+    transform var(--motion-duration-panel) var(--motion-ease-standard),
+    opacity var(--motion-duration-panel) var(--motion-ease-standard);
+}
+
+/* DEF-315 — last-resort yield: with less than one verb of free band the dock
+ * has no horizontal home, so it parks ABOVE the pill row (still centred on the
+ * canvas, the pills still in their corners). `--dock-lift` is the measured pill
+ * height plus the clearance, published by ActionDock; this cap is the no-JS
+ * fallback for the same state. */
+.action-dock[data-dock-lift='true'] {
+  max-width: max(0px, calc(100% - 24px));
+}
+
+
+/* State 4 — idle: ~40% after 3s without activity. The transition is the
+ * existing panel token (140ms); reduced motion collapses it to 0ms through
+ * the animations.css reduced-motion overrides. */
+.action-dock[data-dock-idle='true'] {
+  opacity: 0.4;
+}
+
+.action-dock-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* DEF-313 — the verb group wraps inside the capped dock instead of
+   * overflowing and clipping its trailing verb. */
+  flex-wrap: wrap;
+  max-width: 100%;
+  gap: 4px;
+}
+
+/* The state change (State 1 <-> State 2) is a ~140ms crossfade on the existing
+ * panel token — the dock itself never moves, so the canvas never reflows. */
+.action-dock-group {
+  animation: tf-anim-tab-in var(--motion-duration-panel) var(--motion-ease-enter) both;
+}
+
+.action-dock-chip {
+  padding: 3px 7px;
+  font-size: 9px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--fg-on-accent);
+  background: var(--accent);
+  border-radius: 6px;
+}
+
+.action-dock-divider {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+}
+
+.action-dock-verb {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 9px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.action-dock-verb:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.action-dock-verb:active:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.action-dock-verb:focus-visible {
+  outline: 2px solid var(--tf-accent-focus);
+  outline-offset: -2px;
+}
+
+/* State 1/2 — the FIRST button carries the stage-primary accent-soft wash. */
+.action-dock-verb-primary {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.action-dock-verb-primary:hover:not(:disabled) {
+  background: var(--accent-hover-bg);
+  color: var(--accent);
+}
+
+.action-dock-verb:disabled {
+  color: var(--fg-disabled);
+  cursor: not-allowed;
+}
+
+/* DEF-314 — a toggle verb that is currently ON (Edit content while Edit mode
+ * is active) keeps the accent wash plus a hairline accent ring, so its ON
+ * state is unmistakable and distinct from the first verb's primary wash. */
+.action-dock-verb[aria-pressed='true']:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.action-dock-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.action-dock-label {
+  font-size: 9px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.action-dock-overflow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.action-dock-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 148px;
+  padding: 4px;
+  background: var(--menu-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-popover);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+/* The `...` chip's own list anchors to the chip, not the pointer. */
+.action-dock-menu-overflow {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.action-dock-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  text-align: left;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color var(--motion-duration-micro) var(--motion-ease-standard);
+}
+
+.action-dock-menu-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.action-dock-menu-item:focus-visible {
+  outline: 2px solid var(--tf-accent-focus);
+  outline-offset: -2px;
+}
+
+.action-dock-menu-item:disabled {
+  color: var(--fg-disabled);
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .action-dock,
+  .action-dock-verb,
+  .action-dock-menu-item {
+    transition: none;
+  }
+}
+
+
+/* ===========================================================================
+ * Phase 36 (chunk 3b) — THE FLOATING CANVAS PILLS + THE ANNOTATIONS FLYOUT.
+ *
+ * The command toolbar ROW is retired in SINGLE mode. Its two view clusters
+ * become two floating pills over the canvas — page navigation at the
+ * bottom-LEFT, zoom / fit / pan at the bottom-RIGHT — and the REVIEW dock's
+ * Annotate primary opens the annotations flyout just above the dock. All three
+ * live in the `.canvas-overlay` layer (DEF-319), so they are anchored to the
+ * VISIBLE canvas and the open Inspector can never cover them. Both surfaces
+ * reuse the Action Dock's treatment verbatim (the same --bg-elevated
+ * surface, --glass-border hairline, --glass-blur and --shadow-menu, the same
+ * theme + motion tokens). No new colours or durations.
+ * ========================================================================= */
+
+.canvas-pills {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  /* The layer is inert; the two pills opt back into pointer events, so the
+   * page canvas stays clickable everywhere the pills are not. */
+  pointer-events: none;
+}
+
+/* DEF-319 — the CANVAS-BOUND floating-chrome layer.
+ *
+ * The page/zoom pills, the annotations flyout and the Action Dock are anchored
+ * to the VISIBLE canvas, not to the whole page column. This layer is inset on
+ * the right by the open Inspector's width (`--tf-tools-inset`, the SAME
+ * registered token the scroller consumes as its margin-right), so the
+ * Inspector can never cover a pill control or a dock verb: the zoom pill's
+ * `right: 12px` now lands 12px LEFT of the Inspector's edge, and the dock's
+ * `left: 50%` centres on the canvas rather than on the canvas + panel.
+ *
+ * With the Inspector closed the token is 0px, the layer is exactly
+ * `.workspace-main`'s box, and every surface keeps its pre-Inspector geometry
+ * pixel-for-pixel. The token is registered on `.app-main` and transitioned on
+ * `.workspace-main` (the shared panel-slide curve), so the layer inherits the
+ * animated value and travels WITH the page — no second duration anywhere.
+ *
+ * The layer is pointer-inert; each surface opts back in (the pills and the
+ * flyout anchor already declare their own pointer-events, the dock does so
+ * below). It is `z-index: auto` on purpose: it creates no stacking context, so
+ * the dock's overflow menu keeps its pre-existing lane against the Inspector. */
+.canvas-overlay {
+  position: absolute;
+  inset: 0;
+  right: var(--tf-tools-inset, 0px);
+  pointer-events: none;
+}
+
+.canvas-pill {
+  position: absolute;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-group);
+  box-shadow: var(--shadow-menu);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  transition: opacity var(--motion-duration-panel) var(--motion-ease-standard);
+}
+
+.canvas-pill-page {
+  left: 12px;
+}
+
+.canvas-pill-zoom {
+  right: 12px;
+}
+
+/* DEF-322 — the two pills YIELD as the canvas narrows instead of colliding.
+ *
+ * The VISIBLE canvas (`.canvas-overlay`) is the query container, so the yield
+ * keys on the real canvas width in every Inspector/rail state, not on the
+ * window. The ladder mirrors `src/renderer/state/pillFit.ts`:
+ *
+ *   full      canvas >= 404px   both pills full width, one row (the base rules
+ *                               above; `.canvas-pill-zoom` keeps `right: 12`).
+ *   compact   canvas >= 308px   the zoom pill drops its percent readout
+ *                               (icon-only) and the page pill drops "/ N" + the
+ *                               logical label, narrowing its input to 20px, so
+ *                               the compact pair fits one row.
+ *   stacked   otherwise         the zoom pill is raised one pill + a 6px gap
+ *                               above the page pill, so the two can never
+ *                               intersect even when no one-row pair fits.
+ *
+ * Every control stays present and hit-testable at every width: the compact
+ * readout is still the SAME page input (label-aware title kept), and the
+ * stacked zoom pill is still the same eight controls, just one row higher.
+ *
+ * Scoped to SINGLE mode (`data-multi-mode="false"`): Multi Mode places each
+ * pane's pills at that pane's outer edge (a later block) and must not inherit
+ * this container. */
+.tab-stage[data-multi-mode='false'] .canvas-overlay {
+  container-type: inline-size;
+  container-name: canvas-pills;
+}
+
+@container canvas-pills (max-width: 403px) {
+  .zoom-percent,
+  .page-total,
+  .page-label-hint {
+    display: none;
+  }
+
+  .page-input {
+    width: 20px;
+    padding: 0 2px;
+  }
+}
+
+@container canvas-pills (max-width: 307px) {
+  .canvas-pill-zoom {
+    bottom: 60px;
+  }
+}
+
+/* DEF-323 — in Multi Mode the Inspector inset is ALREADY consumed by the pane
+ * geometry (each pane stops at the stage minus the inset), so a pane's
+ * `.canvas-overlay` must NOT apply it a second time: that shrank pane B's
+ * layer to ~79px and pushed its right-anchored pills LEFT into the divider and
+ * under the shared dock. `right: 0` makes each pane's layer exactly its own
+ * visible canvas, so pane A's pills sit at A's left edge and pane B's at B's
+ * right edge — outboard of the dock's centred band. */
+.tab-stage[data-multi-mode='true'] .canvas-overlay {
+  right: 0;
+}
+
+/* The pills hide WITH the dock's idle fade (one shared state — the dock
+ * reports it), and never while a tool is armed (the dock cannot idle then). */
+.canvas-pills[data-canvas-pills-idle='true'] .canvas-pill {
+  opacity: 0.4;
+}
+
+.annotation-flyout-anchor {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 72px;
+  z-index: 8;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.annotation-flyout {
+  box-sizing: border-box;
+  min-width: 260px;
+  max-width: calc(100% - 24px);
+  padding: 6px 8px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-group);
+  box-shadow: var(--shadow-menu);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+
+.annotation-flyout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.annotation-flyout-title {
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.annotation-flyout-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.annotation-flyout-close:hover {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.annotation-flyout-close:focus-visible {
+  outline: 2px solid var(--tf-accent-focus);
+  outline-offset: -2px;
+}
+
+.annotation-flyout-body {
+  display: flex;
+  align-items: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-pill,
+  .annotation-flyout-close {
+    transition: none;
+  }
+}
+
+/* ===========================================================================
+ * Phase 36 (chunk 4) — THE COMMAND PALETTE.
+ *
+ * `Ctrl+K` opens the browse-everything surface that supersedes the All-tools
+ * panel: a 480px card at the top of the window (15% down), radius 10px, the
+ * raised dialog surface, the elevated dialog shadow and the same glass blur
+ * idiom the other floating chrome surfaces use (the blur is a no-op where the
+ * theme paints an opaque sheet and reads in frosted, where --bg-raised is the
+ * translucent dialog film).
+ *
+ * The LAYER never claims pointer events: the rest of the app stays reachable
+ * while the palette is open and an outside mousedown only closes it. The BOX
+ * re-enables pointer events for itself (the same overlay idiom as
+ * .sig-layer / .stamp-layer / .annotation-flyout).
+ *
+ * Colours are all existing theme tokens. The stage-tag chip and the pin marker
+ * consume the four per-theme semantic stage tokens (--tf-stage-pages /
+ * --tf-stage-edit / --tf-stage-review / --tf-stage-deliver) added in chunk 8:
+ * each of the four stages reads its own hue, so a result's stage is
+ * identifiable at a glance. Rows that are not one of the four stages (the
+ * "Global" bucket, the "Recent" file rows) keep the accent treatment. No hue
+ * is invented here beyond those four tokens.
+ * ========================================================================= */
+.command-palette-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 15vh var(--space-standard) var(--space-standard);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.command-palette {
+  box-sizing: border-box;
+  width: min(480px, calc(100vw - 32px));
+  max-height: min(520px, 70vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-dialog);
+  box-shadow: var(--shadow-dialog);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+}
+
+.command-palette-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  padding: 10px var(--space-control);
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--fg-muted);
+}
+
+.command-palette-input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-1);
+  color: var(--fg-strong);
+  font-size: var(--fs-md);
+  font-family: inherit;
+  outline: none;
+}
+
+.command-palette-input::placeholder {
+  color: var(--fg-faint);
+}
+
+/* The visible focus ring the palette's keyboard contract needs. */
+.command-palette-input:focus-visible {
+  outline: 2px solid var(--tf-accent-focus);
+  outline-offset: 2px;
+}
+
+.command-palette-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-micro);
+  list-style: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.command-palette-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-small);
+  padding: 7px 10px;
+  border-radius: var(--radius-2);
+  color: var(--fg);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.command-palette-row-active {
+  background: var(--accent-selected);
+  color: var(--fg-strong);
+}
+
+.command-palette-row-disabled {
+  color: var(--fg-disabled);
+  cursor: default;
+}
+
+.command-palette-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  color: inherit;
+}
+
+.command-palette-row-label {
+  flex: 0 1 auto;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+
+.command-palette-row-desc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+.command-palette-row-disabled .command-palette-row-desc {
+  color: var(--fg-faint);
+}
+
+.command-palette-row-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+  direction: rtl;
+  text-align: left;
+}
+
+.command-palette-pin {
+  display: inline-flex;
+  align-items: center;
+  color: var(--stage-hue, var(--accent));
+}
+
+.command-palette-shortcut {
+  flex: 0 0 auto;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+/* The per-stage identification hook. Set once on the ROW so the tag chip and
+ * the pin marker below both inherit the same stage hue; a 10% wash of that hue
+ * supplies the chip's soft fill (the soft-tint idiom the accent pair used).
+ * Only the four rail stages are listed — a `global` entry or a `recent` file
+ * row matches nothing and falls back to the accent. */
+.command-palette-row[data-stage="pages"] {
+  --stage-hue: var(--tf-stage-pages);
+  --stage-soft: color-mix(in srgb, var(--tf-stage-pages) 10%, transparent);
+}
+
+.command-palette-row[data-stage="edit"] {
+  --stage-hue: var(--tf-stage-edit);
+  --stage-soft: color-mix(in srgb, var(--tf-stage-edit) 10%, transparent);
+}
+
+.command-palette-row[data-stage="review"] {
+  --stage-hue: var(--tf-stage-review);
+  --stage-soft: color-mix(in srgb, var(--tf-stage-review) 10%, transparent);
+}
+
+.command-palette-row[data-stage="deliver"] {
+  --stage-hue: var(--tf-stage-deliver);
+  --stage-soft: color-mix(in srgb, var(--tf-stage-deliver) 10%, transparent);
+}
+
+/* The stage tag chip. Each of the four stages consumes its per-theme
+ * --tf-stage-* token: the label is the stage hue on a 10% wash of the same
+ * hue, so the label clears the 4.5:1 text floor in every theme. A row that is
+ * not one of the four stages keeps the accent treatment. */
+.command-palette-tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--stage-soft, var(--accent-soft));
+  color: var(--stage-hue, var(--accent));
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.command-palette-empty {
+  padding: var(--space-standard);
+  color: var(--fg-muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.command-palette-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-small);
+  padding: 8px var(--space-control);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--fs-xs);
+  color: var(--fg-muted);
+}
+
+.command-palette-hint {
+  white-space: nowrap;
+}
+
+.command-palette-notice {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-strong);
+}
+
+.command-palette-count {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .command-palette,
+  .command-palette-row {
+    transition: none;
+  }
+}
+

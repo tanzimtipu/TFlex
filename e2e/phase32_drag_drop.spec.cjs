@@ -24,7 +24,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
 
 const FIX = path.resolve(__dirname, '..', 'test-fixtures');
 const ALPHA_SRC = path.join(FIX, 'report.pdf'); // 34 pages
@@ -72,8 +72,9 @@ async function twoPaneSetup() {
   await waitTabCount(2);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p32-beta' }).first().click();
   await win.waitForTimeout(1200);

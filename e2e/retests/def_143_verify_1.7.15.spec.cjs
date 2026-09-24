@@ -8,7 +8,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armSignTool } = require('../lib/helpers.cjs');
 const path = require('node:path');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
@@ -78,7 +78,7 @@ async function savedRows(label) {
 }
 
 async function openSignManager() {
-  await win.click('button[aria-label="Sign tool"]');
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 10000 });
   await win.waitForTimeout(600);
 }

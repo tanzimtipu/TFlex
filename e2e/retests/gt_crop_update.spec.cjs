@@ -2,7 +2,7 @@
 // Group 3: Bug 8 (crop-box adjustment flashes a larger-crop artifact),
 // Bug 9 (OTA update prompt update-click UX).
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, runTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -21,11 +21,8 @@ async function openSample(name) {
   await window.waitForTimeout(1500);
 }
 async function snap(name) { await window.screenshot({ path: `screenshots/${name}.png` }); }
-async function openToolsPalette() {
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.waitForTimeout(300);
-}
+// Phase 36 migration: the All-tools palette is retired; Crop pages is a
+// PAGES-stage Action Dock verb now (inline or the "More" overflow lane).
 
 test.beforeEach(async () => { await launch(); });
 test.afterEach(async () => { await close(); });
@@ -36,8 +33,7 @@ test.afterEach(async () => { await close(); });
 test('GT-08: crop box drag does not flash a larger crop window / remount canvas', async () => {
   test.setTimeout(120000);
   await openSample('report.pdf');
-  await openToolsPalette();
-  await window.click('[data-tool-id="cropPages"]');
+  await runTool(window, 'cropPages');
   await window.waitForSelector('[data-crop-pages-dialog]');
   await window.waitForTimeout(700);
   await snap('gt-bug8-crop-open');

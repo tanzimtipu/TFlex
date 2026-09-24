@@ -10,7 +10,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, dismissUpdatePrompt } = require('./lib/helpers.cjs');
+const { hardClose, dismissUpdatePrompt, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
 const {
   twoPaneSetup,
   focusPaneByPage,
@@ -255,7 +255,8 @@ test('DEF3 Multi View composite tab separator', async () => {
 // DEFECT 4 — thumbnail page-view header's top-right corner is rounded
 // ---------------------------------------------------------------------------
 test('DEF4 thumbnail header top-right corner radius', async () => {
-  // Single mode first: the left rail header (.rail-header inside .side-rail).
+  // Single mode first: the promoted ContextPanel (Phase 36 chunk 6 replaced the
+  // retired .side-rail / .rail-header).
   await openFile(app, win, tmpCopy(REPORT, 'p35-radius.pdf'));
   await win.waitForTimeout(1500);
   const single = await win.evaluate(() => {
@@ -274,21 +275,21 @@ test('DEF4 thumbnail header top-right corner radius', async () => {
       };
     };
     return {
-      railHeader: read('.side-rail .rail-header'),
-      sideRail: read('.side-rail'),
-      railContent: read('.side-rail .rail-content'),
+      railHeader: read('.context-panel-header'),
+      sideRail: read('.context-panel'),
+      railContent: read('.context-panel-body'),
     };
   });
   console.log(`[P35-DEF4] SINGLE mode=${JSON.stringify(single)}`);
   // DEF-294 (fixed) — the thumbnail panel's top-right corner is SQUARE; the
-  // single-mode rail keeps its bottom-right radius (the old repro captured the
-  // rounded top-right corner as the defect).
-  expect(single.sideRail, 'single-mode rail found').not.toBeNull();
-  expect(single.sideRail.borderTopRightRadius, 'single rail top-right corner is square').toBe('0px');
-  expect(single.railHeader.borderTopRightRadius, 'rail header top-right corner is square').toBe('0px');
-  expect(single.sideRail.borderBottomRightRadius, 'single rail keeps its bottom-right radius').toBe('16px');
-  // Hover the rail header so its background paints and the clipped corner is visible.
-  await win.locator('.side-rail .rail-header').first().hover();
+  // panel keeps its bottom-right radius (the old repro captured the rounded
+  // top-right corner as the defect).
+  expect(single.sideRail, 'single-mode panel found').not.toBeNull();
+  expect(single.sideRail.borderTopRightRadius, 'panel top-right corner is square').toBe('0px');
+  expect(single.railHeader.borderTopRightRadius, 'panel header top-right corner is square').toBe('0px');
+  expect(single.sideRail.borderBottomRightRadius, 'panel keeps its bottom-right radius').toBe('16px');
+  // Hover the panel header so its background paints and the clipped corner is visible.
+  await win.locator('.context-panel-header').first().hover();
   await win.waitForTimeout(400);
   await shot('def294-single-rail-header-corner.png');
 
@@ -297,8 +298,9 @@ test('DEF4 thumbnail header top-right corner radius', async () => {
   await win.waitForTimeout(1200);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p35-radius.pdf' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p35-radius-beta' }).first().click();
   await win.waitForTimeout(1500);
@@ -428,7 +430,14 @@ test('DEF6 page zoom has no animation', async () => {
   };
   const z0 = await sample('t=before');
   const animsBefore = await win.evaluate(() => document.getAnimations({ subtree: true }).length);
-  await win.locator('button[aria-label="Zoom in"]').first().click();
+  // Phase 36 (chunk 5) — the floating zoom pill is covered by the Inspector
+  // (DEF-319), so drive the SAME zoom path through the Command Palette's
+  // `zoomIn` view action (the focused view's own handler).
+  await win.keyboard.press('Control+k');
+  await win.waitForSelector('[data-command-palette]', { timeout: 8000 });
+  await win.fill('[data-command-palette-input]', 'zoom in');
+  await win.waitForTimeout(150);
+  await win.locator('[data-palette-tool-id="zoomIn"]').first().click();
   const z1 = await sample('t=0ms (immediately after click)');
   await win.waitForTimeout(16);
   const z2 = await sample('t=16ms');
@@ -471,16 +480,16 @@ test('DEF7 top-bar transparency in frosted single mode', async () => {
     return {
       html: read('html'), body: read('body'), app: read('.app'), ambient: read('.tf-ambient'),
       titlebar: read('.titlebar'), appHeader: read('.app-header'),
-      toolbar: read('.toolbar'), workspaceMain: read('.workspace-main'), scroller: read('.document-scroller'),
+      toolbar: read('.action-dock'), workspaceMain: read('.workspace-main'), scroller: read('.document-scroller'),
       stage: read('.tab-stage'), pane: read('.tab-pane'),
     };
   });
   console.log(`[P35-DEF7] theme=${theme}`);
   console.log(`[P35-DEF7] styles=${JSON.stringify(styles)}`);
 
-  // What is directly behind the toolbar's centre (the floating chrome row).
+  // What is directly behind the Action Dock's centre (the floating chrome).
   const behind = await win.evaluate(() => {
-    const t = document.querySelector('.toolbar');
+    const t = document.querySelector('.action-dock');
     if (t === null) return null;
     const r = t.getBoundingClientRect();
     const x = Math.round(r.left + r.width / 2);

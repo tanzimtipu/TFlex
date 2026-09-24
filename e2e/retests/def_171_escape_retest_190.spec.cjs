@@ -12,7 +12,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armSignTool, clickDockVerb } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 let electronApp = null;
@@ -26,7 +26,7 @@ async function modalState() {
 }
 
 async function openSignatureManager() {
-  await win.click('button[aria-label="Sign tool"]');
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 10000 });
   await win.waitForTimeout(400);
   const st = await modalState();
@@ -123,9 +123,9 @@ test('DEF-171 retest: Escape closes the Signature manager + backdrop, workspace 
 
     // ---- 6. Escape must not leak into other modals' state: reopen Insert pages
     // dialog right after and Escape-close it as usual (no cross-talk). ----
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.click('[data-tool-id="insertPages"]');
+    // Phase 36 migration: the All-tools palette is retired; Insert pages is a
+    // PAGES-stage Action Dock verb now (inline or the "More" overflow lane).
+    await clickDockVerb(win, 1, 'insertPages');
     await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 8000 });
     await win.waitForTimeout(400);
     await win.keyboard.press('Escape');

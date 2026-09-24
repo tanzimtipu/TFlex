@@ -20,7 +20,7 @@ import { DocumentStage, type StageTab } from "../../../src/renderer/components/M
 import {
   MIN_PAGE_WIDTH_PX,
   MIN_PANE_PANE_PX,
-  TOOLS_PANEL_W_LIST_PX,
+  INSPECTOR_W_PX,
   clampSplitFraction,
   multiPaneGeometry,
 } from "../../../src/renderer/components/multiPaneLayout";
@@ -83,7 +83,7 @@ function Harness(props: {
       <button
         type="button"
         data-open-panel
-        onClick={(): void => setTarget(TOOLS_PANEL_W_LIST_PX)}
+        onClick={(): void => setTarget(INSPECTOR_W_PX)}
       >
         open panel
       </button>
@@ -154,27 +154,28 @@ function resizeStage(host: HTMLElement, width: number): void {
 
 describe("DEF-287 residual — clampSplitFraction is the ONE rule", () => {
   it("is the identity for a fraction already inside the bounds", () => {
-    expect(clampSplitFraction(1600, TOOLS_PANEL_W_LIST_PX, 0.5)).toBe(0.5);
+    expect(clampSplitFraction(1600, INSPECTOR_W_PX, 0.5)).toBe(0.5);
     expect(clampSplitFraction(1200, 0, 0.5)).toBe(0.5);
   });
 
   it("clamps a carried fraction up to the pane minimum", () => {
-    // min = (MIN_PANE_WIDTH_PX + inset/2) / W = (320 + 172) / 1000.
-    expect(clampSplitFraction(1000, TOOLS_PANEL_W_LIST_PX, 0.35)).toBeCloseTo(0.492, 9);
+    // Phase 36 (chunk 5) — the Inspector's 264px replaces the palette's 344px.
+    // min = (MIN_PANE_WIDTH_PX + inset/2) / W = (320 + 132) / 1000.
+    expect(clampSplitFraction(1000, INSPECTOR_W_PX, 0.35)).toBeCloseTo(0.452, 9);
   });
 
   it("pins to 0.5 when even 0.5 cannot satisfy the minimum", () => {
-    expect(clampSplitFraction(640, TOOLS_PANEL_W_LIST_PX, 0.35)).toBe(0.5);
-    expect(clampSplitFraction(500, TOOLS_PANEL_W_LIST_PX, 0.9)).toBe(0.5);
-    expect(clampSplitFraction(0, TOOLS_PANEL_W_LIST_PX, 0.35)).toBe(0.5);
+    expect(clampSplitFraction(640, INSPECTOR_W_PX, 0.35)).toBe(0.5);
+    expect(clampSplitFraction(500, INSPECTOR_W_PX, 0.9)).toBe(0.5);
+    expect(clampSplitFraction(0, INSPECTOR_W_PX, 0.35)).toBe(0.5);
   });
 
   it("is idempotent — a re-clamp can never oscillate", () => {
     const cases: Array<[number, number, number]> = [
-      [640, TOOLS_PANEL_W_LIST_PX, 0.2],
-      [1000, TOOLS_PANEL_W_LIST_PX, 0.35],
+      [640, INSPECTOR_W_PX, 0.2],
+      [1000, INSPECTOR_W_PX, 0.35],
       [1600, 0, 0.7],
-      [480, TOOLS_PANEL_W_LIST_PX, 0.5],
+      [480, INSPECTOR_W_PX, 0.5],
     ];
     for (const [w, inset, f] of cases) {
       const once = clampSplitFraction(w, inset, f);
@@ -191,11 +192,11 @@ describe("DEF-287 residual — the stored fraction is re-clamped on geometry cha
   it("re-clamps a wide-window fraction when the window narrows, panel open", () => {
     const ctl: Ctl = { calls: [] };
     const { host, unmount } = mount(
-      <Harness ctl={ctl} initial={0.35} initialTarget={TOOLS_PANEL_W_LIST_PX} />,
+      <Harness ctl={ctl} initial={0.35} initialTarget={INSPECTOR_W_PX} />,
     );
     try {
       // Carried in from a wide window: under budget at 640 with the panel open.
-      const before = multiPaneGeometry(640, TOOLS_PANEL_W_LIST_PX, 0.35);
+      const before = multiPaneGeometry(640, INSPECTOR_W_PX, 0.35);
       expect(before.paneA.width).toBeLessThan(MIN_PANE_PANE_PX);
 
       resizeStage(host, 640);
@@ -203,7 +204,7 @@ describe("DEF-287 residual — the stored fraction is re-clamped on geometry cha
       expect(ctl.calls).toEqual([0.5]);
       const f = fractionOf(host);
       expect(f).toBe(0.5);
-      const g = multiPaneGeometry(640, TOOLS_PANEL_W_LIST_PX, f);
+      const g = multiPaneGeometry(640, INSPECTOR_W_PX, f);
       expect(g.paneA.width).toBeGreaterThanOrEqual(MIN_PANE_PANE_PX);
       expect(g.paneB.width).toBeGreaterThanOrEqual(MIN_PANE_PANE_PX);
       expect(g.paneA.page).toBeGreaterThanOrEqual(MIN_PAGE_WIDTH_PX);
@@ -228,9 +229,9 @@ describe("DEF-287 residual — the stored fraction is re-clamped on geometry cha
 
       expect(ctl.calls).toHaveLength(1);
       const f = fractionOf(host);
-      expect(f).toBeCloseTo(clampSplitFraction(1000, TOOLS_PANEL_W_LIST_PX, 0.35), 6);
+      expect(f).toBeCloseTo(clampSplitFraction(1000, INSPECTOR_W_PX, 0.35), 6);
       expect(f).toBeGreaterThan(0.35);
-      const g = multiPaneGeometry(1000, TOOLS_PANEL_W_LIST_PX, f);
+      const g = multiPaneGeometry(1000, INSPECTOR_W_PX, f);
       expect(g.paneA.width).toBeGreaterThanOrEqual(MIN_PANE_PANE_PX);
       expect(g.paneA.page).toBeGreaterThanOrEqual(MIN_PAGE_WIDTH_PX);
       expect(g.paneB.page).toBeGreaterThanOrEqual(MIN_PAGE_WIDTH_PX);
@@ -264,7 +265,7 @@ describe("DEF-287 residual — the stored fraction is re-clamped on geometry cha
   it("pins to 0.5 below the supported minimum without oscillating", () => {
     const ctl: Ctl = { calls: [] };
     const { host, unmount } = mount(
-      <Harness ctl={ctl} initial={0.35} initialTarget={TOOLS_PANEL_W_LIST_PX} />,
+      <Harness ctl={ctl} initial={0.35} initialTarget={INSPECTOR_W_PX} />,
     );
     try {
       resizeStage(host, 500);
@@ -273,9 +274,9 @@ describe("DEF-287 residual — the stored fraction is re-clamped on geometry cha
       resizeStage(host, 480);
       expect(ctl.calls).toEqual([0.5]);
       expect(fractionOf(host)).toBe(0.5);
-      const g = multiPaneGeometry(480, TOOLS_PANEL_W_LIST_PX, 0.5);
+      const g = multiPaneGeometry(480, INSPECTOR_W_PX, 0.5);
       // The DEF-287 inset cap keeps the page areas usable there.
-      expect(g.inset).toBeLessThan(TOOLS_PANEL_W_LIST_PX);
+      expect(g.inset).toBeLessThan(INSPECTOR_W_PX);
       expect(g.paneA.page).toBeGreaterThanOrEqual(MIN_PAGE_WIDTH_PX);
       expect(g.paneB.page).toBeGreaterThanOrEqual(MIN_PAGE_WIDTH_PX);
     } finally {
@@ -335,7 +336,7 @@ describe("DEF-287 residual — the drag path is unchanged", () => {
   it("keeps the pre-change 1:1 tracking (inset participates, pointer->fraction)", () => {
     const ctl: Ctl = { calls: [] };
     const { host, unmount } = mount(
-      <Harness ctl={ctl} initial={0.5} initialTarget={TOOLS_PANEL_W_LIST_PX} />,
+      <Harness ctl={ctl} initial={0.5} initialTarget={INSPECTOR_W_PX} />,
     );
     try {
       expect(dragDivider(host, 2000, 800, "400px")).toBe("50.000%");
@@ -348,7 +349,7 @@ describe("DEF-287 residual — the drag path is unchanged", () => {
   it("writes exactly once per drag and is never overridden by the re-clamp", () => {
     const ctl: Ctl = { calls: [] };
     const { host, unmount } = mount(
-      <Harness ctl={ctl} initial={0.5} initialTarget={TOOLS_PANEL_W_LIST_PX} />,
+      <Harness ctl={ctl} initial={0.5} initialTarget={INSPECTOR_W_PX} />,
     );
     try {
       // A narrow, panel-open stage: the drag parks at 0.5 (below two minimum

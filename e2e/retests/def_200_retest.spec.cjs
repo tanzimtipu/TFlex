@@ -22,7 +22,7 @@
 // rule (i.e. the build under test is stale).
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
-const { launchDev, openSample, hardClose } = require('../lib/helpers.cjs');
+const { launchDev, openSample, hardClose, openDockVerb } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
@@ -91,7 +91,8 @@ test('DEF-200: pressed .btn applies the shared press transform (scale 0.97 + ty 
   expect(parseFloat(cssom.scalePress), `--motion-scale-press must resolve to 0.97 on :root, got ${cssom.scalePress}`).toBeCloseTo(0.97, 6);
 
   // Open the flatten dialog (form.pdf carries form fields).
-  await win.click('button[aria-label="Flatten form fields"]');
+  // Phase 36 (chunk 3) — Flatten is the REVIEW dock's `flatten` verb.
+  await openDockVerb(win, 3, 'flatten');
   await win.waitForSelector('[data-animated-dialog="flatten-confirm"]', { timeout: 8000 });
   await win.waitForTimeout(900); // let the bloom settle before pressing
 

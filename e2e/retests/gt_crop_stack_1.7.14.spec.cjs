@@ -7,7 +7,7 @@
 // Launch only via e2e/lib/launch.cjs against the DEV build (historically: the packaged installed exe).
 
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, runTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
@@ -43,14 +43,8 @@ async function openSampleFromCard(name) {
   await win.waitForTimeout(2200);
 }
 
-async function openTools() {
-  const open = await win.evaluate(() => document.querySelector('[data-tools-palette]') !== null);
-  if (!open) {
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-    await win.waitForTimeout(300);
-  }
-}
+// Phase 36 migration: the All-tools palette is retired; Crop pages is a
+// PAGES-stage Action Dock verb now (inline or the "More" overflow lane).
 
 // Set the crop box on the editor page to (x,y,w,h) in page points (612x792).
 async function setCropBoxTo(x, y, width, height) {
@@ -107,8 +101,7 @@ async function setCropBoxTo(x, y, width, height) {
 }
 
 async function cropPage1To(x, y, width, height) {
-  await openTools();
-  await win.click('[data-tool-id="cropPages"]');
+  await runTool(win, 'cropPages');
   await win.waitForSelector('[data-crop-pages-dialog]', { timeout: 10000 });
   await win.waitForTimeout(800);
   await win.click('[data-crop-mode="perPage"]');
@@ -207,7 +200,7 @@ test('Item 2: crop PAGE 1 to a small box -> pages below OVERLAP/stack; density v
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
   }, savePath);
-  await win.click('[aria-label="Save As"]');
+  await win.click('[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.click('[data-save-as-confirm]');

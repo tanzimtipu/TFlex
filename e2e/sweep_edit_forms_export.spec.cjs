@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const zlib = require('node:zlib');
 const { PDFDocument, PDFName } = require('pdf-lib');
-const { launchDev, openSample, diag, shot, scrollToPage, getSamplePath , hardClose } = require('./lib/helpers.cjs');
+const { launchDev, openSample, diag, shot, scrollToPage, getSamplePath , hardClose, toggleEditMode, runTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -31,8 +31,7 @@ test.setTimeout(300000);
 
 async function eng() { const d = await diag(win); return d.engineState || d; }
 async function openTools() {
-  const open = await win.evaluate(() => document.querySelector('[data-tools-palette]') !== null);
-  if (!open) { await win.click('[data-tools-toggle]'); await win.waitForSelector('[data-tools-palette]', { timeout: 10000 }); await win.waitForTimeout(300); }
+  // Phase 36 migration: the All-tools palette is retired; use runTool(id).
 }
 function badHooks() {
   return pageErrors.filter((m) => /#310|Rules of Hooks|#520|Invalid page request|NaN|degreeAngle/.test(m));
@@ -43,7 +42,7 @@ async function saveAsTo(name) {
   await electronApp.evaluate(async ({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, outPath);
-  await win.click('button[aria-label="Save As"]');
+  await win.click('[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await win.click('[data-save-as-confirm]');
   await win.waitForTimeout(2500);
@@ -57,7 +56,9 @@ test('E1: edit text run, add box, exit/re-enter edit mode with no phantom surfac
   await openSample(win, electronApp, 'report.pdf');
   await scrollToPage(win, 1);
 
-  await win.click('[data-toolbar-edit-toggle]');
+  // Phase 36 (chunk 3) — the per-view command row is retired; Edit mode is the
+  // EDIT dock's `editMode` verb.
+  await toggleEditMode(win);
   await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
   await win.click('[data-edit-tool="text"]');
   await win.waitForTimeout(400);
@@ -109,9 +110,9 @@ test('E1: edit text run, add box, exit/re-enter edit mode with no phantom surfac
   // Toggle Edit mode off then on repeatedly; ensure no phantom surfaces accumulate.
   let phantom = false;
   for (let i = 0; i < 5; i++) {
-    await win.click('[data-toolbar-edit-toggle]');
+    await toggleEditMode(win);
     await win.waitForTimeout(500);
-    await win.click('[data-toolbar-edit-toggle]');
+    await toggleEditMode(win);
     await win.waitForTimeout(500);
   }
   const editBoxesAfter = await win.locator('.edit-box').count();
@@ -191,8 +192,7 @@ test('X1: DOCX export contains editable text runs (not an image-only docx)', asy
     });
   }, docxPath).catch(() => {});
 
-  await openTools();
-  await win.click('[data-tool-id="exportDocx"]');
+  await runTool(win, 'exportDocx');
   await win.waitForSelector('[data-docx-export-dialog], .dialog, .sheet', { timeout: 10000 });
   await win.waitForTimeout(400);
   // Set page range to the whole doc (default) and confirm export.

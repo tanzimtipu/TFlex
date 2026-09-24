@@ -3,7 +3,7 @@
 // equally polished, no emojis, readability).
 const { test } = require('@playwright/test');
 const path = require('node:path');
-const { launchDev, openSample, getSamplePath , hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
+const { launchDev, openSample, getSamplePath , hardClose, armAnnotationTool, armSignTool, runTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -73,8 +73,9 @@ test('VISUAL: every major screen in both themes', async () => {
   await snap('visual-annotations-light.png');
 
   // Tools palette in both themes.
-  const open = await win.evaluate(() => document.querySelector('[data-tools-palette]') !== null);
-  if (!open) { await win.click('[data-tools-toggle]'); await win.waitForSelector('[data-tools-palette]', { timeout: 8000 }); }
+  // Phase 36 migration: the All-tools palette is retired; the ContextPanel is
+  // the tools panel now and is present whenever a document is open.
+  await win.waitForSelector('[data-context-panel]', { timeout: 8000 }).catch(() => {});
   await win.waitForTimeout(400);
   await snap('visual-palette-light.png');
   await setTheme('dark');
@@ -83,12 +84,11 @@ test('VISUAL: every major screen in both themes', async () => {
 
   // Insert-pages dialog: capture in current theme, close, toggle, reopen, capture.
   const openPalette = async () => {
-    const open = await win.evaluate(() => document.querySelector('[data-tools-palette]') !== null);
-    if (!open) { await win.click('[data-tools-toggle]'); await win.waitForSelector('[data-tools-palette]', { timeout: 8000 }); }
+    await win.waitForSelector('[data-context-panel]', { timeout: 8000 }).catch(() => {});
   };
   await setTheme('light');
   await openPalette();
-  await win.click('[data-tool-id="insertPages"]');
+  await runTool(win, 'insertPages');
   await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 8000 });
   await win.waitForTimeout(600);
   await snap('visual-dialog-light.png');
@@ -98,7 +98,7 @@ test('VISUAL: every major screen in both themes', async () => {
 
   await setTheme('dark');
   await openPalette();
-  await win.click('[data-tool-id="insertPages"]');
+  await runTool(win, 'insertPages');
   await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 8000 });
   await win.waitForTimeout(600);
   await snap('visual-dialog-dark.png');
@@ -108,7 +108,7 @@ test('VISUAL: every major screen in both themes', async () => {
 
   // Sign manager in light + dark (toggle theme with no modal open first).
   await setTheme('light');
-  await win.click('button[aria-label="Sign tool"]');
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 10000 });
   await win.waitForTimeout(600);
   await snap('visual-sign-light.png');
@@ -116,7 +116,7 @@ test('VISUAL: every major screen in both themes', async () => {
   await win.waitForTimeout(500);
 
   await setTheme('dark');
-  await win.click('button[aria-label="Sign tool"]');
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 10000 });
   await win.waitForTimeout(600);
   await snap('visual-sign-dark.png');

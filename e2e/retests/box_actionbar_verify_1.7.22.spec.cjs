@@ -11,7 +11,7 @@
 
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, toggleEditMode } = require('../lib/helpers.cjs');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
@@ -124,7 +124,7 @@ test('repro: place box -> drag BODY to move -> release -> inspect action bar', a
   await scrollToPage1();
 
   // Enter Edit mode + Add box tool.
-  await win.click('[data-toolbar-edit-toggle]');
+  await toggleEditMode(win);
   await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.click('[data-edit-tool="box"]');

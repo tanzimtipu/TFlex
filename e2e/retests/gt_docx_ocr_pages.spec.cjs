@@ -3,7 +3,7 @@
 // Bug 4 (OCR does not make form.pdf "John Doe" searchable),
 // Bug 7 (insert blank page visually adds 2 pages / blank page has marks).
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, clickDockVerb } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const os = require('node:os');
 const path = require('node:path');
@@ -27,11 +27,9 @@ async function openSample(name) {
 async function diag() { return await window.evaluate(() => window.tflexDiagnostics()); }
 async function snap(name) { await window.screenshot({ path: `screenshots/${name}.png` }); }
 
-async function openToolsPalette() {
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.waitForTimeout(300);
-}
+// Phase 36 (chunk 9 migration): the All-tools palette is retired; each tool is
+// a stage Action Dock verb now, reached through clickDockVerb (inline or the
+// "More" overflow lane). The dialogs and assertions are unchanged.
 
 test.beforeEach(async () => { await launch(); });
 test.afterEach(async () => { await close(); });
@@ -60,8 +58,7 @@ test('GT-03: DOCX export respects the selected page range', async () => {
   const d0 = await diag();
   console.log('GT-03 initial pageCount=', d0.engineState ? d0.engineState.pageCount : d0.pageCount);
 
-  await openToolsPalette();
-  await window.click('[data-tool-id="exportDocx"]');
+  await clickDockVerb(window, 4, 'exportDocx');
   await window.waitForSelector('[data-docx-export-dialog]');
   await window.waitForTimeout(400);
 
@@ -124,8 +121,7 @@ test('GT-04: OCR makes the form.pdf "John Doe" value searchable', async () => {
   });
   console.log('GT-04 textLayer BEFORE OCR=', JSON.stringify(before));
 
-  await openToolsPalette();
-  await window.click('[data-tool-id="recognizeText"]');
+  await clickDockVerb(window, 2, 'recognizeText');
   await window.waitForSelector('.ocr-dialog');
   await window.waitForTimeout(400);
 
@@ -188,8 +184,7 @@ test('GT-07: insert blank page adds exactly one page', async () => {
   console.log('GT-07 .pdf-page count before=', pagesBefore);
   await snap('gt-bug7-before');
 
-  await openToolsPalette();
-  await window.click('[data-tool-id="insertPages"]');
+  await clickDockVerb(window, 1, 'insertPages');
   await window.waitForSelector('[data-insert-pages-dialog]');
   await window.waitForTimeout(400);
   // ensure blank mode

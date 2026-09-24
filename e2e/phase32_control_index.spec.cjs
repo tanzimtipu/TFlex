@@ -94,7 +94,7 @@ async function state() {
       })(),
       paneAWidth: widthOf('.tab-pane[data-pane="A"]'),
       paneBWidth: widthOf('.tab-pane[data-pane="B"]'),
-      singleRailThumbW: thumbW('.side-rail'),
+      singleRailThumbW: thumbW('[data-context-panel]'),
       multiThumbA: thumbW('[data-pane-strip-pane="A"]'),
       dragHandles: document.querySelectorAll('[data-page-drag-handle]').length,
       cmdPressed: document.querySelector('[data-toolbar-multi-mode]')
@@ -104,9 +104,11 @@ async function state() {
   });
 }
 async function allToolsPressed() {
-  const el = await win.locator('[data-tool-id="multi-mode"]').count();
+  // Phase 36 (chunk 6) — the single-mode Multi Mode toggle is the title-bar
+  // control; the All-tools palette entry is retired.
+  const el = await win.locator('[data-header-multi-mode]').count();
   if (el === 0) return null;
-  return win.locator('[data-tool-id="multi-mode"]').getAttribute('aria-pressed');
+  return win.locator('[data-header-multi-mode]').getAttribute('aria-pressed');
 }
 
 test.beforeEach(async () => {
@@ -144,8 +146,9 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s0.singleRailThumbW).toBe(126); // single-mode thumb width
   expect(s0.dragHandles).toBe(0); // canvas drag is Multi-Mode-only
 
-  // --- [data-toolbar-multi-mode]: ON (pane A seeded, B empty) ---
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  // --- Multi Mode entry: ON (pane A seeded, B empty) ---
+  // Phase 36 (chunk 6) — the single-mode home is the title-bar toggle.
+  await win.locator('[data-header-multi-mode]').click();
   await win.waitForTimeout(500);
   const s1 = await state();
   console.log(`[P32-ci] after CommandBar ON: ${JSON.stringify(s1)}`);
@@ -161,12 +164,8 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s1.activePane).toBe('A');
   expect(s1.cmdPressed).toBe('true');
   expect(s1.dragHandles).toBeGreaterThan(0); // canvas grip exists in Multi Mode
-  // All tools entry agrees.
-  await win.locator('[data-tools-badge]').first().click();
-  await win.waitForSelector('[data-tool-id="multi-mode"]', { timeout: 10000 });
+  // The title-bar toggle agrees (pressed while Multi Mode is on).
   expect(await allToolsPressed()).toBe('true');
-  await win.locator('.tools-palette-close').click();
-  await win.waitForSelector('[data-tools-palette]', { state: 'detached', timeout: 10000 });
 
   // --- [data-pane-pick] fills pane B; [data-multi-panes] -> 2 ---
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
@@ -222,8 +221,10 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   // panes are adjacent with ONLY the 8px divider between them. Assert the stage
   // is exactly filled by the two panes plus the divider (allowing +/-1px
   // rounding on each pane width) - a reserved rail gap would now be the bug.
-  expect(stageW - gap).toBeGreaterThanOrEqual(6);
-  expect(stageW - gap).toBeLessThanOrEqual(10);
+  // Phase 36 (chunk 5) — the Inspector reserves its 264px inset at the stage's
+  // right edge, so the two panes + divider fill the stage MINUS that inset.
+  expect(stageW - gap).toBeGreaterThanOrEqual(258);
+  expect(stageW - gap).toBeLessThanOrEqual(272);
 
   // --- [data-pane-clear] empties pane B, rail section goes, width back to 126 ---
   await win.locator('.tab-pane[data-pane="B"] [data-pane-clear]').click();
@@ -254,14 +255,12 @@ test('CONTROL-INDEX: every Multi Mode control has its promised observable effect
   expect(s5.multiPanes).toBe('2');
   expect(s5.paneStrips).toBe(2);
 
-  // --- [data-tool-id="multi-mode"]: OFF (All tools) ---
-  await win.locator('[data-tools-badge]').last().click({ force: true });
-  await win.waitForSelector('[data-tool-id="multi-mode"]', { timeout: 10000 });
+  // --- Multi Mode OFF via the title-bar toggle ---
   expect(await allToolsPressed()).toBe('true');
-  await win.locator('[data-tool-id="multi-mode"]').click();
+  await win.locator('[data-header-multi-mode]').click();
   await win.waitForTimeout(600);
   const s6 = await state();
-  console.log(`[P32-ci] after All tools OFF: ${JSON.stringify(s6)}`);
+  console.log(`[P32-ci] after Multi Mode OFF: ${JSON.stringify(s6)}`);
   expect(s6.multi).toBe('false');
   expect(s6.paneCount).toBe(0);
   expect(s6.headers).toBe(0);

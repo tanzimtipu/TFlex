@@ -107,6 +107,54 @@ export interface AnnotationToolbarProps {
   selectedColor?: AnnotationColorValue | null;
 }
 
+/** The trigger's viewport-space box, reduced to the edges the placement reads. */
+export interface AnnMenuAnchor {
+  top: number;
+  bottom: number;
+  right: number;
+}
+
+/** Viewport-space box for the portaled dropdown (DEF-317). */
+export interface AnnMenuPlacement {
+  left: number;
+  top: number;
+}
+
+/**
+ * DEF-317 — place the all-tools dropdown against its arrow with the same
+ * clamp/flip contract the rest of the app uses (`clampMenuPosition` in
+ * ContextPanel, `clampDockMenu` in ActionDock): right-aligned to the
+ * trigger's right edge, clamped to `[0, viewportW - menuW]`, and — the
+ * piece those pointer-anchored menus did not need — flipped ABOVE the
+ * trigger when the menu cannot fit below it. The Phase 36 flyout parks the
+ * annotation toolbar at the BOTTOM of the window, so a below-only clamp
+ * pushed the menu down over its own arrow (and the arrow's own row then
+ * swallowed the re-click that should close it). Opening flush above keeps
+ * the joined edge (gap 0, DEF-248) and leaves the arrow clear and clickable.
+ *
+ * Pure and viewport-agnostic so the geometry is unit-testable without a
+ * browser: jsdom reports zero-size rects.
+ */
+export function placeAnchoredMenu(
+  anchor: AnnMenuAnchor,
+  menuW: number,
+  menuH: number,
+  viewportW: number,
+  viewportH: number,
+): AnnMenuPlacement {
+  const left = Math.min(
+    Math.max(anchor.right - menuW, 0),
+    Math.max(0, viewportW - menuW),
+  );
+  const roomBelow = viewportH - anchor.bottom;
+  // Full menu fits below -> flush under the arrow; otherwise flip flush above.
+  const rawTop = roomBelow >= menuH ? anchor.bottom : anchor.top - menuH;
+  // Degenerate case (menu taller than the viewport, or no room either side):
+  // stay on-screen as far as the viewport allows.
+  const top = Math.min(Math.max(rawTop, 0), Math.max(0, viewportH - menuH));
+  return { left, top };
+}
+
 const MARKUP_TOOLS: AnnotationTool[] = ["highlight", "underline", "strikeout"];
 
 /** Concise labels for the tool buttons and the menu rows. */
@@ -265,9 +313,12 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
     };
   }, [menuOpen]);
 
-  // The menu is placed in viewport coordinates under the arrow,
+  // The menu is placed in viewport coordinates against the arrow,
   // right-aligned and clamped — the same placement contract as the
-  // colour popover (DEF-175 / DEF-147).
+  // colour popover (DEF-175 / DEF-147) — with the DEF-317 flip: opening
+  // flush BELOW the arrow when it fits, flush ABOVE it when the flyout's
+  // bottom anchor leaves no room below. `placeAnchoredMenu` owns the
+  // geometry (pure, unit-tested); this effect only feeds it live rects.
   useLayoutEffect(() => {
     if (!menuOpen) return;
     const place = (): void => {
@@ -275,16 +326,20 @@ export function AnnotationToolbar(props: AnnotationToolbarProps): ReactElement {
       const anchorEl = toggleRef.current;
       if (el === null || anchorEl === null) return;
       const anchor = anchorEl.getBoundingClientRect();
-      const w = el.offsetWidth;
-      const h = el.offsetHeight;
-      const maxLeft = Math.max(0, window.innerWidth - w);
-      const maxTop = Math.max(0, window.innerHeight - h);
+      const { left, top } = placeAnchoredMenu(
+        { top: anchor.top, bottom: anchor.bottom, right: anchor.right },
+        el.offsetWidth,
+        el.offsetHeight,
+        window.innerWidth,
+        window.innerHeight,
+      );
       el.style.position = "fixed";
-      el.style.left = `${Math.min(Math.max(anchor.right - w, 0), maxLeft)}px`;
-      // Phase 20 — flush under the toggle (was anchor.bottom + 6): the
+      el.style.left = `${left}px`;
+      // Phase 20 — flush against the toggle (was anchor.bottom + 6): the
       // morph's first frame is the toggle's own box, so the anchored edge
-      // must touch it with no seam.
-      el.style.top = `${Math.min(Math.max(anchor.bottom, 0), maxTop)}px`;
+      // must touch it with no seam. The anchored edge is the menu's top
+      // when it opens below and its bottom when it flips above.
+      el.style.top = `${top}px`;
     };
     place();
     // Keyboard: move focus into the menu so ArrowUp/Down + Enter reach

@@ -23,7 +23,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const {
-  hardClose, armAnnotationTool, openSamplePath,
+  hardClose, armAnnotationTool, openSamplePath, toggleEditMode,
 } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
@@ -515,19 +515,21 @@ test('C3 text element move integrity + save/reopen', async () => {
     await armAnnotationTool(win, 'select');
     await win.waitForTimeout(300);
     if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
-      await win.click('button[aria-label="Edit content"]');
+      await toggleEditMode(win);
       await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     }
     await win.click('[data-edit-tool="box"]');
     await dragOnPage(win, 0.58, 0.66, 200, 70);
     // Phase 26 — panel Text field is the editor (session commits on blur).
-    await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
+    // Phase 36 (chunk 6): in the EDIT stage the Inspector ALSO re-parents the
+    // same TextPropertiesPanel, so scope to the VISIBLE field.
+    await win.waitForSelector('[data-txt-text]:visible', { timeout: 8000 });
     await win.waitForFunction(() => {
       const ta = document.querySelector('[data-txt-text]');
       return ta !== null && ta.disabled === false;
     }, null, { timeout: 8000 });
-    await win.locator('[data-txt-text]').fill('P25-EB');
-    await win.locator('[data-txt-text]').blur();
+    await win.locator('[data-txt-text]:visible').first().fill('P25-EB');
+    await win.locator('[data-txt-text]:visible').first().blur();
     await win.waitForSelector('.edit-box', { timeout: 8000 });
     await win.waitForTimeout(400);
     await win.locator('.edit-box').first().click({ position: { x: 8, y: 8 } });
@@ -556,7 +558,7 @@ test('C3 text element move integrity + save/reopen', async () => {
 
     // Render the committed edit box after reopen (Edit mode + box tool).
     if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
-      await win.click('button[aria-label="Edit content"]');
+      await toggleEditMode(win);
       await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     }
     await win.click('[data-edit-tool="box"]');
@@ -699,41 +701,14 @@ async function controlDisabledMap(win) {
   }, ALL_CONTROLS);
 }
 
-async function panelAndPaletteRects(win) {
-  return win.evaluate(() => {
-    const rect = (sel) => {
-      const el = document.querySelector(sel);
-      if (!el) return null;
-      const b = el.getBoundingClientRect();
-      const cs = getComputedStyle(el);
-      return {
-        left: +b.left.toFixed(1), top: +b.top.toFixed(1), right: +b.right.toFixed(1),
-        bottom: +b.bottom.toFixed(1), width: +b.width.toFixed(1), height: +b.height.toFixed(1),
-        z: cs.zIndex, visible: b.width > 0 && b.height > 0,
-      };
-    };
-    return { panel: rect('.text-props-panel'), palette: rect('[data-tools-palette]') };
-  });
-}
-
-function overlapArea(a, b) {
-  if (!a || !b) return null;
-  const w = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
-  const h = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
-  return +(w * h).toFixed(1);
-}
-
-async function ensurePalette(win) {
-  if ((await win.locator('[data-tools-palette]').count()) === 0) {
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-  }
-  await win.waitForTimeout(350);
-}
+// Phase 36 (chunk 5) — the All-tools palette is retired, so the palette-vs-
+// panel coexistence helpers and the C4-(d) report were removed with their
+// subject. The Phase-25 contract (the Phase-24 controls stay live; the panel
+// opens instantly under animations-off / reduced motion) is proven by C4 (a)(b)(c).
 
 // ===========================================================================
 // C4 — Phase-24 annotation controls still live; animations-off + reduced
-// motion stay instant; the tools palette no longer blocks the panel.
+// motion stay instant.
 // ===========================================================================
 test('C4 regression: annotation controls, motion contracts, palette at 640/820/1440', async () => {
   test.setTimeout(420000);
@@ -803,58 +778,6 @@ test('C4 regression: annotation controls, motion contracts, palette at 640/820/1
       expect(s.end && s.end.w, 'reduced motion: panel reaches open width').toBeGreaterThan(240);
     } finally {
       await hardClose(app, 'p25-c4c');
-    }
-  }
-
-  // (d) tools palette + floating panel at 640 / 820 / 1440.
-  {
-    const app = await launchApp();
-    const win = await app.firstWindow();
-    try {
-      await win.waitForSelector('.sample-card', { timeout: 30000 });
-      await openReport(app, win);
-      await armAnnotationTool(win, 'textbox');
-      await win.waitForSelector('.text-props-panel', { timeout: 8000 });
-      const table = [];
-      for (const width of [640, 820, 1440]) {
-        await setSize(app, win, width, 800);
-        await ensurePalette(win);
-        const rects = await panelAndPaletteRects(win);
-        const area = overlapArea(rects.panel, rects.palette);
-        // Hit-test the top of the panel's controls: are they covered by the
-        // palette (the retired DEF-241 class) or actually clickable?
-        const cover = await win.evaluate(() => {
-          const probe = (sel) => {
-            const el = document.querySelector(sel);
-            if (!el) return null;
-            const r = el.getBoundingClientRect();
-            const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-            return {
-              sel, covered: !(top === el || el.contains(top)),
-              topCls: top ? String(top.className) : null,
-            };
-          };
-          return {
-            font: probe('[data-txt-font]'),
-            bold: probe('[data-txt-bold]'),
-            color: probe('[data-txt-color]'),
-            align: probe('[data-txt-align-left]'),
-          };
-        });
-        const reachable = cover !== null && Object.values(cover).every((c) => c && !c.covered);
-        const row = { width, panel: rects.panel, palette: rects.palette, overlapArea: area, cover, reachable };
-        table.push(row);
-        log('C4-palette', row);
-        await win.screenshot({ path: path.join(SHOTS, `phase25-c4-palette-${width}.png`) }).catch(() => {});
-        expect(rects.palette && rects.palette.visible, `${width}: tools palette opens`).toBe(true);
-        expect(rects.panel && rects.panel.visible, `${width}: text panel stays mounted`).toBe(true);
-        // Overlap/reachability is REPORTED (the retired DEF-241 cap class); the
-        // Phase-25 criterion is that the Phase-24 controls stay live, which the
-        // (a) block already proves. Recorded here for the phase report.
-      }
-      fs.writeFileSync(path.join(SHOTS, 'phase25-c4-palette.json'), JSON.stringify(table, null, 2));
-    } finally {
-      await hardClose(app, 'p25-c4d');
     }
   }
 });

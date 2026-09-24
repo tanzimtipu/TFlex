@@ -20,7 +20,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, clickDockVerb } = require('../lib/helpers.cjs');
 
 const FIXTURE = path.resolve(__dirname, '..', '..', 'test-fixtures', 'marker-3pages.pdf');
 
@@ -46,12 +46,9 @@ async function runExtract(win, pages) {
   // The palette may already be open from a previous extract (the modal
   // confirm does not close it) - only toggle when it is closed, otherwise
   // the click would close it (same guard as the def167 probe spec).
-  const palUp = await win.evaluate(() => !!document.querySelector('[data-tools-palette]'));
-  if (!palUp) {
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-  }
-  await win.click('[data-tool-id="split"]');
+  // Phase 36 migration: the All-tools palette is retired; Extract is a
+  // PAGES-stage Action Dock verb now. Same dialog and assertions follow.
+  await clickDockVerb(win, 1, 'split');
   await win.waitForSelector('.modal-dialog.dialog', { timeout: 8000 });
   await win.fill('.modal-dialog .modal-input', pages);
   await win.click('.modal-dialog button.btn-primary');

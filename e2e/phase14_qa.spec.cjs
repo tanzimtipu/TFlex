@@ -82,21 +82,6 @@ async function truncationAudit(selector) {
   }, selector);
 }
 
-/** Sample the animated transform of the palette over ~900ms via rAF. */
-async function samplePaletteMotion(ms = 900) {
-  await win.evaluate((msArg) => {
-    window.__p14samples = [];
-    const t0 = performance.now();
-    const cb = () => {
-      const el = document.querySelector('[data-tools-palette]');
-      const m = el ? getComputedStyle(el).transform : 'detached';
-      window.__p14samples.push({ t: Math.round(performance.now() - t0), m });
-      if (performance.now() - t0 < msArg) requestAnimationFrame(cb);
-    };
-    requestAnimationFrame(cb);
-  }, ms);
-}
-
 /** Sample the animated transform of one entry during a hover spring. */
 async function sampleEntryTransform(selector, ms = 500) {
   return win.evaluate(({ sel, msArg }) => {
@@ -214,12 +199,13 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     expect(pageFacts.canvasBackdrop).toBe('none');
     expect(pageFacts.canvasOpacity).toBe('1');
 
-    const rail = await materialOf('.side-rail');
-    facts('sideRail', { bg: rail.bg, alpha: rail.alpha, backdropFilter: rail.backdropFilter, radius: rail.borderRadius });
+    // Phase 36 (chunk 6) — the retired floating rail card is replaced by the live
+    // frosted title bar (same --glass-blur token).
+    const rail = await materialOf('.titlebar');
+    facts('titlebarGlass', { bg: rail && rail.bg, alpha: rail && rail.alpha, backdropFilter: rail && rail.backdropFilter, radius: rail && rail.borderRadius });
+    expect(rail).not.toBeNull();
     expect(rail.alpha).toBeLessThan(0.9);
     expect(rail.backdropFilter).toContain('blur(20px)');
-    // Floating card: ALL four corners rounded at the 16px panel radius.
-    expect(rail.borderRadius.replace(/0px/g, '0')).toContain('16px');
 
     await snap('phase14-qa-02-workspace-frosted.png');
 
@@ -288,211 +274,13 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     });
   });
 
-  test('P14-C tools panel (list): structure, full descriptions, width, 16px radius', async () => {
-    test.setTimeout(180000);
-    electronApp = await launchApp();
-    win = await electronApp.firstWindow();
-    attachErrorCollectors(win);
-    await win.waitForSelector('.sample-card', { timeout: 30000 });
-    await openSample(win, electronApp, 'report.pdf');
-    await win.waitForTimeout(1500);
+  // P14-C (tools panel list) and P14-D (tools panel grid) REMOVED with their
+  // subject (Phase 36 chunk 5): the All-tools palette, its list/grid layout
+  // toggle, its groups and its frosted backdrop are retired. The replacement
+  // surfaces (the Inspector, the Command Palette) carry their own Phase-36
+  // gate coverage.
 
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.waitForTimeout(500);
-
-    const structure = await win.evaluate(() => {
-      const palette = document.querySelector('[data-tools-palette]');
-      // Phase 14.1: the palette header is the shared GlassSidebarHeader,
-      // so the title span is .glass-sidebar-title (the old
-      // .tools-palette-title span is gone with the legacy header).
-      const title = palette.querySelector('.glass-sidebar-title');
-      const toggles = Array.from(palette.querySelectorAll('[data-tools-layout]')).map((b) => ({
-        layout: b.getAttribute('data-tools-layout'),
-        pressed: b.getAttribute('aria-pressed'),
-        visible: !!(b.offsetWidth || b.offsetHeight),
-      }));
-      const groups = Array.from(palette.querySelectorAll('[data-tools-group]')).map((g) => {
-        const label = g.querySelector('.tools-palette-group-label');
-        const entries = Array.from(g.querySelectorAll('.tools-palette-entry'));
-        return {
-          id: g.getAttribute('data-tools-group'),
-          labelText: (label.textContent || '').trim(),
-          textTransform: getComputedStyle(label).textTransform,
-          entries: entries.length,
-        };
-      });
-      const entries = Array.from(palette.querySelectorAll('.tools-palette-entry')).map((e) => {
-        const iconSvg = e.querySelector('.tools-palette-entry-icon svg');
-        const label = e.querySelector('.tools-palette-entry-label');
-        const desc = e.querySelector('.tools-palette-entry-desc');
-        const lcs = label ? getComputedStyle(label) : null;
-        const dcs = desc ? getComputedStyle(desc) : null;
-        return {
-          id: e.getAttribute('data-tool-id'),
-          disabled: e.disabled,
-          hasIcon: !!iconSvg,
-          label: (label && label.textContent || '').trim(),
-          desc: (desc && desc.textContent || '').trim(),
-          labelWeight: lcs ? lcs.fontWeight : null,
-          descWhite: dcs ? dcs.whiteSpace : null,
-          descOverflowX: dcs ? dcs.overflowX : null,
-          descClipX: desc ? desc.scrollWidth > desc.clientWidth + 1 : null,
-          descClipY: desc ? desc.scrollHeight > desc.clientHeight + 2 : null,
-          labelClipX: label ? label.scrollWidth > label.clientWidth + 1 : null,
-        };
-      });
-      const cs = getComputedStyle(palette);
-      return {
-        layout: palette.getAttribute('data-layout'),
-        title: (title.textContent || '').trim(),
-        toggles,
-        groups,
-        entries,
-        panelWidth: palette.offsetWidth,
-        panelMinWidth: cs.minWidth,
-        panelMaxWidth: cs.maxWidth,
-        paletteBg: cs.backgroundColor,
-        paletteRadius: cs.borderRadius,
-        backdropFilter: cs.backdropFilter || cs.webkitBackdropFilter,
-      };
-    });
-
-    facts('paletteList', {
-      layout: structure.layout,
-      title: structure.title,
-      toggles: structure.toggles,
-      groups: structure.groups,
-      panelWidth: structure.panelWidth,
-      paletteBg: structure.paletteBg,
-      paletteRadius: structure.paletteRadius,
-      backdropFilter: structure.backdropFilter,
-      entryCount: structure.entries.length,
-    });
-
-    // Checklist: title "Tools" with grid/list toggle.
-    expect(structure.title).toBe('Tools');
-    expect(structure.toggles).toHaveLength(2);
-    expect(structure.toggles.map((t) => t.layout).sort()).toEqual(['grid', 'list']);
-    expect(structure.toggles.every((t) => t.visible)).toBe(true);
-    expect(structure.toggles.find((t) => t.layout === 'list').pressed).toBe('true');
-
-    // Sections present, uppercase display.
-    const groupIds = structure.groups.map((g) => g.id);
-    expect(groupIds).toContain('organize');
-    expect(groupIds).toContain('document');
-    for (const g of structure.groups) {
-      expect(g.textTransform || 'none').toBe('uppercase');
-      expect(g.entries).toBeGreaterThan(0);
-    }
-    facts('groupDisplayLabels', structure.groups.map((g) => g.labelText));
-
-    // Every entry: icon + bold title + description; nothing clipped.
-    const labelWeights = new Set();
-    expect(structure.entries.length).toBeGreaterThanOrEqual(14);
-    for (const e of structure.entries) {
-      expect(e.hasIcon, `icon missing on ${e.label}`).toBe(true);
-      expect(e.label.length, `label missing on ${e.label}`).toBeGreaterThan(0);
-      expect(e.desc.length, `description missing on ${e.label}`).toBeGreaterThan(0);
-      // Checklist says "bold title" — asserted since the DEF-180 fix
-      // (weight 600 in BOTH layouts; the grid override only retunes the
-      // font-size, so the shared 600 weight reaches the grid cards too).
-      labelWeights.add(Number(e.labelWeight));
-      expect(Number(e.labelWeight), `title not bold on ${e.label}`).toBeGreaterThanOrEqual(600);
-      expect(e.descClipX, `desc horizontally clipped on ${e.label}`).toBe(false);
-      expect(e.descClipY, `desc vertically clipped on ${e.label}`).toBe(false);
-      expect(e.labelClipX, `label clipped on ${e.label}`).toBe(false);
-      expect(e.descOverflowX).not.toBe('hidden');
-    }
-    const clipped = structure.entries.filter((e) => e.descClipX || e.descClipY || e.labelClipX);
-    facts('truncationAudit', { clippedCount: clipped.length, clipped: clipped.map((e) => e.label) });
-    facts('labelWeights', {
-      distinct: [...labelWeights],
-      note: 'checklist promises a bold title (>=600); see DEF-180',
-    });
-
-    // Dynamic width: inside bounds, wide enough to hold the wrapped text.
-    expect(structure.panelWidth).toBeGreaterThanOrEqual(320);
-    expect(structure.paletteRadius.replace(/0px/g, '0')).toContain('16px');
-    expect(structure.paletteBg.startsWith('rgba')).toBe(true);
-    const palAlpha = Number(/rgba?\([^)]*,\s*([\d.]+)\)/.exec(structure.paletteBg)[1]);
-    facts('paletteAlpha', palAlpha);
-    expect(palAlpha).toBeLessThan(0.9);
-    expect(structure.backdropFilter).toContain('blur(20px)');
-
-    await snap('phase14-qa-03-palette-list-frosted.png');
-  });
-
-  test('P14-D tools panel (grid): cards keep icon+title+description, never icon-only', async () => {
-    test.setTimeout(180000);
-    electronApp = await launchApp();
-    win = await electronApp.firstWindow();
-    attachErrorCollectors(win);
-    await win.waitForSelector('.sample-card', { timeout: 30000 });
-    await openSample(win, electronApp, 'report.pdf');
-    await win.waitForTimeout(1500);
-
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.waitForTimeout(500);
-    await win.click('[data-tools-layout="grid"]');
-    await win.waitForTimeout(500);
-
-    const grid = await win.evaluate(() => {
-      const palette = document.querySelector('[data-tools-palette]');
-      const cards = Array.from(palette.querySelectorAll('.tools-palette-entry-grid')).map((e) => {
-        const iconSvg = e.querySelector('.tools-palette-entry-icon svg');
-        const label = e.querySelector('.tools-palette-entry-label');
-        const desc = e.querySelector('.tools-palette-entry-desc');
-        const dcs = desc ? getComputedStyle(desc) : null;
-        return {
-          label: (label && label.textContent || '').trim(),
-          desc: (desc && desc.textContent || '').trim(),
-          hasIcon: !!iconSvg,
-          descPresent: !!desc && desc.textContent.trim().length > 0,
-          descClipX: desc ? desc.scrollWidth > desc.clientWidth + 1 : null,
-          descWhite: dcs ? dcs.whiteSpace : null,
-          labelClipX: label ? label.scrollWidth > label.clientWidth + 1 : null,
-        };
-      });
-      const groupGrid = palette.querySelector('.tools-palette-group-grid');
-      const cols = groupGrid ? getComputedStyle(groupGrid).gridTemplateColumns.split(' ').length : 0;
-      const card0 = palette.querySelector('.tools-palette-entry-grid');
-      const card0cs = card0 ? getComputedStyle(card0) : null;
-      return {
-        layout: palette.getAttribute('data-layout'),
-        panelWidth: palette.offsetWidth,
-        cols,
-        cardRadius: card0cs ? card0cs.borderRadius : null,
-        cardBg: card0cs ? card0cs.backgroundColor : null,
-        cards,
-      };
-    });
-    facts('paletteGrid', {
-      layout: grid.layout,
-      panelWidth: grid.panelWidth,
-      cols: grid.cols,
-      cardRadius: grid.cardRadius,
-      cardBg: grid.cardBg,
-      cardCount: grid.cards.length,
-      sample: grid.cards.slice(0, 3),
-    });
-    expect(grid.layout).toBe('grid');
-    expect(grid.cols).toBe(2);
-    expect(grid.cards.length).toBeGreaterThanOrEqual(14);
-    for (const c of grid.cards) {
-      expect(c.hasIcon, `icon missing on grid card ${c.label}`).toBe(true);
-      expect(c.descPresent, `description missing on grid card ${c.label}`).toBe(true);
-      expect(c.descClipX, `desc clipped on grid card ${c.label}`).toBe(false);
-      expect(c.labelClipX, `label clipped on grid card ${c.label}`).toBe(false);
-      expect(c.descWhite).toBe('normal');
-    }
-    expect(grid.cardRadius).toBe('12px');
-
-    await snap('phase14-qa-04-palette-grid-frosted.png');
-  });
-
-  test('P14-E spring motion: hover overshoot curve, panel open spring, 60fps probe, parallax', async () => {
+  test('P14-E spring motion: 60fps probe + parallax', async () => {
     test.setTimeout(240000);
     electronApp = await launchApp();
     win = await electronApp.firstWindow();
@@ -501,68 +289,10 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     await openSample(win, electronApp, 'report.pdf');
     await win.waitForTimeout(1500);
 
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.waitForTimeout(500);
-
-    // 1) Spring curve on the hover transition (computed). NOTE: do NOT
-    //    split the transition shorthand on commas — cubic-bezier()
-    //    contains commas. Assert with regexes over the whole string.
-    const hoverTransition = await win.evaluate(() =>
-      getComputedStyle(document.querySelector('.tools-palette-entry:not([disabled])')).transition);
-    facts('hoverTransition', { transition: hoverTransition });
-    expect(hoverTransition).toMatch(/transform 0\.22s cubic-bezier\(0\.34, 1\.56, 0\.64, 1\)/);
-    expect(hoverTransition).toMatch(/box-shadow 0\.22s cubic-bezier\(0\.34, 1\.56, 0\.64, 1\)/);
-
-    // 2) Hover an entry, sample the spring: expect scale ~1.02 and an
-    //    overshoot above 1.02 somewhere in the curve (y2=1.56 bezier).
-    const entryBox = await win.locator('.tools-palette-entry:not([disabled])').first().boundingBox();
-    await win.mouse.move(entryBox.x + entryBox.width / 2, entryBox.y + entryBox.height / 2, { steps: 4 });
-    const hoverSamples = await sampleEntryTransform('.tools-palette-entry:not([disabled]):hover', 480);
-    const scales = hoverSamples
-      .map((s) => parseMatrixScale(s.m))
-      .filter((p) => p && p.a)
-      .map((p) => p.a);
-    const maxScale = scales.length ? Math.max(...scales) : null;
-    const settledScale = scales.length ? scales[scales.length - 1] : null;
-    facts('hoverSpring', {
-      samples: hoverSamples.length,
-      firstScale: scales[0] ?? null,
-      maxScale: maxScale === null ? null : Number(maxScale.toFixed(5)),
-      finalScale: settledScale === null ? null : Number(settledScale.toFixed(5)),
-      overshoot: maxScale !== null && maxScale > 1.0201,
-    });
-    expect(settledScale).toBeCloseTo(1.02, 2);
-    await snap('phase14-qa-05-palette-hover.png');
-
-    // 3) Panel open spring: close, then reopen while sampling x.
-    await win.click('[data-tools-toggle]');
-    await win.waitForTimeout(500);
-    const closed = await win.evaluate(() => !document.querySelector('[data-tools-palette]'));
-    facts('paletteClosedOnToggle', closed);
-    await samplePaletteMotion(900);
-    await win.click('[data-tools-toggle]');
-    await win.waitForTimeout(1000);
-    const openSamples = await win.evaluate(() => window.__p14samples);
-    const txs = openSamples
-      .filter((s) => s.m && s.m !== 'detached' && s.m !== 'none')
-      .map((s) => ({ t: s.t, tx: parseMatrixScale(s.m)?.tx }));
-    facts('openSpring', {
-      sampleCount: txs.length,
-      first: txs[0] ?? null,
-      last: txs[txs.length - 1] ?? null,
-      spanMs: txs.length ? txs[txs.length - 1].t - txs[0].t : 0,
-      path: txs.slice(0, 14).map((s) => s.tx),
-    });
-    // Spring, not a snap: multiple samples while the panel travels, and the
-    // final x settles at 0.
-    expect(txs.length).toBeGreaterThanOrEqual(8);
-    expect(Math.abs(txs[txs.length - 1].tx)).toBeLessThan(0.5);
-    const big = txs.filter((s) => Math.abs(s.tx) > 1).length;
-    expect(big, 'open must travel through intermediate positions').toBeGreaterThanOrEqual(4);
-
-    // 4) Frame-rate probe across the palette (hover springs + parallax).
-    const entryCount = await win.locator('.tools-palette-entry:not([disabled])').count();
+    // Frame-rate probe across the LIVE workspace chrome (the ContextPanel's
+    // thumbnails + the Action Dock's verbs), replacing the retired palette
+    // hover span.
+    const thumbCount = Math.min(8, await win.locator('[data-context-panel] .thumb-item').count());
     await win.evaluate(() => {
       window.__frames = [];
       window.__framesDone = false;
@@ -574,15 +304,14 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
       window.__framesEnd = performance.now() + 2200;
       requestAnimationFrame(cb);
     });
-    for (let i = 0; i < entryCount; i += 1) {
-      const box = await win.locator('.tools-palette-entry:not([disabled])').nth(i).boundingBox();
+    for (let i = 0; i < thumbCount; i += 1) {
+      const box = await win.locator('[data-context-panel] .thumb-item').nth(i).boundingBox();
       if (!box) continue;
       await win.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 3 });
       await win.waitForTimeout(90);
     }
     const frames = await win.evaluate(() => window.__frames);
     const deltas = frames.slice(1).map((t, i) => t - frames[i]);
-    const longFrames = deltas.filter((d) => d > 100);
     const avgFps = deltas.length ? 1000 / (deltas.reduce((a, b) => a + b, 0) / deltas.length) : 0;
     facts('frameProbe', {
       frameCount: frames.length,
@@ -594,7 +323,7 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     expect(avgFps).toBeGreaterThanOrEqual(55);
     expect(deltas.filter((d) => d > 100).length).toBe(0);
 
-    // 5) Parallax: the ambient layer must have followed the pointer.
+    // Parallax: the ambient layer must have followed the pointer.
     const parallax = await win.evaluate(() => {
       const el = document.querySelector('.tf-ambient');
       return {
@@ -616,13 +345,12 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     await win.waitForSelector('.sample-card', { timeout: 30000 });
     await openSample(win, electronApp, 'report.pdf');
     await win.waitForTimeout(1500);
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await win.waitForTimeout(600);
 
+    // Phase 36 (chunk 5) — the All-tools palette is retired; the same
+    // --glass-blur token is probed on the live frosted title bar.
     const focusedBlur = await win.evaluate(() => ({
       focus: document.documentElement.getAttribute('data-window-focus'),
-      paletteBackdrop: getComputedStyle(document.querySelector('[data-tools-palette]')).backdropFilter,
+      paletteBackdrop: getComputedStyle(document.querySelector('.titlebar')).backdropFilter,
     }));
     facts('focusState', focusedBlur);
     expect(focusedBlur.focus).toBe('focused');
@@ -652,7 +380,7 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     );
     await win.waitForTimeout(400); // let the 180ms blur tween settle
     const blurredBlur = await win.evaluate(() => ({
-      paletteBackdrop: getComputedStyle(document.querySelector('[data-tools-palette]')).backdropFilter,
+      paletteBackdrop: getComputedStyle(document.querySelector('.titlebar')).backdropFilter,
     }));
     facts('blurredState', blurredBlur);
     expect(blurredBlur.paletteBackdrop).toContain('blur(12px)');
@@ -671,7 +399,7 @@ test.describe.serial('phase 14 liquid glass qa verification', () => {
     );
     await win.waitForTimeout(400);
     const refocused = await win.evaluate(() =>
-      getComputedStyle(document.querySelector('[data-tools-palette]')).backdropFilter);
+      getComputedStyle(document.querySelector('.titlebar')).backdropFilter);
     facts('refocusedBlur', refocused);
     expect(refocused).toContain('blur(20px)');
   });

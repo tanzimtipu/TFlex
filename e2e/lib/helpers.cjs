@@ -160,6 +160,21 @@ async function diag(window) {
 // click the row. Waits for the menu to detach so the caller's next page
 // gesture is not swallowed by the dismiss guard (DEF-227).
 async function armAnnotationTool(window, kind) {
+  // Phase 36 (chunk 3) — in SINGLE mode the command row is retired and the
+  // annotation toolbar lives inside the REVIEW dock's Annotate flyout. Multi
+  // Mode keeps it inline in the shared toolbar, so only open the flyout when
+  // the toolbar is not already on screen.
+  if ((await window.locator('[data-ann-tools-visible]').count()) === 0
+    && (await window.locator('[data-ann-dropdown-toggle]').count()) === 0
+    && (await window.locator('[data-annotation-flyout]').count()) === 0) {
+    await window.keyboard.press('Control+3');
+    await window.waitForTimeout(300);
+    const annotate = window.locator('[data-dock-verb="annotate"]');
+    if ((await annotate.count()) > 0) {
+      await annotate.first().click();
+      await window.waitForSelector('[data-annotation-flyout]', { state: 'visible', timeout: 8000 });
+    }
+  }
   const visible = window.locator(`[data-ann-tools-visible] button[data-tool="${kind}"]`);
   if ((await visible.count()) > 0) {
     await visible.first().click();
@@ -170,6 +185,207 @@ async function armAnnotationTool(window, kind) {
     await window.waitForSelector('[data-ann-dropdown-menu]', { state: 'detached', timeout: 8000 });
   }
   await window.waitForTimeout(300);
+}
+
+// Phase 36 (chunk 6) — the Multi Mode toggle moved to the TITLE BAR
+// (`[data-header-multi-mode]`), the single control that switches the mode in
+// BOTH directions (it renders while Multi Mode is on too). The retired
+// All-tools badge/palette path this helper used is gone. The name is kept so
+// the many call sites stay unchanged; the behaviour is the original "toggle
+// Multi Mode through its real control, then let the panes settle".
+async function toggleMultiModeViaPalette(window) {
+  const toggle = window.locator('[data-header-multi-mode]').first();
+  await toggle.waitFor({ state: 'visible', timeout: 10000 });
+  await toggle.click();
+  await window.waitForTimeout(600);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 36 (chunk 3) — the per-view command ROW is retired in SINGLE mode and
+// its controls were re-homed. These helpers reach a control's NEW home through
+// the real UI (Stage Rail -> Action Dock / REVIEW flyout) so the legacy specs
+// keep asserting the SAME behaviour against the new surface. They are the
+// single source of the stage-switch choreography, so a later chunk that moves
+// a control again only has to change these.
+// ---------------------------------------------------------------------------
+
+// Switch stages via the documented Ctrl+1..4 shortcuts (Stage Rail binding).
+// The rail deliberately ignores the chord while a text-entry control has focus
+// (StageRail.isStageRailEditableTarget), so blur the focused element first.
+async function gotoStage(window, stage) {
+  await window.evaluate(() => {
+    const el = document.activeElement;
+    if (el instanceof HTMLElement) el.blur();
+  });
+  await window.keyboard.press(`Control+${stage}`);
+  await window.waitForTimeout(350);
+}
+
+// Click a stage's Action Dock verb, switching to that stage first.
+async function openDockVerb(window, stage, id) {
+  await gotoStage(window, stage);
+  const verb = window.locator(`[data-dock-verb="${id}"]`).first();
+  await verb.waitFor({ state: 'visible', timeout: 10000 });
+  await verb.click();
+  await window.waitForTimeout(400);
+}
+
+// The EDIT dock's `editMode` verb is the ONE Edit-mode toggle (DEF-314).
+async function toggleEditMode(window) {
+  await openDockVerb(window, 2, 'editMode');
+}
+
+// The Sign control is a REVIEW dock verb now (its legacy aria-label is gone).
+async function armSignTool(window) {
+  await openDockVerb(window, 3, 'sign');
+}
+
+// Open the REVIEW dock's Annotate flyout, which re-parents the EXISTING
+// AnnotationToolbar (its `data-ann-*` selectors are preserved inside it).
+async function openAnnotationFlyout(window) {
+  await gotoStage(window, 3);
+  if ((await window.locator('[data-annotation-flyout]').count()) === 0) {
+    await openDockVerb(window, 3, 'annotate');
+    await window.waitForSelector('[data-annotation-flyout]', { state: 'visible', timeout: 10000 });
+  }
+  await window.waitForTimeout(250);
+}
+
+// Phase 36 (chunk 9 migration) — click a stage's Action Dock verb whichever
+// lane currently hosts it: the inline group (`[data-dock-verb]`) or the
+// "More" overflow menu (`[data-dock-overflow-item]`). The dock spills
+// lower-priority verbs into overflow as the window narrows, so a migrated spec
+// must not assume either lane. Same behaviour either way; returns the lane used
+// for the spec's log.
+async function clickDockVerb(window, stage, id) {
+  await gotoStage(window, stage);
+  const inline = window.locator(`[data-dock-verb="${id}"]`);
+  const overflow = window.locator('[data-dock-overflow]');
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if ((await inline.count()) > 0) {
+      const vis = await inline.first().isVisible().catch(() => false);
+      if (vis) {
+        await inline.first().click();
+        await window.waitForTimeout(400);
+        return 'inline';
+      }
+      await inline.first().click({ force: true });
+      await window.waitForTimeout(400);
+      return 'inline-forced';
+    }
+    if ((await overflow.count()) > 0 && (await overflow.first().isVisible().catch(() => false))) {
+      await overflow.first().click();
+      await window.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
+      const item = window.locator(`[data-dock-overflow-item="${id}"]`);
+      if ((await item.count()) > 0) {
+        await item.first().click();
+        await window.waitForTimeout(400);
+        return 'overflow';
+      }
+      await window.keyboard.press('Escape');
+    }
+    // The dock only swaps to its selection verb set in the PAGES stage when a
+    // page is selected; Escape clears that selection and restores the stage set.
+    if (attempt === 0) {
+      await window.keyboard.press('Escape');
+      await window.waitForTimeout(300);
+    }
+  }
+  const present = await window.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-dock-verb]')).map((b) => b.getAttribute('data-dock-verb')));
+  throw new Error(`clickDockVerb: '${id}' not reachable on the stage-${stage} dock; present verbs=${JSON.stringify(present)}`);
+}
+
+// Phase 36 (chunk 9 migration, batch 3) — resolve a tool to its CORRECT current
+// home and run it. The dock does not host every tool (the PAGES dock renders
+// only six inline verbs with no overflow), so a spec should not assume a lane:
+// `runTool(window, id)` tries, in order —
+//   1. the ContextPanel header's Combine control (id 'merge'),
+//   2. the Action Dock verb on its registry stage, then every other stage
+//      (inline lane first, then the "More" overflow lane),
+//   3. the Command Palette fallback (Ctrl+K -> input -> registry label -> row/Enter).
+// The label/stage maps mirror src/renderer/state/toolsRegistry.ts. The SAME
+// behaviour/dialog follows whichever home wins; the return value names it.
+const TOOL_STAGE_NUM = {
+  merge: 1, split: 1, extract: 1, rotate: 1, delete: 1, insertPages: 1,
+  replacePages: 1, renumberPages: 1, cropPages: 1, rotateCounterClockwise: 1,
+  recognizeText: 2, annotate: 3, sign: 3, flatten: 3, stamp: 3, watermark: 3,
+  optimize: 4, audit: 4, createFromImages: 4, exportPages: 4, exportText: 4, exportDocx: 4,
+  undo: 1, redo: 1,
+};
+const TOOL_LABEL = {
+  merge: 'Merge PDFs', split: 'Split pages', extract: 'Extract pages', rotate: 'Rotate pages',
+  delete: 'Delete pages', insertPages: 'Insert pages', replacePages: 'Replace pages',
+  renumberPages: 'Renumber pages', cropPages: 'Crop pages', rotateCounterClockwise: 'Rotate counter-clockwise',
+  recognizeText: 'Recognize text (OCR)', annotate: 'Annotate', sign: 'Sign', flatten: 'Flatten',
+  stamp: 'Stamp', watermark: 'Watermark', optimize: 'Reduce file size', audit: 'Audit space usage',
+  createFromImages: 'Create PDF from images', exportPages: 'Export pages as images',
+  exportText: 'Export text', exportDocx: 'Export to Word (.docx)', undo: 'Undo', redo: 'Redo',
+};
+
+async function tryDockVerb(window, stageNum, id) {
+  await gotoStage(window, stageNum);
+  const inline = window.locator(`[data-dock-verb="${id}"]`);
+  if ((await inline.count()) > 0) {
+    const vis = await inline.first().isVisible().catch(() => false);
+    await inline.first().click(vis ? {} : { force: true });
+    await window.waitForTimeout(400);
+    return true;
+  }
+  const overflow = window.locator('[data-dock-overflow]');
+  if ((await overflow.count()) > 0 && (await overflow.first().isVisible().catch(() => false))) {
+    await overflow.first().click();
+    await window.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 5000 }).catch(() => {});
+    const item = window.locator(`[data-dock-overflow-item="${id}"]`);
+    if ((await item.count()) > 0) {
+      await item.first().click();
+      await window.waitForTimeout(400);
+      return true;
+    }
+    await window.keyboard.press('Escape');
+  }
+  return false;
+}
+
+const ANN_TOOL_KIND = {
+  annHighlight: 'highlight', annUnderline: 'underline', annStrikeout: 'strikeout', annInk: 'ink',
+  annTextbox: 'textbox', annRect: 'rect', annEllipse: 'ellipse', annArrow: 'arrow',
+  annCallout: 'callout', annNote: 'note',
+};
+
+async function runTool(window, id) {
+  // 0. Annotation tools live in the REVIEW stage's Annotate flyout.
+  if (ANN_TOOL_KIND[id]) {
+    await armAnnotationTool(window, ANN_TOOL_KIND[id]);
+    return 'flyout';
+  }
+  // 1. The PAGES ContextPanel header hosts the Combine (merge) entry.
+  if (id === 'merge') {
+    const combine = window.locator('[data-context-panel-combine]');
+    if ((await combine.count()) > 0 && (await combine.first().isVisible().catch(() => false))) {
+      await combine.first().click();
+      await window.waitForTimeout(400);
+      return 'combine';
+    }
+  }
+  // 2. Action Dock verb, declared stage first then every other stage.
+  const order = [TOOL_STAGE_NUM[id] ?? 1, 1, 2, 3, 4];
+  for (const stageNum of [...new Set(order)]) {
+    if (await tryDockVerb(window, stageNum, id)) return `dock:${stageNum}`;
+  }
+  // 3. Command Palette — the universal global command surface.
+  await window.keyboard.press('Control+k');
+  await window.waitForSelector('[data-command-palette-input]', { state: 'visible', timeout: 8000 });
+  await window.locator('[data-command-palette-input]').fill(TOOL_LABEL[id] ?? id);
+  await window.waitForTimeout(350);
+  const row = window.locator('.command-palette-row').filter({ hasText: TOOL_LABEL[id] ?? id }).first();
+  if ((await row.count()) > 0) {
+    await row.click();
+  } else {
+    await window.keyboard.press('Enter');
+  }
+  await window.waitForTimeout(500);
+  return 'palette';
 }
 
 // Step-scroll the (virtualized) document scroller until the requested page-slot
@@ -416,4 +632,4 @@ async function hardClose(electronApp, label = 'hardClose') {
   log(`hardClose done (force path) in ${Date.now() - t0}ms`);
 }
 
-module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool };
+module.exports = { launchDev, launchInstalled, dismissUpdatePrompt, openSample, openSamplePath, diag, shot, dumpEngine, getSamplePath, scrollToPage, sampleCanvasPageRect, hardClose, armAnnotationTool, toggleMultiModeViaPalette, gotoStage, openDockVerb, clickDockVerb, runTool, toggleEditMode, armSignTool, openAnnotationFlyout };

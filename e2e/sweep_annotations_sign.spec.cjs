@@ -9,7 +9,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { PDFDocument } = require('pdf-lib');
-const { launchDev, openSample, diag, shot, dumpEngine, scrollToPage, getSamplePath , hardClose } = require('./lib/helpers.cjs');
+const { launchDev, openSample, diag, shot, dumpEngine, scrollToPage, getSamplePath , hardClose, armSignTool, openAnnotationFlyout } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -39,9 +39,7 @@ async function eng() {
 }
 
 async function openTools() {
-  await win.click('[data-tools-toggle]');
-  await win.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-  await win.waitForTimeout(300);
+  // Phase 36 migration: the All-tools palette is retired; use runTool(id).
 }
 
 function badHooks() {
@@ -76,6 +74,9 @@ async function slotBox(pageNum) {
 }
 
 async function armTool(kind) {
+  // Phase 36 (chunk 3) — the annotation group is re-parented into the REVIEW
+  // dock's Annotate flyout; open it before driving the group.
+  await openAnnotationFlyout(win);
   // Phase 19 - the CommandBar group shows only the MRU five; tools outside
   // the visible set (rect / ellipse / arrow / textbox / callout / note) are
   // reachable from the all-tools dropdown. Prefer the visible button when it
@@ -320,7 +321,7 @@ test('A3: annotations panel lists, note edit round-trips, delete works', async (
 // S1: signature place / move / delete lifecycle
 // ---------------------------------------------------------------------------
 async function armTypedSignature(text) {
-  await win.click('button[aria-label="Sign tool"]');
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 10000 });
   await win.click('.sig-tab:has-text("Type")');
   await win.waitForTimeout(300);
@@ -413,7 +414,7 @@ test('S2: signature near edges, reused on another page, save/reopen safe', async
 
   // Reuse a saved signature on page 2.
   await scrollToPage(win, 2);
-  await win.click('button[aria-label="Sign tool"]');
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 10000 });
   await win.waitForTimeout(500);
   await win.click('.sig-saved-pick');

@@ -62,19 +62,18 @@ export interface DocumentStageProps {
    *  handed back too, so App can give each pane its OWN thumbnail strip on
    *  the correct rail side. */
   renderDocument: (tabId: string, pane: PaneId | null) => ReactNode;
-  /** Phase 33 (chunk 4) — the workspace's SINGLE toolbar, rendered once in
-   *  the stage above both panes while Multi Mode is on. `null`/absent in
-   *  single mode (each view keeps its own toolbar, unchanged). */
-  sharedToolbar?: ReactNode;
-  /** Phase 33 / DEF-284 — the workspace's SINGLE All Tools badge, rendered
-   *  once here while Multi Mode is on. The per-pane views suppress their own
-   *  copy, so exactly one affordance exists (criterion 4b); single mode keeps
-   *  the badge inside its `DocumentView`, unchanged. */
-  toolsBadge?: ReactNode;
-  /** DEF-287 (residual) — the All Tools panel's requested inset TARGET in px
-   *  (0 with the panel closed, 344 list / 380 grid with it open). A change
-   *  here is a geometry change: the stored split fraction is re-clamped so
-   *  both panes keep their minimum without requiring a drag. */
+  /** Phase 36 (chunk 7) — the workspace's ONE Action Dock, rendered once in
+   *  the stage as a floating layer at the workspace's bottom-centre while
+   *  Multi Mode is on. It reads the FOCUSED pane's stage + context, so a
+   *  focus switch changes its verbs. `null`/absent renders no dock layer at
+   *  all (single mode has its own per-view dock, unchanged). */
+  sharedDock?: ReactNode;
+  /** DEF-287 (residual) — the Inspector's requested inset TARGET in px (0
+   *  with no document open, its single width with the Inspector mounted).
+   *  Phase 36 (chunk 5): the retired All-tools palette's list/grid modes
+   *  (344/380) collapsed to the Inspector's one width. A change here is a
+   *  geometry change: the stored split fraction is re-clamped so both panes
+   *  keep their minimum without requiring a drag. */
   toolsInsetTarget?: number;
 }
 
@@ -214,22 +213,16 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     onPickPane,
     onOpenIntoPane,
     renderDocument,
-    sharedToolbar,
-    toolsBadge,
+    sharedDock,
     toolsInsetTarget,
   } = props;
 
   const stageRef = useRef<HTMLDivElement | null>(null);
   const draggingRef = useRef(false);
-  // Phase 33 (chunk 4) — the shared toolbar row's measured height. The panes
-  // start below it; measuring (rather than assuming) keeps the geometry right
-  // when the bar wraps at a narrow window.
-  const toolbarRowRef = useRef<HTMLDivElement | null>(null);
-  const [toolbarHeight, setToolbarHeight] = useState(0);
   // DEF-287 — the stage's measured inline width. The panes' minimum budget
-  // (strip floor + page minimum, both panes + the divider) caps the All
-  // Tools inset so the page areas can never collapse; the cap is derived
-  // from this measurement and written inline as `--tf-multi-inset-cap`.
+  // (strip floor + page minimum, both panes + the divider) caps the Inspector
+  // inset so the page areas can never collapse; the cap is derived from this
+  // measurement and written inline as `--tf-multi-inset-cap`.
   const [stageWidth, setStageWidth] = useState(0);
 
   const multiOn = multiMode.enabled;
@@ -241,8 +234,6 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     // multiply it by a length-percentage (calc cannot multiply by a
     // percentage value).
     "--tf-split-frac": String(splitFraction),
-    // Phase 33 (chunk 4) — the panes' top offset under the shared toolbar.
-    "--tf-multi-toolbar-h": multiOn ? `${toolbarHeight}px` : "0px",
     // DEF-287 — the largest inset the two panes may consume at this width.
     // Omitted until measured (jsdom reports 0): the stylesheet's fallback
     // then leaves the inset uncapped, exactly the pre-change geometry.
@@ -274,31 +265,13 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     return (): void => observer.disconnect();
   }, [multiOn]);
 
-  // Measure the shared toolbar row so the panes (headers and strips
-  // included) start below it. The measured height is written to
-  // `--tf-multi-toolbar-h`, which BOTH the panes' `top` and the divider's
-  // `top` read — so no part of the workspace can drift out from under the
-  // bar (DEF-282). Measuring (rather than hardcoding) keeps the geometry
-  // right when the bar wraps at a narrow window. Layout effect: the offset
-  // is applied before the first paint, so the bar never overlays the headers
-  // for even one frame. jsdom has no layout (offsetHeight 0) and may not
-  // implement ResizeObserver — both fall back cleanly to the 0 offset the
-  // pre-chunk-4 stage had.
-  useLayoutEffect((): (() => void) | undefined => {
-    const el = toolbarRowRef.current;
-    if (el === null) {
-      setToolbarHeight(0);
-      return undefined;
-    }
-    const update = (): void => setToolbarHeight(el.offsetHeight);
-    update();
-    const RO = (globalThis as { ResizeObserver?: new (cb: () => void) => ResizeObserver })
-      .ResizeObserver;
-    if (RO === undefined) return undefined;
-    const observer = new RO(update);
-    observer.observe(el);
-    return (): void => observer.disconnect();
-  }, [multiOn, sharedToolbar]);
+  // Phase 36 (chunk 7) — the shared toolbar ROW is RETIRED. Its measured
+  // height (`--tf-multi-toolbar-h`) and the panes' / divider's top offset are
+  // gone with it: the panes reclaim that band and start at the stage's top,
+  // and the ONE shared Action Dock floats at the workspace's bottom-centre
+  // (`.multi-dock-layer`), so no workspace chrome is laid over the pane
+  // headers (DEF-282's invariant). Nothing is measured, so no offset can
+  // arrive after a paint.
 
   // DEF-287 (residual) — a STORED split fraction must keep both panes at
   // their minimum at every supported width with the panel open, without
@@ -396,11 +369,6 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
         </div>
       ) : (
         <>
-          {multiOn && sharedToolbar !== undefined && sharedToolbar !== null ? (
-            <div className="multi-toolbar-row" data-shared-toolbar ref={toolbarRowRef}>
-              {sharedToolbar}
-            </div>
-          ) : null}
           {tabs.map((tab) => {
             const pane: PaneId | null = !multiOn
               ? null
@@ -467,12 +435,19 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
               onPointerUp={onDividerUp}
             />
           ) : null}
-          {/* Phase 33 / DEF-284 — ONE All Tools badge for the whole
-              workspace. It is `position: fixed` (window right edge), so it
-              keeps a stable position as focus moves between panes; rendering
-              it here (not per pane) is what makes Multi Mode satisfy
-              criterion 4b. */}
-          {multiOn && toolsBadge !== undefined && toolsBadge !== null ? toolsBadge : null}
+          {/* Phase 36 (chunk 7) — the ONE shared Action Dock's layer. It is a
+              zero-height box pinned to the stage's bottom edge (inset on the
+              right by the open Inspector's width), so the dock it hosts is
+              anchored to the workspace's bottom-centre and can never reach the
+              pane-header band above it. The layer claims no pointer events
+              (the dock opts back in), so the page canvas stays fully usable. */}
+          {multiOn && sharedDock !== undefined && sharedDock !== null ? (
+            <div className="multi-dock-layer" data-multi-dock-layer>
+              {sharedDock}
+            </div>
+          ) : null}
+          {/* Phase 36 (chunk 5) — the All Tools badge is RETIRED; the stage
+              no longer hosts a workspace badge node. */}
         </>
       )}
     </div>

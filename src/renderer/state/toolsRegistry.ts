@@ -188,6 +188,25 @@ export type ToolAvailability =
   /** Requires a live page/thumbnail selection. */
   | 'selection';
 
+/** Which surface renders this entry's own control. Exactly one surface owns
+ *  a tool (one canonical home per tool):
+ *
+ *    'dock'    — the Action Dock lists it as a stage verb. The dock's curated
+ *                set per stage is `DOCK_STAGE_IDS`; membership + ORDER is
+ *                explicit there, so a dock tool that is not a concept verb
+ *                (`rotateCounterClockwise`) stays out while a concept verb
+ *                whose rail stage differs (`cropPages`) still renders.
+ *    'flyout'  — the REVIEW annotations flyout hosts it (the dock references
+ *                the whole set through its one `annotate` primary), so the
+ *                dock never renders a second copy.
+ *    'panel'   — a panel/rail/inspector/edit-layer/pill hosts the control
+ *                (thumbnail verbs + menus, rail panel toggles, edit tools).
+ *    'palette' — the browse-everything palette / title bar / menu hosts it.
+ *
+ *  Every registry entry is marked: `SURFACE_BY_ID` is a
+ *  `Record<ToolId, ToolSurface>`, so the compiler refuses a missing id. */
+export type ToolSurface = 'dock' | 'flyout' | 'panel' | 'palette';
+
 export interface ToolEntry {
   id: string;
   label: string;
@@ -200,6 +219,8 @@ export interface ToolEntry {
   /** The command id the entry runs (an existing handler/dialog). */
   action: string;
   availability: ToolAvailability;
+  /** The surface that hosts this entry's control. Defaults to 'dock'. */
+  surface?: ToolSurface;
 }
 
 /** The palette's four section headers. Group and entry order is the
@@ -490,6 +511,21 @@ const REGISTRY = [
 
   // ---- REVIEW --------------------------------------------------------
   // sign it off, comment on it, mark it up.
+  //
+  // Phase 36 (chunk 3b) — `annotate` is the REVIEW dock's primary: it opens
+  // the ONE annotations flyout that hosts the existing AnnotationToolbar. The
+  // annotation tool entries below carry `surface: 'flyout'`, so the flyout is
+  // their canonical home and the dock does not render a duplicated set.
+  {
+    id: 'annotate',
+    label: 'Annotate',
+    description: 'Show the annotation tools: markup, shapes, ink and notes.',
+    icon: Highlighter,
+    shortcut: '',
+    stage: 'review',
+    action: 'annotate',
+    availability: 'document',
+  },
   {
     id: 'sign',
     label: 'Sign',
@@ -579,6 +615,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationSelect',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annHighlight',
@@ -589,6 +626,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationHighlight',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annUnderline',
@@ -599,6 +637,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationUnderline',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annStrikeout',
@@ -609,6 +648,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationStrikeout',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annInk',
@@ -619,6 +659,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationInk',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annTextbox',
@@ -629,6 +670,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationTextbox',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annRect',
@@ -639,6 +681,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationRect',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annEllipse',
@@ -649,6 +692,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationEllipse',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annArrow',
@@ -659,6 +703,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationArrow',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annCallout',
@@ -669,6 +714,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationCallout',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annNote',
@@ -679,6 +725,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationNote',
     availability: 'document',
+    surface: 'flyout',
   },
   {
     id: 'annColor',
@@ -689,6 +736,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationColor',
     availability: 'colour-tool',
+    surface: 'flyout',
   },
   {
     id: 'annPenWidth',
@@ -699,6 +747,7 @@ const REGISTRY = [
     stage: 'review',
     action: 'annotationPenWidth',
     availability: 'ink-tool',
+    surface: 'flyout',
   },
 
   // ---- DELIVER -------------------------------------------------------
@@ -1098,13 +1147,19 @@ const REGISTRY = [
     availability: 'always',
   },
   {
+    // Phase 36 (chunk 4) — this entry now opens the COMMAND PALETTE: the
+    // browse-everything surface that supersedes the All-tools panel. The
+    // `Ctrl+Shift+P` accelerator stays its legacy alias, and the panel itself
+    // is retired in the next chunk (its badge keeps it reachable until then),
+    // so nothing is unreachable in between.
     id: 'toolsPalette',
-    label: 'Show tools palette',
-    description: 'Open the All-tools palette.',
+    label: 'Browse all tools',
+    description:
+      'Open the command palette and search every tool, recent file and view action.',
     icon: LayoutGrid,
     shortcut: 'Ctrl+Shift+P',
     stage: 'global',
-    action: 'showToolsPalette',
+    action: 'openCommandPalette',
     availability: 'always',
   },
   {
@@ -1208,10 +1263,123 @@ const REGISTRY = [
 export type ToolId = (typeof REGISTRY)[number]['id'];
 export type ToolActionId = (typeof REGISTRY)[number]['action'];
 
-export const TOOL_REGISTRY: readonly ToolEntry[] = REGISTRY;
+/** Every entry's hosting surface, keyed by id. A `Record<ToolId, ToolSurface>`
+ *  so the compiler forces a value for EVERY registry entry — a new tool must
+ *  declare where its control lives, or this map fails to compile. */
+const SURFACE_BY_ID: Record<ToolId, ToolSurface> = {
+  // PAGES — the curated dock set is rotate/extract/insertPages/replacePages/
+  // split/delete; the rest keep a panel or palette home.
+  merge: 'palette',
+  split: 'dock',
+  extract: 'dock',
+  rotate: 'dock',
+  delete: 'dock',
+  insertPages: 'dock',
+  replacePages: 'dock',
+  renumberPages: 'panel',
+  cropPages: 'dock',
+  rotateCounterClockwise: 'panel',
+  pageThumbnails: 'panel',
+  outlinePanel: 'panel',
+  pageContextMenu: 'panel',
+  clearPageSelection: 'panel',
+  dragPage: 'panel',
+  // EDIT — the curated dock set is editMode/editText/editImage/editTextBox/
+  // recognizeText/cropPages; the edit layer itself hosts the tool toggles.
+  editMode: 'dock',
+  editToolOff: 'panel',
+  editText: 'dock',
+  editTextBox: 'dock',
+  editImage: 'dock',
+  editDefaultFont: 'panel',
+  recognizeText: 'dock',
+  batchOcr: 'palette',
+  ocrSuspects: 'palette',
+  // REVIEW — the curated dock set is annotate/sign/stamp/flatten; the
+  // annotation set lives in the flyout; forms/watermark/comments are palette.
+  annotate: 'dock',
+  sign: 'dock',
+  forms: 'palette',
+  flatten: 'dock',
+  stamp: 'dock',
+  watermark: 'palette',
+  exportComments: 'palette',
+  importComments: 'palette',
+  annotationsPanel: 'panel',
+  annSelect: 'flyout',
+  annHighlight: 'flyout',
+  annUnderline: 'flyout',
+  annStrikeout: 'flyout',
+  annInk: 'flyout',
+  annTextbox: 'flyout',
+  annRect: 'flyout',
+  annEllipse: 'flyout',
+  annArrow: 'flyout',
+  annCallout: 'flyout',
+  annNote: 'flyout',
+  annColor: 'flyout',
+  annPenWidth: 'flyout',
+  // DELIVER — the curated dock set is optimize/audit/exportPages/exportText/
+  // exportDocx; create-from-images lives in the palette + welcome.
+  optimize: 'dock',
+  audit: 'dock',
+  createFromImages: 'palette',
+  exportPages: 'dock',
+  exportText: 'dock',
+  exportDocx: 'dock',
+  // GLOBAL — no dock verb: the title bar / File menu / palette (and the
+  // floating pills for the view controls) own these.
+  open: 'palette',
+  openRecent: 'palette',
+  openSample: 'palette',
+  removeRecent: 'palette',
+  createFromClipboard: 'palette',
+  save: 'palette',
+  saveAs: 'palette',
+  print: 'palette',
+  find: 'palette',
+  zoomIn: 'panel',
+  zoomOut: 'panel',
+  fitWidth: 'panel',
+  fitPage: 'panel',
+  prevPage: 'panel',
+  nextPage: 'panel',
+  pageJump: 'panel',
+  undo: 'palette',
+  redo: 'palette',
+  tabNew: 'palette',
+  tabClose: 'palette',
+  'multi-mode': 'palette',
+  paneOpen: 'panel',
+  panePick: 'panel',
+  paneClear: 'panel',
+  paneResize: 'panel',
+  toggleTheme: 'palette',
+  preferences: 'palette',
+  checkForUpdate: 'palette',
+  updateDownload: 'palette',
+  updateInstall: 'palette',
+  about: 'palette',
+  appMenu: 'palette',
+  toolsPalette: 'palette',
+  panMode: 'panel',
+  railCollapse: 'panel',
+  stagePages: 'palette',
+  stageEdit: 'palette',
+  stageReview: 'palette',
+  stageDeliver: 'palette',
+  windowMinimize: 'palette',
+  windowMaximize: 'palette',
+  windowClose: 'palette',
+};
+
+export const TOOL_REGISTRY: readonly ToolEntry[] = REGISTRY.map((entry) => ({
+  ...entry,
+  surface: SURFACE_BY_ID[entry.id],
+}));
 
 const BY_ID: ReadonlyMap<string, ToolEntry> = new Map(
-  REGISTRY.map((entry) => [entry.id as string, entry as ToolEntry]),
+  TOOL_REGISTRY.map((entry) => [entry.id as string, entry]),
 );
 
 /** The registry entry for a tool id, or `undefined`. */
@@ -1222,6 +1390,48 @@ export function toolById(id: string): ToolEntry | undefined {
 /** Every entry whose canonical home is `stage` (rail stages plus global). */
 export function toolsForStage(stage: ToolStage): readonly ToolEntry[] {
   return TOOL_REGISTRY.filter((entry) => entry.stage === stage);
+}
+
+/** The Action Dock's CURATED verb set per stage, in render order. The
+ *  concept "Action Dock" shows 5-7 verbs per stage, NOT every registry entry
+ *  whose rail stage matches: panel/section/view controls (thumbnails, outline,
+ *  per-page menus, clear, drag) and the non-concept commands (merge, renumber,
+ *  rotate-counter-clockwise, watermark, the extra exports, every GLOBAL entry)
+ *  keep a panel/palette home and must not crowd the dock (DEF-313). `|` in the
+ *  concept's table separates visual groups; the dock renders one row.
+ *
+ *  PAGES:  rotate · extract · insertPages · replacePages | split · delete
+ *  EDIT:   editMode (the toggle/primary) · editText · editImage · editTextBox
+ *          | recognizeText · cropPages
+ *  REVIEW: annotate (the flyout primary) · sign · stamp | flatten
+ *  DELIVER: optimize · audit | exportPages · exportText · exportDocx
+ *
+ *  `editMode` is the EDIT primary and the ONLY control that turns Edit mode on
+ *  (DEF-314): it is enabled whenever a document is open and shows its pressed
+ *  state while Edit mode is on. */
+export const DOCK_STAGE_IDS: Readonly<Record<Stage, readonly string[]>> = {
+  pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete'],
+  edit: ['editMode', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'cropPages'],
+  review: ['annotate', 'sign', 'stamp', 'flatten'],
+  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx'],
+};
+
+/** True when the Action Dock hosts this entry as a verb. Entries the REVIEW
+ *  flyout hosts (`surface: 'flyout'`) and every panel/palette entry are
+ *  skipped: the dock renders only the curated `DOCK_STAGE_IDS` set. */
+export function isDockSurfaceEntry(entry: ToolEntry): boolean {
+  return (entry.surface ?? 'dock') === 'dock';
+}
+
+/** The Action Dock's curated verb set for a stage, resolved from the registry
+ *  by id so each verb reuses the registry's own icon/label/gate. A stage with
+ *  no curated list (or `global`) renders no dock verbs. */
+export function dockToolsForStage(stage: ToolStage): readonly ToolEntry[] {
+  if (stage === 'global') return [];
+  return DOCK_STAGE_IDS[stage].flatMap((id) => {
+    const entry = BY_ID.get(id);
+    return entry === undefined || !isDockSurfaceEntry(entry) ? [] : [entry];
+  });
 }
 
 /** The canonical entry order the All-tools palette renders. */

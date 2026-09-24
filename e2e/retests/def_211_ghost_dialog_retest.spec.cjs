@@ -37,7 +37,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
-const { launchDev, diag, hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
+const { launchDev, diag, hardClose, armAnnotationTool, openDockVerb, clickDockVerb } = require('../lib/helpers.cjs');
 const { getSamplePath } = require('../lib/launch.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
@@ -85,15 +85,22 @@ async function clickPageAt(fx, fy) {
     const slot = pane && pane.querySelector('.page-slot[data-page="1"]');
     if (!slot) return null;
     const r = slot.getBoundingClientRect();
-    return { x: r.x, y: r.y, w: r.width, h: r.height, winW: window.innerWidth, winH: window.innerHeight };
+    // Phase 36 (chunk 3) — the REVIEW Annotate flyout occupies the bottom band
+    // of the canvas; a clamped click must stay ABOVE it or it lands on the
+    // flyout's tool buttons instead of the page.
+    const flyout = document.querySelector('[data-annotation-flyout]');
+    const flyoutTop = flyout ? flyout.getBoundingClientRect().top : window.innerHeight;
+    return { x: r.x, y: r.y, w: r.width, h: r.height, winW: window.innerWidth, winH: window.innerHeight, flyoutTop };
   });
   if (!layout) throw new Error('page slot 1 not mounted');
   // The page slot can be TALLER than the viewport (fit-width on a letter
   // page), so a slot-relative point can land BELOW the window. Clamp the
-  // click into the visible viewport while staying inside the page.
+  // click into the visible viewport (and above the flyout) while staying
+  // inside the page.
   let x = layout.x + layout.w * fx;
   let y = layout.y + layout.h * fy;
-  if (y > layout.winH - 80) y = layout.winH - 120;
+  const maxY = Math.min(layout.winH - 80, layout.flyoutTop - 40);
+  if (y > maxY) y = maxY;
   if (y < layout.y + 30) y = layout.y + 40;
   await win.mouse.move(x - 6, y - 6);
   await win.mouse.move(x, y);
@@ -164,9 +171,8 @@ test('DEF-211 T1: Insert Pages dialog disarms the ghost (textbox tool)', async (
   await shot(win, 'def-211-t1-ghost-armed.png');
 
   // Open the dialog through the real UI: Tools palette -> Insert pages.
-  await win.click('[data-tools-toggle]');
-  await win.waitForSelector('[data-tools-palette]', { state: 'visible', timeout: 10000 });
-  await win.click('[data-tool-id="insertPages"]');
+  // Phase 36 migration: All-tools palette retired; Insert pages is a PAGES dock verb.
+  await clickDockVerb(win, 1, 'insertPages');
   await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 10000 });
   await shot(win, 'def-211-t1-insert-pages-moment.png'); // the instant the dialog mounts
   await assertDisarmedAndGhostGone('T1');
@@ -222,7 +228,8 @@ test('DEF-211 T2: Optimize dialog disarms the ghost (note tool)', async () => {
   expect(pre.noteConfirm, 'note ghost action bar exists before the dialog').toBe(true);
   await shot(win, 'def-211-t2-ghost-armed.png');
 
-  await win.click('[data-toolbar-optimize]');
+  // Phase 36 (chunk 3) — Optimize is the DELIVER dock's `optimize` verb.
+  await openDockVerb(win, 4, 'optimize');
   await win.waitForSelector('.optimize-dialog', { timeout: 10000 });
   await settleGhostGone();
   const d2 = await diag(win);

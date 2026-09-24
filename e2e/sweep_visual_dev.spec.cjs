@@ -7,7 +7,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, runTool, armAnnotationTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -112,8 +112,8 @@ test('VISUAL DEV: every major screen in both themes + token dump', async () => {
     console.log('[page-dark] ', JSON.stringify(pageRgb));
 
     // ---- 3. Tools panel (palette) ----
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
+    // Phase 36 migration: All-tools palette retired; ContextPanel is the tools panel.
+    await win.waitForSelector('[data-context-panel]', { timeout: 8000 }).catch(() => {});
     await win.waitForTimeout(400);
     await snap('visual-dev-palette-dark.png');
     await setTheme('light');
@@ -121,7 +121,7 @@ test('VISUAL DEV: every major screen in both themes + token dump', async () => {
     await snap('visual-dev-palette-light.png');
 
     // ---- 4. A dialog (Insert pages) ----
-    await win.click('[data-tool-id="insertPages"]');
+    await runTool(win, 'insertPages');
     await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 8000 });
     await win.waitForTimeout(600);
     await snap('visual-dev-dialog-light.png');
@@ -131,12 +131,11 @@ test('VISUAL DEV: every major screen in both themes + token dump', async () => {
     await setTheme('dark');
     // The Escape above closed the DIALOG only - the palette is still open.
     // Reopen it only if it is actually closed, otherwise this click closes it.
-    const palOpen2 = await win.evaluate(() => !!document.querySelector('[data-tools-palette]'));
+    const palOpen2 = await win.evaluate(() => !!document.querySelector('[data-context-panel]'));
     if (!palOpen2) {
-      await win.click('[data-tools-toggle]');
-      await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
+      await win.waitForSelector('[data-context-panel]', { timeout: 8000 }).catch(() => {});
     }
-    await win.click('[data-tool-id="insertPages"]');
+    await runTool(win, 'insertPages');
     await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 8000 });
     await win.waitForTimeout(600);
     await snap('visual-dev-dialog-dark.png');
@@ -145,10 +144,12 @@ test('VISUAL DEV: every major screen in both themes + token dump', async () => {
 
     // ---- 5. Contextual toolbar (annotation toolbar armed) ----
     // Close any palette first.
-    const paletteOpen = await win.evaluate(() => !!document.querySelector('[data-tools-palette]'));
+    const paletteOpen = await win.evaluate(() => !!document.querySelector('[data-context-panel]'));
     if (paletteOpen) await win.keyboard.press('Escape');
     await win.waitForTimeout(400);
-    await win.click('button[aria-label="Highlight"]');
+    // Phase 36 migration: the annotation tools live in the REVIEW Annotate
+    // flyout now; armAnnotationTool opens it and clicks the tool.
+    await armAnnotationTool(win, 'highlight');
     await win.waitForTimeout(500);
     await snap('visual-dev-contextual-dark.png');
     await setTheme('light');

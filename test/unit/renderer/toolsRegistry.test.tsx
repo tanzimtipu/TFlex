@@ -25,6 +25,7 @@ import {
   PALETTE_GROUPS,
   PALETTE_TOOL_IDS,
   TOOL_REGISTRY,
+  dockToolsForStage,
   paletteEntries,
   toolById,
   toolsForStage,
@@ -49,7 +50,7 @@ const AUDITED: Record<string, readonly string[]> = {
     "editDefaultFont", "recognizeText", "batchOcr", "ocrSuspects",
   ],
   review: [
-    "sign", "forms", "flatten", "stamp", "watermark", "exportComments",
+    "annotate", "sign", "forms", "flatten", "stamp", "watermark", "exportComments",
     "importComments", "annotationsPanel", "annSelect", "annHighlight",
     "annUnderline", "annStrikeout", "annInk", "annTextbox", "annRect",
     "annEllipse", "annArrow", "annCallout", "annNote", "annColor",
@@ -172,6 +173,65 @@ describe("toolsRegistry — completeness and uniqueness", () => {
       ["global", "Ctrl+3"],
       ["global", "Ctrl+4"],
     ]);
+  });
+});
+
+describe("toolsRegistry — canonical surface + the curated dock sets (DEF-313)", () => {
+  it("marks EVERY entry with a surface", () => {
+    for (const entry of TOOL_REGISTRY) {
+      expect(entry.surface, entry.id).toBeDefined();
+    }
+  });
+
+  it("gives the REVIEW dock one Annotate primary and the flyout the annotation set", () => {
+    // The dock's primary is the FIRST review entry, so `annotate` must lead.
+    expect(dockToolsForStage("review")[0]?.id).toBe("annotate");
+    expect(toolById("annotate")?.action).toBe("annotate");
+    expect(toolById("annotate")?.stage).toBe("review");
+  });
+
+  it("marks every annotation tool `surface: 'flyout'` and nothing else", () => {
+    const flyout = TOOL_REGISTRY.filter((e) => e.surface === "flyout").map((e) => e.id);
+    expect(flyout.sort()).toEqual(
+      [
+        "annArrow", "annCallout", "annColor", "annEllipse", "annHighlight",
+        "annInk", "annNote", "annPenWidth", "annRect", "annSelect",
+        "annStrikeout", "annTextbox", "annUnderline",
+      ].sort(),
+    );
+  });
+
+  it("returns the CURATED dock set per stage, in the concept's order", () => {
+    expect(dockToolsForStage("pages").map((e) => e.id)).toEqual([
+      "rotate", "extract", "insertPages", "replacePages", "split", "delete",
+    ]);
+    expect(dockToolsForStage("edit").map((e) => e.id)).toEqual([
+      "editMode", "editText", "editImage", "editTextBox", "recognizeText", "cropPages",
+    ]);
+    expect(dockToolsForStage("review").map((e) => e.id)).toEqual([
+      "annotate", "sign", "stamp", "flatten",
+    ]);
+    expect(dockToolsForStage("deliver").map((e) => e.id)).toEqual([
+      "optimize", "audit", "exportPages", "exportText", "exportDocx",
+    ]);
+    expect(dockToolsForStage("global")).toEqual([]);
+  });
+
+  it("keeps the non-concept verbs OUT of the dock (each keeps a real home)", () => {
+    const allDockIds = ["pages", "edit", "review", "deliver"].flatMap((s) =>
+      dockToolsForStage(s as "pages").map((e) => e.id),
+    );
+    for (const id of [
+      "merge", "renumberPages", "rotateCounterClockwise", "pageThumbnails",
+      "outlinePanel", "pageContextMenu", "clearPageSelection", "dragPage",
+      "editToolOff", "editDefaultFont", "batchOcr", "ocrSuspects",
+      "forms", "watermark", "exportComments", "importComments",
+      "annotationsPanel", "createFromImages",
+    ]) {
+      expect(allDockIds, id).not.toContain(id);
+      // ...and each is still a registered entry (nothing removed).
+      expect(toolById(id), id).toBeDefined();
+    }
   });
 });
 

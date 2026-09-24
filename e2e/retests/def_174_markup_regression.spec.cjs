@@ -110,7 +110,7 @@ test('DEF-174 regression: underline + strikeout stay solid strokes, save/reopen 
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
     }, savePath);
-    await win.click('[aria-label="Save As"]');
+    await win.click('[data-toolbar-save-as]');
     await win.click('[data-save-as-confirm="true"]');
     await win.waitForFunction(() => !window.tflexDiagnostics().modified, null, { timeout: 30000 });
 

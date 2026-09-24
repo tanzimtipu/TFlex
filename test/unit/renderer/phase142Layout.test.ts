@@ -185,13 +185,16 @@ describe("Phase 14.2 — state-driven page view in every theme (FIX 4/5)", () =>
     expect(frostedApp ?? "").not.toMatch(/overflow:\s*hidden/);
   });
 
-  it("the open palette drives the inset from .app-main data attributes", () => {
+  it("the open Inspector drives the inset from .app-main data attributes", () => {
     expect(css).toMatch(/\.app-main\[data-tools-open="true"\]\s*\{/);
-    expect(css).toMatch(/\.app-main\[data-tools-open="true"\]\[data-tools-mode="grid"\]/);
+    // Phase 36 (chunk 5) — the palette's list/grid layout modes retired with
+    // the palette, so there is no data-tools-mode width rule any more.
+    expect(css).not.toMatch(/\.app-main\[data-tools-open="true"\]\[data-tools-mode="grid"\]/);
     const driver = css.match(/\.app-main\[data-tools-open="true"\]\s*\{([^}]*)\}/);
     expect(driver?.[1] ?? "").toMatch(
-      /--tf-tools-inset:\s*var\(--tools-panel-w,\s*344px\);/,
+      /--tf-tools-inset:\s*var\(--tools-panel-w,\s*264px\);/,
     );
+    expect(driver?.[1] ?? "").toMatch(/--tools-panel-w:\s*264px;/);
   });
 
   it("the scroller consumes the inset with NO transition of its own", () => {

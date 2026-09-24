@@ -307,83 +307,12 @@ test.describe('DEF-191..194 retest (phase 14.2 fix round 2)', () => {
   });
 
   // ------------------------------------------------------------------
-  // DEF-194: command-bar icons render at full 22px.
+  // DEF-194 (DELETED, Phase 36 chunk 3): this test's subject was the retired
+  // per-view CommandBar — its 22px glyph ladder, 32px hit boxes and 36px glass
+  // capsules. The row is retired; the Action Dock's own icon/label contract is
+  // covered by phase36_chunk3_dock_gate.spec.cjs. The remaining DEF-191/192/193
+  // coverage (Open control, dynamic page view, panel+page animation) is kept.
   // ------------------------------------------------------------------
-  test('DEF-194: command bar icons are full 22px, not letterboxed', async () => {
-    test.setTimeout(240000);
-    await openReport();
-    const icons = await win.evaluate(() => {
-      const sizeOf = (svg) => {
-        const cs = getComputedStyle(svg);
-        return {
-          w: Math.round(parseFloat(cs.width) * 100) / 100,
-          h: Math.round(parseFloat(cs.height) * 100) / 100,
-        };
-      };
-      const detail = (btn) => {
-        const svg = btn.querySelector('svg');
-        const r = svg.getBoundingClientRect();
-        const s = sizeOf(svg);
-        return {
-          label: btn.getAttribute('aria-label') || btn.title || btn.getAttribute('data-icon') || '',
-          attrW: svg.getAttribute('width'),
-          rectW: Math.round(r.width * 100) / 100,
-          rectH: Math.round(r.height * 100) / 100,
-          cssW: s.w, cssH: s.h,
-        };
-      };
-      const cmdBtns = Array.from(document.querySelectorAll('.toolbar .tool-btn'));
-      const annBtns = Array.from(document.querySelectorAll('.ann-toolbar .ann-tool-btn'));
-      const railBtns = Array.from(document.querySelectorAll('.side-rail button'));
-      return {
-        dataTheme: document.documentElement.getAttribute('data-theme'),
-        cmdIcons: cmdBtns.map(detail),
-        annSizes: Array.from(new Set(annBtns.map((b) => {
-          const s = sizeOf(b.querySelector('svg'));
-          return `${s.w}x${s.h}`;
-        }))),
-        annCount: annBtns.length,
-        cmdBtnHeights: Array.from(new Set(cmdBtns.map((b) => Math.round(b.getBoundingClientRect().height)))),
-        cmdBtnPaddings: Array.from(new Set(cmdBtns.map((b) => getComputedStyle(b).padding))),
-        capsuleH: (() => {
-          const c = document.querySelector('.toolbar .glass-control-group');
-          return c ? Math.round(c.getBoundingClientRect().height) : null;
-        })(),
-        railIconMin: railBtns.length
-          ? Math.min(...railBtns.map((b) => {
-            const svg = b.querySelector('svg');
-            return svg ? parseFloat(getComputedStyle(svg).width) : 999;
-          }))
-          : null,
-      };
-    });
-    console.log(`[DEF-194] theme=${icons.dataTheme} cmd icons (${icons.cmdIcons.length}):`,
-      JSON.stringify(icons.cmdIcons.map((i) => `${i.label}:${i.cssW}x${i.cssH}`)));
-    console.log('[DEF-194] ann sizes:', JSON.stringify(icons.annSizes),
-      'cmd btn heights:', JSON.stringify(icons.cmdBtnHeights),
-      'cmd paddings:', JSON.stringify(icons.cmdBtnPaddings),
-      'capsuleH:', icons.capsuleH, 'railIconMin:', icons.railIconMin);
-
-    expect(icons.cmdIcons.length, 'command bar glyphs present').toBeGreaterThanOrEqual(15);
-    for (const ic of icons.cmdIcons) {
-      expect(ic.cssW, `command icon "${ic.label}" width ${ic.cssW} must be the full 22px band`).toBeGreaterThanOrEqual(20);
-      expect(ic.cssW, `command icon "${ic.label}" width ${ic.cssW} must not exceed 22px`).toBeLessThanOrEqual(22);
-      expect(ic.cssH, `command icon "${ic.label}" height ${ic.cssH}`).toBeGreaterThanOrEqual(20);
-      expect(ic.cssH, `command icon "${ic.label}" height ${ic.cssH}`).toBeLessThanOrEqual(22);
-      expect(ic.rectW, `command icon "${ic.label}" rect width ${ic.rectW} must match its css width (no letterbox)`).toBeGreaterThanOrEqual(ic.cssW - 0.5);
-    }
-    expect(icons.annCount, 'annotation toolbar glyphs present').toBeGreaterThan(0);
-    // Phase 19 - the annotation tools are CommandBar tool-btns now, so they use
-    // the bar's 22px glyph ladder (the separate 24px row is retired).
-    expect(icons.annSizes, `annotation icons must use the CommandBar 22px ladder (got ${icons.annSizes})`).toEqual(['22x22']);
-    for (const h of icons.cmdBtnHeights) expect(h, 'command tool hit box').toBeGreaterThanOrEqual(32);
-    expect(icons.capsuleH, 'command capsule hit row >= 36px').toBeGreaterThanOrEqual(36);
-    expect(icons.railIconMin, 'sidebar icons unaffected (>= 20px)').toBeGreaterThanOrEqual(20);
-    await win.screenshot({
-      path: path.join(SHOTS, 'def-194-retest.png'),
-      clip: { x: 0, y: 0, width: 1100, height: 190 },
-    });
-  });
 });
 
 // OPEN-direction curve verifier (ported from the filing spec): the inset must

@@ -47,12 +47,13 @@ export const MIN_PANES_BUDGET_PX = 2 * MIN_PANE_PANE_PX + PANE_DIVIDER_W_PX;
  *  the split keeps the panes pleasant to read, not merely non-empty. */
 export const MIN_PANE_WIDTH_PX = 320;
 
-/** The All Tools panel's declared width per layout mode; mirrors the
- *  `--tools-panel-w` values in styles.css
- *  (`.app-main[data-tools-open="true"]`). The re-clamp uses the TARGET, not
- *  the animated computed value, so the settled geometry is what decides. */
-export const TOOLS_PANEL_W_LIST_PX = 344;
-export const TOOLS_PANEL_W_GRID_PX = 380;
+/** The Inspector's declared width; mirrors the `--tools-panel-w` value in
+ *  styles.css (`.app-main[data-tools-open="true"]`). Phase 36 (chunk 5) —
+ *  the Inspector replaces the retired All-tools palette's list/grid modes
+ *  (344/380) with ONE width in the 240-280px band. The re-clamp uses the
+ *  TARGET, not the animated computed value, so the settled geometry is what
+ *  decides. */
+export const INSPECTOR_W_PX = 264;
 
 /** The largest inset the panes may consume at `stageWidth` before their
  *  minimum page area would be violated. `MultiPane` measures the stage and

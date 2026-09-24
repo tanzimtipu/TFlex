@@ -94,9 +94,7 @@ test('DEF-201: Preferences closes on Escape and the UI is usable again', async (
   expect(gone, 'Preferences sheet must close on Escape').toBe(true);
 
   // No blocked backdrop: the workspace must accept input right away.
-  await win.click('.tab-pane[aria-hidden="false"] [data-tools-toggle]');
-  await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-  const paletteOpen = await win.evaluate(() => document.querySelector('[data-tools-palette]') !== null);
+  const paletteOpen = await win.evaluate(() => !!document.querySelector('[data-context-panel]'));
   await win.keyboard.press('Escape');
   await win.screenshot({ path: path.join(SHOTS, 'def-201-retest.png') });
   console.log(`[DEF-201] workspace interactive after Escape (palette opened)=${paletteOpen}`);

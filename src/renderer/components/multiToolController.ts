@@ -1,18 +1,26 @@
-// Phase 33 (chunk 4) — ONE shared toolbar in Multi Mode.
+// Phase 33 (chunk 4) + Phase 36 (chunk 7) — the Multi Mode workspace bridge.
 //
-// In Multi Mode the workspace shows a single toolbar (the same one single
-// mode shows) instead of one per pane. This module is the small bridge that
-// lets that single bar drive BOTH panes without lifting either pane's
-// internals (so single mode stays byte-for-byte unchanged):
+// In Multi Mode ONE shared surface serves the whole workspace (Phase 33's
+// decision, kept by Phase 36): a single Action Dock at the workspace's
+// bottom-centre showing the FOCUSED pane's stage verbs. The panes publish the
+// context that surface needs instead of each rendering its own copy, so no
+// pane's internals are lifted and single mode stays untouched:
 //
-//   - `toolbar` entries: each pane's DocumentView publishes a read-only
-//     "model" (page / zoom / search / hand values plus the matching command
-//     callbacks) keyed by its pane. The shared bar reads the FOCUSED pane's
-//     entry, so its display follows the pane the user is working in.
+//   - `dock` entries: each pane's DocumentView publishes a live read-only
+//     context (its page selection, the State-2 bulk verbs, the live
+//     availability gate and its armed / dragging flags) keyed by pane. The
+//     shared dock reads the FOCUSED pane's entry, so its display AND its
+//     availability follow the pane the user is working in.
 //   - `ann` sinks: each pane registers its annotation-tool reducer dispatch.
-//     Every annotation action (from the shared bar OR from a pane's own
-//     internal disarm) is broadcast to all registered panes, so arming and
-//     disarming stay coherent across both.
+//     Every annotation action (from the shared dock / the REVIEW flyout OR
+//     from a pane's own internal disarm) is broadcast to all registered
+//     panes, so arming and disarming stay coherent across both.
+//
+// Phase 36 (chunk 7) RETIRED the shared toolbar ROW (`MultiToolbar`): the
+// pane's page / zoom / search / hand model is no longer published here — the
+// floating pills read that from the pane's own view state, and the dock's
+// view-level verbs route through `registerViewCommands` (App's
+// `focusedViewCommands`).
 //
 // The controller is NOT a store: it holds no React state. Components
 // subscribe to a plain revision signal and re-read the values they need.
@@ -22,42 +30,37 @@ import type {
   AnnotationToolState,
 } from "../annotations/model";
 import type { PaneId } from "../state/multiMode";
-import type { ZoomMode } from "../state/zoom";
+import type { ToolEntry } from "../state/toolsRegistry";
+import type { DockBulkActions } from "./ActionDock";
 
-/** The values the shared bar displays for one pane. */
-export interface PaneToolbarValues {
-  page: number;
-  pageCount: number;
-  pageLabel: string | null;
-  zoomPercent: number;
-  zoomMode: ZoomMode;
-  searchOpen: boolean;
-  handActive: boolean;
+/** The pane context the ONE shared Action Dock consumes for one pane. */
+export interface PaneDockContext {
+  /** The visible 1-based pages selected in THIS pane's PAGES panel. */
+  pageSelection: readonly number[];
+  /** State 2's Clear — empties this pane's selection (back to State 1). */
+  clearPageSelection: () => void;
+  /** State 2's bulk verbs, wired to this pane's existing engine/dialog paths. */
+  bulk: DockBulkActions;
+  /** This pane's live availability gate (it owns the selection + edit mode). */
+  isToolEnabled: (entry: ToolEntry) => boolean;
+  /** This pane's live disabled-reason copy (DEF-311). */
+  disabledReasonFor: (entry: ToolEntry) => string | undefined;
+  /** Idle suppression: a tool is armed in this pane. */
+  toolArmed: boolean;
+  /** Idle suppression: a page drag is in progress in this pane. */
+  dragInProgress: boolean;
 }
 
-/** The commands the shared bar runs against one pane. */
-export interface PaneToolbarCommands {
-  onJump: (input: string) => void;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onFitWidth: () => void;
-  onFitPage: () => void;
-  onToggleSearch: () => void;
-  onHandToggle: () => void;
-}
-
-export interface PaneToolbarEntry {
-  /** Reads the pane's LATEST toolbar values (a live ref, not a snapshot). */
-  values: () => PaneToolbarValues | null;
-  /** Reads the pane's command callbacks (a live ref). */
-  commands: () => PaneToolbarCommands | null;
+export interface PaneDockEntry {
+  /** Reads the pane's LATEST dock context (a live ref, not a snapshot). */
+  dock: () => PaneDockContext | null;
 }
 
 /** An annotation-tool reducer dispatch owned by one pane. */
 export type AnnToolSink = (action: AnnotationToolAction) => void;
 
 export class SharedToolController {
-  private toolbars = new Map<PaneId, PaneToolbarEntry>();
+  private panes = new Map<PaneId, PaneDockEntry>();
   private annSinks = new Map<PaneId, AnnToolSink>();
   private annState = new Map<PaneId, AnnotationToolState>();
   private listeners = new Set<() => void>();
@@ -74,23 +77,25 @@ export class SharedToolController {
     for (const listener of this.listeners) listener();
   }
 
-  // ---- the shared bar's model -------------------------------------------
+  // ---- the shared dock's per-pane context -------------------------------
 
-  registerToolbar(pane: PaneId, entry: PaneToolbarEntry): () => void {
-    this.toolbars.set(pane, entry);
+  registerPane(pane: PaneId, entry: PaneDockEntry): () => void {
+    this.panes.set(pane, entry);
     this.emit();
     return (): void => {
-      if (this.toolbars.get(pane) === entry) this.toolbars.delete(pane);
+      if (this.panes.get(pane) === entry) this.panes.delete(pane);
       this.emit();
     };
   }
 
-  getToolbar(pane: PaneId): PaneToolbarEntry | undefined {
-    return this.toolbars.get(pane);
+  /** The pane's current dock context, or `null` before it registers (the
+   *  shared dock renders nothing rather than a dock with no verbs). */
+  getDock(pane: PaneId): PaneDockContext | null {
+    return this.panes.get(pane)?.dock() ?? null;
   }
 
-  /** A pane's own values/commands changed — let the bar re-read them. */
-  notifyToolbar(): void {
+  /** A pane's own context changed — let the shared dock re-read it. */
+  notifyPane(): void {
     this.emit();
   }
 
@@ -109,8 +114,8 @@ export class SharedToolController {
    * Fan an annotation action out to every registered pane. `self` (the pane
    * whose own reducer originated the action) is invoked once, directly; the
    * remaining panes receive it through their registered sinks, so an action
-   * from either the shared bar or a pane's internal disarm keeps BOTH panes
-   * in lockstep.
+   * from either the shared dock / flyout or a pane's internal disarm keeps
+   * BOTH panes in lockstep.
    */
   annToolAction(action: AnnotationToolAction, self?: AnnToolSink): void {
     if (self !== undefined) self(action);
@@ -135,9 +140,9 @@ export class SharedToolController {
   }
 
   /** Drop every registration — the mode was left, so the panes unmounted
-   *  their shared wiring and no stale arm state may survive. */
+   *  their shared wiring and no stale context may survive. */
   reset(): void {
-    this.toolbars.clear();
+    this.panes.clear();
     this.annSinks.clear();
     this.annState.clear();
     this.emit();

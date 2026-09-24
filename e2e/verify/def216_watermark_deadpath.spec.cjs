@@ -30,7 +30,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp } = require('../lib/launch.cjs');
-const { shot, hardClose, openSample } = require('../lib/helpers.cjs');
+const { shot, hardClose, openSample, runTool } = require('../lib/helpers.cjs');
 
 test('DEF-216: Watermark apply is a dead path - engine:addWatermark never registered/exposed', async () => {
   test.setTimeout(180000);
@@ -46,19 +46,12 @@ test('DEF-216: Watermark apply is a dead path - engine:addWatermark never regist
     await window.waitForSelector('.pdf-page canvas', { timeout: 30000 });
     await window.waitForTimeout(1500); // settle the workspace
 
-    // 2. Open the Tools palette (the floating "All Tools" badge).
-    const toolsToggle = window.locator('[data-tools-toggle]');
-    await toolsToggle.waitFor({ timeout: 15000, state: 'visible' });
-    await toolsToggle.click();
-    const palette = window.locator('[data-tools-palette]');
-    await palette.waitFor({ timeout: 15000, state: 'visible' });
-
-    // 3. Click the Watermark entry.
-    const watermarkEntry = window.locator('[data-tool-id="watermark"]');
-    await watermarkEntry.waitFor({ timeout: 15000, state: 'visible' });
-    const entryEnabled = await watermarkEntry.isEnabled();
-    console.log(`[def216] watermark palette entry enabled: ${entryEnabled}`);
-    await watermarkEntry.click();
+    // 2-3. Phase 36 migration: the All-tools palette is retired; runTool opens
+    // the Watermark dialog through its current home (REVIEW dock verb).
+    await runTool(window, 'watermark');
+    const entryEnabled = (await window.locator('[data-watermark-dialog]').count()) > 0;
+    console.log(`[def216] watermark dialog mounted: ${entryEnabled}`);
+    // (runTool already opened the Watermark dialog through its current home.)
 
     // 4. The Watermark dialog must mount.
     const dialog = window.locator('[data-watermark-dialog]');

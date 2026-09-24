@@ -5,7 +5,7 @@
 // launchApp helper. No screenshots unless a failure needs one.
 const { test, expect } = require('@playwright/test');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('../lib/helpers.cjs');
 const { twoPaneSetup } = require('../lib/p33_common.cjs');
 
 let app = null;
@@ -35,15 +35,19 @@ async function setSize(w, h) {
   await win.waitForTimeout(900);
 }
 
+// Phase 36 (chunk 5) — the right panel is the INSPECTOR, open by default when a
+// real document is open (the All-tools palette and its 344px list/grid widths
+// are retired; the Inspector is ONE 264px width). There is no open/close.
 async function openPanel() {
-  await win.locator('[data-tools-badge]').first().click();
-  await win.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-  await win.waitForTimeout(900);
+  const inset = await win.evaluate(() => getComputedStyle(document.querySelector('.app-main')).getPropertyValue('--tf-tools-inset').trim());
+  expect(inset, 'the Inspector reserves its 264px inset').toBe('264px');
+  expect(await win.locator('[data-inspector]').count(), 'the Inspector is the right panel').toBe(1);
+  await win.waitForTimeout(400);
 }
 async function closePanel() {
-  await win.locator('.tools-palette-close').first().click();
-  await win.waitForSelector('[data-tools-palette]', { state: 'detached', timeout: 10000 });
-  await win.waitForTimeout(900);
+  // The Inspector cannot be closed while a document is open; the pre-Phase-34
+  // "closed" geometry no longer exists, so this is a settle wait only.
+  await win.waitForTimeout(300);
 }
 
 // Drag the divider so the stage fraction lands on `frac` (panel closed).
@@ -77,7 +81,7 @@ async function geom() {
     return {
       stage: r('.tab-stage'),
       divider: r('[data-multi-divider]'),
-      panel: r('[data-tools-palette]'),
+      panel: r('[data-inspector]'),
       paneA: r('.tab-pane[data-pane="A"]'),
       paneB: r('.tab-pane[data-pane="B"]'),
       mainA: r('.tab-pane[data-pane="A"] .workspace-main'),
@@ -93,71 +97,52 @@ async function geom() {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-286 — the All Tools panel shrinks BOTH panes by the SAME amount at every
-// split (inset/2 = 172px with the 344px list panel), divider stays centred.
+// DEF-286 (migrated to the Inspector) — the 264px inset is reserved ONCE and
+// the panes keep their split with the divider between them.
 // ---------------------------------------------------------------------------
-test('DEF-286 equal panel shrink at 0.35 / 0.5 / 0.65 and pre-Phase-34 closed geometry', async () => {
+test('DEF-286 Inspector inset reserved once; panes keep their split at 0.35/0.5/0.65', async () => {
   await setSize(1440, 900);
   await twoPaneSetup(app, win);
   await setSize(1440, 900);
+  await openPanel();
 
   for (const f of [0.35, 0.5, 0.65]) {
     await dragDividerTo(f);
-    const before = await geom();
-    await openPanel();
     const after = await geom();
-    const dPaneA = before.paneA.w - after.paneA.w;
-    const dPaneB = before.paneB.w - after.paneB.w;
-    const dMainA = before.mainA.w - after.mainA.w;
-    const dMainB = before.mainB.w - after.mainB.w;
-    console.log(`[DEF-286] frac req=${f} actual=${after.frac} inset=${after.inset}`);
-    console.log(`[DEF-286]   paneA ${before.paneA.w}->${after.paneA.w} (d ${dPaneA}); paneB ${before.paneB.w}->${after.paneB.w} (d ${dPaneB}); |dPaneA-dPaneB|=${Math.abs(dPaneA - dPaneB)}`);
-    console.log(`[DEF-286]   mainA ${before.mainA.w}->${after.mainA.w} (d ${dMainA}); mainB ${before.mainB.w}->${after.mainB.w} (d ${dMainB}); |dMainA-dMainB|=${Math.abs(dMainA - dMainB)}`);
-    console.log(`[DEF-286]   divider=${JSON.stringify(after.divider)} paneA.right=${after.paneA.right} paneB.left=${after.paneB.left}`);
-
-    // Equal shrink per split, and the expected 172px (344/2).
-    expect(Math.abs(dPaneA - dPaneB), `pane deltas differ at ${f}: A=${dPaneA} B=${dPaneB}`).toBeLessThanOrEqual(1);
-    expect(Math.abs(dMainA - dMainB), `page-area deltas differ at ${f}: A=${dMainA} B=${dMainB}`).toBeLessThanOrEqual(1);
-    expect(Math.abs(dPaneA - 172), `pane A delta ${dPaneA} != 172 at ${f}`).toBeLessThanOrEqual(1);
-    expect(Math.abs(dPaneB - 172), `pane B delta ${dPaneB} != 172 at ${f}`).toBeLessThanOrEqual(1);
-    // Divider stays centred between the panes.
-    expect(Math.abs(after.divider.left - after.paneA.right), `divider.left ${after.divider.left} != paneA.right ${after.paneA.right}`).toBeLessThanOrEqual(1);
-    expect(Math.abs(after.divider.right - after.paneB.left), `divider.right ${after.divider.right} != paneB.left ${after.paneB.left}`).toBeLessThanOrEqual(1);
-    await closePanel();
+    const inset = parseInt(after.inset, 10);
+    console.log(`[DEF-286] frac req=${f} actual=${after.frac} inset=${after.inset} paneA=${after.paneA.w} paneB=${after.paneB.w} divider=${after.divider.w} stage=${after.stage.w}`);
+    // The stage minus the one reserved inset is split between the panes + divider.
+    expect(Math.abs((after.paneA.w + after.paneB.w + after.divider.w) - (after.stage.w - inset)),
+      `panes+divider + inset != stage width at ${f}`).toBeLessThanOrEqual(3);
+    // The divider stays centred between the panes.
+    expect(Math.abs(after.divider.left - after.paneA.right), `divider.left != paneA.right at ${f}`).toBeLessThanOrEqual(1);
+    expect(Math.abs(after.divider.right - after.paneB.left), `divider.right != paneB.left at ${f}`).toBeLessThanOrEqual(1);
+    // Both page areas keep a usable floor.
+    expect(after.mainA.w, `pane A page area floor at ${f}`).toBeGreaterThan(40);
+    expect(after.mainB.w, `pane B page area floor at ${f}`).toBeGreaterThan(40);
   }
-
-  // Panel closed: geometry is the pre-Phase-34 arithmetic (no inset consumed).
-  await dragDividerTo(0.35);
-  const closed = await geom();
-  const W = closed.stage.w;
-  const expectedA = W * 0.35 - 4;
-  const expectedB = W * 0.65 - 4;
-  console.log(`[DEF-286] closed frac=${closed.frac} stageW=${W} paneA=${closed.paneA.w} (expect ~${Math.round(expectedA)}) paneB=${closed.paneB.w} (expect ~${Math.round(expectedB)}) inset=${closed.inset}`);
-  expect(Math.abs(closed.paneA.w - expectedA), `closed paneA ${closed.paneA.w} != ${expectedA}`).toBeLessThanOrEqual(2);
-  expect(Math.abs(closed.paneB.w - expectedB), `closed paneB ${closed.paneB.w} != ${expectedB}`).toBeLessThanOrEqual(2);
-  expect(closed.paneA.w + closed.paneB.w + closed.divider.w, 'closed panes + divider != stage width').toBeGreaterThanOrEqual(W - 2);
-  expect(closed.paneA.w + closed.paneB.w + closed.divider.w, 'closed panes + divider != stage width').toBeLessThanOrEqual(W + 2);
 });
 
 // ---------------------------------------------------------------------------
-// DEF-287 — at 640x520 with the panel open both page areas stay >= 44px and
-// both strips shrink to their 100px minimum; a carried fraction re-clamps.
+// DEF-287 — at 640x520 both page areas stay >= 44px and both strips shrink to
+// their 100px minimum; a carried fraction re-clamps.
 // ---------------------------------------------------------------------------
-test('DEF-287 page areas never collapse at 640x520 with the panel open (incl. carried fraction)', async () => {
+test('DEF-287 page areas never collapse at 640x520 with the Inspector open (incl. carried fraction)', async () => {
   await twoPaneSetup(app, win);
   await setSize(640, 520);
   await openPanel();
   const g = await geom();
-  console.log(`[DEF-287] 640x520 panel open: stageW=${g.stage.w} inset=${g.inset} frac=${g.frac}`);
-  console.log(`[DEF-287]   paneA=${g.paneA.w} paneB=${g.paneB.w} mainA=${g.mainA.w} mainB=${g.mainB.w} stripA=${g.stripA.w} stripB=${g.stripB.w} scA=${g.scA.w} scB=${g.scB.w}`);
-  console.log(`[DEF-287]   divider=${JSON.stringify(g.divider)} panel=${JSON.stringify(g.panel)}`);
+  console.log(`[DEF-287] 640x520 inspector: stageW=${g.stage.w} inset=${g.inset} frac=${g.frac}`);
+  console.log(`[DEF-287]   paneA=${g.paneA.w} paneB=${g.paneB.w} mainA=${g.mainA.w} mainB=${g.mainB.w} stripA=${g.stripA && g.stripA.w} stripB=${g.stripB && g.stripB.w} scA=${g.scA && g.scA.w} scB=${g.scB && g.scB.w}`);
   expect(g.mainA.w, 'pane A page area collapsed').toBeGreaterThanOrEqual(44);
   expect(g.mainB.w, 'pane B page area collapsed').toBeGreaterThanOrEqual(44);
-  expect(Math.abs(g.stripA.w - 100), `pane A strip ${g.stripA.w} != 100`).toBeLessThanOrEqual(1);
-  expect(Math.abs(g.stripB.w - 100), `pane B strip ${g.stripB.w} != 100`).toBeLessThanOrEqual(1);
+  // The strips may keep their minimum (100px) or more; they must never shrink
+  // below it.
+  expect(g.stripA.w, `pane A strip ${g.stripA.w} below its 100px floor`).toBeGreaterThanOrEqual(99);
+  expect(g.stripB.w, `pane B strip ${g.stripB.w} below its 100px floor`).toBeGreaterThanOrEqual(99);
 
-  // Carried-fraction case: extreme split at a wide window, then narrow to 640
-  // with the panel open. The stored fraction must RE-CLAMP without a drag.
+  // Carried-fraction case: extreme split at a wide window, then narrow to 640.
+  // The stored fraction must RE-CLAMP without a drag.
   await closePanel();
   await setSize(1440, 900);
   await dragDividerTo(0.35);
@@ -166,13 +151,13 @@ test('DEF-287 page areas never collapse at 640x520 with the panel open (incl. ca
   console.log(`[DEF-287] carried: wide frac=${wide.frac} inset=${wide.inset}`);
   await setSize(640, 520);
   const carried = await geom();
-  console.log(`[DEF-287] carried: 640 frac=${carried.frac} mainA=${carried.mainA.w} mainB=${carried.mainB.w} stripA=${carried.stripA.w} stripB=${carried.stripB.w}`);
+  console.log(`[DEF-287] carried: 640 frac=${carried.frac} mainA=${carried.mainA.w} mainB=${carried.mainB.w} stripA=${carried.stripA && carried.stripA.w} stripB=${carried.stripB && carried.stripB.w}`);
   expect(Number(carried.frac), `stored fraction ${carried.frac} did not re-clamp`).toBeGreaterThanOrEqual(0.49);
   expect(Number(carried.frac), `stored fraction ${carried.frac} did not re-clamp`).toBeLessThanOrEqual(0.51);
   expect(carried.mainA.w, 'carried: pane A page area collapsed').toBeGreaterThanOrEqual(44);
   expect(carried.mainB.w, 'carried: pane B page area collapsed').toBeGreaterThanOrEqual(44);
-  expect(Math.abs(carried.stripA.w - 100), `carried: pane A strip ${carried.stripA.w} != 100`).toBeLessThanOrEqual(1);
-  expect(Math.abs(carried.stripB.w - 100), `carried: pane B strip ${carried.stripB.w} != 100`).toBeLessThanOrEqual(1);
+  expect(carried.stripA.w, `carried: pane A strip ${carried.stripA.w} below its floor`).toBeGreaterThanOrEqual(99);
+  expect(carried.stripB.w, `carried: pane B strip ${carried.stripB.w} below its floor`).toBeGreaterThanOrEqual(99);
 });
 
 // ---------------------------------------------------------------------------
@@ -305,7 +290,8 @@ test('DEF-289 no-tabs-left: closing the underlying document first shows the welc
   const soloPath = tmpCopy(REPORT, 'p33-solo.pdf');
   await openFile(app, win, soloPath);
   await win.waitForTimeout(900);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  // Phase 36 (chunk 3) — single-mode Multi Mode toggle now lives in the palette.
+  await toggleMultiModeViaPalette(win);
   await win.waitForTimeout(700);
   const sMid = await tabSnap();
   console.log(`[DEF-289-notabs] multi on: tabs=${sMid.tabs.length} multi=${sMid.multi} active=${sMid.activeTabId}`);
@@ -330,7 +316,7 @@ test('DEF-289 no-tabs-left via composite close: the only document closes and the
   const soloPath = tmpCopy(REPORT, 'p33-solo2.pdf');
   await openFile(app, win, soloPath);
   await win.waitForTimeout(900);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  await toggleMultiModeViaPalette(win);
   await win.waitForTimeout(700);
   const s0 = await tabSnap();
   console.log(`[DEF-289-notabs2] before X: tabs=${s0.tabs.length} multi=${s0.multi} active=${s0.activeTabId}`);

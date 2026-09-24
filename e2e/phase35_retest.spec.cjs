@@ -1,4 +1,4 @@
-// Phase 35 retest (qa) — DEF-291..DEF-297 after FIX-READY.
+﻿// Phase 35 retest (qa) â€” DEF-291..DEF-297 after FIX-READY.
 //
 // Each test asserts the FIXED behaviour (the original repro harness
 // e2e/phase35_operator_repro.spec.cjs pinned the buggy behaviour and is left
@@ -7,7 +7,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
 const {
   twoPaneSetup,
   focusPaneByPage,
@@ -87,15 +87,16 @@ async function synthDrag(srcSel, tgtSel, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// DEF-291 — Multi Mode strip is headerless and flush
+// DEF-291 â€” Multi Mode strip is headerless and flush
 // ---------------------------------------------------------------------------
 test('DEF-291 retest: no strip header in Multi Mode, strip flush', async () => {
-  // Single mode first: the rail header must still exist (untouched).
+// Single mode first: the ContextPanel header must exist (Phase 36 chunk 6
+  // replaced the retired .side-rail / .rail-header).
   await openFile(app, win, tmpCopy(REPORT, 'p35r-291a.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1200);
-  const singleRailHeader = await win.locator('.side-rail .rail-header').count();
-  console.log(`[P35R-291] single-mode .side-rail .rail-header count=${singleRailHeader}`);
+  const singleRailHeader = await win.locator('.context-panel-header').count();
+  console.log(`[P35R-291] single-mode .context-panel-header count=${singleRailHeader}`);
   expect(singleRailHeader).toBeGreaterThanOrEqual(1);
 
   // Multi Mode with both panes filled.
@@ -103,8 +104,9 @@ test('DEF-291 retest: no strip header in Multi Mode, strip flush', async () => {
   await win.waitForTimeout(1200);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p35r-291a' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) â€” the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p35r-291b' }).first().click();
   await win.waitForTimeout(1500);
@@ -146,7 +148,7 @@ test('DEF-291 retest: no strip header in Multi Mode, strip flush', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// DEF-292 — joint undo from EITHER pane conserves every page
+// DEF-292 â€” joint undo from EITHER pane conserves every page
 // ---------------------------------------------------------------------------
 test('DEF-292 retest: joint undo from either pane conserves 554/554/554/554', async () => {
   await twoPaneSetup(app, win);
@@ -211,7 +213,7 @@ test('DEF-292 retest: joint undo from either pane conserves 554/554/554/554', as
 });
 
 // ---------------------------------------------------------------------------
-// DEF-293 — composite tab separator is " | "
+// DEF-293 â€” composite tab separator is " | "
 // ---------------------------------------------------------------------------
 test('DEF-293 retest: composite tab separator is " | "', async () => {
   await twoPaneSetup(app, win);
@@ -235,7 +237,7 @@ test('DEF-293 retest: composite tab separator is " | "', async () => {
 });
 
 // ---------------------------------------------------------------------------
-// DEF-294 — thumbnail header top-right corner is square
+// DEF-294 â€” thumbnail header top-right corner is square
 // ---------------------------------------------------------------------------
 test('DEF-294 retest: thumbnail panel top corner radius 0', async () => {
   await openFile(app, win, tmpCopy(REPORT, 'p35r-294a.pdf'));
@@ -248,7 +250,7 @@ test('DEF-294 retest: thumbnail panel top corner radius 0', async () => {
       const cs = getComputedStyle(el);
       return { selector: sel, borderTopRightRadius: cs.borderTopRightRadius, borderTopLeftRadius: cs.borderTopLeftRadius, borderBottomRightRadius: cs.borderBottomRightRadius, overflow: cs.overflow };
     };
-    return { railHeader: read('.side-rail .rail-header'), sideRail: read('.side-rail') };
+return { railHeader: read('.context-panel-header'), sideRail: read('.context-panel') };
   });
   console.log(`[P35R-294] SINGLE=${JSON.stringify(single)}`);
   expect(single.sideRail).not.toBeNull();
@@ -259,8 +261,9 @@ test('DEF-294 retest: thumbnail panel top corner radius 0', async () => {
   await win.waitForTimeout(1200);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p35r-294a' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) â€” the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p35r-294b' }).first().click();
   await win.waitForTimeout(1500);
@@ -280,7 +283,7 @@ test('DEF-294 retest: thumbnail panel top corner radius 0', async () => {
   expect(stripA.borderTopLeftRadius).toBe('0px');
 });
 // ---------------------------------------------------------------------------
-// DEF-295 � OS file drop: defaults prevented + open through the shared path
+// DEF-295 ï¿½ OS file drop: defaults prevented + open through the shared path
 // ---------------------------------------------------------------------------
 test('DEF-295 retest: drop handler prevents defaults; openPathRequest opens', async () => {
   // (a) Unit-level drop behaviour in the real renderer: a Files drag is
@@ -360,11 +363,11 @@ test('DEF-295 retest: openPathRequest assigns to the focused pane in Multi Mode'
 });
 
 // ---------------------------------------------------------------------------
-// DEF-296 � zoom animates; suppressed under reduced motion / Animations off
+// DEF-296 ï¿½ zoom animates; suppressed under reduced motion / Animations off
 // ---------------------------------------------------------------------------
 async function installZoomProbe() {
   await win.evaluate(() => {
-    // DEF-307 — the FLIP unit is the PAPER-OWNING `.page-slot`
+    // DEF-307 â€” the FLIP unit is the PAPER-OWNING `.page-slot`
     // (ZOOM_FLIP_UNIT_SELECTOR, zoomFlip.ts), not the content-only `.pdf-page`
     // that the pre-1.27.2 harness watched (commit 0ffb79b relocated it).
     window.__zoomProbe = { seen: false, cls: null, from: null, dx: null, dy: null, anims: [], pageFlip: null };
@@ -389,18 +392,34 @@ async function readZoomProbe() {
   return win.evaluate(() => window.__zoomProbe);
 }
 
+// Phase 36 (chunk 3) â€” the command toolbar ROW is retired and its zoom control
+// is the floating zoom pill's "Zoom in" (same aria-label). In the PAGES stage
+// the Action Dock currently spans the canvas width and covers the pill
+// (DEF-313), so step to a stage whose dock is narrow first. The zoom behaviour
+// under test is unchanged.
+async function clickZoomIn() {
+  // Phase 36 (chunk 5) — the floating zoom pill is covered by the Inspector
+  // (DEF-319), so drive the SAME zoom path through the Command Palette's
+  // `zoomIn` view action (the focused view's own handler).
+  await win.keyboard.press('Control+k');
+  await win.waitForSelector('[data-command-palette]', { timeout: 8000 });
+  await win.fill('[data-command-palette-input]', 'zoom in');
+  await win.waitForTimeout(150);
+  await win.locator('[data-palette-tool-id="zoomIn"]').first().click();
+}
+
 test('DEF-296 retest: zoom plays the FLIP animation', async () => {
   await openFile(app, win, tmpCopy(REPORT, 'p35r-296.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1500);
   await installZoomProbe();
-  await win.locator('button[aria-label="Zoom in"]').first().click();
+  await clickZoomIn();
   await win.waitForTimeout(600);
   const probe = await readZoomProbe();
   console.log(`[P35R-296] zoom probe=${JSON.stringify(probe)}`);
   expect(probe.seen).toBe(true);
   expect(probe.cls).toContain('pdf-page-zoom-flip');
-  // DEF-307 — the class/vars live on the PAPER-OWNING `.page-slot` now; the
+  // DEF-307 â€” the class/vars live on the PAPER-OWNING `.page-slot` now; the
   // content wrapper must not carry them (1.27.2 relocation).
   expect(probe.pageFlip).toBe(false);
   expect(Number(probe.from)).toBeGreaterThan(0);
@@ -418,7 +437,7 @@ test('DEF-296 retest: reduced motion suppresses the zoom animation', async () =>
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(1500);
   await installZoomProbe();
-  await win.locator('button[aria-label="Zoom in"]').first().click();
+  await clickZoomIn();
   await win.waitForTimeout(600);
   const probe = await readZoomProbe();
   console.log(`[P35R-296] reduced-motion zoom probe=${JSON.stringify(probe)}`);
@@ -440,7 +459,7 @@ test('DEF-296 retest: Animations off suppresses the zoom animation', async () =>
   await win.locator('[aria-label="Close preferences"]').first().click();
   await win.waitForTimeout(500);
   await installZoomProbe();
-  await win.locator('button[aria-label="Zoom in"]').first().click();
+  await clickZoomIn();
   await win.waitForTimeout(600);
   const probe = await readZoomProbe();
   console.log(`[P35R-296] animations-off zoom probe=${JSON.stringify(probe)}`);
@@ -448,7 +467,7 @@ test('DEF-296 retest: Animations off suppresses the zoom animation', async () =>
 });
 
 // ---------------------------------------------------------------------------
-// DEF-297 � frosted top bar reads as glass; canvas stays opaque
+// DEF-297 ï¿½ frosted top bar reads as glass; canvas stays opaque
 // ---------------------------------------------------------------------------
 test('DEF-297 retest: frosted top bar glass restored, canvas opaque', async () => {
   await openFile(app, win, tmpCopy(REPORT, 'p35r-297.pdf'));
@@ -464,14 +483,16 @@ test('DEF-297 retest: frosted top bar glass restored, canvas opaque', async () =
       return { selector: sel, background: cs.backgroundColor, backgroundImage: cs.backgroundImage, backdropFilter: cs.backdropFilter || cs.webkitBackdropFilter };
     };
     return {
-      titlebar: read('.titlebar'), toolbar: read('.toolbar'),
+      titlebar: read('.titlebar'), dock: read('.action-dock'),
       workspaceMain: read('.workspace-main'), scroller: read('.document-scroller'),
     };
   });
 console.log(`[P35R-297] theme=${theme}`);
   console.log(`[P35R-297] styles=${JSON.stringify(styles)}`);
   expect(theme).toBe('frosted');
-  expect(styles.toolbar.backdropFilter).toMatch(/blur/);
+  // Phase 36 (chunk 3) â€” the retired command ROW's floating glass chrome is
+  // now the Action Dock; it keeps the same frosted glass contract.
+  expect(styles.dock.backdropFilter).toMatch(/blur/);
   // The workspace frame steps aside (transparent) so the bar has something to diffuse.
   expect(styles.workspaceMain.background).toBe('rgba(0, 0, 0, 0)');
   // The scroller confines the opaque canvas below the chrome band: transparent
@@ -480,10 +501,10 @@ console.log(`[P35R-297] theme=${theme}`);
   expect(styles.scroller.backgroundImage).toMatch(/rgba\(0, 0, 0, 0\)/);
   expect(styles.scroller.backgroundImage).toMatch(/rgb\(238, 241, 245\)/);
 
-  // What sits directly behind the toolbar's centre: the glass must have a
+  // What sits directly behind the dock's centre: the glass must have a
   // transparent surface to diffuse (not a flat opaque sheet).
   const behind = await win.evaluate(() => {
-    const t = document.querySelector('.toolbar');
+    const t = document.querySelector('.action-dock');
     if (t === null) return null;
     const r = t.getBoundingClientRect();
     const x = Math.round(r.left + r.width / 2);
@@ -496,7 +517,7 @@ console.log(`[P35R-297] theme=${theme}`);
     }));
     return { x, y, stack };
   });
-  console.log(`[P35R-297] behind toolbar centre=${JSON.stringify(behind)}`);
+  console.log(`[P35R-297] behind dock centre=${JSON.stringify(behind)}`);
   const behindToolbar = behind.stack.find((s) => s.cls.includes('workspace-main') || s.cls.includes('document-scroller'));
   expect(behindToolbar).toBeTruthy();
   expect(behindToolbar.bg).toBe('rgba(0, 0, 0, 0)');

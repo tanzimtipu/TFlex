@@ -1,16 +1,28 @@
 // @vitest-environment jsdom
 //
-// DEF-282 — in Multi Mode the ONE shared toolbar row overlapped the pane
-// headers: the panes kept `top: 0` while the absolutely-positioned bar sat on
-// top of them, so `[data-pane-header]`, `[data-pane-clear]` and the strip
-// header were clipped and unreachable.
+// DEF-282 (restated by Phase 36 chunk 7) — no workspace chrome may cover the
+// pane headers, and no offset may arrive after a paint.
 //
-// The fix: the stage's measured toolbar height (`--tf-multi-toolbar-h`, written
-// inline by DocumentStage) offsets the panes exactly as it already offset the
-// divider. These tests pin the runtime contract (the offset is DERIVED from the
-// measured row height, never a hardcoded pixel value) and the static CSS
-// contract (the panes and the divider both read that variable; the bar sits at
-// the top).
+// History: DEF-282 was the ONE shared toolbar ROW overlapping both pane headers
+// — the panes kept `top: 0` while the absolutely-positioned bar sat over them,
+// so `[data-pane-header]`, `[data-pane-clear]` and the strip header were
+// clipped and unreachable. The fix offset the panes by the row's MEASURED
+// height (`--tf-multi-toolbar-h`).
+//
+// Phase 36 (chunk 7) RETIRED that row: the shared dock replaces it, the
+// measured offset is gone with it, and the panes own the stage from its top
+// edge. The invariant is unchanged in substance — nothing may overlap the pane
+// headers and no offset may be applied after a paint — and it is pinned here in
+// its new form:
+//
+//   runtime — each pane's header is that pane's FIRST flow child; no shared row
+//             node exists; the stage writes NO top-offset variable at all (so
+//             there is nothing to apply late); the ONE shared dock lives in a
+//             sibling layer pinned to the stage's bottom, never inside a pane.
+//   static  — the pane rule and the divider start at `top: 0` (no offset is
+//             consumed); `--tf-multi-toolbar-h` and `.multi-toolbar-row` are
+//             gone; `.multi-dock-layer` is a zero-height box at the stage's
+//             bottom, so workspace chrome cannot reach the header band.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -48,7 +60,7 @@ class CapturingResizeObserver implements FakeResizeObserver {
   public disconnect(): void {}
 }
 
-function renderStage(multi: MultiModeState, shared: boolean): HTMLElement {
+function renderStage(multi: MultiModeState, sharedDock: boolean): HTMLElement {
   roCallbacks = [];
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver = CapturingResizeObserver;
   const host = document.createElement("div");
@@ -71,81 +83,86 @@ function renderStage(multi: MultiModeState, shared: boolean): HTMLElement {
         onOpenIntoPane: NOOP,
         renderDocument: (tabId: string): ReturnType<typeof createElement> =>
           createElement("div", { "data-doc": tabId }),
-        sharedToolbar: shared ? createElement("div", { className: "toolbar" }, "bar") : null,
+        sharedDock: sharedDock ? createElement("div", { "data-shared-dock-stub": true }) : null,
       }),
     );
   });
   return host;
 }
 
-/** Give the shared row a measured height and let the observer re-measure. */
-function measureRow(host: HTMLElement, px: number): void {
-  const row = host.querySelector<HTMLElement>("[data-shared-toolbar]");
-  if (row === null) throw new Error("shared toolbar row did not render");
-  Object.defineProperty(row, "offsetHeight", { configurable: true, get: () => px });
+/** Flush every captured ResizeObserver callback (a late measurement pass). */
+function flushObservers(): void {
   act((): void => {
-    for (const cb of roCallbacks) cb();
+    for (const cb of [...roCallbacks]) cb();
   });
 }
 
-const stageVar = (host: HTMLElement): string =>
-  host.querySelector<HTMLElement>(".tab-stage")?.style.getPropertyValue("--tf-multi-toolbar-h") ?? "";
+const stageEl = (host: HTMLElement): HTMLElement => {
+  const el = host.querySelector<HTMLElement>(".tab-stage");
+  if (el === null) throw new Error("stage missing");
+  return el;
+};
 
 const MULTI: MultiModeState = { enabled: true, paneA: "a", paneB: "b", focused: "A" };
 const SINGLE: MultiModeState = { enabled: false, paneA: null, paneB: null, focused: "A" };
 
-describe("DEF-282 — the stage offsets the panes by the measured toolbar height", () => {
-  it("derives the offset from the row's measured height (not a hardcoded value)", () => {
+describe("DEF-282 restated — the panes own the stage from its top edge", () => {
+  it("writes NO top-offset variable on the first paint (nothing is measured)", () => {
     const host = renderStage(MULTI, true);
-    // jsdom has no layout: unmeasured = 0, the pre-chunk-4 baseline.
-    expect(stageVar(host)).toBe("0px");
-    measureRow(host, 41);
-    expect(stageVar(host)).toBe("41px");
-    // A different measurement must move the offset too: proof it is read
-    // from the element rather than baked in.
-    measureRow(host, 61);
-    expect(stageVar(host)).toBe("61px");
+    expect(stageEl(host).style.getPropertyValue("--tf-multi-toolbar-h")).toBe("");
+    // A late measurement pass must not introduce one either.
+    flushObservers();
+    expect(stageEl(host).style.getPropertyValue("--tf-multi-toolbar-h")).toBe("");
   });
 
-  it("follows the row height when the bar wraps at a narrow window", () => {
+  it("renders no shared row node of any kind in Multi Mode", () => {
     const host = renderStage(MULTI, true);
-    measureRow(host, 53);
-    expect(stageVar(host)).toBe("53px");
-    // The same bar wrapped to two rows: the panes must move down with it.
-    measureRow(host, 105);
-    expect(stageVar(host)).toBe("105px");
-  });
-
-  it("applies the offset to BOTH panes' CSS variable source (one stage value)", () => {
-    const host = renderStage(MULTI, true);
-    measureRow(host, 53);
-    // Both panes are present and the stage carries the single value their
-    // CSS `top` reads, so neither can start above the bar.
-    expect(host.querySelectorAll('.tab-pane[data-pane="A"]').length).toBe(1);
-    expect(host.querySelectorAll('.tab-pane[data-pane="B"]').length).toBe(1);
-    expect(stageVar(host)).toBe("53px");
-    // The panes are siblings of the bar inside the same stage.
-    const stage = host.querySelector(".tab-stage");
-    expect(stage?.querySelector("[data-shared-toolbar]")).not.toBeNull();
-  });
-
-  it("keeps single mode at zero offset with no toolbar row", () => {
-    const host = renderStage(SINGLE, false);
     expect(host.querySelector("[data-shared-toolbar]")).toBeNull();
-    expect(stageVar(host)).toBe("0px");
+    expect(host.querySelector(".multi-toolbar-row")).toBeNull();
+    expect(host.querySelector("[data-multi-toolbar]")).toBeNull();
+    expect(host.querySelector(".toolbar")).toBeNull();
   });
 
-  it("has no toolbar row in single mode even when one is supplied", () => {
-    const host = renderStage(SINGLE, true);
-    expect(host.querySelector("[data-shared-toolbar]")).toBeNull();
-    expect(stageVar(host)).toBe("0px");
+  it("makes each pane's header its FIRST flow child (nothing is laid over it)", () => {
+    const host = renderStage(MULTI, true);
+    for (const pane of ["A", "B"] as const) {
+      const paneEl = host.querySelector<HTMLElement>(`.tab-pane[data-pane="${pane}"]`);
+      const header = paneEl?.querySelector("[data-pane-header]");
+      expect(header).not.toBeNull();
+      expect(paneEl?.firstElementChild).toBe(header);
+      // The clear affordance rides inside that header, so it cannot be covered.
+      expect(header?.querySelector("[data-pane-clear]")).not.toBeNull();
+    }
+  });
+
+  it("puts the ONE shared dock in a sibling layer pinned to the stage's bottom", () => {
+    const host = renderStage(MULTI, true);
+    const layers = host.querySelectorAll("[data-multi-dock-layer]");
+    expect(layers).toHaveLength(1);
+    const layer = layers[0] as HTMLElement;
+    // Exactly one dock node, and it is NOT inside either pane.
+    expect(layer.querySelectorAll("[data-shared-dock-stub]")).toHaveLength(1);
+    expect(host.querySelectorAll("[data-shared-dock-stub]")).toHaveLength(1);
+    expect(host.querySelector('.tab-pane[data-pane] [data-shared-dock-stub]')).toBeNull();
+    // The layer is a direct child of the stage, after the panes and the divider,
+    // so its bottom-anchored box can never sit over a pane header.
+    expect(layer.parentElement).toBe(stageEl(host));
+    const stage = stageEl(host);
+    expect(stage.lastElementChild).toBe(layer);
+    expect(host.querySelector("[data-multi-divider]")).not.toBeNull();
+  });
+
+  it("renders no dock layer in single mode, or when no dock is supplied", () => {
+    expect(renderStage(SINGLE, true).querySelector("[data-multi-dock-layer]")).toBeNull();
+    const noDock = renderStage(MULTI, false);
+    expect(noDock.querySelector("[data-multi-dock-layer]")).toBeNull();
+    expect(noDock.querySelector("[data-pane-header]")).not.toBeNull();
   });
 });
 
 // ---------------------------------------------------------------------------
-// Static CSS guard: the offset the runtime writes must actually be consumed by
-// the panes (the divider already consumed it). Removing the panes' `top` rule
-// fails this assertion — the exact DEF-282 regression.
+// Static CSS guard: the removed offset must not reappear, and the dock layer's
+// geometry must stay bottom-only.
 
 function stripCssComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -179,28 +196,45 @@ function findRuleBody(src: string, selector: string): string | null {
   }
 }
 
-describe("DEF-282 — CSS consumes the measured offset for panes and divider", () => {
+describe("DEF-282 restated — the stylesheet keeps the header band clear", () => {
   const src = readFileSync(STYLES_PATH, "utf8");
 
-  it("the Multi Mode panes start at the measured toolbar offset, not top: 0", () => {
+  it("the Multi Mode panes start at the stage top with no consumed offset", () => {
     const body = findRuleBody(src, '.tab-stage[data-multi-mode="true"] .tab-pane[data-pane]');
     expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/top:\s*var\(--tf-multi-toolbar-h,\s*0px\)/);
-    // `top: 0` here is precisely DEF-282: it let the bar cover the headers.
-    expect(body ?? "").not.toMatch(/top:\s*0\s*;/);
+    expect(body ?? "").toMatch(/top:\s*0\s*;/);
+    expect(body ?? "").not.toMatch(/--tf-multi-toolbar-h/);
     expect(body ?? "").toMatch(/bottom:\s*0\s*;/);
   });
 
-  it("the divider keeps the same measured offset (panes and divider stay consistent)", () => {
+  it("the divider starts at the stage top too (panes and divider stay consistent)", () => {
     const body = findRuleBody(src, ".multi-divider");
     expect(body).not.toBeNull();
-    expect(body ?? "").toMatch(/top:\s*var\(--tf-multi-toolbar-h,\s*0px\)/);
+    expect(body ?? "").toMatch(/top:\s*0\s*;/);
+    expect(body ?? "").not.toMatch(/--tf-multi-toolbar-h/);
   });
 
-  it("the shared toolbar row is anchored at the stage top", () => {
-    const body = findRuleBody(src, ".multi-toolbar-row");
+  it("the retired row and its variable are gone from the stylesheet", () => {
+    // Comments may name the retired token (the retirement is documented); only
+    // a real declaration / selector is a regression.
+    const rules = stripCssComments(src);
+    expect(rules).not.toMatch(/--tf-multi-toolbar-h/);
+    expect(rules).not.toMatch(/\.multi-toolbar-row/);
+  });
+
+  it("the dock layer is a zero-height box pinned to the stage's bottom", () => {
+    const body = findRuleBody(src, ".multi-dock-layer");
     expect(body).not.toBeNull();
     expect(body ?? "").toMatch(/position:\s*absolute\s*;/);
-    expect(body ?? "").toMatch(/top:\s*0\s*;/);
+    expect(body ?? "").toMatch(/bottom:\s*0\s*;/);
+    expect(body ?? "").toMatch(/height:\s*0\s*;/);
+    expect(body ?? "").toMatch(/pointer-events:\s*none\s*;/);
+    // No top anchor: the layer's box cannot extend upward past the bottom edge.
+    expect(body ?? "").not.toMatch(/top:\s*/);
+    // The dock itself is bottom-anchored, never top-anchored.
+    const dock = findRuleBody(src, ".action-dock");
+    expect(dock).not.toBeNull();
+    expect(dock ?? "").toMatch(/bottom:\s*12px\s*;/);
+    expect(dock ?? "").not.toMatch(/top:\s*\d/);
   });
 });

@@ -1,7 +1,7 @@
 // QA triage probe round 3 for the 1.9.0 full-suite run.
 const { test, expect } = require('@playwright/test');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, runTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -103,9 +103,8 @@ test('R2: insert blank after page 1 - pageOrder shape (B7 replica)', async () =>
   const e0 = await win.evaluate(() => window.tflexDiagnostics());
   console.log('[R2] before: pageCount=' + e0.pageCount + ' order=' + JSON.stringify((e0.engineState || {}).pageOrder));
 
-  await win.click('[data-tools-toggle]');
-  await win.waitForSelector('[data-tools-palette]');
-  await win.click('[data-tool-id="insertPages"]');
+  // Phase 36 migration: All-tools palette retired; runTool resolves Insert pages' home.
+  await runTool(win, 'insertPages');
   await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.click('[data-insert-mode="blank"]');

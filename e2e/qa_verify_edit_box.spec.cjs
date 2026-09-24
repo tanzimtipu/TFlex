@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
-const { launchDev, openSample, scrollToPage, shot, hardClose } = require('./lib/helpers.cjs');
+const { launchDev, openSample, scrollToPage, shot, hardClose, toggleEditMode } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -21,8 +21,8 @@ test.describe('Verification: Add Box Edit Mode', () => {
     await openSample(win, app, 'report.pdf');
     await scrollToPage(win, 1);
 
-    // 2. Enter Edit mode
-    await win.click('[data-toolbar-edit-toggle]');
+    // 2. Enter Edit mode (Phase 36 — the EDIT dock's `editMode` verb)
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
 
     // 3. Click "Add box" tool

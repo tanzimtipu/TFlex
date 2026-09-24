@@ -100,25 +100,6 @@ describe("preferencesReducer.set-recents-cap", () => {
   });
 });
 
-describe("preferencesReducer.set-tools-palette-layout", () => {
-  it("stores the new layout", () => {
-    const s = makeSettings();
-    const next = preferencesReducer(s, {
-      type: "set-tools-palette-layout",
-      value: "grid",
-    });
-    expect(next.toolsPaletteLayout).toBe("grid");
-  });
-  it("is a no-op when the layout is unchanged", () => {
-    const s = makeSettings({ toolsPaletteLayout: "list" });
-    const next = preferencesReducer(s, {
-      type: "set-tools-palette-layout",
-      value: "list",
-    });
-    expect(next).toBe(s);
-  });
-});
-
 describe("preferencesReducer.set-optimize-preset", () => {
   it("stores the new preset", () => {
     const s = makeSettings();

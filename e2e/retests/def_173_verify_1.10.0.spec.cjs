@@ -183,7 +183,7 @@ test('DEF-173/174: committed + preview highlight translucent; save bakes /CA 0.3
     await electronApp.evaluate(async ({ dialog }, p) => {
       dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
     }, savePath);
-    await win.click('[aria-label="Save As"]');
+    await win.click('[data-toolbar-save-as]');
     await win.click('[data-save-as-confirm="true"]');
     await win.waitForFunction(() => !window.tflexDiagnostics().modified, null, { timeout: 30000 });
     expect(fs.existsSync(savePath), 'saved PDF must exist on disk').toBe(true);

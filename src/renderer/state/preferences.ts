@@ -31,7 +31,6 @@ export type ThemeDefault = 'light' | 'dark' | 'system' | 'frosted';
 export type PreferencesAction =
   | { type: 'set-theme-default'; value: ThemeDefault }
   | { type: 'set-recents-cap'; value: number }
-  | { type: 'set-tools-palette-layout'; value: 'list' | 'grid' }
   | { type: 'set-optimize-preset'; value: OptimizePreset }
   | { type: 'set-export-image-format'; value: ExportImageFormat }
   | { type: 'set-export-image-dpi'; value: number }
@@ -151,11 +150,10 @@ export function preferencesReducer(
       if (current === clamped) return state;
       return { ...state, recentsCap: clamped };
     }
-    case 'set-tools-palette-layout': {
-      const current = state.toolsPaletteLayout ?? 'list';
-      if (current === action.value) return state;
-      return { ...state, toolsPaletteLayout: action.value };
-    }
+    // Phase 36 (chunk 5) — `set-tools-palette-layout` RETIRED: the All-tools
+    // palette (and its list/grid modes) is gone, so `toolsPaletteLayout` is a
+    // tolerated legacy key with NO renderer writer (the main-process validator
+    // keeps accepting an existing settings.json value).
     case 'set-optimize-preset': {
       const current: OptimizePreset = state.optimizePreset ?? DEFAULT_OPTIMIZE_PRESET;
       if (current === action.value) return state;

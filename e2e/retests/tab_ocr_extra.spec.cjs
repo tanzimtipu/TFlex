@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armSignTool, clickDockVerb } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -23,7 +23,8 @@ test.beforeEach(async () => { await launch(); });
 test.afterEach(async () => { await close(); });
 
 async function createAndArmSignature() {
-  await window.click('button[aria-label="Sign tool"]');
+  // Phase 36 (chunk 3) — Sign is the REVIEW dock's `sign` verb.
+  await armSignTool(window);
   await window.waitForSelector('.sig-manager', { timeout: 10000 });
   await window.click('.sig-tab:has-text("Type")').catch(() => {});
   const typeInput = window.locator('input[aria-label="Type your signature"]');
@@ -40,7 +41,7 @@ test('BUG-10c: "+" new empty tab inherits armed Sign tool / annotation tool', as
 
   // Case 1: armed Sign tool then new "+" tab
   await createAndArmSignature();
-  const signBefore = await window.locator('button[aria-label="Sign tool"]').getAttribute('aria-pressed');
+  const signBefore = await window.locator('.signatures-layer').first().getAttribute('data-armed');
   const armedBefore = await window.locator('.signatures-layer').first().getAttribute('data-armed');
   console.log('BUG10c sign before new tab:', signBefore, 'armed:', armedBefore);
 
@@ -56,8 +57,8 @@ test('BUG-10c: "+" new empty tab inherits armed Sign tool / annotation tool', as
   console.log('BUG10c tab count after new tab:', tabs);
   const activeTabText = await window.evaluate(() => document.querySelector('.tab-active')?.textContent || null);
   console.log('BUG10c active tab text:', activeTabText);
-  // NOTE: on an empty tab the document toolbar (Sign button) is not rendered
-  const signBtnOnEmptyTab = await window.locator('button[aria-label="Sign tool"]').count();
+  // NOTE: on an empty tab the document dock (Sign verb) is not rendered
+  const signBtnOnEmptyTab = await window.locator('[data-dock-verb="sign"]').count();
   console.log('BUG10c Sign button present on empty tab?', signBtnOnEmptyTab);
   await snap('bug10c-new-empty-tab');
 
@@ -67,9 +68,9 @@ test('BUG-10c: "+" new empty tab inherits armed Sign tool / annotation tool', as
   await window.click('.sample-card:has-text("form.pdf")');
   await window.waitForTimeout(2500);
   const activeTab = await window.evaluate(() => document.querySelector('.tab-active')?.textContent || null);
-  const signCount = await window.locator('button[aria-label="Sign tool"]').count();
+  const signCount = await window.locator('[data-dock-verb="sign"]').count();
   const signActives = await window.evaluate(() => {
-    return Array.from(document.querySelectorAll('button[aria-label="Sign tool"]')).map(b => b.getAttribute('aria-pressed') + '|' + b.className);
+    return Array.from(document.querySelectorAll('[data-dock-verb="sign"]')).map(b => b.getAttribute('aria-pressed') + '|' + b.className);
   });
   const armedActive = await window.locator('.signatures-layer').last().getAttribute('data-armed');
   console.log('BUG10c activeTab after open:', activeTab, 'signBtnCount=', signCount, 'signActives=', JSON.stringify(signActives), 'armedActive(last)=', armedActive);
@@ -79,9 +80,8 @@ test('BUG-10c: "+" new empty tab inherits armed Sign tool / annotation tool', as
 test('BUG-14b: OCR on text PDF yields "no low-confidence words" toast / blank page', async () => {
   test.setTimeout(120000);
   await openSample('report.pdf');
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.click('[data-tool-id="recognizeText"]');
+  // Phase 36 migration: All-tools palette retired; OCR is an EDIT dock verb.
+  await clickDockVerb(window, 2, 'recognizeText');
   await window.waitForSelector('.ocr-dialog', { timeout: 10000 });
   const curScope = window.locator('[data-ocr-scope="currentPage"]');
   if (await curScope.count()) { await curScope.check({ force: true }); }

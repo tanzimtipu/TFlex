@@ -48,27 +48,16 @@ test.describe.serial('phase 14.1 command bar control sweep', () => {
     win = null;
   });
 
-  test('CAPSULES: command-bar capsules + the title-bar file group', async () => {
+  test('CAPSULES: the title-bar file group', async () => {
     test.setTimeout(180000);
     await win.locator('button:has-text("Open PDF")').first().click();
     await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
     await win.waitForTimeout(1800);
 
-    const groups = await win.evaluate(() =>
-      Array.from(document.querySelectorAll('.toolbar .glass-control-group')).map((g) => ({
-        label: g.getAttribute('aria-label'),
-        role: g.getAttribute('role'),
-        buttons: g.querySelectorAll('button').length,
-      })));
-    console.log('[sweep] capsules:', JSON.stringify(groups));
-    expect(groups.map((g) => g.label)).toEqual([
-      'Navigation', 'Zoom', 'Tools', 'Document actions', 'Annotate',
-    ]);
-    for (const g of groups) {
-      expect(g.role, `${g.label} must be role=group`).toBe('group');
-    }
-    // Phase 22 - the File group (Open / Save / Save As) now lives in the
-    // title bar, still as ONE role=group capsule.
+    // Phase 36 (chunk 3) — the command row's grouped capsules are retired;
+    // the title-bar File group is the surviving capsule contract.
+    // Phase 22 - the File group (Open / Save / Save As) lives in the
+    // title bar as ONE role=group capsule.
     const fileGroup = await win.evaluate(() => {
       const g = document.querySelector('.titlebar-file');
       return g ? {
@@ -168,12 +157,11 @@ test.describe.serial('phase 14.1 command bar control sweep', () => {
     // sweep expects does not exist — report it, do not crash opaque).
     const moreFacts = await win.evaluate(() => ({
       tabs: document.querySelectorAll('.tab[data-tab-id]').length,
-      toolbarPresent: !!document.querySelector('.toolbar'),
+      toolbarPresent: !!document.querySelector('.action-dock'),
       moreBtn: !!document.querySelector('button[data-tools-toggle]'),
-      groupLabels: Array.from(document.querySelectorAll('.toolbar .glass-control-group')).map((g) => g.getAttribute('aria-label')),
     }));
     console.log('[sweep:more] mount facts:', JSON.stringify(moreFacts));
-    expect(moreFacts.toolbarPresent, 'the command bar must be mounted in the workspace').toBe(true);
+    expect(moreFacts.toolbarPresent, 'the Action Dock must be mounted in the workspace').toBe(true);
     expect(moreFacts.moreBtn, 'the More capsule must be mounted').toBe(true);
 
     const more = 'button[data-tools-toggle]';

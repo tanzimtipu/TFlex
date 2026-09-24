@@ -20,7 +20,7 @@ import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import type { ReactElement } from "react";
-import { AnnotationToolbar } from "../../../src/renderer/annotations/AnnotationToolbar";
+import { AnnotationToolbar, placeAnchoredMenu } from "../../../src/renderer/annotations/AnnotationToolbar";
 import { CommandBar } from "../../../src/renderer/components/CommandBar";
 import {
   initialAnnotationToolState,
@@ -354,6 +354,88 @@ describe("Phase 19 — the group is the CommandBar's last capsule", () => {
       // The old row chrome must be gone.
       expect(last?.classList.contains("glass-chrome-command")).toBe(false);
       expect(last?.getAttribute("aria-label")).toBe("Annotate");
+    } finally {
+      m.unmount();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEF-317 — the flyout's dropdown must flip above its bottom-anchored arrow
+// ---------------------------------------------------------------------------
+//
+// jsdom reports zero-size rects, so the placement geometry is pinned through
+// the pure `placeAnchoredMenu` helper (the same approach the ContextPanel and
+// ActionDock clamp tests use for `clampMenuPosition` / `clampDockMenu`).
+describe("DEF-317 — all-tools dropdown placement flips above its arrow", () => {
+  const MENU_W = 200;
+  const MENU_H = 509;
+
+  it("opens flush BELOW the trigger when the menu fits below", () => {
+    // Trigger near the top of a 900px-tall viewport: 768px of room below.
+    const anchor = { top: 100, bottom: 132, right: 895 };
+    const { left, top } = placeAnchoredMenu(anchor, MENU_W, MENU_H, 1440, 900);
+    // Flush joined edge (gap 0, DEF-248): menu top == trigger bottom.
+    expect(top).toBe(anchor.bottom);
+    const menuBottom = top + MENU_H;
+    // Does not overlap the trigger.
+    expect(menuBottom <= anchor.top || top >= anchor.bottom).toBe(true);
+    // Right-aligned to the trigger's right edge.
+    expect(left + MENU_W).toBe(anchor.right);
+  });
+
+  it("flips ABOVE the trigger when it is bottom-anchored (no room below)", () => {
+    // The Phase 36 flyout parks the arrow at the window bottom: the
+    // measured trigger is 785..817 in a 900px viewport, so only 83px of
+    // room below and the 509px menu must flip.
+    const anchor = { top: 785, bottom: 817, right: 895 };
+    const { left, top } = placeAnchoredMenu(anchor, MENU_W, MENU_H, 1440, 900);
+    const menuBottom = top + MENU_H;
+    // Flush joined edge, this time on the menu's BOTTOM against the
+    // trigger's TOP (gap 0) — not clamped to the viewport floor.
+    expect(menuBottom).toBe(anchor.top);
+    // The menu sits entirely above the trigger and never covers the arrow,
+    // so re-clicking the arrow is not intercepted.
+    expect(menuBottom <= anchor.top || top >= anchor.bottom).toBe(true);
+    expect(top).toBeLessThan(anchor.top);
+    // Right edge still joins the arrow, and the whole menu stays on-screen.
+    expect(left + MENU_W).toBe(anchor.right);
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(left + MENU_W).toBeLessThanOrEqual(1440);
+    expect(top).toBeGreaterThanOrEqual(0);
+    expect(menuBottom).toBeLessThanOrEqual(900);
+  });
+
+  it("stays fully on-screen (clamped) when the viewport shrinks", () => {
+    const anchor = { top: 585, bottom: 617, right: 615 };
+    const { left, top } = placeAnchoredMenu(anchor, MENU_W, MENU_H, 820, 700);
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(left + MENU_W).toBeLessThanOrEqual(820);
+    expect(top).toBeGreaterThanOrEqual(0);
+    expect(top + MENU_H).toBeLessThanOrEqual(700);
+  });
+
+  it("re-clicking the arrow closes the open menu (the close path is not swallowed)", () => {
+    const m = mountGroup({ recent: [] });
+    try {
+      const toggle = m.host.querySelector<HTMLElement>("[data-ann-dropdown-toggle]");
+      if (toggle === null) throw new Error("dropdown toggle missing");
+      const menu = openMenu(m.host);
+      expect(document.body.contains(menu)).toBe(true);
+      expect(toggle.getAttribute("aria-expanded")).toBe("true");
+      // The arrow is clear of the menu (per the flip above), so its own
+      // click is free to reach the toggle and flip the state closed.
+      act((): void => {
+        toggle.click();
+      });
+      expect(toggle.getAttribute("aria-expanded")).toBe("false");
+      // jsdom cannot complete the motion exit, so the surface lingers in its
+      // exit state — but it has already flipped there (and dropped
+      // pointer-events), proving the close path ran and cannot swallow the
+      // arrow's next click.
+      const exiting = document.body.querySelector<HTMLElement>("[data-ann-dropdown-menu]");
+      expect(exiting?.getAttribute("data-tf-morph")).toBe("out");
+      expect(exiting?.style.pointerEvents).toBe("none");
     } finally {
       m.unmount();
     }

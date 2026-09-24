@@ -9,7 +9,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openAnnotationFlyout } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -40,6 +40,9 @@ async function openReport(electronApp, win) {
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
   await win.waitForSelector('.tab-pane[aria-hidden="false"] .pdf-page canvas', { timeout: 30000 });
   await wait(2000);
+  // Phase 36 (chunk 3) — the annotation group lives in the REVIEW Annotate
+  // flyout; open it so the annotation toolbar is on screen.
+  await openAnnotationFlyout(win);
 }
 
 test('P13-VIS: borderless title bar + toolbar + light/dark design-reference screenshots', async () => {
@@ -124,16 +127,15 @@ test('P13-VIS: borderless title bar + toolbar + light/dark design-reference scre
         primary: b.matches('.btn-primary'),
       }));
       return {
-        main: scan('.toolbar'),
         ann: scan('.ann-toolbar'),
         labelSpans: document.querySelectorAll('.tool-btn-label, .btn-label').length,
       };
     })(),
   }));
-  console.log(`[light] ${JSON.stringify({ ...lightProbe, main: `${lightProbe.iconOnly.main.length} btns`, ann: `${lightProbe.iconOnly.ann.length} btns` })}`);
+  console.log(`[light] ${JSON.stringify({ ...lightProbe, ann: `${lightProbe.iconOnly.ann.length} btns` })}`);
   expect(lightProbe.dataTheme).toBe('light');
   expect(lightProbe.accent).toBe('#2563eb');
-  for (const b of [...lightProbe.iconOnly.main, ...lightProbe.iconOnly.ann]) {
+  for (const b of [...lightProbe.iconOnly.ann]) {
     expect(b.label, 'every toolbar button must have an aria-label').toBeTruthy();
     expect(b.title, 'every toolbar button must have a title tooltip').toBeTruthy();
     // The command bar's primary Open action is a labelled button by design
@@ -151,14 +153,13 @@ test('P13-VIS: borderless title bar + toolbar + light/dark design-reference scre
 
   await win.screenshot({ path: path.join(SHOTS, 'phase13-verification-02-workspace-light.png') });
   await win.locator('.titlebar').first().screenshot({ path: path.join(SHOTS, 'phase13-verification-03-titlebar-light.png') });
-  await win.locator('.toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-verification-04-toolbar-light.png') });
+  await win.locator('.action-dock').first().screenshot({ path: path.join(SHOTS, 'phase13-verification-04-toolbar-light.png') });
   await win.locator('.ann-toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-verification-05-annotation-toolbar-light.png') });
 
   // ---------- 3. Tools palette (compare against reference Tools panel) ----------
-  await win.click('[data-tools-toggle]');
-  await wait(500);
+  await wait(500); // Phase 36: the ContextPanel is the tools panel now
   const palette = await win.evaluate(() => {
-    const el = document.querySelector('.tools-palette, [data-tools-palette]');
+    const el = document.querySelector('[data-context-panel]');
     if (!el) return null;
     const r = el.getBoundingClientRect();
     return { visible: el.offsetParent !== null, cls: el.className, w: Math.round(r.width), h: Math.round(r.height) };

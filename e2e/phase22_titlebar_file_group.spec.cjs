@@ -16,7 +16,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, gotoStage } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -130,9 +130,11 @@ test.describe('Phase 22 — title-bar file group', () => {
     test.setTimeout(180000);
     await launchAndOpenTemp();
     const counts = await win.evaluate(() => ({
-      barOpen: document.querySelectorAll('.toolbar [data-toolbar-open]').length,
-      barSave: document.querySelectorAll('.toolbar [data-toolbar-save]').length,
-      barSaveAs: document.querySelectorAll('.toolbar [data-toolbar-save-as]').length,
+      // Phase 36 (chunk 3) — the command row is retired; the Action Dock is the
+      // workspace chrome and must carry no file actions either.
+      barOpen: document.querySelectorAll('.action-dock [data-toolbar-open]').length,
+      barSave: document.querySelectorAll('.action-dock [data-toolbar-save]').length,
+      barSaveAs: document.querySelectorAll('.action-dock [data-toolbar-save-as]').length,
       totalOpen: document.querySelectorAll('[data-toolbar-open]').length,
       totalSave: document.querySelectorAll('[data-toolbar-save]').length,
       totalSaveAs: document.querySelectorAll('[data-toolbar-save-as]').length,
@@ -175,7 +177,8 @@ test.describe('Phase 22 — title-bar file group', () => {
     expect(clean.saveClass, 'clean: success tint').toContain('titlebar-file-btn-clean');
 
     // modify (rotate clockwise) -> enabled + dot
-    await win.click('.tab-pane[aria-hidden="false"] [data-toolbar-rotate-cw]');
+    await gotoStage(win, 1);
+    await win.click('.tab-pane[aria-hidden="false"] [data-dock-verb="rotate"]');
     await win.waitForTimeout(1200);
     const dirty = await state();
     console.log('[p22|state modified]', JSON.stringify(dirty));
@@ -211,7 +214,8 @@ test.describe('Phase 22 — title-bar file group', () => {
     expect(active, 'Ctrl+O opened the picked document').toContain('form.pdf');
 
     // Ctrl+Shift+S -> Save-As modal, confirm writes a copy, clean after
-    await win.click('.tab-pane[aria-hidden="false"] [data-toolbar-rotate-cw]');
+    await gotoStage(win, 1);
+    await win.click('.tab-pane[aria-hidden="false"] [data-dock-verb="rotate"]');
     await win.waitForTimeout(1200);
     const copyPath = path.join(os.tmpdir(), `tflex-p22-saveas-${Date.now()}.pdf`);
     await electronApp.evaluate(async ({ dialog }, p) => {
@@ -237,7 +241,8 @@ test.describe('Phase 22 — title-bar file group', () => {
     await win.locator('.sample-card:has-text("report.pdf")').first().click();
     await win.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 30000 });
     await win.waitForTimeout(1600);
-    await win.click('.tab-pane[aria-hidden="false"] [data-toolbar-rotate-cw]');
+    await gotoStage(win, 1);
+    await win.click('.tab-pane[aria-hidden="false"] [data-dock-verb="rotate"]');
     await win.waitForTimeout(1200);
     const st = await win.evaluate(() => {
       const s = document.querySelector('[data-toolbar-save]');

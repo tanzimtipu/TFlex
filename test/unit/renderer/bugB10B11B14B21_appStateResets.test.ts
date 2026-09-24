@@ -10,9 +10,17 @@
 // next page click spawned a signature instead of the annotation
 // the user reached for.
 //
-// B11 — the Tools palette's Delete entry must open the SAME
-// DeletePageDialog the toolbar uses (the previous wiring was a
-// toast no-op: "Select a thumbnail in the left rail…").
+// B11 — the Delete action must open the SAME DeletePageDialog the
+// toolbar uses (the previous wiring was a toast no-op: "Select a
+// thumbnail in the left rail…").
+//
+// Phase 36 (chunk 5) retired the Tools palette, and Phase 36 (chunk 7) replaced
+// the shared Multi Mode toolbar row with the shared Action Dock, so this case is
+// RE-POINTED at the Delete action's current canonical home: the PAGES Action
+// Dock's `delete` verb (registry action `deletePages`), which App wires to the
+// same `onDeletePageClick` dialog. The thumbnail verbs and the thumbnail
+// right-click "Delete…" row reuse that same handler. The test's intent — Delete
+// opens the real dialog, never a toast no-op — is unchanged.
 //
 // B14 — the OCR suspects panel must (a) render as a right-side
 // rail (not at x:0 where it hid behind the annotation toolbar)
@@ -64,18 +72,16 @@ describe("B10 — new-tab and tab-switch reset App-level tool state", () => {
   });
 });
 
-describe("B11 — palette Delete opens the DeletePageDialog", () => {
-  it("the Tools palette onDelete routes through onDeletePageClick (not a toast no-op)", async () => {
+describe("B11 — the Delete action opens the DeletePageDialog", () => {
+  it("the PAGES dock's deletePages verb routes through onDeletePageClick (not a toast no-op)", async () => {
     const text = await readFile(APP_PATH, "utf8");
-    const match = text.match(/onDelete=\{\(\):\s*void\s*=>\s*\{[\s\S]*?\}\}/);
+    // The dock's app-level map: the registry action `deletePages` calls the SAME
+    // dialog opener the toolbar used. The engine-level `deletePages: (pages) =>`
+    // handler is a different shape and does not match this anchor.
+    const match = text.match(/deletePages:\s*\(\):\s*void\s*=>\s*onDeletePageClick\(\),/);
     expect(match).not.toBeNull();
-    if (match === null) return;
-    const body = match[0];
-    // The palette entry funnels into the same dialog the toolbar
-    // uses.
-    expect(body).toContain("onDeletePageClick()");
-    // The old toast no-op is gone.
-    expect(body).not.toContain("Select a thumbnail in the left rail");
+    // The old palette toast no-op is gone.
+    expect(text).not.toContain("Select a thumbnail in the left rail");
   });
 });
 
@@ -96,7 +102,10 @@ describe("B14 — OCR suspects panel placement and empty-tab guard", () => {
 
   it("the .ocr-suspects-panel CSS is a FLOW TOP BAR that reserves its own space (DEF-126)", async () => {
     const styles = await readFile(STYLES_PATH, "utf8");
-    const rule = styles.match(/\.ocr-suspects-panel\s*\{[^}]*\}/);
+    // Phase 36 (chunk 5) added `.inspector .ocr-suspects-panel` (the Inspector's
+    // inline re-parent override). Anchor to a line that STARTS with the
+    // selector so this scans the bar's own rule, not the override.
+    const rule = styles.match(/^\.ocr-suspects-panel\s*\{[^}]*\}/m);
     expect(rule).not.toBeNull();
     if (rule === null) return;
     // DEF-126 — the panel is a flow element at the top of

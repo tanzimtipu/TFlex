@@ -1,11 +1,11 @@
-// Phase 34 — criterion 1: the All Tools panel resizes BOTH panes equally.
+// Phase 34 — criterion 1 (migrated at the Phase 36 chunk 5/6 gate): the right
+// panel resizes BOTH Multi Mode panes equally.
 //
-// In Multi Mode the reserved --tf-tools-inset is consumed ONCE at the stage
-// level, so opening the panel shrinks pane A and pane B by the SAME amount and
-// neither pane carries an internal blank strip (the operator's "blank space on
-// its right"). Single mode's panel behaviour (the scroller's margin-right
-// inset) is unchanged. Frame sampling across the open and the close reports
-// blank frames in either pane.
+// The panel is the Phase-36 INSPECTOR now (the All-tools palette is retired),
+// open by default whenever a real document is open. In Multi Mode the reserved
+// --tf-tools-inset is consumed ONCE at the stage level, so both panes shrink by
+// the SAME amount and neither pane carries an internal blank strip (the
+// operator's "blank space on its right"). The single-mode inset is 264px.
 //
 // Launches only through the canonical launchApp helper.
 const { test, expect } = require('@playwright/test');
@@ -76,15 +76,17 @@ async function inset() {
   });
 }
 
-async function openPanel() {
-  await win.locator('[data-tools-badge]').first().click();
-  await win.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-  await win.waitForTimeout(700);
-}
-async function closePanel() {
-  await win.locator('.tools-palette-close').first().click();
-  await win.waitForSelector('[data-tools-palette]', { state: 'detached', timeout: 10000 });
-  await win.waitForTimeout(700);
+// Phase 36 (chunk 5/6) — the right panel is the INSPECTOR now, open by default
+// whenever a real document is open (there is no toggle; the retired All-tools
+// palette's badge/palette are gone). Its single width is INSPECTOR_W_PX = 264,
+// reserved through the same --tf-tools-inset machinery. These tests measure the
+// surviving invariants: both Multi Mode panes shrink equally, neither carries
+// an internal blank strip, the page-area floor holds, and single mode stays out
+// of Multi Mode.
+async function assertInspectorOpen() {
+  const insetVal = await inset();
+  expect(insetVal, 'the Inspector reserves its 264px inset').toBe('264px');
+  expect(await win.locator('[data-inspector]').count(), 'the Inspector is the right panel').toBe(1);
 }
 
 // 16ms in-page frame sampler (mirrors the DEF-274 probe): per pane, the page-1
@@ -139,99 +141,59 @@ function analyse(samples, key) {
 const PROBE_A = { key: 'A', sel: '.tab-pane[data-pane="A"]' };
 const PROBE_B = { key: 'B', sel: '.tab-pane[data-pane="B"]' };
 
-test('C1 Multi Mode: the panel shrinks both panes equally and leaves no internal blank strip', async () => {
+test('C1 Multi Mode: the Inspector inset shrinks both panes equally and leaves no internal blank strip', async () => {
   await twoPaneSetup(app, win);
   const stage = win.locator('.tab-stage');
   expect(await stage.getAttribute('data-multi-mode')).toBe('true');
-  const frac = await win.evaluate(() => {
-    const st = document.querySelector('.tab-stage');
-    return st ? getComputedStyle(st).getPropertyValue('--tf-split-frac').trim() : null;
-  });
-  console.log(`[P34-inset] split fraction at measure = ${frac} (default 50/50)`);
+  await assertInspectorOpen();
 
-  const beforeA = await paneGeometry('A');
-  const beforeB = await paneGeometry('B');
-  console.log(`[P34-inset] panel CLOSED inset=${await inset()} A=${JSON.stringify(beforeA)} B=${JSON.stringify(beforeB)}`);
+  const a = await paneGeometry('A');
+  const b = await paneGeometry('B');
+  console.log(`[P34-inset] multi inset=${await inset()} A=${JSON.stringify(a)} B=${JSON.stringify(b)}`);
 
-  // --- open, sampling frames in both panes ---
-  const p = sampleTimeline(2000, [PROBE_A, PROBE_B]);
-  await win.waitForTimeout(60);
-  await openPanel();
-  const openSamples = await p;
-  const openA = analyse(openSamples, 'A');
-  const openB = analyse(openSamples, 'B');
+  // Both panes shrink by the SAME amount: equal page-area widths under the
+  // shared 264px inset.
+  expect(Math.abs(a.main.width - b.main.width), `pane widths differ: A=${a.main.width} B=${b.main.width}`).toBeLessThanOrEqual(2);
+  // The page-area floor: neither pane collapses.
+  expect(a.main.width).toBeGreaterThan(200);
+  expect(b.main.width).toBeGreaterThan(200);
+  // Neither pane gains an internal blank reserved strip.
+  expect(Math.abs(a.blankBand), `pane A carries a blank strip (${a.blankBand}px)`).toBeLessThanOrEqual(4);
+  expect(Math.abs(b.blankBand), `pane B carries a blank strip (${b.blankBand}px)`).toBeLessThanOrEqual(4);
 
-  const afterA = await paneGeometry('A');
-  const afterB = await paneGeometry('B');
-  const insetOpen = await inset();
-  const deltaA = beforeA.main.width - afterA.main.width;
-  const deltaB = beforeB.main.width - afterB.main.width;
-  console.log(`[P34-inset] panel OPEN inset=${insetOpen} A.main ${beforeA.main.width}->${afterA.main.width} (delta ${deltaA}); B.main ${beforeB.main.width}->${afterB.main.width} (delta ${deltaB})`);
-  console.log(`[P34-inset] open frame sampling: A=${JSON.stringify(openA)} B=${JSON.stringify(openB)}`);
+  // No blank frame / placeholder through a Multi Mode OFF -> ON cycle (the
+  // geometry change the shared inset drives).
+  const p = sampleTimeline(2400, [PROBE_A, PROBE_B]);
+  await win.locator('[data-header-multi-mode]').click();
+  await win.waitForTimeout(800);
+  await win.locator('[data-header-multi-mode]').click();
+  const samples = await p;
+  const cycA = analyse(samples, 'A');
+  const cycB = analyse(samples, 'B');
+  console.log(`[P34-inset] cycle sampling A=${JSON.stringify(cycA)} B=${JSON.stringify(cycB)}`);
+  expect(cycA.blank, `blank frames in pane A across the cycle: ${cycA.blank}`).toBe(0);
+  expect(cycB.blank, `blank frames in pane B across the cycle: ${cycB.blank}`).toBe(0);
+  expect(cycA.placeholders).toBe(0);
+  expect(cycB.placeholders).toBe(0);
 
-  // Both panes shrink by the SAME amount (within a pixel) at the 50/50 split.
-  expect(deltaA).toBeGreaterThan(50);
-  expect(deltaB).toBeGreaterThan(50);
-  expect(Math.abs(deltaA - deltaB), `pane shrink deltas differ: A=${deltaA} B=${deltaB}`).toBeLessThanOrEqual(1);
-
-  // Neither pane gains an internal blank reserved strip when the panel opens.
-  expect(afterA.blankBand - beforeA.blankBand, `pane A blank band grew ${beforeA.blankBand}->${afterA.blankBand}`).toBeLessThanOrEqual(2);
-  expect(afterB.blankBand - beforeB.blankBand, `pane B blank band grew ${beforeB.blankBand}->${afterB.blankBand}`).toBeLessThanOrEqual(2);
-  expect(Math.abs(afterA.blankBand), `pane A carries a blank strip (${afterA.blankBand}px)`).toBeLessThanOrEqual(4);
-  expect(Math.abs(afterB.blankBand), `pane B carries a blank strip (${afterB.blankBand}px)`).toBeLessThanOrEqual(4);
-
-  // No blank frame in either pane across the open.
-  expect(openA.blank, `blank frames in pane A on open: ${openA.blank}`).toBe(0);
-  expect(openB.blank, `blank frames in pane B on open: ${openB.blank}`).toBe(0);
-  expect(openA.placeholders).toBe(0);
-  expect(openB.placeholders).toBe(0);
-
-  // Visual record: the panel open with both panes resized equally.
   await win.screenshot({ path: path.join(SHOTS, 'phase34-panel-open.png') });
   console.log('[P34-inset] captured screenshots/phase34-panel-open.png');
-
-  // --- close, sampling frames again ---
-  const p2 = sampleTimeline(2000, [PROBE_A, PROBE_B]);
-  await win.waitForTimeout(60);
-  await closePanel();
-  const closeSamples = await p2;
-  const closeA = analyse(closeSamples, 'A');
-  const closeB = analyse(closeSamples, 'B');
-  const backA = await paneGeometry('A');
-  const backB = await paneGeometry('B');
-  console.log(`[P34-inset] panel CLOSED again A.main=${backA.main.width} B.main=${backB.main.width}; close sampling A=${JSON.stringify(closeA)} B=${JSON.stringify(closeB)}`);
-  expect(Math.abs(backA.main.width - beforeA.main.width), 'pane A did not return to its closed width').toBeLessThanOrEqual(1);
-  expect(Math.abs(backB.main.width - beforeB.main.width), 'pane B did not return to its closed width').toBeLessThanOrEqual(1);
-  expect(closeA.blank).toBe(0);
-  expect(closeB.blank).toBe(0);
-  expect(closeA.placeholders).toBe(0);
-  expect(closeB.placeholders).toBe(0);
 });
 
-test('C2 Single mode: the panel behaviour is unchanged', async () => {
+test('C2 Single mode: the Inspector inset is 264px and the stage stays out of Multi Mode', async () => {
   await openFile(app, win, tmpCopy(LONG, 'p34-single.pdf'));
   await win.waitForTimeout(900);
   expect(await win.locator('.tab-stage').getAttribute('data-multi-mode')).toBe('false');
   expect(await win.locator('[data-pane]').count()).toBe(0);
+  await assertInspectorOpen();
 
-  const before = await singleGeometry();
-  console.log(`[P34-inset] single CLOSED inset=${await inset()} ${JSON.stringify(before)}`);
-  await openPanel();
-  const after = await singleGeometry();
-  const insetOpen = await inset();
-  const shrink = before.scroller.width - after.scroller.width;
-  console.log(`[P34-inset] single OPEN inset=${insetOpen} ${JSON.stringify(after)} scrollerShrink=${shrink}`);
-
-  // The single document's page area still shrinks by the reserved inset (the
-  // pre-Phase-34 margin-right behaviour is untouched) and the stage stays out
-  // of Multi Mode.
-  expect(shrink).toBeGreaterThan(50);
-  expect(shrink).toBeGreaterThan(300);
+  const g = await singleGeometry();
+  console.log(`[P34-inset] single inset=${await inset()} ${JSON.stringify(g)}`);
+  // The scroller is inset by the Inspector width (its margin-right), so the
+  // page area is narrower than its host by ~264px and the floor still holds.
+  expect(g.main.width - g.scroller.width, 'the single pane is inset by the Inspector width').toBeGreaterThanOrEqual(255);
+  expect(g.main.width - g.scroller.width).toBeLessThanOrEqual(272);
+  expect(g.scroller.width, 'the page area keeps a usable floor').toBeGreaterThan(200);
   expect(await win.locator('[data-pane]').count()).toBe(0);
   expect(await win.locator('.tab-stage').getAttribute('data-multi-mode')).toBe('false');
-
-  await closePanel();
-  const back = await singleGeometry();
-  console.log(`[P34-inset] single CLOSED again ${JSON.stringify(back)}`);
-  expect(Math.abs(back.scroller.width - before.scroller.width)).toBeLessThanOrEqual(1);
 });

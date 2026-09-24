@@ -3,6 +3,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const { toggleMultiModeViaPalette } = require('./helpers.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const FIX = path.join(ROOT, 'test-fixtures');
@@ -45,8 +46,9 @@ async function twoPaneSetup(app, win) {
   await waitTabCount(win, 2);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p33-alpha' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
   const { expect } = require('@playwright/test');
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p33-beta' }).first().click();

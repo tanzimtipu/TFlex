@@ -7,7 +7,7 @@
 const { test } = require('@playwright/test');
 const fs = require('node:fs');
 const path = require('node:path');
-const { launchDev, openSample, hardClose, armAnnotationTool, scrollToPage } = require('./lib/helpers.cjs');
+const { launchDev, openSample, hardClose, armAnnotationTool, scrollToPage, openAnnotationFlyout, openDockVerb, runTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 const REPORT = path.join(SHOTS, 'audit-radius-report.json');
@@ -155,12 +155,14 @@ test('Audit A - rounded surface consistency', async () => {
     await surface(window, 'side-rail', '.side-rail');
     await surface(window, 'ann-toolbar', '[data-annotation-toolbar]');
 
-    await window.click('[data-tools-toggle]');
-    await window.waitForSelector('[data-tools-palette]', { state: 'visible', timeout: 8000 }).catch(() => {});
+    await window.waitForSelector('[data-context-panel]', { state: 'visible', timeout: 8000 }).catch(() => {});
     await window.waitForTimeout(500);
-    await surface(window, 'tools-palette', '[data-tools-palette]');
+    await surface(window, 'context-panel', '[data-context-panel]');
     await window.screenshot({ path: path.join(SHOTS, 'auditA-workspace-palette.png') });
 
+    // Phase 36 (chunk 3) — the annotation toolbar is re-parented into the
+    // REVIEW dock's Annotate flyout; open it before driving the ann menu.
+    await openAnnotationFlyout(window);
     await window.click('[data-ann-dropdown-toggle]');
     await window.waitForSelector('[data-ann-dropdown-menu]', { state: 'visible', timeout: 8000 });
     await window.waitForTimeout(500);
@@ -181,7 +183,8 @@ test('Audit A - rounded surface consistency', async () => {
     if (ps) await zoomShot(window, 'auditA-prefs-sheet.png', ps.rect);
     await window.keyboard.press('Escape'); await window.waitForTimeout(450);
 
-    await window.click('[data-toolbar-optimize]');
+    // Phase 36 (chunk 3) — Optimize is the DELIVER dock's `optimize` verb.
+    await openDockVerb(window, 4, 'optimize');
     await window.waitForSelector('.modal-dialog', { state: 'visible', timeout: 8000 }).catch(() => {});
     await window.waitForTimeout(500);
     const md = await surface(window, 'optimize-modal', '.modal-dialog');
@@ -211,11 +214,7 @@ test('Audit A - rounded surface consistency', async () => {
 
     // OCR suspects bar (heavy: best-effort, never aborts the audit).
     try {
-      if ((await window.locator('[data-tools-palette]').count()) === 0) {
-        await window.click('[data-tools-toggle]').catch(() => {});
-        await window.waitForTimeout(400);
-      }
-      await window.click('[data-tool-id="recognizeText"]', { timeout: 5000 });
+      await runTool(window, 'recognizeText');
       await window.waitForSelector('[data-ocr-confirm]', { timeout: 8000 });
       await window.click('[data-ocr-scope="currentPage"]');
       await window.waitForTimeout(150);
@@ -248,6 +247,8 @@ test('Audit B - dropdown seam', async () => {
       await setTheme(window, theme);
       await seam(window, 'theme', '[data-theme-toggle]', '.theme-toggle-popover');
       await seam(window, 'titlebar', '.titlebar-menu-button', '.titlebar-menu-popover');
+      // Phase 36 (chunk 3) — the ann menu lives in the REVIEW Annotate flyout.
+      await openAnnotationFlyout(window);
       await seam(window, 'annmenu', '[data-ann-dropdown-toggle]', '[data-ann-dropdown-menu]');
       await armAnnotationTool(window, 'highlight');
       await window.waitForTimeout(300);

@@ -17,7 +17,7 @@ const { test } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openAnnotationFlyout, toggleEditMode, armSignTool } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots', 'phase20');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -202,6 +202,8 @@ test('P20-A: family mount probes + screenshot bursts', async () => {
   await win.waitForTimeout(300);
 
   // 3. Annotation tools menu (TfPopover, portaled).
+  // Phase 36 (chunk 3) — the ann menu lives in the REVIEW Annotate flyout.
+  await openAnnotationFlyout(win);
   await startSample('.ann-tool-menu', 500);
   await win.click('[data-ann-dropdown-toggle]');
   await win.waitForSelector('[data-ann-dropdown-menu]', { timeout: 5000 });
@@ -227,12 +229,13 @@ test('P20-A: family mount probes + screenshot bursts', async () => {
   await win.waitForFunction(() => document.querySelector('.modal-dialog') === null, null, { timeout: 3000 }).catch(() => {});
 
   // 6. Edit toolbar (bar family, TfBar).
-  await win.click('[data-toolbar-edit-toggle]');
+  // Phase 36 (chunk 3) — Edit mode is the EDIT dock's `editMode` verb.
+  await toggleEditMode(win);
   await startSample('.edit-toolbar', 500);
   await win.waitForSelector('.edit-toolbar', { timeout: 5000 });
   await burst('bar-edit', '.edit-toolbar');
   log('edit-toolbar', summarize(await readRows()));
-  await win.click('[data-toolbar-edit-toggle]');
+  await toggleEditMode(win);
   await win.waitForTimeout(300);
 
   // 7. Search bar (conditional chrome row - static evidence says no wrapper).
@@ -269,8 +272,13 @@ test('P20-B1: menu trigger-vs-surface rects and gap', async () => {
     { name: 'ann-tools-menu', trigger: '[data-ann-dropdown-toggle]', surface: '.ann-tool-menu', esc: true },
   ];
 
+  // Phase 36 (chunk 3) — the ann menu lives in the REVIEW Annotate flyout.
+  await openAnnotationFlyout(win);
+
   for (const c of cases) {
     await win.waitForTimeout(250);
+    // Escape closes the flyout too, so re-open it for the ann entry.
+    if (c.name === 'ann-tools-menu') await openAnnotationFlyout(win);
     const trig = await rectOf(win, c.trigger);
     await startSample(c.surface, 500);
     await win.click(c.trigger);
@@ -303,7 +311,8 @@ test('P20-B2: Sign modal tab-switch frame rects', async () => {
   test.setTimeout(180000);
   await openReport(1500);
 
-  await win.click('button[data-icon="sign"]');
+  // Phase 36 (chunk 3) — Sign is the REVIEW dock's `sign` verb.
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 8000 });
   await win.waitForTimeout(600);
 

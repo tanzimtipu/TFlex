@@ -19,7 +19,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool, openSamplePath } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, openSamplePath, toggleEditMode } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -47,7 +47,7 @@ async function dragOnPage(win, fx, fy, dxPx = 190, dyPx = 70) {
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 260));
-  const y = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 130));
+  const y = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 240));
   await win.mouse.move(x, y);
   await win.mouse.down();
   await win.mouse.move(x + dxPx, y + dyPx, { steps: 6 });
@@ -66,7 +66,7 @@ async function fillPanelText(win, text) {
 
 async function closeEditMode(win) {
   if ((await win.locator('[data-edit-toolbar]').count()) > 0) {
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForTimeout(400);
   }
 }
@@ -259,7 +259,7 @@ module.exports = { CONTROLS };
 // ---------------------------------------------------------------------------
 async function placeEditBox(win, text) {
   if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
   }
 await win.click('[data-edit-tool="box"]');
@@ -279,7 +279,7 @@ async function placeAnn(win, kind, text, fx, fy) {
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
     const x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 40));
-    const y = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 130));
+    const y = Math.max(40, Math.min(pg.y + pg.height * fy, vp.h - 240));
     await win.mouse.click(x, y);
   } else {
     await dragOnPage(win, fx, fy);
@@ -292,7 +292,7 @@ async function placeAnn(win, kind, text, fx, fy) {
 
 async function placeRun(win, text) {
   if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
   }
   await win.click('[data-edit-tool="text"]');
@@ -373,7 +373,7 @@ async function selectRun(win) {
 
 async function sweepRun(win, shape, text) {
   if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
   }
   await win.click('[data-edit-tool="text"]');

@@ -3,7 +3,7 @@
 // adjudicate product bug vs stale test. Only qa writes this file.
 const { test, expect } = require('@playwright/test');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, toggleEditMode, openAnnotationFlyout, runTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -40,7 +40,9 @@ async function openSampleViaDialog(name) {
 test('T1: edit-text editor open (def_108 replica, instrumented)', async () => {
   test.setTimeout(120000);
   await openSampleViaDialog('report.pdf');
-  await win.click('[data-toolbar-edit-toggle]');
+  // Phase 36 (chunk 3) — the per-view command row is retired; Edit mode is the
+  // EDIT dock's `editMode` verb.
+  await toggleEditMode(win);
   await win.waitForSelector('[data-edit-toolbar]');
   await win.click('[data-edit-tool="text"]');
   await win.waitForTimeout(300);
@@ -165,8 +167,8 @@ test('T3: empty tab surface (B11 premise check)', async () => {
   await win.click('[data-new-tab]');
   await win.waitForTimeout(1200);
   const state = await win.evaluate(() => ({
-    toolbarCount: document.querySelectorAll('[data-tools-toggle]').length,
-    paletteCount: document.querySelectorAll('[data-tools-palette]').length,
+    inspectorCount: document.querySelectorAll('[data-inspector]').length,
+    contextPanelCount: document.querySelectorAll('[data-context-panel]').length,
     welcomeCount: document.querySelectorAll('.welcome').length,
     workspaceCount: document.querySelectorAll('.workspace').length,
     titlebarMenu: !!document.querySelector('.titlebar-menu-button'),
@@ -182,6 +184,8 @@ test('T3: empty tab surface (B11 premise check)', async () => {
 test('T4: activeTool diagnostic shape after tab close (DEF-097)', async () => {
   test.setTimeout(120000);
   await openSampleViaDialog('report.pdf');
+  // Phase 36 (chunk 3) — the annotation tool lives in the REVIEW Annotate flyout.
+  await openAnnotationFlyout(win);
   await win.click('button[data-tool="highlight"]');
   await win.waitForTimeout(400);
   const before = await win.evaluate(() => window.tflexDiagnostics());
@@ -249,9 +253,8 @@ test('T6: note editor action buttons (B4 premise check)', async () => {
 test('T7: merge dialog input names (B12 premise check)', async () => {
   test.setTimeout(120000);
   await openSampleViaDialog('report.pdf');
-  await win.click('[data-tools-toggle]');
-  await win.waitForSelector('[data-tools-palette]');
-  await win.click('button[data-tool-id="merge"]');
+  // Phase 36 migration: All-tools palette retired; runTool resolves Merge's home.
+  await runTool(win, 'merge');
   await win.waitForSelector('.merge-dialog', { timeout: 10000 });
   await win.waitForTimeout(500);
   const dialog = await win.evaluate(() => {

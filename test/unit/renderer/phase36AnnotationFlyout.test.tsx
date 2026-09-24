@@ -1,0 +1,144 @@
+// @vitest-environment jsdom
+//
+// Phase 36 (chunk 3b) — the annotations flyout.
+//
+// The REVIEW dock's Annotate primary opens ONE expandable surface that hosts
+// the EXISTING AnnotationToolbar (re-parented, selectors/aria kept). These
+// tests pin: closed renders nothing, open renders exactly ONE surface carrying
+// the real toolbar, arming a tool runs the existing annotation action, Esc
+// closes, and the close button closes.
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+import { describe, expect, it, vi } from "vitest";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+import { AnnotationFlyout } from "../../../src/renderer/components/AnnotationFlyout";
+import { AnnotationToolbar } from "../../../src/renderer/annotations/AnnotationToolbar";
+import { initialAnnotationToolState } from "../../../src/renderer/annotations/model";
+
+interface Harness {
+  host: HTMLElement;
+  setOpen: (open: boolean) => void;
+  unmount: () => void;
+}
+
+function renderFlyout(initialOpen: boolean, onClose = vi.fn()): Harness {
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  let open = initialOpen;
+  const onAction = vi.fn();
+  const draw = (): void => {
+    act((): void => {
+      root.render(
+        <AnnotationFlyout open={open} onClose={onClose}>
+          <AnnotationToolbar state={initialAnnotationToolState} onAction={onAction} theme="dark" />
+        </AnnotationFlyout>,
+      );
+    });
+  };
+  draw();
+  return {
+    host,
+    setOpen: (next): void => {
+      open = next;
+      draw();
+    },
+    unmount: (): void => {
+      act((): void => {
+        root.unmount();
+      });
+      host.remove();
+    },
+  };
+}
+
+function clickOn(target: Element): void {
+  act((): void => {
+    target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
+}
+
+describe("Phase 36 (chunk 3b) — the annotations flyout surface", () => {
+  it("renders nothing while closed", () => {
+    const { host, unmount } = renderFlyout(false);
+    try {
+      expect(host.querySelector("[data-annotation-flyout]")).toBeNull();
+      expect(host.querySelector("[data-annotation-toolbar]")).toBeNull();
+    } finally {
+      unmount();
+    }
+  });
+
+  it("opens exactly ONE surface hosting the existing AnnotationToolbar", () => {
+    const { host, unmount } = renderFlyout(true);
+    try {
+      expect(host.querySelectorAll("[data-annotation-flyout]")).toHaveLength(1);
+      // The re-parented toolbar keeps its own selector/aria contract.
+      expect(host.querySelectorAll("[data-annotation-toolbar]")).toHaveLength(1);
+      expect(host.querySelector("[data-ann-tools-visible]")).not.toBeNull();
+      expect(host.querySelector("[data-ann-dropdown-toggle]")).not.toBeNull();
+      expect(host.querySelector("[data-annotation-flyout]")?.getAttribute("role")).toBe("dialog");
+      expect(host.querySelector("[data-annotation-flyout]")?.getAttribute("aria-label")).toBe("Annotations");
+    } finally {
+      unmount();
+    }
+  });
+
+  it("arming a tool from the flyout runs the existing annotation action", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const onAction = vi.fn();
+    act((): void => {
+      root.render(
+        <AnnotationFlyout open onClose={vi.fn()}>
+          <AnnotationToolbar state={initialAnnotationToolState} onAction={onAction} theme="dark" />
+        </AnnotationFlyout>,
+      );
+    });
+    try {
+      const tool = host.querySelector<HTMLButtonElement>(".ann-tools-visible [data-tool]");
+      expect(tool).not.toBeNull();
+      const toolId = tool?.getAttribute("data-tool");
+      clickOn(tool as Element);
+      expect(onAction).toHaveBeenCalledWith({ type: "set-tool", tool: toolId });
+      // Arming a tool keeps the surface open (mirrors the persistent toolbar).
+      expect(host.querySelector("[data-annotation-flyout]")).not.toBeNull();
+    } finally {
+      act((): void => {
+        root.unmount();
+      });
+      host.remove();
+    }
+  });
+
+  it("closes on Escape and via the close button", () => {
+    const onClose = vi.fn();
+    const { host, unmount } = renderFlyout(true, onClose);
+    try {
+      act((): void => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      clickOn(host.querySelector("[data-annotation-flyout] .annotation-flyout-close") as Element);
+      expect(onClose).toHaveBeenCalledTimes(2);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("does not listen for Escape while closed", () => {
+    const onClose = vi.fn();
+    const { unmount } = renderFlyout(false, onClose);
+    try {
+      act((): void => {
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+      });
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      unmount();
+    }
+  });
+});

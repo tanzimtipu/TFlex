@@ -19,7 +19,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool, openSamplePath } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, openSamplePath, toggleEditMode } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -83,7 +83,7 @@ async function installProbe(win) {
         const t = Math.round(performance.now() - t0);
         const panel = document.querySelector('.text-props-panel');
         const main = document.querySelector('.workspace-main');
-        const rail = document.querySelector('.side-rail');
+        const rail = document.querySelector('[data-context-panel]');
         const pane = document.querySelector('.tab-pane[aria-hidden="false"]') || document;
         const canvas = pane.querySelector('.pdf-page[data-page="1"] canvas');
         const sc = document.querySelector('.document-scroller');
@@ -154,14 +154,21 @@ async function waitForBox(win, text, pred, timeout = 12000) {
 // Create a committed TFlex text box through the real UI and select it.
 async function createTextBox(win, text, fx = 0.22, fy = 0.18) {
   if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
   }
   await win.click('[data-edit-tool="box"]');
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
-  const x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 240));
-  const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * fy, vp.h - 110));
+  // Keep the drag clear of the floating Text-properties panel (Phase 25), which
+  // overlays the page's left edge and would swallow the drag start.
+  const panelRight = await win.evaluate(() => {
+    const p = document.querySelector('[data-text-panel]');
+    return p ? p.getBoundingClientRect().right : 0;
+  });
+  let x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 240));
+  x = Math.min(Math.max(x, panelRight + 40), vp.w - 240);
+  const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * fy, vp.h - 200));
   await win.mouse.move(x, y);
   await win.mouse.down();
   await win.mouse.move(x + 200, y + 70, { steps: 6 });
@@ -185,7 +192,7 @@ async function createTextBox(win, text, fx = 0.22, fy = 0.18) {
 /** Close Edit mode (annotation tools are gated while it is open). */
 async function closeEditMode(win) {
   if ((await win.locator('[data-edit-toolbar]').count()) > 0) {
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForTimeout(400);
   }
 }
@@ -418,7 +425,7 @@ test('C2 per-control live change + save/reopen round-trip', async () => {
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
     const x = Math.max(40, Math.min(pg.x + pg.width * 0.5, vp.w - 240));
-    const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * 0.42, vp.h - 110));
+    const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * 0.42, vp.h - 200));
     await win.mouse.move(x, y);
     await win.mouse.down();
     await win.mouse.move(x + 200, y + 70, { steps: 6 });
@@ -510,7 +517,7 @@ async function dragOnPage(win, fx, fy) {
   const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
   const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
   const x = Math.max(40, Math.min(pg.x + pg.width * fx, vp.w - 200));
-  const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * fy, vp.h - 100));
+  const y = Math.max(pg.y + 20, Math.min(pg.y + pg.height * fy, vp.h - 200));
   await win.mouse.move(x, y);
   await win.mouse.down();
   await win.mouse.move(x + 160, y + 70, { steps: 6 });
@@ -531,7 +538,7 @@ test('C3 no floating style toolbox; panel Text field + Confirm/Delete remain', a
     }, null, { timeout: 8000 });
 
     // -- text box path ------------------------------------------------------
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.click('[data-edit-tool="box"]');
     await dragOnPage(win, 0.25, 0.2);
@@ -607,7 +614,7 @@ test('C3 no floating style toolbox; panel Text field + Confirm/Delete remain', a
     const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
     const vp = await win.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
     const nx = Math.max(40, Math.min(pg.x + pg.width * 0.5, vp.w - 40));
-    const ny = Math.max(40, Math.min(pg.y + pg.height * 0.5, vp.h - 110));
+    const ny = Math.max(40, Math.min(pg.y + pg.height * 0.5, vp.h - 200));
     await win.mouse.click(nx, ny);
     await win.waitForSelector('[data-txt-text]', { timeout: 8000 });
     out.note = await win.evaluate((ret) => ({
@@ -624,7 +631,7 @@ test('C3 no floating style toolbox; panel Text field + Confirm/Delete remain', a
 
     // -- edit-text-run path -------------------------------------------------
     await armAnnotationTool(win, 'select');
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.click('[data-edit-tool="text"]');
     const span = win.locator('.pdf-page[data-page="1"] .textLayer span').filter({ hasText: /[A-Za-z]/ }).first();
@@ -786,7 +793,7 @@ test('C4 panel re-target matrix + annotation per-family scope', async () => {
     // Edit-mode close/reopen, so this step places a fresh box to re-target.)
     await armAnnotationTool(win, 'select');
     await win.waitForTimeout(300);
-    await win.click('button[aria-label="Edit content"]');
+    await toggleEditMode(win);
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     await win.click('[data-edit-tool="box"]');
     const pgB = await win.locator('.pdf-page[data-page="1"]').boundingBox();

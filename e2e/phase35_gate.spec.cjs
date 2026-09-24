@@ -9,7 +9,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
 const { openFile, tmpCopy, REPORT } = require('./lib/p33_common.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
@@ -299,7 +299,7 @@ test('P35-G4 standalone print window: own window, print-only UI, movable, lifecy
   const chrome = await printPage.evaluate(() => ({
     printWindow: !!document.querySelector('[data-print-window]'),
     tabs: document.querySelectorAll('.tab[data-tab-id]').length,
-    toolbar: document.querySelectorAll('.toolbar').length,
+    toolbar: document.querySelectorAll('.action-dock').length,
     titlebar: document.querySelectorAll('.titlebar').length,
     app: document.querySelectorAll('.app').length,
     printer: !!document.querySelector('[data-print-printer]'),
@@ -412,8 +412,9 @@ test('P35-shots single mode and Multi Mode strip', async () => {
   await win.waitForTimeout(1200);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p35shot-alpha' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p35shot-beta' }).first().click();
   await win.waitForTimeout(1800);

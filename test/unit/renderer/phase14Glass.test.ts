@@ -241,18 +241,15 @@ describe("Phase 14 — docked glass shell (the panels behave like light/dark)", 
     );
     expect(driver, "the tools-inset driver rule missing").not.toBeNull();
     expect(driver?.[1] ?? "").toMatch(
-      /--tf-tools-inset:\s*var\(--tools-panel-w,\s*344px\);/,
+      /--tf-tools-inset:\s*var\(--tools-panel-w,\s*264px\);/,
     );
     // The gap token is gone: the page content must sit flush against
     // the panel (a 12px breathing gap used to leave a visible empty
     // band between the scrollbar and the panel).
     expect(stripped).not.toMatch(/--tools-panel-gap/);
-    // The grid layout mode widens the panel token to 380px.
-    const gridDriver = stripped.match(
-      /\.app-main\[data-tools-open="true"\]\[data-tools-mode="grid"\]\s*\{([^}]*)\}/,
-    );
-    expect(gridDriver, "the grid-mode panel width rule missing").not.toBeNull();
-    expect(gridDriver?.[1] ?? "").toMatch(/--tools-panel-w:\s*380px/);
+    // Phase 36 (chunk 5) — the Inspector has ONE width; the palette's
+    // grid-mode 380px rule retired with the palette.
+    expect(stripped).not.toMatch(/\[data-tools-mode="grid"\]/);
     // The scroller consumes the inset as a margin (transition-free —
     // the PDF-safety audit keeps motion off the document surfaces).
     const scroller = findRuleBody(css, ".document-scroller");

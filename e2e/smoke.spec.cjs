@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const os = require('node:os');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armSignTool, openDockVerb } = require('./lib/helpers.cjs');
 
 test('smoke', async () => {
   const electronApp = await launchApp();
@@ -82,12 +82,13 @@ async function runSmoke(electronApp, window) {
   // Redesign: the Optimize dialog's preset <select> became a radiogroup
   // (input[data-optimize-preset]). The onChange persists the preset even
   // when the dialog is dismissed, so check + Escape keeps the old intent.
-  await window.click('[aria-label="Reduce file size"]');
+  // Phase 36 (chunk 3) — Optimize is the DELIVER dock's `optimize` verb.
+  await openDockVerb(window, 4, 'optimize');
   await window.waitForSelector('.dialog');
   await window.check('input[data-optimize-preset="max"]');
   await window.keyboard.press('Escape');
   
-  await window.click('[aria-label="Save As"]');
+  await window.click('[data-toolbar-save-as]');
   await window.waitForSelector('.dialog');
   await window.keyboard.press('Escape');
   const finalPreset = await window.evaluate(() => window.tflexDiagnostics().optimizePreset);
@@ -120,7 +121,7 @@ async function runSmoke(electronApp, window) {
   await electronApp.evaluate(async ({ dialog }, p) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath: p });
   }, savePath);
-  await window.click('[aria-label="Save As"]');
+  await window.click('[data-toolbar-save-as]');
   // Redesign: Save As first opens the in-app "Save a copy" dialog; its
   // confirm button ([data-save-as-confirm]) fires the OS save dialog
   // (mocked above), which is where the write actually happens.
@@ -135,7 +136,7 @@ async function runSmoke(electronApp, window) {
   // is gone — Save lands on the Saved tab and clicking the saved row arms
   // placement. B2: the page click spawns a PENDING placement bar; Confirm
   // commits to the engine.
-  await window.click('[aria-label="Sign tool"]');
+  await armSignTool(window);
   await window.click('button:has-text("Type")');
   await window.fill('input[aria-label="Type your signature"]', 'Tester');
   await window.click('.sig-tab-actions button:has-text("Save")');

@@ -24,7 +24,7 @@
 //     bars commit/cancel through `[data-annotation-action*]`,
 //   - Phase 26 — the in-canvas note editor is retired: text entry is the
 //     panel's `[data-txt-text]` field; the committed note surface is `.ann-note`,
-//   - Edit mode is `[data-toolbar-edit-toggle]`; while it is open every
+//   - Edit mode is the EDIT dock's `editMode` verb; while it is open every
 //     `.ann-toolbar` button is disabled (mutual exclusion),
 //   - flatten lives in the document toolbar (aria-label="Flatten form
 //     fields") and confirms through the `.modal-dialog` footer primary,
@@ -41,7 +41,7 @@ const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, armAnnotationTool } = require('./lib/helpers.cjs');
+const { hardClose, armAnnotationTool, armSignTool, openDockVerb, toggleEditMode, openAnnotationFlyout, runTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let window = null;
@@ -78,11 +78,12 @@ async function firstPageBox() {
 }
 
 // B1-port (bug_sweep B1 / comprehensive B1 / final_b_sweep B1): cancelling the
-// pending signature placement must also DISARM the Sign tool (aria-pressed
-// back to false), not leave a ghost-armed tool behind.
+// pending signature placement must also DISARM the Sign tool (the signatures
+// layer reports data-armed=false), not leave a ghost-armed tool behind.
 test('B1-port: Sign pending-bar Cancel disarms the Sign tool', async () => {
   await openSample('form.pdf');
-  await window.click('[aria-label="Sign tool"]');
+  // Phase 36 (chunk 3) — Sign is the REVIEW dock's `sign` verb.
+  await armSignTool(window);
   await window.waitForSelector('.sig-manager', { timeout: 10000 });
   await window.click('.sig-tab:has-text("Type")');
   await window.fill('input[aria-label="Type your signature"]', 'QA PORT B1');
@@ -93,7 +94,7 @@ test('B1-port: Sign pending-bar Cancel disarms the Sign tool', async () => {
   await window.waitForSelector('[data-sig-action-bar]', { timeout: 8000 });
   await window.click('[data-sig-action="cancel"]');
   await window.waitForSelector('[data-sig-action-bar]', { state: 'hidden' });
-  const pressed = await window.locator('[aria-label="Sign tool"]').getAttribute('aria-pressed');
+  const pressed = await window.locator('.signatures-layer').first().getAttribute('data-armed');
   expect(pressed, 'Cancel must disarm the Sign tool').toBe('false');
 });
 
@@ -146,19 +147,20 @@ test('B4-port: Sticky note content round-trips through the committed icon', asyn
 });
 
 // B5-port (comprehensive B5/B14 / final_b_sweep B5/B14): with Edit mode open,
-// annotation tools are disabled (mutual exclusion), not silently double-armed.
-test('B5-port: Edit mode disables annotation tools', async () => {
+// annotation tools are excluded (mutual exclusion), not silently double-armed.
+// Phase 36 (chunk 3) — the annotation group now lives in the REVIEW dock's
+// flyout, and Edit mode is the EDIT dock's verb, so mutual exclusion is
+// enforced by the stage: turning Edit on swaps REVIEW out and the flyout
+// unmounts. Asserted through the same intent against the new surface.
+test('B5-port: Edit mode excludes the annotation surface', async () => {
   await openSample('report.pdf');
-  await window.click('[data-toolbar-edit-toggle]');
+  // Open the REVIEW flyout first so the exclusion is not vacuous.
+  await openAnnotationFlyout(window);
+  expect(await window.locator('[data-ann-tools-visible]').count(), 'annotation tools visible in REVIEW').toBeGreaterThan(0);
+  await toggleEditMode(window);
   await window.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
-  // Phase 19 / DEF-226: rect and note are not in the visible five, so open the
-  // portaled menu and assert the rows are disabled (mutual exclusion).
-  await window.click('[data-ann-dropdown-toggle]');
-  await window.waitForSelector('[data-ann-dropdown-menu]', { state: 'visible', timeout: 8000 });
-  const rectBtn = window.locator('[data-ann-dropdown-menu] button[data-tool="rect"]');
-  await expect(rectBtn, 'shape tool must be disabled while Edit mode is open').toBeDisabled();
-  const noteBtn = window.locator('[data-ann-dropdown-menu] button[data-tool="note"]');
-  await expect(noteBtn, 'note tool must be disabled while Edit mode is open').toBeDisabled();
+  expect(await window.locator('[data-annotation-flyout]').count(), 'no annotation flyout while Edit mode is open').toBe(0);
+  expect(await window.locator('[data-ann-tools-visible]').count(), 'no annotation tools while Edit mode is open').toBe(0);
 });
 
 // B6-port (bug_sweep B6 / comprehensive B6): closing the last tab resets the
@@ -177,9 +179,7 @@ test('B6-port: Tab close clears the active tool', async () => {
 // stamp that lands on the page as a foreground surface.
 test('B10-port: Stamp dialog places a stamp on the page', async () => {
   await openSample('report.pdf');
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-  await window.click('[data-tool-id="stamp"]');
+  await runTool(window, 'stamp');
   await window.waitForSelector('[data-stamp-dialog]', { timeout: 10000 });
   await window.click('label:has-text("APPROVED"), [data-stamp-id="APPROVED"]');
   await window.click('[data-stamp-confirm]');
@@ -195,7 +195,8 @@ test('B10-port: Stamp dialog places a stamp on the page', async () => {
 test('B15-port: Flatten bakes form fields and refreshes the proxy', async () => {
   await openSample('form.pdf');
   await window.waitForFunction(() => window.tflexDiagnostics().hasFormFields, null, { timeout: 10000 });
-  await window.click('[aria-label="Flatten form fields"]');
+  // Phase 36 (chunk 3) — Flatten is the REVIEW dock's `flatten` verb.
+  await openDockVerb(window, 3, 'flatten');
   await window.waitForSelector('.modal-dialog', { timeout: 10000 });
   await window.click('.modal-dialog .modal-footer button.btn-primary');
   await window.waitForFunction(() => !window.tflexDiagnostics().hasFormFields, null, { timeout: 15000 });
@@ -218,9 +219,7 @@ test('B17-port: Replace pages refreshes the page count', async () => {
     dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [p] });
   }, donorPath);
 
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-  await window.click('[data-tool-id="replacePages"]');
+  await runTool(window, 'replacePages');
   await window.waitForSelector('[data-replace-pages-dialog]', { timeout: 10000 });
   await window.click('[data-replace-pick]');
   await window.waitForTimeout(600); // let the mocked pick resolve
@@ -231,21 +230,10 @@ test('B17-port: Replace pages refreshes the page count', async () => {
   expect(after, 'replacing page 1 with the donor PDF must change the count to base - 1 + donor').toBe(basePages - 1 + donorPages);
 });
 
-// B20-port (comprehensive B20): the tools palette close control closes the
-// palette (click must change state - no-op sweep rule).
-test('B20-port: Tools palette close button closes the palette', async () => {
-  await openSample('report.pdf');
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-  const closeBtn = window.locator('.tools-palette-close, [aria-label="Close tools palette"]').first();
-  if (await closeBtn.count()) {
-    await closeBtn.click();
-  } else {
-    // The palette may only offer the toggle as its close control.
-    await window.click('[data-tools-toggle]');
-  }
-  await window.waitForSelector('[data-tools-palette]', { state: 'hidden', timeout: 5000 });
-});
+// B20-port RETIRED (Phase 36): its subject is the retired Tools-palette close
+// control; the ContextPanel has no close control (always present with a
+// document), so the behaviour is gone, not moved. Covered by
+// phase36_chunk456_gate (panel presence) + phase34_panel_inset.
 
 // B21-port (DEF-165 rounds, retired 2026-09-05): the SAVED shape fill must be
 // translucent - the annotation AP /N stream must invoke an ExtGState with
@@ -396,7 +384,11 @@ test('B22-port: Textbox move + Confirm relocates text exactly once (view + saved
   const live = await window.evaluate(() => {
     const out = [];
     document.querySelectorAll('.ann-textbox[data-kind="textbox"]').forEach((el) => {
-      const t = el.textContent || '';
+      // The overlay renders one div per wrapped line, so textContent drops
+      // the spaces between lines ("PORTRESIDUE4242"); join the line texts to
+      // read the box's actual content.
+      const lines = Array.from(el.querySelectorAll('.ann-text-line')).map((l) => l.textContent || '');
+      const t = lines.length > 0 ? lines.join(' ') : (el.textContent || '');
       if (t.includes('PORT RESIDUE 4242')) {
         const r = el.getBoundingClientRect();
         out.push({ x: r.x, y: r.y, w: r.width, h: r.height });

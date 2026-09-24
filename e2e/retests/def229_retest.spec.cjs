@@ -7,7 +7,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, openAnnotationFlyout } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
@@ -61,6 +61,8 @@ test('DEF-229: group reachable + clickable at 640; menu inside viewport; titleba
     expect(layout.topAtCenter?.inGroup, 'elementFromPoint at the group centre must hit the group').toBe(true);
 
     // --- Clickable: real click on a visible tool arms it ---
+    // Phase 36 (chunk 3) — the annotation group is in the REVIEW Annotate flyout.
+    await openAnnotationFlyout(win);
     await win.click('[data-ann-tools-visible] [data-tool="highlight"]');
     await win.waitForTimeout(400);
     const armed = await win.evaluate(() => window.tflexDiagnostics().activeTool);

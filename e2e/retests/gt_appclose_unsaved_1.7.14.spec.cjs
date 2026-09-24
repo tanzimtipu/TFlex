@@ -7,7 +7,7 @@
 // Launch only via e2e/lib/launch.cjs against the DEV build (historically: the packaged installed exe).
 
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, gotoStage } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
@@ -38,7 +38,9 @@ test('Item 3: closing the app (window X) with an unsaved document does NOT promp
   await openSampleFromCard('report.pdf');
 
   // Make an edit so the document is modified (rotates page 1).
-  await win.click('[data-toolbar-rotate-cw]');
+  // Phase 36 (chunk 3) — Rotate is the PAGES dock's `rotate` verb.
+  await gotoStage(win, 1);
+  await win.click('[data-dock-verb="rotate"]');
   await win.waitForTimeout(1500);
   const modified = await win.evaluate(() => window.tflexDiagnostics().modified);
   const tabModified = await win.evaluate(() => window.tflexDiagnostics().tabModified);

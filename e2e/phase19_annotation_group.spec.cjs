@@ -16,7 +16,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, getSamplePath } = require('./lib/helpers.cjs');
+const { hardClose, getSamplePath, openAnnotationFlyout } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 
@@ -32,6 +32,9 @@ async function openReport(electronApp, win) {
   await win.waitForSelector('.workspace', { timeout: 30000 });
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(400);
+  // Phase 36 (chunk 3) — the annotation group is re-parented into the REVIEW
+  // dock's Annotate flyout; its selectors are preserved inside it.
+  await openAnnotationFlyout(win);
 }
 
 async function visibleIds(win) {
@@ -39,6 +42,9 @@ async function visibleIds(win) {
 }
 
 async function openMenu(win) {
+  // Phase 36 (chunk 3) — the group lives in the REVIEW Annotate flyout, and
+  // Escape closes the flyout too, so re-open it (idempotent) before each menu.
+  await openAnnotationFlyout(win);
   await win.click('[data-ann-dropdown-toggle]');
   await win.waitForSelector('[data-ann-dropdown-menu]', { state: 'visible', timeout: 8000 });
   await win.waitForTimeout(220); // pop animation settle
@@ -64,54 +70,15 @@ async function setTheme(win, want) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. Layout: group is the CommandBar's LAST capsule; no annotation row below
-//    the bar; the page starts directly under the single bar.
+// 1. Layout (DELETED, Phase 36 chunk 3): this test's subject was the retired
+//    per-view CommandBar row — "the annotation group is the LAST .toolbar-group
+//    capsule of `.toolbar`, the bar stays 52px, the page starts under it". The
+//    row is retired; the group now lives in the REVIEW dock's Annotate flyout,
+//    whose open/close-on-stage-change placement is covered by
+//    phase36_chunk3_dock_gate.spec.cjs (P36-C3-G/H). Nothing else asserted the
+//    retired row's own geometry, so this is a deliberate removal, not a
+//    weakened migration.
 // ---------------------------------------------------------------------------
-test('layout: annotation group is the CommandBar last capsule, no separate row, page starts under the bar', async () => {
-  test.setTimeout(180000);
-  const app = await launchApp();
-  const win = await app.firstWindow();
-  try {
-    await win.waitForSelector('.sample-card', { timeout: 30000 });
-    await openReport(app, win);
-    await setTheme(win, 'light');
-
-    const geo = await win.evaluate(() => {
-      const toolbar = document.querySelector('.workspace .toolbar');
-      const group = document.querySelector('[data-annotation-toolbar]');
-      const groups = Array.from(document.querySelectorAll('.toolbar > .toolbar-group'));
-      const last = groups[groups.length - 1];
-      const scroller = document.querySelector('.document-scroller');
-      const page = document.querySelector('.tab-pane[aria-hidden="false"] .pdf-page[data-page="1"]');
-      const t = toolbar.getBoundingClientRect();
-      const s = scroller.getBoundingClientRect();
-      const p = page ? page.getBoundingClientRect() : null;
-      return {
-        groupInsideToolbar: toolbar.contains(group),
-        lastIsAnnotate: last === group,
-        lastClass: last ? last.className : null,
-        toolbarBottom: Math.round(t.bottom),
-        toolbarTop: Math.round(t.top),
-        toolbarH: Math.round(t.height),
-        scrollerTop: Math.round(s.top),
-        pageTop: p ? Math.round(p.top) : null,
-        annHVar: getComputedStyle(document.documentElement).getPropertyValue('--ann-toolbar-h').trim(),
-      };
-    });
-    console.log(`[p19-layout] ${JSON.stringify(geo)}`);
-
-    expect(geo.groupInsideToolbar, 'the annotation group must render INSIDE .toolbar').toBe(true);
-    expect(geo.lastIsAnnotate, `the annotation group must be the LAST .toolbar-group (last=${geo.lastClass})`).toBe(true);
-    expect(geo.annHVar, '--ann-toolbar-h must be retired').toBe('');
-    // The freed 52px row: in-flow themes put the scroller flush under the bar.
-    expect(geo.scrollerTop - geo.toolbarBottom, `scroller must start at the bar bottom (gap ${geo.scrollerTop - geo.toolbarBottom}px)`).toBeLessThanOrEqual(2);
-    expect(geo.scrollerTop - geo.toolbarBottom, 'scroller must not overlap the bar').toBeGreaterThanOrEqual(-1);
-    expect(geo.pageTop, 'page slot must not be clipped/overlapped by the bar').toBeGreaterThanOrEqual(geo.toolbarBottom - 1);
-    expect(geo.toolbarH, 'the single bar stays 52px').toBeGreaterThanOrEqual(50);
-  } finally {
-    await hardClose(app, 'p19-layout');
-  }
-});
 
 // ---------------------------------------------------------------------------
 // 2. Exactly five visible tool buttons, MRU-first.
@@ -224,9 +191,10 @@ test('dropdown: aria-expanded; Escape / outside click / re-click close; Arrow ke
     await openMenu(win);
     expect(await win.locator('[data-ann-dropdown-toggle]').getAttribute('aria-expanded'), 'open -> aria-expanded true').toBe('true');
 
-    // Escape closes.
+    // Escape closes the menu (and the flyout that hosts it).
     await win.keyboard.press('Escape');
     await win.waitForSelector('[data-ann-dropdown-menu]', { state: 'detached', timeout: 5000 });
+    await openAnnotationFlyout(win);
     expect(await win.locator('[data-ann-dropdown-toggle]').getAttribute('aria-expanded'), 'Escape -> aria-expanded false').toBe('false');
 
     // Outside click closes.
@@ -238,6 +206,7 @@ test('dropdown: aria-expanded; Escape / outside click / re-click close; Arrow ke
     await openMenu(win);
     await win.click('[data-ann-dropdown-toggle]');
     await win.waitForSelector('[data-ann-dropdown-menu]', { state: 'detached', timeout: 5000 });
+    await openAnnotationFlyout(win);
     expect(await win.locator('[data-ann-dropdown-toggle]').getAttribute('aria-expanded'), 're-click -> aria-expanded false').toBe('false');
 
     // Keyboard: initial highlight is the active tool (Select, index 0).
@@ -313,6 +282,7 @@ test('pen width: row appears only when Ink is armed; clicking changes the width'
     await win.waitForTimeout(200);
 
     // Arm Ink, open the menu: pen row present.
+    await openAnnotationFlyout(win);
     await win.click('[data-ann-tools-visible] [data-tool="ink"]');
     await win.waitForTimeout(250);
     await openMenu(win);
@@ -333,9 +303,14 @@ test('pen width: row appears only when Ink is armed; clicking changes the width'
 });
 
 // ---------------------------------------------------------------------------
-// 8. Disabled states: Edit mode open (all but Select) and Pan active (all).
+// 8. Disabled states: Pan active disables every annotation tool.
+//    Phase 36 (chunk 3) — the Edit-mode half of this test is no longer
+//    reachable: the annotation group lives in the REVIEW dock's flyout, which
+//    only mounts in the REVIEW stage, and turning Edit mode on switches to the
+//    EDIT stage (closing the flyout). That assertion is dropped as superseded
+//    by the new IA; the Pan half is preserved verbatim.
 // ---------------------------------------------------------------------------
-test('disabled states: Edit mode disables all but Select; Pan disables all; tooltips preserved', async () => {
+test('disabled states: Pan disables all annotation tools; tooltips preserved', async () => {
   test.setTimeout(180000);
   const app = await launchApp();
   const win = await app.firstWindow();
@@ -349,23 +324,6 @@ test('disabled states: Edit mode disables all but Select; Pan disables all; tool
       ariaDisabled: e.getAttribute('aria-disabled'),
       title: e.getAttribute('title'),
     })));
-
-    // Edit mode open.
-    await win.click('[data-toolbar-edit-toggle]');
-    await win.waitForSelector('.edit-toolbar', { state: 'attached', timeout: 10000 });
-    await win.waitForTimeout(300);
-    const edit = await read();
-    console.log(`[p19-disabled-edit] ${JSON.stringify(edit)}`);
-    for (const b of edit) {
-      if (b.tool === 'select') {
-        expect(b.disabled, 'Select stays enabled in Edit mode').toBe(false);
-      } else {
-        expect(b.disabled, `${b.tool} must be disabled in Edit mode`).toBe(true);
-        expect(b.title, `${b.tool} carries the Edit-mode tooltip`).toContain('Edit mode is open');
-      }
-    }
-    await win.click('[data-toolbar-edit-toggle]');
-    await win.waitForTimeout(400);
 
     // Pan mode active.
     await win.click('[data-hand-toggle]');
@@ -475,9 +433,22 @@ test('anchoring: dropdown opens right-aligned under its arrow, not at the far-le
     // its first frame IS the trigger box and the anchored edge is flush, so
     // the old +6px seam is gone by design. Same intent: anchored under the
     // arrow, not detached.
-    expect(anchor.menuTop, 'menu top is flush with the toggle bottom (Phase 20 morph)').toBeGreaterThanOrEqual(anchor.toggleBottom - 1);
-    expect(anchor.menuTop, 'menu top is flush with the toggle bottom (Phase 20 morph)').toBeLessThanOrEqual(anchor.toggleBottom + 1);
-    expect(anchor.menuLeft, 'menu must not detach to the far-left edge').toBeGreaterThan(anchor.innerWidth / 2);
+    // Phase 36 (chunk 3): the annotation group now sits in the REVIEW flyout
+    // at the BOTTOM of the canvas, so the menu flips ABOVE the arrow instead
+    // of below it. The intent is unchanged: the menu is flush with the toggle
+    // edge, not detached.
+    const flushBelow = Math.abs(anchor.menuTop - anchor.toggleBottom) <= 1;
+    const flushAbove = Math.abs(anchor.menuBottom - anchor.toggleTop) <= 1;
+    expect(flushBelow || flushAbove, 'menu is flush with the toggle edge (above or below)').toBe(true);
+    // Phase 36 (chunk 3): the toggle moved from the top command row into the
+    // bottom REVIEW flyout, so the old "left of centre" proxy no longer holds
+    // (a 200px menu right-aligned to a toggle at x~895 starts at ~695, left of
+    // 1440/2). The real contract is that the menu is anchored to the arrow, not
+    // detached: its left edge sits at toggleRight - menuW.
+    expect(
+      Math.abs(anchor.menuLeft - (anchor.toggleRight - anchor.menuW)),
+      'menu left edge is anchored to the toggle (right-aligned, not detached)',
+    ).toBeLessThanOrEqual(6);
     expect(anchor.menuLeft, 'menu fully inside viewport (left)').toBeGreaterThanOrEqual(0);
     expect(anchor.menuRight, 'menu fully inside viewport (right)').toBeLessThanOrEqual(anchor.innerWidth);
     expect(anchor.menuTop, 'menu fully inside viewport (top)').toBeGreaterThanOrEqual(0);

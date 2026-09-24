@@ -19,7 +19,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('./lib/helpers.cjs');
 
 const FIX = path.resolve(__dirname, '..', 'test-fixtures');
 const REPORT_SRC = path.join(FIX, 'report.pdf'); // 34 pages
@@ -85,8 +85,9 @@ async function twoPaneSetup() {
   await waitTabCount(2);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
-  await win.waitForTimeout(500);
+  // Phase 36 (chunk 3) — the CommandBar row is retired in single mode; the
+  // Multi Mode toggle now lives in the All-tools palette.
+  await toggleMultiModeViaPalette(win);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p32-beta' }).first().click();
   await win.waitForTimeout(1200);
@@ -280,10 +281,10 @@ test('F1 no flicker: toggling Multi Mode on and off', async () => {
   expect(a.blank.length, `blank frames on toggle OFF: ${JSON.stringify(a.blank.slice(0, 3))}`).toBe(0);
   expect(a.placeholders.length).toBe(0);
 
-  // ON again
+  // ON again (Phase 36 chunk 3: the single-mode toggle is in the palette)
   p = sampleTimeline(1600, 16, [PROBE_VISIBLE]);
   await win.waitForTimeout(80);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  await toggleMultiModeViaPalette(win);
   s = await p;
   a = analyse(s, 'V');
   logAnalyse('F1 toggle ON', 'V', a);
@@ -535,7 +536,9 @@ test('B1 responsiveness: two 34-page docs - scroll, focus, drag (rAF + liveness)
   // --- mode-toggle and pane-focus settle timings ---
   const offMs = await clickSettleMs('[data-shared-toolbar] [data-toolbar-multi-mode]');
   await win.waitForTimeout(600);
-  const onMs = await clickSettleMs('[data-toolbar-multi-mode]');
+  // Phase 36 (chunk 6) — the single-mode Multi Mode toggle is the title-bar
+  // control; measure its settle time.
+  const onMs = await clickSettleMs('[data-header-multi-mode]');
   await win.waitForTimeout(900);
   // Pane B starts empty again after the re-enable: fill it so a header exists.
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').first().click();

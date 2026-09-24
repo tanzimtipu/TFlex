@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, clickDockVerb } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const os = require('node:os');
 const path = require('node:path');
@@ -28,9 +28,8 @@ test('B14 precise: does OCR suspects panel overlap the shapes/ann-toolbar?', asy
   test.setTimeout(180000);
   await openSample('scanned.pdf');
 
-  await window.click('[data-tools-toggle]');
-  await window.waitForSelector('[data-tools-palette]');
-  await window.click('[data-tool-id="recognizeText"]');
+  // Phase 36 migration: All-tools palette retired; OCR is an EDIT dock verb.
+  await clickDockVerb(window, 2, 'recognizeText');
   await window.waitForSelector('.ocr-dialog', { timeout: 10000 });
   const curScope = window.locator('[data-ocr-scope="currentPage"]');
   if (await curScope.count()) { await curScope.check({ force: true }); }

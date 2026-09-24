@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, armSignTool, openDockVerb, gotoStage, openAnnotationFlyout } = require('./lib/helpers.cjs');
 const fs = require('fs');
 const path = require('path');
 
@@ -48,7 +48,7 @@ test.describe('No-op Sweep and Feature Verification', () => {
     // B2: a page click with a signature armed spawns a PENDING placement
     // with a floating Confirm/Cancel/Delete bar; only Confirm commits to
     // the engine (accidental-click protection).
-    await window.click('[aria-label="Sign tool"]');
+    await armSignTool(window);
     await window.click('.sig-tab:has-text("Type")');
     await window.fill('input[aria-label="Type your signature"]', 'QA Sign');
     await window.click('.sig-tab-actions button:has-text("Save")');
@@ -65,7 +65,9 @@ test.describe('No-op Sweep and Feature Verification', () => {
 
     // 6. Rotate page click
     const initialRot = (await window.evaluate(() => window.tflexDiagnostics())).engineState.rotations[0];
-    await window.click('[aria-label="Rotate clockwise"]');
+    // Phase 36 (chunk 3) — Rotate is the PAGES dock's `rotate` verb.
+    await gotoStage(window, 1);
+    await window.click('[data-dock-verb="rotate"]');
     await window.waitForTimeout(500);
     const afterRot = (await window.evaluate(() => window.tflexDiagnostics())).engineState.rotations[0];
     expect(afterRot).not.toBe(initialRot);
@@ -75,7 +77,9 @@ test.describe('No-op Sweep and Feature Verification', () => {
     const initialPageCount = (await window.evaluate(() => window.tflexDiagnostics())).pageCount;
     // Redesign: Delete pages opens a dialog (current page / custom range);
     // the default mode deletes the current page on confirm.
-    await window.click('[aria-label="Delete pages"]');
+    // Phase 36 (chunk 3) — Delete is the PAGES dock's `delete` verb.
+    await gotoStage(window, 1);
+    await window.click('[data-dock-verb="delete"]');
     await window.waitForSelector('[data-delete-pages-dialog]');
     await window.click('[data-delete-confirm]');
     await window.waitForTimeout(500);
@@ -86,6 +90,8 @@ test.describe('No-op Sweep and Feature Verification', () => {
     // 8. Highlight color default
     // Redesign: annotation tools are disabled while Edit mode is open
     // (mutual exclusion), so Highlight is armed directly with Edit closed.
+    // Phase 36 (chunk 3) — the annotation group lives in the REVIEW flyout.
+    await openAnnotationFlyout(window);
     await window.click('button[aria-label="Highlight"]');
     // Check swatch color or default state
     // The requirement says "must be the accent blue (#2563eb)"
@@ -114,7 +120,8 @@ test.describe('No-op Sweep and Feature Verification', () => {
 
     // DEF-073: Shared optimizePreset collision
     await window.keyboard.press('Escape'); // close the tools palette
-    await window.click('[aria-label="Reduce file size"]');
+    // Phase 36 (chunk 3) — Optimize is the DELIVER dock's `optimize` verb.
+    await openDockVerb(window, 4, 'optimize');
     await window.waitForSelector('.dialog, .sheet');
     // Redesign: the preset <select> became a radiogroup
     // (input[data-optimize-preset]); onChange persists even on Escape.
@@ -126,10 +133,13 @@ test.describe('No-op Sweep and Feature Verification', () => {
     // (icon-only redesign) - the dialog and its linearize checkbox are
     // unchanged, so the sweep tracks the stable data-toolbar-save-as hook.
     await window.click('[data-toolbar-save-as]');
-    await window.waitForSelector('.dialog, .sheet');
-    const linearize = window.locator('input[type="checkbox"]').first();
+    await window.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
+    const linearize = window.locator('[data-save-as-linearize]');
     await linearize.setChecked(true);
-    await window.keyboard.press('Escape');
+    // Close via the dialog's own close control: Escape is consumed by the
+    // armed annotation tool / flyout global handlers first.
+    await window.locator('[data-save-as-dialog] .modal-close').click();
+    await window.waitForSelector('[data-save-as-dialog]', { state: 'detached', timeout: 10000 });
 
     const diagOpt = await window.evaluate(() => window.tflexDiagnostics());
     expect(diagOpt.optimizePreset).toBe('max');
@@ -140,7 +150,7 @@ test.describe('No-op Sweep and Feature Verification', () => {
     // was placed on - so the placements list is legitimately empty here.
     // Place a fresh signature for the round-trip (Type -> Save -> pick row
     // -> page click -> pending bar Confirm).
-    await window.click('[aria-label="Sign tool"]');
+    await armSignTool(window);
     await window.click('.sig-tab:has-text("Type")');
     await window.fill('input[aria-label="Type your signature"]', 'QA Roundtrip');
     await window.click('.sig-tab-actions button:has-text("Save")');

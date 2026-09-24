@@ -8,7 +8,7 @@
 // Launch only via e2e/lib/launch.cjs against the DEV build (historically: the packaged installed exe).
 
 const { test, expect } = require('@playwright/test');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, armSignTool } = require('../lib/helpers.cjs');
 const { launchApp } = require('../lib/launch.cjs');
 const path = require('node:path');
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
@@ -56,7 +56,7 @@ test('Item 5: drawn signature ghost + placed result; no image import available',
   await openSampleFromCard('report.pdf');
 
   // Open the Sign manager.
-  await win.click('button[aria-label="Sign tool"]');
+  await armSignTool(win);
   await win.waitForSelector('.sig-manager', { timeout: 10000 });
   await win.waitForTimeout(600);
 

@@ -80,7 +80,9 @@ test.describe('Full Retest and Regression', () => {
     // Let's just try to see if the engine call enables it.
     // Wait, let's use the UI instead to ensure state sync
     await window.click('.thumb.thumb-current', { modifiers: ['Control'] });
-    await window.click('button[aria-label="Rotate clockwise"]');
+    // Phase 36 (chunk 3) — the command row is retired; Rotate is the PAGES
+    // Action Dock's `rotate` verb (also the selection-state verb).
+    await window.click('[data-dock-verb="rotate"]');
     
     await new Promise(r => setTimeout(r, 1000));
     const isUndoDisabled = await undoBtn.isDisabled();
@@ -97,7 +99,7 @@ test.describe('Full Retest and Regression', () => {
         });
     });
     
-    await window.click('button[aria-label="Save As"]').catch(() => {
+    await window.click('[data-toolbar-save-as]').catch(() => {
         return window.evaluate(() => {
             const btn = Array.from(document.querySelectorAll('button')).find(b => b.title === 'Save As');
             btn?.click();
@@ -213,15 +215,15 @@ test.describe('Full Retest and Regression', () => {
     await window.waitForSelector('.tab-pane[aria-hidden="false"] .workspace', { timeout: 10000 });
 
     // Inactive tab panes stay mounted (visibility:hidden), so scope to the
-    // ACTIVE pane - a stale hidden pane's Find button otherwise wins the
-    // locator and the click waits forever on an invisible element.
+    // ACTIVE pane. Phase 36 (chunk 3) — the row's Find button is retired; find
+    // is the Ctrl+F overlay, so probe for the search bar's input instead.
     const findState = await window.evaluate(() => {
       const pane = document.querySelector('.tab-pane[aria-hidden="false"]');
-      const btn = pane ? pane.querySelector('button[title*="Find in document"]') : null;
-      const out = { paneExists: !!pane, btnInPane: !!btn };
-      if (btn) {
-        const r = btn.getBoundingClientRect();
-        const cs = getComputedStyle(btn);
+      const input = pane ? pane.querySelector('.search-input') : null;
+      const out = { paneExists: !!pane, searchInputInPane: !!input };
+      if (input) {
+        const r = input.getBoundingClientRect();
+        const cs = getComputedStyle(input);
         out.rect = { x: r.x, y: r.y, w: r.width, h: r.height };
         out.display = cs.display;
         out.vis = cs.visibility;
@@ -235,7 +237,8 @@ test.describe('Full Retest and Regression', () => {
     console.log('P1 pre-click state:', JSON.stringify(findState, null, 1));
     await window.screenshot({ path: 'screenshots/full-retest-p1-state.png' });
 
-    await window.click('.tab-pane[aria-hidden="false"] button[title*="Find in document"]');
+    await window.keyboard.press('Control+f');
+    await window.waitForSelector('.tab-pane[aria-hidden="false"] .search-input', { timeout: 10000 });
     await window.fill('.tab-pane[aria-hidden="false"] .search-input', 'orchestration');
     await new Promise(r => setTimeout(r, 5000)); // More time for search
     const diagSearch = await window.evaluate(() => window.tflexDiagnostics());

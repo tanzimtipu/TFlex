@@ -17,7 +17,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette } = require('../lib/helpers.cjs');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const FIX = path.join(ROOT, 'test-fixtures');
@@ -66,7 +66,8 @@ async function twoPaneSetup() {
   await waitTabCount(2);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p32-alpha' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  // Phase 36 (chunk 3) — single-mode Multi Mode toggle now lives in the palette.
+  await toggleMultiModeViaPalette(win);
   await win.waitForTimeout(500);
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p32-beta' }).first().click();
   await win.waitForTimeout(1400);
@@ -160,7 +161,7 @@ test('DEF-279 guard: a case-variant spelling of the same file cannot enter the o
   expect(tabsAfterVariant).toBe(1);
 
   // Enable Multi Mode -> pane A = the exact-case document, pane B empty.
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  await toggleMultiModeViaPalette(win);
   await win.waitForTimeout(500);
 
   // Focus the EMPTY pane B, then open the SAME file: the pane guard must
@@ -180,7 +181,7 @@ test('DEF-279 guard: a case-variant spelling of the same file cannot enter the o
 test('criterion 2 (amended): opening a document while the mode is on assigns it to the FOCUSED pane', async () => {
   await openFile(tmpCopy(REPORT_SRC, 'p32-alpha.pdf'));
   await waitTabCount(1);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  await toggleMultiModeViaPalette(win);
   await win.waitForTimeout(400);
   // Focused pane is A by default; open gamma -> pane A must become gamma.
   await openFile(tmpCopy(REPORT_SRC, 'p32-gamma.pdf'));

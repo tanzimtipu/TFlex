@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { hardClose, armAnnotationTool } = require('../lib/helpers.cjs');
+const { hardClose, armAnnotationTool, armSignTool } = require('../lib/helpers.cjs');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
 
 let electronApp = null;
@@ -50,8 +50,8 @@ test('AFTER-SIGN: textbox single-click creates bar', async () => {
   const page = window.locator('.pdf-page').first();
   const pbox = await page.boundingBox();
 
-  // Sign flow
-  await window.click('button[aria-label="Sign tool"]');
+  // Sign flow (Phase 36 — Sign is the REVIEW dock's `sign` verb)
+  await armSignTool(window);
   await window.waitForSelector('.sig-manager', { timeout: 10000 });
   await window.click('.sig-tab:has-text("Type")').catch(() => {});
   const typeInput = window.locator('input[aria-label="Type your signature"]');
@@ -68,7 +68,7 @@ test('AFTER-SIGN: textbox single-click creates bar', async () => {
   const confirmBtn = window.locator('[data-sig-action="confirm"]').first();
   if (await confirmBtn.count()) { await confirmBtn.click({ force: true }); }
   await window.waitForTimeout(600);
-  const sigToolbar = await window.locator('button[aria-label="Sign tool"]').getAttribute('aria-pressed');
+  const sigToolbar = await window.locator('.signatures-layer').first().getAttribute('data-armed');
   console.log('AFTER-SIGN sig toolbar pressed:', sigToolbar);
 
   // textbox after sign

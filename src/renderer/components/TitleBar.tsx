@@ -42,8 +42,8 @@
 //      contract that survives React re-renders.
 
 import {
+  ChevronDown,
   Copy,
-  Menu,
   Minus,
   Square,
   type LucideIcon,
@@ -255,15 +255,20 @@ export function TitleBar(props: TitleBarProps): ReactElement {
           <button
             ref={menuButtonRef}
             type="button"
-            className={menuOpen ? "titlebar-menu-button titlebar-menu-button-active" : "titlebar-menu-button"}
+            className={menuOpen ? "titlebar-menu-button titlebar-menu-file titlebar-menu-button-active" : "titlebar-menu-button titlebar-menu-file"}
             onClick={(): void => setMenuOpen((v) => !v)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
-            aria-label="Application menu"
-            title="Application menu"
+            aria-label="File menu"
+            title="File menu"
             data-menu-button
           >
-            <Menu size={16} aria-hidden />
+            {/* Phase 36 (chunk 6) — the hamburger becomes an explicit "File"
+                label. The popover, its groups and every entry are unchanged;
+                only the trigger's face changed. `data-menu-button` stays so
+                the existing selectors keep resolving. */}
+            <span className="titlebar-menu-label">File</span>
+            <ChevronDown size={12} aria-hidden />
           </button>
           <AnimatePresence>
             {menuOpen && (

@@ -143,7 +143,7 @@ test('DEF-300 regression: OS file-open reaches the MAIN window while the print w
     const printState = await pw.evaluate(() => ({
       printWindow: !!document.querySelector('[data-print-window]'),
       tabs: document.querySelectorAll('.tab[data-tab-id]').length,
-      toolbar: document.querySelectorAll('.toolbar').length,
+      toolbar: document.querySelectorAll('.action-dock').length,
     }));
     console.log(`[DEF-300] print window state=${JSON.stringify(printState)}`);
 

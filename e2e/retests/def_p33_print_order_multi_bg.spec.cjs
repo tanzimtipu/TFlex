@@ -25,7 +25,7 @@ const os = require('node:os');
 const zlib = require('node:zlib');
 const { PNG } = require('pngjs');
 const { launchApp } = require('../lib/launch.cjs');
-const { openSamplePath, hardClose } = require('../lib/helpers.cjs');
+const { openSamplePath, hardClose, toggleMultiModeViaPalette } = require('../lib/helpers.cjs');
 
 const REPORT = path.resolve(__dirname, '..', '..', 'test-fixtures', 'report.pdf');
 const LONG = path.resolve(__dirname, '..', '..', 'test-fixtures', 'long.pdf');
@@ -70,7 +70,7 @@ async function twoPaneSetup(app, win) {
   await waitTabCount(win, 2);
   await win.locator('.tab[data-tab-id]').filter({ hasText: 'p33-alpha' }).first().click();
   await win.waitForTimeout(300);
-  await win.locator('[data-toolbar-multi-mode]').first().click();
+  await toggleMultiModeViaPalette(win);
   await win.waitForTimeout(400);
   await expect(win.locator('.tab-pane[data-pane="B"][data-pane-empty]')).toBeVisible({ timeout: 15000 });
   await win.locator('.tab-pane[data-pane="B"] [data-pane-pick]').filter({ hasText: 'p33-beta' }).first().click();

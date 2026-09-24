@@ -6,7 +6,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { PNG } = require('pngjs');
 const { launchApp } = require('../lib/launch.cjs');
-const { hardClose } = require('../lib/helpers.cjs');
+const { hardClose, clickDockVerb } = require('../lib/helpers.cjs');
 
 const FIXTURE = path.resolve(__dirname, '..', '..', 'test-fixtures', 'marker-3pages.pdf');
 
@@ -77,9 +77,8 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
     expect(await activeMarker()).toBe('MARKER-PAGE-1');
 
     // --- Part 1: extract "1" must yield the FIRST page ---
-    await window.click('[data-tools-toggle]');
-    await window.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await window.click('[data-tool-id="split"]');
+    // Phase 36 migration: All-tools palette retired; Extract is a PAGES dock verb.
+    await clickDockVerb(window, 1, 'split');
     await window.waitForSelector('.modal-dialog.dialog', { timeout: 8000 });
     await window.fill('.modal-dialog .modal-input', '1');
     await window.click('.modal-dialog button.btn-primary');
@@ -122,12 +121,7 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
 
     // The palette typically stays open behind the closed dialog; only
     // toggle it when it is not already up.
-    let palUp = await window.evaluate(() => !!document.querySelector('[data-tools-palette]'));
-    if (!palUp) {
-      await window.locator('[data-tools-toggle]:visible').first().click();
-      await window.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    }
-    await window.click('[data-tool-id="split"]');
+    await clickDockVerb(window, 1, 'split');
     await window.waitForSelector('.modal-dialog.dialog', { timeout: 8000 });
     await window.fill('.modal-dialog .modal-input', '3');
     await window.click('.modal-dialog button.btn-primary');
@@ -164,9 +158,8 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
     const accentToken = () => window.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim());
 
     // Open Tools palette -> Insert pages (the dialog cited in DEF-168).
-    await window.click('[data-tools-toggle]');
-    await window.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    await window.click('[data-tool-id="insertPages"]');
+    // Phase 36 migration: All-tools palette retired; Insert pages is a PAGES dock verb.
+    await clickDockVerb(window, 1, 'insertPages');
     await window.waitForSelector('.modal-dialog', { timeout: 8000 });
     await window.waitForTimeout(400);
 
@@ -193,12 +186,7 @@ test.describe('DEF-167/168/169 dev-build retests', () => {
     await window.waitForTimeout(300);
     await window.click('.theme-toggle');
     await window.waitForTimeout(500);
-    const palOpen = await window.evaluate(() => !!document.querySelector('[data-tools-palette]'));
-    if (!palOpen) {
-      await window.locator('[data-tools-toggle]:visible').first().click();
-      await window.waitForSelector('[data-tools-palette]', { timeout: 8000 });
-    }
-    await window.click('[data-tool-id="insertPages"]');
+    await clickDockVerb(window, 1, 'insertPages');
     await window.waitForSelector('.modal-dialog', { timeout: 8000 });
     await window.waitForTimeout(400);
     const lightAccent = await accentToken();

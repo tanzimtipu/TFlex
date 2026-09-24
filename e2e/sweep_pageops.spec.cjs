@@ -7,7 +7,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { PDFDocument } = require('pdf-lib');
-const { launchDev, openSample, diag, shot, scrollToPage, getSamplePath , hardClose } = require('./lib/helpers.cjs');
+const { launchDev, openSample, diag, shot, scrollToPage, getSamplePath , hardClose, gotoStage, runTool } = require('./lib/helpers.cjs');
 
 let electronApp = null;
 let win = null;
@@ -34,12 +34,7 @@ async function eng() {
   return d.engineState || d;
 }
 async function openTools() {
-  const open = await win.evaluate(() => document.querySelector('[data-tools-palette]') !== null);
-  if (!open) {
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 10000 });
-    await win.waitForTimeout(300);
-  }
+  // Phase 36 migration: the All-tools palette is retired; use runTool(id).
 }
 function badHooks() {
   return pageErrors.filter((m) => /#310|Rules of Hooks|#520|Invalid page request|NaN|degreeAngle/.test(m));
@@ -49,7 +44,8 @@ async function saveAsTo(name) {
   await electronApp.evaluate(async ({ dialog }, filePath) => {
     dialog.showSaveDialog = async () => ({ canceled: false, filePath });
   }, outPath);
-  await win.click('button[aria-label="Save As"]');
+  // Stable title-bar hook (the Phase-13 label is "Save a copy").
+  await win.click('[data-toolbar-save-as]');
   await win.waitForSelector('[data-save-as-dialog]', { timeout: 10000 });
   await win.click('[data-save-as-confirm]');
   await win.waitForTimeout(2500);
@@ -64,8 +60,7 @@ async function reparse(filePath) {
 
 // Insert a blank page at a numeric position (rank semantics).
 async function insertBlank(position) {
-  await openTools();
-  await win.click('[data-tool-id="insertPages"]');
+  await runTool(win, 'insertPages');
   await win.waitForSelector('[data-insert-pages-dialog]', { timeout: 10000 });
   await win.waitForTimeout(400);
   await win.click('[data-insert-mode="blank"]');
@@ -104,13 +99,13 @@ test('P1: insert blank at start/middle/end + save/reopen preserves structure', a
   expect(new Set(e1.pageOrder).size, 'no dup after end insert').toBe(e1.pageOrder.length);
 
   // Undo chain: undo the end insert, then the mid insert, then the start insert.
-  await win.click('[aria-label="Undo last change"]');
+  await runTool(win, 'undo');
   await win.waitForTimeout(1500);
   expect((await eng()).pageCount, 'undo end insert').toBe(base + 2);
-  await win.click('[aria-label="Undo last change"]');
+  await runTool(win, 'undo');
   await win.waitForTimeout(1500);
   expect((await eng()).pageCount, 'undo mid insert').toBe(base + 1);
-  await win.click('[aria-label="Undo last change"]');
+  await runTool(win, 'undo');
   await win.waitForTimeout(1500);
   expect((await eng()).pageCount, 'undo start insert').toBe(base);
 
@@ -129,22 +124,22 @@ test('P2: reorder + rotate + delete + insert, then save/reopen preserves', async
   await openSample(win, electronApp, 'report.pdf');
   const base = (await eng()).pageCount;
 
-  // Rotate page 1 via the toolbar.
-  await win.click('[data-toolbar-rotate-cw]');
+  // Rotate page 1 via the PAGES dock (Phase 36 — the row is retired).
+  await gotoStage(win, 1);
+  await win.click('[data-dock-verb="rotate"]');
   await win.waitForTimeout(1000);
   // Jump to page 2 via the current-page input, then rotate page 2.
   await win.fill('input[aria-label="Current page"], .page-nav input', '2');
   await win.keyboard.press('Enter');
   await win.waitForTimeout(900);
-  await win.click('[data-toolbar-rotate-cw]');
+  await win.click('[data-dock-verb="rotate"]');
   await win.waitForTimeout(1000);
   const afterRot = await eng();
   console.log(`[P2] rotations after two rotates: ${JSON.stringify(afterRot.rotations.slice(0, 4))}`);
 
   // Delete page 3 via the Delete pages dialog (range mode).
   const beforeDeleteCount = (await eng()).pageCount;
-  await openTools();
-  await win.click('[data-tool-id="delete"]');
+  await runTool(win, 'delete');
   await win.waitForSelector('[data-delete-pages-dialog]', { timeout: 8000 });
   await win.waitForTimeout(400);
   await win.click('[data-delete-mode="range"]');
@@ -201,8 +196,7 @@ test('P3: crop multiple pages with different box sizes; only intended pages crop
 
   // Crop a specific page (per-page) with a given drag.
   const cropOne = async (pageNum, drag) => {
-    await openTools();
-    await win.click('[data-tool-id="cropPages"]');
+    await runTool(win, 'cropPages');
     await win.waitForSelector('[data-crop-pages-dialog]', { timeout: 10000 });
     await win.waitForTimeout(600);
     await win.click('[data-crop-mode="perPage"]');
@@ -272,7 +266,7 @@ test('P3: crop multiple pages with different box sizes; only intended pages crop
   expect(Math.abs(a1.aspect - a2.aspect), 'page 1 and 2 have different crop boxes').toBeGreaterThan(0.005);
 
   // Undo one crop.
-  await win.click('[aria-label="Undo last change"]');
+  await runTool(win, 'undo');
   await win.waitForTimeout(1800);
   await scrollToPage(win, 1);
   const afterUndo = await win.evaluate(() => {

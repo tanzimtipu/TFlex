@@ -46,11 +46,18 @@ import {
 } from "./zoomFlip";
 import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
-import { SideRail } from "./SideRail";
 import { PaneThumbStrip } from "./PaneThumbStrip";
-import { ContextPanel } from "./ContextPanel";
-import { currentStagePanelDevFlag } from "../state/devFlags";
-import { ToolsBadge } from "./ToolsBadge";
+import { ContextPanel, type ContextPanelEditContent } from "./ContextPanel";
+import {
+  floatingTextPanelOpen as resolveFloatingTextPanelOpen,
+  inspectorOwnsTextPanel,
+  type InspectorTextSelection,
+} from "./Inspector";
+import { ActionDock, type DockBulkActions } from "./ActionDock";
+import { prunePageSelection } from "../state/pageSelection";
+import { sanitizeDockPins } from "../state/dockModel";
+import { toolById, type ToolEntry } from "../state/toolsRegistry";
+import type { Stage } from "../state/stages";
 import { usePageDragOptional } from "../state/PageDragContext";
 import {
   buildDragSource,
@@ -61,7 +68,8 @@ import {
   resolveDrop,
   type PageDropOp,
 } from "../state/pageDrag";
-import { Toolbar } from "./Toolbar";
+import { CanvasPills } from "./CanvasPills";
+import { AnnotationFlyout } from "./AnnotationFlyout";
 import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
 import { EditToolbar, defaultEditHint } from "../edit/EditToolbar";
 import { TextPropertiesPanel, isTextPanelFocusTarget } from "../edit/TextPropertiesPanel";
@@ -112,8 +120,7 @@ import type {
 } from "../../shared/types";
 import type { PaneId } from "../state/multiMode";
 import type {
-  PaneToolbarCommands,
-  PaneToolbarValues,
+  PaneDockContext,
   SharedToolController,
 } from "./multiToolController";
 
@@ -152,7 +159,7 @@ export interface DocDiagnostics {
   activeTool: AnnotationTool | null;
 }
 
-interface DocumentViewProps {
+interface DocumentViewProps extends DocumentViewDockProps {
   doc: PDFDocumentProxy;
   pageCount: number;
   outline: OutlineNode[] | null;
@@ -210,6 +217,10 @@ interface DocumentViewProps {
   onSave?: () => void;
   onSaveAs?: () => void;
   onMerge?: () => void;
+  /** Phase 36 (chunk 3b) — SUPERSEDED: the command toolbar row is retired, so
+   *  Split is reached from the PAGES dock / the palette / the thumbnails'
+   *  verbs (routed through App's `onDockToolAction`). This prop stays on the
+   *  interface for host/harness compatibility, like Open / Save above. */
   onSplit?: () => void;
   /** Phase 36 (chunk 2) — the PAGES ContextPanel's right-click verbs. Each is
    *  the host's EXISTING surface for that command (the same dialogs the
@@ -217,8 +228,7 @@ interface DocumentViewProps {
    *  page the gesture landed on so the host can pre-scope the dialog.
    *  "Insert blank after" is the ONE exception: it is an immediate engine
    *  insert (no dialog), so its handler receives the page and acts at once.
-   *  Optional: with a handler absent its menu item is not wired (the panel
-   *  is dev-mounted, so the default app never depends on these). */
+   *  Optional: with a handler absent its menu item is not wired. */
   onExtractPages?: (page: number) => void;
   onInsertBlankPage?: (page: number) => void;
   onReplacePages?: (page: number) => void;
@@ -247,6 +257,9 @@ interface DocumentViewProps {
    *  on; the toolbar passes no argument (the dialog then seeds from
    *  the tab's current page). */
   onDeletePage?: (page?: number) => void;
+  /** Phase 36 (chunk 3b) — SUPERSEDED: the retired toolbar was the only
+   *  reader; the PAGES dock's Delete verb is disabled from the host's gate
+   *  instead. Kept on the interface for host/harness compatibility. */
   canDeletePage?: boolean;
   /** Phase 3 — annotations. The host (App) holds the canonical list; this
    *  view threads it through to each PageView's overlay and the rail's
@@ -275,6 +288,27 @@ interface DocumentViewProps {
   signatures?: SignaturePlacement[];
   savedSignatures?: SavedSignature[];
   armedSignatureId?: string | null;
+  /** Phase 36 (chunk 6) — the EDIT / REVIEW / DELIVER ContextPanel's host
+   *  wiring. All optional: an absent handler disables its control (never a
+   *  silent no-op), so the document-less harnesses stay unchanged. */
+  onSignSignature?: (signatureId: string) => void;
+  onManageSignatures?: () => void;
+  ocrStatus?: string | null;
+  ocrHasRun?: boolean;
+  ocrSuspectCount?: number;
+  onRecognizeText?: () => void;
+  onOpenOcrSuspects?: () => void;
+  fileSize?: number | null;
+  onCreateFromImages?: () => void;
+  /** Phase 36 (chunk 6) — publish the CURRENT text-object selection (the edit
+   *  model's selected committed box, or the text-run target the panel edits)
+   *  so the host can feed the Inspector's EDIT/text section. `null` when
+   *  nothing text-bearing is selected. The snapshot carries the view's OWN
+   *  handlers, so the Inspector never re-implements the text edit path.
+   *  Phase 36 (chunk 7) — BOTH panes publish in Multi Mode; the host's
+   *  `resolvePaneSelection` guard keeps only the FOCUSED pane's publish, so the
+   *  ONE shared Inspector follows the pane the user is working in. */
+  onTextSelectionChange?: (selection: InspectorTextSelection | null) => void;
   /** B10 — armed stamp. When non-null, every PageView shows a
    *  ghost preview following the cursor; clicking a page embeds
    *  the stamp at the click point. */
@@ -323,15 +357,6 @@ interface DocumentViewProps {
    *  stamp is pending, the host drops the pending stamp so the pan
    *  drag is the only gesture that handles the press. */
   onDisarmStamp?: () => void;
-  /** Phase 6 — Tools palette. App owns the open/closed state. The
-   *  toolbar no longer carries the toggle: when `onToolsPaletteToggle`
-   *  is wired, this view renders the floating badge on the page view's
-   *  right edge (.tools-badge-tracker / data-tools-badge) that flips
-   *  it. The palette is conditionally mounted, so the badge is a
-   *  separate element that tracks the panel's slide via CSS (see the
-   *  badge block in styles.css). */
-  toolsPaletteOpen?: boolean;
-  onToolsPaletteToggle?: () => void;
   /** Phase 6 — annotation color palette. The toolbar shows a
    *  single swatch that opens a popover picker; the host owns the
    *  saved presets (typically App.settings.annotationColors). The
@@ -399,6 +424,9 @@ interface DocumentViewProps {
   /** Phase 32 — Multi Mode state for the CommandBar control. The host
    *  (App) owns the mode; this view only threads it to the toolbar. */
   multiModeEnabled?: boolean;
+  /** Phase 36 (chunk 3b) — SUPERSEDED: the retired toolbar hosted this
+   *  toggle. Multi Mode's canonical home is now the title bar + the command
+   *  palette; the prop stays on the interface for host/harness compatibility. */
   onMultiModeToggle?: () => void;
   /** Phase 32 (chunk 2b) — an external page jump: a page drop reveals the
    *  landing page in the target pane. `seq` makes each request unique, so
@@ -406,19 +434,33 @@ interface DocumentViewProps {
    *  replays a stale request. `null` (the single-mode default) means this
    *  view is never driven from outside. */
   jumpRequest?: { page: number; seq: number } | null;
-  /** Phase 33 (chunk 4) — Multi Mode's SHARED toolbar wiring. When supplied,
-   *  this view suppresses its OWN toolbar rows (the shared bar in the stage
-   *  renders the one toolbar) and instead:
-   *    - publishes its toolbar model (page / zoom / search / hand values +
-   *      commands) to the controller so the shared bar can drive it;
+  /** Phase 33 (chunk 4) + Phase 36 (chunk 7) — Multi Mode's SHARED workspace
+   *  wiring. When supplied, this view suppresses its OWN toolbar rows (the ONE
+   *  shared Action Dock renders the workspace's verbs) and instead:
+   *    - publishes its DOCK CONTEXT (page selection, State-2 bulk verbs, the
+   *      live availability gate, its armed / dragging flags) to the controller
+   *      so the shared dock can drive this pane;
    *    - routes its annotation-tool reducer through the controller's
-   *      fan-out, so arming / disarming from the bar or in either pane keeps
+   *      fan-out, so arming / disarming from the dock or in either pane keeps
    *      BOTH panes coherent.
    *  `null` (the single-mode default) is the pre-Phase-33 behaviour exactly. */
   sharedTools?: {
     pane: PaneId;
     controller: SharedToolController;
   } | null;
+  /** Phase 36 (chunk 7) — the pane this view fills in Multi Mode (`null` in
+   *  single mode). It gates the per-pane chrome the chunk adds: the pane's own
+   *  floating pills (each pane keeps its own page / zoom / pan) and the
+   *  document keyboard handler (find / Escape act on the FOCUSED pane only, so
+   *  the workspace never ends up with two search bars). */
+  multiPane?: PaneId | null;
+  /** Phase 36 (chunk 7) — true while THIS view is the focused pane. The REVIEW
+   *  annotations flyout is ONE surface: only the focused pane mounts it. */
+  paneFocused?: boolean;
+  /** Phase 36 (chunk 7) — the shared chrome idle (reported by the ONE dock).
+   *  Multi Mode's per-pane pills fade with it, exactly as single mode's pills
+   *  fade with the view's own dock. */
+  chromeIdle?: boolean;
   /** Phase 32 (chunk 2d) — canvas page drag and drop. Present only in Multi
    *  Mode: each page grows a hover-revealed grip (`data-page-drag-handle`)
    *  that starts a document-aware drag, and every page slot accepts a drop
@@ -599,6 +641,32 @@ export function applyAnnSelectionReport(
   return prev;
 }
 
+/** Phase 36 (chunk 3a) — the ActionDock wiring the host (App) supplies. All
+ *  optional: a DocumentView with no `activeStage` renders no dock, so the
+ *  dev/test harnesses and every pre-chunk-3a mount are unchanged. */
+export interface DocumentViewDockProps {
+  /** The stage in force for this pane (App's per-pane stage model). */
+  activeStage?: Stage;
+  /** The persisted, registry-validated dock pins (max 4). */
+  dockPins?: readonly string[];
+  onDockPin?: (id: string) => void;
+  onDockUnpin?: (id: string) => void;
+  /** Per-tool usage counts for the compact overflow ranking. */
+  toolUsage?: Readonly<Record<string, number>> | undefined;
+  /** App-level registry actions this view cannot run itself (dialogs, OCR,
+   *  export, sign, forms, ...). Returns true when it handled the id. */
+  onDockToolAction?: (id: string) => boolean;
+  /** App-level availability for those same entries. */
+  isDockToolEnabled?: (id: string) => boolean;
+  /** Phase 36 (chunk 4) — publish the view-level commands this view owns
+   *  (zoom presets, page stepping, find, pan, the edit / annotation tools) to
+   *  the host, which routes the Command Palette's rows through them. Same
+   *  pattern as `registerSearchIndexInvalidator`: the SAME handlers the pills
+   *  and the dock already call, never a second implementation. `null`
+   *  withdraws this view's commands (unmount / tab close). */
+  registerViewCommands?: (commands: Record<string, () => void> | null) => void;
+}
+
 /**
  * The full document workspace: side rail (thumbnails / outline), toolbar,
  * search bar, and the virtualized continuous scroller. All per-document
@@ -613,6 +681,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onDiagnostics,
   onSearchIndexProgress,
   registerSearchIndexInvalidator,
+  registerViewCommands,
   onToast,
   engineState,
   proxyVisibleOrder = false,
@@ -622,17 +691,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onReorder,
   onUndo,
   onMerge,
-  onSplit,
   onExtractPages,
   onInsertBlankPage,
   onReplacePages,
   onRenumberPages,
-  onOptimize,
-  onAuditSpace,
   onRotateClockwise,
   onRotateCounterClockwise,
   onDeletePage,
-  canDeletePage = true,
+  onOptimize,
+  onAuditSpace,
   annotations = [],
   onCreateAnnotation,
   onEditAnnotation,
@@ -651,6 +718,16 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   signatures = [],
   savedSignatures = [],
   armedSignatureId = null,
+  onSignSignature,
+  onManageSignatures,
+  ocrStatus = null,
+  ocrHasRun = false,
+  ocrSuspectCount = 0,
+  onRecognizeText,
+  onOpenOcrSuspects,
+  fileSize = null,
+  onCreateFromImages,
+  onTextSelectionChange,
   armedStamp = null,
   onPlaceStamp,
   stampAnnotations = [],
@@ -662,8 +739,6 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   onDeleteSignature,
   onCancelSignatureArm,
   onDisarmStamp,
-  toolsPaletteOpen = false,
-  onToolsPaletteToggle,
   annotationPalette,
   onAnnotationPaletteChange,
   annotationRecentTools,
@@ -678,10 +753,19 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   railSide = "left",
   multiRail = null,
   multiModeEnabled,
-  onMultiModeToggle,
   jumpRequest = null,
   pageDrag = null,
   sharedTools = null,
+  multiPane = null,
+  paneFocused = false,
+  chromeIdle = false,
+  activeStage,
+  dockPins = [],
+  onDockPin,
+  onDockUnpin,
+  toolUsage,
+  onDockToolAction,
+  isDockToolEnabled,
 }: DocumentViewProps,
   ref,
 ) {
@@ -1074,6 +1158,22 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     (selectedTextBox !== null || edit.state.tool === "text" || edit.state.tool === "box");
   const textPanelMode: "text" | "annotation" = tfTextPanelOpen ? "text" : "annotation";
   const textPanelOpen = tfTextPanelOpen || annTextToolArmed || selectedAnnText;
+  // DEF-321 — ONE properties UI per selection. The Inspector's EDIT/text
+  // section is the canonical mount; this view's floating card is the pop-out
+  // and is suppressed exactly when the Inspector is showing the same
+  // selection. The two predicates are pure (see Inspector.tsx) so the rule is
+  // unit-testable without a DOM.
+  const inspectorShowsTextPanel = inspectorOwnsTextPanel({
+    // Single mode wires the publisher; Multi Mode passes undefined and the
+    // host withdraws the published selection.
+    publishesSelection: onTextSelectionChange !== undefined,
+    stage: activeStage,
+    hasTextTarget: textTarget !== null,
+  });
+  const floatingTextPanelOpen = resolveFloatingTextPanelOpen({
+    textPanelOpen,
+    inspectorOwns: inspectorShowsTextPanel,
+  });
   // The full control set is live only for TFlex-owned text objects; the
   // annotation panel values are the per-tool defaults with the colour
   // swapped for the annotation's actual colour.
@@ -2804,6 +2904,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   };
 
   // ---- keyboard: Ctrl+F opens search, Escape closes / disarms -------------
+  //
+  // Phase 36 (chunk 7) — in Multi Mode this pane's chrome facts are needed
+  // before the keyboard handler: `inMultiPane` gates the per-pane floating
+  // pills, and `paneOwnsKeys` scopes the document chords to the FOCUSED pane
+  // (both panes are mounted and visible, so an ungated window handler would
+  // open the search bar in BOTH).
+  const inMultiPane = multiPane !== null;
+  const paneOwnsKeys = !inMultiPane || paneFocused;
+
   // Bug 4 — Escape disarms ANY armed annotation tool first, then closes
   // search. Previously Escape only closed the search bar, so an armed
   // sticky-note / ink / shape tool stayed hot after the user pressed
@@ -2814,6 +2923,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // must leave pan first.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // Phase 36 (chunk 7) — in Multi Mode only the FOCUSED pane's view acts on
+      // the document chord. Both panes are mounted and visible, so an ungated
+      // handler would open the search bar in BOTH panes at once (and the
+      // shared annotation fan-out already keeps the disarm coherent).
+      if (!paneOwnsKeys) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         e.preventDefault();
         setSearchOpen(true);
@@ -2825,13 +2939,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           e.preventDefault();
           dispatchAnnTool({ type: "set-tool", tool: "select" });
         } else if (searchOpen) {
+          e.preventDefault();
           setSearchOpen(false);
         }
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [searchOpen, annTool.tool, handActive]);
+  }, [searchOpen, annTool.tool, handActive, paneOwnsKeys]);
 
   // ---- persistence + diagnostics ------------------------------------------------------------
   useEffect(() => {
@@ -2889,31 +3004,332 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     [onToast],
   );
 
-  // Phase 33 — the rail slot's content. Single mode keeps the unchanged
-  // SideRail; Multi Mode renders this pane's OWN thumbnail strip, which the
-  // workspace places at `railSide` (pane A right, pane B left) so the two
-  // strips meet side by side in the middle of the workspace.
-  // Phase 36 (chunk 2) — the PAGES ContextPanel, mounted ALONGSIDE the
-  // unchanged rail behind the temporary `?tfStagePanel=1` dev flag (see
-  // state/devFlags.ts). Read once per mount: the flag is dev-only scaffolding
-  // and is deleted with the flag when the rail retires. The panel is single
-  // mode only (the concept's left context panel applies to SINGLE mode; Multi
-  // Mode keeps its Phase 32-34 centred pane strips).
-  const showContextPanel = useMemo(
-    (): boolean => multiRail === null && currentStagePanelDevFlag(),
-    [multiRail],
+  // Phase 33 — the rail slot's content. Multi Mode renders this pane's OWN
+  // thumbnail strip, which the workspace places at `railSide` (pane A right,
+  // pane B left) so the two strips meet side by side in the middle.
+  //
+  // Phase 36 (chunk 6) — SINGLE mode now renders the STAGES ContextPanel in
+  // the rail's place (the concept's left context panel applies to SINGLE mode
+  // only; Multi Mode keeps its Phase 32-34 centred pane strips). The panel
+  // re-parents the rail's own ThumbnailRail + OutlinePanel, so the thumbnails,
+  // drag-reorder, selection and outline are the same code paths; the dev flag
+  // that mounted it alongside the rail in chunk 2 is retired.
+
+  // ---- EDIT panel: the current page's modelled content -------------------
+  // Built from the EXISTING edit model — the panel never reads it itself.
+  const editContent = useMemo<ContextPanelEditContent[]>(() => {
+    if (edit === null) return [];
+    const boxes = edit.state.textBoxes.map((b) => ({
+      id: b.id,
+      kind: 'text' as const,
+      label: b.text.trim() === '' ? 'Text box' : b.text.trim().slice(0, 48),
+      page: b.page,
+      selected: edit.state.selectedTextBox === b.id,
+    }));
+    const images = edit.state.placements.map((p) => ({
+      id: p.id,
+      kind: 'image' as const,
+      label: 'Image',
+      page: p.page,
+      selected: edit.state.selectedImage?.id === p.id,
+    }));
+    return [...boxes, ...images];
+  }, [edit]);
+
+  const selectEditContent = useCallback(
+    (id: string, kind: 'text' | 'image'): void => {
+      if (edit === null) return;
+      if (kind === 'text') edit.onAction({ type: 'select-text-box', textBoxId: id });
+      else edit.onAction({ type: 'select-image', image: { id } });
+    },
+    [edit],
   );
 
+  // ---- Inspector live selection: publish the text-object selection -------
+  // The Inspector is mounted by the host, but the text selection + its
+  // handlers live HERE (the edit model / text-edit session). The view
+  // publishes a snapshot upward so the host can feed the Inspector's
+  // EDIT/text section; there is NO second selection model — the snapshot IS
+  // the existing selection's view.
+  const textSelection = useMemo<InspectorTextSelection | null>(() => {
+    if (textTarget === null) return null;
+    return {
+      targetKey: textTargetKeyNow ?? 'none',
+      name: textTarget.kind === 'annotation' ? 'Text annotation' : 'Text object',
+      values: textPanelValues,
+      defaults: textPanelDefaults,
+      mode: textPanelMode,
+      text: panelText,
+      onPatch: handleTextPanelPatch,
+      onTextChange: handlePanelTextChange,
+      onTextCommit: commitTextSession,
+      focusToken: textFocusToken,
+    };
+    // `textPanelValues` is rebuilt each render by design (it merges the live
+    // annotation style), so the snapshot identity is not the publish signal —
+    // the effect below gates on the observable shape instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    textTargetKeyNow,
+    textTarget,
+    textPanelMode,
+    panelText,
+    textPanelDefaults,
+    textPanelValues,
+    handleTextPanelPatch,
+    handlePanelTextChange,
+    commitTextSession,
+    textFocusToken,
+  ]);
+
+  const onTextSelectionChangeRef = useRef(onTextSelectionChange);
+  onTextSelectionChangeRef.current = onTextSelectionChange;
+  // The publisher's presence is part of the key: entering / leaving Multi Mode
+  // flips the host callback on and off, and the selection must be (re)published
+  // on the next change even when its own shape is unchanged.
+  const textSelectionKey =
+    textSelection === null
+      ? ''
+      : [
+          onTextSelectionChange === undefined ? 'gone' : 'wired',
+          textSelection.targetKey,
+          textSelection.mode,
+          textSelection.focusToken,
+          textSelection.text ?? '',
+          JSON.stringify(textSelection.values),
+        ].join('\u0000');
+  const lastTextSelectionKeyRef = useRef<string | null>(null);
+  // DEF-321 — a LAYOUT effect: the floating pop-out closes on the same commit
+  // that the target appears, so the host's Inspector copy must be mounted in
+  // the same paint or the selection would briefly have no properties UI at all.
+  // Publishing after paint left exactly that one-frame gap.
+  useLayoutEffect((): void => {
+    if (lastTextSelectionKeyRef.current === textSelectionKey) return;
+    lastTextSelectionKeyRef.current = textSelectionKey;
+    onTextSelectionChangeRef.current?.(textSelection);
+  });
+  useEffect((): (() => void) => {
+    return (): void => {
+      // Withdraw the selection when this view unmounts (tab switch / close)
+      // so the host's Inspector never shows a stale text object.
+      onTextSelectionChangeRef.current?.(null);
+    };
+  }, []);
+
+  // ---- Phase 36 (chunk 3a): the Action Dock + the page selection it reads --
+  //
+  // The SELECTION SET is owned here because two sibling surfaces consume it:
+  // the PAGES ContextPanel writes it (the rail's multi-select gestures) and
+  // the ActionDock reads it (State 2's selection override). Both get the same
+  // array; nothing else holds it.
+  const [pageSelection, setPageSelection] = useState<number[]>([]);
+
+  // A delete (or any page-count change) can strand selected pages: prune to
+  // the live range so the dock's `[N pages]` never counts a page that is gone.
+  useEffect((): void => {
+    setPageSelection((prev) => {
+      if (prev.length === 0) return prev;
+      const next = prunePageSelection({ pages: prev, anchor: null }, pageCount).pages;
+      return next.length === prev.length ? prev : [...next];
+    });
+  }, [pageCount]);
+
+  const clearPageSelection = useCallback((): void => setPageSelection([]), []);
+
+  // ---- Phase 36 (chunk 3b / chunk 7): the annotations flyout + shared idle --
+  //
+  // The REVIEW dock's `annotate` primary toggles ONE flyout that hosts the
+  // existing AnnotationToolbar. Phase 36 (chunk 7): in Multi Mode the shared
+  // dock's Annotate verb routes to the FOCUSED pane's `annotate` command, so
+  // exactly one flyout exists; it closes when the stage leaves REVIEW and when
+  // this pane stops being the focused one.
+  const [flyoutOpen, setFlyoutOpen] = useState(false);
+  useEffect((): void => {
+    if (activeStage !== 'review') setFlyoutOpen(false);
+  }, [activeStage]);
+  const paneWasFocusedRef = useRef(paneFocused);
+  useEffect((): void => {
+    if (inMultiPane && paneWasFocusedRef.current && !paneFocused) setFlyoutOpen(false);
+    paneWasFocusedRef.current = paneFocused;
+  }, [inMultiPane, paneFocused]);
+
+  // State 4 is shared chrome state: the ActionDock reports its idle flip here
+  // so the floating pills fade WITH the dock, never on their own clock.
+  const [dockIdle, setDockIdle] = useState(false);
+
+  // State 2's bulk verbs — every one reuses an EXISTING multi-page path: the
+  // engine's rotate op (one call per selected page), the delete-pages engine
+  // op (which already takes a page array), and the host's existing extract /
+  // merge dialog entries.
+  const dockBulk = useMemo<DockBulkActions>(
+    () => ({
+      onRotate: (pages): void => {
+        for (const page of pages) onRotate?.({ kind: 'rotate', page, dir: 'cw' });
+      },
+      onExtract: (pages): void => {
+        if (pages.length > 0) onExtractPages?.(pages[0]);
+      },
+      onMerge: (): void => onMerge?.(),
+      onDelete: (pages): void => {
+        if (pages.length === 0) return;
+        onDelete?.([...pages]);
+        setPageSelection([]);
+      },
+    }),
+    [onRotate, onExtractPages, onMerge, onDelete],
+  );
+
+  // The dock's availability gate and action routing. This view runs the
+  // view-level verbs (rotate, edit tools, annotation tools, pan, clear) and
+  // defers the app-level ones (dialogs, OCR, export, sign, forms, ...) to the
+  // host. An entry with no handler anywhere is DISABLED (never a silent no-op).
+  const viewDockActions = useMemo<Record<string, () => void>>(
+    () => ({
+      rotateClockwise: (): void => onRotateClockwise?.(),
+      rotateCounterClockwise: (): void => onRotateCounterClockwise?.(),
+      editModeToggle: (): void => onEditModeToggle?.(),
+      editToolOff: (): void => edit?.onAction({ type: 'set-tool', tool: 'off' }),
+      editToolText: (): void => edit?.onAction({ type: 'set-tool', tool: 'text' }),
+      editToolBox: (): void => edit?.onAction({ type: 'set-tool', tool: 'box' }),
+      editToolImage: (): void => edit?.onAction({ type: 'set-tool', tool: 'image' }),
+      handToggle: (): void => toggleHand(),
+      clearPageSelection,
+      annotate: (): void => setFlyoutOpen((v) => !v),
+      // The toolbar's DELIVER verbs now run through the dock; this view still
+      // owns its existing handlers (the same ones the toolbar's buttons called).
+      optimize: (): void => onOptimize?.(),
+      auditSpace: (): void => onAuditSpace?.(),
+      annotationSelect: (): void => onAnnToolAction({ type: 'set-tool', tool: 'select' }),
+      annotationHighlight: (): void => onAnnToolAction({ type: 'set-tool', tool: 'highlight' }),
+      annotationUnderline: (): void => onAnnToolAction({ type: 'set-tool', tool: 'underline' }),
+      annotationStrikeout: (): void => onAnnToolAction({ type: 'set-tool', tool: 'strikeout' }),
+      annotationInk: (): void => onAnnToolAction({ type: 'set-tool', tool: 'ink' }),
+      annotationTextbox: (): void => onAnnToolAction({ type: 'set-tool', tool: 'textbox' }),
+      annotationRect: (): void => onAnnToolAction({ type: 'set-tool', tool: 'rect' }),
+      annotationEllipse: (): void => onAnnToolAction({ type: 'set-tool', tool: 'ellipse' }),
+      annotationArrow: (): void => onAnnToolAction({ type: 'set-tool', tool: 'arrow' }),
+      annotationCallout: (): void => onAnnToolAction({ type: 'set-tool', tool: 'callout' }),
+      annotationNote: (): void => onAnnToolAction({ type: 'set-tool', tool: 'note' }),
+    }),
+    [
+      onRotateClockwise,
+      onRotateCounterClockwise,
+      onEditModeToggle,
+      edit,
+      toggleHand,
+      clearPageSelection,
+      onAnnToolAction,
+      onOptimize,
+      onAuditSpace,
+    ],
+  );
+
+  // Phase 36 (chunk 4) — the Command Palette's view-command bridge.
+  //
+  // The palette is mounted once by App (it must work on the welcome screen and
+  // must never mount twice in Multi Mode), but the view-level verbs live HERE.
+  // Publishing the handlers this view already owns — the CanvasPills' zoom /
+  // page stepping, the search toggle, the dock's own view verbs — keeps ONE
+  // implementation of each command: the palette never re-implements zoom.
+  const viewCommands = useMemo<Record<string, () => void>>(
+    () => ({
+      ...viewDockActions,
+      zoomIn: (): void => zoomTo(1),
+      zoomOut: (): void => zoomTo(-1),
+      fitWidth: (): void => setMode('fit-width'),
+      fitPage: (): void => setMode('fit-page'),
+      find: (): void => setSearchOpen(true),
+      // Page stepping composes the view's own `jumpToPage` (the same call the
+      // rail thumbnails and the search hits use); the clamp keeps the ends.
+      prevPage: (): void => jumpToPage(Math.max(1, currentPage - 1)),
+      nextPage: (): void => jumpToPage(Math.min(pageCount, currentPage + 1)),
+    }),
+    [viewDockActions, zoomTo, setMode, jumpToPage, currentPage, pageCount],
+  );
+
+  const registerViewCommandsRef = useRef(registerViewCommands);
+  registerViewCommandsRef.current = registerViewCommands;
+  useEffect((): (() => void) | undefined => {
+    const register = registerViewCommandsRef.current;
+    if (register === undefined) return undefined;
+    register(viewCommands);
+    return (): void => register(null);
+  }, [viewCommands]);
+
+  const runDockTool = useCallback(
+    (id: string): void => {
+      const entry: ToolEntry | undefined = toolById(id);
+      if (entry === undefined) return;
+      const viewAction = viewDockActions[entry.action];
+      if (viewAction !== undefined) {
+        viewAction();
+        return;
+      }
+      onDockToolAction?.(id);
+    },
+    [viewDockActions, onDockToolAction],
+  );
+
+  const dockToolEnabled = useCallback(
+    (entry: ToolEntry): boolean => {
+      // View-level gates the registry cannot express from App state alone.
+      if (entry.action === 'clearPageSelection') return pageSelection.length > 0;
+      // DEF-314 — `editModeToggle` IS the control that turns Edit mode ON, so
+      // it is enabled while Edit mode is OFF (a document is always open in this
+      // view). Only the edit-layer TOOL verbs need Edit mode to already be on.
+      if (entry.action.startsWith('editTool')) return editModeOpen;
+      if (entry.action === 'annotationColor' || entry.action === 'annotationPenWidth') {
+        return false;
+      }
+      if (viewDockActions[entry.action] !== undefined) return true;
+      return isDockToolEnabled?.(entry.id) ?? false;
+    },
+    [pageSelection.length, editModeOpen, viewDockActions, isDockToolEnabled],
+  );
+
+  const dockDisabledReason = useCallback(
+    (entry: ToolEntry): string | undefined => {
+      if (dockToolEnabled(entry)) return undefined;
+      // DEF-311 — leave the reason undefined so the dock uses the registry's
+      // declared availability copy ("Run Recognize text first") instead of the
+      // tool's description. Only the edit layer needs live copy: its gate is
+      // Edit mode, not the entry's declared 'document' precondition.
+      if (entry.action.startsWith('editTool')) return 'Turn on Edit content first';
+      return undefined;
+    },
+    [dockToolEnabled],
+  );
+
+  const dockPinsSanitized = useMemo(() => sanitizeDockPins(dockPins), [dockPins]);
+
+  // The dock is IDLE-suppressed while a tool is armed (sign / stamp / edit /
+  // a hand pan) or a page drag is in flight. `edit` here is the edit-layer
+  // model: its tool is 'off' when nothing is armed.
+  const dockToolArmed =
+    armedSignatureId !== null ||
+    armedStamp !== null ||
+    editModeOpen ||
+    handActive ||
+    annTool.tool !== 'select' ||
+    (edit !== null && edit.state.tool !== 'off');
+  const dockDragInProgress = drag !== null && drag.source !== null;
+
   const railNode = multiRail === null ? (
-    <SideRail
+    // Phase 36 (chunk 6) — SINGLE mode's left slot is the STAGES ContextPanel.
+    // It passes through EXACTLY the rail's own props (doc, engine state, the
+    // current page, the per-page sizes, the jump/scroll sync, the op handlers,
+    // the drag wiring and the organize-dialog entries) plus the stage panels'
+    // host wiring. It owns no document state: the page selection, the edit
+    // model, the annotations, the signatures and the OCR mirror all live in the
+    // host and are threaded through.
+    <ContextPanel
+      stage={activeStage}
       doc={doc}
-      pageCount={pageCount}
-      outline={outline}
       currentPage={currentPage}
       defaultWidthPt={firstPageSize?.w ?? 612}
       defaultHeightPt={firstPageSize?.h ?? 792}
       // DEF-148 — the per-VISIBLE-page sizes the mounted PageViews
-      // report. The rail sizes each thumb wrap from ITS OWN page's
+      // report. ThumbnailRail sizes each thumb wrap from ITS OWN page's
       // aspect ratio (never a single page-1-derived ratio), so a
       // per-page crop of page 1 no longer collapses pages 2..N into
       // the crop square.
@@ -2929,16 +3345,48 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       onReorder={onReorder}
       onUndo={onUndo}
       onJump={(p): void => jumpToPage(p)}
+      outline={outline}
       onError={railError}
+      onMerge={onMerge}
+      onExtractPages={onExtractPages}
+      onInsertBlank={onInsertBlankPage}
+      onReplacePages={onReplacePages}
+      onRenumberPages={onRenumberPages}
+      onDeletePage={onDeletePage}
+      // Phase 32's cross-document drag wiring: single mode keeps the rail's
+      // intra-document drag semantics (null), exactly as before.
+      crossDoc={null}
+      // Phase 36 (chunk 3a) — the thumbnail multi-select. The set is owned
+      // here and consumed by the dock (State 2); the panel only writes it.
+      pageSelection={pageSelection}
+      onPageSelectionChange={setPageSelection}
+      // Phase 16 — the collapse affordance, re-homed to the panel header. The
+      // host (App) owns the value; the panel renders it and reports toggles.
+      collapsed={pagesPanelCollapsed ?? false}
+      onToggleCollapsed={onTogglePagesPanelCollapsed}
+      // EDIT — the current page's modelled content + the recognition summary.
+      editContent={editContent}
+      onSelectEditContent={selectEditContent}
+      ocrStatus={ocrStatus}
+      ocrHasRun={ocrHasRun}
+      ocrSuspectCount={ocrSuspectCount}
+      onRecognizeText={onRecognizeText}
+      onOpenOcrSuspects={onOpenOcrSuspects}
+      // REVIEW — the annotations list (the ONE home for it) plus the
+      // saved-signatures section.
       annotations={annotations}
+      onJumpToAnnotation={onAnnJump}
       onEditAnnotation={onEditAnnotation}
       onDeleteAnnotation={onDeleteAnnotation}
-      onJumpToAnnotation={onAnnJump}
-      // Phase 16 — pages-panel collapsed state is App-owned
-      // (persisted in settings); the rail only renders it and
-      // reports toggles through the callback.
-      pagesPanelCollapsed={pagesPanelCollapsed}
-      onTogglePagesPanelCollapsed={onTogglePagesPanelCollapsed}
+      savedSignatures={savedSignatures}
+      armedSignatureId={armedSignatureId}
+      onSignSignature={onSignSignature}
+      onManageSignatures={onManageSignatures}
+      // DELIVER — the pre-flight checklist reads the existing state only.
+      fileSize={fileSize}
+      formFieldCount={formFields.length}
+      onOptimize={onOptimize}
+      onCreateFromImages={onCreateFromImages}
     />
   ) : (
     <PaneThumbStrip
@@ -2971,42 +3419,36 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // stable (one per pane per mode session) while every read returns the
   // CURRENT state. In single mode `sharedTools` is null: no registration,
   // no effects, no change.
-  const sharedValuesRef = useRef<PaneToolbarValues | null>(null);
-  const sharedCommandsRef = useRef<PaneToolbarCommands | null>(null);
-  sharedValuesRef.current = {
-    page: currentPage,
-    pageCount,
-    pageLabel: resolvePageLabel(currentPage, engineState.pageLabels),
-    zoomPercent: Math.round(effectiveScale * 100),
-    zoomMode: zoom.mode,
-    searchOpen,
-    handActive,
-  };
-  sharedCommandsRef.current = {
-    onJump: pageJump,
-    onZoomIn: (): void => zoomTo(1),
-    onZoomOut: (): void => zoomTo(-1),
-    onFitWidth: (): void => setMode("fit-width"),
-    onFitPage: (): void => setMode("fit-page"),
-    onToggleSearch: (): void => setSearchOpen((v) => !v),
-    onHandToggle: toggleHand,
+  //
+  // Phase 36 (chunk 7) — the pane publishes its DOCK CONTEXT (not a toolbar
+  // model): the ONE shared Action Dock renders the workspace's verbs from the
+  // FOCUSED pane's entry, so the selection, the availability gates and the
+  // idle suppression must all come from the pane that owns them.
+  const dockContextRef = useRef<PaneDockContext | null>(null);
+  dockContextRef.current = {
+    pageSelection,
+    clearPageSelection,
+    bulk: dockBulk,
+    isToolEnabled: dockToolEnabled,
+    disabledReasonFor: dockDisabledReason,
+    toolArmed: dockToolArmed,
+    dragInProgress: dockDragInProgress,
   };
 
   useEffect((): (() => void) | undefined => {
     const shared = sharedTools;
     if (shared === null) return undefined;
-    const offToolbar = shared.controller.registerToolbar(shared.pane, {
-      values: (): PaneToolbarValues | null => sharedValuesRef.current,
-      commands: (): PaneToolbarCommands | null => sharedCommandsRef.current,
+    const offPane = shared.controller.registerPane(shared.pane, {
+      dock: (): PaneDockContext | null => dockContextRef.current,
     });
     const offSink = shared.controller.registerAnnSink(shared.pane, rawDispatchAnnTool);
     return (): void => {
-      offToolbar();
+      offPane();
       offSink();
     };
   }, [sharedTools, rawDispatchAnnTool]);
 
-  // Publish this pane's armed annotation tool so the shared bar can show the
+  // Publish this pane's armed annotation tool so the shared dock can show the
   // FOCUSED pane's state (both panes converge through the fan-out above).
   useEffect((): void => {
     const shared = sharedTools;
@@ -3014,15 +3456,16 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     shared.controller.publishAnn(shared.pane, annTool);
   }, [sharedTools, annTool]);
 
-  // The bar re-reads this pane's values on every value change.
+  // The shared dock re-reads this pane's context when anything it shows or
+  // gates on changes (its selection, its gates, its armed / dragging flags).
   useEffect((): void => {
     const shared = sharedTools;
     if (shared === null) return;
-    shared.controller.notifyToolbar();
-  }, [sharedTools, currentPage, pageCount, effectiveScale, zoom.mode, searchOpen, handActive]);
+    shared.controller.notifyPane();
+  }, [sharedTools, pageSelection, editModeOpen, dockToolArmed, dockDragInProgress]);
 
-  // Multi Mode suppresses this pane's own toolbar rows (the stage renders
-  // the single shared bar instead).
+  // Multi Mode suppresses this pane's own toolbar rows and its own dock (the
+  // stage renders the ONE shared dock instead).
   const suppressToolbar = sharedTools !== null;
 
   return (
@@ -3038,136 +3481,22 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // area on the left (single mode, unchanged) and AFTER it on the right
       // (Multi Mode's pane A), so the DOM order matches the geometry.
       data-rail-side={showRail ? railSide : undefined}
-      // Phase 36 (chunk 2) — dev-only marker: the PAGES ContextPanel is
-      // mounted alongside the rail for a side-by-side comparison.
-      data-context-panel-dev-mount={showContextPanel ? "true" : undefined}
     >
       {showRail && railSide === "left" ? railNode : null}
-      {showContextPanel && railSide === "left" ? (
-        // The dev panel passes through EXACTLY the rail's own props (doc,
-        // engine state, current page, the per-page sizes, the jump/scroll
-        // sync, the op handlers and the drag wiring) plus the host's existing
-        // organize-dialog entries. It owns no state of its own.
-        <ContextPanel
-          dev
-          doc={doc}
-          currentPage={currentPage}
-          defaultWidthPt={firstPageSize?.w ?? 612}
-          defaultHeightPt={firstPageSize?.h ?? 792}
-          pageSizes={pageSizes}
-          engineState={engineState}
-          proxyVisibleOrder={proxyVisibleOrder}
-          canUndo={canUndo}
-          onOp={onRotate}
-          onDelete={onDelete}
-          onReorder={onReorder}
-          onUndo={onUndo}
-          onJump={(p): void => jumpToPage(p)}
-          outline={outline}
-          onError={railError}
-          onMerge={onMerge}
-          onExtractPages={onExtractPages}
-          onInsertBlank={onInsertBlankPage}
-          onReplacePages={onReplacePages}
-          onRenumberPages={onRenumberPages}
-          onDeletePage={onDeletePage}
-          // Phase 32's cross-document drag wiring, threaded exactly as the
-          // pane strips thread it. The gate above is single mode only, so this
-          // is null in practice today (the panel then keeps the rail's own
-          // intra-document drag semantics); the contract is plumbed now so the
-          // later chunk that gives one panel both modes needs no new wiring.
-          crossDoc={
-            multiRail === null ? null : { tabId: multiRail.tabId, onDrop: multiRail.onDrop }
-          }
-        />
-      ) : null}
       <div ref={mainRef} className="workspace-main">
-        {/* Phase 33 (chunk 4) — in Multi Mode the ONE toolbar lives in the
-            stage (the shared bar); this pane suppresses its own rows so the
-            workspace never shows two toolbars. */}
-        {suppressToolbar ? null : (
-        <Toolbar
-          page={currentPage}
-          pageCount={pageCount}
-          pageLabel={resolvePageLabel(currentPage, engineState.pageLabels)}
-          zoomPercent={Math.round(effectiveScale * 100)}
-          zoomMode={zoom.mode}
-          onJump={pageJump}
-          onZoomIn={(): void => zoomTo(1)}
-          onZoomOut={(): void => zoomTo(-1)}
-          onFitWidth={(): void => setMode("fit-width")}
-          onFitPage={(): void => setMode("fit-page")}
-          searchOpen={searchOpen}
-          onToggleSearch={(): void => setSearchOpen((v) => !v)}
-          onMerge={(): void => onMerge?.()}
-          onSplit={(): void => onSplit?.()}
-          signToolActive={armedSignatureId !== null}
-          onSignClick={(): void => {
-            // The toolbar's Sign button toggles the modal at the App
-            // level. We don't open the modal here; we just notify App so
-            // it can decide to open the manager or clear the armed id.
-            // The actual action lives on App (wires the modal open +
-            // passes onApply). The toolbar's button click event is
-            // synthesised below via window.dispatchEvent so App can
-            // catch it cleanly.
-            window.dispatchEvent(new CustomEvent("tflex:sign-button"));
-          }}
-          hasFormFields={formFields.length > 0}
-          onFlattenClick={(): void => {
-            window.dispatchEvent(new CustomEvent("tflex:flatten-button"));
-          }}
-          editModeOpen={editModeOpen}
-          onEditModeToggle={onEditModeToggle}
-          onOptimize={(): void => onOptimize?.()}
-          onAuditSpace={(): void => onAuditSpace?.()}
-          onRotateClockwise={onRotateClockwise}
-          onRotateCounterClockwise={onRotateCounterClockwise}
-          handActive={handActive}
-          onHandToggle={toggleHand}
-          onDeletePage={onDeletePage}
-          canDeletePage={canDeletePage}
-          // Phase 32 — the CommandBar's Multi Mode toggle. App owns the
-          // mode; this view only forwards it (the same state drives the
-          // All-tools entry, so both entry points always agree).
-          multiModeEnabled={multiModeEnabled}
-          onMultiModeToggle={onMultiModeToggle}
-          /* Phase 19 — the annotation tools are the CommandBar's LAST
-             capsule. The group element is built here (DocumentView is
-             the prop conduit for the annotation state) and handed to
-             the bar, which only places it. */
-          annotationTools={
-            <AnnotationToolbar
-              state={annTool}
-              onAction={onAnnToolAction}
-              editModeOpen={editModeOpen}
-              handModeOpen={handActive}
-              palette={
-                annotationPalette === undefined || annotationPalette === null
-                  ? undefined
-                  : {
-                      light: annotationPalette.light ?? [],
-                      dark: annotationPalette.dark ?? [],
-                    }
-              }
-              onPaletteChange={
-                onAnnotationPaletteChange === undefined
-                  ? undefined
-                  : (next): void => onAnnotationPaletteChange(next)
-              }
-              /* Phase-15 — frosted is a dark acrylic variant, so the
-                 annotation palette treats it as the 'dark' preset bucket
-                 (the shared AnnotationColors contract has no frosted key). */
-              theme={themeName === 'light' ? 'light' : 'dark'}
-              annotationRecentTools={annotationRecentTools}
-              onAnnotationRecentToolsChange={onAnnotationRecentToolsChange}
-              /* Phase 28 — the toolbar's dropdown colour drives the
-                 ARMED tool only. It neither patches nor mirrors a
-                 SELECTED annotation's colour: that colour is owned by
-                 the in-canvas action bar's colour box. */
-            />
-          }
-        />
-        )}
+        {/* Phase 36 (chunk 3b) — the per-view command toolbar ROW is RETIRED
+            in SINGLE mode: every control it hosted is reachable from its new
+            home (page nav + zoom/fit -> the floating CanvasPills; pan -> the
+            pills' Hand control; find -> Ctrl+F / the palette; rotate, delete,
+            merge, split -> the thumbnails' verbs / the PAGES dock / the
+            palette; edit content -> the EDIT dock; optimize/audit -> the
+            DELIVER dock; sign/forms/flatten/stamp/watermark -> the REVIEW dock;
+            annotations -> the REVIEW dock's Annotate flyout; multi-mode -> the
+            palette until the title-bar chunk). The reflowing grid rows collapse
+            to 0, so the canvas keeps the reclaimed height with no dead space.
+            Multi Mode renders ONE shared Action Dock (plus each pane's own
+            pills and the one focused-pane flyout) in the stage; this view
+            suppresses its rows and its own dock while `suppressToolbar`. */}
         <AnimatePresence>
           {!suppressToolbar && editModeOpen && edit !== null && (
             <EditToolbar
@@ -3459,26 +3788,21 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             })}
           </div>
         </div>
-        {/* Phase 33 / DEF-284 — the floating All Tools badge. The badge is a
-            WORKSPACE control, not a per-document one: while Multi Mode is on
-            (`multiModeEnabled === true`, which covers EVERY mounted view —
-            both panes AND any extra unpaned tab) it is suppressed here and
-            the stage renders the ONE workspace badge instead, so Multi Mode
-            can never mount a duplicate (criterion 4b). In single mode this
-            view renders it exactly as before. The ToolsBadge component keeps
-            the badge's position, selector and aria contract: a `position:
-            fixed` arrow tab on the window's right edge whose `right`
-            transitions to the open panel's width (--tools-panel-w) on the
-            same 150ms curve, with the chevron flipping by state. */}
-        {onToolsPaletteToggle !== undefined && multiModeEnabled !== true && (
-          <ToolsBadge open={toolsPaletteOpen} onToggle={onToolsPaletteToggle} />
-        )}
+        {/* Phase 36 (chunk 5) — the floating All Tools badge is RETIRED. The
+            Inspector is the workspace's right panel and needs no toggle, so
+            no view renders a badge any more (DEF-284's single-badge rule is
+            moot: there is no badge to duplicate). */}
         {/* Phase 25 — the text-properties panel is a FLOATING card over
             the page view (absolutely positioned inside .workspace-main),
             NOT a workspace grid column. It has no header, is draggable by
-            its grip, and opening/closing it never reflows the page. */}
+            its grip, and opening/closing it never reflows the page.
+            DEF-321 — for a SELECTED text target the Inspector's EDIT/text
+            section is the canonical mount and this pop-out is suppressed
+            (one properties UI per selection); it stays the mount for an
+            armed tool with nothing selected, and whenever the Inspector is
+            not showing that selection (e.g. a text annotation in REVIEW). */}
         <TextPropertiesPanel
-          open={textPanelOpen}
+          open={floatingTextPanelOpen}
           values={textPanelValues}
           defaults={textPanelDefaults}
           mode={textPanelMode}
@@ -3488,6 +3812,109 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           onTextCommit={commitTextSession}
           focusToken={textFocusToken}
         />
+        {/* DEF-319 — the CANVAS-BOUND floating-chrome layer. The page/zoom
+            pills, the annotations flyout and the Action Dock all live inside
+            it, so they anchor to the VISIBLE canvas: the layer is inset on the
+            right by the open Inspector's width (--tf-tools-inset), which is
+            what keeps every pill control and dock verb hit-testable while the
+            Inspector is open. With the Inspector closed the token is 0px and
+            the layer is exactly .workspace-main, so the surfaces are
+            pixel-identical to before. The layer is pointer-inert; the pills,
+            the flyout and the dock opt back in. */}
+        <div className="canvas-overlay" data-canvas-overlay>
+        {/* Phase 36 (chunk 3b / chunk 7) — the floating page + zoom pills.
+            SINGLE mode keeps their unchanged placement (page bottom-left, zoom
+            bottom-right of the canvas). In MULTI MODE each pane carries its OWN
+            pills inside its OWN canvas bounds, so page / zoom / pan act on the
+            pane that owns them: they stack at the pane's OUTER edge (A left,
+            B right) so the workspace's bottom-centre band stays clear for the
+            ONE shared Action Dock. They re-parent the retired toolbar's
+            handlers and aria-labels and fade with the dock's idle. */}
+        {(inMultiPane || (!suppressToolbar && multiModeEnabled !== true)) && (
+          <CanvasPills
+            page={currentPage}
+            pageCount={pageCount}
+            pageLabel={resolvePageLabel(currentPage, engineState.pageLabels)}
+            zoomPercent={Math.round(effectiveScale * 100)}
+            zoomMode={zoom.mode}
+            onJump={pageJump}
+            onZoomIn={(): void => zoomTo(1)}
+            onZoomOut={(): void => zoomTo(-1)}
+            onFitWidth={(): void => setMode('fit-width')}
+            onFitPage={(): void => setMode('fit-page')}
+            handActive={handActive}
+            onHandToggle={toggleHand}
+            idle={inMultiPane ? chromeIdle : dockIdle}
+            pane={multiPane}
+          />
+        )}
+        {/* Phase 36 (chunk 3b) — the ONE annotations flyout. The REVIEW dock's
+            Annotate primary toggles it; it hosts the EXISTING AnnotationToolbar
+            (re-parented), so the registry's annotation entries have exactly one
+            home and the dock never renders a duplicate set.
+            Phase 36 (chunk 7) — in Multi Mode it is ONE surface driven by the
+            FOCUSED pane: only the focused pane's view mounts it (the dock's
+            Annotate verb routes to the focused pane's `annotate` command), and
+            a pane that loses focus closes it, so a focus switch can never leave
+            two flyouts (or a stale one) on screen. */}
+        {activeStage === 'review' &&
+          (!suppressToolbar || (inMultiPane && paneFocused)) && (
+          <AnnotationFlyout open={flyoutOpen} onClose={(): void => setFlyoutOpen(false)}>
+            <AnnotationToolbar
+              state={annTool}
+              onAction={onAnnToolAction}
+              editModeOpen={editModeOpen}
+              handModeOpen={handActive}
+              palette={
+                annotationPalette === undefined || annotationPalette === null
+                  ? undefined
+                  : {
+                      light: annotationPalette.light ?? [],
+                      dark: annotationPalette.dark ?? [],
+                    }
+              }
+              onPaletteChange={
+                onAnnotationPaletteChange === undefined
+                  ? undefined
+                  : (next): void => onAnnotationPaletteChange(next)
+              }
+              /* Phase-15 — frosted is a dark acrylic variant, so the
+                 annotation palette treats it as the 'dark' preset bucket
+                 (the shared AnnotationColors contract has no frosted key). */
+              theme={themeName === 'light' ? 'light' : 'dark'}
+              annotationRecentTools={annotationRecentTools}
+              onAnnotationRecentToolsChange={onAnnotationRecentToolsChange}
+            />
+          </AnnotationFlyout>
+        )}
+        {/* Phase 36 (chunk 3a / chunk 7) — the Action Dock. Mounted as an
+            ADDITION at the bottom-centre of the canvas (the `.canvas-overlay`
+            layer is the positioning context, DEF-319) so nothing else moves:
+            the rail, the palette and the flyout all stay. It renders only when
+            the host supplies a stage (every pre-chunk-3a mount omits it) and is
+            suppressed in Multi Mode, where the ONE shared dock
+            (`MultiActionDock`) floats at the workspace's bottom-centre instead —
+            a per-pane dock would be a second surface. */}
+        {activeStage !== undefined && !suppressToolbar && (
+          <ActionDock
+            activeStage={activeStage}
+            pageSelection={pageSelection}
+            onClearPageSelection={clearPageSelection}
+            bulk={dockBulk}
+            dockPins={dockPinsSanitized}
+            onPinTool={(id): void => onDockPin?.(id)}
+            onUnpinTool={(id): void => onDockUnpin?.(id)}
+            onRunTool={runDockTool}
+            isToolEnabled={dockToolEnabled}
+            disabledReasonFor={dockDisabledReason}
+            toolArmed={dockToolArmed}
+            dragInProgress={dockDragInProgress}
+            toolUsage={toolUsage}
+            activeToolIds={editModeOpen ? ['editMode'] : []}
+            onIdleChange={setDockIdle}
+          />
+        )}
+        </div>
       </div>
       {/* Phase 33 — the rail's RIGHT-side slot (Multi Mode's pane A): the
           strip sits immediately after the page area, so A's strip and B's

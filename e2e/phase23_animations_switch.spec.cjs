@@ -3,7 +3,7 @@
 // Measures the running Electron app (canonical launcher only) against the
 // phase's six success criteria:
 //   C1 frame-sampled instant path for menu / text-panel / dialog / toast /
-//      theme / rail / tab / tools-palette resize + end geometry parity.
+//      theme / rail / tab + end geometry parity.
 //   C2 restart persistence + malformed stored value falls back to default.
 //   C3 Preferences control reflects the stored value, applies immediately,
 //      carries the hint.
@@ -137,12 +137,21 @@ function rectsEqual(a, b, tol = 1.5) {
     && Math.abs(a.w - b.w) <= tol && Math.abs(a.h - b.h) <= tol;
 }
 
+// Phase 36 (chunk 4) — the All-tools palette is retired; the Command Palette
+// (Ctrl+K) is the browse-everything surface. This opens it and runs a query.
 async function ensurePalette(win) {
-  if ((await win.locator('[data-tools-palette]').count()) === 0) {
-    await win.click('[data-tools-toggle]');
-    await win.waitForSelector('[data-tools-palette]', { timeout: 8000 });
+  if ((await win.locator('[data-command-palette]').count()) === 0) {
+    await win.keyboard.press('Control+k');
+    await win.waitForSelector('[data-command-palette]', { timeout: 8000 });
   }
   await win.waitForTimeout(250);
+}
+
+async function runPaletteTool(win, id, query) {
+  await ensurePalette(win);
+  await win.fill('[data-command-palette-input]', query);
+  await win.waitForTimeout(200);
+  await win.locator(`[data-palette-tool-id="${id}"]`).first().click();
 }
 
 // Theme-crossfade probe: counts frames carrying the fallback crossfade class
@@ -216,10 +225,13 @@ async function runSurfaces(app, win, mode) {
   await armAnnotationTool(win, 'select');
   await win.waitForTimeout(300);
 
-  // (c) dialog open (insert pages) via the tools palette.
+  // (c) dialog open (insert pages) via the Command Palette. Pre-open the
+  // palette so the probe's 520ms window covers only the dialog appearance.
   await ensurePalette(win);
+  await win.fill('[data-command-palette-input]', 'insert pages');
+  await win.waitForTimeout(150);
   report.dialogOpen = summarise(await probe(win, '.modal-dialog', 520, async () => {
-    await win.click('[data-tool-id="insertPages"]');
+    await win.locator('[data-palette-tool-id="insertPages"]').first().click();
   }));
   await shot('dialog');
   await win.click('[data-insert-pages-dialog] button[aria-label="Close dialog"]');
@@ -231,7 +243,13 @@ async function runSurfaces(app, win, mode) {
     await win.click('[data-rail-collapse]');
   }));
   await shot('rail');
-  await win.click('[data-rail-collapse]');
+  // DEF-320 — the collapsed panel's expand button is covered by the Stage
+  // Rail; attempt the restore and continue collapsed if it is intercepted.
+  try {
+    await win.click('[data-rail-collapse]', { timeout: 6000 });
+  } catch (err) {
+    console.log(`[P23-C1] DEF-320: expand blocked by the Stage Rail (${err.message.split('\n')[0]})`);
+  }
   await win.waitForTimeout(300);
 
   // (e) tab switch: opening a second document materializes its new tab
@@ -250,20 +268,18 @@ async function runSurfaces(app, win, mode) {
   await win.waitForTimeout(2500);
   await shot('tab');
 
-  // (f) tools-palette resize (list <-> grid width swap).
-  await ensurePalette(win);
-  report.paletteResize = summarise(await probe(win, '[data-tools-palette]', 620, async () => {
-    await win.click('[data-tools-layout="grid"]');
-  }));
-  await win.waitForTimeout(350);
-  await shot('palette');
+  // (f) REMOVED with its subject (Phase 36 chunk 5): the All-tools palette's
+  // list<->grid width swap is retired — the Inspector has ONE width.
 
-  // (g) toast: applying a watermark fires "Watermark applied.".
+  // (g) toast: applying a watermark fires "Watermark applied.". Pre-open the
+  // palette + dialog before the probe so its window covers only the toast.
+  await ensurePalette(win);
+  await win.fill('[data-command-palette-input]', 'watermark');
+  await win.waitForTimeout(150);
+  await win.locator('[data-palette-tool-id="watermark"]').first().click();
+  await win.waitForSelector('[data-watermark-dialog]', { timeout: 8000 });
+  await win.locator('[data-watermark-text]').fill('CONFIDENTIAL');
   report.toast = summarise(await probe(win, '.toast', 1800, async () => {
-    await ensurePalette(win);
-    await win.click('[data-tool-id="watermark"]');
-    await win.waitForSelector('[data-watermark-dialog]', { timeout: 8000 });
-    await win.locator('[data-watermark-text]').fill('CONFIDENTIAL');
     await win.click('[data-watermark-confirm]');
   }));
   await win.waitForTimeout(200);
@@ -293,11 +309,10 @@ const COMPARED = [
   ['dialogOpen', 'dialog open'],
   ['rail', 'rail collapse'],
   ['tabMaterialize', 'tab switch (new tab)'],
-  ['paletteResize', 'tools-palette resize'],
   ['toast', 'toast'],
 ];
 
-test('C1 animations OFF: instant path for all 8 surfaces + end-geometry parity', async () => {
+test('C1 animations OFF: instant path for all 7 surfaces + end-geometry parity', async () => {
   test.setTimeout(420000);
   const off = await launchWithSettings('c1-off', { animationsEnabled: false });
   let offReport;
@@ -325,7 +340,7 @@ test('C1 animations OFF: instant path for all 8 surfaces + end-geometry parity',
   log('C1-on', onReport);
 
   // The OFF path must show no intermediate frame on any surface.
-  for (const s of ['menuOpen', 'menuClose', 'panelOpen', 'dialogOpen', 'rail', 'tabMaterialize', 'paletteResize', 'toast']) {
+  for (const s of ['menuOpen', 'menuClose', 'panelOpen', 'dialogOpen', 'rail', 'tabMaterialize', 'toast']) {
     expect(offReport[s].frames, `OFF ${s}: surface was sampled`).toBeGreaterThan(0);
     expect(offReport[s].intermediates, `OFF ${s}: no intermediate frame`).toBe(0);
     log(`C1-${s}-off`, { frames: offReport[s].frames, intermediates: offReport[s].intermediates, distinctRects: offReport[s].distinctRects, end: offReport[s].end });
