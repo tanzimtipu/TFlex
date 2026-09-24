@@ -80,13 +80,21 @@ describe("B11 — OCR palette shortcut on empty tab (re-verified for retest)", (
     );
   });
 
-  it("the Tools palette wires its OCR-suspects click through onOpenOcrSuspects (not raw setState)", async () => {
+  it("the EDIT ContextPanel wires its OCR-suspects click through onOpenOcrSuspects (not raw setState)", async () => {
+    // Phase 36 STAGES retired the Tools palette from App's render tree. The
+    // OCR-suspects entry's current homes are the EDIT ContextPanel's "Review
+    // suspects" action and the Action Dock's `ocrSuspects` row (the Command
+    // Palette runs the same dock action); both route through the SAME gated
+    // onOpenOcrSuspects handler. Pin both call sites.
     const text = await readFile(APP_PATH, "utf8");
-    const paletteMatch = text.match(/onOcrSuspects=\{[^}]*\}/);
-    expect(paletteMatch).not.toBeNull();
-    if (paletteMatch === null) return;
-    expect(paletteMatch[0]).toContain("onOpenOcrSuspects");
-    expect(paletteMatch[0]).not.toContain("setOcrSuspectsOpen(true)");
+    const panelMatch = text.match(/onOpenOcrSuspects=\{onOpenOcrSuspects\}/);
+    expect(panelMatch, "EDIT ContextPanel suspects wiring missing").not.toBeNull();
+    const dockMatch = text.match(/ocrSuspects: \(\): void => onOpenOcrSuspects\(\)/);
+    expect(dockMatch, "Action Dock suspects wiring missing").not.toBeNull();
+    for (const call of [panelMatch?.[0] ?? "", dockMatch?.[0] ?? ""]) {
+      expect(call).toContain("onOpenOcrSuspects");
+      expect(call).not.toContain("setOcrSuspectsOpen(true)");
+    }
   });
 
   it("no keyboard shortcut bypasses the guard (no direct setOcrSuspectsOpen(true) outside the three legitimate sites)", async () => {

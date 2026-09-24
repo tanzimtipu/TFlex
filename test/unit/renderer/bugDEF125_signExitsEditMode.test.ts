@@ -55,8 +55,15 @@ describe("DEF-125 — arming the Sign tool exits Edit mode", () => {
     expect(body).toMatch(/setArmedSignatureId\(signatureId\)/);
   });
 
-  it("the Tools palette's Sign button exits Edit mode before opening the modal", () => {
-    const match = appSource.match(/onSign=\{\(\): void => \{[\s\S]*?\n              \}\}/);
+  it("the REVIEW dock's sign verb exits Edit mode before opening the modal", () => {
+    // Phase 36 STAGES retired the Tools palette's `onSign` prop. The sign
+    // entry's current homes are the REVIEW Action Dock's `sign` verb (the
+    // Command Palette runs this same dock action), the palette row, and the
+    // panel's signature list. The palette row and the signature list both
+    // reach the `onSigManagerApply` path pinned above; the dock verb is the
+    // remaining App-level arm site and carries the SAME DEF-125 edit-mode
+    // exit, so a REVIEW-dock Sign click while Edit is open still lands.
+    const match = appSource.match(/sign: \(\): void => \{[\s\S]*?\n      \},/);
     expect(match).not.toBeNull();
     if (match === null) return;
     const body = match[0];
@@ -66,14 +73,17 @@ describe("DEF-125 — arming the Sign tool exits Edit mode", () => {
     expect(body).toMatch(/setSigModalOpen\(true\)/);
   });
 
-  it("the palette Site exit is inside the un-armed branch (a toggle-off does not need it)", () => {
-    // The toggle-off branch (already armed) must NOT call
-    // setEditMode — Sign is already active there.
-    const match = appSource.match(/onSign=\{\(\): void => \{[\s\S]*?\n              \}\}/);
+  it("the dock sign toggle-off branch is inside the armed early-return (a toggle-off does not need it)", () => {
+    // The toggle-off branch (already armed) must NOT call setEditMode —
+    // Sign is already active there. The retired palette used an `} else {`
+    // block; the dock verb uses an early `return`, so the toggle-off is
+    // everything before that return.
+    const match = appSource.match(/sign: \(\): void => \{[\s\S]*?\n      \},/);
     expect(match).not.toBeNull();
     if (match === null) return;
     const body = match[0];
-    const toggleOff = body.slice(0, body.indexOf("} else {"));
+    const toggleOff = body.slice(0, body.indexOf("return;"));
+    expect(toggleOff).toMatch(/setArmedSignatureId\(null\)/);
     expect(toggleOff).not.toMatch(/setEditMode/);
   });
 });

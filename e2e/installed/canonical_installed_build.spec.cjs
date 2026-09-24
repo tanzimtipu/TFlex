@@ -28,7 +28,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { execSync } = require('node:child_process');
 const { launchApp, getSamplePath } = require('../lib/launch.cjs');
-const { hardClose, dismissUpdatePrompt, openSamplePath, armAnnotationTool } = require('../lib/helpers.cjs');
+const { hardClose, dismissUpdatePrompt, openSamplePath, armAnnotationTool, gotoStage } = require('../lib/helpers.cjs');
 
 // Read the expected version from package.json - never hardcode it.
 const EXPECTED = require('../../package.json').version;
@@ -104,10 +104,19 @@ async function waitForAnn(win, pred, timeout = 15000) {
   return last;
 }
 
-async function openToolsPalette(win) {
-  const palette = win.locator('[data-tools-palette]');
-  if (!(await palette.isVisible().catch(() => false))) await win.locator('[data-tools-toggle]').first().click();
-  await palette.waitFor({ state: 'visible', timeout: 15000 });
+// STAGES retired the All-tools palette (`[data-tools-toggle]` /
+// `[data-tools-palette]`). The tool-browsing surface is the Command Palette now
+// (Ctrl+K); a tool row carries `data-palette-tool-id`.
+async function openCommandPalette(win) {
+  await win.keyboard.press('Control+k');
+  await win.waitForSelector('[data-command-palette]', { state: 'visible', timeout: 15000 });
+}
+
+async function runPaletteTool(win, id, query) {
+  await openCommandPalette(win);
+  await win.fill('[data-command-palette-input]', query);
+  await win.waitForTimeout(300);
+  await win.locator(`[data-palette-tool-id="${id}"]`).first().click();
 }
 
 async function toastText(win, text) {
@@ -153,18 +162,38 @@ test("ABOUT: Help > About reports the package.json version and a non-empty What'
 });
 
 // ===========================================================================
-// 1. annotation toolbar + edit toggle guard (DEF-214)
+// 1. workspace chrome + annotation toolbar reachability + edit toggle guard
 // ===========================================================================
-test('CORE 1: annotation toolbar visible; edit toggle arms/disarms the edit toolbar', async () => {
+// STAGES retired the single-mode command row (and its `.ann-toolbar`). The
+// workspace chrome that stands in for it is the Stage Rail plus the per-stage
+// Action Dock; the annotation toolbar is re-parented into the REVIEW dock's
+// Annotate flyout; the edit toggle is the EDIT dock's `editMode` verb (DEF-314).
+// The assertion INTENT is unchanged: the single-mode command surface exists and
+// is reachable, and the edit toggle arms/disarms the edit toolbar.
+test('CORE 1: Stage Rail chrome reachable; annotation toolbar reachable; edit toggle arms/disarms', async () => {
   await withApp(async (win, pageErrors, app) => {
     await openReport(app, win);
-    const ann = win.locator('.ann-toolbar');
-    await ann.waitFor({ timeout: 15000, state: 'visible' });
-    const box = await ann.boundingBox();
-    expect(box, '.ann-toolbar has a box').not.toBeNull();
-    expect(box.height, '.ann-toolbar visible row').toBeGreaterThan(0);
 
-    const editToggle = win.locator('[data-toolbar-edit-toggle]');
+    // The Stage Rail is the single-mode workspace chrome now.
+    const rail = win.locator('[data-stage-rail]');
+    await rail.waitFor({ timeout: 15000, state: 'visible' });
+    const box = await rail.boundingBox();
+    expect(box, '[data-stage-rail] has a box').not.toBeNull();
+    expect(box.height, '[data-stage-rail] visible column').toBeGreaterThan(0);
+    const stages = await win.$$eval('[data-stage-rail] [data-stage]', (els) =>
+      els.map((e) => e.getAttribute('data-stage')));
+    expect(stages, 'the four stages are reachable from the rail').toEqual(['pages', 'edit', 'review', 'deliver']);
+
+    // The annotation toolbar's new home: the REVIEW dock's Annotate flyout.
+    await gotoStage(win, 3);
+    await win.locator('[data-dock-verb="annotate"]').first().click();
+    await win.waitForSelector('[data-annotation-flyout]', { state: 'visible', timeout: 10000 });
+    expect(await win.locator('[data-annotation-flyout] .ann-toolbar').isVisible(),
+      'annotation toolbar reachable in the REVIEW flyout').toBe(true);
+
+    // The edit toggle is the EDIT dock's `editMode` verb now.
+    await gotoStage(win, 2);
+    const editToggle = win.locator('[data-dock-verb="editMode"]');
     expect(await editToggle.count(), 'exactly one edit toggle').toBe(1);
     await editToggle.click();
     await win.waitForSelector('[data-edit-toolbar]', { timeout: 10000 });
@@ -245,14 +274,14 @@ test('CORE 3: the annotation colour picker opens, dismisses, and applies a colou
 test('CORE 4: watermark apply then delete round-trips', async () => {
   await withApp(async (win, pageErrors, app) => {
     await openReport(app, win);
-    await openToolsPalette(win);
-    await win.locator('[data-tool-id="watermark"]').click();
+    // The tool-browsing surface is the Command Palette now (the All-tools
+    // palette is retired); watermark's home is the palette.
+    await runPaletteTool(win, 'watermark', 'Watermark');
     await win.locator('[data-watermark-dialog]').waitFor({ state: 'visible', timeout: 10000 });
     await win.locator('[data-watermark-text]').fill('CONFIDENTIAL');
     await win.locator('[data-watermark-confirm]').click();
     await toastText(win, 'Watermark applied.');
-    await openToolsPalette(win);
-    await win.locator('[data-tool-id="watermark"]').click();
+    await runPaletteTool(win, 'watermark', 'Watermark');
     await win.locator('[data-watermark-applied="wm-1"]').waitFor({ state: 'visible', timeout: 15000 });
     await win.locator('[data-watermark-delete="wm-1"]').click();
     await toastText(win, 'Watermark deleted.');
@@ -314,9 +343,14 @@ test('CORE 6: the animations preference toggles the root data-animations hook', 
 });
 
 // ===========================================================================
-// 7. flush canvas
+// 7. flush canvas + the Inspector inset contract
 // ===========================================================================
-test('CORE 7: the canvas is flush (0 padding/gutter) and the page slot is aligned', async () => {
+// STAGES made the Inspector the default-open right panel, so the scroller is
+// inset on its right by the Inspector width (--tf-tools-inset = 264px). That
+// inset is the CURRENT contract, not a gutter: the canvas content stays flush
+// (no padding/margin on .document-content, no padding on the scroller) and the
+// page area is the canvas minus the Inspector.
+test('CORE 7: the canvas is flush and the page area is inset by the Inspector', async () => {
   await withApp(async (win, pageErrors, app) => {
     await openReport(app, win);
     await win.evaluate(() => { const sc = document.querySelector('.document-scroller'); if (sc) sc.scrollTop = 0; });
@@ -325,6 +359,8 @@ test('CORE 7: the canvas is flush (0 padding/gutter) and the page slot is aligne
       const sc = document.querySelector('.document-scroller');
       const ct = document.querySelector('.document-content');
       const slot = document.querySelector('.page-slot[data-page="1"]');
+      const main = document.querySelector('.workspace-main');
+      const insp = document.querySelector('[data-inspector]');
       const cs = (el) => {
         const s = getComputedStyle(el);
         return { pt: s.paddingTop, pb: s.paddingBottom, pl: s.paddingLeft, pr: s.paddingRight,
@@ -332,16 +368,31 @@ test('CORE 7: the canvas is flush (0 padding/gutter) and the page slot is aligne
       };
       const scR = sc.getBoundingClientRect();
       const slR = slot.getBoundingClientRect();
+      const mainR = main.getBoundingClientRect();
+      const inspR = insp ? insp.getBoundingClientRect() : null;
       return { theme: document.documentElement.dataset.theme, scroller: cs(sc), content: cs(ct),
+        inset: getComputedStyle(document.querySelector('.app-main')).getPropertyValue('--tf-tools-inset').trim(),
+        scrollerWidth: Math.round(scR.width), mainWidth: Math.round(mainR.width),
+        inspectorWidth: inspR ? Math.round(inspR.width) : null,
         slotTopGap: +(slR.top - scR.top).toFixed(2) };
     });
     log('flush', m);
-    for (const [k, v] of Object.entries(m.scroller)) {
-      expect(v, `.document-scroller ${k} is 0`).toMatch(/^0(px)?$/);
+    // The canvas itself stays flush: the scroller carries no padding and the
+    // content wrapper carries no padding or margin.
+    for (const k of ['pt', 'pb', 'pl', 'pr', 'mt', 'mb', 'ml']) {
+      expect(m.scroller[k], `.document-scroller ${k} is 0`).toMatch(/^0(px)?$/);
     }
     for (const [k, v] of Object.entries(m.content)) {
       expect(v, `.document-content ${k} is 0`).toMatch(/^0(px)?$/);
     }
+    // The Inspector is default-open: the scroller's right inset IS the
+    // Inspector width, and the page area is the canvas minus that inset.
+    expect(m.inset, 'the Inspector inset token').toBe('264px');
+    expect(m.scroller.mr, '.document-scroller margin-right is the Inspector inset').toBe(m.inset);
+    expect(m.inspectorWidth, 'the Inspector renders at the inset width').toBeGreaterThanOrEqual(258);
+    expect(m.inspectorWidth).toBeLessThanOrEqual(270);
+    expect(m.mainWidth - m.scrollerWidth, 'the scroller width is the canvas minus the Inspector').toBeGreaterThanOrEqual(255);
+    expect(m.mainWidth - m.scrollerWidth).toBeLessThanOrEqual(272);
     expect(Math.abs(m.slotTopGap), 'page slot flush with the scroller top').toBeLessThanOrEqual(1);
     expect(pageErrors, 'zero uncaught renderer page errors').toEqual([]);
   }, 'canonical-core7');

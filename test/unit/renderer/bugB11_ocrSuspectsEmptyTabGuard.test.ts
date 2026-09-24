@@ -61,17 +61,20 @@ describe("B11 — OCR suspects panel must not open on an empty tab", () => {
     );
   });
 
-  it("the Tools palette call site routes through onOpenOcrSuspects (not a raw setState)", () => {
-    // The previous bug was a raw `setOcrSuspectsOpen(true)` in the
-    // palette wiring. Pin the new wiring: every palette trigger
-    // routes through the guarded handler.
-    const paletteMatch = appSource.match(
-      /onOcrSuspects=\{[^}]*\}/,
-    );
-    expect(paletteMatch).not.toBeNull();
-    if (paletteMatch === null) return;
-    expect(paletteMatch[0]).toContain("onOpenOcrSuspects");
-    expect(paletteMatch[0]).not.toContain("setOcrSuspectsOpen(true)");
+  it("the EDIT ContextPanel / Action Dock call sites route through onOpenOcrSuspects (not a raw setState)", () => {
+    // Phase 36 STAGES retired the Tools palette (the old raw-setState
+    // wiring is gone with it). The suspects entry now lives in the EDIT
+    // ContextPanel's "Review suspects" action and the Action Dock's
+    // `ocrSuspects` row, which the Command Palette runs through the same
+    // dock action. Both route through the guarded handler.
+    const panelMatch = appSource.match(/onOpenOcrSuspects=\{onOpenOcrSuspects\}/);
+    expect(panelMatch, "EDIT ContextPanel suspects wiring missing").not.toBeNull();
+    const dockMatch = appSource.match(/ocrSuspects: \(\): void => onOpenOcrSuspects\(\)/);
+    expect(dockMatch, "Action Dock suspects wiring missing").not.toBeNull();
+    for (const call of [panelMatch?.[0] ?? "", dockMatch?.[0] ?? ""]) {
+      expect(call).toContain("onOpenOcrSuspects");
+      expect(call).not.toContain("setOcrSuspectsOpen(true)");
+    }
   });
 
   it("the only direct setOcrSuspectsOpen(true) calls in App.tsx are inside the guarded onOpenOcrSuspects / OCR-confirm / batch paths", () => {

@@ -172,17 +172,25 @@ describe("B11 / DEF-102 — OCR entries are disabled on a doc-less tab", () => {
     }
   });
 
-  it("App passes documentRequired=false for an empty tab (the undefined !== null trap)", () => {
-    // Read the App source for the exact wiring: the previous shape
-    // `activeTab !== null` was TRUE for an empty tab (openTabs has
-    // no entry, so activeTab is undefined). The fix gates on the
-    // tab not being empty.
+  it("App no longer passes the retired palette's documentRequired; the suspects entry routes through the gated handler", () => {
+    // Phase 36 STAGES retired the Tools palette from App's render tree, so
+    // App no longer passes a `documentRequired` prop to anything. The old
+    // `activeTab !== null` trap is therefore unreachable by shape. The
+    // doc-required gating now happens per-document: the EDIT ContextPanel
+    // only renders inside a real tab's DocumentView, and its "Review
+    // suspects" action is wired to App's gated `onOpenOcrSuspects` (which
+    // requires a non-null active tab id AND an OCR run — pinned by
+    // bugB11_ocrSuspectsEmptyTabGuard). The palette's own doc-less gate is
+    // still pinned behaviourally by the two mount tests above.
     const fs = require("node:fs") as typeof import("node:fs");
     const path = require("node:path") as typeof import("node:path");
     const appPath = path.join(__dirname, "..", "..", "..", "src", "renderer", "App.tsx");
     const source = fs.readFileSync(appPath, "utf8");
-    expect(source).toMatch(/documentRequired=\{\s*tabs\.activeId\s*!==\s*null\s*&&\s*!activeIsEmpty\s*\}/);
-    // The broken shape must be gone.
+    // The retired palette prop is not wired anywhere in App.
+    expect(source).not.toMatch(/documentRequired=/);
+    // The EDIT panel's suspects action routes through the gated handler.
+    expect(source).toMatch(/onOpenOcrSuspects=\{onOpenOcrSuspects\}/);
+    // The broken `activeTab !== null` trap shape must stay gone.
     expect(source).not.toMatch(/documentRequired=\{activeTab !== null\}/);
   });
 });
