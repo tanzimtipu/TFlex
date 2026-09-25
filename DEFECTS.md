@@ -5,6 +5,140 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-356: Ctrl+S on a CLEAN on-disk document rewrote the file although the toolbar Save is disabled
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 40
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper (`e2e/phase40_def351_356_verify.spec.cjs`).
+2. Open a real on-disk PDF (a temp copy of `report.pdf` via the Open dialog override); the toolbar Save is disabled and the document is clean.
+3. Record the file's SHA-256, mtime and size; press Ctrl+S; re-read them.
+4. Modify the document (rotate page 1), confirm Save is enabled, press Ctrl+S again, re-read.
+
+Expected: with a clean on-disk document Ctrl+S is a silent no-op (matching the disabled toolbar Save), so the file's SHA/mtime/size are unchanged; a modified document still saves.
+Actual (pre-fix): Ctrl+S reached App's `onSave`, which called `engine.save` unconditionally and rewrote the file even though the UI said Save was disabled.
+Raw (post-fix): clean before saveDisabled=true sha=9b39af69e81ee8a5 mtime=1789550984915.226 size=33028; after Ctrl+S sha=9b39af69e81ee8a5 mtime=1789550984915.226 size=33028 (shaChanged=false mtimeChanged=false); modified saveDisabled=false; after Ctrl+S sha=7129733769f60ac8 (shaChanged=true) saveDisabled=true.
+
+History:
+- qa: opened (Ctrl+S observation, Phase 40 post-gate).
+- fix: `saveIntentFor` (src/renderer/state/saveGuard.ts) resolves a clean on-disk document to `clean` and App's `onSave` returns without writing; a modified document resolves to `save`.
+- qa: CLOSED -- retested on the rebuilt dev tree. `e2e/phase40_def351_356_verify.spec.cjs` DEF-356: 6 passed overall; the clean Ctrl+S left the file byte-identical (SHA 9b39af69e81ee8a5, mtime and size unchanged) and the modified Ctrl+S wrote a new SHA (7129733769f60ac8) and returned the document to clean (Save disabled). The modified case is the control proving the accelerator path really saves, so the clean no-op is not a false pass.
+
+## DEF-355: Pressed-state Open label (3.75:1) and dark active page-layout icon (2.98:1) are below the Phase-38 floors
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-095)
+- Phase: 40
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper (`e2e/phase40_def351_356_verify.spec.cjs`).
+2. Open `report.pdf`; for each theme force `data-theme` on the root.
+3. Hold the mouse down over `[data-toolbar-open]` and measure the label's contrast; measure the ACTIVE `[data-page-layout-option][aria-pressed="true"]` icon's contrast.
+4. WCAG helper: walk ancestors to the first opaque background, blend alpha, compute the relative-luminance ratio.
+
+Expected: Phase 38 floors hold in every state -- 4.5:1 for text, 3:1 for icons.
+Actual (pre-fix): pressed `.titlebar-file-btn` Open label 3.75:1 in light (plain `--accent` on `--accent-pressed-soft`); active page-layout icon 2.98:1 in dark (plain `--accent` on the active tool-btn wash) -- a hair under the 3:1 icon floor.
+Raw (post-fix): pressed Open 4.86 / 6.15 / 4.91 (light / dark / frosted); active page-layout icon 5.69 / 6.08 / 5.55. Both floors met in all three themes (dark icon 6.08 >= 3; every pressed Open >= 4.5).
+Screenshot: screenshots/def-355-open-layout-dark.png
+
+History:
+- qa: opened (adversary ADV-095).
+- fix: the pressed `.titlebar-file-btn:active` ink and `.canvas-page-layout .tool-btn-active` ink now use `--dock-primary-fg` (the accent-family on-wash token) instead of plain `--accent`.
+- qa: CLOSED -- retested on the rebuilt dev tree. `e2e/phase40_def351_356_verify.spec.cjs` DEF-355: 6 passed overall; measured with the adversary's exact helper: pressed Open 4.86 / 6.15 / 4.91 and active layout icon 5.69 / 6.08 / 5.55, all above the 4.5:1 text and 3:1 icon floors. Screenshot inspected: dark ghost Open label and the active layout icon are legible.
+
+## DEF-354: Palette "Recent"/"Global" stage-tag text is below the 4.5:1 floor in all three themes
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-094)
+- Phase: 40
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper (`e2e/phase40_def351_356_verify.spec.cjs`).
+2. Open `report.pdf`; open the Ctrl+K palette; for each theme force `data-theme` on the root.
+3. Measure text-on-real-background contrast for every `.command-palette-tag` (walk ancestors to the first opaque background; blend alpha; WCAG relative-luminance ratio).
+
+Expected: every tag's text meets 4.5:1 in all three themes (Phase 40 item 12).
+Actual (pre-fix): the four stage tags passed, but the non-stage `Recent`/`Global` tags fell back to `var(--accent)` on `var(--accent-soft)` and measured 4.37 / 3.24 / 4.34 (light / dark / frosted).
+Raw (post-fix): `Recent` 5.67 / 6.61 / 5.63; `Global` 5.67 / 6.61 / 5.63 (light / dark / frosted); the four stage tags measured 8.62 / 7.59 / 9.12 (Pages), 6.70 / 7.29 / 8.65 (Edit), 6.29 / 6.33 / 7.95 (Review), 7.13 / 8.42 / 6.83 (Deliver). Every measured tag >= 4.5.
+Screenshot: screenshots/def-354-palette-tags-dark.png
+
+History:
+- qa: opened (adversary ADV-094).
+- fix: `.command-palette-tag` now inks the non-stage fallback with `--dock-primary-fg` (the accent-family on-wash token) instead of plain `--accent`.
+- qa: CLOSED -- retested on the rebuilt dev tree. `e2e/phase40_def351_356_verify.spec.cjs` DEF-354: 6 passed overall; the Recent/Global tags measured 5.67 / 6.61 / 5.63 in light / dark / frosted (matching the frontend-dev's report) and no measured tag fell below 4.5:1. Screenshot inspected: the dark palette's Recent and Pages tags are legible.
+
+## DEF-353: The palette pin icon can disagree with the dock when an id is present in both `dockPins` and `dockUnpinned`
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-093)
+- Phase: 40
+
+Steps to reproduce:
+1. Pre-write a schema-valid but hostile `settings.json` into a fresh userData dir: `dockPins: ["__nope__","rotate","rotate","delete","delete","annotate","sign","watermark","merge"]`, `dockUnpinned: ["merge","merge","__bogus__","not-real-tool","delete"]`.
+2. `npm.cmd run build` (exit 0); launch the dev app with that userData dir through the canonical helper (`e2e/phase40_def351_356_verify.spec.cjs`).
+3. Open `report.pdf`, open the Ctrl+K palette, and compare every row's `data-palette-pinned` against the `[data-dock-verb]` membership.
+4. Restart with the same hand-written profile and repeat.
+
+Expected: the palette's pin icon and the dock render the same membership for every tool; with an id in both lists the UN-PIN wins (`delete` is dropped from `dockPins` and kept in `dockUnpinned`).
+Actual (pre-fix): `disagree: ["delete"]` -- `sanitizeDockPins` kept `delete` as an explicit pin while `sanitizeDockUnpinned` also kept it, so `isToolPinned("delete")` took the stage-default branch and read unpinned while the dock rendered the explicit pin.
+Raw (post-fix): launch 1 disagree=[] deleteRow={"id":"delete","pinned":"false"} dockHasDelete=false dock=["rotate","extract","insertPages","replacePages","split","cropPages","annotate"]; launch 2 (restart) disagree=[] deleteRow={"id":"delete","pinned":"false"} dockHasDelete=false (same dock).
+
+History:
+- qa: opened (adversary ADV-093).
+- fix: `sanitizeDockCuration` (src/renderer/state/dockModel.ts) resolves `dockPins`/`dockUnpinned` into one mutually-exclusive pair (un-pin wins), and App reads the dock curation through it.
+- qa: CLOSED -- retested on the rebuilt dev tree. `e2e/phase40_def351_356_verify.spec.cjs` DEF-353: 6 passed overall; on both the first launch and a restart with the same hostile profile the palette-vs-dock disagreement list is empty, the disputed `delete` reads unpinned in the palette and is not rendered by the dock.
+
+## DEF-352: The palette pin toggle cannot restore a removed stage-default once four explicit pins exist, and reports a false "Dock is full (max 4 pins)"
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-092)
+- Phase: 40
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper (`e2e/phase40_def351_356_verify.spec.cjs`); open `report.pdf` (PAGES stage).
+2. Open the Ctrl+K palette, search `merge` and click its pin toggle to UNPIN that stage default (the dock drops it).
+3. Search/pin four NON-stage tools (`annotate`, `sign`, `stamp`, `watermark`) so `dockPins` holds four explicit pins.
+4. Search `merge` again (palette shows it unpinned, dock does not contain it) and click its pin toggle to restore it.
+
+Expected: restoring a focused-stage default writes no explicit pin, so it succeeds even at the four-pin cap and adds no "Dock is full" refusal.
+Actual (pre-fix): the notice read `Dock is full (max 4 pins)` and the toggle did nothing -- the capacity guard ran before the default-vs-cross-stage branch, so a restore that needed no pin slot was refused.
+Raw (post-fix): merge before {"pinned":"true","inDock":true,"dockCount":8}; unpin notice "Unpinned Merge PDFs from the dock" dockHasMerge=false dockCount=7; four pins dockPins=["annotate","sign","stamp","watermark"]; restore before {"pinned":"false","inDock":false,"dockCount":11} notice="Pinned Merge PDFs to the dock" after {"pinned":"true","inDock":true,"dockCount":12}; final dockPins still length 4, dockUnpinned=[].
+Dock contents after restore: ["rotate","extract","insertPages","replacePages","split","delete","merge","cropPages","annotate","sign","stamp","watermark"].
+
+History:
+- qa: opened (adversary ADV-092).
+- fix: `palettePinAllowed` (src/renderer/state/dockModel.ts) exempts a stage default from the pin cap, and `pinDockTool` restores a default by only removing it from `dockUnpinned`.
+- qa: CLOSED -- retested on the rebuilt dev tree. `e2e/phase40_def351_356_verify.spec.cjs` DEF-352: 6 passed overall; with four explicit pins the restore succeeded (notice "Pinned Merge PDFs to the dock", no "Dock is full"), merge is back in the dock (12 verbs), and `dockPins` stayed at four with `dockUnpinned` empty.
+
+## DEF-351: The TWO/FOUR page pill swaps its range readout for a bare page without selecting, so a click-and-type jump appends (14 instead of 4) or is silently refused
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-091)
+- Phase: 40
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper (`e2e/phase40_def351_356_verify.spec.cjs`); open `report.pdf` (34 pages); select the TWO page layout.
+2. Click the page pill and type `4`; press Enter.
+3. Repeat the "3 + 6" case (the row readout `3-4`; click and type `6`), and repeat in FOUR.
+
+Expected: focusing the range readout swaps it to the editable page AND selects it, so the first keystroke replaces the value; the jump lands on page 4 / the row beginning at 4 (never 14), and `3` + `6` lands on the row beginning at 6 (never a silently refused 63).
+Actual (pre-fix): the `onFocus` swap to the bare page did not select it, so typing appended -- `1-2` + `4` -> `14` (jumped to page 14) or `3` + `6` -> `63` (parseInt 63 > pageCount, silently refused).
+Raw (post-fix): TWO resting {"value":"1-2"}; click -> {"value":"1","ss":0,"se":1}; type 4 -> {"value":"4"}; Enter -> {"value":"3-4","currentPage":3}. B: blur, click -> {"value":"3","ss":0,"se":1}; type 6 -> {"value":"6"}; Enter -> {"value":"5-6","currentPage":5}. FOUR: type 4 -> {"value":"4"}; Enter -> {"value":"3-4"}. No append, no silent refusal.
+Screenshot: screenshots/def-351-page-pill-jump.png
+
+History:
+- qa: opened (adversary ADV-091).
+- fix: CanvasPills' page input now selects the numeric value on focus (a layout-effect re-select after the swap, plus a click re-select), so a keystroke replaces the shown value.
+- qa: CLOSED -- retested on the rebuilt dev tree. `e2e/phase40_def351_356_verify.spec.cjs` DEF-351: 6 passed overall; the pill replaced on type in TWO and FOUR (click -> value `1`/`3` fully selected; type `4` -> `4`; Enter -> row `3-4`) and the `3` + `6` case replaced to `6` and landed on row `5-6` rather than being refused. Screenshot inspected: the pill reads `3-4 / 34` after the jump.
+
 ## DEF-350: verify:full gate flake - engine getDocumentBytes byte-equality test fails when the two serializations straddle a one-second boundary
 
 - Status: CLOSED

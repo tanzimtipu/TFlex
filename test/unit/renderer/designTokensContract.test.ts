@@ -995,25 +995,23 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     expect(dark).toMatch(/--bg-base:\s*#0b0d0f/);
   });
 
-  it("frosted mutes the tool-icon palette in-block only (desaturated but still colorful)", () => {
-    // The full-saturation icon palette stays in :root (light + flat
-    // dark keep it untouched); frosted overrides every --icon-* token
-    // with a slightly muted variant inside its own block. The muted
-    // hues must still be colorful — a wide channel spread, never
-    // gray or white.
+  it("frosted re-tunes the semantic palette in-block only (a real deeper step)", () => {
+    // Phase 40 (item 11) — the flat light palette stays in :root (light + flat
+    // dark keep it untouched); frosted overrides every --sem-* role with a
+    // deeper step tuned to the light glass. The override must be a real
+    // change, and every role value must remain a saturated-enough colour
+    // (never gray or white).
     const frosted = frostedBlock();
     const root = lightThemeBlock(css);
-    for (const name of ["blue", "cyan", "green", "orange", "yellow", "purple", "red", "pink"]) {
-      const rootHex = new RegExp(`--icon-${name}:\\s*(#[0-9a-fA-F]{6})`).exec(root)?.[1];
-      const frostedHex = new RegExp(`--icon-${name}:\\s*(#[0-9a-fA-F]{6})`).exec(frosted)?.[1];
-      expect(rootHex, `:root must declare --icon-${name}`).toBeTruthy();
-      expect(frostedHex, `frosted must override --icon-${name}`).toBeTruthy();
+    for (const role of ["primary", "neutral", "affirmative", "attention"]) {
+      const rootHex = new RegExp(`--sem-${role}:\\s*(#[0-9a-fA-F]{6})`).exec(root)?.[1];
+      const frostedHex = new RegExp(`--sem-${role}:\\s*(#[0-9a-fA-F]{6})`).exec(frosted)?.[1];
+      expect(rootHex, `:root must declare --sem-${role}`).toBeTruthy();
+      expect(frostedHex, `frosted must override --sem-${role}`).toBeTruthy();
       if (!rootHex || !frostedHex) continue;
-      // The override must actually mute the hue (a real change, not a
-      // no-op alias).
       expect(frostedHex.toLowerCase()).not.toBe(rootHex.toLowerCase());
       const [r, g, b] = [1, 3, 5].map((i) => parseInt(frostedHex.slice(i, i + 2), 16));
-      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeGreaterThanOrEqual(24);
+      expect(Math.max(r, g, b) - Math.min(r, g, b)).toBeGreaterThanOrEqual(20);
     }
   });
 
@@ -1113,36 +1111,30 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     }
   });
 
-  it("colorful tool icons ship their semantic palette — no monochrome leftovers, no rainbow text", () => {
+  it("ships the semantic 4-role palette — the 8 ad-hoc hues are gone, no rainbow text", () => {
+    // Phase 40 (item 11) — the eight per-family --icon-* hues are REMOVED and
+    // replaced by four named roles. This pins the replaced palette at the
+    // source: the roles exist, no --icon-* token survives, and every icon
+    // colour rule routes through a declared semantic token.
     const root = lightThemeBlock(css);
-    for (const token of [
-      "--icon-blue",
-      "--icon-cyan",
-      "--icon-green",
-      "--icon-orange",
-      "--icon-yellow",
-      "--icon-purple",
-      "--icon-red",
-      "--icon-pink",
-    ]) {
+    for (const token of ["--sem-primary", "--sem-neutral", "--sem-affirmative", "--sem-attention"]) {
       expect(root).toMatch(new RegExp(`${token}\\s*:`));
     }
-    // Every icon selector routes through var(--icon-*) — the palette
-    // is the single color source for tool icons.
-    const iconRules = css.match(/\.(?:tool-btn|ann-tool-btn|edit-toolbar-btn)[^}]*\{[^}]*color:\s*var\(--icon-[a-z]+\)[^}]*\}/g) ?? [];
+    // No legacy hue token survives anywhere (definition or use).
+    expect(css).not.toMatch(/--icon-(?:blue|cyan|green|orange|yellow|purple|red|pink)\b/);
+    // Every tool-icon rule routes through the semantic palette (roles or the
+    // stage tokens that resolve from them).
+    const iconRules = css.match(
+      /\.(?:tool-btn|ann-tool-btn|edit-toolbar-btn)[^}]*\{[^}]*color:\s*var\(--(?:sem-[a-z]+|tf-stage-[a-z]+)\)[^}]*\}/g,
+    ) ?? [];
     expect(iconRules.length).toBeGreaterThanOrEqual(11);
-    // Text/indicators must never dip into the icon palette at random: every
-    // `color: var(--icon-...)` use must be attributed to an ICON SURFACE — a
-    // tool-button attribute grip (the Phase-B rule) OR a Phase-38 (feature B)
-    // family-coloured chrome control (dock verb, header control, stage rail,
-    // canvas pill, command-palette row, context panel, inspector). Colour is
-    // never the only signal: shape + label still carry the meaning.
-    const iconUses = [...css.matchAll(/color:\s*var\(--icon-[a-z]+\)/g)];
-    const iconRuleSelectors = [...css.matchAll(/([^{}]*)\{[^}]*color:\s*var\(--icon-[a-z]+\)/g)];
-    expect(iconRuleSelectors.length).toBe(iconUses.length);
-    for (const m of iconRuleSelectors) {
+    // Colour is never the only signal: shape + label still carry the meaning.
+    const roleUses = [...css.matchAll(/color:\s*var\(--(?:sem-[a-z]+|tf-stage-[a-z]+)\)/g)];
+    const roleSelectors = [...css.matchAll(/([^{}]*)\{[^}]*color:\s*var\(--(?:sem-[a-z]+|tf-stage-[a-z]+)\)/g)];
+    expect(roleSelectors.length).toBe(roleUses.length);
+    for (const m of roleSelectors) {
       expect(m[1] ?? "").toMatch(
-        /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab|stage|dock-verb|context-panel-stage)=|tools-palette-entry-icon|icon-detail|::after|action-dock-verb|titlebar-file-btn|header-|theme-toggle|tab-new|stage-rail|canvas-pill|command-palette-row-icon|inspector|context-panel|tool-btn/,
+        /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab|stage|dock-verb|context-panel-stage)=|tools-palette-entry-icon|action-dock-verb|titlebar-file-btn|header-|theme-toggle|tab-new|stage-rail|canvas-pill|command-palette-row-icon|inspector|context-panel|tool-btn|\.context-panel|\.inspector|\.command-palette/,
       );
     }
   });

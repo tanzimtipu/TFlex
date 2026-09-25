@@ -277,7 +277,9 @@ test('P36C2-B1 live previews and thumbnail geometry', async () => {
   await openDoc('scanned.pdf');
 
   await expect(win.locator(PANEL)).toBeVisible();
-  await expect(win.locator(`${PANEL} .glass-sidebar-title`)).toHaveText('Pages · 6');
+  // Phase 37 (item 15) — the PAGES header title is retired; the panel is
+  // identified by its stage attribute and the thumbnail count below.
+  expect(await win.locator(`${PANEL} .glass-sidebar-title`).count(), 'the retired Pages title is absent').toBe(0);
 
   const panel = await measure(PANEL);
   table('B1 previews + geometry', panel);
@@ -392,7 +394,9 @@ test('P36C2-B2 rotate and delete re-render the panel', async () => {
 
   await expect.poll(async () => (await engine()).pageCount, { timeout: 30000 }).toBe(33);
   await expect.poll(async () => win.locator(`${PANEL} .thumb-item`).count(), { timeout: 30000 }).toBe(33);
-  await expect(win.locator(`${PANEL} .glass-sidebar-title`)).toHaveText('Pages · 33');
+  // Phase 37 (item 15) — the PAGES header title is retired; the page count is
+  // asserted through the engine + thumbnail count above.
+  expect(await win.locator(`${PANEL} .glass-sidebar-title`).count(), 'the retired Pages title is absent').toBe(0);
 
   const panel = await measure(PANEL);
   table('B2 after delete', panel);

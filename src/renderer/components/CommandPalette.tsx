@@ -21,7 +21,7 @@
 // shows. Nothing here is a second implementation of anything.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent, ReactElement } from 'react';
+import type { ChangeEvent, MouseEvent as ReactMouseEvent, ReactElement } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Pin, Search } from 'lucide-react';
 import {
@@ -35,7 +35,7 @@ import {
   type PaletteRecentFile,
   type PaletteRow,
 } from '../state/commandPalette';
-import { canPinMore } from '../state/dockModel';
+import { palettePinAllowed } from '../state/dockModel';
 import type { ToolEntry } from '../state/toolsRegistry';
 import { useBackdropFadeAnimation, useCommandPaletteAnimation } from '../hooks/useAnimations';
 
@@ -58,9 +58,21 @@ export interface CommandPaletteProps {
   onRunTool: (id: string) => void;
   /** Pin a registry tool id to the dock (the host's `dockPins` writer). */
   onPinTool: (id: string) => void;
+  /** Phase 40 (item 6) — unpin a registry tool id from the dock (the host's
+   *  `dockUnpinned`/pin-removal writer). The row's pin affordance is a real
+   *  TOGGLE, so the palette needs both directions of the same store. */
+  onUnpinTool?: (id: string) => void;
   /** The persisted, registry-validated dock pins (max 4) — drives the pinned
    *  marker and the full-dock refusal. */
   dockPins?: readonly string[];
+  /** DEF-352 — whether the id is part of the FOCUSED stage's default dock set.
+   *  A restore of a removed stage default writes no explicit pin, so it is
+   *  allowed even at the 4-pin cap; only a cross-stage pin consumes a slot. */
+  isStageDefault?: (id: string) => boolean;
+  /** Phase 40 (item 6) — the host's TRUE dock membership (explicit pin OR a
+   *  focused-stage default the user has not un-pinned). Drives the pin
+   *  toggle's icon/state; absent falls back to `dockPins` membership. */
+  isToolPinned?: (id: string) => boolean;
   /** Live availability gate, same contract as the Action Dock. */
   isToolEnabled?: (entry: ToolEntry) => boolean;
   /** DEF-327 — the SAME live refusal copy the Action Dock shows, so a disabled
@@ -81,12 +93,15 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
     onClose,
     onRunTool,
     onPinTool,
+    onUnpinTool,
     dockPins = NO_PINS,
     isToolEnabled,
     disabledReasonFor,
     toolUsage,
     recentFiles = NO_RECENTS,
     onOpenRecent,
+    isToolPinned,
+    isStageDefault,
     entries,
   } = props;
 
@@ -116,11 +131,12 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
         recents: recentFiles,
         usage: toolUsage,
         dockPins,
+        isToolPinned,
         isToolEnabled: (entry): boolean => gateRef.current?.(entry) ?? true,
         disabledReasonFor: (entry): string | undefined => reasonRef.current?.(entry),
         entries,
       }),
-    [open, query, recentFiles, toolUsage, dockPins, entries],
+    [open, query, recentFiles, toolUsage, dockPins, isToolPinned, entries],
   );
 
   // Opening resets the surface: an empty query, the first runnable row
@@ -175,14 +191,46 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
         setNotice(`${row.entry.label} is already pinned`);
         return;
       }
-      if (!canPinMore(dockPins)) {
+      if (!palettePinAllowed({ pins: dockPins, isStageDefault: isStageDefault?.(row.id) ?? false })) {
         setNotice(PALETTE_DOCK_FULL_MESSAGE);
         return;
       }
       onPinTool(row.id);
       setNotice(`Pinned ${row.entry.label} to the dock`);
     },
-    [dockPins, onPinTool],
+    [dockPins, onPinTool, isStageDefault],
+  );
+
+  // Phase 40 (item 6) — the row's pin affordance is a real TOGGLE. The event is
+  // stopped from reaching the row, so a pin click NEVER runs the tool and NEVER
+  // closes the palette; it only flips the dock store. The cap applies on the
+  // PIN direction only (removing a pin can never overflow). Both writers are the
+  // host's existing `dockPins`/`dockUnpinned` path (`pinDockTool` /
+  // `unpinDockTool`), so the state persists across a restart.
+  const togglePinRow = useCallback(
+    (row: PaletteRow, event: ReactMouseEvent<HTMLButtonElement>): void => {
+      // Keep the click off the row's run handler and off the palette's
+      // document-level outside-mousedown listener (the button is inside the
+      // box, so the latter would not close anyway — this is the run guard).
+      event.stopPropagation();
+      if (row.kind !== 'tool' || !row.enabled) return;
+      if (row.pinned) {
+        if (onUnpinTool === undefined) {
+          setNotice(`${row.entry.label} is pinned to the dock`);
+          return;
+        }
+        onUnpinTool(row.id);
+        setNotice(`Unpinned ${row.entry.label} from the dock`);
+        return;
+      }
+      if (!palettePinAllowed({ pins: dockPins, isStageDefault: isStageDefault?.(row.id) ?? false })) {
+        setNotice(PALETTE_DOCK_FULL_MESSAGE);
+        return;
+      }
+      onPinTool(row.id);
+      setNotice(`Pinned ${row.entry.label} to the dock`);
+    },
+    [dockPins, onPinTool, onUnpinTool, isStageDefault],
   );
 
   const runHighlighted = useCallback((): void => {
@@ -319,6 +367,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactElement {
                   highlighted={index === highlight}
                   onHover={setHighlight}
                   onRun={runRow}
+                  onTogglePin={togglePinRow}
                 />
               ))}
             </ul>
@@ -354,14 +403,16 @@ interface PaletteRowItemProps {
   highlighted: boolean;
   onHover: (index: number) => void;
   onRun: (row: PaletteRow) => void;
+  onTogglePin: (row: PaletteRow, event: ReactMouseEvent<HTMLButtonElement>) => void;
 }
 
 /** One row: the semantic icon + label, the right-aligned stage tag (tools),
- *  the shortcut text, and the pinned marker. Disabled rows are rendered
- *  `aria-disabled` with the reason in `title` and carry no click handler, so
- *  a click on them is inert by construction rather than a silent no-op. */
+ *  the shortcut text, and — Phase 40 (item 6) — the pin TOGGLE beside every
+ *  tool. Disabled rows are rendered `aria-disabled` with the reason in `title`
+ *  and carry no click handler, so a click on them is inert by construction
+ *  rather than a silent no-op. */
 function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
-  const { row, index, listId, highlighted, onHover, onRun } = props;
+  const { row, index, listId, highlighted, onHover, onRun, onTogglePin } = props;
   const actionable = isRowActionable(row);
   const id = `${listId}-option-${row.key}`;
 
@@ -409,11 +460,43 @@ function PaletteRowItem(props: PaletteRowItemProps): ReactElement {
       </span>
       <span className="command-palette-row-label">{row.entry.label}</span>
       <span className="command-palette-row-desc">{row.reason ?? row.entry.description}</span>
-      {row.pinned && (
-        <span className="command-palette-pin" data-palette-pin aria-label="Pinned to dock">
-          <Pin size={12} aria-hidden />
+      {/* Phase 40 (item 6) — the pin TOGGLE. Its glyph is a solid, upright pin
+          when the tool is in the dock and an outline, 45deg-tilted pin when it
+          is not, so the state reads by SHAPE as well as by colour. The click
+          handler stops propagation, so a pin click never runs the row. */}
+      <button
+        type="button"
+        className={
+          row.pinned
+            ? 'command-palette-pin-toggle command-palette-pin-toggle-on'
+            : 'command-palette-pin-toggle'
+        }
+        data-palette-pin-toggle
+        data-palette-pin-state={row.pinned ? 'pinned' : 'unpinned'}
+        {...(row.pinned ? { 'data-palette-pin': 'true' } : {})}
+        aria-pressed={row.pinned}
+        aria-label={
+          row.pinned
+            ? `Unpin ${row.entry.label} from the dock`
+            : `Pin ${row.entry.label} to the dock`
+        }
+        title={
+          row.pinned
+            ? `Unpin ${row.entry.label} from the dock`
+            : `Pin ${row.entry.label} to the dock`
+        }
+        disabled={!row.enabled}
+        onClick={(event): void => onTogglePin(row, event)}
+      >
+        <span className="command-palette-pin-glyph" data-pin-state={row.pinned ? 'pinned' : 'unpinned'}>
+          <Pin
+            size={13}
+            fill={row.pinned ? 'currentColor' : 'none'}
+            className={row.pinned ? 'pin-glyph-pinned' : 'pin-glyph-unpinned'}
+            aria-hidden
+          />
         </span>
-      )}
+      </button>
       {row.entry.shortcut.length > 0 && (
         <span className="command-palette-shortcut">{row.entry.shortcut}</span>
       )}

@@ -409,6 +409,12 @@ const api = {
   openFileDialog(kind?: OpenFileDialogKind): Promise<string | null> {
     return ipcRenderer.invoke(IPC.openFileDialog, kind);
   },
+  // Phase 40 — multi-select sibling of `openFileDialog` ("Merge PDF from
+  // scratch"). Forwards the same optional `kind`; resolves to the picked
+  // paths (normalized by main) or an empty array on cancel.
+  openFilesDialog(kind?: OpenFileDialogKind): Promise<string[]> {
+    return ipcRenderer.invoke(IPC.openFilesDialog, kind);
+  },
   async loadPdf(path: string): Promise<Result<ArrayBuffer, PdfOpenError>> {
     const result = (await ipcRenderer.invoke(IPC.pdfLoad, path)) as Result<ArrayBuffer, PdfOpenError>;
     if (!result.ok) {

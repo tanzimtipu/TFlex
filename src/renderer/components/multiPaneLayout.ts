@@ -17,7 +17,16 @@
 // area collapsing to zero.
 
 import { THUMB_MIN_WIDTH, THUMB_RAIL_INSET_PX } from "./thumbGeometry";
-import { PILL_INSET, ZOOM_FULL_W } from "../state/pillFit";
+import {
+  COMPACT_MIN_CANVAS,
+  FULL_MIN_CANVAS,
+  PAGE_COMPACT_W,
+  PAGE_FULL_W,
+  PILL_INSET,
+  PILL_ROW_GAP,
+  ZOOM_COMPACT_W,
+  ZOOM_FULL_W,
+} from "../state/pillFit";
 
 /** The divider's rendered width; mirrors `--tf-divider-w` in styles.css. */
 export const PANE_DIVIDER_W_PX = 8;
@@ -109,23 +118,57 @@ export function bandClearsDock(args: {
   return bandPx >= bottomInsetPx + dockHeightPx + liftPx;
 }
 
-/** Phase 39 (DEF-349) — the height of the per-pane bottom band Multi Mode
- *  reserves for that pane's own floating pills once they no longer fit inside
- *  the pane's page column. Two stacked pill rows (42px each) plus the 6px gap
- *  and the 12px bottom inset — the same stacked geometry the single-mode
- *  ladder uses (see `pillFit.ts`). The strip stops above this band, so a pill
- *  can never overlap the strip or its page-action bar. */
-export const MULTI_PILL_BAND_PX = 102;
+/** Phase 40 (item 1) — the height of the per-pane bottom band Multi Mode
+ *  reserves for that pane's floating pills once they can no longer fit
+ *  HORIZONTALLY inside the pane's page column. The pills are never stacked any
+ *  more, so the band is ONE pill row (42px) plus the 12px bottom inset plus a
+ *  2px clearance: the strip (and its page-action bar) stops above the band and
+ *  the pill's top edge can never round into the strip's bottom edge. The strip
+ *  stops above this band, so a pill can never overlap the strip or its bar. */
+export const MULTI_PILL_BAND_PX = 56;
 
-/** The page-column width at which the pane's full pills still fit: they stack
- *  at the pane's outer edge, so the wider zoom pill plus its inset is the
- *  binding constraint (`PILL_INSET + ZOOM_FULL_W` = 230px). At or above this
- *  width the pane needs no reserved band and keeps the Phase 36/37/38
- *  placement exactly. */
-export const MULTI_PILL_FIT_PAGE_PX = PILL_INSET + ZOOM_FULL_W;
+/** Phase 40 (item 1) — the page-column width at which the pane's two pills fit
+ *  HORIZONTALLY at their FULL width (page at the left, zoom at the right):
+ *  the pair needs `FULL_MIN_CANVAS` (404px) plus a 4px guard for the live
+ *  sub-pixel pill widths (measured 154.4px + 218px). Below this the pane
+ *  reserves a one-row band and the pills layer spans the whole pane instead.
+ *  Mirrored by the `multi-pills` container query's 407px threshold. */
+export const MULTI_PILL_FULL_MIN_LAYER_PX = FULL_MIN_CANVAS + 4;
 
-/** The bottom band a pane reserves for its pills: 0 when both pills fit the
- *  page column, `MULTI_PILL_BAND_PX` otherwise. `MultiPane` writes this as
+/** The layer width at/above which the pair fits side by side with the COMPACT
+ *  pills (the zoom percent readout and the "/ N" yield): `COMPACT_MIN_CANVAS`
+ *  (308px) plus the same 4px live-width guard. Mirrored by the `multi-pills`
+ *  container query's 311px threshold. */
+export const MULTI_PILL_COMPACT_MIN_LAYER_PX = COMPACT_MIN_CANVAS + 4;
+
+/** Phase 40 (item 1) — the MICRO tier: the two pills at the pane's own sides
+ *  when even the compact pair is too wide for the pane. The controls stay
+ *  icon-only at the project's dense 24px button size and the pill chrome
+ *  tightens; every control stays present and hit-testable. The numbers are the
+ *  ONE source of truth the `multi-pills` micro container query mirrors
+ *  (page 82 = 8 chrome + 24 + 2 + 22 + 2 + 24; zoom 136 = 8 chrome + 5*24 +
+ *  4*2). */
+export const MULTI_PILL_MICRO_INSET_PX = 6;
+export const MULTI_PILL_MICRO_PAGE_W_PX = 82;
+export const MULTI_PILL_MICRO_ZOOM_W_PX = 136;
+export const MULTI_PILL_MICRO_HEIGHT_PX = 36;
+
+/** The narrowest layer the micro pair fits in: both insets, both pills and the
+ *  row gap between them (238px). At the 640px minimum window a pane is 262px,
+ *  so the micro pair always fits with room to spare. */
+export const MULTI_PILL_MICRO_MIN_LAYER_PX =
+  2 * MULTI_PILL_MICRO_INSET_PX +
+  MULTI_PILL_MICRO_PAGE_W_PX +
+  PILL_ROW_GAP +
+  MULTI_PILL_MICRO_ZOOM_W_PX;
+
+/** The page-column width at/above which the pane keeps the pills inside its
+ *  page column (no band): the full horizontal pair's fit width. */
+export const MULTI_PILL_FIT_PAGE_PX = MULTI_PILL_FULL_MIN_LAYER_PX;
+
+/** The bottom band a pane reserves for its pills: 0 when the FULL pair fits
+ *  horizontally inside the page column, `MULTI_PILL_BAND_PX` otherwise (the
+ *  layer then spans the whole pane). `MultiPane` writes this as
  *  `--tf-multi-pill-band` on the pane; the CSS mirrors it as the workspace's
  *  bottom padding and the pills layer's downward offset. */
 export function multiPillBandPx(paneWidth: number): number {
@@ -142,6 +185,54 @@ export function multiPillSpanPx(paneWidth: number): number {
   const W = Number.isFinite(paneWidth) ? Math.max(0, paneWidth) : 0;
   if (W <= 0 || multiPillBandPx(W) === 0) return 0;
   return stripAndPageWidths(W).strip;
+}
+
+/** The width the pane's pills LAYER spans: the whole pane when a band is
+ *  reserved (the layer is offset outwards by `multiPillSpanPx`), otherwise the
+ *  page column alone. The `multi-pills` container query keys on exactly this
+ *  width, so the tier and the geometry can never disagree. */
+export function multiPillLayerWidthPx(paneWidth: number): number {
+  const W = Number.isFinite(paneWidth) ? Math.max(0, paneWidth) : 0;
+  if (W <= 0) return 0;
+  return multiPillBandPx(W) > 0 ? W : stripAndPageWidths(W).page;
+}
+
+/** Phase 40 (item 1) — the three horizontal-fit tiers of a pane's pills. */
+export type MultiPillTier = "full" | "compact" | "micro";
+
+/** Resolve the tier for the pills LAYER's width (`multiPillLayerWidthPx`). */
+export function multiPillTier(layerWidth: number): MultiPillTier {
+  const W = Number.isFinite(layerWidth) ? Math.max(0, layerWidth) : 0;
+  if (W >= MULTI_PILL_FULL_MIN_LAYER_PX) return "full";
+  if (W >= MULTI_PILL_COMPACT_MIN_LAYER_PX) return "compact";
+  return "micro";
+}
+
+/** One tier's rendered pill metrics: the outer inset, the pill height and the
+ *  two pill widths. The CSS mirrors these exactly (the `multi-pills` container
+ *  tiers in styles.css). */
+export interface MultiPillMetrics {
+  inset: number;
+  height: number;
+  pageW: number;
+  zoomW: number;
+}
+
+/** The metrics a tier renders. Full/compact reuse the shared `pillFit`
+ *  constants; micro is the Multi-Mode-only dense tier above. */
+export function multiPillMetrics(tier: MultiPillTier): MultiPillMetrics {
+  if (tier === "full") {
+    return { inset: PILL_INSET, height: 42, pageW: PAGE_FULL_W, zoomW: ZOOM_FULL_W };
+  }
+  if (tier === "compact") {
+    return { inset: PILL_INSET, height: 42, pageW: PAGE_COMPACT_W, zoomW: ZOOM_COMPACT_W };
+  }
+  return {
+    inset: MULTI_PILL_MICRO_INSET_PX,
+    height: MULTI_PILL_MICRO_HEIGHT_PX,
+    pageW: MULTI_PILL_MICRO_PAGE_W_PX,
+    zoomW: MULTI_PILL_MICRO_ZOOM_W_PX,
+  };
 }
 
 /** The inset the panes actually consume: the requested All Tools inset,

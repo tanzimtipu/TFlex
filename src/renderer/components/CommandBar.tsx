@@ -332,10 +332,10 @@ export function CommandBar(props: CommandBarProps) {
             aria-pressed={multiModeEnabled}
             title={
               multiModeEnabled
-                ? 'Multi Mode on — two documents side by side. Click to return to one document.'
-                : 'Multi Mode: view two documents side by side in one workspace'
+                ? 'Multi Mode on — view/edit two documents side by side. Click to return to one document.'
+                : 'Multi Mode: view/edit two documents side by side in one workspace'
             }
-            aria-label="Multi Mode"
+            aria-label="Multi Mode: view/edit two documents side by side"
             data-toolbar-multi-mode
             data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}
             data-icon="multi-mode"

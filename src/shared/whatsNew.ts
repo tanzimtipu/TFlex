@@ -23,6 +23,18 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.32.0',
+    date: '2026-09-26',
+    highlights: [
+      'Multi View: the page and zoom controls now sit side by side at the edges of each page.',
+      'A new page-layout control at the top-right of the canvas shows one, two or four pages of a document at a time.',
+      'Merge PDF can now start from scratch - pick several files and combine them without opening one first.',
+      'Every tool in the Ctrl+K palette has a pin button, and the top bar has icons for tool search (Ctrl+K) and find (Ctrl+F).',
+      'A calmer, more professional colour system: four semantic colours for icons and text, consistent in all three themes.',
+      'The Open label is readable at rest and the top-bar buttons lost their boxes; the Create-from-images window follows the app window size.',
+    ],
+  },
+  {
     version: '1.31.0',
     date: '2026-09-25',
     highlights: [

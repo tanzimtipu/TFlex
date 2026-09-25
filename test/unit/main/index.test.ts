@@ -178,6 +178,8 @@ vi.mock('../../../src/main/menu', () => ({
 
 vi.mock('../../../src/main/services/dialog', () => ({
   openPdfDialog: vi.fn().mockResolvedValue('/mock/selected.pdf'),
+  // Phase 40 — the multi-select sibling for "Merge PDF from scratch".
+  openPdfDialogMulti: vi.fn().mockResolvedValue(['/mock/selected.pdf']),
   // Phase 35 — the Save-As picker is shared with the virtual-PDF print path;
   // print.ts reads it at module scope, so the mock must export it.
   savePdfDialog: vi.fn().mockResolvedValue('/mock/saved.pdf'),
@@ -230,6 +232,11 @@ describe('main/index - start()', () => {
 
   it('registers dialog:openFile handler', () => {
     expect(getRegisteredChannels()).toContain(IPC.openFileDialog);
+  });
+
+  // Phase 40 — multi-select picker for "Merge PDF from scratch".
+  it('registers dialog:openFiles handler', () => {
+    expect(getRegisteredChannels()).toContain(IPC.openFilesDialog);
   });
 
   it('registers pdf:load handler', () => {

@@ -66,6 +66,21 @@ import {
   type PageDropOp,
 } from "../state/pageDrag";
 import { CanvasPills } from "./CanvasPills";
+import { PageLayoutControl } from "./PageLayoutControl";
+import {
+  DEFAULT_PAGE_LAYOUT,
+  buildRowGeom,
+  layoutFitAnchor,
+  layoutFitViewport,
+  pageLayoutColumns,
+  pageLayoutFitMode,
+  pageLayoutFitPages,
+  pageReadoutLabel,
+  pageToRow,
+  rowToFirstPage,
+  rowsToPageRange,
+  type PageLayoutMode,
+} from "./pageLayoutMode";
 import { AnnotationFlyout } from "./AnnotationFlyout";
 import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
 import { EditToolbar, defaultEditHint } from "../edit/EditToolbar";
@@ -869,6 +884,18 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
 
   const [firstPageSize, setFirstPageSize] = useState<{ w: number; h: number } | null>(null);
 
+  // Phase 40 (item 7) — the SINGLE-VIEW page-layout mode (one / two / four
+  // pages). Per-tab, session-scoped: DocumentView is mounted once per tab
+  // (MultiPane keys each tab-pane by tab id), so this local state is exactly
+  // the tab's session value and is never persisted (REQUIREMENTS.md Phase 40,
+  // Settings impact: none). Multi Mode panes always render ONE (their layout
+  // is out of scope for this item), so the effective mode collapses to ONE
+  // whenever this view fills a pane.
+  const [pageLayout, setPageLayout] = useState<PageLayoutMode>(DEFAULT_PAGE_LAYOUT);
+  const singleView = multiPane === null;
+  const layoutMode: PageLayoutMode = singleView ? pageLayout : DEFAULT_PAGE_LAYOUT;
+  const layoutColumns = pageLayoutColumns(layoutMode);
+
   // Phase 3 â€” annotation tool state. Declared ahead of the Phase-21
   // text-properties panel block below, which reads the armed annotation
   // text tool (`textbox` / `callout` / `note`) to decide whether the
@@ -1603,10 +1630,23 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     fitAnchor,
     paneGateActive ? paneBoxReady : true,
   );
-  const effectiveScale = useMemo(
-    () => computeEffectiveScale(viewportBox, fitAnchor, zoom, CONTENT_PADDING_PX),
-    [zoom, viewportBox, fitAnchor],
-  );
+  const effectiveScale = useMemo(() => {
+    if (layoutMode === "one") {
+      // The DEF-338 gate's exact call — byte-identical behaviour for the
+      // single-page default (the fit has ONE home in `computeEffectiveScale`).
+      return computeEffectiveScale(viewportBox, fitAnchor, zoom, CONTENT_PADDING_PX);
+    }
+    // Phase 40 (item 7) — TWO / FOUR transform the fit box and anchor so the
+    // SAME formula measures the laid-out footprint (2 columns, and 2 rows for
+    // FOUR) minus the inter-column / inter-row gaps. The exact rule per mode
+    // lives in pageLayoutMode.ts.
+    return computeEffectiveScale(
+      layoutFitViewport(layoutMode, zoom.mode, viewportBox),
+      fitAnchor === null ? null : layoutFitAnchor(layoutMode, zoom.mode, fitAnchor),
+      zoom,
+      CONTENT_PADDING_PX,
+    );
+  }, [zoom, viewportBox, fitAnchor, layoutMode]);
   const effectiveScaleRef = useRef(effectiveScale);
   effectiveScaleRef.current = effectiveScale;
 
@@ -1763,8 +1803,21 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     }
     return { geom, pt };
   }, [pageSizes, fallbackSize, firstPageSize, engineState.rotations, effectiveScale, pageCount]);
-  const pageGeomRef = useRef(pageLayouts.geom);
-  pageGeomRef.current = pageLayouts.geom;
+  // Phase 40 (item 7) — the scroller's geometry math runs on ROWS. A
+  // 2-column flow groups pages 1..2 into row 1, 3..4 into row 2, and so on;
+  // each CSS grid row sizes to its tallest page. With `layoutColumns === 1`
+  // every row holds one page and this reduces to `pageLayouts.geom`, so the
+  // single-page default's scroll math is byte-identical.
+  const rowGeom = useMemo(
+    () => buildRowGeom(pageLayouts.geom, layoutColumns),
+    [pageLayouts.geom, layoutColumns],
+  );
+  const rowGeomRef = useRef(rowGeom);
+  rowGeomRef.current = rowGeom;
+  const rowCountRef = useRef(rowGeom.length);
+  rowCountRef.current = rowGeom.length;
+  const columnsRef = useRef(layoutColumns);
+  columnsRef.current = layoutColumns;
 
   // ---- first page dims (placeholder sizing for all pages) -------------------
   //
@@ -2054,16 +2107,25 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const range = mixedVisiblePageRange(
       scroller?.scrollTop ?? 0,
       scroller?.clientHeight ?? 0,
-      pageGeomRef.current,
-      pageCount,
+      // Phase 40 (item 7) — the range is computed in ROWS, then expanded to
+      // the pages those rows hold (1..2 pages per row).
+      rowGeomRef.current,
+      rowCountRef.current,
       PAGE_BUFFER_PAGES,
-      // Phase 29 â€” flush canvas: the content top pad is 0 in every
+      // Phase 29 — flush canvas: the content top pad is 0 in every
       // theme (CONTENT_PADDING_PX), and the mount's "fully above the
       // viewport" math subtracts exactly that real padding.
       contentTopPadRef.current,
     );
-    const rangeStart = range.start;
-    const rangeEnd = range.end;
+    const pageRange = rowsToPageRange(
+      range.start,
+      range.end,
+      columnsRef.current,
+      pageCount,
+    );
+    const rangeStart = pageRange.start;
+    const rangeEnd = pageRange.end;
+
     setMountedPages((prev) => {
       // Drop IO extras that have scrolled far from the current viewport so
       // the union can't grow without bound. We keep anything within
@@ -2129,7 +2191,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     const pending = jumpTargetRef.current;
     if (pending !== null && pendingJumpLandingRef.current && firstPageSize !== null) {
       const top =
-        mixedSlotOffsetTop(pending, pageGeomRef.current, contentTopPadRef.current) -
+        mixedSlotOffsetTop(
+          pageToRow(pending, columnsRef.current),
+          rowGeomRef.current,
+          contentTopPadRef.current,
+        ) -
         contentTopPadRef.current;
       if (Math.abs(scroller.scrollTop - top) > 1) {
         scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
@@ -2161,7 +2227,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       // must leave the scroll position untouched; a real size change
       // (page-1 crop, re-laid-out page) still re-syncs.
       const top =
-        mixedSlotOffsetTop(currentPage, pageGeomRef.current, contentTopPadRef.current) -
+        mixedSlotOffsetTop(
+          pageToRow(currentPage, columnsRef.current),
+          rowGeomRef.current,
+          contentTopPadRef.current,
+        ) -
         contentTopPadRef.current;
       if (Math.abs(scroller.scrollTop - top) > 1) {
         scroller.scrollTo({ top: Math.max(top, 0), behavior: "instant" });
@@ -2170,7 +2240,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     syncGuardRef.current = { firstPageSize, pageCount };
     if (!mountSeededRef.current) {
       mountSeededRef.current = true;
-      const initialEnd = Math.min(pageCount, INITIAL_MOUNT_PAGES);
+      // Phase 40 (item 7) — for a multi-page layout the first viewport holds
+      // up to four pages, so seed at least that many real bitmaps.
+      const initialEnd = Math.min(
+        pageCount,
+        Math.max(INITIAL_MOUNT_PAGES, pageLayoutFitPages(layoutMode)),
+      );
       setMountedPages((prev) => {
         let changed = false;
         const next = new Set(prev);
@@ -2190,7 +2265,10 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     }
     // Run a geometry mount so the state converges with the IO extras.
     computeGeometryMountRef.current();
-  }, [firstPageSize, pageCount, currentPage]);
+    // Phase 40 (item 7) — `layoutMode` is a dep so a mode switch re-runs the
+    // geometry mount against the NEW row geometry (the guard above means the
+    // re-run never re-syncs the scroll or re-seeds the initial range).
+  }, [firstPageSize, pageCount, currentPage, layoutMode]);
 
   // ---- scroll -> current page --------------------------------------------------
   //
@@ -2256,11 +2334,14 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     if (scroller === null || firstPageSize === null) {
       return;
     }
-    const page = mixedPageAtScrollTop(
-      scroller.scrollTop,
-      pageGeomRef.current,
-      pageCount,
-      contentTopPadRef.current,
+    const page = rowToFirstPage(
+      mixedPageAtScrollTop(
+        scroller.scrollTop,
+        rowGeomRef.current,
+        rowCountRef.current,
+        contentTopPadRef.current,
+      ),
+      columnsRef.current,
     );
     setCurrentPage((prev) => (prev === page ? prev : page));
   }, [firstPageSize, pageCount]);
@@ -2280,8 +2361,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       const target = jumpTargetRef.current;
       if (target !== null && firstPageSize !== null) {
         const targetTop =
-          mixedSlotOffsetTop(target, pageGeomRef.current, contentTopPadRef.current) -
-        contentTopPadRef.current;
+          mixedSlotOffsetTop(
+            pageToRow(target, columnsRef.current),
+            rowGeomRef.current,
+            contentTopPadRef.current,
+          ) -
+          contentTopPadRef.current;
         const scroller = scrollerRef.current;
         if (scroller !== null && scroller.scrollTop >= targetTop - 1) {
           jumpTargetRef.current = null;
@@ -2398,7 +2483,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         pendingJumpLandingRef.current = true;
         return;
       }
-      const target = mixedSlotOffsetTop(page, pageGeomRef.current, contentTopPadRef.current);
+      const target = mixedSlotOffsetTop(
+        pageToRow(page, columnsRef.current),
+        rowGeomRef.current,
+        contentTopPadRef.current,
+      );
       // DEF-098 â€” the click's own scroll runs now; make sure the
       // mount-sync effect does not re-apply it as a queued jump
       // (which would INSTANT-kill this smooth scroll). A subsequent
@@ -2486,6 +2575,34 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       dispatchZoom({ type: "set-mode", mode });
     },
     [firstPageSize],
+  );
+
+  // Phase 40 (item 9) — selecting a page-layout mode establishes that mode's
+  // promised fit (fit-page, the only fit that clamps height, so the pages the
+  // mode promises are actually FULLY visible). ONE's layout and readout are
+  // unchanged; its default on open is still the App's fit-width, and this
+  // re-fits only on an explicit mode selection. The manual zoom controls
+  // override the established fit afterwards. Selecting the already-active
+  // option also re-establishes the fit, so a document opened at fit-width can
+  // be fitted to ONE page by clicking the active ONE option.
+  const onChangePageLayout = useCallback(
+    (mode: PageLayoutMode): void => {
+      setPageLayout(mode);
+      setMode(pageLayoutFitMode(mode));
+    },
+    [setMode],
+  );
+
+  // Phase 40 (item 9) — the honest readout for the current layout. Single
+  // column leaves it null (the pill shows the bare page, unchanged); a
+  // multi-column grid shows the row's page range so an even-page jump reports
+  // the page it landed on, not just the row's first page.
+  const pageReadout = useMemo(
+    () =>
+      layoutColumns > 1
+        ? pageReadoutLabel(currentPage, layoutColumns, pageCount)
+        : null,
+    [layoutColumns, currentPage, pageCount],
   );
 
   // ---- ctrl+wheel zoom -----------------------------------------------------------------
@@ -2888,7 +3005,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       if (scroller === null || firstPageSize === null) {
         return;
       }
-      const pageTop = mixedSlotOffsetTop(page, pageGeomRef.current, contentTopPadRef.current);
+      const pageTop = mixedSlotOffsetTop(
+        pageToRow(page, columnsRef.current),
+        rowGeomRef.current,
+        contentTopPadRef.current,
+      );
       const target = pageTop + cssTop - scroller.clientHeight / 2;
       scroller.scrollTo({ top: Math.max(target, 0), behavior: "smooth" });
     },
@@ -3855,7 +3976,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           onPointerCancel={onScrollerPointerUp}
           onDragLeave={canvasDragOn ? onCanvasDragLeave : undefined}
         >
-          <div className="document-content">
+          <div className="document-content" data-page-layout={layoutMode}>
             {/* DEF-338 — a Multi Mode pane holds its first content render
                 until it has a pane-constrained fit (see `paneFitPending`):
                 rendering a slot/placeholder before the pane's own scroller
@@ -4128,6 +4249,15 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             pixel-identical to before. The layer is pointer-inert; the pills,
             the flyout and the dock opt back in. */}
         <div className="canvas-overlay" data-canvas-overlay>
+        {/* Phase 40 (item 7) — the SINGLE-VIEW page-layout control. It sits at
+            the canvas's top-right (inside the canvas-bound overlay, so the open
+            Inspector's inset already keeps it off the panel) and never renders
+            in a Multi Mode pane — the requirement is single-view only, and
+            Multi Mode's layout is untouched. The pills live at the bottom and
+            the dock is Multi Mode only, so the three surfaces cannot overlap. */}
+        {!inMultiPane && (
+          <PageLayoutControl value={pageLayout} onChange={onChangePageLayout} />
+        )}
         {/* Phase 36 (chunk 3b / chunk 7) â€” the floating page + zoom pills.
             SINGLE mode keeps their unchanged placement (page bottom-left, zoom
             bottom-right of the canvas). In MULTI MODE each pane carries its OWN
@@ -4142,6 +4272,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             page={currentPage}
             pageCount={pageCount}
             pageLabel={resolvePageLabel(currentPage, engineState.pageLabels)}
+            pageReadout={pageReadout}
             zoomPercent={Math.round(effectiveScale * 100)}
             zoomMode={zoom.mode}
             onJump={pageJump}

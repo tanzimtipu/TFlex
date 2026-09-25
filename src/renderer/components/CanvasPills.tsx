@@ -27,7 +27,7 @@ import {
   MoveHorizontal,
   Plus,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 import type { PaneId } from '../state/multiMode';
 import type { ZoomMode } from '../state/zoom';
@@ -38,6 +38,13 @@ export interface CanvasPillsProps {
   /** Phase 12 — logical page label for the active page (e.g. "iv", "A1").
    *  Display-only; the input still accepts numeric jumps. */
   pageLabel?: string | null;
+  /** Phase 40 (item 9) — the page readout string. Absent in a single-column
+   *  layout (the input shows `page` exactly as before). In a multi-column grid
+   *  DocumentView passes the row's page RANGE ("3-4") so the readout names the
+   *  page the user navigated to instead of only the row's first page. Focusing
+   *  the input swaps it back to the numeric page for editing; the shared
+   *  `pageJump` parses the leading integer, so committing a range is harmless. */
+  pageReadout?: string | null;
   zoomPercent: number;
   zoomMode: ZoomMode;
   onJump: (input: string) => void;
@@ -68,6 +75,7 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
     page,
     pageCount,
     pageLabel = null,
+    pageReadout = null,
     zoomPercent,
     zoomMode,
     onJump,
@@ -81,10 +89,33 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
     pane = null,
   } = props;
 
-  const [pageInput, setPageInput] = useState(String(page));
+  // Phase 40 (item 9) — the displayed readout is the layout-aware string when
+  // one is supplied (a grid row's page range), else the bare page (today's
+  // single-column behaviour). Focusing swaps to the numeric page so editing
+  // and typing a jump stay a plain integer.
+  const readout = pageReadout !== null ? pageReadout : String(page);
+  const [pageInput, setPageInput] = useState(readout);
   useEffect((): void => {
-    setPageInput(String(page));
-  }, [page]);
+    setPageInput(readout);
+    // `page` is also a dep: a jump to page 4 in a 2-column layout moves the
+    // current page but the row's readout stays "3-4", so the string alone
+    // would not re-fire and the typed "4" would linger. Re-applying on the
+    // page change restores the honest range the moment the jump lands.
+  }, [readout, page]);
+
+  // DEF-351 — replace-on-type. In TWO/FOUR the resting value is the row RANGE
+  // ("3-4"); focusing swaps it to the numeric page (`3`) and must SELECT it, or
+  // the first keystroke APPENDS ("3" + "6" -> "63" -> a silently refused jump).
+  // The swap commits one render later, so the selection is applied in a layout
+  // effect keyed on the value; a mouse click re-selects too, because the
+  // browser's own caret placement runs after the focus event.
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const selectOnCommitRef = useRef(false);
+  useLayoutEffect((): void => {
+    if (!selectOnCommitRef.current) return;
+    selectOnCommitRef.current = false;
+    inputRef.current?.select();
+  }, [pageInput]);
 
   const commit = (): void => {
     onJump(pageInput);
@@ -111,9 +142,20 @@ export function CanvasPills(props: CanvasPillsProps): ReactElement {
         </button>
         <div className="page-indicator">
           <input
+            ref={inputRef}
             className="page-input"
             value={pageInput}
             onChange={(e): void => setPageInput(e.target.value)}
+            onFocus={(e): void => {
+              selectOnCommitRef.current = true;
+              setPageInput(String(page));
+              // Synchronous select for the no-swap case (ONE mode / already
+              // numeric); the layout effect re-selects if the swap re-renders.
+              e.currentTarget.select();
+            }}
+            onClick={(e): void => {
+              e.currentTarget.select();
+            }}
             onBlur={commit}
             onKeyDown={(e): void => {
               if (e.key === 'Enter') {

@@ -26,19 +26,19 @@ const { hardClose, openSample } = require('../lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', '..', 'screenshots');
 
-// The fix's fingerprint: the exact new frosted --icon-* set (styles.css
-// Phase-B block). The old set (#4d8fd8/#3cb7c9/#65a87b/#d9762f/#d3a03f/
-// #9674cf/#d0615d/#c9769f) failed the 3:1 graphical-contrast bar on
-// cyan/green/yellow; every value below clears it.
-const EXPECTED_FROSTED_ICONS = {
-  '--icon-blue': '#3a7bc8',
-  '--icon-cyan': '#2a9da8',
-  '--icon-green': '#4a8f6a',
-  '--icon-orange': '#c55f1a',
-  '--icon-yellow': '#b88a2f',
-  '--icon-purple': '#7d5fc0',
-  '--icon-red': '#b84a47',
-  '--icon-pink': '#b0608a',
+// Phase 40 (item 11) — the eight per-family --icon-* hues are RETIRED. The
+// frosted theme now carries the four semantic roles; each must clear the 3:1
+// graphical floor against the white page backdrop. The retired hue names are
+// asserted ABSENT (empty) so a re-introduced ad-hoc hue fails here.
+const RETIRED_ICON_HUES = [
+  '--icon-blue', '--icon-cyan', '--icon-green', '--icon-orange',
+  '--icon-yellow', '--icon-purple', '--icon-red', '--icon-pink',
+];
+const EXPECTED_FROSTED_ROLES = {
+  '--sem-primary': '#1e40af',
+  '--sem-neutral': '#3a4862',
+  '--sem-affirmative': '#12682f',
+  '--sem-attention': '#9f1239',
 };
 
 function parseRgba(str) {
@@ -158,12 +158,16 @@ test.describe.serial('theme UI fixes (icons / spacing / badge)', () => {
       const out = {};
       for (const k of keys) out[k] = (cs.getPropertyValue(k) || '').trim().toLowerCase();
       return out;
-    }, Object.keys(EXPECTED_FROSTED_ICONS));
-    console.log(`[icons] frosted --icon-* = ${JSON.stringify(iconVars)}`);
-    for (const [k, want] of Object.entries(EXPECTED_FROSTED_ICONS)) {
+    }, [...RETIRED_ICON_HUES, ...Object.keys(EXPECTED_FROSTED_ROLES)]);
+    console.log(`[icons] frosted retired --icon-* = ${JSON.stringify(RETIRED_ICON_HUES.map((k) => iconVars[k]))}`);
+    console.log(`[icons] frosted --sem-* = ${JSON.stringify(EXPECTED_FROSTED_ROLES)}`);
+    for (const k of RETIRED_ICON_HUES) {
+      expect(iconVars[k], `${k} is retired (Phase 40 item 11)`).toBe('');
+    }
+    for (const [k, want] of Object.entries(EXPECTED_FROSTED_ROLES)) {
       expect(
         iconVars[k],
-        `frosted ${k} must be the darker fix value ${want} (got ${iconVars[k]})`,
+        `frosted ${k} must be the semantic role ${want} (got ${iconVars[k]})`,
       ).toBe(want);
       expect(
         contrastVsWhite(iconVars[k]),

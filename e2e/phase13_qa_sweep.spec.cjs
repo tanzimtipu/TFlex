@@ -404,19 +404,15 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
 
   // --- Rotate counter-clockwise changes the engine rotation ---
   const rotBefore = await win.evaluate(() => (window.tflexDiagnostics().engineState.rotations || []).slice(0, 4));
-  // Phase 36 (chunk 3) — the command row is retired; counter-clockwise rotation
-  // is the thumbnail rail's selected-page action (the PAGES dock verb is cw).
-  // The legacy rail (the single-mode default) only SELECTS on a modifier click
-  // — a plain click navigates — so Shift-click the thumb to raise its action
-  // bar. (The multi-select ContextPanel selects on a plain click, but it is
-  // behind the ?tfStagePanel dev flag and not mounted here.)
-  // Phase 36: the thumbnail rail is re-parented under the ContextPanel; the
-  // panel selects on Ctrl+click and its action bar rides the panel thumbs.
+  // Phase 40 (item 9) — the under-thumbnail action bar is RETIRED. The
+  // counter-clockwise rotation keeps its home in the page right-click menu
+  // (the PAGES dock verb is clockwise). Open the menu on the first thumb and
+  // run rotate-ccw from there.
   await gotoStage(win, 1);
   await ensurePanelExpanded(win);
-  await win.locator('[data-context-panel-thumbs] .thumb-item').first().click({ modifiers: ['Control'] });
-  await win.waitForSelector('[data-context-panel-thumbs] [data-rail-action-bar]', { timeout: 8000 });
-  await win.click('[data-context-panel-thumbs] [data-rail-action-bar] [aria-label="Rotate counter-clockwise"]');
+  await win.locator('[data-context-panel-thumbs] .thumb-item').first().click({ button: 'right' });
+  await win.waitForSelector('[data-context-menu]', { state: 'visible', timeout: 8000 });
+  await win.click('[data-menu-item="rotate-ccw"]');
   await wait(1200);
   const rotAfter = await win.evaluate(() => (window.tflexDiagnostics().engineState.rotations || []).slice(0, 4));
   console.log(`[rotate-ccw] before=${JSON.stringify(rotBefore)} after=${JSON.stringify(rotAfter)}`);
@@ -452,15 +448,25 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   const accent = await win.evaluate(() => {
     const cs = getComputedStyle(document.documentElement);
     const open = document.querySelector('[data-toolbar-open]');
+    const label = document.querySelector('.titlebar-file-label');
     const openStyle = open ? getComputedStyle(open) : null;
     return {
       accent: cs.getPropertyValue('--accent').trim(),
       openBg: openStyle ? openStyle.backgroundColor : null,
+      openBorder: openStyle ? openStyle.borderTopColor : null,
+      labelColor: label ? getComputedStyle(label).color : null,
+      semNeutral: cs.getPropertyValue('--sem-neutral').trim(),
     };
   });
   console.log(`[accent] ${JSON.stringify(accent)}`);
   expect(accent.accent.toLowerCase()).toBe('#2563eb');
-  expect(accent.openBg).toBe('rgb(37, 99, 235)');
+  // Phase 40 (items 2 + 13) — the Open control is a GHOST now: no resting
+  // background box or border, and its label is the neutral semantic role
+  // (readable at rest). The retired solid accent fill is asserted absent.
+  expect(accent.openBg).toBe('rgba(0, 0, 0, 0)');
+  expect(accent.openBorder).toBe('rgba(0, 0, 0, 0)');
+  expect(accent.labelColor).toBe('rgb(61, 76, 105)');
+  expect(accent.semNeutral.toLowerCase()).toBe('#3d4c69');
 
   // Phase 36 (chunk 3) — the annotation toolbar lives in the REVIEW Annotate
   // flyout, and the flyout's own Escape handler closed it during the hand-pan
@@ -503,7 +509,7 @@ test('P13-QA: workspace light + icon-only toolbar sweep + hand pan + rotate + ac
   }
   expect(editSweep.labelSpans).toBe(0);
   await win.locator('.edit-toolbar').first().screenshot({ path: path.join(SHOTS, 'phase13-qa-11-edit-toolbar-closeup.png') });
-  await toggleEditMode(win); // close edit mode
+  await gotoStage(win, 1); // leave the EDIT stage (turns edit mode off)
   await wait(400);
 
   console.log(`[errors] ${errors.length}: ${JSON.stringify(errors.slice(0, 5))}`);

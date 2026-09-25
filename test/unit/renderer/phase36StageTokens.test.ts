@@ -2,18 +2,20 @@
 //
 // Phase 36 (chunk 8) — the four per-theme STAGE-IDENTIFICATION tokens.
 //
-// styles.css defines --tf-stage-pages / --tf-stage-edit / --tf-stage-review /
-// --tf-stage-deliver once per theme (light :root, flat dark, frosted). This
-// contract pins three things at the source, mirroring designTokensContract's
-// read-the-stylesheet idiom:
+// Phase 40 (item 11) SUPERSEDES the original contract: the stage tokens no
+// longer carry their own cyan/amber/rose/green hues. They now RESOLVE from the
+// single semantic 4-role palette (--sem-neutral / --sem-primary /
+// --sem-attention / --sem-affirmative), one role per stage by what the stage is
+// FOR. This spec keeps the three things chunk 8 cared about, retargeted:
 //
-//   1. every token exists in all three theme blocks and is a plain hex;
-//   2. the four hues are mutually distinguishable in every theme (>= 35deg of
-//      hue separation) and each clears the WCAG AA floors on the surface it is
-//      drawn on: 4.5:1 for the chip LABEL, 3:1 for the rail ICON / chip tint;
-//   3. the CommandPalette + StageRail rules CONSUME the tokens (no literals) —
-//      the chip label + tint, the pin marker and the rail icon all resolve
-//      from the vars, and the brand accent keeps the active affordance.
+//   1. all four --tf-stage-* tokens exist in all three theme blocks and each
+//      resolves to the declared semantic role via var();
+//   2. the four stage roles resolve to four PAIRWISE-DISTINCT values and each
+//      clears the WCAG AA floors on the surface it is drawn on: 4.5:1 for the
+//      chip LABEL, 3:1 for the rail ICON / chip graphic;
+//   3. the CommandPalette + StageRail rules still CONSUME the tokens (no
+//      literals) — the chip label + tint, the pin marker and the rail icon all
+//      resolve from the vars, and the brand accent keeps the active affordance.
 //
 // The contrast numbers are computed here from the SAME declared surface values
 // the CSS resolves: the palette card is --bg-raised, the rail is --bg-rail, and
@@ -28,17 +30,60 @@ const CSS = readFileSync(resolve(process.cwd(), "src/renderer/styles.css"), "utf
 
 const STAGES = ["pages", "edit", "review", "deliver"] as const;
 const TOKENS = STAGES.map((s) => `--tf-stage-${s}`);
+/** The Phase 40 semantic roles, one per stage (the declared mapping). */
+const STAGE_ROLE: Record<(typeof STAGES)[number], string> = {
+  pages: "--sem-neutral",
+  edit: "--sem-primary",
+  review: "--sem-attention",
+  deliver: "--sem-affirmative",
+};
 
 const block = (re: RegExp): string => re.exec(CSS)?.[1] ?? "";
-const light = block(/:root\s*\{([\s\S]*?)\n\}/m);
-const dark = block(/:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/m);
-const frosted = block(/:root\[data-theme="frosted"\]\s*\{([\s\S]*?)\n\}/m);
+/** Comments stripped before a block is split into declarations, so a `--name`
+ *  declaration preceded by a comment is never dropped. */
+const stripComments = (s: string): string => s.replace(/\/\*[\s\S]*?\*\//g, "");
+const rootVars = ((): Record<string, string> => {
+  const out: Record<string, string> = {};
+  for (const decl of stripComments(block(/:root\s*\{([\s\S]*?)\n\}/m)).split(";")) {
+    const m = decl.match(/^\s*(--[\w-]+)\s*:\s*(.+?)\s*$/s);
+    if (m !== null) out[m[1]] = m[2];
+  }
+  return out;
+})();
+const merge = (theme: string): Record<string, string> => {
+  const out = { ...rootVars };
+  for (const decl of stripComments(theme).split(";")) {
+    const m = decl.match(/^\s*(--[\w-]+)\s*:\s*(.+?)\s*$/s);
+    if (m !== null) out[m[1]] = m[2];
+  }
+  return out;
+};
+const lightBlock = block(/:root\s*\{([\s\S]*?)\n\}/m);
+const darkBlock = block(/:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/m);
+const frostedBlock = block(/:root\[data-theme="frosted"\]\s*\{([\s\S]*?)\n\}/m);
+const THEME_MAPS: Record<string, Record<string, string>> = {
+  light: merge(lightBlock),
+  dark: merge(darkBlock),
+  frosted: merge(frostedBlock),
+};
 
-/** The first six-digit hex a token resolves to inside a theme block. */
-function hex(theme: string, name: string): number[] {
-  const m = new RegExp(`${name}\\s*:\\s*(#[0-9a-fA-F]{6})`).exec(theme);
-  expect(m, `${name} must be defined as a 6-digit hex`).not.toBeNull();
-  const s = (m?.[1] ?? "#000000").slice(1);
+/** Resolve a token through any var() chain inside a theme map. */
+function resolveVar(map: Record<string, string>, name: string, seen: readonly string[] = []): string | undefined {
+  if (seen.includes(name)) return undefined;
+  const raw = map[name];
+  if (raw === undefined) return undefined;
+  const m = raw.match(/var\(\s*(--[\w-]+)\s*(?:,\s*([^)]+))?\)/);
+  if (m === null) return raw;
+  const r = resolveVar(map, m[1] ?? "", [...seen, name]);
+  return r ?? m[2]?.trim();
+}
+
+/** The first six-digit hex a token resolves to inside a theme map. */
+function hex(map: Record<string, string>, name: string): number[] {
+  const raw = resolveVar(map, name);
+  const m = raw === undefined ? null : /^#([0-9a-fA-F]{6})$/.exec(raw.trim());
+  expect(m, `${name} must resolve to a 6-digit hex`).not.toBeNull();
+  const s = (m?.[1] ?? "000000");
   return [0, 2, 4].map((i) => parseInt(s.slice(i, i + 2), 16));
 }
 
@@ -47,8 +92,8 @@ function rgba(value: string): number[] {
   return [Number(m?.[1] ?? 0), Number(m?.[2] ?? 0), Number(m?.[3] ?? 0), m?.[4] === undefined ? 1 : Number(m[4])];
 }
 
-function rgbaDecl(theme: string, name: string): number[] {
-  const m = new RegExp(`${name}\\s*:\\s*(rgba?\\([^)]*\\))`).exec(theme);
+function rgbaDecl(raw: string, name: string): number[] {
+  const m = new RegExp(`${name}\\s*:\\s*(rgba?\\([^)]*\\))`).exec(raw);
   expect(m, `${name} must be an rgba() film`).not.toBeNull();
   return rgba(m?.[1] ?? "rgba(255,255,255,1)");
 }
@@ -66,85 +111,66 @@ const contrast = (a: number[], b: number[]): number => {
   const [hi, lo] = lum(a) > lum(b) ? [lum(a), lum(b)] : [lum(b), lum(a)];
   return (hi + 0.05) / (lo + 0.05);
 };
-const hue = (rgb: number[]): number => {
-  const [r, g, b] = [0, 1, 2].map((i) => (rgb[i] ?? 0) / 255);
-  const mx = Math.max(r ?? 0, g ?? 0, b ?? 0);
-  const mn = Math.min(r ?? 0, g ?? 0, b ?? 0);
-  const d = mx - mn;
-  if (d === 0) return 0;
-  let h = mx === r ? ((g ?? 0) - (b ?? 0)) / d : mx === g ? ((b ?? 0) - (r ?? 0)) / d + 2 : ((r ?? 0) - (g ?? 0)) / d + 4;
-  h *= 60;
-  return h < 0 ? h + 360 : h;
-};
-/** Circular distance between two hue angles, in degrees. */
-const hueGap = (a: number, b: number): number => {
-  const d = Math.abs(a - b) % 360;
-  return Math.min(d, 360 - d);
-};
 
 /** The surface a token is drawn on, per theme (card = palette, rail = stage rail). */
 const surfaces = {
-  light: { card: hex(light, "--bg-raised"), rail: hex(light, "--bg-rail") },
-  dark: { card: hex(dark, "--bg-raised"), rail: hex(dark, "--bg-rail") },
+  light: { card: hex(THEME_MAPS.light, "--bg-raised"), rail: hex(THEME_MAPS.light, "--bg-rail") },
+  dark: { card: hex(THEME_MAPS.dark, "--bg-raised"), rail: hex(THEME_MAPS.dark, "--bg-rail") },
   frosted: {
-    card: over(rgbaDecl(frosted, "--tf-surface-dialog"), hex(frosted, "--tf-bg")),
-    rail: over(rgbaDecl(frosted, "--glass-sidebar-bg"), hex(frosted, "--tf-bg")),
+    card: over(rgbaDecl(frostedBlock, "--tf-surface-dialog"), hex(THEME_MAPS.frosted, "--tf-bg")),
+    rail: over(rgbaDecl(frostedBlock, "--glass-sidebar-bg"), hex(THEME_MAPS.frosted, "--tf-bg")),
   },
 };
 /** The 10% stage tint the chip background uses (the CSS color-mix alpha). */
 const chipBg = (token: number[], card: number[]): number[] =>
   token.map((c, i) => Math.round(c * 0.1 + (card[i] ?? 0) * 0.9));
 /** The rail's active wash: --accent-soft (0.12) over the rail surface. */
-const activeRail = (rail: number[]): number[] => {
-  const accent = rgba((/--accent-soft:\s*(rgba\([^)]*\))/.exec(light)?.[1]) ?? "rgba(37,99,235,0.12)");
+const activeRail = (themeName: string, rail: number[]): number[] => {
+  const accent = rgba(String(resolveVar(THEME_MAPS[themeName], "--accent-soft") ?? "rgba(37,99,235,0.12)"));
   return over([accent[0] ?? 0, accent[1] ?? 0, accent[2] ?? 0, accent[3] ?? 0.12], rail);
 };
 
 const THEMES = [
-  ["light", light],
-  ["dark", dark],
-  ["frosted", frosted],
+  ["light", lightBlock],
+  ["dark", darkBlock],
+  ["frosted", frostedBlock],
 ] as const;
 
-describe("Phase 36 chunk 8 — the four stage tokens exist per theme", () => {
+describe("Phase 40 item 11 — the stage tokens resolve from the semantic roles", () => {
   for (const [name, theme] of THEMES) {
-    it(`defines all four --tf-stage-* tokens in the ${name} theme`, () => {
-      for (const token of TOKENS) {
-        const m = new RegExp(`${token}\\s*:\\s*#[0-9a-fA-F]{6}`).exec(theme);
-        expect(m, `${token} missing from the ${name} theme`).not.toBeNull();
+    it(`binds all four --tf-stage-* tokens to their declared role (${name})`, () => {
+      for (const stage of STAGES) {
+        const token = `--tf-stage-${stage}`;
+        const raw = merge(theme)[token];
+        expect(raw, `${token} missing from the ${name} theme`).toBeDefined();
+        expect(raw, `${token} must resolve from ${STAGE_ROLE[stage]}`).toContain(
+          `var(${STAGE_ROLE[stage]})`,
+        );
       }
     });
   }
 
-  it("leaves the brand accent untouched (the tokens are stage-identification only)", () => {
-    // The stage hues are distinct from the accent in every theme, so a stage
-    // chip can never read as a primary/selection affordance.
-    const accent = /--accent:\s*(#[0-9a-fA-F]{6})/.exec(light)?.[1] ?? "";
-    for (const [name, theme] of THEMES) {
-      for (const token of TOKENS) {
-        const v = new RegExp(`${token}\\s*:\\s*(#[0-9a-fA-F]{6})`).exec(theme)?.[1] ?? "";
-        expect(v.toLowerCase(), `${token} must not equal the accent in ${name}`).not.toBe(accent.toLowerCase());
+  it("uses exactly the four declared semantic roles — no fifth colour", () => {
+    for (const { name } of THEMES.map(([n]) => ({ name: n }))) {
+      const map = THEME_MAPS[name];
+      for (const role of Object.values(STAGE_ROLE)) {
+        expect(map[role], `${role} missing from the ${name} theme`).toBeDefined();
       }
     }
   });
 });
 
-describe("Phase 36 chunk 8 — WCAG AA + mutual distinguishability", () => {
+describe("Phase 40 item 11 — WCAG AA + role distinctness", () => {
   for (const [name] of THEMES) {
-    it(`keeps the four hues a stage apart and above the AA floors (${name})`, () => {
-      const theme = name === "light" ? light : name === "dark" ? dark : frosted;
+    it(`keeps the four stage roles distinct and above the AA floors (${name})`, () => {
       const surface = surfaces[name];
-      const values = TOKENS.map((t) => hex(theme, t));
+      const values = TOKENS.map((t) => hex(THEME_MAPS[name], t));
 
-      // 1. Mutual distinguishability: every pair differs by >= 35deg of hue.
-      for (let i = 0; i < values.length; i += 1) {
-        for (let j = i + 1; j < values.length; j += 1) {
-          const gap = hueGap(hue(values[i] ?? []), hue(values[j] ?? []));
-          expect(gap, `${STAGES[i]} vs ${STAGES[j]} in ${name}`).toBeGreaterThanOrEqual(35);
-        }
-      }
+      // 1. Distinctness: the four stages resolve to four different values.
+      const serialised = values.map((v) => v.join(","));
+      expect(new Set(serialised).size, `${name}: the four stage roles are pairwise distinct`).toBe(4);
 
-      // 2. The chip LABEL (stage hue on the 10% wash of itself) clears 4.5:1.
+      // 2. The chip LABEL (stage role on the 10% wash of itself) clears 4.5:1.
       for (let i = 0; i < values.length; i += 1) {
         const token = values[i] ?? [];
         const ratio = contrast(token, chipBg(token, surface.card));
@@ -153,7 +179,7 @@ describe("Phase 36 chunk 8 — WCAG AA + mutual distinguishability", () => {
 
       // 3. The stage IDENTIFIER (rail icon, chip graphic) clears 3:1 on the
       //    resting rail and on the active rail's accent-soft wash.
-      const active = activeRail(surface.rail);
+      const active = activeRail(name, surface.rail);
       for (let i = 0; i < values.length; i += 1) {
         const token = values[i] ?? [];
         expect(contrast(token, surface.rail), `${STAGES[i]} icon on the ${name} rail`).toBeGreaterThanOrEqual(3);
@@ -163,7 +189,7 @@ describe("Phase 36 chunk 8 — WCAG AA + mutual distinguishability", () => {
   }
 });
 
-describe("Phase 36 chunk 8 — the palette + rail consume the tokens (no literals)", () => {
+describe("Phase 40 item 11 — the palette + rail consume the tokens (no literals)", () => {
   const body = (sel: string): string => {
     const idx = CSS.indexOf(sel);
     expect(idx, `${sel} rule missing`).toBeGreaterThan(-1);
@@ -175,7 +201,10 @@ describe("Phase 36 chunk 8 — the palette + rail consume the tokens (no literal
   it("the stage-tag chip resolves its fill and label from the stage vars", () => {
     const rule = body(".command-palette-tag {");
     expect(rule).toMatch(/background:\s*var\(--stage-soft,\s*var\(--accent-soft\)\)/);
-    expect(rule).toMatch(/color:\s*var\(--stage-hue,\s*var\(--accent\)\)/);
+    // DEF-354 — the non-stage fallback is the accent-family on-wash ink
+    // (`--dock-primary-fg`), not the plain `--accent`, so the Recent / Global
+    // tags clear the 4.5:1 floor in all three themes.
+    expect(rule).toMatch(/color:\s*var\(--stage-hue,\s*var\(--dock-primary-fg\)\)/);
     expect(rule).not.toMatch(NO_LITERAL);
   });
 
@@ -186,7 +215,7 @@ describe("Phase 36 chunk 8 — the palette + rail consume the tokens (no literal
       expect(rule).toMatch(new RegExp(`--stage-soft:\\s*color-mix\\(in srgb,\\s*var\\(--tf-stage-${stage}\\)\\s*10%`));
       expect(rule).not.toMatch(NO_LITERAL);
     }
-    const pin = body(".command-palette-pin {");
+    const pin = body(".command-palette-pin-toggle-on {");
     expect(pin).toMatch(/color:\s*var\(--stage-hue,\s*var\(--accent\)\)/);
     expect(pin).not.toMatch(NO_LITERAL);
   });

@@ -173,7 +173,7 @@ const RAIL_W_PROPERTY = /@property\s+--tf-rail-w\s*\{([^}]*)\}/.exec(STYLES)?.[1
 const STAGE_RAIL_W_TOKEN = Number.parseFloat(/--tf-stage-rail-w:\s*(\d+)px/.exec(STYLES)?.[1] ?? "NaN");
 const LABEL_SIZE_TOKEN = Number.parseFloat(/--tf-label-size:\s*(\d+)px/.exec(STYLES)?.[1] ?? "NaN");
 const OUTLINE = ruleBody(".context-panel-outline");
-const OUTLINE_WITH_BODY = ruleBody(".context-panel-outline:has(.context-panel-outline-body)");
+const OUTLINE_WITH_BODY = ruleBody(".context-panel-outline[data-outline-open='true']");
 const PANEL_HEADER_ACTIONS = ruleBody(".context-panel-header .glass-sidebar-actions");
 const PANEL_ACTIONS = ruleBody(".context-panel-actions");
 const STRIP_WORKSPACE = ruleBody(".workspace:has(> .pane-thumb-strip)");

@@ -693,32 +693,39 @@ function cssRuleBody(src: string, selector: string): string | null {
   }
 }
 
-describe("Phase 36 (chunk 7) ï¿½ the pane pills never reach the shared dock", () => {
-  it("the symmetric dock reserve clears the widest stacked pill footprint", () => {
+describe("Phase 36 (chunk 7) — the pane pills never reach the shared dock", () => {
+  it("the symmetric dock reserve clears the widest single pill footprint", () => {
     // The dock is centred with a symmetric reserve, so its half-width band is
-    // `DOCK_DEFAULT_RESERVE / 2` from each workspace edge. A pane's stacked
-    // pills sit at that pane's OUTER edge (= the workspace edge) and occupy the
-    // widest single pill: 12px inset + the 218px zoom pill, plus the 8px
-    // clearance. The two numbers must match (238 >= 230 + 8).
+    // `DOCK_DEFAULT_RESERVE / 2` from each workspace edge. The reserve basis is
+    // the widest SINGLE pill footprint (12px inset + the 218px zoom pill) plus
+    // the 8px clearance; the two numbers must match (238 >= 230 + 8). Phase 40
+    // keeps the panes' pills clear of the dock structurally (the pane bottom
+    // band, `--tf-multi-dock-band`), so this constant identity is unchanged.
     expect(DOCK_DEFAULT_RESERVE / 2).toBe(DOCK_PILL_INSET + ZOOM_PILL_MAX_W + DOCK_PILL_GAP);
     expect(DOCK_DEFAULT_RESERVE / 2).toBeGreaterThanOrEqual(
       DOCK_PILL_INSET + ZOOM_PILL_MAX_W + DOCK_PILL_GAP,
     );
   });
 
-  it("stacks each pane's pills at its OUTER edge in the stylesheet", () => {
+  it("Phase 40: places each pane's pills HORIZONTALLY, page left / zoom right", () => {
     const css = readFileSync(STYLES_PATH, "utf8");
-    const a = cssRuleBody(css, '.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane="A"] .canvas-pill');
-    const b = cssRuleBody(css, '.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane="B"] .canvas-pill');
-    expect(a ?? "").toMatch(/left:\s*12px\s*;/);
-    expect(a ?? "").toMatch(/right:\s*auto\s*;/);
-    expect(b ?? "").toMatch(/right:\s*12px\s*;/);
-    expect(b ?? "").toMatch(/left:\s*auto\s*;/);
+    // Both panes read ONE inset token: the page pill anchors to the layer's
+    // left and the zoom pill to its right, in pane A and pane B alike (the old
+    // per-pane outer-edge stack is retired).
+    const page = cssRuleBody(
+      css,
+      '.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane] .canvas-pill-page',
+    );
+    expect(page ?? "").toMatch(/left:\s*var\(--tf-multi-pill-inset, 12px\)\s*;/);
+    expect(page ?? "").toMatch(/right:\s*auto\s*;/);
     const zoom = cssRuleBody(
       css,
       '.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane] .canvas-pill-zoom',
     );
-    // The zoom pill stacks ABOVE the page pill (12px inset + 40px pill + 6px gap).
-    expect(zoom ?? "").toMatch(/bottom:\s*58px\s*;/);
+    expect(zoom ?? "").toMatch(/right:\s*var\(--tf-multi-pill-inset, 12px\)\s*;/);
+    expect(zoom ?? "").toMatch(/left:\s*auto\s*;/);
+    // The pills share ONE row: no raised placement survives in Multi Mode.
+    expect(zoom ?? "").toMatch(/bottom:\s*12px\s*;/);
+    expect(zoom ?? "").not.toMatch(/bottom:\s*58px/);
   });
 });

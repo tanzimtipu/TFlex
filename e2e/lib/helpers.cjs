@@ -230,9 +230,11 @@ async function openDockVerb(window, stage, id) {
   await window.waitForTimeout(400);
 }
 
-// The EDIT dock's `editMode` verb is the ONE Edit-mode toggle (DEF-314).
+// Phase 37 (item 13) — the stage IS the Edit-mode switch: entering the EDIT
+// stage turns edit mode on and every other stage turns it off; the `editMode`
+// dock verb is retired. The helper name is kept for its many call sites.
 async function toggleEditMode(window) {
-  await openDockVerb(window, 2, 'editMode');
+  await gotoStage(window, 2);
 }
 
 // The Sign control is a REVIEW dock verb now (its legacy aria-label is gone).

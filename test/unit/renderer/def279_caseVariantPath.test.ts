@@ -162,6 +162,9 @@ describe("DEF-279 — App dedupeTarget uses the canonical path key", () => {
 
   it("still returns the reducer-activated id to Multi Mode", () => {
     expect(appSource).toMatch(/const effectiveId = dedupeTarget\?\.id \?\? id;/);
-    expect(appSource).toMatch(/return \{ tabId: effectiveId \};/);
+    // Phase 40 item 4 — the open path now also returns the engine doc id so
+    // the from-scratch merge can address the freshly opened document without
+    // racing the openTabs commit. The tab id contract is unchanged.
+    expect(appSource).toMatch(/return \{ tabId: effectiveId, engineDocId \};/);
   });
 });

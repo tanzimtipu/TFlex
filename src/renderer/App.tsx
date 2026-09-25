@@ -78,11 +78,11 @@ import { StageRail, isStageRailVisible } from "./components/StageRail";
 // lookup that validates them on read.
 import {
   pinDockTool,
-  sanitizeDockPins,
-  sanitizeDockUnpinned,
+  sanitizeDockCuration,
   unpinDockTool,
   type DockAvailability,
 } from "./state/dockModel";
+import { saveIntentFor } from "./state/saveGuard";
 import { collapsePreferenceAfterToggle, inspectorCollapsedFor, resolveDockLadder } from "./state/dockResponsive";
 import { dockToolsForStage, toolById, type ToolEntry } from "./state/toolsRegistry";
 // Phase 36 (chunk 4) — the Command Palette. `paletteChordFor` owns the
@@ -162,6 +162,10 @@ import { toArrayBuffer } from "./utils/toArrayBuffer";
 import { createDebouncer } from "./utils/debounce";
 import { formatBytes as formatBytesForToast } from "./utils/formatBytes";
 import { downloadBlob } from "./utils/exportDownload";
+import {
+  runMergeFromScratch,
+  mergeClickStartsFromScratch,
+} from "./utils/mergeFromScratch";
 import { removeRecent } from "./state/recentFiles";
 import { getEngine } from "./engine/engineClient";
 import { MergeDialog } from "./components/MergeDialog";
@@ -1386,7 +1390,7 @@ export function App(): ReactElement {
          *  the existing tab). */
         dedupePath?: boolean;
       },
-    ): Promise<{ tabId: string } | null> => {
+    ): Promise<{ tabId: string; engineDocId: string } | null> => {
       const parsed = await openPdfDocument(bytes);
       if (!("doc" in parsed)) {
         pushToast("error", toastForPdfError(parsed.error, source.path));
@@ -1566,7 +1570,12 @@ export function App(): ReactElement {
           });
         })
         .catch(() => undefined);
-      return { tabId: effectiveId };
+      // Phase 40 item 4 — the engine doc id is returned alongside the
+      // tab id so the from-scratch merge flow can address the freshly
+      // opened document without racing the `openTabs` state commit
+      // (`openTabsRef` is stale until React re-renders — see the
+      // loadFormFields comment above).
+      return { tabId: effectiveId, engineDocId };
     },
     [pushToast, toastForPdfError],
   );
@@ -3706,13 +3715,23 @@ export function App(): ReactElement {
     async (tabId: string): Promise<void> => {
       const tab = openTabsRef.current[tabId];
       if (tab === undefined) return;
-      if (tab.session.onDiskPath === null) {
+      // Phase 40 post-gate — mirror the disabled toolbar Save: a CLEAN document
+      // is a silent no-op, so the Ctrl+S accelerator can no longer rewrite an
+      // unchanged file (the UI and the accelerator must agree).
+      const intent = saveIntentFor({
+        onDiskPath: tab.session.onDiskPath,
+        modified:
+          tab.meta.modified === true ||
+          (engineUiRef.current[tabId]?.state ?? tab.engine).modified === true,
+      });
+      if (intent === 'readonly') {
         pushToast(
           "info",
           "This document is read-only. Use Save As to save a copy.",
         );
         return;
       }
+      if (intent === 'clean') return;
       const result = await engineRef.current.save(tab.session.engineDocId);
       if (!result.ok) {
         pushToast("error", describeEngineError(result.error.code, result.error.message));
@@ -3784,6 +3803,106 @@ export function App(): ReactElement {
     [pushToast, setEngineUiFor],
   );
 
+  // Phase 40 item 4 — "Merge PDFs" with NO document open. The Welcome
+  // screen (and the File menu) can start a merge from scratch: one
+  // multi-select picker, the first picked file opens as a brand-new
+  // in-memory document, and the rest are merged into it by path. The
+  // sequencing lives in the pure `runMergeFromScratch` helper so it is
+  // unit-tested without mounting App; these closures supply the real
+  // picker / engine / tab wiring.
+  const runFromScratchMerge = useCallback(async (): Promise<void> => {
+    const pickPdfPaths = window.tflex.openFilesDialog;
+    if (pickPdfPaths === undefined) {
+      pushToast("error", "This build cannot select multiple PDFs.");
+      return;
+    }
+    await runMergeFromScratch({
+      pickPdfPaths: (): Promise<string[]> => pickPdfPaths("pdf"),
+      openSinglePdf: (path: string): Promise<unknown> => openPdfFromPath(path),
+      openFirstAsCombined: async (
+        firstPath: string,
+        totalPicked: number,
+      ): Promise<{ tabId: string; engineDocId: string } | null> => {
+        const loaded = await window.tflex.loadPdf(firstPath);
+        if (!loaded.ok) {
+          pushToast("error", toastForPdfError(loaded.error.code, firstPath));
+          return null;
+        }
+        // In-memory: a from-scratch merge is a NEW document and must
+        // never overwrite the first source file (Save-As is required
+        // to keep it, exactly like split / extract / optimize).
+        const opened = await openFromBytes(toArrayBuffer(loaded.value), {
+          kind: "file",
+          path: `<merge>${firstPath}`,
+          displayName: `Merged (${totalPicked} files)`,
+          onDiskPath: null,
+          dedupePath: false,
+        });
+        if (opened === null) return null;
+        return { tabId: opened.tabId, engineDocId: opened.engineDocId };
+      },
+      mergeRest: async (
+        tabId: string,
+        engineDocId: string,
+        otherPaths: string[],
+      ): Promise<{ ok: boolean; message?: string }> => {
+        const result = await engineRef.current.merge(
+          engineDocId,
+          otherPaths,
+          "after",
+        );
+        if (!result.ok) {
+          return {
+            ok: false,
+            message: describeEngineError(result.error.code, result.error.message),
+          };
+        }
+        noteOpApplied(tabId, result.value);
+        // Merge mutates page content: rebuild the tab's PDF.js proxy
+        // so the merged-in pages render (same refresh crop / stamp /
+        // the doc-bound merge already use).
+        const refreshFn = refreshDocProxyForRef.current;
+        if (refreshFn !== null) {
+          void refreshFn(tabId).catch(() => undefined);
+        }
+        return { ok: true };
+      },
+      onError: (message: string): void => {
+        pushToast("error", message);
+      },
+      onMerged: (tabId: string, totalPicked: number): void => {
+        // Mark the combined tab modified so the header dot shows it
+        // has not been saved yet (mirrors the split / extract flow).
+        dispatchTabs({ type: "set-modified", id: tabId, modified: true });
+        setOpenTabs((prev) => {
+          const tab = prev[tabId];
+          if (tab === undefined) return prev;
+          return {
+            ...prev,
+            [tabId]: { ...tab, meta: { ...tab.meta, modified: true } },
+          };
+        });
+        pushToast("info", `Merged ${totalPicked} PDFs into one document.`);
+      },
+    });
+  }, [openFromBytes, openPdfFromPath, pushToast, noteOpApplied, toastForPdfError]);
+
+  /** Phase 40 item 4 — one Merge entry point for the Welcome screen,
+   *  the File menu and the dock. No document open -> from-scratch
+   *  multi-select merge; otherwise the existing doc-bound dialog. */
+  const openMergeFlow = useCallback((): void => {
+    // "No document open" includes an active EMPTY tab (a "+ tab" with
+    // no document registered in openTabs) — not just activeId === null.
+    const activeId = tabsRef.current.activeId;
+    const hasDocument =
+      activeId !== null && openTabsRef.current[activeId] !== undefined;
+    if (mergeClickStartsFromScratch(hasDocument ? activeId : null)) {
+      void runFromScratchMerge();
+      return;
+    }
+    setMergeOpen(true);
+  }, [runFromScratchMerge]);
+
   // Phase 7 — native application menu. The backend builds the menu
   // (see src/main/menu.ts) and pushes every action over IPC as a
   // 'menu:action' channel carrying { action: string }. The preload
@@ -3826,7 +3945,7 @@ const menuContext: MenuActionContext = useMemo<MenuActionContext>(
         void onOpenClick();
       },
       merge: (): void => {
-        setMergeOpen(true);
+        openMergeFlow();
       },
       // DEF-065 — Save / Save As / Close Tab / Undo / Redo are
       // document-bound menu actions. The renderer's context
@@ -3963,6 +4082,7 @@ const menuContext: MenuActionContext = useMemo<MenuActionContext>(
       onRedo,
       onToggleTheme,
       onCheckForUpdate,
+      openMergeFlow,
     ],
   );
 
@@ -3975,8 +4095,9 @@ useEffect(() => {
 
   // ---- merge / split dialogs ----
   const onMergeClick = useCallback((): void => {
-    setMergeOpen(true);
-  }, []);
+    // Phase 40 item 4 — routes from-scratch (no doc) or doc-bound.
+    openMergeFlow();
+  }, [openMergeFlow]);
 
   const onCancelMerge = useCallback((): void => {
     setMergeOpen(false);
@@ -7708,11 +7829,15 @@ pushToast(
 
   // The dock's persisted pins + un-pins, both validated against the registry on
   // read (unknown ids dropped, de-duped, capped). These are the ONLY writers.
-  const dockPins = useMemo(() => sanitizeDockPins(settings?.dockPins), [settings?.dockPins]);
-  const dockUnpinned = useMemo(
-    () => sanitizeDockUnpinned(settings?.dockUnpinned),
-    [settings?.dockUnpinned],
+  // DEF-353 — resolve them as ONE mutually-exclusive pair so a hostile settings
+  // file (an id in both `dockPins` and `dockUnpinned`) can never make the dock
+  // and the palette disagree. The un-pin wins; see `sanitizeDockCuration`.
+  const dockCuration = useMemo(
+    () => sanitizeDockCuration({ pins: settings?.dockPins, unpinned: settings?.dockUnpinned }),
+    [settings?.dockPins, settings?.dockUnpinned],
   );
+  const dockPins = dockCuration.pins;
+  const dockUnpinned = dockCuration.unpinned;
   // Phase 37 (item 21) — the CURRENT stage's default verb ids, used to decide
   // whether a pin RESTORES an un-pinned default tool or records a cross-stage
   // pin (see `pinDockTool`). The focused pane's stage drives the shared dock.
@@ -7721,22 +7846,28 @@ pushToast(
     [activeStage],
   );
 
+  // Phase 40 (item 6) — the palette's pin toggle reads the SAME dock curation
+  // the Action Dock uses: an explicit cross-stage pin OR a focused-stage
+  // default the user has not un-pinned. The toggle icon then reflects what the
+  // dock is actually showing, and the writers below (`onDockPin` /
+  // `onDockUnpin`, Phase 37's `pinDockTool` / `unpinDockTool`) keep both
+  // directions coherent and persisted.
+  const isPaletteToolPinned = useCallback(
+    (id: string): boolean =>
+      dockDefaultIds.includes(id) ? !dockUnpinned.includes(id) : dockPins.includes(id),
+    [dockDefaultIds, dockPins, dockUnpinned],
+  );
+
   const onDockPin = useCallback(
     (id: string): void => {
       setSettings((prev) => {
         if (prev === null) return prev;
-        const next = pinDockTool(
-          {
-            pins: sanitizeDockPins(prev.dockPins),
-            unpinned: sanitizeDockUnpinned(prev.dockUnpinned),
-          },
-          id,
-          dockDefaultIds,
-        );
+        const current = sanitizeDockCuration({ pins: prev.dockPins, unpinned: prev.dockUnpinned });
+        const next = pinDockTool(current, id, dockDefaultIds);
         const updated: AppSettings = { ...prev, dockPins: next.pins, dockUnpinned: next.unpinned };
         if (
-          next.pins.length === sanitizeDockPins(prev.dockPins).length &&
-          next.unpinned.length === sanitizeDockUnpinned(prev.dockUnpinned).length
+          next.pins.length === current.pins.length &&
+          next.unpinned.length === current.unpinned.length
         ) {
           return prev;
         }
@@ -7751,17 +7882,11 @@ pushToast(
     (id: string): void => {
       setSettings((prev) => {
         if (prev === null) return prev;
-        const next = unpinDockTool(
-          {
-            pins: sanitizeDockPins(prev.dockPins),
-            unpinned: sanitizeDockUnpinned(prev.dockUnpinned),
-          },
-          id,
-          dockDefaultIds,
-        );
+        const current = sanitizeDockCuration({ pins: prev.dockPins, unpinned: prev.dockUnpinned });
+        const next = unpinDockTool(current, id, dockDefaultIds);
         if (
-          next.pins.length === sanitizeDockPins(prev.dockPins).length &&
-          next.unpinned.length === sanitizeDockUnpinned(prev.dockUnpinned).length
+          next.pins.length === current.pins.length &&
+          next.unpinned.length === current.unpinned.length
         ) {
           return prev;
         }
@@ -7771,6 +7896,13 @@ pushToast(
       });
     },
     [trackAndSave, dockDefaultIds],
+  );
+
+  // DEF-352 — the palette's pin toggle may only report "dock full" for a
+  // cross-stage pin; a restore of a focused-stage default writes no slot.
+  const isPaletteStageDefault = useCallback(
+    (id: string): boolean => dockDefaultIds.includes(id),
+    [dockDefaultIds],
   );
 
   // The app-level availability gate for the dock. The registry DECLARES the
@@ -7912,6 +8044,13 @@ pushToast(
     if (!multiMode.enabled) return map.get("single") ?? {};
     return map.get(multiMode.focused) ?? map.get("A") ?? map.get("B") ?? map.get("single") ?? {};
   }, [multiMode.enabled, multiMode.focused]);
+
+  // Phase 40 (item 5) — the top bar's Ctrl+F icon opens the SAME find surface
+  // the Ctrl+F chord and the palette's `find` row open: the focused pane's own
+  // `find` view command. One implementation of "find", three entry points.
+  const openFindInDocument = useCallback((): void => {
+    focusedViewCommands()["find"]?.();
+  }, [focusedViewCommands]);
 
   // DEF-327 — each mounted DocumentView ALSO publishes the dock availability it
   // already gives the Action Dock (the live gate + the refusal copy). The
@@ -8233,6 +8372,14 @@ pushToast(
           onPrint={openPrintWindow}
           // DEF-336 — enabled only with a real document on the active tab.
           printEnabled={activeTabHasDocument}
+          // Phase 40 (item 5) — the TWO distinct search icons. Ctrl+K opens
+          // the Command Palette (the same `openCommandPalette` every palette
+          // route uses); Ctrl+F opens the focused pane's find bar through the
+          // view command above. `findEnabled` mirrors the Print gate: the find
+          // bar is per-document, so it disables with a reason when none is open.
+          onOpenToolSearch={openCommandPalette}
+          onOpenFind={openFindInDocument}
+          findEnabled={activeTabHasDocument}
           // Phase 22 — the relocated Open / Save / Save As. The CommandBar
           // no longer renders them; the caption strip owns them now.
           onOpenFile={onOpenClick}
@@ -9181,7 +9328,10 @@ pushToast(
         onClose={(): void => setCommandPaletteOpen(false)}
         onRunTool={onPaletteRun}
         onPinTool={onDockPin}
+        onUnpinTool={onDockUnpin}
         dockPins={dockPins}
+        isToolPinned={isPaletteToolPinned}
+        isStageDefault={isPaletteStageDefault}
         isToolEnabled={paletteToolEnabled}
         disabledReasonFor={paletteDisabledReason}
         toolUsage={settings.toolUsage}

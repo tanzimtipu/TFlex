@@ -12,6 +12,7 @@ import {
   Check,
   ChevronDown,
   Columns2,
+  Command,
   FolderOpen,
   Monitor,
   Moon,
@@ -19,6 +20,7 @@ import {
   Printer,
   Save,
   SaveAll,
+  Search,
   Settings,
   Sparkles,
   Sun,
@@ -36,6 +38,20 @@ export type AppHeaderTab = TabInput;
 
 /** DEF-288 — the reason shown on the disabled "+" while Multi Mode is on. */
 export const NEW_TAB_MULTI_MODE_REASON = "Turn off Multi Mode to create a new document";
+
+/** Phase 40 (item 8) — the Multi Mode toggle's accessible name. The tooltip
+ *  (title) carries the same "view/edit two documents side by side" wording, so
+ *  the accessible name and the hover tooltip can never drift apart. */
+export const MULTI_MODE_ACCESSIBLE_NAME =
+  "Multi Mode: view/edit two documents side by side";
+
+/** Phase 40 (item 5) — the Ctrl+K tool-search icon's accessible name. It
+ *  names the shortcut AND the surface (the Command Palette), so the icon
+ *  can never be confused with the Ctrl+F find icon beside it. */
+export const TOOL_SEARCH_ACCESSIBLE_NAME = "Search tools and commands (Ctrl+K)";
+
+/** Phase 40 (item 5) — the Ctrl+F find icon's accessible name. */
+export const FIND_IN_DOCUMENT_ACCESSIBLE_NAME = "Find in document (Ctrl+F)";
 
 interface AppHeaderProps {
   activeId: string | null;
@@ -110,6 +126,18 @@ interface AppHeaderProps {
    *  AppHeader stays presentational and doesn't need to know about
    *  the IPC channel shape. */
   updateIndicator?: ReactNode;
+  /** Phase 40 (item 5) — the Ctrl+K tool-search icon. Opens the Command
+   *  Palette, the SAME surface the Ctrl+K chord and the registry's
+   *  "Browse all tools" row open. Omitted means the control is not
+   *  rendered (harnesses / pre-Phase-40 mounts), never a silent no-op. */
+  onOpenToolSearch?: () => void;
+  /** Phase 40 (item 5) — the Ctrl+F find icon. Opens the focused pane's
+   *  find bar, the SAME surface the Ctrl+F chord opens. */
+  onOpenFind?: () => void;
+  /** Phase 40 (item 5) — whether the find surface exists right now (a
+   *  document is open). The find bar is per-document, so with none open
+   *  the control disables with a reason instead of doing nothing. */
+  findEnabled?: boolean;
 }
 
 /** Phase-15 — the three themes the picker offers, in display order
@@ -138,7 +166,7 @@ function themeLabel(value: ThemeDefault): string {
 }
 
 export function AppHeader(props: AppHeaderProps): ReactElement {
-  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, printEnabled = true, onMultiModeToggle, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true, multiModeEnabled = false } = props;
+  const { activeId, tabs, onActivate, onClose, theme, themeDefault, onThemeChange, onNewEmptyTab, onOpenPreferences, onPrint, printEnabled = true, onMultiModeToggle, updateIndicator = null, onOpenFile, onSave, onSaveAs, saveModified = false, saveInPlaceEnabled = true, multiModeEnabled = false, onOpenToolSearch, onOpenFind, findEnabled = false } = props;
   // Phase-15 — the embedded theme dropdown. All hooks stay at the top
   // of the component (DEF-117 hook-order contract): no early returns.
   // The picker's selection is the SAVED preference (themeDefault) —
@@ -482,6 +510,39 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             settings affordance sits with the other app-level controls
             at the trailing edge of the title bar. */}
         {updateIndicator}
+        {/* Phase 40 (item 5) — the TWO distinct search affordances, leading
+            the trailing chrome cluster. The Ctrl+K icon uses the command
+            glyph (the command-palette symbol) and opens the SAME surface as
+            the Ctrl+K chord; the Ctrl+F icon is a magnifier and opens the
+            focused pane's find bar. Different glyph, different surface, and
+            each accessible name names its shortcut so they cannot be
+            confused. */}
+        {onOpenToolSearch !== undefined && (
+          <button
+            type="button"
+            className="header-tool-search"
+            onClick={onOpenToolSearch}
+            aria-haspopup="dialog"
+            aria-label={TOOL_SEARCH_ACCESSIBLE_NAME}
+            title="Search tools and commands (Ctrl+K)"
+            data-header-tool-search
+          >
+            <Command size={16} aria-hidden />
+          </button>
+        )}
+        {onOpenFind !== undefined && (
+          <button
+            type="button"
+            className="header-find"
+            onClick={onOpenFind}
+            disabled={!findEnabled}
+            aria-label={FIND_IN_DOCUMENT_ACCESSIBLE_NAME}
+            title={findEnabled ? "Find in document (Ctrl+F)" : "Open a document to search it"}
+            data-header-find
+          >
+            <Search size={16} aria-hidden />
+          </button>
+        )}
         {/* Phase 36 (chunk 6) — the Multi Mode toggle, moved into the title
             bar (its approved home; the palette keeps its own route through
             the registry's `multiModeToggle`). `data-multi-mode-active`
@@ -492,11 +553,14 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
             className="header-multi-mode"
             onClick={onMultiModeToggle}
             aria-pressed={multiModeEnabled}
-            aria-label="Multi Mode"
+            // Phase 40 (item 8) — the tooltip and the accessible name both
+            // name VIEW and EDIT: the mode is not read-only, each pane's
+            // canvas keeps its edit surfaces.
+            aria-label={MULTI_MODE_ACCESSIBLE_NAME}
             title={
               multiModeEnabled
-                ? 'Multi Mode on — two documents side by side. Click to return to one document.'
-                : 'Multi Mode: view two documents side by side in one workspace'
+                ? 'Multi Mode on — view/edit two documents side by side. Click to return to one document.'
+                : 'Multi Mode: view/edit two documents side by side in one workspace'
             }
             data-header-multi-mode
             data-multi-mode-active={multiModeEnabled ? 'true' : 'false'}

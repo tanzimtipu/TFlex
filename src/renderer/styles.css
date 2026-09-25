@@ -320,26 +320,29 @@
   --ann-teal: #14b8a6;
   --ann-gray: #64748b;
 
-  /* Phase B — colorful icon system, retuned by Phase 38 (feature B).
-   * A controlled semantic palette for tool icons AND the family-coloured
-   * control labels: each tool family carries ONE primary hue from this
-   * 8-swatch set, so the UI reads rich instead of a wall of uniform grey.
-   * The icon SHAPE and the LABEL text still carry the meaning — colour is
-   * never the only differentiator.
+  /* Phase 40 (item 11) — THE SEMANTIC 4-ROLE PALETTE. This replaces the
+   * Phase-38 eight per-family hues. Four named roles, assigned by tool
+   * CATEGORY / importance — never per-tool whimsy — plus the neutral text
+   * ladder and the divider/surface ramp. The icon SHAPE and the LABEL text
+   * still carry the meaning; colour is never the only differentiator.
    *
-   * Phase 38 retune: every light/frosted value is deep enough to clear the
-   * 4.5:1 TEXT floor (so a family hue can colour its own label, not just the
-   * glyph) on every chrome surface (raised / elevated / toolbar / rail /
-   * panel). The dark values are the bright counterparts, likewise >= 4.5:1.
-   * Measured by phase38LegibilityContrast.test.ts. */
-  --icon-blue: #2563eb;
-  --icon-cyan: #0e7490;
-  --icon-green: #15803d;
-  --icon-orange: #b45309;
-  --icon-yellow: #8a6100;
-  --icon-purple: #6d28d9;
-  --icon-red: #be123c;
-  --icon-pink: #be185d;
+   *   --sem-primary      PRIMARY / brand accent. Selection, active state,
+   *                      primary actions, the active panel edge. Reserved.
+   *   --sem-neutral      NEUTRAL. The bulk: ordinary tools, navigation,
+   *                      view, editing, annotations, app text.
+   *   --sem-affirmative  AFFIRMATIVE. Constructive / completion: insert,
+   *                      add, create, merge, sign, optimize, export, save.
+   *   --sem-attention    ATTENTION. Destructive / critical: delete, clear,
+   *                      replace, flatten, close.
+   *
+   * Every value is >= 4.5:1 as a LABEL and >= 3:1 as an ICON on every chrome
+   * surface (raised / elevated / toolbar / rail / panel) in all three themes
+   * (measured by phase40SemanticPalette.test.ts). The disabled state stays
+   * its own distinct token (--fg-disabled). */
+  --sem-primary: #1d4ed8;
+  --sem-neutral: #3d4c69;
+  --sem-affirmative: #166534;
+  --sem-attention: #be123c;
 
   /* Phase B — dialog radius. The radius ladder stays tight (controls
    * 5-7px, panels 8-10px); dialogs / sheets get their own slightly
@@ -428,25 +431,22 @@
   --hit: rgba(37, 99, 235, 0.28);
   --hit-active: rgba(37, 99, 235, 0.55);
 
-  /* Phase 36 — the four STAGE-IDENTIFICATION tokens. They answer "which
-   * stage of work is this?" (the palette's stage tag chips, the Stage Rail's
-   * per-stage icons) and are the ONLY place a stage hue is spent: the brand
-   * accent stays reserved for primary/selection, so the rail's active wash +
-   * accent indicator and the dock's primary verb are never repainted here.
+  /* Phase 40 (item 11) — the four stage-identification tokens now RESOLVE
+   * from the semantic roles: each stage maps to exactly one role by what the
+   * stage is FOR, so the rail can never invent a fifth colour.
    *
-   * One hue FAMILY per stage in all three themes — cyan (PAGES, navigation),
-   * amber (EDIT, writing), rose (REVIEW, checking) and green (DELIVER, done):
-   * four well-separated families, none of them the accent blue. Only the
-   * TONE moves per theme (deep on the white light surfaces, bright on the
+   *   PAGES   -> NEUTRAL      (navigation / organisation — the base)
+   *   EDIT    -> PRIMARY      (authoring — the primary work stage)
+   *   REVIEW  -> ATTENTION    (checking / correcting — what needs attention)
+   *   DELIVER -> AFFIRMATIVE  (completion / shipping — the affirmative end)
+   *
+   * Only the TONE moves per theme (deep on white light surfaces, bright on
    * near-black dark surfaces, deeper again on the light frosted glass) so
-   * every value clears WCAG AA on the surface it is drawn on: >= 4.5:1 text
-   * (the chip label) and >= 3:1 icons/chips (the rail icon, a stage dot).
-   * Measured (see phase36StageTokens.test.ts): text-on-chip 4.7-6.1,
-   * icon-on-rail 4.9-7.1, chip-on-active-rail 4.2-5.5. */
-  --tf-stage-pages: #0e7490;
-  --tf-stage-edit: #9a4408;
-  --tf-stage-review: #be123c;
-  --tf-stage-deliver: #116632;
+   * every value clears WCAG AA on the surface it is drawn on. */
+  --tf-stage-pages: var(--sem-neutral);
+  --tf-stage-edit: var(--sem-primary);
+  --tf-stage-review: var(--sem-attention);
+  --tf-stage-deliver: var(--sem-affirmative);
 
   color-scheme: light;
 }
@@ -591,20 +591,14 @@
   --error: #d96c63;
   --error-soft: rgba(217, 108, 99, 0.16);
 
-  /* Phase C — dark tool icons. The :root palette is tuned for the
-   * light surfaces; on the near-black dark panels the same mid-tone
-   * hues drop below the comfortable floor, so each icon gets a
-   * slightly BRIGHTER variant here. Three themes, three distinct
-   * palettes: light/root = saturated mid-tones, dark = brighter,
-   * frosted = deeper light-tuned hues. */
-  --icon-blue: #63a8e8;
-  --icon-cyan: #55c2d2;
-  --icon-green: #7fbd8f;
-  --icon-orange: #e98a42;
-  --icon-yellow: #e0b054;
-  --icon-purple: #ab93e0;
-  --icon-red: #e07a74;
-  --icon-pink: #d88bb0;
+  /* Phase 40 (item 11) — the semantic 4-role palette on the near-black dark
+   * surfaces. The :root values are tuned for white; on the dark panels each
+   * role takes its bright counterpart so every one clears the 4.5:1 label
+   * floor and the 3:1 icon floor (measured by phase40SemanticPalette.test.ts). */
+  --sem-primary: #63a8e8;
+  --sem-neutral: #9aa7bd;
+  --sem-affirmative: #7fbd8f;
+  --sem-attention: #e07a74;
 
   /* Phase 14.1 — dark mapping of the glass material. The chips flip to
    * translucent white on the near-black panels (the same inversion the
@@ -622,15 +616,13 @@
   --glass-group-border: rgba(255, 255, 255, 0.1);
   --glass-hover-bg: rgba(255, 255, 255, 0.1);
 
-  /* Phase 36 — the four stage-identification tokens on the near-black dark
-   * surfaces: the SAME cyan / amber / rose / green hue families, brightened
-   * two Tailwind steps (cyan-400 / amber-400 / rose-400 / green-400) so each
-   * clears the 4.5:1 text floor on the dark raised surface and the 3:1 icon
-   * floor with a wide margin (text-on-chip 6.0-9.2, icon-on-rail 6.9-11.1). */
-  --tf-stage-pages: #22d3ee;
-  --tf-stage-edit: #fbbf24;
-  --tf-stage-review: #fb7185;
-  --tf-stage-deliver: #4ade80;
+  /* Phase 40 (item 11) — the stage-identification tokens resolve from the
+   * semantic roles on the dark surfaces too (the same mapping: PAGES ->
+   * neutral, EDIT -> primary, REVIEW -> attention, DELIVER -> affirmative). */
+  --tf-stage-pages: var(--sem-neutral);
+  --tf-stage-edit: var(--sem-primary);
+  --tf-stage-review: var(--sem-attention);
+  --tf-stage-deliver: var(--sem-affirmative);
 
   color-scheme: dark;
 }
@@ -801,19 +793,14 @@
   --error: #d96c63;
   --error-soft: rgba(217, 108, 99, 0.12);
 
-  /* Phase C — light-frosted tool icons. Phase 38 (feature B) — a DEEPER
-   * variant of the light family palette (one Tailwind step down), so the
-   * frosted glass keeps its own three-theme palette while every value clears
-   * the 4.5:1 family-label floor and the 3:1 icon floor on the near-white
-   * frosted sheets. */
-  --icon-blue: #1d4ed8;
-  --icon-cyan: #0b5a68;
-  --icon-green: #12682f;
-  --icon-orange: #96450a;
-  --icon-yellow: #6f4e00;
-  --icon-purple: #5b21b6;
-  --icon-red: #9f1239;
-  --icon-pink: #9d174d;
+  /* Phase 40 (item 11) — the semantic 4-role palette on the LIGHT frosted
+   * glass. A deeper step than the flat light theme so every role keeps the
+   * 4.5:1 label floor and the 3:1 icon floor across the translucent sheets
+   * (measured by phase40SemanticPalette.test.ts). */
+  --sem-primary: #1e40af;
+  --sem-neutral: #3a4862;
+  --sem-affirmative: #12682f;
+  --sem-attention: #9f1239;
 
   /* Phase 14.1 — the CANONICAL Liquid Glass values (the task-spec
    * token block, verbatim). The frosted theme is the one theme that
@@ -846,15 +833,12 @@
   --panel-radius: var(--radius-panel);
   --panel-shadow: none;
 
-  /* Phase 36 — the four stage-identification tokens on the LIGHT frosted
-   * glass (the declared rail composite sits just off white, the palette card
-   * closer still): the same cyan / amber / rose / green families pulled a step
-   * deeper than the flat light theme so the label keeps the 4.5:1 text floor
-   * across the translucent rail (text-on-chip 5.9-6.6, icon-on-rail 6.7-7.5). */
-  --tf-stage-pages: #0d6277;
-  --tf-stage-edit: #96400c;
-  --tf-stage-review: #a80f34;
-  --tf-stage-deliver: #0f5f30;
+  /* Phase 40 (item 11) — the stage-identification tokens resolve from the
+   * semantic roles on the light frosted glass (same mapping as light/dark). */
+  --tf-stage-pages: var(--sem-neutral);
+  --tf-stage-edit: var(--sem-primary);
+  --tf-stage-review: var(--sem-attention);
+  --tf-stage-deliver: var(--sem-affirmative);
 
   color-scheme: light;
 }
@@ -1615,9 +1599,15 @@ input[type="checkbox"] {
   padding: 0 3px;
   margin-right: var(--sp-3);
   border-radius: var(--radius-3);
-  background: var(--glass-group-bg);
-  border: 1px solid var(--glass-group-border);
-  box-shadow: inset 0 1px 0 var(--glass-highlight);
+  /* Phase 40 (items 2 + 13) — the file group is BORDERLESS/ghost in EVERY
+   * theme: the capsule's glass film, its hairline and its inner highlight are
+   * all retired at rest, so Open / Save / Save As sit directly on the caption
+   * strip. The transparent border keeps the 32px box (and the layout) stable
+   * while the group carries no visible edge; the controls keep their own
+   * hover / focus affordance below. */
+  background: transparent;
+  border: 1px solid transparent;
+  box-shadow: none;
   /* The caption strip defaults to a window-drag surface; the capsule's
    * own padding is interactive chrome, so it opts out (the buttons
    * inside already inherit no-drag from the .app-header button rule). */
@@ -1657,7 +1647,10 @@ input[type="checkbox"] {
 
 .titlebar-file-btn:active:not([disabled]) {
   background: var(--accent-pressed-soft);
-  color: var(--accent);
+  /* DEF-355 — the plain --accent measured 3.75 / 3.01 / 3.89 on the pressed
+   * wash (below the 4.5:1 text floor). The accent-family on-wash ink clears
+   * 4.86 / 6.15 / 5.05 in all three themes. */
+  color: var(--dock-primary-fg);
 }
 
 .titlebar-file-btn:focus-visible {
@@ -1670,26 +1663,19 @@ input[type="checkbox"] {
   cursor: not-allowed;
 }
 
-/* The Open action stays the accent primary it was in the command bar —
- * the ONE solid-accent control in the strip, compacted to the caption
- * ladder (blue is reserved for primary actions). */
+/* Phase 40 (items 2 + 13) — the Open action is a GHOST control now: its
+ * solid accent fill and its accent border are retired in every theme, so it
+ * carries no background box at rest. The label keeps the header's NEUTRAL role
+ * (`--sem-neutral`, applied by the semantic-map rule below), which is
+ * measured at >= 4.5:1 against the real caption-strip surface in all three
+ * themes; the previous resting pair was a family hue ON `--accent` (1.0:1
+ * light) and only became readable on hover — the operator's report. The hover
+ * / pressed affordance is the shared ghost treatment the two save controls
+ * already use (`.titlebar-file-btn:hover` / `:active`), so no state is lost. */
 .titlebar-file-open {
   padding: 0 9px;
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--fg-on-accent);
-}
-
-.titlebar-file-open:hover:not([disabled]) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-  color: var(--fg-on-accent);
-}
-
-.titlebar-file-open:active:not([disabled]) {
-  background: var(--accent-pressed);
-  border-color: var(--accent-pressed);
-  color: var(--fg-on-accent);
+  background: transparent;
+  border-color: transparent;
 }
 
 .titlebar-file-label {
@@ -2133,6 +2119,56 @@ input[type="checkbox"] {
 .header-multi-mode[aria-pressed="true"] {
   background: var(--accent-selected);
   color: var(--fg-strong);
+}
+
+/* Phase 40 (item 5) — the two top-bar search affordances. Same chrome ladder
+ * as .header-print / .header-gear (28px icon control) so the trailing cluster
+ * reads as one group. They lead the cluster: the Ctrl+K command glyph first,
+ * the Ctrl+F magnifier second — different glyphs, different surfaces. */
+.header-tool-search,
+.header-find {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background var(--motion-fast) var(--ease-out),
+    color var(--motion-fast) var(--ease-out),
+    border-color var(--motion-fast) var(--ease-out),
+    box-shadow var(--motion-fast) var(--ease-out),
+    transform var(--motion-fast) var(--ease-in-out);
+}
+
+.header-tool-search:hover,
+.header-find:hover:not([disabled]) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.header-tool-search:active,
+.header-find:active:not([disabled]) {
+  background: var(--accent-pressed-soft);
+  color: var(--accent);
+}
+
+.header-tool-search:focus-visible,
+.header-find:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* DEF-271 ladder — the find control is document-scoped, so it dims on the
+ * welcome screen like Print. */
+.header-find[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .tab-stage {
@@ -2728,9 +2764,14 @@ input[type="checkbox"] {
 }
 
 .text-props-group-title {
+  /* Phase 40 (item 12) — aligned to the ONE in-panel section-heading standard
+   * set by the ContextPanel / Inspector: --fs-xs, 600, uppercase, .04em,
+   * --fg-muted. */
   font-size: var(--fs-xs);
   font-weight: 600;
-  color: var(--fg-soft);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
   padding: 6px 2px 4px;
 }
 
@@ -3012,13 +3053,12 @@ input[type="checkbox"] {
 }
 
 .thumb-scroller {
-  /* Strict flex column: the rail-actions (Undo) row at the top, the
-   * scrollable thumb-scroller-inner in the middle, and the (optional)
-   * ThumbActions bar pinned at the bottom once a thumbnail is selected.
-   * `overflow: hidden` keeps the parent from also becoming a scroller —
-   * only the inner .thumb-scroller-inner actually scrolls, so the
-   * action bar stays anchored to the rail's bottom edge regardless of
-   * the document's page count (DEF-018). */
+  /* Strict flex column: the rail-actions (Undo) row at the top and the
+   * scrollable thumb-scroller-inner below it. `overflow: hidden` keeps the
+   * parent from also becoming a scroller — only the inner
+   * .thumb-scroller-inner actually scrolls, so the undo control stays
+   * anchored to the rail's top edge regardless of the document's page
+   * count (DEF-018). */
   position: absolute;
   inset: 0;
   display: flex;
@@ -3365,6 +3405,15 @@ input[type="checkbox"] {
 .tool-btn:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+/* DEF-355 — the ACTIVE page-layout option's ICON. The shared active rule's
+ * plain --accent measured 2.98:1 on the dark active wash (a hair under the 3:1
+ * icon floor; light 4.39 / frosted 4.50 were marginal too). The accent-family
+ * on-wash ink clears 5.69 / 6.08 / 5.83 in all three themes. The layout mode
+ * itself is unchanged; only the active option's ink is corrected. */
+.canvas-page-layout .tool-btn-active {
+  color: var(--dock-primary-fg);
 }
 
 /* Phase 4 — the SAME pressed wash across every neutral-surface
@@ -3730,6 +3779,21 @@ input[type="checkbox"] {
    * CONTENT_PADDING_PX (now 0) so jump landings stay exact. */
   padding: 0;
   gap: 18px;
+}
+
+/* Phase 40 (item 7) — the SINGLE-VIEW multi-page layouts. TWO and FOUR flow
+ * the SAME always-mounted page slots into a 2-column grid; FOUR additionally
+ * fits 2x2 (the fit maths lives in pageLayoutMode.ts). The 18px `gap` applies
+ * on both axes, matching PAGE_GAP_PX. ONE is the unchanged flex column, so the
+ * default is byte-identical to the pre-change canvas. The scroller's row math
+ * reads the same rows (buildRowGeom) the grid lays out. */
+.document-content[data-page-layout="two"],
+.document-content[data-page-layout="four"] {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  justify-content: center;
+  align-content: start;
+  justify-items: center;
 }
 
 /* DEF-296 + DEF-302 — page zoom FLIP. A zoom step re-lays-out the page unit
@@ -4360,36 +4424,13 @@ input[type="checkbox"] {
   animation: tooltip-enter var(--tf-motion-fast) var(--tf-ease-fast) 300ms forwards;
 }
 
-/* ---- Rail actions (undo + per-page rotate/delete) ---- */
+/* ---- Rail actions (undo) ---- */
 
 .rail-actions {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 var(--sp-2) 8px;
-}
-
-.rail-actions-bar {
-  /* Phase-3 workspace: section separator above the per-page action
-   * bar uses the subtle --divider hairline. */
-  border-top: 1px solid var(--divider);
-  padding-top: 8px;
-  margin-top: 4px;
-  justify-content: space-between;
-}
-
-.rail-actions-label {
-  font-size: var(--fs-xs);
-  color: var(--fg-muted);
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.rail-actions-btns {
-  display: flex;
-  align-items: center;
-  gap: 2px;
 }
 
 .rail-action-btn {
@@ -4438,15 +4479,6 @@ input[type="checkbox"] {
 
 .rail-action-btn[disabled] svg {
   opacity: 0.6;
-}
-
-.rail-action-danger:hover:not([disabled]) {
-  background: rgba(239, 68, 68, 0.12);
-  color: #ef4444;
-}
-
-.rail-action-close {
-  font-size: var(--fs-xs);
 }
 
 .thumb-scroller-inner {
@@ -7100,11 +7132,14 @@ rect.ann-highlight.ann-preview {
 
 .tools-palette-group-label {
   margin: 12px 8px 4px;
-  font-size: var(--tf-label-size);
+  /* Phase 40 (item 12) — the ONE section-heading standard, matching the
+   * ContextPanel / Inspector reference: --fs-xs, 600, uppercase, .04em,
+   * --fg-muted. The old .09em / --fg-faint treatment was the outlier. */
+  font-size: var(--fs-xs);
   font-weight: 600;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--fg-faint);
+  color: var(--fg-muted);
   user-select: none;
   white-space: nowrap;
   overflow: hidden;
@@ -8631,6 +8666,46 @@ rect.ann-highlight.ann-preview {
 .create-image-remove:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+/* Phase 40 item 3 — the Create-from-images dialog is responsive: it
+ * shrinks with a small window (no clipped control) and grows with a
+ * large one, while its file list owns the vertical scroll so the
+ * header and the footer (Cancel / Create PDF) always stay reachable.
+ * Mirrors the DEF-219 watermark containment pattern: scoped through
+ * the backdrop's data hook so the shared `.modal-dialog` /
+ * `.modal-body` rules every other dialog depends on stay untouched. */
+[data-create-from-images-dialog] .modal-dialog {
+  /* Width tracks the viewport between a small floor and a large cap;
+   * height does the same vertically. At 900x600 this resolves to
+   * ~558x432, at 1920x1080 to 760x760, both inside the viewport. */
+  width: clamp(320px, 62vw, 760px);
+  height: min(72vh, 760px);
+  /* minmax(0, 1fr) lets the body shrink below its content height so
+   * the dialog never scrolls as a whole and carries the footer out
+   * of the viewport. */
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+[data-create-from-images-dialog] .modal-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* The selected-images list takes the body's leftover space and
+ * scrolls internally once it outgrows it. The base rule's fixed
+ * 160px cap would otherwise leave the large-window space unused. */
+[data-create-from-images-dialog] .create-image-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+/* The Add images… / Create from clipboard row wraps at the dialog's
+ * smallest widths instead of clipping either button. */
+[data-create-from-images-dialog] .modal-row {
+  flex-wrap: wrap;
 }
 
 .export-format {
@@ -10567,150 +10642,150 @@ rect.ann-highlight.ann-preview {
 }
 
 /* ---------------------------------------------------------------------------
- * Phase B — COLORFUL TOOL ICONS.
+ * Phase 40 (item 11) — THE SEMANTIC COLOUR MAPPING.
  *
- * The semantic 8-hue palette (--icon-*) above, applied per tool. One
- * primary hue per icon; a few two-tone tools (Merge blue+cyan, Split
- * orange+red, Forms red/orange) carry a tiny corner detail dot for
- * their secondary hue (see the icon-detail rules below). Colours are
- * stable across hover/active so a tool keeps its identity; the shared
- * state washes (hover highlight, selected tint, pressed, focus ring)
- * still provide all interaction feedback.
+ * Four named roles from the palette above, applied by tool CATEGORY /
+ * importance. Each rule below picks exactly ONE role; there is no fifth
+ * colour and no per-tool whim. The role choices:
  *
- * Selectors ride the stable data attributes already carried by the
- * controls (data-icon / data-tool-id / data-tool / data-edit-tool /
- * data-rail-tab) — no structural changes, no emojis, lucide-only.
+ *   PRIMARY      selection / active state / primary actions (also the dock's
+ *                leading verb through `.action-dock-verb-primary`).
+ *   NEUTRAL      the bulk: ordinary tools, navigation, view, editing,
+ *                annotations and all app text.
+ *   AFFIRMATIVE  constructive / completion: insert, add, create, merge, sign,
+ *                optimize, export, save.
+ *   ATTENTION    destructive / critical: delete, clear, replace, flatten.
+ *
+ * Colours are stable across hover/active so a tool keeps its identity; the
+ * shared state washes (hover highlight, selected tint, pressed, focus ring)
+ * still provide all interaction feedback. Selectors ride the stable data
+ * attributes already carried by the controls (data-icon / data-tool-id /
+ * data-tool / data-edit-tool / data-rail-tab) — no structural changes, no
+ * emojis, lucide-only. The two-tone corner dots are RETIRED (they were
+ * decorative noise; shape + label carry the meaning).
  * ------------------------------------------------------------------------- */
 
-/* ---- Primary command toolbar ---- */
+/* ---- Primary command toolbar (role per tool) ---- */
 .tool-btn[data-icon="merge"],
-.tool-btn[data-icon="merge"]:hover { color: var(--icon-blue); }
+.tool-btn[data-icon="merge"]:hover { color: var(--sem-affirmative); }
 .tool-btn[data-icon="split"],
-.tool-btn[data-icon="split"]:hover { color: var(--icon-orange); }
+.tool-btn[data-icon="split"]:hover { color: var(--sem-neutral); }
 .tool-btn[data-icon="sign"],
-.tool-btn[data-icon="sign"]:hover { color: var(--icon-orange); }
+.tool-btn[data-icon="sign"]:hover { color: var(--sem-affirmative); }
 .tool-btn[data-icon="flatten"],
-.tool-btn[data-icon="flatten"]:hover { color: var(--icon-purple); }
+.tool-btn[data-icon="flatten"]:hover { color: var(--sem-attention); }
 .tool-btn[data-icon="optimize"],
-.tool-btn[data-icon="optimize"]:hover { color: var(--icon-green); }
+.tool-btn[data-icon="optimize"]:hover { color: var(--sem-affirmative); }
 .tool-btn[data-icon="audit"],
-.tool-btn[data-icon="audit"]:hover { color: var(--icon-green); }
+.tool-btn[data-icon="audit"]:hover { color: var(--sem-neutral); }
 .tool-btn[data-icon="edit"],
-.tool-btn[data-icon="edit"]:hover { color: var(--icon-purple); }
+.tool-btn[data-icon="edit"]:hover { color: var(--sem-primary); }
 .tool-btn[data-icon="delete"],
-.tool-btn[data-icon="delete"]:hover { color: var(--icon-red); }
+.tool-btn[data-icon="delete"]:hover { color: var(--sem-attention); }
 
-/* ---- Annotation toolbar (per data-tool) ---- */
+/* ---- Annotation toolbar (per data-tool). Category: markup that ADDS
+ *      content to the review -> AFFIRMATIVE; the plain Select tool is
+ *      navigation -> NEUTRAL. ---- */
+.ann-tool-btn[data-tool="select"],
+.ann-tool-btn[data-tool="select"]:hover { color: var(--sem-neutral); }
 .ann-tool-btn[data-tool="highlight"],
-.ann-tool-btn[data-tool="highlight"]:hover { color: var(--icon-yellow); }
+.ann-tool-btn[data-tool="highlight"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="underline"],
-.ann-tool-btn[data-tool="underline"]:hover { color: var(--icon-cyan); }
+.ann-tool-btn[data-tool="underline"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="strikeout"],
-.ann-tool-btn[data-tool="strikeout"]:hover { color: var(--icon-red); }
+.ann-tool-btn[data-tool="strikeout"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="ink"],
-.ann-tool-btn[data-tool="ink"]:hover { color: var(--icon-pink); }
+.ann-tool-btn[data-tool="ink"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="textbox"],
-.ann-tool-btn[data-tool="textbox"]:hover { color: var(--icon-purple); }
+.ann-tool-btn[data-tool="textbox"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="rect"],
-.ann-tool-btn[data-tool="rect"]:hover { color: var(--icon-blue); }
+.ann-tool-btn[data-tool="rect"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="ellipse"],
-.ann-tool-btn[data-tool="ellipse"]:hover { color: var(--icon-green); }
+.ann-tool-btn[data-tool="ellipse"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="arrow"],
-.ann-tool-btn[data-tool="arrow"]:hover { color: var(--icon-cyan); }
+.ann-tool-btn[data-tool="arrow"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="callout"],
-.ann-tool-btn[data-tool="callout"]:hover { color: var(--icon-orange); }
+.ann-tool-btn[data-tool="callout"]:hover { color: var(--sem-affirmative); }
 .ann-tool-btn[data-tool="note"],
-.ann-tool-btn[data-tool="note"]:hover { color: var(--icon-yellow); }
+.ann-tool-btn[data-tool="note"]:hover { color: var(--sem-affirmative); }
 
-/* ---- Edit toolbar (per data-edit-tool) ---- */
+/* ---- Edit toolbar (per data-edit-tool). Category: ordinary content
+ *      editing -> NEUTRAL. ---- */
 .edit-toolbar-btn[data-edit-tool="text"],
-.edit-toolbar-btn[data-edit-tool="text"]:hover:not(:disabled) { color: var(--icon-purple); }
+.edit-toolbar-btn[data-edit-tool="text"]:hover:not(:disabled) { color: var(--sem-neutral); }
 .edit-toolbar-btn[data-edit-tool="box"],
-.edit-toolbar-btn[data-edit-tool="box"]:hover:not(:disabled) { color: var(--icon-cyan); }
+.edit-toolbar-btn[data-edit-tool="box"]:hover:not(:disabled) { color: var(--sem-neutral); }
 .edit-toolbar-btn[data-edit-tool="image"],
-.edit-toolbar-btn[data-edit-tool="image"]:hover:not(:disabled) { color: var(--icon-blue); }
+.edit-toolbar-btn[data-edit-tool="image"]:hover:not(:disabled) { color: var(--sem-neutral); }
 
 /* ---- Tools palette (per data-tool-id). The entry-level selectors
  *      beat the shared hover-brighten rule, so each icon keeps its
- *      identity in every state. ---- */
+ *      role in every state. ---- */
 .tools-palette-entry[data-tool-id="merge"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="merge"]:hover .tools-palette-entry-icon { color: var(--icon-blue); }
+.tools-palette-entry[data-tool-id="merge"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="split"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="split"]:hover .tools-palette-entry-icon { color: var(--icon-orange); }
+.tools-palette-entry[data-tool-id="split"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 .tools-palette-entry[data-tool-id="extract"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="extract"]:hover .tools-palette-entry-icon { color: var(--icon-cyan); }
+.tools-palette-entry[data-tool-id="extract"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="rotate"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="rotate"]:hover .tools-palette-entry-icon { color: var(--icon-cyan); }
+.tools-palette-entry[data-tool-id="rotate"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 .tools-palette-entry[data-tool-id="delete"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="delete"]:hover .tools-palette-entry-icon { color: var(--icon-red); }
+.tools-palette-entry[data-tool-id="delete"]:hover .tools-palette-entry-icon { color: var(--sem-attention); }
 .tools-palette-entry[data-tool-id="sign"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="sign"]:hover .tools-palette-entry-icon { color: var(--icon-orange); }
+.tools-palette-entry[data-tool-id="sign"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="forms"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="forms"]:hover .tools-palette-entry-icon { color: var(--icon-red); }
+.tools-palette-entry[data-tool-id="forms"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="flatten"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="flatten"]:hover .tools-palette-entry-icon { color: var(--icon-purple); }
+.tools-palette-entry[data-tool-id="flatten"]:hover .tools-palette-entry-icon { color: var(--sem-attention); }
 .tools-palette-entry[data-tool-id="optimize"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="optimize"]:hover .tools-palette-entry-icon { color: var(--icon-green); }
+.tools-palette-entry[data-tool-id="optimize"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="audit"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="audit"]:hover .tools-palette-entry-icon { color: var(--icon-green); }
+.tools-palette-entry[data-tool-id="audit"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 .tools-palette-entry[data-tool-id="recognizeText"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="recognizeText"]:hover .tools-palette-entry-icon { color: var(--icon-blue); }
+.tools-palette-entry[data-tool-id="recognizeText"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="batchOcr"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="batchOcr"]:hover .tools-palette-entry-icon { color: var(--icon-blue); }
+.tools-palette-entry[data-tool-id="batchOcr"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="ocrSuspects"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="ocrSuspects"]:hover .tools-palette-entry-icon { color: var(--icon-yellow); }
+.tools-palette-entry[data-tool-id="ocrSuspects"]:hover .tools-palette-entry-icon { color: var(--sem-attention); }
 .tools-palette-entry[data-tool-id="createFromImages"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="createFromImages"]:hover .tools-palette-entry-icon { color: var(--icon-blue); }
+.tools-palette-entry[data-tool-id="createFromImages"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="exportPages"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="exportPages"]:hover .tools-palette-entry-icon { color: var(--icon-blue); }
+.tools-palette-entry[data-tool-id="exportPages"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="exportText"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="exportText"]:hover .tools-palette-entry-icon { color: var(--icon-cyan); }
+.tools-palette-entry[data-tool-id="exportText"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="exportDocx"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="exportDocx"]:hover .tools-palette-entry-icon { color: var(--icon-blue); }
+.tools-palette-entry[data-tool-id="exportDocx"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="insertPages"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="insertPages"]:hover .tools-palette-entry-icon { color: var(--icon-cyan); }
+.tools-palette-entry[data-tool-id="insertPages"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="replacePages"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="replacePages"]:hover .tools-palette-entry-icon { color: var(--icon-cyan); }
+.tools-palette-entry[data-tool-id="replacePages"]:hover .tools-palette-entry-icon { color: var(--sem-attention); }
 .tools-palette-entry[data-tool-id="renumberPages"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="renumberPages"]:hover .tools-palette-entry-icon { color: var(--icon-purple); }
+.tools-palette-entry[data-tool-id="renumberPages"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 .tools-palette-entry[data-tool-id="cropPages"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="cropPages"]:hover .tools-palette-entry-icon { color: var(--icon-green); }
+.tools-palette-entry[data-tool-id="cropPages"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 .tools-palette-entry[data-tool-id="stamp"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="stamp"]:hover .tools-palette-entry-icon { color: var(--icon-purple); }
+.tools-palette-entry[data-tool-id="stamp"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
+.tools-palette-entry[data-tool-id="watermark"] .tools-palette-entry-icon,
+.tools-palette-entry[data-tool-id="watermark"]:hover .tools-palette-entry-icon { color: var(--sem-affirmative); }
 .tools-palette-entry[data-tool-id="exportComments"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="exportComments"]:hover .tools-palette-entry-icon { color: var(--icon-orange); }
+.tools-palette-entry[data-tool-id="exportComments"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 .tools-palette-entry[data-tool-id="importComments"] .tools-palette-entry-icon,
-.tools-palette-entry[data-tool-id="importComments"]:hover .tools-palette-entry-icon { color: var(--icon-orange); }
+.tools-palette-entry[data-tool-id="importComments"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
+.tools-palette-entry[data-tool-id="multi-mode"] .tools-palette-entry-icon,
+.tools-palette-entry[data-tool-id="multi-mode"]:hover .tools-palette-entry-icon { color: var(--sem-neutral); }
 
-/* ---- Rail tab identity (Comment orange on the annotations tab) ---- */
+/* ---- Rail tab identity (the annotations tab is REVIEW = attention) ---- */
 .rail-tab[data-rail-tab="annotations"],
-.rail-tab[data-rail-tab="annotations"]:hover { color: var(--icon-orange); }
+.rail-tab[data-rail-tab="annotations"]:hover { color: var(--tf-stage-review); }
 
-/* ---- Two-tone detail dots (occasional subtle secondary hue) ----
- * Tiny corner chips on the palette icons whose spec mapping names a
- * second hue: Merge blue+cyan, Split orange+red, Forms red/orange.
- * The dot is decorative, pointer-transparent and clipped by nothing
- * (the icon wrapper is the only position context). */
+/* ---- Two-tone detail dots RETIRED (Phase 40 item 11) ----
+ * The tiny per-tool corner chips were decorative noise and a second hue
+ * outside the four semantic roles. They are gone; the icon SHAPE and the
+ * label continue to carry each tool's identity. The `.tools-palette-entry-icon`
+ * wrapper keeps `position: relative` for its existing internal layout. */
 .tools-palette-entry-icon {
   position: relative;
 }
-
-.tools-palette-entry[data-tool-id="merge"] .tools-palette-entry-icon::after,
-.tools-palette-entry[data-tool-id="split"] .tools-palette-entry-icon::after,
-.tools-palette-entry[data-tool-id="forms"] .tools-palette-entry-icon::after {
-  content: "";
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 4px;
-  height: 4px;
-  border-radius: 999px;
-  pointer-events: none;
-}
-
-.tools-palette-entry[data-tool-id="merge"] .tools-palette-entry-icon::after { background: var(--icon-cyan); }
-.tools-palette-entry[data-tool-id="split"] .tools-palette-entry-icon::after { background: var(--icon-red); }
-.tools-palette-entry[data-tool-id="forms"] .tools-palette-entry-icon::after { background: var(--icon-orange); }
 
 /* ---------------------------------------------------------------------------
  * Phase B — FROSTED CHROME RESTYLE (at the END of the file on purpose:
@@ -12419,53 +12494,44 @@ rect.ann-highlight.ann-preview {
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.28);
 }
 
-/* ---- Phase 36 (chunk 7) — the per-pane floating pills -------------------- */
+/* ---- Phase 36 (chunk 7) / Phase 40 (item 1) — the per-pane floating pills -- */
 
 /* Each pane keeps its OWN page / zoom / pan pills inside its OWN canvas bounds,
-   so the view controls act on the pane that owns them. They STACK at the pane's
-   OUTER edge (pane A's page area is its left column, pane B's its right), which
-   leaves the workspace's bottom-centre band free for the ONE shared Action Dock
-   — the pane-inner-edge placement would sit exactly under it. The stack is
-   page pill at the bottom with the zoom pill directly above it: the two pills'
-   horizontal footprint stays at the widest single pill (the zoom pill), so a
-   minimum-width pane (320px) still holds them. */
-.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane="A"] .canvas-pill {
-  left: 12px;
+   so the view controls act on the pane that owns them. The two pills are
+   HORIZONTALLY placed — page at the pane's LEFT, zoom at its RIGHT, mirroring
+   single mode's page-bottom-left / zoom-bottom-right — and are NEVER stacked at
+   any window width (the Phase 39 stacked band is superseded).
+
+   When the pane's page column can no longer hold the pair, the pane reserves a
+   ONE-ROW bottom band (`multiPillBandPx` in multiPaneLayout.ts) and the pills
+   layer spans the whole pane there (the `--tf-multi-pill-span` extension into
+   the strip column, which stops above the band). The layer is the
+   `multi-pills` query container, so the width tiers below key on the SAME width
+   the pills actually have. */
+.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane] {
+  container-type: inline-size;
+  container-name: multi-pills;
+  --tf-multi-pill-inset: 12px;
+}
+
+.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane] .canvas-pill-page {
+  left: var(--tf-multi-pill-inset, 12px);
   right: auto;
 }
 
-.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane="B"] .canvas-pill {
-  right: 12px;
-  left: auto;
-}
-
-/* 12px inset + the 40px pill + a 6px gap between the stacked pills. */
 .tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane] .canvas-pill-zoom {
-  bottom: 58px;
+  right: var(--tf-multi-pill-inset, 12px);
+  left: auto;
+  /* Phase 40 — no raised placement in Multi Mode: the zoom pill always shares
+     the page pill's row (the old 58px stack is retired). */
+  bottom: 12px;
 }
 
-/* Phase 39 (DEF-349) — NARROW-PANE PILL BAND.
- *
- * At a narrow pane the two outboard pills are wider than the pane's page
- * column, so anchored at the pane's outer edge they spill horizontally over
- * that pane's thumbnail strip and its page-action bar. When that happens the
- * pane reserves a bottom band — exactly the way the shared dock already owns
- * `--tf-multi-dock-band` — the STRIP STOPS ABOVE IT and the pills span the
- * full pane inside the band, so no pill can reach the strip or its bar.
- *
- * `MultiPane` measures each pane and writes `--tf-multi-pill-band` /
- * `--tf-multi-pill-span` inline plus `data-multi-pill-band`; the thresholds
- * and widths come from `multiPillBandPx` / `multiPillSpanPx` in
- * multiPaneLayout.ts (the ONE source of truth the unit test reads). At the
- * default window the page column is wider than the full zoom pill, the band
- * is 0px and this whole block is inert: the Phase 36/37/38 placement is
- * pixel-identical. The band itself is reserved as the workspace's
- * `padding-bottom` in the `.workspace:has(> .pane-thumb-strip)` rule above. */
-
-/* The pills layer drops from the page-area bottom into the reserved band and
- * reaches past the page column to the pane's outer edge, so the outer anchors
- * (`left: 12` pane A / `right: 12` pane B) land on the pane itself rather than
- * on the narrower page column. Both offsets are 0 when no band is reserved. */
+/* Phase 39 (DEF-349) — the reserved-band offsets. The pills layer drops from
+ * the page-area bottom into the reserved band and reaches past the page column
+ * to the pane's outer edge, so the outer anchors (`left` pane A / `right` pane
+ * B) land on the pane itself rather than on the narrower page column. Both
+ * offsets are 0 when no band is reserved. */
 .tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane="A"] {
   right: calc(-1 * var(--tf-multi-pill-span, 0px));
   bottom: calc(-1 * var(--tf-multi-pill-band, 0px));
@@ -12623,11 +12689,11 @@ rect.ann-highlight.ann-preview {
   --tf-strip-w: 150px;
   --tf-strip-min: 100px;
   --tf-page-min: 44px;
-  /* Phase 39 (DEF-349) — the per-pane pill band. When a pane is too narrow for
-   * its pills to fit the page column, `MultiPane` writes
-   * `--tf-multi-pill-band` (0px at the wide default) on the pane; the strip
-   * stops above that band and the pills span the full pane inside it, so no
-   * pill can reach the strip or its page-action bar. */
+  /* Phase 39 (DEF-349) / Phase 40 (item 1) — the per-pane pill band. When the
+   * page column can no longer hold the pane's two pills HORIZONTALLY,
+   * `MultiPane` writes `--tf-multi-pill-band` (0px at the wide default) on the
+   * pane; the strip stops above that one-row band and the pills span the full
+   * pane inside it, so no pill can reach the strip or its page-action bar. */
   padding-bottom: var(--tf-multi-pill-band, 0px);
   grid-template-columns:
     minmax(var(--tf-strip-min), var(--tf-strip-w))
@@ -13104,8 +13170,14 @@ rect.ann-highlight.ann-preview {
  * panel body (`height: 40%`) and `.context-panel-thumbs` (flex: 1 1 auto)
  * takes the rest, so the section's bottom edge is FLUSH with the panel's
  * bottom edge. `flex-basis` is pinned to the same share so a short body can
- * never shrink the section up off the bottom. */
-.context-panel-outline:has(.context-panel-outline-body) {
+ * never shrink the section up off the bottom.
+ *
+ * Phase 40 (item 10) — the expanded state's flush is driven by the section's
+ * OWN state attribute (`data-outline-open`), not by `:has()`: the section is
+ * the body's last in-flow child and both the section and its body are the
+ * definite-height flex boxes that pin the re-parented `.outline-panel` to the
+ * panel's bottom edge. Same rule whether the outline is open or closed. */
+.context-panel-outline[data-outline-open='true'] {
   height: 40%;
   flex: 0 0 40%;
 }
@@ -13673,48 +13745,50 @@ rect.ann-highlight.ann-preview {
   box-shadow: inset 0 0 0 1px var(--accent);
 }
 
-/* Phase 38 (feature B) — THE DOCK'S FAMILY COLOUR. Each verb carries its tool
- * family's accent hue on the button's `color`, so both its glyph and its label
- * read colourful instead of uniform grey. Rules are guarded so the PRIMARY
- * verb (accent wash), a pressed toggle (accent ring) and a disabled verb keep
- * their own unmistakable states — the family hue only paints the resting,
- * enabled, non-primary verb. The base rule gives every unmapped verb the
- * blue family, so nothing is left grey. All hues are the retuned --icon-*
- * tokens, each >= 4.5:1 on the dock surface in every theme (measured by
- * phase38LegibilityContrast.test.ts). */
+/* Phase 40 (item 11) — THE DOCK'S SEMANTIC ROLE. Each verb carries exactly
+ * one of the four roles on the button's `color`, so its glyph and its label
+ * read with meaning instead of a rainbow. Rules are guarded so the PRIMARY
+ * verb (accent wash, `--dock-primary-fg`), a pressed toggle (accent ring) and
+ * a disabled verb keep their own unmistakable states — the role colour only
+ * paints the resting, enabled, non-primary verb. The base rule gives every
+ * unmapped verb NEUTRAL, so nothing is left uncoloured. Category rule:
+ * constructive (insert/add/create/merge/sign/export/optimize/OCR) ->
+ * AFFIRMATIVE; destructive (delete/clear/replace/flatten) -> ATTENTION;
+ * navigation/view/edit -> NEUTRAL. Every role is >= 4.5:1 on the dock surface
+ * in every theme (measured by phase40SemanticPalette.test.ts). */
 .action-dock-verb:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) {
-  color: var(--icon-blue);
+  color: var(--sem-neutral);
 }
 
-.action-dock-verb[data-dock-verb='rotate']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-cyan); }
-.action-dock-verb[data-dock-verb='extract']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
-.action-dock-verb[data-dock-verb='insertPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-green); }
-.action-dock-verb[data-dock-verb='replacePages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-purple); }
-.action-dock-verb[data-dock-verb='split']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-orange); }
+.action-dock-verb[data-dock-verb='rotate']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='extract']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='insertPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='replacePages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
+.action-dock-verb[data-dock-verb='split']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
 .action-dock-verb[data-dock-verb='delete']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled),
-.action-dock-verb[data-dock-verb='clearPageSelection']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-red); }
-.action-dock-verb[data-dock-verb='merge']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
-.action-dock-verb[data-dock-verb='cropPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-pink); }
-.action-dock-verb[data-dock-verb='editText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-purple); }
-.action-dock-verb[data-dock-verb='editImage']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
-.action-dock-verb[data-dock-verb='editTextBox']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-cyan); }
-.action-dock-verb[data-dock-verb='recognizeText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-yellow); }
-.action-dock-verb[data-dock-verb='batchOcr']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-green); }
-.action-dock-verb[data-dock-verb='ocrSuspects']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-orange); }
-.action-dock-verb[data-dock-verb='annotate']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-yellow); }
-.action-dock-verb[data-dock-verb='sign']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-orange); }
-.action-dock-verb[data-dock-verb='stamp']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-red); }
-.action-dock-verb[data-dock-verb='flatten']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-purple); }
-.action-dock-verb[data-dock-verb='forms']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-pink); }
-.action-dock-verb[data-dock-verb='watermark']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
-.action-dock-verb[data-dock-verb='exportComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-cyan); }
-.action-dock-verb[data-dock-verb='importComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-green); }
-.action-dock-verb[data-dock-verb='optimize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-green); }
-.action-dock-verb[data-dock-verb='audit']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-purple); }
-.action-dock-verb[data-dock-verb='exportPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
-.action-dock-verb[data-dock-verb='exportText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-cyan); }
-.action-dock-verb[data-dock-verb='exportDocx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-orange); }
-.action-dock-verb[data-dock-verb='createFromImages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-pink); }
+.action-dock-verb[data-dock-verb='clearPageSelection']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
+.action-dock-verb[data-dock-verb='merge']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='cropPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='editText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='editImage']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='editTextBox']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='recognizeText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='batchOcr']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='ocrSuspects']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
+.action-dock-verb[data-dock-verb='annotate']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='sign']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='stamp']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='flatten']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-attention); }
+.action-dock-verb[data-dock-verb='forms']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='watermark']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='exportComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='importComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='optimize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='audit']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-neutral); }
+.action-dock-verb[data-dock-verb='exportPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='exportText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='exportDocx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
+.action-dock-verb[data-dock-verb='createFromImages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--sem-affirmative); }
 
 /* DEF-344 — the hover / pressed INK. The per-verb family rules above are
  * (0,5,0) and the old state rules were (0,3,0), so a hovered or pressed family
@@ -14021,6 +14095,36 @@ rect.ann-highlight.ann-preview {
   right: 12px;
 }
 
+/* Phase 40 (item 7) — the SINGLE-VIEW page-layout control.
+ *
+ * Anchored to the canvas's TOP-RIGHT inside the canvas-bound overlay
+ * (`.canvas-overlay`), so the open Inspector's `--tf-tools-inset` already
+ * keeps it clear of the panel. `top` adds the measured chrome stack
+ * (`--tf-chrome-y`, the search / edit rows) so the control never lands on the
+ * search bar when it is open; with no chrome the token is unset and the
+ * control sits 12px below the canvas top. It shares the pills' surface
+ * treatment (same theme tokens + motion), and it is single-view only (the
+ * component is not rendered in a Multi Mode pane), so it cannot meet the dock
+ * or the per-pane pills. */
+.canvas-page-layout {
+  position: absolute;
+  top: calc(var(--tf-chrome-y, 0px) + 12px);
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-group);
+  box-shadow: var(--shadow-menu);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  -webkit-app-region: no-drag;
+  pointer-events: auto;
+  z-index: 3;
+}
+
 /* DEF-322 — the two pills YIELD as the canvas narrows instead of colliding.
  *
  * The VISIBLE canvas (`.canvas-overlay`) is the query container, so the yield
@@ -14083,6 +14187,56 @@ rect.ann-highlight.ann-preview {
  * reports it), and never while a tool is armed (the dock cannot idle then). */
 .canvas-pills[data-canvas-pills-idle='true'] .canvas-pill {
   opacity: 0.4;
+}
+
+/* Phase 40 (item 1) — the MULTI-MODE pill width tiers.
+ *
+ * The container is the pane's pills LAYER (`multi-pills`, declared with the
+ * placement block): its width is the pane's page column when the full pair
+ * fits there, and the whole pane inside the reserved band otherwise. So the
+ * tiers key on the width the pills actually have, at every window width.
+ *
+ *   full     layer >= 408px   both pills at full width (the base rules).
+ *   compact  layer >= 312px   the zoom percent readout and the page pill's
+ *                             "/ N" + label yield (icon-only controls).
+ *   micro    otherwise        the dense tier: 24px icon-only buttons, 6px
+ *                             outer inset and tightened pill chrome, so the
+ *                             pair still fits side by side in a 262px pane.
+ *
+ * The thresholds and the micro metrics are mirrored by `multiPillTier` /
+ * `multiPillMetrics` in multiPaneLayout.ts (the ONE source of truth the unit
+ * test reads); these two blocks must equal `MULTI_PILL_FULL_MIN_LAYER_PX - 1`
+ * and `MULTI_PILL_COMPACT_MIN_LAYER_PX - 1`. */
+@container multi-pills (max-width: 407px) {
+  .zoom-percent,
+  .page-total,
+  .page-label-hint {
+    display: none;
+  }
+
+  .page-input {
+    width: 20px;
+    padding: 0 2px;
+  }
+}
+
+@container multi-pills (max-width: 311px) {
+  .canvas-pill {
+    /* The inset the placement block reads (the pills are edge-anchored). */
+    --tf-multi-pill-inset: 6px;
+    gap: 2px;
+    padding: 3px 3px;
+  }
+
+  .canvas-pill .tool-btn {
+    width: 24px;
+    height: 28px;
+  }
+
+  .canvas-pill .page-indicator {
+    gap: 2px;
+    padding: 0;
+  }
 }
 
 .annotation-flyout-anchor {
@@ -14343,10 +14497,64 @@ rect.ann-highlight.ann-preview {
   text-align: left;
 }
 
-.command-palette-pin {
+/* Phase 40 (item 6) — the per-row pin TOGGLE beside every tool. A real button:
+ * a solid, upright pin when the tool is in the dock; an outline, 45deg-tilted
+ * pin when it is not, so the state reads by SHAPE as well as colour. */
+.command-palette-pin-toggle {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-2);
+  color: var(--fg-muted);
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.command-palette-pin-toggle:hover:not([disabled]) {
+  background: var(--bg-hover);
+  color: var(--fg-strong);
+}
+
+.command-palette-pin-toggle:active:not([disabled]) {
+  background: var(--accent-pressed-soft);
+  color: var(--accent);
+}
+
+.command-palette-pin-toggle:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.command-palette-pin-toggle-on {
   color: var(--stage-hue, var(--accent));
+}
+
+.command-palette-pin-toggle[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.command-palette-pin-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.command-palette-pin-glyph .pin-glyph-unpinned {
+  transform: rotate(-45deg);
+  opacity: 0.7;
+}
+
+.command-palette-pin-glyph .pin-glyph-pinned {
+  transform: none;
 }
 
 .command-palette-shortcut {
@@ -14384,13 +14592,16 @@ rect.ann-highlight.ann-preview {
 /* The stage tag chip. Each of the four stages consumes its per-theme
  * --tf-stage-* token: the label is the stage hue on a 10% wash of the same
  * hue, so the label clears the 4.5:1 text floor in every theme. A row that is
- * not one of the four stages keeps the accent treatment. */
+ * not one of the four stages (Recent / Global) falls back to the accent wash;
+ * DEF-354 — its ink is `--dock-primary-fg`, the accent-family on-wash token,
+ * because the plain --accent measured 4.37 / 3.24 / 4.34 on that wash (below
+ * the floor), while the on-wash ink clears 5.67 / 6.61 / 5.67. */
 .command-palette-tag {
   flex: 0 0 auto;
   padding: 1px 6px;
   border-radius: var(--radius-pill);
   background: var(--stage-soft, var(--accent-soft));
-  color: var(--stage-hue, var(--accent));
+  color: var(--stage-hue, var(--dock-primary-fg));
   font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -14564,39 +14775,44 @@ rect.ann-highlight.ann-preview {
   min-height: var(--tf-icon-size-lg);
 }
 
-/* ---- Family colour on the other chrome surfaces ---- */
+/* ---- The semantic roles on the other chrome surfaces ---- */
 
-/* Header / title-bar controls: the global (blue) family. Hover rules on the
- * individual buttons still win, so the resting state is colourful and the
- * interaction states are unchanged. */
+/* Header / title-bar controls: the NEUTRAL role (the bulk). Hover rules on
+ * the individual buttons still win, so the resting state is a considered slate
+ * and the interaction states are unchanged. */
 .app-header .titlebar-file-btn,
 .app-header .tab-new,
 .app-header .header-multi-mode,
 .app-header .header-print,
 .app-header .header-gear,
+.app-header .header-tool-search,
+.app-header .header-find,
 .app-header .theme-toggle {
-  color: var(--icon-blue);
+  color: var(--sem-neutral);
 }
 
-/* Stage rail gear (no data-stage): the global family hue for glyph + label. */
+/* Stage rail gear (no data-stage): NEUTRAL for glyph + label. */
 .stage-rail-btn:not([data-stage]) {
-  color: var(--icon-blue);
+  color: var(--sem-neutral);
 }
 
-/* Floating canvas pills reuse .tool-btn; the resting glyph carries the global
- * family hue, the active fit/pan states keep their accent treatment. */
+/* Floating canvas pills reuse .tool-btn; the resting glyph carries the NEUTRAL
+ * role, the active fit/pan states keep their accent treatment. */
 .canvas-pill .tool-btn:not(.tool-btn-active) {
-  color: var(--icon-blue);
+  color: var(--sem-neutral);
 }
 
-/* Command palette rows: the PER-STAGE hue already set on the row (Phase 36)
- * now paints the glyph too; a global/recent row falls back to the blue family. */
+/* Command palette rows: the PER-STAGE role already set on the row (Phase 36,
+ * now resolved from the semantic palette) paints the glyph too; a
+ * global/recent row falls back to NEUTRAL. */
 .command-palette-row-icon {
-  color: var(--stage-hue, var(--icon-blue));
+  color: var(--stage-hue, var(--sem-neutral));
 }
 
-/* Context panel: its stage hue paints the section titles and their glyphs, so
- * each stage's panel reads in that stage's family colour. */
+/* Context panel: its stage role paints the section titles and their glyphs, so
+ * each stage's panel reads in that stage's category colour. The stage ->
+ * role mapping is declared once (styles.css tokens): PAGES neutral, EDIT
+ * primary, REVIEW attention, DELIVER affirmative. */
 [data-context-panel-stage='pages'] { --family-hue: var(--tf-stage-pages); }
 [data-context-panel-stage='edit'] { --family-hue: var(--tf-stage-edit); }
 [data-context-panel-stage='review'] { --family-hue: var(--tf-stage-review); }
@@ -14612,9 +14828,27 @@ rect.ann-highlight.ann-preview {
   color: var(--family-hue, var(--fg-muted));
 }
 
-/* Inspector: the global family hue on its glyphs, links/actions keep their
- * own accent/hover treatments. */
+/* Inspector: the NEUTRAL role on its glyphs, links/actions keep their own
+ * accent/hover treatments. */
 .inspector svg {
-  color: var(--icon-blue);
+  color: var(--sem-neutral);
 }
+
+/* ---- Phase 40 (item 11/13) — SEPARATOR + ACTIVE-EDGE RULE ----
+ *
+ * Separators are ALWAYS the lowest-contrast NEUTRAL divider token
+ * (`--divider`) — a 1px hairline, never a coloured or heavy border. This is
+ * already the shared treatment across the Inspector inter-row rules, the
+ * ContextPanel outline + inter-section rules and the command-palette rows.
+ *
+ * The ACTIVE / selected panel edge is the ONE edge that may take colour, and
+ * it is STATE-DRIVEN (never a decorative one-sided stripe): the Inspector's
+ * page-facing edge takes the PRIMARY role only while it hosts a live
+ * selection (`data-inspector-selection` is not `none`); at rest every panel
+ * edge is the neutral hairline. Identical geometry in all three themes; only
+ * the colour value moves per theme. */
+.inspector[data-inspector-selection]:not([data-inspector-selection='none']) {
+  border-left-color: var(--sem-primary);
+}
+
 

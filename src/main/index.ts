@@ -30,7 +30,7 @@ import type {
   WatermarkSettings,
 } from '../shared/types';
 import type { SignatureSource } from '../shared/types';
-import { openPdfDialog, savePdfDialog } from './services/dialog';
+import { openPdfDialog, openPdfDialogMulti, savePdfDialog } from './services/dialog';
 import { EngineService } from './services/engine';
 import { OcrService } from './services/ocr';
 import { loadPdfFile, loadFdfFile } from './services/pdf-file';
@@ -320,6 +320,9 @@ export async function start(): Promise<void> {
   });
 
   ipcMain.handle(IPC.openFileDialog, (_event, kind?: OpenFileDialogKind) => openPdfDialog(kind));
+  // Phase 40 — multi-select sibling for "Merge PDF from scratch"; resolves to
+  // a normalized string[] (empty on cancel).
+  ipcMain.handle(IPC.openFilesDialog, (_event, kind?: OpenFileDialogKind) => openPdfDialogMulti(kind));
   ipcMain.handle(IPC.pdfLoad, (_event, path: string) => loadPdfFile(path));
   ipcMain.handle(IPC.fdfLoad, (_event, path: string) => loadFdfFile(path));
   ipcMain.handle(IPC.samplesList, () => samples.list());

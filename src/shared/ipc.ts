@@ -63,6 +63,11 @@ export const IPC = {
   // Broadcast-only; the renderer consumer is wired separately.
   windowMinimizedChangedEvent: "window:minimizedChanged",
   openFileDialog: "dialog:openFile",
+  // Phase 40 — multi-select sibling of `dialog:openFile`, for "Merge PDF
+  // from scratch". Same filter set (via `specForKind`) with OS
+  // multi-selection enabled; resolves to a NORMALIZED string[] (empty on
+  // cancel), never null.
+  openFilesDialog: "dialog:openFiles",
   pdfLoad: "pdf:load",
   // Phase 12 — separate FDF load path. FDF files start with %FDF- and would
   // be rejected by the PDF sniff; this channel uses the FDF signature check.
@@ -576,6 +581,12 @@ export interface TFlexApi {
    *  degrades gracefully (jsdom tests, older builds). */
   onMinimizedChanged?(cb: (state: WindowMinimizedChange) => void): () => void;
   openFileDialog(kind?: OpenFileDialogKind): Promise<string | null>;
+  /** Phase 40 — multi-select file picker for "Merge PDF from scratch".
+   *  Same `OpenFileDialogKind` filter set as `openFileDialog` (default
+   *  `'pdf'`), with OS multi-selection enabled. Resolves to the NORMALIZED
+   *  picked paths in selection order, or an EMPTY ARRAY when the user
+   *  cancels — never `null`. The single-file `openFileDialog` is unchanged. */
+  openFilesDialog(kind?: OpenFileDialogKind): Promise<string[]>;
   loadPdf(path: string): Promise<Result<ArrayBuffer, PdfOpenError>>;
   /** Phase 12 — load an FDF (Forms Data Format) comment file from disk.
    *  Separate from `loadPdf` because FDF files start with `%FDF-`, not

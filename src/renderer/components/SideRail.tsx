@@ -1,4 +1,4 @@
-import { ChevronRight, Images, List, MessageSquare, PanelLeftClose, PanelRightOpen, Undo2, RotateCcw, RotateCw, Scissors, Trash2 } from 'lucide-react';
+import { ChevronRight, Images, List, MessageSquare, PanelLeftClose, PanelRightOpen, Undo2, RotateCw, Scissors, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { ReactElement } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
@@ -455,6 +455,11 @@ export interface ThumbnailRailProps {
    //  of the raw page number. */
   pageLabelMap?: Map<number, string> | null;
   canUndo: boolean;
+  /* Phase 40 (item 9) — the per-page rotate/delete UI that consumed these
+   * was retired (its homes are the Action Dock's page verbs and the page
+   * right-click menu). The props stay on the rail's contract so every
+   * caller/test keeps passing them unchanged; the rail itself no longer
+   * wires them to any control. */
   onOp?: (op: { kind: 'rotate'; page: number; dir: 'cw' | 'ccw' }) => void;
   onDelete?: (pages: number[]) => void;
   onReorder?: (fromIndex: number, toIndex: number) => void;
@@ -521,8 +526,6 @@ export function ThumbnailRail({
   proxyVisibleOrder,
   pageLabelMap = null,
   canUndo,
-  onOp,
-  onDelete,
   onReorder,
   onUndo,
   onJump,
@@ -1045,25 +1048,6 @@ const onDragStart = (page: number) => (e: React.DragEvent<HTMLElement>): void =>
           </div>
         )}
       </div>
-      {singleSelected !== null && singleSelected <= pageCount && (
-        <ThumbActions
-          page={singleSelected}
-          canRotate={onOp !== undefined}
-          canDelete={onDelete !== undefined && pageCount > 1}
-          onRotateCw={(): void => onOp?.({ kind: 'rotate', page: singleSelected, dir: 'cw' })}
-          onRotateCcw={(): void => onOp?.({ kind: 'rotate', page: singleSelected, dir: 'ccw' })}
-          onDelete={(): void => {
-            if (onDelete === undefined) return;
-            onDelete([singleSelected]);
-            if (multiSelect) onPageSelectionChange?.([]);
-            else setSelected(null);
-          }}
-          onClearSelection={(): void => {
-            if (multiSelect) onPageSelectionChange?.([]);
-            else setSelected(null);
-          }}
-        />
-      )}
     </div>
   );
 }
@@ -1585,73 +1569,6 @@ function Thumb({
         {pageLabel !== null ? pageLabel : label}
       </span>
     </button>
-  );
-}
-
-interface ThumbActionsProps {
-  page: number;
-  canRotate: boolean;
-  canDelete: boolean;
-  onRotateCw: () => void;
-  onRotateCcw: () => void;
-  onDelete: () => void;
-  onClearSelection: () => void;
-}
-
-function ThumbActions(props: ThumbActionsProps): ReactElement {
-  const { page, canRotate, canDelete, onRotateCw, onRotateCcw, onDelete, onClearSelection } =
-    props;
-  return (
-    <div
-      className="rail-actions rail-actions-bar"
-      role="toolbar"
-      aria-label={`Actions for page ${page}`}
-      data-rail-action-bar={page}
-      data-page={page}
-    >
-      <span className="rail-actions-label">Page {page}</span>
-      <div className="rail-actions-btns">
-        <button
-          type="button"
-          className="rail-action-btn"
-          onClick={onRotateCcw}
-          disabled={!canRotate}
-          title="Rotate counter-clockwise"
-          aria-label="Rotate counter-clockwise"
-        >
-          <RotateCcw size={22} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="rail-action-btn"
-          onClick={onRotateCw}
-          disabled={!canRotate}
-          title="Rotate clockwise"
-          aria-label="Rotate clockwise"
-        >
-          <RotateCw size={22} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="rail-action-btn rail-action-danger"
-          onClick={onDelete}
-          disabled={!canDelete}
-          title="Delete this page"
-          aria-label="Delete this page"
-        >
-          <Trash2 size={22} aria-hidden />
-        </button>
-        <button
-          type="button"
-          className="rail-action-btn rail-action-close"
-          onClick={onClearSelection}
-          title="Clear selection"
-          aria-label="Clear selection"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
   );
 }
 

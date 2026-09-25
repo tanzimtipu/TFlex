@@ -64,6 +64,13 @@ import {
   type PillControl,
 } from "../../../src/renderer/state/pillFit";
 import { multiPaneGeometry } from "../../../src/renderer/components/multiPaneLayout";
+import {
+  MULTI_DOCK_BAND_BASE_PX,
+  multiPillLayerWidthPx,
+  multiPillMetrics,
+  multiPillTier,
+  type MultiPillTier,
+} from "../../../src/renderer/components/multiPaneLayout";
 
 const STYLES_PATH = resolve(__dirname, "../../../src/renderer/styles.css");
 
@@ -758,13 +765,18 @@ describe("DEF-322 — the two pills yield, never colliding, at every supported w
 //    inset (the pane geometry already consumed it, DEF-286/287).
 // ---------------------------------------------------------------------------
 
-/** The multi CSS stack: 12px inset + 40px pill + a 6px gap. */
-const MULTI_RAISE = 58;
-
+/** The Multi Mode panes' pills (Phase 40, item 1): the two pills sit
+ *  HORIZONTALLY — page at the pills layer's left, zoom at its right — one row
+ *  at the pane's bottom inset. The layer spans the pane's page column when the
+ *  full pair fits there, and the whole pane inside the reserved one-row band
+ *  otherwise (the strip stops above the band). The panes themselves stop
+ *  `MULTI_DOCK_BAND_BASE_PX` above the stage bottom, so the pills can never
+ *  reach the shared dock whatever their x range. */
 interface MultiPanePills {
   page: PillBox;
   zoom: PillBox;
   rect: Rect;
+  tier: MultiPillTier;
 }
 
 function multiPills(appWidth: number): {
@@ -779,21 +791,33 @@ function multiPills(appWidth: number): {
   const aRight = stageLeft + geo.paneA.right;
   const bLeft = stageLeft + geo.paneB.left;
   const bRight = stageLeft + geo.paneB.right;
-  // Pane A's page column is its LEFT track; pane B's is its RIGHT track.
-  const aCanvasLeft = aLeft;
-  const bCanvasRight = bRight;
-  const box = (left: number, bottomOffset: number, width: number): PillBox => ({
-    left,
-    right: left + width,
-    top: HOST_H - bottomOffset - 42,
-    bottom: HOST_H - bottomOffset,
-    width,
-    height: 42,
-  });
-  const aPage = box(aCanvasLeft + 12, 12, PAGE_FULL_W);
-  const aZoom = box(aCanvasLeft + 12, MULTI_RAISE, ZOOM_FULL_W);
-  const bPage = box(bCanvasRight - 12 - PAGE_FULL_W, 12, PAGE_FULL_W);
-  const bZoom = box(bCanvasRight - 12 - ZOOM_FULL_W, MULTI_RAISE, ZOOM_FULL_W);
+  // The panes own the stage minus the shared dock's reserved bottom band.
+  const paneBottom = HOST_H - MULTI_DOCK_BAND_BASE_PX;
+  const build = (left: number, right: number, paneWidth: number): MultiPanePills => {
+    const layer = multiPillLayerWidthPx(paneWidth);
+    const tier = multiPillTier(layer);
+    const m = multiPillMetrics(tier);
+    // The layer is right-aligned to the pane's right edge for pane B (its page
+    // column is the right track) and left-aligned for pane A.
+    const layerLeft = left === bLeft ? right - layer : left;
+    const bottom = paneBottom - PILL_BOTTOM;
+    const box = (boxLeft: number, width: number): PillBox => ({
+      left: boxLeft,
+      right: boxLeft + width,
+      top: bottom - m.height,
+      bottom,
+      width,
+      height: m.height,
+    });
+    return {
+      page: box(layerLeft + m.inset, m.pageW),
+      zoom: box(layerLeft + layer - m.inset - m.zoomW, m.zoomW),
+      rect: { left, right, top: 0, bottom: paneBottom },
+      tier,
+    };
+  };
+  const paneA = build(aLeft, aRight, geo.paneA.width);
+  const paneB = build(bLeft, bRight, geo.paneB.width);
   // The shared dock: centred on `.multi-dock-layer` (the stage less the
   // Inspector inset). It has no pill siblings, so it never lifts and its cap
   // is its band.
@@ -806,11 +830,7 @@ function multiPills(appWidth: number): {
     top: HOST_H - 12 - DOCK_H,
     bottom: HOST_H - 12,
   };
-  return {
-    paneA: { page: aPage, zoom: aZoom, rect: { left: aLeft, right: aRight, top: 0, bottom: HOST_H } },
-    paneB: { page: bPage, zoom: bZoom, rect: { left: bLeft, right: bRight, top: 0, bottom: HOST_H } },
-    dock,
-  };
+  return { paneA, paneB, dock };
 }
 
 describe("DEF-323 — each pane's pills clear the dock and the other pane in Multi Mode", () => {
@@ -829,11 +849,17 @@ describe("DEF-323 — each pane's pills clear the dock and the other pane in Mul
           expect(pill.left, `pane ${name} pill inside its pane at ${w}`).toBeGreaterThanOrEqual(pane.rect.left);
           expect(pill.right, `pane ${name} pill inside its pane at ${w}`).toBeLessThanOrEqual(pane.rect.right);
         }
-        assertControlsClearAt(
-          [...pageControls(pane.page, "full"), ...zoomControls(pane.zoom, "full")],
-          [{ name: "the dock", rect: dock }, { name: `pane ${otherName}`, rect: other.rect }],
-          `pane ${name} at a ${w}px window`,
-        );
+        // The inner-row control geometry is the single-mode ladder's (28px
+        // buttons); the micro tier's dense 24px chrome is covered by the
+        // Phase 40 spec, so the control-level check runs for full/compact.
+        if (pane.tier !== "micro") {
+          const mode = pane.tier === "full" ? "full" : "compact";
+          assertControlsClearAt(
+            [...pageControls(pane.page, mode), ...zoomControls(pane.zoom, mode)],
+            [{ name: "the dock", rect: dock }, { name: `pane ${otherName}`, rect: other.rect }],
+            `pane ${name} at a ${w}px window`,
+          );
+        }
       };
       checkPane("A", paneA, paneB);
       checkPane("B", paneB, paneA);

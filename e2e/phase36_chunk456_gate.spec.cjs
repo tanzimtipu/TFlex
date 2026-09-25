@@ -12,7 +12,7 @@
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, gotoStage } = require('./lib/helpers.cjs');
+const { hardClose, gotoStage, closeStandalonePrintWindow } = require('./lib/helpers.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const REPORT = path.join(ROOT, 'test-fixtures', 'report.pdf');
@@ -184,30 +184,32 @@ test.describe('Phase 36 chunk 4 — the Command Palette', () => {
     const s0 = await loadSettings();
     console.log(`[P36C456-P4] initial dockPins=${JSON.stringify(s0.dockPins)}`);
 
-    // Pin "merge" via Ctrl+Enter.
+    // Pin "renumberPages" via Ctrl+Enter. Phase 40: `merge` is now a PAGES
+    // dock DEFAULT, so it reads as already-pinned and Ctrl+Enter refuses it;
+    // the Ctrl+Enter pin path is proven with a NON-default tool instead.
     await openPaletteCtrlK();
-    await win.fill('[data-command-palette-input]', 'merge pdfs');
+    await win.fill('[data-command-palette-input]', 'renumber');
     await win.waitForTimeout(200);
-    await win.locator('[data-palette-tool-id="merge"]').first().hover();
+    await win.locator('[data-palette-tool-id="renumberPages"]').first().hover();
     await win.waitForTimeout(120);
     await win.keyboard.press('Control+Enter');
     await win.waitForTimeout(400);
-    const s1 = await waitForSettings((s) => Array.isArray(s.dockPins) && s.dockPins.includes('merge'), 'pin-merge');
-    const pinnedAttr = await win.locator('[data-palette-tool-id="merge"]').first().getAttribute('data-palette-pinned');
-    const pinMark = await win.locator('[data-palette-tool-id="merge"] [data-palette-pin]').count();
+    const s1 = await waitForSettings((s) => Array.isArray(s.dockPins) && s.dockPins.includes('renumberPages'), 'pin-renumber');
+    const pinnedAttr = await win.locator('[data-palette-tool-id="renumberPages"]').first().getAttribute('data-palette-pinned');
+    const pinMark = await win.locator('[data-palette-tool-id="renumberPages"] [data-palette-pin]').count();
     console.log(`[P36C456-P4] after pin: dockPins=${JSON.stringify(s1 && s1.dockPins)} pinned=${pinnedAttr} pinMark=${pinMark}`);
-    expect((s1 && s1.dockPins) || [], 'Ctrl+Enter did not write the pinned tool id through the dockPins writer').toContain('merge');
+    expect((s1 && s1.dockPins) || [], 'Ctrl+Enter did not write the pinned tool id through the dockPins writer').toContain('renumberPages');
     expect(pinnedAttr).toBe('true');
     expect(pinMark).toBe(1);
 
-    // Full-dock refusal: seed 4 pins, then try to pin a 5th.
+    // Full-dock refusal: seed 4 explicit NON-default pins, then try a 5th.
     await win.keyboard.press('Escape');
     await win.waitForSelector('[data-command-palette]', { state: 'detached' });
-    await saveSettings({ dockPins: ['merge', 'split', 'extract', 'delete'] });
+    await saveSettings({ dockPins: ['renumberPages', 'watermark', 'multi-mode', 'zoomIn'] });
     await openPaletteCtrlK();
-    await win.fill('[data-command-palette-input]', 'crop pages');
+    await win.fill('[data-command-palette-input]', 'zoom out');
     await win.waitForTimeout(200);
-    await win.locator('[data-palette-tool-id="cropPages"]').first().hover();
+    await win.locator('[data-palette-tool-id="zoomOut"]').first().hover();
     await win.waitForTimeout(120);
     await win.keyboard.press('Control+Enter');
     await win.waitForTimeout(400);
@@ -215,22 +217,25 @@ test.describe('Phase 36 chunk 4 — the Command Palette', () => {
     const s2 = await loadSettings();
     console.log(`[P36C456-P4] full-dock notice=${JSON.stringify(notice.trim())} dockPins=${JSON.stringify(s2 && s2.dockPins)}`);
     expect(notice.trim()).toContain('Dock is full');
-    expect((s2 && s2.dockPins) || []).not.toContain('cropPages');
+    expect((s2 && s2.dockPins) || []).not.toContain('zoomOut');
 
     // Ctrl+P is NOT claimed by the palette: it must reach the print path.
+    // Phase 37 (item 17) — the in-app print modal is retired; Ctrl+P opens the
+    // STANDALONE print window (?tfWindow=print), a separate BrowserWindow.
     await win.keyboard.press('Escape');
     await win.waitForSelector('[data-command-palette]', { state: 'detached' });
     await openPaletteCtrlK();
     await win.bringToFront();
+    const printPromise = app.waitForEvent('window');
     await app.evaluate(({ BrowserWindow }) => {
       const w = BrowserWindow.getAllWindows()[0];
       w.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'P', modifiers: ['control'] });
       w.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'P', modifiers: ['control'] });
     });
-    await win.waitForSelector('[data-print-printer]', { state: 'visible', timeout: 15000 });
-    console.log('[P36C456-P4] Ctrl+P reached the print dialog while the palette was open');
-    await win.click('[data-print-cancel]');
-    await win.waitForSelector('[data-print-printer]', { state: 'detached', timeout: 8000 });
+    const printPage = await printPromise;
+    await printPage.waitForSelector('[data-print-window]', { timeout: 30000 });
+    console.log('[P36C456-P4] Ctrl+P reached the standalone print window while the palette was open');
+    await closeStandalonePrintWindow(app, printPage);
   });
 
   test('P5 the palette honours reduced motion (still opens and runs) and captures the screenshot', async () => {
@@ -350,46 +355,10 @@ test.describe('Phase 36 chunk 5 — the Inspector', () => {
   test('P7b the LIVE text-object and signature selections reach the Inspector', async () => {
     await openReport();
 
-    // --- text object: EDIT mode + place a text box -> the new box is selected,
-    //     which the DocumentView publishes up to the Inspector.
-    await gotoStage(win, 2);
-    await win.locator('[data-dock-verb="editMode"]').click();
-    await win.waitForTimeout(900);
-    await win.locator('[data-dock-verb="editTextBox"]').click();
-    await win.waitForTimeout(500);
-    const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
-    await win.mouse.click(Math.round(pg.x + pg.width * 0.4), Math.round(pg.y + pg.height * 0.3));
-    await win.waitForTimeout(1200);
-    const textSel = await win.locator('[data-inspector]').getAttribute('data-inspector-selection');
-    const textSlots = await inspectorSlots();
-    const textTitle = (await win.locator('[data-inspector] .glass-sidebar-title').textContent()) || '';
-    console.log(`[P36C456-P7b] text selection=${textSel} slots=${JSON.stringify(textSlots)} title=${JSON.stringify(textTitle)}`);
-    expect(textSel, 'a live text object drives the Inspector selection').toBe('text');
-    expect(textSlots).toEqual(['text']);
-    expect(await win.locator('[data-inspector-text-panel] [data-text-panel]').count(), 'the re-parented text panel rendered inline').toBe(1);
-    expect(await win.locator('[data-inspector] [data-txt-text]').count(), 'the panel shows the selected object text field').toBe(1);
-    // DEF-321 probe: is the same TextPropertiesPanel ALSO mounted floating?
-    const dup = await win.evaluate(() => {
-      const panels = [...document.querySelectorAll('.text-props-panel')];
-      const r = (el) => {
-        const b = el.getBoundingClientRect();
-        return { w: Math.round(b.width), h: Math.round(b.height), x: Math.round(b.x), y: Math.round(b.y) };
-      };
-      return {
-        total: panels.length,
-        inInspector: panels.filter((p) => p.closest('[data-inspector]')).length,
-        visibleOutside: panels.filter((p) => !p.closest('[data-inspector]') && p.getBoundingClientRect().width > 0 && p.getBoundingClientRect().height > 0).length,
-        rects: panels.map(r),
-      };
-    });
-    console.log(`[P36C456-P7b] text-props panels: ${JSON.stringify(dup)}`);
-
-    // Turn Edit mode off so the signature path starts clean.
-    await win.locator('[data-dock-verb="editMode"]').click().catch(() => {});
-    await win.waitForTimeout(700);
-
-    // --- signature: create a typed saved signature, then arm it -> the
-    //     Inspector shows the signature section with its label.
+    // --- signature FIRST: create a typed saved signature, then arm it -> the
+    //     Inspector shows the signature section with its label. A text-object
+    //     selection persists across stage changes and takes precedence in the
+    //     Inspector, so the signature flow runs on a clean selection.
     await gotoStage(win, 3);
     await win.locator('[data-dock-verb="sign"]').click();
     await win.waitForSelector('.sig-manager', { state: 'visible', timeout: 8000 });
@@ -408,6 +377,44 @@ test.describe('Phase 36 chunk 5 — the Inspector', () => {
     expect(sigSlots).toEqual(['signature']);
     expect(sigTitle).toContain('Ada Lovelace');
     expect((await win.locator('[data-inspector-row="signature-style"]').textContent()) || '').toContain('Typed');
+
+    // --- text object: EDIT mode + place a text box -> the new box is selected,
+    //     which the DocumentView publishes up to the Inspector (and which takes
+    //     precedence over the armed signature).
+    // Phase 37 (item 13) — `editMode` is retired: entering the EDIT stage IS
+    // edit mode, so no separate toggle verb exists.
+    await gotoStage(win, 2);
+    await win.waitForTimeout(900);
+    await win.locator('[data-dock-verb="editTextBox"]').click();
+    await win.waitForTimeout(500);
+    const pg = await win.locator('.pdf-page[data-page="1"]').boundingBox();
+    await win.mouse.click(Math.round(pg.x + pg.width * 0.4), Math.round(pg.y + pg.height * 0.3));
+    await win.waitForTimeout(1200);
+    const textSel = await win.locator('[data-inspector]').getAttribute('data-inspector-selection');
+    const textSlots = await inspectorSlots();
+    const textTitle = (await win.locator('[data-inspector] .glass-sidebar-title').textContent()) || '';
+    console.log(`[P36C456-P7b] text selection=${textSel} slots=${JSON.stringify(textSlots)} title=${JSON.stringify(textTitle)}`);
+    expect(textSel, 'a live text object drives the Inspector selection').toBe('text');
+    // Phase 37 (item 1) — a selected TEXT object keeps the document facts
+    // below and lifts the text panel to the top; the slot set is ['document'].
+    expect(textSlots).toEqual(['document']);
+    expect(await win.locator('[data-inspector-text-panel] [data-text-panel]').count(), 'the re-parented text panel rendered inline').toBe(1);
+    expect(await win.locator('[data-inspector] [data-txt-text]').count(), 'the panel shows the selected object text field').toBe(1);
+    // DEF-321 probe: is the same TextPropertiesPanel ALSO mounted floating?
+    const dup = await win.evaluate(() => {
+      const panels = [...document.querySelectorAll('.text-props-panel')];
+      const r = (el) => {
+        const b = el.getBoundingClientRect();
+        return { w: Math.round(b.width), h: Math.round(b.height), x: Math.round(b.x), y: Math.round(b.y) };
+      };
+      return {
+        total: panels.length,
+        inInspector: panels.filter((p) => p.closest('[data-inspector]')).length,
+        visibleOutside: panels.filter((p) => !p.closest('[data-inspector]') && p.getBoundingClientRect().width > 0 && p.getBoundingClientRect().height > 0).length,
+        rects: panels.map(r),
+      };
+    });
+    console.log(`[P36C456-P7b] text-props panels: ${JSON.stringify(dup)}`);
   });
 });
 
@@ -632,10 +639,17 @@ test.describe('Phase 36 chunk 5/6 — the retirement and the 264px panel-inset i
     });
     console.log(`[P36C456-P10] DEF-319 zoom-pill hit-test: ${JSON.stringify(zoomDiag)}`);
     if (zoomDiag.hit) {
+      // Phase 40 — the fit-width scale can sit a hair above a ladder step, so
+      // the first Zoom-out snaps to that step and the INTEGER percent can read
+      // unchanged. Click until the readout actually drops (max 2 steps) so the
+      // assertion still proves the control acts.
       const zBefore = parseInt(await win.locator('[data-zoom-pill] .zoom-percent').innerText(), 10);
-      await win.locator('[data-zoom-pill] [aria-label="Zoom out"]').click({ timeout: 8000 });
-      await win.waitForTimeout(700);
-      const zAfter = parseInt(await win.locator('[data-zoom-pill] .zoom-percent').innerText(), 10);
+      let zAfter = zBefore;
+      for (let i = 0; i < 2 && zAfter >= zBefore; i += 1) {
+        await win.locator('[data-zoom-pill] [aria-label="Zoom out"]').click({ timeout: 8000 });
+        await win.waitForTimeout(700);
+        zAfter = parseInt(await win.locator('[data-zoom-pill] .zoom-percent').innerText(), 10);
+      }
       console.log(`[P36C456-P10] zoom pill: ${zBefore}% -> ${zAfter}%`);
       expect(zAfter, 'the zoom pill Zoom-out control is clickable and acts').toBeLessThan(zBefore);
     } else {

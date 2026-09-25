@@ -267,7 +267,10 @@ describe("App wiring — assign path, pane Open, single mode", () => {
 
   it("openFromBytes returns the id the reducer activated (dedupe-safe)", () => {
     expect(appSource).toMatch(/const effectiveId = dedupeTarget\?\.id \?\? id;/);
-    expect(appSource).toMatch(/return \{ tabId: effectiveId \};/);
+    // Phase 40 item 4 — the return now also carries the engine doc id (the
+    // from-scratch merge addresses the doc directly). The tab-id contract is
+    // unchanged, so the dedupe-safe id assertion is intact.
+    expect(appSource).toMatch(/return \{ tabId: effectiveId, engineDocId \};/);
   });
 });
 

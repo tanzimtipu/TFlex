@@ -232,10 +232,13 @@ test('DEF-348c page-rotate home parity: single mode vs Multi Mode', async () => 
 
   console.log(`[P39-DEF348c single] ${JSON.stringify(single)}`);
   console.log(`[P39-DEF348c multi]  ${JSON.stringify(multi)}`);
+  // Phase 40 (item 9) — the under-thumbnail page-action bar is RETIRED in
+  // BOTH modes; the rotate capability keeps its dock home (and the page
+  // right-click menu). The old "bar contained by its strip" premise is gone.
+  expect(single.actionBarCount, 'single mode: the page-action bar is retired').toBe(0);
+  expect(multi.actionBarCount, 'Multi Mode: the page-action bar is retired').toBe(0);
   expect(multi.dockRotate, 'dock exposes the rotate verb in Multi Mode').toBe(1);
-  expect(multi.actionBarFloating, 'no page-action bar floats outside its pane strip').toBe(0);
-  expect(multi.actionBarInStrip, 'page-action bar (if any) is contained by its pane strip').toBe(multi.actionBarCount);
-  expect(multi.actionBarHitsDock, 'page-action bar does not intersect the dock').toBe(0);
+  expect(multi.actionBarHitsDock, 'no page-action bar intersects the dock').toBe(0);
   await hardClose(app, 'def348c');
   app = null; win = null;
 });

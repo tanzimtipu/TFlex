@@ -236,13 +236,15 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
   const [stageWidth, setStageWidth] = useState(0);
 
   const multiOn = multiMode.enabled;
-  // Phase 39 (DEF-349) — the per-pane pill band. When a pane is too narrow for
-  // its pills to fit inside the page column, that pane reserves a bottom band
-  // (`multiPillBandPx`), the strip stops above it and the pills span the full
-  // pane there. The pure geometry is the ONE source of truth the CSS mirrors
-  // via the `--tf-multi-pill-band` / `--tf-multi-pill-span` custom properties
-  // written below; with no measurement (jsdom) no band is reserved and the
-  // wide Phase 36/37/38 placement is untouched.
+  // Phase 39 (DEF-349) / Phase 40 (item 1) — the per-pane pill band. The
+  // pane's two pills are laid out HORIZONTALLY (page at the pane's left, zoom
+  // at its right); when the page column can no longer hold that pair, the pane
+  // reserves a ONE-ROW bottom band (`multiPillBandPx`), the strip stops above
+  // it and the pills span the full pane there. The pure geometry is the ONE
+  // source of truth the CSS mirrors via the `--tf-multi-pill-band` /
+  // `--tf-multi-pill-span` custom properties written below; with no
+  // measurement (jsdom) no band is reserved and the wide placement is
+  // untouched.
   const paneGeometry =
     multiOn && stageWidth > 0
       ? multiPaneGeometry(stageWidth, toolsInsetTarget ?? 0, splitFraction)

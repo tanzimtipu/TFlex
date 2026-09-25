@@ -15,7 +15,7 @@ vi.mock('electron', () => ({
   },
 }));
 
-import { openPdfDialog, savePdfDialog } from '../../../src/main/services/dialog';
+import { openPdfDialog, openPdfDialogMulti, savePdfDialog } from '../../../src/main/services/dialog';
 
 describe('openPdfDialog', () => {
   beforeEach(() => {
@@ -112,6 +112,80 @@ describe('openPdfDialog', () => {
       properties: ['openFile'],
       filters: [{ name: 'FDF', extensions: ['fdf'] }],
     });
+  });
+});
+
+describe('openPdfDialogMulti', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns several normalized paths in the picked order', async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/one/first.pdf', '/two/second.pdf', '/three/third.pdf'],
+    });
+
+    const result = await openPdfDialogMulti();
+
+    // normalize() on Windows rewrites separators; order must be preserved.
+    expect(result).toEqual(['\\one\\first.pdf', '\\two\\second.pdf', '\\three\\third.pdf']);
+    expect(result).toHaveLength(3);
+  });
+
+  it('returns a single-element array for one picked file', async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/one/only.pdf'],
+    });
+
+    expect(await openPdfDialogMulti()).toEqual(['\\one\\only.pdf']);
+  });
+
+  it('returns an empty array when the dialog is canceled', async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: true,
+      filePaths: [],
+    });
+
+    expect(await openPdfDialogMulti()).toEqual([]);
+  });
+
+  it('returns an empty array when filePaths is empty even if not canceled', async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [],
+    });
+
+    expect(await openPdfDialogMulti()).toEqual([]);
+  });
+
+  it('enables multi-selection and passes the PDF filter by default', async () => {
+    mockShowOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['/a.pdf'] });
+
+    await openPdfDialogMulti();
+
+    expect(mockShowOpenDialog).toHaveBeenCalledWith({
+      title: 'Open PDF',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+  });
+
+  it('uses the FDF filter and multi-selection when kind is "fdf"', async () => {
+    mockShowOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: ['/comments/a.fdf', '/comments/b.fdf'],
+    });
+
+    const result = await openPdfDialogMulti('fdf');
+
+    expect(mockShowOpenDialog).toHaveBeenCalledWith({
+      title: 'Import FDF Comments',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'FDF', extensions: ['fdf'] }],
+    });
+    expect(result).toEqual(['\\comments\\a.fdf', '\\comments\\b.fdf']);
   });
 });
 

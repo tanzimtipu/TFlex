@@ -387,7 +387,7 @@ describe("ContextPanel — the live thumbnail stack (re-parented ThumbnailRail)"
     }
   });
 
-  it("keeps the rail's own Ctrl/Shift-click selection and its action bar", () => {
+  it("keeps the rail's own Ctrl/Shift-click selection (its action bar is retired)", () => {
     const onJump = vi.fn();
     const { host, unmount } = renderPanel({ pageCount: 5, onJump });
     try {
@@ -397,7 +397,9 @@ describe("ContextPanel — the live thumbnail stack (re-parented ThumbnailRail)"
         );
       });
       expect(host.querySelector(".thumb-selected")?.getAttribute("data-page")).toBe("2");
-      expect(host.querySelector("[data-rail-action-bar]")).not.toBeNull();
+      // Phase 40 (item 9) — the under-thumbnail rotate/delete bar is retired;
+      // selection itself is unchanged.
+      expect(host.querySelector("[data-rail-action-bar]")).toBeNull();
       // A modifier click selects; it does not navigate.
       expect(onJump).not.toHaveBeenCalled();
     } finally {
@@ -914,10 +916,11 @@ describe("ContextPanel — DEF-310 outline containment", () => {
     expect(body).not.toMatch(/overflow-y:\s*auto/);
     // While the body is mounted the section has a definite height (the
     // `.rail-content` analogue: an auto-height parent would collapse the
-    // absolute tree to a sliver).
+    // absolute tree to a sliver). Phase 40 (item 10) — the rule keys on the
+    // section's own `data-outline-open` state, not `:has()`.
     const sectionWithBody = ruleBody(
       css,
-      "\\.context-panel-outline:has\\(\\.context-panel-outline-body\\)",
+      "\\.context-panel-outline\\[data-outline-open='true'\\]",
     );
     expect(sectionWithBody).toMatch(/height:\s*40%/);
     // `.outline-panel`'s own rule is unchanged — the rail depends on it.

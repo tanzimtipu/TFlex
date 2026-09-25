@@ -3749,4 +3749,267 @@ Disposition: ACCEPTED -> DEF-346
   (inferred from the inset=0px overshoot frame, not instrumented directly).
 
 
+## Phase 40 gate — chrome, dialogs, view modes, design system
+
+Session label: `phase-40 gate`. Harness lives in `test-fixtures/adv-p40/`
+(`probe.cjs`, `hostile.cjs`; shots in `test-fixtures/adv-p40/shots/`). All runs
+go through the canonical `e2e/lib/launch.cjs` launcher against the current
+`dist` build (dev build). Fixture copies are always made to `%TEMP%`; no
+recorded fixture is mutated. Model: `openrouter/deepseek/deepseek-v4.1-flash`.
+
+## ADV-091: In TWO/FOUR layout the page pill shows a range, focus swaps it to a bare page without selecting, so a click-and-type jump lands on the wrong row or is a silent no-op
+
+- Session: phase-40 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. `node test-fixtures/adv-p40/probe.cjs layoutGeometry` - open `report.pdf`
+   (34 pages) at 1440x900, select the TWO page layout. The page pill's resting
+   value is the row range `1-2` (`data-page-layout` = `two`).
+2. `node test-fixtures/adv-p40/probe.cjs jump` - (a) click the page input, read
+   `input.value` and `selectionStart/End`; (b) type a single digit and press
+   Enter; (c) also try a full clear (Ctrl+A) then type, for comparison.
+
+Expected: clicking the page input and typing a page number jumps to that page,
+or at minimum either selects the shown text or rejects the input visibly.
+
+Actual:
+- After the click the input reads `3` (the range `3-4` was swapped for the row's
+  first page by the `onFocus` handler) with `selectionStart = selectionEnd = 0`;
+  nothing is selected. Typing `6` produced the value `63`; Enter parsed
+  `parseInt("63") = 63 > pageCount 34`, so the jump was silently refused and the
+  field stayed showing `63`.
+- In a second run the resting value was `1-2`; `fill("4")` (which first focuses,
+  and so triggers the same swap) ended with the value `14`; Enter jumped to
+  page 14 (readout `13-14`, scroller at the row for pages 13-14) - a wrong
+  destination the user did not ask for.
+- Ctrl+A then typing the number works (`8` -> readout `7-8`, scroll lands on
+  pages 7-8), which isolates the trigger to the missing select-on-focus.
+- The same append behaviour exists in ONE mode (`3` + `6` -> `36`), but there
+  the resting value IS the page; Phase 40's range readout makes the resting
+  value not the editable page, aggravating it.
+
+Screenshot: `test-fixtures/adv-p40/shots/layout-wide-four.png` (range readout
+`1-2` while the control offers a 2x2 layout)
+
+Disposition: ACCEPTED -> DEF-351
+
+
+## ADV-092: Palette pin toggle cannot restore a removed stage-default tool once four explicit pins exist, and reports a false "Dock is full (max 4 pins)"
+
+- Session: phase-40 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. `node test-fixtures/adv-p40/probe.cjs pinsCap` - open `report.pdf` (PAGES
+   stage), open the Ctrl+K palette, search `merge` and click its pin toggle to
+   UNPIN that stage default. The dock correctly drops Merge (7 defaults left).
+2. Search/pin four NON-stage tools (`annotate`, `sign`, `stamp`, `watermark`)
+   so `dockPins` holds 4 explicit pins.
+3. Search `merge` again (palette shows it `unpinned`, dock does not contain it)
+   and click its pin toggle to restore it.
+
+Expected: restoring a tool that is part of the current stage's default set adds
+no explicit pin (`pinDockTool` only removes it from `dockUnpinned`), so it should
+succeed even with 4 explicit pins.
+
+Actual: the notice reads `Dock is full (max 4 pins)` and the toggle does
+nothing - Merge stays out of the dock (`dockCount` stays 11 = 7 defaults + 4
+pins, and `inDock:false`). The capacity guard is evaluated against `dockPins`
+in `togglePinRow`/`pinRow` before the default-vs-cross-stage branch in
+`pinDockTool`, so a restore that needs no pin slot is refused with a misleading
+reason. The user cannot get the tool back from the palette by any path while
+the 4 cross-stage pins exist.
+
+Screenshot: `test-fixtures/adv-p40/shots/pins-cap.png`
+
+Disposition: ACCEPTED -> DEF-352
+
+
+## ADV-093: Palette pin icon can disagree with the dock when an id is present in both `dockPins` and `dockUnpinned` (hand-edited or cross-version settings)
+
+- Session: phase-40 gate
+- Suggested severity: LOW
+
+What I did:
+1. `node test-fixtures/adv-p40/hostile.cjs array` - pre-write a settings.json
+   with a hostile-but-schema-valid curation:
+   `dockPins: ["__nope__","rotate","rotate","delete","delete","annotate","sign","watermark","merge"]`,
+   `dockUnpinned: ["merge","merge","__bogus__","not-real-tool","delete"]`.
+2. Launch with that userData dir, open `report.pdf`, open the palette and
+   compare every row's `data-palette-pinned` against the `[data-dock-verb]`
+   membership of the dock.
+
+Expected: `isToolPinned` and the dock render the same membership for every tool
+(the palette contract: "the toggle icon must reflect what the dock is actually
+showing").
+
+Actual: `disagree: ["delete"]`. `sanitizeDockPins` keeps `delete` as an explicit
+pin, but `sanitizeDockUnpinned` also keeps `delete` (it is a PAGES default), so
+`isToolPinned("delete")` takes the `dockDefaultIds` branch and returns
+`!unpinned.includes("delete") = false` while the dock is rendering the explicit
+pin. The palette shows "unpinned", the dock shows "pinned". No crash, and one
+click self-heals it (`onDockPin` removes the un-pin), but the two surfaces
+visibly contradict each other until then. Requires a settings file containing
+the same id in both lists (hand-edited or left behind by a stage change across
+versions); normal pin/unpin writes cannot produce it. The rest of the hostile
+settings cases (`nonarray`, `corrupt`) load cleanly with defaults and no
+disagreement.
+
+Screenshot: `test-fixtures/adv-p40/shots/hostile-array.png`
+
+Disposition: ACCEPTED -> DEF-353
+
+
+## ADV-094: Palette "Recent"/"Global" stage-tag text is below the 4.5:1 floor in all three themes
+
+- Session: phase-40 gate
+- Suggested severity: MEDIUM
+
+What I did:
+1. `node test-fixtures/adv-p40/probe.cjs contrast` - open `report.pdf`, open the
+   Ctrl+K palette, force each theme by setting `data-theme` on the root, and
+   measure text-on-real-background contrast for every palette tag variant
+   (`.command-palette-tag[data-stage="..."]`) with a WCAG ratio helper that
+   walks ancestors to the first opaque background.
+
+Expected: with Phase 40 item 12 ("the contrast floors still hold in all three
+themes"), every tag's text meets 4.5:1.
+
+Actual: the four stage tags pass, but the non-stage tags fall back to
+`var(--accent)` on `var(--accent-soft)` and fail in all three themes:
+
+| tag | light | dark | frosted |
+| --- | --- | --- | --- |
+| Recent / Global | 4.37:1 | 3.24:1 | 4.34:1 |
+| PAGES | 8.62 | 7.59 | 9.12 |
+| EDIT | 6.70 | 7.29 | 8.65 |
+| REVIEW | 6.29 | 6.33 | 7.95 |
+| DELIVER | 7.13 | 8.42 | 6.83 |
+
+The dark 3.24:1 is the worst (accent `#2563eb` on the dark accent wash). The
+comment in `styles.css` explicitly says non-stage rows "keep the accent
+treatment", so this is a deliberate token choice that still misses the floor.
+
+Screenshot: `test-fixtures/adv-p40/shots/contrast.png`
+
+Disposition: ACCEPTED -> DEF-354
+
+
+## ADV-095: Pressed-state Open label (3.75:1) and dark active page-layout icon (2.98:1) are below the Phase-38 floors
+
+- Session: phase-40 gate
+- Suggested severity: LOW
+
+What I did:
+1. `node test-fixtures/adv-p40/probe.cjs contrast` - same setup; additionally
+   hold the mouse down over `[data-toolbar-open]` (pressed state) and read the
+   ratio, and measure the ACTIVE `[data-page-layout-option]` (the segmented
+   control at the canvas top-right) in each theme.
+
+Expected: Phase 38 floors hold in every state (4.5:1 text, 3:1 icon), and item 3
+requires the borderless Open/Save controls to keep those floors through their
+hover/focus/pressed affordances.
+
+Actual:
+- Pressed `.titlebar-file-btn` (the "Open" label): 3.75:1 in light
+  (`color: var(--accent)` `#2563eb` on `--accent-pressed-soft` = rgb(207,220,247))
+  - below the 4.5:1 text floor. Resting is 8.26 and hover 15.79, so only the
+  pressed state regresses.
+- Active page-layout option icon, dark theme: 2.98:1 (accent on the active
+  tool-btn wash) - a hair under the 3:1 icon floor; light 4.39 and frosted 4.28
+  are above it. Reported as borderline (within measurement noise of 3.0).
+- The pressed page-layout icon is 3.80:1 (passes the icon floor).
+- Dock primary verb, palette rows, pin toggles, header icons and the context
+  panel title all pass or greatly exceed the floors in every theme and state.
+
+Screenshot: `test-fixtures/adv-p40/shots/contrast.png`
+
+Disposition: ACCEPTED -> DEF-355
+
+
+## Negative results — Phase 40 (no finding)
+
+- Page-layout modes (item 7), the main new surface: across 1920x1080, 1440x900,
+  900x700, 720x1000 and 1000x1300, ONE/TWO/FOUR were exercised on the 520-page
+  `long.pdf` and the 1-page `form.pdf`. In every mode the expected number of
+  pages was FULLY inside the viewport at the mode's `fit-page` (FOUR showed
+  pages 1-4 in a 2x2 grid fully visible at the wide/std/narrow/tall sizes; TWO
+  showed 1-2 side by side; ONE showed exactly page 1). Rows were 2 columns for
+  TWO/FOUR, 1 for ONE; `data-page-layout` and `aria-pressed` matched the
+  clicked option every time. Overlay alignment: for every mounted page the slot,
+  `.pdf-page` and `.textLayer` rects shared origin within 0-1px and the canvas
+  filled the slot (canvasW = slotW, or slotW-1 for sub-pixel) in TWO and FOUR,
+  including after a rotate via the page right-click menu. No blank page, no
+  wrong-size canvas, no page that never rendered, no mode that landed between
+  layouts. A 1-page document in FOUR is rendered at the 4-page fit (64% at
+  1920) top-centred with empty grid cells - consistent with the mode's declared
+  fit, noted as an observation rather than a defect.
+- Multi Mode stays ONE: entering Multi Mode removes the page-layout control
+  (`controls: 0`) and both panes' `.document-content` report `data-page-layout="one"`.
+- Performance with 4-up on the 520-page monster: switching to TWO/FOUR took
+  130-264 ms to the next two frames, mounted only 6 pages at 4-up (2 at 1-up),
+  and main RSS stayed 133-134 MB and the renderer JS heap 28 MB across four
+  mode switches plus six more cycles - no unbounded growth, no hang. The 520
+  slots are virtualised; only the visible rows mount.
+- Merge from scratch (item 4): cancel (0 files) = no tab, no source write;
+  1 file = normal open of that path; 2 files (34+1) = `Merged (2 files)` with 35
+  pages; the same file twice = 68 pages; corrupt-first + form = loaded the
+  corrupt fixture as a 1-page doc and merged to 2 pages with no crash; a missing
+  path and a non-PDF = no tab and no source write; 11 files (34 + 10x1) = 44
+  pages. In every multi-file case the combined tab is in-memory
+  (`onDiskPath:null`, Save disabled, Save dot on, modified dot on) and the first
+  source file's SHA-256 was unchanged after Ctrl+S, so a plain Save cannot
+  overwrite a source. With a document already open, Merge opens the doc-bound
+  dialog instead of the from-scratch picker.
+- Palette pin toggles (item 6), normal operation: `node ... pins` showed the
+  palette's pinned flag and the dock's actual membership agree for all 95
+  registry rows, and toggling four stage-default pins off removed exactly those
+  four from the dock; `hostile.cjs persist` pinned `watermark`, wrote
+  `dockPins:["watermark"]`, restarted on the same userData and found it still
+  pinned in the dock and in the palette. Rapid toggling (18 clicks over 3 rows)
+  did not crash, did not close the palette and left no page error.
+- Header icons (items 5/8): welcome shows the Ctrl+K command glyph and a
+  disabled Ctrl+F find icon; with a document the find icon enables and opens the
+  search bar; the two accessible names are distinct and name their shortcuts;
+  rapid alternating clicks never produced two search bars or left the palette
+  stuck. `MULTI_MODE_ACCESSIBLE_NAME`/title both contain "view/edit two ...
+  side by side" (item 8).
+- Horizontal pane pills (item 1): `pills`/`pills2` swept Multi Mode A and B at
+  640/800/960/1120/1280/1440/1600/1760/1920 (one and two documents) plus a
+  900x1400 tall window and 0.2/0.8 divider splits. In every sample the page pill
+  and the zoom pill were on ONE row (`sameRow:true`), did not overlap
+  (`overlap:false`), and each sat entirely inside its own pane
+  (`pageInside`/`zoomInside:true`), including a 262px pane at 640 and the
+  micro tier.
+- Retirements + page actions (items 9/10): `[data-rail-action-bar]` count is 0
+  before and after selecting a thumbnail; the dock's Rotate pages verb ran on
+  34 pages; the page right-click menu still exposes
+  `rotate-cw, rotate-ccw, extract, insert-blank, replace, delete`, so no page
+  action lost its home. Outline flush (item 11): in both the collapsed and the
+  expanded state the `.context-panel-outline` bottom equals the panel bottom
+  (`gap:0`).
+- Create-from-images (item 3): at the 640x620 minimum and at 1920x1080 all four
+  controls (`Add more`, `Create from clipboard`, quality, `Create PDF`) stayed
+  inside the viewport; with 30 images the list scrolled (`scrollHeight 1039` in
+  a 52px scroller at minimum) and the confirm button remained visible and
+  unclipped; removing rows emptied the list.
+- Hostile settings: a corrupt settings.json and a non-array `dockPins` both load
+  with defaults, a sane dock, no disagreement and no renderer page error.
+- Could not reproduce / not independently verified: pin persistence of an
+  explicit pin after a pin/unpin rapid sequence (only the single-pin restart
+  path was proven); the palette's pin state under a Multi Mode stage change;
+  the dock's disabled/selected state contrast (no dock verb was in a disabled
+  or pressed state at the sampled moment, so `dockActive`/`dockDisabled` were
+  null); Multi Mode's page right-click menu (shared `pageThumbMenu` module, but
+  only the single-mode menu was driven).
+
+- Out-of-scope observation (NOT filed; adjacent to item 4's save path but
+  pre-existing): pressing Ctrl+S with a CLEAN single-file document open rewrote
+  that file on disk (its SHA-256 changed) even though the toolbar Save control
+  was disabled and the document unmodified. This is the global accelerator, not
+  the from-scratch merge path (which is correctly save-protected), and it
+  predates Phase 40, so it is left for the orchestrator to scope.
+
+
 

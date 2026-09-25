@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { TitleBar, type MenuGroup } from '../../../src/renderer/components/TitleBar';
-import { AppHeader } from '../../../src/renderer/components/AppHeader';
+import { AppHeader, MULTI_MODE_ACCESSIBLE_NAME } from '../../../src/renderer/components/AppHeader';
 import type { MenuActionContext } from '../../../src/renderer/state/menuActions';
 import { PALETTE_TOOL_IDS, toolById } from '../../../src/renderer/state/toolsRegistry';
 
@@ -227,7 +227,7 @@ describe('Phase 36 chunk 6 — the title-bar Multi Mode toggle', () => {
       const toggle = container.querySelector<HTMLButtonElement>('[data-header-multi-mode]');
       expect(toggle).not.toBeNull();
       expect(toggle?.getAttribute('aria-pressed')).toBe('false');
-      expect(toggle?.getAttribute('aria-label')).toBe('Multi Mode');
+      expect(toggle?.getAttribute('aria-label')).toBe(MULTI_MODE_ACCESSIBLE_NAME);
       act((): void => {
         toggle?.click();
       });

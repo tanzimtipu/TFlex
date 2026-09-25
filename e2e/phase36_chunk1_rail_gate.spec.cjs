@@ -30,6 +30,13 @@ test.afterEach(async () => {
 test.setTimeout(240000);
 
 test('P36-C1 rail: four stages, indicator, Ctrl+1..4, compact, gear, screenshot', async () => {
+  // Phase 37 — the Stage Rail is document-scoped: it is NOT on the welcome
+  // screen. Open a sample first, then assert the rail.
+  expect(await win.locator('[data-stage-rail]').count(), 'no rail on the welcome screen').toBe(0);
+  await win.click('.sample-card');
+  await win.waitForSelector('.workspace', { timeout: 20000 });
+  await win.waitForTimeout(800);
+
   const rail = win.locator('[data-stage-rail]');
   await expect(rail).toBeVisible();
 
@@ -57,10 +64,7 @@ test('P36-C1 rail: four stages, indicator, Ctrl+1..4, compact, gear, screenshot'
   await win.keyboard.press('Control+4');
   expect(await rail.getAttribute('data-active-stage')).toBe('deliver');
 
-  // 4. Open a sample so the page input exists; the chord must NOT fire while a
-  //    text field is focused.
-  await win.click('.sample-card');
-  await win.waitForSelector('.workspace', { timeout: 20000 });
+  // 4. The chord must NOT fire while a text field is focused.
   const pageInput = win.locator('input.page-input');
   await pageInput.waitFor({ state: 'visible', timeout: 10000 });
   await pageInput.click();

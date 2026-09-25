@@ -354,7 +354,7 @@ const pageCount = engineState.pageCount;
         />
       </div>
       {outline !== null && (
-        <section className="context-panel-outline" data-context-panel-outline aria-label="Outline">
+        <section className="context-panel-outline" data-context-panel-outline aria-label="Outline" data-outline-open={outlineOpen ? 'true' : 'false'}>
           <button
             type="button"
             className="context-panel-section-toggle"

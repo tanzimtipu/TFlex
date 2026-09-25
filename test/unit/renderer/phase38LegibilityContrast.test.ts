@@ -126,19 +126,19 @@ const SURFACES = ["--bg-elevated", "--bg-raised", "--bg-toolbar", "--bg-rail", "
 
 /** The text tokens and the family/icon tokens that may colour a label. */
 const LABEL_TOKENS = ["--fg-strong", "--fg", "--fg-muted"] as const;
+/** Phase 40 (item 11) — the EIGHT per-family hues were replaced by the four
+ *  semantic roles. This sweep now scores the roles themselves, the four stage
+ *  tokens that resolve from them, and the dock primary's on-wash ink. */
 const FAMILY_TOKENS = [
-  "--icon-blue",
-  "--icon-cyan",
-  "--icon-green",
-  "--icon-orange",
-  "--icon-yellow",
-  "--icon-purple",
-  "--icon-red",
-  "--icon-pink",
+  "--sem-primary",
+  "--sem-neutral",
+  "--sem-affirmative",
+  "--sem-attention",
   "--tf-stage-pages",
   "--tf-stage-edit",
   "--tf-stage-review",
   "--tf-stage-deliver",
+  "--dock-primary-fg",
 ] as const;
 
 const TEXT_FLOOR = 4.5;
@@ -361,6 +361,95 @@ describe("Phase 38 feature B — the legibility + contrast sweep", () => {
     expect(CSS_NO_COMMENTS.slice(CSS_NO_COMMENTS.indexOf(active))).toMatch(
       /color:\s*var\(--fg-strong\)/,
     );
+  });
+});
+
+/**
+ * DEF-354 / DEF-355 — the two on-WASH pairs the DEF-340 sweep did not cover.
+ * Each is a translucent accent wash composited over its REAL surface, so the
+ * ratio is computed from the rendered pair, not the bare tokens.
+ */
+function washSurface(
+  theme: Record<string, string>,
+  washToken: string,
+  surfaceToken: string,
+): RGB {
+  const base = surfaceColor(theme, surfaceToken);
+  return composite(tokenColor(theme, washToken), base);
+}
+
+describe("Phase 38 feature B — DEF-354 / DEF-355 on-wash contrast", () => {
+  it("DEF-354: the palette Recent/Global tag clears 4.5:1 on the accent-soft wash in all three themes", () => {
+    const failures: string[] = [];
+    const measured: string[] = [];
+    for (const { id, map } of THEMES) {
+      const surface = washSurface(map, "--accent-soft", "--bg-raised");
+      const ink = tokenColor(map, "--dock-primary-fg");
+      const ratio = contrast(ink, surface);
+      measured.push(`${id} ${ratio.toFixed(2)}`);
+      if (ratio < TEXT_FLOOR) {
+        failures.push(`${id} tag ink on --accent-soft/--bg-raised = ${ratio.toFixed(2)} (floor ${TEXT_FLOOR})`);
+      }
+    }
+    console.log(`[DEF-354] palette tag ink: ${measured.join(" | ")}`);
+    // The fallback text the fix replaces measured below the floor (3.24 dark).
+    expect(contrast(tokenColor(DARK, "--accent"), washSurface(DARK, "--accent-soft", "--bg-raised")))
+      .toBeLessThan(TEXT_FLOOR);
+    expect(failures, failures.join("\n")).toEqual([]);
+  });
+
+  it("DEF-354: the tag's non-stage fallback resolves to the on-wash ink token", () => {
+    const rule = block(CSS_NO_COMMENTS, /\.command-palette-tag\s*\{/);
+    expect(rule).toMatch(/color:\s*var\(--stage-hue,\s*var\(--dock-primary-fg\)\)/);
+  });
+
+  it("DEF-355: the pressed Open label clears 4.5:1 on the pressed wash in all three themes", () => {
+    const failures: string[] = [];
+    const measured: string[] = [];
+    for (const { id, map } of THEMES) {
+      const surface = washSurface(map, "--accent-pressed-soft", "--bg-toolbar");
+      const ink = tokenColor(map, "--dock-primary-fg");
+      const ratio = contrast(ink, surface);
+      measured.push(`${id} ${ratio.toFixed(2)}`);
+      if (ratio < TEXT_FLOOR) {
+        failures.push(`${id} pressed Open = ${ratio.toFixed(2)} (floor ${TEXT_FLOOR})`);
+      }
+    }
+    console.log(`[DEF-355] pressed Open: ${measured.join(" | ")}`);
+    // The retired pair (plain --accent) failed in light (3.75).
+    expect(contrast(tokenColor(BASE, "--accent"), washSurface(BASE, "--accent-pressed-soft", "--bg-toolbar")))
+      .toBeLessThan(TEXT_FLOOR);
+    expect(failures, failures.join("\n")).toEqual([]);
+  });
+
+  it("DEF-355: the pressed file controls resolve to the on-wash ink token", () => {
+    const active = block(CSS_NO_COMMENTS, /\.titlebar-file-btn:active:not\(\[disabled\]\)\s*\{/);
+    expect(active).toMatch(/background:\s*var\(--accent-pressed-soft\)/);
+    expect(active).toMatch(/color:\s*var\(--dock-primary-fg\)/);
+  });
+
+  it("DEF-355: the active page-layout option icon clears 3:1 in every theme (dark included)", () => {
+    const failures: string[] = [];
+    const measured: string[] = [];
+    for (const { id, map } of THEMES) {
+      const surface = washSurface(map, "--accent-selected", "--bg-elevated");
+      const ink = tokenColor(map, "--dock-primary-fg");
+      const ratio = contrast(ink, surface);
+      measured.push(`${id} ${ratio.toFixed(2)}`);
+      if (ratio < ICON_FLOOR) {
+        failures.push(`${id} active layout icon = ${ratio.toFixed(2)} (floor ${ICON_FLOOR})`);
+      }
+    }
+    console.log(`[DEF-355] active page-layout icon: ${measured.join(" | ")}`);
+    // The retired pair failed dark (2.98).
+    expect(contrast(tokenColor(DARK, "--accent"), washSurface(DARK, "--accent-selected", "--bg-elevated")))
+      .toBeLessThan(ICON_FLOOR);
+    expect(failures, failures.join("\n")).toEqual([]);
+  });
+
+  it("DEF-355: the active page-layout option resolves to the on-wash ink token", () => {
+    const rule = block(CSS_NO_COMMENTS, /\.canvas-page-layout \.tool-btn-active\s*\{/);
+    expect(rule).toMatch(/color:\s*var\(--dock-primary-fg\)/);
   });
 });
 

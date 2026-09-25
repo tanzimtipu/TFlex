@@ -80,7 +80,7 @@ export function Welcome(props: WelcomeProps): ReactElement {
             type="button"
             className="btn btn-secondary"
             onClick={onMergeClick}
-            title="Pick a second PDF to combine with the open document"
+            title="Combine multiple PDF files into one document"
           >
             <GitMerge size={16} aria-hidden /> Merge PDFs
           </button>

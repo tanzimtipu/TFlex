@@ -196,8 +196,11 @@ describe("Phase 36 — thumbnail multi-select (ContextPanel)", () => {
       clickThumb(thumb(h.host, 3));
       expect(onJump).toHaveBeenCalledWith(3);
       expect(h.selection()).toEqual([3]);
-      // A single-page set still drives the rail's own action bar.
-      expect(h.host.querySelector("[data-rail-action-bar]")).not.toBeNull();
+      // Phase 40 item 9 — the under-thumbnail action bar is retired; the
+      // single-page set survives as the rail's own selected class and is the
+      // Action Dock's input, so no bar renders under the thumbnails.
+      expect(selectedPages(h.host)).toEqual([3]);
+      expect(h.host.querySelector("[data-rail-action-bar]")).toBeNull();
     } finally {
       h.unmount();
     }
@@ -233,14 +236,22 @@ describe("Phase 36 — thumbnail multi-select (ContextPanel)", () => {
     }
   });
 
-  it("clearing via the rail's own action bar empties the host set", () => {
-    const h = renderHarness({ multi: true });
+  it("clearing the set flows through the panel's empty-space click", () => {
+    const onChange = vi.fn();
+    const h = renderHarness({ multi: true, onChange });
     try {
       clickThumb(thumb(h.host, 2));
-      const clear = h.host.querySelector<HTMLElement>('[data-rail-action-bar] button[aria-label="Clear selection"]');
-      expect(clear).not.toBeNull();
-      clickThumb(clear as Element);
+      expect(h.selection()).toEqual([2]);
+      // Phase 40 item 9 — the rail's own action bar (and its Clear button) is
+      // retired; the surviving clear gesture is the empty-space click.
+      expect(h.host.querySelector("[data-rail-action-bar]")).toBeNull();
+      const scroller = h.host.querySelector<HTMLElement>(".thumb-scroller");
+      expect(scroller).not.toBeNull();
+      act((): void => {
+        scroller?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      });
       expect(h.selection()).toEqual([]);
+      expect(onChange).toHaveBeenLastCalledWith([]);
     } finally {
       h.unmount();
     }
@@ -253,7 +264,9 @@ describe("Phase 36 — the legacy single-selection path is unchanged", () => {
     try {
       clickThumb(thumb(h.host, 2), { shiftKey: true });
       expect(selectedPages(h.host)).toEqual([2]);
-      expect(h.host.querySelector("[data-rail-action-bar]")).not.toBeNull();
+      // Phase 40 item 9 — the retired under-thumbnail bar no longer renders in
+      // the legacy single-selection path either; selection itself is intact.
+      expect(h.host.querySelector("[data-rail-action-bar]")).toBeNull();
     } finally {
       h.unmount();
     }

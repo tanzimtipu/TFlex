@@ -62,3 +62,26 @@ export async function openPdfDialog(
   }
   return normalize(result.filePaths[0]);
 }
+
+/**
+ * Phase 40 — multi-select sibling of `openPdfDialog`, used by the
+ * "Merge PDF from scratch" picker. Uses the same `specForKind` filter set
+ * (default `'pdf'`) with OS multi-selection enabled. Returns the NORMALIZED
+ * picked paths in the order the user selected them; a cancel resolves to an
+ * EMPTY ARRAY (never `null`), so a caller can iterate the result
+ * unconditionally. The single-file `openPdfDialog` is unchanged.
+ */
+export async function openPdfDialogMulti(
+  kind: OpenFileDialogKind = 'pdf',
+): Promise<string[]> {
+  const spec = specForKind(kind);
+  const result = await dialog.showOpenDialog({
+    title: spec.title,
+    properties: ['openFile', 'multiSelections'],
+    filters: spec.filters,
+  });
+  if (result.canceled || result.filePaths.length === 0) {
+    return [];
+  }
+  return result.filePaths.map(normalize);
+}

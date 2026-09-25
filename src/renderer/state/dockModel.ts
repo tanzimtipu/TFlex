@@ -280,6 +280,46 @@ export interface DockCuration {
 }
 
 /**
+ * DEF-353 — resolve the raw persisted curation into ONE coherent pair with
+ * deterministic mutual exclusion. A hand-edited / cross-version settings file
+ * can hold the same id in BOTH `dockPins` and `dockUnpinned`; left as-is the
+ * palette's `isToolPinned` (which reads `unpinned` for a stage default) and the
+ * dock's pin row (which reads `pins`) disagree about the same tool.
+ *
+ * Rule: the UN-PIN wins. An id in both lists is dropped from `dockPins` and
+ * kept in `dockUnpinned`. This matches the palette's existing interpretation
+ * of a stage default (`!unpinned.includes(id)`) and guarantees a removed tool
+ * can never silently resurrect from a stale explicit pin. Every surface (the
+ * dock, the palette's toggle, the settings writers) consumes this ONE pair, so
+ * the two can never disagree.
+ */
+export function sanitizeDockCuration(raw: {
+  pins?: unknown;
+  unpinned?: unknown;
+}): { pins: string[]; unpinned: string[] } {
+  const unpinned = sanitizeDockUnpinned(raw.unpinned);
+  const unpinnedSet = new Set(unpinned);
+  const pins = sanitizeDockPins(raw.pins).filter((id) => !unpinnedSet.has(id));
+  return { pins, unpinned };
+}
+
+/**
+ * DEF-352 — whether the palette's PIN direction is allowed. A RESTORE (a
+ * focused-stage default the user had un-pinned) writes no explicit pin, so the
+ * 4-pin cap does not apply to it; only a cross-stage pin consumes a slot and
+ * can be refused. Keeping the rule here (next to `pinDockTool`, which implements
+ * the same default-vs-cross-stage branch) stops the palette from reporting a
+ * false "Dock is full (max 4 pins)" for a restore.
+ */
+export function palettePinAllowed(args: {
+  pins: readonly string[];
+  isStageDefault: boolean;
+}): boolean {
+  if (args.isStageDefault) return true;
+  return canPinMore(args.pins);
+}
+
+/**
  * Phase 37 (item 21) — the dock now shows the stage's FULL relevant tool set by
  * default, so a pin is only the extra cross-stage placement. Pin a tool that
  * IS in the current stage's default set and the operation RESTORES it (drops

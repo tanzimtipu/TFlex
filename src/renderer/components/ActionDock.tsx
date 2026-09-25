@@ -65,7 +65,15 @@ import {
   type PillBox,
 } from '../state/dockFit';
 import { toolById, dockToolsForStage, type ToolEntry } from '../state/toolsRegistry';
-import { PILL_RAISE, pillMode } from '../state/pillFit';
+import {
+  PAGE_COMPACT_W,
+  PAGE_FULL_W,
+  PILL_HEIGHT,
+  PILL_RAISE,
+  ZOOM_COMPACT_W,
+  ZOOM_FULL_W,
+  pillMode,
+} from '../state/pillFit';
 import type { Stage } from '../state/stages';
 
 /** The State 2 bulk verbs, reusing the EXISTING multi-page engine/dialog
@@ -306,17 +314,32 @@ export function ActionDock(props: ActionDockProps): ReactElement {
       const zoom = box(source.querySelector('[data-zoom-pill]'));
       if (page === null && zoom === null) return;
       // Single mode measures the pills' real inner-edge offsets; Multi Mode
-      // rebuilds the same basis from the focused pane's pill widths (D3), so
-      // both modes reserve the identical band at the same host width.
+      // rebuilds the same basis from the SINGLE-mode pill ladder at this host
+      // width (D3), so both modes reserve the identical band at the same host
+      // width. Phase 40 (item 1) — the focused pane's pills compact to the
+      // PANE (page left / zoom right, the dense micro tier at a narrow pane),
+      // while single mode compacts to the whole CANVAS; consuming the pane's
+      // measured widths made the two modes' lane/lift decisions diverge at the
+      // same window width, so the multi basis is the ladder's widths and height
+      // instead of the pane's own.
+      const singleLadderPill = (w: number): PillBox => ({
+        left: 0,
+        right: w,
+        top: 0,
+        bottom: PILL_HEIGHT,
+        width: w,
+        height: PILL_HEIGHT,
+      });
+      const singleMode = pillMode(hostRect.width);
       const basis = outboard
         ? pillBasisFromWidths({
-            page,
-            zoom,
+            page: singleLadderPill(singleMode === 'full' ? PAGE_FULL_W : PAGE_COMPACT_W),
+            zoom: singleLadderPill(singleMode === 'full' ? ZOOM_FULL_W : ZOOM_COMPACT_W),
             hostWidth: hostRect.width,
             // The lift basis is SINGLE mode's: the stacked rung is decided by
             // the host width (`pillMode`), never by the focused pane's own
-            // stacked arrangement — so the lift magnitude matches single mode.
-            stackedRaisePx: pillMode(hostRect.width) === 'stacked' ? PILL_RAISE : 0,
+            // arrangement — so the lift magnitude matches single mode.
+            stackedRaisePx: singleMode === 'stacked' ? PILL_RAISE : 0,
           })
         : {
             reserve: pillReserve({

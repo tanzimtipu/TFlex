@@ -240,6 +240,11 @@ export interface PaletteRowGateArgs {
   /** The persisted dock pins (already validated) — drives the pinned marker
    *  and the dock's own dedupe. */
   dockPins?: readonly string[];
+  /** Phase 40 (item 6) — the host's TRUE dock membership for a tool id: an
+   *  explicit pin OR a focused-stage default the user has not un-pinned. The
+   *  palette's pin toggle icon must reflect what the dock is actually showing,
+   *  so the host supplies the full answer; absent falls back to `dockPins`. */
+  isToolPinned?: (id: string) => boolean;
 }
 
 /** The enabled state + the reason copy for one registry row. */
@@ -290,7 +295,10 @@ export function buildPaletteRows(args: PaletteRowsArgs): PaletteRow[] {
       id: entry.id,
       entry,
       score: scoreToolEntry(entry, query),
-      pinned: pins.includes(entry.id),
+      pinned:
+        args.isToolPinned !== undefined
+          ? args.isToolPinned(entry.id)
+          : pins.includes(entry.id),
       enabled: state.enabled,
       reason: state.reason,
     };
