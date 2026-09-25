@@ -3384,3 +3384,90 @@ committed; a `.gitignore` entry for those two subdirs is tidy-up for a future pa
 **Operator ruling recorded this phase:** the ladder breakpoints keep their EXCLUSIVE semantics - a rung
 named "@1200" fires AT 1200 downward (`width < 1200`), so 1200 itself is still expanded and 1199 is
 collapsed. The gate assertions were written to the implemented semantics rather than moving the threshold.
+
+## 2026-09-25: Release 1.31.0 - Phase 38 (installation, legibility, edit fidelity) + Phase 39 (Multi Mode parity)
+
+Release 1.31.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.31.0 with all
+four assets, and the public feed verifies (`version: 1.31.0`, sha512 `7NTbSxFw...`, size 163289807).
+Commits: `24032fc` (Phase 38 + 39, 88 files), `9a50da8` (bump), tag `v1.31.0`. Gates: `verify:full` 396
+files / **5132 tests** green, the packaged canonical installed spec 9/9 at 1.31.0, the phase e2e suites
+green (42 + 14 Phase 39 tests), and the operator's own per-machine install of the earlier 1.30.0 build
+verified by qa (Program Files path, uninstaller, ARP entry, legacy per-user install removed).
+
+**NOTE - 1.30.0 was never published.** The operator installed a locally built 1.30.0; the tree kept
+everything uncommitted, so this release carries BOTH phases. The `WHATS_NEW` 1.30.0 entry stays (the
+operator's installed build shows it) and 1.31.0 is the entry the feed announces.
+
+**Lesson 1 - Electron 44 has NO 32-bit Windows binary.** The operator asked for a 64-bit and a 32-bit
+installer. `electron-builder`'s ia32 target 404s on `electron-v44.0.0-win32-ia32.zip`, and
+`node_modules/electron/checksums.json` lists only x64 and arm64 for win32 - so an ia32 build is impossible
+without repinning Electron, which would re-open validation of printToPDF, the window behaviour and
+electron-updater. The operator chose x64-only, recorded in REQUIREMENTS.md as a Phase 38 amendment. The
+`-x64` token in the artifact name is LOAD-BEARING: electron-updater's `NsisUpdater.findFile` picks the
+entry whose URL contains `process.arch`, so removing the token from the names would break arch selection
+if an ia32 target is ever added.
+
+**Lesson 2 - per-machine NSIS needs THREE config keys, and the ARP entry needs one hand-written value.**
+`nsis.perMachine: true` puts the app in `C:\Program Files\TFlex` with an elevation prompt; `allowElevation`
+plus `packElevateHelper` are what make electron-builder emit `isAdminRightsRequired: true` in `latest.yml`
+(without `packElevateHelper` the updater's elevation is not deterministic - a silent hole found by
+backend-dev). Separately, electron-builder 26 writes `InstallLocation` only to the install-info key
+(`Software\<GUID>`), NOT to the ARP key, so the Add/Remove Programs entry shows an empty location - qa
+caught it on the operator's real install. Fix: `WriteRegStr SHELL_CONTEXT "${UNINSTALL_REGISTRY_KEY}"
+"InstallLocation" "$INSTDIR"` (and `DisplayPath`) in the `customInstall` macro.
+
+**Lesson 3 - the legacy per-user install must be swept, and the sweep needs REAL guards.** Pre-1.30
+releases installed to `%LOCALAPPDATA%\Programs\TFlex` with a per-user uninstall key and a per-user
+`.pdf` ProgID; a per-machine install would leave that second copy behind. The first `.nsh` used
+name/path heuristics (`StrContains "TFlex"`, a bare `FileExists TFlex.exe`) and an UNGUARDED
+`DeleteRegKey` - the adversary's audit (ADV-090) found the holes and the operator had it tightened:
+exact identity (`InstallLocation` equals the legacy path, `DisplayName` exactly "TFlex" or "TFlex "), the
+ProgID deleted only when its `shell\open\command` points at the legacy exe, and the registry block gated
+on the directory removal SUCCEEDING (a running legacy app blocks `RMDir /r`, so the first version could
+delete the keys and leave a half-removed directory). Limitation documented in the script: an elevated
+install resolves `HKCU`/`$LOCALAPPDATA` to the ELEVATING account - the same limitation electron-builder's
+own sweep has.
+
+**Lesson 4 - a measurement that feeds its own input is not a fix; and a gate must include every input it
+guards.** Two rounds on the same defect: `useRowOverflow` read `clientWidth === 0` as "overflowing" while
+the container it measured was `display: contents` whenever the arrows were off (DEF-337), and then the
+pane first-fit gate released after three identical samples while the Inspector's `--tf-tools-inset`
+transition had not started yet - and the reopen path skipped the gate entirely because the latch survived
+a cleared-then-reopened pane (DEF-338, then ADV-087/DEF-343). Rules: a stability signature must include
+EVERY input that can change the measurement, and a per-mount latch must be reset when the mount is
+logically new.
+
+**Lesson 5 - the legibility floor must be measured per STATE, not just at rest.** The item-2 sweep passed
+at rest in all three themes, but the family-hue rule (specificity 0,4,0) outranked the `:hover`/`:active`
+ink rule (0,3,0), so hovered/pressed verbs kept their family hue on the darker `--bg-active`: light green
+4.16, orange 4.17, blue 4.29, cyan 4.45 (ADV-088/DEF-344). Contrast specs must cover resting, hover,
+pressed, selected AND disabled - and CSS specificity is part of the contrast contract.
+
+**Lesson 6 - Multi Mode is a second surface: measure every control pair as bounding boxes.** The operator
+reported three concrete Multi Mode faults and asked for a deep sweep. What the measurements found: the
+thumbnail preview overflowed its page row by 9.3px (DEF-347); the shared dock VANISHED when the empty pane
+was focused (DEF-348a); the strip's page-action bar overlapped the dock by 5882 px2 and the dock's rotate
+verb overlapped the strip by 3631 px2 (DEF-348b/c); and at a 700px window each pane's pills floated over
+its strip by 3643 px2 (DEF-349). All were invisible to the single-mode suites. Rules: any "one home per
+control" claim needs a measured intersection table at the DEFAULT and the NARROW width, with one AND two
+documents; and the dock's reserve/lift basis must be computed the same way in both modes (the multi dock
+was measuring the focused pane's outboard pills, which is what made the lane/lift differ at the same
+window width).
+
+**Lesson 7 - a stage-driven side effect must re-apply when the document returns.** DEF-342: closing the
+only tab in EDIT and reopening a document left the rail showing EDIT with no edit toolbar, because the
+stage effect only fired on a stage CHANGE. Key the effect on the document identity as well as the stage.
+
+**Lesson 8 - a byte-equality test that saves twice is time-dependent.** DEF-350: pdf-lib stamps `/ModDate`
+on every `save()`, so two serializations straddling a one-second boundary differ and the release gate
+flaked once in 5132 tests. Freeze the clock (`vi.useFakeTimers({ toFake: ['Date'] })` + a fixed system
+time) around the comparison; keep the byte loop intact so a real regression still fails.
+
+**Still awaiting the operator's sign-off (Phase 39 criteria 6/7):** D2 - Multi Mode has no shared
+collapsible rail (the Phase 32-34 ruling keeps per-pane strips), so the <1000 rung has no shared surface
+to collapse; D4 - a cross-stage pinned tool is unreachable through the UI in BOTH modes (parity, not a
+divergence). Both are recorded with their evidence in `e2e/PHASE39-MULTIVIEW-MATRIX.md`.
+
+**Automation limit worth restating:** qa's shell is non-elevated, so a per-machine install cannot be
+verified by the automated gate - the operator runs the installer and qa then measures the installed build.
+Keep that split when the packaging changes again.
