@@ -23,6 +23,27 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.31.0',
+    date: '2026-09-25',
+    highlights: [
+      'Multi View: the page previews in the thumbnail panel now sit neatly inside their page borders.',
+      'Multi View: opening a PDF from either pane always asks which file to open, without moving the divider.',
+      'Multi View: the tool dock now appears with a single document open too, and nothing overlaps the thumbnail panel.',
+      "Multi View's dock now behaves exactly like single view - the same tools, and the same layout changes as the window narrows.",
+    ],
+  },
+  {
+    version: '1.30.0',
+    date: '2026-09-25',
+    highlights: [
+      'TFlex now installs for all users in C:\\Program Files, with its own uninstaller in Settings > Apps.',
+      'Bigger, brighter icons and labels, with a colour accent for every tool family - in all three themes.',
+      'The text panel now lives only in the Inspector, fixed in place - no more floating panel to drag.',
+      'Editing text shows your text at its original size and format, and the text field is ready the moment you select text.',
+      'Fixed the violent flicker when a document opened in the second pane of Multi View.',
+    ],
+  },
+  {
     version: '1.29.0',
     date: '2026-09-25',
     highlights: [

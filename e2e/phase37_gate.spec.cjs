@@ -787,10 +787,30 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
     await setWindowSize(w, 900);
     await gotoStage(1);
     const d = await dockInfo();
-    console.log(`[P37-E] w=${w} inner=${d.innerWidth} dock=${JSON.stringify({ h: d.height, rows: d.verbRows, wrap: d.flexWrap, arrows: d.arrows, iconOnly: d.iconOnly, labels: d.labels.length, verbs: d.verbs.length })}`);
+    // Re-derive the single-row height from the icon token and the live paddings
+    // instead of a magic number: the dock is now 60px with the 20px icons, so
+    // the old `< 60` threshold was exactly at the boundary. A stacked dock would
+    // add a second verb row and exceed this bound.
+    const singleRow = await win.evaluate(() => {
+      const root = getComputedStyle(document.documentElement);
+      const icon = parseFloat(root.getPropertyValue('--tf-icon-size-md')) || 20;
+      const dock = document.querySelector('[data-action-dock]');
+      const verb = dock.querySelector('[data-dock-verb]');
+      const dcs = getComputedStyle(dock);
+      const vcs = getComputedStyle(verb);
+      const label = verb.querySelector('.action-dock-label');
+      const labelH = label ? label.getBoundingClientRect().height : 0;
+      const gap = parseFloat(vcs.rowGap) || 0;
+      const oneRow = parseFloat(dcs.paddingTop) + parseFloat(dcs.paddingBottom)
+        + parseFloat(vcs.paddingTop) + parseFloat(vcs.paddingBottom)
+        + icon + gap + labelH
+        + parseFloat(dcs.borderTopWidth) + parseFloat(dcs.borderBottomWidth);
+      return { icon, oneRow: +oneRow.toFixed(1) };
+    });
+    console.log(`[P37-E] w=${w} inner=${d.innerWidth} dock=${JSON.stringify({ h: d.height, rows: d.verbRows, wrap: d.flexWrap, arrows: d.arrows, iconOnly: d.iconOnly, labels: d.labels.length, verbs: d.verbs.length })} singleRow=${JSON.stringify(singleRow)}`);
     expect(d, `dock present at ${w}`).not.toBeNull();
     expect(d.verbRows, `w=${w}: the dock is ONE row (never stacks)`).toBe(1);
-    expect(d.height, `w=${w}: a single-row dock height`).toBeLessThan(60);
+    expect(d.height, `w=${w}: a single-row dock height (<= ${singleRow.oneRow + 3}px, derived from --tf-icon-size-md=${singleRow.icon})`).toBeLessThanOrEqual(singleRow.oneRow + 3);
     expect(d.flexWrap, `w=${w}: flex-wrap is nowrap`).toBe('nowrap');
   }
 
@@ -865,10 +885,12 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
 
   // --- item 6: the arrows scroll the single verb row. ---
   // DEF-337 — the arrows render only on a REAL overflow, so the row must
-  // genuinely overflow for this proof. At 719 (the arrows rung, where the dock
-  // is not lifted above the pills) the 8 stage verbs plus the 4-pin cap exceed
-  // the scroller; at 640 the lifted dock is wide enough to fit them.
-  await setWindowSize(719, 900);
+  // genuinely overflow for this proof. At 719 the Phase-38 20px-icon dock is
+  // now WIDE enough to trigger the DEF-315 lift (it parks above the pills and
+  // gets the full host), so the 8 stage verbs plus the 4-pin cap FIT and no
+  // arrows render. Use 900, where the dock is not lifted and the labelled row
+  // genuinely overflows its band (the DEF-334 arrows lane).
+  await setWindowSize(900, 900);
   const pins0 = await loadSettings();
   await win.evaluate((v) => window.tflex.saveSettings(v), {
     ...pins0,
@@ -883,7 +905,7 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
   });
   console.log(`[P37-E] arrows rung scroller=${JSON.stringify(scrollInfo)}`);
   // DEF-337 — the arrows render because the row genuinely overflows.
-  expect(scrollInfo.scrollWidth, 'the pinned row genuinely overflows at 719').toBeGreaterThan(scrollInfo.clientWidth + 1);
+  expect(scrollInfo.scrollWidth, 'the pinned row genuinely overflows at 900').toBeGreaterThan(scrollInfo.clientWidth + 1);
   expect(await win.locator('[data-dock-arrow="left"]').count()).toBe(1);
   expect(await win.locator('[data-dock-arrow="right"]').count()).toBe(1);
   await win.locator('[data-dock-arrow="right"]').click();

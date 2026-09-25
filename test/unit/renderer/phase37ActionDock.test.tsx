@@ -755,3 +755,47 @@ describe("Phase 37 item 20 � Watermark reflects the real document state", () =
     expect(dockEnabledWithFallback(entry!, { ...GATE_BASE, appEnabled: () => false })).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 38 (feature B) — the enlarged dock still renders ONE ROW
+// ---------------------------------------------------------------------------
+
+describe("Phase 38 feature B — the dock keeps ONE ROW with the enlarged sizes", () => {
+  it("keeps every PAGES label on one primary group at 1440", () => {
+    const { host, unmount } = renderDock({ activeStage: "pages", canvasWidth: 1440 });
+    try {
+      const root = host.querySelector("[data-action-dock]");
+      expect(root?.getAttribute("data-dock-icon-only")).toBe("false");
+      expect(root?.getAttribute("data-dock-arrows")).toBe("false");
+      expect(host.querySelectorAll('[data-dock-group="primary"]')).toHaveLength(1);
+      expect(host.querySelectorAll(".action-dock-label")).toHaveLength(
+        dockToolsForStage("pages").length,
+      );
+    } finally {
+      unmount();
+    }
+  });
+
+  it("drops to the icon-only arrows lane (still one row) at 640", () => {
+    const { host, unmount } = renderDock({ activeStage: "pages", canvasWidth: 640 });
+    try {
+      const root = host.querySelector("[data-action-dock]");
+      expect(root?.getAttribute("data-dock-icon-only")).toBe("true");
+      expect(root?.getAttribute("data-dock-arrows-lane")).toBe("true");
+      expect(host.querySelectorAll('[data-dock-group="primary"]')).toHaveLength(1);
+      expect(host.querySelectorAll(".action-dock-label")).toHaveLength(0);
+    } finally {
+      unmount();
+    }
+  });
+
+  it("declares the enlarged sizes and the nowrap guarantee in the stylesheet", () => {
+    // ONE row, always.
+    expect(CSS).toMatch(/\.action-dock\s*\{[^}]*flex-wrap:\s*nowrap/s);
+    expect(CSS).toMatch(/\.action-dock-group\s*\{[^}]*flex-wrap:\s*nowrap/s);
+    // The dock's glyph is the 20px token and its label the 12px floor.
+    expect(CSS).toMatch(/\.action-dock-icon svg\s*\{[^}]*width:\s*var\(--tf-icon-size-md\)/s);
+    expect(CSS).toMatch(/\.action-dock-label\s*\{[^}]*font-size:\s*var\(--tf-label-size\)/s);
+  });
+});
+

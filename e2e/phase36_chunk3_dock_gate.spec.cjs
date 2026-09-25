@@ -424,7 +424,7 @@ test('P36-C3-E idle: fade ~40% after 3s, hover restores, suppressed armed/draggi
 // F. Responsive — labels drop below 900px; below 640px the compact plan fits
 //    the curated set inline (no chip) and the dock wraps without clipping.
 // ---------------------------------------------------------------------------
-test('P36-C3-F responsive: labels drop <900px, compact plan fits <640px', async () => {
+test('P36-C3-F responsive: labels drop <880px, compact plan fits <640px', async () => {
   await openSample();
   const dock = win.locator('[data-action-dock]');
   const setSize = (w, h) => app.evaluate(({ BrowserWindow }, s) => {
@@ -445,26 +445,38 @@ test('P36-C3-F responsive: labels drop <900px, compact plan fits <640px', async 
   expect(await win.locator('.action-dock-label').count()).toBeGreaterThan(0);
   console.log(`[P36C3-F] 1600 host=${await hostW()} labels=${await win.locator('.action-dock-label').count()}`);
 
-  // The dock keys on the CANVAS HOST width, not the window: the rail (44px),
-  // the ContextPanel (220px) and the Inspector (264px) are reserved first. A
-  // 1328px window leaves a ~800px host — icon-only (host < 900) but above the
-  // 640px compact break.
+  // Phase 37 item 6 — the label rung is the WINDOW width < 880, not the canvas
+  // host. At 1328 the labels are KEPT: the labelled row overflows into the
+  // arrows lane instead of dropping. (The old "icon-only at 1328" assertion
+  // predated the 880 rung and is stale.)
   await setSize(1328, 800);
+  await win.waitForFunction(
+    () => document.querySelector('[data-action-dock]')?.getAttribute('data-dock-icon-only') === 'false',
+    null, { timeout: 10000 });
+  console.log(`[P36C3-F] 1328 host=${await hostW()} icon-only=${await dock.getAttribute('data-dock-icon-only')} compact=${await dock.getAttribute('data-dock-compact')} labels=${await win.locator('.action-dock-label').count()}`);
+  expect(await dock.getAttribute('data-dock-icon-only'), 'labels are kept at 1328 (above the 880 rung)').toBe('false');
+  expect(await win.locator('.action-dock-label').count(), 'the labelled row is kept at 1328').toBeGreaterThan(0);
+  expect(await dock.getAttribute('data-dock-compact'), 'still above the compact break').toBe('false');
+
+  // Below the 880 rung the labels drop.
+  await setSize(820, 800);
   await win.waitForFunction(
     () => document.querySelector('[data-action-dock]')?.getAttribute('data-dock-icon-only') === 'true',
     null, { timeout: 10000 });
-  console.log(`[P36C3-F] 1328 host=${await hostW()} icon-only=${await dock.getAttribute('data-dock-icon-only')} compact=${await dock.getAttribute('data-dock-compact')} labels=${await win.locator('.action-dock-label').count()}`);
-  expect(await win.locator('.action-dock-label').count(), 'labels drop in icon-only mode').toBe(0);
-  expect(await dock.getAttribute('data-dock-compact'), 'still above the compact break').toBe('false');
+  console.log(`[P36C3-F] 820 host=${await hostW()} icon-only=${await dock.getAttribute('data-dock-icon-only')} compact=${await dock.getAttribute('data-dock-compact')} labels=${await win.locator('.action-dock-label').count()}`);
+  expect(await win.locator('.action-dock-label').count(), 'labels drop below the 880 rung').toBe(0);
 
   await setSize(620, 800);
+  // DEF-337 — the arrows render iff the row genuinely overflows; at 620 the
+  // compact/icon-only row fits, so the arrows are absent. Wait on the stable
+  // 620 layout (labels dropped) rather than on the oscillating arrows flag.
   await win.waitForFunction(
-    () => document.querySelector('[data-action-dock]')?.getAttribute('data-dock-arrows') === 'true',
+    () => document.querySelector('[data-action-dock]')?.getAttribute('data-dock-icon-only') === 'true',
     null, { timeout: 10000 });
   const host620 = await hostW();
   const inlineVerbs = await win.locator('[data-action-dock] [data-dock-verb]').count();
   const chipCount = await win.locator('[data-dock-overflow]').count();
-  console.log(`[P36C3-F] 620 host=${host620} compact=${await dock.getAttribute('data-dock-compact')} arrows=${await dock.getAttribute('data-dock-arrows')} inlineVerbs=${inlineVerbs} overflowChip=${chipCount}`);
+  console.log(`[P36C3-F] 620 host=${host620} compact=${await dock.getAttribute('data-dock-compact')} arrows=${await dock.getAttribute('data-dock-arrows')} arrowsLane=${await dock.getAttribute('data-dock-arrows-lane')} inlineVerbs=${inlineVerbs} overflowChip=${chipCount}`);
   // Phase 37 item 6 — at the arrows rung every PAGES verb stays inline and the
   // row scrolls; nothing is hidden behind a `...` chip and nothing is clipped.
   expect(chipCount, 'the arrows rung replaces the overflow chip').toBe(0);
@@ -495,10 +507,13 @@ test('P36-C3-F responsive: labels drop <900px, compact plan fits <640px', async 
 });
 
 // ---------------------------------------------------------------------------
-// N. DEF-313 retest — at every required width the curated dock keeps every verb
-//    INSIDE its own box (nothing clipped) and clear of both floating pills.
+// N. DEF-313 retest (re-pointed for the Phase 37 scrolling lane) — at every
+//    required width NOTHING paints or hit-tests outside the dock: the scroller
+//    clips its horizontal overflow, no verb is clipped vertically, the leading
+//    verb is inside the dock and hit-testable, and every verb is reachable via
+//    the lane. The page pill stays hit-testable.
 // ---------------------------------------------------------------------------
-test('P36-C3-N dock clipping: no verb clipped, no pill covered at 1440/1100/900/760', async () => {
+test('P36-C3-N dock containment: nothing paints or hit-tests outside the dock at 1440/1100/900/760', async () => {
   await openSample();
   const dock = win.locator('[data-action-dock]');
   const setSize = (w, h) => app.evaluate(({ BrowserWindow }, s) => {
@@ -512,23 +527,27 @@ test('P36-C3-N dock clipping: no verb clipped, no pill covered at 1440/1100/900/
     const m = await win.evaluate(() => {
       const d = document.querySelector('[data-action-dock]');
       const dr = d.getBoundingClientRect();
-      const host = d.parentElement.getBoundingClientRect();
+      const sc = document.querySelector('[data-dock-scroll]');
+      const scr = sc.getBoundingClientRect();
+      const scs = getComputedStyle(sc);
       const verbs = [...d.querySelectorAll('[data-dock-verb]')].map((el) => {
         const r = el.getBoundingClientRect();
         return { id: el.getAttribute('data-dock-verb'), left: r.left, right: r.right, top: r.top, bottom: r.bottom };
       });
-      const clipped = verbs.filter((v) =>
-        v.left < dr.left - 0.6 || v.right > dr.right + 0.6 || v.top < dr.top - 0.6 || v.bottom > dr.bottom + 0.6,
-      ).map((v) => v.id);
-      const outsideHost = verbs.filter((v) => v.right > host.right + 0.6 || v.left < host.left - 0.6).map((v) => v.id);
-      const box = { left: dr.left, right: dr.right, top: dr.top, bottom: dr.bottom };
-      const pill = (sel) => {
-        const el = document.querySelector(sel);
-        if (el === null) return null;
-        const r = el.getBoundingClientRect();
-        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
-      };
-      const hits = (a, b) => a !== null && b !== null && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      // Vertical clipping only: the row must never stack.
+      const vClipped = verbs.filter((v) => v.top < dr.top - 0.6 || v.bottom > dr.bottom + 0.6).map((v) => v.id);
+      // The scroller owns the horizontal overflow: its box is inside the dock,
+      // so nothing paints outside the dock.
+      const scrollerInside = scr.left >= dr.left - 0.6 && scr.right <= dr.right + 0.6
+        && scr.top >= dr.top - 0.6 && scr.bottom <= dr.bottom + 0.6;
+      const clips = scs.overflowX === 'auto' || scs.overflowX === 'scroll' || scs.overflowX === 'hidden';
+      // The leading verb is inside the dock and hit-testable.
+      const firstEl = d.querySelector('[data-dock-verb]');
+      const fr = firstEl.getBoundingClientRect();
+      const fel = document.elementFromPoint(Math.round(fr.left + fr.width / 2), Math.round(fr.top + fr.height / 2));
+      const firstHit = fel !== null && (fel === firstEl || firstEl.contains(fel));
+      const firstInside = fr.left >= dr.left - 0.6 && fr.right <= dr.right + 0.6
+        && fr.top >= dr.top - 0.6 && fr.bottom <= dr.bottom + 0.6;
       // Which pill controls are actually obstructed: elementFromPoint at each
       // control's own centre must resolve back to that control.
       const covered = [];
@@ -539,25 +558,73 @@ test('P36-C3-N dock clipping: no verb clipped, no pill covered at 1440/1100/900/
           covered.push(`${document.querySelector('[data-page-pill]')?.contains(btn) ? 'page' : 'zoom'}:${btn.getAttribute('aria-label')}`);
         }
       }
-      const page = pill('[data-page-pill]');
-      const zoom = pill('[data-zoom-pill]');
       return {
         vw: window.innerWidth,
         dock: { left: Math.round(dr.left), right: Math.round(dr.right), top: Math.round(dr.top), bottom: Math.round(dr.bottom), w: Math.round(dr.width), h: Math.round(dr.height) },
-        host: { left: Math.round(host.left), right: Math.round(host.right), w: Math.round(host.width) },
-        page: page === null ? null : { left: Math.round(page.left), right: Math.round(page.right), w: Math.round(page.right - page.left) },
-        zoom: zoom === null ? null : { left: Math.round(zoom.left), right: Math.round(zoom.right), w: Math.round(zoom.right - zoom.left) },
+        scroller: { left: Math.round(scr.left), right: Math.round(scr.right), top: Math.round(scr.top), bottom: Math.round(scr.bottom), overflowX: scs.overflowX, display: scs.display, scrollWidth: sc.scrollWidth, clientWidth: sc.clientWidth },
         count: verbs.length,
-        clipped,
-        outsideHost,
+        vClipped,
+        scrollerInside,
+        clips,
+        first: { id: firstEl.getAttribute('data-dock-verb'), left: Math.round(fr.left), right: Math.round(fr.right), inside: firstInside, hit: firstHit },
         covered,
-        hitsPage: hits(box, page),
-        hitsZoom: hits(box, zoom),
       };
     });
-    console.log(`[P36C3-N] w=${w} vw=${m.vw} iconOnly=${await dock.getAttribute('data-dock-icon-only')} verbs=${m.count} dock=${JSON.stringify(m.dock)} host=${JSON.stringify(m.host)} page=${JSON.stringify(m.page)} zoom=${JSON.stringify(m.zoom)} clipped=${JSON.stringify(m.clipped)} outsideHost=${JSON.stringify(m.outsideHost)} covered=${JSON.stringify(m.covered)} hitsPage=${m.hitsPage} hitsZoom=${m.hitsZoom}`);
-    expect(m.clipped, `no verb clipped at ${w}px`).toEqual([]);
-    expect(m.outsideHost, `no verb outside the canvas host at ${w}px`).toEqual([]);
+    console.log(`[P36C3-N] w=${w} vw=${m.vw} iconOnly=${await dock.getAttribute('data-dock-icon-only')} verbs=${m.count} dock=${JSON.stringify(m.dock)} scroller=${JSON.stringify(m.scroller)} vClipped=${JSON.stringify(m.vClipped)} scrollerInside=${m.scrollerInside} clips=${m.clips} first=${JSON.stringify(m.first)} covered=${JSON.stringify(m.covered)}`);
+    expect(m.vClipped, `no verb is clipped vertically at ${w}px`).toEqual([]);
+
+    // Every verb must be inside the dock and hit-testable at its own centre.
+    // When the scroller has a box (the arrows lane) the off-screen verbs are
+    // clipped by it and reached by scrolling; when it is `display: contents`
+    // (the compact plan fits inline) every verb is laid out directly.
+    const noBox = m.scroller.display === 'contents' || (m.scroller.left === 0 && m.scroller.right === 0);
+    const allVerbs = await win.evaluate(() => {
+      const d = document.querySelector('[data-action-dock]');
+      const dr = d.getBoundingClientRect();
+      return [...d.querySelectorAll('[data-dock-verb]')].map((v) => {
+        const r = v.getBoundingClientRect();
+        const el = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2));
+        return {
+          id: v.getAttribute('data-dock-verb'),
+          inside: r.left >= dr.left - 0.6 && r.right <= dr.right + 0.6 && r.top >= dr.top - 0.6 && r.bottom <= dr.bottom + 0.6,
+          hit: el !== null && (el === v || v.contains(el)),
+        };
+      });
+    });
+    if (noBox) {
+      const bad = allVerbs.filter((v) => !v.inside || !v.hit).map((v) => v.id);
+      console.log(`[P36C3-N] w=${w} no-scroller-box verbs=${allVerbs.length} bad=${JSON.stringify(bad)}`);
+      expect(bad, `every verb is inside the dock and hit-testable at ${w}px (no scroller box)`).toEqual([]);
+    } else {
+      expect(m.scrollerInside, `the scroller box is inside the dock at ${w}px (nothing paints outside)`).toBe(true);
+      expect(m.clips, `the scroller clips its horizontal overflow at ${w}px`).toBe(true);
+      expect(m.first.inside, `the leading verb is inside the dock at ${w}px`).toBe(true);
+      expect(m.first.hit, `the leading verb is hit-testable at ${w}px`).toBe(true);
+
+      // Every verb is reachable via the lane: scroll it into view, then it is
+      // the top element at its own centre.
+      const reach = await win.evaluate(() => {
+        const d = document.querySelector('[data-action-dock]');
+        const sc = document.querySelector('[data-dock-scroll]');
+        const out = [];
+        for (const v of [...d.querySelectorAll('[data-dock-verb]')]) {
+          const id = v.getAttribute('data-dock-verb');
+          const sr = sc.getBoundingClientRect();
+          let vr = v.getBoundingClientRect();
+          if (vr.left < sr.left) sc.scrollLeft -= (sr.left - vr.left) + 4;
+          else if (vr.right > sr.right) sc.scrollLeft += (vr.right - sr.right) + 4;
+          vr = v.getBoundingClientRect();
+          const el = document.elementFromPoint(Math.round(vr.left + vr.width / 2), Math.round(vr.top + vr.height / 2));
+          out.push({ id, hit: el !== null && (el === v || v.contains(el)) });
+        }
+        sc.scrollLeft = 0;
+        return out;
+      });
+      const unreachable = reach.filter((r) => !r.hit).map((r) => r.id);
+      console.log(`[P36C3-N] w=${w} reachable=${reach.length - unreachable.length}/${reach.length} unreachable=${JSON.stringify(unreachable)}`);
+      expect(unreachable, `every verb is reachable via the lane at ${w}px`).toEqual([]);
+    }
+
     // The page pill must stay hit-testable at every width.
     const pageCovered = m.covered.filter((c) => c.startsWith('page:'));
     expect(pageCovered, `every page-pill control is hit-testable at ${w}px`).toEqual([]);

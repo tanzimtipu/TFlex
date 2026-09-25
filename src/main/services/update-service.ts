@@ -203,11 +203,24 @@ export class UpdateService {
     // Feed assets consumed from the GitHub release (uploaded by the
     // `electron-builder --publish` release pipeline — see
     // electron-builder.yml for the exact asset names):
-    //   latest.yml                           — update manifest (version + sha512)
-    //   TFlex-Setup-<version>.exe             — NSIS installer
-    //   TFlex-Setup-<version>.exe.blockmap    — differential update blockmap
-    // The portable build (TFlex-<version>-portable.exe) is NOT listed in
-    // latest.yml and is gated by isPortableBuild() above.
+    //   latest.yml                                — SINGLE manifest listing BOTH
+    //                                               arch installers in `files:`
+    //   TFlex-Setup-<version>-x64.exe             — x64 NSIS installer
+    //   TFlex-Setup-<version>-x64.exe.blockmap    — x64 differential blockmap
+    //   TFlex-Setup-<version>-ia32.exe            — ia32 NSIS installer
+    //   TFlex-Setup-<version>-ia32.exe.blockmap   — ia32 differential blockmap
+    //
+    // Windows emits ONLY latest.yml for every architecture (electron-builder's
+    // getArchPrefixForUpdateFile returns "" off Linux), so BOTH archs request
+    // the same channel file. Per-arch correctness comes from the artifact
+    // NAMES: NsisUpdater's findFile(files, "exe") prefers the files[] entry
+    // whose URL contains `process.arch`, so an installed x64 build picks the
+    // `-x64` installer and an installed ia32 build picks `-ia32`. The names
+    // MUST therefore keep the `-x64` / `-ia32` token. A per-machine install
+    // additionally carries `isAdminRightsRequired: true` per file, so the
+    // updater re-runs the installer elevated via resources/elevate.exe.
+    // The portable builds (TFlex-<version>-portable-<arch>.exe) are NOT listed
+    // in latest.yml and are gated by isPortableBuild() above.
     //
     // Token env vars (read at RUNTIME from the process environment, never
     // committed to source):

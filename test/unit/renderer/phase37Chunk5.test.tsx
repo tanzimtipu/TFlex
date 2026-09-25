@@ -28,7 +28,7 @@ import type { PDFDocumentProxy } from "pdfjs-dist";
 import { ContextPanel } from "../../../src/renderer/components/ContextPanel";
 import { PaneThumbStrip } from "../../../src/renderer/components/PaneThumbStrip";
 import { isStageRailVisible } from "../../../src/renderer/components/StageRail";
-import { THUMB_RAIL_INSET_PX, THUMB_WIDTH, computeThumbWidth } from "../../../src/renderer/components/thumbGeometry";
+import { THUMB_FIT_INSET_PX, THUMB_RAIL_INSET_PX, THUMB_WIDTH, computeThumbWidth } from "../../../src/renderer/components/thumbGeometry";
 import { STRIP_REST_PX } from "../../../src/renderer/components/multiPaneLayout";
 import { STRIP_WIDTH_PX } from "../../../src/renderer/components/PaneThumbStrip";
 import { PageDragProvider } from "../../../src/renderer/state/PageDragContext";
@@ -169,6 +169,9 @@ const STAGE_RAIL = ruleBody(".stage-rail");
 const STAGE_RAIL_LABEL = ruleBody(".stage-rail-label");
 const STAGE_RAIL_BTN = ruleBody(".stage-rail-btn");
 const RAIL_W_PROPERTY = /@property\s+--tf-rail-w\s*\{([^}]*)\}/.exec(STYLES)?.[1] ?? "";
+/** Phase 38 (feature B) — the rail's width and label-floor tokens. */
+const STAGE_RAIL_W_TOKEN = Number.parseFloat(/--tf-stage-rail-w:\s*(\d+)px/.exec(STYLES)?.[1] ?? "NaN");
+const LABEL_SIZE_TOKEN = Number.parseFloat(/--tf-label-size:\s*(\d+)px/.exec(STYLES)?.[1] ?? "NaN");
 const OUTLINE = ruleBody(".context-panel-outline");
 const OUTLINE_WITH_BODY = ruleBody(".context-panel-outline:has(.context-panel-outline-body)");
 const PANEL_HEADER_ACTIONS = ruleBody(".context-panel-header .glass-sidebar-actions");
@@ -206,7 +209,7 @@ describe("Phase 37 item 8 - the Stage Rail is hidden on the welcome screen", () 
     expect(isStageRailVisible(2, false, true)).toBe(true);
   });
 
-  it("App gates the rail render AND collapses its 44px track from the same flag", () => {
+  it("App gates the rail render AND collapses its track from the same flag", () => {
     const appSrc = readFileSync(resolve(__dirname, "../../../src/renderer/App.tsx"), "utf8");
     expect(appSrc).toContain("const stageRailVisible = isStageRailVisible(");
     expect(appSrc).toContain("const showWelcomeEffective = !stageRailVisible;");
@@ -218,7 +221,9 @@ describe("Phase 37 item 8 - the Stage Rail is hidden on the welcome screen", () 
   it("collapses the rail track and lets the stage span the frame when hidden", () => {
     expect(decl(HIDDEN_APP_MAIN, "grid-template-columns")).toBe("minmax(0, 1fr)");
     expect(decl(HIDDEN_TAB_STAGE, "grid-column")).toBe("1");
-    expect(decl(APP_MAIN, "grid-template-columns")).toBe("44px minmax(0, 1fr)");
+    expect(decl(APP_MAIN, "grid-template-columns")).toBe(
+      "var(--tf-stage-rail-w, 64px) minmax(0, 1fr)",
+    );
   });
 });
 
@@ -303,20 +308,22 @@ describe("Phase 37 item 9 - no control or label touches the window/canvas edge",
     const parts = (decl(STAGE_RAIL, "padding") ?? "").split(/\s+/);
     const inset = px(parts[1] ?? "");
     expect(inset).toBeGreaterThanOrEqual(3);
-    expect(px(decl(STAGE_RAIL, "width"))).toBe(44);
+    // Phase 38 (feature B) — the rail consumes the --tf-stage-rail-w token
+    // (64px) so the 12px label floor fits; no hardcoded 44px.
+    expect(decl(STAGE_RAIL, "width")).toBe("var(--tf-stage-rail-w, 64px)");
+    expect(STAGE_RAIL_W_TOKEN).toBe(64);
     expect(decl(STAGE_RAIL_BTN, "border-radius")).toBe("var(--radius-2)");
 
-    const contentBox = 44 - 2 * inset;
-    const fontPx = px(decl(STAGE_RAIL_LABEL, "font-size"));
-    const tracking =
-      Number.parseFloat((decl(STAGE_RAIL_LABEL, "letter-spacing") ?? "0").replace("em", "")) || 0;
-    expect(fontPx).toBeLessThanOrEqual(7);
-    // "SETTINGS" (8 chars) at ~0.62em average uppercase advance.
-    const labelPx = 8 * fontPx * 0.62 + 8 * tracking * fontPx;
+    const contentBox = STAGE_RAIL_W_TOKEN - 2 * inset;
+    const fontPx = LABEL_SIZE_TOKEN;
+    // The interactive-label floor: no stage label below 12px.
+    expect(fontPx).toBeGreaterThanOrEqual(12);
+    expect(decl(STAGE_RAIL_LABEL, "text-transform")).toBeNull();
+    // "Settings" (8 chars) at ~0.52em average TITLE-CASE advance.
+    const labelPx = 8 * fontPx * 0.52;
     const labelGap = inset + Math.max(0, (contentBox - labelPx) / 2);
     expect(labelPx).toBeLessThanOrEqual(contentBox);
     expect(labelGap).toBeGreaterThanOrEqual(4);
-    expect(Number(labelGap.toFixed(2))).toBe(4.08);
   });
 
   it("gives the panel header, sections and thumbnail stack their own insets", () => {
@@ -459,9 +466,14 @@ describe("Phase 37 item 18 - the Multi Mode strips are narrower", () => {
     const thumbWidth = computeThumbWidth(STRIP_REST_PX, 2);
     expect(thumbWidth).toBe(89);
     expect(thumbWidth).toBeGreaterThanOrEqual(84);
-    expect(thumbWidth + THUMB_RAIL_INSET_PX).toBeLessThanOrEqual(STRIP_REST_PX);
-    expect(computeThumbWidth(STRIP_REST_PX, 1)).toBe(THUMB_WIDTH);
-    expect(THUMB_WIDTH + THUMB_RAIL_INSET_PX).toBeLessThanOrEqual(STRIP_REST_PX);
+    expect(thumbWidth + THUMB_FIT_INSET_PX).toBeLessThanOrEqual(STRIP_REST_PX);
+    // DEF-347 - a single document in the 150px strip can NOT use the
+    // single-mode 126px width: it caps to the strip's real content box, so
+    // the preview stays inside its page row.
+    const one = computeThumbWidth(STRIP_REST_PX, 1);
+    expect(one).toBe(STRIP_REST_PX - THUMB_FIT_INSET_PX);
+    expect(one).toBeLessThan(THUMB_WIDTH);
+    expect(one + THUMB_FIT_INSET_PX).toBeLessThanOrEqual(STRIP_REST_PX);
   });
 });
 

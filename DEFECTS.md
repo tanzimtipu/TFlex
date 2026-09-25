@@ -5,6 +5,296 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-350: verify:full gate flake - engine getDocumentBytes byte-equality test fails when the two serializations straddle a one-second boundary
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 39
+
+Steps to reproduce:
+1. `npm.cmd run verify:full` on the Phase 39 tree (the release-gate run), repeatedly.
+2. Intermittently, `test/unit/main/engine.test.ts > EngineService - getDocumentBytes > returns re-parseable bytes that match save output (round-trip)` fails at line 1327 (`expect(same).toBe(true)`): the bytes `getDocumentBytes` returns are not byte-identical to the bytes `save()` wrote.
+
+Expected: the two serializations compare byte-identical, so the test is deterministic.
+Actual: pdf-lib stamps `/ModDate` with the current time on every save (`updateInfoDict` in pdf-lib `PDFDocument.js` calls `setModificationDate(new Date())`; PDF date strings are second-resolution). `getDocumentBytes` and `save()` each call `serializeDoc` -> `out.save()`, so when the two calls straddle a one-second boundary the `/ModDate` differs and the byte comparison fails. Observed once in the release-gate run (exit 1, `1 failed | 5131 passed`), then green twice: the isolated file run (`npm.cmd run test:unit -- test/unit/main/engine.test.ts` -> 237 passed) and the immediate `verify:full` re-run (396 files / 5132 tests passed, exit 0). The DEF-349 fix touches only renderer layout files, so the engine path is unaffected.
+Screenshot: n/a (test-only). Logs: e2e/phase39-verifyfull-rerun.log (failed run) vs e2e/phase39-verifyfull-rerun2.log (green re-run).
+
+History:
+- qa: opened (observed during the Phase 39 release-gate `verify:full`; intermittent, gate passed on rerun).
+- qa: CLOSED -- retested the backend-dev fix on the current tree. `npm.cmd run test:unit -- test/unit/main/engine.test.ts` run 3 times: 237 passed / 237 passed / 237 passed (1 file passed each run, 0 failed). Assertion-strength check (git diff of `test/unit/main/engine.test.ts`): the fix only wraps the two serializing calls in `vi.useFakeTimers({ toFake: ['Date'] })` + `vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))` (restored in a `finally`); the byte-for-byte comparison is untouched -- `savedView[i] !== gotView[i]` over every byte with `expect(same).toBe(true)`, plus the `saved.byteLength === r.value.byteLength` length check. A genuine engine regression (any content-stream/page-tree difference) would still fail it; only the `/ModDate` second-boundary flake is removed. No product code changed.
+
+## DEF-349: Phase 39 Multi Mode pane pills float over that pane's thumbnail strip at narrow windows
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 39
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper (`e2e/phase39_def348_verify.spec.cjs`).
+2. Open `report.pdf`; click `[data-header-multi-mode]` (one document seeds pane A, pane B empty).
+3. Resize the window to 700x720 (`BrowserWindow.setSize`); click pane A's first `.thumb-item`.
+4. Read `getBoundingClientRect()` of `.pane-thumb-strip`, `[data-page-pill]`, `[data-zoom-pill]` and `[data-rail-action-bar]`; repeat with two documents (fill pane B).
+
+Expected: no control overlaps another (Phase 39 criterion 4) - the pane's pills and page-action bar stay inside that pane's page area and intersect no strip/panel.
+Actual: the pane's outboard pills (pane A left-anchored, pane B right-anchored) are wider than the pane's canvas column, so they float over that pane's thumbnail strip. ONE document, pane A (viewport 700x720): strip x=206..356 y=78..586.7; zoom pill x=76..294 y=487.3..528.7 -> 88 x 41.4 = 3643.2 px^2; page pill x=76..222.9 y=533.3..574.7 -> 16.9 x 41.4 = 699.7 px^2; the page pill also covers the strip's page-action bar (16.2 x 41.4 = 639.9 px^2). TWO documents: both panes show it (pane A strip-1 x=206..356 / zoompill-1 x=76..294 -> 3643.2, pagepill-1 -> 1022.6, actionbar-1 -> 948; pane B strip-0 x=364..514 / zoompill-0 x=426..644 -> 3643.2, pagepill-0 x=497.1..644 -> 699.7, actionbar-0 -> 639.9). The 218px zoom pill does not compact in Multi Mode (the container-query yield is scoped to `data-multi-mode='false'`), and at a 700px window the panes are 292px, below the declared 320px pane minimum. NOT present at the default window (1442) even at a 0.30 narrow pane - every non-containment pair there is zero.
+Screenshot: screenshots/def-348-narrow-window.png
+
+History:
+- qa: opened (reproduced on the dev build; harness `e2e/phase39_def348_verify.spec.cjs`). Found while measuring DEF-348 part (b) (the pairwise intersection matrix): the dock/divider/strip/action-bar pairs are all zero, but the pills/strip pair is not at the 700px window.
+- qa: CLOSED -- retested on the rebuilt dev tree (`npm.cmd run build`, exit 0). New harness `e2e/phase39_def349_verify.spec.cjs` -> 1 passed, summary []. At 1442/700/640 x ONE/TWO documents every pane pill (`[data-page-pill]`, `[data-zoom-pill]`) intersects ZERO px^2 of any `.pane-thumb-strip`, any `[data-rail-action-bar]`, the shared `.action-dock` and `[data-multi-divider]` (96 intersection checks, all 0.0), and every pill stays hit-testable (`elementFromPoint` at the pill centre returns the pill or a child: page pill -> `input`, zoom pill -> `svg`). At 700/640 the pane reserves band=102px / span=150px (both panes with two docs); at 1442 band=0px and the pill right edge (294) stays clear of pane A's strip (left 467) and pane B's strip (left 625). Raw table `e2e/phase39-def349.log`. Screenshot screenshots/def-349-verify-700.png. Regression: `e2e/phase39_def348_verify.spec.cjs` -> 3 passed, `[P39-DEF348b summary] []`.
+
+## DEF-348: Phase 39 Multi Mode Action Dock vanishes while the empty pane is focused, and the thumbnail panel's page-action bar overlaps the dock
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 39
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper (`e2e/phase39_probe.spec.cjs`).
+2. Open `report.pdf`; click `[data-header-multi-mode]` (one document seeds pane A, pane B is empty, focus A).
+3. Read `.action-dock` / `[data-dock-verb]` -> present, 8 verbs, `data-dock-idle="false"`, opacity 1.
+4. Click the empty pane B body -> focus moves to B. Re-read: `document.querySelector('.action-dock')` is null and `[data-dock-verb]` count is 0.
+5. Click pane A's page -> the dock returns.
+6. Click pane A's first `.thumb-item` -> `[data-rail-action-bar]` appears at the bottom of the pane's thumb strip; measure it against the dock.
+
+Expected: with ONE document the Action Dock renders and works exactly as in single mode (Phase 39 criterion 3); no control overlaps another (criterion 4); the page-rotate control has one home that intersects nothing (criterion 5).
+Actual: (a) the shared dock is not rendered at all while the EMPTY pane is focused (focus A -> present, 8 verbs, opacity 1; focus B -> absent, 0 verbs; refocus A -> returns). This also reproduces on the installed 1.30.0 build. (b) The pane thumb strip's bottom page-action bar (rotate CCW/CW/delete) overlaps the Action Dock: bar x=467.7..617.0 y=851.9..903.3, dock x=373.3..868.7 y=831.8..891.3 -> intersection 149.3 x 39.4 = 5882.4 px^2; the Rotate-clockwise button alone intersects 39.3 x 24 = 943.2 px^2. (c) At a narrow pane (split 0.396) the dock's primary "Rotate pages" verb overlaps the strip: rotate x=310.7..402.0, strip x=323.4..473.4, y overlap 46.2 -> 78.6 x 46.2 = 3631 px^2. At the default 50/50 split the dock as a whole overlaps the strip by 150 x 59.5 = 8925 px^2.
+Screenshot: screenshots/def-349-rail-bar.png, screenshots/def-347-narrow.png
+
+History:
+- qa: opened (reproduced on the dev build and on the installed 1.30.0 at `C:\Program Files\TFlex`; harnesses `e2e/phase39_probe.spec.cjs` and `e2e/installed/phase39_installed_repro.spec.cjs`).
+- qa: CLOSED -- retested on the rebuilt tree (`npm.cmd run build`, exit 0). `e2e/phase39_def348_verify.spec.cjs`: (a) PASS and (c) PASS. (a) one-doc dock presence: focus A -> dock true, 8 verbs (`rotate,extract,insertPages,replacePages,split,delete,merge,cropPages`), `data-dock-idle="false"`, opacity 1, toolsOpen true; focus EMPTY B -> dock true, 8 verbs, toolsOpen true, activePane A (the workspace document stays active); back to A -> 8. (b) the action-bar/dock overlap is gone: default window, pane A strip y=78..819.3 and action bar y=767.9..819.3, dock y=831.8..891.3 -> 0 intersection; at the 700px window strip/action-bar end y=586.7, dock y=615.3..658.7 -> 0. (c) at the default 50/50 split and a 0.30 narrow pane the dock intersects no strip (dock y=831.8..891.3 vs strip y=78..819.3); the pane band (`--tf-multi-dock-band`) holds. The remaining part-(b) failure is a NEW, separate pair (pills over the strip at the 700px window) filed as DEF-349 -- not a recurrence of this defect. Screenshot: screenshots/def-348-multiview-one-doc.png.
+
+## DEF-347: Phase 39 Multi Mode thumbnail page preview overflows its page row with one document
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 39
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper (`e2e/phase39_part1_repro.spec.cjs`).
+2. Open `report.pdf` (34 pages) via the title-bar Open (dialog mocked); wait for the canvas.
+3. Click `[data-header-multi-mode]` (one document in pane A, pane B empty).
+4. Measure `getBoundingClientRect()` of `.tab-pane[data-pane="A"] .thumb` (the page row/frame) and `.thumb-canvas-wrap` (the page preview) at the default window, after dragging `[data-multi-divider]` to 0.30 and to 0.78, and after two `[data-zoom-pill]` zoom-in clicks.
+
+Expected: the preview's box is inside its page frame at every pane width and zoom (Phase 39 criterion 1).
+Actual: the preview is a fixed 126px wide (`THUMB_WIDTH`) while the 150px pane strip's scroller content is 123.3px wide (150 - 16px padding - ~10.7px scrollbar). The preview is 6.6px inset from the row's left and overflows the row's right edge by 9.3px at every width and zoom. Measured (viewport 1442): row x=475.7 w=123.3 right=599.0; preview x=482.3 w=126 right=608.3. Narrow pane A (split 0.396): row right=455.4, preview right=464.7 (+9.3). Wide pane A (split 0.672): row right=836.0, preview right=845.3 (+9.3). Zoom +1/+2 unchanged. The canvas-vs-preview overflow is only the 0.7px border.
+Screenshot: screenshots/def-347-thumb1-closeup.png (current-page row; the white page is shifted right and spills past the blue row), screenshots/def-347-349-default.png
+
+History:
+- qa: opened (reproduced on the dev build and on the installed 1.30.0; harnesses `e2e/phase39_part1_repro.spec.cjs` and `e2e/phase39_thumb_closeup.spec.cjs`).
+- qa: CLOSED -- retested on the rebuilt tree (`npm.cmd run build`, exit 0). `e2e/phase39_def347_verify.spec.cjs` -> 2 passed. Raw (viewport 1442, pane A strip 150px): default row x=475.67..599.0 w=123.33, preview wrap x=483.83..590.83 w=107 -> wrap-in-row overflow left/right/top/bottom = 0/0/0/0; narrow pane (divider 0.30) row x=332.06..455.4, wrap x=340.23..447.23 -> 0; wide pane (0.78) row x=712.67..836.0, wrap x=720.83..827.83 -> 0; zoom+1/+2 -> 0. TWO documents: pane A wrap w=89, pane B wrap w=89, all edges 0 at default/narrow/wide. The only residual is the 0.67px canvas-vs-wrap frame border (`overflow:hidden` clips it) -- the frame itself, not a spill. Screenshot: screenshots/def-347-verify-strip.png.
+
+## DEF-346: Phase 38 legacy-cleanup NSIS guards are name/path heuristics and run in the elevating user's context
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-090)
+- Phase: 38
+
+Steps to reproduce:
+1. Read `electron-builder.nsh` (the `customInstall` hook) and `electron-builder.yml` (`nsis.include`).
+2. Read electron-builder's NSIS templates that define `${INSTALL_REGISTRY_KEY}` / `${UNINSTALL_REGISTRY_KEY}` and insert the hook.
+3. Read this machine's keys read-only (`HKCU ...\Uninstall\<GUID>`, `HKCU\Software\<GUID>`, `HKCU\Software\Classes\TFlex.pdf`, `.pdf\OpenWithProgids`) and list `%LOCALAPPDATA%\Programs\TFlex`.
+
+Expected: "nothing is deleted unless it is provably TFlex's" (the script's own comment), and a per-machine install removes the legacy per-user install.
+Actual: the guards were name/path heuristics and the ProgID key was deleted unguarded; the elevated context resolves HKCU/$LOCALAPPDATA to the elevating account.
+Screenshot: none (static audit).
+
+History:
+- qa: opened (filed from ADV-090; static audit of the script and the electron-builder templates).
+- qa: CLOSED -- verified on the hardened script (script evidence only; the LIVE install verification is the operator's elevated run and was NOT attempted). Guards verified: (1) the directory sweep requires `$LOCALAPPDATA\Programs\TFlex\TFlex.exe` AND (`Uninstall TFlex.exe` OR `tflexLegacyProven`); (2) `tflexLegacyProven` is set only by exact identity -- InstallLocation exactly `$LOCALAPPDATA\Programs\TFlex` (Identity A) or DisplayName exactly "TFlex" / first 6 chars exactly "TFlex " (Identity B); (3) the whole registry block is gated on `tflexLegacyDirFailed == 0` AND `tflexLegacyProven == 1`; (4) the ProgID key is deleted only when `shell\open\command` contains the full legacy exe path `$LOCALAPPDATA\Programs\TFlex\TFlex.exe`; (5) a failed `RMDir /r` sets `tflexLegacyDirFailed=1`, shows a MessageBox ("...Close TFlex and run this installer again. No registry entries were changed.") and skips the registry deletion. `electron-builder.yml` wires `nsis.include: electron-builder.nsh`.
+
+## DEF-345: Phase 38 the Inspector still shows an enabled text-manipulation panel after leaving the text stage, while its own selection line says "page"
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-089)
+- Phase: 38
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper; open `long.pdf`; Ctrl+2 (EDIT); arm Edit text via Ctrl+K; click a text run until `[data-textrun-selection]` appears.
+2. Read `[data-inspector][data-inspector-selection]`, the `[data-inspector-text-panel]` count and the `[data-txt-text]` disabled/value.
+3. Ctrl+1 (PAGES); re-read.
+
+Expected: the text-manipulation surface is shown only while the resolved selection is a text target; a page selection renders no enabled field (fail loud, never a surface with no matching target).
+Actual: `data-inspector-selection="page"` but `[data-inspector-text-panel]` persisted with the field enabled and holding the run text; typing was accepted then silently discarded.
+Screenshot: test-fixtures/adv-p38/shots/text-single-pages.png
+
+History:
+- qa: opened (filed from ADV-089).
+- qa: CLOSED -- retested on the rebuilt tree (`npm.cmd run build`, exit 0). `e2e/def345_textpanel.spec.cjs` -> 1 passed. Raw: at-edit `{selection:"text", panels:1, fieldDisabled:false, fieldValue:"Performance testing requires a significant number of pages."}`; at-pages `{selection:"page", panels:0, fieldPresent:false}`. The panel is absent for a page selection, so there is no enabled field and no silent discard. The pure mapping is covered by `test/unit/renderer/def345_inspectorTextStage.test.tsx`.
+
+## DEF-344: Phase 38 light-theme dock verbs fall below the 4.5:1 text floor in the pressed (:active) state
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: adversary (ADV-088)
+- Phase: 38
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper; open `report.pdf`; Ctrl+1 (PAGES).
+2. For light, dark and frosted: hover and press each non-primary enabled dock verb; read the computed `color` and the composited surface; compute the WCAG 2.1 ratio.
+
+Expected: hover and pressed text contrast >= 4.5:1 against the ACTUAL surface in every theme.
+Actual: the per-verb family-hue rule (0,4,0) out-specified the hover/active ink (0,3,0), so light blue/cyan/green/orange measured 4.29/4.45/4.16/4.17.
+Screenshot: test-fixtures/adv-p38/shots/legibility-light.png
+
+History:
+- qa: opened (filed from ADV-088).
+- qa: CLOSED -- retested on the rebuilt tree (`npm.cmd run build`, exit 0). `e2e/def344_contrast.spec.cjs` -> 1 passed; all 8 families sampled in all 3 themes, `failures []`. Min ratios: light importComments 4.88, exportDocx 4.89, merge 5.03; dark min 5.75 (delete); frosted min 6.60 (exportDocx). The old 4.16-4.45 values are gone. The fix adds the same three `:not()` guards to the hover/active rules (`styles.css` 13678/13682) so the state ink is `--fg-strong`.
+
+## DEF-343: Phase 38 re-opening a document into the same Multi Mode pane still paints the pre-Inspector-inset fit (page ~34% oversized) before it settles
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: adversary (ADV-087)
+- Phase: 38
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper; open `report.pdf`; click `[data-header-multi-mode]` (pane B empty).
+2. Install the per-frame rAF sampler on `.tab-pane[data-pane="B"]`; open a document into B via `[data-pane-open]` (dialog mocked), settle ~3.5s, click `[data-pane-clear]`, repeat with `long.pdf`/`report.pdf` (7 cycles); repeat with a CDP screencast (`overshoot`).
+3. Run `node test-fixtures/adv-p38/gate_probe.cjs repeat` and `... overshoot`.
+
+Expected: each open into the pane is held by the DEF-338 gate until the scroller box is stable, so the first painted fit IS the settled fit (zero frames wider than the settled fit; the zoom does not step).
+Actual: cycles k=2/k=3 painted a 525px slot (86% fit) for 1-2 frames before stepping to 393px (64%) -- a 132px / ~34% oversize first paint; `--tf-tools-inset` read `0px` at the overshoot frame.
+Screenshot: test-fixtures/adv-p38/shots/gate-overshoot-widest.png
+
+History:
+- qa: opened (filed from ADV-087).
+- qa: CLOSED -- retested on the rebuilt tree with the adversary's read-only harness `test-fixtures/adv-p38/gate_probe.cjs`. `overshoot` -> 8/8 cycles `bigOvershootFrames: 0`, `maxSlot 403`, `settled 393`, `overDetail []` (the 34% 525px overshoot is gone). `repeat` -> maxSlot 403, settled 393, overshootFrames 1 (the known ~10px scrollbar residual 403->393, separately documented in `def338_residual_report.spec.cjs`, not this finding). The zoom no longer commits the 86% pre-fit; the residual 66%->64% blip is the same 10px step.
+
+## DEF-342: Phase 38 the EDIT stage stays selected after a tab switch but edit mode turns off, and re-selecting EDIT does not re-enable it
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 38
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper; open `report.pdf`.
+2. Press Ctrl+2 (EDIT): the Stage Rail shows EDIT and the edit toolbar mounts.
+3. Close the only tab (`.tab-active .tab-close`), then open a document again (title-bar Open).
+4. Read `[data-stage-rail][data-active-stage]` and the `[data-edit-toolbar]` count; press Ctrl+2 again and re-read.
+
+Expected: the EDIT stage is the edit-mode switch (Phase 37 item 13), so while the rail shows EDIT the edit toolbar is present; re-selecting EDIT re-enables it.
+Actual: after the tab switch the rail still shows `data-active-stage="edit"` but `[data-edit-toolbar]` is absent (edit mode off). Pressing Ctrl+2 (already EDIT) does not re-enable it -- the stage effect only fires on a stage CHANGE (`App.tsx` `prevActiveStageRef`). Only a real stage change (Ctrl+1 then Ctrl+2) recovers it. Raw (`e2e/def342_repro.spec.cjs`): in-edit `{stage:"edit",editToolbar:1}`; after-close `{stage:null,editToolbar:0}`; after-open `{stage:"edit",editToolbar:0}`; after-reselect `{stage:"edit",editToolbar:0}`; after-cycle `{stage:"edit",editToolbar:1}`.
+Severity: LOW -- the EDIT stage silently loses its tools after a tab switch; recoverable by switching stages, no data impact.
+
+History:
+- qa: opened (observed while migrating `e2e/phase25_text_panel_float.spec.cjs` for Phase 38; the spec now forces a PAGES -> EDIT stage change to re-enter edit mode.)
+- qa: CLOSED -- retested on the rebuilt tree (`npm.cmd run build`, exit 0). The inverted `e2e/def342_repro.spec.cjs` -> 1 passed: after-open `{stage:"edit",editToolbar:1}`, after-reselect `{stage:"edit",editToolbar:1}`, after-cycle `{stage:"edit",editToolbar:1}`. The edit toolbar returns when a document arrives while the stage is already EDIT.
+
+## DEF-341: Phase 38 the dock's verb group spills outside its box and the leading verb of every stage is clipped and unclickable at the default window
+
+- Status: CLOSED
+- Severity: HIGH
+- Found by: qa
+- Phase: 38
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` helper; open `report.pdf` (default window, 1440x900).
+2. Ctrl+3 (REVIEW); read the `[data-action-dock]` and `[data-dock-verb="annotate"]` rects and `document.elementFromPoint` at the annotate button's centre.
+3. `npm.cmd run test:e2e -- e2e/phase36_chunk3_dock_gate.spec.cjs -g "P36-C3-N"` and `npm.cmd run test:e2e -- e2e/phase37_gate.spec.cjs`.
+
+Expected: the dock's verb row fits its own box (or scrolls WITHIN it); no verb is clipped; no dock verb is covered by the floating canvas pills; the leading verb of each stage is clickable.
+Actual: the verb group overflows the dock's scroll box and `.action-dock-group { justify-content: center }` spills the leading verbs to the LEFT of the dock box, under the bottom-left page pill. REVIEW: `annotate` lays out at x=340 while the dock box starts at x=422; `elementFromPoint` at its centre returns `.page-indicator` and Playwright's click times out ("page-indicator ... intercepts pointer events"). First verb of EVERY stage is covered: pages `rotate` (hit `page-total`), edit `editText` (hit a pill svg), review `annotate` (hit `page-indicator`), deliver `optimize` (hit `page-input`). Annotate and Sign are invisible in the REVIEW dock. Raw: dock x=422 w=508, scroller scrollLeft=0 scrollWidth=552 clientWidth=430, verbRects annotate 340..408, sign 411..452, stamp 455..508, importComments 861..1013. `P36-C3-N` reports `clipped=["rotate","extract","merge","cropPages"]` at 1440.
+Severity: HIGH -- the primary dock action of every stage is clipped, and in REVIEW the Annotate/Sign controls are invisible and unclickable at the default window, so annotation cannot be armed from the dock (the Ctrl+K palette still reaches it). It regresses the Phase 36 dock-clipping contract and leaves `phase37_gate` 4 failed / 3 passed and the Phase 36 dock/rail suites 8 failed / 7 passed.
+Screenshot: screenshots/phase38-dock-overlap.png
+
+History:
+- qa: opened (Phase 38 gate; reproduced at the default window and 1440 in `e2e/phase38_gate.spec.cjs` P38-2 and `e2e/phase36_chunk3_dock_gate.spec.cjs` P36-C3-N.)
+- qa: CLOSED -- retested on the rebuilt tree (`npm.cmd run build`, exit 0). `npm.cmd run test:e2e -- e2e/phase38_gate.spec.cjs` -> 4 passed. The new P38-4 sweep measured the leading verb of EVERY stage at 1920/1440/1200/880/719/640: all inside the dock box, `elementFromPoint` at the leading verb centre returns the verb, one row, no vertical clipping. Raw at 1440 REVIEW: dock x=422..930, annotate x=461..529 (was x=340), hit=true; 1200 dock 422..690, annotate 461..529; 880 dock 286..590, annotate 325..393; 719 dock 231..557, annotate 239..275; 640 dock 191..517, annotate 200..236. The migrated `P36-C3-N` -> 1 passed: at 1440/1100/900 the scroller box is inside the dock, clips its overflow, the leading verb is inside and hit-testable, and all 8 verbs are reachable via the lane; at 760 (no scroller box) both verbs are inside and hit-testable.
+
+## DEF-340: Phase 38 the dock's stage-primary verb fails the 4.5:1 label contrast floor in all three themes
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 38
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper; open `report.pdf`; Ctrl+1 (PAGES).
+2. For light, dark and frosted: read the primary dock verb (`[data-dock-verb="rotate"]`, `.action-dock-verb-primary`) computed `color` and its own composited background (its `--accent-soft` wash over the dock), then compute the WCAG 2.1 ratio.
+
+Expected: every interactive text label is at least 4.5:1 against its actual surface in all three themes (criterion 4); the developer's spec claims the worst pair is 4.56.
+Actual: the primary verb uses `--accent` #2563eb on the `--accent-soft` wash and measures light 4.27, dark 2.92, frosted 4.34 -- all below the 4.5 floor. Raw (e2e/phase38-gate1.log `contrast-failures`): light `rgb(37,99,235)` on `rgb(225,234,251)` = 4.27; dark on `rgb(26,38,60)` = 2.92; frosted on `rgb(228,235,252)` = 4.34. The unit sweep (`phase38LegibilityContrast.test.ts`) only checks `--fg-strong/--fg/--fg-muted` and the family tokens against the five surfaces, never `--accent` on `--accent-soft`.
+Severity: MEDIUM -- the primary action of each stage carries the least legible glyph+label in the dock, worst in dark theme (2.92); no data or workflow impact.
+Screenshot: screenshots/phase38-accents-dark.png
+
+History:
+- qa: opened (Phase 38 gate; independent sample of the REAL rendered colours.)
+- qa: CLOSED -- retested on the rebuilt tree (`npm.cmd run build`, exit 0). `e2e/phase38_gate.spec.cjs` P38-1 independently sampled the REAL rendered colours: the primary verb (`rotate`, `--dock-primary-fg`) on its `--accent-soft` wash measures light 5.53 (rgb(29,78,216) on rgb(225,234,251)), dark 5.96 (rgb(99,168,232) on rgb(26,38,60)), frosted 5.63 (rgb(29,78,216) on rgb(228,235,252)) -- all >= 4.5. The `contrast-failures` list is empty across all three themes.
+
+## DEF-339: Phase 38 header and Inspector control icons flex-shrink below the 18px legibility floor
+
+- Status: CLOSED
+- Severity: LOW
+- Found by: qa
+- Phase: 38
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical helper; open `report.pdf`; set the window to 1440x900.
+2. Read the rendered glyph box of every `button svg` / `[role="button"] svg` inside `.app-header`/`.titlebar` and `[data-inspector]`.
+
+Expected: no icon below 18px across the header and Inspector (criterion 5).
+Actual: the icons are flex items (`flex: 0 1 auto`) and shrink in the main axis, so the SVG letterboxes below 18px: tab Close `lucide-x` 6x18, Multi Mode / Print / Open-preferences 14.7x18, Inspector `Collapse inspector` 16x18. Identical in light, dark and frosted (raw: e2e/phase38-gate1.log `icon-details-*`; computed widths 6px / 14.6667px / 16px with `flex-shrink: 1`).
+Severity: LOW -- cosmetic legibility-floor miss; the icons remain visible and usable.
+History:
+- qa: opened (Phase 38 gate; measured, not asserted from CSS.)
+- qa: CLOSED -- retested on the rebuilt tree (`npm.cmd run build`, exit 0). `e2e/phase38_gate.spec.cjs` P38-1 measured every header/Inspector `button svg` / `[role="button"] svg` in all three themes: all 18x18 with `flex-shrink: 0`. Raw: tab Close `lucide-x` 18x18 (was 6x18), Multi Mode `lucide-columns-2` 18x18, Print `lucide-printer` 18x18, Open preferences `lucide-settings` 18x18, Inspector `Collapse inspector` `lucide-panel-right-close` 18x18 (was 16x18). No icon below 18px.
+
+## DEF-338: Multi Mode - opening a document into pane B lays the page out at the full-stage fit-width (204% for the payslip) and flashes an oversized grey placeholder before snapping to the half-pane fit-width (69%)
+
+- Status: CLOSED
+- Severity: MEDIUM
+- Found by: qa
+- Phase: 38
+
+Steps to reproduce:
+1. `npm.cmd run build` (exit 0); launch the dev app through the canonical `e2e/lib/launch.cjs` `launchApp`; wait for the welcome screen.
+2. Open `test-fixtures/squiggly-native.pdf` (or any fixture) via the title-bar Open control (mocked OS dialog); wait for the page.
+3. Click the title-bar Multi Mode toggle `[data-header-multi-mode]`; pane B shows its empty state.
+4. Click pane B's `[data-pane-open]` and pick `C:\Users\tanzi\Downloads\TanzimulIslamPaySlip20260930.pdf` (the operator's payslip, used IN PLACE - never copied into the repo).
+5. Watch pane B during the open.
+
+Expected: pane B lays the page out at its own half-pane fit-width from the first painted frame; the page (or its placeholder) never exceeds the pane; the zoom readout goes straight to the half-pane fit-width (~69%).
+
+Actual: pane B's page slot is first laid out at the FULL-STAGE width (~1214px, the single-pane document width) and the pane's zoom readout shows 204% (fit-width computed against the full stage). The `.page-placeholder` shimmer (light grey `#e5e7eb`) is painted at that oversized slot, filling the whole pane as a grey slab, while the pane B thumbnail already shows the payslip. The slot then converges 1214 -> 454 -> 434 -> 422 -> 414 -> 413px over ~160-240ms (each step cancelling the in-flight render), and the page finally paints at 69%. The zoom readout jumps 204% -> 69%.
+
+Raw measurements (CDP `Page.startScreencast`, full-res 1280x900, `e2e/def338_repro.spec.cjs`): 35 frames captured across the open; frames open-12..open-23 (12 consecutive frames) show pane B as a uniform grey placeholder slab; open-24..open-34 show the rendered payslip. Pane B zoom pill reads "204%" in open-12 and "69%" in open-23. Per-frame in-page rAF probe (`e2e/def338_probe.spec.cjs`): pane B slot width sequence [1214, 454, 434, 422, 414, 413], canvas backing sequence [1214x1717, 454x642, 434x614, 414x585, 413x584], `.page-placeholder` present for 9 frames (t=146..305ms).
+
+Scope matrix (`e2e/def338_scope.spec.cjs`, same probe):
+- Normal fixture `report.pdf` into pane B: slot [1204, 412, 404, 403], canvas backing [612x792, 1204x1558, 412x533, 404x522, 403x521], placeholder 8 frames (167..403ms). REPRODUCES.
+- Payslip 20260930 into pane B: slot [1214, 454, 434, 422, 414, 413], placeholder 9 frames (146..305ms). REPRODUCES.
+- Sibling payslip 20260731 into pane B: slot [1214, 442, 427, 418, 413], placeholder 8 frames (113..259ms). REPRODUCES.
+- Payslip in SINGLE mode: slot [612, 950, 940] (grows from a smaller initial value to the correct full-width fit), placeholder 4 frames (146..235ms). A brief placeholder flash at the correct size, NOT the oversized slab.
+- Payslip as pane A when Multi Mode turns on: slot [940, 403, 413], placeholder 0 frames. No glitch (the already-painted frame is kept).
+- Focus switch to/from pane B, scroll, zoom step: 64/32/30 frames, all stable, no glitch.
+
+So the glitch is specific to opening a document INTO pane B (the pane's DocumentView measures its scroller before the multi-mode split constrains it), not to the payslip.
+
+Structural facts about the payslip (read-only, in place, `e2e/def338_inspect.cjs`): 1 page, MediaBox 595x842 (A4), /Rotate 0, resources only /Font + /ProcSet; no XObjects, images, inline images (BI/ID/EI = 0), tiling patterns, shading, transparency groups, soft masks, annotations or AcroForm; content is 18,163 decoded bytes of text/vector (198 q / 197 Q, 126 re, 115 W n, 83 BT/ET, 70 Tj, 14 TJ); two embedded Type0 CID LiberationSans subsets. The "large image / XObject / pattern / transparency" suspects are all absent.
+
+Console/error evidence: no renderer errors, no React errors, no unhandled rejections. The only console line is `Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true`, emitted by the QA harness's own `getImageData` sampler, not the product.
+
+Root-cause hypothesis (proven vs suspected):
+PROVEN: pane B's fit-width scale is computed against the full-stage width on the first layout pass. `DocumentView.effectiveScale` = `(viewportBox.w - CONTENT_PADDING_PX*2) / fitAnchor.w` (`src/renderer/components/DocumentView.tsx:1516-1519`), and `viewportBox` is set from `scrollerRef.current.clientWidth` in the mount effect and a ResizeObserver (`DocumentView.tsx:1737-1749`). For the payslip, 1214/595 = 2.04 = the 204% readout; the final 413/595 = 0.69 = 69%. The slot/canvas/zoom sequences above are the direct measurement of that scale being recomputed as the pane width converges.
+SUSPECTED (not yet proven at source level): the pane B scroller reports the full stage width on its first measurement because the pane's DocumentView mounts before the multi-mode split constrains the pane's content box (a mount-before-layout race); the ResizeObserver then corrects it through several steps. This is a layout/scale race, NOT the DEF-274 canvas-backing-store clear class: the visible canvas is never cleared to blank (the placeholder covers it), and the canvas is re-rendered at each new scale via the existing scratch-canvas swap.
+
+Severity: MEDIUM -- a visible, jarring flash on every document opened into pane B (the page appears at ~3x its correct size as a grey slab, and the zoom readout jumps 204% -> 69%), on a core Multi Mode workflow. No data loss and the page settles correctly, so not HIGH.
+
+Screenshots: screenshots/def-338-paneB-glitch-204.png (payslip into pane B, glitch frame: grey placeholder slab, zoom 204%), screenshots/def-338-paneB-settled-69.png (same open settled: payslip rendered, zoom 69%), screenshots/def-338-normal-fixture-glitch.png (report.pdf into pane B, placeholder slab), screenshots/def-338-single-mode-glitch.png (payslip single mode: placeholder at the correct 158%, no oversized slab), screenshots/def-338-paneA-transition.png (payslip as pane A, no glitch). Harnesses: e2e/def338_repro.spec.cjs, e2e/def338_probe.spec.cjs, e2e/def338_scope.spec.cjs, e2e/def338_evidence.spec.cjs; frame analyzer e2e/def338_analyze.cjs; structural inspector e2e/def338_inspect.cjs.
+
+History:
+- qa: opened (Phase 38 item 5, feature E; operator-reported: "open TanzimulIslamPaySlip20260930.pdf from downloads folder in the 2nd window in multi view. The page glitches violently." Reproduced on the dev build after `npm.cmd run build` exit 0.)
+- qa: retested on the rebuilt tree (`npm.cmd run build`, exit 0). The VIOLENT full-stage glitch is FIXED: the pane B slot never reaches the full stage width (max 525px vs the 1214px slab before) and the zoom readout never shows 204%. `e2e/def338_repro.spec.cjs` -> 1 passed; pane B canvas backing 403x570 (not 1214x1717). BUT the strict criterion is NOT met, so it stays OPEN: `e2e/phase38_def338_payslip.spec.cjs` (operator's exact scenario, payslip IN PLACE) measured 3 placeholder frames WIDER than the settled fit (slot widths 525/465/409 vs the settled 403) and a zoom ramp 88% -> 78% -> 69% -> 68% -- the readout does not go straight to the correct fit. Residual root cause: the pane's document area first fits before its 150px thumbnail strip mounts, so the first fit is the strip-less pane width (88%) and then reflows to the with-strip fit (68%). Settled state is correct (payslip rendered, 68%); screenshot screenshots/phase38-def338-payslip-paneB.png; raw samples e2e/phase38-def338-payslip-samples.json.
+- qa: CLOSED -- retested on the rebuilt tree (`npm.cmd run build`, exit 0). `npm.cmd run test:e2e -- e2e/def338_repro.spec.cjs e2e/phase38_def338_payslip.spec.cjs` -> 2 passed. `def338_repro`: pane B canvas 403x570 (not the 1214x1717 full-stage slab), no oversized placeholder. `phase38_def338_payslip` (operator's exact payslip, in place): maxSlotW == finalSlotW == 403, overFinalFrames 0, overFinalPlaceholderFrames 0, zoomSeq [{t:504, zoom:"68%"}] (straight to the settled fit), maxZoom 68 == finalZoom 68. The stability gate holds the first fit until the scroller box is stable. Residual (report.pdf into pane B still steps 403->393): judged imperceptible -- the widest frame is a blank placeholder at 66% and the page paints only at the settled 393/64%, so no page resize is visible (screenshots/def338-residual-report-widest.png, -after1.png, -after2.png, -settled.png).
+
 ## DEF-337: Phase 37 the dock's scroll arrows render when the row already fits, so clicking them does nothing
 
 - Status: CLOSED

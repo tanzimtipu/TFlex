@@ -21,6 +21,7 @@ import { createRoot } from "react-dom/client";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { DocumentView, type PersistedViewer } from "../../../src/renderer/components/DocumentView";
 import type { DocDiagnostics } from "../../../src/renderer/components/DocumentView";
+import type { InspectorTextSelection } from "../../../src/renderer/components/Inspector";
 import type { EngineState } from "../../../src/renderer/engine/types";
 import type { TextBoxModel } from "../../../src/shared/types";
 import {
@@ -130,6 +131,9 @@ interface HostApi {
   actions: EditAction[];
   /** Seed the renderer mirror directly (a renderer-local draft). */
   setMirror: (boxes: EditState["textBoxes"]) => void;
+  /** Phase 38 — the latest text surface the view published upward (the
+   *  Inspector's snapshot; the view no longer mounts a panel of its own). */
+  latestTextSelection: InspectorTextSelection | null;
 }
 
 interface HostProps {
@@ -185,6 +189,9 @@ function Host(props: HostProps): ReactElement {
     editModeOpen: props.open,
     onEditModeToggle: NOOP,
     edit,
+    onTextSelectionChange: (selection): void => {
+      props.api.latestTextSelection = selection;
+    },
   });
 }
 
@@ -204,7 +211,12 @@ async function mountView(): Promise<Harness> {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  const api: HostApi = { state: { ...initialEditState, tool: "box" }, actions: [], setMirror: NOOP };
+  const api: HostApi = {
+    state: { ...initialEditState, tool: "box" },
+    actions: [],
+    setMirror: NOOP,
+    latestTextSelection: null,
+  };
   let props: { open: boolean; boxes: TextBoxModel[] | undefined } = {
     open: false,
     boxes: undefined,
@@ -344,18 +356,6 @@ function pointer(el: Element, type: string, x: number, y: number): void {
   });
 }
 
-/** Type into the panel's controlled textarea (native setter + input). */
-function setTextarea(el: HTMLTextAreaElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLTextAreaElement.prototype,
-    "value",
-  )?.set;
-  act((): void => {
-    setter?.call(el, value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
 describe("DEF-257 - a committed new box survives the abandoned-placement cleanup", () => {
   it("keeps the mirror and its .edit-box surface after commit + Edit-mode close/reopen", async () => {
     const h = await mountView();
@@ -370,14 +370,17 @@ describe("DEF-257 - a committed new box survives the abandoned-placement cleanup
       expect(placed.length, "the drag placed one box").toBe(1);
       const id = placed[0]?.id ?? "";
       expect(id).not.toBe("");
-      // The panel's Text field is the editor for the new box (Phase 26).
-      const ta = h.host.querySelector<HTMLTextAreaElement>("[data-txt-text]");
-      if (ta === null) throw new Error("[data-txt-text] not found");
-      expect(ta.disabled).toBe(false);
-      setTextarea(ta, "DEF257 BOX");
+      // The Inspector's published snapshot is the editor for the new box
+      // (Phase 26; Phase 38 retired the view's own floating panel).
+      const snap = h.api.latestTextSelection;
+      if (snap === null) throw new Error("text surface not published");
+      expect(snap.text).toBe("");
+      act((): void => {
+        snap.onTextChange?.("DEF257 BOX");
+      });
       // Blur commits the session: the box reaches the engine (one op).
       act((): void => {
-        ta.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+        h.api.latestTextSelection?.onTextCommit?.(null);
       });
       // The engine registry stays ABSENT in this harness, so the
       // rehydration cannot mask a dropped mirror: only clearing `isNew`

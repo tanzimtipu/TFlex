@@ -181,8 +181,22 @@ export function inspectorTextPanelFor(
   };
 }
 
+/** DEF-345 — the text-manipulation panel is shown ONLY while the RESOLVED
+ *  selection is a text target. `inspectorTextPanelFor` alone returns a panel
+ *  whenever a snapshot exists, independent of the stage: leaving EDIT for PAGES
+ *  kept an enabled field whose own selection line read "page", and typing into
+ *  it was silently discarded (a fail-loud violation). Gating on the selection
+ *  kind keeps the panel and its header in agreement, and the legitimate EDIT /
+ *  REVIEW-annotate flows are unchanged (they resolve kind `text`). */
+export function inspectorTextPanelForSelection(
+  selection: InspectorSelection,
+  text: InspectorTextSelection | null,
+): TextPropertiesPanelProps | null {
+  return selection.kind === 'text' ? inspectorTextPanelFor(text) : null;
+}
+
+
 /** DEF-321 — the single-instance rule for the text-properties UI.
- *
  *  TextPropertiesPanel has TWO mount points by design (the Phase-36 contract:
  *  "one component, two mount points — never a second properties UI"): the
  *  Inspector's EDIT/text section (the CANONICAL home) and the floating card in

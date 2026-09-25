@@ -43,6 +43,9 @@ export interface MultiActionDockProps {
   activeToolIds?: readonly string[];
   /** State 4 reporter: App shares the idle flip with the panes' pills. */
   onIdleChange?: (idle: boolean) => void;
+  /** Phase 39 (DEF-348b/c) — the dock's measured vertical yield, shared with
+   *  App so the panes reserve a band that contains the (possibly lifted) dock. */
+  onLiftChange?: (liftPx: number) => void;
   /** Phase 37 (items 2 + 6) — the shared responsive ladder (App resolves it
    *  once from the measured workspace width). */
   ladder?: DockLadder;
@@ -84,6 +87,12 @@ export function MultiActionDock(props: MultiActionDockProps): ReactElement | nul
       toolUsage={props.toolUsage}
       activeToolIds={props.activeToolIds}
       onIdleChange={props.onIdleChange}
+      onLiftChange={props.onLiftChange}
+      /* Phase 39 (D3) — the shared dock lives in `.multi-dock-layer`, but the
+         pane's pills are OUTBOARD (pane-sized, at the pane's outer edge). The
+         dock measures THEIR widths and rebuilds the single-mode basis, so the
+         reserve/lane/lift are identical to single mode at the same width. */
+      pillSelector={`.tab-pane[data-pane="${pane}"]`}
     />
   );
 }

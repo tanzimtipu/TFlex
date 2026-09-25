@@ -8,8 +8,8 @@
 import { describe, expect, it } from "vitest";
 import {
   computeThumbWidth,
+  THUMB_FIT_INSET_PX,
   THUMB_MIN_WIDTH,
-  THUMB_RAIL_INSET_PX,
   THUMB_WIDTH,
 } from "../../../src/renderer/components/thumbGeometry";
 
@@ -17,11 +17,20 @@ import {
 const RAIL_W = 220;
 
 describe("computeThumbWidth - single mode is today's value", () => {
-  it("returns THUMB_WIDTH (126) for one document, whatever the rail width", () => {
+  it("returns THUMB_WIDTH (126) for one document on a wide enough rail", () => {
     expect(computeThumbWidth(RAIL_W, 1)).toBe(THUMB_WIDTH);
     expect(computeThumbWidth(RAIL_W, 1)).toBe(126);
-    expect(computeThumbWidth(90, 1)).toBe(126);
-    expect(computeThumbWidth(0, 1)).toBe(126);
+    // DEF-347 - the single-mode rail is 184px, well past the fit line.
+    expect(computeThumbWidth(184, 1)).toBe(THUMB_WIDTH);
+  });
+
+  it("caps a single document to the real content box on a narrow rail (DEF-347)", () => {
+    // A 150px Multi Mode strip: the preview must sit inside its page row.
+    expect(computeThumbWidth(150, 1)).toBe(150 - THUMB_FIT_INSET_PX);
+    expect(computeThumbWidth(150, 1)).toBeLessThan(THUMB_WIDTH);
+    expect(computeThumbWidth(150, 1) + THUMB_FIT_INSET_PX).toBeLessThanOrEqual(150);
+    // A degenerate width floors at the minimum hit target (never zero).
+    expect(computeThumbWidth(0, 1)).toBe(THUMB_MIN_WIDTH);
   });
 
   it("treats a missing/absurd document count as one document", () => {
@@ -74,8 +83,10 @@ describe("computeThumbWidth - a degenerate rail width is never zero/negative", (
   });
 
   it("uses the rail width as a cap when the rail is only just wide enough", () => {
-    // usable = 100 - 16 = 84 -> the scaled 89 is capped to 84.
+    // DEF-347 - the cap now charges the full fit inset (scroller chrome +
+    // the thumb slot's own padding/border/scrollbar), so a 100px rail
+    // cannot hold the 89px two-document thumb: it floors at the minimum.
     expect(computeThumbWidth(100, 2)).toBe(84);
-    expect(computeThumbWidth(THUMB_RAIL_INSET_PX + 100, 2)).toBe(89);
+    expect(computeThumbWidth(200, 2)).toBe(89);
   });
 });

@@ -82,6 +82,7 @@ const ladderState = () => win.evaluate(() => {
     panelAttr: panel?.getAttribute('data-context-panel-collapsed') ?? null,
     iconOnly: d?.getAttribute('data-dock-icon-only') ?? null,
     arrows: d?.getAttribute('data-dock-arrows') ?? null,
+    arrowsLane: d?.getAttribute('data-dock-arrows-lane') ?? null,
     labels: labelEls.length,
     visibleLabels,
     clippedLabels,
@@ -149,7 +150,13 @@ test('DEF-334 label rung: PAGES labels visible at 1440, ladder order down and up
   expect(r999.panel, `at ~999 the panel is collapsed (inner=${r999.innerWidth})`).toBe('true');
   expect(r879.iconOnly, `at ~879 the labels are hidden (inner=${r879.innerWidth})`).toBe('true');
   expect(r879.labels, `at ~879 no labels render (inner=${r879.innerWidth})`).toBe(0);
-  expect(r719.arrows, `at ~719 the arrows are present (inner=${r719.innerWidth})`).toBe('true');
+  // The ladder rung below 720 engages the arrows LANE; the rendered arrows
+  // themselves follow the DEF-337 contract (present iff the row overflows). The
+  // Phase-38 20px dock now fits at 719 (scrollWidth == clientWidth == 231), so
+  // the lane is engaged but no arrow control renders.
+  expect(r719.arrowsLane, `at ~719 the arrows LANE is engaged (inner=${r719.innerWidth})`).toBe('true');
+  expect(r719.arrows, `at ~719 the rendered arrows follow the overflow contract (inner=${r719.innerWidth})`)
+    .toBe(r719.scrollWidth > r719.clientWidth ? 'true' : 'false');
 
   // The arrows lane is used instead of dropping labels when the eight labelled
   // verbs cannot fit: at 1440 the labels are visible AND the arrows lane is
@@ -327,7 +334,10 @@ test('DEF-336 empty-tab print: title-bar Print and File > Print disabled, no sil
 test('DEF-337 dead arrows: absent when the row fits, present and scrolling when it overflows', async () => {
   await openSample('report.pdf');
 
-  // DELIVER: the row fits at 700/640 (no arrows), overflows at 719 (arrows scroll).
+  // DELIVER: the row fits at 700/640 (no arrows), overflows at 1440 (arrows
+  // scroll). The Phase-38 20px dock now fits at 719 (scrollWidth == clientWidth
+  // == 231), so the overflow proof is re-pointed to 1440 where the labelled row
+  // genuinely overflows (clientWidth 430, scrollWidth 776).
   await gotoStage(4);
   const deliver = {};
   const readDock = () => win.evaluate(() => {
@@ -350,7 +360,7 @@ test('DEF-337 dead arrows: absent when the row fits, present and scrolling when 
       scrollLeft: sc?.scrollLeft ?? null,
     };
   });
-  for (const w of [700, 640, 719]) {
+  for (const w of [700, 640, 1440]) {
     await setWindowSize(w, 900);
     await gotoStage(4);
     const reads = [];
@@ -361,16 +371,16 @@ test('DEF-337 dead arrows: absent when the row fits, present and scrolling when 
     deliver[w] = reads[reads.length - 1];
     console.log(`[DEF-337] DELIVER w=${w} reads=${JSON.stringify(reads)}`);
   }
-  await win.screenshot({ path: path.join(SHOTS, 'phase37-def337-arrows-719.png') });
-  console.log(`[DEF-337] screenshot ${path.join(SHOTS, 'phase37-def337-arrows-719.png')}`);
-  expect(deliver[719].arrows, 'at 719 the DELIVER row overflows, so the arrows render').toBe('true');
-  expect(deliver[719].arrowCount, 'at 719 both arrows render').toBe(2);
-  expect(deliver[719].scrollWidth, 'at 719 the scroller genuinely overflows').toBeGreaterThan(deliver[719].clientWidth);
+  await win.screenshot({ path: path.join(SHOTS, 'phase37-def337-arrows-1440.png') });
+  console.log(`[DEF-337] screenshot ${path.join(SHOTS, 'phase37-def337-arrows-1440.png')}`);
+  expect(deliver[1440].arrows, 'at 1440 the DELIVER row overflows, so the arrows render').toBe('true');
+  expect(deliver[1440].arrowCount, 'at 1440 both arrows render').toBe(2);
+  expect(deliver[1440].scrollWidth, 'at 1440 the scroller genuinely overflows').toBeGreaterThan(deliver[1440].clientWidth);
   await win.locator('[data-dock-arrow="right"]').click();
   await win.waitForTimeout(700);
   const afterRight = await win.evaluate(() => document.querySelector('[data-dock-scroll]').scrollLeft);
-  console.log(`[DEF-337] DELIVER 719 arrow right scrollLeft ${deliver[719].scrollLeft} -> ${afterRight}`);
-  expect(afterRight, 'the right arrow scrolls the overflowing row').toBeGreaterThan(deliver[719].scrollLeft);
+  console.log(`[DEF-337] DELIVER 1440 arrow right scrollLeft ${deliver[1440].scrollLeft} -> ${afterRight}`);
+  expect(afterRight, 'the right arrow scrolls the overflowing row').toBeGreaterThan(deliver[1440].scrollLeft);
   expect(deliver[700].arrows, 'at 700 the DELIVER row fits, so no arrows').toBe('false');
   expect(deliver[700].arrowCount, 'at 700 no arrow controls render').toBe(0);
   expect(deliver[640].arrows, 'at 640 the DELIVER row fits, so no arrows').toBe('false');

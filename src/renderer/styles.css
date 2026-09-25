@@ -1,4 +1,4 @@
-/* TFlex renderer styles
+﻿/* TFlex renderer styles
  * Single accent professional blue (#2563eb, Phase 13), neutral zinc/slate base,
  * two equally designed themes.
  * Inter via @fontsource-variable/inter. Density like VS Code / Linear.
@@ -23,7 +23,11 @@
   --font-ui: var(--font-sans);
   --font-mono: ui-monospace, "Cascadia Code", "Consolas", "SF Mono", Menlo, monospace;
 
-  --fs-xs: 11px;
+  /* Phase 38 (feature B) — LEGIBILITY FLOOR. --fs-xs is raised from 11px
+   * to 12px so every interactive control label that rides the body ladder
+   * clears the stated floor (no control label below 12px). It now equals
+   * --fs-sm; the ladder stays in place for metadata that needs a step. */
+  --fs-xs: 12px;
   --fs-sm: 12px;
   --fs-md: 13px;
   --fs-lg: 15px;
@@ -32,6 +36,24 @@
    * welcome hero uses it (the app's ONE large heading); everything
    * else stays on the --fs-* body ladder so chrome stays compact. */
   --fs-2xl: 24px;
+
+  /* Phase 38 (feature B) — THE icon and interactive-label size ladder.
+   * ONE token layer for every surface (dock, stage rail, panels, Inspector,
+   * header, pills, palette). Floors from the phase: icon >= 18px, control
+   * label >= 12px. `md` is the dock/pill/flyout glyph, `lg` the stage rail
+   * and rail-tab glyph. Declared here (theme-independent) so the geometry is
+   * identical in light, dark and frosted — only visual properties differ. */
+  --tf-icon-size: 18px;
+  --tf-icon-size-md: 20px;
+  --tf-icon-size-lg: 22px;
+  --tf-label-size: 12px;
+  --tf-label-size-md: 13px;
+  /* Phase 38 (feature B) — the Stage Rail's width. Was a hardcoded 44px; the
+   * 12px label floor means every stage word (including the gear's "Settings")
+   * needs more than the old 38px content box, so the ONE track token widens
+   * the rail to 64px (58px content). Both .app-main's grid track and the rail
+   * itself consume it, so the panel column can never overlap the rail. */
+  --tf-stage-rail-w: 64px;
 
   --sp-1: 4px;
   --sp-2: 8px;
@@ -298,22 +320,26 @@
   --ann-teal: #14b8a6;
   --ann-gray: #64748b;
 
-  /* Phase B — colorful icon system. A controlled semantic palette for
-   * TOOL ICONS ONLY (primary command toolbar, annotation toolbar,
-   * edit toolbar, tools palette, rail tabs). Icons are never
-   * monochrome: each tool carries ONE primary hue from this 8-swatch
-   * set, with an occasional subtle secondary detail (a small corner
-   * dot on the two-tone tools). The palette is theme-independent —
-   * identical hues on light, dark and frosted — and never applies to
-   * text, indicators or the single blue accent. */
-  --icon-blue: #4d9de0;
-  --icon-cyan: #42b7c8;
-  --icon-green: #69b578;
-  --icon-orange: #e07a2d;
-  --icon-yellow: #d9a441;
-  --icon-purple: #9b7ed8;
-  --icon-red: #d96c63;
-  --icon-pink: #d47ba8;
+  /* Phase B — colorful icon system, retuned by Phase 38 (feature B).
+   * A controlled semantic palette for tool icons AND the family-coloured
+   * control labels: each tool family carries ONE primary hue from this
+   * 8-swatch set, so the UI reads rich instead of a wall of uniform grey.
+   * The icon SHAPE and the LABEL text still carry the meaning — colour is
+   * never the only differentiator.
+   *
+   * Phase 38 retune: every light/frosted value is deep enough to clear the
+   * 4.5:1 TEXT floor (so a family hue can colour its own label, not just the
+   * glyph) on every chrome surface (raised / elevated / toolbar / rail /
+   * panel). The dark values are the bright counterparts, likewise >= 4.5:1.
+   * Measured by phase38LegibilityContrast.test.ts. */
+  --icon-blue: #2563eb;
+  --icon-cyan: #0e7490;
+  --icon-green: #15803d;
+  --icon-orange: #b45309;
+  --icon-yellow: #8a6100;
+  --icon-purple: #6d28d9;
+  --icon-red: #be123c;
+  --icon-pink: #be185d;
 
   /* Phase B — dialog radius. The radius ladder stays tight (controls
    * 5-7px, panels 8-10px); dialogs / sheets get their own slightly
@@ -343,10 +369,19 @@
 
   --fg-strong: #0f172a;
   --fg: #1e293b;
-  --fg-muted: #64748b;
+  /* Phase 38 (feature B) — darkened from #64748b: the old muted ink sat at
+   * 4.33:1 on the rail/panel surface, below the 4.5:1 interactive-text floor.
+   * #556070 clears 5.8:1 on the rail and 6.4:1 on white. */
+  --fg-muted: #556070;
   --fg-soft: #475569;
   --fg-faint: #94a3b8;
   --fg-on-accent: #ffffff;
+  /* DEF-340 — the dock's stage-PRIMARY verb ink. It sits on the --accent-soft
+   * wash over --bg-elevated, and the plain --accent (#2563eb) only measured
+   * 4.27:1 there, below the 4.5:1 interactive-text floor. blue-700 is the same
+   * accent family one step deeper and measures 5.54:1 on that wash. The wash,
+   * the accent itself and every family hue are unchanged. */
+  --dock-primary-fg: #1d4ed8;
 
   /* Page-content ink (DEF-158/159). The paper-white page is NEVER
    * inverted (DEF-099 keeps pages white in dark mode), so any text
@@ -502,11 +537,19 @@
 
   --fg-strong: #e7e9ec;
   --fg: #a8aeb6;
-  --fg-muted: #737a84;
+  /* Phase 38 (feature B) — brightened from #737a84: the old muted ink sat at
+   * 3.87:1 on the raised dark surface, below the 4.5:1 interactive-text floor.
+   * #828a97 clears 4.82:1 on the raised surface and 5.3:1 on the rail. */
+  --fg-muted: #828a97;
   --fg-soft: #98a0aa;
   --fg-faint: #5b626b;
   --fg-disabled: #505761;
   --fg-on-accent: #ffffff;
+  /* DEF-340 — the dock's stage-PRIMARY verb ink on the dark --accent-soft wash
+   * over --bg-elevated (#191e24). The plain --accent is far too dark there
+   * (2.92:1); the bright family blue is the dark-theme counterpart and measures
+   * 5.99:1. The wash and every family hue are unchanged. */
+  --dock-primary-fg: #63a8e8;
 
   --border: #242a31;
   --border-strong: #2e353d;
@@ -707,6 +750,11 @@
   --fg-faint: var(--tf-text-disabled);
   --fg-disabled: #b6bcc6;
   --fg-on-accent: #ffffff;
+  /* DEF-340 — the dock's stage-PRIMARY verb ink on the frosted --accent-soft
+   * wash over the translucent --bg-elevated dialog sheet. The plain --accent
+   * measured 4.34:1; blue-700 (the frosted family blue) measures 5.61:1. The
+   * wash and every family hue are unchanged. */
+  --dock-primary-fg: #1d4ed8;
 
   /* Hairlines */
   --border: var(--tf-border);
@@ -753,19 +801,19 @@
   --error: #d96c63;
   --error-soft: rgba(217, 108, 99, 0.12);
 
-  /* Phase C — light-frosted tool icons. Light and flat-dark keep the
-   * full-saturation :root palette; on the near-white frosted sheets
-   * the SAME hues would wash out, so each icon is pulled slightly
-   * deeper (still vivid, still unmistakably colorful, never
-   * monochrome) so the hue holds its contrast on white glass. */
-  --icon-blue: #3a7bc8;
-  --icon-cyan: #2a9da8;
-  --icon-green: #4a8f6a;
-  --icon-orange: #c55f1a;
-  --icon-yellow: #b88a2f;
-  --icon-purple: #7d5fc0;
-  --icon-red: #b84a47;
-  --icon-pink: #b0608a;
+  /* Phase C — light-frosted tool icons. Phase 38 (feature B) — a DEEPER
+   * variant of the light family palette (one Tailwind step down), so the
+   * frosted glass keeps its own three-theme palette while every value clears
+   * the 4.5:1 family-label floor and the 3:1 icon floor on the near-white
+   * frosted sheets. */
+  --icon-blue: #1d4ed8;
+  --icon-cyan: #0b5a68;
+  --icon-green: #12682f;
+  --icon-orange: #96450a;
+  --icon-yellow: #6f4e00;
+  --icon-purple: #5b21b6;
+  --icon-red: #9f1239;
+  --icon-pink: #9d174d;
 
   /* Phase 14.1 — the CANONICAL Liquid Glass values (the task-spec
    * token block, verbatim). The frosted theme is the one theme that
@@ -1129,7 +1177,7 @@ input[type="checkbox"] {
    * the rail + stage share row 2. With no bar, row 1 is empty (auto -> 0) and
    * row 2 (1fr) owns the whole frame, exactly the old flex-column result. */
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: var(--tf-stage-rail-w, 64px) minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   position: relative;
@@ -1537,7 +1585,7 @@ input[type="checkbox"] {
   display: grid;
   place-items: center;
   color: var(--fg-on-accent);
-  font-size: 10px;
+  font-size: var(--tf-label-size);
   font-weight: 700;
 }
 
@@ -2633,13 +2681,11 @@ input[type="checkbox"] {
   min-height: 0;
 }
 
-/* Phase 25 — the text-properties FLOATING CARD. It is an absolutely
- * positioned overlay inside .workspace-main (the page-view area), not a
- * grid column: opening/closing it never reflows the page, and it never
- * takes top-bar space. The wrapper carries the session drag offset (a
- * transform written inline by the panel) and is pointer-transparent so
- * only the card itself takes presses. Default placement: top-left of the
- * page view, just below the measured chrome rows. */
+/* Phase 38 (feature C) — the text-properties panel's ONE home is the
+ * Inspector (`.inspector .text-props-float` resets it to `position: static`).
+ * The legacy floating card and its drag wrapper are retired; the base rule
+ * below is inert inside the Inspector and kept only so any pre-Phase-38 host
+ * mounting the component still lays it out. */
 .text-props-float {
   position: absolute;
   top: calc(var(--tf-chrome-y, 92px) + 8px);
@@ -2648,10 +2694,9 @@ input[type="checkbox"] {
   pointer-events: none;
 }
 
-/* The card itself: the shared --panel-* surface, now a floating rounded
- * surface on all corners (it no longer abuts the rail) with the popover
- * shadow so it reads as a card over the page. It is a flex column so the
- * grip strip stays pinned while the control body scrolls. */
+/* The card itself: the shared --panel-* surface, now a rounded surface on all
+ * corners with the popover shadow. It is a flex column so the control body
+ * scrolls. */
 .text-props-panel {
   display: flex;
   flex-direction: column;
@@ -2665,19 +2710,6 @@ input[type="checkbox"] {
   /* The wrapper is pointer-transparent; the card is the interactive
    * surface (motion's exit variant overrides this to none inline). */
   pointer-events: auto;
-}
-
-/* Phase 25 — the only chrome: the shared ContentGrip strip. No header,
- * no title. It is the drag handle (useDragWindow.handleProps). */
-.text-props-grip {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 5px 8px;
-  border-bottom: 1px solid var(--panel-border);
-  cursor: grab;
-  flex: 0 0 auto;
-  user-select: none;
 }
 
 .text-props-body {
@@ -3639,7 +3671,7 @@ input[type="checkbox"] {
 /* Vertical "All Tools" label below the chevron — bottom-to-top
  * reading (vertical-rl turned 180deg). */
 .tools-badge-label {
-  font-size: 10px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
   color: #ffffff;
   writing-mode: vertical-rl;
@@ -4008,7 +4040,7 @@ input[type="checkbox"] {
   display: inline-block;
   padding: 1px 6px;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   background: var(--bg-toolbar);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
@@ -5038,7 +5070,7 @@ rect.ann-highlight.ann-preview {
   border-bottom: none;
   border-radius: var(--radius-1) var(--radius-1) 0 0;
   color: var(--fg-soft);
-  font-size: 10px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -5060,7 +5092,7 @@ rect.ann-highlight.ann-preview {
   width: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-1);
-  font-size: 9px;
+  font-size: var(--tf-label-size);
   padding: 2px 6px;
   flex-shrink: 0;
 }
@@ -5107,7 +5139,7 @@ rect.ann-highlight.ann-preview {
   background: #15181c;
   color: #f1f5f9;
   border-radius: var(--radius-1);
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   font-weight: 500;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -5163,7 +5195,7 @@ rect.ann-highlight.ann-preview {
   pointer-events: auto;
 }
 .committed-color-label {
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -6113,7 +6145,7 @@ rect.ann-highlight.ann-preview {
   align-items: center;
   justify-content: center;
   width: 14px;
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   color: var(--accent);
 }
 
@@ -6231,7 +6263,7 @@ rect.ann-highlight.ann-preview {
 .stamp-type-btn {
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
 }
 
@@ -7068,7 +7100,7 @@ rect.ann-highlight.ann-preview {
 
 .tools-palette-group-label {
   margin: 12px 8px 4px;
-  font-size: 10px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -7791,7 +7823,7 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-1);
   background: var(--accent);
   color: #fff;
-  font-size: 9px;
+  font-size: var(--tf-label-size);
   font-weight: 700;
   line-height: 1;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
@@ -7829,7 +7861,7 @@ rect.ann-highlight.ann-preview {
   align-items: center;
   gap: 6px;
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -7842,7 +7874,7 @@ rect.ann-highlight.ann-preview {
   border-radius: 999px;
   background: var(--bg-subtle, var(--bg-toolbar));
   color: var(--fg-muted);
-  font-size: 10px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -7884,7 +7916,7 @@ rect.ann-highlight.ann-preview {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  font-size: 11px;
+  font-size: var(--tf-label-size);
 }
 
 .ann-comment-author {
@@ -7894,7 +7926,7 @@ rect.ann-highlight.ann-preview {
 
 .ann-comment-time {
   color: var(--fg-muted);
-  font-size: 10px;
+  font-size: var(--tf-label-size);
 }
 
 .ann-comment-text {
@@ -7941,7 +7973,7 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-1);
   background: var(--accent);
   color: #fff;
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
   cursor: pointer;
   transition: opacity var(--motion-fast) var(--ease-out);
@@ -8062,7 +8094,7 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-1);
   cursor: pointer;
   color: var(--error);
-  font-size: 9px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
   line-height: 1;
   white-space: nowrap;
@@ -9015,7 +9047,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .edit-inline-label {
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   color: var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -9209,7 +9241,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .edit-toolbar-font-label {
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   color: var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -9229,7 +9261,7 @@ rect.ann-highlight.ann-preview {
 
 .edit-toolbar-hint {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   color: var(--fg-muted);
   font-style: italic;
   user-select: none;
@@ -10106,7 +10138,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .crop-summary-label {
-  font-size: 10px;
+  font-size: var(--tf-label-size);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--fg-muted);
@@ -10168,7 +10200,7 @@ rect.ann-highlight.ann-preview {
 }
 
 .stamp-preview-meta {
-  font-size: 10px;
+  font-size: var(--tf-label-size);
   color: var(--fg-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -11771,7 +11803,7 @@ rect.ann-highlight.ann-preview {
 
 .watermark-preview-missing {
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--tf-label-size);
   position: absolute;
   top: 50%;
   left: 50%;
@@ -12028,7 +12060,14 @@ rect.ann-highlight.ann-preview {
    on the VISIBLE canvas while the panel animates. */
 .multi-dock-layer {
   position: absolute;
-  left: 0;
+  /* Phase 39 (D3) — the shared dock's responsive band must match single mode
+     at the same window width. Single mode's canvas already excludes the left
+     thumbnail-panel column (`--tf-rail-w`); in Multi Mode there is no such
+     column, so without this the dock's host was one rail wider and its
+     measured-overflow lane diverged from single mode's at 1250/1199/1050/719/
+     700. Insetting the layer by the same token restores the identical host
+     width (and therefore the identical band/lane/lift decisions). */
+  left: var(--tf-rail-w, 184px);
   right: var(--tf-tools-inset, 0px);
   bottom: 0;
   /* Zero height: the dock's `bottom: 12px` is measured from the stage's bottom
@@ -12050,7 +12089,11 @@ rect.ann-highlight.ann-preview {
      and `[data-pane-clear]` / the header / strip focus clicks are always
      reachable (DEF-282's invariant, restated). */
   top: 0;
-  bottom: 0;
+  /* Phase 39 (DEF-348b/c) — the shared Action Dock owns a reserved bottom
+     band in Multi Mode (`--tf-multi-dock-band`, 84px base + the dock's
+     measured lift). Both panes stop above it, so their strips, pills and
+     page-action bars can never intersect the dock. */
+  bottom: var(--tf-multi-dock-band, 84px);
   left: auto;
   right: auto;
   display: flex;
@@ -12237,7 +12280,7 @@ rect.ann-highlight.ann-preview {
   border-radius: var(--radius-1);
   background: var(--bg-sunken);
   color: var(--fg-muted);
-  font-size: 10px;
+  font-size: var(--tf-label-size);
   font-weight: 600;
   letter-spacing: 0.04em;
   transition:
@@ -12299,9 +12342,11 @@ rect.ann-highlight.ann-preview {
 .multi-divider {
   position: absolute;
   /* Phase 36 (chunk 7) — no shared-row offset any more: the divider spans the
-     stage from its top edge, exactly like the panes it divides. */
+     stage from its top edge, exactly like the panes it divides.
+     Phase 39 (DEF-348c) — it stops above the same reserved dock band the
+     panes use, so the divider can never intersect the shared dock either. */
   top: 0;
-  bottom: 0;
+  bottom: var(--tf-multi-dock-band, 84px);
   /* Phase 34 (chunk 3) — the divider consumes the SAME capped inset as the
      pane widths (see the pane rule), so its centre stays exactly between
      them when the All Tools panel is open. */
@@ -12397,6 +12442,38 @@ rect.ann-highlight.ann-preview {
 /* 12px inset + the 40px pill + a 6px gap between the stacked pills. */
 .tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane] .canvas-pill-zoom {
   bottom: 58px;
+}
+
+/* Phase 39 (DEF-349) — NARROW-PANE PILL BAND.
+ *
+ * At a narrow pane the two outboard pills are wider than the pane's page
+ * column, so anchored at the pane's outer edge they spill horizontally over
+ * that pane's thumbnail strip and its page-action bar. When that happens the
+ * pane reserves a bottom band — exactly the way the shared dock already owns
+ * `--tf-multi-dock-band` — the STRIP STOPS ABOVE IT and the pills span the
+ * full pane inside the band, so no pill can reach the strip or its bar.
+ *
+ * `MultiPane` measures each pane and writes `--tf-multi-pill-band` /
+ * `--tf-multi-pill-span` inline plus `data-multi-pill-band`; the thresholds
+ * and widths come from `multiPillBandPx` / `multiPillSpanPx` in
+ * multiPaneLayout.ts (the ONE source of truth the unit test reads). At the
+ * default window the page column is wider than the full zoom pill, the band
+ * is 0px and this whole block is inert: the Phase 36/37/38 placement is
+ * pixel-identical. The band itself is reserved as the workspace's
+ * `padding-bottom` in the `.workspace:has(> .pane-thumb-strip)` rule above. */
+
+/* The pills layer drops from the page-area bottom into the reserved band and
+ * reaches past the page column to the pane's outer edge, so the outer anchors
+ * (`left: 12` pane A / `right: 12` pane B) land on the pane itself rather than
+ * on the narrower page column. Both offsets are 0 when no band is reserved. */
+.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane="A"] {
+  right: calc(-1 * var(--tf-multi-pill-span, 0px));
+  bottom: calc(-1 * var(--tf-multi-pill-band, 0px));
+}
+
+.tab-stage[data-multi-mode="true"] .canvas-pills[data-pill-pane="B"] {
+  left: calc(-1 * var(--tf-multi-pill-span, 0px));
+  bottom: calc(-1 * var(--tf-multi-pill-band, 0px));
 }
 
 /* ---- empty pane -------------------------------------------------------- */
@@ -12546,6 +12623,12 @@ rect.ann-highlight.ann-preview {
   --tf-strip-w: 150px;
   --tf-strip-min: 100px;
   --tf-page-min: 44px;
+  /* Phase 39 (DEF-349) — the per-pane pill band. When a pane is too narrow for
+   * its pills to fit the page column, `MultiPane` writes
+   * `--tf-multi-pill-band` (0px at the wide default) on the pane; the strip
+   * stops above that band and the pills span the full pane inside it, so no
+   * pill can reach the strip or its page-action bar. */
+  padding-bottom: var(--tf-multi-pill-band, 0px);
   grid-template-columns:
     minmax(var(--tf-strip-min), var(--tf-strip-w))
     minmax(var(--tf-page-min), 1fr);
@@ -12769,12 +12852,11 @@ rect.ann-highlight.ann-preview {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  width: 44px;
+  width: var(--tf-stage-rail-w, 64px);
   /* Phase 37 (item 9, the placement audit) — a horizontal inset so the rail's
    * controls (and the "Settings" label in particular) never touch the window's
-   * leading edge. 3px per side leaves a 38px content box; the rail label is
-   * sized (see .stage-rail-label) so every stage word plus the gear's
-   * "Settings" fits inside it with a visible edge gap. */
+   * leading edge. Phase 38 (feature B) — the token width (64px) gives a 58px
+   * content box, enough for every 12px stage word with a visible edge gap. */
   padding: var(--sp-2) 3px;
   background: var(--bg-rail);
   border-right: 1px solid var(--border);
@@ -12875,14 +12957,17 @@ rect.ann-highlight.ann-preview {
 }
 
 .stage-rail-label {
-  /* Phase 37 (item 9) — 7px / 0.02em lets every label (including the gear's
-   * "Settings") fit the 38px content box, so no word is flush with the
-   * window edge. Still a legible micro-label, now with real padding. */
-  font-size: 7px;
-  line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  /* Phase 38 (feature B) — the 12px interactive-label floor. The old 7px
+   * uppercase micro-label is retired: title-case at 12px keeps every stage
+   * word (and the gear's "Settings") readable inside the widened 58px content
+   * box. Colour is supplied per stage by the family-hue rule below; the gear
+   * (no data-stage) stays --fg-muted, which now clears the 4.5:1 floor. */
+  font-size: var(--tf-label-size);
+  line-height: 1.1;
+  letter-spacing: 0.01em;
   white-space: nowrap;
+  color: var(--stage-hue, var(--fg-muted));
+  transition: color var(--motion-duration-fast) var(--motion-ease-standard);
 }
 
 /* Icon-only below the compact breakpoint. */
@@ -13180,7 +13265,7 @@ rect.ann-highlight.ann-preview {
   display: inline-block;
   min-width: 18px;
   padding: 1px 5px;
-  font-size: 10px;
+  font-size: var(--tf-label-size);
   line-height: 1.4;
   text-align: center;
   color: var(--fg-soft);
@@ -13484,6 +13569,13 @@ rect.ann-highlight.ann-preview {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* DEF-341 — `safe center`: a centred row that OVERFLOWS spills half the
+   * excess to the LEFT of its box, which puts the leading verb's centre outside
+   * the dock (under the page pill) and makes it unclickable. `safe` falls back
+   * to `start` the moment centring would overflow, so nothing can ever paint or
+   * hit-test to the left of the box. The plain `center` above is the fallback
+   * for an engine without the `safe` keyword. */
+  justify-content: safe center;
   /* Phase 37 (item 2) — the verb group NEVER wraps; the ladder's arrows scroll
    * it instead. The dock and its groups are one row at every width. DEF-330 —
    * the inter-verb gap and the verb padding are trimmed by 1px / 2px so the
@@ -13501,7 +13593,7 @@ rect.ann-highlight.ann-preview {
 
 .action-dock-chip {
   padding: 3px 7px;
-  font-size: 9px;
+  font-size: var(--tf-label-size);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -13521,12 +13613,13 @@ rect.ann-highlight.ann-preview {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  /* DEF-330 — 7px (not the concept's 9px) horizontal padding: with the
-   * measured Inter advance the five DELIVER labels need ~490px on one row
-   * inside the 493.75px pill-free band at the default window; at 9px they need
-   * ~514px and would wrap. Vertical padding is unchanged. */
-  padding: 4px 7px;
+  gap: 3px;
+  /* Phase 38 (feature B) — the enlarged 20px glyph + 12px label need a
+   * comfortable hit target; 5px/8px keeps the verb >= 30px tall and wide
+   * enough to press. DEF-334: the wider row routes into the arrows lane
+   * rather than wrapping or dropping labels. Padding is 8px (16px total)
+   * and the fit model (dockFit.dockVerbWidth) matches it. */
+  padding: 5px 8px;
   background: transparent;
   border: 0;
   border-radius: 8px;
@@ -13551,15 +13644,19 @@ rect.ann-highlight.ann-preview {
   outline-offset: -2px;
 }
 
-/* State 1/2 — the FIRST button carries the stage-primary accent-soft wash. */
+/* State 1/2 — the FIRST button carries the stage-primary accent-soft wash.
+ * DEF-340 — its ink is the per-theme `--dock-primary-fg` (the accent family
+ * tuned to clear 4.5:1 on that wash in all three themes; the plain --accent
+ * measured 4.27 / 2.92 / 4.34). The wash itself is unchanged, so the primary
+ * verb stays the only accent-filled verb in the dock. */
 .action-dock-verb-primary {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--dock-primary-fg, var(--accent));
 }
 
 .action-dock-verb-primary:hover:not(:disabled) {
   background: var(--accent-hover-bg);
-  color: var(--accent);
+  color: var(--dock-primary-fg, var(--accent));
 }
 
 .action-dock-verb:disabled {
@@ -13572,20 +13669,97 @@ rect.ann-highlight.ann-preview {
  * state is unmistakable and distinct from the first verb's primary wash. */
 .action-dock-verb[aria-pressed='true']:not(:disabled) {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--dock-primary-fg, var(--accent));
   box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Phase 38 (feature B) — THE DOCK'S FAMILY COLOUR. Each verb carries its tool
+ * family's accent hue on the button's `color`, so both its glyph and its label
+ * read colourful instead of uniform grey. Rules are guarded so the PRIMARY
+ * verb (accent wash), a pressed toggle (accent ring) and a disabled verb keep
+ * their own unmistakable states — the family hue only paints the resting,
+ * enabled, non-primary verb. The base rule gives every unmapped verb the
+ * blue family, so nothing is left grey. All hues are the retuned --icon-*
+ * tokens, each >= 4.5:1 on the dock surface in every theme (measured by
+ * phase38LegibilityContrast.test.ts). */
+.action-dock-verb:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) {
+  color: var(--icon-blue);
+}
+
+.action-dock-verb[data-dock-verb='rotate']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-cyan); }
+.action-dock-verb[data-dock-verb='extract']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
+.action-dock-verb[data-dock-verb='insertPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-green); }
+.action-dock-verb[data-dock-verb='replacePages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-purple); }
+.action-dock-verb[data-dock-verb='split']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-orange); }
+.action-dock-verb[data-dock-verb='delete']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled),
+.action-dock-verb[data-dock-verb='clearPageSelection']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-red); }
+.action-dock-verb[data-dock-verb='merge']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
+.action-dock-verb[data-dock-verb='cropPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-pink); }
+.action-dock-verb[data-dock-verb='editText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-purple); }
+.action-dock-verb[data-dock-verb='editImage']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
+.action-dock-verb[data-dock-verb='editTextBox']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-cyan); }
+.action-dock-verb[data-dock-verb='recognizeText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-yellow); }
+.action-dock-verb[data-dock-verb='batchOcr']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-green); }
+.action-dock-verb[data-dock-verb='ocrSuspects']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-orange); }
+.action-dock-verb[data-dock-verb='annotate']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-yellow); }
+.action-dock-verb[data-dock-verb='sign']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-orange); }
+.action-dock-verb[data-dock-verb='stamp']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-red); }
+.action-dock-verb[data-dock-verb='flatten']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-purple); }
+.action-dock-verb[data-dock-verb='forms']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-pink); }
+.action-dock-verb[data-dock-verb='watermark']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
+.action-dock-verb[data-dock-verb='exportComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-cyan); }
+.action-dock-verb[data-dock-verb='importComments']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-green); }
+.action-dock-verb[data-dock-verb='optimize']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-green); }
+.action-dock-verb[data-dock-verb='audit']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-purple); }
+.action-dock-verb[data-dock-verb='exportPages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-blue); }
+.action-dock-verb[data-dock-verb='exportText']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-cyan); }
+.action-dock-verb[data-dock-verb='exportDocx']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-orange); }
+.action-dock-verb[data-dock-verb='createFromImages']:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled) { color: var(--icon-pink); }
+
+/* DEF-344 — the hover / pressed INK. The per-verb family rules above are
+ * (0,5,0) and the old state rules were (0,3,0), so a hovered or pressed family
+ * verb kept its hue on the darker `--bg-hover` / `--bg-active` surface; in the
+ * light theme blue/cyan/green/orange measured 4.29/4.45/4.16/4.17 — below the
+ * 4.5:1 floor. These overrides carry the SAME three `:not()` guards (so the
+ * primary wash, an aria-pressed toggle and a disabled verb keep their own
+ * treatments) and sit AFTER the family block, so equal specificity wins by
+ * position and the state ink is `--fg-strong` in every theme. Measured by
+ * phase38LegibilityContrast.test.ts: --fg-strong clears 4.5:1 on both
+ * --bg-hover and --bg-active over --bg-elevated in light/dark/frosted. */
+.action-dock-verb:hover:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']) {
+  color: var(--fg-strong);
+}
+
+.action-dock-verb:active:not(:disabled):not(.action-dock-verb-primary):not([aria-pressed='true']) {
+  color: var(--fg-strong);
 }
 
 .action-dock-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  /* Phase 38 (feature B) — the 20px dock glyph token, overriding the inline
+   * lucide size attribute. Identical geometry in all three themes. */
+  width: var(--tf-icon-size-md);
+  height: var(--tf-icon-size-md);
+  color: inherit;
+}
+
+.action-dock-icon svg {
+  width: var(--tf-icon-size-md);
+  height: var(--tf-icon-size-md);
 }
 
 .action-dock-label {
-  font-size: 9px;
-  line-height: 1;
+  /* Phase 38 (feature B) — the 12px label floor. The per-verb family hue is
+   * set on the verb button's `color` (see the family rules below), so the
+   * label inherits it; the label text itself (plus the icon shape) carries
+   * the meaning, colour is never the only signal. */
+  font-size: var(--tf-label-size);
+  line-height: 1.1;
+  font-weight: 500;
   white-space: nowrap;
+  color: inherit;
 }
 
 .action-dock-overflow {
@@ -13666,12 +13840,35 @@ rect.ann-highlight.ann-preview {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
+  /* DEF-341 — the scroll container OWNS the overflow and the row starts at the
+   * scroll origin, so the leading verb is always fully inside the dock and
+   * hit-testable at scrollLeft 0 (the arrows lane absorbs the rest). The old
+   * `justify-content: center` here let an overflowing row spill to the LEFT of
+   * the scroller: REVIEW's annotate laid out at x=340 while the dock box began
+   * at x=422, so its centre hit-tested the page pill and the verb was
+   * unreachable by scrolling. */
+  justify-content: flex-start;
   gap: 4px;
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: none;
+}
+
+/* DEF-341 — inside the lane the row keeps its NATURAL width (it is what the
+ * scroller scrolls, never what it shrinks). When the row FITS, the auto margins
+ * on the groups absorb the free space and re-centre it; when it overflows they
+ * collapse to 0 and the row starts at the origin — the standard centred-
+ * scrolling-row pattern, with no unreachable left overflow. */
+.action-dock[data-dock-arrows-lane='true'] .action-dock-scroll > * {
+  flex: 0 0 auto;
+}
+
+.action-dock[data-dock-arrows-lane='true'] .action-dock-group {
+  justify-content: flex-start;
+  max-width: none;
+  margin-inline: auto;
 }
 
 .action-dock[data-dock-arrows-lane='true'] .action-dock-scroll::-webkit-scrollbar {
@@ -13721,7 +13918,7 @@ rect.ann-highlight.ann-preview {
   right: 0;
   bottom: calc(100% + 5px);
   text-align: center;
-  font-size: 9px;
+  font-size: var(--tf-label-size);
   line-height: 1;
   color: var(--fg-faint);
   pointer-events: none;
@@ -14307,5 +14504,117 @@ rect.ann-highlight.ann-preview {
   .theme-toggle {
     padding: 0 5px;
   }
+}
+
+/* ===========================================================================
+ * Phase 38 (feature B) — THE ICON SIZE FLOOR + FAMILY COLOUR, APPLIED.
+ *
+ * ONE token layer (`--tf-icon-size`, `--tf-icon-size-md`, `--tf-icon-size-lg`,
+ * `--tf-label-size` declared in :root) drives every chrome surface here, so
+ * the geometry is identical in light, dark and frosted and only the visual
+ * properties differ. The rules override the inline lucide `size` attribute
+ * (an SVG presentation attribute loses to CSS), which is what lets a single
+ * token govern the dock, the rail, the panels, the Inspector and the header
+ * without touching each component's markup.
+ *
+ * Surfaces and their rendered glyph size:
+ *   dock verbs / floating pills            20px (--tf-icon-size-md)
+ *   stage rail / rail tabs                 22px (--tf-icon-size-lg)
+ *   header / title bar / palette / panels  18px (--tf-icon-size)
+ * ========================================================================= */
+
+/* DEF-339 — an icon glyph is never a SHRINKABLE flex item. The controls that
+ * host them (the tab close, Multi Mode / Print / Preferences, the Inspector's
+ * collapse) are flex rows under pressure, and `flex: 0 1 auto` let the SVG
+ * letterbox: the tab close measured 6x18 and the header controls 14.7x18 — the
+ * height held at the token while the WIDTH collapsed, below the 18px floor.
+ * `flex: none` plus explicit min dimensions pins the glyph box at the token in
+ * every theme. */
+.app-header svg,
+.titlebar svg,
+.context-panel svg,
+.side-rail svg,
+.inspector svg,
+.command-palette svg,
+.annotation-flyout svg,
+.ann-toolbar svg {
+  width: var(--tf-icon-size);
+  height: var(--tf-icon-size);
+  flex: none;
+  min-width: var(--tf-icon-size);
+  min-height: var(--tf-icon-size);
+}
+
+.action-dock svg,
+.canvas-pill svg {
+  width: var(--tf-icon-size-md);
+  height: var(--tf-icon-size-md);
+  flex: none;
+  min-width: var(--tf-icon-size-md);
+  min-height: var(--tf-icon-size-md);
+}
+
+.stage-rail svg,
+.side-rail .rail-tab svg,
+.side-rail .rail-action-btn svg {
+  width: var(--tf-icon-size-lg);
+  height: var(--tf-icon-size-lg);
+  flex: none;
+  min-width: var(--tf-icon-size-lg);
+  min-height: var(--tf-icon-size-lg);
+}
+
+/* ---- Family colour on the other chrome surfaces ---- */
+
+/* Header / title-bar controls: the global (blue) family. Hover rules on the
+ * individual buttons still win, so the resting state is colourful and the
+ * interaction states are unchanged. */
+.app-header .titlebar-file-btn,
+.app-header .tab-new,
+.app-header .header-multi-mode,
+.app-header .header-print,
+.app-header .header-gear,
+.app-header .theme-toggle {
+  color: var(--icon-blue);
+}
+
+/* Stage rail gear (no data-stage): the global family hue for glyph + label. */
+.stage-rail-btn:not([data-stage]) {
+  color: var(--icon-blue);
+}
+
+/* Floating canvas pills reuse .tool-btn; the resting glyph carries the global
+ * family hue, the active fit/pan states keep their accent treatment. */
+.canvas-pill .tool-btn:not(.tool-btn-active) {
+  color: var(--icon-blue);
+}
+
+/* Command palette rows: the PER-STAGE hue already set on the row (Phase 36)
+ * now paints the glyph too; a global/recent row falls back to the blue family. */
+.command-palette-row-icon {
+  color: var(--stage-hue, var(--icon-blue));
+}
+
+/* Context panel: its stage hue paints the section titles and their glyphs, so
+ * each stage's panel reads in that stage's family colour. */
+[data-context-panel-stage='pages'] { --family-hue: var(--tf-stage-pages); }
+[data-context-panel-stage='edit'] { --family-hue: var(--tf-stage-edit); }
+[data-context-panel-stage='review'] { --family-hue: var(--tf-stage-review); }
+[data-context-panel-stage='deliver'] { --family-hue: var(--tf-stage-deliver); }
+
+.context-panel .context-panel-section-title {
+  color: var(--family-hue, var(--fg-muted));
+}
+
+.context-panel .context-panel-item svg,
+.context-panel .context-panel-action svg,
+.context-panel .context-panel-section-toggle svg {
+  color: var(--family-hue, var(--fg-muted));
+}
+
+/* Inspector: the global family hue on its glyphs, links/actions keep their
+ * own accent/hover treatments. */
+.inspector svg {
+  color: var(--icon-blue);
 }
 

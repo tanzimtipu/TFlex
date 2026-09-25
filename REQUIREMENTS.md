@@ -2043,3 +2043,158 @@ IS open. The availability gate must reflect the real state.
 **Settings impact:** one new field - `dockUnpinned?: string[]` (the tool ids the user removed from the dock;
 validated like `dockPins`: an array of non-empty strings, de-duplicated, unknown ids dropped on read, a
 cap to keep the file bounded). No other settings change.
+
+## Phase 38 — Installation, legibility, the legacy text panel, edit fidelity and a multi-view glitch (5 operator items)
+
+**Operator request (2026-09-25):** the five numbered items below (verbatim intent). Items 1 and 2 change the
+product's packaging and visual language; items 3 and 4 retire a surface and correct the edit-text experience;
+item 5 is a crash-class rendering bug on a real-world document that must be root-caused, not patched.
+
+**Features**
+
+**A. Standard Windows installation, 64-bit and 32-bit (item 1)**
+- TFlex installs to the standard per-machine Program Files location, like any other Windows application:
+  the 64-bit build to `C:\Program Files\TFlex` and the 32-bit build to `C:\Program Files (x86)\TFlex`
+  (never the per-user `%LOCALAPPDATA%\Programs` location). The installer is a real per-machine install
+  (the standard elevation prompt, an Add/Remove Programs entry, an uninstaller in the install folder).
+- **Operator ruling (2026-09-25) - 32-bit is DEFERRED.** The pinned runtime (Electron 44) publishes no
+  32-bit Windows binary upstream (`electron-v44.0.0-win32-ia32.zip` 404s; the local `checksums.json` lists
+  only x64 and arm64 for win32), so an ia32 installer cannot be produced without repinning Electron -
+  which would re-open validation of printToPDF, window behaviour and electron-updater. The operator chose
+  x64-only for now. The release therefore ships ONE per-machine installer for x64 plus its portable build,
+  with the architecture token kept in the artifact name so the updater's arch selection stays correct and
+  an ia32 target can be added later without renaming anything. The ia32 target returns only if the runtime
+  is deliberately repinned.
+- Auto-update keeps working: the feed carries the x64 installer and the updater selects the entry whose
+  URL matches the running architecture's token (`process.arch`); the mechanism is proven by the emitted
+  metadata names and the updater's actual requested URL.
+- **The installer removes the LEGACY per-user install** (operator ruling, 2026-09-25): the pre-1.30
+  releases installed to `%LOCALAPPDATA%\Programs\TFlex` with a per-user uninstall entry and a per-user
+  `.pdf` ProgID. A per-machine install must not leave that second copy behind - it removes the old install
+  directory, its per-user uninstall registry entry and its per-user file-association ProgID.
+
+**B. Rich, readable icons and text (item 2)**
+- Icons and their labels are bigger, higher-contrast and colourful: the UI must read as rich, not as a wall
+  of uniform grey. Tool families carry a distinct accent colour, while the icon shape and the label remain
+  the primary differentiators (colour is never the only signal).
+- Every interactive label and icon meets a legibility floor in ALL THREE themes (light, dark, frosted):
+  text contrast at least 4.5:1 against its ACTUAL surface and icon/graphic contrast at least 3:1, with
+  stated minimum sizes (no icon below 18px, no control label below 12px). Disabled states stay visibly
+  distinct from enabled ones.
+
+**C. The legacy text-manipulation panel is retired (items 3 and 4, second half)**
+- The OLD floating text-manipulation panel - and its drag-to-move behaviour - is REMOVED from every flow.
+  The Inspector-hosted text manipulation (Phase 37 item A) is the ONLY text-manipulation surface; it stays
+  fixed in the Inspector and is not movable. No capability may lose its home in the retirement.
+
+**D. Editing text looks like editing the original text (item 4, first half)**
+- While a text object is being edited, the canvas editor renders the text at the SOURCE run's size and
+  format (no visual shrink) and the original glyphs are FULLY covered - no ghost/duplicate of the old text
+  may remain visible behind the edited text.
+- Selecting a text object ACTIVATES the Inspector's text field (DOM focus), so the user can start typing
+  immediately without first clicking the field.
+
+**E. The multi-view page glitch on a real-world document (item 5)**
+- `TanzimulIslamPaySlip20260930.pdf` (the operator's real payslip) opened as the SECOND document in Multi
+  Mode glitches violently. The glitch is reproduced, ROOT-CAUSED with evidence (not guessed), filed as a
+  defect, fixed, and the fix verified on that exact file plus the fixture corpus - no regression to single
+  mode, to pane 1, or to the other fixtures.
+
+**Success criteria**
+
+1. After the installer runs on a 64-bit device, `TFlex.exe` lives under `C:\Program Files\TFlex` (measured
+   path, not asserted from config), the install is per-machine (an Add/Remove Programs entry and an
+   uninstaller exist), and no per-user `%LOCALAPPDATA%\Programs\TFlex` install remains.
+2. The installed artifact's name carries its architecture (`-x64`) and that token is what the updater
+   matches on; a 32-bit artifact is NOT produced while the runtime pin has no ia32 build - the deferral is
+   recorded with its evidence (the upstream 404 and the checksums listing).
+3. The published release carries the x64 installer, its blockmap, the x64 portable build and the feed
+   metadata; the feed's entries and the updater's requested URL are reported as measured evidence.
+   Installing over an existing legacy per-user install removes it: after the per-machine install there is
+   NO `%LOCALAPPDATA%\Programs\TFlex` directory, no per-user uninstall entry and no per-user `.pdf`
+   ProgID left behind.
+4. Every interactive text label meets at least 4.5:1 contrast and every icon at least 3:1 against its real
+   surface, in light, dark and frosted themes - measured by an automated sweep over the shipped controls,
+   with the failing element named if any exists (zero failures required).
+5. Icon and label sizes meet the stated floors (icon at least 18px, label at least 12px) across the dock,
+   the stage rail, the panels, the Inspector and the header; the sizes are measured, not asserted from CSS.
+6. Tool families are visually distinguishable by colour in all three themes (a screenshot per theme), and
+   colour is never the only differentiator (shape/label carry the meaning).
+7. The legacy text-manipulation panel is absent from the DOM in every flow (annotate and edit), its drag
+   handle no longer exists, and exactly ONE text-manipulation surface renders - the Inspector's, fixed in
+   place (a screenshot plus a DOM assertion for both flows).
+8. No tool or capability lost its home in the retirement: the registry x surfaces sweep passes, and the
+   Ctrl+K palette still reaches every text-manipulation control the retired panel offered.
+9. While editing, the canvas editor's rendered text size equals the source run's size (within 0.5px) at
+   several source sizes and zoom levels, and a pixel-difference of the edited region shows the original
+   glyphs fully covered (no ghost text) - measured, with the numbers reported.
+10. Selecting a text object focuses the Inspector's text field (`document.activeElement` is that input) and
+    typing immediately changes its value without a manual click, verified in both the annotate and edit
+    flows.
+11. The payslip document opens as the second Multi Mode document and renders with NO violent glitch:
+    painted-frame capture across opening in pane 2, focus switching, scrolling and zooming shows zero
+    blank/garbled frames, and the defect record states the root cause with its evidence.
+12. No regression: the full unit suite and the phase's e2e suite are green, the canonical installed spec
+    passes against the Program Files install, and the previously released behaviours (Phase 36/37 surfaces,
+    single mode, pane 1) are unchanged.
+
+**Settings impact:** none - no new `AppSettings` field; the packaging change is build configuration and the
+UI changes are tokens/styles, not user preferences.
+
+## Phase 39 — Multi Mode consistency round (4 operator items)
+
+**Operator request (2026-09-25):** the four numbered items below (verbatim intent). Three are concrete
+defects seen with ONE document open in Multi Mode; the fourth asks for a DEEP SWEEP so Multi Mode's dock
+behaves exactly like single mode. Multi Mode must not be a second-class surface.
+
+**Features**
+
+**A. The thumbnail preview must sit inside its page frame (item 1)**
+- With ONE document open in Multi Mode, the page preview inside the thumbnail panel must render WITHIN its
+  page border/box at every pane width and zoom - no part of the preview may spill outside the page frame
+  or overlap the panel's edges.
+
+**B. The pane's "Open a PDF" must open the file picker (item 2)**
+- In Multi Mode, clicking the pane's "Open a PDF" affordance must open the standard OS file picker and open
+  the chosen document into that pane. It must NOT resize the panes, move the divider or enlarge the left
+  pane. This holds with one document and with two.
+
+**C. The dock must exist and be correctly placed in Multi Mode (item 3)**
+- With ONE document open in Multi Mode, the Action Dock must render and work exactly as in single mode -
+  the same stage verb set, the same availability gates, the same pins.
+- No control may overlap another panel: the page-rotate control that currently sits at the bottom of the
+  thumbnail panel over other content must have ONE correct home (consistent with single mode) and must not
+  intersect any other panel or control.
+
+**D. Deep sweep: Multi Mode's dock must behave identically to single mode (item 4)**
+- Every dock behaviour is compared between Multi Mode and single mode for each of the four stages: the
+  default verb set and its curation, the availability gates, pins/unpins and their persistence, the
+  responsive ladder (Inspector collapse, panel collapse, labels, arrows), the one-row guarantee, the
+  hover/pressed/disabled/selected states, the right-click menu, the secondary row / annotations flyout,
+  the Ctrl+K palette reach, and the Inspector's text integration. Every divergence is either FIXED or
+  recorded as an operator-approved difference with a reason.
+
+**Success criteria**
+
+1. With ONE document in Multi Mode the thumbnail preview renders inside its page frame at the default
+   window and at narrow/wide panes and several zoom levels (measured bounding boxes: the preview's box is
+   inside the page's box; a screenshot per case).
+2. Clicking the pane's "Open a PDF" in Multi Mode opens the OS file picker (the standard open flow) and the
+   chosen document lands in that pane; the pane split and the divider position are UNCHANGED by the click
+   (measured before/after). Verified with one and with two documents.
+3. With ONE document in Multi Mode the Action Dock renders, and for every stage its verbs are reachable and
+   identical to the single-mode set (a per-stage comparison with the single-mode baseline).
+4. No control overlaps another: measured bounding boxes for the dock, the thumbnail panel, the rotate
+   control, the pills and the Inspector show ZERO intersections in Multi Mode at the default and narrow
+   widths, with one and with two documents.
+5. The page-rotate (and every other page action) has exactly ONE home, the same one it has in single mode;
+   no duplicate or floating page-action control remains anywhere.
+6. A single-vs-multi comparison MATRIX is produced for all four stages covering every behaviour listed in
+   feature D, with a verdict per row; every divergence is fixed or carries an operator-approved reason.
+7. The dock's behaviour is identical in Multi Mode and single mode for the same stage and window width -
+   the matrix has zero unexplained divergences.
+8. No regression: single mode is unchanged, the Phase 38 criteria still hold (the legibility floors, the
+   retired text panel, the edit fidelity, the pane first-fit), and `verify:full` plus the phase suites are
+   green.
+
+**Settings impact:** none - no new `AppSettings` field; this is behaviour parity and layout correction.

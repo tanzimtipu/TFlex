@@ -1131,16 +1131,18 @@ describe("Phase D — three-theme coherence + embedded theme picker license", ()
     // is the single color source for tool icons.
     const iconRules = css.match(/\.(?:tool-btn|ann-tool-btn|edit-toolbar-btn)[^}]*\{[^}]*color:\s*var\(--icon-[a-z]+\)[^}]*\}/g) ?? [];
     expect(iconRules.length).toBeGreaterThanOrEqual(11);
-    // Text/indicators must never dip into the icon palette (no
-    // rainbow text): `color: var(--icon-...)` may appear ONLY in
-    // rules whose selector carries an icon-bearing attribute/data
-    // grip. Every use must be attributed to an icon surface.
+    // Text/indicators must never dip into the icon palette at random: every
+    // `color: var(--icon-...)` use must be attributed to an ICON SURFACE — a
+    // tool-button attribute grip (the Phase-B rule) OR a Phase-38 (feature B)
+    // family-coloured chrome control (dock verb, header control, stage rail,
+    // canvas pill, command-palette row, context panel, inspector). Colour is
+    // never the only signal: shape + label still carry the meaning.
     const iconUses = [...css.matchAll(/color:\s*var\(--icon-[a-z]+\)/g)];
     const iconRuleSelectors = [...css.matchAll(/([^{}]*)\{[^}]*color:\s*var\(--icon-[a-z]+\)/g)];
     expect(iconRuleSelectors.length).toBe(iconUses.length);
     for (const m of iconRuleSelectors) {
       expect(m[1] ?? "").toMatch(
-        /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab)=|tools-palette-entry-icon|icon-detail|::after/,
+        /\[data-(?:icon|tool|edit-tool|tool-id|rail-tab|stage|dock-verb|context-panel-stage)=|tools-palette-entry-icon|icon-detail|::after|action-dock-verb|titlebar-file-btn|header-|theme-toggle|tab-new|stage-rail|canvas-pill|command-palette-row-icon|inspector|context-panel|tool-btn/,
       );
     }
   });

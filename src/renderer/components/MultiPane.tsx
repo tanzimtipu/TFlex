@@ -23,9 +23,13 @@ import { Columns2, FileText, FolderOpen, GripVertical, X } from "lucide-react";
 import { paneTabId, type MultiModeState, type PaneId } from "../state/multiMode";
 import {
   MIN_PANE_WIDTH_PX,
+  MULTI_DOCK_BAND_BASE_PX,
   clampSplitFraction,
   effectiveToolsInset,
   insetCapFor,
+  multiPaneGeometry,
+  multiPillBandPx,
+  multiPillSpanPx,
 } from "./multiPaneLayout";
 
 /** A tab that can fill a pane: a real document with a name and page count. */
@@ -75,6 +79,11 @@ export interface DocumentStageProps {
    *  geometry change: the stored split fraction is re-clamped so both panes
    *  keep their minimum without requiring a drag. */
   toolsInsetTarget?: number;
+  /** Phase 39 (DEF-348b/c) — the height (px) of the bottom band Multi Mode
+   *  reserves for the shared Action Dock (`base 84 + the dock's lift`). The
+   *  panes, their strips and their pills stop above it, so the dock can never
+   *  intersect another surface. Defaults to the 84px base. */
+  dockBandPx?: number;
 }
 
 /** The per-pane header: document name, page count, and the clear control. */
@@ -215,6 +224,7 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     renderDocument,
     sharedDock,
     toolsInsetTarget,
+    dockBandPx,
   } = props;
 
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -226,6 +236,31 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
   const [stageWidth, setStageWidth] = useState(0);
 
   const multiOn = multiMode.enabled;
+  // Phase 39 (DEF-349) — the per-pane pill band. When a pane is too narrow for
+  // its pills to fit inside the page column, that pane reserves a bottom band
+  // (`multiPillBandPx`), the strip stops above it and the pills span the full
+  // pane there. The pure geometry is the ONE source of truth the CSS mirrors
+  // via the `--tf-multi-pill-band` / `--tf-multi-pill-span` custom properties
+  // written below; with no measurement (jsdom) no band is reserved and the
+  // wide Phase 36/37/38 placement is untouched.
+  const paneGeometry =
+    multiOn && stageWidth > 0
+      ? multiPaneGeometry(stageWidth, toolsInsetTarget ?? 0, splitFraction)
+      : null;
+  const pillBandFor = (pane: PaneId | null): number => {
+    if (paneGeometry === null || pane === null) return 0;
+    const width = pane === "A" ? paneGeometry.paneA.width : paneGeometry.paneB.width;
+    return multiPillBandPx(width);
+  };
+  const pillTokensFor = (pane: PaneId | null): CSSProperties => {
+    const band = pillBandFor(pane);
+    if (band <= 0 || paneGeometry === null || pane === null) return {};
+    const width = pane === "A" ? paneGeometry.paneA.width : paneGeometry.paneB.width;
+    return {
+      "--tf-multi-pill-band": `${band}px`,
+      "--tf-multi-pill-span": `${multiPillSpanPx(width)}px`,
+    } as CSSProperties;
+  };
   const stageStyle = {
     // Kept for the existing e2e/unit contract (`--tf-split` is the
     // divider's position as a percentage of the stage).
@@ -239,6 +274,12 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
     // then leaves the inset uncapped, exactly the pre-change geometry.
     "--tf-multi-inset-cap":
       multiOn && stageWidth > 0 ? `${insetCapFor(stageWidth)}px` : undefined,
+    // Phase 39 (DEF-348b/c) — the bottom band the shared dock owns. The panes
+    // and the divider stop above it (see styles.css), so every strip, pill,
+    // page-action bar and the dock are mutually non-intersecting.
+    "--tf-multi-dock-band": multiOn
+      ? `${dockBandPx ?? MULTI_DOCK_BAND_BASE_PX}px`
+      : undefined,
   } as CSSProperties;
 
   // DEF-287 — measure the stage's own width (layout effect: the cap is
@@ -385,7 +426,7 @@ export function DocumentStage(props: DocumentStageProps): ReactElement {
                 className="tab-pane"
                 data-pane={pane ?? undefined}
                 data-pane-focused={pane === null ? undefined : focused ? "true" : "false"}
-                style={{ visibility: visible ? "visible" : "hidden" }}
+                style={{ visibility: visible ? "visible" : "hidden", ...pillTokensFor(pane) }}
                 aria-hidden={!visible}
                 // Clicking anywhere in the pane (page, header, scrollbar
                 // region) focuses it. Capture phase so a child that stops

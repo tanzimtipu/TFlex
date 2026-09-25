@@ -204,7 +204,10 @@ describe("DEF-282 restated — the stylesheet keeps the header band clear", () =
     expect(body).not.toBeNull();
     expect(body ?? "").toMatch(/top:\s*0\s*;/);
     expect(body ?? "").not.toMatch(/--tf-multi-toolbar-h/);
-    expect(body ?? "").toMatch(/bottom:\s*0\s*;/);
+    // Phase 39 (DEF-348b/c) — the panes stop above the dock's reserved band
+    // instead of running to the stage bottom; the top-band invariant is
+    // unchanged.
+    expect(body ?? "").toMatch(/bottom:\s*var\(--tf-multi-dock-band/);
   });
 
   it("the divider starts at the stage top too (panes and divider stay consistent)", () => {

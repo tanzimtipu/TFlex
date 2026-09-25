@@ -2,27 +2,15 @@
 //
 // DEF-321 — ONE TextPropertiesPanel visible per selection.
 //
-// The Phase-36 contract says the floating text panel "becomes an optional
-// pop-out of the same Inspector component (one component, two mount points —
-// never a second properties UI)". The chunk-6 wiring mounted BOTH at once for
-// the SAME selection: a floating `.text-props-panel` over the canvas AND the
-// Inspector's `.inspector-text-panel .text-props-panel`, each with its own
-// `[data-txt-text]` field (qa measured 248x723 at x=232 and 216x722 at x=1195).
+// Phase 38 feature C SUPERSEDES the two-mount-point rule: the floating
+// DocumentView pop-out is RETIRED, so the Inspector's text block is the ONLY
+// text-manipulation surface. The historical pure predicates below are kept as
+// the record of the DEF-321 rule (and its unit coverage); the live seam is now
+// the source assertions in section 3: the DocumentView renders no pop-out and
+// publishes the text surface (with the armed-tool defaults) upward.
 //
-// THE RULE (implemented by the two pure predicates in Inspector.tsx):
-//   * the Inspector's EDIT/text section is the CANONICAL mount;
-//   * the DocumentView's floating card is a POP-OUT and opens only when the
-//     host's panel state says so AND the Inspector is NOT showing that same
-//     selection;
-//   * the Inspector owns it exactly when the view publishes the selection
-//     (single mode), the stage is one of the text flows (EDIT, or REVIEW's
-//     annotate flow — Phase 37 item 1), and a text target exists;
-//   * the pop-out therefore stays the only properties UI for an armed tool
-//     with nothing selected, and in Multi Mode (where the host withdraws the
-//     published selection).
-//
-// The count assertion below mounts both real mount points as DocumentView does
-// and asserts exactly ONE `.text-props-panel` and ONE `[data-txt-text]`.
+// NOTE — `inspectorOwnsTextPanel` / `floatingTextPanelOpen` are no longer
+// referenced by product code after the Phase-38 retirement.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -294,31 +282,33 @@ describe('DEF-321 — exactly one TextPropertiesPanel per selection', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3. The source seam: DocumentView feeds the pop-out the RESOLVED state.
+// 3. The source seam: Phase 38 feature C retires the DocumentView pop-out.
 // ---------------------------------------------------------------------------
 
-describe('DEF-321 — the DocumentView seam', () => {
+describe('Phase 38 — the DocumentView no longer mounts a text-properties pop-out', () => {
   const docView = readFileSync(
     resolve(ROOT, 'src/renderer/components/DocumentView.tsx'),
     'utf8',
   );
 
-  it('resolves the pop-out from the two predicates and uses it as the open prop', () => {
-    expect(docView).toContain('inspectorOwnsTextPanel({');
-    expect(docView).toContain('resolveFloatingTextPanelOpen({');
-    expect(docView).toContain('open={floatingTextPanelOpen}');
-    // The old unconditional mount is gone.
-    expect(docView).not.toContain('open={textPanelOpen}');
+  it('renders no TextPropertiesPanel, no float attribute and no drag plumbing', () => {
+    const code = docView.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toContain('<TextPropertiesPanel');
+    expect(code).not.toContain('data-text-panel-float');
+    expect(code).not.toContain('resolveFloatingTextPanelOpen');
+    expect(code).not.toContain('inspectorOwnsTextPanel');
   });
 
-  it('keys the pop-out on the published-selection seam (single mode only)', () => {
-    expect(docView).toContain('publishesSelection: onTextSelectionChange !== undefined');
-    expect(docView).toContain('hasTextTarget: textTarget !== null');
+  it('publishes the text surface (including the armed-tool defaults) upward', () => {
+    // The Inspector is the ONLY surface, so the view publishes whenever a text
+    // surface is engaged — a selected target OR an armed tool with nothing
+    // selected yet.
+    expect(docView).toContain('textPanelSelectionActive');
+    expect(docView).toContain('if (!textPanelSelectionActive) return null;');
+    expect(docView).toContain('onTextSelectionChangeRef.current?.(textSelection)');
   });
 
-  it('publishes the selection in a LAYOUT effect (no one-frame gap with no panel)', () => {
-    // The pop-out closes on the same commit the target appears, so the
-    // Inspector copy must mount in the same paint.
+  it('still publishes through a LAYOUT effect (no one-frame gap with no panel)', () => {
     const publish = docView.slice(
       docView.indexOf('lastTextSelectionKeyRef.current = textSelectionKey;') - 400,
       docView.indexOf('lastTextSelectionKeyRef.current = textSelectionKey;'),

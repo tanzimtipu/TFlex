@@ -195,7 +195,7 @@ describe('Phase 36 chunk 6 — the wiring seams (source)', () => {
     expect(app).toContain('selection={inspectorSelection}');
     expect(app).toContain('textPanel={inspectorTextPanel}');
     expect(app).toContain('inspectorSelectionFor(');
-    expect(app).toContain('inspectorTextPanelFor(');
+    expect(app).toContain('inspectorTextPanelForSelection(');
     expect(app).toContain('signatureStyle=');
     expect(app).toContain('signatureHint=');
   });

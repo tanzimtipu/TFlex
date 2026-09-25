@@ -48,11 +48,7 @@ import { PageView } from "./PageView";
 import { SearchBar } from "./SearchBar";
 import { PaneThumbStrip } from "./PaneThumbStrip";
 import { ContextPanel, type ContextPanelEditContent } from "./ContextPanel";
-import {
-  floatingTextPanelOpen as resolveFloatingTextPanelOpen,
-  inspectorOwnsTextPanel,
-  type InspectorTextSelection,
-} from "./Inspector";
+import { type InspectorTextSelection } from "./Inspector";
 import { ActionDock, type DockBulkActions } from "./ActionDock";
 import { prunePageSelection } from "../state/pageSelection";
 import { dockAvailabilityFor, dockEnabledWithFallback, sanitizeDockPins, type DockAvailability } from "../state/dockModel";
@@ -73,13 +69,14 @@ import { CanvasPills } from "./CanvasPills";
 import { AnnotationFlyout } from "./AnnotationFlyout";
 import { AnnotationToolbar } from "../annotations/AnnotationToolbar";
 import { EditToolbar, defaultEditHint } from "../edit/EditToolbar";
-import { TextPropertiesPanel, isTextPanelFocusTarget } from "../edit/TextPropertiesPanel";
+import { isTextPanelFocusTarget } from "../edit/TextPropertiesPanel";
 import {
   annotationStyleFromPanelPatch,
   applyPatchToValues,
   defaultTextStyleValues,
   editColorToHex,
   editTextStyleFromValues,
+  runSourceTextStyle,
   textStyleValuesFromStyle,
   type TextStyleValues,
 } from "../edit/textStyle";
@@ -108,6 +105,12 @@ import {
   visibleToSourcePageForProxy,
   type MixedPageGeom,
 } from "./pageGeometry";
+import {
+  computeEffectiveScale,
+  paneBoxSettled,
+  paneFitDeferred,
+  type FitBoxSize,
+} from "./paneFit";
 import {
   createIdleCleanupCoordinator,
   type IdleCleanupCoordinator,
@@ -456,6 +459,20 @@ interface DocumentViewProps extends DocumentViewDockProps {
    *  document keyboard handler (find / Escape act on the FOCUSED pane only, so
    *  the workspace never ends up with two search bars). */
   multiPane?: PaneId | null;
+  /** DEF-343 — the Inspector's REQUESTED inset (px) for this pane's document:
+   *  0 while no document is open, `INSPECTOR_COLLAPSED_W_PX` while collapsed,
+   *  otherwise `INSPECTOR_W_PX`. The pane first-fit gate will not release until
+   *  the live `--tf-tools-inset` has reached this target, so a first fit can
+   *  never be committed while the panel slide is still pending. `null` (the
+   *  single-mode default) leaves the gate box-only, as before DEF-343. */
+  paneInsetTarget?: number | null;
+  /** DEF-343 — true once this pane's tab is a REAL document (not the empty
+   *  placeholder it is while its bytes load). The engine page count can reach
+   *  >0 a commit before the tab's `kind` flips and the Inspector target
+   *  changes; without this the gate could settle at the placeholder inset (0)
+   *  and only THEN see the panel slide begin. Defaults to `true` (single mode /
+   *  a host that does not supply it). */
+  paneContentReady?: boolean;
   /** Phase 36 (chunk 7) â€” true while THIS view is the focused pane. The REVIEW
    *  annotations flyout is ONE surface: only the focused pane mounts it. */
   paneFocused?: boolean;
@@ -799,6 +816,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   pageDrag = null,
   sharedTools = null,
   multiPane = null,
+  paneInsetTarget = null,
+  paneContentReady = true,
   paneFocused = false,
   chromeIdle = false,
   activeStage,
@@ -1225,29 +1244,31 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     (selectedTextBox !== null || edit.state.tool === "text" || edit.state.tool === "box");
   const textPanelMode: "text" | "annotation" = tfTextPanelOpen ? "text" : "annotation";
   const textPanelOpen = tfTextPanelOpen || annTextToolArmed || selectedAnnText;
-  // DEF-321 â€” ONE properties UI per selection. The Inspector's EDIT/text
-  // section is the canonical mount; this view's floating card is the pop-out
-  // and is suppressed exactly when the Inspector is showing the same
-  // selection. The two predicates are pure (see Inspector.tsx) so the rule is
-  // unit-testable without a DOM.
-  const inspectorShowsTextPanel = inspectorOwnsTextPanel({
-    // Single mode wires the publisher; Multi Mode passes undefined and the
-    // host withdraws the published selection.
-    publishesSelection: onTextSelectionChange !== undefined,
-    stage: activeStage,
-    hasTextTarget: textTarget !== null,
-  });
-  const floatingTextPanelOpen = resolveFloatingTextPanelOpen({
-    textPanelOpen,
-    inspectorOwns: inspectorShowsTextPanel,
-  });
+  // Phase 38 feature C — the floating text-manipulation card is RETIRED. The
+  // Inspector's text block is the ONLY text surface, so this view publishes a
+  // text-panel snapshot whenever a text surface is engaged: a selected target
+  // (box / run / annotation) OR an armed text tool with nothing selected yet
+  // (the pre-placement defaults the retired card used to host). The snapshot
+  // rides the existing `onTextSelectionChange` seam; App maps it onto the
+  // Inspector (see `inspectorSelectionFor` / `inspectorTextPanelFor`).
+  const textPanelSelectionActive = textPanelOpen || textTarget !== null;
   // The full control set is live only for TFlex-owned text objects; the
   // annotation panel values are the per-tool defaults with the colour
   // swapped for the annotation's actual colour.
+  // Phase 38 feature D — a selected RUN has no stored style: seed the panel
+  // (and therefore the live on-canvas preview and the eventual commit) from
+  // the run's source rect, so editing renders at the run's own size, not the
+  // 12pt per-tool default (which shrank the text on the canvas).
+  const selectedRunValues = useMemo<TextStyleValues | null>(() => {
+    if (editTextTarget === null || editTextTarget.kind !== "run") return null;
+    return textStyleValuesFromStyle(
+      runSourceTextStyle(editTextTarget.rect.height, edit?.defaultFont ?? "Helvetica"),
+    );
+  }, [editTextTarget, edit?.defaultFont]);
   const textPanelTextValues =
     selectedTextBox !== null
       ? textStyleValuesFromStyle(selectedTextBox.style)
-      : pendingTextStyle ?? textPanelDefaults;
+      : pendingTextStyle ?? selectedRunValues ?? textPanelDefaults;
   const annotationPanelColor = hexToEditColor(
     annotationColorToCss(
       selectedAnnText && selectedAnnotation !== null ? selectedAnnotation.color : annTool.color,
@@ -1311,7 +1332,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
         edit?.onTextStylePatch?.(patch);
         return;
       }
-      setPendingTextStyle((prev) => applyPatchToValues(prev ?? textPanelDefaults, patch));
+      // Phase 38 feature D — a style gesture on a selected RUN composes on
+      // top of the run's SOURCE style, not the 12pt per-tool default, so the
+      // preview and the commit keep the run's size unless the user changes it.
+      setPendingTextStyle((prev) =>
+        applyPatchToValues(prev ?? selectedRunValues ?? textPanelDefaults, patch),
+      );
     },
     [
       textPanelMode,
@@ -1321,9 +1347,23 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       annGrownRect,
       selectedTextBox,
       edit?.onTextStylePatch,
+      selectedRunValues,
       textPanelDefaults,
     ],
   );
+  // Phase 38 feature D — a NEW run target starts from ITS OWN source size; a
+  // pending style composed for a previous run (or for the armed tool) must
+  // not bleed across. Clear the renderer-local pending set when the run
+  // target changes (including run -> nothing, so the armed-tool defaults
+  // resume clean).
+  const runTargetKeyRef = useRef<string | null>(null);
+  const runTargetKeyNow =
+    editTextTarget !== null && editTextTarget.kind === "run" ? textTargetKeyNow : null;
+  useEffect((): void => {
+    if (runTargetKeyNow === runTargetKeyRef.current) return;
+    runTargetKeyRef.current = runTargetKeyNow;
+    setPendingTextStyle(null);
+  }, [runTargetKeyNow]);
   // The page-1 dimensions the fit modes (fit-width / fit-page) anchor
   // their scale to. Deliberately decoupled from the LIVE `firstPageSize`
   // layout reference above: the live size must track the current bytes
@@ -1501,7 +1541,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     };
   }, [editModeOpen, searchOpen, themeName]);
 
-  // ---- effective scale ----------------------------------------------------
+  // ---- effective scale (DEF-338 pane-constrained first fit) ---------------
   //
   // Fit modes anchor to `fitAnchor` (see its declaration) instead of the
   // live `firstPageSize`. This is what keeps a crop from re-scaling every
@@ -1509,20 +1549,64 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // `firstPageSize` (so slots / wrappers track reality), but the fit scale
   // stays anchored to the pre-crop reference until the user explicitly
   // re-fits or the first page genuinely changes identity.
-  const effectiveScale = useMemo(() => {
-    if (fitAnchor === null) {
-      return 1;
-    }
-    const availW = Math.max(viewportBox.w - CONTENT_PADDING_PX * 2, 50);
-    const availH = Math.max(viewportBox.h - CONTENT_PADDING_PX * 2, 50);
-    if (zoom.mode === "fit-width") {
-      return availW / fitAnchor.w;
-    }
-    if (zoom.mode === "fit-page") {
-      return Math.min(availW / fitAnchor.w, availH / fitAnchor.h);
-    }
-    return zoom.manualScale;
-  }, [zoom, viewportBox, fitAnchor]);
+  //
+  // DEF-338 — the fit is computed through the pure `computeEffectiveScale`
+  // helper, and a Multi Mode view whose pane-constrained box is not the one
+  // being measured is DEFERRED (`paneFitDeferred`, see its doc): while a
+  // freshly opened tab is still unassigned to a pane it is hidden but laid
+  // out at the full stage width, so committing a fit there produced the
+  // 204% / grey-slab glitch. The viewport effect below is the only writer of
+  // `viewportBox`; the pane remeasure layout effect re-reads it before paint
+  // the moment a tab is assigned to a pane.
+  //
+  // DEF-338 (residual) — the pane's FIRST fit is also held until its scroller
+  // box has STOPPED MOVING (`paneBoxSettled`). Opening a document into a pane
+  // makes the new tab a brief empty placeholder, which collapses the
+  // Inspector's inset to 0 and re-opens it; the registered `--tf-tools-inset`
+  // transition then shrinks the pane (and this scroller) over ~200ms. A fit
+  // measured mid-transition is wider than the settled fit, so the page stepped
+  // 88% -> 78% -> 69% -> 68% and painted placeholders wider than the pane.
+  // `firstFitCommittedRef` is the one-shot latch: a view that has already
+  // painted in this pane (Multi Mode toggled on over a painted document) never
+  // re-gates and never blinks.
+  const [paneBoxReady, setPaneBoxReady] = useState(false);
+  const firstFitCommittedRef = useRef(false);
+  // DEF-343 — a document CLEARED from a pane and later re-opened into it is
+  // the SAME view instance with Multi Mode still on: its pane assignment went
+  // `"B" -> null -> "B"`. The reopen triggers the placeholder's inset collapse
+  // and the panel slide, so the previously committed fit is stale and the gate
+  // must run again. The opposite case — Multi Mode toggled ON over an
+  // already-painted document — is `false -> null`, its geometry is unchanged
+  // (both consume the same inset), and it must NOT re-gate (no blink, qa's
+  // placeholder-0-frames expectation). Detect the reopen during RENDER and
+  // drop the latch plus the held state BEFORE children render, so the stale
+  // wide first frame is never committed.
+  const prevMultiPaneRef = useRef<PaneId | null>(multiPane);
+  const prevMultiModeRef = useRef(multiModeEnabled === true);
+  const reopenedPane =
+    prevMultiModeRef.current === true &&
+    prevMultiPaneRef.current === null &&
+    multiPane !== null &&
+    multiModeEnabled === true;
+  prevMultiModeRef.current = multiModeEnabled === true;
+  prevMultiPaneRef.current = multiPane;
+  if (reopenedPane && firstFitCommittedRef.current) {
+    firstFitCommittedRef.current = false;
+    if (paneBoxReady) setPaneBoxReady(false);
+  }
+  const paneGateActive =
+    multiModeEnabled === true && multiPane !== null && !firstFitCommittedRef.current;
+  const paneFitPending = paneFitDeferred(
+    multiModeEnabled === true,
+    multiPane,
+    zoom.mode,
+    fitAnchor,
+    paneGateActive ? paneBoxReady : true,
+  );
+  const effectiveScale = useMemo(
+    () => computeEffectiveScale(viewportBox, fitAnchor, zoom, CONTENT_PADDING_PX),
+    [zoom, viewportBox, fitAnchor],
+  );
   const effectiveScaleRef = useRef(effectiveScale);
   effectiveScaleRef.current = effectiveScale;
 
@@ -1747,6 +1831,118 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     setViewportBox({ w: el.clientWidth, h: el.clientHeight });
     return () => ro.disconnect();
   }, []);
+
+  // DEF-338 — a Multi Mode pane's scroller is only the pane-constrained box
+  // once the tab is actually assigned to that pane. The view instance is
+  // never remounted by the assignment (MultiPane keeps the tab-pane keyed by
+  // tab id), so its `viewportBox` can still hold the un-split stage width.
+  // This LAYOUT effect re-reads the scroller the moment the pane assignment
+  // changes and flushes the measurement before the browser paints: the first
+  // frame the pane becomes visible is already fitted to the pane, never to
+  // the stage. Single mode is untouched (`multiPane === null`).
+  useLayoutEffect(() => {
+    if (multiModeEnabled !== true || multiPane === null) {
+      return;
+    }
+    const el = scrollerRef.current;
+    if (el === null) {
+      return;
+    }
+    const next = { w: el.clientWidth, h: el.clientHeight };
+    setViewportBox((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+  }, [multiModeEnabled, multiPane]);
+
+  // DEF-338 (residual) — hold a Multi Mode pane's FIRST fit until its scroller
+  // box has stopped moving, then commit the settled box (see the `paneFitPending`
+  // comment above). rAF sampling rather than a ResizeObserver: the box moves on
+  // every frame of the Inspector's `--tf-tools-inset` transition, and the
+  // observer only reports that it changed — the gate needs to know it STOPPED.
+  // A view that has already painted in this pane never re-gates. An environment
+  // with no layout at all (jsdom: every box is 0) releases immediately, so a
+  // unit mount is never held.
+  //
+  // DEF-343 — the gate's stability signature now ALSO carries the measured
+  // `--tf-tools-inset` and only settles once it matches `paneInsetTarget`. The
+  // old box-only gate could release during the empty-placeholder window (inset
+  // still 0, box temporarily static) and only then did the panel slide begin,
+  // narrowing the pane by half the inset and painting a ~34% oversized first
+  // frame. The gate also stays closed while `pageCount` is 0, so a fit can
+  // never be committed for a pane that has not actually loaded its document.
+  useEffect((): (() => void) | undefined => {
+    if (multiModeEnabled !== true || multiPane === null) return undefined;
+    if (firstFitCommittedRef.current) return undefined;
+    const el = scrollerRef.current;
+    if (el === null || el.clientWidth <= 0 || el.clientHeight <= 0) {
+      setPaneBoxReady(true);
+      return undefined;
+    }
+    if (typeof window.requestAnimationFrame !== "function") {
+      setPaneBoxReady(true);
+      return undefined;
+    }
+    let prev2: FitBoxSize | null = null;
+    let prev1: FitBoxSize | null = null;
+    let zeroFrames = 0;
+    let raf = 0;
+    const tick = (): void => {
+      const node = scrollerRef.current;
+      if (node === null) return;
+      const next: FitBoxSize = { w: node.clientWidth, h: node.clientHeight };
+      if (next.w <= 0 || next.h <= 0) {
+        zeroFrames += 1;
+        if (zeroFrames >= 3) {
+          setPaneBoxReady(true);
+          return;
+        }
+        raf = window.requestAnimationFrame(tick);
+        return;
+      }
+      zeroFrames = 0;
+      // DEF-343 — read the live Inspector inset off the stage (the element that
+      // transitions the registered token) so it is part of the settle window.
+      const stageEl = node.closest(".tab-stage");
+      const insetRaw =
+        stageEl === null
+          ? ""
+          : window.getComputedStyle(stageEl).getPropertyValue("--tf-tools-inset").trim();
+      const insetParsed = Number.parseFloat(insetRaw);
+      next.inset = Number.isFinite(insetParsed) ? insetParsed : 0;
+      // A pane whose tab is still the empty placeholder (or whose document has
+      // not reported a page count yet) is never "settled": the document load is
+      // what flips the Inspector target and starts the slide, so the gate must
+      // still be sampling when that happens (the effect re-runs on the
+      // paneContentReady / pageCount / target change, resetting the window
+      // below). Requiring `paneContentReady` specifically closes the commit gap
+      // where engine.pageCount is already >0 but the tab's kind — and therefore
+      // `data-tools-open` and the requested inset — has not flipped yet.
+      if (!paneContentReady || pageCount <= 0) {
+        prev2 = null;
+        prev1 = null;
+        raf = window.requestAnimationFrame(tick);
+        return;
+      }
+      if (paneBoxSettled(prev2, prev1, next, paneInsetTarget)) {
+        setViewportBox((cur) => (cur.w === next.w && cur.h === next.h ? cur : next));
+        setPaneBoxReady(true);
+        return;
+      }
+      prev2 = prev1;
+      prev1 = next;
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return (): void => window.cancelAnimationFrame(raf);
+  }, [multiModeEnabled, multiPane, pageCount, paneInsetTarget, paneContentReady]);
+
+  // The one-shot latch: once this view has painted content (in single mode or
+  // in a settled pane) its pane assignments never re-gate the fit.
+  useEffect((): void => {
+    if (!paneFitPending && pageCount > 0) firstFitCommittedRef.current = true;
+  }, [paneFitPending, pageCount]);
+
+  // True only while a NEVER-painted pane is waiting for its first settled box.
+  // A view that has already painted keeps its pills exactly as before.
+  const paneFirstFitHeld = paneGateActive && !paneBoxReady;
 
   // ---- page slot registry + IntersectionObserver ---------------------------
   //
@@ -3111,11 +3307,24 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
   // publishes a snapshot upward so the host can feed the Inspector's
   // EDIT/text section; there is NO second selection model â€” the snapshot IS
   // the existing selection's view.
+  //
+  // Phase 38 feature C — the Inspector is the ONLY text-manipulation surface
+  // now, so the snapshot is published whenever a text surface is engaged:
+  // with a selected target, and (with `text: null`) for an armed text tool
+  // with nothing selected yet. That second case is what keeps the pre-
+  // placement defaults reachable after the floating card was retired.
   const textSelection = useMemo<InspectorTextSelection | null>(() => {
-    if (textTarget === null) return null;
+    if (!textPanelSelectionActive) return null;
     return {
       targetKey: textTargetKeyNow ?? 'none',
-      name: textTarget.kind === 'annotation' ? 'Text annotation' : 'Text object',
+      name:
+        textTarget === null
+          ? textPanelMode === 'annotation'
+            ? 'Text annotation'
+            : 'Text object'
+          : textTarget.kind === 'annotation'
+            ? 'Text annotation'
+            : 'Text object',
       values: textPanelValues,
       defaults: textPanelDefaults,
       mode: textPanelMode,
@@ -3130,6 +3339,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     // the effect below gates on the observable shape instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    textPanelSelectionActive,
     textTargetKeyNow,
     textTarget,
     textPanelMode,
@@ -3646,7 +3856,12 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
           onDragLeave={canvasDragOn ? onCanvasDragLeave : undefined}
         >
           <div className="document-content">
-            {Array.from({ length: pageCount }, (_, i) => i + 1).map((visiblePage) => {
+            {/* DEF-338 — a Multi Mode pane holds its first content render
+                until it has a pane-constrained fit (see `paneFitPending`):
+                rendering a slot/placeholder before the pane's own scroller
+                box is measured paints the full-stage-width slab the operator
+                reported. Single mode is never pending. */}
+            {!paneFitPending && Array.from({ length: pageCount }, (_, i) => i + 1).map((visiblePage) => {
               // DEF-064 â€” after a delete / reorder the visual scroller
               // used to keep its original `doc.numPages` slots while
               // the rail correctly shrank to `engineState.pageCount`,
@@ -3898,26 +4113,11 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             Inspector is the workspace's right panel and needs no toggle, so
             no view renders a badge any more (DEF-284's single-badge rule is
             moot: there is no badge to duplicate). */}
-        {/* Phase 25 â€” the text-properties panel is a FLOATING card over
-            the page view (absolutely positioned inside .workspace-main),
-            NOT a workspace grid column. It has no header, is draggable by
-            its grip, and opening/closing it never reflows the page.
-            DEF-321 â€” for a SELECTED text target the Inspector's EDIT/text
-            section is the canonical mount and this pop-out is suppressed
-            (one properties UI per selection); it stays the mount for an
-            armed tool with nothing selected, and whenever the Inspector is
-            not showing that selection (e.g. a text annotation in REVIEW). */}
-        <TextPropertiesPanel
-          open={floatingTextPanelOpen}
-          values={textPanelValues}
-          defaults={textPanelDefaults}
-          mode={textPanelMode}
-          onPatch={handleTextPanelPatch}
-          text={panelText}
-          onTextChange={handlePanelTextChange}
-          onTextCommit={commitTextSession}
-          focusToken={textFocusToken}
-        />
+        {/* Phase 38 feature C — the legacy floating text-properties card and
+            its drag-to-move grip are RETIRED. The Inspector's text block is
+            the ONLY text-manipulation surface; this view publishes the text
+            snapshot upward (including the armed-tool defaults) and renders no
+            properties UI of its own. */}
         {/* DEF-319 â€” the CANVAS-BOUND floating-chrome layer. The page/zoom
             pills, the annotations flyout and the Action Dock all live inside
             it, so they anchor to the VISIBLE canvas: the layer is inset on the
@@ -3936,7 +4136,8 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
             B right) so the workspace's bottom-centre band stays clear for the
             ONE shared Action Dock. They re-parent the retired toolbar's
             handlers and aria-labels and fade with the dock's idle. */}
-        {(inMultiPane || (!suppressToolbar && multiModeEnabled !== true)) && (
+        {(inMultiPane || (!suppressToolbar && multiModeEnabled !== true)) &&
+          !paneFirstFitHeld && (
           <CanvasPills
             page={currentPage}
             pageCount={pageCount}

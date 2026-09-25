@@ -17,6 +17,7 @@
 // area collapsing to zero.
 
 import { THUMB_MIN_WIDTH, THUMB_RAIL_INSET_PX } from "./thumbGeometry";
+import { PILL_INSET, ZOOM_FULL_W } from "../state/pillFit";
 
 /** The divider's rendered width; mirrors `--tf-divider-w` in styles.css. */
 export const PANE_DIVIDER_W_PX = 8;
@@ -73,6 +74,74 @@ export const INSPECTOR_COLLAPSED_W_PX = 44;
 export function insetCapFor(stageWidth: number): number {
   if (!Number.isFinite(stageWidth)) return 0;
   return Math.max(0, stageWidth - MIN_PANES_BUDGET_PX);
+}
+
+/** Phase 39 (DEF-348b/c) — the base height of the bottom band Multi Mode
+ *  reserves for the shared Action Dock. The dock's box is `bottom: 12px` and
+ *  up to 59.5px tall (a labelled verb row), so the panes (and their strips,
+ *  pills and page-action bars) stopping at `base + lift` above the stage's
+ *  bottom edge can never intersect the dock, lifted or not. */
+export const MULTI_DOCK_BAND_BASE_PX = 84;
+
+/** The band the panes reserve for the shared dock at a measured vertical
+ *  yield (`liftPx` is the dock's own pill-band lift, 0 when not lifted). The
+ *  lift is added so a lifted dock stays inside the reserved band too. */
+export function multiDockBandPx(liftPx: number): number {
+  const lift = Number.isFinite(liftPx) && liftPx > 0 ? liftPx : 0;
+  return MULTI_DOCK_BAND_BASE_PX + lift;
+}
+
+/**
+ * Phase 39 (DEF-348b/c) — true when a pane that stops `bandPx` above the
+ * stage bottom cannot intersect a dock whose box is `dockHeightPx` tall,
+ * anchored `bottomInsetPx` above the stage bottom and lifted `liftPx`. This is
+ * the structural zero-intersection rule the CSS mirrors: the pane's bottom
+ * edge is `stageBottom - bandPx`; the dock's top edge is
+ * `stageBottom - bottomInsetPx - dockHeightPx - liftPx`.
+ */
+export function bandClearsDock(args: {
+  bandPx: number;
+  dockHeightPx: number;
+  bottomInsetPx: number;
+  liftPx: number;
+}): boolean {
+  const { bandPx, dockHeightPx, bottomInsetPx, liftPx } = args;
+  return bandPx >= bottomInsetPx + dockHeightPx + liftPx;
+}
+
+/** Phase 39 (DEF-349) — the height of the per-pane bottom band Multi Mode
+ *  reserves for that pane's own floating pills once they no longer fit inside
+ *  the pane's page column. Two stacked pill rows (42px each) plus the 6px gap
+ *  and the 12px bottom inset — the same stacked geometry the single-mode
+ *  ladder uses (see `pillFit.ts`). The strip stops above this band, so a pill
+ *  can never overlap the strip or its page-action bar. */
+export const MULTI_PILL_BAND_PX = 102;
+
+/** The page-column width at which the pane's full pills still fit: they stack
+ *  at the pane's outer edge, so the wider zoom pill plus its inset is the
+ *  binding constraint (`PILL_INSET + ZOOM_FULL_W` = 230px). At or above this
+ *  width the pane needs no reserved band and keeps the Phase 36/37/38
+ *  placement exactly. */
+export const MULTI_PILL_FIT_PAGE_PX = PILL_INSET + ZOOM_FULL_W;
+
+/** The bottom band a pane reserves for its pills: 0 when both pills fit the
+ *  page column, `MULTI_PILL_BAND_PX` otherwise. `MultiPane` writes this as
+ *  `--tf-multi-pill-band` on the pane; the CSS mirrors it as the workspace's
+ *  bottom padding and the pills layer's downward offset. */
+export function multiPillBandPx(paneWidth: number): number {
+  const W = Number.isFinite(paneWidth) ? Math.max(0, paneWidth) : 0;
+  if (W <= 0) return 0;
+  return stripAndPageWidths(W).page >= MULTI_PILL_FIT_PAGE_PX ? 0 : MULTI_PILL_BAND_PX;
+}
+
+/** The horizontal span the pills layer extends past the page column into the
+ *  strip column when a band is reserved: exactly the strip's width, so the
+ *  layer reaches the pane's outer edge. 0 when no band is reserved (the wide
+ *  Phase 36/37/38 placement is untouched). */
+export function multiPillSpanPx(paneWidth: number): number {
+  const W = Number.isFinite(paneWidth) ? Math.max(0, paneWidth) : 0;
+  if (W <= 0 || multiPillBandPx(W) === 0) return 0;
+  return stripAndPageWidths(W).strip;
 }
 
 /** The inset the panes actually consume: the requested All Tools inset,

@@ -35,15 +35,7 @@ const CANVAS = 914;
 const PAGE_W = 154.45;
 const ZOOM_W = 225.8;
 
-/** The four curated stages' labels, in registry order. */
-const STAGE_LABELS: Record<Stage, string[]> = {
-  pages: ['Rotate pages', 'Extract pages', 'Insert pages', 'Replace pages', 'Split pages', 'Delete pages'],
-  edit: ['Edit content', 'Edit text', 'Edit images', 'Add a text box', 'Recognize text (OCR)', 'Crop pages'],
-  review: ['Annotate', 'Sign', 'Stamp', 'Flatten'],
-  deliver: ['Reduce file size', 'Audit space usage', 'Export pages as images', 'Export text', 'Export to Word (.docx)'],
-};
-
-/** Phase 37 (item 21) — the dock's WIDENED relevant sets, as rendered. At the
+/** Phase 38 (feature B) — the dock's WIDENED relevant sets, as rendered. At the
  *  default-window band (~494px) these exceed the band, so DEF-334 routes the
  *  labelled row into the ARROWS lane (all labels kept, one scrolling row)
  *  instead of yielding them; the ladder hides labels only below 880px. */
@@ -207,25 +199,20 @@ describe('DEF-330 â€” the dock renders as designed at the default window', 
     }
   });
 
-  it('the tightened verb metrics fit DELIVER one-row in the live band', () => {
+  it('uses the enlarged verb metrics; a set wider than the band routes to arrows, never a label drop', () => {
     const css = readFileSync(resolve(__dirname, '../../../src/renderer/styles.css'), 'utf8').replace(
       /\/\*[\s\S]*?\*\//g,
       '',
     );
-    // The dock verb's horizontal padding and the group gap are the only lever
-    // that can fit DELIVER's five REAL labels in the 493.75px band (the pills
-    // are fixed geometry): the live probe's per-label widths sum to 390px, and
-    // 390 + 5*(2*pad) + 4*gap + dock padding(16) + border(2) must be <= 493.75.
-    expect(css).toMatch(/\.action-dock-verb\s*\{[^}]*padding:\s*4px 7px/s);
+    // Phase 38 (feature B) — the dock verb now carries the 20px glyph and the
+    // 12px label floor: 5px/8px padding and the 3px group gap are the declared
+    // metrics (up from the Phase-37 4px/7px).
+    expect(css).toMatch(/\.action-dock-verb\s*\{[^}]*padding:\s*5px 8px/s);
     expect(css).toMatch(/\.action-dock-group\s*\{[^}]*gap:\s*3px/s);
-    const liveLabelWidths = [67, 79, 102, 46, 96]; // qa's ADV-081 probe (DELIVER)
-    const verbs = liveLabelWidths.reduce((sum, w) => sum + Math.max(16, w) + 2 * 7, 0);
-    const realDockWidth = verbs + 4 * 3 + 2 * 8 + 2;
-    expect(realDockWidth).toBeLessThanOrEqual(freeBand().width);
-    // ...and the pre-fix metrics (9px padding, 4px gap) did NOT fit, which is
-    // why DELIVER wrapped onto two rows.
-    const wideVerbs = liveLabelWidths.reduce((sum, w) => sum + Math.max(16, w) + 2 * 9, 0);
-    expect(wideVerbs + 4 * 4 + 2 * 8 + 2).toBeGreaterThan(freeBand().width);
+    // The enlarged DELIVER set genuinely exceeds the 493.75px band, so DEF-334
+    // routes the still-labelled row into the arrows lane (one row, nothing
+    // hidden) instead of squeezing the labels.
+    expect(labelledDockNeed(DOCK_LABELS.deliver)).toBeGreaterThan(freeBand().width);
   });
 
   it('the stylesheet places the dock in the band with left/right + margin auto', () => {
@@ -256,24 +243,36 @@ describe('DEF-330 â€” the dock renders as designed at the default window', 
       expect(shift).toBeCloseTo(band.left + band.width / 2 - CANVAS / 2, 1);
       // The shift is the difference between the band's centre and the host's.
       expect(shift).toBeLessThan(0);
-      // A labelled DELIVER dock still clears each pill by the gap.
-      const half = labelledDockNeed(STAGE_LABELS.deliver) / 2;
-      const centre = CANVAS / 2 + shift;
-      expect(centre - half).toBeGreaterThanOrEqual(pill('page', CANVAS).right + DOCK_PILL_GAP - 0.01);
-      expect(centre + half).toBeLessThanOrEqual(pill('zoom', CANVAS).left - DOCK_PILL_GAP + 0.01);
+      // Phase 38 (feature B) — the labelled DELIVER set is now WIDER than the
+      // band, so the dock is capped to the band and routed to the arrows lane;
+      // the clearance contract is the band's own edges (clearance-exclusive),
+      // which sit inside both pills by DOCK_PILL_GAP.
+      expect(band.left).toBeGreaterThanOrEqual(pill('page', CANVAS).right + DOCK_PILL_GAP - 0.01);
+      expect(band.left + band.width).toBeLessThanOrEqual(
+        pill('zoom', CANVAS).left - DOCK_PILL_GAP + 0.01,
+      );
+      expect(Number.parseFloat(dock.style.maxWidth)).toBeCloseTo(band.width, 1);
     } finally {
       unmount();
     }
   });
 
   it('stays labelled everywhere above the 880 rung, routing to arrows where the band is tight', () => {
-    // 1100px canvas leaves ~679.75px of band: every widened set fits.
+    // Phase 38 (feature B) — the enlarged labels no longer all fit 1100's
+    // ~679.75px band (PAGES 708.8 / DELIVER 760 exceed it; EDIT 614.4 and
+    // REVIEW 636 fit). DEF-334 keeps the labels either way: the wide sets ride
+    // the arrows lane, the fitting sets render as a plain labelled row.
     const wideBand = 1100 - (DOCK_PILL_INSET + PAGE_W + DOCK_PILL_GAP) - (DOCK_PILL_INSET + ZOOM_W + DOCK_PILL_GAP);
     for (const stage of ['pages', 'edit', 'review', 'deliver'] as const) {
       const wide = mountDock(1100, stage);
       try {
-        expect(labelledDockNeed(DOCK_LABELS[stage]), `1100 need ${stage}`).toBeLessThanOrEqual(wideBand);
         expect(wide.dock.getAttribute('data-dock-icon-only'), `1100 ${stage}`).toBe('false');
+        expect(wide.dock.querySelectorAll('.action-dock-label').length, `1100 ${stage}`).toBe(
+          DOCK_LABELS[stage].length,
+        );
+        expect(wide.dock.getAttribute('data-dock-arrows'), `1100 ${stage}`).toBe(
+          labelledDockNeed(DOCK_LABELS[stage]) > wideBand ? 'true' : 'false',
+        );
       } finally {
         wide.unmount();
       }

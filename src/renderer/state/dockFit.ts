@@ -132,26 +132,81 @@ export function pillFreeBand(args: {
   };
 }
 
+/**
+ * Phase 39 (D3) — the dock's pill basis rebuilt from the pills' measured
+ * WIDTHS/HEIGHTS at the single-mode insets.
+ *
+ * In Multi Mode the FOCUSED pane's pills are OUTBOARD: they park at the pane's
+ * outer edge (A left, B right), so their measured POSITIONS relative to the
+ * workspace-centred dock are meaningless — feeding those boxes to
+ * `pillReserve` charged the dock for most of the workspace width, so the
+ * shared dock's reserve (and therefore its measured-overflow lane and its
+ * vertical lift) differed from single mode's at the same window width. Their
+ * WIDTHS are identical to single mode's (the same CanvasPills component, the
+ * same zoom readout), so rebuilding the boxes at `DOCK_PILL_INSET` gives the
+ * dock EXACTLY the reserve, free band and pill band height single mode measures
+ * at the same host width — the shared basis that keeps the lane and lift
+ * decisions identical between the modes.
+ *
+ * `page`/`zoom` are the focused pane's measured boxes (null when absent); only
+ * their widths and their vertical band are consumed, never their horizontal
+ * offsets. The vertical band is mode-independent (both panes bottom-anchor
+ * their pills), so `pillBandHeight` reads the real stacked/full yield directly.
+ */
+export function pillBasisFromWidths(args: {
+  page: PillBox | null;
+  zoom: PillBox | null;
+  hostWidth: number;
+  /** The SINGLE-mode stacked yield's raise, in px (0 when the pills share one
+   *  row). `ActionDock` supplies `pillFit.PILL_RAISE` when the host width is
+   *  below the stacked rung, so the vertical band this returns is the one
+   *  single mode would report at the same host width — NOT the focused pane's
+   *  own stacked arrangement, which is outboard and mode-specific. */
+  stackedRaisePx?: number;
+}): { reserve: number; pillHeight: number; free: { left: number; width: number } | null } {
+  const needs: number[] = [];
+  if (args.page !== null) needs.push(DOCK_PILL_INSET + args.page.width);
+  if (args.zoom !== null) needs.push(DOCK_PILL_INSET + args.zoom.width);
+  const reserve =
+    needs.length === 0 ? DOCK_DEFAULT_RESERVE : 2 * Math.max(...needs) + 2 * DOCK_PILL_GAP;
+  const free =
+    args.page !== null && args.zoom !== null
+      ? {
+          left: DOCK_PILL_INSET + args.page.width + DOCK_PILL_GAP,
+          width: Math.max(
+            0,
+            args.hostWidth -
+              2 * DOCK_PILL_INSET -
+              args.page.width -
+              args.zoom.width -
+              2 * DOCK_PILL_GAP,
+          ),
+        }
+      : null;
+  const rowHeight = Math.max(args.page?.height ?? 0, args.zoom?.height ?? 0);
+  const raise = args.stackedRaisePx !== undefined && args.stackedRaisePx > 0 ? args.stackedRaisePx : 0;
+  return { reserve, pillHeight: rowHeight + raise, free };
+}
+
 /** True when the horizontal band cannot hold the collapsed dock. */
 export function shouldLiftDock(band: number): boolean {
   return band < DOCK_MIN_BAND;
 }
 
-/** The average advance width of a dock label at 9px Inter, measured from the
- *  real curated labels: "Export to Word (.docx)" is 89.9px for its 22
- *  characters, "Sign" 18px for 4, and 4.2px/char reproduces every curated
- *  label to within ~2% (mean absolute error < 4px). The label's own width is
- *  what decides the fit — a per-verb CONSTANT cannot: DELIVER's five wide verbs
- *  (491px) are wider than PAGES' six narrow ones (462px). */
-export const DOCK_LABEL_ADVANCE_PX = 4.2;
+/** The average advance width of a dock label at 12px Inter (Phase 38 feature B
+ *  raised the label from 9px to the 12px floor), measured from the real curated
+ *  labels: the old 4.2px/char at 9px scales to 5.6px/char at 12px ("Export to
+ *  Word (.docx)" is ~119.8px for its 22 characters). The label's own width is
+ *  what decides the fit — a per-verb CONSTANT cannot. */
+export const DOCK_LABEL_ADVANCE_PX = 5.6;
 
-/** One labelled dock verb's ESTIMATED width: the wider of its 16px icon and
- *  its 9px label, plus padding. The model keeps the concept's 2 x 9px padding
- *  (18), which now OVERESTIMATES the rendered 2 x 7px (DEF-330 trimmed the
- *  verb padding to fit the pill-free band), so the fit test stays conservative
- *  rather than dropping labels a dock could render. */
+/** One labelled dock verb's ESTIMATED width: the wider of its 20px icon
+ *  (Phase 38 feature B, was 16px) and its 12px label, plus 2 x 9px padding
+ *  (18). The padding slightly OVERESTIMATES the rendered 2 x 8px (16), so the
+ *  fit test stays conservative rather than dropping labels a dock could
+ *  render. */
 export function dockVerbWidth(label: string): number {
-  return Math.max(16, label.length * DOCK_LABEL_ADVANCE_PX) + 18;
+  return Math.max(20, label.length * DOCK_LABEL_ADVANCE_PX) + 18;
 }
 
 /**
@@ -197,4 +252,32 @@ export function dockPlanWidth(args: {
 /** True when two boxes overlap on both axes. */
 export function rectsIntersect(a: Rect, b: Rect): boolean {
   return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+}
+
+/**
+ * DEF-341 — the leading verb's left offset inside a scroll box of `box` for a
+ * row needing `need`.
+ *
+ * A centred row that OVERFLOWS spills half the excess to the LEFT of its box.
+ * In the dock that put the leading verb of every stage outside the dock's
+ * bounding box — REVIEW's `annotate` laid out at x=340 while the dock box began
+ * at x=422, so its centre hit-tested `.page-indicator` and Playwright's click
+ * timed out on the pill that covered it. The arrows lane therefore START-aligns
+ * an overflowing row (offset 0, so the leading verb is fully inside the box and
+ * reachable at `scrollLeft = 0`) and centres only a row that fits. The old
+ * `(need - box) / 2` value is what the containment test rules out.
+ */
+export function dockRowLeadingOffset(need: number, box: number): number {
+  if (need <= box) return Math.max(0, (box - need) / 2);
+  return 0;
+}
+
+/**
+ * DEF-341 — true when the row overflows its scroll box and must therefore run
+ * through the arrows lane (start-aligned) rather than sit centred in the dock.
+ * The dock's lane decision is `ladder.arrows || this`; the containment contract
+ * is that the lane is on whenever the row does not fit the box.
+ */
+export function dockRowNeedsLane(need: number, box: number): boolean {
+  return need > box;
 }

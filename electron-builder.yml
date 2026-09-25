@@ -7,9 +7,20 @@ files:
   - assets/**
   - package.json
 win:
+  # Phase 38 item A — x64 ONLY (operator ruling 2026-09-25: 32-bit is DEFERRED).
+  # Electron 44 publishes no win32-ia32 binary upstream (electron-v44.0.0-win32-ia32.zip
+  # 404s; the local checksums.json lists only x64/arm64 for win32), so an ia32
+  # installer cannot be produced without repinning the runtime — which the operator
+  # chose not to do. `arch: x64` is stated explicitly (rather than omitted) so the
+  # intent is in the config and an `ia32` entry can be added back later without any
+  # artifact renaming: the `${arch}` token stays load-bearing in the names below.
   target:
-    - nsis
-    - portable
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
   # Phase 35 — register TFlex as a .pdf handler so it appears in Explorer's
   # "Open with" list and can be chosen as the default PDF app in Windows
   # Settings. `name` is the ProgID / file class (electron-builder passes it
@@ -41,11 +52,45 @@ win:
 #     does not expose. Out of scope for v1; the installer keeps its native
 #     frame. Only the runtime app window is frameless (see src/main/window.ts).
 nsis:
+  # Phase 38 item A — real per-machine install (INSTALL_MODE_PER_ALL_USERS_REQUIRED).
+  # This is what moves the install from the per-user %LOCALAPPDATA%\Programs\TFlex
+  # to the standard Program Files location, with the normal UAC elevation prompt
+  # (RequestExecutionLevel admin), a per-machine Add/Remove Programs entry
+  # (HKLM) and an uninstaller in the install folder:
+  #   x64 build -> $PROGRAMFILES64\TFlex = C:\Program Files\TFlex
+  # (the ia32 -> $PROGRAMFILES\TFlex WOW64 path is deferred with the ia32 target;
+  # it returns unchanged if the runtime is ever repinned with a 32-bit binary.)
+  # `allowElevation` lets the assisted installer offer elevation for the
+  # install; `packElevateHelper` below packs resources/elevate.exe so the
+  # electron-updater OTA path can re-run the installer elevated over a
+  # Program Files install.
   oneClick: false
+  perMachine: true
+  allowElevation: true
+  # Explicitly true: for an assisted (oneClick:false) per-machine installer the
+  # builder writes `isAdminRightsRequired: true` into latest.yml only when this
+  # is truthy (NsisTarget: `oneClick || packElevateHelper`); leaving it unset
+  # made the built 1.29.0-x64 latest.yml omit the flag. With it set the updater
+  # takes the deterministic resources/elevate.exe path instead of relying on
+  # the EACCES retry fallback.
+  packElevateHelper: true
   allowToChangeInstallationDirectory: true
-  artifactName: TFlex-Setup-${version}.${ext}
+  # Phase 38 item A (operator ruling 2026-09-25) — remove the LEGACY per-user
+  # install (pre-1.30: %LOCALAPPDATA%\Programs\TFlex, an HKCU uninstall entry
+  # and an HKCU TFlex.pdf ProgID) when this per-machine installer runs, so a
+  # machine never keeps two copies. The hook is the documented electron-builder
+  # `customInstall` macro, defined in the include below — not a hand-edit of
+  # generated output. `electron-builder.nsh` sits next to this file and is
+  # resolved by electron-builder's project-dir fallback.
+  include: electron-builder.nsh
+  # Phase 38 item A — the architecture is IN the artifact name so the NSIS
+  # installers cannot overwrite each other. The token is literally `x64` (and
+  # `ia32` if it ever returns) — electron-builder's Arch names, which is also
+  # what electron-updater's findFile() matches against process.arch. See the
+  # feed notes below.
+  artifactName: TFlex-Setup-${version}-${arch}.${ext}
 portable:
-  artifactName: TFlex-${version}-portable.${ext}
+  artifactName: TFlex-${version}-portable-${arch}.${ext}
 # Publish target for GitHub Releases. `npm run dist` passes `--publish never`
 # so artifacts are built locally without uploading; the operator publishes by
 # running `electron-builder --publish onTag` (or `always`) with `GH_TOKEN` set,
@@ -53,13 +98,34 @@ portable:
 #
 # When published, electron-builder uploads these release assets to the GitHub
 # release for the matching git tag (vMAJOR.MINOR.PATCH):
-#   TFlex-Setup-<version>.exe           — NSIS installer (auto-updateable)
-#   TFlex-Setup-<version>.exe.blockmap  — differential update blockmap
-#   latest.yml                          — update feed manifest consumed by
-#                                       electron-updater at runtime
-# The portable build (TFlex-<version>-portable.exe) is built but NOT listed
-# in latest.yml — it is not auto-updateable (see isPortableBuild() in
-# update-service.ts).
+#   TFlex-Setup-<version>-x64.exe           — x64 NSIS installer (auto-updateable)
+#   TFlex-Setup-<version>-x64.exe.blockmap  — x64 differential update blockmap
+#   latest.yml                              — the SINGLE update feed manifest
+#                                             consumed by electron-updater
+#   TFlex-<version>-portable-x64.exe        — portable x64 (direct download)
+# (32-bit artifacts are deferred per the 2026-09-25 operator ruling; if ia32
+# returns, the same four names gain an -ia32 twin and latest.yml lists both.)
+#
+# Phase 38 feed facts — verified against the installed electron-builder 26.x and
+# electron-updater 6.x source, and by the published metadata of the build:
+#   - On Windows electron-builder emits exactly ONE metadata file, `latest.yml`,
+#     regardless of architecture: updateInfoBuilder.getArchPrefixForUpdateFile()
+#     returns "" unless the platform is Linux. There is NO `latest-ia32.yml`.
+#   - That one file lists every installer in its `files:` array (electron-builder
+#     merges the per-arch update-info tasks into the same channel file).
+#   - At runtime BOTH archs request the same URL, `latest.yml`. The correct file
+#     is then chosen by NsisUpdater -> findFile(files, "exe"), which prefers the
+#     entry whose URL contains `process.arch`. This ONLY works because the
+#     artifact names above end in `-x64` (and would end in `-ia32`): an installed
+#     x64 build requests the x64 installer. Renaming the artifacts without that
+#     arch token would break OTA silently.
+#   - Because this is a per-machine install with packElevateHelper: true,
+#     electron-builder sets `isAdminRightsRequired: true` on the installer's
+#     files[] entry (verified in the built latest.yml). electron-updater then
+#     re-runs the downloaded installer via the packed resources/elevate.exe, so
+#     the OTA update over C:\Program Files prompts UAC and succeeds.
+# The portable builds are built but NOT listed in latest.yml — they are not
+# auto-updateable (see isPortableBuild() in update-service.ts).
 #
 # Release artifacts are published to a SEPARATE PUBLIC repo (`tflex-releases`)
 # so end users can check for and download updates WITHOUT a token — the source

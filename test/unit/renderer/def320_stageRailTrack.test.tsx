@@ -33,6 +33,9 @@ const CSS = readFileSync(resolve(__dirname, '../../../src/renderer/styles.css'),
   '',
 );
 
+/** Phase 38 (feature B) — the rail's width token, now the ONE track value. */
+const RAIL_W = Number.parseFloat((CSS.match(/--tf-stage-rail-w:\s*(\d+)px/) ?? [])[1] ?? 'NaN');
+
 function escapeRe(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -72,10 +75,14 @@ const PANEL_WIDTHS = [220, 48];
 //    inspector.
 // ---------------------------------------------------------------------------
 
-describe('DEF-320 — the rail owns a real 44px track in .app-main', () => {
+describe('DEF-320 — the rail owns a real track in .app-main', () => {
   it('makes .app-main a two-column grid (rail track + stage) with the bar row above', () => {
     expect(decl(APP_MAIN, 'display')).toBe('grid');
-    expect(decl(APP_MAIN, 'grid-template-columns')).toBe('44px minmax(0, 1fr)');
+    // Phase 38 (feature B) — the track is the --tf-stage-rail-w token (64px),
+    // widened from the hardcoded 44px for the 12px label floor.
+    expect(decl(APP_MAIN, 'grid-template-columns')).toBe(
+      'var(--tf-stage-rail-w, 64px) minmax(0, 1fr)',
+    );
     // Row 1 is the (optional) suspects bar, row 2 the rail + stage.
     expect(decl(APP_MAIN, 'grid-template-rows')).toBe('auto minmax(0, 1fr)');
   });
@@ -103,11 +110,9 @@ describe('DEF-320 — the rail owns a real 44px track in .app-main', () => {
   });
 
   it('parses the rail width out of the same track the frame reserves', () => {
-    const track = decl(APP_MAIN, 'grid-template-columns') ?? '';
-    const first = Number.parseFloat(track.split(' ')[0] ?? '');
-    expect(Number.isNaN(first)).toBe(false);
-    expect(first).toBe(44);
-    expect(decl(STAGE_RAIL, 'width')).toBe(`${first}px`);
+    expect(RAIL_W).toBe(64);
+    expect(decl(APP_MAIN, 'grid-template-columns')).toContain('var(--tf-stage-rail-w, 64px)');
+    expect(decl(STAGE_RAIL, 'width')).toBe('var(--tf-stage-rail-w, 64px)');
   });
 });
 
@@ -118,9 +123,7 @@ describe('DEF-320 — the rail owns a real 44px track in .app-main', () => {
 
 describe('DEF-320 — rail and panel never overlap, at any width or state', () => {
   it('starts the panel column at the rail track edge, so the overlap is 0', () => {
-    const railTrack = Number.parseFloat(
-      (decl(APP_MAIN, 'grid-template-columns') ?? '44px').split(' ')[0] ?? '44',
-    );
+    const railTrack = RAIL_W;
     for (const width of WIDTHS) {
       for (const panelWidth of PANEL_WIDTHS) {
         // The rail occupies the app frame's first track; the panel column
@@ -165,19 +168,16 @@ describe('DEF-320 — the panel collapse/expand control stays clickable', () => 
     expect(inset).toBe(2);
     // 48 - 2*2 = 44px of content box holds the 38px control.
     expect(strip - 2 * inset).toBeGreaterThanOrEqual(button);
-    // The rail track (44px) sits entirely to the LEFT of the panel column, so
+    // The rail track (64px) sits entirely to the LEFT of the panel column, so
     // no part of the control can be covered by it.
-    const railTrack = Number.parseFloat(
-      (decl(APP_MAIN, 'grid-template-columns') ?? '44px').split(' ')[0] ?? '44',
-    );
-    expect(railTrack).toBeLessThanOrEqual(strip);
+    expect(RAIL_W).toBe(64);
   });
 
   it('keeps the compact (<1100px) rail behaviour and the Ctrl+1..4 chords', () => {
     expect(STAGE_RAIL_COMPACT_WIDTH).toBe(1100);
     expect(isStageRailCompact(1099)).toBe(true);
     expect(isStageRailCompact(1100)).toBe(false);
-    // The label is what compact drops; the rail keeps its 44px track width.
+    // The label is what compact drops; the rail keeps its token track width.
     expect(CSS).toMatch(/\.stage-rail-compact \.stage-rail-label\s*\{[^}]*display:\s*none/s);
     const railSrc = readFileSync(
       resolve(__dirname, '../../../src/renderer/components/StageRail.tsx'),

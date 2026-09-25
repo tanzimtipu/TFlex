@@ -18,6 +18,7 @@ import {
 } from "../../../src/renderer/edit/TextPropertiesPanel";
 import { AnnotationOverlay } from "../../../src/renderer/annotations/AnnotationOverlay";
 import { DocumentView } from "../../../src/renderer/components/DocumentView";
+import type { InspectorTextSelection } from "../../../src/renderer/components/Inspector";
 import type { EngineState } from "../../../src/renderer/engine/types";
 import type {
   Annotation,
@@ -944,6 +945,7 @@ function armTextboxTool(host: HTMLElement): void {
 describe("Phase 21 regression — the text-properties panel across a placement", () => {
   async function mountDocView(args: {
     onCreateAnnotation: (a: Annotation) => void;
+    onTextSelectionChange?: (selection: InspectorTextSelection | null) => void;
   }): Promise<{ host: HTMLElement; unmount: () => void }> {
     stubObservers();
     const host = document.createElement("div");
@@ -978,6 +980,7 @@ describe("Phase 21 regression — the text-properties panel across a placement",
           // Phase 36 (chunk 3b) — annotations live in the REVIEW stage; the
           // dock's Annotate primary opens their flyout.
           activeStage: "review",
+          onTextSelectionChange: args.onTextSelectionChange,
         }),
       );
       await Promise.resolve();
@@ -993,64 +996,71 @@ describe("Phase 21 regression — the text-properties panel across a placement",
     };
   }
 
-  it("stays open from arming through placement, then closes on a blank-page click", async () => {
+  it("publishes the armed + placed text surface, then withdraws it on a blank-page click", async () => {
     const onCreateAnnotation = vi.fn<(a: Annotation) => void>();
-    const { host, unmount } = await mountDocView({ onCreateAnnotation });
+    const published: (InspectorTextSelection | null)[] = [];
+    const { host, unmount } = await mountDocView({
+      onCreateAnnotation,
+      onTextSelectionChange: (selection): void => {
+        published.push(selection);
+      },
+    });
     try {
       const layer = host.querySelector("[data-annotation-layer='1']");
       if (layer === null) throw new Error("page 1 annotation layer did not mount");
+      const last = (): InspectorTextSelection | null => published.at(-1) ?? null;
       // Closed before any text surface is engaged.
       expect(workspacePanelOpen(host)).toBe("false");
-      // Arm the annotation text tool: the panel opens.
+      expect(last()).toBeNull();
+      // Arm the annotation text tool: Phase 38 (feature C) — with the floating
+      // card retired, the armed tool's pre-placement defaults are published to
+      // the Inspector as a snapshot with `text: null`.
       armTextboxTool(host);
       expect(workspacePanelOpen(host)).toBe("true");
+      expect(last(), "the armed tool publishes its defaults").not.toBeNull();
+      expect(last()?.mode).toBe("annotation");
+      expect(last()?.text).toBeNull();
       // Place: a page press creates the annotation immediately (Phase 26
-      // — the text is typed in the panel's Text field, no editor mounts).
+      // — the text is typed in the Inspector's Text field, no editor mounts).
       firePointer(layer, "pointerdown", 10, 10);
       expect(host.querySelector("[data-annotation-editor]")).toBeNull();
       expect(onCreateAnnotation).toHaveBeenCalledTimes(1);
       expect((onCreateAnnotation.mock.calls[0]?.[0] as Annotation).kind).toBe("textbox");
-      // The panel's Text field is the live editor and is enabled.
-      const field = host.querySelector<HTMLTextAreaElement>("[data-txt-text]");
-      expect(field, "the panel Text field is mounted").not.toBeNull();
-      expect(field?.disabled).toBe(false);
-      // THE REGRESSION: the one-shot disarm must not close the panel. The
-      // engine's create echo has not landed either (annotations is still
-      // []), so this also pins the host's retention of the reported
-      // annotation object.
-      expect(workspacePanelOpen(host)).toBe("true");
-      expect(host.querySelector("[data-text-panel]")?.getAttribute("data-text-panel-mode")).toBe(
-        "annotation",
-      );
+      // The one-shot disarm must not withdraw the surface: the placed
+      // annotation is still a live text target (empty text, field enabled).
+      expect(last(), "the placed annotation keeps the surface").not.toBeNull();
+      expect(last()?.text).toBe("");
+      expect(last()?.mode).toBe("annotation");
       // The intentional close path is untouched: a blank-page press
-      // deselects and the panel closes (the reflow runs only here).
+      // deselects and the surface is withdrawn.
       firePointer(layer, "pointerdown", 2, 2);
       expect(workspacePanelOpen(host)).toBe("false");
+      expect(last()).toBeNull();
     } finally {
       unmount();
     }
   });
 
-  // Phase 25 — the panel floats INSIDE the page-view area. It is no
-  // longer a direct child of the .workspace grid, so opening it cannot
-  // take a column or move the page.
-  it("mounts the panel inside .workspace-main, not as a workspace grid column", async () => {
+  // Phase 38 (feature C) — the legacy floating card is retired: the
+  // DocumentView renders NO text-properties UI. The panel's ONE home is the
+  // Inspector, fed by the published snapshot above.
+  it("mounts no text-properties panel in the DocumentView (Inspector-only)", async () => {
+    const published: (InspectorTextSelection | null)[] = [];
     const { host, unmount } = await mountDocView({
       onCreateAnnotation: (): void => undefined,
+      onTextSelectionChange: (selection): void => {
+        published.push(selection);
+      },
     });
     try {
-      expect(host.querySelector(".workspace-main [data-text-panel]")).toBeNull();
       armTextboxTool(host);
-      const panel = host.querySelector(".workspace-main [data-text-panel]");
-      expect(panel).not.toBeNull();
-      expect(panel?.getAttribute("data-text-panel-mode")).toBe("annotation");
-      // The floating wrapper lives in the page-view area only, never as a
-      // direct .workspace child (the retired docked column slot).
-      expect(host.querySelector(".workspace-main [data-text-panel-float]")).not.toBeNull();
-      expect(host.querySelector(".workspace > [data-text-panel-float]")).toBeNull();
-      // Header-less: the grip strip is the only chrome.
-      expect(host.querySelector(".workspace-main .text-props-header")).toBeNull();
-      expect(host.querySelector("[data-drag-grip='text-props']")).not.toBeNull();
+      // The armed tool publishes to the Inspector, not a floating card.
+      expect(published.at(-1)).not.toBeNull();
+      // No text-properties surface exists anywhere in the DocumentView DOM.
+      expect(host.querySelector("[data-text-panel]")).toBeNull();
+      expect(host.querySelector("[data-text-panel-float]")).toBeNull();
+      expect(host.querySelector(".text-props-panel")).toBeNull();
+      expect(host.querySelector("[data-drag-grip='text-props']")).toBeNull();
     } finally {
       unmount();
     }
@@ -1131,6 +1141,7 @@ describe("Phase 24 — annotation text style wiring", () => {
   async function mountStyledDocView(args: {
     annotations: Annotation[];
     onEditAnnotation: (id: string, patch: AnnotationPatch) => void;
+    onTextSelectionChange?: (selection: InspectorTextSelection | null) => void;
   }): Promise<{ host: HTMLElement; unmount: () => void }> {
     stubObservers();
     const host = document.createElement("div");
@@ -1163,6 +1174,7 @@ describe("Phase 24 — annotation text style wiring", () => {
           stampAnnotations: [],
           onCreateAnnotation: (): void => undefined,
           onEditAnnotation: args.onEditAnnotation,
+          onTextSelectionChange: args.onTextSelectionChange,
         }),
       );
       await Promise.resolve();
@@ -1188,23 +1200,29 @@ describe("Phase 24 — annotation text style wiring", () => {
     });
   }
 
-  it("shows the selected annotation's stored font / size / bold", async () => {
+  it("publishes the selected annotation's stored font / size / bold to the Inspector", async () => {
+    const published: (InspectorTextSelection | null)[] = [];
     const { host, unmount } = await mountStyledDocView({
       annotations: [STYLED_TEXTBOX],
       onEditAnnotation: (): void => undefined,
+      onTextSelectionChange: (selection): void => {
+        published.push(selection);
+      },
     });
     try {
       selectStyledTextbox(host);
-      const panel = host.querySelector("[data-text-panel]");
-      expect(panel?.getAttribute("data-text-panel-mode")).toBe("annotation");
-      expect(host.querySelector<HTMLSelectElement>("[data-txt-font]")?.value).toBe("Times");
-      expect(host.querySelector<HTMLInputElement>("[data-txt-size]")?.value).toBe("18");
-      expect(host.querySelector("[data-txt-bold]")?.getAttribute("aria-pressed")).toBe("true");
-      expect(host.querySelector("[data-txt-align-center]")?.getAttribute("aria-pressed")).toBe(
-        "true",
-      );
+      // Phase 38 (feature C) — the Inspector is the only surface; the view
+      // publishes the resolved snapshot it renders.
+      const snap = published.at(-1) ?? null;
+      expect(snap, "the annotation selection is published").not.toBeNull();
+      expect(snap?.mode).toBe("annotation");
+      expect(snap?.text).toBe("STYLED BOX");
+      expect(snap?.values.font).toBe("Times");
+      expect(snap?.values.size).toBe(18);
+      expect(snap?.values.bold).toBe(true);
+      expect(snap?.values.align).toBe("center");
       // The annotation's own colour, not the tool default.
-      expect(host.querySelector<HTMLInputElement>("[data-txt-color]")?.value).toBe("#3b82f6");
+      expect(snap?.values.color).toEqual({ r: 0.23137254901960785, g: 0.5098039215686274, b: 0.9647058823529412 });
     } finally {
       unmount();
     }
@@ -1212,33 +1230,38 @@ describe("Phase 24 — annotation text style wiring", () => {
 
   it("routes a style patch to editAnnotation as a style payload", async () => {
     const onEditAnnotation = vi.fn<(id: string, patch: AnnotationPatch) => void>();
+    const published: (InspectorTextSelection | null)[] = [];
     const { host, unmount } = await mountStyledDocView({
       annotations: [STYLED_TEXTBOX],
       onEditAnnotation,
+      onTextSelectionChange: (selection): void => {
+        published.push(selection);
+      },
     });
     try {
       selectStyledTextbox(host);
-      fireChange(host.querySelector("[data-txt-font]"), "Courier");
+      const onPatch = (published.at(-1) as InspectorTextSelection).onPatch;
+      onPatch({ font: "Courier" });
       expect(onEditAnnotation).toHaveBeenCalledTimes(1);
       expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { font: "Courier" } });
       // A multi-field patch carries every patched field (no colour key).
-      fireChange(host.querySelector("[data-txt-size]"), "22");
+      onPatch({ size: 22 });
       expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { size: 22 } });
-      click(host.querySelector("[data-txt-bold]"));
+      onPatch({ bold: false });
       expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { bold: false } });
-      click(host.querySelector("[data-txt-underline]"));
+      onPatch({ underline: true });
       expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", {
         style: { underline: true },
       });
-      click(host.querySelector("[data-txt-align-right]"));
+      onPatch({ align: "right" });
       expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { align: "right" } });
-      fireChange(host.querySelector("[data-txt-line-height]"), "1.6");
+      onPatch({ lineHeight: 1.6 });
       expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", {
         style: { lineHeight: 1.6 },
       });
-      click(host.querySelector("[data-txt-list-bullet]"));
+      onPatch({ list: "bullet" });
       expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { list: "bullet" } });
-      click(host.querySelector("[data-txt-indent-inc]"));
+      onPatch({ indent: 12 });
       expect(onEditAnnotation).toHaveBeenLastCalledWith("tbx-styled", { style: { indent: 12 } });
     } finally {
       unmount();
@@ -1247,13 +1270,18 @@ describe("Phase 24 — annotation text style wiring", () => {
 
   it("routes a colour patch through the colour path only (never double-sent)", async () => {
     const onEditAnnotation = vi.fn<(id: string, patch: AnnotationPatch) => void>();
+    const published: (InspectorTextSelection | null)[] = [];
     const { host, unmount } = await mountStyledDocView({
       annotations: [STYLED_TEXTBOX],
       onEditAnnotation,
+      onTextSelectionChange: (selection): void => {
+        published.push(selection);
+      },
     });
     try {
       selectStyledTextbox(host);
-      fireChange(host.querySelector("[data-txt-color]"), "#00ff00");
+      // The panel's colour input emits an EditColor; green.
+      (published.at(-1) as InspectorTextSelection).onPatch({ color: { r: 0, g: 1, b: 0 } });
       expect(onEditAnnotation).toHaveBeenCalledTimes(1);
       const [id, patch] = onEditAnnotation.mock.calls[0] ?? [];
       expect(id).toBe("tbx-styled");
@@ -1266,13 +1294,18 @@ describe("Phase 24 — annotation text style wiring", () => {
 
   it("clear formatting sends style and colour in ONE call (a single undo step)", async () => {
     const onEditAnnotation = vi.fn<(id: string, patch: AnnotationPatch) => void>();
+    const published: (InspectorTextSelection | null)[] = [];
     const { host, unmount } = await mountStyledDocView({
       annotations: [STYLED_TEXTBOX],
       onEditAnnotation,
+      onTextSelectionChange: (selection): void => {
+        published.push(selection);
+      },
     });
     try {
       selectStyledTextbox(host);
-      click(host.querySelector("[data-txt-clear]"));
+      const snap = published.at(-1) as InspectorTextSelection;
+      snap.onPatch(clearFormattingPatch(snap.defaults));
       expect(onEditAnnotation).toHaveBeenCalledTimes(1);
       const [, patch] = onEditAnnotation.mock.calls[0] ?? [];
       // Style fields reset to the per-tool defaults ...

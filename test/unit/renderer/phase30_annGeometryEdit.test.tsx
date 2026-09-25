@@ -23,6 +23,7 @@ import { act, createElement, useRef, useState, type ReactElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { DocumentView, type PersistedViewer } from "../../../src/renderer/components/DocumentView";
+import type { InspectorTextSelection } from "../../../src/renderer/components/Inspector";
 import {
   applyPatch,
   isPositiveAnnRect,
@@ -146,6 +147,9 @@ interface HostApi {
   flushNext: () => void;
   /** The renderer's current annotation list (what the overlay draws). */
   annotations: () => StoredAnn[];
+  /** Phase 38 — the latest text surface the view published upward (the
+   *  Inspector's snapshot; the view no longer mounts a panel of its own). */
+  latestTextSelection: InspectorTextSelection | null;
 }
 
 /** The tab host: owns the annotation list App would own AND a FIFO of
@@ -200,6 +204,9 @@ function Host(props: { api: HostApi; initialAnn: Annotation }): ReactElement {
     editModeOpen: false,
     onEditModeToggle: NOOP,
     edit: null,
+    onTextSelectionChange: (selection): void => {
+      api.latestTextSelection = selection as InspectorTextSelection | null;
+    },
   });
 }
 
@@ -213,7 +220,12 @@ async function mountView(initialAnn: Annotation): Promise<Harness> {
   const host = document.createElement("div");
   document.body.appendChild(host);
   const root = createRoot(host);
-  const api: HostApi = { ops: [], flushNext: NOOP, annotations: (): StoredAnn[] => [] };
+  const api: HostApi = {
+    ops: [],
+    flushNext: NOOP,
+    annotations: (): StoredAnn[] => [],
+    latestTextSelection: null,
+  };
   await act(async (): Promise<void> => {
     root.render(createElement(Host, { api, initialAnn }));
     await Promise.resolve();
@@ -251,38 +263,39 @@ function selectAnn(h: Harness): void {
 }
 
 function panelMode(h: Harness): string | null {
-  return h.host.querySelector("[data-text-panel]")?.getAttribute("data-text-panel-mode") ?? null;
+  // Phase 38 — the DocumentView publishes the text surface; the Inspector
+  // renders it. The harness reads the published snapshot.
+  return h.api.latestTextSelection?.mode ?? null;
 }
 
-function setTextarea(el: HTMLTextAreaElement, value: string): void {
-  const setter = Object.getOwnPropertyDescriptor(
-    window.HTMLTextAreaElement.prototype,
-    "value",
-  )?.set;
-  act((): void => {
-    setter?.call(el, value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-}
-
-/** Type into the panel's Text field, then blur it: the session commits. */
+/** Type into the published Text surface, then commit it (blur): the session
+ *  commits exactly one engine op. */
 function typeAndCommit(h: Harness, text: string): void {
-  const ta = h.host.querySelector<HTMLTextAreaElement>("[data-txt-text]");
-  if (ta === null) throw new Error("[data-txt-text] not found");
-  setTextarea(ta, text);
+  const snap = h.api.latestTextSelection;
+  if (snap === null) throw new Error("text surface not published");
   act((): void => {
-    ta.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    snap.onTextChange?.(text);
+  });
+  act((): void => {
+    h.api.latestTextSelection?.onTextCommit?.(null);
   });
 }
+
+/** Map a panel control hook to the patch it emits (the Inspector instance
+ *  renders the SAME component; the harness drives its `onPatch` directly). */
+const CONTROL_PATCHES: Record<string, Record<string, unknown>> = {
+  "[data-txt-bold]": { bold: true },
+  "[data-txt-align-center]": { align: "center" },
+  "[data-txt-list-bullet]": { list: "bullet" },
+  "[data-txt-indent-inc]": { indent: 12 },
+};
 
 function clickControl(h: Harness, selector: string): void {
-  const btn = h.host.querySelector<HTMLButtonElement>(selector);
-  if (btn === null) throw new Error(`${selector} not found`);
+  const snap = h.api.latestTextSelection;
+  const patch = CONTROL_PATCHES[selector];
+  if (snap === null || patch === undefined) throw new Error(`${selector} not found`);
   act((): void => {
-    btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-  });
-  act((): void => {
-    btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    snap.onPatch(patch as never);
   });
 }
 

@@ -192,15 +192,17 @@ describe("DEF-315 — the measured pill reserve", () => {
     ];
     const pins = ["Zoom in", "Zoom out", "Fit width", "Fit page"];
     expect(labelledDockNeed(deliver)).toBeGreaterThan(labelledDockNeed(pages));
-    expect(labelledDockNeed(pages)).toBeCloseTo(450.6, 1);
-    expect(labelledDockNeed(deliver)).toBeCloseTo(491.6, 1);
+    // Phase 38 (feature B) — the 12px label floor + 20px glyph raise the need
+    // from the 9px model's 450.6 / 491.6.
+    expect(labelledDockNeed(pages)).toBeCloseTo(552.8, 1);
+    expect(labelledDockNeed(deliver)).toBeCloseTo(614.8, 1);
     // Six labelled PAGES verbs fit a generous band...
     expect(labelsFitBand(labelledDockNeed(pages), 964)).toBe(true);
-    // ...with four pins the labelled dock needs ~682px, so a 524px band yields
-    // while a 744px band still fits.
-    expect(labelledDockNeed(pages, pins)).toBeCloseTo(682, 1);
+    // ...with four pins the labelled dock needs ~829px, so a 524px band yields
+    // while a 900px band still fits.
+    expect(labelledDockNeed(pages, pins)).toBeCloseTo(829.0, 1);
     expect(labelsFitBand(labelledDockNeed(pages, pins), 524)).toBe(false);
-    expect(labelsFitBand(labelledDockNeed(pages, pins), 744)).toBe(true);
+    expect(labelsFitBand(labelledDockNeed(pages, pins), 900)).toBe(true);
   });
 });
 

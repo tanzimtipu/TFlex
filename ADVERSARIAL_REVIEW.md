@@ -3489,4 +3489,264 @@ right-click menu and hover verbs were verified, the drag/multi-select paths were
 not exhaustively exercised).
 
 
+## ADV-087: Re-opening a document into the same Multi Mode pane still paints the pre-Inspector-inset fit (page ~34% oversized) before it settles
+
+- Session: phase-38 gate
+- Suggested severity: MEDIUM
+
+What I did (harness `test-fixtures/adv-p38/gate_probe.cjs`, scenarios
+`repeat` and `overshoot`; the dev build launched through `e2e/lib/launch.cjs`):
+1. Opened `test-fixtures/report.pdf` in single mode, clicked
+   `[data-header-multi-mode]` (pane B empty).
+2. Installed a per-frame rAF sampler on `.tab-pane[data-pane="B"]` recording
+   `.page-slot` / `.pdf-page` width, the pane width, `--tf-tools-inset`, the pane
+   zoom-pill readout and placeholder presence.
+3. Opened a document into B via `[data-pane-open]` (dialog mocked), let it
+   settle ~3.5s, then clicked `[data-pane-clear]` and repeated the open with
+   `long.pdf` / `report.pdf` (7 cycles). The same sequence was then repeated
+   with a CDP screencast recording frames (`overshoot` scenario).
+
+Expected: each open into the pane is held by the DEF-338 gate until the scroller
+box is stable, so the first painted fit IS the settled fit (criterion 11: zero
+frames wider than the settled fit; "a fit measured while the pane is still
+shrinking can never be committed").
+
+Actual: reproduced on the 3rd and 4th reopen of each run (cycles k=2 and k=3 in
+both `repeat` and `overshoot`). Frame-level samples:
+
+```
+overshoot-cycles k=2 (long.pdf): maxSlot 525, settled 393
+  overshoot frame: {t:11203, slotW:525, pageW:525, paneW:555, stageW:1378,
+                    inset:"0px", slots:520, ph:true, canvas:true, zoom:"86%"}
+  zoomSeq: ["86%","65%","64%"]   final 64% / slot 393
+overshoot-cycles k=3 (report.pdf): maxSlot 525, settled 393
+  overshoot frame: {t:16090, slotW:525, pageW:525, paneW:554, stageW:1378,
+                    inset:"0px", slots:520, ph:true, canvas:true, zoom:"86%"}
+```
+
+So a `.page-slot` and its `.pdf-page` are laid out at 525px (the 86% fit) for
+1-2 painted frames, then step down to 393px (64%) - a 132px / ~34% oversize
+first paint. `--tf-tools-inset` read `0px` at the overshoot frame: the gate
+released after three identical samples while the Inspector's tools inset was
+still collapsed, and the inset transition (which then narrows the pane's
+content box) began only afterwards. The gate's "three identical samples" window
+cannot see a transition that starts after it releases, so the race the fix was
+meant to close is still open on a repeated open/clear/open of a pane. First
+opens into B (and the payslip open) did not overshoot in these runs; the gate
+catches the inset transition when it starts before the gate settles (ordering
+dependent). The known ~10px scrollbar step (403->393) is separate and already
+documented in `def338_residual_report.spec.cjs`; this finding is the 34% wrong
+fit, not that residual.
+
+Screenshot: `test-fixtures/adv-p38/shots/gate-overshoot-widest.png` (screencast
+frame nearest the overshoot, ~116ms late, so it shows the pane a moment after;
+the sample JSON above is the frame-level evidence). Final/settled state:
+`test-fixtures/adv-p38/shots/gate-overshoot-final.png`.
+
+Disposition: ACCEPTED -> DEF-343
+
+
+## ADV-088: Light-theme dock verbs fall below the 4.5:1 text floor in the pressed (:active) state
+
+- Session: phase-38 gate
+- Suggested severity: LOW
+
+What I did (harness `test-fixtures/adv-p38/gate_probe.cjs`, scenario
+`legibility`; and re-ran qa's `P38-1` group for the resting-state baseline):
+1. Opened report.pdf at 1920x900, read the resolved tokens and the rendered dock
+   verb colours, and composited the actual surfaces (`--bg-elevated`,
+   `--bg-hover`, `--bg-active`, `--accent-soft`) exactly as the browser does.
+2. Hovered and pressed a non-primary verb to confirm which rule wins.
+3. Computed WCAG ratios for every family hue against the resting, hover and
+   active surfaces in all three themes.
+
+Expected: text contrast >= 4.5:1 and icon contrast >= 3:1 against the ACTUAL
+surface in every state (hover / active / pressed / disabled) and theme.
+
+Actual - the family-hue rule wins by specificity over the hover/active ink:
+
+```
+.action-dock-verb:not(.action-dock-verb-primary):not([aria-pressed='true']):not(:disabled)  (0,4,0)
+.action-dock-verb:hover:not(:disabled)                                                       (0,3,0)
+```
+
+so a hovered/pressed family verb keeps its hue instead of `--fg-strong`, and the
+hue then sits on the darker `--bg-active`. Empirical confirmation: hovering
+`extract` in the light theme left `color: rgb(37, 99, 235)` (the family hue)
+with `background: rgba(15, 23, 42, 0.04)`.
+
+Light theme, pressed (`:active`, surface ~#e8eaec, ratio to the hue):
+
+```
+blue   #2563eb 4.29   (below 4.5)
+cyan   #0e7490 4.45   (below 4.5)
+green  #15803d 4.16   (below 4.5)
+orange #b45309 4.17   (below 4.5)
+yellow #8a6100 4.60   ok
+purple #6d28d9 5.90   ok
+red    #be123c 5.22   ok
+pink   #be185d 5.01   ok
+```
+
+Hover is marginal but passes (light: blue 4.65, cyan 4.82, green 4.52, orange
+4.52). Dark (min hover 5.17, min active 4.58) and frostied (min hover 5.96, min
+active 5.49) pass. Resting min is 4.88 light / 5.75 dark / 6.60 frosted. Icon
+contrast (>=3:1) still passes everywhere. qa's `P38-1` sweep measures only the
+resting colour, so it cannot see this state. Fixing the hover/active rules'
+specificity (or moving the family hue to a rule the hover can override) closes
+it.
+
+Screenshot: `test-fixtures/adv-p38/shots/legibility-light.png`.
+
+Disposition: ACCEPTED -> DEF-344
+
+
+## ADV-089: The Inspector still shows an enabled text-manipulation panel after leaving the text stage, while its own selection line says "page"
+
+- Session: phase-38 gate
+- Suggested severity: LOW
+
+What I did (harness `test-fixtures/adv-p38/gate_probe.cjs`, scenarios
+`textSingle` and `textMulti`):
+1. Single mode: opened `long.pdf`, Ctrl+2 (EDIT), armed Edit text via Ctrl+K,
+   clicked a text run until `[data-textrun-selection]` appeared. The Inspector
+   showed `data-inspector-selection="text"` and the field held the run text.
+2. Pressed Ctrl+1 (PAGES). After 1.5s: `data-inspector-selection="page"` but
+   `[data-inspector-text-panel]` was still present (one instance), the field
+   enabled and still holding the run text; typing into it changed the field
+   ("ZZZ").
+3. Re-entered EDIT and re-selected; the field showed the ORIGINAL run text
+   again, i.e. the typed value had not persisted.
+4. Repeated in Multi Mode (report.pdf pane A, long.pdf pane B, focused pane B):
+   same result, and once typed the panel then persisted across PAGES/EDIT/
+   REVIEW/DELIVER with `data-inspector-selection="page"`.
+
+Expected: the Inspector's text-manipulation surface is shown only when its
+selection is a text target (`inspectorSelectionFor` yields kind `text`); leaving
+the EDIT/REVIEW stage clears the selection and the panel should not render an
+enabled field for a "page" selection (fail loud, never a surface with no
+matching target).
+
+Actual: `inspectorTextPanelFor` returns a panel whenever the published
+`inspectorTextSelection` snapshot is non-null, independent of the stage, while
+`inspectorSelectionFor` already reports `page`. So the header says "Page 1" and
+an editable text field for the previous run coexists. Typing into it is accepted
+and then silently discarded (step 3). No crash and no document mutation was
+observed, but the state is contradictory and the edit is a silent no-op.
+
+Screenshot: `test-fixtures/adv-p38/shots/text-single-pages.png`,
+`test-fixtures/adv-p38/shots/text-multi-stages.png` (see console log for the
+snapshot JSON).
+
+Disposition: ACCEPTED -> DEF-345
+
+
+## ADV-090: Legacy-cleanup NSIS guards are name/path heuristics and run in the elevating user's context
+
+- Session: phase-38 gate
+- Suggested severity: LOW
+
+What I did (static audit of `electron-builder.nsh` + `electron-builder.yml`;
+verified electron-builder's defines in
+`node_modules/app-builder-lib/templates/nsis/multiUser.nsh` and
+`out/targets/nsis/NsisTarget.js`; plus a READ-ONLY registry/filesystem probe of
+this machine - no install, no registry write):
+1. Read the `customInstall` hook and the electron-builder NSIS templates that
+   define `INSTALL_REGISTRY_KEY` / `UNINSTALL_REGISTRY_KEY` and insert the hook.
+2. Read this machine's keys read-only (`HKCU ... \Uninstall\<GUID>`,
+   `HKCU\Software\<GUID>`, `HKCU\Software\Classes\TFlex.pdf`,
+   `HKCU\Software\Classes\.pdf\OpenWithProgids`, the `.pdf` UserChoice) and
+   listed `%LOCALAPPDATA%\Programs\TFlex`.
+
+Expected: "nothing is deleted unless it is provably TFlex's" (the script's own
+comment), and a per-machine install removes the legacy per-user install (the
+success criterion 3).
+
+Actual - the guards are real but name/path heuristics, and one step is
+unguarded:
+- `${UNINSTALL_REGISTRY_KEY}` = `Software\Microsoft\Windows\CurrentVersion\Uninstall\f890a78b-...`
+  and `${INSTALL_REGISTRY_KEY}` = `Software\f890a78b-...`, both read from HKCU
+  and deleted only when `DisplayName` / `InstallLocation` contain the substring
+  "TFlex" (case-sensitive `${StrContains}`). A different product whose
+  display name or install location merely contains "TFlex" would be deleted;
+  the GUID itself is appId-unique, so a genuine GUID collision is not credible.
+- The directory step is guarded only by
+  `${FileExists} "$LOCALAPPDATA\Programs\TFlex\TFlex.exe"`; any directory with
+  that exact path containing a file named `TFlex.exe` (not necessarily this
+  product) is `RMDir /r`-ed. On this machine it is genuinely the legacy 1.29.0
+  install (TFlex.exe + "Uninstall TFlex.exe"), so the guard passes as intended.
+- Step 4 is UNGUARDED: `DeleteRegKey HKCU "Software\Classes\TFlex.pdf"` deletes
+  the ProgID key with no ownership check, contradicting the "provably TFlex's"
+  claim. It only affects a per-user ProgID under that exact name; the user's
+  real default is `...\FileExts\.pdf\UserChoice` (here `MSEdgePDF`) which is
+  never touched, and `.pdf\OpenWithProgids` only lists candidates - so deleting
+  the `TFlex.pdf` value there cannot change the effective default handler.
+- Context hole: an elevated per-machine install runs at `RequestExecutionLevel
+  admin`; `HKCU` and `$LOCALAPPDATA` then resolve to the ELEVATING account. If a
+  standard user installs with a different admin's credentials, the legacy
+  per-user install/uninstall keys of the invoking user are not removed (the
+  stated job fails) and the admin's own profile is targeted instead. When the
+  user is an admin who self-elevates (this machine), it cleans the right
+  profile. Also, if the legacy `TFlex.exe` is still running during a first
+  per-machine install, `RMDir /r` cannot delete the in-use file and can leave a
+  half-removed directory while the registry entries are already gone.
+
+Screenshot: none (analysis; the read-only probe output is in the session log).
+
+Disposition: ACCEPTED -> DEF-346
+
+
+## Negative results - Phase 38 (no finding)
+
+- Pane first-fit gate, all other hostile sequences: payslip into pane B, opening
+  while dragging the divider, opening while toggling the Inspector, focus
+  switching mid-fit, a 3rd document, a 1-page document, a 520-page document, and
+  rapid open/clear loops all ended with a painted pane and no held-blank pane
+  (`repeat`/`overshoot` cycles had canvas frames and slot 393-403; `dragDuringLoad`,
+  `payslipDrag`, `inspector`, `tabSwitch`, `third`, `tiny` all settled). No gate
+  hold-forever was reproduced on any sequence. Toggling Multi Mode before a
+  document exists is inert (no pane, no crash). Opening an unopenable fixture
+  (encrypted/zero/truncated/not-a-pdf) into pane B leaves the pane empty with no
+  assignment; that is a document-open error path, not a gate hold, and is out of
+  this phase's scope.
+- Dock containment (DEF-341): my sweep at 1920/1440/1200/880/719/640 (and the
+  clamped 640 floor at 520/400) for all four stages found one row everywhere,
+  the leading verb inside the dock box and hit-testable, the trailing verb
+  reachable (scroll to end), no vertical clipping, and no oscillation on
+  repeated 1920<->640 resizes. The pin menu clamps inside the viewport at both
+  window edges (420x560). Unpinning all PAGES verbs leaves an empty 17x13 dock
+  remnant, which the Ctrl+K palette can re-populate (already recorded in ADV-086's
+  negative results; no new finding).
+- Legibility (item 2), all states except ADV-088: resting/hover/pressed/primary
+  in dark and frosted pass >= 4.5 (min resting 5.75/6.60, hover 5.17/5.96,
+  active 4.58/5.49, primary 5.96/5.61); light resting/hover/primary pass (min
+  4.88/4.52/5.52). Icons render at 20px (dock), 22px (rail), 18px (panel,
+  Inspector, header, pills) - all >= 18; labels 12px everywhere. Disabled ink is
+  1.86-2.30:1 against the dock but is visibly distinct from every enabled hue
+  (min RGB distance 121) as required. 8 dock verbs carry 6-7 distinct hues plus
+  8 distinct icon shapes and labels (colour is not the only signal). The 64px
+  stage rail keeps its buttons fully inside the rail (3..60) and the dock/pills
+  are inset from the window edges.
+- Retired text panel (item 3): qa's `P38-2` reproduces "exactly one
+  `[data-inspector-text-panel]`, inside the Inspector, static, retired float/grip
+  selectors absent" for the armed tool, a placed text annotation, the REVIEW
+  re-selection, the Ctrl+K palette path, and the EDIT text-box flow; my
+  `textMulti`/`textSingle` add Multi Mode (one panel, never per-pane; no panel in
+  either pane subtree) and closing a pane mid-edit (no orphan). No duplicated
+  surface was found.
+- Edit fidelity (item 4): qa's `P38-3` passes (preview font == source run height
+  within 0.5px at 150%/200% for report.pdf and 200% for long.pdf; eraser covers
+  the run box including descenders). My `editRotated` sweep at 0/90/180/270
+  degrees found sizeDelta 0 and full four-side eraser coverage at every
+  rotation. No ghost/duplicate and no focus steal observed; note that after
+  selecting a text RUN the activeElement stayed BODY in that probe (the
+  focus-on-select guarantee is asserted for text OBJECTS in `P38-2`, which
+  passes), so run-level focus is unverified rather than broken.
+- Not fully verified: the OTA/update-path installer run (I did not install, per
+  instruction); rotated-page edit with a rotated DESCENDER run (report.pdf run
+  boxes are axis-aligned after rotation and covered); rapid theme switching
+  during a pane load; the `--tf-tools-inset` transition's exact trigger ordering
+  (inferred from the inset=0px overshoot frame, not instrumented directly).
+
+
 

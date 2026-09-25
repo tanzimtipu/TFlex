@@ -23,7 +23,7 @@ import { act } from "react";
 import type { ReactElement } from "react";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import { PaneThumbStrip } from "../../../src/renderer/components/PaneThumbStrip";
-import { computeThumbWidth } from "../../../src/renderer/components/thumbGeometry";
+import { computeThumbWidth, THUMB_WIDTH } from "../../../src/renderer/components/thumbGeometry";
 import type { EngineState } from "../../../src/renderer/engine/types";
 import type { PageDropOp } from "../../../src/renderer/state/pageDrag";
 
@@ -183,9 +183,13 @@ describe("PaneThumbStrip — the dynamically computed thumb width", () => {
     expect(new Set(thumbWidths(host))).toEqual(new Set([`${expected}px`]));
   });
 
-  it("keeps the single-mode width when one document is loaded", () => {
+  it("caps one document to the strip's real content box (DEF-347)", () => {
     const host = renderStrip({ documentCount: 1 });
-    expect(new Set(thumbWidths(host))).toEqual(new Set([`${computeThumbWidth(220, 1)}px`]));
+    // The strip's measured width is 150 (STRIP_WIDTH_PX), so the single
+    // document can no longer use the 126px single-mode width.
+    const expected = computeThumbWidth(150, 1);
+    expect(expected).toBeLessThan(THUMB_WIDTH);
+    expect(new Set(thumbWidths(host))).toEqual(new Set([`${expected}px`]));
   });
 
   it("never drops below the minimum hit target on a narrow strip", () => {

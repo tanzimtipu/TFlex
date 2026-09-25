@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { inflateSync } from 'node:zlib';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PDFDocument, PDFName, PDFRawStream, StandardFonts } from 'pdf-lib';
 import { EngineService } from '../../../src/main/services/engine';
 import { embedEditFont, getBundledFontDir, setBundledFontDir } from '../../../src/main/services/fonts';
@@ -1297,34 +1297,44 @@ describe('EngineService - getDocumentBytes', () => {
     await engine.applyOp('doc-1', { kind: 'rotate-cw', page: 0 });
     await engine.applyOp('doc-1', { kind: 'delete', page: 2 });
 
-    const r = await engine.getDocumentBytes('doc-1');
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
+    // pdf-lib stamps /ModDate with `new Date()` on every save (second
+    // resolution), so two serializations that straddle a one-second boundary
+    // differ only in that save-time stamp. Freeze Date across both calls so the
+    // byte comparison stays exact and deterministic (DEF-350).
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'));
+    try {
+      const r = await engine.getDocumentBytes('doc-1');
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
 
-    // Result is a standalone ArrayBuffer (not a shared view).
-    expect(r.value).toBeInstanceOf(ArrayBuffer);
+      // Result is a standalone ArrayBuffer (not a shared view).
+      expect(r.value).toBeInstanceOf(ArrayBuffer);
 
-    // Re-parse the returned bytes and assert the mutations are present.
-    const reparsed = await PDFDocument.load(r.value);
-    // 4 - 1 deleted = 3 surviving pages.
-    expect(reparsed.getPageCount()).toBe(3);
-    // First page rotated 90deg.
-    expect(reparsed.getPage(0).getRotation().angle).toBe(90);
+      // Re-parse the returned bytes and assert the mutations are present.
+      const reparsed = await PDFDocument.load(r.value);
+      // 4 - 1 deleted = 3 surviving pages.
+      expect(reparsed.getPageCount()).toBe(3);
+      // First page rotated 90deg.
+      expect(reparsed.getPage(0).getRotation().angle).toBe(90);
 
-    // The bytes from getDocumentBytes must match what save() writes to disk
-    // (same serializeDoc path), proving the renderer refresh matches a save.
-    const saveR = await engine.save('doc-1');
-    expect(saveR.ok).toBe(true);
-    const { readFile } = await import('node:fs/promises');
-    const saved = await readFile(path);
-    expect(saved.byteLength).toBe(r.value.byteLength);
-    const savedView = new Uint8Array(saved);
-    const gotView = new Uint8Array(r.value);
-    let same = savedView.length === gotView.length;
-    for (let i = 0; same && i < savedView.length; i++) {
-      if (savedView[i] !== gotView[i]) same = false;
+      // The bytes from getDocumentBytes must match what save() writes to disk
+      // (same serializeDoc path), proving the renderer refresh matches a save.
+      const saveR = await engine.save('doc-1');
+      expect(saveR.ok).toBe(true);
+      const { readFile } = await import('node:fs/promises');
+      const saved = await readFile(path);
+      expect(saved.byteLength).toBe(r.value.byteLength);
+      const savedView = new Uint8Array(saved);
+      const gotView = new Uint8Array(r.value);
+      let same = savedView.length === gotView.length;
+      for (let i = 0; same && i < savedView.length; i++) {
+        if (savedView[i] !== gotView[i]) same = false;
+      }
+      expect(same).toBe(true);
+    } finally {
+      vi.useRealTimers();
     }
-    expect(same).toBe(true);
   });
 
   it('is read-only: does not reset modified or clear the undo stack', async () => {

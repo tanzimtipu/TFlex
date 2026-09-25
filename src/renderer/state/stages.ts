@@ -130,6 +130,27 @@ export function editModeForStage(stage: Stage): boolean {
   return stage === 'edit';
 }
 
+/**
+ * Phase 38 / DEF-342 — whether the stage effect must (re-)apply its side
+ * effects. The stage's side effects must re-apply not only on a stage CHANGE
+ * but whenever the stage becomes APPLICABLE again: closing the only tab
+ * clears edit mode App-side while the rail keeps showing EDIT, so a document
+ * ARRIVING (`prevDocId` null -> `docId` set) must re-apply them even though
+ * the stage value never changed. Closing (`docId` -> null) does NOT re-apply:
+ * the tab-close path already turns the stage's side effects off, and there is
+ * no document surface to apply them to. Pure so the rule is unit-testable
+ * without mounting App.
+ */
+export function stageEffectsNeedApply(args: {
+  prevStage: Stage;
+  prevDocId: string | null;
+  stage: Stage;
+  docId: string | null;
+}): boolean {
+  if (args.prevStage !== args.stage) return true;
+  return args.docId !== null && args.docId !== args.prevDocId;
+}
+
 export function stageReducer(state: StageState, action: StageAction): StageState {
   switch (action.type) {
     case 'set': {

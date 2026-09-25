@@ -36,7 +36,7 @@ import { TitleBar, type MenuGroup } from "./components/TitleBar";
 import {
   Inspector,
   inspectorSelectionFor,
-  inspectorTextPanelFor,
+  inspectorTextPanelForSelection,
 } from "./components/Inspector";
 import type { InspectorTextSelection } from "./components/Inspector";
 import { AboutDialog } from "./components/AboutDialog";
@@ -68,6 +68,7 @@ import {
 import {
   editModeForStage,
   initialStageState,
+  stageEffectsNeedApply,
   stageForPane,
   stageReducer,
   type Stage,
@@ -100,9 +101,10 @@ import {
   resolvePaneClear,
   resolvePaneFocus,
   resolveTabStripActivation,
+  shouldClearActiveOnEmptyFocus,
 } from "./state/multiModeRouting";
 import { collectModifiedTabIds, orderWindowCloseQueue } from "./state/closeGate";
-import { resolvePaneSelection } from "./state/multiChrome";
+import { resolveDockPane, resolvePaneSelection } from "./state/multiChrome";
 import { planJointPaneRefresh, type JointPaneRefresh } from "./state/jointUndo";
 import {
   COMPOSITE_TAB_ID,
@@ -113,7 +115,7 @@ import {
   planCompositeClose,
 } from "./state/compositeTab";
 import { DocumentStage, type StageTab } from "./components/MultiPane";
-import { INSPECTOR_COLLAPSED_W_PX, INSPECTOR_W_PX } from "./components/multiPaneLayout";
+import { INSPECTOR_COLLAPSED_W_PX, INSPECTOR_W_PX, multiDockBandPx } from "./components/multiPaneLayout";
 import { MultiActionDock } from "./components/MultiActionDock";
 import { SharedToolController } from "./components/multiToolController";
 // Phase 33 — the per-pane thumbnail strips are rendered by each pane's own
@@ -7199,7 +7201,14 @@ pushToast(
       dispatchMultiMode({ type: "focus", pane: decision.focus });
       if (decision.activate !== null) {
         if (decision.activate !== tabs.activeId) activateTab(decision.activate);
-      } else if (tabs.activeId !== null) {
+      } else if (
+        tabs.activeId !== null &&
+        shouldClearActiveOnEmptyFocus(multiMode, pane)
+      ) {
+        // Phase 39 (item 2) — only clear the active document when the
+        // workspace has NO document left. If the other pane still holds one,
+        // keeping it active holds the Inspector's inset (and the divider)
+        // stable when a document is subsequently opened into this pane.
         dispatchTabs({ type: "deactivate" });
       }
     },
@@ -7525,6 +7534,14 @@ pushToast(
   // drives the one active stage.
   const stagePane: PaneId | null = multiMode.enabled ? multiMode.focused : null;
   const activeStage: Stage = stageForPane(stageState, stagePane);
+  // Phase 39 (DEF-348a) — the shared Action Dock is WORKSPACE-level: when the
+  // focused pane is EMPTY it reads the pane that actually owns a document, so
+  // it stays present and functional. `resolveDockPane` is the pure rule; the
+  // dock's stage follows the same pane.
+  const dockPane: PaneId | null = multiMode.enabled
+    ? resolveDockPane(multiMode, multiMode.focused)
+    : null;
+  const dockStage: Stage = stageForPane(stageState, dockPane);
   const onStageChange = useCallback(
     (stage: Stage): void => {
       dispatchStage({ type: "set", pane: stagePane, stage });
@@ -7535,13 +7552,32 @@ pushToast(
   // Phase 37 (item 13) — the stage IS the Edit-mode switch. Entering the
   // EDIT stage turns the canvas's edit mode on and every other stage turns
   // it off; the `editMode` dock verb is retired. ONE effect keyed on the
-  // active stage, so there is no second source of truth for edit mode.
-  const prevActiveStageRef = useRef<Stage>(activeStage);
+  // active stage AND the active document identity, so there is no second
+  // source of truth for edit mode.
+  //
+  // DEF-342 — the effect must re-apply when the stage becomes APPLICABLE
+  // again, not only when the stage value changes. Closing the only tab
+  // clears edit mode App-side while the rail keeps showing EDIT, so
+  // re-opening a document (docId null -> a tab id) has to re-apply EDIT's
+  // side effects even though the stage value never changed. The decision is
+  // the pure `stageEffectsNeedApply`, so the rule is unit-testable.
+  const prevStageApplyRef = useRef<{ stage: Stage; docId: string | null }>({
+    stage: activeStage,
+    docId: tabs.activeId,
+  });
   useEffect((): void => {
-    if (prevActiveStageRef.current === activeStage) return;
-    prevActiveStageRef.current = activeStage;
+    const docId = tabs.activeId;
+    const prev = prevStageApplyRef.current;
+    prevStageApplyRef.current = { stage: activeStage, docId };
+    const needApply = stageEffectsNeedApply({
+      prevStage: prev.stage,
+      prevDocId: prev.docId,
+      stage: activeStage,
+      docId,
+    });
+    if (!needApply) return;
     setEditMode(editModeForStage(activeStage));
-  }, [activeStage, setEditMode]);
+  }, [activeStage, tabs.activeId, setEditMode]);
 
   // Phase 36 (chunk 6) — the Inspector's LIVE selection.
   //
@@ -7563,7 +7599,10 @@ pushToast(
     signatureLabel: armedSignature === null ? null : armedSignature.label,
     page: Math.max(1, Math.floor(activeTab?.persisted.currentPage ?? 1)),
   });
-  const inspectorTextPanel = inspectorTextPanelFor(inspectorTextSelection);
+  const inspectorTextPanel = inspectorTextPanelForSelection(
+    inspectorSelection,
+    inspectorTextSelection,
+  );
   // Multi Mode's shared Inspector follows the FOCUSED pane (Phase 36 chunk 7):
   // entering the mode withdraws a single-mode selection, and a focus switch
   // withdraws the previous pane's, so the panel never shows a background
@@ -7813,6 +7852,11 @@ pushToast(
   // with BOTH panes' floating pills, so the whole workspace's chrome fades in
   // lockstep (single mode's per-view dock keeps reporting to its own view).
   const [sharedDockIdle, setSharedDockIdle] = useState(false);
+  // Phase 39 (DEF-348b/c) — the shared dock's measured vertical yield, in px.
+  // The dock reports it so the panes/strips can reserve exactly the band the
+  // dock needs (84px base + the lift): no dock verb, strip, page-action bar or
+  // pill can then intersect another surface in Multi Mode.
+  const [sharedDockLift, setSharedDockLift] = useState(0);
 
   // The shared Inspector's text-selection rule: in Multi Mode only the FOCUSED
   // pane's publish may drive the panel (`resolvePaneSelection`); the
@@ -8284,6 +8328,7 @@ pushToast(
           onClearPane={onClearPane}
           onPickPane={onPickPane}
           onOpenIntoPane={onOpenIntoPane}
+          dockBandPx={multiDockBandPx(sharedDockLift)}
           // Phase 36 (chunk 7) — the workspace's ONE Action Dock: rendered
           // once, floating at the workspace's bottom-centre while Multi Mode
           // is on. It reads the FOCUSED pane's stage (the verb set) and that
@@ -8294,8 +8339,8 @@ pushToast(
             multiMode.enabled ? (
               <MultiActionDock
                 controller={sharedToolController}
-                pane={multiMode.focused}
-                activeStage={activeStage}
+                pane={dockPane ?? multiMode.focused}
+                activeStage={dockStage}
                 dockPins={dockPins}
                 dockUnpinned={dockUnpinned}
                 ladder={dockLadder}
@@ -8305,6 +8350,7 @@ pushToast(
                 toolUsage={settings.toolUsage}
                 activeToolIds={editModeOpen ? ['editMode'] : []}
                 onIdleChange={setSharedDockIdle}
+                onLiftChange={setSharedDockLift}
               />
             ) : null
           }
@@ -8582,6 +8628,22 @@ pushToast(
                     // chrome fades together.
                     multiPane={pane}
                     paneFocused={pane !== null && pane === multiMode.focused}
+                    // DEF-343 — the Inspector's REQUESTED inset, so a Multi Mode
+                    // pane's first-fit gate cannot release while the panel slide
+                    // is still pending (the SAME target the stage's
+                    // `toolsInsetTarget` above hands the panes' geometry).
+                    paneInsetTarget={
+                      inspectorOpen
+                        ? inspectorCollapsedEffective
+                          ? INSPECTOR_COLLAPSED_W_PX
+                          : INSPECTOR_W_PX
+                        : 0
+                    }
+                    // DEF-343 — the pane's tab must be a REAL document before
+                    // its first fit can settle: engine.pageCount can be >0 one
+                    // commit before `kind` flips and the Inspector target (and
+                    // the panel slide) changes.
+                    paneContentReady={meta.kind !== "empty"}
                     chromeIdle={sharedDockIdle}
                     // Phase 32 (chunk 2d) — canvas page drag and drop is a
                     // Multi Mode feature: the hover grip and the page drop

@@ -63,6 +63,26 @@ import {
   liveTextBlockStyle,
   liveTextLineStyle,
 } from "./liveText";
+import { runSourceTextStyle } from "./textStyle";
+
+/** Phase 38 feature D — the descent pad (fraction of the run rect's height)
+ *  by which the run cover is extended BELOW the run rect. `textItemsToGeom`
+ *  anchors a run's rect bottom at the PDF baseline, so glyph descenders fall
+ *  outside it; without the pad the original ink peeks out under the live
+ *  preview ("the old text is slightly visible behind the selected text").
+ *  The live preview uses the SAME padded rect so the new descenders render
+ *  unclipped and are fully backed by the cover. */
+const RUN_COVER_DESCENT = 0.25;
+
+/** Extend a run rect to fully contain its glyph box (baseline -> descender). */
+function runCoverRect(rect: { x: number; y: number; width: number; height: number }): {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+} {
+  return { ...rect, height: rect.height * (1 + RUN_COVER_DESCENT) };
+}
 
 export interface EditOverlayProps {
   page: number;
@@ -1190,7 +1210,9 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
       return { ...textTarget.rect };
     }
     if (textTarget !== null && textTarget.kind === "run" && textTarget.text.length > 0) {
-      return { ...textTarget.rect };
+      // Phase 38 feature D — extend below the baseline so the run's
+      // descenders are covered too (no ghost ink under the live preview).
+      return runCoverRect(textTarget.rect);
     }
     return null;
   })();
@@ -1369,11 +1391,10 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
               return;
             }
             const p = pendingRunMove;
-            const style: EditTextStyle = {
-              font: defaultFont,
-              size: Math.round(p.oldRect.height * 0.8),
-              color: { r: 0, g: 0, b: 0 },
-            };
+            // Phase 38 feature D — the commit uses the run's SOURCE style
+            // derivation (rect height -> size), the same one the live preview
+            // renders, so nothing shrinks when the edit is baked.
+            const style: EditTextStyle = runSourceTextStyle(p.oldRect.height, defaultFont);
             const moved = !rectsClose(p.newRect, p.oldRect, 1);
             // Phase-C smooth commit — keep the white cover over the
             // run's ORIGINAL rect until the engine mask + proxy
@@ -1409,11 +1430,7 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
             setPendingRunMove(null);
           }}
           onDelete={(): void => {
-            const style: EditTextStyle = {
-              font: defaultFont,
-              size: Math.round(runSelection.rect.height * 0.8),
-              color: { r: 0, g: 0, b: 0 },
-            };
+            const style: EditTextStyle = runSourceTextStyle(runSelection.rect.height, defaultFont);
             onCommitTextEdit({
               rect: { ...runSelection.rect },
               newText: "",
@@ -1538,7 +1555,11 @@ export function EditOverlay(props: EditOverlayProps): ReactElement | null {
           a white hole. */}
       {runPreviewText !== null && runPreviewText.length > 0 && (
           <RunLivePreview
-            rect={textTarget === null ? { x: 0, y: 0, width: 0, height: 0 } : textTarget.rect}
+            rect={
+              textTarget === null
+                ? { x: 0, y: 0, width: 0, height: 0 }
+                : runCoverRect(textTarget.rect)
+            }
             text={runPreviewText}
             style={textStyle ?? defaultEditTextStyle(defaultFont)}
             cssScale={cssScale}

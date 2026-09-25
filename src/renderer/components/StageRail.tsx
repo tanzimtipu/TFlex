@@ -141,7 +141,7 @@ export function StageRail(props: StageRailProps): ReactElement {
               data-stage={stage}
             >
               <span className="stage-rail-icon" aria-hidden>
-                <Icon size={18} />
+                <Icon size={22} />
               </span>
               <span className="stage-rail-label" aria-hidden>
                 {STAGE_LABELS[stage]}
@@ -161,7 +161,7 @@ export function StageRail(props: StageRailProps): ReactElement {
           data-stage-rail-gear
         >
           <span className="stage-rail-icon" aria-hidden>
-            <Settings size={18} />
+            <Settings size={22} />
           </span>
           <span className="stage-rail-label" aria-hidden>
             Settings

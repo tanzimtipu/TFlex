@@ -6,13 +6,12 @@
 // this component only renders the current state and reports the smallest
 // possible `TextBoxStylePatch` per gesture.
 //
-// Geometry (Phase 25 — supersedes the Phase-21/24 docked column): the
-// panel is a FLOATING card over the page view, not a grid column. It
-// renders inside `.workspace-main` (positioned by `.text-props-float`),
-// has NO header bar, and its only chrome is the shared `ContentGrip`
-// strip at the top. Opening/closing it never reflows the page. The
-// Phase-20 AnimatedPanel still owns the enter/exit motion (token
-// durations, reduced-motion and animations-off paths unchanged).
+// Geometry (Phase 38 feature C — supersedes the Phase-25 floating card): the
+// panel has exactly ONE home, the Inspector's text block, where it is FIXED
+// in place. The floating, drag-to-move card and its ContentGrip chrome are
+// retired; this component renders no grip, no float attribute, and no drag
+// transform. The Phase-20 AnimatedPanel still owns the enter/exit motion
+// (token durations, reduced-motion and animations-off paths unchanged).
 //
 // Phase 24 — the Phase-21 per-family scope is retired. `mode: "annotation"`
 // is now IDENTICAL to `"text"` for control gating: every control is live for
@@ -43,8 +42,6 @@ import {
 } from "lucide-react";
 import type { EditFont, TextBoxStylePatch, TextAlign, TextListStyle } from "../../shared/types";
 import { AnimatedPanel } from "../components/AnimatedPanel";
-import { ContentGrip } from "../components/selectableContent";
-import { useDragWindow } from "../components/useDragWindow";
 import { fontFamilyFor } from "./editColor";
 import { hexToEditColor } from "./model";
 import {
@@ -113,10 +110,11 @@ const FONT_OPTIONS: readonly { group: string; fonts: readonly EditFont[] }[] = [
   { group: "Bundled", fonts: ["Liberation Sans", "DejaVu Serif", "DejaVu Sans Mono"] },
 ];
 
-/** DEF-256 — the gutter (CSS px) kept between the floating card's right
- *  edge and the open Tools palette's left edge. The same value drives the
- *  palette's coexistence cap through `--text-panel-gap` in styles.css
- *  (keep the two in lockstep). */
+/** DEF-256 — the gutter (CSS px) kept between the text-properties panel and
+ *  the open Tools palette's left edge. The same value drives the palette's
+ *  coexistence cap through `--text-panel-gap` in styles.css (keep the two in
+ *  lockstep). Phase 38 feature C — the panel no longer drags, so only the
+ *  stylesheet relation survives; the constant stays the shared source value. */
 export const TEXT_PANEL_PALETTE_GAP = 8;
 
 /** Parse a numeric input; null when the field is empty / not finite. */
@@ -126,17 +124,19 @@ function numberOrNull(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Phase 29 (DEF-266) — true when a focus target lives inside the floating
+/** Phase 29 (DEF-266) — true when a focus target lives inside the
  *  text-properties card. When a style control (a number / colour input or a
  *  select) takes focus, the host must keep the text session alive: committing
  *  on that blur deselected the run and the remaining controls could no longer
- *  compose. Exported so the host's `commitTextSession` and its unit tests use
- *  the exact predicate. */
+ *  compose. Phase 38 feature C — the panel's one home is the Inspector, so the
+ *  predicate keys on the control surface (`[data-text-panel]`), which both the
+ *  retired floating card and the Inspector instance carried. Exported so the
+ *  host's `commitTextSession` and its unit tests use the exact predicate. */
 export function isTextPanelFocusTarget(target: EventTarget | null | undefined): boolean {
   return (
     typeof Element !== "undefined" &&
     target instanceof Element &&
-    target.closest("[data-text-panel-float]") !== null
+    target.closest("[data-text-panel]") !== null
   );
 }
 
@@ -162,35 +162,26 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
   // effect afterwards), so the effect waits for `text` and then takes
   // focus. `el.select()` selects the whole content so the user can type
   // over it immediately.
+  //
+  // Phase 38 feature D — the Inspector instance mounts fresh when the first
+  // text object is selected, with the focus token ALREADY bumped (the token
+  // is bumped in the same commit as the selection, and the Inspector mounts
+  // on that commit). The old `lastFocusTokenRef` initialised to the incoming
+  // token, so the effect saw no change and never focused. The ref now starts
+  // at -1, so a mount carrying a POSITIVE token focuses and selects; a token
+  // of 0 still means "no request" and never steals focus.
   const textRef = useRef<HTMLTextAreaElement | null>(null);
-  const lastFocusTokenRef = useRef<number>(props.focusToken ?? 0);
+  const lastFocusTokenRef = useRef<number>(-1);
   const focusToken = props.focusToken ?? 0;
   useEffect(() => {
     if (focusToken === lastFocusTokenRef.current) return;
     const el = textRef.current;
     if (el === null || text === null) return;
     lastFocusTokenRef.current = focusToken;
+    if (focusToken === 0) return;
     el.focus();
     el.select();
   }, [focusToken, text]);
-
-  // Phase 25 — the panel is a floating card over the page view. The
-  // grip strip is the drag handle (the shared useDragWindow semantics:
-  // a press on a control never starts a move); the clamp is the
-  // page-view area itself, so the card can never be dragged out of
-  // `.workspace-main`. The offset lives in this component's state, so
-  // the position persists for the session (and per tab, like every
-  // other floating surface). DEF-256 — the open Tools palette is a
-  // no-go area as well: the card's right edge stops at the palette's
-  // left edge plus the shared gutter, so a drag can never bury the
-  // palette's entries under the card. When the palette is closed the
-  // constraint is inert and the card keeps its full existing range.
-  const drag = useDragWindow({
-    controlsSelector: "button, input, select, textarea, [role='button']",
-    clampSelector: ".workspace-main",
-    avoidSelector: "[data-tools-palette]",
-    avoidGap: TEXT_PANEL_PALETTE_GAP,
-  });
 
   // Phase 24 — no dispatch gate. The panel forwards the control's patch
   // verbatim; the host decides the route (text-object patch vs annotation
@@ -205,12 +196,7 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
   );
 
   return (
-    <div
-      className="text-props-float"
-      data-text-panel-float
-      ref={drag.windowRef}
-      style={{ transform: `translate3d(${drag.offset.x}px, ${drag.offset.y}px, 0)` }}
-    >
+    <div className="text-props-float">
       <AnimatedPanel
         open={open}
         side="left"
@@ -218,11 +204,6 @@ export function TextPropertiesPanel(props: TextPropertiesPanelProps): ReactEleme
         className="text-props-panel"
         testId="text-properties"
       >
-        {/* Phase 25 — the ONLY chrome: the shared ContentGrip drag
-            affordance. No header, no title. */}
-        <div className="text-props-grip" data-text-panel-grip {...drag.handleProps}>
-          <ContentGrip handleName="text-props" className="content-grip-inline" />
-        </div>
         <div
           className="text-props-body"
           data-text-panel

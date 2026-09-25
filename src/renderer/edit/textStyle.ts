@@ -141,6 +141,22 @@ export function applyPatchToValues(
   return next;
 }
 
+/** Phase 38 feature D — the SOURCE style of a raw text run. A run carries no
+ *  stored `EditTextStyle`; pdf.js reports the run's FONT SIZE as the text
+ *  item's `height` (`Math.hypot(trm[2], trm[3])` in device space, i.e. the
+ *  source run's size in points). The live editor seeds the panel and the
+ *  on-canvas preview from this helper, and the eventual commit uses the SAME
+ *  size, so editing a run renders at the run's source size — no shrink — and
+ *  the bake matches what the user saw. The source run's format is the
+ *  document's default font and black ink (runs carry no style in the model). */
+export function runSourceTextStyle(rectHeight: number, font: EditFont): EditTextStyle {
+  return {
+    font,
+    size: clampFontSize(Math.max(1, rectHeight)),
+    color: { r: 0, g: 0, b: 0 },
+  };
+}
+
 /** The full patch that writes every field back. Used by "clear formatting"
  *  and by the host when it needs a complete style write. A null highlight
  *  goes out as the explicit `null` removal. */

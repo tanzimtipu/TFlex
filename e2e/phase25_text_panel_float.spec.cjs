@@ -1,13 +1,17 @@
-// Phase 25 QA validation — floating, movable, header-less text-properties
-// panel (no page reflow).
+// Phase 25 QA validation — header-less text-properties panel (no page reflow),
+// MIGRATED for Phase 38 feature C: the floating, drag-to-move card is retired,
+// so this spec now pins the current contract (the panel is the Inspector's one
+// fixed text surface) while keeping the original behaviour checks (header-less,
+// no page reflow on open/close, control presses never move it).
 //
 // Measures the running Electron app (canonical launcher only) against the
 // phase's four success criteria:
 //   C1 no header/title; opening/closing never moves the page (frame-sampled
-//      canvas rect + scroller scrollTop spans) and the panel floats inside
-//      .workspace-main; three themes.
-//   C2 drag by grip to several positions (rect after each), clamped inside
-//      the page view when dragged far out; a press on a control never drags.
+//      canvas rect + scroller scrollTop spans) and the panel is hosted by the
+//      Inspector (no float wrapper); three themes.
+//   C2 the retired grip/drag chrome is ABSENT and the fixed panel cannot be
+//      dragged; it stays inside the page view; a press on a control never
+//      moves it.
 //   C3 with the panel open, dragging an annotation textbox / callout / note
 //      and an Edit-mode text box moves it by exactly the mouse delta with no
 //      ghost/duplicate/drift; survives Save As + close + reopen.
@@ -23,7 +27,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const {
-  hardClose, armAnnotationTool, openSamplePath, toggleEditMode,
+  hardClose, armAnnotationTool, openSamplePath, gotoStage,
 } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
@@ -129,7 +133,10 @@ async function panelRects(win) {
     };
     return {
       panel: r(panel), main: r(main),
-      transform: float ? getComputedStyle(float).transform : null,
+      // Phase 38 feature C — the retired float wrapper is gone; the panel is
+      // in-flow inside the Inspector, so there is no drag transform.
+      float: float !== null,
+      transform: panel ? getComputedStyle(panel).transform : null,
     };
   });
 }
@@ -150,20 +157,28 @@ test('C1 header-less, no page shift on open/close, floats in page view, 3 themes
     await win.waitForSelector('.text-props-panel', { timeout: 8000 });
     await win.waitForTimeout(500);
     const dom = await win.evaluate(() => {
-      const float = document.querySelector('[data-text-panel-float]');
-      const main = document.querySelector('.workspace-main');
+      const panel = document.querySelector('[data-text-panel]');
+      const insp = document.querySelector('[data-inspector]');
       return {
         hasHeader: !!document.querySelector('.text-props-header'),
         hasTitle: !!document.querySelector('.text-props-title'),
+        float: !!document.querySelector('[data-text-panel-float]'),
         grip: !!document.querySelector('[data-text-panel-grip]'),
-        floatInsideMain: float !== null && main !== null && main.contains(float),
+        gripClass: !!document.querySelector('.text-props-grip'),
+        inspectorHosted: panel !== null && insp !== null && insp.contains(panel),
+        panels: document.querySelectorAll('.text-props-panel').length,
       };
     });
     log('C1-dom', dom);
     expect(dom.hasHeader, 'no header element').toBe(false);
     expect(dom.hasTitle, 'no title element').toBe(false);
-    expect(dom.grip, 'grip strip present').toBe(true);
-    expect(dom.floatInsideMain, 'float wrapper is inside .workspace-main').toBe(true);
+    // Phase 38 feature C — the retired floating chrome is absent; the
+    // Inspector-hosted block is the ONE home of the panel.
+    expect(dom.float, 'no float wrapper').toBe(false);
+    expect(dom.grip, 'no grip strip').toBe(false);
+    expect(dom.gripClass, 'no grip class').toBe(false);
+    expect(dom.inspectorHosted, 'the panel is hosted by the Inspector').toBe(true);
+    expect(dom.panels, 'exactly one text-props panel').toBe(1);
     await armAnnotationTool(win, 'select');
     await win.waitForTimeout(300);
 
@@ -214,10 +229,12 @@ test('C1 header-less, no page shift on open/close, floats in page view, 3 themes
   }
 });
 
-async function dragGrip(win, dx, dy) {
-  const g = await win.locator('[data-text-panel-grip]').boundingBox();
-  const x = g.x + g.width / 2;
-  const y = g.y + g.height / 2;
+// Phase 38 feature C — the panel no longer has a grip. Attempt the retired
+// drag on the panel's own surface: a fixed panel must not move.
+async function dragPanelSurface(win, dx, dy) {
+  const p = await win.locator('.text-props-panel').boundingBox();
+  const x = p.x + 8;
+  const y = p.y + 8;
   await win.mouse.move(x, y);
   await win.mouse.down();
   await win.mouse.move(x + dx, y + dy, { steps: 10 });
@@ -238,10 +255,11 @@ function sameRel(a, b, tol = 1.5) {
 }
 
 // ===========================================================================
-// C2 — drag by grip to several positions; clamped inside the page view;
-// a press on a control never starts a drag.
+// C2 (Phase 38 feature C migration) — the panel is FIXED in the Inspector:
+// the retired grip/drag chrome is absent, attempting the drag never moves it,
+// it stays inside the page view, and a press on a control never moves it.
 // ===========================================================================
-test('C2 drag by grip + clamp inside page view + control press no drag', async () => {
+test('C2 panel is fixed in the Inspector (no drag) + control press no move', async () => {
   test.setTimeout(200000);
   const app = await launchApp();
   const win = await app.firstWindow();
@@ -252,26 +270,31 @@ test('C2 drag by grip + clamp inside page view + control press no drag', async (
     await win.waitForSelector('.text-props-panel', { timeout: 8000 });
     await win.waitForTimeout(700);
 
+    // The retired drag chrome is gone.
+    expect(await win.locator('[data-text-panel-grip]').count(), 'no drag grip').toBe(0);
+    expect(await win.locator('[data-text-panel-float]').count(), 'no float wrapper').toBe(0);
+    expect(await win.locator('.text-props-grip').count(), 'no grip class').toBe(0);
+
     const start = await panelRects(win);
     const positions = [];
     for (const [dx, dy] of [[120, 80], [-60, 160], [80, 220]]) {
-      await dragGrip(win, dx, dy);
+      await dragPanelSurface(win, dx, dy);
       const r1 = await panelRects(win);
       await win.waitForTimeout(300);
       const r2 = await panelRects(win);
-      positions.push({ dx, dy, panel: r1.panel, stayed: sameRect(r1.panel, r2.panel) });
-      log('C2-pos', { dx, dy, panel: r1.panel, stayed: sameRect(r1.panel, r2.panel) });
+      positions.push({ dx, dy, panel: r1.panel, stayed: sameRect(r1.panel, r2.panel), moved: !sameRect(r1.panel, start.panel) });
+      log('C2-pos', { dx, dy, panel: r1.panel, stayed: sameRect(r1.panel, r2.panel), moved: !sameRect(r1.panel, start.panel) });
     }
 
-    // Far outside: must clamp inside .workspace-main.
-    await dragGrip(win, 3000, 3000);
+    // A far drag must leave the fixed panel inside the page view.
+    await dragPanelSurface(win, 3000, 3000);
     const far = await panelRects(win);
     const m = far.main;
     const clamped = far.panel.left >= m.left - 2 && far.panel.top >= m.top - 2
       && far.panel.right <= m.right + 2 && far.panel.bottom <= m.bottom + 2;
     log('C2-clamp', { panel: far.panel, main: m, clamped });
 
-    // A press on a control must NOT start a drag.
+    // A press on a control must NOT move the panel either.
     const before = (await panelRects(win)).transform;
     const b = await win.locator('[data-txt-bold]').boundingBox();
     await win.mouse.move(b.x + b.width / 2, b.y + b.height / 2);
@@ -285,10 +308,11 @@ test('C2 drag by grip + clamp inside page view + control press no drag', async (
 
     expect(start.panel, 'panel mounted at start').not.toBeNull();
     for (const p of positions) {
-      expect(p.stayed, `drag (${p.dx},${p.dy}): panel stays where it is put`).toBe(true);
+      expect(p.moved, `drag (${p.dx},${p.dy}): the fixed panel does not move`).toBe(false);
+      expect(p.stayed, `drag (${p.dx},${p.dy}): panel stays where it is`).toBe(true);
     }
-    expect(clamped, `far drag clamps inside the page view (panel=${JSON.stringify(far.panel)} main=${JSON.stringify(m)})`).toBe(true);
-    expect(after, 'a press on a control never starts a drag').toBe(before);
+    expect(clamped, `the fixed panel stays inside the page view (panel=${JSON.stringify(far.panel)} main=${JSON.stringify(m)})`).toBe(true);
+    expect(after, 'a press on a control never moves the panel').toBe(before);
   } finally {
     await hardClose(app, 'p25-c2');
   }
@@ -511,11 +535,12 @@ test('C3 text element move integrity + save/reopen', async () => {
       log('C3-ann', rec);
     }
 
-    // Edit-mode text box.
+    // Edit-mode text box. Phase 37 item 13 — the EDIT STAGE is the edit-mode
+    // switch (the `editMode` dock verb is retired), so enter the stage.
     await armAnnotationTool(win, 'select');
     await win.waitForTimeout(300);
     if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
-      await toggleEditMode(win);
+      await gotoStage(win, 2);
       await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     }
     await win.click('[data-edit-tool="box"]');
@@ -557,8 +582,13 @@ test('C3 text element move integrity + save/reopen', async () => {
     log('C3-reopen-box', postBox);
 
     // Render the committed edit box after reopen (Edit mode + box tool).
+    // Phase 37 item 13 — the EDIT stage is the switch. Opening/activating a tab
+    // resets edit mode while the stage stays EDIT, and the stage effect only
+    // fires on a stage CHANGE, so force a real stage change (PAGES -> EDIT) to
+    // re-enter edit mode. (Recorded as DEF-342.)
     if ((await win.locator('[data-edit-toolbar]').count()) === 0) {
-      await toggleEditMode(win);
+      await gotoStage(win, 1);
+      await gotoStage(win, 2);
       await win.waitForSelector('[data-edit-toolbar]', { timeout: 8000 });
     }
     await win.click('[data-edit-tool="box"]');
@@ -751,7 +781,9 @@ test('C4 regression: annotation controls, motion contracts, palette at 640/820/1
       log('C4-anim-off', s);
       expect(s.frames, 'animations off: panel sampled').toBeGreaterThan(10);
       expect(s.intermediates, 'animations off: panel opens instantly (0 intermediate frames)').toBe(0);
-      expect(s.end && s.end.w, 'animations off: panel reaches open width').toBeGreaterThan(240);
+      // Phase 38 feature C — the panel's one home is the Inspector (264px); its
+      // in-flow text surface is 216px. Assert it reaches that open width.
+      expect(s.end && s.end.w, 'animations off: the Inspector text surface reaches its open width').toBeGreaterThan(180);
     } finally {
       await hardClose(app, 'p25-c4b');
     }
@@ -775,7 +807,8 @@ test('C4 regression: annotation controls, motion contracts, palette at 640/820/1
       const s = panelSummary(rows);
       log('C4-reduced', s);
       expect(s.intermediates, 'reduced motion: panel opens instantly').toBe(0);
-      expect(s.end && s.end.w, 'reduced motion: panel reaches open width').toBeGreaterThan(240);
+      // Phase 38 feature C — the Inspector text surface is 216px.
+      expect(s.end && s.end.w, 'reduced motion: the Inspector text surface reaches its open width').toBeGreaterThan(180);
     } finally {
       await hardClose(app, 'p25-c4c');
     }

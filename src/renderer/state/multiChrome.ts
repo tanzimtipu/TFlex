@@ -5,7 +5,25 @@
 // selections. These rules decide which pane's publish may drive the shared
 // surface, so the wiring is unit-testable without mounting App.
 
-import type { PaneId } from "./multiMode";
+import { paneTabId, type MultiModeState, type PaneId } from "./multiMode";
+
+/**
+ * Phase 39 (DEF-348a) — which pane the ONE shared Action Dock reads.
+ *
+ * The dock is WORKSPACE-level in Multi Mode: the operator's ruling is that it
+ * must be present and functional whenever a document exists in the workspace,
+ * whichever pane is focused. The focused pane normally drives it, but an EMPTY
+ * pane has published no dock context (nothing to show) — historically that
+ * made the whole dock vanish while the empty pane was focused. Fall back to the
+ * other pane exactly when it owns a document; if neither pane has a document
+ * the focused pane is returned (and the dock renders nothing, which is
+ * correct: there is no document in the workspace).
+ */
+export function resolveDockPane(multi: MultiModeState, focused: PaneId): PaneId {
+  if (paneTabId(multi, focused) !== null) return focused;
+  const other: PaneId = focused === "A" ? "B" : "A";
+  return paneTabId(multi, other) !== null ? other : focused;
+}
 
 /** What the host must do with a pane's published selection. */
 export interface PaneSelectionDecision<T> {

@@ -1,15 +1,14 @@
 // @vitest-environment jsdom
-// Phase 25 — the text-properties panel is a floating, header-less card.
+// Phase 25 / Phase 38 — the text-properties panel has no header chrome.
 //
-// Pins:
-//   1. the header / title are GONE; the only chrome is the shared
-//      ContentGrip strip;
-//   2. the useDragWindow wiring is live (a grip press moves the card and
-//      the offset STAYS after release; a press on a control never starts
-//      a move);
-//   3. the host no longer drives a page-reflow column: DocumentView mounts
-//      the panel inside .workspace-main, and styles.css has no --tf-text-w
-//      grid track or @property (static source scan).
+// Phase 38 (feature C) SUPERSEDES the Phase-25 floating-card contract: the
+// panel's drag-to-move wrapper, its float attribute and its ContentGrip handle
+// are retired. The panel's one home is the Inspector, fixed in place. Pins:
+//   1. no header / title AND no grip / float / drag affordance remains;
+//   2. the control surface + its stable hooks survive unchanged;
+//   3. the host still no longer drives a page-reflow column: styles.css has
+//      no --tf-text-w grid track or @property (static source scan), and the
+//      DocumentView mounts no text panel at all.
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 import { readFileSync } from "node:fs";
@@ -47,65 +46,20 @@ function mount(): { host: HTMLElement; cleanup: () => void } {
   };
 }
 
-function firePointer(
-  el: Element | Window,
-  type: "pointerdown" | "pointermove" | "pointerup",
-  x: number,
-  y: number,
-): void {
-  act((): void => {
-    el.dispatchEvent(
-      new PointerEvent(type, {
-        bubbles: true,
-        button: 0,
-        clientX: x,
-        clientY: y,
-        pointerId: 1,
-      }),
-    );
-  });
-}
-
-describe("Phase 25 — header-less floating card", () => {
-  it("renders no header / title; the ContentGrip strip is the only chrome", () => {
+describe("Phase 38 — the panel is fixed, with no drag chrome", () => {
+  it("renders no header / title and no grip / float / drag affordance", () => {
     const { host, cleanup } = mount();
     expect(host.querySelector(".text-props-header")).toBeNull();
     expect(host.querySelector(".text-props-title")).toBeNull();
-    // The floating wrapper + the grip drag affordance.
-    expect(host.querySelector("[data-text-panel-float]")).not.toBeNull();
-    expect(host.querySelector("[data-text-panel-grip]")).not.toBeNull();
-    expect(host.querySelector("[data-drag-grip='text-props']")).not.toBeNull();
+    // Phase 38 — the floating wrapper, grip and drag handle are gone.
+    expect(host.querySelector("[data-text-panel-float]")).toBeNull();
+    expect(host.querySelector("[data-text-panel-grip]")).toBeNull();
+    expect(host.querySelector(".text-props-grip")).toBeNull();
+    expect(host.querySelector("[data-drag-grip='text-props']")).toBeNull();
     // The control surface + its stable hooks survive.
     expect(host.querySelector("[data-text-panel]")).not.toBeNull();
     expect(host.querySelector("[data-txt-font]")).not.toBeNull();
     expect(host.querySelector("[data-txt-bold]")).not.toBeNull();
-    cleanup();
-  });
-
-  it("drags by its grip, holds the offset after release, and never drags from a control", () => {
-    const { host, cleanup } = mount();
-    const float = host.querySelector<HTMLElement>("[data-text-panel-float]");
-    if (float === null) throw new Error("float wrapper not found");
-    float.getBoundingClientRect = (): DOMRect => ({
-      x: 40, y: 120, left: 40, top: 120, right: 288, bottom: 640, width: 248, height: 520,
-      toJSON: () => ({}),
-    });
-    const grip = host.querySelector("[data-text-panel-grip]");
-    if (grip === null) throw new Error("grip not found");
-
-    // Grip press -> move -> release: the card follows and STAYS.
-    firePointer(grip, "pointerdown", 60, 140);
-    firePointer(window, "pointermove", 130, 200);
-    firePointer(window, "pointerup", 130, 200);
-    expect(float.style.transform).toContain("translate3d(70px, 60px, 0)");
-
-    // A press on a control is that control's: no move starts.
-    const bold = host.querySelector("[data-txt-bold]");
-    if (bold === null) throw new Error("bold control not found");
-    firePointer(bold, "pointerdown", 60, 140);
-    firePointer(window, "pointermove", 260, 380);
-    firePointer(window, "pointerup", 260, 380);
-    expect(float.style.transform).toContain("translate3d(70px, 60px, 0)");
     cleanup();
   });
 });
@@ -131,15 +85,12 @@ describe("Phase 25 — the page-reflow column is retired", () => {
     expect(CLEAN).not.toMatch(/\.text-props-title\s*\{/);
   });
 
-  it("DocumentView no longer writes a text-panel grid column", () => {
-    // Strip comments: the retirement note may name the retired token.
+  it("DocumentView mounts no text-properties panel (Inspector-only)", () => {
+    // Strip comments: the retirement note may name the retired surface.
     const docCode = DOCVIEW.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
     expect(docCode).not.toMatch(/--tf-text-w/);
-    // The mount lives inside the page-view area.
-    const panelMount = docCode.indexOf("<TextPropertiesPanel");
-    const mainOpen = docCode.indexOf('className="workspace-main"');
-    expect(panelMount).toBeGreaterThan(-1);
-    expect(mainOpen).toBeGreaterThan(-1);
-    expect(panelMount).toBeGreaterThan(mainOpen);
+    expect(docCode).not.toContain("<TextPropertiesPanel");
+    expect(docCode).not.toContain("data-text-panel-float");
+    expect(docCode).not.toContain("resolveFloatingTextPanelOpen");
   });
 });

@@ -58,12 +58,14 @@ import {
   labelledDockNeed,
   labelsFitBand,
   pillBandHeight,
+  pillBasisFromWidths,
   pillFreeBand,
   pillReserve,
   shouldLiftDock,
   type PillBox,
 } from '../state/dockFit';
 import { toolById, dockToolsForStage, type ToolEntry } from '../state/toolsRegistry';
+import { PILL_RAISE, pillMode } from '../state/pillFit';
 import type { Stage } from '../state/stages';
 
 /** The State 2 bulk verbs, reusing the EXISTING multi-page engine/dialog
@@ -122,6 +124,19 @@ export interface ActionDockProps {
    *  workspace chrome (the floating page / zoom pills) fades in lockstep with
    *  the dock instead of on its own timer. */
   onIdleChange?: (idle: boolean) => void;
+  /** Phase 39 (DEF-348b/c) — reporter for the dock's measured vertical yield in
+   *  px (the pill band's height + clearance when the dock parks above the pills,
+   *  else 0). The Multi Mode host reserves a bottom band of `base + lift` so no
+   *  panel, pill or page-action control can ever intersect the dock. */
+  onLiftChange?: (liftPx: number) => void;
+  /** Phase 39 (D3) — the pill source for the reserve/lift basis, as a selector
+   *  resolved against the document. Single mode omits it: the dock's host IS
+   *  the canvas and the pills are its siblings. Multi Mode passes the FOCUSED
+   *  pane's selector, because the shared dock lives in `.multi-dock-layer` while
+   *  the pane's pills are OUTBOARD — the basis is then rebuilt from the pills'
+   *  measured widths at the single-mode insets, so both modes reserve the SAME
+   *  band at the same host width (Phase 39 D3). */
+  pillSelector?: string;
 }
 /** One rendered verb, unified across States 1 and 2. */
 interface DockVerb {
@@ -213,6 +228,8 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     toolUsage,
     activeToolIds,
     onIdleChange,
+    onLiftChange,
+    pillSelector,
   } = props;
 
   const rootRef = useRef<HTMLElement | null>(null);
@@ -261,6 +278,14 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   useEffect((): (() => void) | undefined => {
     const host = rootRef.current?.parentElement ?? null;
     if (host === null) return undefined;
+    // Phase 39 (D3) — the PILL SOURCE. Single mode: the dock's host (the pills
+    // are its siblings at the host's 12px insets). Multi Mode: the FOCUSED
+    // pane, whose pills are OUTBOARD (pane-sized, at the pane's outer edge), so
+    // their positions must not feed the workspace-centred dock's reserve; only
+    // their widths/band do, rebuilt at the single-mode insets below.
+    const outboard = pillSelector !== undefined;
+    const source =
+      pillSelector === undefined ? host : (document.querySelector(pillSelector) ?? host);
     const box = (el: Element | null): PillBox | null => {
       if (el === null) return null;
       const r = el.getBoundingClientRect();
@@ -277,22 +302,39 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     const measure = (): void => {
       const hostRect = host.getBoundingClientRect();
       if (!(hostRect.width > 0)) return;
-      const page = box(host.querySelector('[data-page-pill]'));
-      const zoom = box(host.querySelector('[data-zoom-pill]'));
+      const page = box(source.querySelector('[data-page-pill]'));
+      const zoom = box(source.querySelector('[data-zoom-pill]'));
       if (page === null && zoom === null) return;
-      const reserve = pillReserve({
-        page,
-        zoom,
-        hostLeft: hostRect.left,
-        hostRight: hostRect.right,
-      });
-      const bandHeight = pillBandHeight(page, zoom);
-      // DEF-330 — the pill-FREE band needs BOTH boxes: with only one pill there
-      // is no "between" to place the dock in, so the symmetric reserve stays.
-      const free =
-        page !== null && zoom !== null
-          ? pillFreeBand({ page, zoom, hostLeft: hostRect.left })
-          : null;
+      // Single mode measures the pills' real inner-edge offsets; Multi Mode
+      // rebuilds the same basis from the focused pane's pill widths (D3), so
+      // both modes reserve the identical band at the same host width.
+      const basis = outboard
+        ? pillBasisFromWidths({
+            page,
+            zoom,
+            hostWidth: hostRect.width,
+            // The lift basis is SINGLE mode's: the stacked rung is decided by
+            // the host width (`pillMode`), never by the focused pane's own
+            // stacked arrangement — so the lift magnitude matches single mode.
+            stackedRaisePx: pillMode(hostRect.width) === 'stacked' ? PILL_RAISE : 0,
+          })
+        : {
+            reserve: pillReserve({
+              page,
+              zoom,
+              hostLeft: hostRect.left,
+              hostRight: hostRect.right,
+            }),
+            pillHeight: pillBandHeight(page, zoom),
+            // DEF-330 — the pill-FREE band needs BOTH boxes: with only one pill
+            // there is no "between" to place the dock in, so the symmetric
+            // reserve stays.
+            free:
+              page !== null && zoom !== null
+                ? pillFreeBand({ page, zoom, hostLeft: hostRect.left })
+                : null,
+          };
+      const { reserve, pillHeight: bandHeight, free } = basis;
       const key = `${reserve}:${Math.round(bandHeight)}:${
         free === null ? 'x' : `${Math.round(free.left)}:${Math.round(free.width)}`
       }`;
@@ -304,12 +346,12 @@ export function ActionDock(props: ActionDockProps): ReactElement {
     if (typeof ResizeObserver === 'undefined') return undefined;
     const ro = new ResizeObserver(measure);
     ro.observe(host);
-    const pageEl = host.querySelector('[data-page-pill]');
-    const zoomEl = host.querySelector('[data-zoom-pill]');
+    const pageEl = source.querySelector('[data-page-pill]');
+    const zoomEl = source.querySelector('[data-zoom-pill]');
     if (pageEl !== null) ro.observe(pageEl);
     if (zoomEl !== null) ro.observe(zoomEl);
     return (): void => ro.disconnect();
-  }, []);
+  }, [pillSelector]);
 
   const width = canvasWidth ?? measuredWidth;
   const compact = isDockCompact(width);
@@ -327,6 +369,12 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   const reserve = pill?.reserve ?? DOCK_DEFAULT_RESERVE;
   const band = dockBand(width, reserve);
   const lifted = pill !== null && shouldLiftDock(band);
+  // Phase 39 (DEF-348b/c) — publish the vertical yield so the Multi Mode host
+  // can reserve a band that contains the dock at its lifted position too.
+  const liftPx = lifted ? (pill?.pillHeight ?? 0) + DOCK_PILL_GAP : 0;
+  useEffect((): void => {
+    onLiftChange?.(liftPx);
+  }, [liftPx, onLiftChange]);
   // DEF-330 — the pill-FREE band. The symmetric `band` doubles the WIDEST
   // pill's offset, so it charged the dock for slack the narrower side never
   // uses; between the pills there is `free.width` to work with and the dock
@@ -620,7 +668,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         }}
       >
         <span className="action-dock-icon" aria-hidden>
-          <Icon size={16} />
+          <Icon size={20} />
         </span>
         {!iconOnly && <span className="action-dock-label">{verb.label}</span>}
       </button>
@@ -707,7 +755,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           title="Scroll left"
           onClick={(): void => scrollVerbs(-1)}
         >
-          <ChevronLeft size={16} aria-hidden />
+          <ChevronLeft size={20} aria-hidden />
         </button>
       )}
       <div className="action-dock-scroll" ref={scrollRef} data-dock-scroll>
@@ -735,7 +783,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
               }}
             >
               <span className="action-dock-icon" aria-hidden>
-                <Ellipsis size={16} />
+                <Ellipsis size={20} />
               </span>
               {!iconOnly && <span className="action-dock-label">More</span>}
             </button>
@@ -757,7 +805,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
                         verb.run();
                       }}
                     >
-                      <Icon size={14} aria-hidden />
+                      <Icon size={18} aria-hidden />
                       <span>{verb.label}</span>
                     </button>
                   );
@@ -784,7 +832,7 @@ export function ActionDock(props: ActionDockProps): ReactElement {
           title="Scroll right"
           onClick={(): void => scrollVerbs(1)}
         >
-          <ChevronRight size={16} aria-hidden />
+          <ChevronRight size={20} aria-hidden />
         </button>
       )}
       {/* DEF-312 — the Pin/Unpin menu is portaled to `document.body`. The dock

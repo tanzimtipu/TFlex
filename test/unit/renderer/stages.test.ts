@@ -26,6 +26,7 @@ import {
   stageForPane,
   stageReducer,
   stageShortcutLabel,
+  stageEffectsNeedApply,
   type Stage,
   type StageAction,
   type StageState,
@@ -206,5 +207,75 @@ describe("stage model — fallbacks and refusals", () => {
     expect(stageReducer(state, { type: "reset", pane: "B" })).toBe(state);
     expect(stageReducer(state, { type: "reset", pane: null })).toBe(state);
     expect(stageReducer(initialStageState, { type: 'reset', pane: 'A' })).toBe(initialStageState);
+  });
+});
+
+// Phase 38 / DEF-342 — the EDIT stage's side effects must re-apply when the
+// stage becomes applicable again, not only on a stage CHANGE. The repro:
+// close the only tab while EDIT is active (exit clears edit mode App-side but
+// the rail still shows EDIT), then reopen a document; the stage value never
+// changed, yet the edit surface has to come back.
+describe("stage model — stage effect re-application (DEF-342)", () => {
+  it("re-applies on document arrival with an unchanged stage", () => {
+    expect(
+      stageEffectsNeedApply({
+        prevStage: "edit",
+        prevDocId: null,
+        stage: "edit",
+        docId: "tab-1",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not re-apply when a document closes (the close path owns the reset)", () => {
+    expect(
+      stageEffectsNeedApply({
+        prevStage: "edit",
+        prevDocId: "tab-1",
+        stage: "edit",
+        docId: null,
+      }),
+    ).toBe(false);
+  });
+
+  it("re-applies on a tab switch while the stage is unchanged", () => {
+    expect(
+      stageEffectsNeedApply({
+        prevStage: "edit",
+        prevDocId: "tab-1",
+        stage: "edit",
+        docId: "tab-2",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not re-apply when neither the stage nor the document changed", () => {
+    expect(
+      stageEffectsNeedApply({
+        prevStage: "edit",
+        prevDocId: "tab-1",
+        stage: "edit",
+        docId: "tab-1",
+      }),
+    ).toBe(false);
+  });
+
+  it("always re-applies on a genuine stage change, document or not", () => {
+    expect(
+      stageEffectsNeedApply({
+        prevStage: "edit",
+        prevDocId: "tab-1",
+        stage: "pages",
+        docId: "tab-1",
+      }),
+    ).toBe(true);
+    expect(
+      stageEffectsNeedApply({
+        prevStage: "pages",
+        prevDocId: null,
+        stage: "edit",
+        docId: null,
+      }),
+    ).toBe(true);
   });
 });

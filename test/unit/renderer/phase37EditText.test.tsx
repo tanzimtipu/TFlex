@@ -387,9 +387,12 @@ describe("Phase 37 item 13 � the EDIT stage is the Edit-mode switch", () => {
     expect(toolById("editMode")?.surface).not.toBe("dock");
   });
 
-  it("App owns the single stage -> edit-mode effect (no second switch)", () => {
+it("App owns the single stage -> edit-mode effect (no second switch)", () => {
+    // Phase 38 / DEF-342 — the effect is keyed on the active stage AND the
+    // active document id so it re-applies when a document arrives while the
+    // stage is unchanged (reopening a tab while EDIT is shown).
     const effect =
-      /const prevActiveStageRef[\s\S]*?useEffect\(\(\): void => \{[\s\S]*?setEditMode\(editModeForStage\(activeStage\)\)[\s\S]*?\}, \[activeStage, setEditMode\]\);/;
+      /const prevStageApplyRef[\s\S]*?useEffect\(\(\): void => \{[\s\S]*?setEditMode\(editModeForStage\(activeStage\)\)[\s\S]*?\}, \[activeStage, tabs\.activeId, setEditMode\]\);/;
     expect(APP_SOURCE).toMatch(effect);
   });
 });

@@ -65,6 +65,26 @@ export function resolvePaneFocus(
 }
 
 /**
+ * Phase 39 (item 2 / DEF-348-adjacent) — when a pane is EMPTY, may the app
+ * clear its active document? Only when NO pane owns a document. If the other
+ * pane still holds one, the active document must be KEPT: the Inspector's
+ * inset (`--tf-tools-inset`) keys on "is there an active document", so
+ * clearing it while an empty pane is focused collapses the Inspector, and a
+ * subsequent Open into that pane would reopen it and move the divider — the
+ * operator's "clicking Open changes the pane layout". Keeping the workspace's
+ * document active (exactly what the workspace-level shared dock already reads)
+ * makes the inset — and therefore the divider — stable across the open.
+ */
+export function shouldClearActiveOnEmptyFocus(
+  state: MultiModeState,
+  pane: PaneId,
+): boolean {
+  // `pane` is the newly focused (empty) pane; the OTHER pane decides.
+  const other = pane === "A" ? "B" : "A";
+  return paneTabId(state, other) === null;
+}
+
+/**
  * Which tab the app must activate after a pane is emptied. `null` means the
  * app has no active document (the focused pane is empty), so document-scoped
  * operations must not fall back to the previously active tab.
