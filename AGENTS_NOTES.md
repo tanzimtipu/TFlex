@@ -3471,3 +3471,82 @@ divergence). Both are recorded with their evidence in `e2e/PHASE39-MULTIVIEW-MAT
 **Automation limit worth restating:** qa's shell is non-elevated, so a per-machine install cannot be
 verified by the automated gate - the operator runs the installer and qa then measures the installed build.
 Keep that split when the packaging changes again.
+
+## 2026-09-26: Release 1.32.0 - Phase 40 (14 operator items: chrome, dialogs, view modes, a design system)
+
+Release 1.32.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.32.0 with all
+four assets, and the public feed verifies (`version: 1.32.0`, sha512 `I1w2lzXy...`, size 163291295).
+Commits: `019e722` (Phase 40, 70 files), `dad29bc` (bump), tag `v1.32.0`. Gates: `verify:full` 413 files /
+**5252 tests** green, the PACKAGED canonical spec 9/9 at 1.32.0, 43 phase-suite e2e tests, and the
+fourteen criteria verified individually.
+
+**OPERATOR RULING - no more local installs.** "No need to install the app on my computer from now on. I
+will install it from OTA." The release gate is therefore `verify:full` + the packaged canonical spec
+(`TFLEX_PACKAGED_EXE` pointing at `release/win-unpacked/TFlex.exe`) - the elevation dependency is gone
+from the routine. The per-machine install behaviour (Program Files, legacy cleanup, the ARP entry) was
+verified once, on the operator's own install, and is recorded above.
+
+**THE DESIGN SYSTEM (Phase 40 items 11/12).** `docs/DESIGN-SYSTEM.md` could not be created - no role's
+permissions include `docs/` - so the palette of record lives here. The eight ad-hoc `--icon-*` family hues
+from Phase 38 are RETIRED; every icon, text and edge now resolves through four semantic roles:
+
+| Token | Role | light | dark | frosted |
+|---|---|---|---|---|
+| `--sem-primary` | selection, active state, primary actions, the active panel edge (reserved) | `#1d4ed8` | `#63a8e8` | `#1e40af` |
+| `--sem-neutral` | the bulk: ordinary tools, navigation, view/edit, annotations, app text | `#3d4c69` | `#9aa7bd` | `#3a4862` |
+| `--sem-affirmative` | constructive/completion: insert, merge, sign, stamp, watermark, export, save, OCR | `#166534` | `#7fbd8f` | `#12682f` |
+| `--sem-attention` | destructive/critical: delete, clear, replace, flatten, OCR suspects | `#be123c` | `#e07a74` | `#9f1239` |
+
+Stages map onto roles (PAGES -> neutral, EDIT -> primary, REVIEW -> attention, DELIVER -> affirmative), so
+the four `--tf-stage-*` tokens are aliases, not a fifth colour. Separators are ALWAYS the 1px neutral
+`--divider`; the ONLY coloured edge is state-driven (the Inspector's page-facing edge takes `--sem-primary`
+while a selection is live). `--dock-primary-fg` stays as the primary role's on-wash shade. A unit spec
+asserts the palette is FINITE (no surface may use an undeclared colour) and that every tool category
+resolves to exactly one role. Measured floors hold in all three themes (min 5.72:1 text; icons >=3:1).
+
+**Lesson 1 - the palette STATES are part of the contrast contract (again).** The Phase 38 lesson repeated:
+the resting pairs all passed, while the palette's "Recent"/"Global" tags sat at 4.37/3.24/4.34 and the
+PRESSED Open label at 3.75 (ADV-094/095). Any palette change must re-measure hover, pressed, selected and
+the tag/secondary text - not just the base state.
+
+**Lesson 2 - a mode must deliver the count it promises.** The new 1/2/4 page-layout control first left the
+default `fit-width` in place, where TWO and FOUR produced identical page boxes (only the height scrolled) -
+so choosing FOUR did not show four pages. Fix: selecting a mode establishes `fit-page` for that mode
+(manual zoom still overrides), and a measured check now proves 1/2/4 pages are fully visible at 1440 and
+900. A control whose label promises a count must be measured against that count.
+
+**Lesson 3 - an editable control showing a RANGE must select on focus.** ADV-091: the page pill shows a
+range (`1-2`) in grid modes; focusing it swapped to a bare page WITHOUT selecting, so typing `4` appended -
+`14`, a jump to the wrong row. The fix selects the whole value on focus/click (and after the swap commits).
+Any input that programmatically rewrites its own value owes the user a selection.
+
+**Lesson 4 - a RESTORE does not consume a pin slot, and two stores need one stated precedence.** ADV-092:
+with four explicit pins, restoring a removed stage-default from the palette was refused with a false "Dock
+is full (max 4 pins)" although the restore adds no explicit pin. ADV-093: an id present in BOTH `dockPins`
+and `dockUnpinned` (hand-edited or cross-version settings) let the palette icon disagree with the dock -
+fixed by one deterministic rule, **the un-pin wins** (`sanitizeDockCuration`), so a removed tool can never
+resurrect. When two stores describe one truth, resolve them through ONE function at every read and write.
+
+**Lesson 5 - the UI and its accelerator must agree.** DEF-356: Ctrl+S on a CLEAN on-disk document rewrote
+the file (new `/ModDate`, new SHA) while the toolbar Save sat disabled. The accelerator is main-process
+(`menu.ts`) but the write path is renderer-side, so the guard belongs in the save handler
+(`saveGuard.ts` `saveIntentFor` -> no-op when clean). A disabled control and its shortcut are the same
+contract.
+
+**Lesson 6 - VERIFY a resumed child's report against the artefact.** A qa session that had settled empty
+was resumed per the token-limit rule; it came back with a confident, detailed report claiming six DEF
+entries filed and closed, an invented DEF-357, and a `verify:full` count that did not match the tree. NONE
+of it was true - `DEFECTS.md` still ended at DEF-350 and no ledger line had been written. An empty step or
+a garbled resume is a token-limit artefact, not evidence: check the FILE (the ledger, the diff, the log)
+before acting on what a resumed child says. The re-dispatched session filed the six entries correctly and
+the counts then matched the run.
+
+**Also recorded:** the phase retired the under-thumbnail rotate/delete bar in both modes (the capabilities
+stay reachable from the dock verbs and the page right-click menu - that is the "one home per control" rule
+being re-pointed by the operator, not violated); the top-bar Open/Save controls lost their background boxes
+(a ghost treatment, with the pressed-state ink fixed so the floors still hold); the Create-from-images
+dialog is now viewport-responsive; Merge PDF can start from scratch with no document open, through the new
+`openFilesDialog` multi-select IPC (channel `dialog:openFiles`, `Promise<string[]>`, `[]` on cancel - the
+first open runs in MEMORY so a source file cannot be overwritten); the palette pin toggles persist through
+the existing `dockPins`; and `e2e/phase40_def351_356_verify.spec.cjs` is the single consolidated verify
+spec (three near-duplicate ones were deleted).
