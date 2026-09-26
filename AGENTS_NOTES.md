@@ -3938,3 +3938,24 @@ untouched by the whole affair, which is what proved the target state.
 **Also note:** the artifacts built before the incident are still valid (their asar carries `1.36.0` and the
 `tflex` block, and the source never changed), but a clean rebuild after the repair is the honest way to ship:
 the committed manifest and the packaged manifest should be the same bytes.
+
+## 2026-09-26: Release 1.36.0 PUBLISHED - optional accounts + cloud sync on Neon (behind a flag)
+
+Release 1.36.0 is published: https://github.com/tanzimtipu/tflex-releases/releases/tag/v1.36.0 with all four
+assets, and the public feed verifies (`version: 1.36.0`, sha512 `0deecg9i...`, size 171,835,374). Commits:
+`ab08bf7` (Phase 44, 38 files - including `neon.ts` + `hello.ts`, which are now tracked), `88fd688` (the 1.36.0
+notes), `fb2d156` (bump), tag `v1.36.0`. Gates: `verify:full` 426 files / **5420 tests** green; the packaged
+canonical spec 9/9 at 1.36.0; the Phase 44 flag/session e2e specs pass **on the packaged build** (flag OFF =
+zero account UI and zero accounts network traffic, which is the whole point of a flagged release). The setup
+artefact grew from ~163 MB to ~172 MB - the two Neon SDKs.
+
+**Residual housekeeping (needs the operator or a permission change):** six files under `.agents/skills/**`
+plus `skills-lock.json` are modified but UNCOMMITTED - the `neon skills -y` run rewrote them after the earlier
+commit `9b508f2`. git-agent cannot stage `.agents/**` (its permission layer denies the path), and the skills
+are agent tooling rather than product code, so they were deliberately left out of the release commit. They
+need either an authorised commit or a revert; they do not affect the shipped app.
+
+**What a future phase must pick up (unchanged from the Phase 44 record above):** signature image bytes to the
+`tflex` bucket (needs a real upload endpoint inside the `api` Function - its source is a root file), Export my
+data and Delete my account, and the live verification of the Google round-trip, the OTP email and two-device
+sync against a real account. The RLS boundary itself is already proven live (read denied, write rejected).
